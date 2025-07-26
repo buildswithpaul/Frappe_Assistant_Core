@@ -1,7 +1,15 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+# Frappe Assistant Core - SSE MCP Bridge Service
+# Copyright (C) 2025 Paul Clinton
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+
 """
-Robust SSE MCP Bridge that handles race conditions
-Allows POST requests to be buffered before SSE connection is established
+SSE MCP Bridge Service for Frappe Assistant Core
 """
 
 import json
@@ -13,10 +21,20 @@ import logging
 import uuid
 import time
 
-import httpx
-from fastapi import FastAPI, HTTPException, Header, Request
-from fastapi.responses import StreamingResponse, JSONResponse
-from pydantic import BaseModel
+try:
+    import httpx
+    from fastapi import FastAPI, HTTPException, Header, Request
+    from fastapi.responses import StreamingResponse, JSONResponse
+    from pydantic import BaseModel
+    from dotenv import load_dotenv
+except ImportError as e:
+    print(f"Missing required dependencies for SSE bridge: {e}")
+    print("Please install with: pip install frappe_assistant_core[sse-bridge]")
+    exit(1)
+
+# Load environment variables from various sources
+load_dotenv()  # Load from .env file if present
+load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 
 # Configure logging
 logging.basicConfig(
@@ -415,322 +433,203 @@ async def cleanup_task():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager"""
-    logger.info("Starting Robust SSE MCP Bridge")
+    logger.info("Starting Frappe Assistant Core SSE MCP Bridge")
     # Start cleanup task
     cleanup = asyncio.create_task(cleanup_task())
     yield
     # Cancel cleanup task
     cleanup.cancel()
-    logger.info("Shutting down Robust SSE MCP Bridge")
+    logger.info("Shutting down Frappe Assistant Core SSE MCP Bridge")
 
 # Create FastAPI app
-app = FastAPI(
-    title="Frappe MCP SSE Bridge (Robust)",
-    description="Robust SSE bridge that handles race conditions",
-    version="3.0.0",
-    lifespan=lifespan
-)
-
-@app.get("/health")
-async def health_check():
-    """Health check endpoint"""
-    return {
-        "status": "healthy", 
-        "service": "frappe-mcp-sse-bridge-robust",
-        "active_connections": len(bridge.connections),
-        "pending_requests": sum(len(reqs) for reqs in bridge.pending_requests.values())
-    }
-
-@app.get("/mcp/sse")
-async def mcp_sse_endpoint_get(
-    request: Request,
-    server_url: str,
-    authorization: Optional[str] = Header(None)
-):
-    """
-    SSE endpoint for MCP - establishes SSE stream and provides endpoint URL
-    """
-    
-    # Validate authorization (OAuth or API key)
-    user_context = await bridge.validate_authorization(authorization, server_url)
-    if not user_context:
-        raise HTTPException(status_code=401, detail="Invalid or missing authorization token")
-    
-    # Store the full authorization header for later use
-    if not authorization:
-        raise HTTPException(status_code=401, detail="Missing authorization header")
-    
-    async def generate_sse_stream() -> AsyncGenerator[str, None]:
-        """Generate SSE stream for MCP responses"""
-        
-        connection_id = f"{user_context}_{uuid.uuid4().hex[:8]}"
-        response_queue = asyncio.Queue()
-        
-        # Store connection info
-        bridge.connections[user_context] = response_queue
-        bridge.connection_metadata[user_context] = {
-            "connection_id": connection_id,
-            "server_url": server_url,
-            "auth_token": authorization
-        }
-        
-        try:
-            logger.info(f"SSE connection established: {connection_id} for user: {user_context}")
-            
-            # Send endpoint event - tells client where to send POST messages
-            endpoint_url = f"/mcp/messages?session_id={connection_id}"
-            yield f"event: endpoint\n"
-            yield f"data: {endpoint_url}\n\n"
-            
-            # Give the connection a moment to stabilize
-            await asyncio.sleep(0.1)
-            
-            # Process any pending requests
-            await bridge.process_pending_requests(user_context)
-            
-            # Keep connection alive and send queued responses
-            ping_counter = 0
-            while True:
-                try:
-                    # Wait for responses to send (with timeout for ping)
-                    response = await asyncio.wait_for(response_queue.get(), timeout=5.0)
-                    yield f"event: message\n"
-                    yield f"data: {json.dumps(response)}\n\n"
-                    logger.info(f"Sent SSE response: {response.get('id')} to {connection_id}")
-                    
-                except asyncio.TimeoutError:
-                    # Send periodic ping to keep connection alive
-                    ping_counter += 1
-                    ping_data = {
-                        "type": "ping",
-                        "timestamp": time.time(),
-                        "counter": ping_counter,
-                        "active_connections": len(bridge.connections)
-                    }
-                    yield f"event: ping\n"
-                    yield f"data: {json.dumps(ping_data)}\n\n"
-                    
-                except Exception as e:
-                    logger.error(f"Error in SSE stream: {e}")
-                    error_response = bridge.format_error_response(-32603, "Stream error", str(e))
-                    yield f"event: error\n"
-                    yield f"data: {json.dumps(error_response)}\n\n"
-                    break
-                    
-        except Exception as e:
-            logger.error(f"SSE connection error: {e}")
-            
-        finally:
-            # Cleanup connection
-            if user_context in bridge.connections:
-                del bridge.connections[user_context]
-            if user_context in bridge.connection_metadata:
-                del bridge.connection_metadata[user_context]
-            logger.info(f"SSE connection closed: {connection_id}")
-    
-    return StreamingResponse(
-        generate_sse_stream(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",  # Disable nginx buffering
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Headers": "Authorization",
-        }
+def create_app():
+    """Create and configure the FastAPI application"""
+    app = FastAPI(
+        title="Frappe Assistant Core SSE Bridge",
+        description="SSE bridge for Frappe Assistant Core MCP integration",
+        version="2.0.0",
+        lifespan=lifespan
     )
 
-@app.post("/mcp/messages")
-async def mcp_messages_endpoint(
-    request: Request,
-    session_id: str,
-    authorization: Optional[str] = Header(None)
-):
-    """
-    MCP message endpoint - handles POST messages from client
-    """
-    
-    # Find the user context and server URL from session_id
-    user_context = None
-    server_url = None
-    
-    for ctx, meta in bridge.connection_metadata.items():
-        if session_id in meta.get("connection_id", ""):
-            user_context = ctx
-            server_url = meta.get("server_url")
-            break
-    
-    if not user_context or not server_url:
-        raise HTTPException(status_code=400, detail="Invalid session ID or no active connection")
-    
-    # Validate authorization (OAuth or API key) - this ensures the token is still valid
-    validated_user = await bridge.validate_authorization(authorization, server_url)
-    if not validated_user or validated_user != user_context:
-        raise HTTPException(status_code=401, detail="Invalid or missing authorization token")
-    
-    # Double-check connection exists
-    if user_context not in bridge.connections:
-        raise HTTPException(status_code=400, detail="No active SSE connection")
-    
-    try:
-        # Read the MCP request from POST body
-        body = await request.body()
-        mcp_request = json.loads(body.decode('utf-8'))
-        
-        logger.info(f"Received MCP message: {mcp_request.get('method')} (id: {mcp_request.get('id')}) from {user_context}")
-        
-        # Get auth token from connection metadata (we already have server_url from above)
-        metadata = bridge.connection_metadata.get(user_context, {})
-        auth_token = metadata.get("auth_token")
-        
-        if not auth_token:
-            raise HTTPException(status_code=500, detail="Connection metadata missing auth token")
-        
-        # Process the MCP request and queue response for SSE
-        await bridge.process_mcp_request(
-            mcp_request, 
-            server_url, 
-            auth_token, 
-            user_context,
-            use_sse=True
-        )
-        
-        # Return simple acknowledgment
-        return JSONResponse(
-            content={"status": "accepted"},
-            status_code=202  # Accepted
-        )
-        
-    except json.JSONDecodeError as e:
-        logger.error(f"Invalid JSON in POST request: {e}")
-        raise HTTPException(status_code=400, detail="Invalid JSON in request body")
-    
-    except Exception as e:
-        logger.error(f"Error processing MCP message: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+    @app.get("/health")
+    async def health_check():
+        """Health check endpoint"""
+        return {
+            "status": "healthy", 
+            "service": "frappe-assistant-core-sse-bridge",
+            "active_connections": len(bridge.connections),
+            "pending_requests": sum(len(reqs) for reqs in bridge.pending_requests.values())
+        }
 
-@app.post("/mcp/sse")
-async def mcp_sse_endpoint_post(
-    request: Request,
-    server_url: str,
-    authorization: Optional[str] = Header(None)
-):
-    """
-    Legacy SSE endpoint - kept for backward compatibility
-    """
-    
-    # Validate authorization (OAuth or API key)
-    user_context = await bridge.validate_authorization(authorization, server_url)
-    if not user_context:
-        raise HTTPException(status_code=401, detail="Invalid or missing authorization token")
-    
-    # Extract OAuth token
-    auth_token = authorization.split(' ')[1] if authorization and authorization.startswith('Bearer ') else None
-    if not auth_token:
-        raise HTTPException(status_code=401, detail="Invalid authorization format")
-    
-    try:
-        # Read the MCP request from POST body
-        body = await request.body()
-        mcp_request = json.loads(body.decode('utf-8'))
+    @app.get("/mcp/sse")
+    async def mcp_sse_endpoint_get(
+        request: Request,
+        server_url: str,
+        authorization: Optional[str] = Header(None)
+    ):
+        """SSE endpoint for MCP - establishes SSE stream and provides endpoint URL"""
         
-        logger.info(f"Received legacy POST MCP request: {mcp_request.get('method')} (id: {mcp_request.get('id')}) from {user_context}")
+        # Validate authorization (OAuth or API key)
+        user_context = await bridge.validate_authorization(authorization, server_url)
+        if not user_context:
+            raise HTTPException(status_code=401, detail="Invalid or missing authorization token")
         
-        # Handle critical MCP methods immediately (required for MCP handshake and discovery)
-        method = mcp_request.get('method')
-        if method in ['initialize', 'tools/list', 'prompts/list', 'resources/list']:
-            logger.info(f"Processing {method} request directly for {user_context}")
-            response = await bridge.process_mcp_request(
-                mcp_request, 
-                server_url, 
-                authorization, 
-                user_context,
-                use_sse=False  # Return response directly
-            )
-            return JSONResponse(content=response)
+        # Store the full authorization header for later use
+        if not authorization:
+            raise HTTPException(status_code=401, detail="Missing authorization header")
         
-        # Check if user has an active SSE connection
-        if user_context in bridge.connections:
-            # Process immediately if connection exists
-            logger.info(f"Processing request for active connection: {user_context}")
+        async def generate_sse_stream() -> AsyncGenerator[str, None]:
+            """Generate SSE stream for MCP responses"""
             
-            # Get stored connection metadata
+            connection_id = f"{user_context}_{uuid.uuid4().hex[:8]}"
+            response_queue = asyncio.Queue()
+            
+            # Store connection info
+            bridge.connections[user_context] = response_queue
+            bridge.connection_metadata[user_context] = {
+                "connection_id": connection_id,
+                "server_url": server_url,
+                "auth_token": authorization
+            }
+            
+            try:
+                logger.info(f"SSE connection established: {connection_id} for user: {user_context}")
+                
+                # Send endpoint event - tells client where to send POST messages
+                endpoint_url = f"/mcp/messages?session_id={connection_id}"
+                yield f"event: endpoint\n"
+                yield f"data: {endpoint_url}\n\n"
+                
+                # Give the connection a moment to stabilize
+                await asyncio.sleep(0.1)
+                
+                # Process any pending requests
+                await bridge.process_pending_requests(user_context)
+                
+                # Keep connection alive and send queued responses
+                ping_counter = 0
+                while True:
+                    try:
+                        # Wait for responses to send (with timeout for ping)
+                        response = await asyncio.wait_for(response_queue.get(), timeout=5.0)
+                        yield f"event: message\n"
+                        yield f"data: {json.dumps(response)}\n\n"
+                        logger.info(f"Sent SSE response: {response.get('id')} to {connection_id}")
+                        
+                    except asyncio.TimeoutError:
+                        # Send periodic ping to keep connection alive
+                        ping_counter += 1
+                        ping_data = {
+                            "type": "ping",
+                            "timestamp": time.time(),
+                            "counter": ping_counter,
+                            "active_connections": len(bridge.connections)
+                        }
+                        yield f"event: ping\n"
+                        yield f"data: {json.dumps(ping_data)}\n\n"
+                        
+                    except Exception as e:
+                        logger.error(f"Error in SSE stream: {e}")
+                        error_response = bridge.format_error_response(-32603, "Stream error", str(e))
+                        yield f"event: error\n"
+                        yield f"data: {json.dumps(error_response)}\n\n"
+                        break
+                        
+            except Exception as e:
+                logger.error(f"SSE connection error: {e}")
+                
+            finally:
+                # Cleanup connection
+                if user_context in bridge.connections:
+                    del bridge.connections[user_context]
+                if user_context in bridge.connection_metadata:
+                    del bridge.connection_metadata[user_context]
+                logger.info(f"SSE connection closed: {connection_id}")
+        
+        return StreamingResponse(
+            generate_sse_stream(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",  # Disable nginx buffering
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Headers": "Authorization",
+            }
+        )
+
+    @app.post("/mcp/messages")
+    async def mcp_messages_endpoint(
+        request: Request,
+        session_id: str,
+        authorization: Optional[str] = Header(None)
+    ):
+        """MCP message endpoint - handles POST messages from client"""
+        
+        # Find the user context and server URL from session_id
+        user_context = None
+        server_url = None
+        
+        for ctx, meta in bridge.connection_metadata.items():
+            if session_id in meta.get("connection_id", ""):
+                user_context = ctx
+                server_url = meta.get("server_url")
+                break
+        
+        if not user_context or not server_url:
+            raise HTTPException(status_code=400, detail="Invalid session ID or no active connection")
+        
+        # Validate authorization (OAuth or API key) - this ensures the token is still valid
+        validated_user = await bridge.validate_authorization(authorization, server_url)
+        if not validated_user or validated_user != user_context:
+            raise HTTPException(status_code=401, detail="Invalid or missing authorization token")
+        
+        # Double-check connection exists
+        if user_context not in bridge.connections:
+            raise HTTPException(status_code=400, detail="No active SSE connection")
+        
+        try:
+            # Read the MCP request from POST body
+            body = await request.body()
+            mcp_request = json.loads(body.decode('utf-8'))
+            
+            logger.info(f"Received MCP message: {mcp_request.get('method')} (id: {mcp_request.get('id')}) from {user_context}")
+            
+            # Get auth token from connection metadata (we already have server_url from above)
             metadata = bridge.connection_metadata.get(user_context, {})
-            stored_auth_token = metadata.get("auth_token", auth_token)
+            auth_token = metadata.get("auth_token")
+            
+            if not auth_token:
+                raise HTTPException(status_code=500, detail="Connection metadata missing auth token")
             
             # Process the MCP request and queue response for SSE
             await bridge.process_mcp_request(
                 mcp_request, 
                 server_url, 
-                stored_auth_token, 
+                auth_token, 
                 user_context,
                 use_sse=True
             )
             
-        else:
-            # Buffer the request if no connection yet
-            logger.info(f"Buffering request for pending connection: {user_context}")
-            
-            if user_context not in bridge.pending_requests:
-                bridge.pending_requests[user_context] = []
-            
-            bridge.pending_requests[user_context].append(
-                PendingRequest(mcp_request, server_url, auth_token)
+            # Return simple acknowledgment
+            return JSONResponse(
+                content={"status": "accepted"},
+                status_code=202  # Accepted
             )
             
-            logger.info(f"Buffered request. Total pending for {user_context}: {len(bridge.pending_requests[user_context])}")
+        except json.JSONDecodeError as e:
+            logger.error(f"Invalid JSON in POST request: {e}")
+            raise HTTPException(status_code=400, detail="Invalid JSON in request body")
         
-        # Return response that tells Claude where to connect for SSE
-        sse_url = f"{request.url.scheme}://{request.url.netloc}/mcp/sse"
-        return JSONResponse(
-            content={
-                "status": "accepted", 
-                "message": "Response will be sent via SSE stream",
-                "sse": {
-                    "url": sse_url,
-                    "events": ["message", "error", "ping"]
-                }
-            },
-            status_code=202  # Accepted
-        )
-        
-    except json.JSONDecodeError as e:
-        logger.error(f"Invalid JSON in POST request: {e}")
-        raise HTTPException(status_code=400, detail="Invalid JSON in request body")
-    
-    except Exception as e:
-        logger.error(f"Error processing POST MCP request: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+        except Exception as e:
+            logger.error(f"Error processing MCP message: {e}")
+            raise HTTPException(status_code=500, detail="Internal server error")
 
-@app.post("/mcp/request")
-async def handle_mcp_request_direct(
-    request: MCPRequest,
-    server_url: str,
-    authorization: Optional[str] = Header(None)
-):
-    """Handle individual MCP requests with direct response (for testing)"""
-    
-    # Validate authorization (OAuth or API key)
-    user_context = await bridge.validate_authorization(authorization, server_url)
-    if not user_context:
-        raise HTTPException(status_code=401, detail="Invalid or missing authorization token")
-    
-    # Extract OAuth token
-    auth_token = authorization.split(' ')[1] if authorization and authorization.startswith('Bearer ') else None
-    if not auth_token:
-        raise HTTPException(status_code=401, detail="Invalid authorization format")
-    
-    # Process the request with direct response (no SSE)
-    response = await bridge.process_mcp_request(
-        request.dict(), 
-        server_url, 
-        auth_token, 
-        user_context,
-        use_sse=False
-    )
-    return response
+    # Add other endpoints...
+    return app
 
-if __name__ == "__main__":
+def main():
+    """Main entry point for the SSE bridge service"""
     import uvicorn
     
     # Get configuration from environment
@@ -738,15 +637,25 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", "8080"))
     debug = os.environ.get("DEBUG", "false").lower() == "true"
     
-    logger.info(f"Starting Robust SSE MCP Bridge on {host}:{port}")
+    logger.info(f"Starting Frappe Assistant Core SSE MCP Bridge on {host}:{port}")
     logger.info("Bridge configured to handle race conditions")
     logger.info("POST requests are buffered if SSE connection not established")
     logger.info(f"Grace period for pending requests: {bridge.connection_grace_period}s")
     
+    # Create app
+    app = create_app()
+    
     uvicorn.run(
-        "sse_mcp_bridge:app",
+        app,
         host=host,
         port=port,
         reload=debug,
         log_level="info" if not debug else "debug"
     )
+
+if __name__ == "__main__":
+    main()
+
+# Make this module executable via python -m
+def __main__():
+    main()

@@ -18,6 +18,13 @@ Welcome to the comprehensive documentation for **Frappe Assistant Core** - the o
   - Installation and setup guide
   - Testing and troubleshooting
 
+- **[SSE Bridge Integration](SSE_BRIDGE_INTEGRATION.md)**: Claude API Integration Guide
+  - Real-time streaming communication setup
+  - Development and production deployment
+  - Authentication and configuration
+  - Troubleshooting and monitoring
+  - Complete usage examples
+
 ### 🛠️ Tool Reference
 - **[Tool Usage Guide](TOOL_USAGE_GUIDE.md)**: Comprehensive guide for using all available tools
   - Tool categories and descriptions

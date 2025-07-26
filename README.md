@@ -81,6 +81,7 @@ class MyBusinessPlugin(BasePlugin):
 - **📈 Advanced Reporting**: Execute Frappe reports with enhanced debugging and error handling
 - **📊 Data Visualization**: Create charts and graphs with inline display support
 - **🔍 Advanced Analytics**: Statistical analysis and business intelligence tools with hybrid streaming
+- **🌐 SSE Bridge Integration**: Real-time streaming communication with Claude API via Server-Sent Events
 - **🔎 Global Search**: Search across all accessible documents and data
 - **🗂️ Metadata Access**: Query DocType schemas, permissions, and workflow information
 - **📋 Audit Logging**: Comprehensive operation tracking and monitoring
@@ -128,13 +129,16 @@ bench --site [site-name] migrate
 
 ```bash
 # Development installation with all dependencies
-pip install -e .[dev,analysis]
+pip install -e .[dev,analysis,sse-bridge]
 
-# Production installation
-pip install .
+# Production installation with SSE bridge for Claude API
+pip install .[sse-bridge]
 
 # Analysis dependencies only
 pip install .[analysis]
+
+# SSE bridge for real-time Claude API integration
+pip install .[sse-bridge]
 ```
 
 ### Configuration
