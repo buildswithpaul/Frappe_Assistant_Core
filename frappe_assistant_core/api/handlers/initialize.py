@@ -27,6 +27,7 @@ from frappe_assistant_core.constants.definitions import (
     MCP_PROTOCOL_VERSION, SERVER_NAME, SERVER_VERSION, ErrorCodes, ErrorMessages
 )
 from frappe_assistant_core.utils.logger import api_logger
+from frappe_assistant_core.api.mcp import get_app_version
 
 def handle_initialize(params: Dict[str, Any], request_id: Optional[Any]) -> Dict[str, Any]:
     """Handle MCP initialize request with prompts capabilities"""
@@ -50,7 +51,7 @@ def handle_initialize(params: Dict[str, Any], request_id: Optional[Any]) -> Dict
                 },
                 "serverInfo": {
                     "name": SERVER_NAME,
-                    "version": frappe.get_version() if frappe else SERVER_VERSION
+                    "version": get_app_version("frappe_assistant_core") or SERVER_VERSION
                 }
             }
         }

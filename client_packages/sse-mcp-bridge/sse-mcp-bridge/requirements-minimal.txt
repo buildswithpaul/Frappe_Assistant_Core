@@ -1,0 +1,5 @@
+# Minimal requirements for Python 3.13 compatibility
+fastapi>=0.100.0
+uvicorn>=0.20.0
+httpx>=0.25.0
+python-dotenv>=1.0.0

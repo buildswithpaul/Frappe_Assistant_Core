@@ -109,6 +109,29 @@ def handle_mcp_request(request_data: str) -> str:
         )
 
 
+def get_app_version(app_name: str) -> str:
+    """
+    Get version of a Frappe app.
+    
+    Args:
+        app_name: Name of the app
+        
+    Returns:
+        Version string or empty string if not found
+    """
+    try:
+        if app_name == "frappe_assistant_core":
+            from frappe_assistant_core import __version__
+            return __version__
+        else:
+            # For other apps, try to import and get __version__
+            module = __import__(app_name)
+            version = getattr(module, "__version__", None)
+            return version if version else ""
+    except ImportError:
+        return ""
+
+
 def _handle_initialize(params: Dict[str, Any]) -> Dict[str, Any]:
     """Handle MCP initialize request"""
     # Check protocol version
@@ -126,7 +149,7 @@ def _handle_initialize(params: Dict[str, Any]) -> Dict[str, Any]:
         },
         "serverInfo": {
             "name": "frappe-assistant-core",
-            "version": frappe.get_app_version("frappe_assistant_core") or "1.0.0"
+            "version": get_app_version("frappe_assistant_core") or "1.0.0"
         }
     }
 
@@ -279,7 +302,7 @@ def get_server_info() -> Dict[str, Any]:
             "success": True,
             "server_info": {
                 "name": "frappe-assistant-core",
-                "version": frappe.get_app_version("frappe_assistant_core") or "1.0.0",
+                "version": get_app_version("frappe_assistant_core") or "1.0.0",
                 "protocol_version": "2024-11-05",
                 "total_tools": len(tools),
                 "core_tools": len([t for t in tools if not hasattr(t, "plugin_name")]),

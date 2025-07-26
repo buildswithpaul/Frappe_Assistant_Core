@@ -21,6 +21,7 @@ import frappe
 from typing import Dict, Any, Optional
 from frappe import _
 from frappe.utils import now
+from frappe_assistant_core.api.mcp import get_app_version
 
 class assistantProtocolHandler:
     """Handles assistant JSON-RPC 2.0 protocol"""
@@ -92,7 +93,7 @@ class assistantProtocolHandler:
                 },
                 "serverInfo": {
                     "name": "Frappe Assistant Core",
-                    "version": frappe.get_version()
+                    "version": get_app_version("frappe_assistant_core") or "2.0.1"
                 }
             },
             "id": request_id
