@@ -18,7 +18,7 @@ from frappe_assistant_core.tools.example_tools import ExampleTools
 from frappe_assistant_core.tests.base_test import BaseAssistantTest, TestDataBuilder
 
 class TestExampleTools(BaseAssistantTest):
-    """Test suite for [tool category] tools functionality"""
+    """Test suite for example tools functionality"""
     
     def setUp(self):
         """Set up test environment"""
@@ -207,14 +207,14 @@ class TestExampleTools(BaseAssistantTest):
             ExampleTools.execute_tool("invalid_tool_name", {})
 
 class TestExampleToolsIntegration(BaseAssistantTest):
-    """Integration tests for [tool category] tools"""
+    """Integration tests for example tools"""
     
     def setUp(self):
         """Set up integration test environment"""
         super().setUp()
     
     def test_complete_example_workflow(self):
-        """Test complete [tool category] workflow"""
+        """Test complete example workflow"""
         # Mock operation data
         mock_operation_1_result = {
             "processed": True,
@@ -250,7 +250,7 @@ class TestExampleToolsIntegration(BaseAssistantTest):
                 self.assertEqual(result["workflow_id"], workflow_id)
     
     def test_example_permissions_and_security(self):
-        """Test [tool category] permissions and security"""
+        """Test example permissions and security"""
         security_scenarios = [
             {
                 "operation": "operation_1",
@@ -289,7 +289,7 @@ class TestExampleToolsIntegration(BaseAssistantTest):
                     self.assertIn("permission", result.get("error", "").lower())
     
     def test_example_performance_with_large_dataset(self):
-        """Test [tool category] performance with large dataset"""
+        """Test example performance with large dataset"""
         # Create large mock dataset
         large_dataset = [
             {
@@ -315,7 +315,7 @@ class TestExampleToolsIntegration(BaseAssistantTest):
             self.assertLess(execution_time, 3.0)  # Should complete within 3 seconds
     
     def test_example_error_scenarios(self):
-        """Test various error scenarios in [tool category] operations"""
+        """Test various error scenarios in example operations"""
         error_scenarios = [
             {
                 "operation": "operation_1",
@@ -344,7 +344,7 @@ class TestExampleToolsIntegration(BaseAssistantTest):
                 self.assertIn(scenario["expected_error"], result.get("error", "").lower())
     
     def test_example_data_consistency(self):
-        """Test data consistency across [tool category] operations"""
+        """Test data consistency across example operations"""
         # Mock consistent data across operations
         base_data = {
             "name": "CONSISTENCY-001",

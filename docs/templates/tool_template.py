@@ -16,7 +16,7 @@ For External App Tools (Recommended):
 - Register in: your_app/hooks.py
 
 For Internal Plugin Tools:
-- Place in: frappe_assistant_core/plugins/[plugin_name]/tools/example_tool.py
+- Place in: frappe_assistant_core/plugins/example_plugin/tools/example_tool.py
 - Register in: plugin.py get_tools() method
 """
 
@@ -28,12 +28,12 @@ from frappe_assistant_core.core.base_tool import BaseTool
 
 class ExampleTool(BaseTool):
     """
-    [Brief description of what this tool does]
+    Brief description of what this tool does
     
     Provides capabilities for:
-    - [Main capability 1]
-    - [Main capability 2]
-    - [Main capability 3]
+    - Main capability 1
+    - Main capability 2
+    - Main capability 3
     
     Example usage:
     {
@@ -120,17 +120,17 @@ class ExampleTool(BaseTool):
     
     def _get_description(self) -> str:
         """Get rich formatted tool description"""
-        return """[Detailed description of what the tool does]
+        return """Detailed description of what the tool does
 
 🚀 **OPERATIONS:**
-• Analyze - [Description of analyze operation]
-• Process - [Description of process operation]
-• Export - [Description of export operation]
+• Analyze - Description of analyze operation
+• Process - Description of process operation
+• Export - Description of export operation
 
 📊 **FEATURES:**
-• [Feature 1] - [Description]
-• [Feature 2] - [Description]
-• [Feature 3] - [Description]
+• Feature 1 - Description
+• Feature 2 - Description
+• Feature 3 - Description
 
 ⚙️ **CONFIGURATION:**
 • Configurable limits and timeouts
