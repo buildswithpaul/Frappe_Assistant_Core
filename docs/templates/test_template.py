@@ -1,11 +1,11 @@
 """
-Test Template for [Tool Category] Tools (Updated to match actual patterns)
+Test Template for Example Category Tools (Updated to match actual patterns)
 Template for creating comprehensive test suites for new tool categories
 
 Instructions:
 1. Replace [ToolCategory] with your tool category name (e.g., "Analytics", "Reporting")
-2. Replace [tool_category] with lowercase version (e.g., "analytics", "reporting")
-3. Replace [tool_file_name] with actual tool file name (e.g., "analytics_tools")
+2. Replace example with lowercase version (e.g., "analytics", "reporting")
+3. Replace example_tools with actual tool file name (e.g., "analytics_tools")
 4. Update test scenarios based on your specific tool functionality
 5. Add additional test methods as needed for comprehensive coverage
 """
@@ -14,20 +14,20 @@ import frappe
 import unittest
 import json
 from unittest.mock import patch, MagicMock
-from frappe_assistant_core.tools.[tool_file_name] import [ToolCategory]Tools
+from frappe_assistant_core.tools.example_tools import ExampleTools
 from frappe_assistant_core.tests.base_test import BaseAssistantTest, TestDataBuilder
 
-class Test[ToolCategory]Tools(BaseAssistantTest):
+class TestExampleTools(BaseAssistantTest):
     """Test suite for [tool category] tools functionality"""
     
     def setUp(self):
         """Set up test environment"""
         super().setUp()
-        self.tools = [ToolCategory]Tools()
+        self.tools = ExampleTools()
     
     def test_get_tools_structure(self):
         """Test that get_tools returns proper structure"""
-        tools = [ToolCategory]Tools.get_tools()
+        tools = ExampleTools.get_tools()
         
         self.assertIsInstance(tools, list)
         self.assertGreater(len(tools), 0)
@@ -57,9 +57,9 @@ class Test[ToolCategory]Tools(BaseAssistantTest):
         with patch('frappe.db.exists', return_value=True), \
              patch('frappe.has_permission', return_value=True), \
              patch('frappe.log_error'), \
-             patch('[module_path].perform_operation_1_logic', return_value=mock_operation_result):
+             patch('example_module.perform_operation_1_logic', return_value=mock_operation_result):
             
-            result = [ToolCategory]Tools.operation_1("Test DocType", "TEST-001", "optional_value")
+            result = ExampleTools.operation_1("Test DocType", "TEST-001", "optional_value")
             
             self.assertTrue(result.get("success"))
             self.assertEqual(result["doctype"], "Test DocType")
@@ -70,7 +70,7 @@ class Test[ToolCategory]Tools(BaseAssistantTest):
     def test_operation_1_no_doctype_exists(self):
         """Test operation 1 with non-existent DocType"""
         with patch('frappe.db.exists', return_value=False):
-            result = [ToolCategory]Tools.operation_1("NonExistent DocType", "TEST-001")
+            result = ExampleTools.operation_1("NonExistent DocType", "TEST-001")
             
             self.assertFalse(result.get("success"))
             self.assertIn("does not exist", result.get("error", ""))
@@ -80,7 +80,7 @@ class Test[ToolCategory]Tools(BaseAssistantTest):
         with patch('frappe.db.exists', return_value=True), \
              patch('frappe.has_permission', return_value=False):
             
-            result = [ToolCategory]Tools.operation_1("Test DocType", "TEST-001")
+            result = ExampleTools.operation_1("Test DocType", "TEST-001")
             
             self.assertFalse(result.get("success"))
             self.assertIn("permission", result.get("error", "").lower())
@@ -90,7 +90,7 @@ class Test[ToolCategory]Tools(BaseAssistantTest):
         with patch('frappe.db.exists', return_value=True), \
              patch('frappe.has_permission', return_value=True):
             
-            result = [ToolCategory]Tools.operation_1("Test DocType", "")
+            result = ExampleTools.operation_1("Test DocType", "")
             
             self.assertFalse(result.get("success"))
             self.assertIn("required", result.get("error", "").lower())
@@ -102,7 +102,7 @@ class Test[ToolCategory]Tools(BaseAssistantTest):
             mock_exists.side_effect = lambda dt, name=None: dt == "Test DocType" and name != "NONEXISTENT-001"
             
             with patch('frappe.has_permission', return_value=True):
-                result = [ToolCategory]Tools.operation_1("Test DocType", "NONEXISTENT-001")
+                result = ExampleTools.operation_1("Test DocType", "NONEXISTENT-001")
                 
                 self.assertFalse(result.get("success"))
                 self.assertIn("does not exist", result.get("error", ""))
@@ -126,10 +126,10 @@ class Test[ToolCategory]Tools(BaseAssistantTest):
         with patch('frappe.db.exists', return_value=True), \
              patch('frappe.has_permission', return_value=True), \
              patch('frappe.log_error'), \
-             patch('[module_path].perform_operation_2_logic', return_value=mock_results):
+             patch('example_module.perform_operation_2_logic', return_value=mock_results):
             
             filters = {"status": "Active"}
-            result = [ToolCategory]Tools.operation_2("Test DocType", filters, 10)
+            result = ExampleTools.operation_2("Test DocType", filters, 10)
             
             self.assertTrue(result.get("success"))
             self.assertEqual(result["doctype"], "Test DocType")
@@ -145,9 +145,9 @@ class Test[ToolCategory]Tools(BaseAssistantTest):
         with patch('frappe.db.exists', return_value=True), \
              patch('frappe.has_permission', return_value=True), \
              patch('frappe.log_error'), \
-             patch('[module_path].perform_operation_2_logic', return_value=mock_results):
+             patch('example_module.perform_operation_2_logic', return_value=mock_results):
             
-            result = [ToolCategory]Tools.operation_2("Test DocType")
+            result = ExampleTools.operation_2("Test DocType")
             
             self.assertTrue(result.get("success"))
             self.assertEqual(result["limit_used"], 20)  # Default limit
@@ -159,19 +159,19 @@ class Test[ToolCategory]Tools(BaseAssistantTest):
              patch('frappe.has_permission', return_value=True):
             
             # Test negative limit
-            result = [ToolCategory]Tools.operation_2("Test DocType", None, -1)
+            result = ExampleTools.operation_2("Test DocType", None, -1)
             self.assertFalse(result.get("success"))
             self.assertIn("between 1 and 1000", result.get("error", ""))
             
             # Test limit too large
-            result = [ToolCategory]Tools.operation_2("Test DocType", None, 2000)
+            result = ExampleTools.operation_2("Test DocType", None, 2000)
             self.assertFalse(result.get("success"))
             self.assertIn("between 1 and 1000", result.get("error", ""))
     
     def test_operation_2_no_doctype_exists(self):
         """Test operation 2 with non-existent DocType"""
         with patch('frappe.db.exists', return_value=False):
-            result = [ToolCategory]Tools.operation_2("NonExistent DocType")
+            result = ExampleTools.operation_2("NonExistent DocType")
             
             self.assertFalse(result.get("success"))
             self.assertIn("does not exist", result.get("error", ""))
@@ -181,7 +181,7 @@ class Test[ToolCategory]Tools(BaseAssistantTest):
         with patch('frappe.db.exists', return_value=True), \
              patch('frappe.has_permission', return_value=False):
             
-            result = [ToolCategory]Tools.operation_2("Test DocType")
+            result = ExampleTools.operation_2("Test DocType")
             
             self.assertFalse(result.get("success"))
             self.assertIn("permission", result.get("error", "").lower())
@@ -189,13 +189,13 @@ class Test[ToolCategory]Tools(BaseAssistantTest):
     def test_execute_tool_routing(self):
         """Test tool execution routing"""
         valid_tools = [
-            "[tool_category]_operation_1",
-            "[tool_category]_operation_2"
+            "example_operation_1",
+            "example_operation_2"
         ]
         
         for tool_name in valid_tools:
             try:
-                result = [ToolCategory]Tools.execute_tool(tool_name, {})
+                result = ExampleTools.execute_tool(tool_name, {})
                 self.assertIsInstance(result, dict)
             except Exception:
                 # Expected for some tools due to missing arguments
@@ -204,16 +204,16 @@ class Test[ToolCategory]Tools(BaseAssistantTest):
     def test_execute_tool_invalid_tool(self):
         """Test execution of invalid tool name"""
         with self.assertRaises(Exception):
-            [ToolCategory]Tools.execute_tool("invalid_tool_name", {})
+            ExampleTools.execute_tool("invalid_tool_name", {})
 
-class Test[ToolCategory]ToolsIntegration(BaseAssistantTest):
+class TestExampleToolsIntegration(BaseAssistantTest):
     """Integration tests for [tool category] tools"""
     
     def setUp(self):
         """Set up integration test environment"""
         super().setUp()
     
-    def test_complete_[tool_category]_workflow(self):
+    def test_complete_example_workflow(self):
         """Test complete [tool category] workflow"""
         # Mock operation data
         mock_operation_1_result = {
@@ -231,16 +231,16 @@ class Test[ToolCategory]ToolsIntegration(BaseAssistantTest):
             
             # Step 1: Perform operation 1
             with patch('frappe.log_error'), \
-                 patch('[module_path].perform_operation_1_logic', return_value=mock_operation_1_result):
-                result1 = [ToolCategory]Tools.operation_1("Test DocType", "WORKFLOW-001")
+                 patch('example_module.perform_operation_1_logic', return_value=mock_operation_1_result):
+                result1 = ExampleTools.operation_1("Test DocType", "WORKFLOW-001")
                 self.assertTrue(result1.get("success"))
                 workflow_id = result1["data"]["workflow_id"]
             
             # Step 2: Use result from step 1 in operation 2
             with patch('frappe.log_error'), \
-                 patch('[module_path].perform_operation_2_logic', return_value=mock_operation_2_results):
+                 patch('example_module.perform_operation_2_logic', return_value=mock_operation_2_results):
                 filters = {"workflow_id": workflow_id}
-                result2 = [ToolCategory]Tools.operation_2("Test DocType", filters)
+                result2 = ExampleTools.operation_2("Test DocType", filters)
                 self.assertTrue(result2.get("success"))
                 self.assertEqual(len(result2["results"]), 2)
             
@@ -249,7 +249,7 @@ class Test[ToolCategory]ToolsIntegration(BaseAssistantTest):
             for result in result2["results"]:
                 self.assertEqual(result["workflow_id"], workflow_id)
     
-    def test_[tool_category]_permissions_and_security(self):
+    def test_example_permissions_and_security(self):
         """Test [tool category] permissions and security"""
         security_scenarios = [
             {
@@ -270,7 +270,7 @@ class Test[ToolCategory]ToolsIntegration(BaseAssistantTest):
                  patch('frappe.has_permission', return_value=True), \
                  patch('frappe.log_error'):
                 try:
-                    method = getattr([ToolCategory]Tools, scenario["operation"])
+                    method = getattr(ExampleTools, scenario["operation"])
                     result = method(**scenario["args"])
                     # Should not fail due to permissions (may fail due to missing mocks)
                 except Exception:
@@ -283,12 +283,12 @@ class Test[ToolCategory]ToolsIntegration(BaseAssistantTest):
                      patch('frappe.has_permission', return_value=False), \
                      patch('frappe.log_error'):
                     
-                    method = getattr([ToolCategory]Tools, scenario["operation"])
+                    method = getattr(ExampleTools, scenario["operation"])
                     result = method(**scenario["args"])
                     self.assertFalse(result.get("success"))
                     self.assertIn("permission", result.get("error", "").lower())
     
-    def test_[tool_category]_performance_with_large_dataset(self):
+    def test_example_performance_with_large_dataset(self):
         """Test [tool category] performance with large dataset"""
         # Create large mock dataset
         large_dataset = [
@@ -303,10 +303,10 @@ class Test[ToolCategory]ToolsIntegration(BaseAssistantTest):
         with patch('frappe.db.exists', return_value=True), \
              patch('frappe.has_permission', return_value=True), \
              patch('frappe.log_error'), \
-             patch('[module_path].perform_operation_2_logic', return_value=large_dataset):
+             patch('example_module.perform_operation_2_logic', return_value=large_dataset):
             
             result, execution_time = self.measure_execution_time(
-                [ToolCategory]Tools.operation_2,
+                ExampleTools.operation_2,
                 "Test DocType", {}, 500
             )
             
@@ -314,18 +314,18 @@ class Test[ToolCategory]ToolsIntegration(BaseAssistantTest):
             self.assertEqual(result["total_count"], 500)
             self.assertLess(execution_time, 3.0)  # Should complete within 3 seconds
     
-    def test_[tool_category]_error_scenarios(self):
+    def test_example_error_scenarios(self):
         """Test various error scenarios in [tool category] operations"""
         error_scenarios = [
             {
                 "operation": "operation_1",
-                "setup": lambda: patch('[module_path].perform_operation_1_logic', side_effect=Exception("Operation error")),
+                "setup": lambda: patch('example_module.perform_operation_1_logic', side_effect=Exception("Operation error")),
                 "args": {"doctype": "Test DocType", "name": "ERROR-001"},
                 "expected_error": "operation error"
             },
             {
                 "operation": "operation_2",
-                "setup": lambda: patch('[module_path].perform_operation_2_logic', side_effect=Exception("Database error")),
+                "setup": lambda: patch('example_module.perform_operation_2_logic', side_effect=Exception("Database error")),
                 "args": {"doctype": "Test DocType"},
                 "expected_error": "database error"
             }
@@ -337,19 +337,19 @@ class Test[ToolCategory]ToolsIntegration(BaseAssistantTest):
                  patch('frappe.has_permission', return_value=True), \
                  patch('frappe.log_error'):
                 
-                method = getattr([ToolCategory]Tools, scenario["operation"])
+                method = getattr(ExampleTools, scenario["operation"])
                 result = method(**scenario["args"])
                 
                 self.assertFalse(result.get("success"))
                 self.assertIn(scenario["expected_error"], result.get("error", "").lower())
     
-    def test_[tool_category]_data_consistency(self):
+    def test_example_data_consistency(self):
         """Test data consistency across [tool category] operations"""
         # Mock consistent data across operations
         base_data = {
             "name": "CONSISTENCY-001",
             "status": "Active",
-            "category": "[tool_category]_test",
+            "category": "example_test",
             "created_by": "test_user"
         }
         
@@ -372,13 +372,13 @@ class Test[ToolCategory]ToolsIntegration(BaseAssistantTest):
              patch('frappe.log_error'):
             
             # Operation 1
-            with patch('[module_path].perform_operation_1_logic', return_value=mock_operation_1_result):
-                result1 = [ToolCategory]Tools.operation_1("Test DocType", base_data["name"])
+            with patch('example_module.perform_operation_1_logic', return_value=mock_operation_1_result):
+                result1 = ExampleTools.operation_1("Test DocType", base_data["name"])
                 self.assertTrue(result1.get("success"))
             
             # Operation 2
-            with patch('[module_path].perform_operation_2_logic', return_value=mock_operation_2_results):
-                result2 = [ToolCategory]Tools.operation_2("Test DocType", {"name": base_data["name"]})
+            with patch('example_module.perform_operation_2_logic', return_value=mock_operation_2_results):
+                result2 = ExampleTools.operation_2("Test DocType", {"name": base_data["name"]})
                 self.assertTrue(result2.get("success"))
             
             # Verify data consistency
