@@ -81,7 +81,7 @@ class CreateDashboardChart(BaseTool):
                     "type": "string",
                     "enum": ["Last Year", "Last Quarter", "Last Month", "Last Week"],
                     "default": "Last Month",
-                    "description": "Time range for the chart data"
+                    "description": "Time range for the chart data (only applies to line/heatmap charts)"
                 },
                 "time_interval": {
                     "type": "string",
@@ -129,8 +129,9 @@ class CreateDashboardChart(BaseTool):
 
 💡 **EXAMPLES:**
 • Bar chart of sales by customer: chart_type='bar', based_on='customer', aggregate_function='Sum', value_based_on='grand_total'
-• Line chart of monthly revenue: chart_type='line', time_series_based_on='posting_date', aggregate_function='Sum', value_based_on='grand_total'
-• Pie chart of status distribution: chart_type='pie', based_on='status', aggregate_function='Count'"""
+• Line chart of monthly revenue: chart_type='line', time_series_based_on='posting_date', aggregate_function='Sum', value_based_on='grand_total'  
+• Pie chart of status distribution: chart_type='pie', based_on='status', aggregate_function='Count'
+• Simple count chart: chart_type='bar', aggregate_function='Count' (no grouping)"""
     
     def execute(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
         """Create dashboard chart"""
@@ -192,7 +193,7 @@ class CreateDashboardChart(BaseTool):
                 "chart_url": f"/app/dashboard-chart/{chart_doc.name}",
                 "added_to_dashboard": arguments.get("dashboard_name") if dashboard_added else None,
                 "data_points": validation_result.get("data_points", 0),
-                "chart_validated": True
+                "chart_validated": validation_result.get("chart_validated", False)
             }
             
             # Include any warnings from field validation and chart validation
@@ -327,37 +328,50 @@ class CreateDashboardChart(BaseTool):
             "filters_json": json.dumps(self._convert_filters_to_frappe_format(arguments.get("filters", {}), doctype))
         }
         
-        # Add value_based_on for Sum/Average
-        if aggregate_function in ["Sum", "Average"] and arguments.get("value_based_on"):
-            chart_data["value_based_on"] = arguments["value_based_on"]
-        
-        # Configure chart based on type
+        # Configure chart based on type and aggregation
         if chart_type in ["line", "heatmap"]:
-            # Time series charts: use time_series_based_on for based_on field
+            # Time series charts: ALWAYS use timeseries=1
             time_field = arguments.get("time_series_based_on")
             if time_field:
-                chart_data["based_on"] = time_field  # CORRECT: based_on is for time series date field
-                chart_data["timeseries"] = 1  # CORRECT: timeseries is boolean flag to enable time series
-                chart_data["timespan"] = arguments.get("timespan", "Last Month")
-                chart_data["time_interval"] = arguments.get("time_interval", "Daily")
+                chart_data["based_on"] = time_field
             else:
-                # These chart types always need time series, use creation as fallback
-                chart_data["based_on"] = "creation"  # CORRECT: based_on is for time series date field
-                chart_data["timeseries"] = 1  # CORRECT: timeseries is boolean flag to enable time series
-                chart_data["timespan"] = arguments.get("timespan", "Last Month")
-                chart_data["time_interval"] = arguments.get("time_interval", "Daily")
-        
+                # Auto-detect time field
+                chart_data["based_on"] = self._detect_date_field(available_fields) or "creation"
+            
+            chart_data["timeseries"] = 1
+            chart_data["timespan"] = arguments.get("timespan", "Last Month")
+            chart_data["time_interval"] = arguments.get("time_interval", "Daily")
+            
+            # Add value_based_on for Sum/Average in time series
+            if aggregate_function in ["Sum", "Average"] and arguments.get("value_based_on"):
+                chart_data["value_based_on"] = arguments["value_based_on"]
+            
         elif chart_type in ["bar", "pie", "donut"]:
-            # Non-time series charts: use based_on for grouping field
+            # Non-time series charts with grouping
             if arguments.get("based_on"):
-                chart_data["based_on"] = arguments["based_on"]
-                chart_data["group_by_based_on"] = arguments["based_on"]  # Some chart types need this too
-            # Don't set timeseries flag for non-time series charts
+                # Use Group By chart type with grouping field
+                chart_data["chart_type"] = "Group By"  # Override to Group By
+                chart_data["group_by_based_on"] = arguments["based_on"]
+                chart_data["group_by_type"] = aggregate_function  # Count, Sum, Average
+                
+                # For Sum/Average, need the aggregate field
+                if aggregate_function in ["Sum", "Average"] and arguments.get("value_based_on"):
+                    chart_data["aggregate_function_based_on"] = arguments["value_based_on"]
+            else:
+                # No grouping - just use basic chart_type (Count, Sum, Average)
+                # Add value_based_on for Sum/Average
+                if aggregate_function in ["Sum", "Average"] and arguments.get("value_based_on"):
+                    chart_data["value_based_on"] = arguments["value_based_on"]
+            
+            # Don't set timeseries for non-time series charts
+            chart_data["timeseries"] = 0
             
         elif chart_type == "percentage":
-            # Percentage charts typically don't need grouping, just value aggregation
-            # Don't set timeseries flag for non-time series charts
-            pass
+            # Percentage charts - no grouping, just aggregation
+            chart_data["timeseries"] = 0
+            # Add value_based_on for Sum/Average
+            if aggregate_function in ["Sum", "Average"] and arguments.get("value_based_on"):
+                chart_data["value_based_on"] = arguments["value_based_on"]
         
         # Add color if specified
         if arguments.get("color"):
@@ -493,9 +507,10 @@ class CreateDashboardChart(BaseTool):
         
         doctype = chart_data.get("document_type")
         timeseries_enabled = chart_data.get("timeseries")
-        time_series_field = chart_data.get("based_on")  # CORRECT: based_on holds time series field
-        group_field = chart_data.get("group_by_based_on")  # CORRECT: group_by_based_on holds grouping field
+        time_series_field = chart_data.get("based_on") if timeseries_enabled else None
+        group_field = chart_data.get("group_by_based_on")  # Only for Group By charts
         value_field = chart_data.get("value_based_on")
+        aggregate_field = chart_data.get("aggregate_function_based_on")  # Only for Group By with Sum/Average
         
         # Validate time series field exists and is date type (when time series is enabled)
         if timeseries_enabled and time_series_field and time_series_field not in ["creation", "modified"]:
@@ -523,6 +538,15 @@ class CreateDashboardChart(BaseTool):
                 field = available_fields[value_field]
                 if field.fieldtype not in ["Int", "Float", "Currency", "Percent"]:
                     warnings.append(f"Value field '{value_field}' ({field.fieldtype}) may not be suitable for aggregation")
+        
+        # Validate aggregate function field for Group By charts
+        if aggregate_field and aggregate_field not in ["name", "creation", "modified"]:
+            if aggregate_field not in available_fields:
+                errors.append(f"Aggregate field '{aggregate_field}' does not exist in {doctype}")
+            else:
+                field = available_fields[aggregate_field]
+                if field.fieldtype not in ["Int", "Float", "Currency", "Percent"]:
+                    warnings.append(f"Aggregate field '{aggregate_field}' ({field.fieldtype}) may not be suitable for aggregation")
         
         if errors:
             return {
