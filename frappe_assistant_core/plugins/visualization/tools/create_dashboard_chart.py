@@ -124,8 +124,8 @@ class CreateDashboardChart(BaseTool):
 
 🔧 **FIELD REQUIREMENTS:**
 • value_based_on: Required for Sum/Average (e.g., 'grand_total', 'qty')
-• based_on: Required for grouping/x-axis (e.g., 'customer', 'status')
-• time_series_based_on: Required for line charts (date fields like 'posting_date')
+• based_on: Required for grouping/x-axis in bar/pie/donut charts (e.g., 'customer', 'status')
+• time_series_based_on: Required ONLY for line/heatmap charts (date fields like 'posting_date')
 
 💡 **EXAMPLES:**
 • Bar chart of sales by customer: chart_type='bar', based_on='customer', aggregate_function='Sum', value_based_on='grand_total'
@@ -261,6 +261,13 @@ class CreateDashboardChart(BaseTool):
                 if field_type not in ["Date", "Datetime"]:
                     errors.append(f"Time series field '{time_field}' must be Date or Datetime, got {field_type}")
         
+        # Validate that non-time series charts don't have time_series_based_on when they should use based_on instead
+        elif chart_type in ["bar", "pie", "donut", "percentage"]:
+            time_field = arguments.get("time_series_based_on")
+            if time_field:
+                warnings.append(f"{chart_type.title()} charts don't need 'time_series_based_on'. Use 'based_on' for grouping instead.")
+                # Don't auto-move it to based_on as user might have both specified
+        
         # Validate bar/pie/donut charts need based_on for meaningful grouping
         if chart_type in ["bar", "pie", "donut"]:
             based_on = arguments.get("based_on")
@@ -324,12 +331,9 @@ class CreateDashboardChart(BaseTool):
         if aggregate_function in ["Sum", "Average"] and arguments.get("value_based_on"):
             chart_data["value_based_on"] = arguments["value_based_on"]
         
-        # Add grouping field for bar/pie/donut charts
-        if arguments.get("based_on") and chart_type in ["bar", "pie", "donut"]:
-            chart_data["group_by_based_on"] = arguments["based_on"]
-        
-        # Add time series configuration for line and heatmap charts
+        # Configure chart based on type
         if chart_type in ["line", "heatmap"]:
+            # Time series charts: use time_series_based_on for based_on field
             time_field = arguments.get("time_series_based_on")
             if time_field:
                 chart_data["based_on"] = time_field  # CORRECT: based_on is for time series date field
@@ -342,6 +346,18 @@ class CreateDashboardChart(BaseTool):
                 chart_data["timeseries"] = 1  # CORRECT: timeseries is boolean flag to enable time series
                 chart_data["timespan"] = arguments.get("timespan", "Last Month")
                 chart_data["time_interval"] = arguments.get("time_interval", "Daily")
+        
+        elif chart_type in ["bar", "pie", "donut"]:
+            # Non-time series charts: use based_on for grouping field
+            if arguments.get("based_on"):
+                chart_data["based_on"] = arguments["based_on"]
+                chart_data["group_by_based_on"] = arguments["based_on"]  # Some chart types need this too
+            # Don't set timeseries flag for non-time series charts
+            
+        elif chart_type == "percentage":
+            # Percentage charts typically don't need grouping, just value aggregation
+            # Don't set timeseries flag for non-time series charts
+            pass
         
         # Add color if specified
         if arguments.get("color"):

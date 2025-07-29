@@ -66,8 +66,9 @@ class CreateDashboard(BaseTool):
                                 "description": "Type of chart/widget"
                             },
                             "title": {"type": "string", "description": "Chart title"},
-                            "x_field": {"type": "string", "description": "X-axis field"},
-                            "y_field": {"type": "string", "description": "Y-axis field"},
+                            "x_field": {"type": "string", "description": "X-axis/grouping field (for bar/pie/donut charts)"},
+                            "y_field": {"type": "string", "description": "Y-axis/value field (for Sum/Average aggregation)"},
+                            "time_field": {"type": "string", "description": "Date/datetime field for line/heatmap charts (auto-detected if not specified)"},
                             "aggregate": {
                                 "type": "string",
                                 "enum": ["sum", "count", "avg", "min", "max"],
@@ -136,7 +137,8 @@ class CreateDashboard(BaseTool):
 
 📈 **CHART CONFIGURATION:**
 • Each chart needs proper field mapping
-• Time series charts need time_series_based_on field
+• Line/heatmap charts need time fields (auto-detected if not specified)
+• Bar/pie/donut charts use x_field for grouping
 • Filters are applied at chart level
 
 🔧 **FEATURES:**
