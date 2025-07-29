@@ -170,14 +170,23 @@ class CreateDashboardChart(BaseTool):
                     "error_type": "field_validation_error"
                 }
             
-            # Validate chart before creation (optional - skip if validation fails but still allow creation)
-            validation_result = self._validate_chart_before_creation(chart_doc.as_dict())
+            # Try to get actual chart data after creation
+            validation_result = {"success": True, "data_points": 0, "chart_validated": False}
             chart_validation_warning = None
-            if not validation_result["success"]:
-                chart_validation_warning = f"Chart validation warning: {validation_result.get('error', 'Unknown validation issue')}"
-                validation_result = {"success": True, "data_points": 0, "chart_validated": False}
             
             chart_doc.insert()
+            
+            # Try to get actual data points after creation
+            try:
+                from frappe.desk.doctype.dashboard_chart.dashboard_chart import get
+                chart_data_result = get(chart_name=chart_doc.name)
+                if chart_data_result:
+                    if 'datasets' in chart_data_result and chart_data_result['datasets']:
+                        total_data_points = sum(len(dataset.get('values', [])) for dataset in chart_data_result['datasets'])
+                        validation_result["data_points"] = total_data_points
+                        validation_result["chart_validated"] = True
+            except Exception as e:
+                frappe.logger("dashboard_chart").warning(f"Failed to get chart data: {str(e)}")
             
             # Add to dashboard if specified
             dashboard_added = False
@@ -411,11 +420,9 @@ class CreateDashboardChart(BaseTool):
             # Test chart data retrieval using Frappe's dashboard chart logic
             from frappe.desk.doctype.dashboard_chart.dashboard_chart import get
             
-            # Create a temporary chart object for testing
-            test_chart = frappe._dict(chart_data)
-            
-            # Test data retrieval
-            test_result = get(chart=test_chart)
+            # The get function expects either chart_name or chart as JSON string
+            # Pass chart as JSON string since we don't have a saved chart yet
+            test_result = get(chart=json.dumps(chart_data))
             
             if not test_result or not test_result.get('data'):
                 return {
