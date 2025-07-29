@@ -322,60 +322,65 @@ class CreateDashboardChart(BaseTool):
         chart_data = {
             "doctype": "Dashboard Chart",
             "chart_name": chart_name,
-            "chart_type": aggregate_function,  # Frappe's chart_type = aggregation function
-            "type": visual_type_map.get(chart_type, "Bar"),  # Frappe's type = visual chart type
+            "type": visual_type_map.get(chart_type, "Bar"),  # Visual chart type
             "document_type": doctype,
             "filters_json": json.dumps(self._convert_filters_to_frappe_format(arguments.get("filters", {}), doctype))
         }
         
-        # Configure chart based on type and aggregation
-        if chart_type in ["line", "heatmap"]:
-            # Time series charts: ALWAYS use timeseries=1
-            time_field = arguments.get("time_series_based_on")
-            if time_field:
-                chart_data["based_on"] = time_field
+        # Configure chart based on Frappe's exact requirements
+        has_grouping = arguments.get("based_on") and chart_type in ["bar", "pie", "donut"]
+        
+        if has_grouping:
+            # GROUPING CHARTS: Use chart_type="Group By" 
+            # This matches Frappe validation: if chart_type == "Group By", requires group_by_based_on
+            chart_data["chart_type"] = "Group By"
+            chart_data["group_by_based_on"] = arguments["based_on"]  # REQUIRED for Group By
+            chart_data["group_by_type"] = aggregate_function  # Count, Sum, Average
+            
+            # For Sum/Average group by, need aggregate_function_based_on
+            if aggregate_function in ["Sum", "Average"]:
+                if arguments.get("value_based_on"):
+                    chart_data["aggregate_function_based_on"] = arguments["value_based_on"]  # REQUIRED for Sum/Average Group By
+                else:
+                    return {
+                        "success": False,
+                        "error": f"value_based_on is required for {aggregate_function} aggregation with grouping"
+                    }
+            
+        else:
+            # TIME SERIES OR SIMPLE AGGREGATION: Use chart_type=Count/Sum/Average
+            # This matches Frappe validation: if chart_type != "Group By", requires based_on
+            chart_data["chart_type"] = aggregate_function  # Count, Sum, Average
+            
+            if chart_type in ["line", "heatmap"]:
+                # Time series charts
+                time_field = arguments.get("time_series_based_on") or self._detect_date_field(available_fields) or "creation"
+                chart_data["based_on"] = time_field  # REQUIRED for non-Group By charts
+                chart_data["timeseries"] = 1
+                chart_data["timespan"] = arguments.get("timespan", "Last Month")
+                chart_data["time_interval"] = arguments.get("time_interval", "Daily")
             else:
-                # Auto-detect time field
-                chart_data["based_on"] = self._detect_date_field(available_fields) or "creation"
+                # Simple aggregation charts (no grouping, no time series)
+                # Still need based_on for Frappe validation, but timeseries=0
+                chart_data["based_on"] = self._detect_date_field(available_fields) or "creation"  # REQUIRED for non-Group By charts
+                chart_data["timeseries"] = 0
             
-            chart_data["timeseries"] = 1
-            chart_data["timespan"] = arguments.get("timespan", "Last Month")
-            chart_data["time_interval"] = arguments.get("time_interval", "Daily")
-            
-            # Add value_based_on for Sum/Average in time series
-            if aggregate_function in ["Sum", "Average"] and arguments.get("value_based_on"):
-                chart_data["value_based_on"] = arguments["value_based_on"]
-            
-        elif chart_type in ["bar", "pie", "donut"]:
-            # Non-time series charts with grouping
-            if arguments.get("based_on"):
-                # Use Group By chart type with grouping field
-                chart_data["chart_type"] = "Group By"  # Override to Group By
-                chart_data["group_by_based_on"] = arguments["based_on"]
-                chart_data["group_by_type"] = aggregate_function  # Count, Sum, Average
-                
-                # For Sum/Average, need the aggregate field
-                if aggregate_function in ["Sum", "Average"] and arguments.get("value_based_on"):
-                    chart_data["aggregate_function_based_on"] = arguments["value_based_on"]
-            else:
-                # No grouping - just use basic chart_type (Count, Sum, Average)
-                # Add value_based_on for Sum/Average
-                if aggregate_function in ["Sum", "Average"] and arguments.get("value_based_on"):
+            # For Sum/Average, need value_based_on  
+            if aggregate_function in ["Sum", "Average"]:
+                if arguments.get("value_based_on"):
                     chart_data["value_based_on"] = arguments["value_based_on"]
-            
-            # Don't set timeseries for non-time series charts
-            chart_data["timeseries"] = 0
-            
-        elif chart_type == "percentage":
-            # Percentage charts - no grouping, just aggregation
-            chart_data["timeseries"] = 0
-            # Add value_based_on for Sum/Average
-            if aggregate_function in ["Sum", "Average"] and arguments.get("value_based_on"):
-                chart_data["value_based_on"] = arguments["value_based_on"]
+                else:
+                    return {
+                        "success": False,
+                        "error": f"value_based_on is required for {aggregate_function} aggregation"
+                    }
         
         # Add color if specified
         if arguments.get("color"):
             chart_data["color"] = arguments["color"]
+        
+        # Debug logging to understand what's being created
+        frappe.logger("dashboard_chart").info(f"Creating chart with data: {json.dumps(chart_data, indent=2)}")
         
         return frappe.get_doc(chart_data)
     
