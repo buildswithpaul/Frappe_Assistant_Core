@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/buildswithpaul-frappe-assistant-core-badge.png)](https://mseep.ai/app/buildswithpaul-frappe-assistant-core)
+
 # Frappe Assistant Core
 
 🤖 **Professional AI Assistant for ERPNext** - Transform your ERPNext experience with intelligent AI assistance through the Model Context Protocol (MCP).
