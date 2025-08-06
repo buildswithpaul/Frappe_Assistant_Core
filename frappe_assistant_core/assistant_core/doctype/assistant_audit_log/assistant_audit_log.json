@@ -1,17 +1,9 @@
 {
  "actions": [],
- "allow_copy": 0,
- "allow_events_in_timeline": 0,
- "allow_guest_to_view": 0,
- "allow_import": 0,
- "allow_rename": 0,
  "autoname": "naming_series:",
- "beta": 0,
  "creation": "2025-06-21 22:45:07.030425",
- "custom": 0,
- "docstatus": 0,
  "doctype": "DocType",
- "document_type": "Transaction",
+ "document_type": "Document",
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
@@ -52,10 +44,10 @@
   },
   {
    "fieldname": "tool_name",
-   "fieldtype": "Link",
+   "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Tool Name",
-   "options": "Assistant Tool Registry"
+   "length": 120
   },
   {
    "fieldname": "user",
@@ -145,21 +137,11 @@
    "label": "Error Message"
   }
  ],
- "has_web_view": 0,
- "hide_heading": 0,
- "hide_toolbar": 0,
- "idx": 0,
- "image_view": 0,
- "in_create": 0,
- "is_submittable": 0,
- "issingle": 0,
- "istable": 0,
- "max_attachments": 0,
- "modified": "2024-06-18 12:00:00.000000",
+ "links": [],
+ "modified": "2025-08-06 18:15:28.901145",
  "modified_by": "Administrator",
  "module": "Assistant Core",
  "name": "Assistant Audit Log",
- "naming_rule": "By naming series",
  "owner": "Administrator",
  "permissions": [
   {
@@ -179,14 +161,7 @@
    "role": "Auditor"
   }
  ],
- "quick_entry": 0,
- "read_only": 0,
- "read_only_onload": 0,
- "show_name_in_global_search": 0,
  "sort_field": "modified",
  "sort_order": "DESC",
- "states": [],
- "track_changes": 0,
- "track_seen": 0,
- "track_views": 0
+ "states": []
 }
