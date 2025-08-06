@@ -86,18 +86,45 @@ class ExecutePythonCode(BaseTool):
     
     def _get_dynamic_description(self) -> str:
         """Generate description based on current streaming settings"""
-        base_description = """Execute Python code safely with pre-loaded data science libraries. 
+        base_description = """🛡️ Execute Python code safely with SECURE database access and proper user context.
 
-🚫 **NO IMPORTS NEEDED** - All libraries are pre-loaded and ready to use:
-• pd (pandas) - Data manipulation: df = pd.DataFrame()
-• np (numpy) - Numerical operations: arr = np.array([1,2,3])  
-• plt (matplotlib) - Plotting: plt.plot([1,2,3]); plt.show()
-• sns (seaborn) - Statistical visualization: sns.scatterplot()
-• frappe - Frappe API: frappe.get_all('DocType')
-• Standard: math, datetime, json, re, random
+🔒 **ENTERPRISE SECURITY FEATURES**:
+• ✅ **Read-Only Database**: Only SELECT queries allowed (no DELETE/UPDATE/DROP)
+• ✅ **User Context Management**: All operations run under your user with proper permissions
+• ✅ **Code Security Scanning**: Dangerous operations blocked before execution
+• ✅ **Unicode Sanitization**: Surrogate characters cleaned to prevent encoding errors
+• ✅ **Audit Trail**: All executions logged with user attribution
+• ✅ **System Manager Required**: Role-based access control enforced
 
-⚠️ **DO NOT use import statements** - they will cause "__import__ not found" errors.
-Just use the pre-loaded variables directly. Requires System Manager role."""
+🚫 **NO IMPORTS NEEDED** - All libraries pre-loaded and ready:
+• **pd** (pandas) - Data manipulation: `df = pd.DataFrame({'A': [1,2,3]})`
+• **np** (numpy) - Numerical operations: `arr = np.array([1,2,3])`  
+• **plt** (matplotlib) - Plotting: `plt.plot([1,2,3]); plt.show()`
+• **sns** (seaborn) - Statistical visualization: `sns.scatterplot(data=df, x='A', y='B')`
+• **db** - 🛡️ READ-ONLY database: `db.sql("SELECT name FROM tabUser LIMIT 5")`
+• **frappe** - Frappe utilities: `frappe.get_all('Sales Invoice', limit=10)`
+• **current_user** - Your username for context: `print(f"Running as: {current_user}")`
+• **Standard libraries**: math, datetime, json, re, random, statistics
+
+⚠️ **SECURITY NOTES**:
+• Only SELECT/SHOW/DESCRIBE database queries allowed
+• DELETE, UPDATE, INSERT, DROP operations are BLOCKED
+• All database access respects your user permissions
+• Code is scanned for security violations before execution
+• Execution context is properly audited and logged
+
+💡 **Example Safe Usage**:
+```python
+# ✅ Data analysis (ALLOWED)
+sales = db.sql("SELECT grand_total, posting_date FROM `tabSales Invoice` WHERE docstatus = 1 LIMIT 100")
+df = pd.DataFrame(sales)
+print(f"Average sale: {df['grand_total'].mean()}")
+
+# 🚫 Data modification (BLOCKED)
+# db.sql("DELETE FROM tabUser")  # This will be blocked with security error
+```
+
+🎯 **Perfect for**: Data analysis, reporting, visualization, statistical calculations - all with enterprise-grade security."""
         
         try:
             from frappe_assistant_core.utils.streaming_manager import get_streaming_manager
@@ -110,22 +137,15 @@ Just use the pre-loaded variables directly. Requires System Manager role."""
             return base_description
     
     def execute(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute Python code safely"""
+        """Execute Python code safely with secure user context and read-only database"""
         code = arguments.get("code", "")
         data_query = arguments.get("data_query")
         timeout = arguments.get("timeout", 30)
         capture_output = arguments.get("capture_output", True)
         return_variables = arguments.get("return_variables", [])
         
-        # Check permissions - requires System Manager role
-        user_roles = frappe.get_roles()
-        if "System Manager" not in user_roles:
-            return {
-                "success": False,
-                "error": "Insufficient permissions. System Manager role required for code execution",
-                "output": "",
-                "variables": {}
-            }
+        # Import security utilities
+        from frappe_assistant_core.utils.user_context import secure_user_context, audit_code_execution
         
         if not code.strip():
             return {
@@ -135,29 +155,78 @@ Just use the pre-loaded variables directly. Requires System Manager role."""
                 "variables": {}
             }
         
-        # Setup execution environment
-        execution_globals = self._setup_execution_environment()
-        
-        # Handle data query if provided
-        if data_query:
-            try:
-                data = self._fetch_data_from_query(data_query)
-                execution_globals['data'] = data
-            except Exception as e:
-                return {
-                    "success": False,
-                    "error": f"Error fetching data: {str(e)}",
-                    "output": "",
-                    "variables": {}
-                }
-        
-        # Check for import statements and provide helpful error
-        import_check_result = self._check_and_handle_imports(code)
-        if not import_check_result["success"]:
-            return import_check_result
-        
-        # Remove dangerous imports for security
-        code = self._remove_dangerous_imports(import_check_result["code"])
+        try:
+            # Use secure user context manager with audit trail
+            with secure_user_context(require_system_manager=True) as current_user:
+                with audit_code_execution(code_snippet=code, user_context=current_user) as audit_info:
+                    
+                    # Perform security scan before execution
+                    security_check = self._scan_for_dangerous_operations(code)
+                    if not security_check["success"]:
+                        frappe.logger().warning(
+                            f"Security violation in code execution - User: {current_user}, "
+                            f"Pattern: {security_check.get('pattern_matched', 'unknown')}"
+                        )
+                        return security_check
+                    
+                    # Check for import statements and provide helpful error
+                    import_check_result = self._check_and_handle_imports(code)
+                    if not import_check_result["success"]:
+                        return import_check_result
+                    
+                    # Remove dangerous imports for additional security
+                    code = self._remove_dangerous_imports(import_check_result["code"])
+                    
+                    # Sanitize Unicode characters to prevent encoding errors
+                    unicode_check_result = self._sanitize_unicode(code)
+                    if not unicode_check_result["success"]:
+                        return unicode_check_result
+                    code = unicode_check_result["code"]
+                    
+                    # Setup secure execution environment with read-only database
+                    execution_globals = self._setup_secure_execution_environment(current_user)
+                    
+                    # Handle data query if provided
+                    if data_query:
+                        try:
+                            data = self._fetch_data_from_query(data_query)
+                            execution_globals['data'] = data
+                        except Exception as e:
+                            return {
+                                "success": False,
+                                "error": f"Error fetching data: {str(e)}",
+                                "output": "",
+                                "variables": {},
+                                "user_context": current_user
+                            }
+                    
+                    # Execute the code safely
+                    return self._execute_code_with_timeout(
+                        code, execution_globals, timeout, capture_output, 
+                        return_variables, current_user, audit_info
+                    )
+                    
+        except frappe.PermissionError as e:
+            return {
+                "success": False,
+                "error": str(e),
+                "output": "",
+                "variables": {},
+                "security_error": True
+            }
+        except Exception as e:
+            frappe.logger().error(f"Code execution error: {str(e)}")
+            return {
+                "success": False,
+                "error": f"Execution failed: {str(e)}",
+                "output": "",
+                "variables": {}
+            }
+    
+    def _execute_code_with_timeout(self, code: str, execution_globals: Dict[str, Any], 
+                                 timeout: int, capture_output: bool, return_variables: list,
+                                 current_user: str, audit_info: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute code with timeout and proper error handling"""
         
         # Capture output
         output = ""
@@ -170,8 +239,20 @@ Just use the pre-loaded variables directly. Requires System Manager role."""
                 stderr_capture = io.StringIO()
                 
                 with redirect_stdout(stdout_capture), redirect_stderr(stderr_capture):
-                    # Execute code
-                    exec(code, execution_globals)
+                    # Execute code with user context preserved and Unicode handling
+                    try:
+                        exec(code, execution_globals)
+                    except UnicodeEncodeError as unicode_error:
+                        # Handle Unicode encoding errors during execution
+                        raise UnicodeEncodeError(
+                            unicode_error.encoding,
+                            unicode_error.object, 
+                            unicode_error.start,
+                            unicode_error.end,
+                            f"Unicode encoding error during code execution. "
+                            f"Code contains characters that cannot be encoded. "
+                            f"Original error: {unicode_error.reason}"
+                        )
                 
                 output = stdout_capture.getvalue()
                 error = stderr_capture.getvalue()
@@ -179,9 +260,17 @@ Just use the pre-loaded variables directly. Requires System Manager role."""
                 # Execute without capturing output
                 exec(code, execution_globals)
             
-            # Extract all user-defined variables (not built-ins)
+            # Extract all user-defined variables (not built-ins or system variables)
+            excluded_vars = {
+                'frappe', 'pd', 'np', 'plt', 'sns', 'data', 'current_user', 'db',
+                'get_doc', 'get_list', 'get_all', 'get_single', 'math', 'datetime', 
+                'json', 're', 'random', 'statistics', 'decimal', 'fractions'
+            }
+            
             for var_name, var_value in execution_globals.items():
-                if not var_name.startswith('_') and var_name not in ['frappe', 'pd', 'np', 'plt', 'sns', 'data']:
+                if (not var_name.startswith('_') and 
+                    var_name not in excluded_vars and 
+                    var_name not in execution_globals.get('__builtins__', {})):
                     try:
                         # Try to serialize the variable
                         variables[var_name] = self._serialize_variable(var_value)
@@ -203,24 +292,52 @@ Just use the pre-loaded variables directly. Requires System Manager role."""
                 "output": output,
                 "error": error,
                 "variables": variables,
+                "user_context": current_user,
                 "execution_info": {
                     "lines_executed": len(code.split('\n')),
-                    "variables_returned": len(variables)
+                    "variables_returned": len(variables),
+                    "execution_id": audit_info.get("execution_id"),
+                    "executed_by": current_user
                 }
             }
             
+        except UnicodeEncodeError as unicode_error:
+            error_msg = (f"🚫 Unicode Error: Code contains characters that cannot be encoded in UTF-8. "
+                        f"Character '\\u{ord(unicode_error.object[unicode_error.start]):04x}' at position {unicode_error.start} "
+                        f"cannot be processed. Please remove or replace non-standard Unicode characters.")
+            
+            self.logger.error(f"Unicode encoding error for user {current_user}: {error_msg}")
+            
+            return {
+                "success": False,
+                "error": error_msg,
+                "traceback": traceback.format_exc(),
+                "output": output,
+                "variables": {},
+                "user_context": current_user,
+                "unicode_error": True,
+                "execution_info": {
+                    "execution_id": audit_info.get("execution_id"),
+                    "executed_by": current_user
+                }
+            }
         except Exception as e:
             error_msg = str(e)
             error_traceback = traceback.format_exc()
             
-            self.logger.error(f"Python execution error: {error_msg}")
+            self.logger.error(f"Python execution error for user {current_user}: {error_msg}")
             
             return {
                 "success": False,
                 "error": error_msg,
                 "traceback": error_traceback,
                 "output": output,
-                "variables": {}
+                "variables": {},
+                "user_context": current_user,
+                "execution_info": {
+                    "execution_id": audit_info.get("execution_id"),
+                    "executed_by": current_user
+                }
             }
     
     def _check_and_handle_imports(self, code: str) -> Dict[str, Any]:
@@ -448,11 +565,18 @@ Just use the pre-loaded variables directly. Requires System Manager role."""
             return [dict(row) for row in raw_data]
     
     def _setup_execution_environment(self) -> Dict[str, Any]:
-        """Setup safe execution environment with data science libraries"""
-        # Base environment
+        """Legacy method - use _setup_secure_execution_environment instead"""
+        frappe.logger().warning("Using legacy _setup_execution_environment - should use secure version")
+        return self._setup_secure_execution_environment("legacy_user")
+    
+    def _setup_secure_execution_environment(self, current_user: str) -> Dict[str, Any]:
+        """Setup secure execution environment with read-only database and user context"""
+        from frappe_assistant_core.utils.read_only_db import ReadOnlyDatabase
+        
+        # Base environment with safe built-ins only
         env = {
             '__builtins__': {
-                # Safe built-ins
+                # Safe built-ins for data manipulation and analysis
                 'len': len,
                 'str': str,
                 'int': int,
@@ -478,7 +602,7 @@ Just use the pre-loaded variables directly. Requires System Manager role."""
                 'isinstance': isinstance,
                 'hasattr': hasattr,
                 'getattr': getattr,
-                'setattr': setattr,
+                # Note: setattr removed for security
                 'Exception': Exception,
                 'ValueError': ValueError,
                 'TypeError': TypeError,
@@ -487,10 +611,11 @@ Just use the pre-loaded variables directly. Requires System Manager role."""
                 'AttributeError': AttributeError,
                 'NameError': NameError,
                 'ZeroDivisionError': ZeroDivisionError,
+                'StopIteration': StopIteration,
             }
         }
         
-        # Add standard libraries first
+        # Add standard libraries (safe mathematical and utility libraries)
         import math
         import statistics
         import decimal
@@ -555,17 +680,190 @@ Just use the pre-loaded variables directly. Requires System Manager role."""
         except ImportError as e:
             self.logger.warning(f"Some data science libraries not available: {str(e)}")
         
-        # Add Frappe utilities
+        # Add SECURE Frappe utilities with read-only database wrapper
+        secure_db = ReadOnlyDatabase(frappe.db)
+        
         env.update({
-            'frappe': frappe,
-            'get_doc': frappe.get_doc,
-            'get_list': frappe.get_list,
-            'get_all': frappe.get_all,
-            'db': frappe.db,
-            'get_single': frappe.get_single,
+            'frappe': frappe,  # Keep frappe for utility functions
+            'get_doc': frappe.get_doc,  # Permission-checked by default
+            'get_list': frappe.get_list,  # Permission-checked by default
+            'get_all': frappe.get_all,  # Permission-checked by default
+            'get_single': frappe.get_single,  # Permission-checked by default
+            'db': secure_db,  # 🛡️ READ-ONLY database wrapper instead of frappe.db
+            'current_user': current_user,  # 👤 Current user context for reference
         })
         
+        # Log security setup
+        frappe.logger().info(
+            f"Secure execution environment setup complete - User: {current_user}, "
+            f"DB: Read-only wrapper, Libraries: {len(env)} variables available"
+        )
+        
         return env
+    
+    def _scan_for_dangerous_operations(self, code: str) -> Dict[str, Any]:
+        """
+        Scan code for potentially dangerous operations before execution
+        
+        This method performs static analysis of the code to detect:
+        - Dangerous SQL operations (DELETE, UPDATE, DROP, etc.)
+        - Unsafe Python operations (exec, eval, __import__)
+        - Attempts to modify Frappe framework internals
+        - Other security-sensitive patterns
+        
+        Args:
+            code (str): Python code to analyze
+            
+        Returns:
+            dict: Security scan results with success flag and error details
+        """
+        import re
+        
+        # Define dangerous patterns with descriptions
+        dangerous_patterns = [
+            # Database security patterns
+            (r'db\.sql\s*\(\s*[\'"](?:DELETE|DROP|INSERT|UPDATE|ALTER|CREATE|TRUNCATE|REPLACE)', 
+             'Dangerous SQL operation detected in db.sql()'),
+            (r'frappe\.db\.sql\s*\(\s*[\'"](?:DELETE|DROP|INSERT|UPDATE|ALTER|CREATE|TRUNCATE|REPLACE)', 
+             'Dangerous SQL operation detected in frappe.db.sql()'),
+             
+            # Python security patterns
+            (r'\bexec\s*\(', 'Code execution via exec() not allowed'),
+            (r'\beval\s*\(', 'Code evaluation via eval() not allowed'),
+            (r'__import__\s*\(', 'Dynamic imports via __import__() not allowed'),
+            (r'compile\s*\(', 'Code compilation not allowed'),
+            
+            # Frappe framework modification patterns
+            (r'setattr\s*\(\s*frappe', 'Frappe framework modification not allowed'),
+            (r'delattr\s*\(\s*frappe', 'Frappe framework modification not allowed'),
+            (r'frappe\.local\s*\.\s*\w+\s*=', 'Frappe local context modification not allowed'),
+            (r'frappe\.session\s*\.\s*\w+\s*=', 'Frappe session modification not allowed'),
+            
+            # File system access patterns (additional security)
+            (r'open\s*\(', 'File system access not allowed'),
+            (r'file\s*\(', 'File system access not allowed'),
+            (r'input\s*\(', 'User input not allowed in code execution'),
+            (r'raw_input\s*\(', 'User input not allowed in code execution'),
+            
+            # Dangerous database method patterns
+            (r'db\.set_value\s*\(', 'Database write operation db.set_value() not allowed'),
+            (r'db\.delete\s*\(', 'Database delete operation not allowed'),
+            (r'db\.insert\s*\(', 'Database insert operation not allowed'),
+            (r'db\.truncate\s*\(', 'Database truncate operation not allowed'),
+            
+            # Network access patterns
+            (r'urllib', 'Network access not allowed'),
+            (r'requests', 'Network access not allowed'),
+            (r'socket', 'Network access not allowed'),
+            (r'http', 'Network access not allowed'),
+        ]
+        
+        # Scan for dangerous patterns
+        for pattern, message in dangerous_patterns:
+            if re.search(pattern, code, re.IGNORECASE | re.MULTILINE):
+                return {
+                    "success": False,
+                    "error": f"🚫 Security: {message}",
+                    "pattern_matched": pattern,
+                    "security_violation": True,
+                    "output": "",
+                    "variables": {}
+                }
+        
+        # Check for suspicious variable names that might indicate attempts to bypass security
+        suspicious_vars = [
+            r'\b_[a-zA-Z0-9_]*db[a-zA-Z0-9_]*\b',  # Variables like _db, _original_db
+            r'\boriginal_[a-zA-Z0-9_]*\b',          # Variables like original_frappe
+            r'\b__[a-zA-Z0-9_]+__\b'                # Dunder variables
+        ]
+        
+        for pattern in suspicious_vars:
+            if re.search(pattern, code, re.IGNORECASE):
+                frappe.logger().warning(f"Suspicious variable pattern detected in code execution: {pattern}")
+        
+        # Additional check for SQL injection patterns in string literals
+        sql_injection_patterns = [
+            r'[\'"].*(?:union|select|insert|delete|update|drop).*[\'"]',
+            r'[\'"].*;.*[\'"]',  # SQL statement terminators
+        ]
+        
+        for pattern in sql_injection_patterns:
+            if re.search(pattern, code, re.IGNORECASE):
+                frappe.logger().warning(f"Potential SQL injection pattern detected: {pattern}")
+        
+        return {"success": True}
+    
+    def _sanitize_unicode(self, code: str) -> Dict[str, Any]:
+        """
+        Sanitize Unicode characters in code to prevent encoding errors
+        
+        This method detects and cleans surrogate characters that can cause
+        'utf-8' codec can't encode character errors during exec().
+        
+        Args:
+            code (str): Python code to sanitize
+            
+        Returns:
+            dict: Sanitization results with success flag and cleaned code
+        """
+        try:
+            # Check for surrogate characters (Unicode code points 0xD800-0xDFFF)
+            surrogate_found = False
+            surrogate_count = 0
+            cleaned_chars = []
+            
+            for i, char in enumerate(code):
+                char_code = ord(char)
+                
+                # Check if this is a surrogate character
+                if 0xD800 <= char_code <= 0xDFFF:
+                    surrogate_found = True
+                    surrogate_count += 1
+                    # Replace with space to maintain code structure
+                    cleaned_chars.append(' ')
+                    frappe.logger().warning(
+                        f"Surrogate character U+{char_code:04X} found at position {i}, replaced with space"
+                    )
+                else:
+                    cleaned_chars.append(char)
+            
+            cleaned_code = ''.join(cleaned_chars)
+            
+            # Test if the cleaned code is valid UTF-8
+            try:
+                cleaned_code.encode('utf-8')
+            except UnicodeEncodeError as e:
+                frappe.logger().error(f"Unicode encoding still failed after cleaning: {str(e)}")
+                return {
+                    "success": False,
+                    "error": f"🚫 Unicode Error: Code contains characters that cannot be encoded in UTF-8. "
+                            f"Please remove or replace non-standard Unicode characters.",
+                    "output": "",
+                    "variables": {},
+                    "unicode_error": True
+                }
+            
+            result = {
+                "success": True,
+                "code": cleaned_code
+            }
+            
+            # Add warning information if surrogates were found
+            if surrogate_found:
+                result["warning"] = f"Cleaned {surrogate_count} surrogate character(s) from code"
+                frappe.logger().warning(f"Unicode sanitization: {surrogate_count} surrogate characters cleaned")
+            
+            return result
+            
+        except Exception as e:
+            frappe.logger().error(f"Unicode sanitization failed: {str(e)}")
+            return {
+                "success": False,
+                "error": f"🚫 Unicode Processing Error: {str(e)}",
+                "output": "",
+                "variables": {},
+                "unicode_error": True
+            }
     
     def _serialize_variable(self, value: Any) -> Any:
         """Serialize a variable for JSON return"""

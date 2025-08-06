@@ -1,5 +1,3 @@
-[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/buildswithpaul-frappe-assistant-core-badge.png)](https://mseep.ai/app/buildswithpaul-frappe-assistant-core)
-
 # Frappe Assistant Core
 
 🤖 **Professional AI Assistant for ERPNext** - Transform your ERPNext experience with intelligent AI assistance through the Model Context Protocol (MCP).
@@ -298,16 +296,18 @@ See [PLUGIN_DEVELOPMENT.md](docs/PLUGIN_DEVELOPMENT.md) for plugin development.
 ### 🧪 Data Science Plugin
 
 **Python Execution & Analysis**
+
 - `execute_python_code` - Secure Python execution with data science libraries
 - `analyze_frappe_data` - Statistical analysis of Frappe data
 - `query_and_analyze` - SQL query execution with analysis
 
 ### 📊 Visualization Plugin
+
 **Dashboard & Chart Creation**
+
 - `create_dashboard` - Create Frappe dashboards with multiple charts
 - `create_dashboard_chart` - Create individual charts for dashboards
 - `list_user_dashboards` - List user's accessible dashboards
-
 
 ### ⚡ Batch Processing Plugin
 
