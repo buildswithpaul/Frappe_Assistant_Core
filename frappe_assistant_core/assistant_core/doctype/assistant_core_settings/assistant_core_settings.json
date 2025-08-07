@@ -12,7 +12,6 @@
   "rate_limit",
   "allowed_origins",
   "server_section",
-  "websocket_enabled",
   "ssl_enabled",
   "ssl_cert_path",
   "ssl_key_path",
@@ -65,12 +64,6 @@
    "fieldname": "server_section",
    "fieldtype": "Section Break",
    "label": "Server Configuration"
-  },
-  {
-   "default": "1",
-   "fieldname": "websocket_enabled",
-   "fieldtype": "Check",
-   "label": "Enable WebSocket Support"
   },
   {
    "default": "0",
