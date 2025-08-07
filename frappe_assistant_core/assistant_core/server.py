@@ -111,21 +111,6 @@ class assistantServer:
         # Server is running if it's enabled (since API endpoints are always available)
         is_running = bool(settings.get("server_enabled"))
         
-        # Check WebSocket status
-        websocket_status = {"enabled": False, "running": False}
-        if settings.get("websocket_enabled"):
-            try:
-                from frappe_assistant_core.assistant_core.websocket_server import get_websocket_server
-                ws_server = get_websocket_server()
-                websocket_status = {
-                    "enabled": True,
-                    "running": ws_server.running,
-                    "connections": len(ws_server.connections),
-                    "endpoint": "ws://localhost:8001/mcp?api_key=YOUR_KEY&api_secret=YOUR_SECRET"
-                }
-            except Exception:
-                websocket_status = {"enabled": True, "running": False, "error": "Failed to get WebSocket status"}
-        
         return {
             "running": is_running,  # For backward compatibility
             "enabled": settings.get("server_enabled"),
@@ -133,7 +118,6 @@ class assistantServer:
             "ping_endpoint": f"/api/method/frappe_assistant_core.api.assistant_api.ping",
             "protocol": "mcp",
             "frappe_port": f"{get_frappe_port()} (detected)",
-            "websocket": websocket_status,
             "status_note": "MCP API endpoints are part of Frappe's web server - no separate process required"
         }
 

@@ -2,7 +2,7 @@
   "dxt_version": "0.1",
   "name": "claude-for-frappe",
   "display_name": "Claude for Frappe ERP",
-  "version": "1.2.0",
+  "version": "2.0.3",
   "description": "AI-powered bridge connecting Claude Desktop to Frappe ERP via Frappe Assistant Core",
   "long_description": "This extension creates an intelligent bridge between Claude Desktop and your Frappe ERP system through the Frappe Assistant Core app. Enable AI-powered data analysis, automated report generation, and natural language interactions with your business data.",
   "author": {
@@ -57,7 +57,6 @@
       "title": "Frappe Server URL",
       "description": "URL of your Frappe instance (e.g., https://your-domain.com)",
       "required": true,
-      "default": "https://erptest.promantia.in",
       "pattern": "^https?://",
       "placeholder": "https://your-frappe-instance.com"
     },
@@ -87,15 +86,15 @@
   },
   "tools": [
     {
-      "name": "execute_python_code",
+      "name": "run_python_code",
       "description": "Execute custom Python code for advanced data analysis, calculations, and business logic with full access to Frappe framework"
     },
     {
-      "name": "analyze_frappe_data",
+      "name": "analyze_business_data",
       "description": "Perform comprehensive statistical analysis on Frappe business data. Calculate averages, trends, correlations, and business insights from any DocType"
     },
     {
-      "name": "query_and_analyze",
+      "name": "run_database_query",
       "description": "Execute custom SQL queries on Frappe database and perform advanced data analysis. Perfect for complex business intelligence and custom reporting"
     },
     {
@@ -103,19 +102,15 @@
       "description": "Create interactive charts and visualizations from Frappe business data. Charts are displayed inline and saved as files"
     },
     {
-      "name": "report_execute",
+      "name": "generate_report",
       "description": "Execute a Frappe report to get business data and analytics. Use this for financial reports, sales analysis, inventory reports, etc."
     },
     {
-      "name": "report_list",
-      "description": "Discover available Frappe reports for data analysis and business intelligence. Essential for report discovery"
+      "name": "get_report_data",
+      "description": "Get detailed report data and structure for a specific report. Understand what data fields are available before executing"
     },
     {
-      "name": "report_columns",
-      "description": "Get detailed column information and structure for a specific report. Understand what data fields are available before executing"
-    },
-    {
-      "name": "search_global",
+      "name": "search_documents",
       "description": "Global search across all accessible documents"
     },
     {
@@ -127,48 +122,48 @@
       "description": "Search for link field options"
     },
     {
-      "name": "metadata_doctype",
+      "name": "get_doctype_info",
       "description": "Get DocType metadata and field information"
     },
     {
-      "name": "metadata_list_doctypes",
-      "description": "List all available DocTypes"
-    },
-    {
-      "name": "metadata_permissions",
-      "description": "Get permission information for a DocType"
-    },
-    {
-      "name": "metadata_workflow",
-      "description": "Get workflow information for a DocType"
-    },
-    {
-      "name": "document_create",
-      "description": "Create a new Frappe document (e.g., Customer, Sales Invoice, Item, etc.). Add new records to the system"
-    },
-    {
-      "name": "document_get",
-      "description": "Retrieve detailed information about a specific Frappe document"
-    },
-    {
-      "name": "document_update",
-      "description": "Update/modify an existing Frappe document. Change field values in existing records"
-    },
-    {
-      "name": "document_list",
+      "name": "list_documents",
       "description": "Search and list Frappe documents with optional filtering. Primary tool for data exploration and discovery"
     },
     {
-      "name": "start_workflow",
-      "description": "Start a workflow for a specific document"
+      "name": "create_document",
+      "description": "Create a new Frappe document (e.g., Customer, Sales Invoice, Item, etc.). Add new records to the system"
     },
     {
-      "name": "get_workflow_state",
-      "description": "Get the current state of a workflow for a document"
+      "name": "get_document",
+      "description": "Retrieve detailed information about a specific Frappe document"
     },
     {
-      "name": "get_workflow_actions",
-      "description": "Get available actions for a document in a workflow"
+      "name": "update_document",
+      "description": "Update/modify an existing Frappe document. Change field values in existing records"
+    },
+    {
+      "name": "delete_document",
+      "description": "Delete an existing Frappe document. Remove records from the system"
+    },
+    {
+      "name": "submit_document",
+      "description": "Submit a Frappe document to change its status from draft to submitted"
+    },
+    {
+      "name": "run_workflow",
+      "description": "Execute workflow actions on documents (start, approve, reject, etc.)"
+    },
+    {
+      "name": "create_dashboard",
+      "description": "Create custom dashboards for business intelligence and data visualization"
+    },
+    {
+      "name": "create_dashboard_chart",
+      "description": "Create dashboard charts for data visualization and business insights"
+    },
+    {
+      "name": "list_user_dashboards",
+      "description": "List all dashboards accessible to the current user"
     }
   ],
   "tools_generated": true,

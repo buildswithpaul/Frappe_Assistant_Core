@@ -81,7 +81,7 @@ class CreateDashboardChart(BaseTool):
                     "type": "string",
                     "enum": ["Last Year", "Last Quarter", "Last Month", "Last Week"],
                     "default": "Last Month",
-                    "description": "Time range for the chart data"
+                    "description": "Time range for the chart data (only applies to line/heatmap charts)"
                 },
                 "time_interval": {
                     "type": "string",
@@ -124,13 +124,14 @@ class CreateDashboardChart(BaseTool):
 
 🔧 **FIELD REQUIREMENTS:**
 • value_based_on: Required for Sum/Average (e.g., 'grand_total', 'qty')
-• based_on: Required for grouping/x-axis (e.g., 'customer', 'status')
-• time_series_based_on: Required for line charts (date fields like 'posting_date')
+• based_on: Required for grouping/x-axis in bar/pie/donut charts (e.g., 'customer', 'status')
+• time_series_based_on: Required ONLY for line/heatmap charts (date fields like 'posting_date')
 
 💡 **EXAMPLES:**
 • Bar chart of sales by customer: chart_type='bar', based_on='customer', aggregate_function='Sum', value_based_on='grand_total'
-• Line chart of monthly revenue: chart_type='line', time_series_based_on='posting_date', aggregate_function='Sum', value_based_on='grand_total'
-• Pie chart of status distribution: chart_type='pie', based_on='status', aggregate_function='Count'"""
+• Line chart of monthly revenue: chart_type='line', time_series_based_on='posting_date', aggregate_function='Sum', value_based_on='grand_total'  
+• Pie chart of status distribution: chart_type='pie', based_on='status', aggregate_function='Count'
+• Simple count chart: chart_type='bar', aggregate_function='Count' (no grouping)"""
     
     def execute(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
         """Create dashboard chart"""
@@ -169,14 +170,23 @@ class CreateDashboardChart(BaseTool):
                     "error_type": "field_validation_error"
                 }
             
-            # Validate chart before creation (optional - skip if validation fails but still allow creation)
-            validation_result = self._validate_chart_before_creation(chart_doc.as_dict())
+            # Try to get actual chart data after creation
+            validation_result = {"success": True, "data_points": 0, "chart_validated": False}
             chart_validation_warning = None
-            if not validation_result["success"]:
-                chart_validation_warning = f"Chart validation warning: {validation_result.get('error', 'Unknown validation issue')}"
-                validation_result = {"success": True, "data_points": 0, "chart_validated": False}
             
             chart_doc.insert()
+            
+            # Try to get actual data points after creation
+            try:
+                from frappe.desk.doctype.dashboard_chart.dashboard_chart import get
+                chart_data_result = get(chart_name=chart_doc.name)
+                if chart_data_result:
+                    if 'datasets' in chart_data_result and chart_data_result['datasets']:
+                        total_data_points = sum(len(dataset.get('values', [])) for dataset in chart_data_result['datasets'])
+                        validation_result["data_points"] = total_data_points
+                        validation_result["chart_validated"] = True
+            except Exception as e:
+                frappe.logger("dashboard_chart").warning(f"Failed to get chart data: {str(e)}")
             
             # Add to dashboard if specified
             dashboard_added = False
@@ -192,7 +202,7 @@ class CreateDashboardChart(BaseTool):
                 "chart_url": f"/app/dashboard-chart/{chart_doc.name}",
                 "added_to_dashboard": arguments.get("dashboard_name") if dashboard_added else None,
                 "data_points": validation_result.get("data_points", 0),
-                "chart_validated": True
+                "chart_validated": validation_result.get("chart_validated", False)
             }
             
             # Include any warnings from field validation and chart validation
@@ -261,6 +271,13 @@ class CreateDashboardChart(BaseTool):
                 if field_type not in ["Date", "Datetime"]:
                     errors.append(f"Time series field '{time_field}' must be Date or Datetime, got {field_type}")
         
+        # Validate that non-time series charts don't have time_series_based_on when they should use based_on instead
+        elif chart_type in ["bar", "pie", "donut", "percentage"]:
+            time_field = arguments.get("time_series_based_on")
+            if time_field:
+                warnings.append(f"{chart_type.title()} charts don't need 'time_series_based_on'. Use 'based_on' for grouping instead.")
+                # Don't auto-move it to based_on as user might have both specified
+        
         # Validate bar/pie/donut charts need based_on for meaningful grouping
         if chart_type in ["bar", "pie", "donut"]:
             based_on = arguments.get("based_on")
@@ -314,38 +331,65 @@ class CreateDashboardChart(BaseTool):
         chart_data = {
             "doctype": "Dashboard Chart",
             "chart_name": chart_name,
-            "chart_type": aggregate_function,  # Frappe's chart_type = aggregation function
-            "type": visual_type_map.get(chart_type, "Bar"),  # Frappe's type = visual chart type
+            "type": visual_type_map.get(chart_type, "Bar"),  # Visual chart type
             "document_type": doctype,
             "filters_json": json.dumps(self._convert_filters_to_frappe_format(arguments.get("filters", {}), doctype))
         }
         
-        # Add value_based_on for Sum/Average
-        if aggregate_function in ["Sum", "Average"] and arguments.get("value_based_on"):
-            chart_data["value_based_on"] = arguments["value_based_on"]
+        # Configure chart based on Frappe's exact requirements
+        has_grouping = arguments.get("based_on") and chart_type in ["bar", "pie", "donut"]
         
-        # Add grouping field for bar/pie/donut charts
-        if arguments.get("based_on") and chart_type in ["bar", "pie", "donut"]:
-            chart_data["group_by_based_on"] = arguments["based_on"]
-        
-        # Add time series configuration for line and heatmap charts
-        if chart_type in ["line", "heatmap"]:
-            time_field = arguments.get("time_series_based_on")
-            if time_field:
-                chart_data["based_on"] = time_field  # CORRECT: based_on is for time series date field
-                chart_data["timeseries"] = 1  # CORRECT: timeseries is boolean flag to enable time series
+        if has_grouping:
+            # GROUPING CHARTS: Use chart_type="Group By" 
+            # This matches Frappe validation: if chart_type == "Group By", requires group_by_based_on
+            chart_data["chart_type"] = "Group By"
+            chart_data["group_by_based_on"] = arguments["based_on"]  # REQUIRED for Group By
+            chart_data["group_by_type"] = aggregate_function  # Count, Sum, Average
+            
+            # For Sum/Average group by, need aggregate_function_based_on
+            if aggregate_function in ["Sum", "Average"]:
+                if arguments.get("value_based_on"):
+                    chart_data["aggregate_function_based_on"] = arguments["value_based_on"]  # REQUIRED for Sum/Average Group By
+                else:
+                    return {
+                        "success": False,
+                        "error": f"value_based_on is required for {aggregate_function} aggregation with grouping"
+                    }
+            
+        else:
+            # TIME SERIES OR SIMPLE AGGREGATION: Use chart_type=Count/Sum/Average
+            # This matches Frappe validation: if chart_type != "Group By", requires based_on
+            chart_data["chart_type"] = aggregate_function  # Count, Sum, Average
+            
+            if chart_type in ["line", "heatmap"]:
+                # Time series charts
+                time_field = arguments.get("time_series_based_on") or self._detect_date_field(available_fields) or "creation"
+                chart_data["based_on"] = time_field  # REQUIRED for non-Group By charts
+                chart_data["timeseries"] = 1
                 chart_data["timespan"] = arguments.get("timespan", "Last Month")
                 chart_data["time_interval"] = arguments.get("time_interval", "Daily")
             else:
-                # These chart types always need time series, use creation as fallback
-                chart_data["based_on"] = "creation"  # CORRECT: based_on is for time series date field
-                chart_data["timeseries"] = 1  # CORRECT: timeseries is boolean flag to enable time series
-                chart_data["timespan"] = arguments.get("timespan", "Last Month")
-                chart_data["time_interval"] = arguments.get("time_interval", "Daily")
+                # Simple aggregation charts (no grouping, no time series)
+                # Still need based_on for Frappe validation, but timeseries=0
+                chart_data["based_on"] = self._detect_date_field(available_fields) or "creation"  # REQUIRED for non-Group By charts
+                chart_data["timeseries"] = 0
+            
+            # For Sum/Average, need value_based_on  
+            if aggregate_function in ["Sum", "Average"]:
+                if arguments.get("value_based_on"):
+                    chart_data["value_based_on"] = arguments["value_based_on"]
+                else:
+                    return {
+                        "success": False,
+                        "error": f"value_based_on is required for {aggregate_function} aggregation"
+                    }
         
         # Add color if specified
         if arguments.get("color"):
             chart_data["color"] = arguments["color"]
+        
+        # Debug logging to understand what's being created
+        frappe.logger("dashboard_chart").info(f"Creating chart with data: {json.dumps(chart_data, indent=2)}")
         
         return frappe.get_doc(chart_data)
     
@@ -376,11 +420,9 @@ class CreateDashboardChart(BaseTool):
             # Test chart data retrieval using Frappe's dashboard chart logic
             from frappe.desk.doctype.dashboard_chart.dashboard_chart import get
             
-            # Create a temporary chart object for testing
-            test_chart = frappe._dict(chart_data)
-            
-            # Test data retrieval
-            test_result = get(chart=test_chart)
+            # The get function expects either chart_name or chart as JSON string
+            # Pass chart as JSON string since we don't have a saved chart yet
+            test_result = get(chart=json.dumps(chart_data))
             
             if not test_result or not test_result.get('data'):
                 return {
@@ -477,9 +519,10 @@ class CreateDashboardChart(BaseTool):
         
         doctype = chart_data.get("document_type")
         timeseries_enabled = chart_data.get("timeseries")
-        time_series_field = chart_data.get("based_on")  # CORRECT: based_on holds time series field
-        group_field = chart_data.get("group_by_based_on")  # CORRECT: group_by_based_on holds grouping field
+        time_series_field = chart_data.get("based_on") if timeseries_enabled else None
+        group_field = chart_data.get("group_by_based_on")  # Only for Group By charts
         value_field = chart_data.get("value_based_on")
+        aggregate_field = chart_data.get("aggregate_function_based_on")  # Only for Group By with Sum/Average
         
         # Validate time series field exists and is date type (when time series is enabled)
         if timeseries_enabled and time_series_field and time_series_field not in ["creation", "modified"]:
@@ -507,6 +550,15 @@ class CreateDashboardChart(BaseTool):
                 field = available_fields[value_field]
                 if field.fieldtype not in ["Int", "Float", "Currency", "Percent"]:
                     warnings.append(f"Value field '{value_field}' ({field.fieldtype}) may not be suitable for aggregation")
+        
+        # Validate aggregate function field for Group By charts
+        if aggregate_field and aggregate_field not in ["name", "creation", "modified"]:
+            if aggregate_field not in available_fields:
+                errors.append(f"Aggregate field '{aggregate_field}' does not exist in {doctype}")
+            else:
+                field = available_fields[aggregate_field]
+                if field.fieldtype not in ["Int", "Float", "Currency", "Percent"]:
+                    warnings.append(f"Aggregate field '{aggregate_field}' ({field.fieldtype}) may not be suitable for aggregation")
         
         if errors:
             return {

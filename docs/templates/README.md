@@ -1,6 +1,8 @@
-# Templates for Frappe Assistant Core Development
+# Development Templates
 
-This directory contains templates for creating new tools and test cases in the Frappe Assistant Core system.
+This directory contains templates for creating new tools and test cases. 
+
+**For complete development guidance, see the [Development Guide](../DEVELOPMENT_GUIDE.md).**
 
 ## Available Templates
 

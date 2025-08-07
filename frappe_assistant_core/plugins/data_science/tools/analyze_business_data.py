@@ -29,13 +29,22 @@ from frappe_assistant_core.core.base_tool import BaseTool
 
 class AnalyzeFrappeData(BaseTool):
     """
-    Tool for analyzing Frappe data with statistical and analytical functions.
+    🎯 ONE-CLICK Business Intelligence Tool - Professional analytics without coding!
     
-    Provides capabilities for:
-    - Statistical analysis of DocType data
-    - Data profiling and summarization
-    - Trend analysis
-    - Data quality assessment
+    ⚡ **INSTANT INSIGHTS** (vs 20+ lines of pandas code):
+    ✅ analyze_business_data(doctype="Sales Invoice", analysis_type="trends") 
+    ❌ run_python_code with pd.read_sql + groupby + pivot + calculations...
+    
+    📊 **5 READY-TO-USE ANALYSIS TYPES**:
+    • 'profile' → Complete data overview (nulls, types, unique counts, field stats)  
+    • 'statistics' → Business metrics (mean, median, std, quartiles, skewness)
+    • 'trends' → Time-series patterns (daily/monthly growth, seasonal trends)
+    • 'quality' → Data health score (duplicates, nulls, consistency issues)  
+    • 'correlations' → Field relationships (which metrics affect each other)
+    
+    🚀 **BUSINESS-READY OUTPUT**: Structured insights, not raw DataFrames
+    🛡️ **BULLETPROOF**: Auto-handles permissions, missing data, edge cases
+    ⚡ **FAST**: Optimized queries + smart field detection
     """
     
     def __init__(self):
@@ -49,31 +58,31 @@ class AnalyzeFrappeData(BaseTool):
             "properties": {
                 "doctype": {
                     "type": "string",
-                    "description": "The DocType to analyze"
+                    "description": "🎯 DocType to analyze (e.g., 'Sales Invoice', 'Customer', 'Item', 'Quotation', 'Purchase Order'). Any Frappe DocType with business data."
                 },
                 "analysis_type": {
                     "type": "string",
                     "enum": ["profile", "statistics", "trends", "quality", "correlations"],
-                    "description": "Type of analysis to perform"
+                    "description": "📊 Analysis type: 'profile' (data overview + field analysis), 'statistics' (mean/median/std for numbers), 'trends' (time-series patterns), 'quality' (data issues + score), 'correlations' (relationships between fields)"
                 },
                 "fields": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "Specific fields to analyze (optional)"
+                    "description": "🎯 Specific fields to focus on (optional). If empty, analyzes all relevant fields automatically. Example: ['grand_total', 'status', 'customer']"
                 },
                 "filters": {
                     "type": "object",
-                    "description": "Filters to apply to the data"
+                    "description": "🔍 Standard Frappe filters to narrow down data. Examples: {'status': 'Paid'}, {'company': 'Your Company'}, {'creation': ['>', '2024-01-01']}"
                 },
                 "date_field": {
                     "type": "string",
-                    "description": "Date field for trend analysis (optional)"
+                    "description": "📅 Date field for trend analysis (defaults to 'creation'). Use 'posting_date', 'delivery_date', 'due_date', etc. for specific time-series analysis"
                 },
                 "limit": {
                     "type": "integer",
                     "default": 1000,
                     "maximum": 10000,
-                    "description": "Maximum number of records to analyze"
+                    "description": "📈 Max records to analyze (default: 1000). Increase for more comprehensive analysis, decrease for faster results. Handles large datasets efficiently."
                 }
             },
             "required": ["doctype", "analysis_type"]
@@ -81,7 +90,35 @@ class AnalyzeFrappeData(BaseTool):
     
     def _get_dynamic_description(self) -> str:
         """Generate description based on current streaming settings"""
-        base_description = """Perform statistical analysis on Frappe business data. Calculate averages, trends, correlations, and insights from any DocType."""
+        base_description = """🎯 **INSTANT Business Intelligence** - Get professional analytics reports from any DocType with ZERO coding required!
+
+✨ **Why use this instead of run_python_code?**
+• 🚀 **INSTANT Results** - No pandas/numpy coding needed, just specify DocType and analysis type
+• 📊 **5 Pre-Built Analytics** - Profile, Statistics, Trends, Quality, Correlations ready-to-go
+• 🛡️ **Bulletproof** - Handles missing data, permissions, and edge cases automatically  
+• 🎨 **Business-Friendly** - Returns structured insights, not raw data dumps
+• ⚡ **Fast Setup** - Single API call vs writing 20+ lines of pandas code
+
+📈 **Perfect for**: Sales analysis, financial reports, inventory trends, customer insights, data quality audits
+
+🔥 **Use Cases**: "Analyze Sales Invoice trends", "Profile Customer data", "Check Item quality", "Find correlations in Quotations"
+
+💡 **COMPARISON with run_python_code**:
+
+🏆 **USE analyze_business_data FOR**:
+• "What are my sales trends?" → trends analysis  
+• "Profile my customer data" → profile analysis
+• "Calculate revenue statistics" → statistics analysis
+• "Check data quality issues" → quality analysis
+• "Find correlations in sales data" → correlations analysis
+
+⚡ **USE run_python_code FOR**:
+• Custom charts/visualizations (matplotlib/plotly)
+• Complex mathematical models  
+• Data transformations not covered by the 5 types
+• Custom business logic or calculations
+
+🎯 **RULE OF THUMB**: Try analyze_business_data FIRST - it's faster and handles 80% of business analytics needs!"""
         
         try:
             from frappe_assistant_core.utils.streaming_manager import get_streaming_manager
@@ -102,16 +139,42 @@ class AnalyzeFrappeData(BaseTool):
         date_field = arguments.get("date_field")
         limit = arguments.get("limit", 1000)
         
+        # Input validation
+        if not doctype:
+            return {
+                "success": False,
+                "error": "DocType is required for analysis"
+            }
+        
+        if not analysis_type:
+            return {
+                "success": False,
+                "error": "Analysis type is required"
+            }
+        
+        # Validate DocType exists
+        if not frappe.db.exists("DocType", doctype):
+            return {
+                "success": False,
+                "error": f"DocType '{doctype}' does not exist",
+                "doctype": doctype,
+                "analysis_type": analysis_type
+            }
+        
         # Check permission for DocType
         if not frappe.has_permission(doctype, "read"):
-            frappe.throw(
-                _("Insufficient permissions to analyze {0} data").format(doctype),
-                frappe.PermissionError
-            )
+            return {
+                "success": False,
+                "error": f"Insufficient permissions to analyze {doctype} data",
+                "doctype": doctype,
+                "analysis_type": analysis_type
+            }
         
         try:
             # Validate that required dependencies are available
-            self._check_dependencies()
+            dependency_check = self._check_dependencies()
+            if not dependency_check["success"]:
+                return dependency_check
             
             # Get data for analysis
             data = self._get_data_for_analysis(doctype, fields, filters, limit)
@@ -155,16 +218,17 @@ class AnalyzeFrappeData(BaseTool):
                 "analysis_type": analysis_type
             }
     
-    def _check_dependencies(self):
+    def _check_dependencies(self) -> Dict[str, Any]:
         """Check if required data science libraries are available"""
         try:
             import pandas as pd
             import numpy as np
-        except ImportError:
-            frappe.throw(
-                _("Data science dependencies not available. Please install pandas and numpy."),
-                frappe.ValidationError
-            )
+            return {"success": True}
+        except ImportError as e:
+            return {
+                "success": False,
+                "error": f"Data science dependencies not available. Please install pandas and numpy. Details: {str(e)}"
+            }
     
     def _get_data_for_analysis(self, doctype: str, fields: List[str], filters: Dict, limit: int) -> List[Dict]:
         """Get data from Frappe for analysis"""
@@ -237,8 +301,20 @@ class AnalyzeFrappeData(BaseTool):
         """Generate data profile with basic statistics"""
         import pandas as pd
         
-        # Convert to DataFrame
-        df = pd.DataFrame(data)
+        try:
+            # Convert to DataFrame
+            df = pd.DataFrame(data)
+            
+            if df.empty:
+                return {
+                    "record_count": 0,
+                    "field_count": 0,
+                    "message": "No data available for profiling"
+                }
+        except Exception as e:
+            return {
+                "error": f"Failed to create DataFrame for profiling: {str(e)}"
+            }
         
         profile = {
             "record_count": len(df),
@@ -286,7 +362,13 @@ class AnalyzeFrappeData(BaseTool):
         import pandas as pd
         import numpy as np
         
-        df = pd.DataFrame(data)
+        try:
+            df = pd.DataFrame(data)
+            
+            if df.empty:
+                return {"message": "No data available for statistical analysis"}
+        except Exception as e:
+            return {"error": f"Failed to create DataFrame for statistical analysis: {str(e)}"}
         
         # Get numeric columns
         numeric_columns = df.select_dtypes(include=[np.number]).columns.tolist()
@@ -322,7 +404,13 @@ class AnalyzeFrappeData(BaseTool):
         """Perform trend analysis on time-series data"""
         import pandas as pd
         
-        df = pd.DataFrame(data)
+        try:
+            df = pd.DataFrame(data)
+            
+            if df.empty:
+                return {"message": "No data available for trend analysis"}
+        except Exception as e:
+            return {"error": f"Failed to create DataFrame for trend analysis: {str(e)}"}
         
         # Use creation date if no date field specified
         if not date_field:
@@ -332,8 +420,11 @@ class AnalyzeFrappeData(BaseTool):
             return {"error": f"Date field '{date_field}' not found in data"}
         
         # Convert date field to datetime
-        df[date_field] = pd.to_datetime(df[date_field])
-        df = df.sort_values(date_field)
+        try:
+            df[date_field] = pd.to_datetime(df[date_field])
+            df = df.sort_values(date_field)
+        except Exception as e:
+            return {"error": f"Failed to convert '{date_field}' to datetime: {str(e)}. Make sure the field contains valid date values."}
         
         # Group by date periods
         daily_counts = df.groupby(df[date_field].dt.date).size()
@@ -343,16 +434,16 @@ class AnalyzeFrappeData(BaseTool):
         trends = {
             "daily_trend": {
                 "data_points": len(daily_counts),
-                "average_per_day": daily_counts.mean(),
-                "max_day": daily_counts.max(),
-                "min_day": daily_counts.min(),
-                "trend_direction": "increasing" if daily_counts.iloc[-1] > daily_counts.iloc[0] else "decreasing"
+                "average_per_day": daily_counts.mean() if len(daily_counts) > 0 else 0,
+                "max_day": daily_counts.max() if len(daily_counts) > 0 else 0,
+                "min_day": daily_counts.min() if len(daily_counts) > 0 else 0,
+                "trend_direction": "increasing" if len(daily_counts) > 1 and daily_counts.iloc[-1] > daily_counts.iloc[0] else "stable" if len(daily_counts) <= 1 else "decreasing"
             },
             "monthly_trend": {
                 "data_points": len(monthly_counts),
-                "average_per_month": monthly_counts.mean(),
-                "max_month": monthly_counts.max(),
-                "min_month": monthly_counts.min()
+                "average_per_month": monthly_counts.mean() if len(monthly_counts) > 0 else 0,
+                "max_month": monthly_counts.max() if len(monthly_counts) > 0 else 0,
+                "min_month": monthly_counts.min() if len(monthly_counts) > 0 else 0
             },
             "date_range": {
                 "start_date": df[date_field].min().strftime('%Y-%m-%d'),
@@ -411,6 +502,8 @@ class AnalyzeFrappeData(BaseTool):
         # Calculate overall quality score
         if total_checks > 0:
             quality_report["overall_score"] = ((total_checks - issues_found) / total_checks) * 100
+        else:
+            quality_report["overall_score"] = 100  # No issues if no checks performed
         
         quality_report["summary"] = {
             "total_issues": issues_found,

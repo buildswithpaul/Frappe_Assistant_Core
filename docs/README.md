@@ -2,22 +2,17 @@
 
 Welcome to the comprehensive documentation for **Frappe Assistant Core** - the open source AI assistant integration for Frappe Framework and ERPNext.
 
-## 📚 Documentation Overview
+## 📚 Documentation Index
 
 ### 🚀 Quick Start
-- **[Main README](../README.md)**: Installation, features, and getting started
+- **[Main README](../README.md)**: Installation, setup, and getting started
 - **[Contributing Guidelines](../CONTRIBUTING.md)**: How to contribute to the project
-- **[Professional Services](../COMMERCIAL.md)**: Available consulting and development services
 
-### 📖 Technical Documentation
-- **[Technical Documentation](TECHNICAL_DOCUMENTATION.md)**: Complete technical reference
-  - Architecture and system design
-  - Development history and recent improvements
-  - Tool system implementation
-  - API documentation
-  - Installation and setup guide
-  - Testing and troubleshooting
-
+### 📖 Core Documentation
+- **[Tool Reference Guide](TOOL_REFERENCE.md)**: Complete catalog of all 21 available tools
+- **[Development Guide](DEVELOPMENT_GUIDE.md)**: How to create custom tools (external apps or internal plugins)
+- **[Architecture Overview](ARCHITECTURE.md)**: System design and technical architecture
+- **[API Reference](API_REFERENCE.md)**: MCP protocol endpoints and tool APIs
 - **[SSE Bridge Integration](SSE_BRIDGE_INTEGRATION.md)**: Claude API Integration Guide
   - Real-time streaming communication setup
   - Development and production deployment
@@ -32,68 +27,80 @@ Welcome to the comprehensive documentation for **Frappe Assistant Core** - the o
   - Best practices for LLMs
   - Field naming conventions
   - Error handling strategies
+  
+### 🛠️ Specialized Guides
+- **[External App Development](EXTERNAL_APP_DEVELOPMENT.md)**: Create tools in your Frappe apps (recommended)
+- **[Internal Plugin Development](PLUGIN_DEVELOPMENT.md)**: Create internal plugins for core features
+- **[Test Case Creation Guide](TEST_CASE_CREATION_GUIDE.md)**: Testing patterns and best practices
 
-### 🔒 Security Documentation
-- **[Comprehensive Security Guide](../COMPREHENSIVE_SECURITY_GUIDE.md)**: Complete security reference
-  - Security architecture and implementation
-  - Role-based access control
-  - Secure code execution with sandboxing
-  - SQL query validation and safety
-  - Attack prevention and mitigation
-  - Audit trails and monitoring
-  - Best practices for administrators
+### 🔒 Security & Operations
+- **[Comprehensive Security Guide](../COMPREHENSIVE_SECURITY_GUIDE.md)**: Security architecture and best practices
+- **[Technical Documentation](TECHNICAL_DOCUMENTATION.md)**: Complete technical reference and troubleshooting
 
-## 🔧 Available Tools
+## 🔧 System Overview
 
-### 📄 Core Document Management (6 tools)
-- `create_document` - Create new documents
-- `get_document` - Retrieve specific documents  
-- `update_document` - Update existing documents
-- `list_documents` - List and search documents
-- `delete_document` - Delete documents
-- `submit_document` - Submit documents for approval
+Frappe Assistant Core provides **21 tools** organized in a plugin-based architecture:
 
-### 🔍 Search & Metadata (3 tools)
-- `search_documents` - Global search across all data
-- `get_doctype_info` - DocType schemas and fields
-- `run_workflow` - Execute document workflows
+| Plugin | Tools | Purpose |
+|--------|--------|---------|
+| **Core** | 19 tools | Essential Frappe operations (always enabled) |
+| **Data Science** | 3 tools | Python execution and statistical analysis |
+| **Visualization** | 3 tools | Dashboard and chart creation |
 
-### 📊 Reporting & Analytics (3 tools)
-- `generate_report` - Execute Frappe reports
-- `get_report_data` - Get detailed report information
-- `analyze_business_data` - Statistical analysis
+**All tools respect Frappe permissions and security policies.**
 
-### 💻 Advanced Data Tools (2 tools)
-- `run_python_code` - Custom Python code execution (System Manager only)
-- `run_database_query` - Custom SQL with analysis (System Manager only)
+For detailed tool descriptions and usage patterns, see the **[Tool Reference Guide](TOOL_REFERENCE.md)**.
 
-### 📊 Visualization Plugin (3 tools)
-- `create_dashboard` - Create Frappe dashboards with multiple charts
-- `create_dashboard_chart` - Create individual Dashboard Chart documents
-- `list_user_dashboards` - List user's accessible dashboards
+## 🚀 Development Quick Start
 
-**Note**: Visualization plugin must be enabled in settings. Creates Frappe Dashboard documents, not Insights dashboards.
+### Creating Tools in Your App (Recommended)
 
-## 🌟 Recent Major Improvements
+```bash
+# 1. Create tool directory
+mkdir -p your_app/assistant_tools
+touch your_app/assistant_tools/__init__.py
 
-### ✅ Fixed Issues
-- **Document List Tool**: Now returns correct results instead of 0 records
-- **Visualization Plugin**: Streamlined to 3 essential tools with proper chart creation
-- **Report Execution**: Enhanced debugging and error handling
+# 2. Use template
+cp docs/templates/tool_template.py your_app/assistant_tools/my_tool.py
 
-### 🆕 New Features
-- **Inline Chart Display**: Base64 encoded images in conversation
-- **Enhanced Tool Descriptions**: Better guidance for AI assistants
-- **MIT License**: Completely open source with no restrictions
+# 3. Register in hooks.py
+echo 'assistant_tools = ["your_app.assistant_tools.my_tool.MyTool"]' >> your_app/hooks.py
+```
+
+**Complete guide**: [External App Development](EXTERNAL_APP_DEVELOPMENT.md)
+
+### Creating Internal Plugins
+
+```bash
+# 1. Create plugin structure
+mkdir -p plugins/my_plugin/tools
+touch plugins/my_plugin/plugin.py
+
+# 2. Use template
+cp docs/templates/tool_template.py plugins/my_plugin/tools/my_tool.py
+```
+
+**Complete guide**: [Internal Plugin Development](PLUGIN_DEVELOPMENT.md)
+
+## 🌟 Key Features
+
+- **🏗️ Plugin Architecture**: Modular, extensible design
+- **🔌 Auto-Discovery**: Zero-configuration tool loading
+- **🔒 Enterprise Security**: Role-based access with audit trails
+- **🐍 Python Sandbox**: Safe code execution environment
+- **📊 Rich Analytics**: Statistical analysis and visualization
+- **⚡ High Performance**: Optimized for production workloads
+- **📝 Comprehensive Testing**: Full test coverage with templates
+- **⚖️ MIT Licensed**: Free for all commercial and personal use
 
 ## 🤝 Contributing
 
-We welcome contributions! Here's how to get involved:
+We welcome contributions! Ways to get involved:
 
-1. **🐛 Report Issues**: Use [GitHub Issues](hhttps://github.com/buildswithpaul/Frappe_Assistant_Core/issues)
-2. **💡 Suggest Features**: Join [GitHub Discussions](hhttps://github.com/buildswithpaul/Frappe_Assistant_Core/discussions)
+1. **🐛 Report Issues**: [GitHub Issues](https://github.com/buildswithpaul/Frappe_Assistant_Core/issues)
+2. **💡 Suggest Features**: [GitHub Discussions](https://github.com/buildswithpaul/Frappe_Assistant_Core/discussions)  
 3. **🔧 Contribute Code**: Follow our [Contributing Guidelines](../CONTRIBUTING.md)
-4. **📚 Improve Docs**: Help us make documentation better
+4. **📚 Improve Documentation**: Help make docs better
 
 ## 📞 Support
 
@@ -103,29 +110,24 @@ We welcome contributions! Here's how to get involved:
 - **Frappe Forum**: General Frappe/ERPNext support
 
 ### 💼 Professional Services
-- **Custom Development**: Tailored solutions for your needs
-- **Implementation Support**: Expert setup and configuration
-- **Training & Consulting**: Team training and best practices
-- **Contact**: [jypaulclinton@gmail.com](mailto:jypaulclinton@gmail.com)
+Custom development, implementation support, training & consulting available.
+**Contact**: [jypaulclinton@gmail.com](mailto:jypaulclinton@gmail.com)
 
 ## 📄 License
 
-This project is licensed under the **MIT License**, which means:
-- ✅ Free for commercial and personal use
-- ✅ Modify and distribute freely
-- ✅ No restrictions or limitations
-- ✅ Community-driven development
+This project is **MIT Licensed** - free for commercial and personal use with no restrictions.
 
-## 🚀 Quick Links
+## 🎯 Quick Navigation
 
-- **[Installation Guide](../README.md#-quick-start)**
-- **[Tool Usage Examples](TOOL_USAGE_GUIDE.md#example-user-scenarios)**
-- **[Architecture Overview](TECHNICAL_DOCUMENTATION.md#architecture)**
-- **[Recent Improvements](TECHNICAL_DOCUMENTATION.md#recent-improvements)**
-- **[Contributing Guide](../CONTRIBUTING.md)**
+| I want to... | Go to... |
+|---------------|----------|
+| **Use existing tools** | [Tool Reference Guide](TOOL_REFERENCE.md) |
+| **Create custom tools** | [Development Guide](DEVELOPMENT_GUIDE.md) |
+| **Understand the system** | [Architecture Overview](ARCHITECTURE.md) |
+| **Integrate via API** | [API Reference](API_REFERENCE.md) |
+| **Set up testing** | [Test Case Creation Guide](TEST_CASE_CREATION_GUIDE.md) |
+| **Get started quickly** | [Main README](../README.md) |
 
 ---
 
-**Ready to get started?** Check out our [Quick Start Guide](../README.md#-quick-start) or dive into the [Technical Documentation](TECHNICAL_DOCUMENTATION.md) for detailed implementation information.
-
-**Questions?** Reach out via [email](mailto:jypaulclinton@gmail.com).
+**Ready to get started?** Check out the [Tool Reference Guide](TOOL_REFERENCE.md) to see what's available, or the [Development Guide](DEVELOPMENT_GUIDE.md) to start building your own tools.

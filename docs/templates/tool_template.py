@@ -3,20 +3,20 @@ Tool Template for Frappe Assistant Core
 Template for creating new tools using the clean architecture
 
 Instructions:
-1. Replace [ToolName] with your tool name (e.g., "SalesAnalyzer", "InventoryManager")
-2. Replace [tool_name] with lowercase underscore version (e.g., "sales_analyzer", "inventory_manager")
-3. Replace [Tool Category] with your tool category (e.g., "Sales & Analytics", "Inventory Management")
-4. Replace [your_app] with your app name if creating external app tool
+1. Replace ExampleTool with your tool name (e.g., "SalesAnalyzer", "InventoryManager")
+2. Replace example_tool with lowercase underscore version (e.g., "sales_analyzer", "inventory_manager")
+3. Replace Example Category with your tool category (e.g., "Sales & Analytics", "Inventory Management")
+4. Replace frappe_assistant_core with your app name if creating external app tool
 5. Implement the execute() method with your business logic
 6. Update the input schema and configuration as needed
 7. Create corresponding test file using test_template.py
 
 For External App Tools (Recommended):
-- Place in: your_app/assistant_tools/[tool_name].py
+- Place in: your_app/assistant_tools/example_tool.py
 - Register in: your_app/hooks.py
 
 For Internal Plugin Tools:
-- Place in: frappe_assistant_core/plugins/[plugin_name]/tools/[tool_name].py
+- Place in: frappe_assistant_core/plugins/example_plugin/tools/example_tool.py
 - Register in: plugin.py get_tools() method
 """
 
@@ -26,14 +26,14 @@ from typing import Dict, Any, Optional, List
 from frappe_assistant_core.core.base_tool import BaseTool
 
 
-class [ToolName](BaseTool):
+class ExampleTool(BaseTool):
     """
-    [Brief description of what this tool does]
+    Brief description of what this tool does
     
     Provides capabilities for:
-    - [Main capability 1]
-    - [Main capability 2]
-    - [Main capability 3]
+    - Main capability 1
+    - Main capability 2
+    - Main capability 3
     
     Example usage:
     {
@@ -46,13 +46,13 @@ class [ToolName](BaseTool):
     
     def __init__(self):
         super().__init__()
-        self.name = "[tool_name]"
+        self.name = "example_tool"
         self.description = self._get_description()
-        self.category = "[Tool Category]"
+        self.category = "Example Category"
         
         # Set source app - use "frappe_assistant_core" for internal plugins
         # or your app name for external app tools
-        self.source_app = "[your_app]"  # e.g., "your_app" or "frappe_assistant_core"
+        self.source_app = "frappe_assistant_core"  # e.g., "your_app" or "frappe_assistant_core"
         
         # Optional: Declare dependencies for automatic validation
         self.dependencies = [
@@ -120,17 +120,17 @@ class [ToolName](BaseTool):
     
     def _get_description(self) -> str:
         """Get rich formatted tool description"""
-        return """[Detailed description of what the tool does]
+        return """Detailed description of what the tool does
 
 🚀 **OPERATIONS:**
-• Analyze - [Description of analyze operation]
-• Process - [Description of process operation]
-• Export - [Description of export operation]
+• Analyze - Description of analyze operation
+• Process - Description of process operation
+• Export - Description of export operation
 
 📊 **FEATURES:**
-• [Feature 1] - [Description]
-• [Feature 2] - [Description]
-• [Feature 3] - [Description]
+• Feature 1 - Description
+• Feature 2 - Description
+• Feature 3 - Description
 
 ⚙️ **CONFIGURATION:**
 • Configurable limits and timeouts
@@ -185,7 +185,7 @@ class [ToolName](BaseTool):
             
         except Exception as e:
             frappe.log_error(
-                title=_("[ToolName] Error"),
+                title=_("ExampleTool Error"),
                 message=f"Error in {self.name}: {str(e)}"
             )
             
@@ -466,7 +466,7 @@ def get_custom_configuration() -> Dict[str, Any]:
 # Export the tool class for discovery
 # For external apps: This enables the tool to be discovered via hooks
 # For internal plugins: The plugin.py file will reference this class
-__all__ = ["[ToolName]"]
+__all__ = ["ExampleTool"]
 
 
 # Usage Examples (for documentation):
@@ -474,11 +474,11 @@ __all__ = ["[ToolName]"]
 External App Registration (in your_app/hooks.py):
 
 assistant_tools = [
-    "your_app.assistant_tools.[tool_name].[ToolName]"
+    "your_app.assistant_tools.example_tool.ExampleTool"
 ]
 
 assistant_tool_configs = {
-    "[tool_name]": {
+    "example_tool": {
         "max_records": 5000,
         "timeout": 60,
         "default_filters": {"status": "Active"}
@@ -489,12 +489,12 @@ Internal Plugin Registration (in plugin.py):
 
 class YourPlugin(BasePlugin):
     def get_tools(self):
-        return ["[tool_name]"]
+        return ["example_tool"]
 
 Example API Call:
 
 {
-    "tool": "[tool_name]",
+    "tool": "example_tool",
     "arguments": {
         "operation": "analyze",
         "doctype": "Sales Order",

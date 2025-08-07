@@ -28,7 +28,7 @@ Frappe Assistant Core is a comprehensive, **MIT-licensed open source** Model Con
 ### Key Features
 
 - **🏗️ Plugin-Based Architecture** - Complete architectural redesign from monolithic to modular plugin system
-- **21 Comprehensive Tools** across 4 plugin categories (all included - no paid tiers)
+- **21 Comprehensive Tools** across 4 plugin categories (see [Tool Reference](TOOL_REFERENCE.md))
 - **🔌 Plugin Auto-Discovery** - Zero configuration plugin and tool loading
 - **🎯 Plugin Manager** - Centralized plugin lifecycle management with validation
 - **📦 Tool Registry** - Dynamic tool discovery and registration system
@@ -1482,11 +1482,22 @@ This is an open-source MIT licensed project. Contributions are welcome!
 
 ---
 
-## Support & Resources
+## Quick Reference
+
+### Documentation Links
+
+- **[Tool Reference](TOOL_REFERENCE.md)**: Complete catalog of all available tools
+- **[Development Guide](DEVELOPMENT_GUIDE.md)**: How to create custom tools
+- **[Architecture Overview](ARCHITECTURE.md)**: System design and structure
+- **[API Reference](API_REFERENCE.md)**: MCP protocol and API endpoints
+- **[External App Development](EXTERNAL_APP_DEVELOPMENT.md)**: Create tools in your apps
+- **[Internal Plugin Development](PLUGIN_DEVELOPMENT.md)**: Create internal plugins
+- **[Test Case Creation Guide](TEST_CASE_CREATION_GUIDE.md)**: Testing patterns
+
+### Support & Resources
 
 - **GitHub Repository**: [frappe-assistant-core](https://github.com/paulclinton/frappe-assistant-core)
 - **License**: MIT License
-- **Documentation**: This file and inline code documentation
 - **Issues**: GitHub Issues for bug reports and feature requests
 
 ---

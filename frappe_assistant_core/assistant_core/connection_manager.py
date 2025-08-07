@@ -20,7 +20,7 @@ import frappe
 import json
 
 class ConnectionManager:
-    """Handles WebSocket and HTTP connections for the assistant server."""
+    """Handles HTTP connections for the assistant server."""
 
     def __init__(self):
         self.connections = {}

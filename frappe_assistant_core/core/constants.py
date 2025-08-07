@@ -64,8 +64,6 @@ TOOL_CATEGORIES = {
     "REPORT": "report",
     "WORKFLOW": "workflow",
     "DATA_SCIENCE": "data_science",
-    "WEBSOCKET": "websocket",
-    "BATCH": "batch_processing",
     "CUSTOM": "custom"
 }
 
@@ -107,18 +105,7 @@ PLUGIN_TOOLS = {
     "EXECUTE_PYTHON_CODE": "execute_python_code",
     "ANALYZE_FRAPPE_DATA": "analyze_frappe_data",
     "QUERY_AND_ANALYZE": "query_and_analyze",
-    "CREATE_VISUALIZATION": "create_visualization",
-    
-    # WebSocket tools
-    "WEBSOCKET_BROADCAST": "websocket_broadcast",
-    "WEBSOCKET_SUBSCRIBE": "websocket_subscribe",
-    "WEBSOCKET_UNSUBSCRIBE": "websocket_unsubscribe",
-    "WEBSOCKET_GET_CONNECTIONS": "websocket_get_connections",
-    
-    # Batch Processing tools
-    "BATCH_CREATE_DOCUMENTS": "batch_create_documents",
-    "BATCH_UPDATE_DOCUMENTS": "batch_update_documents",
-    "BATCH_PROCESS_QUEUE": "batch_process_queue"
+    "CREATE_VISUALIZATION": "create_visualization"
 }
 
 # Error Codes
@@ -191,28 +178,7 @@ DATA_SCIENCE_LIMITS = {
     ]
 }
 
-# WebSocket Constants
-WEBSOCKET_CONFIG = {
-    "DEFAULT_PORT": 8001,
-    "MAX_CONNECTIONS": 1000,
-    "CONNECTION_TIMEOUT": 300,  # 5 minutes
-    "PING_INTERVAL": 30,  # seconds
-    "PING_TIMEOUT": 10,  # seconds
-    "MAX_MESSAGE_SIZE": 1024 * 1024,  # 1MB
-    "BROADCAST_RATE_LIMIT": 100,  # messages per minute
-    "SUBSCRIPTION_LIMIT": 50  # max subscriptions per connection
-}
 
-# Batch Processing Constants
-BATCH_PROCESSING = {
-    "DEFAULT_BATCH_SIZE": 100,
-    "MAX_BATCH_SIZE": 1000,
-    "DEFAULT_TIMEOUT": 3600,  # 1 hour
-    "MAX_TIMEOUT": 7200,  # 2 hours
-    "RETRY_ATTEMPTS": 3,
-    "RETRY_DELAY": 5,  # seconds
-    "STATUS_CHECK_INTERVAL": 10  # seconds
-}
 
 # Security Constants
 SECURITY_CONFIG = {
