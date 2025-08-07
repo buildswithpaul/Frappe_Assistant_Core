@@ -264,7 +264,11 @@ print(f"Average sale: {df['grand_total'].mean()}")
             excluded_vars = {
                 'frappe', 'pd', 'np', 'plt', 'sns', 'data', 'current_user', 'db',
                 'get_doc', 'get_list', 'get_all', 'get_single', 'math', 'datetime', 
-                'json', 're', 'random', 'statistics', 'decimal', 'fractions'
+                'json', 're', 'random', 'statistics', 'decimal', 'fractions',
+                # Pre-loaded libraries that shouldn't appear in response
+                'pandas', 'numpy', 'matplotlib', 'seaborn', 'plotly', 'scipy', 'stats',
+                'go', 'px', '__builtins__', '__name__', '__doc__', '__package__',
+                '__loader__', '__spec__', '__annotations__', '__cached__'
             }
             
             for var_name, var_value in execution_globals.items():
