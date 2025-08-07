@@ -228,6 +228,36 @@ print(f"Average sale: {df['grand_total'].mean()}")
                                  current_user: str, audit_info: Dict[str, Any]) -> Dict[str, Any]:
         """Execute code with timeout and proper error handling"""
         
+        # Setup execution environment
+        execution_globals = self._setup_execution_environment()
+        
+        # Handle data query if provided
+        if data_query:
+            try:
+                data = self._fetch_data_from_query(data_query)
+                execution_globals['data'] = data
+            except Exception as e:
+                return {
+                    "success": False,
+                    "error": f"Error fetching data: {str(e)}",
+                    "output": "",
+                    "variables": {}
+                }
+        
+        # Sanitize Unicode characters before processing
+        sanitize_result = self._sanitize_unicode(code)
+        if not sanitize_result["success"]:
+            return sanitize_result
+        code = sanitize_result["code"]
+        unicode_warning = sanitize_result.get("warning")
+        
+        # Check for import statements and provide helpful error
+        import_check_result = self._check_and_handle_imports(code)
+        if not import_check_result["success"]:
+            return import_check_result
+        
+        # Remove dangerous imports for security
+        code = self._remove_dangerous_imports(import_check_result["code"])        
         # Capture output
         output = ""
         error = ""
@@ -287,7 +317,7 @@ print(f"Average sale: {df['grand_total'].mean()}")
                         except Exception as e:
                             variables[var_name] = f"<Could not serialize: {str(e)}>"
             
-            return {
+            result = {
                 "success": True,
                 "output": output,
                 "error": error,
@@ -321,13 +351,36 @@ print(f"Average sale: {df['grand_total'].mean()}")
                     "executed_by": current_user
                 }
             }
+
+            # Add Unicode warning if present
+            if unicode_warning:
+                result["unicode_warning"] = unicode_warning
+                
+            return result
+            
+
         except Exception as e:
             error_msg = str(e)
             error_traceback = traceback.format_exc()
             
             self.logger.error(f"Python execution error for user {current_user}: {error_msg}")
+            # Provide helpful error message for Unicode issues
+            if "surrogates not allowed" in error_msg or "UnicodeEncodeError" in error_msg:
+                error_msg = f"""Unicode encoding error: {error_msg}
+
+🚨 This error occurs when your code contains invalid Unicode characters (surrogates).
+💡 Common causes:
+   • Copy-pasting code from Word documents, PDFs, or certain web pages
+   • Data with mixed encodings or corrupted text
+   • Special characters that aren't valid UTF-8
+
+✅ Solutions:
+   • Re-type the code manually instead of copy-pasting
+   • Check for unusual characters around position 1030 in your code
+   • Use plain text editors when preparing code"""
             
-            return {
+            self.logger.error(f"Python execution error: {error_msg}")            
+            result = {
                 "success": False,
                 "error": error_msg,
                 "traceback": error_traceback,
@@ -338,6 +391,67 @@ print(f"Average sale: {df['grand_total'].mean()}")
                     "execution_id": audit_info.get("execution_id"),
                     "executed_by": current_user
                 }
+            }
+            
+            # Add Unicode warning if it was processed but still failed
+            if unicode_warning:
+                result["unicode_warning"] = unicode_warning
+                
+            return result
+    
+    def _sanitize_unicode(self, code: str) -> Dict[str, Any]:
+        """Sanitize Unicode characters to prevent encoding errors"""
+        try:
+            # Check if the string contains surrogate characters
+            if any(0xD800 <= ord(char) <= 0xDFFF for char in code if isinstance(char, str)):
+                # Found surrogate characters - clean them
+                cleaned_chars = []
+                surrogate_count = 0
+                
+                for char in code:
+                    char_code = ord(char)
+                    if 0xD800 <= char_code <= 0xDFFF:
+                        # Replace surrogate with a space or remove it
+                        cleaned_chars.append(' ')
+                        surrogate_count += 1
+                    else:
+                        cleaned_chars.append(char)
+                
+                cleaned_code = ''.join(cleaned_chars)
+                
+                # Provide a helpful warning
+                warning_msg = f"⚠️  Code contained {surrogate_count} invalid Unicode surrogate character(s) that were replaced with spaces. This often happens when copying code from certain documents or web pages."
+                
+                return {
+                    "success": True,
+                    "code": cleaned_code,
+                    "warning": warning_msg
+                }
+            
+            # Try encoding to UTF-8 to catch other encoding issues
+            try:
+                code.encode('utf-8')
+            except UnicodeEncodeError as e:
+                # Handle other encoding errors
+                cleaned_code = code.encode('utf-8', errors='replace').decode('utf-8')
+                return {
+                    "success": True,
+                    "code": cleaned_code,
+                    "warning": f"⚠️  Code contained invalid Unicode characters that were replaced. Original error: {str(e)}"
+                }
+            
+            # Code is clean
+            return {
+                "success": True,
+                "code": code
+            }
+            
+        except Exception as e:
+            return {
+                "success": False,
+                "error": f"Error sanitizing Unicode in code: {str(e)}",
+                "output": "",
+                "variables": {}
             }
     
     def _check_and_handle_imports(self, code: str) -> Dict[str, Any]:
