@@ -301,6 +301,8 @@ print(f"Average sale: {df['grand_total'].mean()}")
                 }
             }
             
+            return result
+            
         except UnicodeEncodeError as unicode_error:
             error_msg = (f"🚫 Unicode Error: Code contains characters that cannot be encoded in UTF-8. "
                         f"Character '\\u{ord(unicode_error.object[unicode_error.start]):04x}' at position {unicode_error.start} "
