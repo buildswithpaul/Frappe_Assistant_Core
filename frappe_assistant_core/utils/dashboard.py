@@ -103,9 +103,8 @@ def get_assistant_dashboard_data():
             "server_info": {
                 "enabled": settings.get("server_enabled"),
                 "port": get_frappe_port(),
-                "max_connections": settings.get("max_connections"),
-                "rate_limit": settings.get("rate_limit"),
-                "websocket_enabled": settings.get("websocket_enabled")
+                "enforce_artifact_streaming": settings.get("enforce_artifact_streaming", True),
+                "response_limit_prevention": settings.get("response_limit_prevention", True)
             },
             "connections": dashboard_stats.get("connections", {}),
             "tools": {
@@ -227,8 +226,8 @@ def get_system_health_check():
 def cleanup_old_data():
     """Clean up old logs and data based on settings"""
     try:
-        settings = frappe.get_single("assistant Server Settings")
-        cleanup_days = settings.cleanup_logs_after_days or 30
+        # Default to 30 days for log cleanup
+        cleanup_days = 30
         
         # Clean connection logs
         old_connection_logs = frappe.db.sql("""

@@ -25,18 +25,10 @@ class AssistantCoreSettings(Document):
     
     def validate(self):
         """Validate settings before saving"""
-        # Validate max connections
-        if self.max_connections < 1 or self.max_connections > 1000:
-            frappe.throw("Max connections must be between 1 and 1000")
-        
-        # Validate rate limit
-        if self.rate_limit < 1 or self.rate_limit > 10000:
-            frappe.throw("Rate limit must be between 1 and 10000 requests per minute")
-        
-        # Validate SSL settings
-        if self.ssl_enabled:
-            if not self.ssl_cert_path or not self.ssl_key_path:
-                frappe.throw("SSL certificate and key paths are required when SSL is enabled")
+        # Currently no validation needed as removed unused fields
+        # Plugin validation is handled by plugin manager
+        # Streaming settings have reasonable defaults
+        pass
     
     
     def restart_assistant_core(self):

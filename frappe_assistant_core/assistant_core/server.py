@@ -103,17 +103,16 @@ class assistantServer:
             return {"success": False, "message": f"Failed to disable MCP API: {str(e)}"}
     
     def get_status(self):
-        """Get server status including WebSocket status"""
-        from frappe_assistant_core.utils.cache import get_cached_server_settings
+        """Get server status"""
+        # Read directly from database to avoid cache issues
+        settings = frappe.get_single("Assistant Core Settings")
         
-        settings = get_cached_server_settings()
-        
-        # Server is running if it's enabled (since API endpoints are always available)
-        is_running = bool(settings.get("server_enabled"))
+        # Check if Assistant Core is enabled
+        is_enabled = bool(settings.server_enabled)
         
         return {
-            "running": is_running,  # For backward compatibility
-            "enabled": settings.get("server_enabled"),
+            "running": is_enabled,  # For backward compatibility
+            "enabled": is_enabled,
             "api_endpoint": f"/api/method/frappe_assistant_core.api.assistant_api.handle_assistant_request",
             "ping_endpoint": f"/api/method/frappe_assistant_core.api.assistant_api.ping",
             "protocol": "mcp",
@@ -160,11 +159,12 @@ def get_server_status():
     server = get_server_instance()
     return server.get_status()
 
+@frappe.whitelist(allow_guest=False)
 def cleanup_old_logs():
     """Cleanup old log entries (scheduled task)"""
     try:
-        settings = frappe.get_single("Assistant Core Settings")
-        days_to_keep = settings.cleanup_logs_after_days or 30
+        # Default to 30 days for log cleanup
+        days_to_keep = 30
         
         # Cleanup connection logs
         frappe.db.sql("""

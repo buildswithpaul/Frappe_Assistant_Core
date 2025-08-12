@@ -109,12 +109,10 @@ def get_cached_server_settings():
     settings = frappe.get_single("Assistant Core Settings")
     return {
         "server_enabled": settings.server_enabled,
-        "max_connections": settings.max_connections,
-        "authentication_required": settings.authentication_required,
-        "rate_limit": settings.rate_limit,
-        "allowed_origins": settings.allowed_origins,
-        "websocket_enabled": settings.websocket_enabled,
-        "cleanup_logs_after_days": settings.cleanup_logs_after_days
+        "enforce_artifact_streaming": getattr(settings, "enforce_artifact_streaming", True),
+        "response_limit_prevention": getattr(settings, "response_limit_prevention", True),
+        "streaming_line_threshold": getattr(settings, "streaming_line_threshold", 5),
+        "streaming_char_threshold": getattr(settings, "streaming_char_threshold", 1000)
     }
 
 @redis_cache(ttl=CACHE_TTL["dashboard_stats"], user=True)
@@ -204,6 +202,30 @@ def get_cached_category_performance():
     """, (today(),), as_dict=True)
     
     return category_performance
+
+@frappe.whitelist()
+def clear_all_caches():
+    """Clear all assistant-related caches."""
+    try:
+        # Clear Redis caches
+        frappe.cache().delete_keys("assistant_*")
+        frappe.cache().delete_keys("tool_*")
+        frappe.cache().delete_keys("plugin_*")
+        
+        # Clear site cache if available
+        if hasattr(frappe.local, 'site_cache'):
+            frappe.local.site_cache.clear()
+        
+        return {
+            "success": True,
+            "message": "All caches cleared successfully"
+        }
+    except Exception as e:
+        frappe.log_error(f"Failed to clear caches: {str(e)}")
+        return {
+            "success": False,
+            "error": str(e)
+        }
 
 @site_cache(ttl=CACHE_TTL["tool_registry"])
 def get_cached_tool_registry_stats():

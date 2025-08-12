@@ -26,104 +26,102 @@ def get_server_settings():
     return get_cached_server_settings()
 
 @frappe.whitelist()
-def update_server_settings(server_enabled, max_connections, authentication_required, rate_limit, allowed_origins):
-    """Update Assistant Core Settings with cache invalidation."""
-    from frappe_assistant_core.utils.cache import invalidate_settings_cache
-    
+def update_server_settings(**kwargs):
+    """Update Assistant Core Settings."""
     settings = frappe.get_single("Assistant Core Settings")
-    settings.server_enabled = server_enabled
-    settings.max_connections = max_connections
-    settings.authentication_required = authentication_required
-    settings.rate_limit = rate_limit
-    settings.allowed_origins = allowed_origins
-    settings.save()
     
-    # Invalidate cached settings
-    invalidate_settings_cache()
+    # Update only the fields that are provided
+    updated = False
+    for field in ["server_enabled", "enforce_artifact_streaming", "response_limit_prevention", 
+                  "streaming_line_threshold", "streaming_char_threshold"]:
+        if field in kwargs:
+            setattr(settings, field, kwargs[field])
+            updated = True
+    
+    if updated:
+        settings.save()
     
     return {"message": _("Assistant Core Settings updated successfully.")}
 
 @frappe.whitelist()
 def get_tool_registry():
-    """Fetch assistant Tool Registry with plugin filtering."""
-    # Use the core tool registry which handles plugin filtering properly
-    from frappe_assistant_core.core.tool_registry import get_tool_registry
-    
-    registry = get_tool_registry()
-    tools = registry.get_available_tools()
-    
-    # Convert to the expected format for backward compatibility
-    formatted_tools = [
-        {
-            "tool_name": tool.get("name"),
-            "tool_description": tool.get("description")
-        }
-        for tool in tools
-    ]
-    
-    return {"tools": formatted_tools}
-
-@frappe.whitelist()
-def toggle_tool(tool_name, enabled):
-    """Enable or disable a tool in the assistant Tool Registry."""
-    from frappe_assistant_core.utils.cache import invalidate_tool_registry_cache
-    
-    tool = frappe.get_doc("Assistant Tool Registry", tool_name)
-    tool.enabled = enabled
-    tool.save()
-    
-    # Invalidate tool registry cache
-    invalidate_tool_registry_cache()
-    
-    return {"message": _("Tool status updated successfully.")}
-
-@frappe.whitelist()
-def get_cache_status():
-    """Get current cache status and statistics."""
-    from frappe_assistant_core.utils.cache import get_cache_statistics
+    """Fetch assistant Tool Registry with detailed information."""
+    from frappe_assistant_core.utils.plugin_manager import get_plugin_manager
     
     try:
-        cache_stats = get_cache_statistics()
+        plugin_manager = get_plugin_manager()
+        tools = plugin_manager.get_all_tools()
+        enabled_plugins = plugin_manager.get_enabled_plugins()
+        
+        formatted_tools = []
+        for tool_name, tool_info in tools.items():
+            formatted_tools.append({
+                "name": tool_name.replace('_', ' ').title(),
+                "category": tool_info.plugin_name.replace('_', ' ').title(),
+                "description": tool_info.description,
+                "enabled": tool_info.plugin_name in enabled_plugins
+            })
+        
+        # Sort by category and then by name
+        formatted_tools.sort(key=lambda x: (x['category'], x['name']))
+        
+        return {"tools": formatted_tools}
+    except Exception as e:
+        frappe.log_error(f"Failed to get tool registry: {str(e)}")
+        return {"tools": []}
+
+@frappe.whitelist()
+def get_plugin_stats():
+    """Get plugin statistics for admin dashboard."""
+    from frappe_assistant_core.utils.plugin_manager import get_plugin_manager
+    
+    try:
+        plugin_manager = get_plugin_manager()
+        discovered = plugin_manager.get_discovered_plugins()
+        enabled = plugin_manager.get_enabled_plugins()
+        
+        plugins = []
+        for plugin in discovered:
+            plugins.append({
+                'name': plugin['display_name'],
+                'enabled': plugin['name'] in enabled
+            })
+        
         return {
-            "success": True,
-            "cache_info": cache_stats
+            'enabled_count': len(enabled),
+            'total_count': len(discovered),
+            'plugins': plugins
         }
     except Exception as e:
+        frappe.log_error(f"Failed to get plugin stats: {str(e)}")
         return {
-            "success": False,
-            "error": str(e)
+            'enabled_count': 0,
+            'total_count': 0,
+            'plugins': []
         }
 
 @frappe.whitelist()
-def clear_cache():
-    """Clear all assistant-related caches."""
-    from frappe_assistant_core.utils.cache import clear_all_assistant_cache
+def get_tool_stats():
+    """Get tool statistics for admin dashboard."""
+    from frappe_assistant_core.utils.plugin_manager import get_plugin_manager
     
     try:
-        clear_all_assistant_cache()
+        plugin_manager = get_plugin_manager()
+        tools = plugin_manager.get_all_tools()
+        
+        categories = {}
+        for tool_name, tool_info in tools.items():
+            category = tool_info.plugin_name
+            categories[category] = categories.get(category, 0) + 1
+        
         return {
-            "success": True,
-            "message": _("All assistant caches cleared successfully.")
+            'total_tools': len(tools),
+            'categories': categories
         }
     except Exception as e:
+        frappe.log_error(f"Failed to get tool stats: {str(e)}")
         return {
-            "success": False,
-            "error": str(e)
+            'total_tools': 0,
+            'categories': {}
         }
 
-@frappe.whitelist()
-def warm_cache():
-    """Warm up frequently used caches."""
-    from frappe_assistant_core.utils.cache import warm_cache
-    
-    try:
-        success = warm_cache()
-        return {
-            "success": success,
-            "message": _("Cache warming completed.") if success else _("Cache warming failed.")
-        }
-    except Exception as e:
-        return {
-            "success": False,
-            "error": str(e)
-        }
