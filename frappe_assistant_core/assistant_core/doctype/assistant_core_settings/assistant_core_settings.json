@@ -7,21 +7,9 @@
  "engine": "InnoDB",
  "field_order": [
   "server_enabled",
-  "max_connections",
-  "authentication_required",
-  "rate_limit",
-  "allowed_origins",
-  "server_section",
-  "ssl_enabled",
-  "ssl_cert_path",
-  "ssl_key_path",
   "plugins_section",
   "enabled_plugins_list",
   "plugin_status_html",
-  "logging_section",
-  "log_level",
-  "max_log_entries",
-  "cleanup_logs_after_days",
   "streaming_section",
   "enforce_artifact_streaming",
   "response_limit_prevention",
@@ -31,101 +19,29 @@
  ],
  "fields": [
   {
-   "default": "0",
+   "default": "1",
+   "description": "Enable or disable the Frappe Assistant Core MCP server",
    "fieldname": "server_enabled",
    "fieldtype": "Check",
    "label": "Enable Assistant Core"
   },
   {
-   "default": "100",
-   "fieldname": "max_connections",
-   "fieldtype": "Int",
-   "label": "Max Concurrent Connections"
-  },
-  {
-   "default": "1",
-   "fieldname": "authentication_required",
-   "fieldtype": "Check",
-   "label": "Require Authentication"
-  },
-  {
-   "default": "60",
-   "fieldname": "rate_limit",
-   "fieldtype": "Int",
-   "label": "Rate Limit (requests per minute)"
-  },
-  {
-   "fieldname": "allowed_origins",
-   "fieldtype": "Text",
-   "label": "Allowed Origins (comma-separated)"
-  },
-  {
-   "collapsible": 1,
-   "fieldname": "server_section",
-   "fieldtype": "Section Break",
-   "label": "Server Configuration"
-  },
-  {
-   "default": "0",
-   "fieldname": "ssl_enabled",
-   "fieldtype": "Check",
-   "label": "Enable SSL/TLS"
-  },
-  {
-   "depends_on": "ssl_enabled",
-   "fieldname": "ssl_cert_path",
-   "fieldtype": "Data",
-   "label": "SSL Certificate Path"
-  },
-  {
-   "depends_on": "ssl_enabled",
-   "fieldname": "ssl_key_path",
-   "fieldtype": "Data",
-   "label": "SSL Private Key Path"
-  },
-  {
-   "collapsible": 1,
    "fieldname": "plugins_section",
    "fieldtype": "Section Break",
    "label": "Plugin Configuration"
   },
   {
+   "default": "[]",
    "fieldname": "enabled_plugins_list",
    "fieldtype": "JSON",
-   "label": "Enabled Plugins",
    "hidden": 1,
-   "default": "[]"
+   "label": "Enabled Plugins"
   },
   {
    "fieldname": "plugin_status_html",
    "fieldtype": "HTML",
    "label": "Plugin Status",
    "options": "<div id=\"plugin-status-container\">Loading plugin information...</div>"
-  },
-  {
-   "collapsible": 1,
-   "fieldname": "logging_section",
-   "fieldtype": "Section Break",
-   "label": "Logging Configuration"
-  },
-  {
-   "default": "INFO",
-   "fieldname": "log_level",
-   "fieldtype": "Select",
-   "label": "Log Level",
-   "options": "DEBUG\nINFO\nWARNING\nERROR\nCRITICAL"
-  },
-  {
-   "default": "10000",
-   "fieldname": "max_log_entries",
-   "fieldtype": "Int",
-   "label": "Maximum Log Entries"
-  },
-  {
-   "default": "30",
-   "fieldname": "cleanup_logs_after_days",
-   "fieldtype": "Int",
-   "label": "Cleanup Logs After (Days)"
   },
   {
    "collapsible": 1,
@@ -171,7 +87,7 @@
  ],
  "issingle": 1,
  "links": [],
- "modified": "2025-07-04 14:13:29.128409",
+ "modified": "2025-08-12 17:50:12.690254",
  "modified_by": "Administrator",
  "module": "Assistant Core",
  "name": "Assistant Core Settings",
@@ -188,7 +104,6 @@
    "write": 1
   }
  ],
- "row_format": "Dynamic",
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": [],

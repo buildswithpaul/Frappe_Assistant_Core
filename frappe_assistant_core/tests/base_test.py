@@ -112,14 +112,10 @@ class BaseAssistantTest(unittest.TestCase):
                 doc = frappe.get_doc({
                     "doctype": "Assistant Core Settings",
                     "server_enabled": 0,
-                    "max_connections": 100,
-                    "authentication_required": 1,
-                    "rate_limit": 60,
-                    "websocket_enabled": 1,
-                    "ssl_enabled": 0,
-                    "log_level": "INFO",
-                    "max_log_entries": 10000,
-                    "cleanup_logs_after_days": 30,
+                    "enforce_artifact_streaming": 1,
+                    "response_limit_prevention": 1,
+                    "streaming_line_threshold": 5,
+                    "streaming_char_threshold": 1000,
                     "enabled_plugins_list": json.dumps(["core"])
                 })
                 doc.insert(ignore_permissions=True)
