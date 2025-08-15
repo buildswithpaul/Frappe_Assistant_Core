@@ -81,6 +81,7 @@ class MyBusinessPlugin(BasePlugin):
 - **📈 Advanced Reporting**: Execute Frappe reports with enhanced debugging and error handling
 - **📊 Data Visualization**: Create charts and graphs with inline display support
 - **🔍 Advanced Analytics**: Statistical analysis and business intelligence tools with hybrid streaming
+- **📄 File Processing**: Extract content from PDFs, images (OCR), spreadsheets, and documents for LLM analysis
 - **🌐 SSE Bridge Integration**: Real-time streaming communication with Claude API via Server-Sent Events
 - **🔎 Global Search**: Search across all accessible documents and data
 - **🗂️ Metadata Access**: Query DocType schemas, permissions, and workflow information

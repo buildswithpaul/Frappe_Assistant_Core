@@ -34,6 +34,7 @@ class DataSciencePlugin(BasePlugin):
     - Python code execution with Frappe context
     - Statistical data analysis with pandas/numpy
     - Business intelligence and insights
+    - File processing and AI analysis (PDF, images, CSV, documents)
     """
     
     def get_info(self) -> Dict[str, Any]:
@@ -41,7 +42,7 @@ class DataSciencePlugin(BasePlugin):
         return {
             'name': 'data_science',
             'display_name': 'Data Science & Analytics',
-            'description': 'Python code execution and statistical data analysis tools',
+            'description': 'Python code execution, statistical analysis, and file processing with AI capabilities',
             'version': '1.0.0',
             'author': 'Frappe Assistant Core Team',
             'dependencies': [
@@ -55,7 +56,8 @@ class DataSciencePlugin(BasePlugin):
         return [
             'run_python_code',
             'analyze_business_data',
-            'run_database_query'
+            'run_database_query',
+            'extract_file_content'  # File content extraction tool
         ]
     
     def validate_environment(self) -> Tuple[bool, Optional[str]]:

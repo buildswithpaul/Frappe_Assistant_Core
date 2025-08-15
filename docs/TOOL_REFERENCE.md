@@ -4,7 +4,7 @@
 
 This document provides a comprehensive reference for all tools available in Frappe Assistant Core. Tools are organized by plugins and categories for easy discovery.
 
-**Total Available Tools**: 21 tools across 4 active plugins
+**Total Available Tools**: 22 tools across 4 active plugins
 
 ## Plugin Architecture
 
@@ -13,7 +13,7 @@ Tools are organized into plugins that can be enabled/disabled as needed:
 | Plugin | Tools | Status | Description |
 |--------|-------|--------|-------------|
 | **Core** | 19 | Always Enabled | Essential Frappe operations |
-| **Data Science** | 3 | Optional | Advanced analytics and Python execution |
+| **Data Science** | 4 | Optional | Advanced analytics, Python execution, and file processing |
 | **Visualization** | 3 | Optional | Dashboard and chart creation |
 | **WebSocket** | - | Optional | Real-time communication (under development) |
 | **Batch Processing** | - | Optional | Background operations (under development) |
@@ -179,6 +179,32 @@ Tools are organized into plugins that can be enabled/disabled as needed:
 - **Key patterns**: "SQL query", "custom query", "join tables"
 - **Example**: "Run a query to find top customers by region"
 - **Security**: SELECT-only queries with validation
+
+### extract_file_content 🆕
+- **Description**: Extract content from various file formats for LLM processing
+- **When to use**: Need to read and analyze documents, invoices, contracts, spreadsheets
+- **Supported formats**:
+  - **PDFs**: Text extraction, OCR for scanned documents, table extraction
+  - **Images**: OCR text extraction (JPG, PNG, TIFF)
+  - **Spreadsheets**: CSV and Excel data parsing with structured output
+  - **Documents**: DOCX and TXT file content extraction
+- **Operations**:
+  - **extract**: General text/data extraction from any supported format
+  - **ocr**: Optical character recognition for images and scanned PDFs
+  - **parse_data**: Structured data extraction from CSV/Excel files
+  - **extract_tables**: Table extraction from PDF documents
+- **Key patterns**: "read invoice", "extract from PDF", "OCR scan", "parse spreadsheet"
+- **Example use cases**:
+  - "Extract text from the uploaded contract PDF"
+  - "OCR this scanned invoice image"
+  - "Parse the data from sales.csv file"
+  - "Extract tables from the financial report PDF"
+- **Features**:
+  - Multi-language OCR support (English, French, German, Spanish, etc.)
+  - Automatic format detection
+  - Table extraction with structure preservation
+  - Integration with Frappe File DocType
+  - Content preparation optimized for LLM analysis
 
 ## Visualization Plugin Tools
 

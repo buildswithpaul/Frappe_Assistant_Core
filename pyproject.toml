@@ -35,6 +35,13 @@ dependencies = [
     "plotly>=5.0.0",
     "scipy>=1.7.0",
     "requests>=2.25.0",
+    # File processing dependencies
+    "PyPDF2>=3.0.0",
+    "Pillow>=10.0.0",
+    "python-docx>=0.8.11",
+    "openpyxl>=3.0.0",
+    "pytesseract>=0.3.10",
+    "chardet>=5.2.0",
 ]
 
 [project.optional-dependencies]
@@ -61,6 +68,16 @@ sse-bridge = [
     "uvicorn>=0.20.0",
     "python-dotenv>=1.0.0",
     "python-multipart>=0.0.6",
+]
+file-processing = [
+    "pdfplumber>=0.9.0",
+    "pymupdf>=1.23.0",
+    "easyocr>=1.7.0",
+    "python-magic>=0.4.27",
+    "beautifulsoup4>=4.12.0",
+    "anthropic>=0.7.0",
+    "openai>=1.0.0",
+    "langchain>=0.1.0",
 ]
 
 [project.urls]

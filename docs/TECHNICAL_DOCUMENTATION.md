@@ -28,13 +28,14 @@ Frappe Assistant Core is a comprehensive, **MIT-licensed open source** Model Con
 ### Key Features
 
 - **🏗️ Plugin-Based Architecture** - Complete architectural redesign from monolithic to modular plugin system
-- **21 Comprehensive Tools** across 4 plugin categories (see [Tool Reference](TOOL_REFERENCE.md))
+- **18 Comprehensive Tools** across 4 plugin categories (see [Tool Reference](TOOL_REFERENCE.md))
 - **🔌 Plugin Auto-Discovery** - Zero configuration plugin and tool loading
 - **🎯 Plugin Manager** - Centralized plugin lifecycle management with validation
 - **📦 Tool Registry** - Dynamic tool discovery and registration system
 - **⚙️ Runtime Plugin Management** - Enable/disable plugins through web interface
 - **🐍 Python Code Execution** - Safe sandboxed analysis environment with auto-import handling
 - **📊 Data Analysis & Visualization** - Statistical analysis with pandas/numpy and matplotlib integration
+- **📄 File Processing & OCR** - Extract content from PDFs, images, CSV, Excel, and documents for LLM analysis
 - **📈 Enhanced Report Integration** - Execute all Frappe report types with improved debugging
 - **🔍 Advanced Search & Metadata** - Comprehensive data exploration across all DocTypes
 - **📋 Robust Document Operations** - CRUD operations with enhanced error handling
@@ -343,8 +344,9 @@ Advanced analytics and visualization capabilities:
 - `run_python_code` - Sandboxed Python execution with Frappe context
 - `analyze_business_data` - Statistical data analysis with pandas
 - `query_and_analyze` - SQL queries with advanced analysis
+- `extract_file_content` - Extract content from PDFs, images (OCR), CSV, Excel, DOCX for LLM processing
 
-**Dependencies:** pandas, numpy, matplotlib, seaborn, plotly, scipy
+**Dependencies:** pandas, numpy, matplotlib, seaborn, plotly, scipy, PyPDF2, Pillow, python-docx, pytesseract
 
 #### 3. **Visualization Plugin Tools** (`plugins/visualization/`) - Optional
 

@@ -252,7 +252,7 @@ Essential functionality that's always available:
 
 #### **Data Science Plugin** (`plugins/data_science/`) - Optional
 
-Advanced analytics and visualization capabilities:
+Advanced analytics, visualization, and file processing capabilities:
 
 1. **Python Execution** (`run_python_code.py`)
 
@@ -272,7 +272,15 @@ Advanced analytics and visualization capabilities:
    - Advanced data analysis on query results
    - Business intelligence insights
 
-**Dependencies:** pandas, numpy, matplotlib, seaborn, plotly, scipy
+4. **File Content Extraction** (`extract_file_content.py`) 🆕
+
+   - Multi-format file processing (PDF, images, CSV, Excel, DOCX)
+   - OCR capabilities for scanned documents
+   - Table extraction from PDFs
+   - Structured data parsing from spreadsheets
+   - Content preparation for LLM analysis
+
+**Dependencies:** pandas, numpy, matplotlib, seaborn, plotly, scipy, PyPDF2, Pillow, python-docx, pytesseract
 **Environment Validation:** Automatic dependency checking on plugin load
 
 #### **Visualization Plugin** (`plugins/visualization/`) - Optional
@@ -334,7 +342,33 @@ Response Formatting
 Client Response
 ```
 
-### 2. Tool Discovery
+### 2. File Processing Flow (New)
+
+```
+File Request (via MCP)
+↓
+File DocType Access (Frappe)
+↓
+Permission Validation
+↓
+File Content Retrieval
+↓
+Format Detection (PDF/Image/CSV/etc.)
+↓
+Content Extraction
+├── PDF → Text/Tables Extraction
+├── Image → OCR Processing
+├── CSV/Excel → Data Parsing
+└── DOCX → Document Reading
+↓
+Content Normalization
+↓
+Return to LLM (via MCP)
+↓
+LLM Processing & Analysis
+```
+
+### 3. Tool Discovery
 
 ```
 Server Start
@@ -352,7 +386,7 @@ Registry Population
 Permission Filtering
 ```
 
-### 3. Plugin Lifecycle
+### 4. Plugin Lifecycle
 
 ```
 Plugin Discovery

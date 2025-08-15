@@ -446,6 +446,48 @@ Executes SQL queries and analyzes results.
 - `parameters` (object, optional): Query parameters
 - `limit` (integer, optional): Row limit
 
+#### extract_file_content
+
+Extracts content from various file formats for LLM processing.
+
+**Parameters:**
+
+- `file_url` (string, optional): File URL from Frappe (e.g., '/files/invoice.pdf')
+- `file_name` (string, optional): File name from File DocType
+- `operation` (string, required): Operation type
+  - `extract`: General text/data extraction
+  - `ocr`: OCR for images and scanned documents
+  - `parse_data`: Structured data from CSV/Excel
+  - `extract_tables`: Table extraction from PDFs
+- `language` (string, optional): OCR language code (default: 'eng')
+- `output_format` (string, optional): Output format ('json', 'text', 'markdown')
+- `max_pages` (integer, optional): Max pages for PDFs (default: 50)
+
+**Example:**
+
+```json
+{
+  "file_url": "/files/contract.pdf",
+  "operation": "extract",
+  "output_format": "text"
+}
+```
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "content": "Extracted text content...",
+  "file_info": {
+    "name": "contract.pdf",
+    "type": "pdf",
+    "size": 245678
+  },
+  "pages": 10
+}
+```
+
 ### Visualization Plugin Tools
 
 #### create_dashboard
