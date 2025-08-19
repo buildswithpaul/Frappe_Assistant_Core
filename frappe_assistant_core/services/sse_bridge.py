@@ -214,9 +214,19 @@ class SSEMCPBridge:
                 
                 if isinstance(result, dict) and "message" in result:
                     extracted = result["message"]
-                    return self.validate_jsonrpc_response(extracted, request_data.get("id"))
+                    final_response = self.validate_jsonrpc_response(extracted, request_data.get("id"))
                 else:
-                    return self.validate_jsonrpc_response(result, request_data.get("id"))
+                    final_response = self.validate_jsonrpc_response(result, request_data.get("id"))
+                
+                # Log the actual response being sent back
+                if request_data.get("method") == "tools/list":
+                    tools_count = 0
+                    if isinstance(final_response, dict) and "result" in final_response:
+                        if isinstance(final_response["result"], dict) and "tools" in final_response["result"]:
+                            tools_count = len(final_response["result"]["tools"])
+                    logger.info(f"tools/list response contains {tools_count} tools")
+                
+                return final_response
             else:
                 logger.error(f"Server returned status {response.status_code}: {response.text}")
                 return self.format_error_response(
@@ -247,7 +257,9 @@ class SSEMCPBridge:
         if "jsonrpc" not in response:
             response["jsonrpc"] = "2.0"
         
-        if request_id is not None and "id" not in response:
+        # Always ensure id field is present for JSON-RPC compliance
+        # This is especially important for error responses
+        if "id" not in response:
             response["id"] = request_id
         
         if "result" not in response and "error" not in response:
@@ -266,14 +278,13 @@ class SSEMCPBridge:
             "error": {
                 "code": code,
                 "message": message
-            }
+            },
+            # Always include id field, even if null, to comply with JSON-RPC spec
+            "id": request_id
         }
         
         if data is not None:
             response["error"]["data"] = data
-        
-        if request_id is not None:
-            response["id"] = request_id
             
         return response
     
@@ -338,11 +349,52 @@ class SSEMCPBridge:
             
         return response
     
+    def handle_ping(self, request: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle ping request for connection testing"""
+        response = {
+            "jsonrpc": "2.0",
+            "result": {
+                "status": "ok",
+                "timestamp": time.time(),
+                "service": "frappe-mcp-sse-bridge",
+                "message": "pong"
+            }
+        }
+        
+        if "id" in request and request["id"] is not None:
+            response["id"] = request["id"]
+            
+        return response
+    
+    def handle_notifications_initialized(self, request: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle notifications/initialized - MCP protocol notification sent after initialization"""
+        # This is a notification (no id field expected), just acknowledge it
+        # Notifications don't require a response in MCP protocol
+        logger.info("Client sent notifications/initialized - client is ready")
+        
+        # Since this is a notification (no id), we shouldn't send a response
+        # But if it has an id (which would be non-standard), respond appropriately
+        if "id" in request and request["id"] is not None:
+            return {
+                "jsonrpc": "2.0",
+                "id": request["id"],
+                "result": {"status": "acknowledged"}
+            }
+        
+        # For standard notifications (no id), return empty response that won't be sent
+        return None
+    
     async def queue_response_for_connection(self, user_context: str, response: Dict[str, Any]):
         """Queue a response to be sent via SSE to the appropriate connection"""
         if user_context in self.connections:
             await self.connections[user_context].put(response)
-            logger.info(f"Queued response for user {user_context}: {response.get('id')}")
+            # Better logging for debugging
+            response_id = response.get('id')
+            if "result" in response and isinstance(response["result"], dict) and "tools" in response["result"]:
+                tools_count = len(response["result"]["tools"])
+                logger.info(f"Queued tools/list response for user {user_context}: id={response_id}, tools={tools_count}")
+            else:
+                logger.info(f"Queued response for user {user_context}: id={response_id}")
         else:
             logger.warning(f"No active SSE connection for user {user_context}")
     
@@ -392,13 +444,21 @@ class SSEMCPBridge:
                 response = await self.handle_initialization(request_data, server_url, auth_token)
             elif method == "resources/list":
                 response = self.handle_resources_list(request_data)
+            elif method == "ping":
+                # Handle ping request - this is for JSON-RPC ping, not SSE keep-alive
+                response = self.handle_ping(request_data)
+            elif method == "notifications/initialized":
+                # Handle MCP protocol notification - client is ready
+                response = self.handle_notifications_initialized(request_data)
             else:
                 # Forward all other requests to HTTP server
                 response = await self.send_to_server(request_data, server_url, auth_token)
             
             # If using SSE, queue the response for the SSE stream
             if use_sse and user_context in self.connections:
-                await self.queue_response_for_connection(user_context, response)
+                # Only queue response if it's not None (notifications may not need responses)
+                if response is not None:
+                    await self.queue_response_for_connection(user_context, response)
                 # Return a simple acknowledgment for POST request
                 return {"status": "accepted", "id": request_id}
             else:
@@ -517,20 +577,17 @@ def create_app():
                         logger.info(f"Sent SSE response: {response.get('id')} to {connection_id}")
                         
                     except asyncio.TimeoutError:
-                        # Send periodic ping to keep connection alive
+                        # Send periodic ping as a comment to keep connection alive
+                        # SSE comments start with ':' and don't trigger events in clients
                         ping_counter += 1
-                        ping_data = {
-                            "type": "ping",
-                            "timestamp": time.time(),
-                            "counter": ping_counter,
-                            "active_connections": len(bridge.connections)
-                        }
-                        yield f"event: ping\n"
-                        yield f"data: {json.dumps(ping_data)}\n\n"
+                        ping_timestamp = time.time()
+                        # Send as SSE comment - this keeps the connection alive without triggering unknown event warnings
+                        yield f": ping {ping_counter} at {ping_timestamp}\n\n"
                         
                     except Exception as e:
                         logger.error(f"Error in SSE stream: {e}")
-                        error_response = bridge.format_error_response(-32603, "Stream error", str(e))
+                        # Include a null id for stream errors to comply with JSON-RPC spec
+                        error_response = bridge.format_error_response(-32603, "Stream error", str(e), request_id=None)
                         yield f"event: error\n"
                         yield f"data: {json.dumps(error_response)}\n\n"
                         break

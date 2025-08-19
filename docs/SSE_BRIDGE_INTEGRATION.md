@@ -24,6 +24,7 @@ The SSE (Server-Sent Events) Bridge is a critical component of Frappe Assistant 
 - ✅ Automatic cleanup and connection management
 - ✅ Health monitoring and metrics
 - ✅ Production-ready with proper logging
+- ✅ Local ping request handling for low latency
 
 ## Why SSE Bridge Was Created
 
@@ -509,6 +510,22 @@ curl https://your-site.com/api/method/frappe.auth.get_logged_user
 - Monitor server resources (memory, CPU)
 - Check firewall settings
 
+#### 5. Testing Ping Functionality
+**Testing connection health with ping:**
+```bash
+# First establish SSE connection to get session_id
+# Then send ping request
+curl -X POST \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","method":"ping","id":1}' \
+  "http://localhost:8080/mcp/messages?session_id=YOUR_SESSION_ID"
+
+# Expected response (via SSE stream):
+# event: message
+# data: {"jsonrpc":"2.0","result":{"status":"ok","timestamp":1234567890,"service":"frappe-mcp-sse-bridge","message":"pong"},"id":1}
+```
+
 ### Debug Mode
 
 Enable debug logging for troubleshooting:
@@ -599,6 +616,40 @@ Sends MCP requests through established SSE connection.
 ```json
 {
     "status": "accepted"
+}
+```
+
+### Method Routing
+
+The SSE Bridge handles certain MCP methods locally for improved performance:
+
+| Method | Handler | Description |
+|--------|---------|-------------|
+| `initialize` | Local + Forward | Gets capabilities from Frappe backend |
+| `resources/list` | Local | Returns empty resources (no file resources) |
+| `ping` | Local | Connection test - returns immediate pong response |
+| All others | Forward | Sent to Frappe backend for processing |
+
+**Ping Request Handling:**
+The bridge now handles ping requests locally without forwarding to the backend:
+```json
+// Request
+{
+    "jsonrpc": "2.0",
+    "method": "ping",
+    "id": 1
+}
+
+// Response
+{
+    "jsonrpc": "2.0",
+    "result": {
+        "status": "ok",
+        "timestamp": 1234567890,
+        "service": "frappe-mcp-sse-bridge",
+        "message": "pong"
+    },
+    "id": 1
 }
 ```
 

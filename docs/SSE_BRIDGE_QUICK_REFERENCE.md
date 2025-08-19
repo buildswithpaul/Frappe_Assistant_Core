@@ -17,6 +17,16 @@ bench start  # SSE bridge runs automatically on port 8080
 curl http://localhost:8080/health
 ```
 
+### Test Ping
+```bash
+# Send ping request (requires active SSE connection)
+curl -X POST \
+  -H "Authorization: Bearer TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","method":"ping","id":1}' \
+  "http://localhost:8080/mcp/messages?session_id=SESSION_ID"
+```
+
 ## 📋 Configuration
 
 ### Environment Variables
@@ -133,6 +143,15 @@ DEBUG=true LOG_LEVEL=debug python -c "from frappe_assistant_core.services.sse_br
 | `/health` | GET | Service health and metrics |
 | `/mcp/sse` | GET | Establish SSE connection |
 | `/mcp/messages` | POST | Send MCP requests |
+
+### MCP Method Routing
+
+| Method | Handling | Description |
+|--------|----------|-------------|
+| `initialize` | Forward + Local | Gets capabilities from backend |
+| `resources/list` | Local | Returns empty resources |
+| `ping` | Local | Immediate pong response |
+| All others | Forward | Sent to Frappe backend |
 
 ## 🔍 Monitoring
 

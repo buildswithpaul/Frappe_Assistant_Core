@@ -73,11 +73,11 @@ class ExtractFileContent(BaseTool):
             "properties": {
                 "file_url": {
                     "type": "string",
-                    "description": "File URL from Frappe (e.g., '/files/invoice.pdf' or '/private/files/document.docx')"
+                    "description": "File URL from Frappe (e.g., '/files/invoice.pdf' or '/private/files/document.docx'). Provide either file_url OR file_name."
                 },
                 "file_name": {
                     "type": "string",
-                    "description": "Alternative: File name from File DocType (e.g., 'invoice-2024.pdf')"
+                    "description": "Alternative: File name from File DocType (e.g., 'invoice-2024.pdf'). Provide either file_url OR file_name."
                 },
                 "operation": {
                     "type": "string",
@@ -101,11 +101,7 @@ class ExtractFileContent(BaseTool):
                     "description": "Maximum pages to process for PDFs"
                 }
             },
-            "required": ["operation"],
-            "oneOf": [
-                {"required": ["file_url"]},
-                {"required": ["file_name"]}
-            ]
+            "required": ["operation"]
         }
     
     def _get_description(self) -> str:

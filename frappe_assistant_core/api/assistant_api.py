@@ -278,11 +278,13 @@ def get_usage_statistics() -> Dict[str, Any]:
             api_logger.warning(f"Audit stats error: {e}")
             total_audit = today_audit = week_audit = 0
         
-        # Tool statistics with error handling
+        # Tool statistics from plugin manager
         try:
-            # Skip table existence check and just query directly
-            total_tools = frappe.db.count("Assistant Tool Registry") or 0
-            enabled_tools = frappe.db.count("Assistant Tool Registry", {"enabled": 1}) or 0
+            from frappe_assistant_core.utils.plugin_manager import get_plugin_manager
+            plugin_manager = get_plugin_manager()
+            all_tools = plugin_manager.get_all_tools()
+            total_tools = len(all_tools)
+            enabled_tools = len(all_tools)  # All loaded tools are enabled
             api_logger.debug(f"Tool stats: total={total_tools}, enabled={enabled_tools}")
         except Exception as e:
             api_logger.warning(f"Tool stats error: {e}")
