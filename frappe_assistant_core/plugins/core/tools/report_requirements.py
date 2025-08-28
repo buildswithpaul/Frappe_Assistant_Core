@@ -139,13 +139,24 @@ class ReportRequirements(BaseTool):
         if "sales_analytics" in report_lower or "sales analytics" in report_lower:
             requirements["common_required_filters"] = [
                 "doc_type (Sales Invoice, Sales Order, Quotation, etc.)",
-                "tree_type (Customer, Item, Territory, etc.)"
+                "tree_type (Customer, Item, Territory, etc.)",
+                "value_quantity (Value or Quantity)"
             ]
             requirements["common_optional_filters"] = [
-                "from_date and to_date (defaults to last 12 months)",
+                "from_date and to_date (defaults to current fiscal year)",
                 "company (uses default company if not specified)"
             ]
-            requirements["guidance"].append("For Sales Analytics: Use doc_type='Sales Invoice' and tree_type='Customer' for customer-wise sales analysis")
+            requirements["guidance"].append("For Sales Analytics: Use doc_type='Sales Invoice', tree_type='Customer', and value_quantity='Value' for customer-wise revenue analysis")
+            
+        elif "quotation trends" in report_lower:
+            requirements["common_required_filters"] = [
+                "based_on (Item, Customer, Territory, etc.)"
+            ]
+            requirements["common_optional_filters"] = [
+                "from_date and to_date (defaults to current fiscal year)",
+                "company (uses default company if not specified)"
+            ]
+            requirements["guidance"].append("For Quotation Trends: based_on field is mandatory - use 'Item' for item-wise trends or 'Customer' for customer-wise analysis")
             
         elif "profit" in report_lower and "loss" in report_lower:
             requirements["common_required_filters"] = ["company", "from_date", "to_date"]

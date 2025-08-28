@@ -163,43 +163,26 @@ def get_server_status():
 def cleanup_old_logs():
     """Cleanup old log entries (scheduled task)"""
     try:
-        # Default to 30 days for log cleanup
-        days_to_keep = 30
+        # Default to 60 days for audit log cleanup (keep longer since they're more valuable)
+        days_to_keep = 60
         
-        # Cleanup connection logs
-        frappe.db.sql("""
-            DELETE FROM `tabAssistant Connection Log` 
-            WHERE creation < DATE_SUB(NOW(), INTERVAL %s DAY)
-        """, (days_to_keep,))
-        
-        # Cleanup audit logs (keep more audit logs)
-        audit_days = days_to_keep * 2
+        # Cleanup audit logs only
         frappe.db.sql("""
             DELETE FROM `tabAssistant Audit Log` 
             WHERE creation < DATE_SUB(NOW(), INTERVAL %s DAY)
-        """, (audit_days,))
+        """, (days_to_keep,))
         
         frappe.db.commit()
-        frappe.logger().info(f"Cleaned up assistant logs older than {days_to_keep} days")
+        frappe.logger().info(f"Cleaned up assistant audit logs older than {days_to_keep} days")
         
     except Exception as e:
         frappe.log_error(f"Failed to cleanup assistant logs: {str(e)}")
 
 def update_connection_stats():
-    """Update connection statistics (scheduled task)"""
-    try:
-        # Mark stale connections as disconnected
-        frappe.db.sql("""
-            UPDATE `tabAssistant Connection Log` 
-            SET status = 'Timeout', disconnected_at = NOW()
-            WHERE status = 'Connected' 
-            AND last_activity < DATE_SUB(NOW(), INTERVAL 1 HOUR)
-        """)
-        
-        frappe.db.commit()
-        
-    except Exception as e:
-        frappe.log_error(f"Failed to update connection stats: {str(e)}")
+    """Update connection statistics (scheduled task) - DEPRECATED"""
+    # NOTE: This function is deprecated since Assistant Connection Log was removed
+    # Keeping for backward compatibility, but it does nothing
+    pass
 
 def start_background_server():
     """Enable API in background job (legacy)"""

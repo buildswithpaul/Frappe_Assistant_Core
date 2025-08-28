@@ -260,11 +260,21 @@ Tools are organized into plugins that can be enabled/disabled as needed:
    - Custom visualizations with matplotlib/plotly
 
 ### 🚀 Quick Reference Examples:
-- **"Sales analysis"** → Try `report_list` filter:"Selling" → `generate_report` "Sales Analytics"
-- **"Financial performance"** → `generate_report` "Profit and Loss Statement"
-- **"Customer insights"** → `report_list` → Look for customer reports first
-- **"Revenue trends"** → `generate_report` "Sales Analytics" with trend analysis
-- **"Inventory status"** → `report_list` filter:"Stock" → appropriate inventory report
+
+#### **✅ MOST RELIABLE REPORTS:**
+- **"Sales transactions"** → `generate_report` "Sales Register" (24 columns, very reliable)
+- **"Customer balances"** → `generate_report` "Accounts Receivable Summary" (aging analysis)
+- **"Customer ledger"** → `generate_report` "Customer Ledger Summary" (account balances)
+- **"Product sales"** → `generate_report` "Item-wise Sales History" (19 columns)
+
+#### **⚠️ ENHANCED REPORTS (now working):**
+- **"Sales analytics"** → `generate_report` "Sales Analytics" (auto-adds value_quantity='Value')
+- **"Quotation trends"** → `generate_report` "Quotation Trends" (auto-adds based_on='Item')
+
+#### **🔄 FALLBACK OPTIONS:**
+- **Complex analysis** → Use `analyze_business_data` after trying reports
+- **Custom queries** → Use `list_documents` for reliable data access
+- **Direct data** → Use `run_python_code` for complex calculations
 
 ### 🛠️ When Reports Need Help:
 - **Filter errors** → Use `report_requirements` to understand what's needed

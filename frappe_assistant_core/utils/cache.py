@@ -123,19 +123,16 @@ def get_cached_dashboard_stats():
     # Batch all database queries for efficiency
     stats_data = {}
     
-    # Connection statistics in one query
-    connection_stats = frappe.db.sql("""
-        SELECT 
-            COUNT(CASE WHEN status = 'Connected' THEN 1 END) as active_connections,
-            COUNT(CASE WHEN DATE(creation) = %s THEN 1 END) as today_connections
-        FROM `tabAssistant Connection Log`
-    """, (today(),), as_dict=True)
+    # API usage statistics (replacing connection stats)
+    api_usage_today = frappe.db.count("Assistant Audit Log", 
+                                     filters={
+                                         "creation": [">=", today()]
+                                     })
     
-    if connection_stats:
-        stats_data["connections"] = {
-            "active": connection_stats[0]["active_connections"] or 0,
-            "today_total": connection_stats[0]["today_connections"] or 0
-        }
+    stats_data["connections"] = {
+        "active": 0,  # No persistent connections in HTTP-based MCP
+        "today_total": api_usage_today or 0  # API calls today
+    }
     
     # Tool statistics from plugin manager
     try:
@@ -288,7 +285,6 @@ def get_cached_system_health():
         # Quick health checks
         required_doctypes = [
             "Assistant Core Settings",
-            "Assistant Connection Log",
             "Assistant Audit Log"
         ]
         
@@ -303,8 +299,8 @@ def get_cached_system_health():
         else:
             health_status["checks_passed"] += len(required_doctypes)
         
-        # Check recent error rates
-        recent_errors = frappe.db.count("Assistant Connection Log", 
+        # Check recent error rates from audit logs
+        recent_errors = frappe.db.count("Assistant Audit Log", 
                                        filters={
                                            "status": "Error",
                                            "creation": [">=", today()]

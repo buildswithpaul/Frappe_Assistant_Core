@@ -21,18 +21,8 @@ def execute():
         # Update Assistant Audit Log - replace Auditor with Assistant Admin and add Assistant User
         update_audit_log_permissions()
         
-        # Update Assistant Connection Log - add Assistant Admin role  
-        add_doctype_permission("Assistant Connection Log", "Assistant Admin", {
-            "read": 1,
-            "write": 1,
-            "create": 1,
-            "delete": 1,
-            "email": 1,
-            "export": 1,
-            "print": 1,
-            "report": 1,
-            "share": 1
-        })
+        # Assistant Connection Log removed - no longer needed for HTTP-based MCP
+        # add_doctype_permission("Assistant Connection Log", "Assistant Admin", {...})
         
         frappe.logger().info("Updated DocType permissions for Assistant roles")
         

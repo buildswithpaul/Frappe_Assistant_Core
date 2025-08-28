@@ -9,8 +9,7 @@ def execute():
         # DocTypes that have permissions defined in their JSON files
         doctypes_with_builtin_permissions = [
             "Assistant Core Settings",
-            "Assistant Connection Log", 
-            "Assistant Audit Log"
+            "Assistant Audit Log"  # Assistant Connection Log removed
         ]
         
         for doctype in doctypes_with_builtin_permissions:

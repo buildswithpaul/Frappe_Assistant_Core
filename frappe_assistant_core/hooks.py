@@ -154,9 +154,7 @@ scheduler_events = {
             "frappe_assistant_core.utils.cache.warm_cache"
         ]
     },
-    "hourly": [
-        "frappe_assistant_core.assistant_core.server.update_connection_stats"
-    ]
+    # Hourly tasks removed - no longer needed after Assistant Connection Log removal
 }
 
 # Testing

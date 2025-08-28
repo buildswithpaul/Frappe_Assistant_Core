@@ -270,12 +270,30 @@ class ReportTools:
                     cleaned_filters[key] = value
             filters = cleaned_filters
             
-            # Add default date filters if missing
+            # Add default date filters if missing - use current fiscal year dates
             if not filters.get("from_date") and not filters.get("to_date"):
-                from frappe.utils import getdate, add_months
-                today = getdate()
-                filters["to_date"] = str(today)  # Ensure string format
-                filters["from_date"] = str(add_months(today, -12))  # Default to last 12 months
+                try:
+                    # Get current fiscal year
+                    fiscal_year = frappe.db.get_value("Fiscal Year", 
+                        {"disabled": 0}, 
+                        ["year_start_date", "year_end_date"], 
+                        order_by="year_start_date desc")
+                    
+                    if fiscal_year:
+                        filters["from_date"] = str(fiscal_year[0])  # Fiscal year start
+                        filters["to_date"] = str(fiscal_year[1])    # Fiscal year end
+                    else:
+                        # Fallback to last 12 months if no fiscal year found
+                        from frappe.utils import getdate, add_months
+                        today = getdate()
+                        filters["to_date"] = str(today)
+                        filters["from_date"] = str(add_months(today, -12))
+                except Exception:
+                    # Fallback to last 12 months on any error
+                    from frappe.utils import getdate, add_months
+                    today = getdate()
+                    filters["to_date"] = str(today)
+                    filters["from_date"] = str(add_months(today, -12))
             elif not filters.get("to_date") and filters.get("from_date"):
                 from frappe.utils import getdate
                 filters["to_date"] = str(getdate())
@@ -288,6 +306,17 @@ class ReportTools:
                 default_company = frappe.db.get_single_value("Global Defaults", "default_company")
                 if default_company:
                     filters["company"] = str(default_company)
+            
+            # Add report-specific default parameters
+            report_name_lower = report_doc.name.lower()
+            
+            # Sales Analytics defaults
+            if "sales analytics" in report_name_lower and "value_quantity" not in filters:
+                filters["value_quantity"] = "Value"
+            
+            # Quotation Trends defaults
+            if "quotation trends" in report_name_lower and "based_on" not in filters:
+                filters["based_on"] = "Item"
             
             # Final cleanup - ensure all filter values are strings or proper types
             final_filters = {}
@@ -306,8 +335,8 @@ class ReportTools:
                 report_name=report_doc.name,
                 filters=filters,
                 user=frappe.session.user,
-                is_tree=report_doc.is_tree,
-                parent_field=report_doc.parent_field
+                is_tree=getattr(report_doc, 'is_tree', 0),
+                parent_field=getattr(report_doc, 'parent_field', None)
             )
         except Exception as e:
             # If execution fails, try to get just column info
@@ -337,12 +366,30 @@ class ReportTools:
                     cleaned_filters[key] = value
             filters = cleaned_filters
             
-            # Add default date filters if missing
+            # Add default date filters if missing - use current fiscal year dates
             if not filters.get("from_date") and not filters.get("to_date"):
-                from frappe.utils import getdate, add_months
-                today = getdate()
-                filters["to_date"] = str(today)  # Ensure string format
-                filters["from_date"] = str(add_months(today, -12))  # Default to last 12 months
+                try:
+                    # Get current fiscal year
+                    fiscal_year = frappe.db.get_value("Fiscal Year", 
+                        {"disabled": 0}, 
+                        ["year_start_date", "year_end_date"], 
+                        order_by="year_start_date desc")
+                    
+                    if fiscal_year:
+                        filters["from_date"] = str(fiscal_year[0])  # Fiscal year start
+                        filters["to_date"] = str(fiscal_year[1])    # Fiscal year end
+                    else:
+                        # Fallback to last 12 months if no fiscal year found
+                        from frappe.utils import getdate, add_months
+                        today = getdate()
+                        filters["to_date"] = str(today)
+                        filters["from_date"] = str(add_months(today, -12))
+                except Exception:
+                    # Fallback to last 12 months on any error
+                    from frappe.utils import getdate, add_months
+                    today = getdate()
+                    filters["to_date"] = str(today)
+                    filters["from_date"] = str(add_months(today, -12))
             elif not filters.get("to_date") and filters.get("from_date"):
                 from frappe.utils import getdate
                 filters["to_date"] = str(getdate())
@@ -361,6 +408,17 @@ class ReportTools:
                 default_company = frappe.db.get_single_value("Global Defaults", "default_company")
                 if default_company:
                     filters["company"] = str(default_company)
+            
+            # Add report-specific default parameters
+            report_name_lower = report_doc.name.lower()
+            
+            # Sales Analytics defaults
+            if "sales analytics" in report_name_lower and "value_quantity" not in filters:
+                filters["value_quantity"] = "Value"
+            
+            # Quotation Trends defaults
+            if "quotation trends" in report_name_lower and "based_on" not in filters:
+                filters["based_on"] = "Item"
             
             # Final cleanup - ensure all filter values are strings or proper types
             final_filters = {}
