@@ -86,45 +86,32 @@ class ExecutePythonCode(BaseTool):
     
     def _get_dynamic_description(self) -> str:
         """Generate description based on current streaming settings"""
-        base_description = """🛡️ Execute Python code safely with SECURE database access and proper user context.
+        base_description = """⚡ ADVANCED PYTHON CODING - For complex analysis when reports and analysis tools aren't sufficient
 
-🔒 **ENTERPRISE SECURITY FEATURES**:
-• ✅ **Read-Only Database**: Only SELECT queries allowed (no DELETE/UPDATE/DROP)
-• ✅ **User Context Management**: All operations run under your user with proper permissions
-• ✅ **Code Security Scanning**: Dangerous operations blocked before execution
-• ✅ **Unicode Sanitization**: Surrogate characters cleaned to prevent encoding errors
-• ✅ **Audit Trail**: All executions logged with user attribution
-• ✅ **System Manager Required**: Role-based access control enforced
+⚠️  **USE ONLY WHEN NEEDED**: This is for advanced users who need full programming control
+✅ **HIERARCHY**: 1️⃣ Try 'generate_report' first → 2️⃣ Try 'analyze_business_data' → 3️⃣ Use this only when both fail
 
-🚫 **NO IMPORTS NEEDED** - All libraries pre-loaded and ready:
-• **pd** (pandas) - Data manipulation: `df = pd.DataFrame({'A': [1,2,3]})`
-• **np** (numpy) - Numerical operations: `arr = np.array([1,2,3])`  
-• **plt** (matplotlib) - Plotting: `plt.plot([1,2,3]); plt.show()`
-• **sns** (seaborn) - Statistical visualization: `sns.scatterplot(data=df, x='A', y='B')`
-• **db** - 🛡️ READ-ONLY database: `db.sql("SELECT name FROM tabUser LIMIT 5")`
-• **frappe** - Frappe utilities: `frappe.get_all('Sales Invoice', limit=10)`
-• **current_user** - Your username for context: `print(f"Running as: {current_user}")`
-• **Standard libraries**: math, datetime, json, re, random, statistics
+🎯 **WHEN TO USE THIS**:
+• Complex custom visualizations (matplotlib/plotly charts)
+• Advanced mathematical models and calculations
+• Data transformations not covered by standard analysis  
+• Custom business logic requiring full programming
 
-⚠️ **SECURITY NOTES**:
-• Only SELECT/SHOW/DESCRIBE database queries allowed
-• DELETE, UPDATE, INSERT, DROP operations are BLOCKED
-• All database access respects your user permissions
-• Code is scanned for security violations before execution
-• Execution context is properly audited and logged
+🔒 **SECURITY FEATURES**:
+• Read-Only Database (only SELECT queries allowed)
+• User Context Management (respects your permissions)
+• Code Security Scanning (dangerous operations blocked)
 
-💡 **Example Safe Usage**:
-```python
-# ✅ Data analysis (ALLOWED)
-sales = db.sql("SELECT grand_total, posting_date FROM `tabSales Invoice` WHERE docstatus = 1 LIMIT 100")
-df = pd.DataFrame(sales)
-print(f"Average sale: {df['grand_total'].mean()}")
+🚫 **NO IMPORTS NEEDED** - Pre-loaded libraries:
+• pd (pandas), np (numpy), plt (matplotlib), sns (seaborn)
+• frappe utilities, math, datetime, json, re, statistics
 
-# 🚫 Data modification (BLOCKED)
-# db.sql("DELETE FROM tabUser")  # This will be blocked with security error
-```
+💡 **DECISION TREE**:
+1. "Sales analysis" → Try 'generate_report' "Sales Analytics" first
+2. Standard analysis → Try 'analyze_business_data' 
+3. Need custom code → Use this tool
 
-🎯 **Perfect for**: Data analysis, reporting, visualization, statistical calculations - all with enterprise-grade security."""
+🎯 **Best for**: Advanced analytics, custom visualizations, complex calculations requiring full Python control"""
         
         try:
             from frappe_assistant_core.utils.streaming_manager import get_streaming_manager

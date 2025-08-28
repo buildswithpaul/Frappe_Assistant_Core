@@ -40,26 +40,26 @@ class GenerateReport(BaseTool):
     def __init__(self):
         super().__init__()
         self.name = "generate_report"
-        self.description = "Execute a Frappe report to get business data and analytics"
+        self.description = "🏆 PROFESSIONAL BUSINESS REPORTS - Your FIRST choice for sales analysis, financial reporting, and business intelligence! 🎯 **USE THIS FOR**: Sales analysis, profit reports, customer insights, inventory tracking, financial statements ⚡ **INSTANT ACCESS** to 183+ pre-built business reports including: Sales Analytics (revenue, trends, territory performance), Profit & Loss Statement, Accounts Receivable Summary, Item-wise Sales History, Territory-wise Sales ✅ **ALWAYS TRY THIS FIRST** before using analysis tools - these reports are pre-optimized for business users, professionally formatted, ready for management presentation, and include proper calculations and totals. Use 'report_list' to discover available reports, then execute with filters. IMPORTANT: Many reports require mandatory filters - use report_requirements tool first if you get errors."
         self.requires_permission = None  # Permission checked dynamically per report
         
         self.inputSchema = {
             "type": "object",
             "properties": {
                 "report_name": {
-                    "type": "string",
-                    "description": "Exact name of the Frappe report to execute"
+                    "type": "string", 
+                    "description": "Exact name of the Frappe report to execute (e.g., 'Accounts Receivable Summary', 'Sales Analytics', 'Stock Balance'). Use report_list to find available reports."
                 },
                 "filters": {
-                    "type": "object",
-                    "default": {},
-                    "description": "Report-specific filters as key-value pairs"
+                    "type": "object", 
+                    "default": {}, 
+                    "description": "Report-specific filters as key-value pairs. IMPORTANT: Many reports have mandatory filters like 'doc_type', 'tree_type', etc. Common optional filters: {'company': 'Your Company'}, {'from_date': '2024-01-01', 'to_date': '2024-12-31'}, {'customer': 'Customer Name'}. For Sales Analytics: requires 'doc_type' (Sales Invoice/Sales Order/Quotation) and 'tree_type' (Customer/Item/Territory). Use report_requirements tool to discover required filters if report fails."
                 },
                 "format": {
-                    "type": "string",
-                    "enum": ["json", "csv", "excel"],
+                    "type": "string", 
+                    "enum": ["json", "csv", "excel"], 
                     "default": "json",
-                    "description": "Output format"
+                    "description": "Output format. Use 'json' for data analysis, 'csv' for exports, 'excel' for spreadsheet files."
                 }
             },
             "required": ["report_name"]

@@ -53,13 +53,18 @@ class CorePlugin(BasePlugin):
             'list_documents',
             'delete_document',
             'submit_document',
-            # Consolidated tool classes
+            # Search tools
             'search_documents',
+            'search_doctype',
+            'search_link',
+            # Metadata tools
             'get_doctype_info', 
+            # Report tools (individual classes)
             'generate_report',
-            'run_workflow',
-            # Individual report details tool
-            'get_report_data'
+            'report_list',
+            'report_requirements',
+            # Workflow tools
+            'run_workflow'
         ]
     
     def validate_environment(self):

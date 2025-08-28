@@ -29,7 +29,7 @@ class ReportTools:
         return [
             {
                 "name": "generate_report",
-                "description": "Execute a Frappe report to get business data and analytics. IMPORTANT: Many reports require mandatory filters beyond dates - use report_columns tool first to discover required filters if you get errors. Use this for financial reports, sales analysis, inventory reports, etc.",
+                "description": "🏆 PROFESSIONAL BUSINESS REPORTS - Your FIRST choice for sales analysis, financial reporting, and business intelligence! 🎯 **USE THIS FOR**: Sales analysis, profit reports, customer insights, inventory tracking, financial statements ⚡ **INSTANT ACCESS** to 183+ pre-built business reports including: Sales Analytics (revenue, trends, territory performance), Profit & Loss Statement, Accounts Receivable Summary, Item-wise Sales History, Territory-wise Sales ✅ **ALWAYS TRY THIS FIRST** before using analysis tools - these reports are pre-optimized for business users, professionally formatted, ready for management presentation, and include proper calculations and totals. Use 'report_list' to discover available reports, then execute with filters. IMPORTANT: Many reports require mandatory filters - use report_requirements tool first if you get errors.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -40,7 +40,7 @@ class ReportTools:
                         "filters": {
                             "type": "object", 
                             "default": {}, 
-                            "description": "Report-specific filters as key-value pairs. IMPORTANT: Many reports have mandatory filters like 'doc_type', 'tree_type', etc. Common optional filters: {'company': 'Your Company'}, {'from_date': '2024-01-01', 'to_date': '2024-12-31'}, {'customer': 'Customer Name'}. For Sales Analytics: requires 'doc_type' (Sales Invoice/Sales Order/Quotation) and 'tree_type' (Customer/Item/Territory). Use report_columns tool to discover required filters if report fails."
+                            "description": "Report-specific filters as key-value pairs. IMPORTANT: Many reports have mandatory filters like 'doc_type', 'tree_type', etc. Common optional filters: {'company': 'Your Company'}, {'from_date': '2024-01-01', 'to_date': '2024-12-31'}, {'customer': 'Customer Name'}. For Sales Analytics: requires 'doc_type' (Sales Invoice/Sales Order/Quotation) and 'tree_type' (Customer/Item/Territory). Use report_requirements tool to discover required filters if report fails."
                         },
                         "format": {
                             "type": "string", 
@@ -54,7 +54,7 @@ class ReportTools:
             },
             {
                 "name": "report_list",
-                "description": "Discover available Frappe reports for data analysis and business intelligence. Use this to find reports when users ask for financial data, sales analysis, inventory reports, etc. Essential for report discovery.",
+                "description": "🔍 DISCOVER BUSINESS REPORTS - Find the perfect report for your business question! 🎯 **ESSENTIAL FOR**: Finding sales reports, financial analysis, inventory tracking, HR reports ⚡ **183+ REPORTS AVAILABLE** across modules: Selling (Sales Analytics, Territory Analysis, Customer Reports), Accounts (P&L, Balance Sheet, Receivables, Payables), Stock (Inventory Reports, Item Movement, Valuation), HR (Payroll, Attendance, Leave Reports) 💡 **SMART TIP**: Use this BEFORE trying to analyze raw data - there's likely already a perfect report!",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -71,8 +71,8 @@ class ReportTools:
                 }
             },
             {
-                "name": "report_columns",
-                "description": "Get detailed column information and structure for a specific report. ESSENTIAL for discovering required filters when generate_report fails. Use this to understand what data fields are available and what filters are needed before executing reports.",
+                "name": "report_requirements",
+                "description": "📋 REPORT STRUCTURE ANALYZER - Understand report requirements before execution! 🎯 **ESSENTIAL FOR**: Discovering required filters when generate_report fails, understanding available data fields, planning report execution 💡 **USE WHEN**: You get filter errors from generate_report, need to understand report capabilities, want to know what data is available ⚡ **PREVENTS ERRORS**: Shows exactly what filters are required and optional for successful report execution",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -93,7 +93,7 @@ class ReportTools:
             return ReportTools.execute_report(**arguments)
         elif tool_name == "report_list":
             return ReportTools.list_reports(**arguments)
-        elif tool_name == "report_columns":
+        elif tool_name == "report_requirements":
             return ReportTools.get_report_columns(**arguments)
         else:
             raise Exception(f"Unknown report tool: {tool_name}")
@@ -387,18 +387,18 @@ class ReportTools:
             # Provide helpful error messages for common issues
             error_message = str(e)
             if "'NoneType' object has no attribute 'startswith'" in error_message:
-                error_message = f"Missing required filters for {report_doc.name}. This report requires mandatory filters that were not provided. Use the report_columns tool to discover required filters."
+                error_message = f"Missing required filters for {report_doc.name}. This report requires mandatory filters that were not provided. Use the report_requirements tool to discover required filters."
                 if "sales_analytics" in report_doc.name.lower():
                     error_message += " For Sales Analytics, you need: 'doc_type' (e.g., 'Sales Invoice') and 'tree_type' (e.g., 'Customer')."
             elif "required" in error_message.lower() and any(word in error_message.lower() for word in ["filter", "field", "parameter"]):
-                error_message = f"Missing required filters for {report_doc.name}: {error_message}. Use the report_columns tool to discover all required filters."
+                error_message = f"Missing required filters for {report_doc.name}: {error_message}. Use the report_requirements tool to discover all required filters."
             
             return {
                 "result": [],
                 "columns": [],
                 "message": f"Script report execution failed: {error_message}",
                 "error": error_message,
-                "suggestion": f"Use report_columns tool with report_name='{report_doc.name}' to discover required filters, then retry with proper filters."
+                "suggestion": f"Use report_requirements tool with report_name='{report_doc.name}' to discover required filters, then retry with proper filters."
             }
     
     @staticmethod

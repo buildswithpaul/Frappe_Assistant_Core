@@ -15,7 +15,7 @@ from concurrent.futures import ThreadPoolExecutor, TimeoutError
 
 class StdioMCPWrapper:
     def __init__(self):
-        self.server_url = os.environ.get("FRAPPE_SERVER_URL", "https://erptest.promantia.in")
+        self.server_url = os.environ.get("FRAPPE_SERVER_URL", "http://localhost:8000")
         self.api_key = os.environ.get("FRAPPE_API_KEY")
         self.api_secret = os.environ.get("FRAPPE_API_SECRET")
         

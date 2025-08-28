@@ -85,11 +85,11 @@
   "tools": [
     {
       "name": "run_python_code",
-      "description": "Execute custom Python code for advanced data analysis, calculations, and business logic with full access to Frappe framework"
+      "description": "⚡ ADVANCED PYTHON CODING - For complex analysis when reports and analysis tools aren't sufficient. Use only when both generate_report and analyze_business_data fail to meet your needs."
     },
     {
       "name": "analyze_business_data",
-      "description": "Perform comprehensive statistical analysis on Frappe business data. Calculate averages, trends, correlations, and business insights from any DocType"
+      "description": "📊 CUSTOM DATA ANALYSIS - When standard reports don't meet your specific needs. Use only after checking available reports first with report_list and generate_report."
     },
     {
       "name": "run_database_query",
@@ -100,12 +100,16 @@
       "description": "Create interactive charts and visualizations from Frappe business data. Charts are displayed inline and saved as files"
     },
     {
-      "name": "generate_report",
-      "description": "Execute a Frappe report to get business data and analytics. Use this for financial reports, sales analysis, inventory reports, etc."
+      "name": "generate_report", 
+      "description": "🏆 PROFESSIONAL BUSINESS REPORTS - Your FIRST choice for sales analysis, financial reporting, and business intelligence! Execute pre-built business reports including Sales Analytics, P&L Statement, and 183+ other reports."
     },
     {
-      "name": "get_report_data",
-      "description": "Get detailed report data and structure for a specific report. Understand what data fields are available before executing"
+      "name": "report_list",
+      "description": "🔍 DISCOVER BUSINESS REPORTS - Find the perfect report for your business question! Browse 183+ available reports across Selling, Accounts, Stock, and HR modules."
+    },
+    {
+      "name": "report_requirements", 
+      "description": "📋 REPORT REQUIREMENTS ANALYZER - Understand what you need before running reports! Discover required filters, prevent errors, and get comprehensive report structure analysis."
     },
     {
       "name": "search_documents",

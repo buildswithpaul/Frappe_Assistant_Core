@@ -90,35 +90,27 @@ class AnalyzeFrappeData(BaseTool):
     
     def _get_dynamic_description(self) -> str:
         """Generate description based on current streaming settings"""
-        base_description = """🎯 **INSTANT Business Intelligence** - Get professional analytics reports from any DocType with ZERO coding required!
+        base_description = """📊 CUSTOM DATA ANALYSIS - When standard reports don't meet your specific needs
 
-✨ **Why use this instead of run_python_code?**
-• 🚀 **INSTANT Results** - No pandas/numpy coding needed, just specify DocType and analysis type
-• 📊 **5 Pre-Built Analytics** - Profile, Statistics, Trends, Quality, Correlations ready-to-go
-• 🛡️ **Bulletproof** - Handles missing data, permissions, and edge cases automatically  
-• 🎨 **Business-Friendly** - Returns structured insights, not raw data dumps
-• ⚡ **Fast Setup** - Single API call vs writing 20+ lines of pandas code
+⚠️  **WHEN TO USE**: Only when standard business reports (via 'generate_report') don't provide the specific analysis you need
+✅ **TRY 'generate_report' FIRST** - it has 183+ pre-built business reports including Sales Analytics, Profit & Loss, Territory Analysis  
+🎯 **USE THIS FOR**: Custom statistical analysis, unique data combinations, specialized research
 
-📈 **Perfect for**: Sales analysis, financial reports, inventory trends, customer insights, data quality audits
+🔧 **5 ANALYSIS TYPES**: 
+• 'profile' → Data overview (nulls, types, unique counts, field stats)
+• 'statistics' → Business metrics (mean, median, std, quartiles)  
+• 'trends' → Time-series patterns (daily/monthly growth)
+• 'quality' → Data health score (duplicates, nulls, consistency)
+• 'correlations' → Field relationships
 
-🔥 **Use Cases**: "Analyze Sales Invoice trends", "Profile Customer data", "Check Item quality", "Find correlations in Quotations"
+💡 **BEST PRACTICE**: Check available reports first with 'report_list', then use this for custom analysis
 
-💡 **COMPARISON with run_python_code**:
+📈 **WHEN REPORTS AREN'T ENOUGH**: Need custom field combinations, specialized statistical analysis, data quality research
 
-🏆 **USE analyze_business_data FOR**:
-• "What are my sales trends?" → trends analysis  
-• "Profile my customer data" → profile analysis
-• "Calculate revenue statistics" → statistics analysis
-• "Check data quality issues" → quality analysis
-• "Find correlations in sales data" → correlations analysis
-
-⚡ **USE run_python_code FOR**:
-• Custom charts/visualizations (matplotlib/plotly)
-• Complex mathematical models  
-• Data transformations not covered by the 5 types
-• Custom business logic or calculations
-
-🎯 **RULE OF THUMB**: Try analyze_business_data FIRST - it's faster and handles 80% of business analytics needs!"""
+🎯 **DECISION FLOW**: 
+1. Try 'report_list' to find existing reports
+2. Try 'generate_report' with appropriate report name  
+3. Only then use this tool for custom analysis"""
         
         try:
             from frappe_assistant_core.utils.streaming_manager import get_streaming_manager

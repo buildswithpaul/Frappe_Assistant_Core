@@ -104,29 +104,32 @@ Tools are organized into plugins that can be enabled/disabled as needed:
 - **Key patterns**: "workflow for", "approval process", "states"
 - **Example**: "Show me the workflow for Purchase Orders"
 
-### Report Tools (3 tools)
+### 🏆 Report Tools (3 tools) - **PRIORITIZE THESE FOR BUSINESS ANALYSIS**
 
 #### generate_report
-- **Description**: Execute Frappe reports with filters
-- **When to use**: Running standard or custom business reports
-- **Key patterns**: "run report", "execute", "generate report"
+- **Description**: 🏆 **YOUR FIRST CHOICE** for professional business reports and analytics
+- **When to use**: ANY time users ask for business analysis, sales data, financial reports
+- **Key patterns**: "sales analysis", "revenue report", "profit analysis", "financial report", "business intelligence"
 - **Example**: "Run the Sales Analytics report for Q1 2024"
+- **Why use this first**: Pre-built, optimized, professionally formatted reports ready for management
 - **Features**: 
+  - Access to 183+ business reports across all modules
   - Supports Script, Query, and Standard reports
-  - Returns data with column definitions
-  - Includes enhanced error handling
+  - Returns data with proper calculations and totals
 
 #### report_list
-- **Description**: List all available reports with metadata
-- **When to use**: Discovering what reports are available
-- **Key patterns**: "list reports", "available reports", "what reports"
-- **Example**: "Show me all sales-related reports"
+- **Description**: 🔍 **ESSENTIAL DISCOVERY TOOL** - Find the perfect business report
+- **When to use**: **ALWAYS USE FIRST** when users ask for any business analysis
+- **Key patterns**: "list reports", "available reports", "what reports", "find reports"
+- **Example**: "Show me all sales-related reports" → Then use generate_report
+- **Pro tip**: Filter by module (Selling, Accounts, Stock, HR) to find relevant reports quickly
 
-#### report_columns
-- **Description**: Get report structure without executing
-- **When to use**: Understanding report output before running
-- **Key patterns**: "report columns", "report structure", "what fields"
-- **Example**: "What columns are in the Accounts Receivable report?"
+#### report_requirements
+- **Description**: 📋 **REPORT REQUIREMENTS ANALYZER** - Understand what you need before running reports
+- **When to use**: When generate_report fails due to missing filters or you need to understand report capabilities and requirements
+- **Key patterns**: "report requirements", "what does this report need", "required filters", "report structure"
+- **Example**: "What are the requirements for the Sales Analytics report?"
+- **Enhanced**: Now includes comprehensive metadata and advanced filter analysis
 
 ### Workflow Tools (3 tools)
 
@@ -148,30 +151,28 @@ Tools are organized into plugins that can be enabled/disabled as needed:
 - **Key patterns**: "workflow status", "approval state", "current state"
 - **Example**: "What's the workflow status of SO-00045?"
 
-## Data Science Plugin Tools
-
-### run_python_code
-- **Description**: Execute Python code in a secure sandbox
-- **When to use**: Complex calculations, custom analysis, data transformations
-- **Available libraries**: frappe, pandas, numpy, matplotlib, seaborn, datetime
-- **Key patterns**: "calculate", "analyze with python", "custom code"
-- **Example**: "Calculate the monthly growth rate using Python"
-- **Features**:
-  - Automatic import handling
-  - Artifact streaming for plots
-  - 30-second timeout
-  - Access to Frappe data
+## Data Science Plugin Tools - **USE ONLY WHEN REPORTS DON'T SUFFICE**
 
 ### analyze_business_data
-- **Description**: Automated statistical analysis of DocType data
-- **When to use**: Quick insights without writing code
+- **Description**: 📊 Custom statistical analysis when standard reports aren't enough
+- **⚠️ When to use**: Only after checking available reports first with `report_list` and `generate_report`
+- **✅ Try first**: Use `report_list` to find Sales Analytics, Profit & Loss, or other standard reports
 - **Analysis types**:
   - **profile**: Data overview and distributions
-  - **statistics**: Descriptive statistics
+  - **statistics**: Descriptive statistics  
   - **correlations**: Relationship analysis
   - **trends**: Time-based patterns
   - **quality**: Data quality assessment
-- **Example**: "Analyze sales trends for the last quarter"
+- **Example**: After finding no suitable report, "Analyze custom field correlations in Sales Invoice data"
+
+### run_python_code
+- **Description**: ⚡ Advanced programming for complex custom analysis
+- **⚠️ When to use**: Only when both reports AND analyze_business_data can't meet your needs
+- **✅ Decision tree**: 1️⃣ Try reports → 2️⃣ Try analyze_business_data → 3️⃣ Use this as last resort
+- **Best for**: Custom visualizations, advanced mathematical models, complex data transformations
+- **Available libraries**: frappe, pandas, numpy, matplotlib, seaborn, datetime
+- **Key patterns**: "custom visualization", "complex calculation", "advanced model"
+- **Example**: After exhausting other options, "Create a custom profit margin heatmap with matplotlib"
 
 ### run_database_query
 - **Description**: Execute SELECT queries for custom analysis
@@ -232,7 +233,47 @@ Tools are organized into plugins that can be enabled/disabled as needed:
 - **Key patterns**: "my dashboards", "list dashboards", "show dashboards"
 - **Example**: "Show me all my dashboards"
 
-## Tool Selection Guide
+## 🎯 BUSINESS INTELLIGENCE DECISION TREE
+
+### 🏆 For Business Analysis & Reporting (Priority Order):
+
+#### 1. **📊 FIRST: Try `report_list`**
+   - "Show me sales reports" 
+   - "What financial reports are available?"
+   - Filter by module: Selling, Accounts, Stock, HR, etc.
+   - **Key insight**: 183+ pre-built business reports are available!
+
+#### 2. **🏆 SECOND: Use `generate_report`** 
+   - "Run Sales Analytics report"
+   - "Generate Profit & Loss Statement"
+   - "Execute Territory-wise Sales report"
+   - **Why this first**: Professional, pre-optimized, presentation-ready
+
+#### 3. **📈 THIRD: Use `analyze_business_data`**
+   - Only when no standard report meets your needs
+   - For custom statistical analysis (profile, trends, correlations)
+   - For unique data combinations not covered by reports
+
+#### 4. **⚠️ LAST RESORT: Use `run_python_code`**
+   - Complex custom calculations beyond standard analysis
+   - Advanced data transformations requiring full programming
+   - Custom visualizations with matplotlib/plotly
+
+### 🚀 Quick Reference Examples:
+- **"Sales analysis"** → Try `report_list` filter:"Selling" → `generate_report` "Sales Analytics"
+- **"Financial performance"** → `generate_report` "Profit and Loss Statement"
+- **"Customer insights"** → `report_list` → Look for customer reports first
+- **"Revenue trends"** → `generate_report` "Sales Analytics" with trend analysis
+- **"Inventory status"** → `report_list` filter:"Stock" → appropriate inventory report
+
+### 🛠️ When Reports Need Help:
+- **Filter errors** → Use `report_requirements` to understand what's needed
+- **Understanding report capabilities** → Use `report_requirements` with include_metadata=true  
+- **Planning complex reports** → Use `report_requirements` to see all options
+
+---
+
+## Tool Selection Guide by Category
 
 ### For Document Operations
 1. **Finding records**: Start with `list_documents`
@@ -240,12 +281,6 @@ Tools are organized into plugins that can be enabled/disabled as needed:
 3. **Creating**: Use `create_document`
 4. **Modifying**: Use `update_document`
 5. **Removing**: Use `delete_document`
-
-### For Analysis
-1. **Quick insights**: Use `analyze_business_data`
-2. **Custom analysis**: Use `run_python_code`
-3. **Complex queries**: Use `run_database_query`
-4. **Standard reports**: Use `generate_report`
 
 ### For Visualization
 1. **Full dashboard**: Use `create_dashboard`
