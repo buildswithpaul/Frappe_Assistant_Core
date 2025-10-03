@@ -91,27 +91,7 @@ class AnalyzeFrappeData(BaseTool):
 
     def _get_dynamic_description(self) -> str:
         """Generate description based on current streaming settings"""
-        base_description = """📊 CUSTOM DATA ANALYSIS - When standard reports don't meet your specific needs
-
-⚠️  **WHEN TO USE**: Only when standard business reports (via 'generate_report') don't provide the specific analysis you need
-✅ **TRY 'generate_report' FIRST** - it has 183+ pre-built business reports including Sales Analytics, Profit & Loss, Territory Analysis
-🎯 **USE THIS FOR**: Custom statistical analysis, unique data combinations, specialized research
-
-🔧 **5 ANALYSIS TYPES**:
-• 'profile' → Data overview (nulls, types, unique counts, field stats)
-• 'statistics' → Business metrics (mean, median, std, quartiles)
-• 'trends' → Time-series patterns (daily/monthly growth)
-• 'quality' → Data health score (duplicates, nulls, consistency)
-• 'correlations' → Field relationships
-
-💡 **BEST PRACTICE**: Check available reports first with 'report_list', then use this for custom analysis
-
-📈 **WHEN REPORTS AREN'T ENOUGH**: Need custom field combinations, specialized statistical analysis, data quality research
-
-🎯 **DECISION FLOW**:
-1. Try 'report_list' to find existing reports
-2. Try 'generate_report' with appropriate report name
-3. Only then use this tool for custom analysis"""
+        base_description = """Perform custom statistical analysis and data profiling when standard business reports are insufficient. USE HIERARCHY: First try generate_report for standard business reports, then use this tool only when reports don't provide the specific analysis needed. ANALYSIS TYPES: profile (data overview with nulls, types, unique counts, field statistics), statistics (business metrics including mean, median, standard deviation, quartiles), trends (time-series patterns with daily/monthly growth rates), quality (data health score assessing duplicates, nulls, consistency), correlations (relationships between fields). Best for custom field combinations, specialized statistical analysis, data quality research, and unique analytical requirements not covered by standard reports. Always check report_list first to find existing reports before performing custom analysis."""
 
         try:
             from frappe_assistant_core.utils.streaming_manager import get_streaming_manager

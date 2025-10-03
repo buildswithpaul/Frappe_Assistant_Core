@@ -105,31 +105,7 @@ class CreateDashboardChart(BaseTool):
 
     def _get_description(self) -> str:
         """Get tool description"""
-        return """Create Dashboard Chart documents for Frappe's dashboard system with proper field mappings.
-
-📊 **CHART TYPES (chart_type):**
-• line - Trends over time (requires time_series_based_on)
-• bar - Compare categories/groups (requires based_on for grouping)
-• pie/donut - Show proportions (requires based_on for categories)
-• percentage - Show progress/completion
-• heatmap - Show data density patterns
-
-📈 **AGGREGATION FUNCTIONS (aggregate_function):**
-• Count - Count records (no value_based_on needed)
-• Sum - Total values (requires value_based_on field)
-• Average - Average values (requires value_based_on field)
-• Group By - Group by categories
-
-🔧 **FIELD REQUIREMENTS:**
-• value_based_on: Required for Sum/Average (e.g., 'grand_total', 'qty')
-• based_on: Required for grouping/x-axis in bar/pie/donut charts (e.g., 'customer', 'status')
-• time_series_based_on: Required ONLY for line/heatmap charts (date fields like 'posting_date')
-
-💡 **EXAMPLES:**
-• Bar chart of sales by customer: chart_type='bar', based_on='customer', aggregate_function='Sum', value_based_on='grand_total'
-• Line chart of monthly revenue: chart_type='line', time_series_based_on='posting_date', aggregate_function='Sum', value_based_on='grand_total'
-• Pie chart of status distribution: chart_type='pie', based_on='status', aggregate_function='Count'
-• Simple count chart: chart_type='bar', aggregate_function='Count' (no grouping)"""
+        return """Create Dashboard Chart documents for Frappe's dashboard system with proper field mappings and aggregations. CHART TYPES: line (trends over time, requires time_series_based_on), bar (compare categories/groups, requires based_on for grouping), pie/donut (show proportions, requires based_on for categories), percentage (show progress/completion), heatmap (show data density patterns). AGGREGATION FUNCTIONS: Count (count records, no value field needed), Sum (total values, requires value_based_on), Average (average values, requires value_based_on), Group By (group by categories). FIELD REQUIREMENTS: value_based_on required for Sum/Average aggregations (numeric fields like grand_total, qty), based_on required for grouping/x-axis in bar/pie/donut charts (category fields like customer, status), time_series_based_on required ONLY for line/heatmap charts (date fields like posting_date). Use this to create visual representations of business data for dashboard displays."""
 
     def execute(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
         """Create dashboard chart"""

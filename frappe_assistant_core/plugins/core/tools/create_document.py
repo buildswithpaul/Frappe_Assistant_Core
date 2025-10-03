@@ -41,27 +41,7 @@ class DocumentCreate(BaseTool):
     def __init__(self):
         super().__init__()
         self.name = "create_document"
-        self.description = """Create new Frappe documents with proper validation and child table support.
-
-📋 **WORKFLOW RECOMMENDATION:**
-1. Use get_doctype_info tool first to understand DocType structure
-2. Identify required fields and child tables
-3. Format data correctly (especially for child tables)
-4. Create document with proper field values
-
-📊 **CHILD TABLE EXAMPLES:**
-• Purchase Order: {"supplier": "ABC Corp", "transaction_date": "2025-01-15", "items": [{"item_code": "ITEM001", "qty": 10, "rate": 100, "warehouse": "Store"}]}
-• Sales Invoice: {"customer": "Customer1", "posting_date": "2025-01-15", "items": [{"item_code": "ITEM001", "qty": 5, "rate": 200}]}
-• BOM: {"item": "PROD001", "items": [{"item_code": "RAW001", "qty": 2}]}
-
-⚠️ **IMPORTANT NOTES:**
-• Child tables must be lists of dictionaries: "items": [{"field": "value"}]
-• Always provide required fields (check with get_doctype_info)
-• Referenced records (customers, items, etc.) must exist in system
-• Use exact field names as shown in DocType metadata
-
-🔧 **ERROR RECOVERY:**
-If creation fails, the error response includes specific guidance and suggestions for resolution."""
+        self.description = "Create new Frappe documents with proper validation and child table support. Supports all DocTypes including those with child tables. WORKFLOW: First use get_doctype_info to understand the DocType structure, identify required fields and child tables, then create the document with proper field values. Child tables must be provided as arrays of objects. Referenced records (customers, items, warehouses, etc.) must already exist in the system. Use exact field names as shown in DocType metadata. Error responses include specific guidance for resolution. Common use cases: creating Sales Orders with line items, Purchase Orders with items and taxes, customer records, inventory transactions."
         self.requires_permission = None  # Permission checked dynamically per DocType
 
         self.inputSchema = {

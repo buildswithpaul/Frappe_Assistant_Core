@@ -107,17 +107,7 @@ class ExtractFileContent(BaseTool):
 
     def _get_description(self) -> str:
         """Get tool description"""
-        return """📄 **Extract File Content** - Extract text and data from various file formats for LLM processing.
-
-📁 **Supported Formats**: PDF, JPG/PNG (OCR), CSV/Excel, DOCX/TXT
-🔍 **Operations**: Extract text, OCR images, parse structured data, extract tables
-🎯 **Use Cases**: Read invoices, contracts, forms, spreadsheets for LLM analysis
-
-💡 **Examples**:
-• Extract text from PDF: operation='extract', file_url='/files/contract.pdf'
-• OCR scan: operation='ocr', file_url='/files/invoice_scan.jpg'
-• Parse CSV data: operation='parse_data', file_url='/files/data.csv'
-• Extract PDF tables: operation='extract_tables', file_url='/files/report.pdf'"""
+        return """Extract text and data from various file formats for analysis and processing. SUPPORTED FORMATS: PDF (text extraction, table extraction), Images JPG/PNG (OCR with Tesseract), Spreadsheets CSV/Excel (parse data), Documents DOCX/TXT (text extraction). OPERATIONS: extract (get text content), ocr (optical character recognition on images), parse_data (structured data from CSV/Excel), extract_tables (tables from PDFs). USE CASES: Read invoices, contracts, forms, reports, spreadsheets for analysis and data processing. Requires valid file URL from Frappe file system. Returns extracted content in text or structured format suitable for further processing."""
 
     def execute(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
         """Execute file content extraction"""

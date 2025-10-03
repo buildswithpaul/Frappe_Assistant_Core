@@ -85,29 +85,7 @@ class CreateDashboard(BaseTool):
 
     def _get_description(self) -> str:
         """Get tool description"""
-        return """Create Frappe dashboards by linking existing charts. This creates standard Frappe Dashboard documents, NOT Insights dashboards.
-
-📊 **WHAT THIS TOOL DOES:**
-• Creates Frappe Dashboard DocType documents
-• Links existing Dashboard Chart documents to the dashboard
-• Configures sharing and permissions
-• Organizes multiple charts in a single view
-
-⚠️ **IMPORTANT:**
-• Charts must be created FIRST using create_dashboard_chart tool
-• This tool only creates the dashboard container and links charts
-• This creates FRAPPE dashboards, not Insights dashboards
-
-📈 **WORKFLOW:**
-1. First use create_dashboard_chart to create individual charts
-2. Then use this tool to create a dashboard linking those charts
-3. Share dashboard with users/roles as needed
-
-🔧 **FEATURES:**
-• Multi-chart dashboards
-• User/role based sharing
-• Mobile responsive
-• Export to PDF/Excel"""
+        return """Create Frappe dashboards by linking existing charts into organized views. Creates standard Frappe Dashboard documents, NOT Insights dashboards. WORKFLOW: First create individual charts using create_dashboard_chart tool, then use this tool to create a dashboard container that links those charts together. IMPORTANT: Charts must already exist before creating the dashboard. CAPABILITIES: Multi-chart dashboards, user and role-based sharing, mobile responsive layout, export to PDF/Excel. Use this to organize multiple related charts (sales charts, inventory charts, financial charts) into cohesive dashboard views for business monitoring and reporting."""
 
     def execute(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
         """Create comprehensive dashboard"""

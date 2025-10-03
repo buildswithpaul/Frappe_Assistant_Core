@@ -87,32 +87,7 @@ class ExecutePythonCode(BaseTool):
 
     def _get_dynamic_description(self) -> str:
         """Generate description based on current streaming settings"""
-        base_description = """⚡ ADVANCED PYTHON CODING - For complex analysis when reports and analysis tools aren't sufficient
-
-⚠️  **USE ONLY WHEN NEEDED**: This is for advanced users who need full programming control
-✅ **HIERARCHY**: 1️⃣ Try 'generate_report' first → 2️⃣ Try 'analyze_business_data' → 3️⃣ Use this only when both fail
-
-🎯 **WHEN TO USE THIS**:
-• Complex custom visualizations (matplotlib/plotly charts)
-• Advanced mathematical models and calculations
-• Data transformations not covered by standard analysis
-• Custom business logic requiring full programming
-
-🔒 **SECURITY FEATURES**:
-• Read-Only Database (only SELECT queries allowed)
-• User Context Management (respects your permissions)
-• Code Security Scanning (dangerous operations blocked)
-
-🚫 **NO IMPORTS NEEDED** - Pre-loaded libraries:
-• pd (pandas), np (numpy), plt (matplotlib), sns (seaborn)
-• frappe utilities, math, datetime, json, re, statistics
-
-💡 **DECISION TREE**:
-1. "Sales analysis" → Try 'generate_report' "Sales Analytics" first
-2. Standard analysis → Try 'analyze_business_data'
-3. Need custom code → Use this tool
-
-🎯 **Best for**: Advanced analytics, custom visualizations, complex calculations requiring full Python control"""
+        base_description = """Execute custom Python code for advanced analysis and complex calculations. USE HIERARCHY: First try generate_report for standard business reports, then analyze_business_data for common analytics, and only use this tool when both are insufficient. Suitable for complex custom visualizations using matplotlib/plotly/seaborn, advanced mathematical models, custom data transformations, and specialized business logic requiring full programming control. SECURITY: Read-only database access (only SELECT queries), user context management (respects permissions), code security scanning (dangerous operations blocked). PRE-LOADED LIBRARIES (no imports needed): pd (pandas), np (numpy), plt (matplotlib), sns (seaborn), frappe utilities, math, datetime, json, re, statistics. Best for advanced analytics requiring full Python control when standard tools are insufficient."""
 
         try:
             from frappe_assistant_core.utils.streaming_manager import get_streaming_manager
