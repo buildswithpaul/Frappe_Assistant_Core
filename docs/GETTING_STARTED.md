@@ -122,7 +122,7 @@ If you prefer API-based integration:
 # Example integration script
 import requests
 
-endpoint = "https://yoursite.com/api/method/frappe_assistant_core.api.assistant_api.handle_assistant_request"
+endpoint = "https://yoursite.com/api/method/frappe_assistant_core.api.fac_endpoint.handle_mcp"
 headers = {
     "Authorization": f"token {api_key}:{api_secret}",
     "Content-Type": "application/json"

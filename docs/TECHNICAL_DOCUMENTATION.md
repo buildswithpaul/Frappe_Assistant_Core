@@ -267,7 +267,6 @@ dependencies = [
 - `frappe_assistant_core/api/handlers/prompts.py`
 - `frappe_assistant_core/tools/registry.py`
 - `frappe_assistant_core/tools/executor.py`
-- `frappe_assistant_core/api/assistant_api_notification_handler.py`
 - `pyproject.toml`
 
 #### 4. **Error Fixes Applied**
@@ -1126,7 +1125,7 @@ should_stream = should_stream_to_artifact(
 #### 1. **Initialization**
 
 ```http
-POST /api/method/frappe_assistant_core.api.assistant_api.handle_assistant_request
+POST /api/method/frappe_assistant_core.api.fac_endpoint.handle_mcp
 Content-Type: application/json
 
 {
@@ -1444,7 +1443,7 @@ print(f"Available tools: {len(tools)}")
 
 ```bash
 # Test server connectivity
-curl -X POST http://localhost:8000/api/method/frappe_assistant_core.api.assistant_api.handle_assistant_request \
+curl -X POST http://localhost:8000/api/method/frappe_assistant_core.api.fac_endpoint.handle_mcp \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","method":"tools/list","id":1}'
 ```

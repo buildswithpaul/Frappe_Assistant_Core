@@ -433,7 +433,7 @@ frappe.pages['assistant-admin'].on_page_load = function(wrapper) {
         });
 
         frappe.call({
-            method: "frappe_assistant_core.api.assistant_api.get_usage_statistics",
+            method: "frappe_assistant_core.api.admin_api.get_usage_statistics",
             callback: function(response) {
                 if (response.message && response.message.success) {
                     const stats = response.message.data;
@@ -529,7 +529,7 @@ frappe.pages['assistant-admin'].on_page_load = function(wrapper) {
     // Load recent activity
     function loadRecentActivity() {
         frappe.call({
-            method: "frappe_assistant_core.api.assistant_api.get_usage_statistics",
+            method: "frappe_assistant_core.api.admin_api.get_usage_statistics",
             callback: function(response) {
                 if (response.message && response.message.success) {
                     const activities = response.message.data.recent_activity || [];

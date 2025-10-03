@@ -133,7 +133,7 @@ Update `claude_desktop_config.json`:
 Update stdio bridge to use new endpoint (one line change):
 ```python
 # OLD:
-response = requests.post(f"{self.server_url}/api/method/frappe_assistant_core.api.assistant_api.handle_assistant_request", ...)
+response = requests.post(f"{self.server_url}/api/method/frappe_assistant_core.api.fac_endpoint.handle_mcp", ...)
 
 # NEW:
 response = requests.post(f"{self.server_url}/api/method/frappe_assistant_core.api.fac_endpoint.handle_mcp", ...)
@@ -153,7 +153,7 @@ response = requests.post(f"{self.server_url}/api/method/frappe_assistant_core.ap
 ### Option 1: Keep Both (Recommended for Testing)
 - Keep old `assistant_api.py` for backward compatibility
 - New endpoint: `/api/method/frappe_assistant_core.api.fac_endpoint.handle_mcp`
-- Old endpoint: `/api/method/frappe_assistant_core.api.assistant_api.handle_assistant_request`
+- Old endpoint: `/api/method/frappe_assistant_core.api.fac_endpoint.handle_mcp`
 - Test new implementation thoroughly
 - Gradually migrate clients
 

@@ -82,10 +82,10 @@ class assistantServer:
             # Mark as enabled (API endpoints are always available when enabled)
             self.running = True
 
-            frappe.logger().info("assistant MCP API endpoints enabled")
+            frappe.logger().info("assistant FAC API endpoints enabled")
             return {
                 "success": True,
-                "message": "MCP API enabled - available at /api/method/frappe_assistant_core.api.assistant_api.handle_assistant_request",
+                "message": "FAC API enabled - available at /api/method/frappe_assistant_core.api.fac_endpoint.handle_mcp",
             }
 
         except Exception as e:
@@ -118,8 +118,8 @@ class assistantServer:
         return {
             "running": is_enabled,  # For backward compatibility
             "enabled": is_enabled,
-            "api_endpoint": "/api/method/frappe_assistant_core.api.assistant_api.handle_assistant_request",
-            "ping_endpoint": "/api/method/frappe_assistant_core.api.assistant_api.ping",
+            "api_endpoint": "/api/method/frappe_assistant_core.api.fac_endpoint.handle_mcp",
+            "ping_endpoint": "/api/method/frappe_assistant_core.api.admin_api.ping",
             "protocol": "mcp",
             "frappe_port": f"{get_frappe_port()} (detected)",
             "status_note": "MCP API endpoints are part of Frappe's web server - no separate process required",

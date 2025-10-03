@@ -214,8 +214,9 @@ DATABASE_LIMITS = {
 # API Endpoint Paths
 API_ENDPOINTS = {
     "MCP_HANDLER": "/api/method/frappe_assistant_core.api.mcp.handle_mcp_request",
+    "FAC_ENDPOINT": "/api/method/frappe_assistant_core.api.fac_endpoint.handle_mcp",
+    "ADMIN_API": "/api/method/frappe_assistant_core.api.admin_api",
     "PLUGIN_MANAGEMENT": "/api/method/frappe_assistant_core.api.plugin_api",
-    "ADMIN_ENDPOINTS": "/api/method/frappe_assistant_core.api.admin",
     "HEALTH_CHECK": "/api/method/frappe_assistant_core.api.health",
     "WEBSOCKET_ENDPOINT": "/ws/assistant",
 }

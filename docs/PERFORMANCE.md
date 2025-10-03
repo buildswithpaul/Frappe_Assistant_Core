@@ -421,10 +421,10 @@ Use tools like Apache Bench or Artillery:
 
 ```bash
 # Simple load test
-ab -n 1000 -c 10 http://yoursite.com/api/method/frappe_assistant_core.api.assistant_api.ping
+ab -n 1000 -c 10 http://yoursite.com/api/method/frappe_assistant_core.api.admin_api.ping
 
 # More comprehensive testing with Artillery
-artillery quick --count 10 --num 100 http://yoursite.com/api/method/frappe_assistant_core.api.assistant_api.get_usage_statistics
+artillery quick --count 10 --num 100 http://yoursite.com/api/method/frappe_assistant_core.api.admin_api.get_usage_statistics
 ```
 
 #### Monitoring Tools

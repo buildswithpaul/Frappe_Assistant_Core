@@ -296,7 +296,7 @@ class SSEMCPBridge:
 
         async with httpx.AsyncClient() as client:
             response = await client.post(
-                f"{frappe_server_url}/api/method/frappe_assistant_core.api.assistant_api.handle_assistant_request",
+                f"{frappe_server_url}/api/method/frappe_assistant_core.api.fac_endpoint.handle_mcp",
                 headers=headers,
                 json=test_request,
                 timeout=10.0,
@@ -437,7 +437,7 @@ class SSEMCPBridge:
 
             async with httpx.AsyncClient() as client:
                 response = await client.post(
-                    f"{server_url}/api/method/frappe_assistant_core.api.assistant_api.handle_assistant_request",
+                    f"{server_url}/api/method/frappe_assistant_core.api.fac_endpoint.handle_mcp",
                     headers=headers,
                     json=request_data,
                     timeout=30.0,
