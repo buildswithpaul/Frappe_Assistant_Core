@@ -42,7 +42,7 @@ class ReportRequirements(BaseTool):
     def __init__(self):
         super().__init__()
         self.name = "report_requirements"
-        self.description = "📋 REPORT REQUIREMENTS ANALYZER - Understand what you need before running reports! 🎯 **ESSENTIAL FOR**: Discovering required filters when generate_report fails, understanding what data inputs are needed, preventing filter errors before execution, planning successful report runs 💡 **USE WHEN**: Generate_report gives you filter errors, need to know what options are available, planning complex report execution, understanding report capabilities ⚡ **PREVENTS ERRORS**: Shows exactly what filters are required and optional for successful report execution, plus complete report metadata and structure"
+        self.description = "Get report metadata including required and optional filters, columns, and execution requirements. Use this tool before executing reports to understand what filters are mandatory, what options are available, and how to structure the report request. This prevents filter errors and helps plan successful report execution. Returns complete report metadata including filter definitions, column structure, report type, and capabilities. Essential when generate_report returns filter errors or when planning complex report execution."
         self.requires_permission = None  # Permission checked dynamically per report
 
         self.inputSchema = {

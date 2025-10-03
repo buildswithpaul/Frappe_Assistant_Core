@@ -41,22 +41,30 @@ def _check_assistant_enabled(user: str) -> bool:
 
 
 def _import_tools():
-    """Import and register all tools from plugins directory."""
+    """Import and register all enabled tools from plugin manager."""
     try:
-        # Import the tool registry (has all existing BaseTool instances)
         from frappe_assistant_core.core.tool_registry import get_tool_registry
         from frappe_assistant_core.mcp.tool_adapter import register_base_tool
 
-        # Get all registered tools
+        # Clear existing tools to avoid duplicates on subsequent requests
+        # This is necessary because mcp is a module-level global instance
+        mcp._tool_registry.clear()
+
+        # Get available tools (respects enabled/disabled state and permissions)
         registry = get_tool_registry()
+        available_tools = registry.get_available_tools(user=frappe.session.user)
 
-        # Register each tool with our MCP server
-        for tool_name in registry._tools.keys():
-            tool_instance = registry.get_tool(tool_name)
-            if tool_instance:
-                register_base_tool(mcp, tool_instance)
+        # Register each enabled tool with MCP server
+        tool_count = 0
+        for tool_metadata in available_tools:
+            tool_name = tool_metadata.get("name")
+            if tool_name:
+                tool_instance = registry.get_tool(tool_name)
+                if tool_instance:
+                    register_base_tool(mcp, tool_instance)
+                    tool_count += 1
 
-        frappe.logger().info(f"Registered {len(mcp._tool_registry)} tools with MCP server")
+        frappe.logger().info(f"Registered {tool_count} enabled tools for user {frappe.session.user}")
 
     except Exception as e:
         frappe.log_error(title="Tool Import Error", message=f"Error importing tools: {str(e)}")
@@ -70,7 +78,7 @@ def handle_mcp():
     This is the main entry point for all MCP requests. It uses our custom
     MCP server implementation which properly handles JSON serialization.
 
-    Endpoint: /api/method/frappe_assistant_core.api.mcp_endpoint.handle_mcp
+    Endpoint: /api/method/frappe_assistant_core.api.fac_endpoint.handle_mcp
     Protocol: MCP 2025-03-26 StreamableHTTP
     """
     # Check if user has assistant access enabled
@@ -79,3 +87,6 @@ def handle_mcp():
 
     # Import tools (they auto-register via decorators)
     _import_tools()
+
+    # The response is already handled by the @mcp.register decorator
+    # which calls mcp.handle() internally

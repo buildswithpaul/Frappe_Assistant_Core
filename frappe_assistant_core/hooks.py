@@ -152,9 +152,10 @@ scheduler_events = {
 # Overriding Methods
 # ------------------------------
 #
-# override_whitelisted_methods = {
-# "frappe.desk.doctype.event.event.get_events": "frappe_assistant_core.event.get_events"
-# }
+# Override Frappe's OAuth endpoint to add MCP-required fields
+override_whitelisted_methods = {
+    "frappe.integrations.oauth2.openid_configuration": "frappe_assistant_core.api.oauth_discovery.openid_configuration"
+}
 #
 # each overriding function accepts a `data` argument;
 # generated from the base implementation of the doctype dashboard,

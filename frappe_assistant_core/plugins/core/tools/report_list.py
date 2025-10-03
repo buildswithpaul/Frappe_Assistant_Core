@@ -41,7 +41,7 @@ class ReportList(BaseTool):
     def __init__(self):
         super().__init__()
         self.name = "report_list"
-        self.description = "🔍 DISCOVER BUSINESS REPORTS - Find the perfect report for your business question! 🎯 **ESSENTIAL FOR**: Finding sales reports, financial analysis, inventory tracking, HR reports ⚡ **183+ REPORTS AVAILABLE** across modules: Selling (Sales Analytics, Territory Analysis, Customer Reports), Accounts (P&L, Balance Sheet, Receivables, Payables), Stock (Inventory Reports, Item Movement, Valuation), HR (Payroll, Attendance, Leave Reports) 💡 **SMART TIP**: Use this BEFORE trying to analyze raw data - there's likely already a perfect report!"
+        self.description = "Discover and search available Frappe business reports across all modules. Use this tool to find the appropriate report for business questions before attempting custom data analysis. Returns a list of available reports with descriptions, modules, and types. Available reports include Sales Analytics, Territory Analysis, Customer Reports, P&L Statement, Balance Sheet, Receivables/Payables, Inventory Reports, Item Movement, Stock Valuation, Payroll, Attendance, and Leave Reports. Always search for existing reports first before building custom queries or analysis."
         self.requires_permission = None  # Permission checked dynamically per report
 
         self.inputSchema = {
