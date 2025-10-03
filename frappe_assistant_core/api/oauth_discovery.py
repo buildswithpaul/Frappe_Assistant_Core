@@ -75,6 +75,8 @@ def mcp_discovery():
 
     Returns MCP server capabilities and endpoint information.
     """
+    from frappe_assistant_core import hooks
+
     frappe_url = frappe.utils.get_url()
 
     return {
@@ -84,8 +86,10 @@ def mcp_discovery():
         "oauth_metadata_url": f"{frappe_url}/.well-known/openid-configuration",
         "capabilities": {"tools": True, "prompts": False, "resources": False, "streaming": False},
         "server_info": {
-            "name": "frappe-assistant-core",
-            "version": "2.0.0",
-            "description": "AI Assistant integration for Frappe Framework",
+            "name": hooks.app_name,
+            "version": hooks.app_version,
+            "description": hooks.app_description,
+            "title": hooks.app_title,
+            "publisher": hooks.app_publisher,
         },
     }

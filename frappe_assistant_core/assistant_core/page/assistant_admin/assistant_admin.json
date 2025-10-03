@@ -1,10 +1,10 @@
 {
   "doctype": "Page",
   "name": "assistant-admin",
-  "title": "Assistant Server Admin",
+  "title": "FAC Admin",
   "icon": "octicon octicon-server",
   "page_name": "assistant-admin",
-  "description": "Admin interface for managing the Assistant Server settings and tools.",
+  "description": "Admin interface for managing Frappe Assistant Core (FAC) server settings, plugins, and tools.",
   "standard": "Yes",
   "module": "Assistant Core",
   "creation": "2025-06-22 12:00:00.000000",

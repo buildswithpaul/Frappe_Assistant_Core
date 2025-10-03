@@ -82,6 +82,26 @@ class AssistantCoreSettings(Document):
         """Legacy: Disable the assistant MCP API"""
         return self.disable_assistant_api()
 
+    @frappe.whitelist()
+    def get_mcp_server_info(self):
+        """Get MCP server information (for backward compatibility with MCP Inspector)"""
+        from frappe_assistant_core import hooks
+
+        frappe_url = frappe.utils.get_url()
+        return {
+            "mcp_endpoint": f"{frappe_url}/api/method/frappe_assistant_core.api.fac_endpoint.handle_mcp",
+            "mcp_transport": "StreamableHTTP",
+            "mcp_protocol_version": "2025-03-26",
+            "server_enabled": self.server_enabled,
+            "server_info": {
+                "name": hooks.app_name,
+                "version": hooks.app_version,
+                "description": hooks.app_description,
+                "title": hooks.app_title,
+                "publisher": hooks.app_publisher,
+            },
+        }
+
     def get_streaming_protocol(self):
         """Get current streaming protocol configuration"""
         # Check if streaming-related fields exist in the DocType

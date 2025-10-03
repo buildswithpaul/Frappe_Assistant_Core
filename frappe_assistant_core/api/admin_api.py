@@ -47,6 +47,17 @@ def update_server_settings(**kwargs):
     if updated:
         settings.save()
 
+        # Clear ALL caches using wildcard pattern to catch redis_cache decorated functions
+        cache = frappe.cache()
+        cache.delete_keys("*get_cached_server_settings*")
+        cache.delete_keys("assistant_*")
+
+        # Clear document cache
+        frappe.clear_document_cache("Assistant Core Settings", "Assistant Core Settings")
+
+        # Force frappe to clear its internal caches
+        frappe.clear_cache(doctype="Assistant Core Settings")
+
     return {"message": _("Assistant Core Settings updated successfully.")}
 
 
@@ -118,3 +129,24 @@ def get_tool_stats():
     except Exception as e:
         frappe.log_error(f"Failed to get tool stats: {str(e)}")
         return {"total_tools": 0, "categories": {}}
+
+
+@frappe.whitelist()
+def toggle_plugin(plugin_name: str, enable: bool):
+    """Enable or disable a plugin."""
+    from frappe_assistant_core.utils.plugin_manager import get_plugin_manager
+
+    try:
+        plugin_manager = get_plugin_manager()
+
+        if enable:
+            plugin_manager.enable_plugin(plugin_name)
+            message = f"Plugin '{plugin_name}' enabled successfully"
+        else:
+            plugin_manager.disable_plugin(plugin_name)
+            message = f"Plugin '{plugin_name}' disabled successfully"
+
+        return {"success": True, "message": _(message)}
+    except Exception as e:
+        frappe.log_error(f"Failed to toggle plugin '{plugin_name}': {str(e)}")
+        return {"success": False, "message": _(f"Error: {str(e)}")}
