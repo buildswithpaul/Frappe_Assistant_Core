@@ -6,16 +6,28 @@
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
+  "general_tab",
   "server_enabled",
+  "server_version",
+  "mcp_endpoint_url",
+  "oauth_discovery_url",
+  "plugins_tab",
   "plugins_section",
   "enabled_plugins_list",
   "plugin_status_html",
+  "streaming_tab",
   "streaming_section",
   "enforce_artifact_streaming",
   "response_limit_prevention",
   "streaming_behavior_instructions",
   "streaming_line_threshold",
   "streaming_char_threshold",
+  "mcp_configuration_tab",
+  "mcp_section",
+  "mcp_server_name",
+  "mcp_protocol_version",
+  "mcp_transport_type",
+  "advanced_tab",
   "sse_bridge_section",
   "sse_bridge_warning",
   "sse_bridge_enabled",
@@ -26,11 +38,42 @@
  ],
  "fields": [
   {
+   "fieldname": "general_tab",
+   "fieldtype": "Tab Break",
+   "label": "General"
+  },
+  {
    "default": "1",
    "description": "Enable or disable the Frappe Assistant Core MCP server",
    "fieldname": "server_enabled",
    "fieldtype": "Check",
    "label": "Enable Assistant Core"
+  },
+  {
+   "fieldname": "server_version",
+   "fieldtype": "Data",
+   "label": "Server Version",
+   "read_only": 1,
+   "default": "2.0.0"
+  },
+  {
+   "fieldname": "mcp_endpoint_url",
+   "fieldtype": "Data",
+   "label": "MCP Endpoint URL",
+   "read_only": 1,
+   "description": "Main MCP StreamableHTTP endpoint"
+  },
+  {
+   "fieldname": "oauth_discovery_url",
+   "fieldtype": "Data",
+   "label": "OAuth Discovery URL",
+   "read_only": 1,
+   "description": "OAuth/OIDC discovery endpoint for MCP Inspector"
+  },
+  {
+   "fieldname": "plugins_tab",
+   "fieldtype": "Tab Break",
+   "label": "Plugins & Tools"
   },
   {
    "fieldname": "plugins_section",
@@ -51,7 +94,11 @@
    "options": "<div id=\"plugin-status-container\">Loading plugin information...</div>"
   },
   {
-   "collapsible": 1,
+   "fieldname": "streaming_tab",
+   "fieldtype": "Tab Break",
+   "label": "Streaming"
+  },
+  {
    "fieldname": "streaming_section",
    "fieldtype": "Section Break",
    "label": "Artifact Streaming Configuration"
@@ -92,10 +139,45 @@
    "label": "Character Threshold for Streaming"
   },
   {
-   "collapsible": 1,
+   "fieldname": "mcp_configuration_tab",
+   "fieldtype": "Tab Break",
+   "label": "MCP Configuration"
+  },
+  {
+   "fieldname": "mcp_section",
+   "fieldtype": "Section Break",
+   "label": "MCP Server Settings"
+  },
+  {
+   "fieldname": "mcp_server_name",
+   "fieldtype": "Data",
+   "label": "MCP Server Name",
+   "default": "frappe-assistant-core",
+   "description": "Name identifier for the MCP server"
+  },
+  {
+   "fieldname": "mcp_protocol_version",
+   "fieldtype": "Data",
+   "label": "MCP Protocol Version",
+   "read_only": 1,
+   "default": "2025-03-26"
+  },
+  {
+   "fieldname": "mcp_transport_type",
+   "fieldtype": "Data",
+   "label": "Transport Type",
+   "read_only": 1,
+   "default": "StreamableHTTP"
+  },
+  {
+   "fieldname": "advanced_tab",
+   "fieldtype": "Tab Break",
+   "label": "Advanced"
+  },
+  {
    "fieldname": "sse_bridge_section",
    "fieldtype": "Section Break",
-   "label": "SSE Bridge Configuration"
+   "label": "SSE Bridge Configuration (Deprecated)"
   },
   {
    "fieldname": "sse_bridge_warning",

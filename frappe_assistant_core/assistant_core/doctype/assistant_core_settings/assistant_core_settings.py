@@ -24,6 +24,13 @@ from frappe_assistant_core.assistant_core.server import assistantServer
 class AssistantCoreSettings(Document):
     """assistant Server Settings DocType controller"""
 
+    def before_save(self):
+        """Populate computed fields before saving"""
+        # Set endpoint URLs based on current site
+        frappe_url = frappe.utils.get_url()
+        self.mcp_endpoint_url = f"{frappe_url}/api/method/frappe_assistant_core.api.fac_endpoint.handle_mcp"
+        self.oauth_discovery_url = f"{frappe_url}/.well-known/openid-configuration"
+
     def validate(self):
         """Validate settings before saving"""
         # Currently no validation needed as removed unused fields
