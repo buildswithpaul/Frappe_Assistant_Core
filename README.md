@@ -45,7 +45,7 @@ Robust protocol handler that exposes ERPNext functionality through standardized 
 ### 📦 **Client Integration Packages** 
 Ready-to-use integrations including DXT file generation for Claude Desktop setup.
 
-### 🛠️ **20+ Built-in Tools**
+### 🛠️ **21 Built-in Tools**
 Document CRUD, search, reporting, analytics, Python execution, and visualization capabilities.
 
 ![Available Tools](screenshots/tools-available.png)
@@ -56,6 +56,9 @@ Extensible framework for custom tools, external app integration, and business-sp
 
 ![Admin Interface](screenshots/admin-interface.png)
 *Professional admin interface for plugin management and configuration*
+
+### 🔐 **OAuth 2.0 / OIDC Authentication**
+Full OAuth 2.0 and OpenID Connect implementation with Dynamic Client Registration (RFC 7591), PKCE support, and standardized discovery endpoints for seamless integration with MCP Inspector and third-party tools.
 
 ### 🔒 **Enterprise Security Layer**
 Authentication, ERPNext permissions integration, audit logging, and role-based access.
@@ -371,17 +374,29 @@ The LLM will interact directly with your ERPNext data through the MCP tools.
 
 ## 📚 Documentation
 
+### Quick Start Guides
+| Guide | Description |
+|-------|-------------|
+| [🚀 Getting Started](docs/GETTING_STARTED.md) | New to AI + ERP? Start here |
+| [⚡ Claude Desktop Setup](docs/QUICK_START_CLAUDE_DESKTOP.md) | One-click integration with Claude |
+| [🔐 OAuth Quick Start](docs/oauth/oauth_quick_start.md) | OAuth 2.0 setup in 2 minutes |
+
+### Technical Documentation
 | Guide | Description |
 |-------|-------------|
 | [🏗️ Architecture](docs/ARCHITECTURE.md) | System design and plugin architecture |
-| [🔧 Tool Reference](docs/TOOL_REFERENCE.md) | Complete list of available tools |
-| [🚀 Development Guide](docs/DEVELOPMENT_GUIDE.md) | Create custom tools and plugins |
+| [🔧 Tool Reference](docs/TOOL_REFERENCE.md) | Complete list of 21 available tools |
+| [📖 API Reference](docs/API_REFERENCE.md) | MCP and OAuth API documentation |
+| [🔐 OAuth Setup Guide](docs/oauth/oauth_setup_guide.md) | Comprehensive OAuth configuration |
 | [🔒 Security Guide](docs/COMPREHENSIVE_SECURITY_GUIDE.md) | Security features and best practices |
-| [📖 API Reference](docs/API_REFERENCE.md) | Complete API documentation |
-| [⚡ Performance Guide](docs/PERFORMANCE.md) | Optimization and monitoring |
-| [📋 Release Notes v2.1.0](RELEASE_2.1.0.md) | Latest version features and improvements |
 
-**New to AI + ERP?** Start with our [Getting Started Guide](docs/GETTING_STARTED.md)
+### Development & Advanced
+| Guide | Description |
+|-------|-------------|
+| [🚀 Development Guide](docs/DEVELOPMENT_GUIDE.md) | Create custom tools and plugins |
+| [📦 Plugin Development](docs/PLUGIN_DEVELOPMENT.md) | Build your own plugins |
+| [⚡ Performance Guide](docs/PERFORMANCE.md) | Optimization and monitoring |
+| [📋 Release Notes v2.1.1](RELEASE_2.1.1.md) | Latest version features and improvements |
 
 ---
 

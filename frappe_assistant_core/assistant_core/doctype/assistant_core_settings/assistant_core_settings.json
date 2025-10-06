@@ -27,6 +27,20 @@
   "mcp_server_name",
   "mcp_protocol_version",
   "mcp_transport_type",
+  "oauth_tab",
+  "oauth_authorization_section",
+  "enable_dynamic_client_registration",
+  "allowed_public_client_origins",
+  "oauth_advanced_section",
+  "show_auth_server_metadata",
+  "show_protected_resource_metadata",
+  "oauth_metadata_section",
+  "resource_name",
+  "resource_documentation",
+  "oauth_column_break_2",
+  "resource_policy_uri",
+  "resource_tos_uri",
+  "scopes_supported",
   "advanced_tab",
   "sse_bridge_section",
   "sse_bridge_warning",
@@ -168,6 +182,96 @@
    "label": "Transport Type",
    "read_only": 1,
    "default": "StreamableHTTP"
+  },
+  {
+   "fieldname": "oauth_tab",
+   "fieldtype": "Tab Break",
+   "label": "OAuth"
+  },
+  {
+   "fieldname": "oauth_authorization_section",
+   "fieldtype": "Section Break",
+   "label": "OAuth Configuration",
+   "description": "Configure OAuth 2.0 settings for MCP clients (e.g., Claude Desktop, MCP Inspector)"
+  },
+  {
+   "default": "1",
+   "description": "Enable automatic OAuth client registration for MCP tools. When enabled, tools like MCP Inspector can connect without manual OAuth client setup.",
+   "fieldname": "enable_dynamic_client_registration",
+   "fieldtype": "Check",
+   "label": "Enable Dynamic Client Registration"
+  },
+  {
+   "description": "List of allowed origins for browser-based OAuth clients (one per line).<br>Use <code>*</code> to allow all origins, or specify URLs like <code>http://localhost:6274</code> for MCP Inspector.<br><b>Leave blank to block all public clients.</b>",
+   "fieldname": "allowed_public_client_origins",
+   "fieldtype": "Small Text",
+   "label": "Allowed Public Client Origins",
+   "depends_on": "eval:doc.enable_dynamic_client_registration"
+  },
+  {
+   "fieldname": "oauth_advanced_section",
+   "fieldtype": "Section Break",
+   "label": "Advanced Discovery Settings",
+   "collapsible": 1,
+   "collapsible_depends_on": "eval:0",
+   "description": "Controls which OAuth discovery endpoints are exposed. Most users should leave these enabled."
+  },
+  {
+   "default": "1",
+   "description": "Exposes OAuth server capabilities at <code>/.well-known/oauth-authorization-server</code>. Required for auto-discovery.",
+   "fieldname": "show_auth_server_metadata",
+   "fieldtype": "Check",
+   "label": "Show Authorization Server Metadata"
+  },
+  {
+   "default": "1",
+   "description": "Exposes resource server info at <code>/.well-known/oauth-protected-resource</code>",
+   "fieldname": "show_protected_resource_metadata",
+   "fieldtype": "Check",
+   "label": "Show Protected Resource Metadata"
+  },
+  {
+   "fieldname": "oauth_metadata_section",
+   "fieldtype": "Section Break",
+   "label": "Resource Metadata (Optional)",
+   "collapsible": 1,
+   "collapsible_depends_on": "eval:0"
+  },
+  {
+   "default": "Frappe Assistant Core",
+   "description": "Display name for your resource server",
+   "fieldname": "resource_name",
+   "fieldtype": "Data",
+   "label": "Resource Name"
+  },
+  {
+   "default": "https://github.com/buildswithpaul/Frappe_Assistant_Core",
+   "description": "Documentation URL for developers",
+   "fieldname": "resource_documentation",
+   "fieldtype": "Data",
+   "label": "Documentation URL"
+  },
+  {
+   "fieldname": "oauth_column_break_2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Privacy policy URL",
+   "fieldname": "resource_policy_uri",
+   "fieldtype": "Data",
+   "label": "Policy URI"
+  },
+  {
+   "description": "Terms of service URL",
+   "fieldname": "resource_tos_uri",
+   "fieldtype": "Data",
+   "label": "Terms of Service URI"
+  },
+  {
+   "description": "Supported OAuth scopes (one per line)",
+   "fieldname": "scopes_supported",
+   "fieldtype": "Small Text",
+   "label": "Supported Scopes"
   },
   {
    "fieldname": "advanced_tab",

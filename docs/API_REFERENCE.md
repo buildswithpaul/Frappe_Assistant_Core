@@ -139,6 +139,158 @@ Executes a specific tool with provided arguments.
 }
 ```
 
+## OAuth 2.0 / OIDC Endpoints
+
+### Discovery Endpoints
+
+#### OpenID Configuration
+
+```
+GET /.well-known/openid-configuration
+```
+
+Returns OpenID Connect discovery document with OAuth 2.0 and MCP-specific metadata.
+
+**Response:**
+
+```json
+{
+  "issuer": "https://your-site.com",
+  "authorization_endpoint": "https://your-site.com/api/method/frappe.integrations.oauth2.authorize",
+  "token_endpoint": "https://your-site.com/api/method/frappe.integrations.oauth2.get_token",
+  "userinfo_endpoint": "https://your-site.com/api/method/frappe.integrations.oauth2.openid_profile",
+  "jwks_uri": "https://your-site.com/api/method/frappe_assistant_core.api.oauth_discovery.jwks",
+  "registration_endpoint": "https://your-site.com/api/method/frappe_assistant_core.api.oauth_registration.register_client",
+  "revocation_endpoint": "https://your-site.com/api/method/frappe.integrations.oauth2.revoke_token",
+  "introspection_endpoint": "https://your-site.com/api/method/frappe.integrations.oauth2.introspect_token",
+  "response_types_supported": ["code"],
+  "grant_types_supported": ["authorization_code", "refresh_token"],
+  "code_challenge_methods_supported": ["S256"],
+  "token_endpoint_auth_methods_supported": ["none", "client_secret_basic", "client_secret_post"]
+}
+```
+
+#### OAuth Authorization Server Metadata
+
+```
+GET /.well-known/oauth-authorization-server
+```
+
+Returns RFC 8414 compliant authorization server metadata.
+
+**Response:**
+
+```json
+{
+  "issuer": "https://your-site.com",
+  "authorization_endpoint": "https://your-site.com/api/method/frappe.integrations.oauth2.authorize",
+  "token_endpoint": "https://your-site.com/api/method/frappe.integrations.oauth2.get_token",
+  "registration_endpoint": "https://your-site.com/api/method/frappe_assistant_core.api.oauth_registration.register_client",
+  "response_types_supported": ["code"],
+  "grant_types_supported": ["authorization_code", "refresh_token"],
+  "code_challenge_methods_supported": ["S256"]
+}
+```
+
+#### OAuth Protected Resource Metadata
+
+```
+GET /.well-known/oauth-protected-resource
+```
+
+Returns RFC 9728 compliant protected resource metadata.
+
+**Response:**
+
+```json
+{
+  "resource": "https://your-site.com",
+  "authorization_servers": ["https://your-site.com"],
+  "scopes_supported": ["all", "openid"]
+}
+```
+
+### Dynamic Client Registration
+
+#### Register Client
+
+```
+POST /api/method/frappe_assistant_core.api.oauth_registration.register_client
+```
+
+Implements OAuth 2.0 Dynamic Client Registration (RFC 7591). Creates a new OAuth client automatically.
+
+**Request:**
+
+```json
+{
+  "client_name": "MCP Inspector",
+  "redirect_uris": ["http://localhost:6274/callback"],
+  "token_endpoint_auth_method": "none",
+  "grant_types": ["authorization_code", "refresh_token"],
+  "response_types": ["code"],
+  "scope": "all openid"
+}
+```
+
+**Response:**
+
+```json
+{
+  "client_id": "a1b2c3d4e5",
+  "client_name": "MCP Inspector",
+  "redirect_uris": ["http://localhost:6274/callback"],
+  "token_endpoint_auth_method": "none",
+  "grant_types": ["authorization_code", "refresh_token"],
+  "response_types": ["code"],
+  "client_id_issued_at": 1704067200
+}
+```
+
+### OAuth Flow Endpoints
+
+These endpoints are provided by Frappe core. See [OAuth Setup Guide](oauth/oauth_setup_guide.md) for usage.
+
+#### Authorize
+
+```
+GET /api/method/frappe.integrations.oauth2.authorize
+```
+
+OAuth authorization endpoint. Redirects to login if not authenticated.
+
+#### Token Exchange
+
+```
+POST /api/method/frappe.integrations.oauth2.get_token
+```
+
+Exchange authorization code for access token.
+
+#### Token Revocation
+
+```
+POST /api/method/frappe.integrations.oauth2.revoke_token
+```
+
+Revoke an access or refresh token.
+
+#### Token Introspection
+
+```
+POST /api/method/frappe.integrations.oauth2.introspect_token
+```
+
+Get information about a token.
+
+#### User Info
+
+```
+GET /api/method/frappe.integrations.oauth2.openid_profile
+```
+
+Get user profile information (OpenID Connect).
+
 ## Administrative Endpoints
 
 ### Plugin Management

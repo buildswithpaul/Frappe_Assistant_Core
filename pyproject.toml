@@ -27,41 +27,42 @@ classifiers = [
 keywords = ["frappe", "erp", "ai", "assistant", "mcp", "analysis", "business-intelligence"]
 requires-python = ">=3.8"
 dependencies = [
-    # Core data science libraries
-    "pandas>=1.3.0",
-    "numpy>=1.20.0",
-    "matplotlib>=3.4.0",
-    "seaborn>=0.11.0",
-    "plotly>=5.0.0",
-    "scipy>=1.7.0",
-    "openpyxl>=3.0.0",  # Excel support for pandas
+    # Core data science libraries - pinned to installed versions for stability
+    "pandas~=2.2.3",
+    "numpy~=2.3.3",
+    "matplotlib~=3.10.6",
+    "seaborn~=0.13.2",
+    "plotly~=6.3.0",
+    "scipy~=1.16.2",
+    "openpyxl~=3.1.5",  # Excel support for pandas
     # Additional analysis libraries
-    "scikit-learn>=1.0.0",
-    "bokeh>=2.4.0",
-    "altair>=4.1.0",
-    "sympy>=1.8.0",
-    "networkx>=2.6.0",
-    "xlsxwriter>=3.0.0",
+    "scikit-learn~=1.7.2",
+    "bokeh~=3.8.0",
+    "altair~=5.5.0",
+    "sympy~=1.14.0",
+    "networkx~=3.5.0",
+    "xlsxwriter~=3.2.9",
     # Network and API dependencies
-    "requests>=2.25.0",
-    "jsonschema>=4.0.0",
+    "requests~=2.32.5",
+    "jsonschema~=4.25.1",
+    "pydantic~=2.10.6",  # OAuth dynamic client registration validation
     # SSE Bridge dependencies
-    "fastapi>=0.100.0",
-    "uvicorn>=0.20.0",
-    "python-dotenv>=1.0.0",
-    "python-multipart>=0.0.6",
-    "httpx>=0.24.0",
+    "fastapi~=0.117.1",
+    "uvicorn~=0.36.0",
+    "python-dotenv~=1.1.1",
+    "python-multipart~=0.0.20",
+    "httpx~=0.28.1",
     # File processing dependencies
-    "pypdf>=3.0.0",
-    "Pillow>=10.0.0",
-    "python-docx>=0.8.11",
-    "pytesseract>=0.3.10",
+    "pypdf~=6.0.0",
+    "Pillow~=11.3.0",
+    "python-docx~=1.2.0",
+    "pytesseract~=0.3.13",
     "chardet~=5.1.0",  # Compatible with frappe ~=5.1.0 requirement
     # Advanced file processing
-    "pdfplumber>=0.9.0",
-    "pymupdf>=1.23.0",
-    "python-magic>=0.4.27",
-    "beautifulsoup4~=4.12.2",  # Compatible with frappe ~=4.12.2 requirement
+    "pdfplumber~=0.11.7",
+    "pymupdf~=1.26.4",
+    "python-magic~=0.4.27",
+    "beautifulsoup4~=4.12.3",  # Compatible with frappe ~=4.12.3 requirement
 ]
 
 [project.optional-dependencies]

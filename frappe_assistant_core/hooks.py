@@ -156,6 +156,13 @@ scheduler_events = {
 override_whitelisted_methods = {
     "frappe.integrations.oauth2.openid_configuration": "frappe_assistant_core.api.oauth_discovery.openid_configuration"
 }
+
+# Custom Page Renderers
+# ----------------------
+
+# Handle .well-known OAuth endpoints with custom renderer
+page_renderer = ["frappe_assistant_core.api.oauth_wellknown_renderer.WellKnownRenderer"]
+
 #
 # each overriding function accepts a `data` argument;
 # generated from the base implementation of the doctype dashboard,
@@ -204,6 +211,12 @@ override_whitelisted_methods = {
 # auth_hooks = [
 # "frappe_assistant_core.auth.validate"
 # ]
+
+# Request Hooks
+# -------------
+
+# Handle CORS for OAuth endpoints (dynamic client registration, token endpoints, etc.)
+before_request = ["frappe_assistant_core.api.oauth_cors.set_cors_for_oauth_endpoints"]
 
 # Automatically update python controller files with type annotations for DocTypes
 # Use Developer Mode in Bench set up to auto append type annotation
