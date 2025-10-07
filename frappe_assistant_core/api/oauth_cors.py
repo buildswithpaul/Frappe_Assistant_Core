@@ -70,6 +70,7 @@ def set_cors_for_oauth_endpoints():
         "/api/method/frappe.integrations.oauth2.introspect_token",
         "/api/method/frappe.integrations.oauth2.openid_profile",
         "/api/method/frappe_assistant_core.api.oauth_discovery.openid_configuration",
+        "/api/method/frappe_assistant_core.api.fac_endpoint.handle_mcp",
     ]
 
     if any(request_path.startswith(endpoint) for endpoint in oauth_endpoints):
