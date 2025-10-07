@@ -39,7 +39,7 @@ class SearchDocuments(BaseTool):
 
     def __init__(self):
         super().__init__()
-        self.name = "search"
+        self.name = "search_documents"
         self.description = "Global search across all accessible documents"
         self.requires_permission = None  # Permission checked dynamically per DocType
 

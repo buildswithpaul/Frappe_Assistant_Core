@@ -56,6 +56,9 @@ class CorePlugin(BasePlugin):
             "search_documents",
             "search_doctype",
             "search_link",
+            # ChatGPT-compatible tools (wrappers for ChatGPT MCP requirements)
+            "chatgpt_search",
+            "chatgpt_fetch",
             # Metadata tools
             "get_doctype_info",
             # Report tools (individual classes)

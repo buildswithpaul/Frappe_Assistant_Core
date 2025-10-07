@@ -389,7 +389,7 @@ Creates a new Frappe document.
 }
 ```
 
-#### fetch
+#### get_document
 
 Retrieves a specific document.
 
@@ -432,7 +432,7 @@ Deletes a document.
 
 #### Search Tools
 
-#### search
+#### search_documents
 
 Searches across all accessible DocTypes.
 
@@ -440,7 +440,7 @@ Searches across all accessible DocTypes.
 
 - `query` (string, required): Search query
 - `limit` (integer, optional): Results per DocType
-- `doctypes` (array, optional): Specific DocTypes to search
+- `doctypes` (array, optional): Specific DocTypes to search_documents
 
 #### search_doctype
 
@@ -448,9 +448,9 @@ Searches within a specific DocType.
 
 **Parameters:**
 
-- `doctype` (string, required): DocType to search
+- `doctype` (string, required): DocType to search_documents
 - `query` (string, required): Search query
-- `fields` (array, optional): Fields to search in
+- `fields` (array, optional): Fields to search_documents in
 - `limit` (integer, optional): Maximum results
 
 #### search_link

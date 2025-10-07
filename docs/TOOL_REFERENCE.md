@@ -28,7 +28,7 @@ Tools are organized into plugins that can be enabled/disabled as needed:
 - **Key patterns**: "create a new", "add a", "make a"
 - **Example**: "Create a new customer named ABC Corp"
 
-#### fetch
+#### get_document
 - **Description**: Retrieve complete details of a specific document
 - **When to use**: User knows the exact document ID/name and needs full details
 - **Key patterns**: "show me", "get details of", "what is in"
@@ -49,21 +49,21 @@ Tools are organized into plugins that can be enabled/disabled as needed:
 #### list_documents
 - **Description**: List and filter documents with pagination
 - **When to use**: Primary tool for finding and browsing records
-- **Key patterns**: "list", "show all", "find", "search for", "how many"
+- **Key patterns**: "list", "show all", "find", "search_documents for", "how many"
 - **Example**: "List all sales invoices from last month"
 
 ### Search Tools (3 tools)
 
-#### search
-- **Description**: Global search across all accessible DocTypes
+#### search_documents
+- **Description**: Global search_documents across all accessible DocTypes
 - **When to use**: User doesn't know which DocType contains the information
-- **Key patterns**: "search everywhere", "find across all", "global search"
+- **Key patterns**: "search_documents everywhere", "find across all", "global search_documents"
 - **Example**: "Search for 'electronics' across all documents"
 
 #### search_doctype
-- **Description**: Search within a specific DocType using text search
-- **When to use**: User knows the DocType and wants text-based search
-- **Key patterns**: "search in", "find in [DocType]"
+- **Description**: Search within a specific DocType using text search_documents
+- **When to use**: User knows the DocType and wants text-based search_documents
+- **Key patterns**: "search_documents in", "find in [DocType]"
 - **Example**: "Search for 'pending' in Purchase Orders"
 
 #### search_link
@@ -287,7 +287,7 @@ Tools are organized into plugins that can be enabled/disabled as needed:
 
 ### For Document Operations
 1. **Finding records**: Start with `list_documents`
-2. **Specific record**: Use `fetch`
+2. **Specific record**: Use `get_document`
 3. **Creating**: Use `create_document`
 4. **Modifying**: Use `update_document`
 5. **Removing**: Use `delete_document`
@@ -309,7 +309,7 @@ Tools are organized into plugins that can be enabled/disabled as needed:
 Many tasks require multiple tools:
 ```
 1. list_documents → find records
-2. fetch → get full details
+2. get_document → get full details
 3. update_document → make changes
 ```
 
