@@ -63,7 +63,9 @@ class WellKnownRenderer:
 
         # Handle /.well-known/openid-configuration
         if self.path == ".well-known/openid-configuration":
-            metadata = openid_configuration()
+            # openid_configuration() modifies frappe.local.response directly
+            openid_configuration()
+            metadata = frappe.local.response
             return self._json_response(metadata)
 
         # Handle /.well-known/oauth-authorization-server

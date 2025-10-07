@@ -70,7 +70,7 @@ def _import_tools():
         frappe.log_error(title="Tool Import Error", message=f"Error importing tools: {str(e)}")
 
 
-@mcp.register(allow_guest=False, xss_safe=True)
+@mcp.register(allow_guest=True, xss_safe=True)
 def handle_mcp():
     """
     MCP StreamableHTTP endpoint.
@@ -80,7 +80,82 @@ def handle_mcp():
 
     Endpoint: /api/method/frappe_assistant_core.api.fac_endpoint.handle_mcp
     Protocol: MCP 2025-03-26 StreamableHTTP
+
+    Implements OAuth 2.0 Protected Resource (RFC 9728) with proper 401 responses.
     """
+    from frappe.oauth import get_server_url
+    from werkzeug.wrappers import Response
+
+    # Check for Bearer token in Authorization header
+    auth_header = frappe.request.headers.get("Authorization", "")
+
+    if not auth_header.startswith("Bearer "):
+        # Return 401 with WWW-Authenticate header per RFC 9728
+        frappe_url = get_server_url()
+        metadata_url = f"{frappe_url}/.well-known/oauth-protected-resource"
+
+        response = Response()
+        response.status_code = 401
+        response.headers["WWW-Authenticate"] = (
+            f'Bearer realm="Frappe Assistant Core", ' f'resource_metadata="{metadata_url}"'
+        )
+        response.headers["Content-Type"] = "application/json"
+        response.data = frappe.as_json({"error": "unauthorized", "message": "Authentication required"})
+        return response
+
+    # Validate OAuth token
+    token = auth_header[7:]  # Remove "Bearer " prefix
+    try:
+        # Validate token using Frappe's OAuth Bearer Token doctype
+        bearer_token = frappe.get_doc("OAuth Bearer Token", {"access_token": token})
+
+        # Check if token is active
+        if bearer_token.status != "Active":
+            raise frappe.AuthenticationError("Token is not active")
+
+        # Check if token has expired
+        import datetime
+
+        if bearer_token.expiration_time < datetime.datetime.now():
+            raise frappe.AuthenticationError("Token has expired")
+
+        # Set the user session
+        frappe.set_user(bearer_token.user)
+
+    except frappe.DoesNotExistError:
+        # Token not found
+        frappe_url = get_server_url()
+        metadata_url = f"{frappe_url}/.well-known/oauth-protected-resource"
+
+        response = Response()
+        response.status_code = 401
+        response.headers["WWW-Authenticate"] = (
+            f'Bearer realm="Frappe Assistant Core", '
+            f'error="invalid_token", '
+            f'error_description="Token not found", '
+            f'resource_metadata="{metadata_url}"'
+        )
+        response.headers["Content-Type"] = "application/json"
+        response.data = frappe.as_json({"error": "invalid_token", "message": "Token not found"})
+        return response
+
+    except Exception as e:
+        # Return 401 for invalid/expired tokens per MCP spec
+        frappe_url = get_server_url()
+        metadata_url = f"{frappe_url}/.well-known/oauth-protected-resource"
+
+        response = Response()
+        response.status_code = 401
+        response.headers["WWW-Authenticate"] = (
+            f'Bearer realm="Frappe Assistant Core", '
+            f'error="invalid_token", '
+            f'error_description="{str(e)}", '
+            f'resource_metadata="{metadata_url}"'
+        )
+        response.headers["Content-Type"] = "application/json"
+        response.data = frappe.as_json({"error": "invalid_token", "message": str(e)})
+        return response
+
     # Check if user has assistant access enabled
     if not _check_assistant_enabled(frappe.session.user):
         frappe.throw(f"Assistant access is disabled for user {frappe.session.user}", frappe.PermissionError)
@@ -88,5 +163,5 @@ def handle_mcp():
     # Import tools (they auto-register via decorators)
     _import_tools()
 
-    # The response is already handled by the @mcp.register decorator
-    # which calls mcp.handle() internally
+    # Return None to let the decorator continue with MCP handling
+    return None

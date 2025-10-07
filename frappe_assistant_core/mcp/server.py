@@ -109,8 +109,12 @@ class MCPServer:
             self._entry_fn = fn
 
             def wrapper() -> Response:
-                # Run user's function to import tools
-                fn()
+                # Run user's function to import tools and perform auth checks
+                result = fn()
+
+                # If fn() returned a response (e.g., 401 auth failure), use that
+                if result is not None:
+                    return result
 
                 # Handle MCP request
                 request = frappe.request
