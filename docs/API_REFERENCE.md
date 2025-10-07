@@ -389,7 +389,7 @@ Creates a new Frappe document.
 }
 ```
 
-#### get_document
+#### fetch
 
 Retrieves a specific document.
 
@@ -432,7 +432,7 @@ Deletes a document.
 
 #### Search Tools
 
-#### search_documents
+#### search
 
 Searches across all accessible DocTypes.
 
