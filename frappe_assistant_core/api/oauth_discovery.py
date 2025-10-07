@@ -39,10 +39,10 @@ def openid_configuration():
     from frappe_assistant_core.utils.oauth_compat import get_oauth_settings
 
     # Call Frappe's built-in method (it sets frappe.local.response directly)
-    frappe_openid_config()
+    metadata = frappe_openid_config()
 
     # Get the response that Frappe set
-    metadata = frappe.local.response
+    # metadata = frappe.local.response
 
     # Add MCP-required fields that are missing
     frappe_url = get_server_url()
