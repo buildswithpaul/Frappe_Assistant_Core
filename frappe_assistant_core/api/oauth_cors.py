@@ -38,16 +38,21 @@ def set_cors_for_oauth_endpoints():
     Without CORS, public clients (like MCP Inspector) cannot make
     preflight OPTIONS requests or actual API calls from the browser.
     """
-    # Skip if no request or CORS already allowed globally
-    if (
-        frappe.conf.allow_cors == "*"
-        or not frappe.local.request
-        or not frappe.local.request.headers.get("Origin")
-    ):
+    if not frappe.local.request:
         return
 
     request_path = frappe.request.path
     request_method = frappe.request.method
+
+    # Handle malformed concatenated URLs from OAuth clients
+    # e.g., /.well-known/oauth-protected-resource/api/method/...
+    if "/.well-known/" in request_path and "/api/method/" in request_path:
+        _handle_malformed_wellknown_url(request_path, request_method)
+        return
+
+    # Skip if CORS already allowed globally
+    if frappe.conf.allow_cors == "*" or not frappe.local.request.headers.get("Origin"):
+        return
 
     # Allow CORS for well-known endpoints (GET and OPTIONS)
     if request_path.startswith("/.well-known/") and request_method in ("GET", "OPTIONS"):
@@ -99,3 +104,79 @@ def _set_allowed_cors():
         frappe.local.allow_cors = "*"
     elif allowed:
         frappe.local.allow_cors = allowed
+
+
+def _handle_malformed_wellknown_url(request_path: str, request_method: str):
+    """
+    Handle malformed URLs where OAuth client concatenated .well-known with MCP endpoint.
+
+    Some OAuth clients incorrectly parse the resource_metadata URL and concatenate it
+    with the MCP endpoint, creating URLs like:
+    /.well-known/oauth-protected-resource/api/method/frappe_assistant_core.api.fac_endpoint.handle_mcp
+
+    This handler extracts the .well-known endpoint and returns the correct metadata.
+    """
+    import json
+
+    from werkzeug.wrappers import Response
+
+    # Extract the .well-known endpoint name
+    wellknown_part = request_path.split("/api/method/")[0]
+
+    # Determine which endpoint is being requested
+    metadata = None
+
+    if "openid-configuration" in wellknown_part:
+        from frappe_assistant_core.api.oauth_discovery import openid_configuration
+
+        openid_configuration()
+        metadata = frappe.local.response
+
+    elif "oauth-protected-resource" in wellknown_part:
+        from frappe_assistant_core.api.oauth_discovery import protected_resource_metadata
+
+        metadata = protected_resource_metadata()
+
+    elif "oauth-authorization-server" in wellknown_part:
+        from frappe_assistant_core.api.oauth_discovery import authorization_server_metadata
+
+        metadata = authorization_server_metadata()
+
+    if metadata:
+        # Build a proper werkzeug Response and bypass Frappe's handler
+        from werkzeug.wrappers import Response as WerkzeugResponse
+
+        # Handle OPTIONS preflight request
+        if request_method == "OPTIONS":
+            response = WerkzeugResponse(
+                "",
+                status=200,
+                headers={
+                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+                    "Access-Control-Allow-Headers": "Content-Type, Authorization, MCP-Protocol-Version",
+                    "Access-Control-Max-Age": "3600",
+                },
+            )
+        else:
+            # Return JSON response for GET
+            response = WerkzeugResponse(
+                json.dumps(metadata, indent=2),
+                status=200,
+                headers={
+                    "Content-Type": "application/json",
+                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Methods": "GET, OPTIONS",
+                    "Access-Control-Allow-Headers": "Content-Type",
+                    "Cache-Control": "public, max-age=3600",
+                },
+            )
+
+        # Raise the response as an HTTPException to bypass normal processing
+        from werkzeug.exceptions import HTTPException
+
+        class ResponseException(HTTPException):
+            def get_response(self, environ=None):
+                return response
+
+        raise ResponseException()

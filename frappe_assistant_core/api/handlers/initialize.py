@@ -23,7 +23,6 @@ from typing import Any, Dict, Optional
 
 import frappe
 
-from frappe_assistant_core.api.mcp import get_app_version
 from frappe_assistant_core.constants.definitions import (
     MCP_PROTOCOL_VERSION,
     SERVER_NAME,
@@ -32,6 +31,30 @@ from frappe_assistant_core.constants.definitions import (
     ErrorMessages,
 )
 from frappe_assistant_core.utils.logger import api_logger
+
+
+def get_app_version(app_name: str) -> str:
+    """
+    Get version of a Frappe app.
+
+    Args:
+        app_name: Name of the app
+
+    Returns:
+        Version string or empty string if not found
+    """
+    try:
+        if app_name == "frappe_assistant_core":
+            from frappe_assistant_core import __version__
+
+            return __version__
+        else:
+            # For other apps, try to import and get __version__
+            module = __import__(app_name)
+            version = getattr(module, "__version__", None)
+            return version if version else ""
+    except ImportError:
+        return ""
 
 
 def handle_initialize(params: Dict[str, Any], request_id: Optional[Any]) -> Dict[str, Any]:
