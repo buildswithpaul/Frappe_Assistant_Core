@@ -96,6 +96,10 @@ def _set_allowed_cors():
 
     If allowed_public_client_origins contains "*", allow all origins.
     Otherwise, only allow origins in the whitelist.
+
+    NOTE: For Frappe V15, we set frappe.conf.allow_cors (works immediately).
+    For Frappe V16+, we also set frappe.local.allow_cors (native support).
+    This ensures compatibility with both versions without restart.
     """
     settings = get_oauth_settings()
     allowed = settings.get("allowed_public_client_origins")
@@ -107,8 +111,12 @@ def _set_allowed_cors():
     allowed = [origin.strip() for origin in allowed if origin.strip()]
 
     if "*" in allowed:
+        # Set both for V15 and V16 compatibility
+        frappe.conf.allow_cors = "*"
         frappe.local.allow_cors = "*"
     elif allowed:
+        # Set both for V15 and V16 compatibility
+        frappe.conf.allow_cors = allowed
         frappe.local.allow_cors = allowed
 
 

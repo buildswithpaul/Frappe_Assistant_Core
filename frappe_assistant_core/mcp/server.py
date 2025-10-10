@@ -317,8 +317,18 @@ class MCPServer:
         Declares server capabilities according to MCP 2025-03-26 spec.
         We only support tools (not prompts, resources, or sampling).
         """
+        import frappe
+
+        # Get protocol version from settings
+        protocol_version = "2025-03-26"  # Default
+        try:
+            settings = frappe.get_single("Assistant Core Settings")
+            protocol_version = settings.mcp_protocol_version or protocol_version
+        except Exception:
+            pass
+
         return {
-            "protocolVersion": "2025-03-26",
+            "protocolVersion": protocol_version,
             "capabilities": {
                 "tools": {},  # We support tools
                 # Note: We respond to resources/list and prompts/list with empty arrays

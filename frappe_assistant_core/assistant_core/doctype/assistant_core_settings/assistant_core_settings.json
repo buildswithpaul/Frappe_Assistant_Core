@@ -40,15 +40,7 @@
   "oauth_column_break_2",
   "resource_policy_uri",
   "resource_tos_uri",
-  "scopes_supported",
-  "advanced_tab",
-  "sse_bridge_section",
-  "sse_bridge_warning",
-  "sse_bridge_enabled",
-  "sse_bridge_port",
-  "sse_bridge_host",
-  "sse_bridge_debug",
-  "sse_bridge_status_html"
+  "scopes_supported"
  ],
  "fields": [
   {
@@ -68,21 +60,22 @@
    "fieldtype": "Data",
    "label": "Server Version",
    "read_only": 1,
-   "default": "2.0.0"
+   "default": "2.0.0",
+   "description": "Current version of Frappe Assistant Core"
   },
   {
    "fieldname": "mcp_endpoint_url",
    "fieldtype": "Data",
    "label": "MCP Endpoint URL",
    "read_only": 1,
-   "description": "Main MCP StreamableHTTP endpoint"
+   "description": "Main MCP StreamableHTTP endpoint URL. Use this URL when connecting Claude Desktop or MCP Inspector."
   },
   {
    "fieldname": "oauth_discovery_url",
    "fieldtype": "Data",
    "label": "OAuth Discovery URL",
    "read_only": 1,
-   "description": "OAuth/OIDC discovery endpoint for MCP Inspector"
+   "description": "OAuth/OIDC discovery endpoint for auto-configuration. MCP clients use this to discover authentication endpoints."
   },
   {
    "fieldname": "plugins_tab",
@@ -92,20 +85,23 @@
   {
    "fieldname": "plugins_section",
    "fieldtype": "Section Break",
-   "label": "Plugin Configuration"
+   "label": "Plugin Configuration",
+   "description": "Manage MCP tool plugins. Plugins extend the MCP server with additional tools and capabilities."
   },
   {
    "default": "[\"core\"]",
    "fieldname": "enabled_plugins_list",
    "fieldtype": "JSON",
    "hidden": 1,
-   "label": "Enabled Plugins"
+   "label": "Enabled Plugins",
+   "description": "Internal list of enabled plugin IDs"
   },
   {
    "fieldname": "plugin_status_html",
    "fieldtype": "HTML",
    "label": "Plugin Status",
-   "options": "<div id=\"plugin-status-container\">Loading plugin information...</div>"
+   "options": "<div id=\"plugin-status-container\">Loading plugin information...</div>",
+   "description": "Current status of installed plugins and available tools"
   },
   {
    "fieldname": "streaming_tab",
@@ -115,39 +111,40 @@
   {
    "fieldname": "streaming_section",
    "fieldtype": "Section Break",
-   "label": "Artifact Streaming Configuration"
+   "label": "Artifact Streaming Configuration",
+   "description": "Configure how Claude handles large tool responses using artifacts to prevent hitting response limits."
   },
   {
    "default": "1",
-   "description": "Require all LLMs to use artifact streaming for analysis operations",
+   "description": "Require Claude to use artifact streaming for data analysis operations. When enabled, large results are automatically streamed to artifacts instead of being included inline.",
    "fieldname": "enforce_artifact_streaming",
    "fieldtype": "Check",
    "label": "Enforce Artifact Streaming Protocol"
   },
   {
    "default": "1",
-   "description": "Automatically promote artifact streaming to prevent LLM response limits",
+   "description": "Automatically trigger artifact streaming when tool results exceed the thresholds below. Prevents Claude from hitting response limits on large datasets.",
    "fieldname": "response_limit_prevention",
    "fieldtype": "Check",
    "label": "Enable Response Limit Prevention"
   },
   {
    "default": "Always create analysis workspace artifacts before performing data analysis.\nStream all detailed work to artifacts to prevent response limits.\nKeep responses minimal with artifact references.\nBuild unlimited analysis depth via progressive artifact updates.",
-   "description": "Additional behavioral instructions for LLMs using the MCP server",
+   "description": "Custom instructions sent to Claude about streaming behavior. These instructions guide how Claude structures responses when working with large datasets.",
    "fieldname": "streaming_behavior_instructions",
    "fieldtype": "Small Text",
    "label": "Custom Streaming Instructions"
   },
   {
    "default": "5",
-   "description": "Number of lines in tool result that triggers artifact streaming",
+   "description": "Minimum number of lines in a tool result that triggers artifact streaming (when Response Limit Prevention is enabled)",
    "fieldname": "streaming_line_threshold",
    "fieldtype": "Int",
    "label": "Line Threshold for Streaming"
   },
   {
    "default": "1000",
-   "description": "Number of characters in tool result that triggers artifact streaming",
+   "description": "Minimum number of characters in a tool result that triggers artifact streaming (when Response Limit Prevention is enabled)",
    "fieldname": "streaming_char_threshold",
    "fieldtype": "Int",
    "label": "Character Threshold for Streaming"
@@ -160,28 +157,31 @@
   {
    "fieldname": "mcp_section",
    "fieldtype": "Section Break",
-   "label": "MCP Server Settings"
+   "label": "MCP Server Settings",
+   "description": "Configure MCP (Model Context Protocol) server identity and capabilities. These values are reported to MCP clients during initialization and discovery."
   },
   {
    "fieldname": "mcp_server_name",
    "fieldtype": "Data",
    "label": "MCP Server Name",
    "default": "frappe-assistant-core",
-   "description": "Name identifier for the MCP server"
+   "description": "Unique identifier for this MCP server instance. Used in MCP initialization handshake."
   },
   {
    "fieldname": "mcp_protocol_version",
    "fieldtype": "Data",
    "label": "MCP Protocol Version",
    "read_only": 1,
-   "default": "2025-03-26"
+   "default": "2025-03-26",
+   "description": "MCP specification version this server implements. Currently supports 2025-03-26."
   },
   {
    "fieldname": "mcp_transport_type",
    "fieldtype": "Data",
    "label": "Transport Type",
    "read_only": 1,
-   "default": "StreamableHTTP"
+   "default": "StreamableHTTP",
+   "description": "Transport protocol used for MCP communication. StreamableHTTP enables OAuth-based authentication."
   },
   {
    "fieldname": "oauth_tab",
@@ -268,59 +268,10 @@
    "label": "Terms of Service URI"
   },
   {
-   "description": "Supported OAuth scopes (one per line)",
+   "description": "Supported OAuth scopes (one per line). Leave blank to use default scopes (all, openid).",
    "fieldname": "scopes_supported",
    "fieldtype": "Small Text",
    "label": "Supported Scopes"
-  },
-  {
-   "fieldname": "advanced_tab",
-   "fieldtype": "Tab Break",
-   "label": "Advanced"
-  },
-  {
-   "fieldname": "sse_bridge_section",
-   "fieldtype": "Section Break",
-   "label": "SSE Bridge Configuration (Deprecated)"
-  },
-  {
-   "fieldname": "sse_bridge_warning",
-   "fieldtype": "HTML",
-   "options": "<div class=\"alert alert-warning\" style=\"margin-bottom: 15px;\"><h6><i class=\"fa fa-exclamation-triangle\"></i> Experimental Feature</h6><p><strong>Important:</strong> The SSE Bridge is an experimental feature that:</p><ul><li><strong>Does not work on Frappe Cloud</strong> - Only available for self-hosted installations</li><li>May have stability issues and is subject to breaking changes</li><li>Requires manual port management and process monitoring</li><li>Is intended for development and testing environments</li></ul><p><small>For production use, consider using the standard MCP bridge instead.</small></p></div>"
-  },
-  {
-   "default": "1",
-   "description": "Enable or disable the SSE MCP Bridge for real-time communication",
-   "fieldname": "sse_bridge_enabled",
-   "fieldtype": "Check",
-   "label": "Enable SSE Bridge"
-  },
-  {
-   "default": "8080",
-   "description": "Port number for the SSE bridge server",
-   "fieldname": "sse_bridge_port",
-   "fieldtype": "Int",
-   "label": "SSE Bridge Port"
-  },
-  {
-   "default": "0.0.0.0",
-   "description": "Host address to bind the SSE bridge server",
-   "fieldname": "sse_bridge_host",
-   "fieldtype": "Data",
-   "label": "SSE Bridge Host"
-  },
-  {
-   "default": "0",
-   "description": "Enable debug mode for SSE bridge logging",
-   "fieldname": "sse_bridge_debug",
-   "fieldtype": "Check",
-   "label": "Enable SSE Bridge Debug Mode"
-  },
-  {
-   "fieldname": "sse_bridge_status_html",
-   "fieldtype": "HTML",
-   "label": "SSE Bridge Status",
-   "options": "<div id=\"sse-bridge-status-container\">Loading SSE bridge status...</div>"
   }
  ],
  "issingle": 1,

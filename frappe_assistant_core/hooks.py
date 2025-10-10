@@ -216,6 +216,8 @@ page_renderer = ["frappe_assistant_core.api.oauth_wellknown_renderer.WellKnownRe
 # -------------
 
 # Handle CORS for OAuth endpoints (dynamic client registration, token endpoints, etc.)
+# Sets frappe.conf.allow_cors (V15) and frappe.local.allow_cors (V16+) based on
+# "Allowed Public Client Origins" setting - works immediately without restart
 before_request = ["frappe_assistant_core.api.oauth_cors.set_cors_for_oauth_endpoints"]
 
 # Automatically update python controller files with type annotations for DocTypes

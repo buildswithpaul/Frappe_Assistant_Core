@@ -25,8 +25,18 @@ import frappe
 
 from frappe_assistant_core.mcp.server import MCPServer
 
-# Create MCP server instance
-mcp = MCPServer("frappe-assistant-core")
+
+def _get_mcp_server_name():
+    """Get MCP server name from settings or use default."""
+    try:
+        settings = frappe.get_single("Assistant Core Settings")
+        return settings.mcp_server_name or "frappe-assistant-core"
+    except Exception:
+        return "frappe-assistant-core"
+
+
+# Create MCP server instance with name from settings
+mcp = MCPServer(_get_mcp_server_name())
 
 
 def _check_assistant_enabled(user: str) -> bool:

@@ -19,66 +19,8 @@ from typing import Any, Dict, Optional
 logger = logging.getLogger(__name__)
 
 
-def get_sse_bridge_config() -> Dict[str, Any]:
-    """
-    Get SSE bridge configuration from multiple sources:
-    1. Assistant Core Settings doctype (if Frappe is available)
-    2. Environment variables
-    3. Sensible defaults
-
-    Returns:
-        Dict[str, Any]: Configuration dictionary
-    """
-    config = {
-        # Default configuration
-        "enabled": True,
-        "host": "0.0.0.0",
-        "port": 8080,
-        "debug": False,
-        "redis_config": None,  # Will be populated if Frappe is available
-    }
-
-    # Try to read from Frappe Assistant Core Settings first
-    try:
-        import frappe
-
-        if frappe.db and frappe.db.get_value("DocType", "Assistant Core Settings"):
-            settings = frappe.get_single("Assistant Core Settings")
-
-            # Update config with settings from doctype
-            if hasattr(settings, "sse_bridge_enabled"):
-                config["enabled"] = bool(settings.sse_bridge_enabled)
-            if hasattr(settings, "sse_bridge_host"):
-                config["host"] = settings.sse_bridge_host or config["host"]
-            if hasattr(settings, "sse_bridge_port"):
-                config["port"] = int(settings.sse_bridge_port) if settings.sse_bridge_port else config["port"]
-            if hasattr(settings, "sse_bridge_debug"):
-                config["debug"] = bool(settings.sse_bridge_debug)
-
-            logger.info("SSE bridge config loaded from Assistant Core Settings")
-
-            # Get Redis configuration from Frappe
-            config["redis_config"] = get_frappe_redis_config()
-
-    except Exception as e:
-        logger.info(
-            f"Failed to read from Assistant Core Settings ({e}), using environment variables and defaults"
-        )
-
-    # Override with environment variables if available
-    config["enabled"] = os.environ.get("SSE_BRIDGE_ENABLED", str(config["enabled"])).lower() in (
-        "true",
-        "1",
-        "yes",
-        "on",
-    )
-    config["host"] = os.environ.get("SSE_BRIDGE_HOST", os.environ.get("HOST", config["host"]))
-    config["port"] = int(os.environ.get("SSE_BRIDGE_PORT", os.environ.get("PORT", config["port"])))
-    config["debug"] = os.environ.get(
-        "SSE_BRIDGE_DEBUG", os.environ.get("DEBUG", str(config["debug"]))
-    ).lower() in ("true", "1", "yes", "on")
-
-    return config
+# SSE bridge configuration removed - SSE transport is deprecated
+# Use StreamableHTTP (OAuth-based) transport instead
 
 
 def get_frappe_redis_config() -> Optional[Dict[str, Any]]:
@@ -168,30 +110,23 @@ def get_fallback_redis_config() -> Dict[str, Any]:
     return redis_config
 
 
-def is_sse_bridge_enabled() -> bool:
-    """
-    Check if SSE bridge is enabled in settings.
-
-    Returns:
-        bool: True if SSE bridge is enabled
-    """
-    config = get_sse_bridge_config()
-    return config.get("enabled", True)
+# is_sse_bridge_enabled() removed - SSE transport is deprecated
 
 
 def get_redis_config() -> Dict[str, Any]:
     """
-    Get complete Redis configuration for SSE bridge.
+    Get complete Redis configuration.
     Tries Frappe's method first, then falls back to manual discovery.
 
     Returns:
         Dict[str, Any]: Redis configuration
     """
-    config = get_sse_bridge_config()
+    # Try to get Frappe Redis config
+    redis_config = get_frappe_redis_config()
 
     # Return Frappe Redis config if available
-    if config.get("redis_config"):
-        return config["redis_config"]
+    if redis_config:
+        return redis_config
 
     # Fall back to manual discovery
     return get_fallback_redis_config()

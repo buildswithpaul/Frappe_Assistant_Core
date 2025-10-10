@@ -53,13 +53,24 @@ def openid_configuration():
     # Add PKCE support (required by MCP Inspector)
     metadata["code_challenge_methods_supported"] = ["S256"]
 
-    # Add MCP-specific metadata (optional but useful)
+    # Add MCP-specific metadata (optional but useful) - read from settings
+    settings = get_oauth_settings()
+
+    # Get MCP configuration from Assistant Core Settings
+    mcp_protocol_version = "2025-03-26"
+    mcp_transport = "StreamableHTTP"
+    try:
+        core_settings = frappe.get_single("Assistant Core Settings")
+        mcp_protocol_version = core_settings.mcp_protocol_version or mcp_protocol_version
+        mcp_transport = core_settings.mcp_transport_type or mcp_transport
+    except Exception:
+        pass
+
     metadata["mcp_endpoint"] = f"{frappe_url}/api/method/frappe_assistant_core.api.fac_endpoint.handle_mcp"
-    metadata["mcp_transport"] = "StreamableHTTP"
-    metadata["mcp_protocol_version"] = "2025-03-26"
+    metadata["mcp_transport"] = mcp_transport
+    metadata["mcp_protocol_version"] = mcp_protocol_version
 
     # Add registration endpoint if dynamic client registration is enabled
-    settings = get_oauth_settings()
     if settings.get("enable_dynamic_client_registration"):
         metadata["registration_endpoint"] = (
             f"{frappe_url}/api/method/frappe_assistant_core.api.oauth_registration.register_client"
@@ -89,10 +100,22 @@ def mcp_discovery():
 
     frappe_url = get_server_url()
 
+    # Get MCP configuration from settings
+    mcp_protocol_version = "2025-03-26"
+    mcp_transport = "StreamableHTTP"
+    mcp_server_name = "frappe-assistant-core"
+    try:
+        core_settings = frappe.get_single("Assistant Core Settings")
+        mcp_protocol_version = core_settings.mcp_protocol_version or mcp_protocol_version
+        mcp_transport = core_settings.mcp_transport_type or mcp_transport
+        mcp_server_name = core_settings.mcp_server_name or mcp_server_name
+    except Exception:
+        pass
+
     return {
         "mcp_endpoint": f"{frappe_url}/api/method/frappe_assistant_core.api.fac_endpoint.handle_mcp",
-        "mcp_transport": "StreamableHTTP",
-        "mcp_protocol_version": "2025-03-26",
+        "mcp_transport": mcp_transport,
+        "mcp_protocol_version": mcp_protocol_version,
         "oauth_metadata_url": f"{frappe_url}/.well-known/openid-configuration",
         "capabilities": {"tools": True, "prompts": False, "resources": False, "streaming": False},
         "server_info": {

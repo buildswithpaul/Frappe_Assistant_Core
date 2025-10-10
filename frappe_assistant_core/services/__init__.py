@@ -4,9 +4,12 @@
 """
 Services module for Frappe Assistant Core
 
-This module contains service components including:
-- SSE Bridge for Claude API integration
-- Background services and daemons
+SSE Bridge has been deprecated and removed.
+Use StreamableHTTP (OAuth-based) transport instead.
 """
 
-__version__ = "2.0.0"
+# Import version from parent module
+try:
+    from frappe_assistant_core import __version__
+except ImportError:
+    __version__ = "unknown"
