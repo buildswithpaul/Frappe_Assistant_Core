@@ -105,6 +105,42 @@ def mcp_discovery():
     }
 
 
+def _get_frappe_authorization_server_metadata():
+    """
+    Get base authorization server metadata from Frappe.
+
+    Uses Frappe V16's built-in method if available, otherwise builds
+    metadata manually for V15 compatibility.
+    """
+    try:
+        # Try Frappe V16 method first
+        from frappe.integrations.oauth2 import _get_authorization_server_metadata
+
+        return _get_authorization_server_metadata()
+    except ImportError:
+        # Fallback for Frappe V15 - build metadata manually
+        frappe_url = get_server_url()
+
+        # Base metadata following RFC 8414
+        metadata = {
+            "issuer": frappe_url,
+            "authorization_endpoint": f"{frappe_url}/api/method/frappe.integrations.oauth2.authorize",
+            "token_endpoint": f"{frappe_url}/api/method/frappe.integrations.oauth2.get_token",
+            "response_types_supported": ["code"],
+            "response_modes_supported": ["query"],
+            "grant_types_supported": ["authorization_code", "refresh_token"],
+            "token_endpoint_auth_methods_supported": ["none", "client_secret_basic"],
+            "service_documentation": "https://docs.frappe.io/framework/user/en/guides/integration/how_to_set_up_oauth",
+            "revocation_endpoint": f"{frappe_url}/api/method/frappe.integrations.oauth2.revoke_token",
+            "revocation_endpoint_auth_methods_supported": ["client_secret_basic"],
+            "introspection_endpoint": f"{frappe_url}/api/method/frappe.integrations.oauth2.introspect_token",
+            "userinfo_endpoint": f"{frappe_url}/api/method/frappe.integrations.oauth2.openid_profile",
+            "code_challenge_methods_supported": ["S256"],
+        }
+
+        return metadata
+
+
 @frappe.whitelist(allow_guest=True, methods=["GET"])
 def authorization_server_metadata():
     """
@@ -129,23 +165,19 @@ def authorization_server_metadata():
 
         raise NotFound("Authorization server metadata is not enabled")
 
-    frappe_url = get_server_url()
+    # Get base metadata from Frappe (V16 built-in or V15 fallback)
+    metadata = _get_frappe_authorization_server_metadata()
 
-    metadata = {
-        "issuer": frappe_url,
-        "authorization_endpoint": f"{frappe_url}/api/method/frappe.integrations.oauth2.authorize",
-        "token_endpoint": f"{frappe_url}/api/method/frappe.integrations.oauth2.get_token",
-        "response_types_supported": ["code"],
-        "response_modes_supported": ["query"],
-        "grant_types_supported": ["authorization_code", "refresh_token"],
-        "token_endpoint_auth_methods_supported": ["none", "client_secret_basic", "client_secret_post"],
-        "service_documentation": "https://github.com/buildswithpaul/Frappe_Assistant_Core",
-        "revocation_endpoint": f"{frappe_url}/api/method/frappe.integrations.oauth2.revoke_token",
-        "revocation_endpoint_auth_methods_supported": ["client_secret_basic", "client_secret_post"],
-        "introspection_endpoint": f"{frappe_url}/api/method/frappe.integrations.oauth2.introspect_token",
-        "userinfo_endpoint": f"{frappe_url}/api/method/frappe.integrations.oauth2.openid_profile",
-        "code_challenge_methods_supported": ["S256"],
-    }
+    # Add/override custom service documentation
+    frappe_url = get_server_url()
+    metadata["service_documentation"] = "https://github.com/buildswithpaul/Frappe_Assistant_Core"
+
+    # Add client_secret_post as an additional auth method (Frappe V16 only has client_secret_basic)
+    if "client_secret_post" not in metadata.get("token_endpoint_auth_methods_supported", []):
+        metadata["token_endpoint_auth_methods_supported"].append("client_secret_post")
+
+    if "client_secret_post" not in metadata.get("revocation_endpoint_auth_methods_supported", []):
+        metadata["revocation_endpoint_auth_methods_supported"].append("client_secret_post")
 
     # Add registration endpoint if dynamic client registration is enabled
     if settings.get("enable_dynamic_client_registration"):

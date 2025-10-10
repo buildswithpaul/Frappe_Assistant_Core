@@ -55,75 +55,43 @@ class WellKnownRenderer:
 
     def render(self):
         """Render the .well-known endpoint response"""
+        # Get metadata by calling the actual API methods
+        metadata = self._get_metadata_for_path(self.path)
+
+        if metadata is None:
+            # Unknown .well-known endpoint
+            frappe.throw("Not Found", exc=frappe.NotFound)
+
+        return self._json_response(metadata)
+
+    def _get_metadata_for_path(self, path):
+        """
+        Get metadata for the given .well-known path by calling the actual API methods.
+
+        This ensures we have a single source of truth and no code duplication.
+        """
         # Handle /.well-known/openid-configuration
-        if self.path == ".well-known/openid-configuration":
-            metadata = self._get_openid_configuration()
-            return self._json_response(metadata)
+        if path == ".well-known/openid-configuration":
+            from frappe_assistant_core.api.oauth_discovery import openid_configuration
+
+            # Call the API method - it sets frappe.local.response
+            openid_configuration()
+            return frappe.local.response
 
         # Handle /.well-known/oauth-authorization-server
-        if self.path == ".well-known/oauth-authorization-server":
+        if path == ".well-known/oauth-authorization-server":
             from frappe_assistant_core.api.oauth_discovery import authorization_server_metadata
 
-            metadata = authorization_server_metadata()
-            return self._json_response(metadata)
+            return authorization_server_metadata()
 
         # Handle /.well-known/oauth-protected-resource
-        if self.path == ".well-known/oauth-protected-resource":
+        if path == ".well-known/oauth-protected-resource":
             from frappe_assistant_core.api.oauth_discovery import protected_resource_metadata
 
-            metadata = protected_resource_metadata()
-            return self._json_response(metadata)
+            return protected_resource_metadata()
 
-        # Unknown .well-known endpoint
-        frappe.throw("Not Found", exc=frappe.NotFound)
-
-    def _get_openid_configuration(self):
-        """
-        Get OpenID configuration without triggering redirects.
-
-        We can't call openid_configuration() directly because it calls Frappe's
-        built-in method which may trigger redirects. Instead, we build the
-        response directly.
-        """
-        from frappe.oauth import get_server_url
-
-        from frappe_assistant_core.utils.oauth_compat import get_oauth_settings
-
-        frappe_url = get_server_url()
-        settings = get_oauth_settings()
-
-        # Build OpenID configuration metadata
-        metadata = {
-            "issuer": frappe_url,
-            "authorization_endpoint": f"{frappe_url}/api/method/frappe.integrations.oauth2.authorize",
-            "token_endpoint": f"{frappe_url}/api/method/frappe.integrations.oauth2.get_token",
-            "userinfo_endpoint": f"{frappe_url}/api/method/frappe.integrations.oauth2.openid_profile",
-            "revocation_endpoint": f"{frappe_url}/api/method/frappe.integrations.oauth2.revoke_token",
-            "introspection_endpoint": f"{frappe_url}/api/method/frappe.integrations.oauth2.introspect_token",
-            "response_types_supported": [
-                "code",
-                "token",
-                "code id_token",
-                "code token id_token",
-                "id_token",
-                "id_token token",
-            ],
-            "subject_types_supported": ["public"],
-            "id_token_signing_alg_values_supported": ["HS256"],
-            "jwks_uri": f"{frappe_url}/api/method/frappe_assistant_core.api.oauth_discovery.jwks",
-            "code_challenge_methods_supported": ["S256"],
-            "mcp_endpoint": f"{frappe_url}/api/method/frappe_assistant_core.api.fac_endpoint.handle_mcp",
-            "mcp_transport": "StreamableHTTP",
-            "mcp_protocol_version": "2025-03-26",
-        }
-
-        # Add registration endpoint if dynamic client registration is enabled
-        if settings.get("enable_dynamic_client_registration"):
-            metadata["registration_endpoint"] = (
-                f"{frappe_url}/api/method/frappe_assistant_core.api.oauth_registration.register_client"
-            )
-
-        return metadata
+        # Unknown endpoint
+        return None
 
     def _json_response(self, data):
         """Create a JSON response with CORS headers"""

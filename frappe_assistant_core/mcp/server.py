@@ -138,6 +138,8 @@ class MCPServer:
         Returns:
             Populated Response object with MCP response
         """
+        import frappe
+
         # Only POST allowed
         if request.method != "POST":
             response.status_code = 405
@@ -146,8 +148,13 @@ class MCPServer:
         # Parse JSON request
         try:
             data = request.get_json(force=True)
-        except Exception:
-            return self._error_response(response, None, -32700, "Parse error")
+            # Log incoming request for debugging
+            frappe.logger().debug(f"MCP Request: method={data.get('method')}, id={data.get('id')}")
+        except Exception as e:
+            frappe.logger().error(
+                f"MCP Parse Error: {str(e)}, Raw data: {request.get_data(as_text=True)[:500]}"
+            )
+            return self._error_response(response, None, -32700, f"Parse error: {str(e)}")
 
         # Check if notification (no response needed)
         if self._is_notification(data):
@@ -165,16 +172,27 @@ class MCPServer:
 
         result = None
 
-        if method == "initialize":
-            result = self._handle_initialize(params)
-        elif method == "tools/list":
-            result = self._handle_tools_list(params)
-        elif method == "tools/call":
-            result = self._handle_tools_call(params)
-        elif method == "ping":
-            result = {}
-        else:
-            return self._error_response(response, request_id, -32601, f"Method not found: {method}")
+        try:
+            if method == "initialize":
+                result = self._handle_initialize(params)
+            elif method == "tools/list":
+                result = self._handle_tools_list(params)
+            elif method == "tools/call":
+                frappe.logger().info(
+                    f"MCP tools/call: tool={params.get('name')}, args={json.dumps(params.get('arguments', {}), default=str)[:200]}"
+                )
+                result = self._handle_tools_call(params)
+            elif method == "ping":
+                result = {}
+            else:
+                frappe.logger().warning(f"MCP Unknown method: {method}")
+                return self._error_response(response, request_id, -32601, f"Method not found: {method}")
+        except Exception as e:
+            # Log unexpected errors
+            frappe.logger().error(
+                f"MCP Handler Error for method '{method}': {str(e)}\n{traceback.format_exc()}"
+            )
+            return self._error_response(response, request_id, -32603, f"Internal error: {str(e)}")
 
         # Success response
         return self._success_response(response, request_id, result)
@@ -319,13 +337,19 @@ class MCPServer:
 
         This is the CRITICAL method that fixes the serialization issue.
         """
+        import frappe
+
         tool_name = params.get("name")
         arguments = params.get("arguments", {})
 
+        frappe.logger().debug(f"MCP _handle_tools_call: tool={tool_name}, args={arguments}")
+
         # Check tool exists
         if tool_name not in self._tool_registry:
+            error_msg = f"Tool '{tool_name}' not found. Available tools: {list(self._tool_registry.keys())}"
+            frappe.logger().error(f"MCP Tool Not Found: {error_msg}")
             return {
-                "content": [{"type": "text", "text": f"Tool '{tool_name}' not found"}],
+                "content": [{"type": "text", "text": error_msg}],
                 "isError": True,
             }
 
@@ -334,7 +358,11 @@ class MCPServer:
 
         try:
             # Execute tool
+            frappe.logger().info(f"MCP Executing tool: {tool_name}")
             result = fn(**arguments)
+            frappe.logger().info(
+                f"MCP Tool {tool_name} executed successfully, result type: {type(result).__name__}"
+            )
 
             # CRITICAL FIX: Use json.dumps with default=str
             # This handles datetime, Decimal, and all other non-JSON types!
@@ -349,6 +377,7 @@ class MCPServer:
         except Exception as e:
             # Full traceback for debugging
             error_text = f"Error executing {tool_name}: {str(e)}\n\nTraceback:\n{traceback.format_exc()}"
+            frappe.logger().error(f"MCP Tool Execution Error: {error_text}")
 
             return {"content": [{"type": "text", "text": error_text}], "isError": True}
 

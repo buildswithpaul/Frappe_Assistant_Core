@@ -50,11 +50,17 @@ def set_cors_for_oauth_endpoints():
         _handle_malformed_wellknown_url(request_path, request_method)
         return
 
+    # Handle .well-known/openid-configuration directly to prevent Frappe's redirect
+    # Frappe has a website_redirect that redirects this path before page_renderer can handle it
+    if request_path == "/.well-known/openid-configuration" and request_method in ("GET", "OPTIONS"):
+        _handle_wellknown_endpoint(request_path, request_method)
+        return
+
     # Skip if CORS already allowed globally
     if frappe.conf.allow_cors == "*" or not frappe.local.request.headers.get("Origin"):
         return
 
-    # Allow CORS for well-known endpoints (GET and OPTIONS)
+    # Allow CORS for other well-known endpoints (GET and OPTIONS)
     if request_path.startswith("/.well-known/") and request_method in ("GET", "OPTIONS"):
         frappe.local.allow_cors = "*"
         return
@@ -104,6 +110,67 @@ def _set_allowed_cors():
         frappe.local.allow_cors = "*"
     elif allowed:
         frappe.local.allow_cors = allowed
+
+
+def _handle_wellknown_endpoint(request_path: str, request_method: str):
+    """
+    Handle .well-known/openid-configuration directly to bypass Frappe's redirect.
+
+    Frappe V15 has a website_redirect that redirects /.well-known/openid-configuration
+    to /api/method/frappe.integrations.oauth2.openid_configuration before our
+    page_renderer can intercept it. This handler catches it in before_request.
+    """
+    import json
+
+    from werkzeug.wrappers import Response
+
+    # Determine which endpoint is being requested
+    metadata = None
+
+    if request_path == "/.well-known/openid-configuration":
+        from frappe_assistant_core.api.oauth_discovery import openid_configuration
+
+        openid_configuration()
+        metadata = frappe.local.response
+
+    if metadata:
+        # Build a proper werkzeug Response and bypass Frappe's handler
+        from werkzeug.wrappers import Response as WerkzeugResponse
+
+        # Handle OPTIONS preflight request
+        if request_method == "OPTIONS":
+            response = WerkzeugResponse(
+                "",
+                status=200,
+                headers={
+                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Methods": "GET, OPTIONS",
+                    "Access-Control-Allow-Headers": "Content-Type",
+                    "Access-Control-Max-Age": "3600",
+                },
+            )
+        else:
+            # Return JSON response for GET
+            response = WerkzeugResponse(
+                json.dumps(metadata, indent=2),
+                status=200,
+                headers={
+                    "Content-Type": "application/json",
+                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Methods": "GET, OPTIONS",
+                    "Access-Control-Allow-Headers": "Content-Type",
+                    "Cache-Control": "public, max-age=3600",
+                },
+            )
+
+        # Raise the response as an HTTPException to bypass normal processing
+        from werkzeug.exceptions import HTTPException
+
+        class ResponseException(HTTPException):
+            def get_response(self, environ=None):
+                return response
+
+        raise ResponseException()
 
 
 def _handle_malformed_wellknown_url(request_path: str, request_method: str):
