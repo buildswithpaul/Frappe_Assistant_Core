@@ -182,6 +182,12 @@ class MCPServer:
                     f"MCP tools/call: tool={params.get('name')}, args={json.dumps(params.get('arguments', {}), default=str)[:200]}"
                 )
                 result = self._handle_tools_call(params)
+            elif method == "resources/list":
+                # Return empty resources list (we don't support resources)
+                result = {"resources": []}
+            elif method == "prompts/list":
+                # Return empty prompts list (we don't support prompts)
+                result = {"prompts": []}
             elif method == "ping":
                 result = {}
             else:
@@ -305,10 +311,19 @@ class MCPServer:
         return type_map.get(annotation, "string")
 
     def _handle_initialize(self, params: Dict) -> Dict:
-        """Handle initialize request."""
+        """
+        Handle initialize request.
+
+        Declares server capabilities according to MCP 2025-03-26 spec.
+        We only support tools (not prompts, resources, or sampling).
+        """
         return {
             "protocolVersion": "2025-03-26",
-            "capabilities": {"tools": {}, "prompts": {}, "resources": {}},
+            "capabilities": {
+                "tools": {},  # We support tools
+                # Note: We respond to resources/list and prompts/list with empty arrays
+                # but don't declare them as capabilities since we don't support them
+            },
             "serverInfo": {"name": self.name, "version": "2.0.0"},
         }
 
