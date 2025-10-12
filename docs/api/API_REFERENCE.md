@@ -4,26 +4,79 @@
 
 The Frappe Assistant Core uses a plugin-based architecture where tools are organized into discoverable plugins. This reference covers both the MCP protocol endpoints and the plugin-specific tool APIs.
 
+## Authentication
+
+All MCP requests require **OAuth 2.0 Bearer token authentication**.
+
+### Bearer Token Header
+
+```http
+Authorization: Bearer <access_token>
+```
+
+### Getting an Access Token
+
+1. **Discover OAuth endpoints** via `/.well-known/openid-configuration`
+2. **Optionally register client** via dynamic registration endpoint
+3. **Perform OAuth authorization code flow** with PKCE
+4. **Exchange authorization code** for access token
+5. **Use access token** in Authorization header for all MCP requests
+
+See [MCP StreamableHTTP Guide](../architecture/MCP_STREAMABLEHTTP_GUIDE.md) for complete OAuth flow documentation.
+
+### Authentication Error Responses
+
+**401 Unauthorized - Missing or invalid token:**
+
+```http
+HTTP/1.1 401 Unauthorized
+WWW-Authenticate: Bearer realm="Frappe Assistant Core",
+                  error="invalid_token",
+                  error_description="Token has expired",
+                  resource_metadata="https://your-site.com/.well-known/oauth-protected-resource"
+Content-Type: application/json
+```
+
+```json
+{
+  "error": "invalid_token",
+  "message": "Token has expired"
+}
+```
+
 ## MCP Protocol Endpoints
 
-### Core Endpoints
-
-#### Initialize
+### Core MCP Endpoint
 
 ```
-POST /api/method/frappe_assistant_core.api.mcp.handle_mcp_request
+POST /api/method/frappe_assistant_core.api.fac_endpoint.handle_mcp
 ```
+
+**Protocol:** MCP 2025-03-26 (JSON-RPC 2.0)
+**Transport:** StreamableHTTP
+**Authentication:** Required (OAuth 2.0 Bearer token)
+
+All MCP operations use this single endpoint with different JSON-RPC methods.
+
+### Initialize
 
 Initializes MCP connection and returns server capabilities.
 
 **Request:**
+
+```http
+POST /api/method/frappe_assistant_core.api.fac_endpoint.handle_mcp HTTP/1.1
+Host: your-frappe-site.com
+Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGc...
+Content-Type: application/json
+```
 
 ```json
 {
   "jsonrpc": "2.0",
   "method": "initialize",
   "params": {
-    "protocolVersion": "2025-06-18",
+    "protocolVersion": "2025-03-26",
     "capabilities": {}
   },
   "id": 1
@@ -36,30 +89,31 @@ Initializes MCP connection and returns server capabilities.
 {
   "jsonrpc": "2.0",
   "result": {
-    "protocolVersion": "2025-06-18",
+    "protocolVersion": "2025-03-26",
     "capabilities": {
-      "tools": {
-        "listChanged": true
-      }
+      "tools": {}
     },
     "serverInfo": {
       "name": "frappe-assistant-core",
-      "version": "1.2.0"
+      "version": "2.0.0"
     }
   },
   "id": 1
 }
 ```
 
-#### List Tools
+### List Tools
 
-```
-POST /api/method/frappe_assistant_core.api.mcp.handle_mcp_request
-```
-
-Returns list of available tools for current user.
+Returns list of available tools for current user (filtered by permissions).
 
 **Request:**
+
+```http
+POST /api/method/frappe_assistant_core.api.fac_endpoint.handle_mcp HTTP/1.1
+Host: your-frappe-site.com
+Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGc...
+Content-Type: application/json
+```
 
 ```json
 {
@@ -95,15 +149,18 @@ Returns list of available tools for current user.
 }
 ```
 
-#### Execute Tool
-
-```
-POST /api/method/frappe_assistant_core.api.mcp.handle_mcp_request
-```
+### Execute Tool
 
 Executes a specific tool with provided arguments.
 
 **Request:**
+
+```http
+POST /api/method/frappe_assistant_core.api.fac_endpoint.handle_mcp HTTP/1.1
+Host: your-frappe-site.com
+Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGc...
+Content-Type: application/json
+```
 
 ```json
 {
@@ -133,7 +190,8 @@ Executes a specific tool with provided arguments.
         "type": "text",
         "text": "Customer created successfully with ID: CUST-00001"
       }
-    ]
+    ],
+    "isError": false
   },
   "id": 3
 }
@@ -249,7 +307,7 @@ Implements OAuth 2.0 Dynamic Client Registration (RFC 7591). Creates a new OAuth
 
 ### OAuth Flow Endpoints
 
-These endpoints are provided by Frappe core. See [OAuth Setup Guide](oauth/oauth_setup_guide.md) for usage.
+These endpoints are provided by Frappe core. See [OAuth Setup Guide](../getting-started/oauth/oauth_setup_guide.md) for usage.
 
 #### Authorize
 

@@ -294,9 +294,9 @@ If migrating existing tools:
 
 ### Documentation
 
-- **Architecture Details**: [ARCHITECTURE.md](ARCHITECTURE.md)
-- **API Reference**: [API_REFERENCE.md](API_REFERENCE.md)
-- **Tool Catalog**: [TOOL_REFERENCE.md](TOOL_REFERENCE.md)
+- **Architecture Details**: [ARCHITECTURE.md](../architecture/ARCHITECTURE.md)
+- **API Reference**: [API_REFERENCE.md](../api/API_REFERENCE.md)
+- **Tool Catalog**: [TOOL_REFERENCE.md](../api/TOOL_REFERENCE.md)
 - **Testing Guide**: [TEST_CASE_CREATION_GUIDE.md](TEST_CASE_CREATION_GUIDE.md)
 
 ### Examples

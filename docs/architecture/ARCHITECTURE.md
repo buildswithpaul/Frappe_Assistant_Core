@@ -60,21 +60,78 @@ Frappe Assistant Core is built on a modular plugin architecture that separates c
 
 ### 1. MCP Protocol Layer
 
-The Model Context Protocol (MCP) layer handles communication between AI assistants and the Frappe system.
+The Model Context Protocol (MCP) layer handles communication between AI assistants and the Frappe system using **StreamableHTTP** transport with OAuth 2.0 authentication.
 
 **Key Components:**
 
-- **Protocol Handlers**: Process MCP requests and responses
+- **Custom MCP Server** (`mcp/server.py`): Custom implementation with proper JSON serialization
+- **OAuth 2.0 Authentication** (`api/fac_endpoint.py`): Bearer token validation per RFC 9728
+- **Protocol Handlers**: Process MCP requests and responses (JSON-RPC 2.0)
 - **Request Validation**: Ensure proper protocol compliance
-- **Response Formatting**: Convert internal responses to MCP format
-- **Error Handling**: Standardized error responses
+- **Response Formatting**: Convert internal responses to MCP format with `default=str`
+- **Error Handling**: Standardized error responses with full tracebacks
 
 **Implementation:**
 
-- Located in `api/` directory
-- Uses Frappe's `@frappe.whitelist()` decorators
-- Implements JSON-RPC 2.0 specification
-- Supports all MCP protocol methods
+```
+api/
+├── fac_endpoint.py              # Main MCP endpoint with OAuth validation
+├── oauth_discovery.py           # RFC-compliant OAuth discovery endpoints
+├── oauth_wellknown_renderer.py  # Custom page renderer for .well-known
+├── oauth_registration.py        # Dynamic client registration (RFC 7591)
+└── oauth_cors.py                # CORS handling for public clients
+
+mcp/
+├── server.py                    # Custom MCPServer implementation
+└── tool_adapter.py              # BaseTool to MCP adapter
+```
+
+**Transport:** StreamableHTTP (HTTP POST requests)
+**Protocol:** MCP 2025-03-26 with JSON-RPC 2.0
+**Endpoint:** `/api/method/frappe_assistant_core.api.fac_endpoint.handle_mcp`
+**Authentication:** OAuth 2.0 Bearer tokens
+
+**Why Custom MCP Server?**
+
+We built a custom MCP server implementation instead of using generic libraries because:
+
+1. **JSON Serialization**: Handles Frappe's datetime, Decimal, and other non-JSON types with `default=str`
+2. **Frappe Integration**: Direct integration with Frappe's session, permissions, and ORM
+3. **No Pydantic Dependency**: Lighter, simpler, Frappe-native implementation
+4. **Better Debugging**: Full error tracebacks and comprehensive logging
+5. **Performance**: Optimized for Frappe's architecture
+
+**OAuth 2.0 Integration:**
+
+The MCP endpoint implements OAuth 2.0 Protected Resource (RFC 9728):
+
+```python
+# Extract Bearer token from Authorization header
+auth_header = frappe.request.headers.get("Authorization", "")
+
+if not auth_header.startswith("Bearer "):
+    # Return 401 with WWW-Authenticate header
+    return unauthorized_response()
+
+# Validate token using Frappe's OAuth Bearer Token doctype
+token = auth_header[7:]
+bearer_token = frappe.get_doc("OAuth Bearer Token", {"access_token": token})
+
+# Check token status and expiration
+if bearer_token.status != "Active" or token_expired:
+    return unauthorized_response()
+
+# Set user session
+frappe.set_user(bearer_token.user)
+```
+
+**Discovery Endpoints:**
+
+- `/.well-known/openid-configuration` - OpenID Connect discovery
+- `/.well-known/oauth-authorization-server` - OAuth server metadata (RFC 8414)
+- `/.well-known/oauth-protected-resource` - Protected resource metadata (RFC 9728)
+
+See [MCP StreamableHTTP Guide](MCP_STREAMABLEHTTP_GUIDE.md) for complete details.
 
 ### 2. Tool Registry
 

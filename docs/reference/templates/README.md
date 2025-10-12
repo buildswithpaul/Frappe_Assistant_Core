@@ -2,7 +2,7 @@
 
 This directory contains templates for creating new tools and test cases. 
 
-**For complete development guidance, see the [Development Guide](../DEVELOPMENT_GUIDE.md).**
+**For complete development guidance, see the [Development Guide](../../../development/DEVELOPMENT_GUIDE.md).**
 
 ## Available Templates
 

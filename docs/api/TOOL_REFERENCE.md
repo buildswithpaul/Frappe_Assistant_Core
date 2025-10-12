@@ -334,6 +334,6 @@ Many tasks require multiple tools:
 
 ## Related Documentation
 
-- For development: See [DEVELOPMENT_GUIDE.md](DEVELOPMENT_GUIDE.md)
+- For development: See [DEVELOPMENT_GUIDE.md](../development/DEVELOPMENT_GUIDE.md)
 - For API details: See [API_REFERENCE.md](API_REFERENCE.md)
-- For architecture: See [ARCHITECTURE.md](ARCHITECTURE.md)
+- For architecture: See [ARCHITECTURE.md](../architecture/ARCHITECTURE.md)

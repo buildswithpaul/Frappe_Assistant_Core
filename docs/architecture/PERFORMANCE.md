@@ -441,7 +441,7 @@ Recommended monitoring stack:
 ## 📚 Additional Resources
 
 - [Architecture Guide](ARCHITECTURE.md) - System design and scaling patterns
-- [API Reference](API_REFERENCE.md) - Detailed API performance characteristics  
+- [API Reference](../api/API_REFERENCE.md) - Detailed API performance characteristics  
 - [Security Guide](COMPREHENSIVE_SECURITY_GUIDE.md) - Security performance considerations
 - [Technical Documentation](TECHNICAL_DOCUMENTATION.md) - Low-level implementation details
 

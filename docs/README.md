@@ -2,132 +2,193 @@
 
 Welcome to the comprehensive documentation for **Frappe Assistant Core** - the open source AI assistant integration for Frappe Framework and ERPNext.
 
-## 📚 Documentation Index
+## 📚 Documentation Structure
 
-### 🚀 Quick Start
-- **[Main README](../README.md)**: Installation, setup, and getting started
-- **[Contributing Guidelines](../CONTRIBUTING.md)**: How to contribute to the project
+Our documentation is organized into focused sections for easy navigation:
 
-### 📖 Core Documentation
-- **[Tool Reference Guide](TOOL_REFERENCE.md)**: Complete catalog of all 21 available tools
-- **[Development Guide](DEVELOPMENT_GUIDE.md)**: How to create custom tools (external apps or internal plugins)
-- **[Architecture Overview](ARCHITECTURE.md)**: System design and technical architecture
-- **[API Reference](API_REFERENCE.md)**: MCP protocol endpoints and tool APIs
-- **[SSE Bridge Integration](SSE_BRIDGE_INTEGRATION.md)**: Claude API Integration Guide
-  - Real-time streaming communication setup
-  - Development and production deployment
-  - Authentication and configuration
-  - Troubleshooting and monitoring
-  - Complete usage examples
+### 🚀 [Getting Started](getting-started/)
 
-### 🛠️ Tool Reference
-- **[Tool Usage Guide](TOOL_USAGE_GUIDE.md)**: Comprehensive guide for using all available tools
-  - Tool categories and descriptions
-  - Usage patterns and workflows
-  - Best practices for LLMs
-  - Field naming conventions
-  - Error handling strategies
-  
-### 🛠️ Specialized Guides
-- **[External App Development](EXTERNAL_APP_DEVELOPMENT.md)**: Create tools in your Frappe apps (recommended)
-- **[Internal Plugin Development](PLUGIN_DEVELOPMENT.md)**: Create internal plugins for core features
-- **[Test Case Creation Guide](TEST_CASE_CREATION_GUIDE.md)**: Testing patterns and best practices
+Quick start guides and setup instructions for new users:
 
-### 🔒 Security & Operations
-- **[Comprehensive Security Guide](../COMPREHENSIVE_SECURITY_GUIDE.md)**: Security architecture and best practices
-- **[Technical Documentation](TECHNICAL_DOCUMENTATION.md)**: Complete technical reference and troubleshooting
+- **[Getting Started Guide](getting-started/GETTING_STARTED.md)** - Complete setup guide for new users
+- **[Quick Start: Claude Desktop](getting-started/QUICK_START_CLAUDE_DESKTOP.md)** - Connect Claude Desktop in 5 minutes
+- **[Migration Guide](getting-started/MIGRATION_GUIDE.md)** - Migrate from STDIO to OAuth
+
+#### OAuth Setup
+- **[OAuth Setup Guide](getting-started/oauth/oauth_setup_guide.md)** - Comprehensive OAuth configuration
+- **[OAuth Quick Start](getting-started/oauth/oauth_quick_start.md)** - OAuth setup in 2 minutes
+- **[OAuth Changelog](getting-started/oauth/OAUTH_CHANGELOG.md)** - OAuth feature updates
+
+---
+
+### 🏗️ [Architecture](architecture/)
+
+System design, technical architecture, and implementation details:
+
+- **[Architecture Overview](architecture/ARCHITECTURE.md)** - System design and plugin architecture
+- **[MCP StreamableHTTP Guide](architecture/MCP_STREAMABLEHTTP_GUIDE.md)** - OAuth + StreamableHTTP integration
+- **[Technical Documentation](architecture/TECHNICAL_DOCUMENTATION.md)** - Complete technical reference
+- **[Performance Guide](architecture/PERFORMANCE.md)** - Optimization and monitoring
+
+---
+
+### 📖 [API Reference](api/)
+
+Complete API documentation and tool references:
+
+- **[API Reference](api/API_REFERENCE.md)** - MCP protocol endpoints and OAuth APIs
+- **[Tool Reference](api/TOOL_REFERENCE.md)** - Complete catalog of all 21 available tools
+
+---
+
+### 🛠️ [Development](development/)
+
+Guides for developers building custom tools and plugins:
+
+- **[Development Guide](development/DEVELOPMENT_GUIDE.md)** - Create custom tools and plugins
+- **[External App Development](development/EXTERNAL_APP_DEVELOPMENT.md)** - Create tools in your Frappe apps (recommended)
+- **[Plugin Development](development/PLUGIN_DEVELOPMENT.md)** - Create internal plugins for core features
+- **[Test Case Creation Guide](development/TEST_CASE_CREATION_GUIDE.md)** - Testing patterns and best practices
+
+---
+
+### 📚 [Reference](reference/)
+
+Additional resources and references:
+
+- **[Changelog](reference/CHANGELOG.md)** - Version history and changes
+- **[Capabilities Report](reference/CAPABILITIES_REPORT.md)** - Feature capabilities overview
+- **[Templates](reference/templates)** - Documentation templates
+
+---
+
+## 🔍 Quick Navigation
+
+### By User Type
+
+**👤 End Users:**
+1. Start with [Getting Started Guide](getting-started/GETTING_STARTED.md)
+2. Follow [Claude Desktop Quick Start](getting-started/QUICK_START_CLAUDE_DESKTOP.md)
+3. Explore [Tool Reference](api/TOOL_REFERENCE.md) to see what's possible
+
+**👨‍💻 Developers:**
+1. Review [Architecture Overview](architecture/ARCHITECTURE.md)
+2. Study [Development Guide](development/DEVELOPMENT_GUIDE.md)
+3. Check [API Reference](api/API_REFERENCE.md) for integration details
+
+**🔧 System Administrators:**
+1. Follow [Getting Started Guide](getting-started/GETTING_STARTED.md)
+2. Configure [OAuth Setup](getting-started/oauth/oauth_setup_guide.md)
+3. Review [Performance Guide](architecture/PERFORMANCE.md)
+
+### By Topic
+
+**OAuth & Authentication:**
+- [OAuth Setup Guide](getting-started/oauth/oauth_setup_guide.md)
+- [OAuth Quick Start](getting-started/oauth/oauth_quick_start.md)
+- [MCP StreamableHTTP Guide](architecture/MCP_STREAMABLEHTTP_GUIDE.md)
+
+**MCP Protocol:**
+- [MCP StreamableHTTP Guide](architecture/MCP_STREAMABLEHTTP_GUIDE.md)
+- [API Reference](api/API_REFERENCE.md)
+- [Architecture Overview](architecture/ARCHITECTURE.md)
+
+**Tool Development:**
+- [Development Guide](development/DEVELOPMENT_GUIDE.md)
+- [External App Development](development/EXTERNAL_APP_DEVELOPMENT.md)
+- [Plugin Development](development/PLUGIN_DEVELOPMENT.md)
+
+---
 
 ## 🔧 System Overview
 
 Frappe Assistant Core provides **21 tools** organized in a plugin-based architecture:
 
-| Plugin | Tools | Purpose |
-|--------|--------|---------|
-| **Core** | 19 tools | Essential Frappe operations (always enabled) |
-| **Data Science** | 3 tools | Python execution and statistical analysis |
-| **Visualization** | 3 tools | Dashboard and chart creation |
+### Core Plugins (Always Enabled)
+- **Document Operations** - CRUD operations for all Frappe DocTypes
+- **Search & Discovery** - Global and targeted search capabilities
+- **Metadata Tools** - DocType information and schema discovery
+- **Report Tools** - Execute Frappe reports and analytics
+- **Workflow Tools** - Workflow actions and queue management
 
-**All tools respect Frappe permissions and security policies.**
+### Optional Plugins (Can be enabled/disabled)
+- **Data Science Plugin** - Python code execution, statistical analysis
+- **Visualization Plugin** - Charts, dashboards, and KPIs
+- **Batch Processing Plugin** - Bulk operations and data import
+- **WebSocket Plugin** - Real-time streaming (experimental)
 
-For detailed tool descriptions and usage patterns, see the **[Tool Reference Guide](TOOL_REFERENCE.md)**.
-
-## 🚀 Development Quick Start
-
-### Creating Tools in Your App (Recommended)
-
-```bash
-# 1. Create tool directory
-mkdir -p your_app/assistant_tools
-touch your_app/assistant_tools/__init__.py
-
-# 2. Use template
-cp docs/templates/tool_template.py your_app/assistant_tools/my_tool.py
-
-# 3. Register in hooks.py
-echo 'assistant_tools = ["your_app.assistant_tools.my_tool.MyTool"]' >> your_app/hooks.py
-```
-
-**Complete guide**: [External App Development](EXTERNAL_APP_DEVELOPMENT.md)
-
-### Creating Internal Plugins
-
-```bash
-# 1. Create plugin structure
-mkdir -p plugins/my_plugin/tools
-touch plugins/my_plugin/plugin.py
-
-# 2. Use template
-cp docs/templates/tool_template.py plugins/my_plugin/tools/my_tool.py
-```
-
-**Complete guide**: [Internal Plugin Development](PLUGIN_DEVELOPMENT.md)
-
-## 🌟 Key Features
-
-- **🏗️ Plugin Architecture**: Modular, extensible design
-- **🔌 Auto-Discovery**: Zero-configuration tool loading
-- **🔒 Enterprise Security**: Role-based access with audit trails
-- **🐍 Python Sandbox**: Safe code execution environment
-- **📊 Rich Analytics**: Statistical analysis and visualization
-- **⚡ High Performance**: Optimized for production workloads
-- **📝 Comprehensive Testing**: Full test coverage with templates
-- **⚖️ MIT Licensed**: Free for all commercial and personal use
-
-## 🤝 Contributing
-
-We welcome contributions! Ways to get involved:
-
-1. **🐛 Report Issues**: [GitHub Issues](https://github.com/buildswithpaul/Frappe_Assistant_Core/issues)
-2. **💡 Suggest Features**: [GitHub Discussions](https://github.com/buildswithpaul/Frappe_Assistant_Core/discussions)  
-3. **🔧 Contribute Code**: Follow our [Contributing Guidelines](../CONTRIBUTING.md)
-4. **📚 Improve Documentation**: Help make docs better
-
-## 📞 Support
-
-### 🆓 Community Support
-- **GitHub Issues**: Bug reports and feature requests
-- **GitHub Discussions**: Questions and community help
-- **Frappe Forum**: General Frappe/ERPNext support
-
-### 💼 Professional Services
-Custom development, implementation support, training & consulting available.
-**Contact**: [jypaulclinton@gmail.com](mailto:jypaulclinton@gmail.com)
-
-## 📄 License
-
-This project is **MIT Licensed** - free for commercial and personal use with no restrictions.
-
-## 🎯 Quick Navigation
-
-| I want to... | Go to... |
-|---------------|----------|
-| **Use existing tools** | [Tool Reference Guide](TOOL_REFERENCE.md) |
-| **Create custom tools** | [Development Guide](DEVELOPMENT_GUIDE.md) |
-| **Understand the system** | [Architecture Overview](ARCHITECTURE.md) |
-| **Integrate via API** | [API Reference](API_REFERENCE.md) |
-| **Set up testing** | [Test Case Creation Guide](TEST_CASE_CREATION_GUIDE.md) |
-| **Get started quickly** | [Main README](../README.md) |
+### External App Tools
+- Tools from your custom Frappe apps
+- Discovered automatically via hooks
+- Full integration with core features
 
 ---
 
-**Ready to get started?** Check out the [Tool Reference Guide](TOOL_REFERENCE.md) to see what's available, or the [Development Guide](DEVELOPMENT_GUIDE.md) to start building your own tools.
+## 🎯 Key Features
+
+- **🔌 OAuth 2.0 Authentication** - Industry-standard security with dynamic client registration
+- **🌐 MCP StreamableHTTP** - Modern HTTP-based protocol (RFC 9728 compliant)
+- **🔒 Enterprise Security** - Role-based permissions, audit logging, sensitive data filtering
+- **📦 Plugin Architecture** - Extensible framework for custom business logic
+- **🔄 Frappe v15/v16 Compatible** - Works with both Frappe versions
+- **⚡ Performance Optimized** - Fast, stateless, and scalable
+
+---
+
+## 📖 Documentation Conventions
+
+### File Naming
+- `UPPERCASE.md` - Major documentation files
+- `lowercase.md` - Supplementary files
+- Folders use `lowercase-with-hyphens`
+
+### Links
+- All internal links use relative paths
+- External links use absolute URLs
+- Broken links? [Report an issue](https://github.com/buildswithpaul/Frappe_Assistant_Core/issues)
+
+### Code Examples
+- Python examples use Frappe v15 compatible code
+- Shell commands show both development and production usage
+- Configuration examples include comments
+
+---
+
+## 🆘 Need Help?
+
+### Community Support
+- 🐛 **Bug Reports**: [GitHub Issues](https://github.com/buildswithpaul/Frappe_Assistant_Core/issues)
+- 💬 **Questions**: [GitHub Discussions](https://github.com/buildswithpaul/Frappe_Assistant_Core/discussions)
+- 📧 **Email**: jypaulclinton@gmail.com
+
+### Professional Support
+- Custom development and integration
+- Priority bug fixes and features
+- Training and consulting
+
+---
+
+## 🤝 Contributing
+
+Want to improve the documentation?
+
+1. **Fork the repository**
+2. **Create a branch** for your changes
+3. **Follow our documentation style**
+4. **Submit a pull request**
+
+See [Contributing Guidelines](../CONTRIBUTING.md) for details.
+
+---
+
+## 📄 License
+
+This project is licensed under the **AGPL-3.0 License**.
+
+See the [LICENSE](../LICENSE) file for details.
+
+---
+
+**Version:** 2.0.0+
+**Last Updated:** January 2025
+**Protocol:** MCP 2025-03-26 with OAuth 2.0

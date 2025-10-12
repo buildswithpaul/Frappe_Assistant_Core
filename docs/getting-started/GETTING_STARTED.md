@@ -85,51 +85,125 @@ For secure authentication, generate API keys:
 
 ## 🤖 Step 3: Connect with AI
 
-### Option A: Claude Desktop (Recommended)
+### Option A: Claude Desktop with OAuth (Recommended)
 
-1. **Install Claude Desktop** from Anthropic
-2. **Open Claude Desktop Settings** (gear icon)
-3. **Edit Configuration** and add:
+Connect Claude Desktop using modern OAuth 2.0 authentication:
+
+#### 1. Enable OAuth in Assistant Core Settings
+
+- **Login to ERPNext** as Administrator
+- **Go to**: Setup → Integrations → Assistant Core Settings
+- **OAuth Tab:**
+  - ✅ Check "Show Authorization Server Metadata"
+  - ✅ Check "Enable Dynamic Client Registration"
+  - ✅ Check "Show Protected Resource Metadata"
+- **Save**
+
+#### 2. Configure Claude Desktop
+
+Edit your Claude Desktop configuration file:
+
+**File Locations:**
+- **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+- **Linux**: `~/.config/Claude/claude_desktop_config.json`
+
+**Add this configuration:**
 
 ```json
 {
   "mcpServers": {
     "frappe-assistant": {
-      "command": "python",
-      "args": ["/path/to/frappe_assistant_stdio_bridge.py"],
-      "env": {
-        "FRAPPE_SITE": "yoursite.localhost",
-        "FRAPPE_API_KEY": "your-api-key-here",
-        "FRAPPE_API_SECRET": "your-api-secret-here"
+      "url": "https://your-site.com/api/method/frappe_assistant_core.api.fac_endpoint.handle_mcp",
+      "transport": "streamablehttp",
+      "oauth": {
+        "discoveryUrl": "https://your-site.com/.well-known/openid-configuration",
+        "clientName": "Claude Desktop"
       }
     }
   }
 }
 ```
 
-4. **Replace the values**:
-   - `/path/to/frappe_assistant_stdio_bridge.py` with actual path
-   - `yoursite.localhost` with your site URL
-   - Add your actual API key and secret
+**Replace `your-site.com` with your actual Frappe site URL.**
 
-5. **Restart Claude Desktop**
+#### 3. Authorize Claude Desktop
 
-### Option B: Claude API Integration
+1. **Restart Claude Desktop**
+2. **Start a new conversation**
+3. **When prompted**, Claude will open your browser
+4. **Login to Frappe** and authorize Claude Desktop
+5. **Return to Claude Desktop** - you're connected!
 
-If you prefer API-based integration:
+**What Happens Behind the Scenes:**
+- Claude discovers your OAuth configuration automatically
+- Registers as an OAuth client (if dynamic registration enabled)
+- Requests your authorization
+- Stores and manages access tokens
+- Automatically refreshes tokens when they expire
+
+**[📖 See detailed OAuth flow documentation](../architecture/MCP_STREAMABLEHTTP_GUIDE.md)**
+
+### Option B: MCP Inspector for Testing
+
+Test your setup with the MCP Inspector tool:
+
+#### 1. Enable Browser-Based Clients
+
+- **Go to**: Assistant Core Settings → OAuth Tab
+- **Add to "Allowed Public Client Origins"**: `http://localhost:6274`
+- **Save**
+
+#### 2. Use MCP Inspector
+
+1. **Open**: http://localhost:6274/
+2. **Select**: "Streamable HTTP" transport
+3. **Enter URL**: `https://your-site.com/api/method/frappe_assistant_core.api.fac_endpoint.handle_mcp`
+4. **Click**: "Open Auth Settings"
+5. **Click**: "Quick OAuth Flow"
+6. **Authorize** when prompted
+
+You can now test tools and see MCP requests/responses!
+
+### Option C: Custom Application Integration
+
+For custom applications or other MCP clients, see the complete OAuth integration example in our [MCP StreamableHTTP Guide](../architecture/MCP_STREAMABLEHTTP_GUIDE.md#option-3-custom-application-integration).
+
+**Quick Example:**
 
 ```python
-# Example integration script
 import requests
 
-endpoint = "https://yoursite.com/api/method/frappe_assistant_core.api.fac_endpoint.handle_mcp"
+# 1. Discover OAuth endpoints
+config = requests.get(
+    "https://your-site.com/.well-known/openid-configuration"
+).json()
+
+# 2. Perform OAuth flow (see full example in guide)
+# ... authorization code flow with PKCE ...
+
+# 3. Make authenticated MCP requests
 headers = {
-    "Authorization": f"token {api_key}:{api_secret}",
+    "Authorization": f"Bearer {access_token}",
     "Content-Type": "application/json"
 }
 
-# Your AI integration code here
+response = requests.post(
+    config["mcp_endpoint"],
+    headers=headers,
+    json={
+        "jsonrpc": "2.0",
+        "method": "tools/list",
+        "params": {},
+        "id": 1
+    }
+)
+print(response.json())
 ```
+
+### 🔄 Migrating from STDIO Bridge?
+
+If you're upgrading from an older version that used the STDIO bridge, see our [Migration Guide](MIGRATION_GUIDE.md) for step-by-step instructions.
 
 ## 🎉 Step 4: Test Your Setup
 
@@ -218,7 +292,7 @@ Create your own tools for specific business needs:
 1. **External App Tools** (Recommended): Add tools to your existing Frappe apps
 2. **Plugin Development**: Create internal plugins within the core system
 
-See [Development Guide](DEVELOPMENT_GUIDE.md) for details.
+See [Development Guide](../development/DEVELOPMENT_GUIDE.md) for details.
 
 ## 🚨 Troubleshooting
 
@@ -262,7 +336,7 @@ See [Development Guide](DEVELOPMENT_GUIDE.md) for details.
 
 If you're still having issues:
 
-1. **Check Documentation**: Review [Technical Documentation](TECHNICAL_DOCUMENTATION.md)
+1. **Check Documentation**: Review [Technical Documentation](../architecture/TECHNICAL_DOCUMENTATION.md)
 2. **Community Support**: Post in [GitHub Discussions](https://github.com/buildswithpaul/Frappe_Assistant_Core/discussions)
 3. **Report Bugs**: Use [GitHub Issues](https://github.com/buildswithpaul/Frappe_Assistant_Core/issues)
 4. **Enterprise Support**: Contact jypaulclinton@gmail.com for priority support
@@ -272,7 +346,7 @@ If you're still having issues:
 Now that you're up and running:
 
 1. **Explore Tools**: Try different commands and see what the AI can do
-2. **Learn Advanced Features**: Check out [Tool Reference](TOOL_REFERENCE.md)
+2. **Learn Advanced Features**: Check out [Tool Reference](../api/TOOL_REFERENCE.md)
 3. **Customize**: Create custom tools for your specific business needs
 4. **Monitor**: Set up audit logging and monitoring
 5. **Scale**: Consider performance optimization as you grow

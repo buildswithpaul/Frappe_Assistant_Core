@@ -307,53 +307,142 @@ graph LR
 
 ## 🚀 Getting Started
 
-### Option 1: Claude Desktop (One-Click Setup)
+### Option 1: Claude Desktop with OAuth (Recommended)
 
-Generate a DXT file for instant Claude Desktop integration:
+Connect Claude Desktop using modern OAuth 2.0 authentication:
 
+**1. Enable OAuth in Frappe**
 ```bash
-# Generate DXT file for your site
-bench --site yoursite execute frappe_assistant_core.client_packages.generate_dxt_file
-
-# Install the generated .dxt file in Claude Desktop
-# Double-click the file or drag to Claude Desktop
+# Login to Frappe as Administrator
+# Go to: Setup → Integrations → Assistant Core Settings
+# In OAuth tab: Enable "Dynamic Client Registration"
+# Save
 ```
 
-![DXT File Generation](screenshots/dxt-generation-demo.png)
-*One command generates a complete Claude Desktop integration file*
+**2. Configure Claude Desktop**
 
-### Option 2: Manual MCP Configuration
-
-Add to your Claude Desktop MCP configuration:
+Edit your Claude Desktop config file:
+- **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+- **Linux**: `~/.config/Claude/claude_desktop_config.json`
 
 ```json
 {
   "mcpServers": {
     "frappe-assistant": {
-      "command": "python",
-      "args": ["/path/to/frappe_assistant_stdio_bridge.py"],
-      "env": {
-        "FRAPPE_SITE": "your-site.localhost", 
-        "FRAPPE_API_KEY": "your-api-key",
-        "FRAPPE_API_SECRET": "your-api-secret"
+      "url": "https://your-site.com/api/method/frappe_assistant_core.api.fac_endpoint.handle_mcp",
+      "transport": "streamablehttp",
+      "oauth": {
+        "discoveryUrl": "https://your-site.com/.well-known/openid-configuration",
+        "clientName": "Claude Desktop"
       }
     }
   }
 }
 ```
 
-### Option 3: Custom LLM Integration
+**3. Authorize**
+- Restart Claude Desktop
+- Start a new conversation
+- When prompted, authorize in your browser
+- Done! Claude can now access your ERPNext data
 
-For other LLMs or custom applications:
+![OAuth Setup](screenshots/oauth-setup-demo.png)
+*OAuth provides secure, token-based authentication with automatic refresh*
+
+### Option 2: MCP Inspector for Testing
+
+Test your MCP server with the MCP Inspector tool:
+
+**1. Enable Public Client Origins**
+```bash
+# In Assistant Core Settings → OAuth tab
+# Add to "Allowed Public Client Origins": http://localhost:6274
+# Save
+```
+
+**2. Open MCP Inspector**
+- Go to: http://localhost:6274/
+- Select "Streamable HTTP" transport
+- Enter URL: `https://your-site.com/api/method/frappe_assistant_core.api.fac_endpoint.handle_mcp`
+- Click "Quick OAuth Flow"
+- Authorize when prompted
+
+![MCP Inspector](screenshots/mcp-inspector-demo.png)
+*MCP Inspector provides visual testing and debugging*
+
+### Option 3: Custom Application Integration
+
+For custom applications or other MCP clients:
 
 ```python
-# Connect via MCP protocol
-import mcp_client
+import requests
+import secrets
+import hashlib
+import base64
+from urllib.parse import urlencode
 
-client = mcp_client.connect("http://yoursite.com/api/method/frappe_assistant_core.api.mcp.handle_request")
-tools = client.list_tools()
-result = client.call_tool("list_documents", {"doctype": "Customer"})
+# 1. Discover OAuth configuration
+discovery_url = "https://your-site.com/.well-known/openid-configuration"
+config = requests.get(discovery_url).json()
+
+# 2. Register client (if dynamic registration enabled)
+registration_data = {
+    "client_name": "My MCP Client",
+    "redirect_uris": ["http://localhost:8080/callback"],
+    "token_endpoint_auth_method": "none",
+    "grant_types": ["authorization_code", "refresh_token"],
+    "response_types": ["code"]
+}
+client_info = requests.post(
+    config["registration_endpoint"],
+    json=registration_data
+).json()
+
+# 3. Generate PKCE parameters
+code_verifier = base64.urlsafe_b64encode(secrets.token_bytes(32)).decode('utf-8').rstrip('=')
+code_challenge = base64.urlsafe_b64encode(
+    hashlib.sha256(code_verifier.encode('utf-8')).digest()
+).decode('utf-8').rstrip('=')
+
+# 4. Build authorization URL
+auth_params = {
+    "response_type": "code",
+    "client_id": client_info["client_id"],
+    "redirect_uri": "http://localhost:8080/callback",
+    "scope": "all openid",
+    "code_challenge": code_challenge,
+    "code_challenge_method": "S256"
+}
+auth_url = f"{config['authorization_endpoint']}?{urlencode(auth_params)}"
+print(f"Visit: {auth_url}")
+
+# 5. Exchange code for token (after user authorizes)
+token_data = {
+    "grant_type": "authorization_code",
+    "code": authorization_code,  # From redirect
+    "redirect_uri": "http://localhost:8080/callback",
+    "code_verifier": code_verifier,
+    "client_id": client_info["client_id"]
+}
+token_response = requests.post(config["token_endpoint"], data=token_data).json()
+access_token = token_response["access_token"]
+
+# 6. Make MCP requests with Bearer token
+headers = {
+    "Authorization": f"Bearer {access_token}",
+    "Content-Type": "application/json"
+}
+response = requests.post(config["mcp_endpoint"], headers=headers, json={
+    "jsonrpc": "2.0",
+    "method": "tools/list",
+    "params": {},
+    "id": 1
+})
+print(response.json())
 ```
+
+See [MCP StreamableHTTP Guide](docs/MCP_STREAMABLEHTTP_GUIDE.md) for complete implementation details.
 
 ### Test Your Integration
 
@@ -374,29 +463,38 @@ The LLM will interact directly with your ERPNext data through the MCP tools.
 
 ## 📚 Documentation
 
-### Quick Start Guides
-| Guide | Description |
-|-------|-------------|
-| [🚀 Getting Started](docs/GETTING_STARTED.md) | New to AI + ERP? Start here |
-| [⚡ Claude Desktop Setup](docs/QUICK_START_CLAUDE_DESKTOP.md) | One-click integration with Claude |
-| [🔐 OAuth Quick Start](docs/oauth/oauth_quick_start.md) | OAuth 2.0 setup in 2 minutes |
+**[📖 Complete Documentation Index](docs/README.md)** - Browse all documentation organized by category
 
-### Technical Documentation
+### 🚀 Quick Start Guides
 | Guide | Description |
 |-------|-------------|
-| [🏗️ Architecture](docs/ARCHITECTURE.md) | System design and plugin architecture |
-| [🔧 Tool Reference](docs/TOOL_REFERENCE.md) | Complete list of 21 available tools |
-| [📖 API Reference](docs/API_REFERENCE.md) | MCP and OAuth API documentation |
-| [🔐 OAuth Setup Guide](docs/oauth/oauth_setup_guide.md) | Comprehensive OAuth configuration |
-| [🔒 Security Guide](docs/COMPREHENSIVE_SECURITY_GUIDE.md) | Security features and best practices |
+| [Getting Started](docs/getting-started/GETTING_STARTED.md) | Complete setup guide for new users |
+| [Claude Desktop Quick Start](docs/getting-started/QUICK_START_CLAUDE_DESKTOP.md) | Connect Claude Desktop in 5 minutes |
+| [Migration Guide](docs/getting-started/MIGRATION_GUIDE.md) | **New!** Migrate from STDIO to OAuth |
+| [OAuth Quick Start](docs/getting-started/oauth/oauth_quick_start.md) | OAuth 2.0 setup in 2 minutes |
 
-### Development & Advanced
+### 🏗️ Architecture & Technical
 | Guide | Description |
 |-------|-------------|
-| [🚀 Development Guide](docs/DEVELOPMENT_GUIDE.md) | Create custom tools and plugins |
-| [📦 Plugin Development](docs/PLUGIN_DEVELOPMENT.md) | Build your own plugins |
-| [⚡ Performance Guide](docs/PERFORMANCE.md) | Optimization and monitoring |
-| [📋 Release Notes v2.1.1](RELEASE_2.1.1.md) | Latest version features and improvements |
+| [Architecture Overview](docs/architecture/ARCHITECTURE.md) | System design and plugin architecture |
+| [MCP StreamableHTTP Guide](docs/architecture/MCP_STREAMABLEHTTP_GUIDE.md) | **New!** OAuth + StreamableHTTP integration |
+| [Technical Documentation](docs/architecture/TECHNICAL_DOCUMENTATION.md) | Complete technical reference |
+| [Performance Guide](docs/architecture/PERFORMANCE.md) | Optimization and monitoring |
+
+### 📖 API Reference
+| Guide | Description |
+|-------|-------------|
+| [API Reference](docs/api/API_REFERENCE.md) | MCP protocol endpoints and OAuth APIs |
+| [Tool Reference](docs/api/TOOL_REFERENCE.md) | Complete catalog of all 21 available tools |
+| [OAuth Setup Guide](docs/getting-started/oauth/oauth_setup_guide.md) | Comprehensive OAuth configuration |
+
+### 🛠️ Development
+| Guide | Description |
+|-------|-------------|
+| [Development Guide](docs/development/DEVELOPMENT_GUIDE.md) | Create custom tools and plugins |
+| [External App Development](docs/development/EXTERNAL_APP_DEVELOPMENT.md) | Tools in your Frappe apps (recommended) |
+| [Plugin Development](docs/development/PLUGIN_DEVELOPMENT.md) | Build internal plugins |
+| [Test Case Creation](docs/development/TEST_CASE_CREATION_GUIDE.md) | Testing patterns and best practices |
 
 ---
 
