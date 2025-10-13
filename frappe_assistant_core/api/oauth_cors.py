@@ -18,7 +18,12 @@
 OAuth CORS Handler
 
 Handles CORS (Cross-Origin Resource Sharing) for OAuth endpoints.
-Required for public clients to make registration and token requests.
+Required for public clients (browser-based) to make registration and token requests.
+
+COMPATIBILITY:
+- Uses frappe.local.allow_cors (Frappe v16 mechanism)
+- Also sets frappe.conf.allow_cors (v15 fallback)
+- Ensures forward compatibility when users upgrade from v15 to v16
 """
 
 import frappe
@@ -33,7 +38,8 @@ def set_cors_for_oauth_endpoints():
     This is called as a before_request hook and enables CORS for:
     1. Dynamic client registration endpoint
     2. Token, revocation, introspection, and userinfo endpoints
-    3. Well-known discovery endpoints
+    3. Well-known discovery endpoints (openid-configuration, oauth-authorization-server, oauth-protected-resource)
+    4. MCP endpoint (for browser-based MCP clients)
 
     Without CORS, public clients (like MCP Inspector) cannot make
     preflight OPTIONS requests or actual API calls from the browser.
@@ -50,11 +56,18 @@ def set_cors_for_oauth_endpoints():
         _handle_malformed_wellknown_url(request_path, request_method)
         return
 
-    # Handle .well-known/openid-configuration directly to prevent Frappe's redirect
-    # Frappe has a website_redirect that redirects this path before page_renderer can handle it
-    if request_path == "/.well-known/openid-configuration" and request_method in ("GET", "OPTIONS"):
-        _handle_wellknown_endpoint(request_path, request_method)
-        return
+    # Handle well-known discovery endpoints directly to prevent Frappe's redirect
+    # Frappe has a website_redirect that redirects these paths before page_renderer can handle them
+    wellknown_endpoints = [
+        "/.well-known/openid-configuration",
+        "/.well-known/oauth-authorization-server",
+        "/.well-known/oauth-protected-resource",
+    ]
+
+    for endpoint in wellknown_endpoints:
+        if request_path == endpoint and request_method in ("GET", "OPTIONS"):
+            _handle_wellknown_endpoint(request_path, request_method)
+            return
 
     # Skip if CORS already allowed globally
     if frappe.conf.allow_cors == "*" or not frappe.local.request.headers.get("Origin"):
@@ -81,6 +94,8 @@ def set_cors_for_oauth_endpoints():
         "/api/method/frappe.integrations.oauth2.introspect_token",
         "/api/method/frappe.integrations.oauth2.openid_profile",
         "/api/method/frappe_assistant_core.api.oauth_discovery.openid_configuration",
+        "/api/method/frappe_assistant_core.api.oauth_discovery.authorization_server_metadata",
+        "/api/method/frappe_assistant_core.api.oauth_discovery.protected_resource_metadata",
         "/api/method/frappe_assistant_core.api.fac_endpoint.handle_mcp",
     ]
 
@@ -122,7 +137,12 @@ def _set_allowed_cors():
 
 def _handle_wellknown_endpoint(request_path: str, request_method: str):
     """
-    Handle .well-known/openid-configuration directly to bypass Frappe's redirect.
+    Handle well-known discovery endpoints directly to bypass Frappe's redirect.
+
+    Handles:
+    - /.well-known/openid-configuration (OpenID Connect Discovery)
+    - /.well-known/oauth-authorization-server (RFC 8414 - Authorization Server Metadata)
+    - /.well-known/oauth-protected-resource (RFC 9728 - Protected Resource Metadata)
 
     Frappe V15 has a website_redirect that redirects /.well-known/openid-configuration
     to /api/method/frappe.integrations.oauth2.openid_configuration before our
@@ -141,6 +161,16 @@ def _handle_wellknown_endpoint(request_path: str, request_method: str):
         openid_configuration()
         metadata = frappe.local.response
 
+    elif request_path == "/.well-known/oauth-authorization-server":
+        from frappe_assistant_core.api.oauth_discovery import authorization_server_metadata
+
+        metadata = authorization_server_metadata()
+
+    elif request_path == "/.well-known/oauth-protected-resource":
+        from frappe_assistant_core.api.oauth_discovery import protected_resource_metadata
+
+        metadata = protected_resource_metadata()
+
     if metadata:
         # Build a proper werkzeug Response and bypass Frappe's handler
         from werkzeug.wrappers import Response as WerkzeugResponse
@@ -153,7 +183,7 @@ def _handle_wellknown_endpoint(request_path: str, request_method: str):
                 headers={
                     "Access-Control-Allow-Origin": "*",
                     "Access-Control-Allow-Methods": "GET, OPTIONS",
-                    "Access-Control-Allow-Headers": "Content-Type",
+                    "Access-Control-Allow-Headers": "Content-Type, MCP-Protocol-Version",
                     "Access-Control-Max-Age": "3600",
                 },
             )
@@ -166,7 +196,7 @@ def _handle_wellknown_endpoint(request_path: str, request_method: str):
                     "Content-Type": "application/json",
                     "Access-Control-Allow-Origin": "*",
                     "Access-Control-Allow-Methods": "GET, OPTIONS",
-                    "Access-Control-Allow-Headers": "Content-Type",
+                    "Access-Control-Allow-Headers": "Content-Type, MCP-Protocol-Version",
                     "Cache-Control": "public, max-age=3600",
                 },
             )
@@ -242,7 +272,7 @@ def _handle_malformed_wellknown_url(request_path: str, request_method: str):
                     "Content-Type": "application/json",
                     "Access-Control-Allow-Origin": "*",
                     "Access-Control-Allow-Methods": "GET, OPTIONS",
-                    "Access-Control-Allow-Headers": "Content-Type",
+                    "Access-Control-Allow-Headers": "Content-Type, MCP-Protocol-Version",
                     "Cache-Control": "public, max-age=3600",
                 },
             )
