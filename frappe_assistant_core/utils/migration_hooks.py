@@ -112,20 +112,29 @@ def after_uninstall():
     """
     Hook called after app uninstallation.
 
-    Cleans up tool cache entries from this app.
+    Cleans up:
+    1. Custom fields added to core doctypes
+    2. Tool cache entries from this app
     """
     try:
-        frappe.logger("migration_hooks").info("Cleaning up tool cache after app uninstall")
+        frappe.logger("migration_hooks").info("Starting cleanup after app uninstall")
 
+        # Remove custom field from User doctype
+        if frappe.db.exists("Custom Field", {"dt": "User", "fieldname": "assistant_enabled"}):
+            frappe.delete_doc("Custom Field", "User-assistant_enabled", force=True, ignore_permissions=True)
+            frappe.db.commit()
+            frappe.logger("migration_hooks").info("Removed assistant_enabled custom field from User doctype")
+
+        # Clean up tool cache
         from frappe_assistant_core.utils.tool_cache import get_tool_cache
 
         cache = get_tool_cache()
         cache.invalidate_cache()
 
-        frappe.logger("migration_hooks").info("Tool cache cleanup completed")
+        frappe.logger("migration_hooks").info("Cleanup completed after app uninstall")
 
     except Exception as e:
-        frappe.logger("migration_hooks").warning(f"Failed to cleanup tool cache: {str(e)}")
+        frappe.logger("migration_hooks").warning(f"Failed to complete cleanup: {str(e)}")
 
 
 def on_app_install(app_name: str):
