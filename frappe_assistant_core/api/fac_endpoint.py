@@ -80,7 +80,7 @@ def _import_tools():
         frappe.log_error(title="Tool Import Error", message=f"Error importing tools: {str(e)}")
 
 
-@mcp.register(allow_guest=True, xss_safe=True)
+@mcp.register(allow_guest=True, xss_safe=True, methods=["GET", "POST", "HEAD"])
 def handle_mcp():
     """
     MCP StreamableHTTP endpoint.
@@ -95,6 +95,19 @@ def handle_mcp():
     """
     from frappe.oauth import get_server_url
     from werkzeug.wrappers import Response
+
+    # Handle HEAD request for connectivity check (Claude Web uses this)
+    if frappe.request.method == "HEAD":
+        # Return 401 with WWW-Authenticate header to indicate OAuth is required
+        frappe_url = get_server_url()
+        metadata_url = f"{frappe_url}/.well-known/oauth-protected-resource"
+
+        response = Response()
+        response.status_code = 401
+        response.headers["WWW-Authenticate"] = (
+            f'Bearer realm="Frappe Assistant Core", ' f'resource_metadata="{metadata_url}"'
+        )
+        return response
 
     # Check for Bearer token in Authorization header
     auth_header = frappe.request.headers.get("Authorization", "")
@@ -121,18 +134,24 @@ def handle_mcp():
 
         # Check if token is active
         if bearer_token.status != "Active":
+            frappe.logger().error(f"Token is not active. Status: {bearer_token.status}")
             raise frappe.AuthenticationError("Token is not active")
 
         # Check if token has expired
         import datetime
 
         if bearer_token.expiration_time < datetime.datetime.now():
+            frappe.logger().error(
+                f"Token has expired. Expiration: {bearer_token.expiration_time}, Now: {datetime.datetime.now()}"
+            )
             raise frappe.AuthenticationError("Token has expired")
 
         # Set the user session
         frappe.set_user(bearer_token.user)
+        frappe.logger().info(f"OAuth token validated successfully for user: {bearer_token.user}")
 
     except frappe.DoesNotExistError:
+        frappe.logger().error(f"OAuth Bearer Token not found for access_token: {token[:20]}...")
         # Token not found
         frappe_url = get_server_url()
         metadata_url = f"{frappe_url}/.well-known/oauth-protected-resource"
@@ -150,6 +169,10 @@ def handle_mcp():
         return response
 
     except Exception as e:
+        # Log the error for debugging
+        frappe.logger().error(f"OAuth token validation error: {type(e).__name__}: {str(e)}")
+        frappe.log_error(title="OAuth Token Validation Error", message=f"{type(e).__name__}: {str(e)}")
+
         # Return 401 for invalid/expired tokens per MCP spec
         frappe_url = get_server_url()
         metadata_url = f"{frappe_url}/.well-known/oauth-protected-resource"
