@@ -76,6 +76,7 @@ class MCPServer:
         self,
         allow_guest: bool = False,
         xss_safe: bool = True,
+        methods: list = None,
     ):
         """
         Decorator to register MCP endpoint with Frappe.
@@ -85,6 +86,7 @@ class MCPServer:
         Args:
             allow_guest: If True, allows unauthenticated access
             xss_safe: If True, response will not be sanitized for XSS
+            methods: List of allowed HTTP methods (default: ["POST"])
 
         Example:
             ```python
@@ -96,10 +98,13 @@ class MCPServer:
         """
         import frappe
 
+        if methods is None:
+            methods = ["POST"]
+
         whitelister = frappe.whitelist(
             allow_guest=allow_guest,
             xss_safe=xss_safe,
-            methods=["POST"],
+            methods=methods,
         )
 
         def decorator(fn):
