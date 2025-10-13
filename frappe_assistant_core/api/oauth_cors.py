@@ -107,19 +107,42 @@ def set_cors_for_oauth_endpoints():
 
 def _set_allowed_cors():
     """
-    Set CORS headers based on allowed_public_client_origins setting.
+    Set CORS headers for OAuth endpoints.
 
-    If allowed_public_client_origins contains "*", allow all origins.
-    Otherwise, only allow origins in the whitelist.
+    CONFIGURATION (in order of precedence):
+    1. frappe.conf.oauth_cors_allowed_origins (site_config.json) - RECOMMENDED
+       Example: "oauth_cors_allowed_origins": "*"
+       Example: "oauth_cors_allowed_origins": ["http://localhost:6274"]
 
-    NOTE: For Frappe V15, we set frappe.conf.allow_cors (works immediately).
-    For Frappe V16+, we also set frappe.local.allow_cors (native support).
-    This ensures compatibility with both versions without restart.
+    2. Assistant Core Settings > allowed_public_client_origins (EXPERIMENTAL)
+       For users who prefer UI configuration over site_config.json
+
+    COMPATIBILITY:
+    - Sets frappe.local.allow_cors (Frappe V16 native support)
+    - Sets frappe.conf.allow_cors (V15 fallback)
+
+    NOTE: Most production deployments (Claude Desktop, Claude Web) do NOT need CORS.
+    This is only for browser-based OAuth clients like MCP Inspector during development.
     """
+    # Priority 1: Check site_config.json (frappe.conf)
+    conf_origins = frappe.conf.get("oauth_cors_allowed_origins")
+
+    if conf_origins:
+        # Use site_config setting
+        if conf_origins == "*":
+            frappe.local.allow_cors = "*"
+            frappe.conf.allow_cors = "*"
+        elif isinstance(conf_origins, (list, tuple)):
+            frappe.local.allow_cors = list(conf_origins)
+            frappe.conf.allow_cors = list(conf_origins)
+        return
+
+    # Priority 2: Check Assistant Core Settings (EXPERIMENTAL)
     settings = get_oauth_settings()
     allowed = settings.get("allowed_public_client_origins")
 
     if not allowed:
+        # No CORS configured - this is the expected state for production
         return
 
     allowed = allowed.strip().splitlines()

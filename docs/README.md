@@ -49,6 +49,7 @@ Guides for developers building custom tools and plugins:
 - **[External App Development](development/EXTERNAL_APP_DEVELOPMENT.md)** - Create tools in your Frappe apps (recommended)
 - **[Plugin Development](development/PLUGIN_DEVELOPMENT.md)** - Create internal plugins for core features
 - **[Test Case Creation Guide](development/TEST_CASE_CREATION_GUIDE.md)** - Testing patterns and best practices
+- **[OAuth CORS Configuration](development/OAUTH_CORS_CONFIGURATION.md)** - CORS setup for MCP Inspector (development only)
 
 ---
 

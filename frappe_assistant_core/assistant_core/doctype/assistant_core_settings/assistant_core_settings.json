@@ -202,10 +202,10 @@
    "label": "Enable Dynamic Client Registration"
   },
   {
-   "description": "List of allowed origins for browser-based OAuth clients (one per line).<br>Use <code>*</code> to allow all origins, or specify URLs like <code>http://localhost:6274</code> for MCP Inspector.<br><b>Leave blank to block all public clients.</b>",
+   "description": "<b>⚠️ EXPERIMENTAL - Use site_config.json instead (recommended)</b><br><br><b>For MCP Inspector testing only.</b> Claude and Chatgpt do NOT need this.<br><br>Use this field (one origin per line). Leave blank for production.",
    "fieldname": "allowed_public_client_origins",
    "fieldtype": "Small Text",
-   "label": "Allowed Public Client Origins",
+   "label": "Allowed Public Client Origins (Experimental)",
    "depends_on": "eval:doc.enable_dynamic_client_registration"
   },
   {

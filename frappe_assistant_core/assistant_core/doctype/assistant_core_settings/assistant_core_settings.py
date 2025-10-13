@@ -26,6 +26,11 @@ class AssistantCoreSettings(Document):
 
     def before_save(self):
         """Populate computed fields before saving"""
+        # Set app version from hooks
+        app_version = frappe.get_hooks("app_version", app_name="frappe_assistant_core")
+        if app_version:
+            self.server_version = app_version[0] if isinstance(app_version, list) else app_version
+
         # Set endpoint URLs based on current site
         frappe_url = frappe.utils.get_url()
         self.mcp_endpoint_url = f"{frappe_url}/api/method/frappe_assistant_core.api.fac_endpoint.handle_mcp"

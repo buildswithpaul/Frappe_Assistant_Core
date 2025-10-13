@@ -18,7 +18,7 @@ def execute():
             "fieldtype": "Check",
             "insert_after": "enabled",
             "description": "Allow this user to access assistant tools",
-            "default": "0",
+            "default": "1",
             "reqd": 0,
             "read_only": 0,
             "print_hide": 1,

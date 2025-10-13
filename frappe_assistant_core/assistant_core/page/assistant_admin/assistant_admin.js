@@ -267,8 +267,8 @@ frappe.pages['assistant-admin'].on_page_load = function(wrapper) {
                     <div class="col-md-12">
                         <div class="fac-settings-group">
                             <label class="fac-settings-label">MCP Endpoint</label>
-                            <div class="fac-settings-value fac-endpoint-url">
-                                /api/method/frappe_assistant_core.api.fac_endpoint.handle_mcp
+                            <div class="fac-settings-value fac-endpoint-url" id="fac-mcp-endpoint">
+                                Loading...
                             </div>
                         </div>
                     </div>
@@ -365,7 +365,10 @@ frappe.pages['assistant-admin'].on_page_load = function(wrapper) {
                         toggleText.html('<i class="fa fa-play"></i> Enable');
                     }
 
-                    // Endpoint URL is static, no need to update
+                    // Update MCP Endpoint URL from settings
+                    if (settings.mcp_endpoint_url) {
+                        $('#fac-mcp-endpoint').text(settings.mcp_endpoint_url);
+                    }
                 }
             }
         });

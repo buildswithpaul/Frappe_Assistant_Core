@@ -117,12 +117,20 @@ def cache_with_invalidation(ttl=300, invalidation_keys=None):
 def get_cached_server_settings():
     """Cached version of server settings"""
     settings = frappe.get_single("Assistant Core Settings")
+
+    # Get full server URL for MCP endpoint
+    frappe_url = frappe.utils.get_url()
+    mcp_endpoint_url = f"{frappe_url}/api/method/frappe_assistant_core.api.fac_endpoint.handle_mcp"
+    oauth_discovery_url = f"{frappe_url}/.well-known/openid-configuration"
+
     return {
         "server_enabled": settings.server_enabled,
         "enforce_artifact_streaming": getattr(settings, "enforce_artifact_streaming", True),
         "response_limit_prevention": getattr(settings, "response_limit_prevention", True),
         "streaming_line_threshold": getattr(settings, "streaming_line_threshold", 5),
         "streaming_char_threshold": getattr(settings, "streaming_char_threshold", 1000),
+        "mcp_endpoint_url": mcp_endpoint_url,
+        "oauth_discovery_url": oauth_discovery_url,
     }
 
 
