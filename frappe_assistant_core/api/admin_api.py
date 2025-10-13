@@ -167,7 +167,7 @@ def get_usage_statistics():
 
     try:
         if not check_assistant_permission(frappe.session.user):
-            frappe.throw("Access denied - insufficient permissions")
+            frappe.throw(_("Access denied - insufficient permissions"))
 
         api_logger.info(f"Usage statistics requested by user: {frappe.session.user}")
 
@@ -234,7 +234,7 @@ def ping():
 
     try:
         if not check_assistant_permission(frappe.session.user):
-            frappe.throw("Access denied")
+            frappe.throw(_("Access denied"))
 
         return {
             "success": True,

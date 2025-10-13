@@ -22,6 +22,7 @@ and integrates seamlessly with Frappe's existing tool infrastructure.
 """
 
 import frappe
+from frappe import _
 
 from frappe_assistant_core.mcp.server import MCPServer
 
@@ -191,7 +192,9 @@ def handle_mcp():
 
     # Check if user has assistant access enabled
     if not _check_assistant_enabled(frappe.session.user):
-        frappe.throw(f"Assistant access is disabled for user {frappe.session.user}", frappe.PermissionError)
+        frappe.throw(
+            _("Assistant access is disabled for user {0}").format(frappe.session.user), frappe.PermissionError
+        )
 
     # Import tools (they auto-register via decorators)
     _import_tools()

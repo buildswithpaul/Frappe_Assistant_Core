@@ -23,6 +23,7 @@ which allows custom renderers to handle specific paths.
 """
 
 import frappe
+from frappe import _
 from werkzeug.wrappers import Response
 
 
@@ -60,7 +61,7 @@ class WellKnownRenderer:
 
         if metadata is None:
             # Unknown .well-known endpoint
-            frappe.throw("Not Found", exc=frappe.NotFound)
+            frappe.throw(_("Not Found"), exc=frappe.NotFound)
 
         return self._json_response(metadata)
 

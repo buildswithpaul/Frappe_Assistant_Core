@@ -51,7 +51,7 @@ class AssistantCoreSettings(Document):
 
         except Exception as e:
             frappe.log_error(f"Failed to restart assistant MCP API: {str(e)}")
-            frappe.throw(f"Failed to restart assistant MCP API: {str(e)}")
+            frappe.throw(_("Failed to restart assistant MCP API: {0}").format(str(e)))
 
     def enable_assistant_api(self):
         """Enable the assistant MCP API"""
@@ -769,18 +769,18 @@ Build unlimited analysis depth via progressive artifact updates.
 
             if action == "enable":
                 result = plugin_manager.enable_plugin(plugin_name)
-                message = f"Plugin '{plugin_name}' enabled successfully"
+                message = _("Plugin '{0}' enabled successfully").format(plugin_name)
             elif action == "disable":
                 result = plugin_manager.disable_plugin(plugin_name)
-                message = f"Plugin '{plugin_name}' disabled successfully"
+                message = _("Plugin '{0}' disabled successfully").format(plugin_name)
             else:
-                frappe.throw(f"Invalid action: {action}")
+                frappe.throw(_("Invalid action: {0}").format(action))
 
             if result:
-                frappe.msgprint(frappe._(message))
+                frappe.msgprint(message)
                 return {"success": True, "message": message}
             else:
-                error_msg = f"Failed to {action} plugin '{plugin_name}'"
+                error_msg = _("Failed to {0} plugin '{1}'").format(action, plugin_name)
                 frappe.throw(error_msg)
 
         except PluginError as e:

@@ -22,6 +22,7 @@ import json
 from typing import Any, Dict, Optional
 
 import frappe
+from frappe import _
 
 from frappe_assistant_core.api.handlers import (
     handle_initialize,
@@ -238,7 +239,7 @@ def get_usage_statistics() -> Dict[str, Any]:
         authenticated_user = _authenticate_request()
         if not authenticated_user:
             api_logger.warning("Usage statistics requested without valid authentication")
-            frappe.throw("Authentication required")
+            frappe.throw(_("Authentication required"))
 
         # SECURITY: Check if user has assistant access
         from frappe_assistant_core.utils.permissions import check_assistant_permission
@@ -248,7 +249,7 @@ def get_usage_statistics() -> Dict[str, Any]:
 
         if not check_assistant_permission(authenticated_user):
             api_logger.warning(f"Access denied for user: {authenticated_user} with roles: {user_roles}")
-            frappe.throw("Access denied - insufficient permissions")
+            frappe.throw(_("Access denied - insufficient permissions"))
 
         api_logger.info(f"Usage statistics requested by user: {authenticated_user}")
         api_logger.info(f"Current site: {frappe.local.site}")
@@ -334,13 +335,13 @@ def ping() -> Dict[str, Any]:
         # SECURITY: Handle both session-based and token-based authentication
         authenticated_user = _authenticate_request()
         if not authenticated_user:
-            frappe.throw("Authentication required")
+            frappe.throw(_("Authentication required"))
 
         # SECURITY: Check if user has assistant access
         from frappe_assistant_core.utils.permissions import check_assistant_permission
 
         if not check_assistant_permission(authenticated_user):
-            frappe.throw("Access denied")
+            frappe.throw(_("Access denied"))
 
         return {
             "success": True,
@@ -361,13 +362,13 @@ def force_test_logging() -> Dict[str, Any]:
         # SECURITY: Handle both session-based and token-based authentication
         authenticated_user = _authenticate_request()
         if not authenticated_user:
-            frappe.throw("Authentication required")
+            frappe.throw(_("Authentication required"))
 
         # SECURITY: Check if user has assistant access
         from frappe_assistant_core.utils.permissions import check_assistant_permission
 
         if not check_assistant_permission(authenticated_user):
-            frappe.throw("Access denied")
+            frappe.throw(_("Access denied"))
 
         # Force a test log entry
         api_logger.info(f"Force test logging triggered by user: {authenticated_user}")
