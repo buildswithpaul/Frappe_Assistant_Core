@@ -8,3 +8,7 @@ frappe_assistant_core.patches.v1_0.update_doctype_permissions
 
 # Version 2.0.0 - Enhanced Plugin Architecture
 frappe_assistant_core.patches.v2_0_0.remove_deprecated_doctypes
+
+# Version 2.1.0 - Improved Onboarding UX
+frappe_assistant_core.patches.v2_1.update_assistant_enabled_default
+frappe_assistant_core.patches.v2_1.remove_old_assistant_admin_page

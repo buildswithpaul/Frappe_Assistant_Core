@@ -1,4 +1,4 @@
-frappe.pages['assistant-admin'].on_page_load = function(wrapper) {
+frappe.pages['fac-admin'].on_page_load = function(wrapper) {
     var page = frappe.ui.make_app_page({
         parent: wrapper,
         title: 'FAC Admin',
@@ -469,7 +469,7 @@ frappe.pages['assistant-admin'].on_page_load = function(wrapper) {
                                     <div>
                                         <label class="switch" style="margin: 0;">
                                             <input type="checkbox" class="fac-plugin-toggle"
-                                                   data-plugin="${plugin.name}"
+                                                   data-plugin="${plugin.plugin_id}"
                                                    ${plugin.enabled ? 'checked' : ''}>
                                             <span class="slider round"></span>
                                         </label>

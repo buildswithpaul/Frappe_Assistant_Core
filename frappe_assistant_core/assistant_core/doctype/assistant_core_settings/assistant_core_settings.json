@@ -8,7 +8,6 @@
  "field_order": [
   "general_tab",
   "server_enabled",
-  "server_version",
   "mcp_endpoint_url",
   "oauth_discovery_url",
   "plugins_tab",
@@ -54,14 +53,6 @@
    "fieldname": "server_enabled",
    "fieldtype": "Check",
    "label": "Enable Assistant Core"
-  },
-  {
-   "fieldname": "server_version",
-   "fieldtype": "Data",
-   "label": "Server Version",
-   "read_only": 1,
-   "default": "2.0.0",
-   "description": "Current version of Frappe Assistant Core"
   },
   {
    "fieldname": "mcp_endpoint_url",

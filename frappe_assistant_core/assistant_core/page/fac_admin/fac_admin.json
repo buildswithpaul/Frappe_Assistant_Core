@@ -3,7 +3,7 @@
   "name": "assistant-admin",
   "title": "FAC Admin",
   "icon": "octicon octicon-server",
-  "page_name": "assistant-admin",
+  "page_name": "fac-admin",
   "description": "Admin interface for managing Frappe Assistant Core (FAC) server settings, plugins, and tools.",
   "standard": "Yes",
   "module": "Assistant Core",

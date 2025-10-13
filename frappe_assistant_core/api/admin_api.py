@@ -77,6 +77,7 @@ def get_tool_registry():
                 {
                     "name": tool_name.replace("_", " ").title(),
                     "category": tool_info.plugin_name.replace("_", " ").title(),
+                    "category_id": tool_info.plugin_name,  # Add actual plugin ID for toggling
                     "description": tool_info.description,
                     "enabled": tool_info.plugin_name in enabled_plugins,
                 }
@@ -103,7 +104,13 @@ def get_plugin_stats():
 
         plugins = []
         for plugin in discovered:
-            plugins.append({"name": plugin["display_name"], "enabled": plugin["name"] in enabled})
+            plugins.append(
+                {
+                    "name": plugin["display_name"],
+                    "plugin_id": plugin["name"],  # Add actual plugin ID for toggling
+                    "enabled": plugin["name"] in enabled,
+                }
+            )
 
         return {"enabled_count": len(enabled), "total_count": len(discovered), "plugins": plugins}
     except Exception as e:
