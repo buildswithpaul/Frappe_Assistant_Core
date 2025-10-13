@@ -276,7 +276,7 @@ If everything is working, you should see:
 Access the admin interface to manage plugins:
 
 ```
-URL: https://yoursite.com/desk#/assistant-admin
+URL: https://yoursite.com/desk#/fac-admin
 ```
 
 Available plugins:

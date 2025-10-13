@@ -29,8 +29,6 @@ bench get-app https://github.com/buildswithpaul/Frappe_Assistant_Core
 # 2. Install on your site  
 bench --site [site-name] install-app frappe_assistant_core
 
-# 3. Enable the assistant
-bench --site [site-name] set-config assistant_enabled 1
 ```
 
 **That's it!** Your ERPNext system is now accessible to any MCP-compatible LLM.
@@ -307,157 +305,130 @@ graph LR
 
 ## 🚀 Getting Started
 
-### Option 1: Claude Desktop with OAuth (Recommended)
+Ready to connect your LLM to ERPNext? Follow these simple steps:
 
-Connect Claude Desktop using modern OAuth 2.0 authentication:
+### Step 1: Get Your MCP Endpoint URL
 
-**1. Enable OAuth in Frappe**
-```bash
-# Login to Frappe as Administrator
-# Go to: Setup → Integrations → Assistant Core Settings
-# In OAuth tab: Enable "Dynamic Client Registration"
-# Save
-```
+1. **Open FAC Admin Page**
+   - After installation, go to: **Desk → Tools → FAC Admin**
+   - Or navigate directly to: `https://your-site.com/app/fac-admin`
 
-**2. Configure Claude Desktop**
+2. **Copy Your MCP Endpoint**
+   - On the FAC Admin page, you'll see your **MCP Endpoint URL**
+   - It looks like: `https://your-site.com/api/method/frappe_assistant_core.api.fac_endpoint.handle_mcp`
+   - Copy this URL - you'll need it in the next step
 
-Edit your Claude Desktop config file:
-- **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
-- **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
-- **Linux**: `~/.config/Claude/claude_desktop_config.json`
+![FAC Admin Page](screenshots/fac-admin-endpoint.png)
+*Get your MCP endpoint URL from the FAC Admin page*
 
-```json
-{
-  "mcpServers": {
-    "frappe-assistant": {
-      "url": "https://your-site.com/api/method/frappe_assistant_core.api.fac_endpoint.handle_mcp",
-      "transport": "streamablehttp",
-      "oauth": {
-        "discoveryUrl": "https://your-site.com/.well-known/openid-configuration",
-        "clientName": "Claude Desktop"
-      }
-    }
-  }
-}
-```
+### Step 2: Add MCP Server to Your LLM
 
-**3. Authorize**
-- Restart Claude Desktop
-- Start a new conversation
-- When prompted, authorize in your browser
-- Done! Claude can now access your ERPNext data
+Choose your LLM platform and follow the instructions:
 
-![OAuth Setup](screenshots/oauth-setup-demo.png)
-*OAuth provides secure, token-based authentication with automatic refresh*
+#### 🔷 **Claude Desktop** (Recommended)
 
-### Option 2: MCP Inspector for Testing
+1. **In Claude Desktop**, click the settings icon (⚙️) in the bottom left
+2. Click **"Connectors"**
+3. Click **"+ Add Custom Connector""** button
+4. Fill in the details:
+   - **Name**: `Frappe Assistant Core` (or any name you prefer)
+   - **URL**: Paste your MCP endpoint URL from Step 1
+5. Click **"Add"**
 
-Test your MCP server with the MCP Inspector tool:
+![Claude Add Server](screenshots/claude-add-server.png)
 
-**1. Enable Public Client Origins**
-```bash
-# In Assistant Core Settings → OAuth tab
-# Add to "Allowed Public Client Origins": http://localhost:6274
-# Save
-```
+#### 🟢 **ChatGPT** (Plus Users Only)
 
-**2. Open MCP Inspector**
-- Go to: http://localhost:6274/
-- Select "Streamable HTTP" transport
-- Enter URL: `https://your-site.com/api/method/frappe_assistant_core.api.fac_endpoint.handle_mcp`
-- Click "Quick OAuth Flow"
-- Authorize when prompted
+> **Note**: Custom connectors are only available for ChatGPT Plus and above plan users with Developer Mode enabled
 
-![MCP Inspector](screenshots/mcp-inspector-demo.png)
-*MCP Inspector provides visual testing and debugging*
+1. **In ChatGPT**, open the side panel
+2. Go to **Connectors** menu
+3. Click **"Create"** button
+4. Fill in the connector details:
+   - **Name**: `Frappe Assistant Core` (or any name you prefer)
+   - **URL**: Paste your MCP endpoint URL from Step 1
+5. Click **"Create"**
 
-### Option 3: Custom Application Integration
+![ChatGPT Connector](screenshots/chatgpt-connector.png)
 
-For custom applications or other MCP clients:
+#### 🌐 **Claude Web** (claude.ai)
 
-```python
-import requests
-import secrets
-import hashlib
-import base64
-from urllib.parse import urlencode
+1. **On Claude Web**, click your profile icon
+2. Go to **Settings → Integrations**
+3. Click **"Add Custom Connector"**
+4. Fill in:
+   - **Name**: `Frappe Assistant`
+   - **URL**: Paste your MCP endpoint URL from Step 1
+5. Click **"Add"**
 
-# 1. Discover OAuth configuration
-discovery_url = "https://your-site.com/.well-known/openid-configuration"
-config = requests.get(discovery_url).json()
+### Step 3: Authenticate & Connect
 
-# 2. Register client (if dynamic registration enabled)
-registration_data = {
-    "client_name": "My MCP Client",
-    "redirect_uris": ["http://localhost:8080/callback"],
-    "token_endpoint_auth_method": "none",
-    "grant_types": ["authorization_code", "refresh_token"],
-    "response_types": ["code"]
-}
-client_info = requests.post(
-    config["registration_endpoint"],
-    json=registration_data
-).json()
+1. **Click "Connect"** in your LLM client
+2. **You'll be redirected** to your Frappe login page
+3. **Login** with your Frappe username and password
+4. **Click "Authenticate"** to authorize the LLM to access your ERPNext data
+5. **Done!** You'll be redirected back to your LLM
 
-# 3. Generate PKCE parameters
-code_verifier = base64.urlsafe_b64encode(secrets.token_bytes(32)).decode('utf-8').rstrip('=')
-code_challenge = base64.urlsafe_b64encode(
-    hashlib.sha256(code_verifier.encode('utf-8')).digest()
-).decode('utf-8').rstrip('=')
+![OAuth Flow](screenshots/oauth-authentication-flow.png)
+*Secure OAuth 2.0 authentication - login once, access anytime*
 
-# 4. Build authorization URL
-auth_params = {
-    "response_type": "code",
-    "client_id": client_info["client_id"],
-    "redirect_uri": "http://localhost:8080/callback",
-    "scope": "all openid",
-    "code_challenge": code_challenge,
-    "code_challenge_method": "S256"
-}
-auth_url = f"{config['authorization_endpoint']}?{urlencode(auth_params)}"
-print(f"Visit: {auth_url}")
+### Step 4: Start Using Your Tools!
 
-# 5. Exchange code for token (after user authorizes)
-token_data = {
-    "grant_type": "authorization_code",
-    "code": authorization_code,  # From redirect
-    "redirect_uri": "http://localhost:8080/callback",
-    "code_verifier": code_verifier,
-    "client_id": client_info["client_id"]
-}
-token_response = requests.post(config["token_endpoint"], data=token_data).json()
-access_token = token_response["access_token"]
-
-# 6. Make MCP requests with Bearer token
-headers = {
-    "Authorization": f"Bearer {access_token}",
-    "Content-Type": "application/json"
-}
-response = requests.post(config["mcp_endpoint"], headers=headers, json={
-    "jsonrpc": "2.0",
-    "method": "tools/list",
-    "params": {},
-    "id": 1
-})
-print(response.json())
-```
-
-See [MCP StreamableHTTP Guide](docs/MCP_STREAMABLEHTTP_GUIDE.md) for complete implementation details.
-
-### Test Your Integration
-
-Once connected, try these commands with any compatible LLM:
+Your LLM can now access ERPNext! Try these commands:
 
 > "List all customers in the system"
 
 > "Create a new customer called Acme Corp with email test@acme.com"
 
-> "Show me sales data from this month and create a chart"
+> "Show me this month's sales report"
 
-![Claude Desktop Integration](screenshots/claude-integration-demo.png)
-*Natural language commands create real ERPNext documents and generate insights*
+> "What are the top 5 selling items?"
 
-The LLM will interact directly with your ERPNext data through the MCP tools.
+---
+
+### 🧪 For Developers: MCP Inspector Testing
+
+Want to test and debug your MCP server? Use the MCP Inspector tool:
+
+**1. Enable CORS for Local Testing**
+
+Add to your `site_config.json`:
+```json
+{
+  "oauth_cors_allowed_origins": "*"
+}
+```
+
+Or in **Assistant Core Settings** → OAuth tab → **Allowed Public Client Origins**: `http://localhost:6274`
+
+**2. Open MCP Inspector**
+
+- Go to: http://localhost:6274/
+- Select **"Streamable HTTP"** transport
+- Enter your **MCP Endpoint URL** from FAC Admin
+- Click **"Guided OAuth Flow"** and click **Continue** for each step
+- Login when prompted
+
+**3. Test Tools**
+
+- Browse available tools
+- Execute test calls
+- Debug request/response data
+- Monitor OAuth token flow
+
+![MCP Inspector](screenshots/mcp-inspector-demo.png)
+*MCP Inspector provides visual testing and debugging for developers*
+
+---
+
+### 📚 Advanced Integration
+
+For custom applications, advanced OAuth flows, or programmatic integration, see our comprehensive guides:
+
+- **[MCP StreamableHTTP Guide](docs/architecture/MCP_STREAMABLEHTTP_GUIDE.md)** - Complete OAuth + MCP implementation
+- **[OAuth Setup Guide](docs/getting-started/oauth/oauth_setup_guide.md)** - Detailed OAuth configuration
+- **[API Reference](docs/api/API_REFERENCE.md)** - All endpoints and protocols
+- **[Development Guide](docs/development/DEVELOPMENT_GUIDE.md)** - Build custom integrations
 
 ---
 

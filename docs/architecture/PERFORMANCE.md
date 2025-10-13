@@ -120,7 +120,7 @@ Only enable plugins you actually use:
 
 ```python
 # Via Admin Interface
-https://yoursite.com/desk#/assistant-admin
+https://yoursite.com/desk#/fac-admin
 
 # Or via code
 from frappe_assistant_core.utils.plugin_manager import get_plugin_manager

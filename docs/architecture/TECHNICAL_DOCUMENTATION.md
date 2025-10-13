@@ -1642,7 +1642,7 @@ pip install .[dev]
 bench --site [site-name] set-config assistant_enabled 1
 
 # Or via assistant admin interface
-https://your-site.com/desk#/assistant-admin
+https://your-site.com/desk#/fac-admin
 ```
 
 ### Enhanced Docker Support 🔄 _Updated_
