@@ -28,89 +28,95 @@ MCP StreamableHTTP is a transport layer that:
 ## Architecture Overview
 
 ```mermaid
-graph TB
-    subgraph "MCP Client Layer"
-        Client[MCP Client<br/>Claude Desktop, MCP Inspector, etc.]
-    end
-
-    subgraph "OAuth Discovery & Authentication"
-        Discovery[/.well-known/openid-configuration<br/>OAuth Discovery Endpoint]
-        OAuth[OAuth Endpoints<br/>authorize, token, register, etc.]
-    end
-
-    subgraph "Frappe Assistant Core - MCP Handler"
-        Endpoint[/api/method/frappe_assistant_core<br/>.api.fac_endpoint.handle_mcp]
-
-        subgraph "OAuth Token Validation"
-            Extract[1. Extract Bearer token<br/>from Authorization header]
-            Validate[2. Validate token against<br/>OAuth Bearer Token doc]
-            Check[3. Check token status<br/>and expiration]
-            SetUser[4. Set user session<br/>frappe.set_user]
-        end
-
-        subgraph "FAC MCP Server (mcp/server.py)"
-            JSONRPC[JSON-RPC 2.0<br/>request handling]
-            Routing[Method routing<br/>initialize, tools/list, etc.]
-            MCPRegistry[Tool registry<br/>integration]
-            Serialization[JSON serialization<br/>with default=str]
-        end
-
-        subgraph "Tool Registry"
-            Discovery2[Plugin discovery<br/>and loading]
-            Instantiation[Tool<br/>instantiation]
-            Permissions[Permission<br/>filtering]
-            Adapter[Tool adapter for<br/>BaseTool compatibility]
-        end
-
-        subgraph "Tool Execution"
-            ArgValidation[Argument<br/>validation]
-            PermCheck[Permission<br/>checking]
-            Execute[Tool.execute]
-            Audit[Audit<br/>logging]
-            ErrorHandle[Error<br/>handling]
-        end
-    end
-
-    %% Flow connections
-    Client -->|1. OAuth Discovery| Discovery
-    Client -->|2. OAuth Authorization Flow| OAuth
-    Client -->|3. MCP Requests with Bearer Token| Endpoint
-
+---
+config:
+  layout: elk
+---
+flowchart TB
+ subgraph subGraph0["MCP Client Layer"]
+        Client["MCP Client<br>Claude Desktop, MCP Inspector, etc."]
+  end
+ subgraph subGraph1["OAuth Discovery & Authentication"]
+        Discovery["/.well-known/openid-configuration<br>OAuth Discovery Endpoint"]
+        OAuth["OAuth Endpoints<br>authorize, token, register, etc."]
+  end
+ subgraph subGraph2["OAuth Token Validation"]
+        Extract["Extract Bearer token<br>from Authorization header"]
+        Validate["Validate token against<br>OAuth Bearer Token doc"]
+        Check["Check token status<br>and expiration"]
+        SetUser["Set user session<br>frappe.set_user"]
+  end
+ subgraph subGraph3["FAC MCP Server (mcp/server.py)"]
+        JSONRPC["JSON-RPC 2.0<br>request handling"]
+        Routing["Method routing<br>initialize, tools/list, etc."]
+        MCPRegistry["Tool registry<br>integration"]
+        Serialization["JSON serialization<br>with default=str"]
+  end
+ subgraph subGraph4["Tool Registry"]
+        Discovery2["Plugin discovery<br>and loading"]
+        Instantiation["Tool<br>instantiation"]
+        Permissions["Permission<br>filtering"]
+        Adapter["Tool adapter for<br>BaseTool compatibility"]
+  end
+ subgraph subGraph5["Tool Execution"]
+        ArgValidation["Argument<br>validation"]
+        PermCheck["Permission<br>checking"]
+        Execute["Tool.execute"]
+        Audit["Audit<br>logging"]
+        ErrorHandle["Error<br>handling"]
+  end
+ subgraph subGraph6["Frappe Assistant Core - MCP Handler"]
+        Endpoint["/api/method/frappe_assistant_core<br>.api.fac_endpoint.handle_mcp"]
+        subGraph2
+        subGraph3
+        subGraph4
+        subGraph5
+  end
+    Client -- OAuth Discovery --> Discovery
+    Client -- OAuth Authorization Flow --> OAuth
+    Client -- MCP Requests with Bearer Token --> Endpoint
     Endpoint --> Extract
     Extract --> Validate
     Validate --> Check
     Check --> SetUser
-
     SetUser --> JSONRPC
     JSONRPC --> Routing
     Routing --> MCPRegistry
     MCPRegistry --> Serialization
-
     Serialization --> Discovery2
     Discovery2 --> Instantiation
     Instantiation --> Permissions
     Permissions --> Adapter
-
     Adapter --> ArgValidation
     ArgValidation --> PermCheck
     PermCheck --> Execute
-    Execute --> Audit
-    Execute --> ErrorHandle
-
-    %% Styling
+    Execute --> Audit & ErrorHandle
+     Client:::clientStyle
+     Discovery:::oauthStyle
+     OAuth:::oauthStyle
+     Extract:::validationStyle
+     Validate:::validationStyle
+     Check:::validationStyle
+     SetUser:::validationStyle
+     JSONRPC:::serverStyle
+     Routing:::serverStyle
+     MCPRegistry:::serverStyle
+     Serialization:::serverStyle
+     Discovery2:::registryStyle
+     Instantiation:::registryStyle
+     Permissions:::registryStyle
+     Adapter:::registryStyle
+     ArgValidation:::executionStyle
+     PermCheck:::executionStyle
+     Execute:::executionStyle
+     Audit:::executionStyle
+     ErrorHandle:::executionStyle
     classDef clientStyle fill:#e3f2fd,stroke:#1976d2,stroke-width:2px
     classDef oauthStyle fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
     classDef validationStyle fill:#fff3e0,stroke:#f57c00,stroke-width:2px
     classDef serverStyle fill:#e8f5e8,stroke:#2e7d32,stroke-width:2px
     classDef registryStyle fill:#fce4ec,stroke:#c2185b,stroke-width:2px
     classDef executionStyle fill:#e0f2f1,stroke:#00695c,stroke-width:2px
-
-    class Client clientStyle
-    class Discovery,OAuth oauthStyle
-    class Extract,Validate,Check,SetUser validationStyle
-    class JSONRPC,Routing,MCPRegistry,Serialization serverStyle
-    class Discovery2,Instantiation,Permissions,Adapter registryStyle
-    class ArgValidation,PermCheck,Execute,Audit,ErrorHandle executionStyle
 ```
 
 ## Endpoint

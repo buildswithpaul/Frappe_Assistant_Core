@@ -6,54 +6,103 @@ Frappe Assistant Core is built on a modular plugin architecture that separates c
 
 ## System Architecture
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                     Frappe Assistant Core                   │
-├─────────────────────────────────────────────────────────────┤
-│                    MCP Protocol Layer                       │
-│  ┌───────────────┐  ┌───────────────┐  ┌───────────────┐   │
-│  │ Initialize    │  │ Tools/List    │  │ Tools/Call    │   │
-│  │ Handler       │  │ Handler       │  │ Handler       │   │
-│  └───────────────┘  └───────────────┘  └───────────────┘   │
-├─────────────────────────────────────────────────────────────┤
-│                    Tool Registry                            │
-│  ┌─────────────────────────────────────────────────────────┐ │
-│  │                Tool Discovery Engine                    │ │
-│  │  ┌─────────────┐              ┌─────────────────────┐   │ │
-│  │  │ Core Tools  │              │  Plugin Tools       │   │ │
-│  │  │ Discovery   │              │  Discovery          │   │ │
-│  │  └─────────────┘              └─────────────────────┘   │ │
-│  └─────────────────────────────────────────────────────────┘ │
-├─────────────────────────────────────────────────────────────┤
-│                    Core System                              │
-│  ┌───────────────┐  ┌───────────────┐  ┌───────────────┐   │
-│  │ Document      │  │ Search        │  │ Metadata      │   │
-│  │ Tools         │  │ Tools         │  │ Tools         │   │
-│  └───────────────┘  └───────────────┘  └───────────────┘   │
-│  ┌───────────────┐  ┌───────────────┐                      │
-│  │ Report        │  │ Workflow      │                      │
-│  │ Tools         │  │ Tools         │                      │
-│  └───────────────┘  └───────────────┘                      │
-├─────────────────────────────────────────────────────────────┤
-│                   Plugin System                             │
-│  ┌─────────────────────────────────────────────────────────┐ │
-│  │                Plugin Manager                           │ │
-│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────────┐ │ │
-│  │  │ Discovery   │  │ Validation  │  │ Lifecycle       │ │ │
-│  │  │ Engine      │  │ Engine      │  │ Management      │ │ │
-│  │  └─────────────┘  └─────────────┘  └─────────────────┘ │ │
-│  └─────────────────────────────────────────────────────────┘ │
-│  ┌───────────────┐  ┌───────────────┐  ┌───────────────┐   │
-│  │ Data Science  │  │ WebSocket     │  │ Batch         │   │
-│  │ Plugin        │  │ Plugin        │  │ Processing    │   │
-│  └───────────────┘  └───────────────┘  └───────────────┘   │
-├─────────────────────────────────────────────────────────────┤
-│                   Frappe Framework                          │
-│  ┌───────────────┐  ┌───────────────┐  ┌───────────────┐   │
-│  │ Database      │  │ Permissions   │  │ Caching       │   │
-│  │ ORM           │  │ System        │  │ System        │   │
-│  └───────────────┘  └───────────────┘  └───────────────┘   │
-└─────────────────────────────────────────────────────────────┘
+```mermaid
+graph TB
+    subgraph "MCP Client"
+        Client[Claude Desktop / Claude Web<br/>MCP Inspector / Custom Clients]
+    end
+
+    subgraph "OAuth 2.0 Layer"
+        Discovery[/.well-known/openid-configuration<br/>OAuth Discovery]
+        AuthServer[OAuth Authorization Server<br/>authorize, token, introspect]
+    end
+
+    subgraph "Frappe Assistant Core"
+        subgraph "MCP StreamableHTTP Endpoint"
+            Endpoint[/api/method/.../fac_endpoint.handle_mcp]
+            TokenValidation[Bearer Token Validation]
+            MCPServer[Custom FAC MCP Server<br/>JSON-RPC 2.0 Handler]
+        end
+
+        subgraph "Tool Registry"
+            ToolRegistry[Tool Registry<br/>Tool Discovery & Execution]
+            PluginManager[Plugin Manager<br/>Discovery, Validation, Lifecycle]
+        end
+
+        subgraph "Plugin System"
+            subgraph "Core Plugin - Always Enabled"
+                CoreTools["Document Tools (CRUD)<br/>Search Tools (Global, DocType, Link)<br/>Metadata Tools (DocType Info)<br/>Report Tools (Execute, List, Requirements)<br/>Workflow Tools (Actions, Status)"]
+            end
+
+            subgraph "Data Science Plugin - Optional"
+                DataScienceTools["run_python_code<br/>analyze_business_data<br/>query_and_analyze<br/>extract_file_content (PDF, OCR, CSV, Excel)"]
+            end
+
+            subgraph "Visualization Plugin - Optional"
+                VisualizationTools["create_dashboard<br/>create_dashboard_chart<br/>list_user_dashboards"]
+            end
+
+            subgraph "Custom Tools Plugin - Optional"
+                CustomTools["User-defined custom tools"]
+            end
+        end
+
+        subgraph "External App Tools via Hooks"
+            ExternalTools["Tools from other Frappe apps<br/>via 'assistant_tools' hook"]
+        end
+    end
+
+    subgraph "Frappe Framework"
+        Database[Database ORM]
+        Permissions[Permission System<br/>Role-Based Access Control]
+        Sessions[Session Management]
+        Audit[Audit Logging]
+    end
+
+    %% OAuth Flow
+    Client -->|1. Discover OAuth| Discovery
+    Client -->|2. Authenticate| AuthServer
+    Client -->|3. MCP Request + Bearer Token| Endpoint
+
+    %% MCP Processing Flow
+    Endpoint --> TokenValidation
+    TokenValidation -->|Valid Token| MCPServer
+    MCPServer --> ToolRegistry
+
+    %% Tool Discovery
+    ToolRegistry --> PluginManager
+    PluginManager --> CoreTools
+    PluginManager --> DataScienceTools
+    PluginManager --> VisualizationTools
+    PluginManager --> CustomTools
+    ToolRegistry --> ExternalTools
+
+    %% Tool Execution Flow
+    CoreTools --> Database
+    CoreTools --> Permissions
+    DataScienceTools --> Database
+    VisualizationTools --> Database
+    ExternalTools --> Database
+
+    %% Audit & Sessions
+    TokenValidation --> Sessions
+    ToolRegistry --> Audit
+    CoreTools --> Audit
+
+    %% Styling
+    classDef clientStyle fill:#e3f2fd,stroke:#1976d2,stroke-width:2px
+    classDef oauthStyle fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
+    classDef endpointStyle fill:#fff3e0,stroke:#f57c00,stroke-width:2px
+    classDef registryStyle fill:#e1f5fe,stroke:#0277bd,stroke-width:2px
+    classDef pluginStyle fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+    classDef frappeStyle fill:#fce4ec,stroke:#c2185b,stroke-width:2px
+
+    class Client clientStyle
+    class Discovery,AuthServer oauthStyle
+    class Endpoint,TokenValidation,MCPServer endpointStyle
+    class ToolRegistry,PluginManager registryStyle
+    class CoreTools,DataScienceTools,VisualizationTools,CustomTools,ExternalTools pluginStyle
+    class Database,Permissions,Sessions,Audit frappeStyle
 ```
 
 ## Core Components
@@ -361,21 +410,13 @@ Professional dashboard and chart creation system:
 
 **Dependencies:** matplotlib, pandas, numpy
 
-#### **WebSocket Plugin** (`plugins/websocket/`) - Optional
+#### **Custom Tools Plugin** (`plugins/custom_tools/`) - Optional
 
-Real-time communication capabilities:
+User-defined custom tools for specific business requirements:
 
-- Live data streaming
-- Real-time notifications
-- Interactive dashboard updates
-
-#### **Batch Processing Plugin** (`plugins/batch_processing/`) - Optional
-
-Background and bulk operations:
-
-- Large dataset processing
-- Background task management
-- Bulk operation optimization
+- Placeholder for organization-specific tools
+- Custom business logic implementation
+- Domain-specific functionality
 
 ## Data Flow
 
