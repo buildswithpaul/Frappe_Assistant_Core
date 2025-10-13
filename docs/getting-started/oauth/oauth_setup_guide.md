@@ -400,62 +400,39 @@ This section explains how MCP clients (like Claude Desktop, MCP Inspector, or cu
 
 ### Complete OAuth Flow Overview
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                      MCP Client                             │
-│              (Claude Desktop, MCP Inspector, etc.)          │
-└──────────────────────┬──────────────────────────────────────┘
-                       │
-                       │ 1. Discovery Phase
-                       ▼
-         GET /.well-known/openid-configuration
-                       │
-                       ▼
-         Returns: OAuth endpoints, PKCE support,
-                  dynamic registration endpoint,
-                  MCP endpoint URL
-                       │
-                       │ 2. Registration Phase (Optional)
-                       ▼
-         POST /api/method/.../register_client
-                       │
-                       ▼
-         Returns: client_id (+ client_secret for confidential)
-                       │
-                       │ 3. Authorization Phase
-                       ▼
-         Redirect to: /api/method/.../authorize
-         with PKCE challenge
-                       │
-                       ▼
-         User logs in and authorizes
-                       │
-                       ▼
-         Redirect back with authorization code
-                       │
-                       │ 4. Token Exchange Phase
-                       ▼
-         POST /api/method/.../get_token
-         with code and PKCE verifier
-                       │
-                       ▼
-         Returns: access_token, refresh_token
-                       │
-                       │ 5. API Access Phase
-                       ▼
-         POST /api/method/.../handle_mcp
-         Authorization: Bearer <access_token>
-                       │
-                       ▼
-         MCP tools/list, tools/call, etc.
-                       │
-                       │ 6. Token Refresh Phase (when expired)
-                       ▼
-         POST /api/method/.../get_token
-         with refresh_token
-                       │
-                       ▼
-         Returns: new access_token, refresh_token
+```mermaid
+sequenceDiagram
+    participant Client as MCP Client<br/>(Claude Desktop, MCP Inspector, etc.)
+    participant Discovery as /.well-known/openid-configuration
+    participant Register as Dynamic Client Registration
+    participant Auth as Authorization Endpoint
+    participant Token as Token Endpoint
+    participant MCP as MCP Endpoint
+
+    Note over Client,MCP: Phase 1: Discovery
+    Client->>Discovery: GET /.well-known/openid-configuration
+    Discovery-->>Client: OAuth endpoints, PKCE support,<br/>registration endpoint, MCP endpoint URL
+
+    Note over Client,MCP: Phase 2: Registration (Optional)
+    Client->>Register: POST register_client<br/>(client_name, redirect_uris)
+    Register-->>Client: client_id<br/>(+ client_secret for confidential clients)
+
+    Note over Client,MCP: Phase 3: Authorization
+    Client->>Auth: Redirect to /authorize<br/>with PKCE challenge (code_challenge)
+    Note over Auth: User logs in and authorizes
+    Auth-->>Client: Redirect with authorization code
+
+    Note over Client,MCP: Phase 4: Token Exchange
+    Client->>Token: POST get_token<br/>(code, code_verifier)
+    Token-->>Client: access_token, refresh_token, expires_in
+
+    Note over Client,MCP: Phase 5: API Access
+    Client->>MCP: POST handle_mcp<br/>Authorization: Bearer {access_token}<br/>MCP request (tools/list, tools/call)
+    MCP-->>Client: MCP response
+
+    Note over Client,MCP: Phase 6: Token Refresh (when expired)
+    Client->>Token: POST get_token<br/>(grant_type=refresh_token)
+    Token-->>Client: new access_token, refresh_token
 ```
 
 ### Phase 1: Discovery
@@ -779,7 +756,8 @@ Prevents authorization code interception attacks.
 
 ## Changelog
 
-### v2.0.0
+### v2.2.0
+- Migrated from STDIO to StreamableHTTP transport with OAuth 2.0
 - Added OAuth 2.0 Dynamic Client Registration (RFC 7591)
 - Added Authorization Server Metadata (RFC 8414)
 - Added Protected Resource Metadata (RFC 9728)
@@ -788,3 +766,4 @@ Prevents authorization code interception attacks.
 - Simplified configuration in Assistant Core Settings
 - Automatic Frappe v15/v16 compatibility
 - Added comprehensive OAuth flow documentation for MCP clients
+- Converted documentation diagrams to Mermaid format

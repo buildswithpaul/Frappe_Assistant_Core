@@ -5,6 +5,179 @@ All notable changes to Frappe Assistant Core will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.0] - 2025-10-13
+
+### 🎯 Major Release - StreamableHTTP Transport Migration
+
+#### Transport Layer Migration
+- **Migrated** from STDIO bridge to StreamableHTTP transport
+- **Implemented** OAuth 2.0 authentication with industry-standard security
+- **Added** HTTP-based communication replacing subprocess stdin/stdout
+- **Enabled** web-based MCP client support (Claude Web, browser clients)
+- **Improved** cross-platform compatibility and deployment options
+
+#### OAuth 2.0 Integration
+- **Added** OAuth 2.0 Dynamic Client Registration (RFC 7591)
+- **Added** Authorization Server Metadata (RFC 8414)
+- **Added** Protected Resource Metadata (RFC 9728)
+- **Implemented** PKCE support (RFC 7636) for secure authorization
+- **Added** automatic token refresh mechanism
+- **Added** CORS handling for public clients
+- **Added** discovery endpoints (/.well-known/openid-configuration)
+
+#### Custom FAC MCP Server
+- **Built** custom MCP server optimized for Frappe
+- **Fixed** JSON serialization for Frappe data types (datetime, Decimal)
+- **Removed** Pydantic dependency for lighter footprint
+- **Improved** error handling with full tracebacks
+- **Enhanced** Frappe session integration
+- **Added** tool adapter pattern for BaseTool compatibility
+
+#### Documentation & UX Improvements
+- **Converted** architecture diagrams to Mermaid format
+- **Rewrote** Getting Started guide with LLM-specific instructions
+- **Added** comprehensive OAuth setup guide
+- **Added** MCP StreamableHTTP integration guide
+- **Simplified** onboarding (default-enabled assistant access)
+- **Added** FAC Admin page with MCP endpoint display
+
+#### API & Endpoints
+- **Added** MCP endpoint: `/api/method/frappe_assistant_core.api.fac_endpoint.handle_mcp`
+- **Added** OAuth endpoints (authorize, token, register, introspect, revoke)
+- **Added** Well-known discovery endpoints
+- **Added** HEAD method support for connectivity checks
+- **Implemented** Bearer token validation middleware
+
+#### Configuration & Compatibility
+- **Simplified** configuration via site_config.json
+- **Ensured** Frappe v15/v16 compatibility (dual CORS mechanism)
+- **Added** automatic custom field setup (assistant_enabled)
+- **Added** proper uninstall cleanup
+- **Removed** unnecessary server_version field
+
+### 🐛 Bug Fixes
+
+#### CORS & Authentication
+- **Fixed** CORS headers for OPTIONS preflight requests
+- **Fixed** MCP-Protocol-Version header in CORS allow list
+- **Fixed** 401 responses with proper WWW-Authenticate headers
+- **Fixed** HTTP 417 errors with proper method registration
+
+#### Plugin Management
+- **Fixed** plugin toggle using plugin IDs instead of display names
+- **Fixed** plugin state persistence across page refreshes
+- **Added** plugin_id and category_id fields to API responses
+
+#### Migration & Patches
+- **Fixed** missing patch file errors during migration
+- **Added** patch to update assistant_enabled default to 1
+- **Added** patch to rename assistant-admin page to fac-admin
+- **Ensured** idempotent patches for fresh installs vs upgrades
+
+### ✨ Added
+
+#### Security
+- **OAuth 2.0** with PKCE for secure authorization code flow
+- **Bearer token** authentication for all MCP requests
+- **Token expiration** and automatic refresh support
+- **Dynamic client** registration with origin validation
+- **Public vs confidential** client support
+
+#### Developer Tools
+- **MCP Inspector** support with Quick OAuth Flow
+- **Custom Python client** examples
+- **Comprehensive debugging** with detailed error logging
+- **OAuth error tracking** for troubleshooting
+
+#### Admin Interface
+- **FAC Admin page** showing MCP endpoint URL
+- **Plugin management** with enable/disable functionality
+- **Tool registry** display with category grouping
+- **Real-time stats** and health monitoring
+
+### 🔧 Changed
+
+#### Architecture
+- **Transport**: STDIO subprocess → StreamableHTTP
+- **Authentication**: API Key → OAuth 2.0 Bearer tokens
+- **Client Support**: Limited → Any HTTP-capable client
+- **Discovery**: Manual → Auto-discovery via .well-known
+- **Web Compatibility**: ❌ No → ✅ Yes
+
+#### Performance
+- **No subprocess overhead** with HTTP transport
+- **Better token caching** with client-side management
+- **Connection pooling** support for HTTP clients
+- **Reduced latency** with direct HTTP requests
+
+### 🚨 Security
+
+#### OAuth Security Features
+- **PKCE required** for all authorization code flows
+- **State parameter** for CSRF protection
+- **Token rotation** on refresh (configurable)
+- **Origin validation** for public clients
+- **HTTPS enforcement** for production (except localhost)
+
+#### Token Management
+- **Short-lived access tokens** (default 1 hour)
+- **Long-lived refresh tokens** (default 30 days)
+- **Automatic expiration** and cleanup
+- **Revocation support** for compromised tokens
+
+### 📝 Documentation
+
+#### New Documentation
+- **MCP_STREAMABLEHTTP_GUIDE.md**: Complete integration guide with Mermaid diagrams
+- **oauth_setup_guide.md**: Comprehensive OAuth configuration with Mermaid flow diagrams
+- **OAUTH_CORS_CONFIGURATION.md**: CORS setup for public clients
+- **Updated README.md**: Simplified getting started with LLM-specific steps
+
+#### Diagram Updates
+- **Architecture Overview**: ASCII → Mermaid sequence diagram
+- **OAuth Flow**: ASCII → Mermaid sequence diagram
+- **All diagrams**: GitHub-compatible rendering
+
+### 🔄 Migration Guide
+
+#### From v2.0.x/v2.1.x to v2.2.0
+
+**Breaking Changes:**
+- STDIO bridge no longer supported
+- API key authentication removed
+- Configuration changed to OAuth 2.0
+
+**Migration Steps:**
+
+1. **Update Frappe Assistant Core**
+   ```bash
+   cd apps/frappe_assistant_core
+   git pull
+   bench migrate
+   ```
+
+2. **Enable OAuth in Assistant Core Settings**
+   - Enable Dynamic Client Registration
+   - Configure Allowed Public Client Origins (if using MCP Inspector)
+
+3. **Reconfigure MCP Clients**
+   - **Claude Desktop**: Update config to use StreamableHTTP with OAuth
+   - **MCP Inspector**: Use OAuth flow for authentication
+   - **Custom Clients**: Implement OAuth 2.0 authorization code flow with PKCE
+
+4. **Verify Installation**
+   - Visit FAC Admin page
+   - Copy MCP endpoint URL
+   - Test OAuth flow with MCP Inspector
+
+**Benefits of Migration:**
+- ✅ Better security with OAuth 2.0
+- ✅ Web-based client support
+- ✅ No subprocess management
+- ✅ Better error handling
+- ✅ Auto-discovery support
+- ✅ Token refresh support
+
 ## [2.0.1] - 2025-07-26
 
 ### 🎯 Major Improvements
@@ -138,11 +311,18 @@ See [Git history](hhttps://github.com/buildswithpaul/Frappe_Assistant_Core/commi
 
 | Version | Release Date | Support Status | Notes |
 |---------|--------------|----------------|--------|
-| 2.0.1   | 2025-07-26   | ✅ Current     | Bug fixes & improvements |
+| 2.2.0   | 2025-10-13   | ✅ Current     | StreamableHTTP transport migration |
+| 2.0.1   | 2025-07-26   | ✅ Supported   | Bug fixes & improvements |
 | 2.0.0   | 2025-01-20   | ✅ Supported   | Major architecture overhaul |
 | 1.x     | 2024         | ⚠️ Legacy      | Legacy versions |
 
 ## Upgrade Path
+
+### From 2.0.x/2.1.x to 2.2.0
+- **Breaking Changes**: STDIO → StreamableHTTP transport
+- **Migration Required**: See v2.2.0 migration guide above
+- **Benefits**: OAuth 2.0, web client support, better security
+- **Recommendation**: Test in staging first, update MCP client configs
 
 ### From 2.0.0 to 2.0.1
 - **Automatic**: Most improvements are automatically applied
@@ -153,7 +333,7 @@ See [Git history](hhttps://github.com/buildswithpaul/Frappe_Assistant_Core/commi
 ### From 1.x to 2.0.x
 - **Breaking Changes**: Significant API changes in 2.0.0
 - **Migration Required**: See 2.0.0 migration guide
-- **Recommendation**: Upgrade to 2.0.1 directly for best experience
+- **Recommendation**: Upgrade to 2.2.0 directly for best experience
 
 ## Contributing
 

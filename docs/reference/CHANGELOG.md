@@ -2,6 +2,166 @@
 
 All notable changes to Frappe Assistant Core will be documented in this file.
 
+## [2.2.0] - 2025-10-13 - StreamableHTTP Transport Migration
+
+### 🎯 Major Release - Transport Layer Overhaul
+
+This release migrates Frappe Assistant Core from STDIO bridge to StreamableHTTP transport with OAuth 2.0 authentication, enabling web-based MCP clients and improving security, compatibility, and deployment flexibility.
+
+#### Transport Layer Migration
+- **Migrated** from STDIO subprocess bridge to HTTP-based StreamableHTTP transport
+- **Replaced** API key authentication with industry-standard OAuth 2.0
+- **Enabled** web-based client support (Claude Web, browser-based tools)
+- **Improved** cross-platform compatibility and deployment options
+- **Eliminated** subprocess management complexity
+
+#### OAuth 2.0 Security Implementation
+- **OAuth 2.0 Dynamic Client Registration** (RFC 7591) for automatic client setup
+- **Authorization Server Metadata** (RFC 8414) for endpoint discovery
+- **Protected Resource Metadata** (RFC 9728) for resource information
+- **PKCE Support** (RFC 7636) for secure authorization code flow
+- **Automatic token refresh** with refresh_token grant type
+- **CORS handling** for public clients (browser-based)
+- **Discovery endpoints** at /.well-known/openid-configuration
+
+#### Custom FAC MCP Server
+- **Built custom MCP server** optimized for Frappe's data types and architecture
+- **Fixed JSON serialization** for datetime, Decimal, and other non-JSON Frappe types
+- **Removed Pydantic dependency** for lighter footprint and better Frappe integration
+- **Enhanced error handling** with full tracebacks for debugging
+- **Deep Frappe integration** with session, permissions, and ORM
+- **Tool adapter pattern** for seamless BaseTool compatibility
+
+#### Documentation Improvements
+- **Converted all diagrams** from ASCII to Mermaid format for GitHub rendering
+- **Rewrote Getting Started** with LLM-specific instructions (Claude Desktop, ChatGPT, Claude Web)
+- **Added comprehensive OAuth setup guide** with troubleshooting
+- **Added MCP StreamableHTTP integration guide** with technical details
+- **Simplified onboarding** to zero manual steps after installation
+
+#### API & Endpoints
+- **MCP Endpoint**: `/api/method/frappe_assistant_core.api.fac_endpoint.handle_mcp`
+- **OAuth Endpoints**: authorize, token, register, introspect, revoke
+- **Discovery Endpoints**: /.well-known/openid-configuration, oauth-authorization-server, oauth-protected-resource
+- **HEAD method support** for connectivity checks (Claude Web compatibility)
+- **Bearer token validation** middleware for all MCP requests
+
+#### Configuration & UX
+- **Simplified configuration** via site_config.json for CORS
+- **Frappe v15/v16 compatibility** with dual CORS mechanism
+- **Default-enabled assistant access** for new users
+- **FAC Admin page** displaying MCP endpoint URL
+- **Automatic custom field setup** during installation
+- **Proper uninstall cleanup** removing custom fields
+
+### 🐛 Bug Fixes
+
+#### Authentication & CORS
+- **Fixed CORS headers** for OPTIONS preflight requests
+- **Added MCP-Protocol-Version** to CORS allowed headers
+- **Fixed 401 responses** with proper WWW-Authenticate headers per RFC 9728
+- **Fixed HTTP 417 errors** with proper HTTP method registration
+
+#### Plugin Management
+- **Fixed plugin toggle** to use plugin IDs instead of display names
+- **Fixed state persistence** after page refresh
+- **Added plugin_id fields** to API responses for correct identification
+
+#### Migration System
+- **Fixed missing patch files** causing ModuleNotFoundError
+- **Added idempotent patches** for safe fresh installs and upgrades
+- **Added assistant_enabled default** update patch
+- **Added page rename patch** (assistant-admin → fac-admin)
+
+### ✨ New Features
+
+#### Security
+- **OAuth 2.0 authorization** with PKCE for all flows
+- **Bearer token authentication** for API access
+- **Token expiration** and automatic refresh
+- **Dynamic client registration** with origin validation
+- **Public and confidential** client support
+- **Token revocation** and introspection endpoints
+
+#### Developer Experience
+- **MCP Inspector integration** with Quick OAuth Flow
+- **Custom Python client examples** in documentation
+- **Comprehensive debugging** with OAuth error logging
+- **Connection pooling** support for HTTP clients
+- **Auto-discovery** via well-known endpoints
+
+#### Admin Features
+- **FAC Admin page** with endpoint URL display
+- **Plugin enable/disable** functionality
+- **Tool registry display** with categories
+- **Real-time monitoring** and health checks
+
+### 🔧 Architecture Changes
+
+| Feature | Before (STDIO) | After (StreamableHTTP) |
+|---------|---------------|----------------------|
+| **Transport** | stdin/stdout subprocess | HTTP POST requests |
+| **Authentication** | API Key in environment | OAuth 2.0 Bearer tokens |
+| **Client Support** | Subprocess-capable only | Any HTTP-capable client |
+| **Security** | Basic API key | Industry-standard OAuth |
+| **Discovery** | Manual configuration | Auto-discovery via .well-known |
+| **Token Management** | No refresh | Automatic token refresh |
+| **Web Compatibility** | ❌ No | ✅ Yes |
+| **Deployment** | Complex subprocess setup | Simple HTTP endpoint |
+
+### 🚨 Breaking Changes
+
+#### Migration Required
+- **STDIO bridge no longer supported** - must migrate to StreamableHTTP
+- **API key authentication removed** - must use OAuth 2.0
+- **Client configuration changes** - update MCP client configs
+
+#### Migration Steps
+
+1. **Update Application**
+   ```bash
+   cd apps/frappe_assistant_core
+   git pull
+   bench migrate
+   ```
+
+2. **Configure OAuth**
+   - Go to Assistant Core Settings
+   - Enable Dynamic Client Registration
+   - Configure Allowed Public Client Origins (if needed)
+
+3. **Update MCP Clients**
+   - **Claude Desktop**: Update config to StreamableHTTP with OAuth discovery
+   - **MCP Inspector**: Use OAuth authentication flow
+   - **Custom Clients**: Implement OAuth 2.0 with PKCE
+
+4. **Test Integration**
+   - Visit FAC Admin page
+   - Copy MCP endpoint URL
+   - Authenticate with OAuth flow
+
+### 📊 Benefits of Migration
+
+- ✅ **Better Security**: OAuth 2.0 with PKCE vs simple API keys
+- ✅ **Web Client Support**: Claude Web, browser-based tools now work
+- ✅ **Simpler Deployment**: HTTP endpoint vs subprocess management
+- ✅ **Better Error Handling**: HTTP status codes vs stdout parsing
+- ✅ **Auto-Discovery**: Clients discover endpoints automatically
+- ✅ **Token Refresh**: Long-lived sessions with automatic renewal
+- ✅ **Cross-Platform**: Works anywhere HTTP works
+
+### 📝 Documentation Updates
+
+#### New Guides
+- [MCP_STREAMABLEHTTP_GUIDE.md](../architecture/MCP_STREAMABLEHTTP_GUIDE.md) - Complete technical integration guide
+- [oauth_setup_guide.md](../getting-started/oauth/oauth_setup_guide.md) - OAuth configuration guide
+- [OAUTH_CORS_CONFIGURATION.md](../getting-started/oauth/OAUTH_CORS_CONFIGURATION.md) - CORS setup guide
+
+#### Updated Documentation
+- [README.md](../../README.md) - Simplified getting started with LLM-specific steps
+- All architecture diagrams converted to Mermaid format
+- Updated version references from v2.0.0 to v2.2.0
+
 ## [2.1.0] - 2025-08-29 - Major Performance & Feature Release
 
 ### 🌟 Major Enhancements

@@ -59,7 +59,7 @@ Your OAuth is now configured. MCP clients can auto-register and connect.
 ┌─────────────────────────────────────────────┐
 │ OAuth Configuration                         │
 ├─────────────────────────────────────────────┤
-│ ☑ Enable Dynamic Client Registration       │
+│ ☑ Enable Dynamic Client Registration        │
 │                                             │
 │ Allowed Public Client Origins:              │
 │ ┌─────────────────────────────────────────┐ │

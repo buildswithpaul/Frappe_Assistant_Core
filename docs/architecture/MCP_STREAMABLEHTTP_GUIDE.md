@@ -27,60 +27,90 @@ MCP StreamableHTTP is a transport layer that:
 
 ## Architecture Overview
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                        MCP Client                           │
-│              (Claude Desktop, MCP Inspector, etc.)          │
-└─────────────────────┬───────────────────────────────────────┘
-                      │
-                      │ 1. OAuth Discovery
-                      ▼
-         /.well-known/openid-configuration
-                      │
-                      │ 2. OAuth Authorization Flow
-                      ▼
-         OAuth Endpoints (authorize, token, etc.)
-                      │
-                      │ 3. MCP Requests with Bearer Token
-                      ▼
-┌─────────────────────────────────────────────────────────────┐
-│     /api/method/frappe_assistant_core.api.fac_endpoint      │
-│                      .handle_mcp                            │
-├─────────────────────────────────────────────────────────────┤
-│                  OAuth Token Validation                     │
-│  ┌──────────────────────────────────────────────────────┐   │
-│  │  1. Extract Bearer token from Authorization header  │   │
-│  │  2. Validate token against OAuth Bearer Token doc   │   │
-│  │  3. Check token status and expiration              │   │
-│  │  4. Set user session (frappe.set_user)             │   │
-│  └──────────────────────────────────────────────────────┘   │
-├─────────────────────────────────────────────────────────────┤
-│                    Custom MCP Server                        │
-│                    (mcp/server.py)                          │
-│  ┌──────────────────────────────────────────────────────┐   │
-│  │  - JSON-RPC 2.0 request handling                    │   │
-│  │  - Method routing (initialize, tools/list, etc.)    │   │
-│  │  - Tool registry integration                        │   │
-│  │  - JSON serialization with default=str             │   │
-│  └──────────────────────────────────────────────────────┘   │
-├─────────────────────────────────────────────────────────────┤
-│                      Tool Registry                          │
-│  ┌──────────────────────────────────────────────────────┐   │
-│  │  - Plugin discovery and loading                     │   │
-│  │  - Tool instantiation                               │   │
-│  │  - Permission filtering                             │   │
-│  │  - Tool adapter for BaseTool compatibility          │   │
-│  └──────────────────────────────────────────────────────┘   │
-├─────────────────────────────────────────────────────────────┤
-│                    Tool Execution                           │
-│  ┌──────────────────────────────────────────────────────┐   │
-│  │  - Argument validation                              │   │
-│  │  - Permission checking                              │   │
-│  │  - Tool.execute()                                   │   │
-│  │  - Audit logging                                    │   │
-│  │  - Error handling                                   │   │
-│  └──────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────┘
+```mermaid
+graph TB
+    subgraph "MCP Client Layer"
+        Client[MCP Client<br/>Claude Desktop, MCP Inspector, etc.]
+    end
+
+    subgraph "OAuth Discovery & Authentication"
+        Discovery[/.well-known/openid-configuration<br/>OAuth Discovery Endpoint]
+        OAuth[OAuth Endpoints<br/>authorize, token, register, etc.]
+    end
+
+    subgraph "Frappe Assistant Core - MCP Handler"
+        Endpoint[/api/method/frappe_assistant_core<br/>.api.fac_endpoint.handle_mcp]
+
+        subgraph "OAuth Token Validation"
+            Extract[1. Extract Bearer token<br/>from Authorization header]
+            Validate[2. Validate token against<br/>OAuth Bearer Token doc]
+            Check[3. Check token status<br/>and expiration]
+            SetUser[4. Set user session<br/>frappe.set_user]
+        end
+
+        subgraph "FAC MCP Server (mcp/server.py)"
+            JSONRPC[JSON-RPC 2.0<br/>request handling]
+            Routing[Method routing<br/>initialize, tools/list, etc.]
+            MCPRegistry[Tool registry<br/>integration]
+            Serialization[JSON serialization<br/>with default=str]
+        end
+
+        subgraph "Tool Registry"
+            Discovery2[Plugin discovery<br/>and loading]
+            Instantiation[Tool<br/>instantiation]
+            Permissions[Permission<br/>filtering]
+            Adapter[Tool adapter for<br/>BaseTool compatibility]
+        end
+
+        subgraph "Tool Execution"
+            ArgValidation[Argument<br/>validation]
+            PermCheck[Permission<br/>checking]
+            Execute[Tool.execute]
+            Audit[Audit<br/>logging]
+            ErrorHandle[Error<br/>handling]
+        end
+    end
+
+    %% Flow connections
+    Client -->|1. OAuth Discovery| Discovery
+    Client -->|2. OAuth Authorization Flow| OAuth
+    Client -->|3. MCP Requests with Bearer Token| Endpoint
+
+    Endpoint --> Extract
+    Extract --> Validate
+    Validate --> Check
+    Check --> SetUser
+
+    SetUser --> JSONRPC
+    JSONRPC --> Routing
+    Routing --> MCPRegistry
+    MCPRegistry --> Serialization
+
+    Serialization --> Discovery2
+    Discovery2 --> Instantiation
+    Instantiation --> Permissions
+    Permissions --> Adapter
+
+    Adapter --> ArgValidation
+    ArgValidation --> PermCheck
+    PermCheck --> Execute
+    Execute --> Audit
+    Execute --> ErrorHandle
+
+    %% Styling
+    classDef clientStyle fill:#e3f2fd,stroke:#1976d2,stroke-width:2px
+    classDef oauthStyle fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
+    classDef validationStyle fill:#fff3e0,stroke:#f57c00,stroke-width:2px
+    classDef serverStyle fill:#e8f5e8,stroke:#2e7d32,stroke-width:2px
+    classDef registryStyle fill:#fce4ec,stroke:#c2185b,stroke-width:2px
+    classDef executionStyle fill:#e0f2f1,stroke:#00695c,stroke-width:2px
+
+    class Client clientStyle
+    class Discovery,OAuth oauthStyle
+    class Extract,Validate,Check,SetUser validationStyle
+    class JSONRPC,Routing,MCPRegistry,Serialization serverStyle
+    class Discovery2,Instantiation,Permissions,Adapter registryStyle
+    class ArgValidation,PermCheck,Execute,Audit,ErrorHandle executionStyle
 ```
 
 ## Endpoint
@@ -128,8 +158,17 @@ Host: your-frappe-site.com
   "issuer": "https://your-frappe-site.com",
   "authorization_endpoint": "https://your-frappe-site.com/api/method/frappe.integrations.oauth2.authorize",
   "token_endpoint": "https://your-frappe-site.com/api/method/frappe.integrations.oauth2.get_token",
+  "userinfo_endpoint": "https://your-frappe-site.com/api/method/frappe.integrations.oauth2.openid_profile",
+  "jwks_uri": "https://your-frappe-site.com/.well-known/jwks.json",
   "registration_endpoint": "https://your-frappe-site.com/api/method/frappe_assistant_core.api.oauth_registration.register_client",
+  "revocation_endpoint": "https://your-frappe-site.com/api/method/frappe.integrations.oauth2.revoke_token",
+  "introspection_endpoint": "https://your-frappe-site.com/api/method/frappe.integrations.oauth2.introspect_token",
+  "response_types_supported": ["code"],
+  "grant_types_supported": ["authorization_code", "refresh_token"],
   "code_challenge_methods_supported": ["S256"],
+  "subject_types_supported": ["public"],
+  "id_token_signing_alg_values_supported": ["RS256"],
+  "token_endpoint_auth_methods_supported": ["none", "client_secret_basic", "client_secret_post"],
   "mcp_endpoint": "https://your-frappe-site.com/api/method/frappe_assistant_core.api.fac_endpoint.handle_mcp",
   "mcp_protocol_version": "2025-03-26",
   "mcp_transport": "StreamableHTTP"
@@ -394,7 +433,7 @@ All MCP requests follow JSON-RPC 2.0 specification:
 
 ## Implementation Details
 
-### Custom MCPServer Class
+### FAC MCP Server Class
 
 Located in [mcp/server.py](../frappe_assistant_core/mcp/server.py), our custom implementation provides:
 
@@ -407,7 +446,7 @@ Located in [mcp/server.py](../frappe_assistant_core/mcp/server.py), our custom i
 
 **Why Custom Implementation?**
 
-We built a custom MCP server instead of using generic libraries because:
+We built the FAC MCP Server instead of using generic libraries because:
 
 1. **JSON Serialization Issues**: Generic libraries don't handle Frappe's data types (datetime, Decimal) properly
 2. **Frappe Integration**: Direct integration with Frappe's session, permissions, and ORM
@@ -464,7 +503,7 @@ register_base_tool(mcp, tool_instance)
 
 ### JSON Serialization Fix
 
-One of the key innovations in our custom MCP server is proper JSON serialization:
+One of the key innovations in the FAC MCP Server is proper JSON serialization:
 
 **The Problem:**
 ```python
@@ -535,142 +574,6 @@ Content-Type: application/json
   "error": "invalid_token",
   "message": "Token has expired"
 }
-```
-
-## Client Configuration Examples
-
-### Claude Desktop
-
-Create or edit `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
-
-```json
-{
-  "mcpServers": {
-    "frappe-assistant": {
-      "url": "https://your-frappe-site.com/api/method/frappe_assistant_core.api.fac_endpoint.handle_mcp",
-      "transport": "streamablehttp",
-      "oauth": {
-        "discoveryUrl": "https://your-frappe-site.com/.well-known/openid-configuration",
-        "clientName": "Claude Desktop"
-      }
-    }
-  }
-}
-```
-
-Claude Desktop will:
-1. Fetch OAuth configuration from discoveryUrl
-2. Automatically register via dynamic client registration
-3. Open browser for user authorization
-4. Store and manage access tokens
-5. Automatically refresh tokens when expired
-
-### MCP Inspector
-
-1. Open MCP Inspector: http://localhost:6274/
-2. Select **"Streamable HTTP"** transport
-3. Enter URL: `https://your-frappe-site.com/api/method/frappe_assistant_core.api.fac_endpoint.handle_mcp`
-4. Click **"Open Auth Settings"**
-5. Click **"Quick OAuth Flow"**
-6. Authorize when prompted
-
-### Custom Python Client
-
-```python
-import requests
-from urllib.parse import urlencode
-import secrets
-import hashlib
-import base64
-
-# 1. Discover OAuth endpoints
-discovery_url = "https://your-site.com/.well-known/openid-configuration"
-config = requests.get(discovery_url).json()
-
-# 2. Register client (if dynamic registration enabled)
-registration_data = {
-    "client_name": "My MCP Client",
-    "redirect_uris": ["http://localhost:8080/callback"],
-    "token_endpoint_auth_method": "none",
-    "grant_types": ["authorization_code", "refresh_token"],
-    "response_types": ["code"]
-}
-client_info = requests.post(
-    config["registration_endpoint"],
-    json=registration_data
-).json()
-
-# 3. Generate PKCE parameters
-code_verifier = base64.urlsafe_b64encode(secrets.token_bytes(32)).decode('utf-8').rstrip('=')
-code_challenge = base64.urlsafe_b64encode(
-    hashlib.sha256(code_verifier.encode('utf-8')).digest()
-).decode('utf-8').rstrip('=')
-
-# 4. Build authorization URL
-auth_params = {
-    "response_type": "code",
-    "client_id": client_info["client_id"],
-    "redirect_uri": "http://localhost:8080/callback",
-    "scope": "all openid",
-    "code_challenge": code_challenge,
-    "code_challenge_method": "S256",
-    "state": secrets.token_urlsafe(16)
-}
-auth_url = f"{config['authorization_endpoint']}?{urlencode(auth_params)}"
-print(f"Visit: {auth_url}")
-
-# 5. After user authorizes, exchange code for token
-# (Get code from redirect URL)
-token_data = {
-    "grant_type": "authorization_code",
-    "code": authorization_code,  # From redirect
-    "redirect_uri": "http://localhost:8080/callback",
-    "code_verifier": code_verifier,
-    "client_id": client_info["client_id"]
-}
-token_response = requests.post(
-    config["token_endpoint"],
-    data=token_data
-).json()
-
-access_token = token_response["access_token"]
-
-# 6. Make MCP requests
-mcp_url = config["mcp_endpoint"]
-headers = {
-    "Authorization": f"Bearer {access_token}",
-    "Content-Type": "application/json"
-}
-
-# Initialize
-response = requests.post(mcp_url, headers=headers, json={
-    "jsonrpc": "2.0",
-    "method": "initialize",
-    "params": {"protocolVersion": "2025-03-26", "capabilities": {}},
-    "id": 1
-})
-print(response.json())
-
-# List tools
-response = requests.post(mcp_url, headers=headers, json={
-    "jsonrpc": "2.0",
-    "method": "tools/list",
-    "params": {},
-    "id": 2
-})
-print(response.json())
-
-# Call a tool
-response = requests.post(mcp_url, headers=headers, json={
-    "jsonrpc": "2.0",
-    "method": "tools/call",
-    "params": {
-        "name": "list_documents",
-        "arguments": {"doctype": "Customer", "limit": 5}
-    },
-    "id": 3
-})
-print(response.json())
 ```
 
 ## Troubleshooting
@@ -813,6 +716,6 @@ While MCP doesn't support batch requests, you can optimize by:
 
 ---
 
-**Version:** 2.0.0+
+**Version:** 2.2.0+
 **Last Updated:** January 2025
 **Protocol:** MCP 2025-03-26 with StreamableHTTP transport
