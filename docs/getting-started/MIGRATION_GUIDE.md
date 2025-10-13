@@ -2,7 +2,7 @@
 
 ## Overview
 
-Frappe Assistant Core v2.0+ uses **OAuth-authenticated StreamableHTTP** instead of the STDIO bridge for better security, standardization, and compatibility with modern MCP clients.
+Frappe Assistant Core v2.2.0+ uses **OAuth-authenticated StreamableHTTP** instead of the STDIO bridge for better security, standardization, and compatibility with modern MCP clients.
 
 This guide will help you migrate your existing setup to the new OAuth-based architecture.
 
@@ -43,7 +43,7 @@ This guide will help you migrate your existing setup to the new OAuth-based arch
 
 ### Step 1: Update Frappe Assistant Core
 
-Ensure you're running v2.0 or later:
+Ensure you're running v2.2.0 or later:
 
 ```bash
 cd /path/to/frappe-bench
@@ -471,6 +471,6 @@ After successful migration:
 
 ---
 
-**Migration Version:** 1.x → 2.0+
-**Last Updated:** January 2025
+**Migration Version:** 1.x/2.0.x/2.1.x → 2.2.0
+**Last Updated:** October 2025
 **Status:** Recommended for all users
