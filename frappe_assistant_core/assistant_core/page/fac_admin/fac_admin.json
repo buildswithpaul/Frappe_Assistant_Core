@@ -1,6 +1,6 @@
 {
   "doctype": "Page",
-  "name": "assistant-admin",
+  "name": "fac-admin",
   "title": "FAC Admin",
   "icon": "octicon octicon-server",
   "page_name": "fac-admin",
