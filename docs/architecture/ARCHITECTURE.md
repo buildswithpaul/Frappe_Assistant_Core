@@ -13,13 +13,13 @@ graph TB
     end
 
     subgraph "OAuth 2.0 Layer"
-        Discovery[/.well-known/openid-configuration<br/>OAuth Discovery]
+        Discovery["/.well-known/openid-configuration<br/>OAuth Discovery"]
         AuthServer[OAuth Authorization Server<br/>authorize, token, introspect]
     end
 
     subgraph "Frappe Assistant Core"
         subgraph "MCP StreamableHTTP Endpoint"
-            Endpoint[/api/method/.../fac_endpoint.handle_mcp]
+            Endpoint["/api/method/.../fac_endpoint.handle_mcp"]
             TokenValidation[Bearer Token Validation]
             MCPServer[Custom FAC MCP Server<br/>JSON-RPC 2.0 Handler]
         end
@@ -60,9 +60,9 @@ graph TB
     end
 
     %% OAuth Flow
-    Client -->|1. Discover OAuth| Discovery
-    Client -->|2. Authenticate| AuthServer
-    Client -->|3. MCP Request + Bearer Token| Endpoint
+    Client -->|Discover OAuth| Discovery
+    Client -->|Authenticate| AuthServer
+    Client -->|MCP Request + Bearer Token| Endpoint
 
     %% MCP Processing Flow
     Endpoint --> TokenValidation
