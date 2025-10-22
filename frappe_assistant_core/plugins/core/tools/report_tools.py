@@ -269,9 +269,101 @@ class ReportTools:
             return {"success": False, "error": str(e)}
 
     @staticmethod
+    def _handle_prepared_report_execution(report_doc, filters):
+        """
+        Smart handler for prepared reports:
+        1. Check for existing completed prepared report
+        2. Try quick execution if appropriate
+        3. Fall back to background job creation
+        """
+        from frappe.core.doctype.prepared_report.prepared_report import (
+            get_completed_prepared_report,
+            make_prepared_report,
+            process_filters_for_prepared_report,
+        )
+        from frappe.desk.query_report import get_prepared_report_result
+
+        try:
+            # Check if a completed prepared report exists with these filters
+            prepared_report_name = get_completed_prepared_report(
+                filters=filters, user=frappe.session.user, report_name=report_doc.name
+            )
+
+            if prepared_report_name:
+                # Found existing prepared report - retrieve cached data
+                result = get_prepared_report_result(report_doc, filters, dn=prepared_report_name)
+
+                if result and result.get("result"):
+                    # Successfully retrieved cached data
+                    prepared_doc = result.get("doc")
+                    return {
+                        "result": result.get("result", []),
+                        "columns": result.get("columns", []),
+                        "message": result.get("message"),
+                        "prepared_report": True,
+                        "source": "cached",
+                        "prepared_report_name": prepared_report_name,
+                        "generated_at": str(prepared_doc.modified) if prepared_doc else None,
+                        "status": "completed",
+                    }
+
+            # No existing prepared report found - check if we should try quick execution
+            report_timeout = frappe.get_value("Report", report_doc.name, "timeout") or 120
+
+            # If report has short timeout (< 60 seconds), try direct execution
+            if report_timeout < 60:
+                try:
+                    from frappe.desk.query_report import run
+
+                    direct_result = run(
+                        report_name=report_doc.name,
+                        filters=filters,
+                        user=frappe.session.user,
+                        ignore_prepared_report=True,  # Force direct execution
+                    )
+
+                    if direct_result and direct_result.get("result"):
+                        return {
+                            "result": direct_result.get("result", []),
+                            "columns": direct_result.get("columns", []),
+                            "message": direct_result.get("message"),
+                            "prepared_report": False,
+                            "source": "direct_execution",
+                            "execution_time": direct_result.get("execution_time"),
+                            "status": "completed",
+                        }
+                except Exception as e:
+                    # Quick execution failed, fall through to background job
+                    frappe.log_error(f"Quick execution failed for {report_doc.name}: {str(e)}")
+
+            # Create background job for prepared report
+            prepared_report = make_prepared_report(report_name=report_doc.name, filters=filters)
+
+            return {
+                "result": [],
+                "columns": [],
+                "success": True,
+                "status": "queued",
+                "prepared_report": True,
+                "prepared_report_name": prepared_report.get("name"),
+                "message": f"Report generation queued for background processing. This report typically takes {report_timeout // 60} minutes for large datasets. Please retry this request in a few minutes using the same filters to retrieve the cached results.",
+                "retry_guidance": f"Use report_name='{report_doc.name}' with the same filters to retrieve results once generated.",
+            }
+
+        except Exception as e:
+            frappe.log_error(f"Prepared report handling error for {report_doc.name}: {str(e)}")
+            raise e
+
+    @staticmethod
     def _execute_query_report(report_doc, filters, get_columns_only=False):
         """Execute a Query Report"""
         from frappe.desk.query_report import run
+
+        # Check if this is a prepared report
+        if getattr(report_doc, "prepared_report", False) and not getattr(
+            report_doc, "disable_prepared_report", False
+        ):
+            return ReportTools._handle_prepared_report_execution(report_doc, filters)
 
         try:
             # Add default filters for common requirements and clean None values
@@ -374,6 +466,12 @@ class ReportTools:
     def _execute_script_report(report_doc, filters):
         """Execute a Script Report"""
         from frappe.desk.query_report import run
+
+        # Check if this is a prepared report
+        if getattr(report_doc, "prepared_report", False) and not getattr(
+            report_doc, "disable_prepared_report", False
+        ):
+            return ReportTools._handle_prepared_report_execution(report_doc, filters)
 
         try:
             # Ensure filters is a proper dict and clean None values

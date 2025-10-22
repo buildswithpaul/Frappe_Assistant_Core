@@ -88,12 +88,34 @@ class ReportRequirements(BaseTool):
             if not column_result.get("success", False):
                 return column_result
 
+            # Get report document for prepared report info
+            report_doc = frappe.get_doc("Report", report_name)
+
             # Start building comprehensive response
             result = {
                 "success": True,
                 "report_name": report_name,
                 "report_type": column_result.get("report_type"),
+                "prepared_report": getattr(report_doc, "prepared_report", False),
+                "disable_prepared_report": getattr(report_doc, "disable_prepared_report", False),
             }
+
+            # Add prepared report guidance
+            if getattr(report_doc, "prepared_report", False) and not getattr(
+                report_doc, "disable_prepared_report", False
+            ):
+                report_timeout = frappe.get_value("Report", report_name, "timeout") or 120
+                result["prepared_report_info"] = {
+                    "requires_background_processing": True,
+                    "typical_execution_time": f"{report_timeout // 60} minutes for large datasets",
+                    "behavior": "First execution queues background job. Subsequent calls with same filters retrieve cached results.",
+                    "recommendation": "If queued status is returned, retry after a few minutes with the same filters.",
+                }
+            else:
+                result["prepared_report_info"] = {
+                    "requires_background_processing": False,
+                    "behavior": "Direct execution - returns results immediately.",
+                }
 
             # Add columns if requested
             if include_columns:
