@@ -271,17 +271,19 @@ class ReportTools:
     @staticmethod
     def _handle_prepared_report_execution(report_doc, filters):
         """
-        Smart handler for prepared reports:
+        Smart handler for prepared reports with polling support for AI/MCP tools:
         1. Check for existing completed prepared report
         2. Try quick execution if appropriate
-        3. Fall back to background job creation
+        3. Queue background job and WAIT for completion (polling)
+        4. Return data when ready or timeout gracefully
         """
+        import time
+
         from frappe.core.doctype.prepared_report.prepared_report import (
             get_completed_prepared_report,
             make_prepared_report,
-            process_filters_for_prepared_report,
         )
-        from frappe.desk.query_report import get_prepared_report_result
+        from frappe.desk.query_report import get_prepared_report_result, run
 
         try:
             # Check if a completed prepared report exists with these filters
@@ -307,14 +309,12 @@ class ReportTools:
                         "status": "completed",
                     }
 
-            # No existing prepared report found - check if we should try quick execution
+            # Get report timeout configuration
             report_timeout = frappe.get_value("Report", report_doc.name, "timeout") or 120
 
-            # If report has short timeout (< 60 seconds), try direct execution
+            # Try quick direct execution for fast reports
             if report_timeout < 60:
                 try:
-                    from frappe.desk.query_report import run
-
                     direct_result = run(
                         report_name=report_doc.name,
                         filters=filters,
@@ -329,25 +329,76 @@ class ReportTools:
                             "message": direct_result.get("message"),
                             "prepared_report": False,
                             "source": "direct_execution",
-                            "execution_time": direct_result.get("execution_time"),
                             "status": "completed",
                         }
                 except Exception as e:
                     # Quick execution failed, fall through to background job
                     frappe.log_error(f"Quick execution failed for {report_doc.name}: {str(e)}")
 
-            # Create background job for prepared report
-            prepared_report = make_prepared_report(report_name=report_doc.name, filters=filters)
+            # ===== Queue and WAIT for completion with polling =====
 
+            # Queue the background job
+            prepared_report = make_prepared_report(report_name=report_doc.name, filters=filters)
+            prepared_report_name = prepared_report.get("name")
+
+            # Poll for completion with exponential backoff
+            max_wait_time = min(report_timeout, 300)  # Cap at 5 minutes for MCP tools
+            poll_interval = 2.0  # Start with 2 seconds
+            max_poll_interval = 15.0  # Max 15 seconds between polls
+            elapsed_time = 0
+
+            frappe.db.commit()  # Ensure job is committed to DB
+
+            while elapsed_time < max_wait_time:
+                time.sleep(poll_interval)
+                elapsed_time += poll_interval
+
+                # Check prepared report status - get fresh data
+                frappe.db.rollback()
+                prepared_doc = frappe.get_doc("Prepared Report", prepared_report_name)
+
+                if prepared_doc.status == "Completed":
+                    # Report is ready! Retrieve and return data
+                    result = get_prepared_report_result(report_doc, filters, dn=prepared_report_name)
+
+                    if result and result.get("result"):
+                        return {
+                            "result": result.get("result", []),
+                            "columns": result.get("columns", []),
+                            "message": result.get("message"),
+                            "prepared_report": True,
+                            "source": "background_job_completed",
+                            "prepared_report_name": prepared_report_name,
+                            "wait_time_seconds": int(elapsed_time),
+                            "status": "completed",
+                        }
+
+                elif prepared_doc.status == "Error":
+                    # Report generation failed
+                    error_message = prepared_doc.error_message or "Unknown error during report generation"
+                    return {
+                        "success": False,
+                        "result": [],
+                        "columns": [],
+                        "error": f"Report generation failed: {error_message}",
+                        "prepared_report_name": prepared_report_name,
+                        "status": "error",
+                    }
+
+                # Exponential backoff - increase poll interval
+                poll_interval = min(poll_interval * 1.5, max_poll_interval)
+
+            # Timeout reached - report is still processing
             return {
                 "result": [],
                 "columns": [],
                 "success": True,
-                "status": "queued",
+                "status": "timeout",
                 "prepared_report": True,
-                "prepared_report_name": prepared_report.get("name"),
-                "message": f"Report generation queued for background processing. This report typically takes {report_timeout // 60} minutes for large datasets. Please retry this request in a few minutes using the same filters to retrieve the cached results.",
-                "retry_guidance": f"Use report_name='{report_doc.name}' with the same filters to retrieve results once generated.",
+                "prepared_report_name": prepared_report_name,
+                "message": f"Report generation is taking longer than expected ({int(max_wait_time)}s timeout reached). The report is still being generated in the background. You can retry with the same filters in a few minutes to retrieve the cached result.",
+                "retry_guidance": f"Use report_name='{report_doc.name}' with the same filters to retrieve results.",
+                "wait_time_seconds": int(elapsed_time),
             }
 
         except Exception as e:
