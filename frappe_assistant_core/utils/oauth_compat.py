@@ -40,12 +40,15 @@ def is_frappe_v16_or_later():
     )
 
 
-def get_oauth_settings():
+def get_oauth_settings(use_cache=True):
     """
     Get OAuth settings in a version-agnostic way.
 
     For v15: Reads from Assistant Core Settings
     For v16+: Reads from native OAuth Settings (frappe.integrations)
+
+    Args:
+            use_cache (bool): If False, bypasses cache and fetches fresh data. Default True.
 
     Returns:
             frappe._dict: Dictionary containing OAuth configuration with keys:
@@ -62,9 +65,13 @@ def get_oauth_settings():
     if is_frappe_v16_or_later():
         # Use native Frappe v16 OAuth Settings
         try:
-            oauth_settings = frappe.get_cached_doc(
-                "OAuth Settings", "OAuth Settings", ignore_permissions=True
-            )
+            if use_cache:
+                oauth_settings = frappe.get_cached_doc(
+                    "OAuth Settings", "OAuth Settings", ignore_permissions=True
+                )
+            else:
+                oauth_settings = frappe.get_doc("OAuth Settings", "OAuth Settings")
+
             return frappe._dict(
                 {
                     "show_auth_server_metadata": oauth_settings.show_auth_server_metadata,
@@ -90,9 +97,13 @@ def get_oauth_settings():
     else:
         # Use Frappe v15 - read from Assistant Core Settings
         try:
-            settings = frappe.get_cached_doc(
-                "Assistant Core Settings", "Assistant Core Settings", ignore_permissions=True
-            )
+            if use_cache:
+                settings = frappe.get_cached_doc(
+                    "Assistant Core Settings", "Assistant Core Settings", ignore_permissions=True
+                )
+            else:
+                settings = frappe.get_doc("Assistant Core Settings", "Assistant Core Settings")
+
             return frappe._dict(
                 {
                     "show_auth_server_metadata": settings.show_auth_server_metadata,
