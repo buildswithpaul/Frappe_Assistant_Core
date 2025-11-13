@@ -75,27 +75,61 @@ class ReportTools:
                 return {"success": False, "error": f"Unsupported report type: {report_doc.report_type}"}
 
             # Add debug information for troubleshooting
-            data = result.get("result", [])
-            debug_info = {
-                "success": True,
-                "report_name": report_name,
-                "report_type": report_doc.report_type,
-                "data": data,
-                "columns": result.get("columns", []),
-                "message": result.get("message"),
-                "filters_applied": filters or {},
-                "auto_filters_added": "Automatic date range and company filters applied if missing",
-                "raw_result_keys": list(result.keys()) if result else [],
-                "data_count": len(data) if data else 0,
-                "result_type": type(result).__name__ if result else "None",
-            }
+            # Handle different result structures
+            if isinstance(result, dict):
+                # Report Builder returns different structure than Script/Query reports
+                if report_doc.report_type == "Report Builder":
+                    # Report Builder returns {'keys': [...], 'values': [[...], ...]}
+                    data = result.get("values", [])
+                    columns = result.get("keys", [])
+                else:
+                    # Script/Query reports return {'result': [...], 'columns': [...]}
+                    data = result.get("result", [])
+                    columns = result.get("columns", [])
+
+                debug_info = {
+                    "success": True,
+                    "report_name": report_name,
+                    "report_type": report_doc.report_type,
+                    "data": data,
+                    "columns": columns,
+                    "message": result.get("message"),
+                    "filters_applied": filters or {},
+                    "auto_filters_added": "Automatic date range and company filters applied if missing",
+                    "raw_result_keys": list(result.keys()) if result else [],
+                    "data_count": len(data) if data else 0,
+                    "result_type": type(result).__name__ if result else "None",
+                }
+            elif isinstance(result, list):
+                # Some reports (Report Builder) might return a list directly
+                # Extract columns from first dict if available
+                columns = []
+                if result and len(result) > 0 and isinstance(result[0], dict):
+                    columns = list(result[0].keys())
+
+                debug_info = {
+                    "success": True,
+                    "report_name": report_name,
+                    "report_type": report_doc.report_type,
+                    "data": result,
+                    "columns": columns,
+                    "message": None,
+                    "filters_applied": filters or {},
+                    "auto_filters_added": "Automatic date range and company filters applied if missing",
+                    "raw_result_keys": [],
+                    "data_count": len(result) if result else 0,
+                    "result_type": "list",
+                }
+            else:
+                return {"success": False, "error": f"Unexpected result type: {type(result).__name__}"}
 
             # Add debug info if no data found
+            data = debug_info.get("data", [])
             if not data or len(data) == 0:
                 debug_info["debug_info"] = {
                     "filters_used": filters,
                     "result_structure": result,
-                    "error_from_result": result.get("error") if result else None,
+                    "error_from_result": result.get("error") if isinstance(result, dict) else None,
                 }
 
             return debug_info
@@ -466,12 +500,6 @@ class ReportTools:
         """Execute a Script Report"""
         from frappe.desk.query_report import run
 
-        # Check if this is a prepared report
-        if getattr(report_doc, "prepared_report", False) and not getattr(
-            report_doc, "disable_prepared_report", False
-        ):
-            return ReportTools._handle_prepared_report_execution(report_doc, filters)
-
         try:
             # Ensure filters is a proper dict and clean None values
             if not isinstance(filters, dict):
@@ -544,6 +572,9 @@ class ReportTools:
             if "quotation trends" in report_name_lower and "based_on" not in filters:
                 filters["based_on"] = "Item"
 
+            # Apply default values from JavaScript filter definitions
+            filters = ReportTools._apply_filter_defaults(report_doc, filters)
+
             # Final cleanup - ensure all filter values are strings or proper types
             final_filters = {}
             for key, value in filters.items():
@@ -556,6 +587,12 @@ class ReportTools:
                     else:
                         final_filters[key] = str(value)
             filters = final_filters
+
+            # Check if this is a prepared report (after all filter processing)
+            if getattr(report_doc, "prepared_report", False) and not getattr(
+                report_doc, "disable_prepared_report", False
+            ):
+                return ReportTools._handle_prepared_report_execution(report_doc, filters)
 
             return run(report_name=report_doc.name, filters=filters, user=frappe.session.user)
 
@@ -584,13 +621,97 @@ class ReportTools:
     @staticmethod
     def _execute_report_builder(report_doc, filters):
         """Execute a Report Builder report"""
+        import json as json_module
+
         from frappe.desk.reportview import execute
+
+        # Parse report configuration from JSON field
+        report_config = {}
+        if report_doc.json:
+            try:
+                report_config = json_module.loads(report_doc.json)
+            except Exception:
+                pass
+
+        # Get sort configuration
+        sort_by = report_config.get("sort_by")
+        sort_order = report_config.get("sort_order", "desc")
+
+        # Build order_by string
+        # Note: sort_by from Report Builder json is in format "Doctype.field"
+        # For doctypes with spaces, Frappe's execute() handles the backtick quoting
+        order_by = None
+        if sort_by:
+            # Just use the field name without the doctype prefix
+            # Frappe's reportview will add the proper table reference
+            if "." in sort_by:
+                field_name = sort_by.split(".")[-1]  # Get just the field name
+                order_by = f"`{field_name}` {sort_order}"
+            else:
+                order_by = f"`{sort_by}` {sort_order}"
+
+        # Get columns from JSON config
+        # Format: [["fieldname", "Doctype"], ["fieldname2", "Doctype"], ...]
+        fields = None
+        columns_config = report_config.get("columns", [])
+        if columns_config and len(columns_config) > 0:
+            try:
+                fields = []
+                for col in columns_config:
+                    if isinstance(col, list) and len(col) >= 1:
+                        # Extract field name from ["fieldname", "Doctype"] format
+                        fieldname = col[0]
+                        fields.append(fieldname)
+                    elif isinstance(col, str):
+                        # Direct field name
+                        fields.append(col)
+
+                # Only use extracted fields if we got at least one
+                if not fields:
+                    fields = None
+            except Exception as e:
+                frappe.log_error(f"Error extracting fields from Report Builder columns: {str(e)}")
+                fields = None
+
+        # If no fields from config, try from report_doc.columns child table
+        if not fields and report_doc.columns:
+            try:
+                fields = []
+                for col in report_doc.columns:
+                    if hasattr(col, "fieldname"):
+                        fields.append(col.fieldname)
+                    elif isinstance(col, dict) and "fieldname" in col:
+                        fields.append(col["fieldname"])
+
+                # Only use extracted fields if we got at least one
+                if not fields:
+                    fields = None
+            except Exception as e:
+                frappe.log_error(f"Error extracting fields from Report doc columns: {str(e)}")
+                fields = None
+
+        # Note: If fields is None or empty, we need to get all standard fields from the DocType
+        if not fields:
+            # Get all standard fields from the doctype meta
+            try:
+                meta = frappe.get_meta(report_doc.ref_doctype)
+                fields = [
+                    df.fieldname
+                    for df in meta.fields
+                    if df.fieldtype not in ["Table", "Section Break", "Column Break", "HTML", "Button"]
+                ]
+                # Always include name field
+                if "name" not in fields:
+                    fields.insert(0, "name")
+            except Exception as e:
+                frappe.log_error(f"Error getting meta fields for {report_doc.ref_doctype}: {str(e)}")
+                fields = None
 
         return execute(
             doctype=report_doc.ref_doctype,
             filters=filters,
-            fields=[col.fieldname for col in report_doc.columns],
-            order_by=report_doc.sort_by,
+            fields=fields,
+            order_by=order_by,
             limit_page_length=1000,
         )
 
@@ -690,3 +811,101 @@ class ReportTools:
                     )
 
         return {"valid": len(errors) == 0, "errors": errors, "suggestions": suggestions}
+
+    @staticmethod
+    def _apply_filter_defaults(report_doc, filters):
+        """Apply default filter values from JavaScript filter definitions for Script Reports"""
+        import os
+        import re
+
+        # Only apply for Script Reports
+        if report_doc.report_type != "Script Report":
+            return filters
+
+        try:
+            # Get the report's JavaScript file path
+            module_name = report_doc.module
+            report_name = report_doc.name
+            report_folder = report_name.lower().replace(" ", "_").replace("-", "_")
+            module_folder = module_name.lower().replace(" ", "_")
+
+            # Search for the JS file in installed apps
+            for app in frappe.get_installed_apps():
+                app_path = frappe.get_app_path(app)
+                js_path = os.path.join(
+                    app_path, module_folder, "report", report_folder, f"{report_folder}.js"
+                )
+
+                if os.path.exists(js_path):
+                    # Read and parse the JavaScript file
+                    with open(js_path, encoding="utf-8") as f:
+                        js_content = f.read()
+
+                    # Extract filter definitions
+                    filters_start = js_content.find("filters:")
+                    if filters_start == -1:
+                        continue
+
+                    # Find the filter array using bracket counting
+                    bracket_start = js_content.find("[", filters_start)
+                    if bracket_start == -1:
+                        continue
+
+                    bracket_count = 0
+                    bracket_end = -1
+                    for i in range(bracket_start, len(js_content)):
+                        if js_content[i] == "[":
+                            bracket_count += 1
+                        elif js_content[i] == "]":
+                            bracket_count -= 1
+                            if bracket_count == 0:
+                                bracket_end = i
+                                break
+
+                    if bracket_end == -1:
+                        continue
+
+                    filters_text = js_content[bracket_start + 1 : bracket_end]
+
+                    # Parse filter objects
+                    filter_objects = []
+                    brace_count = 0
+                    current_obj_start = None
+
+                    for i, char in enumerate(filters_text):
+                        if char == "{":
+                            if brace_count == 0:
+                                current_obj_start = i
+                            brace_count += 1
+                        elif char == "}":
+                            brace_count -= 1
+                            if brace_count == 0 and current_obj_start is not None:
+                                obj_content = filters_text[current_obj_start + 1 : i]
+                                filter_objects.append(obj_content)
+                                current_obj_start = None
+
+                    # Extract default values from each filter
+                    for filter_obj in filter_objects:
+                        # Extract fieldname
+                        fieldname_match = re.search(r'fieldname:\s*["\']([^"\']+)["\']', filter_obj)
+                        if not fieldname_match:
+                            continue
+                        fieldname = fieldname_match.group(1)
+
+                        # Skip if filter already has a value
+                        if fieldname in filters and filters[fieldname] is not None:
+                            continue
+
+                        # Extract default value
+                        default_match = re.search(r'default:\s*["\']([^"\']+)["\']', filter_obj)
+                        if default_match:
+                            default_value = default_match.group(1)
+                            filters[fieldname] = default_value
+
+                    break  # Found and processed the JS file
+
+        except Exception as e:
+            # Log error but don't fail the report execution
+            frappe.log_error(f"Error applying filter defaults for {report_doc.name}: {str(e)}")
+
+        return filters
