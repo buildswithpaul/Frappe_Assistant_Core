@@ -108,8 +108,8 @@ class ReportRequirements(BaseTool):
                 result["prepared_report_info"] = {
                     "requires_background_processing": True,
                     "typical_execution_time": f"{report_timeout // 60} minutes for large datasets",
-                    "behavior": "First execution queues background job. Subsequent calls with same filters retrieve cached results.",
-                    "recommendation": "If queued status is returned, retry after a few minutes with the same filters.",
+                    "behavior": "First execution automatically waits for completion (up to 5 minutes). Subsequent calls with same filters retrieve cached results instantly.",
+                    "recommendation": "The tool will automatically wait for report completion. If timeout occurs, retry with the same filters to retrieve cached results.",
                 }
             else:
                 result["prepared_report_info"] = {
