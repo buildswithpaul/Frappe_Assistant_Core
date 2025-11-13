@@ -31,7 +31,7 @@ class ReportTools:
     methods in this utility class.
 
     Methods:
-    - execute_report(): Execute reports (Query, Script, Report Builder)
+    - execute_report(): Execute reports (Query Reports, Script Reports, Custom Reports)
     - list_reports(): List available reports with filtering
     - get_report_columns(): Get report metadata and requirements
     - _validate_filters(): Validate filter values before execution
@@ -70,22 +70,19 @@ class ReportTools:
             elif report_doc.report_type == "Script Report":
                 result = ReportTools._execute_script_report(report_doc, filters or {})
             elif report_doc.report_type == "Report Builder":
-                result = ReportTools._execute_report_builder(report_doc, filters or {})
+                return {
+                    "success": False,
+                    "error": "Report Builder reports are not supported. Report Builder creates simple filtered views of DocTypes. For business intelligence and analytics, please use Script Reports, Query Reports, or Custom Reports instead.",
+                }
             else:
                 return {"success": False, "error": f"Unsupported report type: {report_doc.report_type}"}
 
             # Add debug information for troubleshooting
             # Handle different result structures
             if isinstance(result, dict):
-                # Report Builder returns different structure than Script/Query reports
-                if report_doc.report_type == "Report Builder":
-                    # Report Builder returns {'keys': [...], 'values': [[...], ...]}
-                    data = result.get("values", [])
-                    columns = result.get("keys", [])
-                else:
-                    # Script/Query reports return {'result': [...], 'columns': [...]}
-                    data = result.get("result", [])
-                    columns = result.get("columns", [])
+                # Script/Query reports return {'result': [...], 'columns': [...]}
+                data = result.get("result", [])
+                columns = result.get("columns", [])
 
                 debug_info = {
                     "success": True,
@@ -99,51 +96,6 @@ class ReportTools:
                     "raw_result_keys": list(result.keys()) if result else [],
                     "data_count": len(data) if data else 0,
                     "result_type": type(result).__name__ if result else "None",
-                }
-            elif isinstance(result, list):
-                # Some reports (Report Builder) might return a list directly
-                # Extract columns from first dict if available
-                columns = []
-                filtered_data = result
-
-                if result and len(result) > 0 and isinstance(result[0], dict):
-                    all_columns = list(result[0].keys())
-
-                    # Filter columns to only include those with data (non-empty values)
-                    # Check all rows to determine which columns have meaningful data
-                    columns_with_data = set()
-                    for row in result:
-                        if isinstance(row, dict):
-                            for col, val in row.items():
-                                # Consider a column to have data if it has non-empty, non-zero values
-                                # Always include 'name' column
-                                if col == "name" or val not in [None, "", 0, 0.0, []]:
-                                    columns_with_data.add(col)
-
-                    # Preserve original column order but filter out empty columns
-                    columns = [col for col in all_columns if col in columns_with_data]
-
-                    # Also filter the data rows to only include the filtered columns
-                    filtered_data = []
-                    for row in result:
-                        if isinstance(row, dict):
-                            filtered_row = {col: row.get(col) for col in columns}
-                            filtered_data.append(filtered_row)
-                        else:
-                            filtered_data.append(row)
-
-                debug_info = {
-                    "success": True,
-                    "report_name": report_name,
-                    "report_type": report_doc.report_type,
-                    "data": filtered_data,
-                    "columns": columns,
-                    "message": None,
-                    "filters_applied": filters or {},
-                    "auto_filters_added": "Automatic date range and company filters applied if missing",
-                    "raw_result_keys": [],
-                    "data_count": len(filtered_data) if filtered_data else 0,
-                    "result_type": "list",
                 }
             else:
                 return {"success": False, "error": f"Unexpected result type: {type(result).__name__}"}
@@ -235,17 +187,6 @@ class ReportTools:
                                 "fieldtype": "Data",
                             }
                         ]
-            elif report_doc.report_type == "Report Builder":
-                # Get columns from report builder configuration
-                for col in report_doc.columns:
-                    columns.append(
-                        {
-                            "fieldname": col.fieldname,
-                            "label": col.label,
-                            "fieldtype": col.fieldtype,
-                            "width": col.width,
-                        }
-                    )
 
             # Add helpful filter guidance based on report name patterns
             filter_guidance = []
@@ -642,103 +583,6 @@ class ReportTools:
                 "error": error_message,
                 "suggestion": f"Use report_requirements tool with report_name='{report_doc.name}' to discover required filters, then retry with proper filters.",
             }
-
-    @staticmethod
-    def _execute_report_builder(report_doc, filters):
-        """Execute a Report Builder report"""
-        import json as json_module
-
-        from frappe.desk.reportview import execute
-
-        # Parse report configuration from JSON field
-        report_config = {}
-        if report_doc.json:
-            try:
-                report_config = json_module.loads(report_doc.json)
-            except Exception:
-                pass
-
-        # Get sort configuration
-        sort_by = report_config.get("sort_by")
-        sort_order = report_config.get("sort_order", "desc")
-
-        # Build order_by string
-        # Note: sort_by from Report Builder json is in format "Doctype.field"
-        # For doctypes with spaces, Frappe's execute() handles the backtick quoting
-        order_by = None
-        if sort_by:
-            # Just use the field name without the doctype prefix
-            # Frappe's reportview will add the proper table reference
-            if "." in sort_by:
-                field_name = sort_by.split(".")[-1]  # Get just the field name
-                order_by = f"`{field_name}` {sort_order}"
-            else:
-                order_by = f"`{sort_by}` {sort_order}"
-
-        # Get columns from JSON config
-        # Format: [["fieldname", "Doctype"], ["fieldname2", "Doctype"], ...]
-        fields = None
-        columns_config = report_config.get("columns", [])
-        if columns_config and len(columns_config) > 0:
-            try:
-                fields = []
-                for col in columns_config:
-                    if isinstance(col, list) and len(col) >= 1:
-                        # Extract field name from ["fieldname", "Doctype"] format
-                        fieldname = col[0]
-                        fields.append(fieldname)
-                    elif isinstance(col, str):
-                        # Direct field name
-                        fields.append(col)
-
-                # Only use extracted fields if we got at least one
-                if not fields:
-                    fields = None
-            except Exception as e:
-                frappe.log_error(f"Error extracting fields from Report Builder columns: {str(e)}")
-                fields = None
-
-        # If no fields from config, try from report_doc.columns child table
-        if not fields and report_doc.columns:
-            try:
-                fields = []
-                for col in report_doc.columns:
-                    if hasattr(col, "fieldname"):
-                        fields.append(col.fieldname)
-                    elif isinstance(col, dict) and "fieldname" in col:
-                        fields.append(col["fieldname"])
-
-                # Only use extracted fields if we got at least one
-                if not fields:
-                    fields = None
-            except Exception as e:
-                frappe.log_error(f"Error extracting fields from Report doc columns: {str(e)}")
-                fields = None
-
-        # Note: If fields is None or empty, we need to get all standard fields from the DocType
-        if not fields:
-            # Get all standard fields from the doctype meta
-            try:
-                meta = frappe.get_meta(report_doc.ref_doctype)
-                fields = [
-                    df.fieldname
-                    for df in meta.fields
-                    if df.fieldtype not in ["Table", "Section Break", "Column Break", "HTML", "Button"]
-                ]
-                # Always include name field
-                if "name" not in fields:
-                    fields.insert(0, "name")
-            except Exception as e:
-                frappe.log_error(f"Error getting meta fields for {report_doc.ref_doctype}: {str(e)}")
-                fields = None
-
-        return execute(
-            doctype=report_doc.ref_doctype,
-            filters=filters,
-            fields=fields,
-            order_by=order_by,
-            limit_page_length=1000,
-        )
 
     @staticmethod
     def _validate_filters(filters: Dict[str, Any], report_doc) -> Dict[str, Any]:
