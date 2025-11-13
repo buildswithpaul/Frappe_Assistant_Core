@@ -22,82 +22,20 @@ from frappe import _
 
 
 class ReportTools:
-    """assistant tools for Frappe report operations"""
+    """
+    Shared utility class for Frappe report operations.
 
-    @staticmethod
-    def get_tools() -> List[Dict]:
-        """Return list of report-related assistant tools"""
-        return [
-            {
-                "name": "generate_report",
-                "description": "🏆 PROFESSIONAL BUSINESS REPORTS - Your FIRST choice for sales analysis, financial reporting, and business intelligence! 🎯 **USE THIS FOR**: Sales analysis, profit reports, customer insights, inventory tracking, financial statements ⚡ **INSTANT ACCESS** to 183+ pre-built business reports including: Sales Analytics (revenue, trends, territory performance), Profit & Loss Statement, Accounts Receivable Summary, Item-wise Sales History, Territory-wise Sales ✅ **ALWAYS TRY THIS FIRST** before using analysis tools - these reports are pre-optimized for business users, professionally formatted, ready for management presentation, and include proper calculations and totals. Use 'report_list' to discover available reports, then execute with filters. IMPORTANT: Many reports require mandatory filters - use report_requirements tool first if you get errors.",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "report_name": {
-                            "type": "string",
-                            "description": "Exact name of the Frappe report to execute (e.g., 'Accounts Receivable Summary', 'Sales Analytics', 'Stock Balance'). Use report_list to find available reports.",
-                        },
-                        "filters": {
-                            "type": "object",
-                            "default": {},
-                            "description": "Report-specific filters as key-value pairs. IMPORTANT: Many reports have mandatory filters like 'doc_type', 'tree_type', etc. Common optional filters: {'company': 'Your Company'}, {'from_date': '2024-01-01', 'to_date': '2024-12-31'}, {'customer': 'Customer Name'}. For Sales Analytics: requires 'doc_type' (Sales Invoice/Sales Order/Quotation) and 'tree_type' (Customer/Item/Territory). Use report_requirements tool to discover required filters if report fails.",
-                        },
-                        "format": {
-                            "type": "string",
-                            "enum": ["json", "csv", "excel"],
-                            "default": "json",
-                            "description": "Output format. Use 'json' for data analysis, 'csv' for exports, 'excel' for spreadsheet files.",
-                        },
-                    },
-                    "required": ["report_name"],
-                },
-            },
-            {
-                "name": "report_list",
-                "description": "🔍 DISCOVER BUSINESS REPORTS - Find the perfect report for your business question! 🎯 **ESSENTIAL FOR**: Finding sales reports, financial analysis, inventory tracking, HR reports ⚡ **183+ REPORTS AVAILABLE** across modules: Selling (Sales Analytics, Territory Analysis, Customer Reports), Accounts (P&L, Balance Sheet, Receivables, Payables), Stock (Inventory Reports, Item Movement, Valuation), HR (Payroll, Attendance, Leave Reports) 💡 **SMART TIP**: Use this BEFORE trying to analyze raw data - there's likely already a perfect report!",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "module": {
-                            "type": "string",
-                            "description": "Filter by Frappe module (e.g., 'Accounts', 'Selling', 'Stock', 'HR', 'CRM'). Leave empty to see all modules.",
-                        },
-                        "report_type": {
-                            "type": "string",
-                            "enum": ["Report Builder", "Query Report", "Script Report"],
-                            "description": "Filter by report type. Script Reports are usually the most powerful for analytics. Leave empty to see all types.",
-                        },
-                    },
-                },
-            },
-            {
-                "name": "report_requirements",
-                "description": "📋 REPORT STRUCTURE ANALYZER - Understand report requirements before execution! 🎯 **ESSENTIAL FOR**: Discovering required filters when generate_report fails, understanding available data fields, planning report execution 💡 **USE WHEN**: You get filter errors from generate_report, need to understand report capabilities, want to know what data is available ⚡ **PREVENTS ERRORS**: Shows exactly what filters are required and optional for successful report execution",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "report_name": {
-                            "type": "string",
-                            "description": "Exact name of the Frappe report to analyze (e.g., 'Sales Analytics', 'Accounts Receivable Summary'). This helps understand available fields, required filters, and report structure before execution.",
-                        }
-                    },
-                    "required": ["report_name"],
-                },
-            },
-        ]
+    This class provides the core business logic for report-related operations
+    that is used by the individual tool classes (generate_report.py, report_list.py,
+    report_requirements.py). Each tool class extends BaseTool and delegates to
+    methods in this utility class.
 
-    @staticmethod
-    def execute_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute a report tool with given arguments"""
-        if tool_name == "generate_report":
-            return ReportTools.execute_report(**arguments)
-        elif tool_name == "report_list":
-            return ReportTools.list_reports(**arguments)
-        elif tool_name == "report_requirements":
-            return ReportTools.get_report_columns(**arguments)
-        else:
-            raise Exception(f"Unknown report tool: {tool_name}")
+    Methods:
+    - execute_report(): Execute reports (Query, Script, Report Builder)
+    - list_reports(): List available reports with filtering
+    - get_report_columns(): Get report metadata and requirements
+    - _validate_filters(): Validate filter values before execution
+    """
 
     @staticmethod
     def execute_report(
@@ -115,6 +53,16 @@ class ReportTools:
 
             # Get report document
             report_doc = frappe.get_doc("Report", report_name)
+
+            # Validate filters before execution
+            validation_result = ReportTools._validate_filters(filters or {}, report_doc)
+            if not validation_result.get("valid"):
+                return {
+                    "success": False,
+                    "error": "Invalid filter values provided",
+                    "validation_errors": validation_result.get("errors", []),
+                    "suggestions": validation_result.get("suggestions", []),
+                }
 
             # Execute report based on type
             if report_doc.report_type == "Query Report":
@@ -249,7 +197,7 @@ class ReportTools:
                 filter_guidance.append("Optional: 'company' (uses default company if not specified)")
             elif report_doc.report_type == "Script Report":
                 filter_guidance.append(
-                    "Script Reports often have mandatory filters - check report definition or try execution to discover requirements"
+                    "Script Reports often have mandatory filters - use report_requirements tool to discover exact filter definitions"
                 )
 
             result = {
@@ -645,3 +593,100 @@ class ReportTools:
             order_by=report_doc.sort_by,
             limit_page_length=1000,
         )
+
+    @staticmethod
+    def _validate_filters(filters: Dict[str, Any], report_doc) -> Dict[str, Any]:
+        """Validate filter values against database to catch invalid references early"""
+        errors = []
+        suggestions = []
+
+        # Common Link field filters to validate
+        link_validations = {
+            "company": "Company",
+            "customer": "Customer",
+            "supplier": "Supplier",
+            "item": "Item",
+            "project": "Project",
+            "cost_center": "Cost Center",
+            "warehouse": "Warehouse",
+        }
+
+        for filter_key, doctype in link_validations.items():
+            if filter_key in filters and filters[filter_key]:
+                filter_value = filters[filter_key]
+
+                # Skip validation for list values (used in group reports)
+                if isinstance(filter_value, list):
+                    continue
+
+                # Check if the referenced document exists
+                if not frappe.db.exists(doctype, filter_value):
+                    errors.append(f"Invalid {filter_key}: '{filter_value}' does not exist in {doctype}")
+
+                    # Try to find similar names to suggest
+                    try:
+                        similar = frappe.get_all(
+                            doctype, filters={"name": ["like", f"%{filter_value}%"]}, fields=["name"], limit=3
+                        )
+                        if similar:
+                            suggestions.append(
+                                f"Did you mean one of these {doctype} names? {', '.join([s.name for s in similar])}"
+                            )
+                        else:
+                            # If no similar matches, show first few valid options
+                            valid_options = frappe.get_all(doctype, fields=["name"], limit=5)
+                            if valid_options:
+                                suggestions.append(
+                                    f"Valid {doctype} names include: {', '.join([v.name for v in valid_options])}"
+                                )
+                    except Exception:
+                        pass
+
+        # Validate Select field options
+        select_validations = {
+            "tree_type": [
+                "Customer",
+                "Supplier",
+                "Item",
+                "Customer Group",
+                "Supplier Group",
+                "Item Group",
+                "Territory",
+                "Order Type",
+                "Project",
+            ],
+            "doc_type": [
+                "Sales Invoice",
+                "Sales Order",
+                "Quotation",
+                "Purchase Invoice",
+                "Purchase Order",
+                "Purchase Receipt",
+                "Delivery Note",
+            ],
+            "value_quantity": ["Value", "Quantity"],
+            "range": ["Weekly", "Monthly", "Quarterly", "Half-Yearly", "Yearly"],
+        }
+
+        for filter_key, valid_options in select_validations.items():
+            if filter_key in filters and filters[filter_key]:
+                filter_value = filters[filter_key]
+                if filter_value not in valid_options:
+                    errors.append(
+                        f"Invalid {filter_key}: '{filter_value}'. Must be one of: {', '.join(valid_options)}"
+                    )
+
+        # Validate date formats
+        date_fields = ["from_date", "to_date", "posting_date", "transaction_date"]
+        for date_field in date_fields:
+            if date_field in filters and filters[date_field]:
+                try:
+                    from frappe.utils import getdate
+
+                    getdate(filters[date_field])
+                except Exception:
+                    errors.append(
+                        f"Invalid {date_field}: '{filters[date_field]}'. Expected format: YYYY-MM-DD"
+                    )
+
+        return {"valid": len(errors) == 0, "errors": errors, "suggestions": suggestions}
