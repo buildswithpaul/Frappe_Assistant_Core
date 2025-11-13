@@ -104,20 +104,45 @@ class ReportTools:
                 # Some reports (Report Builder) might return a list directly
                 # Extract columns from first dict if available
                 columns = []
+                filtered_data = result
+
                 if result and len(result) > 0 and isinstance(result[0], dict):
-                    columns = list(result[0].keys())
+                    all_columns = list(result[0].keys())
+
+                    # Filter columns to only include those with data (non-empty values)
+                    # Check all rows to determine which columns have meaningful data
+                    columns_with_data = set()
+                    for row in result:
+                        if isinstance(row, dict):
+                            for col, val in row.items():
+                                # Consider a column to have data if it has non-empty, non-zero values
+                                # Always include 'name' column
+                                if col == "name" or val not in [None, "", 0, 0.0, []]:
+                                    columns_with_data.add(col)
+
+                    # Preserve original column order but filter out empty columns
+                    columns = [col for col in all_columns if col in columns_with_data]
+
+                    # Also filter the data rows to only include the filtered columns
+                    filtered_data = []
+                    for row in result:
+                        if isinstance(row, dict):
+                            filtered_row = {col: row.get(col) for col in columns}
+                            filtered_data.append(filtered_row)
+                        else:
+                            filtered_data.append(row)
 
                 debug_info = {
                     "success": True,
                     "report_name": report_name,
                     "report_type": report_doc.report_type,
-                    "data": result,
+                    "data": filtered_data,
                     "columns": columns,
                     "message": None,
                     "filters_applied": filters or {},
                     "auto_filters_added": "Automatic date range and company filters applied if missing",
                     "raw_result_keys": [],
-                    "data_count": len(result) if result else 0,
+                    "data_count": len(filtered_data) if filtered_data else 0,
                     "result_type": "list",
                 }
             else:
