@@ -24,9 +24,16 @@ from frappe_assistant_core.assistant_core.server import assistantServer
 class AssistantCoreSettings(Document):
     """assistant Server Settings DocType controller"""
 
+    def onload(self):
+        """Populate computed fields when document is loaded (including first time after install)"""
+        self._populate_endpoint_urls()
+
     def before_save(self):
         """Populate computed fields before saving"""
-        # Set endpoint URLs based on current site
+        self._populate_endpoint_urls()
+
+    def _populate_endpoint_urls(self):
+        """Helper to populate endpoint URLs based on current site"""
         frappe_url = frappe.utils.get_url()
         self.mcp_endpoint_url = f"{frappe_url}/api/method/frappe_assistant_core.api.fac_endpoint.handle_mcp"
         self.oauth_discovery_url = f"{frappe_url}/.well-known/openid-configuration"
