@@ -44,6 +44,10 @@ class ExecutePythonCode(BaseTool):
     def __init__(self):
         super().__init__()
         self.name = "run_python_code"
+
+        # Check library availability at initialization time
+        self.library_status = self._check_library_availability()
+
         self.description = self._get_dynamic_description()
         self.requires_permission = None  # Available to all users
 
@@ -85,9 +89,75 @@ class ExecutePythonCode(BaseTool):
             "required": ["code"],
         }
 
+    def _check_library_availability(self) -> Dict[str, bool]:
+        """Check which data science libraries are available at initialization"""
+        libraries = {}
+
+        try:
+            import pandas
+
+            libraries["pandas"] = True
+        except ImportError:
+            libraries["pandas"] = False
+
+        try:
+            import numpy
+
+            libraries["numpy"] = True
+        except ImportError:
+            libraries["numpy"] = False
+
+        try:
+            import matplotlib
+
+            libraries["matplotlib"] = True
+        except ImportError:
+            libraries["matplotlib"] = False
+
+        try:
+            import seaborn
+
+            libraries["seaborn"] = True
+        except ImportError:
+            libraries["seaborn"] = False
+
+        try:
+            import plotly
+
+            libraries["plotly"] = True
+        except ImportError:
+            libraries["plotly"] = False
+
+        try:
+            import scipy
+
+            libraries["scipy"] = True
+        except ImportError:
+            libraries["scipy"] = False
+
+        return libraries
+
     def _get_dynamic_description(self) -> str:
-        """Generate description based on current streaming settings"""
+        """Generate description based on current streaming settings and library availability"""
         base_description = """Execute custom Python code for advanced analysis and complex calculations. USE HIERARCHY: First try generate_report for standard business reports, then analyze_business_data for common analytics, and only use this tool when both are insufficient. Suitable for complex custom visualizations using matplotlib/plotly/seaborn, advanced mathematical models, custom data transformations, and specialized business logic requiring full programming control. SECURITY: Read-only database access (only SELECT queries), user context management (respects permissions), code security scanning (dangerous operations blocked). PRE-LOADED LIBRARIES (no imports needed): pd (pandas), np (numpy), plt (matplotlib), sns (seaborn), frappe utilities, math, datetime, json, re, statistics. Best for advanced analytics requiring full Python control when standard tools are insufficient."""
+
+        # Add library availability warnings
+        library_warnings = []
+        if not self.library_status.get("pandas"):
+            library_warnings.append(
+                "⚠️  pandas is NOT available - use Frappe's native data tools (frappe.get_all, generate_report) instead"
+            )
+        if not self.library_status.get("numpy"):
+            library_warnings.append(
+                "⚠️  numpy is NOT available - use Python's math/statistics modules for calculations"
+            )
+        if not self.library_status.get("matplotlib"):
+            library_warnings.append("⚠️  matplotlib is NOT available - visualization not supported")
+        if not self.library_status.get("seaborn"):
+            library_warnings.append("⚠️  seaborn is NOT available - use matplotlib if needed")
+
+        if library_warnings:
+            base_description += "\n\nLIBRARY AVAILABILITY:\n" + "\n".join(library_warnings)
 
         try:
             from frappe_assistant_core.utils.streaming_manager import get_streaming_manager
@@ -140,6 +210,13 @@ class ExecutePythonCode(BaseTool):
                     if not unicode_check_result["success"]:
                         return unicode_check_result
                     code = unicode_check_result["code"]
+
+                    # Auto-fix common pandas/numpy errors before execution
+                    preprocess_result = self._preprocess_code_for_common_errors(code)
+                    if not preprocess_result["success"]:
+                        return preprocess_result
+                    code = preprocess_result["code"]
+                    fixes_applied = preprocess_result.get("fixes_applied", [])
 
                     # Setup secure execution environment with read-only database
                     execution_globals = self._setup_secure_execution_environment(current_user)
@@ -327,8 +404,10 @@ class ExecutePythonCode(BaseTool):
             error_traceback = traceback.format_exc()
 
             self.logger.error(f"Python execution error for user {current_user}: {error_msg}")
-            # Provide helpful error message for Unicode issues
+
+            # Use enhanced error messages with context
             if "surrogates not allowed" in error_msg or "UnicodeEncodeError" in error_msg:
+                # Special handling for Unicode errors
                 error_msg = f"""Unicode encoding error: {error_msg}
 
 🚨 This error occurs when your code contains invalid Unicode characters (surrogates).
@@ -342,21 +421,111 @@ class ExecutePythonCode(BaseTool):
    • Check for unusual characters around position 1030 in your code
    • Use plain text editors when preparing code"""
 
-            self.logger.error(f"Python execution error: {error_msg}")
-            result = {
-                "success": False,
-                "error": error_msg,
-                "traceback": error_traceback,
-                "output": output,
-                "variables": {},
-                "user_context": current_user,
-                "execution_info": {
+                result = {
+                    "success": False,
+                    "error": error_msg,
+                    "traceback": error_traceback,
+                    "output": output,
+                    "variables": {},
+                    "user_context": current_user,
+                    "unicode_error": True,
+                    "execution_info": {
+                        "execution_id": audit_info.get("execution_id"),
+                        "executed_by": current_user,
+                    },
+                }
+            else:
+                # Use enhanced error message for all other errors
+                result = self._enhance_error_message(error_msg, error_traceback, execution_globals, code)
+
+                # Add execution context
+                result["output"] = output
+                result["variables"] = variables if "variables" in locals() else {}
+                result["user_context"] = current_user
+                result["execution_info"] = {
                     "execution_id": audit_info.get("execution_id"),
                     "executed_by": current_user,
-                },
-            }
+                }
 
+            self.logger.error(f"Python execution error: {error_msg}")
             return result
+
+    def _preprocess_code_for_common_errors(self, code: str) -> Dict[str, Any]:
+        """Auto-fix common pandas/numpy errors before execution"""
+        import re
+
+        fixes_applied = []
+        original_code = code
+
+        # Fix 1: Replace deprecated df.append() with pd.concat()
+        # Pattern: df = df.append(...) -> df = pd.concat([df, ...], ignore_index=True)
+        append_pattern = r"(\w+)\s*=\s*\1\.append\s*\(([^)]+)\)"
+        if re.search(append_pattern, code):
+            code = re.sub(
+                append_pattern, r"\1 = pd.concat([\1, \2], ignore_index=True)", code
+            )
+            if code != original_code:
+                fixes_applied.append("✓ Replaced deprecated df.append() with pd.concat()")
+                original_code = code
+
+        # Fix 2: Add ignore_index=True to pd.concat if missing
+        concat_pattern = r"pd\.concat\s*\(\s*\[([^\]]+)\]\s*\)"
+        concat_matches = re.finditer(concat_pattern, code)
+        for match in concat_matches:
+            full_match = match.group(0)
+            if "ignore_index" not in full_match:
+                # Add ignore_index=True
+                new_match = full_match[:-1] + ", ignore_index=True)"
+                code = code.replace(full_match, new_match)
+                if code != original_code:
+                    fixes_applied.append("✓ Added ignore_index=True to pd.concat()")
+                    original_code = code
+                    break  # Only fix first occurrence to avoid issues
+
+        # Fix 3: Replace inplace=True with explicit assignment (safer)
+        # Pattern: df.sort_values(..., inplace=True) -> df = df.sort_values(...)
+        inplace_pattern = r"(\w+)\.(sort_values|drop_duplicates|fillna|reset_index)\(([^)]*inplace\s*=\s*True[^)]*)\)"
+        if re.search(inplace_pattern, code):
+            def replace_inplace(match):
+                var_name = match.group(1)
+                method_name = match.group(2)
+                args = match.group(3)
+                # Remove inplace=True from args
+                args_clean = re.sub(r",?\s*inplace\s*=\s*True,?", "", args)
+                args_clean = args_clean.strip(", ")
+                return f"{var_name} = {var_name}.{method_name}({args_clean})"
+
+            new_code = re.sub(inplace_pattern, replace_inplace, code)
+            if new_code != code:
+                code = new_code
+                fixes_applied.append("✓ Replaced inplace=True with explicit assignment (safer)")
+                original_code = code
+
+        # Fix 4: Fix chained indexing df['col'][0] = value -> df.loc[0, 'col'] = value
+        # This is complex and risky, so only warn in comments
+        if re.search(r'\w+\[["\'][^"\']+["\']\]\[\d+\]\s*=', code):
+            # Add a warning comment at the top
+            warning = "# Warning: Chained indexing detected - consider using .loc[] instead\n"
+            if not code.startswith(warning):
+                code = warning + code
+                fixes_applied.append("ℹ️  Added warning about chained indexing")
+
+        # Fix 5: Auto-add .copy() when slicing DataFrames to avoid SettingWithCopyWarning
+        # Pattern: df2 = df[...] -> df2 = df[...].copy()
+        slice_pattern = r"(\w+)\s*=\s*(\w+)\[([^\]]+)\](?!\s*\.)"
+        if re.search(slice_pattern, code):
+            # Only apply if it looks like a DataFrame slice (not dict or list access)
+            def add_copy(match):
+                if "pd.DataFrame" in code or "data" in match.group(2):
+                    return f"{match.group(1)} = {match.group(2)}[{match.group(3)}].copy()"
+                return match.group(0)
+
+            new_code = re.sub(slice_pattern, add_copy, code)
+            if new_code != code:
+                code = new_code
+                fixes_applied.append("✓ Added .copy() to DataFrame slices to avoid SettingWithCopyWarning")
+
+        return {"success": True, "code": code, "fixes_applied": fixes_applied}
 
     def _sanitize_unicode(self, code: str) -> Dict[str, Any]:
         """Sanitize Unicode characters to prevent encoding errors"""
@@ -426,12 +595,26 @@ class ExecutePythonCode(BaseTool):
             "import json": "# json is pre-loaded",
             "import re": "# re is pre-loaded",
             "import random": "# random is pre-loaded",
+            "import statistics": "# statistics is pre-loaded",
+            "import decimal": "# decimal is pre-loaded",
+            "import fractions": "# fractions is pre-loaded",
+            # Allow these common stdlib imports
+            "import collections": "# collections allowed - Counter, defaultdict, etc.",
+            "import itertools": "# itertools allowed - combinatoric iterators",
+            "import functools": "# functools allowed - higher-order functions",
+            "import operator": "# operator allowed - standard operators",
+            "import copy": "# copy allowed - shallow and deep copy",
+            "import string": "# string allowed - string operations",
         }
 
         # Safe import prefixes (for partial matches)
         safe_prefixes = {
             "from datetime import": "# datetime is pre-loaded",
             "from math import": "# math is pre-loaded",
+            "from collections import": "# collections allowed",
+            "from itertools import": "# itertools allowed",
+            "from functools import": "# functools allowed",
+            "from operator import": "# operator allowed",
         }
 
         for i, line in enumerate(lines):
@@ -512,22 +695,44 @@ class ExecutePythonCode(BaseTool):
         """Remove dangerous import statements for security, but allow safe ones"""
         import re
 
-        # Define safe modules that are allowed
+        # Define safe modules that are allowed (expanded for more functionality)
         safe_modules = {
+            # Mathematical and numeric modules
             "math",
             "statistics",
             "decimal",
             "fractions",
+            "cmath",  # Complex math
+            # Date/time modules
             "datetime",
+            "time",
+            "calendar",
+            # Text and data processing
             "json",
             "re",
+            "string",
+            "textwrap",
+            "unicodedata",
+            # Data structures and algorithms
+            "collections",  # Counter, defaultdict, OrderedDict, etc.
+            "itertools",  # Combinatoric iterators
+            "functools",  # Higher-order functions
+            "operator",  # Standard operators as functions
+            "heapq",  # Heap queue algorithm
+            "bisect",  # Array bisection algorithm
+            "array",  # Efficient arrays of numeric values
+            "copy",  # Shallow and deep copy operations
+            # Randomization
             "random",
+            "secrets",  # Cryptographically strong random numbers
+            # Data science libraries
             "pandas",
             "numpy",
             "matplotlib",
             "seaborn",
             "plotly",
             "scipy",
+            # Short aliases
             "pd",
             "np",
             "plt",
@@ -733,46 +938,92 @@ class ExecutePythonCode(BaseTool):
             }
         )
 
-        # Add data science libraries
+        # Add data science libraries with clear availability tracking
+        available_libraries = []
+        missing_libraries = []
+
+        # Helper class for unavailable libraries
+        class LibraryNotInstalled:
+            def __init__(self, library_name):
+                self.library_name = library_name
+
+            def __getattr__(self, name):
+                raise ImportError(
+                    f"❌ {self.library_name} is not installed in this environment.\n\n"
+                    f"💡 Alternative solutions:\n"
+                    f"   • Use frappe.get_all() for data queries and manipulation\n"
+                    f"   • Use generate_report tool for business analytics and reporting\n"
+                    f"   • Use Python's built-in modules (math, statistics) for calculations\n"
+                    f"   • Contact your system administrator to install {self.library_name}\n\n"
+                    f"📚 Available libraries: {', '.join(available_libraries) if available_libraries else 'None (data science libraries)'}"
+                )
+
+            def __call__(self, *args, **kwargs):
+                return self.__getattr__("__call__")
+
+        # Try to import pandas
+        try:
+            import pandas as pd
+
+            env.update({"pd": pd, "pandas": pd})
+            available_libraries.append("pandas (pd)")
+        except ImportError:
+            missing_libraries.append("pandas")
+            env["pd"] = LibraryNotInstalled("pandas")
+            env["pandas"] = env["pd"]
+
+        # Try to import numpy
+        try:
+            import numpy as np
+
+            env.update({"np": np, "numpy": np})
+            available_libraries.append("numpy (np)")
+        except ImportError:
+            missing_libraries.append("numpy")
+            env["np"] = LibraryNotInstalled("numpy")
+            env["numpy"] = env["np"]
+
+        # Try to import matplotlib
         try:
             import matplotlib.pyplot as plt
-            import numpy as np
-            import pandas as pd
+
+            env.update({"plt": plt, "matplotlib": plt})
+            available_libraries.append("matplotlib (plt)")
+        except ImportError:
+            missing_libraries.append("matplotlib")
+            env["plt"] = LibraryNotInstalled("matplotlib")
+            env["matplotlib"] = env["plt"]
+
+        # Try to import seaborn
+        try:
             import seaborn as sns
 
-            env.update(
-                {
-                    "pd": pd,
-                    "pandas": pd,
-                    "np": np,
-                    "numpy": np,
-                    "plt": plt,
-                    "matplotlib": plt,
-                    "sns": sns,
-                    "seaborn": sns,
-                }
-            )
+            env.update({"sns": sns, "seaborn": sns})
+            available_libraries.append("seaborn (sns)")
+        except ImportError:
+            missing_libraries.append("seaborn")
+            env["sns"] = LibraryNotInstalled("seaborn")
+            env["seaborn"] = env["sns"]
 
-            # Try to add plotly if available
-            try:
-                import plotly.express as px
-                import plotly.graph_objects as go
+        # Try to add plotly if available
+        try:
+            import plotly.express as px
+            import plotly.graph_objects as go
 
-                env.update({"go": go, "px": px, "plotly": {"graph_objects": go, "express": px}})
-            except ImportError:
-                pass
+            env.update({"go": go, "px": px, "plotly": {"graph_objects": go, "express": px}})
+            available_libraries.append("plotly (go, px)")
+        except ImportError:
+            missing_libraries.append("plotly")
 
-            # Add scipy if available
-            try:
-                import scipy
-                import scipy.stats as stats
+        # Add scipy if available
+        try:
+            import scipy
+            import scipy.stats as stats
 
-                env.update({"scipy": scipy, "stats": stats})
-            except ImportError:
-                pass
-
-        except ImportError as e:
-            self.logger.warning(f"Some data science libraries not available: {str(e)}")
+            env.update({"scipy": scipy, "stats": stats})
+            available_libraries.append("scipy (stats)")
+        except ImportError:
+            missing_libraries.append("scipy")
 
         # Add SECURE Frappe utilities with read-only database wrapper
         secure_db = ReadOnlyDatabase(frappe.db)
@@ -786,13 +1037,17 @@ class ExecutePythonCode(BaseTool):
                 "get_single": frappe.get_single,  # Permission-checked by default
                 "db": secure_db,  # 🛡️ READ-ONLY database wrapper instead of frappe.db
                 "current_user": current_user,  # 👤 Current user context for reference
+                # Store library availability for error messages
+                "_available_libraries": available_libraries,
+                "_missing_libraries": missing_libraries,
             }
         )
 
-        # Log security setup
+        # Log security setup with library availability
         frappe.logger().info(
             f"Secure execution environment setup complete - User: {current_user}, "
-            f"DB: Read-only wrapper, Libraries: {len(env)} variables available"
+            f"DB: Read-only wrapper, Available libraries: {', '.join(available_libraries) if available_libraries else 'None'}, "
+            f"Missing libraries: {', '.join(missing_libraries) if missing_libraries else 'None'}"
         )
 
         return env
@@ -985,3 +1240,95 @@ class ExecutePythonCode(BaseTool):
 
         except Exception:
             return f"<{type(value).__name__} object>"
+
+    def _enhance_error_message(
+        self, error_msg: str, error_traceback: str, env: Dict[str, Any], code: str
+    ) -> Dict[str, Any]:
+        """Provide context-aware error messages with helpful solutions"""
+
+        # Common error patterns and their enhancements
+        error_enhancements = {
+            "name 'pd' is not defined": {
+                "reason": "pandas library is not available in this environment",
+                "solution": "Use Frappe's native data tools instead",
+                "alternative_code": "# Instead of pandas, use:\ndata = frappe.get_all('DocType', fields=['*'], limit=100)\n# Or use the generate_report tool for analytics",
+                "available_alternatives": ["frappe.get_all()", "frappe.get_list()", "generate_report tool"],
+            },
+            "name 'np' is not defined": {
+                "reason": "numpy library is not available in this environment",
+                "solution": "Use Python's math or statistics modules for calculations",
+                "alternative_code": "# Instead of numpy, use:\nimport math\nimport statistics\n# Example: statistics.mean([1,2,3]) instead of np.mean([1,2,3])",
+                "available_alternatives": ["math module", "statistics module"],
+            },
+            "name 'plt' is not defined": {
+                "reason": "matplotlib library is not available in this environment",
+                "solution": "Visualization is not supported without matplotlib",
+                "alternative_code": "# Contact your administrator to install matplotlib for visualization support",
+            },
+            "KeyError": {
+                "reason": "Column or key doesn't exist in the DataFrame/dict",
+                "solution": "Check available columns/keys before accessing",
+                "alternative_code": "# Check DataFrame columns:\nprint(df.columns.tolist())\n# Or check dict keys:\nprint(list(my_dict.keys()))",
+                "debug_tip": f"Available variables: {', '.join([k for k in env.keys() if not k.startswith('_')])[:200]}...",
+            },
+            "'DataFrame' object has no attribute 'append'": {
+                "reason": "df.append() was deprecated in pandas 2.0",
+                "solution": "Use pd.concat() instead (this should have been auto-fixed)",
+                "alternative_code": "# Instead of:\n# df = df.append(new_row, ignore_index=True)\n# Use:\ndf = pd.concat([df, new_row], ignore_index=True)",
+            },
+            "ValueError": {
+                "reason": "Value error - often due to array length mismatch or invalid value",
+                "solution": "Check array shapes and data types",
+                "alternative_code": "# Check shapes:\nprint(f'Shape: {df.shape}')\nprint(f'Length: {len(my_list)}')",
+            },
+            "AttributeError": {
+                "reason": "Attribute doesn't exist on the object",
+                "solution": "Check object type and available methods",
+                "alternative_code": "# Check object type and methods:\nprint(type(obj))\nprint(dir(obj))",
+            },
+            "IndexError": {
+                "reason": "Index out of range",
+                "solution": "Check list/array length before accessing by index",
+                "alternative_code": "# Check length first:\nif len(my_list) > index:\n    value = my_list[index]",
+            },
+            "TypeError": {
+                "reason": "Type error - operation not supported for these types",
+                "solution": "Check data types and convert if needed",
+                "alternative_code": "# Check and convert types:\nprint(type(value))\nvalue = int(value)  # or str(value), float(value), etc.",
+            },
+        }
+
+        # Find matching error pattern
+        enhanced_error = None
+        for pattern, enhancement in error_enhancements.items():
+            if pattern.lower() in error_msg.lower():
+                enhanced_error = {
+                    "success": False,
+                    "error": error_msg,
+                    "reason": enhancement.get("reason", ""),
+                    "solution": enhancement.get("solution", ""),
+                    "traceback": error_traceback,
+                    "available_libraries": env.get("_available_libraries", []),
+                    "missing_libraries": env.get("_missing_libraries", []),
+                }
+
+                if "alternative_code" in enhancement:
+                    enhanced_error["alternative_code"] = enhancement["alternative_code"]
+
+                if "available_alternatives" in enhancement:
+                    enhanced_error["available_alternatives"] = enhancement["available_alternatives"]
+
+                if "debug_tip" in enhancement:
+                    enhanced_error["debug_tip"] = enhancement["debug_tip"]
+
+                return enhanced_error
+
+        # Return standard error with context
+        return {
+            "success": False,
+            "error": error_msg,
+            "traceback": error_traceback,
+            "available_libraries": env.get("_available_libraries", []),
+            "missing_libraries": env.get("_missing_libraries", []),
+            "help": "Check that all required libraries are available and data types are correct. Use print() statements to debug variable values and types.",
+        }
