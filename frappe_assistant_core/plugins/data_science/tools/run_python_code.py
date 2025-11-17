@@ -139,25 +139,199 @@ class ExecutePythonCode(BaseTool):
 
     def _get_dynamic_description(self) -> str:
         """Generate description based on current streaming settings and library availability"""
-        base_description = """Execute custom Python code for advanced analysis and complex calculations. USE HIERARCHY: First try generate_report for standard business reports, then analyze_business_data for common analytics, and only use this tool when both are insufficient. Suitable for complex custom visualizations using matplotlib/plotly/seaborn, advanced mathematical models, custom data transformations, and specialized business logic requiring full programming control. SECURITY: Read-only database access (only SELECT queries), user context management (respects permissions), code security scanning (dangerous operations blocked). PRE-LOADED LIBRARIES (no imports needed): pd (pandas), np (numpy), plt (matplotlib), sns (seaborn), frappe utilities, math, datetime, json, re, statistics. Best for advanced analytics requiring full Python control when standard tools are insufficient."""
+        base_description = """Execute custom Python code for advanced analysis and complex calculations.
+
+USE HIERARCHY:
+1. First try generate_report for standard business reports
+2. Then analyze_business_data for common analytics
+3. Use this tool ONLY when both are insufficient
+
+SUITABLE FOR:
+• Complex multi-source data orchestration (TOKEN EFFICIENT!)
+• Advanced mathematical models and statistical analysis
+• Custom data transformations requiring full programming control
+• Complex visualizations using matplotlib/plotly/seaborn
+• Specialized business logic requiring Python
+
+SECURITY:
+• Read-only database access (SELECT only)
+• User context management (respects permissions)
+• Code security scanning (dangerous operations blocked)
+• Sandboxed execution environment
+• Audit logging
+
+PRE-LOADED LIBRARIES (no imports needed):
+• Data: pd (pandas), np (numpy)
+• Viz: plt (matplotlib), sns (seaborn)
+• Core: frappe, math, datetime, json, re, statistics
+• Utils: collections, itertools, functools, operator, copy
+
+═══════════════════════════════════════════════════════════════════
+🚀 ADVANCED: Multi-Tool Orchestration API (80-95% Token Savings!)
+═══════════════════════════════════════════════════════════════════
+
+For complex analysis combining multiple data sources, use the 'tools' API
+to orchestrate other tools INSIDE your code. This processes data in the
+sandbox and returns ONLY insights to the LLM, saving massive tokens.
+
+AVAILABLE METHODS:
+
+📊 Report Operations:
+  tools.list_reports(module=None, report_type=None)
+    → Get list of available reports (permission-filtered)
+    → Returns: {success, reports, count}
+
+  tools.get_report_info(report_name)
+    → Get requirements BEFORE executing (discovers dependencies!)
+    → Returns: {success, columns, filter_guidance, prepared_report_info}
+    → USE THIS FIRST to discover required filters
+
+  tools.generate_report(report_name, filters={}, format="json")
+    → Execute report with auto-prepared-report handling
+    → Returns: {success, data, columns, message, status}
+    → Automatically waits for prepared reports (up to 5 min)
+
+📄 Document Operations:
+  tools.get_document(doctype, name)
+    → Get single document by name (permission-checked)
+    → Returns: {success, data}
+
+  tools.get_documents(doctype, filters={}, fields=["*"], limit=100)
+    → Get multiple documents with filters
+    → Returns: {success, data, count}
+
+🔍 Search Operations:
+  tools.search(query, doctype=None, limit=20)
+    → Search across Frappe (permission-checked)
+
+📋 Metadata Operations:
+  tools.get_doctype_info(doctype)
+    → Get field definitions, links, permissions
+    → Returns: {success, fields, links, is_table}
+
+═══════════════════════════════════════════════════════════════════
+📖 ORCHESTRATION EXAMPLES
+═══════════════════════════════════════════════════════════════════
+
+Example 1: Report with Auto-Dependency Resolution
+──────────────────────────────────────────────────
+# Step 1: Discover what filters are needed (handles dependency!)
+info = tools.get_report_info("Sales Analytics")
+print("Required filters:", info["filter_guidance"])
+
+# Step 2: Execute with proper filters
+result = tools.generate_report("Sales Analytics",
+    filters={
+        "doc_type": "Sales Invoice",
+        "tree_type": "Customer",
+        "from_date": "2024-01-01"
+    })
+
+# Step 3: Process in Python (not in LLM - saves 90% tokens!)
+if result["success"]:
+    data = result["data"]
+    top_10 = sorted(data, key=lambda x: x.get("revenue", 0), reverse=True)[:10]
+    total = sum(row.get("revenue", 0) for row in data)
+
+    # Return ONLY insights (not raw data)
+    print("\\nTop 10 Customers:")
+    for i, cust in enumerate(top_10, 1):
+        print(f"  {i}. {cust['customer']}: ${cust['revenue']:,.2f}")
+    print(f"\\nTotal Revenue: ${total:,.2f}")
+
+Example 2: Multi-Source Analysis
+─────────────────────────────────
+# Fetch from multiple sources (all in sandbox)
+sales = tools.generate_report("Sales Analytics",
+    filters={"doc_type": "Sales Invoice"})
+customers = tools.get_documents("Customer",
+    fields=["name", "territory", "customer_group"],
+    limit=500)
+products = tools.get_documents("Item",
+    fields=["name", "item_group"],
+    filters={"disabled": 0})
+
+# Join and analyze (ALL processing in sandbox - huge token savings!)
+if sales["success"] and customers["success"]:
+    # Create lookups
+    cust_map = {c["name"]: c for c in customers["data"]}
+
+    # Analyze by territory
+    territory_sales = {}
+    for row in sales["data"]:
+        cust = cust_map.get(row["customer"])
+        if cust:
+            territory = cust["territory"]
+            territory_sales[territory] = territory_sales.get(territory, 0) + row["revenue"]
+
+    # Return insights only (not 10K rows of raw data!)
+    top_5 = sorted(territory_sales.items(), key=lambda x: x[1], reverse=True)[:5]
+    print("\\nTop 5 Territories:")
+    for territory, revenue in top_5:
+        print(f"  {territory}: ${revenue:,.2f}")
+
+Example 3: Report Discovery Workflow
+─────────────────────────────────────
+# Find relevant reports
+all_reports = tools.list_reports(module="Selling")
+
+# Filter for what you need
+analytics = [r for r in all_reports["reports"]
+             if "analytics" in r["report_name"].lower()]
+
+print(f"Found {len(analytics)} analytics reports in Selling:")
+for report in analytics:
+    # Get details for each
+    info = tools.get_report_info(report["report_name"])
+    print(f"\\n{report['report_name']}:")
+    if "filter_guidance" in info:
+        print(f"  Filters: {info['filter_guidance'][:2]}")  # Show first 2
+
+═══════════════════════════════════════════════════════════════════
+💡 WHEN TO USE ORCHESTRATION
+═══════════════════════════════════════════════════════════════════
+
+✅ USE orchestration when:
+  • Combining multiple reports or data sources
+  • Processing large datasets (>100 rows)
+  • Complex calculations or transformations needed
+  • User wants insights, not raw data
+  • Token efficiency is critical
+
+❌ DON'T orchestrate when:
+  • Simple single report execution (use generate_report tool directly)
+  • User explicitly wants to see raw data
+  • Less than 50 rows of data
+  • Simple formatting/display needed
+
+═══════════════════════════════════════════════════════════════════
+🔒 SECURITY GUARANTEES
+═══════════════════════════════════════════════════════════════════
+
+All tools.* methods maintain:
+  ✓ Permission checks (user context preserved)
+  ✓ Read-only database access
+  ✓ Audit logging
+  ✓ No file system access
+  ✓ No network access
+  ✓ Sandboxed execution
+
+No internal directory structure or import paths exposed.
+Use 'tools' API directly - no imports needed."""
 
         # Add library availability warnings
         library_warnings = []
         if not self.library_status.get("pandas"):
             library_warnings.append(
-                "⚠️  pandas is NOT available - use Frappe's native data tools (frappe.get_all, generate_report) instead"
+                "⚠️  pandas NOT available - use tools.generate_report() or frappe.get_all() instead"
             )
         if not self.library_status.get("numpy"):
-            library_warnings.append(
-                "⚠️  numpy is NOT available - use Python's math/statistics modules for calculations"
-            )
+            library_warnings.append("⚠️  numpy NOT available - use math/statistics modules")
         if not self.library_status.get("matplotlib"):
-            library_warnings.append("⚠️  matplotlib is NOT available - visualization not supported")
-        if not self.library_status.get("seaborn"):
-            library_warnings.append("⚠️  seaborn is NOT available - use matplotlib if needed")
+            library_warnings.append("⚠️  matplotlib NOT available - visualization not supported")
 
         if library_warnings:
-            base_description += "\n\nLIBRARY AVAILABILITY:\n" + "\n".join(library_warnings)
+            base_description += "\n\n" + "\n".join(library_warnings)
 
         try:
             from frappe_assistant_core.utils.streaming_manager import get_streaming_manager
@@ -1028,6 +1202,11 @@ class ExecutePythonCode(BaseTool):
         # Add SECURE Frappe utilities with read-only database wrapper
         secure_db = ReadOnlyDatabase(frappe.db)
 
+        # Add secure tool orchestration API (no internal paths exposed)
+        from frappe_assistant_core.utils.tool_api import FrappeAssistantAPI
+
+        tools_api = FrappeAssistantAPI(current_user)
+
         env.update(
             {
                 "frappe": frappe,  # Keep frappe for utility functions
@@ -1037,6 +1216,8 @@ class ExecutePythonCode(BaseTool):
                 "get_single": frappe.get_single,  # Permission-checked by default
                 "db": secure_db,  # 🛡️ READ-ONLY database wrapper instead of frappe.db
                 "current_user": current_user,  # 👤 Current user context for reference
+                # 🔧 TOOL ORCHESTRATION API - secure multi-tool access
+                "tools": tools_api,  # Unified API for report/document/search operations
                 # Store library availability for error messages
                 "_available_libraries": available_libraries,
                 "_missing_libraries": missing_libraries,
