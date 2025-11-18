@@ -22,82 +22,20 @@ from frappe import _
 
 
 class ReportTools:
-    """assistant tools for Frappe report operations"""
+    """
+    Shared utility class for Frappe report operations.
 
-    @staticmethod
-    def get_tools() -> List[Dict]:
-        """Return list of report-related assistant tools"""
-        return [
-            {
-                "name": "generate_report",
-                "description": "🏆 PROFESSIONAL BUSINESS REPORTS - Your FIRST choice for sales analysis, financial reporting, and business intelligence! 🎯 **USE THIS FOR**: Sales analysis, profit reports, customer insights, inventory tracking, financial statements ⚡ **INSTANT ACCESS** to 183+ pre-built business reports including: Sales Analytics (revenue, trends, territory performance), Profit & Loss Statement, Accounts Receivable Summary, Item-wise Sales History, Territory-wise Sales ✅ **ALWAYS TRY THIS FIRST** before using analysis tools - these reports are pre-optimized for business users, professionally formatted, ready for management presentation, and include proper calculations and totals. Use 'report_list' to discover available reports, then execute with filters. IMPORTANT: Many reports require mandatory filters - use report_requirements tool first if you get errors.",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "report_name": {
-                            "type": "string",
-                            "description": "Exact name of the Frappe report to execute (e.g., 'Accounts Receivable Summary', 'Sales Analytics', 'Stock Balance'). Use report_list to find available reports.",
-                        },
-                        "filters": {
-                            "type": "object",
-                            "default": {},
-                            "description": "Report-specific filters as key-value pairs. IMPORTANT: Many reports have mandatory filters like 'doc_type', 'tree_type', etc. Common optional filters: {'company': 'Your Company'}, {'from_date': '2024-01-01', 'to_date': '2024-12-31'}, {'customer': 'Customer Name'}. For Sales Analytics: requires 'doc_type' (Sales Invoice/Sales Order/Quotation) and 'tree_type' (Customer/Item/Territory). Use report_requirements tool to discover required filters if report fails.",
-                        },
-                        "format": {
-                            "type": "string",
-                            "enum": ["json", "csv", "excel"],
-                            "default": "json",
-                            "description": "Output format. Use 'json' for data analysis, 'csv' for exports, 'excel' for spreadsheet files.",
-                        },
-                    },
-                    "required": ["report_name"],
-                },
-            },
-            {
-                "name": "report_list",
-                "description": "🔍 DISCOVER BUSINESS REPORTS - Find the perfect report for your business question! 🎯 **ESSENTIAL FOR**: Finding sales reports, financial analysis, inventory tracking, HR reports ⚡ **183+ REPORTS AVAILABLE** across modules: Selling (Sales Analytics, Territory Analysis, Customer Reports), Accounts (P&L, Balance Sheet, Receivables, Payables), Stock (Inventory Reports, Item Movement, Valuation), HR (Payroll, Attendance, Leave Reports) 💡 **SMART TIP**: Use this BEFORE trying to analyze raw data - there's likely already a perfect report!",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "module": {
-                            "type": "string",
-                            "description": "Filter by Frappe module (e.g., 'Accounts', 'Selling', 'Stock', 'HR', 'CRM'). Leave empty to see all modules.",
-                        },
-                        "report_type": {
-                            "type": "string",
-                            "enum": ["Report Builder", "Query Report", "Script Report"],
-                            "description": "Filter by report type. Script Reports are usually the most powerful for analytics. Leave empty to see all types.",
-                        },
-                    },
-                },
-            },
-            {
-                "name": "report_requirements",
-                "description": "📋 REPORT STRUCTURE ANALYZER - Understand report requirements before execution! 🎯 **ESSENTIAL FOR**: Discovering required filters when generate_report fails, understanding available data fields, planning report execution 💡 **USE WHEN**: You get filter errors from generate_report, need to understand report capabilities, want to know what data is available ⚡ **PREVENTS ERRORS**: Shows exactly what filters are required and optional for successful report execution",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "report_name": {
-                            "type": "string",
-                            "description": "Exact name of the Frappe report to analyze (e.g., 'Sales Analytics', 'Accounts Receivable Summary'). This helps understand available fields, required filters, and report structure before execution.",
-                        }
-                    },
-                    "required": ["report_name"],
-                },
-            },
-        ]
+    This class provides the core business logic for report-related operations
+    that is used by the individual tool classes (generate_report.py, report_list.py,
+    report_requirements.py). Each tool class extends BaseTool and delegates to
+    methods in this utility class.
 
-    @staticmethod
-    def execute_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute a report tool with given arguments"""
-        if tool_name == "generate_report":
-            return ReportTools.execute_report(**arguments)
-        elif tool_name == "report_list":
-            return ReportTools.list_reports(**arguments)
-        elif tool_name == "report_requirements":
-            return ReportTools.get_report_columns(**arguments)
-        else:
-            raise Exception(f"Unknown report tool: {tool_name}")
+    Methods:
+    - execute_report(): Execute reports (Query Reports, Script Reports, Custom Reports)
+    - list_reports(): List available reports with filtering
+    - get_report_columns(): Get report metadata and requirements
+    - _validate_filters(): Validate filter values before execution
+    """
 
     @staticmethod
     def execute_report(
@@ -116,38 +54,59 @@ class ReportTools:
             # Get report document
             report_doc = frappe.get_doc("Report", report_name)
 
+            # Validate filters before execution
+            validation_result = ReportTools._validate_filters(filters or {}, report_doc)
+            if not validation_result.get("valid"):
+                return {
+                    "success": False,
+                    "error": "Invalid filter values provided",
+                    "validation_errors": validation_result.get("errors", []),
+                    "suggestions": validation_result.get("suggestions", []),
+                }
+
             # Execute report based on type
             if report_doc.report_type == "Query Report":
                 result = ReportTools._execute_query_report(report_doc, filters or {})
             elif report_doc.report_type == "Script Report":
                 result = ReportTools._execute_script_report(report_doc, filters or {})
             elif report_doc.report_type == "Report Builder":
-                result = ReportTools._execute_report_builder(report_doc, filters or {})
+                return {
+                    "success": False,
+                    "error": "Report Builder reports are not supported. Report Builder creates simple filtered views of DocTypes. For business intelligence and analytics, please use Script Reports, Query Reports, or Custom Reports instead.",
+                }
             else:
                 return {"success": False, "error": f"Unsupported report type: {report_doc.report_type}"}
 
             # Add debug information for troubleshooting
-            data = result.get("result", [])
-            debug_info = {
-                "success": True,
-                "report_name": report_name,
-                "report_type": report_doc.report_type,
-                "data": data,
-                "columns": result.get("columns", []),
-                "message": result.get("message"),
-                "filters_applied": filters or {},
-                "auto_filters_added": "Automatic date range and company filters applied if missing",
-                "raw_result_keys": list(result.keys()) if result else [],
-                "data_count": len(data) if data else 0,
-                "result_type": type(result).__name__ if result else "None",
-            }
+            # Handle different result structures
+            if isinstance(result, dict):
+                # Script/Query reports return {'result': [...], 'columns': [...]}
+                data = result.get("result", [])
+                columns = result.get("columns", [])
+
+                debug_info = {
+                    "success": True,
+                    "report_name": report_name,
+                    "report_type": report_doc.report_type,
+                    "data": data,
+                    "columns": columns,
+                    "message": result.get("message"),
+                    "filters_applied": filters or {},
+                    "auto_filters_added": "Automatic date range and company filters applied if missing",
+                    "raw_result_keys": list(result.keys()) if result else [],
+                    "data_count": len(data) if data else 0,
+                    "result_type": type(result).__name__ if result else "None",
+                }
+            else:
+                return {"success": False, "error": f"Unexpected result type: {type(result).__name__}"}
 
             # Add debug info if no data found
+            data = debug_info.get("data", [])
             if not data or len(data) == 0:
                 debug_info["debug_info"] = {
                     "filters_used": filters,
                     "result_structure": result,
-                    "error_from_result": result.get("error") if result else None,
+                    "error_from_result": result.get("error") if isinstance(result, dict) else None,
                 }
 
             return debug_info
@@ -228,17 +187,6 @@ class ReportTools:
                                 "fieldtype": "Data",
                             }
                         ]
-            elif report_doc.report_type == "Report Builder":
-                # Get columns from report builder configuration
-                for col in report_doc.columns:
-                    columns.append(
-                        {
-                            "fieldname": col.fieldname,
-                            "label": col.label,
-                            "fieldtype": col.fieldtype,
-                            "width": col.width,
-                        }
-                    )
 
             # Add helpful filter guidance based on report name patterns
             filter_guidance = []
@@ -249,7 +197,7 @@ class ReportTools:
                 filter_guidance.append("Optional: 'company' (uses default company if not specified)")
             elif report_doc.report_type == "Script Report":
                 filter_guidance.append(
-                    "Script Reports often have mandatory filters - check report definition or try execution to discover requirements"
+                    "Script Reports often have mandatory filters - use report_requirements tool to discover exact filter definitions"
                 )
 
             result = {
@@ -596,6 +544,9 @@ class ReportTools:
             if "quotation trends" in report_name_lower and "based_on" not in filters:
                 filters["based_on"] = "Item"
 
+            # Apply default values from JavaScript filter definitions
+            filters = ReportTools._apply_filter_defaults(report_doc, filters)
+
             # Final cleanup - ensure all filter values are strings or proper types
             final_filters = {}
             for key, value in filters.items():
@@ -608,6 +559,12 @@ class ReportTools:
                     else:
                         final_filters[key] = str(value)
             filters = final_filters
+
+            # Check if this is a prepared report (after all filter processing)
+            if getattr(report_doc, "prepared_report", False) and not getattr(
+                report_doc, "disable_prepared_report", False
+            ):
+                return ReportTools._handle_prepared_report_execution(report_doc, filters)
 
             return run(report_name=report_doc.name, filters=filters, user=frappe.session.user)
 
@@ -634,14 +591,196 @@ class ReportTools:
             }
 
     @staticmethod
-    def _execute_report_builder(report_doc, filters):
-        """Execute a Report Builder report"""
-        from frappe.desk.reportview import execute
+    def _validate_filters(filters: Dict[str, Any], report_doc) -> Dict[str, Any]:
+        """Validate filter values against database to catch invalid references early"""
+        errors = []
+        suggestions = []
 
-        return execute(
-            doctype=report_doc.ref_doctype,
-            filters=filters,
-            fields=[col.fieldname for col in report_doc.columns],
-            order_by=report_doc.sort_by,
-            limit_page_length=1000,
-        )
+        # Common Link field filters to validate
+        link_validations = {
+            "company": "Company",
+            "customer": "Customer",
+            "supplier": "Supplier",
+            "item": "Item",
+            "project": "Project",
+            "cost_center": "Cost Center",
+            "warehouse": "Warehouse",
+        }
+
+        for filter_key, doctype in link_validations.items():
+            if filter_key in filters and filters[filter_key]:
+                filter_value = filters[filter_key]
+
+                # Skip validation for list values (used in group reports)
+                if isinstance(filter_value, list):
+                    continue
+
+                # Check if the referenced document exists
+                if not frappe.db.exists(doctype, filter_value):
+                    errors.append(f"Invalid {filter_key}: '{filter_value}' does not exist in {doctype}")
+
+                    # Try to find similar names to suggest
+                    try:
+                        similar = frappe.get_all(
+                            doctype, filters={"name": ["like", f"%{filter_value}%"]}, fields=["name"], limit=3
+                        )
+                        if similar:
+                            suggestions.append(
+                                f"Did you mean one of these {doctype} names? {', '.join([s.name for s in similar])}"
+                            )
+                        else:
+                            # If no similar matches, show first few valid options
+                            valid_options = frappe.get_all(doctype, fields=["name"], limit=5)
+                            if valid_options:
+                                suggestions.append(
+                                    f"Valid {doctype} names include: {', '.join([v.name for v in valid_options])}"
+                                )
+                    except Exception:
+                        pass
+
+        # Validate Select field options
+        select_validations = {
+            "tree_type": [
+                "Customer",
+                "Supplier",
+                "Item",
+                "Customer Group",
+                "Supplier Group",
+                "Item Group",
+                "Territory",
+                "Order Type",
+                "Project",
+            ],
+            "doc_type": [
+                "Sales Invoice",
+                "Sales Order",
+                "Quotation",
+                "Purchase Invoice",
+                "Purchase Order",
+                "Purchase Receipt",
+                "Delivery Note",
+            ],
+            "value_quantity": ["Value", "Quantity"],
+            "range": ["Weekly", "Monthly", "Quarterly", "Half-Yearly", "Yearly"],
+        }
+
+        for filter_key, valid_options in select_validations.items():
+            if filter_key in filters and filters[filter_key]:
+                filter_value = filters[filter_key]
+                if filter_value not in valid_options:
+                    errors.append(
+                        f"Invalid {filter_key}: '{filter_value}'. Must be one of: {', '.join(valid_options)}"
+                    )
+
+        # Validate date formats
+        date_fields = ["from_date", "to_date", "posting_date", "transaction_date"]
+        for date_field in date_fields:
+            if date_field in filters and filters[date_field]:
+                try:
+                    from frappe.utils import getdate
+
+                    getdate(filters[date_field])
+                except Exception:
+                    errors.append(
+                        f"Invalid {date_field}: '{filters[date_field]}'. Expected format: YYYY-MM-DD"
+                    )
+
+        return {"valid": len(errors) == 0, "errors": errors, "suggestions": suggestions}
+
+    @staticmethod
+    def _apply_filter_defaults(report_doc, filters):
+        """Apply default filter values from JavaScript filter definitions for Script Reports"""
+        import os
+        import re
+
+        # Only apply for Script Reports
+        if report_doc.report_type != "Script Report":
+            return filters
+
+        try:
+            # Get the report's JavaScript file path
+            module_name = report_doc.module
+            report_name = report_doc.name
+            report_folder = report_name.lower().replace(" ", "_").replace("-", "_")
+            module_folder = module_name.lower().replace(" ", "_")
+
+            # Search for the JS file in installed apps
+            for app in frappe.get_installed_apps():
+                app_path = frappe.get_app_path(app)
+                js_path = os.path.join(
+                    app_path, module_folder, "report", report_folder, f"{report_folder}.js"
+                )
+
+                if os.path.exists(js_path):
+                    # Read and parse the JavaScript file
+                    with open(js_path, encoding="utf-8") as f:
+                        js_content = f.read()
+
+                    # Extract filter definitions
+                    filters_start = js_content.find("filters:")
+                    if filters_start == -1:
+                        continue
+
+                    # Find the filter array using bracket counting
+                    bracket_start = js_content.find("[", filters_start)
+                    if bracket_start == -1:
+                        continue
+
+                    bracket_count = 0
+                    bracket_end = -1
+                    for i in range(bracket_start, len(js_content)):
+                        if js_content[i] == "[":
+                            bracket_count += 1
+                        elif js_content[i] == "]":
+                            bracket_count -= 1
+                            if bracket_count == 0:
+                                bracket_end = i
+                                break
+
+                    if bracket_end == -1:
+                        continue
+
+                    filters_text = js_content[bracket_start + 1 : bracket_end]
+
+                    # Parse filter objects
+                    filter_objects = []
+                    brace_count = 0
+                    current_obj_start = None
+
+                    for i, char in enumerate(filters_text):
+                        if char == "{":
+                            if brace_count == 0:
+                                current_obj_start = i
+                            brace_count += 1
+                        elif char == "}":
+                            brace_count -= 1
+                            if brace_count == 0 and current_obj_start is not None:
+                                obj_content = filters_text[current_obj_start + 1 : i]
+                                filter_objects.append(obj_content)
+                                current_obj_start = None
+
+                    # Extract default values from each filter
+                    for filter_obj in filter_objects:
+                        # Extract fieldname
+                        fieldname_match = re.search(r'fieldname:\s*["\']([^"\']+)["\']', filter_obj)
+                        if not fieldname_match:
+                            continue
+                        fieldname = fieldname_match.group(1)
+
+                        # Skip if filter already has a value
+                        if fieldname in filters and filters[fieldname] is not None:
+                            continue
+
+                        # Extract default value
+                        default_match = re.search(r'default:\s*["\']([^"\']+)["\']', filter_obj)
+                        if default_match:
+                            default_value = default_match.group(1)
+                            filters[fieldname] = default_value
+
+                    break  # Found and processed the JS file
+
+        except Exception as e:
+            # Log error but don't fail the report execution
+            frappe.log_error(f"Error applying filter defaults for {report_doc.name}: {str(e)}")
+
+        return filters

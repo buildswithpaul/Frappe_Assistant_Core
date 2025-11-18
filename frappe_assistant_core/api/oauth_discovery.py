@@ -223,7 +223,10 @@ def protected_resource_metadata():
     """
     from frappe_assistant_core.utils.oauth_compat import get_oauth_settings
 
-    settings = get_oauth_settings()
+    # Bypass cache for discovery endpoints to ensure fresh data
+    # This is important because OAuth clients may cache this response
+    # and we want them to see updates immediately
+    settings = get_oauth_settings(use_cache=False)
 
     # Check if protected resource metadata is enabled
     if not settings.get("show_protected_resource_metadata", True):
@@ -260,14 +263,23 @@ def protected_resource_metadata():
     }
 
     # Add supported scopes if configured
-    if settings.get("scopes_supported"):
+    scopes_supported_value = settings.get("scopes_supported")
+    if scopes_supported_value and isinstance(scopes_supported_value, str):
+        # Clean and parse scopes - handle both single scopes and newline-separated lists
         scopes = []
-        for line in settings.get("scopes_supported").split("\n"):
-            scope = line.strip()
-            if scope:
-                scopes.append(scope)
+        # Split by newlines and also by spaces (to handle "openid profile" format)
+        for line in scopes_supported_value.split("\n"):
+            line = line.strip()
+            if line:
+                # Further split by whitespace to handle space-separated scopes
+                for scope in line.split():
+                    scope = scope.strip()
+                    if scope and scope not in scopes:  # Avoid duplicates
+                        scopes.append(scope)
+
         if scopes:
             metadata["scopes_supported"] = scopes
+            frappe.logger().debug(f"Protected Resource Metadata: Added scopes_supported = {scopes}")
 
     # Remove None values
     _del_none_values(metadata)

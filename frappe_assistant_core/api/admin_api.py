@@ -153,6 +153,14 @@ def toggle_plugin(plugin_name: str, enable: bool):
             plugin_manager.disable_plugin(plugin_name)
             message = f"Plugin '{plugin_name}' disabled successfully"
 
+        # Clear plugin-related caches to ensure UI shows correct state
+        cache = frappe.cache()
+        cache.delete_keys("plugin_*")
+        cache.delete_keys("tool_registry_*")
+
+        # Refresh plugin manager's internal cache
+        plugin_manager.refresh_plugins()
+
         return {"success": True, "message": _(message)}
     except Exception as e:
         frappe.log_error(f"Failed to toggle plugin '{plugin_name}': {str(e)}")

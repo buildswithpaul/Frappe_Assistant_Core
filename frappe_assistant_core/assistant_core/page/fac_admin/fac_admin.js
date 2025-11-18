@@ -340,7 +340,8 @@ frappe.pages['fac-admin'].on_page_load = function(wrapper) {
         frappe.call({
             method: "frappe.client.get",
             args: {
-                doctype: "Assistant Core Settings"
+                doctype: "Assistant Core Settings",
+                name: "Assistant Core Settings"  // Required for Single DocTypes
             },
             callback: function(response) {
                 if (response.message) {
@@ -365,11 +366,18 @@ frappe.pages['fac-admin'].on_page_load = function(wrapper) {
                         toggleText.html('<i class="fa fa-play"></i> Enable');
                     }
 
-                    // Update MCP Endpoint URL from settings
-                    if (settings.mcp_endpoint_url) {
-                        $('#fac-mcp-endpoint').text(settings.mcp_endpoint_url);
+                    // Update MCP Endpoint URL from settings (with fallback)
+                    let endpointUrl = settings.mcp_endpoint_url;
+                    if (!endpointUrl || endpointUrl === '') {
+                        // Generate URL client-side if not set
+                        endpointUrl = window.location.origin + '/api/method/frappe_assistant_core.api.fac_endpoint.handle_mcp';
                     }
+                    $('#fac-mcp-endpoint').text(endpointUrl);
                 }
+            },
+            error: function(r) {
+                console.error('Failed to load server status:', r);
+                $('#fac-mcp-endpoint').text('Error loading endpoint');
             }
         });
     }
@@ -498,33 +506,48 @@ frappe.pages['fac-admin'].on_page_load = function(wrapper) {
 
     // Toggle plugin enabled/disabled
     function togglePlugin(pluginName, enabled) {
+        // Disable checkbox during API call to prevent double-clicks
+        const checkbox = $(`.fac-plugin-toggle[data-plugin="${pluginName}"]`);
+        const originalState = checkbox.prop('checked');
+        checkbox.prop('disabled', true);
+
         frappe.call({
             method: "frappe_assistant_core.api.admin_api.toggle_plugin",
             args: {
                 plugin_name: pluginName,
                 enable: enabled
             },
+            freeze: true,
+            freeze_message: __('Updating plugin...'),
             callback: function(response) {
                 if (response.message && response.message.success) {
                     frappe.show_alert({
                         message: response.message.message,
                         indicator: enabled ? 'green' : 'orange'
                     });
-                    loadStats(); // Refresh stats
+                    // Refresh both registry and stats after successful toggle
+                    loadStats();
+                    loadToolRegistry();
                 } else {
+                    // Reset checkbox to original state on error
+                    checkbox.prop('checked', originalState);
                     frappe.show_alert({
                         message: response.message?.message || 'Unknown error',
                         indicator: 'red'
                     });
-                    loadToolRegistry(); // Reload to reset checkbox
                 }
             },
             error: function() {
+                // Reset checkbox to original state on error
+                checkbox.prop('checked', originalState);
                 frappe.show_alert({
                     message: 'Error toggling plugin',
                     indicator: 'red'
                 });
-                loadToolRegistry(); // Reload to reset checkbox
+            },
+            always: function() {
+                // Re-enable checkbox
+                checkbox.prop('disabled', false);
             }
         });
     }
@@ -592,10 +615,12 @@ frappe.pages['fac-admin'].on_page_load = function(wrapper) {
     loadToolRegistry();
     loadRecentActivity();
 
-    // Auto-refresh every 30 seconds
+    // Auto-refresh every 30 seconds (but NOT tool registry to avoid disrupting user interactions)
     setInterval(function() {
         loadServerStatus();
         loadStats();
         loadRecentActivity();
+        // Note: We intentionally don't auto-refresh loadToolRegistry() here
+        // to avoid interfering with user plugin toggle interactions
     }, 30000);
 };
