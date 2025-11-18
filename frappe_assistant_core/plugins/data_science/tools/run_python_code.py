@@ -141,183 +141,172 @@ class ExecutePythonCode(BaseTool):
         """Generate description based on current streaming settings and library availability"""
         base_description = """Execute custom Python code for advanced analysis and complex calculations.
 
+CRITICAL: For ANY query requiring data fetching + analysis, use the 'tools' API INSIDE your Python code to fetch data. DO NOT call separate tools (like list_documents) and then manually copy data into code - this wastes tokens and is inefficient.
+
+RECOMMENDED APPROACH FOR DATA ANALYSIS:
+When user asks for analysis that requires fetching and processing data:
+
+CORRECT (Token Efficient):
+  Use tools.get_documents() or tools.generate_report() INSIDE Python code
+  Data stays in sandbox, only insights return to LLM
+  Saves 80-95% tokens compared to passing raw data through LLM context
+
+INCORRECT (Token Wasteful):
+  Call list_documents tool separately, then manually copy data into code
+  Data passes through LLM context unnecessarily
+  Requires multiple tool calls and manual transcription
+
 USE HIERARCHY:
-1. First try generate_report for standard business reports
-2. Then analyze_business_data for common analytics
-3. Use this tool ONLY when both are insufficient
+1. For standard business reports with known filters: Use generate_report tool directly
+   Example: "Show me Sales Analytics report for Q1 2024"
 
-SUITABLE FOR:
-• Complex multi-source data orchestration (TOKEN EFFICIENT!)
-• Advanced mathematical models and statistical analysis
-• Custom data transformations requiring full programming control
-• Complex visualizations using matplotlib/plotly/seaborn
-• Specialized business logic requiring Python
+2. For custom analysis requiring data fetching: Use run_python_code WITH tools API
+   Example: "Show top 10 customers by revenue with collection rates"
+   Code: result = tools.get_documents("Sales Invoice", filters={...}, fields=[...])
 
-SECURITY:
-• Read-only database access (SELECT only)
-• User context management (respects permissions)
-• Code security scanning (dangerous operations blocked)
-• Sandboxed execution environment
-• Audit logging
+3. For simple calculations on provided data: Use run_python_code without tools API
+   Example: "Calculate average of these numbers: [1,2,3,4,5]"
 
 PRE-LOADED LIBRARIES (no imports needed):
-• Data: pd (pandas), np (numpy)
-• Viz: plt (matplotlib), sns (seaborn)
-• Core: frappe, math, datetime, json, re, statistics
-• Utils: collections, itertools, functools, operator, copy
+- Data manipulation: pd (pandas), np (numpy)
+- Visualization: plt (matplotlib), sns (seaborn)
+- Core Python: frappe, math, datetime, json, re, statistics, random
+- Utilities: collections, itertools, functools, operator, copy
 
-═══════════════════════════════════════════════════════════════════
-🚀 ADVANCED: Multi-Tool Orchestration API (80-95% Token Savings!)
-═══════════════════════════════════════════════════════════════════
+SECURITY:
+- Read-only database access (SELECT only)
+- User context management (respects permissions)
+- Code security scanning (dangerous operations blocked)
+- Sandboxed execution environment
+- Audit logging
 
-For complex analysis combining multiple data sources, use the 'tools' API
-to orchestrate other tools INSIDE your code. This processes data in the
-sandbox and returns ONLY insights to the LLM, saving massive tokens.
+TOOLS API - FETCH DATA INSIDE PYTHON CODE:
 
-AVAILABLE METHODS:
+Document Operations:
+  tools.get_documents(doctype, filters={}, fields=["*"], limit=100)
+    Fetch multiple documents with filters (permission-checked)
+    Returns: {success: bool, data: list, count: int}
+    Example: tools.get_documents("Sales Invoice", filters={"posting_date": [">", "2024-01-01"]})
 
-📊 Report Operations:
-  tools.list_reports(module=None, report_type=None)
-    → Get list of available reports (permission-filtered)
-    → Returns: {success, reports, count}
+  tools.get_document(doctype, name)
+    Get single document by name (permission-checked)
+    Returns: {success: bool, data: dict}
+
+Report Operations:
+  tools.generate_report(report_name, filters={}, format="json")
+    Execute Frappe report with auto-prepared-report handling
+    Returns: {success: bool, data: list, columns: list, status: str}
+    Automatically waits for prepared reports (up to 5 minutes)
 
   tools.get_report_info(report_name)
-    → Get requirements BEFORE executing (discovers dependencies!)
-    → Returns: {success, columns, filter_guidance, prepared_report_info}
-    → USE THIS FIRST to discover required filters
+    Get report requirements BEFORE executing
+    Returns: {success: bool, columns: list, filter_guidance: list}
+    Use this first to discover required filters
 
-  tools.generate_report(report_name, filters={}, format="json")
-    → Execute report with auto-prepared-report handling
-    → Returns: {success, data, columns, message, status}
-    → Automatically waits for prepared reports (up to 5 min)
+  tools.list_reports(module=None, report_type=None)
+    Get list of available reports (permission-filtered)
+    Returns: {success: bool, reports: list, count: int}
 
-📄 Document Operations:
-  tools.get_document(doctype, name)
-    → Get single document by name (permission-checked)
-    → Returns: {success, data}
-
-  tools.get_documents(doctype, filters={}, fields=["*"], limit=100)
-    → Get multiple documents with filters
-    → Returns: {success, data, count}
-
-🔍 Search Operations:
+Search Operations:
   tools.search(query, doctype=None, limit=20)
-    → Search across Frappe (permission-checked)
+    Search across Frappe (permission-checked)
 
-📋 Metadata Operations:
+Metadata Operations:
   tools.get_doctype_info(doctype)
-    → Get field definitions, links, permissions
-    → Returns: {success, fields, links, is_table}
+    Get field definitions, links, permissions
+    Returns: {success: bool, fields: list, links: list}
 
-═══════════════════════════════════════════════════════════════════
-📖 ORCHESTRATION EXAMPLES
-═══════════════════════════════════════════════════════════════════
+COMPLETE EXAMPLES:
 
-Example 1: Report with Auto-Dependency Resolution
-──────────────────────────────────────────────────
-# Step 1: Discover what filters are needed (handles dependency!)
-info = tools.get_report_info("Sales Analytics")
-print("Required filters:", info["filter_guidance"])
+Example 1: Customer Sales Analysis (CORRECT APPROACH)
+# User asks: "Show top 10 customers by revenue for current fiscal year"
 
-# Step 2: Execute with proper filters
-result = tools.generate_report("Sales Analytics",
+result = tools.get_documents("Sales Invoice",
     filters={
-        "doc_type": "Sales Invoice",
-        "tree_type": "Customer",
-        "from_date": "2024-01-01"
-    })
+        "docstatus": 1,
+        "posting_date": [">=", "2024-04-01"]
+    },
+    fields=["customer_name", "grand_total", "outstanding_amount", "status"],
+    limit=500
+)
 
-# Step 3: Process in Python (not in LLM - saves 90% tokens!)
 if result["success"]:
-    data = result["data"]
-    top_10 = sorted(data, key=lambda x: x.get("revenue", 0), reverse=True)[:10]
-    total = sum(row.get("revenue", 0) for row in data)
+    df = pd.DataFrame(result["data"])
 
-    # Return ONLY insights (not raw data)
-    print("\\nTop 10 Customers:")
-    for i, cust in enumerate(top_10, 1):
-        print(f"  {i}. {cust['customer']}: ${cust['revenue']:,.2f}")
-    print(f"\\nTotal Revenue: ${total:,.2f}")
+    # Aggregate by customer
+    customer_summary = df.groupby("customer_name").agg({
+        "grand_total": "sum",
+        "outstanding_amount": "sum"
+    }).reset_index()
 
-Example 2: Multi-Source Analysis
-─────────────────────────────────
-# Fetch from multiple sources (all in sandbox)
-sales = tools.generate_report("Sales Analytics",
-    filters={"doc_type": "Sales Invoice"})
-customers = tools.get_documents("Customer",
-    fields=["name", "territory", "customer_group"],
-    limit=500)
-products = tools.get_documents("Item",
-    fields=["name", "item_group"],
-    filters={"disabled": 0})
+    # Calculate metrics
+    customer_summary["paid_amount"] = customer_summary["grand_total"] - customer_summary["outstanding_amount"]
+    customer_summary["collection_rate"] = (customer_summary["paid_amount"] / customer_summary["grand_total"] * 100).round(2)
 
-# Join and analyze (ALL processing in sandbox - huge token savings!)
+    # Get top 10
+    top_10 = customer_summary.sort_values("grand_total", ascending=False).head(10)
+
+    # Print insights only
+    print("TOP 10 CUSTOMERS BY REVENUE:")
+    for idx, row in enumerate(top_10.itertuples(), 1):
+        print(f"{idx}. {row.customer_name}: Revenue={row.grand_total:,.0f}, Collection={row.collection_rate:.1f}%")
+
+Example 2: Multi-Source Territory Analysis
+# Fetch sales and customer data in sandbox
+sales = tools.generate_report("Sales Analytics", filters={"doc_type": "Sales Invoice"})
+customers = tools.get_documents("Customer", fields=["name", "territory", "customer_group"])
+
 if sales["success"] and customers["success"]:
-    # Create lookups
+    # Create customer lookup
     cust_map = {c["name"]: c for c in customers["data"]}
 
-    # Analyze by territory
+    # Aggregate by territory
     territory_sales = {}
     for row in sales["data"]:
         cust = cust_map.get(row["customer"])
         if cust:
             territory = cust["territory"]
-            territory_sales[territory] = territory_sales.get(territory, 0) + row["revenue"]
+            territory_sales[territory] = territory_sales.get(territory, 0) + row.get("revenue", 0)
 
-    # Return insights only (not 10K rows of raw data!)
+    # Return top 5 territories
     top_5 = sorted(territory_sales.items(), key=lambda x: x[1], reverse=True)[:5]
-    print("\\nTop 5 Territories:")
+    print("TOP 5 TERRITORIES BY REVENUE:")
     for territory, revenue in top_5:
-        print(f"  {territory}: ${revenue:,.2f}")
+        print(f"  {territory}: {revenue:,.2f}")
 
-Example 3: Report Discovery Workflow
-─────────────────────────────────────
-# Find relevant reports
+Example 3: Report Discovery
+# Find analytics reports
 all_reports = tools.list_reports(module="Selling")
+analytics = [r for r in all_reports["reports"] if "analytics" in r["report_name"].lower()]
 
-# Filter for what you need
-analytics = [r for r in all_reports["reports"]
-             if "analytics" in r["report_name"].lower()]
-
-print(f"Found {len(analytics)} analytics reports in Selling:")
 for report in analytics:
-    # Get details for each
     info = tools.get_report_info(report["report_name"])
-    print(f"\\n{report['report_name']}:")
-    if "filter_guidance" in info:
-        print(f"  Filters: {info['filter_guidance'][:2]}")  # Show first 2
+    print(f"{report['report_name']}: {len(info.get('columns', []))} columns")
 
-═══════════════════════════════════════════════════════════════════
-💡 WHEN TO USE ORCHESTRATION
-═══════════════════════════════════════════════════════════════════
+WHEN TO USE TOOLS API:
+USE when:
+  - User asks for data analysis (top customers, sales trends, etc.)
+  - Combining multiple data sources
+  - Processing datasets with more than 50 rows
+  - Complex calculations or aggregations needed
+  - Token efficiency is important
 
-✅ USE orchestration when:
-  • Combining multiple reports or data sources
-  • Processing large datasets (>100 rows)
-  • Complex calculations or transformations needed
-  • User wants insights, not raw data
-  • Token efficiency is critical
+DO NOT USE when:
+  - Simple calculations on small provided datasets
+  - User explicitly provides all data in the query
+  - Single report execution without processing (use generate_report tool directly)
 
-❌ DON'T orchestrate when:
-  • Simple single report execution (use generate_report tool directly)
-  • User explicitly wants to see raw data
-  • Less than 50 rows of data
-  • Simple formatting/display needed
-
-═══════════════════════════════════════════════════════════════════
-🔒 SECURITY GUARANTEES
-═══════════════════════════════════════════════════════════════════
-
-All tools.* methods maintain:
-  ✓ Permission checks (user context preserved)
-  ✓ Read-only database access
-  ✓ Audit logging
-  ✓ No file system access
-  ✓ No network access
-  ✓ Sandboxed execution
+SECURITY GUARANTEES:
+All tools methods maintain:
+  - Permission checks (user context preserved)
+  - Read-only database access
+  - Audit logging
+  - No file system access
+  - No network access
+  - Sandboxed execution
 
 No internal directory structure or import paths exposed.
-Use 'tools' API directly - no imports needed."""
+Use tools API directly - no imports needed."""
 
         # Add library availability warnings
         library_warnings = []
@@ -635,9 +624,7 @@ Use 'tools' API directly - no imports needed."""
         # Pattern: df = df.append(...) -> df = pd.concat([df, ...], ignore_index=True)
         append_pattern = r"(\w+)\s*=\s*\1\.append\s*\(([^)]+)\)"
         if re.search(append_pattern, code):
-            code = re.sub(
-                append_pattern, r"\1 = pd.concat([\1, \2], ignore_index=True)", code
-            )
+            code = re.sub(append_pattern, r"\1 = pd.concat([\1, \2], ignore_index=True)", code)
             if code != original_code:
                 fixes_applied.append("✓ Replaced deprecated df.append() with pd.concat()")
                 original_code = code
@@ -658,8 +645,11 @@ Use 'tools' API directly - no imports needed."""
 
         # Fix 3: Replace inplace=True with explicit assignment (safer)
         # Pattern: df.sort_values(..., inplace=True) -> df = df.sort_values(...)
-        inplace_pattern = r"(\w+)\.(sort_values|drop_duplicates|fillna|reset_index)\(([^)]*inplace\s*=\s*True[^)]*)\)"
+        inplace_pattern = (
+            r"(\w+)\.(sort_values|drop_duplicates|fillna|reset_index)\(([^)]*inplace\s*=\s*True[^)]*)\)"
+        )
         if re.search(inplace_pattern, code):
+
             def replace_inplace(match):
                 var_name = match.group(1)
                 method_name = match.group(2)
