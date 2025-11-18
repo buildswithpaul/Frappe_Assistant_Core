@@ -216,6 +216,25 @@ Metadata Operations:
     Get field definitions, links, permissions
     Returns: {success: bool, fields: list, links: list}
 
+DATA HANDLING BEST PRACTICES:
+
+Tools API returns plain Python dicts (already converted from frappe._dict), ready for pandas.
+However, data may contain None/null values that need handling:
+
+1. Handle None values before aggregation:
+   df['field'] = df['field'].fillna(0)  # For numeric fields
+   df['field'] = df['field'].fillna('Unknown')  # For string fields
+
+2. Use safe dictionary access when iterating:
+   value = row.get('field', 'default_value')  # Not row['field']
+
+3. Check for None before formatting:
+   if pd.notna(value):
+       print(f"{value:,.2f}")
+
+4. Handle division by zero:
+   rate = (paid / total * 100) if total > 0 else 0
+
 COMPLETE EXAMPLES:
 
 Example 1: Customer Sales Analysis (CORRECT APPROACH)
@@ -231,7 +250,12 @@ result = tools.get_documents("Sales Invoice",
 )
 
 if result["success"]:
+    # Data is already plain dicts, ready for pandas
     df = pd.DataFrame(result["data"])
+
+    # Handle None values
+    df['grand_total'] = df['grand_total'].fillna(0)
+    df['outstanding_amount'] = df['outstanding_amount'].fillna(0)
 
     # Aggregate by customer
     customer_summary = df.groupby("customer_name").agg({
@@ -239,9 +263,12 @@ if result["success"]:
         "outstanding_amount": "sum"
     }).reset_index()
 
-    # Calculate metrics
+    # Calculate metrics with safe division
     customer_summary["paid_amount"] = customer_summary["grand_total"] - customer_summary["outstanding_amount"]
-    customer_summary["collection_rate"] = (customer_summary["paid_amount"] / customer_summary["grand_total"] * 100).round(2)
+    customer_summary["collection_rate"] = customer_summary.apply(
+        lambda x: (x["paid_amount"] / x["grand_total"] * 100) if x["grand_total"] > 0 else 0,
+        axis=1
+    ).round(2)
 
     # Get top 10
     top_10 = customer_summary.sort_values("grand_total", ascending=False).head(10)

@@ -81,8 +81,12 @@ class ReportTools:
             # Handle different result structures
             if isinstance(result, dict):
                 # Script/Query reports return {'result': [...], 'columns': [...]}
-                data = result.get("result", [])
+                raw_data = result.get("result", [])
                 columns = result.get("columns", [])
+
+                # Convert frappe._dict objects to plain Python dicts for pandas compatibility
+                # This prevents "invalid __array_struct__" errors when using with pandas
+                data = [dict(row) if isinstance(row, dict) else row for row in raw_data]
 
                 debug_info = {
                     "success": True,

@@ -195,7 +195,11 @@ class FrappeAssistantAPI:
                 return {"success": False, "error": f"No permission to read {doctype}"}
 
             doc = frappe.get_doc(doctype, name)
-            return {"success": True, "data": doc.as_dict()}
+
+            # Convert frappe._dict to plain Python dict for pandas compatibility
+            data = dict(doc.as_dict())
+
+            return {"success": True, "data": data}
 
         except frappe.PermissionError as e:
             return {"success": False, "error": f"Permission denied: {str(e)}"}
@@ -242,7 +246,11 @@ class FrappeAssistantAPI:
             if not frappe.has_permission(doctype, "read"):
                 return {"success": False, "error": f"No permission to read {doctype}"}
 
-            data = frappe.get_all(doctype, filters=filters or {}, fields=fields or ["*"], limit=limit)
+            raw_data = frappe.get_all(doctype, filters=filters or {}, fields=fields or ["*"], limit=limit)
+
+            # Convert frappe._dict objects to plain Python dicts for pandas compatibility
+            # This prevents "invalid __array_struct__" errors when using with pandas
+            data = [dict(item) for item in raw_data]
 
             return {"success": True, "data": data, "count": len(data)}
 
