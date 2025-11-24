@@ -81,8 +81,12 @@ class ReportTools:
             # Handle different result structures
             if isinstance(result, dict):
                 # Script/Query reports return {'result': [...], 'columns': [...]}
-                data = result.get("result", [])
+                raw_data = result.get("result", [])
                 columns = result.get("columns", [])
+
+                # Convert frappe._dict objects to plain Python dicts for pandas compatibility
+                # This prevents "invalid __array_struct__" errors when using with pandas
+                data = [dict(row) if isinstance(row, dict) else row for row in raw_data]
 
                 debug_info = {
                     "success": True,
@@ -465,6 +469,12 @@ class ReportTools:
     def _execute_script_report(report_doc, filters):
         """Execute a Script Report"""
         from frappe.desk.query_report import run
+
+        # Check if this is a prepared report
+        if getattr(report_doc, "prepared_report", False) and not getattr(
+            report_doc, "disable_prepared_report", False
+        ):
+            return ReportTools._handle_prepared_report_execution(report_doc, filters)
 
         try:
             # Ensure filters is a proper dict and clean None values

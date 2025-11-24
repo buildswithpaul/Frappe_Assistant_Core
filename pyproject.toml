@@ -55,7 +55,6 @@ dependencies = [
     "pytesseract>=0.3.10",
     "chardet~=5.1.0",  # Compatible with frappe ~=5.1.0 requirement
     # Advanced file processing
-    "pdfplumber>=0.9.0",
     "pymupdf>=1.23.0",
     "python-magic>=0.4.27",
     "beautifulsoup4~=4.12.2",  # Compatible with frappe ~=4.12.2 requirement
@@ -68,6 +67,11 @@ dev = [
     "black>=21.0",
     "flake8>=3.9",
     "mypy>=0.910",
+]
+# Optional PDF table extraction (has security vulnerability in transitive dep pdfminer.six)
+# Only install if you need PDF table extraction feature
+pdf-tables = [
+    "pdfplumber>=0.9.0",
 ]
 # All other dependencies have been moved to main dependencies
 # to ensure they are installed automatically on all servers
