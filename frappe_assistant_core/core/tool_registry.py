@@ -159,6 +159,14 @@ class ToolRegistry:
             if not hasattr(frappe, "get_hooks") or not hasattr(frappe, "local"):
                 return external_tools
 
+            # Check if custom_tools plugin is enabled
+            plugin_manager = get_plugin_manager()
+            enabled_plugins = plugin_manager.get_enabled_plugins()
+
+            if "custom_tools" not in enabled_plugins:
+                self.logger.debug("custom_tools plugin is disabled, skipping external tool discovery")
+                return external_tools
+
             # Get assistant_tools from hooks
             assistant_tools = frappe.get_hooks("assistant_tools") or []
 

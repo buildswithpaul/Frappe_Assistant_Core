@@ -32,8 +32,7 @@ Key improvements over frappe-mcp:
 import json
 import traceback
 from collections import OrderedDict
-from inspect import Parameter, getdoc, signature
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Dict, Optional
 
 from werkzeug.wrappers import Request, Response
 
@@ -48,17 +47,20 @@ class MCPServer:
     Example:
         ```python
         from frappe_assistant_core.mcp.server import MCPServer
+        from frappe_assistant_core.mcp.tool_adapter import register_base_tool
+        from frappe_assistant_core.plugins.core.tools.list_documents import DocumentList
 
         mcp = MCPServer("my-server")
 
-        @mcp.tool(description="Get weather")
-        def get_weather(location: str):
-            return {"temperature": 72, "location": location}
-
         @mcp.register()
         def handle_mcp():
-            pass  # Import tools here
+            # Import and register BaseTool instances
+            register_base_tool(mcp, DocumentList())
         ```
+
+    Note:
+        Tools are implemented as BaseTool subclasses and registered using
+        the tool_adapter. The @mcp.tool decorator pattern is not supported.
     """
 
     def __init__(self, name: str = "frappe-assistant-core"):
@@ -208,112 +210,16 @@ class MCPServer:
         # Success response
         return self._success_response(response, request_id, result)
 
-    def tool(
-        self,
-        description: str = None,
-        name: str = None,
-        input_schema: Dict = None,
-        **annotations,
-    ):
-        """
-        Decorator to register a tool.
-
-        Args:
-            description: Tool description (uses docstring if not provided)
-            name: Tool name (uses function name if not provided)
-            input_schema: JSON schema for inputs (auto-generated if not provided)
-            **annotations: Additional tool annotations (readOnlyHint, etc.)
-
-        Example:
-            ```python
-            @mcp.tool(description="List documents", readOnlyHint=True)
-            def list_documents(doctype: str, limit: int = 20):
-                return frappe.get_all(doctype, limit=limit)
-            ```
-        """
-
-        def decorator(fn: Callable):
-            tool_name = name or fn.__name__
-            tool_desc = description or getdoc(fn) or ""
-
-            # Generate input schema from function signature if not provided
-            if input_schema is None:
-                schema = self._generate_input_schema(fn)
-            else:
-                schema = input_schema
-
-            # Register tool
-            self._tool_registry[tool_name] = {
-                "name": tool_name,
-                "description": tool_desc,
-                "inputSchema": schema,
-                "annotations": annotations if annotations else None,
-                "fn": fn,
-            }
-
-            return fn
-
-        return decorator
-
     def add_tool(self, tool_dict: Dict):
         """
         Programmatically add a tool.
+
+        Used by tool_adapter to register BaseTool instances.
 
         Args:
             tool_dict: Dict with keys: name, description, inputSchema, fn, annotations
         """
         self._tool_registry[tool_dict["name"]] = tool_dict
-
-    def _generate_input_schema(self, fn: Callable) -> Dict:
-        """Generate JSON schema from function signature."""
-        sig = signature(fn)
-        properties = {}
-        required = []
-
-        for param_name, param in sig.parameters.items():
-            # Get type from annotation
-            param_type = self._get_json_type(param.annotation)
-
-            properties[param_name] = {"type": param_type}
-
-            # Check if required (no default value)
-            if param.default == Parameter.empty:
-                required.append(param_name)
-
-        return {"type": "object", "properties": properties, "required": required}
-
-    def _get_json_type(self, annotation) -> str:
-        """Convert Python type to JSON schema type."""
-        if annotation == Parameter.empty:
-            return "string"
-
-        type_map = {
-            str: "string",
-            int: "integer",
-            float: "number",
-            bool: "boolean",
-            dict: "object",
-            list: "array",
-            Dict: "object",
-        }
-
-        # Handle string annotations
-        if isinstance(annotation, str):
-            lower_ann = annotation.lower()
-            if "str" in lower_ann:
-                return "string"
-            if "int" in lower_ann:
-                return "integer"
-            if "float" in lower_ann or "number" in lower_ann:
-                return "number"
-            if "bool" in lower_ann:
-                return "boolean"
-            if "dict" in lower_ann or "object" in lower_ann:
-                return "object"
-            if "list" in lower_ann or "array" in lower_ann:
-                return "array"
-
-        return type_map.get(annotation, "string")
 
     def _handle_initialize(self, params: Dict) -> Dict:
         """
