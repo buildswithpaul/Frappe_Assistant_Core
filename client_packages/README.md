@@ -171,10 +171,10 @@ graph TD
 
 ## 📞 Support
 
-- **Main Project**: [Frappe_Assistant_Core](https://github.com/clinu/Frappe_Assistant_Core)
-- **Issues**: [GitHub Issues](https://github.com/clinu/Frappe_Assistant_Core/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/clinu/Frappe_Assistant_Core/discussions)
-- **Documentation**: [Project Docs](https://github.com/clinu/Frappe_Assistant_Core/blob/main/docs/)
+- **Main Project**: [Frappe_Assistant_Core](https://github.com/buildswithpaul/Frappe_Assistant_Core)
+- **Issues**: [GitHub Issues](https://github.com/buildswithpaul/Frappe_Assistant_Core/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/buildswithpaul/Frappe_Assistant_Core/discussions)
+- **Documentation**: [Project Docs](https://github.com/buildswithpaul/Frappe_Assistant_Core/blob/main/docs/)
 
 ## 📄 License
 

@@ -187,28 +187,39 @@ def create_oauth_client(client_metadata):
         doc.grant_type = "Authorization Code"
         doc.skip_authorization = False
 
-        # Determine if this is a public client (no client secret)
-        is_public_client = (
-            client_metadata.token_endpoint_auth_method == "none"
-            or client_metadata.token_endpoint_auth_method is None
-        )
-
         # Insert and get credentials
         doc.insert(ignore_permissions=True)
 
-        # Build response
+        # Build response - always include client_secret
+        # Even if token_endpoint_auth_method is "none", the client should receive
+        # the secret. They may choose not to use it for authentication, but should have it.
         response = {
             "client_id": doc.client_id,
+            "client_secret": doc.get_password("client_secret"),
             "client_name": doc.app_name,
             "redirect_uris": redirect_uris,
             "grant_types": ["authorization_code", "refresh_token"],
             "response_types": ["code"],
-            "token_endpoint_auth_method": "none" if is_public_client else "client_secret_basic",
+            "token_endpoint_auth_method": client_metadata.token_endpoint_auth_method or "client_secret_basic",
         }
 
-        # Only include client_secret for confidential clients
-        if not is_public_client:
-            response["client_secret"] = doc.get_password("client_secret")
+        # Add optional metadata fields if provided
+        if client_metadata.client_uri:
+            response["client_uri"] = str(client_metadata.client_uri)
+        if client_metadata.logo_uri:
+            response["logo_uri"] = str(client_metadata.logo_uri)
+        if client_metadata.scope:
+            response["scope"] = client_metadata.scope
+        if client_metadata.contacts:
+            response["contacts"] = client_metadata.contacts
+        if client_metadata.tos_uri:
+            response["tos_uri"] = str(client_metadata.tos_uri)
+        if client_metadata.policy_uri:
+            response["policy_uri"] = str(client_metadata.policy_uri)
+        if client_metadata.software_id:
+            response["software_id"] = client_metadata.software_id
+        if client_metadata.software_version:
+            response["software_version"] = client_metadata.software_version
 
         return response
 

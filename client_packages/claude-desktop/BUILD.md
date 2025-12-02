@@ -554,7 +554,7 @@ Enable debug logging in Claude Desktop:
 
 - **[Claude Desktop Extensions](https://www.anthropic.com/engineering/desktop-extensions)** - Official documentation
 - **[MCP Specification](https://modelcontextprotocol.io)** - Protocol details
-- **[Frappe Assistant Core](https://github.com/clinu/Frappe_Assistant_Core)** - Server-side documentation
+- **[Frappe Assistant Core](https://github.com/buildswithpaul/Frappe_Assistant_Core)** - Server-side documentation
 - **[Extension Examples](https://github.com/anthropics/claude-desktop-examples)** - Community examples
 
 ---

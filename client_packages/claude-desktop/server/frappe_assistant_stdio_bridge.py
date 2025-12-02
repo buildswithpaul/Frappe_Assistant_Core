@@ -57,7 +57,7 @@ class StdioMCPWrapper:
 
             # Reduce timeout to 5 seconds to stay under Claude's 6 second timeout
             response = requests.post(
-                f"{self.server_url}/api/method/frappe_assistant_core.api.fac_endpoint.handle_mcp",
+                f"{self.server_url}/api/method/frappe_assistant_core.api.assistant_api.handle_assistant_request",
                 headers=self.headers,
                 json=request_data,
                 timeout=5,

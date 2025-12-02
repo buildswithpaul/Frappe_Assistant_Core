@@ -11,10 +11,10 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/clinu/Frappe_Assistant_Core"
+    "url": "https://github.com/buildswithpaul/Frappe_Assistant_Core"
   },
-  "homepage": "https://github.com/clinu/Frappe_Assistant_Core",
-  "support": "https://github.com/clinu/Frappe_Assistant_Core/issues",
+  "homepage": "https://github.com/buildswithpaul/Frappe_Assistant_Core",
+  "support": "https://github.com/buildswithpaul/Frappe_Assistant_Core/issues",
   "icon": "icon.png",
   "screenshots": [
     "assets/screenshots/dashboard.png",
@@ -84,32 +84,40 @@
   },
   "tools": [
     {
-      "name": "run_python_code",
-      "description": "⚡ ADVANCED PYTHON CODING - For complex analysis when reports and analysis tools aren't sufficient. Use only when both generate_report and analyze_business_data fail to meet your needs."
-    },
-    {
-      "name": "analyze_business_data",
-      "description": "📊 CUSTOM DATA ANALYSIS - When standard reports don't meet your specific needs. Use only after checking available reports first with report_list and generate_report."
-    },
-    {
-      "name": "run_database_query",
-      "description": "Execute custom SQL queries on Frappe database and perform advanced data analysis. Perfect for complex business intelligence and custom reporting"
-    },
-    {
-      "name": "create_visualization",
-      "description": "Create interactive charts and visualizations from Frappe business data. Charts are displayed inline and saved as files"
-    },
-    {
-      "name": "generate_report", 
-      "description": "🏆 PROFESSIONAL BUSINESS REPORTS - Your FIRST choice for sales analysis, financial reporting, and business intelligence! Execute pre-built business reports including Sales Analytics, P&L Statement, and 183+ other reports."
+      "name": "generate_report",
+      "description": "Execute pre-built business reports (Sales Analytics, P&L, etc.) with 183+ available reports across modules"
     },
     {
       "name": "report_list",
-      "description": "🔍 DISCOVER BUSINESS REPORTS - Find the perfect report for your business question! Browse 183+ available reports across Selling, Accounts, Stock, and HR modules."
+      "description": "Browse and discover available business reports across Selling, Accounts, Stock, and HR modules"
     },
     {
-      "name": "report_requirements", 
-      "description": "📋 REPORT REQUIREMENTS ANALYZER - Understand what you need before running reports! Discover required filters, prevent errors, and get comprehensive report structure analysis."
+      "name": "report_requirements",
+      "description": "Get required filters and structure information for any business report"
+    },
+    {
+      "name": "list_documents",
+      "description": "Search and list documents with filtering and pagination"
+    },
+    {
+      "name": "get_document",
+      "description": "Retrieve detailed information about a specific document by name"
+    },
+    {
+      "name": "create_document",
+      "description": "Create new documents (Customer, Invoice, Item, etc.)"
+    },
+    {
+      "name": "update_document",
+      "description": "Modify existing document field values"
+    },
+    {
+      "name": "delete_document",
+      "description": "Remove documents from the system with permission checks"
+    },
+    {
+      "name": "submit_document",
+      "description": "Submit documents to change status from draft to submitted"
     },
     {
       "name": "search_documents",
@@ -117,51 +125,43 @@
     },
     {
       "name": "search_doctype",
-      "description": "Search within a specific DocType"
+      "description": "Search within a specific DocType with filters"
     },
     {
       "name": "search_link",
-      "description": "Search for link field options"
+      "description": "Search for link field options and references"
     },
     {
       "name": "get_doctype_info",
-      "description": "Get DocType metadata and field information"
-    },
-    {
-      "name": "list_documents",
-      "description": "Search and list Frappe documents with optional filtering. Primary tool for data exploration and discovery"
-    },
-    {
-      "name": "create_document",
-      "description": "Create a new Frappe document (e.g., Customer, Sales Invoice, Item, etc.). Add new records to the system"
-    },
-    {
-      "name": "get_document",
-      "description": "Retrieve detailed information about a specific Frappe document"
-    },
-    {
-      "name": "update_document",
-      "description": "Update/modify an existing Frappe document. Change field values in existing records"
-    },
-    {
-      "name": "delete_document",
-      "description": "Delete an existing Frappe document. Remove records from the system"
-    },
-    {
-      "name": "submit_document",
-      "description": "Submit a Frappe document to change its status from draft to submitted"
+      "description": "Get DocType schema, metadata, and field definitions"
     },
     {
       "name": "run_workflow",
-      "description": "Execute workflow actions on documents (start, approve, reject, etc.)"
+      "description": "Execute workflow actions (approve, reject, etc.) on documents"
+    },
+    {
+      "name": "run_python_code",
+      "description": "Execute Python code in sandbox for advanced data analysis with pandas, numpy, and matplotlib"
+    },
+    {
+      "name": "analyze_business_data",
+      "description": "Perform statistical analysis (profiling, trends, correlations) on business data"
+    },
+    {
+      "name": "run_database_query",
+      "description": "Execute custom SQL SELECT queries for complex data analysis"
+    },
+    {
+      "name": "create_visualization",
+      "description": "Create charts and visualizations from data with inline display"
     },
     {
       "name": "create_dashboard",
-      "description": "Create custom dashboards for business intelligence and data visualization"
+      "description": "Create custom dashboards for business intelligence"
     },
     {
       "name": "create_dashboard_chart",
-      "description": "Create dashboard charts for data visualization and business insights"
+      "description": "Create dashboard charts for data visualization"
     },
     {
       "name": "list_user_dashboards",
@@ -175,7 +175,7 @@
       "win32",
       "linux"
     ],
-    "runtime": {
+    "runtimes": {
       "python": ">=3.8.0"
     }
   }
