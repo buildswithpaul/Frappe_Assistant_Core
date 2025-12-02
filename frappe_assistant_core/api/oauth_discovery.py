@@ -208,6 +208,22 @@ def authorization_server_metadata():
             f"{frappe_url}/api/method/frappe_assistant_core.api.oauth_registration.register_client"
         )
 
+    scopes_supported_value = settings.get("scopes_supported")
+    if scopes_supported_value and isinstance(scopes_supported_value, str):
+        # Clean and parse scopes - handle both single scopes and newline-separated lists
+        scopes = []
+        for line in scopes_supported_value.split("\n"):
+            line = line.strip()
+            if line:
+                # Further split by whitespace to handle space-separated scopes
+                for scope in line.split():
+                    scope = scope.strip()
+                    if scope and scope not in scopes:  # Avoid duplicates
+                        scopes.append(scope)
+
+        if scopes:
+            metadata["scopes_supported"] = scopes
+
     return metadata
 
 
