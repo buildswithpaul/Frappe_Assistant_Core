@@ -165,14 +165,23 @@ Tools are organized into plugins that can be enabled/disabled as needed:
   - **quality**: Data quality assessment
 - **Example**: After finding no suitable report, "Analyze custom field correlations in Sales Invoice data"
 
-### run_python_code
-- **Description**: ⚡ Advanced programming for complex custom analysis
-- **⚠️ When to use**: Only when both reports AND analyze_business_data can't meet your needs
-- **✅ Decision tree**: 1️⃣ Try reports → 2️⃣ Try analyze_business_data → 3️⃣ Use this as last resort
-- **Best for**: Custom visualizations, advanced mathematical models, complex data transformations
+### run_python_code 🚀
+- **Description**: ⚡ Advanced Python sandbox with **Multi-Tool Orchestration** capability
+- **🎯 PRIMARY USE**: Write Python code that calls other tools using the `tools` API (80-95% token savings!)
+- **When to use**:
+  - **Data Analysis Workflows**: Fetch data with `tools.get_documents()` and analyze with pandas (RECOMMENDED)
+  - **Report Post-Processing**: Run `tools.generate_report()` and perform additional analysis
+  - **Complex Calculations**: Advanced mathematical models beyond standard tools
+  - **Custom Visualizations**: matplotlib/seaborn charts (after analysis)
 - **Available libraries**: frappe, pandas, numpy, matplotlib, seaborn, datetime
-- **Key patterns**: "custom visualization", "complex calculation", "advanced model"
-- **Example**: After exhausting other options, "Create a custom profit margin heatmap with matplotlib"
+- **Tools API**:
+  - `tools.get_documents(doctype, filters, fields, limit)` - Fetch documents inside sandbox
+  - `tools.get_document(doctype, name)` - Get single document
+  - `tools.generate_report(report_name, filters)` - Execute Frappe reports
+- **Key patterns**: "analyze sales data", "customer analysis", "complex aggregation", "trend analysis"
+- **Token Savings**: Process data in sandbox, return only insights (not raw data to LLM)
+- **Example**: "Analyze top 10 customers by revenue from Sales Invoice data" → Code fetches data using `tools.get_documents()`, aggregates with pandas, returns summary
+- **📖 Complete Guide**: [Python Code Orchestration Guide](../guides/PYTHON_CODE_ORCHESTRATION.md)
 
 ### run_database_query
 - **Description**: Execute SELECT queries for custom analysis
@@ -254,10 +263,12 @@ Tools are organized into plugins that can be enabled/disabled as needed:
    - For custom statistical analysis (profile, trends, correlations)
    - For unique data combinations not covered by reports
 
-#### 4. **⚠️ LAST RESORT: Use `run_python_code`**
-   - Complex custom calculations beyond standard analysis
-   - Advanced data transformations requiring full programming
-   - Custom visualizations with matplotlib/plotly
+#### 4. **🚀 ORCHESTRATED ANALYSIS: Use `run_python_code` with Tools API**
+   - **RECOMMENDED for data analysis**: Fetch data with `tools.get_documents()` inside Python code
+   - Achieves 80-95% token savings by processing data in sandbox
+   - Complex aggregations, statistical analysis, custom calculations
+   - Advanced visualizations with matplotlib/seaborn
+   - **See**: [Python Code Orchestration Guide](../guides/PYTHON_CODE_ORCHESTRATION.md)
 
 ### 🚀 Quick Reference Examples:
 
@@ -271,10 +282,11 @@ Tools are organized into plugins that can be enabled/disabled as needed:
 - **"Sales analytics"** → `generate_report` "Sales Analytics" (auto-adds value_quantity='Value')
 - **"Quotation trends"** → `generate_report` "Quotation Trends" (auto-adds based_on='Item')
 
-#### **🔄 FALLBACK OPTIONS:**
-- **Complex analysis** → Use `analyze_business_data` after trying reports
-- **Custom queries** → Use `list_documents` for reliable data access
-- **Direct data** → Use `run_python_code` for complex calculations
+#### **🔄 ANALYSIS OPTIONS (Best to Good):**
+- **🚀 BEST: Orchestrated Python** → Use `run_python_code` with `tools.get_documents()` for complex analysis (80-95% token savings)
+- **📊 GOOD: Pre-built Reports** → Use `generate_report` for standard business intelligence
+- **📈 GOOD: Statistical Tools** → Use `analyze_business_data` for standard statistical analysis
+- **📝 FALLBACK: Direct Queries** → Use `list_documents` for simple data retrieval
 
 ### 🛠️ When Reports Need Help:
 - **Filter errors** → Use `report_requirements` to understand what's needed

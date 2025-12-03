@@ -5,7 +5,7 @@ All notable changes to Frappe Assistant Core will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.2.2] - 2025-11-26
+## [2.2.2] - 2025-12-03
 
 ### 🏢 Repository Migration & Rebranding
 
@@ -67,6 +67,86 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Changed** from: `/api/method/frappe_assistant_core.api.assistant_api.handle_assistant_request`
 - **Changed** to: `/api/method/frappe_assistant_core.api.fac_endpoint.handle_mcp`
 - **Note**: This change is for internal bridge configuration; external MCP endpoint remains unchanged
+## [2.2.1] - 2025-11-24
+
+### 🚀 Enhanced
+
+#### Prepared Report Polling Support
+- **Implemented** automatic polling logic for prepared (background) reports
+- **Added** exponential backoff strategy (2→4→6→9→13 seconds) to efficiently wait for report completion
+- **Enabled** seamless UX where AI gets report data without interrupting conversation flow
+- **Eliminated** manual retry requests - system automatically polls until report is ready
+- **Added** comprehensive error handling for timeouts, failures, and edge cases
+- **Maintained** backward compatibility - cached reports still return immediately
+- **Benefits**:
+  - Users no longer need to manually retry failed reports
+  - Reduced database load with smart exponential backoff
+  - Production-ready with graceful timeout handling (max 30 seconds)
+  - Transparent progress tracking via logging
+
+#### Multi-Tool Orchestration for run_python_code
+- **Implemented** Tools API for calling other tools inside Python sandbox
+- **Achieved** 80-95% token savings for data analysis workflows by processing data in sandbox instead of passing through LLM context
+- **Added** `tools.get_documents()` and `tools.generate_report()` methods for orchestrated data fetching
+- **Enabled** complex analysis patterns: fetch data inside code, process with pandas/numpy, return only insights to LLM
+- **Updated** tool description to make orchestration the PRIMARY recommended approach
+- **Example**: Instead of calling `list_documents` separately (sends 100 invoices to LLM), write Python code that calls `tools.get_documents()` internally (only analysis results go to LLM)
+
+#### Authentication & Security Enhancements
+- **Refactored** MCP endpoint authentication to support both OAuth 2.0 Bearer tokens and API key/secret methods
+- **Added** `_authenticate_mcp_request()` function with clear separation of authentication logic
+- **Enabled** STDIO clients (like bridge implementations) to authenticate via API key/secret: `Authorization: token <api_key>:<api_secret>`
+- **Improved** error handling for unauthorized requests with proper 401 responses and WWW-Authenticate headers
+- **Enhanced** OAuth discovery endpoint to always bypass cache for fresh configuration
+- **Fixed** OAuth scope parsing to handle both space-separated and newline-separated lists, preventing duplicates
+
+#### Plugin & Tool Registry Improvements
+- **Fixed** custom tools appearing in tools/list API even when custom_tools plugin was disabled
+- **Added** plugin state check in `_get_external_tools()` to respect disabled state for hook-registered tools
+- **Implemented** comprehensive cache clearing after plugin toggle (plugin manager cache, tool registry cache)
+- **Improved** plugin toggle UX with disabled state during API calls and error recovery
+
+#### Data Compatibility Fixes
+- **Fixed** frappe._dict to plain dict conversion for pandas DataFrame compatibility
+- **Resolved** "invalid __array_struct__" errors when using pandas with tool data
+- **Updated** `tools.get_documents()` and `tools.get_document()` to return plain Python dicts
+- **Updated** `report_tools.py` to convert report data rows to plain dicts
+- **Added** comprehensive null value handling guidance in tool descriptions
+
+#### MCP Server Cleanup
+- **Removed** unused `@mcp.tool` decorator method (~95 lines of dead code)
+- **Removed** `_generate_input_schema()` and `_get_json_type()` helper methods
+- **Clarified** that BaseTool is the only supported tool development pattern
+- **Updated** MCPServer class documentation with correct usage examples
+- **Removed** unused imports (Callable, Parameter, getdoc, signature)
+
+#### Admin Page & UX Improvements
+- **Improved** plugin toggle to disable checkbox during API calls
+- **Added** state reset on toggle errors to prevent UI inconsistencies
+- **Enhanced** endpoint URL display with fallback handling
+- **Fixed** AssistantCoreSettings to populate endpoint URLs on load and before save
+- **Ensured** MCP and OAuth discovery URLs are always up-to-date
+
+### 🐛 Bug Fixes
+- **Fixed** custom_tools plugin state not being respected for external tools from hooks
+- **Fixed** pandas DataFrame creation failures with frappe._dict objects
+- **Fixed** null value formatting errors in run_python_code examples
+- **Fixed** endpoint URL population timing in settings DocType
+- **Fixed** plugin cache not refreshing after state changes
+- **Fixed** prepared (background) reports failing with "Report is being prepared" error - now polls automatically until ready
+
+### 📚 Documentation
+- **Updated** run_python_code tool description with orchestration patterns and best practices
+- **Added** clear CORRECT vs INCORRECT usage examples
+- **Added** data handling best practices section with null value handling
+- **Updated** MCPServer class docstring to reflect BaseTool-only approach
+- **Improved** code comments explaining authentication flow and data conversion
+
+### 🔧 Technical Improvements
+- **Simplified** authentication code structure with dedicated helper function
+- **Improved** error messages for authentication failures
+- **Enhanced** logging for plugin state changes and tool discovery
+- **Optimized** tool registry to skip external tool loading when plugin disabled
 
 ## [2.2.0] - 2025-10-13
 
