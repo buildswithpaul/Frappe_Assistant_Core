@@ -5,6 +5,69 @@ All notable changes to Frappe Assistant Core will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.2] - 2025-11-26
+
+### 🏢 Repository Migration & Rebranding
+
+#### GitHub Repository Update
+- **Migrated** repository from `clinu/Frappe_Assistant_Core` to `buildswithpaul/Frappe_Assistant_Core`
+- **Updated** all documentation links, URLs, and references across the project
+- **Updated** manifest.json, README.md, BUILD.md, and configuration files
+- **Maintained** backwards compatibility - existing installations continue to work
+
+### 🚀 Enhanced
+
+#### OAuth 2.0 Client Registration Enhancements
+- **Fixed** dynamic client registration to always return `client_secret` in response
+- **Added** support for public clients that receive secrets but use `token_endpoint_auth_method: "none"`
+- **Enhanced** registration response to include all optional RFC 7591 metadata fields:
+  - `client_uri` - Client homepage URL
+  - `logo_uri` - Client logo URL
+  - `scope` - Requested scopes
+  - `contacts` - Client contact information
+  - `tos_uri` - Terms of Service URL
+  - `policy_uri` - Privacy Policy URL
+  - `software_id` - Client software identifier
+  - `software_version` - Client software version
+- **Improved** MCP Inspector compatibility with complete registration responses
+- **Benefits**:
+  - Full RFC 7591 compliance
+  - Better client identification and metadata
+  - Improved debugging and client management
+
+#### OAuth Discovery API Updates
+- **Updated** OpenID Configuration endpoint to use `get_openid_configuration` from Frappe
+- **Improved** compatibility with latest Frappe OAuth2 API changes
+- **Maintained** backward compatibility with Frappe v15 and v16
+
+#### Manifest & Tool Configuration Improvements
+- **Refactored** tools array in manifest.json with updated names and descriptions
+- **Added** new tools: `delete_document`, `submit_document`
+- **Reorganized** tool descriptions for consistency and improved user experience
+- **Improved** tool ordering for better discoverability
+- **Updated** runtime specification from `runtime` to `runtimes` for future extensibility
+- **Clarified** Python version requirements (>=3.8,<4.0)
+
+#### Documentation Improvements
+- **Enhanced** Getting Started guide with UI-based connector setup for Claude Desktop
+- **Added** ChatGPT integration section with complete setup instructions
+- **Added** comparison table for different AI connection options
+- **Improved** OAuth setup instructions with both UI and manual configuration methods
+- **Updated** all repository references to new GitHub location
+- **Added** tips and best practices for easier onboarding
+- **Benefits**:
+  - Much easier setup with UI-based configuration (no JSON editing)
+  - Support for both Claude Desktop and ChatGPT clearly documented
+  - Better user guidance with comparison table and recommendations
+
+### 🔧 Changed
+
+#### API Endpoint Updates
+- **Updated** Claude Desktop extension server bridge API endpoint
+- **Changed** from: `/api/method/frappe_assistant_core.api.assistant_api.handle_assistant_request`
+- **Changed** to: `/api/method/frappe_assistant_core.api.fac_endpoint.handle_mcp`
+- **Note**: This change is for internal bridge configuration; external MCP endpoint remains unchanged
+
 ## [2.2.0] - 2025-10-13
 
 ### 🎯 Major Release - StreamableHTTP Transport Migration

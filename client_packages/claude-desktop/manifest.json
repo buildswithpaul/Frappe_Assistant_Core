@@ -2,7 +2,7 @@
   "dxt_version": "0.1",
   "name": "claude-for-frappe",
   "display_name": "Claude for Frappe ERP",
-  "version": "2.2.0",
+  "version": "2.2.2",
   "description": "AI-powered bridge connecting Claude Desktop to Frappe ERP via Frappe Assistant Core",
   "long_description": "This extension creates an intelligent bridge between Claude Desktop and your Frappe ERP system through the Frappe Assistant Core app. Enable AI-powered data analysis, automated report generation, and natural language interactions with your business data.",
   "author": {
