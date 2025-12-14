@@ -83,11 +83,12 @@ def _import_tools():
 
 def _authenticate_mcp_request():
     """
-    Authenticate MCP requests using OAuth Bearer tokens or API key/secret.
+    Authenticate MCP requests using OAuth Bearer tokens, API key/secret, or session cookies.
 
-    Supports two authentication methods:
+    Supports three authentication methods:
     1. OAuth 2.0 Bearer tokens: "Authorization: Bearer <token>"
     2. API Key/Secret: "Authorization: token <api_key>:<api_secret>"
+    3. Session cookies: "Cookie: sid=<session_id>" (for internal agent-to-MCP calls)
 
     Returns:
         str: Authenticated username
@@ -95,6 +96,35 @@ def _authenticate_mcp_request():
     """
     from frappe.oauth import get_server_url
     from werkzeug.wrappers import Response
+
+    # Check for session cookie first (for internal agent calls)
+    # When allow_guest=True, we need to manually check the session
+    cookie_header = frappe.request.headers.get("Cookie", "")
+
+    if cookie_header and "sid=" in cookie_header:
+        try:
+            # Extract sid from cookie
+            import re
+
+            sid_match = re.search(r"sid=([^;]+)", cookie_header)
+            if sid_match:
+                sid = sid_match.group(1)
+
+                # Validate session using direct database query
+                # This is necessary because allow_guest=True bypasses normal session validation
+                session_data = frappe.db.sql(
+                    """SELECT user FROM tabSessions WHERE sid = %s LIMIT 1""", (sid,), as_dict=True
+                )
+
+                if session_data and len(session_data) > 0:
+                    user = session_data[0].get("user")
+                    if user and user != "Guest":
+                        frappe.set_user(user)
+                        frappe.logger().info(f"Session cookie authenticated for user: {user}")
+                        return user
+        except Exception as e:
+            frappe.logger().debug(f"Session cookie validation failed: {str(e)}")
+            # Continue to other auth methods
 
     auth_header = frappe.request.headers.get("Authorization", "")
 
