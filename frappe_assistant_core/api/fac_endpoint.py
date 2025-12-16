@@ -97,34 +97,13 @@ def _authenticate_mcp_request():
     from frappe.oauth import get_server_url
     from werkzeug.wrappers import Response
 
-    # Check for session cookie first (for internal agent calls)
-    # When allow_guest=True, we need to manually check the session
-    cookie_header = frappe.request.headers.get("Cookie", "")
-
-    if cookie_header and "sid=" in cookie_header:
-        try:
-            # Extract sid from cookie
-            import re
-
-            sid_match = re.search(r"sid=([^;]+)", cookie_header)
-            if sid_match:
-                sid = sid_match.group(1)
-
-                # Validate session using direct database query
-                # This is necessary because allow_guest=True bypasses normal session validation
-                session_data = frappe.db.sql(
-                    """SELECT user FROM tabSessions WHERE sid = %s LIMIT 1""", (sid,), as_dict=True
-                )
-
-                if session_data and len(session_data) > 0:
-                    user = session_data[0].get("user")
-                    if user and user != "Guest":
-                        frappe.set_user(user)
-                        frappe.logger().info(f"Session cookie authenticated for user: {user}")
-                        return user
-        except Exception as e:
-            frappe.logger().debug(f"Session cookie validation failed: {str(e)}")
-            # Continue to other auth methods
+    # Check if already authenticated via session cookie (handled by Frappe's LoginManager)
+    # This is the normal case for internal agent calls - the session was already validated
+    # during HTTPRequest creation, so frappe.session.user is already set correctly.
+    # IMPORTANT: Do NOT call frappe.set_user() here as it resets frappe.local.session.data
+    # which corrupts the session cache and causes 403 errors on subsequent requests.
+    if frappe.session.user and frappe.session.user != "Guest":
+        return frappe.session.user
 
     auth_header = frappe.request.headers.get("Authorization", "")
 
