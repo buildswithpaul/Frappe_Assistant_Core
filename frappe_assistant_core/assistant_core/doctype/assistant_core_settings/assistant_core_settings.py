@@ -292,12 +292,12 @@ Build unlimited analysis depth via progressive artifact updates.
 
             # Plugin management section
             html_parts.append("""
-            <div class="card">
-                <div class="card-header">
+            <div class="card" style="background: var(--card-bg); border: 1px solid var(--border-color);">
+                <div class="card-header" style="background: var(--bg-color); border-bottom: 1px solid var(--border-color);">
                     <h6><i class="fa fa-puzzle-piece"></i> Plugin Management</h6>
                     <small class="text-muted">Enable or disable plugins to control available tools</small>
                 </div>
-                <div class="card-body">
+                <div class="card-body" style="background: var(--card-bg);">
             """)
 
             # Individual plugin cards with enhanced tool details
@@ -331,7 +331,7 @@ Build unlimited analysis depth via progressive artifact updates.
                 plugin_icon = category_icons.get(plugin_name, "fa-puzzle-piece")
 
                 html_parts.append(f"""
-                <div class="plugin-card border rounded p-3 mb-3" style="background: {"#f8f9fa" if is_enabled else "#ffffff"}; border-left: 4px solid {"#28a745" if is_enabled else "#6c757d"};">
+                <div class="plugin-card border rounded p-3 mb-3" style="background: var(--card-bg); border-left: 4px solid {"var(--green-500)" if is_enabled else "var(--gray-500)"};">
                     <div class="row align-items-center">
                         <div class="col-md-9">
                             <div class="d-flex align-items-center mb-2">
@@ -390,7 +390,7 @@ Build unlimited analysis depth via progressive artifact updates.
 
                             html_parts.append(f"""
                                 <div class="col-md-6 mb-2">
-                                    <div class="small p-2 border rounded" style="background: #f8f9fa;">
+                                    <div class="small p-2 border rounded" style="background: var(--bg-light-gray);">
                                         <div class="d-flex justify-content-between align-items-center">
                                             <span>
                                                 <i class="fa {tool_icon} text-{tool_status}"></i>
@@ -425,7 +425,7 @@ Build unlimited analysis depth via progressive artifact updates.
 
                         html_parts.append(f"""
                             <div class="col-md-6 mb-2">
-                                <div class="small p-2 border rounded" style="background: #f8f9fa;">
+                                <div class="small p-2 border rounded" style="background: var(--bg-light-gray);">
                                     <div class="d-flex justify-content-between align-items-center">
                                         <span>
                                             <i class="fa {tool_icon} text-{tool_status}"></i>
@@ -470,8 +470,8 @@ Build unlimited analysis depth via progressive artifact updates.
                 # Only count external tools for Tool Explorer if not already in available_tools
                 explorer_tool_count = len(available_tools) + len(external_tools)
                 html_parts.append(f"""
-                <div class="card mt-3">
-                    <div class="card-header">
+                <div class="card mt-3" style="background: var(--card-bg); border: 1px solid var(--border-color);">
+                    <div class="card-header" style="background: var(--bg-color); border-bottom: 1px solid var(--border-color);">
                         <div class="row align-items-center">
                             <div class="col-md-6">
                                 <h6 class="mb-0"><i class="fa fa-search"></i> Tool Explorer ({explorer_tool_count} tools)</h6>
@@ -491,7 +491,7 @@ Build unlimited analysis depth via progressive artifact updates.
                             </div>
                         </div>
                     </div>
-                    <div class="card-body" style="max-height: 400px; overflow-y: auto;">
+                    <div class="card-body" style="max-height: 400px; overflow-y: auto; background: var(--card-bg);">
                         <div class="row" id="tools-container">
                 """)
 
@@ -519,7 +519,7 @@ Build unlimited analysis depth via progressive artifact updates.
                          data-tool-name="{tool_name.lower()}"
                          data-plugin="{plugin_name.lower()}"
                          data-status="{"active" if is_plugin_enabled else "inactive"}">
-                        <div class="border rounded p-3 h-100" style="background: {"#f8f9fa" if is_plugin_enabled else "#ffffff"};">
+                        <div class="border rounded p-3 h-100" style="background: var(--card-bg);">
                             <div class="d-flex justify-content-between align-items-start mb-2">
                                 <h6 class="mb-1">
                                     <i class="fa fa-tool text-primary"></i>
@@ -557,7 +557,7 @@ Build unlimited analysis depth via progressive artifact updates.
                          data-tool-name="{tool_name.lower()}"
                          data-plugin="{tool_data.get("source_app", "custom_tools").lower()}"
                          data-status="{"active" if is_plugin_enabled else "inactive"}">
-                        <div class="border rounded p-3 h-100" style="background: {"#f8f9fa" if is_plugin_enabled else "#ffffff"};">
+                        <div class="border rounded p-3 h-100" style="background: var(--card-bg);">
                             <div class="d-flex justify-content-between align-items-start mb-2">
                                 <h6 class="mb-1">
                                     <i class="fa fa-tool text-primary"></i>
