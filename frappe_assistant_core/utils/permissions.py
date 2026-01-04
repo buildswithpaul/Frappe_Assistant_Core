@@ -76,3 +76,56 @@ def check_assistant_permission(user=None):
     assistant_roles = ["System Manager", "Assistant Admin", "Assistant User"]
 
     return any(role in user_roles for role in assistant_roles)
+
+
+def get_prompt_permission_query_conditions(user=None):
+    """
+    Permission query conditions for Prompt Template.
+
+    Users can see:
+    - Their own prompts (any status)
+    - Published + Public prompts
+    - Published + Shared prompts (if user has required role)
+    - Published + System prompts
+    """
+    if not user:
+        user = frappe.session.user
+
+    # System Manager can see all
+    if "System Manager" in frappe.get_roles(user):
+        return ""
+
+    user_roles = frappe.get_roles(user)
+    escaped_user = frappe.db.escape(user)
+
+    # Build the condition
+    conditions = []
+
+    # 1. User's own prompts
+    conditions.append(f"`tabPrompt Template`.owner_user = {escaped_user}")
+
+    # 2. Published + Public prompts
+    conditions.append(
+        "(`tabPrompt Template`.status = 'Published' AND `tabPrompt Template`.visibility = 'Public')"
+    )
+
+    # 3. Published + System prompts
+    conditions.append(
+        "(`tabPrompt Template`.status = 'Published' AND `tabPrompt Template`.is_system = 1)"
+    )
+
+    # 4. Published + Shared prompts with user's roles
+    if user_roles:
+        escaped_roles = ", ".join(frappe.db.escape(r) for r in user_roles)
+        conditions.append(f"""
+            (`tabPrompt Template`.status = 'Published'
+             AND `tabPrompt Template`.visibility = 'Shared'
+             AND EXISTS (
+                SELECT 1 FROM `tabHas Role` hr
+                WHERE hr.parent = `tabPrompt Template`.name
+                  AND hr.parenttype = 'Prompt Template'
+                  AND hr.role IN ({escaped_roles})
+             ))
+        """)
+
+    return "(" + " OR ".join(conditions) + ")"

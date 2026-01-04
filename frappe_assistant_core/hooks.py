@@ -104,7 +104,8 @@ after_uninstall = "frappe_assistant_core.utils.migration_hooks.after_uninstall"
 # Permissions evaluated in scripted ways
 
 permission_query_conditions = {
-    "Assistant Audit Log": "frappe_assistant_core.utils.permissions.get_audit_permission_query_conditions"
+    "Assistant Audit Log": "frappe_assistant_core.utils.permissions.get_audit_permission_query_conditions",
+    "Prompt Template": "frappe_assistant_core.utils.permissions.get_prompt_permission_query_conditions"
 }
 
 # has_permission = {
@@ -257,6 +258,8 @@ after_migrate = [
 fixtures = [
     {"doctype": "Custom Field", "filters": {"dt": "User", "fieldname": ["in", ["assistant_enabled"]]}},
     {"doctype": "Role", "filters": {"role_name": ["in", ["Assistant User", "Assistant Admin"]]}},
+    # Note: Prompt Category and Prompt Template fixtures are in fixtures/ directory
+    # Import manually after first migration: bench --site [site] import-doc frappe_assistant_core/fixtures/
 ]
 
 # Enhanced Plugin Architecture

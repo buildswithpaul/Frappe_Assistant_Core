@@ -1,0 +1,274 @@
+{
+ "actions": [],
+ "autoname": "format:PT-{#####}",
+ "creation": "2025-01-01 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "basic_section",
+  "prompt_id",
+  "title",
+  "column_break_basic",
+  "status",
+  "is_system",
+  "category",
+  "description_section",
+  "description",
+  "template_section",
+  "template_content",
+  "rendering_engine",
+  "arguments_section",
+  "arguments",
+  "organization_section",
+  "column_break_org",
+  "use_count",
+  "last_used",
+  "sharing_section",
+  "visibility",
+  "owner_user",
+  "column_break_sharing",
+  "shared_with_roles",
+  "versioning_section",
+  "version_number",
+  "parent_version",
+  "version_notes"
+ ],
+ "fields": [
+  {
+   "fieldname": "basic_section",
+   "fieldtype": "Section Break",
+   "label": "Basic Information"
+  },
+  {
+   "description": "Unique identifier used in MCP protocol (e.g., 'sales_analysis_report'). Must be lowercase with underscores or hyphens.",
+   "fieldname": "prompt_id",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Prompt ID",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "description": "Human-readable title shown in MCP clients",
+   "fieldname": "title",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Title",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_basic",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "Draft",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "Draft\nPublished\nDeprecated\nArchived",
+   "reqd": 1
+  },
+  {
+   "default": "0",
+   "description": "System templates are created during installation and cannot be deleted",
+   "fieldname": "is_system",
+   "fieldtype": "Check",
+   "label": "System Template",
+   "read_only": 1
+  },
+  {
+   "fieldname": "category",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Category",
+   "options": "Prompt Category"
+  },
+  {
+   "fieldname": "description_section",
+   "fieldtype": "Section Break",
+   "label": "Description"
+  },
+  {
+   "description": "What this prompt template does - shown in MCP prompts/list",
+   "fieldname": "description",
+   "fieldtype": "Small Text",
+   "label": "Description",
+   "reqd": 1
+  },
+  {
+   "fieldname": "template_section",
+   "fieldtype": "Section Break",
+   "label": "Template Content"
+  },
+  {
+   "description": "Template with placeholders. Use Jinja2 syntax: {{ variable_name }} or {{ variable | filter }}",
+   "fieldname": "template_content",
+   "fieldtype": "Code",
+   "label": "Template Content",
+   "options": "Jinja",
+   "reqd": 1
+  },
+  {
+   "default": "Jinja2",
+   "description": "How placeholders are substituted. Jinja2 is recommended for complex templates.",
+   "fieldname": "rendering_engine",
+   "fieldtype": "Select",
+   "label": "Rendering Engine",
+   "options": "Jinja2\nFormat String\nRaw"
+  },
+  {
+   "fieldname": "arguments_section",
+   "fieldtype": "Section Break",
+   "label": "Arguments"
+  },
+  {
+   "description": "Define the arguments/placeholders for this template",
+   "fieldname": "arguments",
+   "fieldtype": "Table",
+   "label": "Arguments",
+   "options": "Prompt Template Argument"
+  },
+  {
+   "fieldname": "organization_section",
+   "fieldtype": "Section Break",
+   "label": "Organization & Analytics"
+  },
+  {
+   "fieldname": "column_break_org",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "fieldname": "use_count",
+   "fieldtype": "Int",
+   "label": "Use Count",
+   "read_only": 1
+  },
+  {
+   "fieldname": "last_used",
+   "fieldtype": "Datetime",
+   "label": "Last Used",
+   "read_only": 1
+  },
+  {
+   "fieldname": "sharing_section",
+   "fieldtype": "Section Break",
+   "label": "Sharing & Permissions"
+  },
+  {
+   "default": "Private",
+   "description": "Private: Only owner can access. Shared: Specific roles can access. Public: All users can access.",
+   "fieldname": "visibility",
+   "fieldtype": "Select",
+   "label": "Visibility",
+   "options": "Private\nShared\nPublic"
+  },
+  {
+   "default": "__user",
+   "fieldname": "owner_user",
+   "fieldtype": "Link",
+   "label": "Owner",
+   "options": "User",
+   "read_only_depends_on": "eval:!frappe.user_roles.includes('System Manager')"
+  },
+  {
+   "fieldname": "column_break_sharing",
+   "fieldtype": "Column Break"
+  },
+  {
+   "depends_on": "eval:doc.visibility=='Shared'",
+   "description": "Roles that can access this template when visibility is 'Shared'",
+   "fieldname": "shared_with_roles",
+   "fieldtype": "Table MultiSelect",
+   "label": "Shared With Roles",
+   "options": "Has Role"
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "versioning_section",
+   "fieldtype": "Section Break",
+   "label": "Version Information"
+  },
+  {
+   "default": "1",
+   "fieldname": "version_number",
+   "fieldtype": "Int",
+   "label": "Version",
+   "read_only": 1
+  },
+  {
+   "description": "The template this version was derived from",
+   "fieldname": "parent_version",
+   "fieldtype": "Link",
+   "label": "Derived From",
+   "options": "Prompt Template",
+   "read_only": 1
+  },
+  {
+   "fieldname": "version_notes",
+   "fieldtype": "Small Text",
+   "label": "Version Notes"
+  }
+ ],
+ "links": [],
+ "modified": "2025-01-01 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Assistant Core",
+ "name": "Prompt Template",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Assistant Admin",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Assistant User",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "if_owner": 1,
+   "read": 1,
+   "role": "All",
+   "write": 1
+  }
+ ],
+ "search_fields": "title, prompt_id, description",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "title",
+ "track_changes": 1
+}

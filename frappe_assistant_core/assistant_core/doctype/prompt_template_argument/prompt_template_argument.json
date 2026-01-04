@@ -1,0 +1,118 @@
+{
+ "actions": [],
+ "creation": "2025-01-01 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "argument_name",
+  "display_label",
+  "argument_type",
+  "is_required",
+  "column_break_main",
+  "default_value",
+  "description",
+  "validation_section",
+  "allowed_values",
+  "column_break_validation",
+  "validation_regex",
+  "min_length",
+  "max_length"
+ ],
+ "fields": [
+  {
+   "fieldname": "argument_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Argument Name",
+   "reqd": 1,
+   "description": "Variable name used in template (e.g., 'analysis_type'). Must be a valid Python identifier."
+  },
+  {
+   "fieldname": "display_label",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Display Label",
+   "description": "Human-readable label shown to users"
+  },
+  {
+   "default": "string",
+   "fieldname": "argument_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Type",
+   "options": "string\nnumber\nboolean\nselect\nmultiselect\ndate\ndatetime\nlink\njson",
+   "reqd": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "is_required",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Required"
+  },
+  {
+   "fieldname": "column_break_main",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "default_value",
+   "fieldtype": "Data",
+   "label": "Default Value",
+   "description": "Default value if not provided by user"
+  },
+  {
+   "fieldname": "description",
+   "fieldtype": "Small Text",
+   "label": "Description",
+   "description": "Help text shown to users when filling this argument"
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "validation_section",
+   "fieldtype": "Section Break",
+   "label": "Validation Rules"
+  },
+  {
+   "depends_on": "eval:in_list(['select', 'multiselect'], doc.argument_type)",
+   "fieldname": "allowed_values",
+   "fieldtype": "Small Text",
+   "label": "Allowed Values",
+   "description": "Comma-separated list of allowed values for 'select' and 'multiselect' types"
+  },
+  {
+   "fieldname": "column_break_validation",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "validation_regex",
+   "fieldtype": "Data",
+   "label": "Validation Pattern",
+   "description": "Regular expression pattern for validation (optional)"
+  },
+  {
+   "depends_on": "eval:doc.argument_type=='string'",
+   "fieldname": "min_length",
+   "fieldtype": "Int",
+   "label": "Min Length"
+  },
+  {
+   "depends_on": "eval:doc.argument_type=='string'",
+   "fieldname": "max_length",
+   "fieldtype": "Int",
+   "label": "Max Length"
+  }
+ ],
+ "istable": 1,
+ "links": [],
+ "modified": "2025-01-01 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Assistant Core",
+ "name": "Prompt Template Argument",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0
+}
