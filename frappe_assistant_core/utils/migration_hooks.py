@@ -33,7 +33,7 @@ def after_migrate():
 
     This ensures tool cache is refreshed with any new tools
     that may have been added during migration, and installs/updates
-    system prompt templates.
+    system prompt categories and templates.
     """
     try:
         frappe.logger("migration_hooks").info("Starting post-migration tool cache refresh")
@@ -58,6 +58,9 @@ def after_migrate():
     except Exception as e:
         # Don't fail migration due to cache issues
         frappe.logger("migration_hooks").error(f"Failed to refresh tool cache after migration: {str(e)}")
+
+    # Install/update system prompt categories (must run before templates)
+    _install_system_prompt_categories()
 
     # Install/update system prompt templates
     _install_system_prompt_templates()
@@ -110,6 +113,9 @@ def after_install():
 
     except Exception as e:
         frappe.logger("migration_hooks").error(f"Failed to initialize tool discovery: {str(e)}")
+
+    # Install system prompt categories (must run before templates)
+    _install_system_prompt_categories()
 
     # Install system prompt templates
     _install_system_prompt_templates()
@@ -224,6 +230,93 @@ def get_migration_status() -> Dict[str, Any]:
         return {"error": str(e), "migration_hooks_active": False}
 
 
+def _install_system_prompt_categories():
+    """
+    Install system prompt categories from data file.
+
+    Categories provide hierarchical organization for prompt templates.
+    Uses nested set model for efficient tree queries.
+    """
+    import json
+    import os
+
+    try:
+        # Check if Prompt Category table exists
+        if not frappe.db.table_exists("Prompt Category"):
+            frappe.logger("migration_hooks").info(
+                "Prompt Category table not yet created, skipping category installation"
+            )
+            return
+
+        # Load data file
+        data_path = os.path.join(
+            os.path.dirname(os.path.dirname(__file__)), "data", "system_prompt_categories.json"
+        )
+
+        if not os.path.exists(data_path):
+            frappe.logger("migration_hooks").warning(f"Prompt category data not found at {data_path}")
+            return
+
+        with open(data_path) as f:
+            categories = json.load(f)
+
+        created_count = 0
+        updated_count = 0
+
+        # First pass: create/update categories without parent references
+        for cat_data in categories:
+            category_id = cat_data.get("category_id")
+
+            existing = frappe.db.exists("Prompt Category", category_id)
+
+            if existing:
+                # Update existing category
+                doc = frappe.get_doc("Prompt Category", category_id)
+                needs_update = False
+
+                for field in ["category_name", "description", "icon", "color", "is_group"]:
+                    if cat_data.get(field) is not None and doc.get(field) != cat_data.get(field):
+                        doc.set(field, cat_data.get(field))
+                        needs_update = True
+
+                if needs_update:
+                    doc.flags.ignore_permissions = True
+                    doc.save()
+                    updated_count += 1
+            else:
+                # Create new category (without parent first to avoid ordering issues)
+                doc = frappe.new_doc("Prompt Category")
+                doc.category_id = category_id
+                doc.category_name = cat_data.get("category_name")
+                doc.description = cat_data.get("description")
+                doc.icon = cat_data.get("icon")
+                doc.color = cat_data.get("color")
+                doc.is_group = cat_data.get("is_group", 0)
+                doc.flags.ignore_permissions = True
+                doc.insert()
+                created_count += 1
+
+        # Second pass: set parent relationships
+        for cat_data in categories:
+            parent_id = cat_data.get("parent_prompt_category")
+            if parent_id:
+                category_id = cat_data.get("category_id")
+                doc = frappe.get_doc("Prompt Category", category_id)
+                if doc.parent_prompt_category != parent_id:
+                    doc.parent_prompt_category = parent_id
+                    doc.flags.ignore_permissions = True
+                    doc.save()
+
+        frappe.db.commit()
+
+        frappe.logger("migration_hooks").info(
+            f"System prompt categories: {created_count} created, {updated_count} updated"
+        )
+
+    except Exception as e:
+        frappe.logger("migration_hooks").error(f"Failed to install system prompt categories: {str(e)}")
+
+
 def _install_system_prompt_templates():
     """
     Install system prompt templates from fixtures.
@@ -293,8 +386,8 @@ def _install_system_prompt_templates():
 
                 # Only update if content has changed
                 needs_update = False
-                for field in ["title", "description", "template_content", "rendering_engine"]:
-                    if template_data.get(field) and doc.get(field) != template_data.get(field):
+                for field in ["title", "description", "template_content", "rendering_engine", "category"]:
+                    if template_data.get(field) is not None and doc.get(field) != template_data.get(field):
                         doc.set(field, template_data.get(field))
                         needs_update = True
 
@@ -323,6 +416,7 @@ def _install_system_prompt_templates():
                 doc.rendering_engine = template_data.get("rendering_engine", "Jinja2")
                 doc.template_content = template_data.get("template_content")
                 doc.owner_user = "Administrator"
+                doc.category = template_data.get("category")
 
                 # Add arguments
                 for arg_data in template_data.get("arguments", []):
