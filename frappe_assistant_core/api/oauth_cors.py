@@ -20,6 +20,9 @@ OAuth CORS Handler
 Handles CORS (Cross-Origin Resource Sharing) for OAuth endpoints.
 Required for public clients (browser-based) to make registration and token requests.
 
+Also handles OAuth token endpoint authentication bypass - prevents Frappe from
+treating OAuth client credentials (in Authorization: Basic header) as User API keys.
+
 COMPATIBILITY:
 - Uses frappe.local.allow_cors (Frappe v16 mechanism)
 - Also sets frappe.conf.allow_cors (v15 fallback)
@@ -43,12 +46,19 @@ def set_cors_for_oauth_endpoints():
 
     Without CORS, public clients (like MCP Inspector) cannot make
     preflight OPTIONS requests or actual API calls from the browser.
+
+    Additionally, this function bypasses Frappe's API key validation for OAuth
+    token endpoints that use Authorization: Basic with client credentials.
     """
     if not frappe.local.request:
         return
 
     request_path = frappe.request.path
     request_method = frappe.request.method
+
+    # Handle OAuth token endpoint authentication bypass FIRST
+    # This must run before validate_auth() tries to validate Basic auth as API keys
+    _handle_oauth_token_endpoint_auth(request_path)
 
     # Handle malformed concatenated URLs from OAuth clients
     # e.g., /.well-known/oauth-protected-resource/api/method/...
@@ -308,3 +318,53 @@ def _handle_malformed_wellknown_url(request_path: str, request_method: str):
                 return response
 
         raise ResponseException()
+
+
+def _handle_oauth_token_endpoint_auth(request_path: str):
+    """
+    Bypass Frappe's API key validation for OAuth token endpoints.
+
+    OAuth token endpoints use Authorization: Basic with client_id:client_secret,
+    which is NOT a User API key. Frappe's validate_auth() incorrectly tries to
+    validate this as a User API key and fails.
+
+    This function monkey-patches frappe.get_request_header to hide the
+    Authorization header from validate_auth() for OAuth token endpoints.
+
+    This runs in before_request hook, BEFORE validate_auth() is called.
+    """
+    # OAuth token endpoints that use client credentials in Basic auth
+    oauth_token_endpoints = [
+        "/api/method/frappe.integrations.oauth2.get_token",
+        "/api/method/frappe.integrations.oauth2.revoke_token",
+        "/api/method/frappe.integrations.oauth2.introspect_token",
+    ]
+
+    # Check if this is an OAuth token endpoint
+    if not any(request_path.startswith(ep) for ep in oauth_token_endpoints):
+        return
+
+    # Check if Authorization header is Basic (OAuth client credentials)
+    auth_header = frappe.request.headers.get("Authorization", "")
+    if not auth_header.startswith("Basic "):
+        return
+
+    # Store original get_request_header function
+    original_get_request_header = frappe.get_request_header
+
+    def patched_get_request_header(key, default=None):
+        """
+        Patched version that hides Authorization header from validate_auth().
+
+        This prevents Frappe from treating OAuth client credentials as User API keys.
+        Our custom oauth_token.py endpoint reads the header directly from request.headers.
+        """
+        if key.lower() == "authorization":
+            # Hide the Basic auth header from Frappe's API key validation
+            return default if default is not None else ""
+        return original_get_request_header(key, default)
+
+    # Apply the monkey-patch
+    frappe.get_request_header = patched_get_request_header
+
+    frappe.logger().debug(f"OAuth token endpoint auth bypass: hiding Authorization header for {request_path}")

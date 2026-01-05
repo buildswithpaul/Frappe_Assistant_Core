@@ -193,8 +193,9 @@ class MCPServer:
                 # Return empty resources list (we don't support resources)
                 result = {"resources": []}
             elif method == "prompts/list":
-                # Return empty prompts list (we don't support prompts)
-                result = {"prompts": []}
+                result = self._handle_prompts_list(params, request_id)
+            elif method == "prompts/get":
+                result = self._handle_prompts_get(params, request_id)
             elif method == "ping":
                 result = {}
             else:
@@ -242,8 +243,9 @@ class MCPServer:
             "protocolVersion": protocol_version,
             "capabilities": {
                 "tools": {},  # We support tools
-                # Note: We respond to resources/list and prompts/list with empty arrays
-                # but don't declare them as capabilities since we don't support them
+                "prompts": {},  # We support prompts (database-driven templates)
+                # Note: We respond to resources/list with empty arrays
+                # since we don't support resources yet
             },
             "serverInfo": {"name": self.name, "version": "2.0.0"},
         }
@@ -337,6 +339,38 @@ class MCPServer:
         response.mimetype = "application/json"
         response.status_code = 400
         return response
+
+    def _handle_prompts_list(self, params: Dict, request_id: Any) -> Dict:
+        """
+        Handle prompts/list request.
+
+        Returns available prompt templates from the database.
+        """
+        from frappe_assistant_core.api.handlers.prompts import handle_prompts_list
+
+        # The handler returns a full JSON-RPC response, extract just the result
+        response = handle_prompts_list(request_id)
+        if "result" in response:
+            return response["result"]
+        # If there's an error, return empty prompts list
+        return {"prompts": []}
+
+    def _handle_prompts_get(self, params: Dict, request_id: Any) -> Dict:
+        """
+        Handle prompts/get request.
+
+        Returns a specific prompt template rendered with provided arguments.
+        """
+        from frappe_assistant_core.api.handlers.prompts import handle_prompts_get
+
+        # The handler returns a full JSON-RPC response, extract just the result
+        response = handle_prompts_get(params, request_id)
+        if "result" in response:
+            return response["result"]
+        # If there's an error, re-raise it
+        if "error" in response:
+            raise Exception(response["error"].get("message", "Unknown prompt error"))
+        return {}
 
     def _is_notification(self, data: Dict) -> bool:
         """Check if request is a notification (no response needed)."""

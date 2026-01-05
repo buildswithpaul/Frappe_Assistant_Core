@@ -36,15 +36,12 @@ class PromptTemplate(Document):
         # Only allow lowercase alphanumeric, underscore, hyphen
         if not re.match(r"^[a-z0-9_-]+$", self.prompt_id):
             frappe.throw(
-                _("Prompt ID must contain only lowercase letters, numbers, "
-                  "underscores, and hyphens")
+                _("Prompt ID must contain only lowercase letters, numbers, " "underscores, and hyphens")
             )
 
         # Check uniqueness (excluding self on update)
         existing = frappe.db.get_value(
-            "Prompt Template",
-            {"prompt_id": self.prompt_id, "name": ["!=", self.name or ""]},
-            "name"
+            "Prompt Template", {"prompt_id": self.prompt_id, "name": ["!=", self.name or ""]}, "name"
         )
         if existing:
             frappe.throw(_("Prompt ID '{0}' already exists").format(self.prompt_id))
@@ -80,9 +77,7 @@ class PromptTemplate(Document):
         # Extract placeholders from template
         if self.rendering_engine == "Jinja2":
             # Match {{ variable }} and {{ variable | filter }}
-            placeholders = set(
-                re.findall(r"\{\{\s*(\w+)(?:\s*\|[^}]*)?\s*\}\}", self.template_content)
-            )
+            placeholders = set(re.findall(r"\{\{\s*(\w+)(?:\s*\|[^}]*)?\s*\}\}", self.template_content))
         else:
             placeholders = set(re.findall(r"\{(\w+)\}", self.template_content))
 
@@ -90,28 +85,22 @@ class PromptTemplate(Document):
         undefined = placeholders - defined_args
         if undefined:
             frappe.msgprint(
-                _("Warning: Template uses undefined arguments: {0}").format(
-                    ", ".join(undefined)
-                ),
-                indicator="orange"
+                _("Warning: Template uses undefined arguments: {0}").format(", ".join(undefined)),
+                indicator="orange",
             )
 
         # Warn about unused argument definitions
         unused = defined_args - placeholders
         if unused:
             frappe.msgprint(
-                _("Warning: Defined arguments not used in template: {0}").format(
-                    ", ".join(unused)
-                ),
-                indicator="yellow"
+                _("Warning: Defined arguments not used in template: {0}").format(", ".join(unused)),
+                indicator="yellow",
             )
 
     def validate_visibility_settings(self):
         """Validate visibility and sharing configuration."""
         if self.visibility == "Shared" and not self.shared_with_roles:
-            frappe.throw(
-                _("Please specify roles to share with when visibility is 'Shared'")
-            )
+            frappe.throw(_("Please specify roles to share with when visibility is 'Shared'"))
 
     def before_save(self):
         """Handle version increment on significant changes."""
@@ -120,10 +109,8 @@ class PromptTemplate(Document):
             if old_doc and old_doc.template_content != self.template_content:
                 self.version_number = (self.version_number or 1) + 1
                 frappe.msgprint(
-                    _("Template content changed. Version incremented to {0}").format(
-                        self.version_number
-                    ),
-                    indicator="blue"
+                    _("Template content changed. Version incremented to {0}").format(self.version_number),
+                    indicator="blue",
                 )
 
     def on_update(self):
@@ -131,8 +118,8 @@ class PromptTemplate(Document):
         self.clear_prompt_cache()
 
     def on_trash(self):
-        """Prevent deletion of system templates."""
-        if self.is_system:
+        """Prevent deletion of system templates (unless explicitly allowed via flag)."""
+        if self.is_system and not self.flags.get("allow_system_delete"):
             frappe.throw(_("System templates cannot be deleted"))
         self.clear_prompt_cache()
 
@@ -164,10 +151,7 @@ class PromptTemplate(Document):
         new_doc.last_used = None
         new_doc.insert()
 
-        frappe.msgprint(
-            _("Created new version: {0}").format(new_doc.name),
-            indicator="green"
-        )
+        frappe.msgprint(_("Created new version: {0}").format(new_doc.name), indicator="green")
 
         return new_doc.name
 
@@ -200,11 +184,7 @@ class PromptTemplate(Document):
 
 
 @frappe.whitelist()
-def preview_template(
-    template_content: str,
-    rendering_engine: str,
-    arguments: dict
-) -> str:
+def preview_template(template_content: str, rendering_engine: str, arguments: dict) -> str:
     """
     Preview a template with test arguments.
 
@@ -246,27 +226,26 @@ def get_version_history(prompt_name: str) -> List[Dict[str, Any]]:
     """
     versions = frappe.get_all(
         "Version",
-        filters={
-            "ref_doctype": "Prompt Template",
-            "docname": prompt_name
-        },
+        filters={"ref_doctype": "Prompt Template", "docname": prompt_name},
         fields=["name", "owner", "creation", "data"],
         order_by="creation desc",
-        limit=50
+        limit=50,
     )
 
     history = []
     for v in versions:
         try:
             data = frappe.parse_json(v.data) if v.data else {}
-            history.append({
-                "version_id": v.name,
-                "modified_by": v.owner,
-                "modified_at": v.creation,
-                "changes": data.get("changed", []),
-                "added": data.get("added", []),
-                "removed": data.get("removed", [])
-            })
+            history.append(
+                {
+                    "version_id": v.name,
+                    "modified_by": v.owner,
+                    "modified_at": v.creation,
+                    "changes": data.get("changed", []),
+                    "added": data.get("added", []),
+                    "removed": data.get("removed", []),
+                }
+            )
         except Exception:
             continue
 
@@ -310,11 +289,7 @@ def restore_version(prompt_name: str, version_id: str) -> bool:
 
 @frappe.whitelist()
 def search_prompts(
-    query: str = None,
-    category: str = None,
-    tags: str = None,
-    status: str = "Published",
-    limit: int = 20
+    query: str = None, category: str = None, tags: str = None, status: str = "Published", limit: int = 20
 ) -> List[Dict[str, Any]]:
     """
     Search prompt templates with filters.
@@ -341,7 +316,7 @@ def search_prompts(
         or_filters = {
             "title": ["like", f"%{query}%"],
             "description": ["like", f"%{query}%"],
-            "prompt_id": ["like", f"%{query}%"]
+            "prompt_id": ["like", f"%{query}%"],
         }
 
     prompts = frappe.get_all(
@@ -349,11 +324,18 @@ def search_prompts(
         filters=filters,
         or_filters=or_filters,
         fields=[
-            "name", "prompt_id", "title", "description", "category",
-            "status", "use_count", "owner_user", "visibility"
+            "name",
+            "prompt_id",
+            "title",
+            "description",
+            "category",
+            "status",
+            "use_count",
+            "owner_user",
+            "visibility",
         ],
         limit=limit,
-        order_by="use_count desc"
+        order_by="use_count desc",
     )
 
     # Filter by tags if specified
@@ -367,9 +349,7 @@ def search_prompts(
 def _prompt_has_tags(prompt_name: str, required_tags: List[str]) -> bool:
     """Check if prompt has all required tags."""
     prompt_tags = frappe.get_all(
-        "Tag Link",
-        filters={"parent": prompt_name, "parenttype": "Prompt Template"},
-        pluck="tag"
+        "Tag Link", filters={"parent": prompt_name, "parenttype": "Prompt Template"}, pluck="tag"
     )
     return set(required_tags).issubset(set(prompt_tags))
 
@@ -390,7 +370,7 @@ def get_popular_prompts(limit: int = 10) -> List[Dict[str, Any]]:
         filters={"status": "Published"},
         fields=["prompt_id", "title", "description", "use_count", "category"],
         order_by="use_count desc",
-        limit=limit
+        limit=limit,
     )
 
 
@@ -409,6 +389,7 @@ def get_prompts_by_category(category: str) -> List[Dict[str, Any]]:
     categories = [category]
     try:
         from frappe.utils.nestedset import get_descendants_of
+
         descendants = get_descendants_of("Prompt Category", category)
         categories.extend(descendants)
     except Exception:
@@ -416,9 +397,6 @@ def get_prompts_by_category(category: str) -> List[Dict[str, Any]]:
 
     return frappe.get_all(
         "Prompt Template",
-        filters={
-            "category": ["in", categories],
-            "status": "Published"
-        },
-        fields=["prompt_id", "title", "description", "category"]
+        filters={"category": ["in", categories], "status": "Published"},
+        fields=["prompt_id", "title", "description", "category"],
     )

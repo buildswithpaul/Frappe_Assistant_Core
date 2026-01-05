@@ -30,7 +30,6 @@ from frappe_assistant_core.constants.definitions import (
     ErrorCodes,
     ErrorMessages,
     LogMessages,
-    PromptTemplates,
 )
 from frappe_assistant_core.utils.logger import api_logger
 
@@ -71,7 +70,7 @@ class PromptTemplateManager:
         own_prompts = frappe.get_all(
             "Prompt Template",
             filters={"owner_user": user},
-            fields=["name", "prompt_id", "title", "description", "status", "category"]
+            fields=["name", "prompt_id", "title", "description", "status", "category"],
         )
         for p in own_prompts:
             if p.prompt_id not in seen_ids:
@@ -81,12 +80,8 @@ class PromptTemplateManager:
         # 2. Published public prompts
         public_prompts = frappe.get_all(
             "Prompt Template",
-            filters={
-                "status": "Published",
-                "visibility": "Public",
-                "owner_user": ["!=", user]
-            },
-            fields=["name", "prompt_id", "title", "description", "status", "category"]
+            filters={"status": "Published", "visibility": "Public", "owner_user": ["!=", user]},
+            fields=["name", "prompt_id", "title", "description", "status", "category"],
         )
         for p in public_prompts:
             if p.prompt_id not in seen_ids:
@@ -103,12 +98,8 @@ class PromptTemplateManager:
         # 4. System prompts (is_system=1, status=Published)
         system_prompts = frappe.get_all(
             "Prompt Template",
-            filters={
-                "is_system": 1,
-                "status": "Published",
-                "owner_user": ["!=", user]
-            },
-            fields=["name", "prompt_id", "title", "description", "status", "category"]
+            filters={"is_system": 1, "status": "Published", "owner_user": ["!=", user]},
+            fields=["name", "prompt_id", "title", "description", "status", "category"],
         )
         for p in system_prompts:
             if p.prompt_id not in seen_ids:
@@ -117,15 +108,14 @@ class PromptTemplateManager:
 
         return prompts
 
-    def _get_shared_prompts_for_user(
-        self, user: str, user_roles: List[str]
-    ) -> List[Dict]:
+    def _get_shared_prompts_for_user(self, user: str, user_roles: List[str]) -> List[Dict]:
         """Get prompts shared with roles that user has."""
         if not user_roles:
             return []
 
         try:
-            shared_prompts = frappe.db.sql("""
+            shared_prompts = frappe.db.sql(
+                """
                 SELECT DISTINCT pt.name, pt.prompt_id, pt.title, pt.description,
                        pt.status, pt.category
                 FROM `tabPrompt Template` pt
@@ -135,7 +125,10 @@ class PromptTemplateManager:
                   AND pt.visibility = 'Shared'
                   AND hr.role IN %(roles)s
                   AND pt.owner_user != %(user)s
-            """, {"roles": user_roles, "user": user}, as_dict=True)
+            """,
+                {"roles": user_roles, "user": user},
+                as_dict=True,
+            )
             return shared_prompts
         except Exception as e:
             self.logger.warning(f"Error fetching shared prompts: {e}")
@@ -153,17 +146,19 @@ class PromptTemplateManager:
         """
         arguments = []
         for arg in prompt_doc.arguments:
-            arguments.append({
-                "name": arg.argument_name,
-                "description": arg.description or arg.display_label or arg.argument_name,
-                "required": bool(arg.is_required)
-            })
+            arguments.append(
+                {
+                    "name": arg.argument_name,
+                    "description": arg.description or arg.display_label or arg.argument_name,
+                    "required": bool(arg.is_required),
+                }
+            )
 
         return {
             "name": prompt_doc.prompt_id,
             "title": prompt_doc.title,
             "description": prompt_doc.description,
-            "arguments": arguments
+            "arguments": arguments,
         }
 
     def render_prompt(self, prompt_doc, arguments: Dict[str, Any]) -> str:
@@ -203,8 +198,7 @@ class PromptTemplateManager:
         for arg_def in prompt_doc.arguments:
             if arg_def.is_required and arg_def.argument_name not in arguments:
                 frappe.throw(
-                    _("Missing required argument: {0}").format(arg_def.argument_name),
-                    frappe.ValidationError
+                    _("Missing required argument: {0}").format(arg_def.argument_name), frappe.ValidationError
                 )
 
             value = arguments.get(arg_def.argument_name)
@@ -216,10 +210,8 @@ class PromptTemplateManager:
                 if arg_def.validation_regex:
                     if not re.match(arg_def.validation_regex, str(value)):
                         frappe.throw(
-                            _("Argument {0} does not match required pattern").format(
-                                arg_def.argument_name
-                            ),
-                            frappe.ValidationError
+                            _("Argument {0} does not match required pattern").format(arg_def.argument_name),
+                            frappe.ValidationError,
                         )
 
                 # Allowed values validation
@@ -230,7 +222,7 @@ class PromptTemplateManager:
                             _("Argument {0} must be one of: {1}").format(
                                 arg_def.argument_name, ", ".join(allowed)
                             ),
-                            frappe.ValidationError
+                            frappe.ValidationError,
                         )
 
     def _validate_argument_type(self, arg_def, value):
@@ -244,14 +236,13 @@ class PromptTemplateManager:
                 except (ValueError, TypeError):
                     frappe.throw(
                         _("Argument {0} must be a number").format(arg_def.argument_name),
-                        frappe.ValidationError
+                        frappe.ValidationError,
                     )
         elif arg_type == "boolean":
             valid_bools = (True, False, "true", "false", "1", "0", 1, 0)
             if value not in valid_bools:
                 frappe.throw(
-                    _("Argument {0} must be a boolean").format(arg_def.argument_name),
-                    frappe.ValidationError
+                    _("Argument {0} must be a boolean").format(arg_def.argument_name), frappe.ValidationError
                 )
 
     def _apply_defaults(self, prompt_doc, arguments: Dict[str, Any]) -> Dict[str, Any]:
@@ -268,29 +259,26 @@ class PromptTemplateManager:
             jinja_template = self._jinja_env.from_string(template)
             return jinja_template.render(**arguments)
         except TemplateSyntaxError as e:
-            frappe.throw(
-                _("Template syntax error: {0}").format(str(e)),
-                frappe.ValidationError
-            )
+            frappe.throw(_("Template syntax error: {0}").format(str(e)), frappe.ValidationError)
 
     def _render_format_string(self, template: str, arguments: Dict[str, Any]) -> str:
         """Render using Python format strings."""
         try:
             return template.format(**arguments)
         except KeyError as e:
-            frappe.throw(
-                _("Missing argument for format string: {0}").format(str(e)),
-                frappe.ValidationError
-            )
+            frappe.throw(_("Missing argument for format string: {0}").format(str(e)), frappe.ValidationError)
 
     def increment_usage(self, prompt_name: str):
         """Increment usage counter for analytics."""
         try:
-            frappe.db.sql("""
+            frappe.db.sql(
+                """
                 UPDATE `tabPrompt Template`
                 SET use_count = use_count + 1, last_used = NOW()
                 WHERE name = %s
-            """, (prompt_name,))
+            """,
+                (prompt_name,),
+            )
         except Exception as e:
             self.logger.warning(f"Failed to increment usage for {prompt_name}: {e}")
 
@@ -338,9 +326,7 @@ def handle_prompts_list(request_id: Optional[Any]) -> Dict[str, Any]:
 
     except Exception as e:
         api_logger.error(f"Error in handle_prompts_list: {e}")
-        return _error_response(
-            ErrorCodes.INTERNAL_ERROR, ErrorMessages.INTERNAL_ERROR, str(e), request_id
-        )
+        return _error_response(ErrorCodes.INTERNAL_ERROR, ErrorMessages.INTERNAL_ERROR, str(e), request_id)
 
 
 def handle_prompts_get(params: Dict[str, Any], request_id: Optional[Any]) -> Dict[str, Any]:
@@ -353,10 +339,7 @@ def handle_prompts_get(params: Dict[str, Any], request_id: Optional[Any]) -> Dic
 
         if not prompt_name:
             return _error_response(
-                ErrorCodes.INVALID_PARAMS,
-                ErrorMessages.MISSING_PROMPT_NAME,
-                None,
-                request_id
+                ErrorCodes.INVALID_PARAMS, ErrorMessages.MISSING_PROMPT_NAME, None, request_id
             )
 
         manager = get_prompt_manager()
@@ -370,10 +353,7 @@ def handle_prompts_get(params: Dict[str, Any], request_id: Optional[Any]) -> Dic
 
         if prompt_result is None:
             return _error_response(
-                ErrorCodes.INVALID_PARAMS,
-                ErrorMessages.UNKNOWN_PROMPT.format(prompt_name),
-                None,
-                request_id
+                ErrorCodes.INVALID_PARAMS, ErrorMessages.UNKNOWN_PROMPT.format(prompt_name), None, request_id
             )
 
         response = {"jsonrpc": "2.0", "result": prompt_result}
@@ -392,23 +372,17 @@ def handle_prompts_get(params: Dict[str, Any], request_id: Optional[Any]) -> Dic
         return _error_response(ErrorCodes.AUTHENTICATION_REQUIRED, str(e), None, request_id)
     except Exception as e:
         api_logger.error(f"Error in handle_prompts_get: {e}")
-        return _error_response(
-            ErrorCodes.INTERNAL_ERROR, ErrorMessages.INTERNAL_ERROR, str(e), request_id
-        )
+        return _error_response(ErrorCodes.INTERNAL_ERROR, ErrorMessages.INTERNAL_ERROR, str(e), request_id)
 
 
 def _get_prompt_from_database(
-    prompt_id: str,
-    arguments: Dict[str, Any],
-    manager: PromptTemplateManager
+    prompt_id: str, arguments: Dict[str, Any], manager: PromptTemplateManager
 ) -> Optional[Dict[str, Any]]:
     """Get prompt from database and render it."""
     try:
         # Find prompt by prompt_id
         prompt_name = frappe.db.get_value(
-            "Prompt Template",
-            {"prompt_id": prompt_id, "status": ["in", ["Published", "Draft"]]},
-            "name"
+            "Prompt Template", {"prompt_id": prompt_id, "status": ["in", ["Published", "Draft"]]}, "name"
         )
 
         if not prompt_name:
@@ -418,10 +392,7 @@ def _get_prompt_from_database(
 
         # Check permission
         if not _user_can_access_prompt(prompt_doc):
-            frappe.throw(
-                _("You don't have permission to access this prompt"),
-                frappe.PermissionError
-            )
+            frappe.throw(_("You don't have permission to access this prompt"), frappe.PermissionError)
 
         # Render the template
         rendered_content = manager.render_prompt(prompt_doc, arguments)
@@ -431,15 +402,7 @@ def _get_prompt_from_database(
 
         return {
             "description": prompt_doc.description,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": {
-                        "type": "text",
-                        "text": rendered_content
-                    }
-                }
-            ]
+            "messages": [{"role": "user", "content": {"type": "text", "text": rendered_content}}],
         }
 
     except frappe.DoesNotExistError:
@@ -482,7 +445,8 @@ def _user_can_access_prompt(prompt_doc) -> bool:
 def _should_use_database_prompts() -> bool:
     """Check if we should use database prompts or fallback."""
     try:
-        if not frappe.db.table_exists("tabPrompt Template"):
+        # Note: table_exists() expects DocType name, not "tab" prefixed table name
+        if not frappe.db.table_exists("Prompt Template"):
             return False
         count = frappe.db.count("Prompt Template", {"status": "Published"})
         return count > 0
@@ -492,115 +456,40 @@ def _should_use_database_prompts() -> bool:
 
 # Legacy functions for backward compatibility
 def _get_legacy_prompt_definitions() -> List[Dict[str, Any]]:
-    """Get hardcoded prompt definitions for backward compatibility."""
+    """
+    Fallback prompt definitions when no database prompts exist.
+
+    Note: System prompt templates are now installed via 'bench migrate'.
+    If you see this fallback being used, run 'bench migrate' to install
+    the proper system prompt templates from fixtures.
+    """
+    api_logger.warning(
+        "Using legacy fallback prompts. Run 'bench migrate' to install system prompt templates."
+    )
     return [
         {
-            "name": "enforce_artifact_streaming_analysis",
-            "description": "Enforce artifact streaming for comprehensive analysis to prevent response limits",
-            "arguments": [
-                {
-                    "name": "analysis_type",
-                    "description": "Type of analysis to perform (sales, financial, operational, data_exploration)",
-                    "required": True,
-                },
-                {
-                    "name": "data_source",
-                    "description": "Frappe data source or DocType to analyze",
-                    "required": True,
-                },
-            ],
-        },
-        {
-            "name": "create_business_intelligence_report",
-            "description": "Create comprehensive business intelligence report in artifacts with unlimited depth",
-            "arguments": [
-                {
-                    "name": "report_focus",
-                    "description": "Primary focus area (sales, financial, operational, customer_analysis, inventory)",
-                    "required": True,
-                },
-                {
-                    "name": "time_period",
-                    "description": "Analysis time period (last_month, last_quarter, last_year, custom)",
-                    "required": False,
-                },
-            ],
-        },
-        {
-            "name": "stream_python_analysis_to_artifact",
-            "description": "Stream Python analysis results to dedicated artifact workspace for unlimited analysis depth",
-            "arguments": [
-                {
-                    "name": "analysis_goal",
-                    "description": "What insights are you trying to achieve with this analysis",
-                    "required": True,
-                },
-                {
-                    "name": "complexity_level",
-                    "description": "Expected complexity (simple, medium, complex, comprehensive)",
-                    "required": False,
-                },
-            ],
-        },
+            "name": "setup_required",
+            "description": "System prompt templates not installed. Run 'bench migrate' to install them.",
+            "arguments": [],
+        }
     ]
 
 
-def _generate_legacy_prompt_content(
-    prompt_name: str, arguments: Dict[str, Any]
-) -> Optional[Dict[str, Any]]:
-    """Generate prompt content using legacy hardcoded templates."""
-    if prompt_name == "enforce_artifact_streaming_analysis":
-        analysis_type = arguments.get("analysis_type", "comprehensive")
-        data_source = arguments.get("data_source", "Frappe data")
+def _generate_legacy_prompt_content(prompt_name: str, arguments: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """
+    Generate fallback prompt content.
 
+    Note: This should rarely be called as system prompts are installed via migration.
+    """
+    if prompt_name == "setup_required":
         return {
-            "description": f"Artifact streaming workflow for {prompt_name}",
+            "description": "System prompt templates not installed",
             "messages": [
                 {
                     "role": "user",
                     "content": {
                         "type": "text",
-                        "text": PromptTemplates.ENFORCE_STREAMING.format(
-                            analysis_type=analysis_type, data_source=data_source
-                        ),
-                    },
-                }
-            ],
-        }
-
-    elif prompt_name == "create_business_intelligence_report":
-        report_focus = arguments.get("report_focus", "business performance")
-        time_period = arguments.get("time_period", "recent")
-
-        return {
-            "description": f"Artifact streaming workflow for {prompt_name}",
-            "messages": [
-                {
-                    "role": "user",
-                    "content": {
-                        "type": "text",
-                        "text": PromptTemplates.BI_REPORT.format(
-                            report_focus=report_focus, time_period=time_period
-                        ),
-                    },
-                }
-            ],
-        }
-
-    elif prompt_name == "stream_python_analysis_to_artifact":
-        analysis_goal = arguments.get("analysis_goal", "data analysis")
-        complexity_level = arguments.get("complexity_level", "comprehensive")
-
-        return {
-            "description": f"Artifact streaming workflow for {prompt_name}",
-            "messages": [
-                {
-                    "role": "user",
-                    "content": {
-                        "type": "text",
-                        "text": PromptTemplates.PYTHON_ANALYSIS.format(
-                            complexity_level=complexity_level, analysis_goal=analysis_goal
-                        ),
+                        "text": "System prompt templates are not installed. Please run 'bench migrate' to install the system prompt templates, or create your own Prompt Template in Frappe.",
                     },
                 }
             ],
@@ -609,14 +498,9 @@ def _generate_legacy_prompt_content(
     return None
 
 
-def _error_response(
-    code: int, message: str, data: Any, request_id: Optional[Any]
-) -> Dict[str, Any]:
+def _error_response(code: int, message: str, data: Any, request_id: Optional[Any]) -> Dict[str, Any]:
     """Build error response."""
-    response = {
-        "jsonrpc": "2.0",
-        "error": {"code": code, "message": message}
-    }
+    response = {"jsonrpc": "2.0", "error": {"code": code, "message": message}}
     if data:
         response["error"]["data"] = data
     if request_id is not None:

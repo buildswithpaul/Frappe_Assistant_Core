@@ -105,7 +105,7 @@ after_uninstall = "frappe_assistant_core.utils.migration_hooks.after_uninstall"
 
 permission_query_conditions = {
     "Assistant Audit Log": "frappe_assistant_core.utils.permissions.get_audit_permission_query_conditions",
-    "Prompt Template": "frappe_assistant_core.utils.permissions.get_prompt_permission_query_conditions"
+    "Prompt Template": "frappe_assistant_core.utils.permissions.get_prompt_permission_query_conditions",
 }
 
 # has_permission = {
@@ -153,9 +153,12 @@ scheduler_events = {
 # Overriding Methods
 # ------------------------------
 #
-# Override Frappe's OAuth endpoint to add MCP-required fields
+# Override Frappe's OAuth endpoints
+# - openid_configuration: Add MCP-required fields
+# - get_token: Properly handle Basic auth for client authentication
 override_whitelisted_methods = {
-    "frappe.integrations.oauth2.openid_configuration": "frappe_assistant_core.api.oauth_discovery.openid_configuration"
+    "frappe.integrations.oauth2.openid_configuration": "frappe_assistant_core.api.oauth_discovery.openid_configuration",
+    "frappe.integrations.oauth2.get_token": "frappe_assistant_core.api.oauth_token.get_token",
 }
 
 # Custom Page Renderers
@@ -258,8 +261,8 @@ after_migrate = [
 fixtures = [
     {"doctype": "Custom Field", "filters": {"dt": "User", "fieldname": ["in", ["assistant_enabled"]]}},
     {"doctype": "Role", "filters": {"role_name": ["in", ["Assistant User", "Assistant Admin"]]}},
-    # Note: Prompt Category and Prompt Template fixtures are in fixtures/ directory
-    # Import manually after first migration: bench --site [site] import-doc frappe_assistant_core/fixtures/
+    # System prompt templates - these are installed via after_migrate hook
+    # because they require special handling for child table data (arguments)
 ]
 
 # Enhanced Plugin Architecture

@@ -32,7 +32,8 @@ def after_migrate():
     Hook called after bench migrate completes.
 
     This ensures tool cache is refreshed with any new tools
-    that may have been added during migration.
+    that may have been added during migration, and installs/updates
+    system prompt templates.
     """
     try:
         frappe.logger("migration_hooks").info("Starting post-migration tool cache refresh")
@@ -57,6 +58,9 @@ def after_migrate():
     except Exception as e:
         # Don't fail migration due to cache issues
         frappe.logger("migration_hooks").error(f"Failed to refresh tool cache after migration: {str(e)}")
+
+    # Install/update system prompt templates
+    _install_system_prompt_templates()
 
 
 def before_migrate():
@@ -84,7 +88,7 @@ def after_install():
     """
     Hook called after app installation.
 
-    Initializes tool discovery and cache for first-time setup.
+    Initializes tool discovery, cache, and system prompt templates.
     """
     try:
         frappe.logger("migration_hooks").info("Initializing tool discovery after app install")
@@ -106,6 +110,9 @@ def after_install():
 
     except Exception as e:
         frappe.logger("migration_hooks").error(f"Failed to initialize tool discovery: {str(e)}")
+
+    # Install system prompt templates
+    _install_system_prompt_templates()
 
 
 def after_uninstall():
@@ -215,6 +222,125 @@ def get_migration_status() -> Dict[str, Any]:
 
     except Exception as e:
         return {"error": str(e), "migration_hooks_active": False}
+
+
+def _install_system_prompt_templates():
+    """
+    Install system prompt templates from fixtures.
+
+    These are reference templates that come with FAC and demonstrate
+    best practices for creating prompt templates.
+
+    System templates have is_system=1 and cannot be deleted by users.
+    """
+    import json
+    import os
+
+    try:
+        # Check if Prompt Template table exists
+        if not frappe.db.table_exists("Prompt Template"):
+            frappe.logger("migration_hooks").info(
+                "Prompt Template table not yet created, skipping system prompt installation"
+            )
+            return
+
+        # Load data file (in data/ directory to avoid Frappe's auto-import from fixtures/)
+        data_path = os.path.join(
+            os.path.dirname(os.path.dirname(__file__)), "data", "system_prompt_templates.json"
+        )
+
+        if not os.path.exists(data_path):
+            frappe.logger("migration_hooks").warning(f"Prompt template data not found at {data_path}")
+            return
+
+        with open(data_path) as f:
+            templates = json.load(f)
+
+        # Get list of valid prompt_ids from JSON file
+        valid_prompt_ids = {t.get("prompt_id") for t in templates}
+
+        # Clean up system templates that are no longer in the JSON file
+        existing_system_templates = frappe.get_all(
+            "Prompt Template", filters={"is_system": 1}, fields=["name", "prompt_id"]
+        )
+
+        deleted_count = 0
+        for existing in existing_system_templates:
+            if existing.prompt_id not in valid_prompt_ids:
+                # This system template is no longer in our JSON, remove it
+                doc = frappe.get_doc("Prompt Template", existing.name)
+                doc.flags.allow_system_delete = True  # Bypass on_trash check
+                doc.delete(ignore_permissions=True)
+                deleted_count += 1
+                frappe.logger("migration_hooks").info(
+                    f"Removed obsolete system prompt template: {existing.prompt_id}"
+                )
+
+        created_count = 0
+        updated_count = 0
+
+        for template_data in templates:
+            prompt_id = template_data.get("prompt_id")
+
+            # Check if system template already exists
+            existing = frappe.db.get_value(
+                "Prompt Template", {"prompt_id": prompt_id, "is_system": 1}, "name"
+            )
+
+            if existing:
+                # Update existing system template
+                doc = frappe.get_doc("Prompt Template", existing)
+
+                # Only update if content has changed
+                needs_update = False
+                for field in ["title", "description", "template_content", "rendering_engine"]:
+                    if template_data.get(field) and doc.get(field) != template_data.get(field):
+                        doc.set(field, template_data.get(field))
+                        needs_update = True
+
+                # Update arguments if changed
+                if "arguments" in template_data:
+                    # Clear and recreate arguments
+                    doc.arguments = []
+                    for arg_data in template_data["arguments"]:
+                        doc.append("arguments", arg_data)
+                    needs_update = True
+
+                if needs_update:
+                    doc.flags.ignore_permissions = True
+                    doc.save()
+                    updated_count += 1
+                    frappe.logger("migration_hooks").debug(f"Updated system prompt template: {prompt_id}")
+            else:
+                # Create new system template
+                doc = frappe.new_doc("Prompt Template")
+                doc.prompt_id = prompt_id
+                doc.title = template_data.get("title")
+                doc.description = template_data.get("description")
+                doc.status = template_data.get("status", "Published")
+                doc.visibility = template_data.get("visibility", "Public")
+                doc.is_system = 1
+                doc.rendering_engine = template_data.get("rendering_engine", "Jinja2")
+                doc.template_content = template_data.get("template_content")
+                doc.owner_user = "Administrator"
+
+                # Add arguments
+                for arg_data in template_data.get("arguments", []):
+                    doc.append("arguments", arg_data)
+
+                doc.flags.ignore_permissions = True
+                doc.insert()
+                created_count += 1
+                frappe.logger("migration_hooks").debug(f"Created system prompt template: {prompt_id}")
+
+        frappe.db.commit()
+
+        frappe.logger("migration_hooks").info(
+            f"System prompt templates: {created_count} created, {updated_count} updated, {deleted_count} removed"
+        )
+
+    except Exception as e:
+        frappe.logger("migration_hooks").error(f"Failed to install system prompt templates: {str(e)}")
 
 
 # Export functions for hooks registration
