@@ -32,9 +32,7 @@ class PromptCategory(NestedSet):
 
         # Only allow lowercase alphanumeric with hyphens
         if not re.match(r"^[a-z0-9-]+$", self.category_id):
-            frappe.throw(
-                _("Category ID must contain only lowercase letters, numbers, and hyphens")
-            )
+            frappe.throw(_("Category ID must contain only lowercase letters, numbers, and hyphens"))
 
     def on_update(self):
         """Clear cache after update."""
@@ -52,8 +50,10 @@ class PromptCategory(NestedSet):
         linked_prompts = frappe.db.count("Prompt Template", {"category": self.name})
         if linked_prompts:
             frappe.throw(
-                _("Cannot delete category with {0} linked prompt template(s). "
-                  "Move or delete the prompts first.").format(linked_prompts)
+                _(
+                    "Cannot delete category with {0} linked prompt template(s). "
+                    "Move or delete the prompts first."
+                ).format(linked_prompts)
             )
 
     def clear_category_cache(self):
@@ -71,9 +71,18 @@ def get_category_tree():
     """
     categories = frappe.get_all(
         "Prompt Category",
-        fields=["name", "category_id", "category_name", "parent_prompt_category",
-                "icon", "color", "is_group", "lft", "rgt"],
-        order_by="lft"
+        fields=[
+            "name",
+            "category_id",
+            "category_name",
+            "parent_prompt_category",
+            "icon",
+            "color",
+            "is_group",
+            "lft",
+            "rgt",
+        ],
+        order_by="lft",
     )
 
     # Build tree structure
@@ -98,11 +107,14 @@ def get_prompt_count_by_category():
     Returns:
         dict: Category name to prompt count mapping
     """
-    counts = frappe.db.sql("""
+    counts = frappe.db.sql(
+        """
         SELECT category, COUNT(*) as count
         FROM `tabPrompt Template`
         WHERE category IS NOT NULL AND category != ''
         GROUP BY category
-    """, as_dict=True)
+    """,
+        as_dict=True,
+    )
 
     return {c.category: c.count for c in counts}

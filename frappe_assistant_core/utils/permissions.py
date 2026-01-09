@@ -110,9 +110,7 @@ def get_prompt_permission_query_conditions(user=None):
     )
 
     # 3. Published + System prompts
-    conditions.append(
-        "(`tabPrompt Template`.status = 'Published' AND `tabPrompt Template`.is_system = 1)"
-    )
+    conditions.append("(`tabPrompt Template`.status = 'Published' AND `tabPrompt Template`.is_system = 1)")
 
     # 4. Published + Shared prompts with user's roles
     if user_roles:
