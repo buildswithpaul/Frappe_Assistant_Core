@@ -411,8 +411,9 @@ def validate_oauth_token():
         if bearer_token.status != "Active":
             raise_unauthorized("Token is not active")
 
-        # Validate expiration
-        if bearer_token.expiration_time < datetime.datetime.now():
+        # Validate expiration (use Frappe's timezone-aware now_datetime)
+        from frappe.utils import now_datetime
+        if bearer_token.expiration_time < now_datetime():
             raise_unauthorized("Token has expired")
 
         # Set user session

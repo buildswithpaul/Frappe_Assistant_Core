@@ -558,8 +558,9 @@ bearer_token = frappe.get_doc("OAuth Bearer Token", {"access_token": token})
 if bearer_token.status != "Active":
     raise frappe.AuthenticationError("Token is not active")
 
-# Check if token has expired
-if bearer_token.expiration_time < datetime.datetime.now():
+# Check if token has expired (use Frappe's timezone-aware now_datetime)
+from frappe.utils import now_datetime
+if bearer_token.expiration_time < now_datetime():
     raise frappe.AuthenticationError("Token has expired")
 
 # Set the user session

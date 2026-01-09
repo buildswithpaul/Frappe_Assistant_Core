@@ -111,11 +111,13 @@ def _authenticate_mcp_request():
                 raise frappe.AuthenticationError("Token is not active")
 
             # Check if token has expired
-            import datetime
+            # Use Frappe's now_datetime() for timezone-aware comparison
+            from frappe.utils import now_datetime
 
-            if bearer_token.expiration_time < datetime.datetime.now():
+            current_time = now_datetime()
+            if bearer_token.expiration_time < current_time:
                 frappe.logger().error(
-                    f"Token has expired. Expiration: {bearer_token.expiration_time}, Now: {datetime.datetime.now()}"
+                    f"Token has expired. Expiration: {bearer_token.expiration_time}, Now: {current_time}"
                 )
                 raise frappe.AuthenticationError("Token has expired")
 
