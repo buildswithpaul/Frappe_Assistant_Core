@@ -640,9 +640,16 @@ Build unlimited analysis depth via progressive artifact updates.
             // Only define functions if they don't exist
             if (typeof window.togglePlugin === 'undefined') {
                 window.togglePlugin = function(pluginName, action) {
+                // Get the current form using Frappe's form manager
+                var frm = frappe.ui.form.get_open_docs()['Assistant Core Settings'];
+                frm = frm ? frappe.ui.form.get_open_docs()['Assistant Core Settings']['Assistant Core Settings'] : null;
+                if (!frm) {
+                    frappe.show_alert({message: __('Form not available'), indicator: 'red'});
+                    return;
+                }
                 frappe.call({
                     method: 'toggle_plugin',
-                    doc: cur_frm.doc,
+                    doc: frm.doc,
                     args: {
                         plugin_name: pluginName,
                         action: action
@@ -651,7 +658,7 @@ Build unlimited analysis depth via progressive artifact updates.
                     freeze_message: __('Updating plugin...'),
                     callback: function(response) {
                         if (!response.exc) {
-                            cur_frm.reload_doc();
+                            frm.reload_doc();
                             frappe.show_alert({
                                 message: __('Plugin {0} {1}d successfully', [pluginName, action]),
                                 indicator: 'green'

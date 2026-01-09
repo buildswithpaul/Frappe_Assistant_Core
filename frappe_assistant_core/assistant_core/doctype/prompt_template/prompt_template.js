@@ -274,7 +274,11 @@ window.frappe_assistant_core_restore_version = function(prompt_name, version_id)
                         });
                         // Close dialog and reload form
                         frappe.msgprint().hide();
-                        cur_frm.reload_doc();
+                        // Use frappe.ui.form.get_open_docs to get the form and reload
+                        let frm = frappe.get_doc('Prompt Template', prompt_name);
+                        if (frm) {
+                            frappe.set_route('Form', 'Prompt Template', prompt_name);
+                        }
                     }
                 }
             });
