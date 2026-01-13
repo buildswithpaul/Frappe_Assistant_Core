@@ -1,0 +1,79 @@
+[
+    {
+        "doctype": "Prompt Category",
+        "category_id": "data-analysis",
+        "category_name": "Data Analysis",
+        "description": "Prompts for analyzing, querying, and reporting on business data",
+        "icon": "fa-chart-bar",
+        "color": "#3498db",
+        "is_group": 1
+    },
+    {
+        "doctype": "Prompt Category",
+        "category_id": "documentation",
+        "category_name": "Documentation",
+        "description": "Prompts for generating documentation, guides, and technical references",
+        "icon": "fa-book",
+        "color": "#9b59b6",
+        "is_group": 0
+    },
+    {
+        "doctype": "Prompt Category",
+        "category_id": "manufacturing",
+        "category_name": "Manufacturing",
+        "description": "Prompts for production planning, work orders, BOM analysis, and shop floor operations",
+        "icon": "fa-industry",
+        "color": "#e67e22",
+        "is_group": 0,
+        "parent_prompt_category": "data-analysis"
+    },
+    {
+        "doctype": "Prompt Category",
+        "category_id": "sales-crm",
+        "category_name": "Sales & CRM",
+        "description": "Prompts for sales analysis, customer management, leads, and opportunities",
+        "icon": "fa-handshake",
+        "color": "#27ae60",
+        "is_group": 0,
+        "parent_prompt_category": "data-analysis"
+    },
+    {
+        "doctype": "Prompt Category",
+        "category_id": "purchasing",
+        "category_name": "Purchasing",
+        "description": "Prompts for procurement analysis, supplier management, and purchase optimization",
+        "icon": "fa-shopping-cart",
+        "color": "#2980b9",
+        "is_group": 0,
+        "parent_prompt_category": "data-analysis"
+    },
+    {
+        "doctype": "Prompt Category",
+        "category_id": "hr-payroll",
+        "category_name": "HR & Payroll",
+        "description": "Prompts for employee management, attendance, leave, and payroll analysis",
+        "icon": "fa-users",
+        "color": "#8e44ad",
+        "is_group": 0,
+        "parent_prompt_category": "data-analysis"
+    },
+    {
+        "doctype": "Prompt Category",
+        "category_id": "data-quality",
+        "category_name": "Data Quality",
+        "description": "Prompts for data auditing, validation, and quality improvement",
+        "icon": "fa-check-circle",
+        "color": "#16a085",
+        "is_group": 0,
+        "parent_prompt_category": "data-analysis"
+    },
+    {
+        "doctype": "Prompt Category",
+        "category_id": "system-admin",
+        "category_name": "System Administration",
+        "description": "Prompts for system configuration, user management, and administrative tasks",
+        "icon": "fa-cogs",
+        "color": "#7f8c8d",
+        "is_group": 0
+    }
+]

@@ -1,0 +1,175 @@
+{
+    "actions": [],
+    "autoname": "field:tool_name",
+    "creation": "2025-01-13 00:00:00.000000",
+    "doctype": "DocType",
+    "engine": "InnoDB",
+    "field_order": [
+        "tool_name",
+        "plugin_name",
+        "enabled",
+        "column_break_basic",
+        "tool_category",
+        "auto_detected_category",
+        "category_override",
+        "section_break_description",
+        "description",
+        "section_break_source",
+        "source_app",
+        "module_path",
+        "section_break_role_access",
+        "role_access_mode",
+        "role_access"
+    ],
+    "fields": [
+        {
+            "fieldname": "tool_name",
+            "fieldtype": "Data",
+            "in_list_view": 1,
+            "in_standard_filter": 1,
+            "label": "Tool Name",
+            "reqd": 1,
+            "unique": 1,
+            "description": "Unique identifier for the tool (e.g., get_document, create_document)"
+        },
+        {
+            "fieldname": "plugin_name",
+            "fieldtype": "Data",
+            "in_list_view": 1,
+            "in_standard_filter": 1,
+            "label": "Plugin Name",
+            "reqd": 1,
+            "description": "The plugin that provides this tool"
+        },
+        {
+            "default": "1",
+            "fieldname": "enabled",
+            "fieldtype": "Check",
+            "in_list_view": 1,
+            "label": "Enabled",
+            "description": "When disabled, this tool will be hidden from MCP tools/list"
+        },
+        {
+            "fieldname": "column_break_basic",
+            "fieldtype": "Column Break"
+        },
+        {
+            "fieldname": "tool_category",
+            "fieldtype": "Select",
+            "in_list_view": 1,
+            "in_standard_filter": 1,
+            "label": "Tool Category",
+            "options": "\nread_only\nwrite\nread_write\ndangerous",
+            "description": "Category indicating what type of operations this tool performs"
+        },
+        {
+            "fieldname": "auto_detected_category",
+            "fieldtype": "Data",
+            "label": "Auto-Detected Category",
+            "read_only": 1,
+            "description": "Category automatically detected from tool code analysis"
+        },
+        {
+            "default": "0",
+            "fieldname": "category_override",
+            "fieldtype": "Check",
+            "label": "Category Manually Overridden",
+            "description": "Check if you have manually set the category"
+        },
+        {
+            "fieldname": "section_break_description",
+            "fieldtype": "Section Break",
+            "label": "Description"
+        },
+        {
+            "fieldname": "description",
+            "fieldtype": "Small Text",
+            "label": "Description",
+            "description": "Human-readable description of what this tool does"
+        },
+        {
+            "fieldname": "section_break_source",
+            "fieldtype": "Section Break",
+            "label": "Source Information",
+            "collapsible": 1
+        },
+        {
+            "fieldname": "source_app",
+            "fieldtype": "Data",
+            "label": "Source App",
+            "read_only": 1,
+            "description": "The Frappe app that provides this tool"
+        },
+        {
+            "fieldname": "module_path",
+            "fieldtype": "Data",
+            "label": "Module Path",
+            "read_only": 1,
+            "description": "Full Python module path to the tool class"
+        },
+        {
+            "fieldname": "section_break_role_access",
+            "fieldtype": "Section Break",
+            "label": "Role-Based Access Control",
+            "description": "Configure which roles can access this tool. Leave empty to allow all roles."
+        },
+        {
+            "fieldname": "role_access_mode",
+            "fieldtype": "Select",
+            "label": "Role Access Mode",
+            "options": "Allow All\nRestrict to Listed Roles",
+            "default": "Allow All",
+            "description": "Allow All: Everyone can use this tool. Restrict to Listed Roles: Only listed roles can access."
+        },
+        {
+            "fieldname": "role_access",
+            "fieldtype": "Table",
+            "label": "Role Access",
+            "options": "FAC Tool Role Access",
+            "depends_on": "eval:doc.role_access_mode == 'Restrict to Listed Roles'",
+            "description": "Specify which roles can access this tool when in restricted mode"
+        }
+    ],
+    "index_web_pages_for_search": 0,
+    "links": [],
+    "modified": "2025-01-13 00:00:00.000000",
+    "modified_by": "Administrator",
+    "module": "Assistant Core",
+    "name": "FAC Tool Configuration",
+    "naming_rule": "By fieldname",
+    "owner": "Administrator",
+    "permissions": [
+        {
+            "create": 1,
+            "delete": 1,
+            "email": 1,
+            "export": 1,
+            "print": 1,
+            "read": 1,
+            "report": 1,
+            "role": "System Manager",
+            "share": 1,
+            "write": 1
+        },
+        {
+            "create": 1,
+            "delete": 0,
+            "email": 1,
+            "export": 1,
+            "print": 1,
+            "read": 1,
+            "report": 1,
+            "role": "Assistant Admin",
+            "share": 1,
+            "write": 1
+        },
+        {
+            "read": 1,
+            "role": "Assistant User"
+        }
+    ],
+    "sort_field": "modified",
+    "sort_order": "DESC",
+    "states": [],
+    "track_changes": 1
+}

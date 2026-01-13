@@ -7,6 +7,7 @@
         "status": "Published",
         "visibility": "Public",
         "is_system": 1,
+        "category": "manufacturing",
         "rendering_engine": "Jinja2",
         "template_content": "Perform a comprehensive manufacturing analysis focusing on {{ analysis_focus }}.\n\n**Analysis Scope:**\n\n1. **Production Overview**\n   - Analyze Work Orders and their completion status\n   - Track production quantities vs planned quantities\n   - Identify bottlenecks and delays\n\n2. **Bill of Materials (BOM) Analysis**\n   - Review material requirements and consumption\n   - Identify cost drivers in production\n   - Analyze BOM accuracy and variance\n\n3. **Efficiency Metrics**\n   - Calculate production efficiency rates\n   - Track cycle times and throughput\n   - Identify improvement opportunities\n\n{% if include_quality %}4. **Quality Analysis**\n   - Review quality inspection results\n   - Track defect rates and rejection patterns\n   - Identify quality improvement areas{% endif %}\n\n5. **Recommendations**\n   - Summarize key findings\n   - Provide actionable recommendations\n   - Prioritize improvement initiatives\n\n**Relevant DocTypes:** Work Order, BOM, Stock Entry (Manufacture), Job Card, Quality Inspection\n\nUse the query_and_analyze and execute_python_code tools to extract and analyze the data. Present findings in a clear, structured format suitable for production management review.",
         "arguments": [
@@ -36,6 +37,7 @@
         "status": "Published",
         "visibility": "Public",
         "is_system": 1,
+        "category": "sales-crm",
         "rendering_engine": "Jinja2",
         "template_content": "Perform a comprehensive sales analysis focusing on {{ analysis_focus }} for the {{ time_period }} period.\n\n**Analysis Scope:**\n\n1. **Revenue Analysis**\n   - Total sales and revenue trends\n   - Compare against previous periods\n   - Identify growth patterns and anomalies\n\n2. **Customer Insights**\n   - Top customers by revenue\n   - Customer acquisition and retention\n   - Customer segment performance\n\n3. **Product Performance**\n   - Best-selling items and item groups\n   - Product profitability analysis\n   - Slow-moving inventory identification\n\n4. **Sales Pipeline**\n   - Quotation to Sales Order conversion rates\n   - Outstanding quotations and opportunities\n   - Sales cycle duration analysis\n\n{% if include_territory %}5. **Territory Analysis**\n   - Performance by territory/region\n   - Territory-wise growth comparison\n   - Market penetration insights{% endif %}\n\n6. **Key Metrics Summary**\n   - Average order value\n   - Sales growth rate\n   - Top recommendations for improvement\n\n**Relevant DocTypes:** Sales Invoice, Sales Order, Quotation, Customer, Item, Territory\n\nUse the query_and_analyze and execute_python_code tools to extract and analyze sales data. Present insights with clear metrics and actionable recommendations.",
         "arguments": [
@@ -74,6 +76,7 @@
         "status": "Published",
         "visibility": "Public",
         "is_system": 1,
+        "category": "purchasing",
         "rendering_engine": "Jinja2",
         "template_content": "Perform a comprehensive purchase analysis focusing on {{ analysis_focus }} for the {{ time_period }} period.\n\n**Analysis Scope:**\n\n1. **Procurement Overview**\n   - Total purchase volume and spend\n   - Purchase trends over time\n   - Compare against budgets if available\n\n2. **Supplier Analysis**\n   - Top suppliers by purchase value\n   - Supplier delivery performance\n   - Lead time analysis and reliability\n\n3. **Cost Analysis**\n   - Item-wise cost trends\n   - Price variance analysis\n   - Identify cost-saving opportunities\n\n4. **Purchase Efficiency**\n   - Purchase Request to PO conversion\n   - PO to Receipt cycle time\n   - Pending orders and delays\n\n{% if include_inventory %}5. **Inventory Optimization**\n   - Stock levels vs reorder points\n   - Items requiring reorder\n   - Overstock and dead stock identification{% endif %}\n\n6. **Recommendations**\n   - Supplier consolidation opportunities\n   - Cost reduction strategies\n   - Process improvement suggestions\n\n**Relevant DocTypes:** Purchase Invoice, Purchase Order, Purchase Receipt, Supplier, Material Request, Stock Ledger Entry\n\nUse the query_and_analyze and execute_python_code tools to analyze procurement data. Provide insights that help optimize purchasing decisions and supplier relationships.",
         "arguments": [
@@ -112,6 +115,7 @@
         "status": "Published",
         "visibility": "Public",
         "is_system": 1,
+        "category": "hr-payroll",
         "rendering_engine": "Jinja2",
         "template_content": "Perform a comprehensive HR analysis focusing on {{ analysis_focus }} for the {{ time_period }} period.\n\n**Analysis Scope:**\n\n1. **Workforce Overview**\n   - Total employee count and distribution\n   - Department-wise headcount\n   - Employment type breakdown (permanent, contract, etc.)\n\n2. **Attendance Analysis**\n   - Attendance patterns and trends\n   - Late arrivals and early departures\n   - Absenteeism rates by department\n\n3. **Leave Analysis**\n   - Leave utilization by type\n   - Pending leave balances\n   - Leave patterns and peak periods\n\n{% if include_payroll %}4. **Payroll Insights**\n   - Salary distribution analysis\n   - Department-wise payroll costs\n   - Overtime and allowance trends{% endif %}\n\n5. **Employee Metrics**\n   - Tenure distribution\n   - New hires and separations\n   - Retention analysis\n\n6. **Recommendations**\n   - Workforce planning insights\n   - Attendance improvement areas\n   - Policy recommendations\n\n**Relevant DocTypes:** Employee, Attendance, Leave Application, Salary Slip, Department, Designation\n\nUse the query_and_analyze and execute_python_code tools to analyze HR data. Ensure employee privacy by presenting aggregate metrics rather than individual details unless specifically requested.",
         "arguments": [
@@ -150,6 +154,7 @@
         "status": "Published",
         "visibility": "Public",
         "is_system": 1,
+        "category": "sales-crm",
         "rendering_engine": "Jinja2",
         "template_content": "Perform a comprehensive CRM analysis focusing on {{ analysis_focus }} for the {{ time_period }} period.\n\n**Analysis Scope:**\n\n1. **Lead Pipeline**\n   - Total leads and lead sources\n   - Lead conversion rates\n   - Lead aging and follow-up status\n\n2. **Opportunity Analysis**\n   - Opportunity pipeline value\n   - Stage-wise distribution\n   - Win/loss analysis\n\n3. **Customer Engagement**\n   - Communication frequency and channels\n   - Response times and follow-ups\n   - Customer satisfaction indicators\n\n{% if include_campaigns %}4. **Campaign Effectiveness**\n   - Campaign performance metrics\n   - Lead generation by campaign\n   - ROI analysis where data available{% endif %}\n\n5. **Sales Team Performance**\n   - Leads and opportunities by owner\n   - Conversion rates by team member\n   - Activity levels and outcomes\n\n6. **Recommendations**\n   - Pipeline health assessment\n   - Focus areas for improvement\n   - Customer engagement strategies\n\n**Relevant DocTypes:** Lead, Opportunity, Customer, Communication, Campaign, Contact\n\nUse the query_and_analyze and execute_python_code tools to analyze CRM data. Provide actionable insights to improve lead conversion and customer relationships.",
         "arguments": [
@@ -188,6 +193,7 @@
         "status": "Published",
         "visibility": "Public",
         "is_system": 1,
+        "category": "documentation",
         "rendering_engine": "Jinja2",
         "template_content": "Generate comprehensive documentation for the {{ doctype_name }} DocType.\n\n**Documentation Sections:**\n\n1. **Overview**\n   - Purpose and use case of this DocType\n   - Where it fits in the business workflow\n   - Key features and capabilities\n\n2. **Field Reference**\n   - List all fields with their types and descriptions\n   - Required vs optional fields\n   - Field dependencies and validations\n\n3. **Workflows & Status**\n   - Document status transitions (if applicable)\n   - Workflow states and actions\n   - Permissions at each stage\n\n4. **Relationships**\n   - Links to other DocTypes\n   - Child tables and their purpose\n   - Related documents and dependencies\n\n5. **Common Use Cases**\n   - Typical usage scenarios\n   - Best practices\n   - Common configurations\n\n{% if include_api_examples %}6. **API Reference**\n   - frappe.get_doc() examples\n   - frappe.get_all() query examples\n   - Common filters and field selections\n   - REST API endpoint examples{% endif %}\n\nUse the document_list and get_document_fields tools to gather the necessary information about the DocType structure.",
         "arguments": [
@@ -216,6 +222,7 @@
         "status": "Published",
         "visibility": "Public",
         "is_system": 1,
+        "category": "data-quality",
         "rendering_engine": "Jinja2",
         "template_content": "Perform a comprehensive data quality audit on the {{ doctype_name }} DocType.\n\n**Audit Scope:**\n\n1. **Completeness Analysis**\n   - Identify records with missing required fields\n   - Calculate fill rates for each field\n   - Flag records that need attention\n\n2. **Consistency Checks**\n   - Verify data format consistency\n   - Check for duplicate records\n   - Validate referential integrity (linked documents exist)\n\n3. **Accuracy Assessment**\n   - Identify outliers and anomalies\n   - Check for invalid values\n   - Validate against business rules\n\n{% if time_range != 'all' %}4. **Time-based Analysis**\n   - Focus on records from {{ time_range }}\n   - Identify trends in data quality over time{% endif %}\n\n5. **Recommendations**\n   - Priority fixes needed\n   - Data cleanup suggestions\n   - Process improvements to prevent future issues\n\n**Output Format:**\n- Executive summary with key findings\n- Detailed metrics and statistics\n- List of records needing attention\n- Recommended actions\n\nUse the query_and_analyze and execute_python_code tools to perform this audit.",
         "arguments": [

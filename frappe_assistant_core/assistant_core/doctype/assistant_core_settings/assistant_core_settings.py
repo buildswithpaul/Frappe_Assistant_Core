@@ -640,31 +640,39 @@ Build unlimited analysis depth via progressive artifact updates.
             // Only define functions if they don't exist
             if (typeof window.togglePlugin === 'undefined') {
                 window.togglePlugin = function(pluginName, action) {
-                frappe.call({
-                    method: 'toggle_plugin',
-                    doc: cur_frm.doc,
-                    args: {
-                        plugin_name: pluginName,
-                        action: action
-                    },
-                    freeze: true,
-                    freeze_message: __('Updating plugin...'),
-                    callback: function(response) {
-                        if (!response.exc) {
-                            cur_frm.reload_doc();
-                            frappe.show_alert({
-                                message: __('Plugin {0} {1}d successfully', [pluginName, action]),
-                                indicator: 'green'
-                            });
-                        } else {
-                            frappe.show_alert({
-                                message: __('Failed to {0} plugin {1}', [action, pluginName]),
-                                indicator: 'red'
-                            });
-                        }
+                    // Use cur_frm if available (Single DocType form)
+                    if (typeof cur_frm === 'undefined' || !cur_frm) {
+                        frappe.show_alert({
+                            message: __('Form not ready. Please refresh the page.'),
+                            indicator: 'red'
+                        });
+                        return;
                     }
-                });
-            };
+
+                    frappe.call({
+                        method: 'frappe_assistant_core.assistant_core.doctype.assistant_core_settings.assistant_core_settings.toggle_plugin_api',
+                        args: {
+                            plugin_name: pluginName,
+                            action: action
+                        },
+                        freeze: true,
+                        freeze_message: __('Updating plugin...'),
+                        callback: function(response) {
+                            if (!response.exc && response.message && response.message.success) {
+                                cur_frm.reload_doc();
+                                frappe.show_alert({
+                                    message: __('Plugin {0} {1}d successfully', [pluginName, action]),
+                                    indicator: 'green'
+                                });
+                            } else {
+                                frappe.show_alert({
+                                    message: __('Failed to {0} plugin {1}', [action, pluginName]),
+                                    indicator: 'red'
+                                });
+                            }
+                        }
+                    });
+                };
             }
 
             if (typeof window.togglePluginTools === 'undefined') {
@@ -800,6 +808,40 @@ Build unlimited analysis depth via progressive artifact updates.
 
 # SSE Bridge API endpoints removed - SSE transport is deprecated
 # Use StreamableHTTP (OAuth-based) transport instead
+
+
+@frappe.whitelist()
+def toggle_plugin_api(plugin_name, action):
+    """
+    Standalone API to enable or disable a plugin.
+    This is called from the HTML buttons in the plugin management UI.
+    """
+    try:
+        from frappe_assistant_core.utils.plugin_manager import PluginError, get_plugin_manager
+
+        plugin_manager = get_plugin_manager()
+
+        if action == "enable":
+            result = plugin_manager.enable_plugin(plugin_name)
+            message = _("Plugin '{0}' enabled successfully").format(plugin_name)
+        elif action == "disable":
+            result = plugin_manager.disable_plugin(plugin_name)
+            message = _("Plugin '{0}' disabled successfully").format(plugin_name)
+        else:
+            frappe.throw(_("Invalid action: {0}").format(action))
+
+        if result:
+            return {"success": True, "message": message}
+        else:
+            error_msg = _("Failed to {0} plugin '{1}'").format(action, plugin_name)
+            frappe.throw(error_msg)
+
+    except PluginError as e:
+        frappe.log_error(title=frappe._("Plugin Toggle Error"), message=str(e))
+        frappe.throw(frappe._(str(e)))
+    except Exception as e:
+        frappe.log_error(title=frappe._("Plugin Toggle Error"), message=str(e))
+        frappe.throw(frappe._("Failed to {0} plugin '{1}': {2}").format(action, plugin_name, str(e)))
 
 
 def get_context(context):

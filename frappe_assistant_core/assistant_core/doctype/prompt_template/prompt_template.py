@@ -106,12 +106,52 @@ class PromptTemplate(Document):
         """Handle version increment on significant changes."""
         if not self.is_new():
             old_doc = self.get_doc_before_save()
-            if old_doc and old_doc.template_content != self.template_content:
+            if old_doc and self._has_significant_changes(old_doc):
                 self.version_number = (self.version_number or 1) + 1
                 frappe.msgprint(
-                    _("Template content changed. Version incremented to {0}").format(self.version_number),
+                    _("Significant changes detected. Version incremented to {0}").format(self.version_number),
                     indicator="blue",
                 )
+
+    def _has_significant_changes(self, old_doc) -> bool:
+        """
+        Check if document has significant changes that warrant version increment.
+
+        Significant changes include:
+        - Template content changes
+        - Argument additions, removals, or modifications
+        - Rendering engine changes
+        """
+        # Check template content
+        if old_doc.template_content != self.template_content:
+            return True
+
+        # Check rendering engine
+        if old_doc.rendering_engine != self.rendering_engine:
+            return True
+
+        # Check arguments
+        old_args = {arg.argument_name: arg for arg in (old_doc.arguments or [])}
+        new_args = {arg.argument_name: arg for arg in (self.arguments or [])}
+
+        # Different number of arguments
+        if set(old_args.keys()) != set(new_args.keys()):
+            return True
+
+        # Check each argument for changes
+        for arg_name, new_arg in new_args.items():
+            old_arg = old_args.get(arg_name)
+            if old_arg:
+                # Check key argument properties
+                if (
+                    old_arg.argument_type != new_arg.argument_type
+                    or old_arg.is_required != new_arg.is_required
+                    or old_arg.allowed_values != new_arg.allowed_values
+                    or old_arg.default_value != new_arg.default_value
+                ):
+                    return True
+
+        return False
 
     def on_update(self):
         """Clear caches after update."""

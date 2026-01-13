@@ -146,20 +146,46 @@ class PromptTemplateManager:
         """
         arguments = []
         for arg in prompt_doc.arguments:
-            arguments.append(
-                {
-                    "name": arg.argument_name,
-                    "description": arg.description or arg.display_label or arg.argument_name,
-                    "required": bool(arg.is_required),
-                }
-            )
+            # Build description with options for select types
+            description = arg.description or arg.display_label or arg.argument_name
 
-        return {
+            # For select/multiselect, append options to description for better visibility
+            options = None
+            if arg.argument_type in ("select", "multiselect") and arg.allowed_values:
+                options = [v.strip() for v in arg.allowed_values.split(",")]
+                options_str = ", ".join(options)
+                description = f"{description}. Options: {options_str}"
+                if arg.default_value:
+                    description = f"{description}. Default: {arg.default_value}"
+
+            arg_data = {
+                "name": arg.argument_name,
+                "description": description,
+                "required": bool(arg.is_required),
+            }
+
+            # Include enum for select/multiselect types (non-standard but useful)
+            if options:
+                arg_data["enum"] = options
+
+            # Include default value if set
+            if arg.default_value:
+                arg_data["default"] = arg.default_value
+
+            arguments.append(arg_data)
+
+        result = {
             "name": prompt_doc.prompt_id,
             "title": prompt_doc.title,
             "description": prompt_doc.description,
             "arguments": arguments,
         }
+
+        # Include category if set (non-standard MCP field but useful for organization)
+        if prompt_doc.category:
+            result["category"] = prompt_doc.category
+
+        return result
 
     def render_prompt(self, prompt_doc, arguments: Dict[str, Any]) -> str:
         """
