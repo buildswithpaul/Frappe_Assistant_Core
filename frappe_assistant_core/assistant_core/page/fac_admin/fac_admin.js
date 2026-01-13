@@ -121,11 +121,12 @@ frappe.pages['fac-admin'].on_page_load = function(wrapper) {
             .fac-tool-badge {
                 display: inline-block;
                 padding: 3px 10px;
-                background: var(--bg-light-gray);
+                background: var(--bg-color);
                 border-radius: 12px;
                 font-size: 11px;
                 color: var(--text-muted);
                 font-weight: 500;
+                border: 1px solid var(--border-color);
             }
             .fac-tool-toggle {
                 margin: 0;
@@ -176,8 +177,9 @@ frappe.pages['fac-admin'].on_page_load = function(wrapper) {
                 left: 0;
                 right: 0;
                 bottom: 0;
-                background-color: var(--gray-300);
+                background-color: var(--gray-400);
                 transition: .3s;
+                border: 1px solid var(--border-color);
             }
             .slider:before {
                 position: absolute;
@@ -186,8 +188,9 @@ frappe.pages['fac-admin'].on_page_load = function(wrapper) {
                 width: 18px;
                 left: 3px;
                 bottom: 3px;
-                background-color: white;
+                background-color: var(--card-bg);
                 transition: .3s;
+                box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
             }
             input:checked + .slider {
                 background-color: var(--primary);
@@ -214,8 +217,8 @@ frappe.pages['fac-admin'].on_page_load = function(wrapper) {
             .fac-settings-value {
                 font-size: 13px;
                 color: var(--text-color);
-                padding: 8px 12px;
-                background: var(--bg-color);
+                padding: 10px 12px;
+                background: var(--control-bg);
                 border-radius: var(--border-radius);
                 border: 1px solid var(--border-color);
             }
@@ -223,7 +226,6 @@ frappe.pages['fac-admin'].on_page_load = function(wrapper) {
                 font-family: var(--font-stack-monospace);
                 font-size: 12px;
                 word-break: break-all;
-                color: var(--primary);
             }
             .fac-table {
                 width: 100%;
@@ -243,6 +245,7 @@ frappe.pages['fac-admin'].on_page_load = function(wrapper) {
             .fac-table td {
                 padding: 10px 12px;
                 font-size: 13px;
+                color: var(--text-color);
                 border-bottom: 1px solid var(--border-color);
             }
             .fac-table tbody tr:hover {

@@ -32,9 +32,10 @@ class PromptTemplateArgument(Document):
         # Must be a valid Python identifier (for Jinja2 compatibility)
         if not re.match(r"^[a-zA-Z_][a-zA-Z0-9_]*$", self.argument_name):
             frappe.throw(
-                _("Argument name '{0}' must be a valid identifier "
-                  "(start with letter or underscore, contain only letters, numbers, underscores)"
-                  ).format(self.argument_name)
+                _(
+                    "Argument name '{0}' must be a valid identifier "
+                    "(start with letter or underscore, contain only letters, numbers, underscores)"
+                ).format(self.argument_name)
             )
 
     def validate_allowed_values(self):
@@ -42,7 +43,5 @@ class PromptTemplateArgument(Document):
         if self.argument_type in ("select", "multiselect"):
             if not self.allowed_values:
                 frappe.throw(
-                    _("Allowed Values is required for {0} type arguments").format(
-                        self.argument_type
-                    )
+                    _("Allowed Values is required for {0} type arguments").format(self.argument_type)
                 )

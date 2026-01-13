@@ -271,14 +271,14 @@ Build unlimited analysis depth via progressive artifact updates.
             total_tools = len(available_tools) + len(external_tools)
 
             html_parts.append(f"""
-            <div class="alert alert-info mb-3">
+            <div class="mb-3 p-3 rounded" style="background: var(--alert-bg-info); color: var(--alert-text-info); border: 1px solid var(--blue-200);">
                 <div class="row align-items-center">
                     <div class="col-md-8">
-                        <h5><i class="fa fa-cogs text-primary"></i> Plugin System Status</h5>
+                        <h5 style="color: var(--alert-text-info);"><i class="fa fa-cogs"></i> Plugin System Status</h5>
                         <div class="row mt-2">
                             <div class="col-md-4"><strong>Active Tools:</strong> <span class="badge badge-success">{active_tools}</span> / {total_tools}</div>
                             <div class="col-md-4"><strong>Plugins:</strong> <span class="badge badge-primary">{len(enabled_plugins)}</span> / {len(discovered_plugins)}</div>
-                            <div class="col-md-4"><strong>Status:</strong> <span class="text-success"><i class="fa fa-check-circle"></i> Operational</span></div>
+                            <div class="col-md-4"><strong>Status:</strong> <span style="color: var(--green-600);"><i class="fa fa-check-circle"></i> Operational</span></div>
                         </div>
                     </div>
                     <div class="col-md-4 text-right">
@@ -292,12 +292,12 @@ Build unlimited analysis depth via progressive artifact updates.
 
             # Plugin management section
             html_parts.append("""
-            <div class="card">
-                <div class="card-header">
+            <div class="card" style="background: var(--card-bg); border: 1px solid var(--border-color);">
+                <div class="card-header" style="background: var(--bg-color); border-bottom: 1px solid var(--border-color);">
                     <h6><i class="fa fa-puzzle-piece"></i> Plugin Management</h6>
                     <small class="text-muted">Enable or disable plugins to control available tools</small>
                 </div>
-                <div class="card-body">
+                <div class="card-body" style="background: var(--card-bg);">
             """)
 
             # Individual plugin cards with enhanced tool details
@@ -331,7 +331,7 @@ Build unlimited analysis depth via progressive artifact updates.
                 plugin_icon = category_icons.get(plugin_name, "fa-puzzle-piece")
 
                 html_parts.append(f"""
-                <div class="plugin-card border rounded p-3 mb-3" style="background: {"#f8f9fa" if is_enabled else "#ffffff"}; border-left: 4px solid {"#28a745" if is_enabled else "#6c757d"};">
+                <div class="plugin-card border rounded p-3 mb-3" style="background: var(--card-bg); border-left: 4px solid {"var(--green-500)" if is_enabled else "var(--gray-500)"};">
                     <div class="row align-items-center">
                         <div class="col-md-9">
                             <div class="d-flex align-items-center mb-2">
@@ -390,7 +390,7 @@ Build unlimited analysis depth via progressive artifact updates.
 
                             html_parts.append(f"""
                                 <div class="col-md-6 mb-2">
-                                    <div class="small p-2 border rounded" style="background: #f8f9fa;">
+                                    <div class="small p-2 border rounded" style="background: var(--bg-light-gray);">
                                         <div class="d-flex justify-content-between align-items-center">
                                             <span>
                                                 <i class="fa {tool_icon} text-{tool_status}"></i>
@@ -425,7 +425,7 @@ Build unlimited analysis depth via progressive artifact updates.
 
                         html_parts.append(f"""
                             <div class="col-md-6 mb-2">
-                                <div class="small p-2 border rounded" style="background: #f8f9fa;">
+                                <div class="small p-2 border rounded" style="background: var(--bg-light-gray);">
                                     <div class="d-flex justify-content-between align-items-center">
                                         <span>
                                             <i class="fa {tool_icon} text-{tool_status}"></i>
@@ -470,8 +470,8 @@ Build unlimited analysis depth via progressive artifact updates.
                 # Only count external tools for Tool Explorer if not already in available_tools
                 explorer_tool_count = len(available_tools) + len(external_tools)
                 html_parts.append(f"""
-                <div class="card mt-3">
-                    <div class="card-header">
+                <div class="card mt-3" style="background: var(--card-bg); border: 1px solid var(--border-color);">
+                    <div class="card-header" style="background: var(--bg-color); border-bottom: 1px solid var(--border-color);">
                         <div class="row align-items-center">
                             <div class="col-md-6">
                                 <h6 class="mb-0"><i class="fa fa-search"></i> Tool Explorer ({explorer_tool_count} tools)</h6>
@@ -491,7 +491,7 @@ Build unlimited analysis depth via progressive artifact updates.
                             </div>
                         </div>
                     </div>
-                    <div class="card-body" style="max-height: 400px; overflow-y: auto;">
+                    <div class="card-body" style="max-height: 400px; overflow-y: auto; background: var(--card-bg);">
                         <div class="row" id="tools-container">
                 """)
 
@@ -519,7 +519,7 @@ Build unlimited analysis depth via progressive artifact updates.
                          data-tool-name="{tool_name.lower()}"
                          data-plugin="{plugin_name.lower()}"
                          data-status="{"active" if is_plugin_enabled else "inactive"}">
-                        <div class="border rounded p-3 h-100" style="background: {"#f8f9fa" if is_plugin_enabled else "#ffffff"};">
+                        <div class="border rounded p-3 h-100" style="background: var(--card-bg);">
                             <div class="d-flex justify-content-between align-items-start mb-2">
                                 <h6 class="mb-1">
                                     <i class="fa fa-tool text-primary"></i>
@@ -557,7 +557,7 @@ Build unlimited analysis depth via progressive artifact updates.
                          data-tool-name="{tool_name.lower()}"
                          data-plugin="{tool_data.get("source_app", "custom_tools").lower()}"
                          data-status="{"active" if is_plugin_enabled else "inactive"}">
-                        <div class="border rounded p-3 h-100" style="background: {"#f8f9fa" if is_plugin_enabled else "#ffffff"};">
+                        <div class="border rounded p-3 h-100" style="background: var(--card-bg);">
                             <div class="d-flex justify-content-between align-items-start mb-2">
                                 <h6 class="mb-1">
                                     <i class="fa fa-tool text-primary"></i>
@@ -589,8 +589,8 @@ Build unlimited analysis depth via progressive artifact updates.
             error_plugins = [p for p in discovered_plugins if not p.get("can_enable", True)]
             if error_plugins:
                 html_parts.append("""
-                <div class="alert alert-warning mt-3">
-                    <h6><i class="fa fa-exclamation-triangle"></i> Plugin Issues</h6>
+                <div class="mt-3 p-3 rounded" style="background: var(--alert-bg-warning); color: var(--alert-text-warning); border: 1px solid var(--yellow-200);">
+                    <h6 style="color: var(--alert-text-warning);"><i class="fa fa-exclamation-triangle"></i> Plugin Issues</h6>
                     <ul class="mb-0">
                 """)
                 for plugin in error_plugins[:3]:
@@ -610,10 +610,14 @@ Build unlimited analysis depth via progressive artifact updates.
             .plugin-card {
                 transition: all 0.3s ease;
                 position: relative;
+                color: var(--text-color);
             }
             .plugin-card:hover {
                 transform: translateY(-2px);
-                box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+                box-shadow: var(--shadow-md);
+            }
+            .plugin-card h6 {
+                color: var(--heading-color);
             }
             .tool-details-btn:hover {
                 transform: scale(1.05);
@@ -628,6 +632,27 @@ Build unlimited analysis depth via progressive artifact updates.
             .badge-sm {
                 font-size: 0.7em;
                 padding: 0.2em 0.4em;
+            }
+            /* Form controls for dark theme */
+            #tool-search, #plugin-filter {
+                background-color: var(--control-bg);
+                color: var(--text-color);
+                border-color: var(--border-color);
+            }
+            #tool-search::placeholder {
+                color: var(--placeholder-color);
+            }
+            /* Card headers and sections */
+            .card-header h6 {
+                color: var(--heading-color);
+            }
+            /* Tool items */
+            .tool-item h6 {
+                color: var(--heading-color);
+            }
+            /* Border colors */
+            .border {
+                border-color: var(--border-color) !important;
             }
             </style>
 
@@ -771,7 +796,7 @@ Build unlimited analysis depth via progressive artifact updates.
         except Exception as e:
             return {
                 "success": False,
-                "html": f"<div class='alert alert-danger'>Error loading plugin status: {str(e)}</div>",
+                "html": f"<div class='p-3 rounded' style='background: var(--alert-bg-danger); color: var(--alert-text-danger); border: 1px solid var(--red-200);'>Error loading plugin status: {str(e)}</div>",
             }
 
     @frappe.whitelist()
