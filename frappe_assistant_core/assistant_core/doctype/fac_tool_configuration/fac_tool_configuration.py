@@ -22,7 +22,7 @@ class FACToolConfiguration(Document):
         plugin_name: Name of the plugin that provides this tool
         description: Tool description
         enabled: Whether the tool is enabled (default: 1)
-        tool_category: Category of the tool (read_only, write, read_write, dangerous)
+        tool_category: Category of the tool (read_only, write, read_write, privileged)
         auto_detected_category: Automatically detected category
         category_override: Whether the category has been manually overridden
         role_access_mode: Access mode (Allow All, Restrict to Listed Roles)

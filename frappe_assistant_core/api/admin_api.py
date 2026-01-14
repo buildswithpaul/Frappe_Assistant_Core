@@ -308,7 +308,12 @@ def get_tool_configurations():
             config = existing_configs.get(tool_name, {})
             tool_enabled = config.get("enabled", 1) if config else 1
             category = config.get("tool_category", "read_write") if config else "read_write"
+            # Normalize 'dangerous' to 'privileged' for UI consistency
+            if category == "dangerous":
+                category = "privileged"
             auto_category = config.get("auto_detected_category", "") if config else ""
+            if auto_category == "dangerous":
+                auto_category = "privileged"
             category_override = config.get("category_override", 0) if config else 0
             role_access_mode = config.get("role_access_mode", "Allow All") if config else "Allow All"
 
@@ -475,7 +480,7 @@ def update_tool_category(tool_name: str, category: str, override: bool = True):
 
     Args:
         tool_name: The name of the tool
-        category: The new category (read_only, write, read_write, dangerous)
+        category: The new category (read_only, write, read_write, privileged)
         override: Whether to mark this as a manual override
 
     Returns:
@@ -485,7 +490,11 @@ def update_tool_category(tool_name: str, category: str, override: bool = True):
     from frappe_assistant_core.utils.plugin_manager import get_plugin_manager
     from frappe_assistant_core.utils.tool_category_detector import detect_tool_category
 
-    valid_categories = ["read_only", "write", "read_write", "dangerous"]
+    # Accept both 'privileged' and 'dangerous' for backward compatibility
+    valid_categories = ["read_only", "write", "read_write", "privileged", "dangerous"]
+    # Normalize 'dangerous' to 'privileged'
+    if category == "dangerous":
+        category = "privileged"
     if category not in valid_categories:
         return {"success": False, "message": _(f"Invalid category. Must be one of: {valid_categories}")}
 

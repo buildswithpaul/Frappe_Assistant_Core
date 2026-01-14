@@ -11,6 +11,8 @@ frappe.pages['fac-admin'].on_page_load = function(wrapper) {
         refreshInProgress: false,  // Track if auto-refresh is happening
         autoRefreshEnabled: true,  // Can be disabled during operations
         viewMode: 'plugins',  // 'plugins' or 'tools'
+        availableRoles: [],  // Cached list of available roles
+        openConfigPanels: {},  // Track which tool config panels are open
     };
 
     // Add custom styles matching Frappe theme
@@ -188,15 +190,18 @@ frappe.pages['fac-admin'].on_page_load = function(wrapper) {
                 width: 18px;
                 left: 3px;
                 bottom: 3px;
-                background-color: var(--card-bg);
+                background-color: white;
                 transition: .3s;
-                box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+                box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
             }
             input:checked + .slider {
-                background-color: var(--primary);
+                background-color: var(--green-500);
+                border-color: var(--green-600);
             }
             input:checked + .slider:before {
                 transform: translateX(20px);
+                background-color: white;
+                box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
             }
             .slider.round {
                 border-radius: 24px;
@@ -304,9 +309,14 @@ frappe.pages['fac-admin'].on_page_load = function(wrapper) {
                 background: var(--blue-100);
                 color: var(--blue-600);
             }
-            .fac-category-badge.dangerous, .fac-category-badge.red {
-                background: var(--red-100);
-                color: var(--red-600);
+            .fac-category-badge.privileged, .fac-category-badge.orange {
+                background: var(--orange-100);
+                color: var(--orange-600);
+            }
+            /* Backward compatibility for existing 'dangerous' category */
+            .fac-category-badge.dangerous {
+                background: var(--orange-100);
+                color: var(--orange-600);
             }
             /* Tool item with expanded layout */
             .fac-tool-item-detailed {
@@ -376,6 +386,123 @@ frappe.pages['fac-admin'].on_page_load = function(wrapper) {
                 border-radius: var(--border-radius);
                 font-size: 13px;
                 background: var(--card-bg);
+            }
+            /* Tool settings button */
+            .fac-tool-settings-btn {
+                background: transparent;
+                border: 1px solid var(--border-color);
+                border-radius: var(--border-radius);
+                padding: 4px 8px;
+                cursor: pointer;
+                color: var(--text-muted);
+                font-size: 12px;
+                transition: all 0.15s;
+                margin-left: 8px;
+            }
+            .fac-tool-settings-btn:hover {
+                background: var(--blue-100);
+                color: var(--blue-600);
+                border-color: var(--blue-400);
+            }
+            .fac-tool-settings-btn.active {
+                background: var(--blue-500);
+                color: white;
+                border-color: var(--blue-600);
+            }
+            /* Tool config panel */
+            .fac-tool-config-panel {
+                display: none;
+                margin-top: 12px;
+                padding: 12px;
+                background: var(--control-bg);
+                border-radius: var(--border-radius);
+                border: 1px solid var(--border-color);
+            }
+            .fac-tool-config-panel.open {
+                display: block;
+            }
+            .fac-config-row {
+                display: flex;
+                gap: 16px;
+                align-items: flex-start;
+                margin-bottom: 12px;
+            }
+            .fac-config-row:last-child {
+                margin-bottom: 0;
+            }
+            .fac-config-group {
+                flex: 1;
+            }
+            .fac-config-label {
+                font-size: 11px;
+                font-weight: 600;
+                color: var(--text-muted);
+                text-transform: uppercase;
+                margin-bottom: 6px;
+                display: block;
+            }
+            .fac-config-select {
+                width: 100%;
+                padding: 6px 10px;
+                border: 1px solid var(--border-color);
+                border-radius: var(--border-radius);
+                font-size: 12px;
+                background: var(--card-bg);
+            }
+            /* Role tags */
+            .fac-role-tags {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 6px;
+                margin-top: 8px;
+            }
+            .fac-role-tag {
+                display: inline-flex;
+                align-items: center;
+                gap: 4px;
+                padding: 4px 8px;
+                background: var(--blue-100);
+                color: var(--blue-700);
+                border-radius: 12px;
+                font-size: 11px;
+                font-weight: 500;
+            }
+            .fac-role-tag .remove-role {
+                cursor: pointer;
+                opacity: 0.7;
+            }
+            .fac-role-tag .remove-role:hover {
+                opacity: 1;
+            }
+            .fac-add-role-btn {
+                display: inline-flex;
+                align-items: center;
+                gap: 4px;
+                padding: 4px 8px;
+                background: var(--card-bg);
+                color: var(--text-muted);
+                border: 1px dashed var(--border-color);
+                border-radius: 12px;
+                font-size: 11px;
+                cursor: pointer;
+                transition: all 0.15s;
+            }
+            .fac-add-role-btn:hover {
+                border-color: var(--primary);
+                color: var(--primary);
+            }
+            .fac-config-actions {
+                display: flex;
+                gap: 8px;
+                justify-content: flex-end;
+                margin-top: 12px;
+                padding-top: 12px;
+                border-top: 1px solid var(--border-color);
+            }
+            .fac-tool-actions {
+                display: flex;
+                align-items: center;
+                gap: 8px;
             }
         </style>
     `;
@@ -468,7 +595,7 @@ frappe.pages['fac-admin'].on_page_load = function(wrapper) {
                         <option value="read_only">Read Only</option>
                         <option value="write">Write</option>
                         <option value="read_write">Read & Write</option>
-                        <option value="dangerous">Dangerous</option>
+                        <option value="privileged">Privileged</option>
                     </select>
                     <select class="fac-filter-select" id="plugin-filter">
                         <option value="">All Plugins</option>
@@ -732,9 +859,13 @@ frappe.pages['fac-admin'].on_page_load = function(wrapper) {
                 !tool.description.toLowerCase().includes(searchTerm)) {
                 return false;
             }
-            // Category filter
-            if (categoryFilter && tool.category !== categoryFilter) {
-                return false;
+            // Category filter - treat 'privileged' and 'dangerous' as equivalent
+            if (categoryFilter) {
+                const toolCategory = tool.category === 'dangerous' ? 'privileged' : tool.category;
+                const filterCategory = categoryFilter === 'dangerous' ? 'privileged' : categoryFilter;
+                if (toolCategory !== filterCategory) {
+                    return false;
+                }
             }
             // Plugin filter
             if (pluginFilter && tool.plugin_name !== pluginFilter) {
@@ -751,27 +882,78 @@ frappe.pages['fac-admin'].on_page_load = function(wrapper) {
         const toolsHtml = filteredTools.map(tool => {
             const isToggling = state.toggleInProgress[`tool_${tool.name}`];
             const pluginDisabled = !tool.plugin_enabled;
+            const isPanelOpen = state.openConfigPanels[tool.name];
+            const roleTagsHtml = (tool.role_access || []).map(r =>
+                `<span class="fac-role-tag" data-role="${r.role}">
+                    ${r.role}
+                    <i class="fa fa-times remove-role" data-tool="${tool.name}" data-role="${r.role}"></i>
+                </span>`
+            ).join('');
 
             return `
-                <div class="fac-tool-item-detailed ${isToggling ? 'toggle-in-progress' : ''} ${pluginDisabled ? 'fac-disabled-overlay' : ''}">
+                <div class="fac-tool-item-detailed ${isToggling ? 'toggle-in-progress' : ''} ${pluginDisabled ? 'fac-disabled-overlay' : ''}" data-tool-name="${tool.name}">
                     <div class="fac-tool-header">
                         <div class="fac-tool-title">
                             ${tool.display_name}
                             <span class="fac-category-badge ${tool.category}">${tool.category_label}</span>
                         </div>
-                        <label class="switch" style="margin: 0;">
-                            <input type="checkbox" class="fac-tool-toggle"
-                                   data-tool="${tool.name}"
-                                   ${tool.tool_enabled ? 'checked' : ''}
-                                   ${isToggling || pluginDisabled ? 'disabled' : ''}>
-                            <span class="slider round"></span>
-                        </label>
+                        <div class="fac-tool-actions">
+                            <button class="fac-tool-settings-btn ${isPanelOpen ? 'active' : ''}"
+                                    data-tool="${tool.name}"
+                                    title="Configure role access">
+                                <i class="fa fa-cog"></i>
+                            </button>
+                            <label class="switch" style="margin: 0;">
+                                <input type="checkbox" class="fac-tool-toggle"
+                                       data-tool="${tool.name}"
+                                       ${tool.tool_enabled ? 'checked' : ''}
+                                       ${isToggling || pluginDisabled ? 'disabled' : ''}>
+                                <span class="slider round"></span>
+                            </label>
+                        </div>
                     </div>
                     <div class="fac-tool-description">${tool.description || 'No description available'}</div>
                     <div class="fac-tool-footer">
                         <span class="fac-tool-badge">${tool.plugin_display_name}</span>
                         ${pluginDisabled ? '<span class="fac-plugin-disabled-notice"><i class="fa fa-exclamation-circle"></i> Plugin disabled</span>' : ''}
                         ${tool.role_access_mode !== 'Allow All' ? '<span class="fac-tool-badge" style="background: var(--blue-100); color: var(--blue-600);"><i class="fa fa-lock"></i> Role restricted</span>' : ''}
+                    </div>
+
+                    <!-- Configuration Panel -->
+                    <div class="fac-tool-config-panel ${isPanelOpen ? 'open' : ''}" id="config-panel-${tool.name}">
+                        <div class="fac-config-row">
+                            <div class="fac-config-group">
+                                <label class="fac-config-label">Role Access Mode</label>
+                                <select class="fac-config-select fac-role-mode-select" data-tool="${tool.name}">
+                                    <option value="Allow All" ${tool.role_access_mode === 'Allow All' ? 'selected' : ''}>Allow All Users</option>
+                                    <option value="Restrict to Listed Roles" ${tool.role_access_mode === 'Restrict to Listed Roles' ? 'selected' : ''}>Restrict to Listed Roles</option>
+                                </select>
+                            </div>
+                            <div class="fac-config-group">
+                                <label class="fac-config-label">Category</label>
+                                <select class="fac-config-select fac-category-select" data-tool="${tool.name}">
+                                    <option value="read_only" ${tool.category === 'read_only' ? 'selected' : ''}>Read Only</option>
+                                    <option value="write" ${tool.category === 'write' ? 'selected' : ''}>Write</option>
+                                    <option value="read_write" ${tool.category === 'read_write' ? 'selected' : ''}>Read & Write</option>
+                                    <option value="privileged" ${tool.category === 'privileged' || tool.category === 'dangerous' ? 'selected' : ''}>Privileged</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="fac-config-row fac-roles-section" data-tool="${tool.name}" style="${tool.role_access_mode !== 'Restrict to Listed Roles' ? 'display: none;' : ''}">
+                            <div class="fac-config-group">
+                                <label class="fac-config-label">Allowed Roles</label>
+                                <div class="fac-role-tags" id="role-tags-${tool.name}">
+                                    ${roleTagsHtml}
+                                    <span class="fac-add-role-btn" data-tool="${tool.name}">
+                                        <i class="fa fa-plus"></i> Add Role
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="fac-config-actions">
+                            <button class="btn btn-xs btn-default fac-config-cancel" data-tool="${tool.name}">Cancel</button>
+                            <button class="btn btn-xs btn-primary fac-config-save" data-tool="${tool.name}">Save Changes</button>
+                        </div>
                     </div>
                 </div>
             `;
@@ -784,6 +966,224 @@ frappe.pages['fac-admin'].on_page_load = function(wrapper) {
             const toolName = $(this).data('tool');
             const isEnabled = $(this).is(':checked');
             toggleTool(toolName, isEnabled);
+        });
+
+        // Add settings button handlers
+        $('.fac-tool-settings-btn').off('click').on('click', function() {
+            const toolName = $(this).data('tool');
+            toggleConfigPanel(toolName);
+        });
+
+        // Add role mode change handlers
+        $('.fac-role-mode-select').off('change').on('change', function() {
+            const toolName = $(this).data('tool');
+            const mode = $(this).val();
+            const rolesSection = $(`.fac-roles-section[data-tool="${toolName}"]`);
+            if (mode === 'Restrict to Listed Roles') {
+                rolesSection.show();
+            } else {
+                rolesSection.hide();
+            }
+        });
+
+        // Add role button handlers
+        $('.fac-add-role-btn').off('click').on('click', function() {
+            const toolName = $(this).data('tool');
+            showAddRoleDialog(toolName);
+        });
+
+        // Remove role handlers
+        $('.remove-role').off('click').on('click', function() {
+            const toolName = $(this).data('tool');
+            const role = $(this).data('role');
+            removeRole(toolName, role);
+        });
+
+        // Cancel button handlers
+        $('.fac-config-cancel').off('click').on('click', function() {
+            const toolName = $(this).data('tool');
+            toggleConfigPanel(toolName, false);
+            // Re-render to reset any unsaved changes
+            renderToolsList();
+        });
+
+        // Save button handlers
+        $('.fac-config-save').off('click').on('click', function() {
+            const toolName = $(this).data('tool');
+            saveToolConfig(toolName);
+        });
+    }
+
+    // Toggle config panel visibility
+    function toggleConfigPanel(toolName, forceState) {
+        const panel = $(`#config-panel-${toolName}`);
+        const btn = $(`.fac-tool-settings-btn[data-tool="${toolName}"]`);
+
+        if (forceState === false || (forceState === undefined && panel.hasClass('open'))) {
+            panel.removeClass('open');
+            btn.removeClass('active');
+            delete state.openConfigPanels[toolName];
+        } else {
+            panel.addClass('open');
+            btn.addClass('active');
+            state.openConfigPanels[toolName] = true;
+            // Load roles if not already loaded
+            if (state.availableRoles.length === 0) {
+                loadAvailableRoles();
+            }
+        }
+    }
+
+    // Load available roles
+    function loadAvailableRoles() {
+        frappe.call({
+            method: "frappe_assistant_core.api.admin_api.get_available_roles",
+            callback: function(response) {
+                if (response.message && response.message.success) {
+                    state.availableRoles = response.message.roles;
+                }
+            }
+        });
+    }
+
+    // Show add role dialog
+    function showAddRoleDialog(toolName) {
+        const tool = toolsData.find(t => t.name === toolName);
+        const existingRoles = (tool?.role_access || []).map(r => r.role);
+        const availableRoles = state.availableRoles.filter(r => !existingRoles.includes(r.name));
+
+        if (availableRoles.length === 0) {
+            frappe.show_alert({
+                message: 'All available roles have been added',
+                indicator: 'orange'
+            });
+            return;
+        }
+
+        const dialog = new frappe.ui.Dialog({
+            title: 'Add Role',
+            fields: [
+                {
+                    fieldname: 'role',
+                    fieldtype: 'Select',
+                    label: 'Role',
+                    options: availableRoles.map(r => r.name).join('\n'),
+                    reqd: 1
+                }
+            ],
+            primary_action_label: 'Add',
+            primary_action: function(values) {
+                addRole(toolName, values.role);
+                dialog.hide();
+            }
+        });
+        dialog.show();
+    }
+
+    // Add role to tool
+    function addRole(toolName, role) {
+        const tool = toolsData.find(t => t.name === toolName);
+        if (!tool.role_access) {
+            tool.role_access = [];
+        }
+        tool.role_access.push({ role: role, allow_access: 1 });
+
+        // Re-render the role tags
+        const container = $(`#role-tags-${toolName}`);
+        const addBtn = container.find('.fac-add-role-btn');
+        addBtn.before(`
+            <span class="fac-role-tag" data-role="${role}">
+                ${role}
+                <i class="fa fa-times remove-role" data-tool="${toolName}" data-role="${role}"></i>
+            </span>
+        `);
+
+        // Re-attach remove handler
+        container.find(`.remove-role[data-role="${role}"]`).off('click').on('click', function() {
+            removeRole(toolName, role);
+        });
+    }
+
+    // Remove role from tool
+    function removeRole(toolName, role) {
+        const tool = toolsData.find(t => t.name === toolName);
+        if (tool && tool.role_access) {
+            tool.role_access = tool.role_access.filter(r => r.role !== role);
+        }
+        $(`#role-tags-${toolName} .fac-role-tag[data-role="${role}"]`).remove();
+    }
+
+    // Save tool configuration
+    function saveToolConfig(toolName) {
+        const tool = toolsData.find(t => t.name === toolName);
+        const panel = $(`#config-panel-${toolName}`);
+
+        const roleAccessMode = panel.find('.fac-role-mode-select').val();
+        const category = panel.find('.fac-category-select').val();
+        const roles = tool.role_access || [];
+
+        // Show saving state
+        const saveBtn = panel.find('.fac-config-save');
+        saveBtn.prop('disabled', true).html('<i class="fa fa-spinner fa-spin"></i> Saving...');
+
+        // Update role access first
+        frappe.call({
+            method: "frappe_assistant_core.api.admin_api.update_tool_role_access",
+            args: {
+                tool_name: toolName,
+                role_access_mode: roleAccessMode,
+                roles: roles
+            },
+            callback: function(response) {
+                if (response.message && response.message.success) {
+                    // Now update category
+                    frappe.call({
+                        method: "frappe_assistant_core.api.admin_api.update_tool_category",
+                        args: {
+                            tool_name: toolName,
+                            category: category,
+                            override: true
+                        },
+                        callback: function(catResponse) {
+                            if (catResponse.message && catResponse.message.success) {
+                                frappe.show_alert({
+                                    message: 'Tool configuration saved',
+                                    indicator: 'green'
+                                });
+
+                                // Update local data
+                                tool.role_access_mode = roleAccessMode;
+                                tool.category = category;
+
+                                // Close panel and refresh
+                                toggleConfigPanel(toolName, false);
+                                loadToolsView();
+                            } else {
+                                frappe.show_alert({
+                                    message: catResponse.message?.message || 'Failed to update category',
+                                    indicator: 'red'
+                                });
+                            }
+                        },
+                        always: function() {
+                            saveBtn.prop('disabled', false).html('Save Changes');
+                        }
+                    });
+                } else {
+                    frappe.show_alert({
+                        message: response.message?.message || 'Failed to save configuration',
+                        indicator: 'red'
+                    });
+                    saveBtn.prop('disabled', false).html('Save Changes');
+                }
+            },
+            error: function() {
+                frappe.show_alert({
+                    message: 'Error saving configuration',
+                    indicator: 'red'
+                });
+                saveBtn.prop('disabled', false).html('Save Changes');
+            }
         });
     }
 

@@ -59,7 +59,7 @@
             "in_list_view": 1,
             "in_standard_filter": 1,
             "label": "Tool Category",
-            "options": "\nread_only\nwrite\nread_write\ndangerous",
+            "options": "\nread_only\nwrite\nread_write\nprivileged",
             "description": "Category indicating what type of operations this tool performs"
         },
         {

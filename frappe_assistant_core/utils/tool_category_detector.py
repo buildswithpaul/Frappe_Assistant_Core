@@ -13,7 +13,7 @@ Categories:
 - read_only: Tools that only read data (perm_type="read")
 - write: Tools that modify data (perm_type in write/create/submit/cancel/amend)
 - read_write: Tools that both read and write data
-- dangerous: Tools that can delete data or execute arbitrary code
+- privileged: Tools with elevated access (delete data, execute code, run queries)
 """
 
 import ast
@@ -27,7 +27,7 @@ PERM_TYPE_CATEGORIES = {
     "read": "read_only",
     "write": "write",
     "create": "write",
-    "delete": "dangerous",
+    "delete": "privileged",
     "submit": "write",
     "cancel": "write",
     "amend": "write",
@@ -39,8 +39,9 @@ PERM_TYPE_CATEGORIES = {
     "report": "read_only",
 }
 
-# Tools that are always categorized as dangerous (hardcoded list)
-DANGEROUS_TOOLS = {
+# Tools that are always categorized as privileged (hardcoded list)
+# These tools have elevated access - can delete data, execute code, or run queries
+PRIVILEGED_TOOLS = {
     "execute_python_code",
     "run_python_code",
     "query_and_analyze",
@@ -87,14 +88,14 @@ class ToolCategoryDetector:
             tool_instance: An instance of a tool class
 
         Returns:
-            Category string: 'read_only', 'write', 'read_write', or 'dangerous'
+            Category string: 'read_only', 'write', 'read_write', or 'privileged'
         """
         tool_name = getattr(tool_instance, "name", None)
 
         # Check hardcoded lists first (fastest path)
         if tool_name:
-            if tool_name in DANGEROUS_TOOLS:
-                return "dangerous"
+            if tool_name in PRIVILEGED_TOOLS:
+                return "privileged"
             if tool_name in READ_ONLY_TOOLS:
                 return "read_only"
             if tool_name in WRITE_TOOLS:
@@ -106,7 +107,7 @@ class ToolCategoryDetector:
             return self._categorize_from_perm_types(perm_types)
         except Exception as e:
             self.logger.warning(f"Failed to detect category for {tool_name}: {e}")
-            return "read_write"  # Default to most permissive non-dangerous category
+            return "read_write"  # Default to most permissive non-privileged category
 
     def _extract_perm_types(self, tool_instance) -> Set[str]:
         """
@@ -167,9 +168,9 @@ class ToolCategoryDetector:
         if not perm_types:
             return "read_write"  # Unknown, assume mixed
 
-        # Check for dangerous operations
+        # Check for privileged operations (elevated access)
         if "delete" in perm_types:
-            return "dangerous"
+            return "privileged"
 
         # Check for write operations
         write_ops = {"write", "create", "submit", "cancel", "amend", "import", "share"}
@@ -209,7 +210,7 @@ def detect_tool_category(tool_instance) -> str:
         tool_instance: An instance of a tool class
 
     Returns:
-        Category string: 'read_only', 'write', 'read_write', or 'dangerous'
+        Category string: 'read_only', 'write', 'read_write', or 'privileged'
     """
     return get_detector().detect_category(tool_instance)
 
@@ -243,11 +244,18 @@ def get_category_info(category: str) -> dict:
             "icon": "fa-exchange-alt",
             "description": "This tool can both read and modify data",
         },
+        "privileged": {
+            "label": "Privileged",
+            "color": "orange",
+            "icon": "fa-shield-alt",
+            "description": "This tool has elevated access - can delete data, execute code, or run database queries",
+        },
+        # Keep backward compatibility for existing data
         "dangerous": {
-            "label": "Dangerous",
-            "color": "red",
-            "icon": "fa-exclamation-triangle",
-            "description": "This tool can delete data or execute arbitrary code - use with caution",
+            "label": "Privileged",
+            "color": "orange",
+            "icon": "fa-shield-alt",
+            "description": "This tool has elevated access - can delete data, execute code, or run database queries",
         },
     }
     return categories.get(category, categories["read_write"])

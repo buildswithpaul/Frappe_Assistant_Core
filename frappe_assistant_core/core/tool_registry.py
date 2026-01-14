@@ -326,7 +326,7 @@ class ToolRegistry:
             "read_only": 0,
             "write": 0,
             "read_write": 0,
-            "dangerous": 0,
+            "privileged": 0,
         }
 
         for tool_info in all_tools.values():
