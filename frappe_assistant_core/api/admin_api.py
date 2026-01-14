@@ -140,7 +140,11 @@ def get_tool_stats():
 
 @frappe.whitelist()
 def toggle_plugin(plugin_name: str, enable: bool):
-    """Enable or disable a plugin."""
+    """Enable or disable a plugin.
+
+    Uses atomic DocType updates via FAC Plugin Configuration for
+    reliable state persistence across Gunicorn workers.
+    """
     from frappe_assistant_core.utils.plugin_manager import get_plugin_manager
 
     try:
@@ -153,10 +157,15 @@ def toggle_plugin(plugin_name: str, enable: bool):
             plugin_manager.disable_plugin(plugin_name)
             message = f"Plugin '{plugin_name}' disabled successfully"
 
-        # Clear plugin-related caches to ensure UI shows correct state
+        # Clear all plugin-related caches to ensure UI shows correct state
         cache = frappe.cache()
         cache.delete_keys("plugin_*")
         cache.delete_keys("tool_registry_*")
+        cache.delete_keys("fac_plugin_*")
+
+        # Clear document caches for proper cross-worker consistency
+        frappe.clear_document_cache("FAC Plugin Configuration", plugin_name)
+        frappe.clear_document_cache("Assistant Core Settings", "Assistant Core Settings")
 
         # Refresh plugin manager's internal cache
         plugin_manager.refresh_plugins()

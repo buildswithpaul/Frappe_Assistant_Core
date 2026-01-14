@@ -65,6 +65,9 @@ def after_migrate():
     # Install/update system prompt templates
     _install_system_prompt_templates()
 
+    # Sync plugin configurations from discovered plugins
+    _sync_plugin_configurations()
+
     # Sync tool configurations from discovered plugins
     _sync_tool_configurations()
 
@@ -122,6 +125,9 @@ def after_install():
 
     # Install system prompt templates
     _install_system_prompt_templates()
+
+    # Sync plugin configurations from discovered plugins
+    _sync_plugin_configurations()
 
     # Sync tool configurations from discovered plugins
     _sync_tool_configurations()
@@ -443,6 +449,75 @@ def _install_system_prompt_templates():
         frappe.logger("migration_hooks").error(f"Failed to install system prompt templates: {str(e)}")
 
 
+def _sync_plugin_configurations():
+    """
+    Sync plugin configurations from discovered plugins.
+
+    This function:
+    1. Discovers all available plugins
+    2. Creates FAC Plugin Configuration records for new plugins
+    3. Preserves existing plugin enabled/disabled states
+    4. Does NOT modify existing configurations (preserves user changes)
+    """
+    try:
+        # Check if FAC Plugin Configuration table exists
+        if not frappe.db.table_exists("tabFAC Plugin Configuration"):
+            frappe.logger("migration_hooks").info(
+                "FAC Plugin Configuration table not yet created, skipping plugin sync"
+            )
+            return
+
+        from frappe_assistant_core.utils.plugin_manager import PluginDiscovery
+
+        discovery = PluginDiscovery()
+        discovered_plugins = discovery.discover_plugins()
+
+        # Load existing enabled state from legacy JSON (for migration)
+        legacy_enabled = set()
+        try:
+            settings = frappe.get_single("Assistant Core Settings")
+            enabled_list = getattr(settings, "enabled_plugins_list", None)
+            if enabled_list:
+                import json
+
+                legacy_enabled = set(json.loads(enabled_list))
+        except Exception:
+            pass
+
+        created_count = 0
+        skipped_count = 0
+
+        for plugin_name, plugin_info in discovered_plugins.items():
+            if frappe.db.exists("FAC Plugin Configuration", plugin_name):
+                skipped_count += 1
+                continue
+
+            # Determine if plugin should be enabled
+            # Use legacy JSON state if available, otherwise default to enabled
+            is_enabled = 1 if plugin_name in legacy_enabled or not legacy_enabled else 0
+
+            # Create configuration
+            config = frappe.new_doc("FAC Plugin Configuration")
+            config.plugin_name = plugin_name
+            config.display_name = plugin_info.display_name
+            config.description = plugin_info.description
+            config.enabled = is_enabled
+            config.discovered_at = frappe.utils.now()
+
+            config.flags.ignore_permissions = True
+            config.insert()
+            created_count += 1
+
+        frappe.db.commit()
+
+        frappe.logger("migration_hooks").info(
+            f"Plugin configurations synced: {created_count} created, {skipped_count} already exist"
+        )
+
+    except Exception as e:
+        frappe.logger("migration_hooks").error(f"Failed to sync plugin configurations: {str(e)}")
+
+
 def _sync_tool_configurations():
     """
     Sync tool configurations from discovered plugins.
@@ -578,5 +653,6 @@ __all__ = [
     "on_app_install",
     "on_app_uninstall",
     "get_migration_status",
+    "_sync_plugin_configurations",
     "_sync_tool_configurations",
 ]

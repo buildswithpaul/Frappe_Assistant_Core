@@ -12,3 +12,6 @@ frappe_assistant_core.patches.v2_0_0.remove_deprecated_doctypes
 # Version 2.1.0 - Improved Onboarding UX
 frappe_assistant_core.patches.v2_1.update_assistant_enabled_default
 frappe_assistant_core.patches.v2_1.remove_old_assistant_admin_page
+
+# Version 2.2.0 - Plugin Configuration Migration
+frappe_assistant_core.patches.v2_2.migrate_plugin_settings_to_doctype
