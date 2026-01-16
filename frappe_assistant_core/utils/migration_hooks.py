@@ -456,8 +456,9 @@ def _sync_plugin_configurations():
     This function:
     1. Discovers all available plugins
     2. Creates FAC Plugin Configuration records for new plugins
-    3. Preserves existing plugin enabled/disabled states
-    4. Does NOT modify existing configurations (preserves user changes)
+    3. Removes orphan configurations for plugins that no longer exist
+    4. Preserves existing plugin enabled/disabled states
+    5. Does NOT modify existing configurations (preserves user changes)
     """
     try:
         # Check if FAC Plugin Configuration table exists
@@ -471,6 +472,7 @@ def _sync_plugin_configurations():
 
         discovery = PluginDiscovery()
         discovered_plugins = discovery.discover_plugins()
+        discovered_plugin_names = set(discovered_plugins.keys())
 
         # Load existing enabled state from legacy JSON (for migration)
         legacy_enabled = set()
@@ -486,7 +488,9 @@ def _sync_plugin_configurations():
 
         created_count = 0
         skipped_count = 0
+        deleted_count = 0
 
+        # Create new plugin configurations
         for plugin_name, plugin_info in discovered_plugins.items():
             if frappe.db.exists("FAC Plugin Configuration", plugin_name):
                 skipped_count += 1
@@ -508,10 +512,30 @@ def _sync_plugin_configurations():
             config.insert()
             created_count += 1
 
+        # Cleanup orphan plugin configurations (plugins that no longer exist)
+        existing_configs = frappe.get_all("FAC Plugin Configuration", pluck="plugin_name")
+        for config_name in existing_configs:
+            if config_name not in discovered_plugin_names:
+                try:
+                    frappe.delete_doc(
+                        "FAC Plugin Configuration",
+                        config_name,
+                        force=True,
+                        ignore_permissions=True,
+                    )
+                    deleted_count += 1
+                    frappe.logger("migration_hooks").info(
+                        f"Removed orphan plugin configuration: {config_name}"
+                    )
+                except Exception as e:
+                    frappe.logger("migration_hooks").warning(
+                        f"Failed to delete orphan plugin config '{config_name}': {e}"
+                    )
+
         frappe.db.commit()
 
         frappe.logger("migration_hooks").info(
-            f"Plugin configurations synced: {created_count} created, {skipped_count} already exist"
+            f"Plugin configurations synced: {created_count} created, {skipped_count} already exist, {deleted_count} removed"
         )
 
     except Exception as e:
@@ -526,7 +550,8 @@ def _sync_tool_configurations():
     1. Discovers all tools from enabled plugins
     2. Creates FAC Tool Configuration records for new tools
     3. Auto-detects tool categories
-    4. Does NOT modify existing configurations (preserves user changes)
+    4. Removes orphan configurations for tools that no longer exist
+    5. Does NOT modify existing configurations (preserves user changes)
     """
     try:
         # Check if FAC Tool Configuration table exists
@@ -548,8 +573,12 @@ def _sync_tool_configurations():
         # Also get external tools from hooks
         external_tools = _get_external_tools_for_sync()
 
+        # Build set of all discovered tool names
+        discovered_tool_names = set(all_tools.keys()) | set(external_tools.keys())
+
         created_count = 0
         skipped_count = 0
+        deleted_count = 0
 
         # Process plugin tools
         for tool_name, tool_info in all_tools.items():
@@ -604,10 +633,28 @@ def _sync_tool_configurations():
             config.insert()
             created_count += 1
 
+        # Cleanup orphan tool configurations (tools that no longer exist)
+        existing_configs = frappe.get_all("FAC Tool Configuration", pluck="tool_name")
+        for config_name in existing_configs:
+            if config_name not in discovered_tool_names:
+                try:
+                    frappe.delete_doc(
+                        "FAC Tool Configuration",
+                        config_name,
+                        force=True,
+                        ignore_permissions=True,
+                    )
+                    deleted_count += 1
+                    frappe.logger("migration_hooks").info(f"Removed orphan tool configuration: {config_name}")
+                except Exception as e:
+                    frappe.logger("migration_hooks").warning(
+                        f"Failed to delete orphan tool config '{config_name}': {e}"
+                    )
+
         frappe.db.commit()
 
         frappe.logger("migration_hooks").info(
-            f"Tool configurations synced: {created_count} created, {skipped_count} already exist"
+            f"Tool configurations synced: {created_count} created, {skipped_count} already exist, {deleted_count} removed"
         )
 
     except Exception as e:

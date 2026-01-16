@@ -51,26 +51,45 @@ PRIVILEGED_TOOLS = {
 
 # Tools that are always categorized as read_only (hardcoded list)
 READ_ONLY_TOOLS = {
+    # Document tools
     "get_document",
     "list_documents",
+    # Search tools
     "search_documents",
     "search_doctype",
     "search_link",
+    "search",  # ChatGPT search
+    "fetch",  # ChatGPT fetch
+    # Metadata tools
     "get_doctype_info",
     "metadata_doctype",
+    # Report tools
     "report_execute",
     "report_list",
+    "report_requirements",  # Only reads report metadata
+    "generate_report",  # Executes reports (read operation)
+    # Workflow tools
     "workflow_list",
     "workflow_status",
+    # Data science tools (read-only analysis)
     "analyze_frappe_data",
+    "analyze_business_data",  # Only analyzes data, no modifications
+    "extract_file_content",  # Only reads file content
+    # Visualization tools (read-only)
+    "list_user_dashboards",  # Only lists dashboards
 }
 
 # Tools that are always categorized as write (hardcoded list)
 WRITE_TOOLS = {
+    # Document tools
     "create_document",
     "update_document",
     "submit_document",
+    # Workflow tools
     "run_workflow",
+    # Visualization tools (create/modify)
+    "create_dashboard",
+    "create_dashboard_chart",
 }
 
 

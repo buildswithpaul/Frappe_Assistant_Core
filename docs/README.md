@@ -41,6 +41,15 @@ Complete API documentation and tool references:
 
 ---
 
+### 📋 [Guides](guides/)
+
+User guides for administrators managing the system:
+
+- **[Tool Management Guide](guides/TOOL_MANAGEMENT_GUIDE.md)** - Enable/disable tools, configure role-based access
+- **[Plugin Management Guide](guides/PLUGIN_MANAGEMENT_GUIDE.md)** - Enable/disable plugins, manage tool groups
+
+---
+
 ### 🛠️ [Development](development/)
 
 Guides for developers building custom tools and plugins:
@@ -98,6 +107,11 @@ Additional resources and references:
 - [Development Guide](development/DEVELOPMENT_GUIDE.md)
 - [External App Development](development/EXTERNAL_APP_DEVELOPMENT.md)
 - [Plugin Development](development/PLUGIN_DEVELOPMENT.md)
+
+**Tool & Plugin Management:**
+- [Tool Management Guide](guides/TOOL_MANAGEMENT_GUIDE.md) - Enable/disable tools, role-based access
+- [Plugin Management Guide](guides/PLUGIN_MANAGEMENT_GUIDE.md) - Enable/disable plugins
+- [Architecture Overview](architecture/ARCHITECTURE.md) - System design
 
 ---
 

@@ -504,6 +504,42 @@ frappe.pages['fac-admin'].on_page_load = function(wrapper) {
                 align-items: center;
                 gap: 8px;
             }
+            /* Bulk actions bar */
+            .fac-bulk-actions-bar {
+                display: flex;
+                gap: 10px;
+                align-items: center;
+                margin-bottom: 12px;
+                padding: 10px 12px;
+                background: var(--bg-color);
+                border-radius: var(--border-radius);
+                border: 1px solid var(--border-color);
+            }
+            .fac-bulk-label {
+                font-size: 12px;
+                font-weight: 600;
+                color: var(--text-muted);
+                margin-right: 4px;
+            }
+            .fac-bulk-actions-bar .btn {
+                min-width: 80px;
+            }
+            .fac-bulk-actions-bar .btn-success {
+                background: var(--green-500);
+                border-color: var(--green-600);
+                color: white;
+            }
+            .fac-bulk-actions-bar .btn-success:hover {
+                background: var(--green-600);
+            }
+            .fac-bulk-actions-bar .btn-warning {
+                background: var(--orange-500);
+                border-color: var(--orange-600);
+                color: white;
+            }
+            .fac-bulk-actions-bar .btn-warning:hover {
+                background: var(--orange-600);
+            }
         </style>
     `;
 
@@ -584,6 +620,27 @@ frappe.pages['fac-admin'].on_page_load = function(wrapper) {
                     <div class="fac-view-tab" data-view="tools">
                         <i class="fa fa-wrench"></i> Individual Tools
                     </div>
+                </div>
+
+                <!-- Bulk Actions Bar (shown in tools view) -->
+                <div class="fac-bulk-actions-bar" id="tools-bulk-actions" style="display: none;">
+                    <span class="fac-bulk-label">Bulk Actions:</span>
+                    <select class="fac-filter-select" id="bulk-category-select">
+                        <option value="">Select Category</option>
+                        <option value="read_only">Read Only</option>
+                        <option value="write">Write</option>
+                        <option value="read_write">Read & Write</option>
+                        <option value="privileged">Privileged</option>
+                    </select>
+                    <select class="fac-filter-select" id="bulk-plugin-select">
+                        <option value="">All Plugins</option>
+                    </select>
+                    <button class="btn btn-xs btn-success" id="bulk-enable-btn">
+                        <i class="fa fa-check"></i> Enable
+                    </button>
+                    <button class="btn btn-xs btn-warning" id="bulk-disable-btn">
+                        <i class="fa fa-times"></i> Disable
+                    </button>
                 </div>
 
                 <!-- Filter Bar (shown in tools view) -->
@@ -828,12 +885,16 @@ frappe.pages['fac-admin'].on_page_load = function(wrapper) {
                 if (response.message && response.message.success) {
                     toolsData = response.message.tools;
 
-                    // Populate plugin filter
+                    // Populate plugin filter and bulk plugin select
                     const plugins = [...new Set(toolsData.map(t => t.plugin_name))];
                     const pluginFilter = $('#plugin-filter');
+                    const bulkPluginSelect = $('#bulk-plugin-select');
                     pluginFilter.find('option:gt(0)').remove();
+                    bulkPluginSelect.find('option:gt(0)').remove();
                     plugins.forEach(p => {
-                        pluginFilter.append(`<option value="${p}">${p.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}</option>`);
+                        const label = p.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase());
+                        pluginFilter.append(`<option value="${p}">${label}</option>`);
+                        bulkPluginSelect.append(`<option value="${p}">${label}</option>`);
                     });
 
                     renderToolsList();
@@ -1385,11 +1446,13 @@ frappe.pages['fac-admin'].on_page_load = function(wrapper) {
         // Update state
         state.viewMode = viewMode;
 
-        // Show/hide filter bar
+        // Show/hide filter bar and bulk actions bar
         if (viewMode === 'tools') {
             $('#tools-filter-bar').show();
+            $('#tools-bulk-actions').show();
         } else {
             $('#tools-filter-bar').hide();
+            $('#tools-bulk-actions').hide();
         }
 
         // Reload the registry
@@ -1407,6 +1470,68 @@ frappe.pages['fac-admin'].on_page_load = function(wrapper) {
         if (state.viewMode === 'tools') {
             renderToolsList();
         }
+    });
+
+    // Bulk toggle by category function
+    function bulkToggleByCategory(category, plugin, enabled) {
+        const actionText = enabled ? 'enable' : 'disable';
+        const categoryText = category ? category.replace('_', ' ') : 'all categories';
+        const pluginText = plugin ? ` in ${plugin}` : '';
+
+        // Disable buttons during operation
+        $('#bulk-enable-btn, #bulk-disable-btn').prop('disabled', true);
+        const btn = enabled ? $('#bulk-enable-btn') : $('#bulk-disable-btn');
+        const originalHtml = btn.html();
+        btn.html(`<i class="fa fa-spinner fa-spin"></i> ${enabled ? 'Enabling' : 'Disabling'}...`);
+
+        frappe.call({
+            method: "frappe_assistant_core.api.admin_api.bulk_toggle_tools_by_category",
+            args: {
+                category: category || null,
+                plugin_name: plugin || null,
+                enabled: enabled
+            },
+            callback: function(response) {
+                if (response.message && response.message.success) {
+                    frappe.show_alert({
+                        message: response.message.message,
+                        indicator: enabled ? 'green' : 'orange'
+                    });
+                    // Refresh the tools list
+                    loadToolsView();
+                    loadStats();
+                } else {
+                    frappe.show_alert({
+                        message: response.message?.message || `Failed to ${actionText} tools`,
+                        indicator: 'red'
+                    });
+                }
+            },
+            error: function() {
+                frappe.show_alert({
+                    message: `Error: Failed to ${actionText} tools`,
+                    indicator: 'red'
+                });
+            },
+            always: function() {
+                // Re-enable buttons
+                $('#bulk-enable-btn, #bulk-disable-btn').prop('disabled', false);
+                btn.html(originalHtml);
+            }
+        });
+    }
+
+    // Bulk action button handlers
+    $('#bulk-enable-btn').on('click', function() {
+        const category = $('#bulk-category-select').val();
+        const plugin = $('#bulk-plugin-select').val();
+        bulkToggleByCategory(category, plugin, true);
+    });
+
+    $('#bulk-disable-btn').on('click', function() {
+        const category = $('#bulk-category-select').val();
+        const plugin = $('#bulk-plugin-select').val();
+        bulkToggleByCategory(category, plugin, false);
     });
 
     // Initial load

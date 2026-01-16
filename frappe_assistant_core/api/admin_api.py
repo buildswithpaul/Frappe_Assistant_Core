@@ -483,6 +483,91 @@ def bulk_toggle_tools(tool_names: list, enabled: bool):
 
 
 @frappe.whitelist()
+def bulk_toggle_tools_by_category(category: str = None, enabled: bool = True, plugin_name: str = None):
+    """
+    Enable or disable all tools in a category.
+
+    Args:
+        category: Tool category (read_only, write, read_write, privileged) or None for all
+        enabled: True to enable, False to disable
+        plugin_name: Optional - filter by plugin (e.g., "core", "data_science")
+
+    Returns:
+        {"success": bool, "toggled": [...], "failed": [...], "total": int, "message": str}
+    """
+    import json
+
+    # Parse JSON if passed as string
+    if isinstance(enabled, str):
+        enabled = enabled.lower() in ("true", "1", "yes")
+
+    # Validate category if provided
+    valid_categories = ["read_only", "write", "read_write", "privileged"]
+    if category and category not in valid_categories:
+        return {
+            "success": False,
+            "message": _(f"Invalid category. Must be one of: {', '.join(valid_categories)}"),
+        }
+
+    # Build filters for query
+    filters = {}
+    if category:
+        filters["tool_category"] = category
+    if plugin_name:
+        filters["plugin_name"] = plugin_name
+
+    # Get matching tools from FAC Tool Configuration
+    try:
+        if filters:
+            tool_names = frappe.get_all("FAC Tool Configuration", filters=filters, pluck="tool_name")
+        else:
+            tool_names = frappe.get_all("FAC Tool Configuration", pluck="tool_name")
+    except Exception as e:
+        return {"success": False, "message": _(f"Error querying tools: {str(e)}")}
+
+    if not tool_names:
+        filter_desc = []
+        if category:
+            filter_desc.append(f"category '{category}'")
+        if plugin_name:
+            filter_desc.append(f"plugin '{plugin_name}'")
+        filter_str = " and ".join(filter_desc) if filter_desc else "the given criteria"
+        return {
+            "success": True,
+            "toggled": [],
+            "failed": [],
+            "total": 0,
+            "message": _(f"No tools found matching {filter_str}"),
+        }
+
+    # Toggle each tool
+    results = {"success": True, "toggled": [], "failed": [], "total": len(tool_names)}
+
+    for tool_name in tool_names:
+        result = toggle_tool(tool_name, enabled)
+        if result.get("success"):
+            results["toggled"].append(tool_name)
+        else:
+            results["failed"].append({"name": tool_name, "error": result.get("message")})
+
+    # Set overall status and message
+    if results["failed"]:
+        results["success"] = len(results["toggled"]) > 0  # Partial success
+        results["message"] = _(f"{len(results['toggled'])} tools toggled, {len(results['failed'])} failed")
+    else:
+        action = "enabled" if enabled else "disabled"
+        filter_desc = []
+        if category:
+            filter_desc.append(f"'{category}'")
+        if plugin_name:
+            filter_desc.append(f"in '{plugin_name}'")
+        filter_str = " ".join(filter_desc) if filter_desc else ""
+        results["message"] = _(f"Successfully {action} {len(results['toggled'])} {filter_str} tools")
+
+    return results
+
+
+@frappe.whitelist()
 def update_tool_category(tool_name: str, category: str, override: bool = True):
     """
     Update the category for a tool.
