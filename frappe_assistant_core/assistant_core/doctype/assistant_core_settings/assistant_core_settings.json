@@ -14,6 +14,10 @@
   "plugins_section",
   "enabled_plugins_list",
   "plugin_status_html",
+  "resources_tab",
+  "resources_section",
+  "enable_resources_feature",
+  "resources_info_html",
   "streaming_tab",
   "streaming_section",
   "enforce_artifact_streaming",
@@ -93,6 +97,30 @@
    "label": "Plugin Status",
    "options": "<div id=\"plugin-status-container\">Loading plugin information...</div>",
    "description": "Current status of installed plugins and available tools"
+  },
+  {
+   "fieldname": "resources_tab",
+   "fieldtype": "Tab Break",
+   "label": "Resources"
+  },
+  {
+   "fieldname": "resources_section",
+   "fieldtype": "Section Break",
+   "label": "MCP Resources Configuration",
+   "description": "Configure MCP resources feature. When enabled, tool descriptions are minimized and detailed documentation is served via MCP resources."
+  },
+  {
+   "default": "0",
+   "description": "When enabled, tool descriptions are minimized and detailed documentation is served via MCP resources. Reduces LLM context usage for clients that support MCP resources. Access tool docs via URIs like <code>fac://tools/list_documents</code>.",
+   "fieldname": "enable_resources_feature",
+   "fieldtype": "Check",
+   "label": "Enable Resources Feature"
+  },
+  {
+   "fieldname": "resources_info_html",
+   "fieldtype": "HTML",
+   "label": "Resources Info",
+   "options": "<div id=\"resources-info-container\"><p><strong>How it works:</strong></p><ul><li><strong>Disabled (default)</strong> - Tools have full descriptions, no resources served</li><li><strong>Enabled</strong> - Tools have minimal descriptions with resource hints, tool documentation served as MCP resources</li></ul><p><strong>Tool Documentation:</strong> Automatically loaded from <code>docs/tools/*.md</code> files</p><p>Access resources via MCP using URIs like <code>fac://tools/list_documents</code></p></div>"
   },
   {
    "fieldname": "streaming_tab",

@@ -197,6 +197,127 @@ Content-Type: application/json
 }
 ```
 
+### List Resources
+
+Returns available MCP resources (tool documentation). Only returns resources when the Resources Feature is enabled in settings.
+
+**Request:**
+
+```http
+POST /api/method/frappe_assistant_core.api.fac_endpoint.handle_mcp HTTP/1.1
+Host: your-frappe-site.com
+Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGc...
+Content-Type: application/json
+```
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "resources/list",
+  "params": {},
+  "id": 4
+}
+```
+
+**Response (Resources Feature Enabled):**
+
+```json
+{
+  "jsonrpc": "2.0",
+  "result": {
+    "resources": [
+      {
+        "uri": "fac://tools/create_document",
+        "name": "Tool: create_document",
+        "description": "Usage documentation for the create_document tool",
+        "mimeType": "text/markdown"
+      },
+      {
+        "uri": "fac://tools/list_documents",
+        "name": "Tool: list_documents",
+        "description": "Usage documentation for the list_documents tool",
+        "mimeType": "text/markdown"
+      }
+    ]
+  },
+  "id": 4
+}
+```
+
+**Response (Resources Feature Disabled):**
+
+```json
+{
+  "jsonrpc": "2.0",
+  "result": {
+    "resources": []
+  },
+  "id": 4
+}
+```
+
+### Read Resource
+
+Reads the content of a specific resource by URI.
+
+**Request:**
+
+```http
+POST /api/method/frappe_assistant_core.api.fac_endpoint.handle_mcp HTTP/1.1
+Host: your-frappe-site.com
+Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGc...
+Content-Type: application/json
+```
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "resources/read",
+  "params": {
+    "uri": "fac://tools/create_document"
+  },
+  "id": 5
+}
+```
+
+**Response:**
+
+```json
+{
+  "jsonrpc": "2.0",
+  "result": {
+    "contents": [
+      {
+        "uri": "fac://tools/create_document",
+        "mimeType": "text/markdown",
+        "text": "# create_document\n\n## Description\n\nCreate new Frappe documents with proper validation..."
+      }
+    ]
+  },
+  "id": 5
+}
+```
+
+**Error Response (Resource Not Found):**
+
+```json
+{
+  "jsonrpc": "2.0",
+  "error": {
+    "code": -32602,
+    "message": "Tool documentation not found: unknown_tool"
+  },
+  "id": 5
+}
+```
+
+**URI Format:**
+
+Resources use the `fac://` URI scheme:
+- `fac://tools/{tool_name}` - Tool documentation
+
+See [MCP Resources Guide](../guides/MCP_RESOURCES_GUIDE.md) for detailed documentation on the resources feature.
+
 ## OAuth 2.0 / OIDC Endpoints
 
 ### Discovery Endpoints

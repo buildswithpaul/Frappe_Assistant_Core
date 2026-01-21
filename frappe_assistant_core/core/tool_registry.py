@@ -215,6 +215,44 @@ class ToolRegistry:
         external_tool_info = external_tools.get(tool_name)
         return external_tool_info.instance if external_tool_info else None
 
+    def _is_resources_feature_enabled(self) -> bool:
+        """
+        Check if resources feature is enabled in settings.
+
+        Returns:
+            True if resources feature is enabled, False otherwise
+        """
+        try:
+            # Read directly from DB to avoid cache issues
+            return bool(
+                frappe.db.get_single_value("Assistant Core Settings", "enable_resources_feature") or 0
+            )
+        except Exception:
+            return False
+
+    def _has_tool_documentation(self, tool_name: str) -> bool:
+        """
+        Check if documentation exists for a tool.
+
+        Only tools with documentation in docs/tools/*.md should use
+        minimal descriptions with resource hints. Custom tools from
+        other apps without documentation should keep full descriptions.
+
+        Args:
+            tool_name: Name of the tool
+
+        Returns:
+            True if documentation file exists, False otherwise
+        """
+        import os
+
+        try:
+            app_path = frappe.get_app_path("frappe_assistant_core")
+            doc_path = os.path.join(app_path, "docs", "tools", f"{tool_name}.md")
+            return os.path.exists(doc_path)
+        except Exception:
+            return False
+
     def get_available_tools(self, user: Optional[str] = None) -> List[Dict[str, Any]]:
         """
         Get list of available tools for user with permission checking.
@@ -233,6 +271,9 @@ class ToolRegistry:
         """
         effective_user = user or frappe.session.user
         plugin_manager = get_plugin_manager()
+
+        # Check if resources feature is enabled (use minimal descriptions)
+        resources_enabled = self._is_resources_feature_enabled()
 
         # Step 1: Get tools from enabled plugins
         tools = plugin_manager.get_all_tools()
@@ -254,7 +295,13 @@ class ToolRegistry:
                 if not self._check_tool_permission(tool_info.instance, effective_user):
                     continue
 
-                available_tools.append(tool_info.instance.get_metadata())
+                # Use minimal descriptions when resources feature is enabled AND tool has documentation
+                # Tools without documentation keep full descriptions to avoid broken resource hints
+                use_minimal = resources_enabled and self._has_tool_documentation(tool_name)
+                if use_minimal:
+                    available_tools.append(tool_info.instance.to_mcp_format(use_minimal=True))
+                else:
+                    available_tools.append(tool_info.instance.get_metadata())
 
             except Exception as e:
                 self.logger.warning(f"Failed to get metadata for tool {tool_info.name}: {e}")

@@ -740,3 +740,144 @@ def get_available_roles():
     except Exception as e:
         frappe.log_error(f"Failed to get available roles: {str(e)}")
         return {"success": False, "error": str(e), "roles": []}
+
+
+# ============================================================================
+# MCP Resources Management APIs
+# ============================================================================
+
+
+@frappe.whitelist()
+def get_resource_stats():
+    """
+    Get MCP resource statistics for admin dashboard.
+
+    Returns statistics about tool documentation and resources feature status.
+    """
+    import os
+
+    try:
+        # Get tool documentation count
+        tool_docs_count = 0
+        try:
+            app_path = frappe.get_app_path("frappe_assistant_core")
+            docs_path = os.path.join(app_path, "docs", "tools")
+            if os.path.exists(docs_path):
+                tool_docs_count = len([f for f in os.listdir(docs_path) if f.endswith(".md")])
+        except Exception:
+            pass
+
+        # Get resources feature status - read directly from DB to avoid cache issues
+        resources_enabled = False
+        try:
+            # Use db.get_single_value to bypass document cache
+            resources_enabled = bool(
+                frappe.db.get_single_value("Assistant Core Settings", "enable_resources_feature") or 0
+            )
+        except Exception:
+            pass
+
+        return {
+            "success": True,
+            "tool_docs_count": tool_docs_count,
+            "total_resources": tool_docs_count,
+            "resources_enabled": resources_enabled,
+        }
+
+    except Exception as e:
+        frappe.log_error(f"Failed to get resource stats: {str(e)}")
+        return {"success": False, "error": str(e)}
+
+
+@frappe.whitelist()
+def get_tool_docs_list():
+    """
+    Get list of available tool documentation files.
+
+    Returns list of tool names that have documentation.
+    """
+    import os
+
+    try:
+        tool_docs = []
+        app_path = frappe.get_app_path("frappe_assistant_core")
+        docs_path = os.path.join(app_path, "docs", "tools")
+
+        if os.path.exists(docs_path):
+            for filename in os.listdir(docs_path):
+                if filename.endswith(".md"):
+                    tool_name = filename[:-3]
+                    file_path = os.path.join(docs_path, filename)
+                    stat = os.stat(file_path)
+
+                    tool_docs.append(
+                        {
+                            "name": tool_name,
+                            "filename": filename,
+                            "uri": f"fac://tools/{tool_name}",
+                            "size": stat.st_size,
+                            "modified": frappe.utils.formatdate(
+                                frappe.utils.get_datetime(stat.st_mtime), "medium"
+                            ),
+                        }
+                    )
+
+        # Sort by name
+        tool_docs.sort(key=lambda x: x["name"])
+
+        return {"success": True, "tool_docs": tool_docs}
+
+    except Exception as e:
+        frappe.log_error(f"Failed to get tool docs list: {str(e)}")
+        return {"success": False, "error": str(e), "tool_docs": []}
+
+
+@frappe.whitelist()
+def toggle_resources_feature(enabled: bool):
+    """
+    Enable or disable the MCP resources feature.
+
+    When enabled:
+    - Tool descriptions are minimized with resource hints
+    - Detailed documentation is served via MCP resources
+
+    Args:
+        enabled: True to enable, False to disable
+
+    Returns:
+        Success status and message
+    """
+    try:
+        # Convert to boolean
+        enabled = frappe.utils.cint(enabled)
+
+        # Clear document cache first to ensure we get fresh data
+        frappe.clear_document_cache("Assistant Core Settings", "Assistant Core Settings")
+
+        settings = frappe.get_single("Assistant Core Settings")
+        settings.enable_resources_feature = enabled
+        settings.save(ignore_permissions=True)
+
+        # Commit the transaction to ensure it's persisted
+        frappe.db.commit()
+
+        # Clear all related caches after save
+        cache = frappe.cache()
+        cache.delete_keys("*get_cached_server_settings*")
+        cache.delete_keys("assistant_*")
+        frappe.clear_document_cache("Assistant Core Settings", "Assistant Core Settings")
+
+        # Also clear frappe's internal single cache
+        if hasattr(frappe.local, "singles"):
+            frappe.local.singles.pop("Assistant Core Settings", None)
+
+        if enabled:
+            message = "Resources feature enabled. Tool descriptions will be minimized."
+        else:
+            message = "Resources feature disabled. Full tool descriptions will be used."
+
+        return {"success": True, "message": _(message), "enabled": bool(enabled)}
+
+    except Exception as e:
+        frappe.log_error(f"Failed to toggle resources feature: {str(e)}")
+        return {"success": False, "message": _(f"Error: {str(e)}")}

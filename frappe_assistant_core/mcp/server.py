@@ -190,8 +190,17 @@ class MCPServer:
                 )
                 result = self._handle_tools_call(params)
             elif method == "resources/list":
-                # Return empty resources list (we don't support resources)
-                result = {"resources": []}
+                from frappe_assistant_core.api.handlers.resources import handle_resources_list
+
+                result = handle_resources_list(params)
+            elif method == "resources/read":
+                from frappe_assistant_core.api.handlers.resources import handle_resources_read
+
+                result = handle_resources_read(params)
+            elif method == "resources/templates/list":
+                # We use static resources, not URI templates
+                # Return empty list to satisfy MCP spec
+                result = {"resourceTemplates": []}
             elif method == "prompts/list":
                 result = self._handle_prompts_list(params, request_id)
             elif method == "prompts/get":
@@ -244,8 +253,7 @@ class MCPServer:
             "capabilities": {
                 "tools": {},  # We support tools
                 "prompts": {},  # We support prompts (database-driven templates)
-                # Note: We respond to resources/list with empty arrays
-                # since we don't support resources yet
+                "resources": {},  # We support resources (tool docs + wiki pages)
             },
             "serverInfo": {"name": self.name, "version": "2.0.0"},
         }

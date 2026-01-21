@@ -23,6 +23,46 @@ without rewriting them. This is a compatibility layer.
 
 from typing import Any, Dict
 
+import frappe
+
+
+def _is_resources_feature_enabled() -> bool:
+    """
+    Check if resources feature is enabled in settings.
+
+    Returns:
+        True if resources feature is enabled, False otherwise
+    """
+    try:
+        # Read directly from DB to avoid cache issues
+        return bool(frappe.db.get_single_value("Assistant Core Settings", "enable_resources_feature") or 0)
+    except Exception:
+        return False
+
+
+def _has_tool_documentation(tool_name: str) -> bool:
+    """
+    Check if documentation exists for a tool.
+
+    Only tools with documentation in docs/tools/*.md should use
+    minimal descriptions with resource hints. Custom tools from
+    other apps without documentation should keep full descriptions.
+
+    Args:
+        tool_name: Name of the tool
+
+    Returns:
+        True if documentation file exists, False otherwise
+    """
+    import os
+
+    try:
+        app_path = frappe.get_app_path("frappe_assistant_core")
+        doc_path = os.path.join(app_path, "docs", "tools", f"{tool_name}.md")
+        return os.path.exists(doc_path)
+    except Exception:
+        return False
+
 
 def register_base_tool(mcp_server, tool_instance):
     """
@@ -30,6 +70,10 @@ def register_base_tool(mcp_server, tool_instance):
 
     This adapter allows existing tools that inherit from BaseTool
     to work with our new MCP server without modification.
+
+    When the resources feature is enabled AND the tool has documentation,
+    uses minimal descriptions that reference MCP resources. Tools without
+    documentation keep their full descriptions to avoid broken resource hints.
 
     Args:
         mcp_server: MCPServer instance
@@ -50,11 +94,20 @@ def register_base_tool(mcp_server, tool_instance):
         """Wrapper that calls BaseTool.execute()"""
         return tool_instance._safe_execute(arguments)
 
+    # Check if resources feature is enabled AND tool has documentation
+    # Only use minimal descriptions for tools with actual documentation
+    # to avoid pointing to non-existent resources
+    use_minimal = _is_resources_feature_enabled() and _has_tool_documentation(tool_instance.name)
+    if use_minimal:
+        description = tool_instance.get_minimal_description()
+    else:
+        description = tool_instance.description
+
     # Register with MCP server
     mcp_server.add_tool(
         {
             "name": tool_instance.name,
-            "description": tool_instance.description,
+            "description": description,
             "inputSchema": tool_instance.inputSchema,
             "annotations": getattr(tool_instance, "annotations", None),
             "fn": tool_wrapper,

@@ -47,6 +47,7 @@ User guides for administrators managing the system:
 
 - **[Tool Management Guide](guides/TOOL_MANAGEMENT_GUIDE.md)** - Enable/disable tools, configure role-based access
 - **[Plugin Management Guide](guides/PLUGIN_MANAGEMENT_GUIDE.md)** - Enable/disable plugins, manage tool groups
+- **[MCP Resources Guide](guides/MCP_RESOURCES_GUIDE.md)** - Optimize LLM context with MCP resources
 
 ---
 
@@ -100,6 +101,7 @@ Additional resources and references:
 
 **MCP Protocol:**
 - [MCP StreamableHTTP Guide](architecture/MCP_STREAMABLEHTTP_GUIDE.md)
+- [MCP Resources Guide](guides/MCP_RESOURCES_GUIDE.md) - Optimize context with resources
 - [API Reference](api/API_REFERENCE.md)
 - [Architecture Overview](architecture/ARCHITECTURE.md)
 
@@ -143,6 +145,7 @@ Frappe Assistant Core provides **21 tools** organized in a plugin-based architec
 
 - **🔌 OAuth 2.0 Authentication** - Industry-standard security with dynamic client registration
 - **🌐 MCP StreamableHTTP** - Modern HTTP-based protocol (RFC 9728 compliant)
+- **📚 MCP Resources** - Optimize LLM context by serving tool docs via resources (~80% token savings)
 - **🔒 Enterprise Security** - Role-based permissions, audit logging, sensitive data filtering
 - **📦 Plugin Architecture** - Extensible framework for custom business logic
 - **🔄 Frappe v15/v16 Compatible** - Works with both Frappe versions

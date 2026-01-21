@@ -1,0 +1,935 @@
+/*
+ * Frappe Assistant Core - FAC Admin Page Styles
+ * Copyright (C) 2025 Paul Clinton
+ * AGPL-3.0 License
+ */
+
+/* ============================================
+   Container & Card Styles
+   ============================================ */
+
+.fac-admin-container {
+    max-width: 1400px;
+    margin: 0 auto;
+}
+
+.fac-card {
+    background: var(--card-bg);
+    border-radius: var(--border-radius-md);
+    padding: 20px;
+    margin-bottom: 20px;
+    box-shadow: var(--shadow-sm);
+    border: 1px solid var(--border-color);
+}
+
+.fac-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.fac-card-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--heading-color);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/* ============================================
+   Status Indicators
+   ============================================ */
+
+.fac-status-indicator {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    display: inline-block;
+}
+
+.fac-status-indicator.active {
+    background: var(--green-500);
+    box-shadow: 0 0 0 3px var(--green-100);
+}
+
+.fac-status-indicator.inactive {
+    background: var(--red-500);
+    box-shadow: 0 0 0 3px var(--red-100);
+}
+
+/* ============================================
+   Stats Grid
+   ============================================ */
+
+.fac-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 20px;
+    margin-bottom: 20px;
+}
+
+.fac-stat-card {
+    background: var(--card-bg);
+    border-radius: var(--border-radius-md);
+    padding: 20px;
+    border-left: 4px solid var(--primary);
+    box-shadow: var(--shadow-sm);
+}
+
+.fac-stat-card h3 {
+    margin: 0 0 12px 0;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.fac-stat-value {
+    font-size: 32px;
+    font-weight: 600;
+    color: var(--heading-color);
+    margin-bottom: 8px;
+}
+
+.fac-stat-label {
+    font-size: 13px;
+    color: var(--text-muted);
+}
+
+/* ============================================
+   Tool & Plugin Items
+   ============================================ */
+
+.fac-tool-item {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border-color);
+    transition: background 0.15s;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.fac-tool-item:hover {
+    background: var(--bg-color);
+}
+
+.fac-tool-item:last-child {
+    border-bottom: none;
+}
+
+.fac-tool-info {
+    flex: 1;
+}
+
+.fac-tool-name {
+    font-weight: 600;
+    color: var(--heading-color);
+    margin-bottom: 4px;
+    font-size: 14px;
+}
+
+.fac-tool-meta {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    font-size: 12px;
+}
+
+.fac-tool-badge {
+    display: inline-block;
+    padding: 3px 10px;
+    background: var(--bg-color);
+    border-radius: 12px;
+    font-size: 11px;
+    color: var(--text-muted);
+    font-weight: 500;
+    border: 1px solid var(--border-color);
+}
+
+.fac-tool-toggle {
+    margin: 0;
+}
+
+.fac-plugin-item {
+    padding: 16px;
+    border-bottom: 1px solid var(--border-color);
+    transition: background 0.15s;
+}
+
+.fac-plugin-item:hover {
+    background: var(--bg-color);
+}
+
+.fac-plugin-item:last-child {
+    border-bottom: none;
+}
+
+.fac-plugin-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.fac-plugin-name {
+    font-weight: 600;
+    color: var(--heading-color);
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.fac-plugin-name i {
+    color: var(--primary);
+}
+
+/* ============================================
+   Toggle Switch
+   ============================================ */
+
+.switch {
+    position: relative;
+    display: inline-block;
+    width: 44px;
+    height: 24px;
+}
+
+.switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: var(--gray-400);
+    transition: .3s;
+    border: 1px solid var(--border-color);
+}
+
+.slider:before {
+    position: absolute;
+    content: "";
+    height: 18px;
+    width: 18px;
+    left: 3px;
+    bottom: 3px;
+    background-color: white;
+    transition: .3s;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+input:checked + .slider {
+    background-color: var(--green-500);
+    border-color: var(--green-600);
+}
+
+input:checked + .slider:before {
+    transform: translateX(20px);
+    background-color: white;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.slider.round {
+    border-radius: 24px;
+}
+
+.slider.round:before {
+    border-radius: 50%;
+}
+
+/* ============================================
+   Settings & Endpoints
+   ============================================ */
+
+.fac-settings-group {
+    margin-bottom: 24px;
+}
+
+.fac-settings-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--heading-color);
+    margin-bottom: 8px;
+    display: block;
+}
+
+.fac-settings-value {
+    font-size: 13px;
+    color: var(--text-color);
+    padding: 10px 12px;
+    background: var(--control-bg);
+    border-radius: var(--border-radius);
+    border: 1px solid var(--border-color);
+}
+
+.fac-endpoint-url {
+    font-family: var(--font-stack-monospace);
+    font-size: 12px;
+    word-break: break-all;
+}
+
+/* ============================================
+   Tables
+   ============================================ */
+
+.fac-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.fac-table thead {
+    background: var(--bg-color);
+}
+
+.fac-table th {
+    padding: 10px 12px;
+    text-align: left;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-muted);
+    border-bottom: 1px solid var(--border-color);
+}
+
+.fac-table td {
+    padding: 10px 12px;
+    font-size: 13px;
+    color: var(--text-color);
+    border-bottom: 1px solid var(--border-color);
+}
+
+.fac-table tbody tr:hover {
+    background: var(--bg-color);
+}
+
+/* ============================================
+   Toggle States
+   ============================================ */
+
+.toggle-in-progress {
+    opacity: 0.6;
+    pointer-events: none;
+}
+
+.toggle-in-progress .slider {
+    cursor: not-allowed;
+}
+
+/* ============================================
+   View Tabs
+   ============================================ */
+
+.fac-view-tabs {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 16px;
+}
+
+.fac-view-tab {
+    padding: 8px 16px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    background: var(--card-bg);
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+    transition: all 0.15s;
+}
+
+.fac-view-tab:hover {
+    background: var(--bg-color);
+}
+
+.fac-view-tab.active {
+    background: var(--primary);
+    color: white;
+    border-color: var(--primary);
+}
+
+/* ============================================
+   Category Badges
+   ============================================ */
+
+.fac-category-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.fac-category-badge.read_only,
+.fac-category-badge.green {
+    background: var(--green-100);
+    color: var(--green-600);
+}
+
+.fac-category-badge.write,
+.fac-category-badge.yellow {
+    background: var(--yellow-100);
+    color: var(--yellow-700);
+}
+
+.fac-category-badge.read_write,
+.fac-category-badge.blue {
+    background: var(--blue-100);
+    color: var(--blue-600);
+}
+
+.fac-category-badge.privileged,
+.fac-category-badge.orange {
+    background: var(--orange-100);
+    color: var(--orange-600);
+}
+
+.fac-category-badge.dangerous {
+    background: var(--orange-100);
+    color: var(--orange-600);
+}
+
+/* ============================================
+   Tool Item Detailed View
+   ============================================ */
+
+.fac-tool-item-detailed {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border-color);
+    transition: background 0.15s;
+}
+
+.fac-tool-item-detailed:hover {
+    background: var(--bg-color);
+}
+
+.fac-tool-item-detailed:last-child {
+    border-bottom: none;
+}
+
+.fac-tool-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 6px;
+}
+
+.fac-tool-title {
+    font-weight: 600;
+    color: var(--heading-color);
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.fac-tool-description {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-bottom: 6px;
+}
+
+.fac-tool-footer {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.fac-disabled-overlay {
+    opacity: 0.5;
+}
+
+.fac-plugin-disabled-notice {
+    font-size: 11px;
+    color: var(--orange-500);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+/* ============================================
+   Filter Controls
+   ============================================ */
+
+.fac-filter-bar {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+}
+
+.fac-filter-input {
+    flex: 1;
+    min-width: 200px;
+    padding: 8px 12px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    font-size: 13px;
+}
+
+.fac-filter-select {
+    padding: 8px 12px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    font-size: 13px;
+    background: var(--card-bg);
+}
+
+/* ============================================
+   Tool Settings & Config Panels
+   ============================================ */
+
+.fac-tool-settings-btn {
+    background: transparent;
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    padding: 4px 8px;
+    cursor: pointer;
+    color: var(--text-muted);
+    font-size: 12px;
+    transition: all 0.15s;
+    margin-left: 8px;
+}
+
+.fac-tool-settings-btn:hover {
+    background: var(--blue-100);
+    color: var(--blue-600);
+    border-color: var(--blue-400);
+}
+
+.fac-tool-settings-btn.active {
+    background: var(--blue-500);
+    color: white;
+    border-color: var(--blue-600);
+}
+
+.fac-tool-config-panel {
+    display: none;
+    margin-top: 12px;
+    padding: 12px;
+    background: var(--control-bg);
+    border-radius: var(--border-radius);
+    border: 1px solid var(--border-color);
+}
+
+.fac-tool-config-panel.open {
+    display: block;
+}
+
+.fac-config-row {
+    display: flex;
+    gap: 16px;
+    align-items: flex-start;
+    margin-bottom: 12px;
+}
+
+.fac-config-row:last-child {
+    margin-bottom: 0;
+}
+
+.fac-config-group {
+    flex: 1;
+}
+
+.fac-config-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    margin-bottom: 6px;
+    display: block;
+}
+
+.fac-config-select {
+    width: 100%;
+    padding: 6px 10px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    font-size: 12px;
+    background: var(--card-bg);
+}
+
+/* ============================================
+   Role Tags
+   ============================================ */
+
+.fac-role-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+}
+
+.fac-role-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+    background: var(--blue-100);
+    color: var(--blue-700);
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 500;
+}
+
+.fac-role-tag .remove-role {
+    cursor: pointer;
+    opacity: 0.7;
+}
+
+.fac-role-tag .remove-role:hover {
+    opacity: 1;
+}
+
+.fac-add-role-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+    background: var(--card-bg);
+    color: var(--text-muted);
+    border: 1px dashed var(--border-color);
+    border-radius: 12px;
+    font-size: 11px;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.fac-add-role-btn:hover {
+    border-color: var(--primary);
+    color: var(--primary);
+}
+
+.fac-config-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border-color);
+}
+
+.fac-tool-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/* ============================================
+   Bulk Actions Bar
+   ============================================ */
+
+.fac-bulk-actions-bar {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    margin-bottom: 12px;
+    padding: 10px 12px;
+    background: var(--bg-color);
+    border-radius: var(--border-radius);
+    border: 1px solid var(--border-color);
+}
+
+.fac-bulk-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-muted);
+    margin-right: 4px;
+}
+
+.fac-bulk-actions-bar .btn {
+    min-width: 80px;
+}
+
+.fac-bulk-actions-bar .btn-success {
+    background: var(--green-500);
+    border-color: var(--green-600);
+    color: white;
+}
+
+.fac-bulk-actions-bar .btn-success:hover {
+    background: var(--green-600);
+}
+
+.fac-bulk-actions-bar .btn-warning {
+    background: var(--orange-500);
+    border-color: var(--orange-600);
+    color: white;
+}
+
+.fac-bulk-actions-bar .btn-warning:hover {
+    background: var(--orange-600);
+}
+
+/* ============================================
+   Resources View Specific Styles
+   ============================================ */
+
+.fac-resource-item {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border-color);
+    transition: background 0.15s;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.fac-resource-item:hover {
+    background: var(--bg-color);
+}
+
+.fac-resource-item:last-child {
+    border-bottom: none;
+}
+
+.fac-resource-info {
+    flex: 1;
+}
+
+.fac-resource-name {
+    font-weight: 600;
+    color: var(--heading-color);
+    margin-bottom: 4px;
+    font-size: 14px;
+}
+
+.fac-resource-uri {
+    font-family: var(--font-stack-monospace);
+    font-size: 11px;
+    color: var(--text-muted);
+    background: var(--control-bg);
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+
+.fac-resource-meta {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    font-size: 12px;
+    margin-top: 4px;
+}
+
+.fac-resource-section {
+    margin-bottom: 24px;
+}
+
+.fac-resource-section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.fac-resource-section-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--heading-color);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.fac-resource-count {
+    background: var(--primary);
+    color: white;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.fac-wiki-space-selector {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    margin-bottom: 16px;
+    padding: 12px;
+    background: var(--control-bg);
+    border-radius: var(--border-radius);
+    border: 1px solid var(--border-color);
+}
+
+.fac-wiki-space-selector label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--heading-color);
+    white-space: nowrap;
+}
+
+.fac-wiki-space-selector select {
+    flex: 1;
+    padding: 8px 12px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    font-size: 13px;
+    background: var(--card-bg);
+}
+
+.fac-empty-state {
+    padding: 40px 20px;
+    text-align: center;
+    color: var(--text-muted);
+}
+
+.fac-empty-state i {
+    font-size: 48px;
+    margin-bottom: 16px;
+    opacity: 0.5;
+}
+
+.fac-empty-state p {
+    margin: 0;
+    font-size: 14px;
+}
+
+/* ============================================
+   Resources View - Additional Styles
+   ============================================ */
+
+.fac-resources-container {
+    padding: 0;
+}
+
+.fac-resources-description {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-bottom: 16px;
+    line-height: 1.5;
+}
+
+.fac-resources-description code {
+    background: var(--control-bg);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 11px;
+    color: var(--primary);
+}
+
+.fac-resources-count {
+    background: var(--bg-color);
+    color: var(--text-muted);
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 500;
+    border: 1px solid var(--border-color);
+}
+
+.fac-tool-docs-list {
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    background: var(--card-bg);
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.fac-no-docs {
+    padding: 20px;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 13px;
+}
+
+.fac-no-docs code {
+    background: var(--control-bg);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 11px;
+}
+
+.fac-doc-status {
+    font-size: 11px;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.fac-doc-status.fac-doc-exists {
+    color: var(--green-600);
+}
+
+.fac-doc-status.fac-doc-missing {
+    color: var(--orange-500);
+}
+
+.fac-resource-item.fac-doc-exists {
+    border-left: 3px solid var(--green-500);
+}
+
+.fac-resource-item.fac-doc-missing {
+    border-left: 3px solid var(--orange-400);
+    background: var(--orange-50, #fff9f5);
+}
+
+.fac-wiki-space-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-top: 8px;
+}
+
+.fac-wiki-space-row select {
+    flex: 1;
+    max-width: 400px;
+}
+
+.fac-wiki-no-space {
+    padding: 30px 20px;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 13px;
+    background: var(--control-bg);
+    border-radius: var(--border-radius);
+    border: 1px dashed var(--border-color);
+}
+
+.fac-wiki-pages-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.fac-wiki-pages-list {
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    background: var(--card-bg);
+    max-height: 350px;
+    overflow-y: auto;
+}
+
+.fac-wiki-page-item {
+    border-left: 3px solid var(--blue-400);
+}
+
+.fac-wiki-page-item .fac-resource-description {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 4px;
+    line-height: 1.4;
+}
+
+.fac-resource-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.fac-resource-actions .btn {
+    font-size: 11px;
+    padding: 4px 10px;
+}

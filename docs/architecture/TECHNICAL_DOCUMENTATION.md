@@ -10,12 +10,13 @@
 6. [Auto-Discovery Registry](#auto-discovery-registry)
 7. [Security Framework](#security-framework)
 8. [Artifact Streaming System](#artifact-streaming-system)
-9. [API Documentation](#api-documentation)
-10. [Installation & Setup](#installation--setup)
-11. [Testing](#testing)
-12. [Recent Improvements](#recent-improvements)
-13. [Troubleshooting](#troubleshooting)
-14. [Future Enhancements](#future-enhancements)
+9. [MCP Resources Feature](#mcp-resources-feature)
+10. [API Documentation](#api-documentation)
+11. [Installation & Setup](#installation--setup)
+12. [Testing](#testing)
+13. [Recent Improvements](#recent-improvements)
+14. [Troubleshooting](#troubleshooting)
+15. [Future Enhancements](#future-enhancements)
 
 ---
 
@@ -1952,6 +1953,217 @@ should_stream = should_stream_to_artifact(
 2. **Provide Context**: Include execution parameters in streaming responses
 3. **Tool Categories**: Ensure proper tool categorization for relevant artifact suggestions
 4. **Error Handling**: Graceful fallbacks when streaming fails
+
+---
+
+## MCP Resources Feature
+
+### Overview
+
+The MCP Resources feature provides a mechanism to optimize LLM context usage by serving detailed tool documentation separately from tool descriptions. When enabled, tools use minimal descriptions with resource hints, while comprehensive documentation is served via the MCP `resources/list` and `resources/read` protocol methods.
+
+### Architecture
+
+#### Components
+
+```
+frappe_assistant_core/
+├── api/
+│   └── handlers/
+│       └── resources.py        # Resource list/read handlers
+├── core/
+│   ├── base_tool.py            # get_minimal_description() method
+│   └── tool_registry.py        # Conditional description logic
+├── mcp/
+│   └── tool_adapter.py         # Documentation existence check
+└── docs/
+    └── tools/                   # Tool documentation files (*.md)
+        ├── create_document.md
+        ├── list_documents.md
+        └── ...
+```
+
+#### Resource URI Scheme
+
+Resources use the `fac://` URI scheme:
+
+```
+fac://tools/{tool_name}
+```
+
+Examples:
+- `fac://tools/create_document`
+- `fac://tools/list_documents`
+- `fac://tools/generate_report`
+
+### How It Works
+
+#### Setting Check Flow
+
+```
+Tool Registration Request
+         │
+         ▼
+┌─────────────────────────────────────────────┐
+│ _is_resources_feature_enabled()             │
+│ - frappe.db.get_single_value() (no cache)   │
+└───────────┬─────────────────────────────────┘
+            │
+     ┌──────┴──────┐
+     │             │
+   True          False
+     │             │
+     ▼             ▼
+┌─────────────────────────────────────────────┐
+│ _has_tool_documentation(tool_name)          │
+│ - Check docs/tools/{tool_name}.md exists    │
+└───────────┬─────────────────────────────────┘
+            │
+     ┌──────┴──────┐
+     │             │
+   True          False
+     │             │
+     ▼             ▼
+┌─────────┐  ┌──────────────┐
+│ Minimal │  │ Full         │
+│ Desc    │  │ Description  │
+└─────────┘  └──────────────┘
+```
+
+#### Minimal Description Generation
+
+The `get_minimal_description()` method in `base_tool.py`:
+
+```python
+def get_minimal_description(self) -> str:
+    """Get minimal description with resource reference."""
+    # Extract first sentence from description
+    first_sentence = self.description.split(".")[0] + "."
+    if len(first_sentence) > 100:
+        first_sentence = first_sentence[:97] + "..."
+
+    return f"{first_sentence} See fac://tools/{self.name} for usage guide."
+```
+
+**Example Output:**
+- **Full**: "Create new Frappe documents with proper validation and child table support. Supports all DocTypes including those with child tables. WORKFLOW: First use get_doctype_info to understand the DocType structure..." (689 chars)
+- **Minimal**: "Create new Frappe documents with proper validation and child table support. See fac://tools/create_document for usage guide." (124 chars)
+
+### Token Efficiency
+
+| Scenario | Avg Description | 23 Tools | Savings |
+|----------|-----------------|----------|---------|
+| **Disabled** | ~600 chars | ~13,800 chars | - |
+| **Enabled** | ~120 chars | ~2,760 chars | **~80%** |
+
+### Custom Tool Handling
+
+Tools from external apps (registered via `assistant_tools` hook) automatically:
+
+1. **Keep full descriptions** when resources feature is enabled
+2. **Don't get broken resource hints** since documentation check fails
+3. **Work normally** without any changes required
+
+This is because `_has_tool_documentation()` checks for files in `frappe_assistant_core/docs/tools/`, which only contains documentation for core tools.
+
+### MCP Protocol Integration
+
+#### resources/list Response
+
+**When Enabled:**
+```json
+{
+  "jsonrpc": "2.0",
+  "result": {
+    "resources": [
+      {
+        "uri": "fac://tools/create_document",
+        "name": "Tool: create_document",
+        "description": "Usage documentation for the create_document tool",
+        "mimeType": "text/markdown"
+      }
+    ]
+  },
+  "id": 1
+}
+```
+
+**When Disabled:**
+```json
+{
+  "jsonrpc": "2.0",
+  "result": {
+    "resources": []
+  },
+  "id": 1
+}
+```
+
+#### resources/read Response
+
+```json
+{
+  "jsonrpc": "2.0",
+  "result": {
+    "contents": [
+      {
+        "uri": "fac://tools/create_document",
+        "mimeType": "text/markdown",
+        "text": "# create_document\n\n## Description\n\nCreate new Frappe documents..."
+      }
+    ]
+  },
+  "id": 2
+}
+```
+
+### Configuration
+
+#### Enable via FAC Admin
+
+1. Navigate to **FAC Admin** page (`/app/fac-admin`)
+2. Click on the **Resources** tab
+3. Toggle the **Resources Feature** switch
+
+#### Enable via API
+
+```python
+import frappe
+
+frappe.call(
+    "frappe_assistant_core.api.admin_api.toggle_resources_feature",
+    enabled=True
+)
+```
+
+#### Database Setting
+
+```sql
+SELECT value FROM `tabSingles`
+WHERE doctype = 'Assistant Core Settings'
+AND field = 'enable_resources_feature';
+```
+
+### Key Implementation Files
+
+| File | Purpose |
+|------|---------|
+| `mcp/tool_adapter.py` | `_is_resources_feature_enabled()`, `_has_tool_documentation()` |
+| `core/tool_registry.py` | Conditional description selection |
+| `core/base_tool.py` | `get_minimal_description()` method |
+| `api/handlers/resources.py` | `ResourceManager`, `handle_resources_list()`, `handle_resources_read()` |
+| `api/admin_api.py` | `toggle_resources_feature()`, `get_resource_stats()` |
+
+### Cache Behavior
+
+- **No caching issues**: Uses `frappe.db.get_single_value()` to bypass document cache
+- **Immediate effect**: Changes take effect on next MCP request
+- **No server restart required**: Setting is read fresh on each request
+
+### Related Documentation
+
+- **[MCP Resources Guide](../guides/MCP_RESOURCES_GUIDE.md)**: Complete user guide
+- **[API Reference](../api/API_REFERENCE.md)**: MCP protocol endpoints
 
 ---
 

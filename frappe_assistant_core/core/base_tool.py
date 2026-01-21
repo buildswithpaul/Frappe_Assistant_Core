@@ -128,9 +128,33 @@ class BaseTool(ABC):
             return isinstance(value, type_map[expected_type])
         return True
 
-    def to_mcp_format(self) -> Dict[str, Any]:
-        """Convert tool to MCP protocol format"""
-        return {"name": self.name, "description": self.description, "inputSchema": self.inputSchema}
+    def get_minimal_description(self) -> str:
+        """
+        Get minimal description with resource reference.
+        Used when resources feature is enabled to reduce LLM context usage.
+
+        Returns:
+            Short description with resource URI hint
+        """
+        # Extract first sentence from description as summary
+        first_sentence = self.description.split(".")[0] + "."
+        if len(first_sentence) > 100:
+            first_sentence = first_sentence[:97] + "..."
+
+        return f"{first_sentence} See fac://tools/{self.name} for usage guide."
+
+    def to_mcp_format(self, use_minimal: bool = False) -> Dict[str, Any]:
+        """
+        Convert tool to MCP protocol format.
+
+        Args:
+            use_minimal: If True, use minimal description with resource hint
+
+        Returns:
+            Tool definition in MCP format
+        """
+        description = self.get_minimal_description() if use_minimal else self.description
+        return {"name": self.name, "description": description, "inputSchema": self.inputSchema}
 
     def _safe_execute(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
         """

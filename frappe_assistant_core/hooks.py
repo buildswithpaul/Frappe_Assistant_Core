@@ -45,7 +45,17 @@ app_version = app_version
 # webform_include_css = {"doctype": "public/css/doctype.css"}
 
 # include js in page
-# page_js = {"page" : "public/js/file.js"}
+# Note: CSS is auto-loaded from fac_admin.css in the page directory
+page_js = {
+    "fac-admin": [
+        "public/js/fac_admin/state.js",
+        "public/js/fac_admin/api.js",
+        "public/js/fac_admin/plugins_view.js",
+        "public/js/fac_admin/tools_view.js",
+        "public/js/fac_admin/resources_view.js",
+        "public/js/fac_admin/main.js",
+    ]
+}
 
 # include js in doctype views
 # doctype_js = {"doctype" : "public/js/doctype.js"}
