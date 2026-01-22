@@ -2,6 +2,49 @@
 
 Execute custom Python code in a secure sandboxed environment for data analysis, calculations, and complex operations.
 
+## CRITICAL: Read Before Writing Code
+
+### Date/Time Handling - Use Pandas, Not datetime
+
+The sandbox has restrictions that can cause `datetime.date.today()` to fail. **Always use pandas for date operations:**
+
+```python
+# CORRECT - Use pandas for all date operations
+today = pd.Timestamp.now()
+yesterday = today - pd.Timedelta(days=1)
+first_of_month = today.replace(day=1)
+
+# For date strings in filters
+date_str = today.strftime("%Y-%m-%d")
+```
+
+```python
+# AVOID - Can cause __import__ errors in sandbox
+today = datetime.date.today()      # May fail
+delta = datetime.timedelta(days=7) # May fail
+```
+
+### Filter Syntax - Use "between" for Date Ranges
+
+```python
+# CORRECT - Use "between" operator
+filters = {
+    "posting_date": ["between", [start_date, end_date]]
+}
+
+# WRONG - Duplicate keys, Python keeps only the last one!
+filters = {
+    "posting_date": [">=", start_date],
+    "posting_date": ["<=", end_date]  # This overwrites the first!
+}
+```
+
+### No Imports Needed
+
+All libraries are pre-loaded. Do NOT write import statements.
+
+---
+
 ## When to Use
 
 - **Data analysis** requiring aggregation, filtering, or calculations
@@ -9,14 +52,7 @@ Execute custom Python code in a secure sandboxed environment for data analysis, 
 - **Multi-source analysis** combining data from multiple DocTypes
 - **Custom visualizations** using matplotlib/seaborn
 - **Calculations** too complex for standard tools
-
-## Key Features
-
-- **Pre-loaded libraries** - No imports needed
-- **Tools API** - Fetch data directly inside your code
-- **Read-only database** - Safe SELECT operations only
-- **Permission-aware** - User permissions are respected
-- **Audit logging** - All executions are logged
+- **Date-based analysis** like "last month", "this quarter", "year over year"
 
 ## Parameters
 
@@ -30,22 +66,122 @@ Execute custom Python code in a secure sandboxed environment for data analysis, 
 
 ## Pre-Loaded Libraries
 
-All libraries are pre-loaded and ready to use. **Do NOT use import statements.**
+All libraries below are ready to use. **Do NOT use import statements.**
 
 | Alias | Library | Purpose |
 |-------|---------|---------|
-| `pd` | pandas | Data manipulation |
+| `pd` | pandas | Data manipulation, **date/time operations** |
 | `np` | numpy | Numerical operations |
 | `plt` | matplotlib.pyplot | Plotting |
 | `sns` | seaborn | Statistical visualization |
 | `frappe` | frappe | Frappe framework |
 | `math` | math | Mathematical functions |
-| `datetime` | datetime | Date/time handling |
+| `datetime` | datetime | Available but **use pandas instead** |
 | `json` | json | JSON parsing |
 | `re` | re | Regular expressions |
 | `statistics` | statistics | Statistical functions |
 | `random` | random | Random number generation |
-| `collections` | collections | Specialized containers |
+
+**Requires Import (allowed but not pre-loaded):**
+```python
+from collections import Counter, defaultdict, OrderedDict
+from itertools import groupby, chain
+from functools import reduce
+```
+
+---
+
+## Date and Time Operations
+
+### Getting Current Date/Time
+
+```python
+# Current timestamp
+now = pd.Timestamp.now()
+print(f"Current time: {now}")
+
+# Just the date part
+today = pd.Timestamp.now().normalize()  # Midnight today
+print(f"Today: {today.strftime('%Y-%m-%d')}")
+```
+
+### Date Arithmetic
+
+```python
+today = pd.Timestamp.now()
+
+# Subtract days
+yesterday = today - pd.Timedelta(days=1)
+last_week = today - pd.Timedelta(weeks=1)
+last_30_days = today - pd.Timedelta(days=30)
+
+# Add time
+tomorrow = today + pd.Timedelta(days=1)
+next_week = today + pd.Timedelta(weeks=1)
+```
+
+### Getting Month Boundaries
+
+```python
+today = pd.Timestamp.now()
+
+# Current month
+current_month_start = today.replace(day=1)
+# Last day of current month (go to next month day 1, subtract 1 day)
+next_month = (today.replace(day=1) + pd.DateOffset(months=1))
+current_month_end = next_month - pd.Timedelta(days=1)
+
+# Last month
+last_month_end = current_month_start - pd.Timedelta(days=1)
+last_month_start = last_month_end.replace(day=1)
+
+# Format for filters
+print(f"Last month: {last_month_start.strftime('%Y-%m-%d')} to {last_month_end.strftime('%Y-%m-%d')}")
+```
+
+### Quarter and Year Boundaries
+
+```python
+today = pd.Timestamp.now()
+year = today.year
+
+# Current quarter
+quarter = (today.month - 1) // 3 + 1
+quarter_start_month = (quarter - 1) * 3 + 1
+quarter_start = pd.Timestamp(year=year, month=quarter_start_month, day=1)
+
+# Fiscal year (April start)
+if today.month >= 4:
+    fiscal_year_start = pd.Timestamp(year=year, month=4, day=1)
+else:
+    fiscal_year_start = pd.Timestamp(year=year-1, month=4, day=1)
+
+print(f"Quarter start: {quarter_start.strftime('%Y-%m-%d')}")
+print(f"Fiscal year start: {fiscal_year_start.strftime('%Y-%m-%d')}")
+```
+
+### Using Dates in Filters
+
+```python
+today = pd.Timestamp.now()
+last_month_start = (today.replace(day=1) - pd.Timedelta(days=1)).replace(day=1)
+last_month_end = today.replace(day=1) - pd.Timedelta(days=1)
+
+# Use "between" for date ranges
+result = tools.get_documents("Sales Invoice",
+    filters={
+        "docstatus": 1,
+        "posting_date": ["between", [
+            last_month_start.strftime("%Y-%m-%d"),
+            last_month_end.strftime("%Y-%m-%d")
+        ]]
+    },
+    fields=["customer_name", "grand_total"],
+    limit=1000
+)
+```
+
+---
 
 ## Tools API - Fetch Data Inside Code
 
@@ -131,19 +267,33 @@ result = tools.get_doctype_info(doctype)
 # Returns: {"success": bool, "fields": list, "links": list}
 ```
 
-## Examples
+---
 
-### Customer Revenue Analysis
+## Complete Examples
+
+### Last Month Customer Revenue Analysis
 
 ```python
-# Fetch sales invoices
+# Calculate last month's date range using pandas
+today = pd.Timestamp.now()
+first_of_this_month = today.replace(day=1)
+last_month_end = first_of_this_month - pd.Timedelta(days=1)
+last_month_start = last_month_end.replace(day=1)
+
+# Fetch sales invoices for last month
 result = tools.get_documents("Sales Invoice",
-    filters={"docstatus": 1, "posting_date": [">=", "2024-01-01"]},
+    filters={
+        "docstatus": 1,
+        "posting_date": ["between", [
+            last_month_start.strftime("%Y-%m-%d"),
+            last_month_end.strftime("%Y-%m-%d")
+        ]]
+    },
     fields=["customer_name", "grand_total", "outstanding_amount"],
-    limit=500
+    limit=1000
 )
 
-if result["success"]:
+if result["success"] and len(result["data"]) > 0:
     df = pd.DataFrame(result["data"])
 
     # Handle null values
@@ -156,7 +306,7 @@ if result["success"]:
         "outstanding_amount": "sum"
     }).reset_index()
 
-    # Calculate collection rate
+    # Calculate collection rate (safe division)
     summary["collection_rate"] = summary.apply(
         lambda x: (x["grand_total"] - x["outstanding_amount"]) / x["grand_total"] * 100
         if x["grand_total"] > 0 else 0,
@@ -166,28 +316,92 @@ if result["success"]:
     # Get top 10
     top_10 = summary.sort_values("grand_total", ascending=False).head(10)
 
-    print("TOP 10 CUSTOMERS BY REVENUE:")
+    month_name = last_month_start.strftime("%B %Y")
+    print(f"TOP 10 CUSTOMERS FOR {month_name.upper()}:")
     for idx, row in enumerate(top_10.itertuples(), 1):
         print(f"{idx}. {row.customer_name}: ${row.grand_total:,.0f} ({row.collection_rate:.1f}% collected)")
+else:
+    print("No sales invoices found for last month.")
+```
+
+### Year-to-Date vs Last Year Comparison
+
+```python
+today = pd.Timestamp.now()
+year = today.year
+
+# YTD range
+ytd_start = pd.Timestamp(year=year, month=1, day=1)
+ytd_end = today
+
+# Same period last year
+ly_start = pd.Timestamp(year=year-1, month=1, day=1)
+ly_end = today - pd.DateOffset(years=1)
+
+# Fetch this year's data
+this_year = tools.get_documents("Sales Invoice",
+    filters={
+        "docstatus": 1,
+        "posting_date": ["between", [
+            ytd_start.strftime("%Y-%m-%d"),
+            ytd_end.strftime("%Y-%m-%d")
+        ]]
+    },
+    fields=["grand_total"],
+    limit=5000
+)
+
+# Fetch last year's data
+last_year = tools.get_documents("Sales Invoice",
+    filters={
+        "docstatus": 1,
+        "posting_date": ["between", [
+            ly_start.strftime("%Y-%m-%d"),
+            ly_end.strftime("%Y-%m-%d")
+        ]]
+    },
+    fields=["grand_total"],
+    limit=5000
+)
+
+if this_year["success"] and last_year["success"]:
+    ty_total = sum(inv.get("grand_total", 0) or 0 for inv in this_year["data"])
+    ly_total = sum(inv.get("grand_total", 0) or 0 for inv in last_year["data"])
+
+    growth = ((ty_total - ly_total) / ly_total * 100) if ly_total > 0 else 0
+
+    print(f"YEAR-TO-DATE COMPARISON:")
+    print(f"  {year} YTD: ${ty_total:,.2f}")
+    print(f"  {year-1} Same Period: ${ly_total:,.2f}")
+    print(f"  Growth: {growth:+.1f}%")
 ```
 
 ### Monthly Sales Trend
 
 ```python
+# Get last 12 months of data
+today = pd.Timestamp.now()
+twelve_months_ago = today - pd.DateOffset(months=12)
+
 result = tools.get_documents("Sales Invoice",
-    filters={"docstatus": 1},
+    filters={
+        "docstatus": 1,
+        "posting_date": [">=", twelve_months_ago.strftime("%Y-%m-%d")]
+    },
     fields=["posting_date", "grand_total"],
-    limit=1000
+    limit=5000
 )
 
 if result["success"]:
     df = pd.DataFrame(result["data"])
     df['posting_date'] = pd.to_datetime(df['posting_date'])
+    df['grand_total'] = df['grand_total'].fillna(0)
     df['month'] = df['posting_date'].dt.to_period('M')
 
     monthly = df.groupby('month')['grand_total'].sum().reset_index()
+    monthly = monthly.sort_values('month')
 
-    print("MONTHLY SALES TREND:")
+    print("MONTHLY SALES TREND (Last 12 Months):")
     for _, row in monthly.iterrows():
         print(f"  {row['month']}: ${row['grand_total']:,.2f}")
 ```
@@ -215,8 +429,12 @@ if bins["success"] and items["success"]:
     # Merge data
     merged = bin_df.merge(item_df, on="item_code", how="left")
 
+    # Handle None values
+    merged['actual_qty'] = merged['actual_qty'].fillna(0)
+    merged['valuation_rate'] = merged['valuation_rate'].fillna(0)
+
     # Calculate stock value
-    merged['stock_value'] = merged['actual_qty'] * merged['valuation_rate'].fillna(0)
+    merged['stock_value'] = merged['actual_qty'] * merged['valuation_rate']
 
     # Aggregate by item group
     by_group = merged.groupby('item_group').agg({
@@ -226,7 +444,8 @@ if bins["success"] and items["success"]:
 
     print("STOCK VALUE BY ITEM GROUP:")
     for group, row in by_group.head(10).iterrows():
-        print(f"  {group}: {row['actual_qty']:,.0f} units, ${row['stock_value']:,.2f}")
+        if pd.notna(group):
+            print(f"  {group}: {row['actual_qty']:,.0f} units, ${row['stock_value']:,.2f}")
 ```
 
 ### Using data_query Parameter
@@ -262,26 +481,79 @@ print(f"Median: {median:.2f}")
 print(f"Std Dev: {std_dev:.2f}")
 ```
 
-## When to Use Tools API vs. Other Approaches
+---
 
-### Use Tools API (Recommended)
+## Common Pitfalls
 
-- User asks for data analysis requiring fetching + processing
-- Combining data from multiple sources
-- Processing datasets with 50+ rows
-- Token efficiency is important
+### 1. Using datetime Module Directly
 
-### Use generate_report Tool Directly
+```python
+# WRONG - May cause sandbox errors
+today = datetime.date.today()
+delta = datetime.timedelta(days=30)
 
-- Standard business report with known filters
-- No custom processing needed
-- Example: "Show me Sales Analytics for Q1"
+# RIGHT - Use pandas
+today = pd.Timestamp.now()
+delta = pd.Timedelta(days=30)
+thirty_days_ago = today - delta
+```
 
-### Use run_python_code Without Tools API
+### 2. Duplicate Filter Keys
 
-- Simple calculations on small provided data
-- User explicitly provides all data
-- No database access needed
+```python
+# WRONG - Python dict keeps only the last key!
+filters = {
+    "posting_date": [">=", "2024-01-01"],
+    "posting_date": ["<=", "2024-01-31"]  # Overwrites the first!
+}
+# Result: Only <= filter is applied
+
+# RIGHT - Use "between"
+filters = {
+    "posting_date": ["between", ["2024-01-01", "2024-01-31"]]
+}
+```
+
+### 3. Not Handling None Values
+
+```python
+# WRONG - Will fail on None values
+total = df['amount'].sum()  # NaN if any None values
+rate = collected / total  # Division error if total is 0
+
+# RIGHT - Handle None values first
+df['amount'] = df['amount'].fillna(0)
+total = df['amount'].sum()
+rate = (collected / total * 100) if total > 0 else 0
+```
+
+### 4. Unsafe Dictionary Access
+
+```python
+# WRONG - KeyError if field missing
+value = row['field_name']
+
+# RIGHT - Use .get() with default
+value = row.get('field_name', 0)
+```
+
+### 5. Not Checking API Response
+
+```python
+# WRONG - Assumes success
+result = tools.get_documents("Sales Invoice", ...)
+df = pd.DataFrame(result["data"])  # Fails if success=False
+
+# RIGHT - Check success first
+result = tools.get_documents("Sales Invoice", ...)
+if result["success"] and len(result["data"]) > 0:
+    df = pd.DataFrame(result["data"])
+    # Process data
+else:
+    print("No data found or query failed")
+```
+
+---
 
 ## Data Handling Best Practices
 
@@ -311,6 +583,8 @@ if pd.notna(value):
     print(f"{value:,.2f}")
 ```
 
+---
+
 ## Response Format
 
 ### Success
@@ -339,6 +613,31 @@ if pd.notna(value):
 }
 ```
 
+---
+
+## When to Use Tools API vs. Other Approaches
+
+### Use Tools API (Recommended)
+
+- User asks for data analysis requiring fetching + processing
+- Combining data from multiple sources
+- Processing datasets with 50+ rows
+- Token efficiency is important
+
+### Use generate_report Tool Directly
+
+- Standard business report with known filters
+- No custom processing needed
+- Example: "Show me Sales Analytics for Q1"
+
+### Use run_python_code Without Tools API
+
+- Simple calculations on small provided data
+- User explicitly provides all data
+- No database access needed
+
+---
+
 ## Security
 
 - **Read-only database** - Only SELECT queries allowed
@@ -354,8 +653,10 @@ if pd.notna(value):
 - File I/O operations
 - Network requests
 - System commands
-- Module imports (except pre-loaded)
+- Most module imports (except pre-loaded and whitelisted)
 - Database writes
+
+---
 
 ## Related Tools
 
