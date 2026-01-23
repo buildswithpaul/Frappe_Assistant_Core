@@ -121,11 +121,19 @@ def get_plugin_stats():
 @frappe.whitelist()
 def get_tool_stats():
     """Get tool statistics for admin dashboard."""
+    from frappe_assistant_core.core.tool_registry import get_tool_registry
     from frappe_assistant_core.utils.plugin_manager import get_plugin_manager
 
     try:
         plugin_manager = get_plugin_manager()
+        tool_registry = get_tool_registry()
+
+        # Get built-in tools from plugin manager
         tools = plugin_manager.get_all_tools()
+
+        # Add external tools from hooks (registered via assistant_tools)
+        external_tools = tool_registry._get_external_tools()
+        tools.update(external_tools)
 
         categories = {}
         for _tool_name, tool_info in tools.items():
@@ -288,6 +296,10 @@ def get_tool_configurations():
         all_tools = plugin_manager.get_all_tools()
         enabled_plugins = plugin_manager.get_enabled_plugins()
 
+        # Include external tools from hooks (registered via assistant_tools)
+        external_tools = tool_registry._get_external_tools()
+        all_tools.update(external_tools)
+
         # Get all existing configurations
         existing_configs = {}
         if frappe.db.table_exists("FAC Tool Configuration"):
@@ -392,7 +404,12 @@ def toggle_tool(tool_name: str, enabled: bool):
     try:
         # Validate tool exists
         plugin_manager = get_plugin_manager()
+        tool_registry = get_tool_registry()
         all_tools = plugin_manager.get_all_tools()
+
+        # Include external tools from hooks
+        external_tools = tool_registry._get_external_tools()
+        all_tools.update(external_tools)
 
         if tool_name not in all_tools:
             return {"success": False, "message": _(f"Tool '{tool_name}' not found")}
@@ -595,7 +612,12 @@ def update_tool_category(tool_name: str, category: str, override: bool = True):
     try:
         # Validate tool exists
         plugin_manager = get_plugin_manager()
+        tool_registry = get_tool_registry()
         all_tools = plugin_manager.get_all_tools()
+
+        # Include external tools from hooks
+        external_tools = tool_registry._get_external_tools()
+        all_tools.update(external_tools)
 
         if tool_name not in all_tools:
             return {"success": False, "message": _(f"Tool '{tool_name}' not found")}
@@ -623,7 +645,6 @@ def update_tool_category(tool_name: str, category: str, override: bool = True):
         frappe.db.commit()
 
         # Clear caches
-        tool_registry = get_tool_registry()
         tool_registry.clear_cache()
 
         return {"success": True, "message": _(f"Tool '{tool_name}' category updated to '{category}'")}
@@ -662,7 +683,12 @@ def update_tool_role_access(tool_name: str, role_access_mode: str, roles: list =
     try:
         # Validate tool exists
         plugin_manager = get_plugin_manager()
+        tool_registry = get_tool_registry()
         all_tools = plugin_manager.get_all_tools()
+
+        # Include external tools from hooks
+        external_tools = tool_registry._get_external_tools()
+        all_tools.update(external_tools)
 
         if tool_name not in all_tools:
             return {"success": False, "message": _(f"Tool '{tool_name}' not found")}
@@ -703,7 +729,6 @@ def update_tool_role_access(tool_name: str, role_access_mode: str, roles: list =
         frappe.db.commit()
 
         # Clear caches
-        tool_registry = get_tool_registry()
         tool_registry.clear_cache()
 
         return {"success": True, "message": _(f"Tool '{tool_name}' role access updated")}
