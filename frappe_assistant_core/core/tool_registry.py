@@ -456,7 +456,7 @@ class ToolRegistry:
 
                         tool_info = ToolInfo(
                             name=tool_instance.name,
-                            plugin_name="external",
+                            plugin_name="custom_tools",  # Use actual plugin name for proper enable/disable tracking
                             description=tool_instance.description,
                             instance=tool_instance,
                         )

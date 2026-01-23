@@ -150,6 +150,7 @@ Build unlimited analysis depth via progressive artifact updates.
     def refresh_plugins(self):
         """Refresh the entire plugin system - discovery and tools"""
         try:
+            from frappe_assistant_core.core.tool_registry import get_tool_registry
             from frappe_assistant_core.utils.plugin_manager import get_plugin_manager
 
             # Refresh plugin manager discovery
@@ -160,6 +161,11 @@ Build unlimited analysis depth via progressive artifact updates.
             discovered_plugins = plugin_manager.get_discovered_plugins()
             enabled_plugins = plugin_manager.get_enabled_plugins()
             available_tools = plugin_manager.get_all_tools()
+
+            # Include external tools from hooks
+            tool_registry = get_tool_registry()
+            external_tools = tool_registry._get_external_tools()
+            available_tools.update(external_tools)
 
             frappe.msgprint(
                 frappe._(
@@ -213,13 +219,19 @@ Build unlimited analysis depth via progressive artifact updates.
     def get_plugin_status(self):
         """Get plugin status with a simplified view that links to FAC Admin for full control"""
         try:
+            from frappe_assistant_core.core.tool_registry import get_tool_registry
             from frappe_assistant_core.utils.plugin_manager import get_plugin_manager
 
             # Get plugin manager for plugin info
             plugin_manager = get_plugin_manager()
+            tool_registry = get_tool_registry()
             discovered_plugins = plugin_manager.get_discovered_plugins()
             enabled_plugins = plugin_manager.get_enabled_plugins()
             available_tools = plugin_manager.get_all_tools()
+
+            # Include external tools from hooks (registered via assistant_tools)
+            external_tools = tool_registry._get_external_tools()
+            available_tools.update(external_tools)
 
             # Count active tools
             active_tools = len(
