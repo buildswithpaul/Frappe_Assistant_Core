@@ -147,7 +147,7 @@ def register_client():
 
     # Create the OAuth Client
     try:
-        response_data = create_oauth_client(client)
+        oauth_client = create_oauth_client(client)
     except Exception as e:
         frappe.log_error("OAuth Client Registration Failed", str(e))
         response.status_code = 500
@@ -159,9 +159,15 @@ def register_client():
         )
         return response
 
-    # Add required RFC 7591 fields
+    # Convert to dict and add required RFC 7591 fields
     import time
 
+    response_data = oauth_client.as_dict() if hasattr(oauth_client, "as_dict") else dict(oauth_client)
+    
+    # Ensure redirect_uris is an array (it might be stored as a newline-separated string)
+    if "redirect_uris" in response_data and isinstance(response_data["redirect_uris"], str):
+        response_data["redirect_uris"] = [uri.strip() for uri in response_data["redirect_uris"].split("\n") if uri.strip()]
+    
     response_data["client_id_issued_at"] = int(time.time())
     response_data["client_secret_expires_at"] = 0  # Client secrets don't expire
 
