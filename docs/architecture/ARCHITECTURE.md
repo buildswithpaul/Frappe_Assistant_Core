@@ -278,13 +278,78 @@ BasePlugin (Abstract)
 **Plugin Manager (Clean Architecture):**
 
 - **Thread-Safe Discovery**: Safe plugin directory scanning with proper locking
-- **State Persistence**: Plugin states persist across system restarts
-- **Atomic Operations**: Plugin enable/disable with rollback on failure
+- **State Persistence**: Plugin states persist via FAC Plugin Configuration DocType
+- **Atomic Operations**: Plugin enable/disable with individual DocType records (no JSON parsing)
+- **Cross-Worker Consistency**: Database-backed state ensures consistency in multi-worker Gunicorn environments
 - **Environment Validation**: Comprehensive dependency and environment checking
 - **Configuration Management**: Integration with Frappe settings and site configuration
 - **Error Recovery**: Specific exceptions with proper recovery mechanisms
 
-### 5. Tool Development Methods
+**Plugin Configuration Storage (FAC Plugin Configuration DocType):**
+
+Each plugin's enabled/disabled state is stored as an individual DocType record:
+
+```
+FAC Plugin Configuration
+├── plugin_name: Data (Primary Key, autoname)
+├── display_name: Data
+├── enabled: Check (0 or 1)
+├── description: Small Text
+├── discovered_at: Datetime
+└── last_toggled_at: Datetime
+```
+
+**Benefits of DocType-Based Storage:**
+- **Atomic Updates**: Single row UPDATE instead of read-modify-write JSON
+- **Multi-Worker Safe**: No race conditions in Gunicorn environments
+- **Standard Frappe Caching**: Works correctly with `frappe.get_doc()` patterns
+- **Proper Cache Invalidation**: `on_update()` hook automatically clears caches
+- **Audit Trail**: Built-in `track_changes` for modification history
+
+### 5. Tool Management System
+
+The Tool Management System provides granular control over individual tools, enabling administrators to configure access at the tool level.
+
+**Tool Configuration Storage (FAC Tool Configuration DocType):**
+
+Each tool has an individual configuration record:
+
+```
+FAC Tool Configuration
+├── tool_name: Data (Primary Key, autoname)
+├── plugin_name: Data
+├── enabled: Check (0 or 1)
+├── tool_category: Select (read_only, write, read_write, privileged)
+├── auto_detected_category: Data (read-only)
+├── category_override: Check
+├── description: Small Text
+├── source_app: Data (read-only)
+├── module_path: Data (read-only)
+├── role_access_mode: Select (Allow All, Restrict to Listed Roles)
+└── role_access: Table (FAC Tool Role Access)
+```
+
+**Tool Categories:**
+
+| Category | Description | Example Tools |
+|----------|-------------|---------------|
+| `read_only` | Only reads data | `get_document`, `list_documents` |
+| `write` | Creates or modifies data | `create_document`, `update_document` |
+| `read_write` | Both reads and modifies | Mixed operation tools |
+| `privileged` | Elevated access (delete, code exec) | `delete_document`, `run_python_code` |
+
+**Role-Based Access Control:**
+
+- **Allow All** - All users can access the tool
+- **Restrict to Listed Roles** - Only specified roles can access
+
+**Key Features:**
+- **Automatic Category Detection** - AST-based code analysis detects tool operations
+- **Individual Tool Toggle** - Enable/disable specific tools
+- **Role-Based Access** - Restrict sensitive tools to specific roles
+- **Cache Invalidation** - Changes propagate immediately
+
+### 6. Tool Development Methods
 
 The system supports two primary methods for tool development:
 
@@ -319,7 +384,7 @@ assistant_tool_configs = {
 
 Tools developed within frappe_assistant_core plugins for core functionality.
 
-### 6. Current Plugin Implementations
+### 7. Current Plugin Implementations
 
 The system currently includes several production-ready plugins:
 

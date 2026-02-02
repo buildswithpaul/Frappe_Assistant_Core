@@ -150,6 +150,7 @@ Build unlimited analysis depth via progressive artifact updates.
     def refresh_plugins(self):
         """Refresh the entire plugin system - discovery and tools"""
         try:
+            from frappe_assistant_core.core.tool_registry import get_tool_registry
             from frappe_assistant_core.utils.plugin_manager import get_plugin_manager
 
             # Refresh plugin manager discovery
@@ -160,6 +161,11 @@ Build unlimited analysis depth via progressive artifact updates.
             discovered_plugins = plugin_manager.get_discovered_plugins()
             enabled_plugins = plugin_manager.get_enabled_plugins()
             available_tools = plugin_manager.get_all_tools()
+
+            # Include external tools from hooks
+            tool_registry = get_tool_registry()
+            external_tools = tool_registry._get_external_tools()
+            available_tools.update(external_tools)
 
             frappe.msgprint(
                 frappe._(
@@ -211,591 +217,119 @@ Build unlimited analysis depth via progressive artifact updates.
 
     @frappe.whitelist()
     def get_plugin_status(self):
-        """Get plugin status with enhanced tool details and controls"""
+        """Get plugin status with a simplified view that links to FAC Admin for full control"""
         try:
+            from frappe_assistant_core.core.tool_registry import get_tool_registry
             from frappe_assistant_core.utils.plugin_manager import get_plugin_manager
 
             # Get plugin manager for plugin info
             plugin_manager = get_plugin_manager()
+            tool_registry = get_tool_registry()
             discovered_plugins = plugin_manager.get_discovered_plugins()
             enabled_plugins = plugin_manager.get_enabled_plugins()
             available_tools = plugin_manager.get_all_tools()
 
-            # Get external tools from hooks
-            external_tools = {}
-            try:
-                assistant_tools_hooks = frappe.get_hooks("assistant_tools") or []
-                for tool_path in assistant_tools_hooks:
-                    try:
-                        parts = tool_path.rsplit(".", 1)
-                        if len(parts) == 2:
-                            module_path, class_name = parts
-                            module = __import__(module_path, fromlist=[class_name])
-                            tool_class = getattr(module, class_name)
-                            tool_instance = tool_class()
-                            tool_name = getattr(tool_instance, "name", parts[0].split(".")[-1])
-                            source_app = getattr(tool_instance, "source_app", parts[0].split(".")[0])
+            # Include external tools from hooks (registered via assistant_tools)
+            external_tools = tool_registry._get_external_tools()
+            available_tools.update(external_tools)
 
-                            external_tools[tool_name] = {
-                                "name": tool_name,
-                                "description": getattr(tool_instance, "description", "External tool"),
-                                "source_app": source_app,
-                                "plugin_name": "custom_tools",  # Associate with custom_tools plugin
-                            }
-                    except Exception as e:
-                        frappe.log_error(
-                            title=frappe._("Failed to load external tool"),
-                            message=f"Tool: {tool_path}\nError: {str(e)}",
-                        )
-            except Exception as e:
-                frappe.log_error(title=frappe._("Failed to get external tools"), message=str(e))
-
-            # Build HTML with enhanced plugin controls
-            html_parts = []
-
-            # Overall statistics header with enhanced info
-            # Count plugin tools that are in enabled plugins
-            active_plugin_tools = len(
+            # Count active tools
+            active_tools = len(
                 [
                     tool_name
                     for tool_name, tool_info in available_tools.items()
                     if tool_info.plugin_name in enabled_plugins
                 ]
             )
+            total_tools = len(available_tools)
 
-            # Add external tools count if custom_tools plugin is enabled
-            active_external_tools = len(external_tools) if "custom_tools" in enabled_plugins else 0
-
-            # Total active tools - external tools are shown as part of custom_tools plugin
-            active_tools = active_plugin_tools + active_external_tools
-            total_tools = len(available_tools) + len(external_tools)
-
-            html_parts.append(f"""
-            <div class="mb-3 p-3 rounded" style="background: var(--alert-bg-info); color: var(--alert-text-info); border: 1px solid var(--blue-200);">
+            # Build simplified HTML
+            html = f"""
+            <div class="p-3 rounded mb-3" style="background: var(--control-bg); border: 1px solid var(--border-color);">
                 <div class="row align-items-center">
                     <div class="col-md-8">
-                        <h5 style="color: var(--alert-text-info);"><i class="fa fa-cogs"></i> Plugin System Status</h5>
-                        <div class="row mt-2">
-                            <div class="col-md-4"><strong>Active Tools:</strong> <span class="badge badge-success">{active_tools}</span> / {total_tools}</div>
-                            <div class="col-md-4"><strong>Plugins:</strong> <span class="badge badge-primary">{len(enabled_plugins)}</span> / {len(discovered_plugins)}</div>
-                            <div class="col-md-4"><strong>Status:</strong> <span style="color: var(--green-600);"><i class="fa fa-check-circle"></i> Operational</span></div>
+                        <h5 class="mb-2" style="color: var(--heading-color);">
+                            <i class="fa fa-cogs"></i> Plugin System Status
+                        </h5>
+                        <div class="row">
+                            <div class="col-md-4">
+                                <strong>Active Tools:</strong>
+                                <span class="badge" style="background: var(--green-500); color: white;">{active_tools}</span>
+                                / {total_tools}
+                            </div>
+                            <div class="col-md-4">
+                                <strong>Plugins:</strong>
+                                <span class="badge" style="background: var(--primary); color: white;">{len(enabled_plugins)}</span>
+                                / {len(discovered_plugins)}
+                            </div>
+                            <div class="col-md-4">
+                                <strong>Status:</strong>
+                                <span style="color: var(--green-600);">
+                                    <i class="fa fa-check-circle"></i> Operational
+                                </span>
+                            </div>
                         </div>
                     </div>
                     <div class="col-md-4 text-right">
-                        <button type="button" class="btn btn-sm btn-outline-primary" onclick="window.toggleToolDetails()" id="toggle-details-btn">
-                            <i class="fa fa-eye"></i> Show Tool Details
-                        </button>
+                        <a href="/app/fac-admin" class="btn btn-primary btn-sm">
+                            <i class="fa fa-external-link-alt"></i> Open FAC Admin
+                        </a>
                     </div>
                 </div>
             </div>
-            """)
 
-            # Plugin management section
-            html_parts.append("""
-            <div class="card" style="background: var(--card-bg); border: 1px solid var(--border-color);">
-                <div class="card-header" style="background: var(--bg-color); border-bottom: 1px solid var(--border-color);">
-                    <h6><i class="fa fa-puzzle-piece"></i> Plugin Management</h6>
-                    <small class="text-muted">Enable or disable plugins to control available tools</small>
-                </div>
-                <div class="card-body" style="background: var(--card-bg);">
-            """)
+            <div class="p-3 rounded" style="background: var(--card-bg); border: 1px solid var(--border-color);">
+                <h6 style="color: var(--heading-color);"><i class="fa fa-puzzle-piece"></i> Plugins</h6>
+                <div class="row mt-3">
+            """
 
-            # Individual plugin cards with enhanced tool details
+            # Show plugin summary cards
             for plugin in discovered_plugins:
                 plugin_name = plugin.get("name", "Unknown")
                 is_enabled = plugin_name in enabled_plugins
                 plugin_tools = plugin.get("tools", [])
+                tools_count = len(plugin_tools)
 
-                # For custom_tools plugin, use external tools count
-                if plugin_name == "custom_tools":
-                    tools_count = len(external_tools)
-                    active_tool_count = len(external_tools) if is_enabled else 0
-                else:
-                    tools_count = len(plugin_tools)
-                    active_tool_count = len(plugin_tools) if plugin_name in enabled_plugins else 0
-
-                status_badge = "badge-success" if is_enabled else "badge-secondary"
+                status_color = "var(--green-500)" if is_enabled else "var(--gray-400)"
                 status_text = "Active" if is_enabled else "Inactive"
-                toggle_action = "disable" if is_enabled else "enable"
-                toggle_class = "btn-outline-warning" if is_enabled else "btn-outline-success"
-                toggle_icon = "fa-pause" if is_enabled else "fa-play"
+                status_badge_bg = "var(--green-100)" if is_enabled else "var(--gray-100)"
+                status_badge_color = "var(--green-700)" if is_enabled else "var(--gray-600)"
 
-                # Plugin category icon
-                category_icons = {
-                    "core": "fa-database",
-                    "data_science": "fa-chart-bar",
-                    "visualization": "fa-chart-pie",
-                    "workflow": "fa-sitemap",
-                    "integration": "fa-plug",
-                }
-                plugin_icon = category_icons.get(plugin_name, "fa-puzzle-piece")
-
-                html_parts.append(f"""
-                <div class="plugin-card border rounded p-3 mb-3" style="background: var(--card-bg); border-left: 4px solid {"var(--green-500)" if is_enabled else "var(--gray-500)"};">
-                    <div class="row align-items-center">
-                        <div class="col-md-9">
-                            <div class="d-flex align-items-center mb-2">
-                                <i class="fa {plugin_icon} text-primary mr-2" style="font-size: 1.2em;"></i>
-                                <h6 class="mb-0">
-                                    {plugin.get("display_name", plugin_name.replace("_", " ").title())}
-                                    <span class="badge {status_badge} ml-2">{status_text}</span>
-                                </h6>
-                            </div>
-                            <p class="text-muted mb-2 small">{plugin.get("description", "Advanced tools and functionality for Frappe Assistant")}</p>
-                            <div class="d-flex align-items-center">
-                                <small class="text-info mr-3">
-                                    <i class="fa fa-tools"></i> {active_tool_count}/{tools_count} tools active
-                                </small>
-                                <small class="text-muted mr-3">
-                                    <i class="fa fa-tag"></i> v{plugin.get("version", "1.0.0")}
-                                </small>
-                                <small class="text-success">
-                                    <i class="fa fa-shield-alt"></i> Verified
-                                </small>
-                            </div>
-                        </div>
-                        <div class="col-md-3 text-right">
-                            <div class="btn-group-vertical" style="width: 100%;">
-                                <button type="button"
-                                        class="btn {toggle_class} btn-sm mb-1"
-                                        onclick="window.togglePlugin('{plugin_name}', '{toggle_action}')"
-                                        style="font-size: 0.8em;">
-                                    <i class="fa {toggle_icon}"></i> {toggle_action.title()}
-                                </button>
-                                <button type="button"
-                                        class="btn btn-outline-info btn-sm tool-details-btn"
-                                        onclick="window.togglePluginTools('{plugin_name}')"
-                                        style="font-size: 0.75em;">
-                                    <i class="fa fa-list"></i> Tools ({tools_count})
-                                </button>
+                html += f"""
+                    <div class="col-md-6 mb-2">
+                        <div class="p-2 rounded" style="background: var(--control-bg); border-left: 3px solid {status_color};">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <strong style="color: var(--heading-color);">{plugin.get("display_name", plugin_name.replace("_", " ").title())}</strong>
+                                    <br>
+                                    <small style="color: var(--text-muted);">{tools_count} tools</small>
+                                </div>
+                                <span class="badge" style="background: {status_badge_bg}; color: {status_badge_color};">
+                                    {status_text}
+                                </span>
                             </div>
                         </div>
                     </div>
+                """
 
-                    <!-- Tool Details Panel (Initially Hidden) -->
-                    <div class="plugin-tools-panel mt-3" id="tools-{plugin_name}" style="display: none;">
-                        <hr class="mt-2 mb-3">
-                        <h6 class="mb-2"><i class="fa fa-tools text-muted"></i> Available Tools</h6>
-                        <div class="row">
-                """)
-
-                # Add individual tool cards within plugin
-                # For custom_tools plugin, show external tools
-                if plugin_name == "custom_tools":
-                    external_tool_names = list(external_tools.keys())
-                    if external_tool_names:
-                        for tool_name in external_tool_names[:6]:  # Show max 6 tools initially
-                            tool_status = "success" if is_enabled else "secondary"
-                            tool_icon = "fa-check-circle" if is_enabled else "fa-circle"
-
-                            html_parts.append(f"""
-                                <div class="col-md-6 mb-2">
-                                    <div class="small p-2 border rounded" style="background: var(--bg-light-gray);">
-                                        <div class="d-flex justify-content-between align-items-center">
-                                            <span>
-                                                <i class="fa {tool_icon} text-{tool_status}"></i>
-                                                <strong>{tool_name.replace("_", " ").title()}</strong>
-                                            </span>
-                                            <span class="badge badge-{tool_status} badge-sm">
-                                                {"Active" if is_enabled else "Inactive"}
-                                            </span>
-                                        </div>
-                                    </div>
-                                </div>
-                            """)
-
-                        if len(external_tool_names) > 6:
-                            html_parts.append(f"""
-                                <div class="col-12">
-                                    <small class="text-muted">
-                                        <i class="fa fa-plus"></i> And {len(external_tool_names) - 6} more tools...
-                                    </small>
-                                </div>
-                            """)
-                    else:
-                        html_parts.append("""
-                            <div class="col-12">
-                                <small class="text-muted">No external tools available</small>
-                            </div>
-                        """)
-                elif plugin_tools:
-                    for plugin_tool in plugin_tools[:6]:  # Show max 6 tools initially
-                        tool_status = "success" if is_enabled else "secondary"
-                        tool_icon = "fa-check-circle" if is_enabled else "fa-circle"
-
-                        html_parts.append(f"""
-                            <div class="col-md-6 mb-2">
-                                <div class="small p-2 border rounded" style="background: var(--bg-light-gray);">
-                                    <div class="d-flex justify-content-between align-items-center">
-                                        <span>
-                                            <i class="fa {tool_icon} text-{tool_status}"></i>
-                                            <strong>{plugin_tool.replace("_", " ").title()}</strong>
-                                        </span>
-                                        <span class="badge badge-{tool_status} badge-sm">
-                                            {"Active" if is_enabled else "Inactive"}
-                                        </span>
-                                    </div>
-                                </div>
-                            </div>
-                        """)
-
-                    if len(plugin_tools) > 6:
-                        html_parts.append(f"""
-                            <div class="col-12">
-                                <small class="text-muted">
-                                    <i class="fa fa-plus"></i> And {len(plugin_tools) - 6} more tools...
-                                </small>
-                            </div>
-                        """)
-                else:
-                    html_parts.append("""
-                        <div class="col-12">
-                            <small class="text-muted">No tools available in this plugin</small>
-                        </div>
-                    """)
-
-                html_parts.append("""
-                        </div>
-                    </div>
+            html += """
                 </div>
-                """)
-
-            html_parts.append("""
+                <div class="mt-3 pt-2" style="border-top: 1px solid var(--border-color);">
+                    <small style="color: var(--text-muted);">
+                        <i class="fa fa-info-circle"></i>
+                        For individual tool management, role-based access control, and category filtering,
+                        use the <a href="/app/fac-admin">FAC Admin</a> page.
+                    </small>
                 </div>
             </div>
-            """)
+            """
 
-            # Tools breakdown by plugin with search and filter
-            if available_tools or external_tools:
-                # Only count external tools for Tool Explorer if not already in available_tools
-                explorer_tool_count = len(available_tools) + len(external_tools)
-                html_parts.append(f"""
-                <div class="card mt-3" style="background: var(--card-bg); border: 1px solid var(--border-color);">
-                    <div class="card-header" style="background: var(--bg-color); border-bottom: 1px solid var(--border-color);">
-                        <div class="row align-items-center">
-                            <div class="col-md-6">
-                                <h6 class="mb-0"><i class="fa fa-search"></i> Tool Explorer ({explorer_tool_count} tools)</h6>
-                            </div>
-                            <div class="col-md-6">
-                                <div class="input-group input-group-sm">
-                                    <input type="text" class="form-control" id="tool-search"
-                                           placeholder="Search tools..." onkeyup="window.filterTools()">
-                                    <div class="input-group-append">
-                                        <select class="form-control" id="plugin-filter" onchange="window.filterTools()">
-                                            <option value="">All Plugins</option>
-                                            <option value="active">Active Only</option>
-                                            <option value="inactive">Inactive Only</option>
-                                        </select>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="card-body" style="max-height: 400px; overflow-y: auto; background: var(--card-bg);">
-                        <div class="row" id="tools-container">
-                """)
-
-                # Display individual tools with detailed information
-                for tool_name, tool_info in available_tools.items():
-                    plugin_name = tool_info.plugin_name
-                    is_plugin_enabled = plugin_name in enabled_plugins
-                    tool_status = "success" if is_plugin_enabled else "secondary"
-                    tool_status_text = "Active" if is_plugin_enabled else "Inactive"
-
-                    # Get tool description if available
-                    tool_desc = "Advanced tool functionality"  # Default description
-                    try:
-                        if hasattr(tool_info, "description"):
-                            tool_desc = (
-                                tool_info.description[:100] + "..."
-                                if len(tool_info.description) > 100
-                                else tool_info.description
-                            )
-                    except Exception:
-                        pass
-
-                    html_parts.append(f"""
-                    <div class="col-md-6 mb-3 tool-item"
-                         data-tool-name="{tool_name.lower()}"
-                         data-plugin="{plugin_name.lower()}"
-                         data-status="{"active" if is_plugin_enabled else "inactive"}">
-                        <div class="border rounded p-3 h-100" style="background: var(--card-bg);">
-                            <div class="d-flex justify-content-between align-items-start mb-2">
-                                <h6 class="mb-1">
-                                    <i class="fa fa-tool text-primary"></i>
-                                    {tool_name.replace("_", " ").title()}
-                                </h6>
-                                <span class="badge badge-{tool_status}">{tool_status_text}</span>
-                            </div>
-                            <p class="text-muted small mb-2">{tool_desc}</p>
-                            <div class="d-flex justify-content-between align-items-center">
-                                <small class="text-info">
-                                    <i class="fa fa-puzzle-piece"></i> {plugin_name.replace("_", " ").title()}
-                                </small>
-                                <small class="text-muted">
-                                    <i class="fa fa-{"check-circle" if is_plugin_enabled else "times-circle"}"></i>
-                                    {"Ready" if is_plugin_enabled else "Disabled"}
-                                </small>
-                            </div>
-                        </div>
-                    </div>
-                    """)
-
-                # Add external tools to the Tool Explorer
-                for tool_name, tool_data in external_tools.items():
-                    is_plugin_enabled = "custom_tools" in enabled_plugins
-                    tool_status = "success" if is_plugin_enabled else "secondary"
-                    tool_status_text = "Active" if is_plugin_enabled else "Inactive"
-
-                    # Get tool description
-                    tool_desc = tool_data.get("description", "External tool")
-                    if len(tool_desc) > 100:
-                        tool_desc = tool_desc[:100] + "..."
-
-                    html_parts.append(f"""
-                    <div class="col-md-6 mb-3 tool-item"
-                         data-tool-name="{tool_name.lower()}"
-                         data-plugin="{tool_data.get("source_app", "custom_tools").lower()}"
-                         data-status="{"active" if is_plugin_enabled else "inactive"}">
-                        <div class="border rounded p-3 h-100" style="background: var(--card-bg);">
-                            <div class="d-flex justify-content-between align-items-start mb-2">
-                                <h6 class="mb-1">
-                                    <i class="fa fa-tool text-primary"></i>
-                                    {tool_name.replace("_", " ").title()}
-                                </h6>
-                                <span class="badge badge-{tool_status}">{tool_status_text}</span>
-                            </div>
-                            <p class="text-muted small mb-2">{tool_desc}</p>
-                            <div class="d-flex justify-content-between align-items-center">
-                                <small class="text-info">
-                                    <i class="fa fa-puzzle-piece"></i> {tool_data.get("source_app", "External").replace("_", " ").title()}
-                                </small>
-                                <small class="text-muted">
-                                    <i class="fa fa-{"check-circle" if is_plugin_enabled else "times-circle"}"></i>
-                                    {"Ready" if is_plugin_enabled else "Disabled"}
-                                </small>
-                            </div>
-                        </div>
-                    </div>
-                    """)
-
-                html_parts.append("""
-                        </div>
-                    </div>
-                </div>
-                """)
-
-            # Show error plugins (if any)
-            error_plugins = [p for p in discovered_plugins if not p.get("can_enable", True)]
-            if error_plugins:
-                html_parts.append("""
-                <div class="mt-3 p-3 rounded" style="background: var(--alert-bg-warning); color: var(--alert-text-warning); border: 1px solid var(--yellow-200);">
-                    <h6 style="color: var(--alert-text-warning);"><i class="fa fa-exclamation-triangle"></i> Plugin Issues</h6>
-                    <ul class="mb-0">
-                """)
-                for plugin in error_plugins[:3]:
-                    error_msg = plugin.get("validation_error", "Unknown error")
-                    html_parts.append(
-                        f"<li><strong>{plugin.get('name', 'Unknown')}:</strong> {error_msg}</li>"
-                    )
-                if len(error_plugins) > 3:
-                    html_parts.append(
-                        f"<li><em>... and {len(error_plugins) - 3} more plugin errors</em></li>"
-                    )
-                html_parts.append("</ul></div>")
-
-            # Add enhanced JavaScript for plugin and tool management
-            html_parts.append("""
-            <style>
-            .plugin-card {
-                transition: all 0.3s ease;
-                position: relative;
-                color: var(--text-color);
-            }
-            .plugin-card:hover {
-                transform: translateY(-2px);
-                box-shadow: var(--shadow-md);
-            }
-            .plugin-card h6 {
-                color: var(--heading-color);
-            }
-            .tool-details-btn:hover {
-                transform: scale(1.05);
-            }
-            .plugin-tools-panel {
-                animation: fadeIn 0.3s ease;
-            }
-            @keyframes fadeIn {
-                from { opacity: 0; height: 0; }
-                to { opacity: 1; height: auto; }
-            }
-            .badge-sm {
-                font-size: 0.7em;
-                padding: 0.2em 0.4em;
-            }
-            /* Form controls for dark theme */
-            #tool-search, #plugin-filter {
-                background-color: var(--control-bg);
-                color: var(--text-color);
-                border-color: var(--border-color);
-            }
-            #tool-search::placeholder {
-                color: var(--placeholder-color);
-            }
-            /* Card headers and sections */
-            .card-header h6 {
-                color: var(--heading-color);
-            }
-            /* Tool items */
-            .tool-item h6 {
-                color: var(--heading-color);
-            }
-            /* Border colors */
-            .border {
-                border-color: var(--border-color) !important;
-            }
-            </style>
-
-            <script>
-            // Avoid redeclaration by checking existence
-            if (typeof window.toolDetailsVisible === 'undefined') {
-                window.toolDetailsVisible = false;
-            }
-
-            // Only define functions if they don't exist
-            if (typeof window.togglePlugin === 'undefined') {
-                window.togglePlugin = function(pluginName, action) {
-                // Get the current form using Frappe's form manager
-                var frm = frappe.ui.form.get_open_docs()['Assistant Core Settings'];
-                frm = frm ? frappe.ui.form.get_open_docs()['Assistant Core Settings']['Assistant Core Settings'] : null;
-                if (!frm) {
-                    frappe.show_alert({message: __('Form not available'), indicator: 'red'});
-                    return;
-                }
-                frappe.call({
-                    method: 'toggle_plugin',
-                    doc: frm.doc,
-                    args: {
-                        plugin_name: pluginName,
-                        action: action
-                    },
-                    freeze: true,
-                    freeze_message: __('Updating plugin...'),
-                    callback: function(response) {
-                        if (!response.exc) {
-                            frm.reload_doc();
-                            frappe.show_alert({
-                                message: __('Plugin {0} {1}d successfully', [pluginName, action]),
-                                indicator: 'green'
-                            });
-                        } else {
-                            frappe.show_alert({
-                                message: __('Failed to {0} plugin {1}', [action, pluginName]),
-                                indicator: 'red'
-                            });
-                        }
-                    }
-                });
-            };
-            }
-
-            if (typeof window.togglePluginTools === 'undefined') {
-                window.togglePluginTools = function(pluginName) {
-                const panel = document.getElementById('tools-' + pluginName);
-                const btn = event.target.closest('button');
-
-                if (panel.style.display === 'none') {
-                    panel.style.display = 'block';
-                    btn.innerHTML = '<i class="fa fa-list"></i> Hide Tools';
-                    btn.classList.remove('btn-outline-info');
-                    btn.classList.add('btn-info');
-                } else {
-                    panel.style.display = 'none';
-                    btn.innerHTML = '<i class="fa fa-list"></i> Tools (' + panel.querySelectorAll('.col-md-6').length + ')';
-                    btn.classList.remove('btn-info');
-                    btn.classList.add('btn-outline-info');
-                }
-            };
-            }
-
-            if (typeof window.toggleToolDetails === 'undefined') {
-                window.toggleToolDetails = function() {
-                window.toolDetailsVisible = !window.toolDetailsVisible;
-                const btn = document.getElementById('toggle-details-btn');
-                const panels = document.querySelectorAll('.plugin-tools-panel');
-
-                if (window.toolDetailsVisible) {
-                    panels.forEach(panel => panel.style.display = 'block');
-                    btn.innerHTML = '<i class="fa fa-eye-slash"></i> Hide Tool Details';
-                    btn.classList.remove('btn-outline-primary');
-                    btn.classList.add('btn-primary');
-                } else {
-                    panels.forEach(panel => panel.style.display = 'none');
-                    btn.innerHTML = '<i class="fa fa-eye"></i> Show Tool Details';
-                    btn.classList.remove('btn-primary');
-                    btn.classList.add('btn-outline-primary');
-
-                    // Reset individual tool buttons
-                    document.querySelectorAll('.tool-details-btn').forEach(toolBtn => {
-                        toolBtn.innerHTML = toolBtn.innerHTML.replace('Hide Tools', 'Tools');
-                        toolBtn.classList.remove('btn-info');
-                        toolBtn.classList.add('btn-outline-info');
-                    });
-                }
-            };
-            }
-
-            // Tool filtering and search functionality
-            if (typeof window.filterTools === 'undefined') {
-                window.filterTools = function() {
-                const searchTerm = document.getElementById('tool-search').value.toLowerCase();
-                const pluginFilter = document.getElementById('plugin-filter').value;
-                const toolItems = document.querySelectorAll('.tool-item');
-                let visibleCount = 0;
-
-                toolItems.forEach(item => {
-                    const toolName = item.getAttribute('data-tool-name');
-                    const pluginName = item.getAttribute('data-plugin');
-                    const status = item.getAttribute('data-status');
-
-                    let showItem = true;
-
-                    // Apply search filter
-                    if (searchTerm && !toolName.includes(searchTerm) && !pluginName.includes(searchTerm)) {
-                        showItem = false;
-                    }
-
-                    // Apply plugin status filter
-                    if (pluginFilter) {
-                        if (pluginFilter === 'active' && status !== 'active') showItem = false;
-                        if (pluginFilter === 'inactive' && status !== 'inactive') showItem = false;
-                    }
-
-                    item.style.display = showItem ? 'block' : 'none';
-                    if (showItem) visibleCount++;
-                });
-
-                // Update the count in header
-                const header = document.querySelector('#tools-container').closest('.card').querySelector('h6');
-                if (header) {
-                    const totalTools = toolItems.length;
-                    header.innerHTML = `<i class="fa fa-search"></i> Tool Explorer (${visibleCount}/${totalTools} tools)`;
-                }
-            };
-            }
-
-            // Auto-refresh disabled to prevent UI state loss
-            // Note: Plugin status updates when form is manually refreshed
-            // This prevents expanded sections from auto-collapsing
-            </script>
-            """)
-
-            return {"success": True, "html": "".join(html_parts)}
+            return {"success": True, "html": html}
 
         except Exception as e:
             return {
                 "success": False,
-                "html": f"<div class='p-3 rounded' style='background: var(--alert-bg-danger); color: var(--alert-text-danger); border: 1px solid var(--red-200);'>Error loading plugin status: {str(e)}</div>",
+                "html": f"<div class='p-3 rounded' style='background: var(--alert-bg-danger); color: var(--alert-text-danger);'>Error loading plugin status: {str(e)}</div>",
             }
 
     @frappe.whitelist()
@@ -832,6 +366,40 @@ Build unlimited analysis depth via progressive artifact updates.
 
 # SSE Bridge API endpoints removed - SSE transport is deprecated
 # Use StreamableHTTP (OAuth-based) transport instead
+
+
+@frappe.whitelist()
+def toggle_plugin_api(plugin_name, action):
+    """
+    Standalone API to enable or disable a plugin.
+    This is called from the HTML buttons in the plugin management UI.
+    """
+    try:
+        from frappe_assistant_core.utils.plugin_manager import PluginError, get_plugin_manager
+
+        plugin_manager = get_plugin_manager()
+
+        if action == "enable":
+            result = plugin_manager.enable_plugin(plugin_name)
+            message = _("Plugin '{0}' enabled successfully").format(plugin_name)
+        elif action == "disable":
+            result = plugin_manager.disable_plugin(plugin_name)
+            message = _("Plugin '{0}' disabled successfully").format(plugin_name)
+        else:
+            frappe.throw(_("Invalid action: {0}").format(action))
+
+        if result:
+            return {"success": True, "message": message}
+        else:
+            error_msg = _("Failed to {0} plugin '{1}'").format(action, plugin_name)
+            frappe.throw(error_msg)
+
+    except PluginError as e:
+        frappe.log_error(title=frappe._("Plugin Toggle Error"), message=str(e))
+        frappe.throw(frappe._(str(e)))
+    except Exception as e:
+        frappe.log_error(title=frappe._("Plugin Toggle Error"), message=str(e))
+        frappe.throw(frappe._("Failed to {0} plugin '{1}': {2}").format(action, plugin_name, str(e)))
 
 
 def get_context(context):

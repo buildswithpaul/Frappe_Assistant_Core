@@ -812,6 +812,52 @@ class PluginManager:
         """Get all tools from a specific plugin"""
 ```
 
+#### Plugin Configuration Storage (FAC Plugin Configuration DocType) 🆕
+
+Plugin enabled/disabled states are stored in individual DocType records for atomic operations and multi-worker consistency:
+
+```
+FAC Plugin Configuration
+├── plugin_name: Data (Primary Key, autoname: field:plugin_name)
+├── display_name: Data (read-only)
+├── enabled: Check (0 or 1)
+├── description: Small Text
+├── discovered_at: Datetime (read-only)
+└── last_toggled_at: Datetime (read-only)
+```
+
+**Key Features:**
+- **Atomic Toggle Operations**: Single row UPDATE instead of read-modify-write JSON
+- **Multi-Worker Safe**: Consistent state across Gunicorn workers (no race conditions)
+- **Automatic Cache Invalidation**: `on_update()` hook clears plugin and tool caches
+- **Audit Trail**: Built-in `track_changes` for modification history
+- **Auto-Sync**: New plugins automatically get configuration records on `bench migrate`
+
+**State Persistence Flow:**
+
+```python
+# frappe_assistant_core/utils/plugin_manager.py
+class PluginPersistence:
+    def load_enabled_plugins(self) -> Set[str]:
+        """Load enabled plugins from FAC Plugin Configuration DocType"""
+        enabled = frappe.get_all(
+            "FAC Plugin Configuration",
+            filters={"enabled": 1},
+            pluck="plugin_name"
+        )
+        return set(enabled)
+
+    def save_plugin_state(self, plugin_name: str, enabled: bool) -> bool:
+        """Atomic plugin state update"""
+        if frappe.db.exists("FAC Plugin Configuration", plugin_name):
+            doc = frappe.get_doc("FAC Plugin Configuration", plugin_name)
+            doc.enabled = 1 if enabled else 0
+            doc.last_toggled_at = frappe.utils.now()
+            doc.save(ignore_permissions=True)
+        frappe.db.commit()
+        return True
+```
+
 #### Base Tool Framework 🆕
 
 ```python
@@ -836,10 +882,88 @@ class BaseTool:
         """Check if user has permission to use this tool"""
 ```
 
-def get_tool_info(tool_name: str) -> Dict[str, Any]:
-"""Get detailed tool information"""
+#### Tool Management System (FAC Tool Configuration DocType) 🆕
 
-````
+Individual tool configuration with granular access control:
+
+```
+FAC Tool Configuration
+├── tool_name: Data (Primary Key, autoname: field:tool_name)
+├── plugin_name: Data (Source plugin)
+├── enabled: Check (Show/hide from MCP)
+├── tool_category: Select (read_only, write, read_write, privileged)
+├── auto_detected_category: Data (AST-detected, read-only)
+├── category_override: Check (Manual category override)
+├── description: Small Text
+├── source_app: Data (Source Frappe app, read-only)
+├── module_path: Data (Python module path, read-only)
+├── role_access_mode: Select (Allow All, Restrict to Listed Roles)
+└── role_access: Table (FAC Tool Role Access child table)
+```
+
+**Tool Category Auto-Detection:**
+
+```python
+# frappe_assistant_core/utils/tool_category_detector.py
+class ToolCategoryDetector:
+    def detect_category(self, tool_instance) -> str:
+        """
+        Detect category by analyzing tool's source code.
+        Uses AST parsing to find perm_type values.
+
+        Returns: 'read_only', 'write', 'read_write', or 'privileged'
+        """
+        # 1. Check hardcoded lists (fastest)
+        if tool_name in PRIVILEGED_TOOLS:  # delete_document, run_python_code
+            return "privileged"
+        if tool_name in READ_ONLY_TOOLS:   # get_document, list_documents
+            return "read_only"
+
+        # 2. Parse source code for perm_type values
+        perm_types = self._extract_perm_types(tool_instance)
+        return self._categorize_from_perm_types(perm_types)
+```
+
+**Role-Based Access Control:**
+
+```python
+# FAC Tool Configuration document method
+def user_has_access(self, user: str = None) -> bool:
+    """Check if user has access based on role configuration."""
+    if not self.enabled:
+        return False
+
+    if self.role_access_mode == "Allow All":
+        return True
+
+    # System Manager always has access
+    user_roles = set(frappe.get_roles(user))
+    if "System Manager" in user_roles:
+        return True
+
+    # Check allowed roles
+    for role_access in self.role_access:
+        if role_access.role in user_roles and role_access.allow_access:
+            return True
+
+    return False
+```
+
+**API Functions:**
+
+```python
+# Toggle a single tool
+from frappe_assistant_core.assistant_core.doctype.fac_tool_configuration.fac_tool_configuration import toggle_tool
+toggle_tool("run_python_code", enabled=False)
+
+# Bulk toggle multiple tools
+from frappe_assistant_core.assistant_core.doctype.fac_tool_configuration.fac_tool_configuration import bulk_toggle_tools
+bulk_toggle_tools(["delete_document", "run_python_code"], enabled=False)
+
+# Check tool access
+from frappe_assistant_core.assistant_core.doctype.fac_tool_configuration.fac_tool_configuration import get_tool_access_status
+status = get_tool_access_status("delete_document", user="test@example.com")
+```
 
 ---
 
