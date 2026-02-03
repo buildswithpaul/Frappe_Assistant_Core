@@ -171,3 +171,6 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "frappe_assistant_core/plugins/base_plugin.py" = ["B027"]
+
+[tool.bench.frappe-dependencies]
+frappe = ">=15.0.0,<17.0.0"
