@@ -274,6 +274,7 @@ class MCPServer:
         Handle tools/call request.
 
         This is the CRITICAL method that fixes the serialization issue.
+        Uses json.dumps with default=str to handle datetime, Decimal, etc.
         """
         import frappe
 

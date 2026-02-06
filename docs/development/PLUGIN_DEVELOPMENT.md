@@ -457,6 +457,80 @@ No additional configuration required.
 
 ````
 
+## Tool Category Auto-Detection
+
+When tools are discovered during `bench migrate`, the system automatically detects their category (read_only, write, read_write, privileged). To ensure correct detection, use standard Frappe permission patterns in your tool code.
+
+### How Auto-Detection Works
+
+The system uses AST (Abstract Syntax Tree) parsing to find `perm_type` values in your code:
+
+```python
+# Detected as "read_only"
+def execute(self, arguments):
+    frappe.has_permission("DocType", perm_type="read")
+    # or
+    self.validate_document_access("DocType", "name", perm_type="read")
+
+# Detected as "write"
+def execute(self, arguments):
+    frappe.has_permission("DocType", perm_type="write")
+    # or perm_type="create", "submit", "cancel", "amend"
+```
+
+### Best Practices for Auto-Detection
+
+1. **Use explicit `perm_type`** in your permission checks:
+
+```python
+class MyReadOnlyTool(BaseTool):
+    def execute(self, arguments):
+        doctype = arguments.get("doctype")
+        # This will be auto-detected as "read_only"
+        if not frappe.has_permission(doctype, perm_type="read"):
+            frappe.throw(_("No read permission"))
+        # ... read operation ...
+
+class MyWriteTool(BaseTool):
+    def execute(self, arguments):
+        doctype = arguments.get("doctype")
+        # This will be auto-detected as "write"
+        if not frappe.has_permission(doctype, perm_type="write"):
+            frappe.throw(_("No write permission"))
+        # ... write operation ...
+```
+
+2. **For complex tools**, add to hardcoded lists in `tool_category_detector.py`:
+
+```python
+# frappe_assistant_core/utils/tool_category_detector.py
+
+PRIVILEGED_TOOLS = {
+    "delete_document",
+    "run_python_code",
+    "my_dangerous_tool",  # Add your tool here
+}
+
+READ_ONLY_TOOLS = {
+    "get_document",
+    "my_read_only_tool",  # Add your tool here
+}
+
+WRITE_TOOLS = {
+    "create_document",
+    "my_write_tool",  # Add your tool here
+}
+```
+
+### Category Definitions
+
+| Category | Use When | Example Operations |
+|----------|----------|-------------------|
+| `read_only` | Only reads data | get, list, search, analyze |
+| `write` | Creates or modifies data | create, update, submit |
+| `read_write` | Both reads and writes | Mixed operations |
+| `privileged` | Elevated access | delete, execute code, raw SQL |
+
 ## Advanced Plugin Features
 
 ### Custom Configuration

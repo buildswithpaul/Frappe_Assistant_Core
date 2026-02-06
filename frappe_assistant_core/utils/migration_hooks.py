@@ -65,6 +65,12 @@ def after_migrate():
     # Install/update system prompt templates
     _install_system_prompt_templates()
 
+    # Sync plugin configurations from discovered plugins
+    _sync_plugin_configurations()
+
+    # Sync tool configurations from discovered plugins
+    _sync_tool_configurations()
+
 
 def before_migrate():
     """
@@ -119,6 +125,12 @@ def after_install():
 
     # Install system prompt templates
     _install_system_prompt_templates()
+
+    # Sync plugin configurations from discovered plugins
+    _sync_plugin_configurations()
+
+    # Sync tool configurations from discovered plugins
+    _sync_tool_configurations()
 
 
 def after_uninstall():
@@ -437,6 +449,248 @@ def _install_system_prompt_templates():
         frappe.logger("migration_hooks").error(f"Failed to install system prompt templates: {str(e)}")
 
 
+def _sync_plugin_configurations():
+    """
+    Sync plugin configurations from discovered plugins.
+
+    This function:
+    1. Discovers all available plugins
+    2. Creates FAC Plugin Configuration records for new plugins
+    3. Removes orphan configurations for plugins that no longer exist
+    4. Preserves existing plugin enabled/disabled states
+    5. Does NOT modify existing configurations (preserves user changes)
+    """
+    try:
+        # Check if FAC Plugin Configuration table exists
+        if not frappe.db.table_exists("tabFAC Plugin Configuration"):
+            frappe.logger("migration_hooks").info(
+                "FAC Plugin Configuration table not yet created, skipping plugin sync"
+            )
+            return
+
+        from frappe_assistant_core.utils.plugin_manager import PluginDiscovery
+
+        discovery = PluginDiscovery()
+        discovered_plugins = discovery.discover_plugins()
+        discovered_plugin_names = set(discovered_plugins.keys())
+
+        # Load existing enabled state from legacy JSON (for migration)
+        legacy_enabled = set()
+        try:
+            settings = frappe.get_single("Assistant Core Settings")
+            enabled_list = getattr(settings, "enabled_plugins_list", None)
+            if enabled_list:
+                import json
+
+                legacy_enabled = set(json.loads(enabled_list))
+        except Exception:
+            pass
+
+        created_count = 0
+        skipped_count = 0
+        deleted_count = 0
+
+        # Create new plugin configurations
+        for plugin_name, plugin_info in discovered_plugins.items():
+            if frappe.db.exists("FAC Plugin Configuration", plugin_name):
+                skipped_count += 1
+                continue
+
+            # Determine if plugin should be enabled
+            # Use legacy JSON state if available, otherwise default to enabled
+            is_enabled = 1 if plugin_name in legacy_enabled or not legacy_enabled else 0
+
+            # Create configuration
+            config = frappe.new_doc("FAC Plugin Configuration")
+            config.plugin_name = plugin_name
+            config.display_name = plugin_info.display_name
+            config.description = plugin_info.description
+            config.enabled = is_enabled
+            config.discovered_at = frappe.utils.now()
+
+            config.flags.ignore_permissions = True
+            config.insert()
+            created_count += 1
+
+        # Cleanup orphan plugin configurations (plugins that no longer exist)
+        existing_configs = frappe.get_all("FAC Plugin Configuration", pluck="plugin_name")
+        for config_name in existing_configs:
+            if config_name not in discovered_plugin_names:
+                try:
+                    frappe.delete_doc(
+                        "FAC Plugin Configuration",
+                        config_name,
+                        force=True,
+                        ignore_permissions=True,
+                    )
+                    deleted_count += 1
+                    frappe.logger("migration_hooks").info(
+                        f"Removed orphan plugin configuration: {config_name}"
+                    )
+                except Exception as e:
+                    frappe.logger("migration_hooks").warning(
+                        f"Failed to delete orphan plugin config '{config_name}': {e}"
+                    )
+
+        frappe.db.commit()
+
+        frappe.logger("migration_hooks").info(
+            f"Plugin configurations synced: {created_count} created, {skipped_count} already exist, {deleted_count} removed"
+        )
+
+    except Exception as e:
+        frappe.logger("migration_hooks").error(f"Failed to sync plugin configurations: {str(e)}")
+
+
+def _sync_tool_configurations():
+    """
+    Sync tool configurations from discovered plugins.
+
+    This function:
+    1. Discovers all tools from enabled plugins
+    2. Creates FAC Tool Configuration records for new tools
+    3. Auto-detects tool categories
+    4. Removes orphan configurations for tools that no longer exist
+    5. Does NOT modify existing configurations (preserves user changes)
+    """
+    try:
+        # Check if FAC Tool Configuration table exists
+        if not frappe.db.table_exists("FAC Tool Configuration"):
+            frappe.logger("migration_hooks").info(
+                "FAC Tool Configuration table not yet created, skipping tool sync"
+            )
+            return
+
+        from frappe_assistant_core.utils.plugin_manager import get_plugin_manager
+        from frappe_assistant_core.utils.tool_category_detector import detect_tool_category
+
+        plugin_manager = get_plugin_manager()
+
+        # Get all tools from all discovered plugins (not just enabled)
+        discovered_plugins = plugin_manager.get_discovered_plugins()
+        all_tools = plugin_manager.get_all_tools()
+
+        # Also get external tools from hooks
+        external_tools = _get_external_tools_for_sync()
+
+        # Build set of all discovered tool names
+        discovered_tool_names = set(all_tools.keys()) | set(external_tools.keys())
+
+        created_count = 0
+        skipped_count = 0
+        deleted_count = 0
+
+        # Process plugin tools
+        for tool_name, tool_info in all_tools.items():
+            if frappe.db.exists("FAC Tool Configuration", tool_name):
+                skipped_count += 1
+                continue
+
+            # Detect category
+            try:
+                category = detect_tool_category(tool_info.instance)
+            except Exception:
+                category = "read_write"
+
+            # Create configuration
+            config = frappe.new_doc("FAC Tool Configuration")
+            config.tool_name = tool_name
+            config.plugin_name = tool_info.plugin_name
+            config.description = tool_info.description or ""
+            config.enabled = 1  # Default to enabled
+            config.tool_category = category
+            config.auto_detected_category = category
+            config.category_override = 0
+            config.role_access_mode = "Allow All"
+            config.source_app = getattr(tool_info.instance, "source_app", "frappe_assistant_core")
+            config.module_path = (
+                f"{tool_info.instance.__class__.__module__}.{tool_info.instance.__class__.__name__}"
+            )
+
+            config.flags.ignore_permissions = True
+            config.insert()
+            created_count += 1
+
+        # Process external tools
+        for tool_name, tool_data in external_tools.items():
+            if frappe.db.exists("FAC Tool Configuration", tool_name):
+                skipped_count += 1
+                continue
+
+            config = frappe.new_doc("FAC Tool Configuration")
+            config.tool_name = tool_name
+            config.plugin_name = "custom_tools"
+            config.description = tool_data.get("description", "")
+            config.enabled = 1
+            config.tool_category = "read_write"  # Default for external tools
+            config.auto_detected_category = "read_write"
+            config.category_override = 0
+            config.role_access_mode = "Allow All"
+            config.source_app = tool_data.get("source_app", "external")
+            config.module_path = tool_data.get("module_path", "")
+
+            config.flags.ignore_permissions = True
+            config.insert()
+            created_count += 1
+
+        # Cleanup orphan tool configurations (tools that no longer exist)
+        existing_configs = frappe.get_all("FAC Tool Configuration", pluck="tool_name")
+        for config_name in existing_configs:
+            if config_name not in discovered_tool_names:
+                try:
+                    frappe.delete_doc(
+                        "FAC Tool Configuration",
+                        config_name,
+                        force=True,
+                        ignore_permissions=True,
+                    )
+                    deleted_count += 1
+                    frappe.logger("migration_hooks").info(f"Removed orphan tool configuration: {config_name}")
+                except Exception as e:
+                    frappe.logger("migration_hooks").warning(
+                        f"Failed to delete orphan tool config '{config_name}': {e}"
+                    )
+
+        frappe.db.commit()
+
+        frappe.logger("migration_hooks").info(
+            f"Tool configurations synced: {created_count} created, {skipped_count} already exist, {deleted_count} removed"
+        )
+
+    except Exception as e:
+        frappe.logger("migration_hooks").error(f"Failed to sync tool configurations: {str(e)}")
+
+
+def _get_external_tools_for_sync() -> dict:
+    """Get external tools from hooks for sync."""
+    external_tools = {}
+
+    try:
+        assistant_tools_hooks = frappe.get_hooks("assistant_tools") or []
+        for tool_path in assistant_tools_hooks:
+            try:
+                parts = tool_path.rsplit(".", 1)
+                if len(parts) == 2:
+                    module_path, class_name = parts
+                    module = __import__(module_path, fromlist=[class_name])
+                    tool_class = getattr(module, class_name)
+                    tool_instance = tool_class()
+                    tool_name = getattr(tool_instance, "name", parts[0].split(".")[-1])
+
+                    external_tools[tool_name] = {
+                        "name": tool_name,
+                        "description": getattr(tool_instance, "description", "External tool"),
+                        "source_app": getattr(tool_instance, "source_app", parts[0].split(".")[0]),
+                        "module_path": tool_path,
+                    }
+            except Exception as e:
+                frappe.logger("migration_hooks").warning(f"Failed to load external tool {tool_path}: {e}")
+    except Exception as e:
+        frappe.logger("migration_hooks").warning(f"Failed to get external tools: {e}")
+
+    return external_tools
+
+
 # Export functions for hooks registration
 __all__ = [
     "after_migrate",
@@ -446,4 +700,6 @@ __all__ = [
     "on_app_install",
     "on_app_uninstall",
     "get_migration_status",
+    "_sync_plugin_configurations",
+    "_sync_tool_configurations",
 ]

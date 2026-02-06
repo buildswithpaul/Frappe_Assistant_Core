@@ -1,0 +1,117 @@
+{
+    "actions": [],
+    "autoname": "field:plugin_name",
+    "creation": "2025-01-14 12:00:00.000000",
+    "doctype": "DocType",
+    "engine": "InnoDB",
+    "field_order": [
+        "plugin_name",
+        "display_name",
+        "enabled",
+        "column_break_basic",
+        "discovered_at",
+        "last_toggled_at",
+        "section_break_description",
+        "description"
+    ],
+    "fields": [
+        {
+            "fieldname": "plugin_name",
+            "fieldtype": "Data",
+            "in_list_view": 1,
+            "in_standard_filter": 1,
+            "label": "Plugin Name",
+            "reqd": 1,
+            "unique": 1,
+            "description": "Unique identifier for the plugin (e.g., core, visualization, data_science)"
+        },
+        {
+            "fieldname": "display_name",
+            "fieldtype": "Data",
+            "in_list_view": 1,
+            "label": "Display Name",
+            "read_only": 1,
+            "description": "Human-readable name shown in the UI"
+        },
+        {
+            "default": "1",
+            "fieldname": "enabled",
+            "fieldtype": "Check",
+            "in_list_view": 1,
+            "label": "Enabled",
+            "description": "When disabled, all tools from this plugin will be hidden from MCP"
+        },
+        {
+            "fieldname": "column_break_basic",
+            "fieldtype": "Column Break"
+        },
+        {
+            "fieldname": "discovered_at",
+            "fieldtype": "Datetime",
+            "label": "Discovered At",
+            "read_only": 1,
+            "description": "When this plugin was first discovered"
+        },
+        {
+            "fieldname": "last_toggled_at",
+            "fieldtype": "Datetime",
+            "label": "Last Toggled At",
+            "read_only": 1,
+            "description": "When this plugin was last enabled or disabled"
+        },
+        {
+            "fieldname": "section_break_description",
+            "fieldtype": "Section Break",
+            "label": "Description"
+        },
+        {
+            "fieldname": "description",
+            "fieldtype": "Small Text",
+            "label": "Description",
+            "read_only": 1,
+            "description": "Description of what this plugin provides"
+        }
+    ],
+    "index_web_pages_for_search": 0,
+    "links": [],
+    "modified": "2025-01-14 12:00:00.000000",
+    "modified_by": "Administrator",
+    "module": "Assistant Core",
+    "name": "FAC Plugin Configuration",
+    "naming_rule": "By fieldname",
+    "owner": "Administrator",
+    "permissions": [
+        {
+            "create": 1,
+            "delete": 1,
+            "email": 1,
+            "export": 1,
+            "print": 1,
+            "read": 1,
+            "report": 1,
+            "role": "System Manager",
+            "share": 1,
+            "write": 1
+        },
+        {
+            "create": 1,
+            "delete": 0,
+            "email": 1,
+            "export": 1,
+            "print": 1,
+            "read": 1,
+            "report": 1,
+            "role": "Assistant Admin",
+            "share": 1,
+            "write": 1
+        },
+        {
+            "read": 1,
+            "role": "Assistant User"
+        }
+    ],
+    "sort_field": "modified",
+    "sort_order": "DESC",
+    "states": [],
+    "track_changes": 1
+}

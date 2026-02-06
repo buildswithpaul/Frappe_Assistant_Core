@@ -177,7 +177,8 @@
   {
    "fieldname": "oauth_tab",
    "fieldtype": "Tab Break",
-   "label": "OAuth"
+   "label": "OAuth",
+   "depends_on": "eval:!frappe.boot.versions?.frappe?.startsWith('16')"
   },
   {
    "fieldname": "oauth_authorization_section",

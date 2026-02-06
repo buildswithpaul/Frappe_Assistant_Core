@@ -85,7 +85,12 @@ jenv = {
 # ------------
 
 # before_install hooks can be added here if needed
-after_install = "frappe_assistant_core.utils.migration_hooks.after_install"
+
+after_install = [
+    "frappe_assistant_core.utils.migration_hooks.after_install",
+    "frappe_assistant_core.utils.email_invite.send_fac_admin_invite",
+]
+
 
 # Uninstallation
 # ------------
