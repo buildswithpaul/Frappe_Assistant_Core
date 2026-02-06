@@ -2,17 +2,8 @@ import frappe
 
 
 def send_fac_admin_invite():
-    users = frappe.get_all(
-        "User", filters={"enabled": 1}, fields=["name", "email", "first_name", "full_name"]
-    )
-    recipients = []
-
-    for user in users:
-        roles = frappe.get_roles(user.name)
-
-        if "System Manager" in roles:
-            if user.email and "@" in user.email and not user.email.endswith("@example.com"):
-                recipients.append(user.email)
+    """Send a welcome email to all System Manager users after FAC installation."""
+    recipients = _get_system_manager_emails()
 
     if not recipients:
         frappe.log_error("No System Manager users found for FAC invite", "FAC Invite Hook")
@@ -26,11 +17,42 @@ def send_fac_admin_invite():
         frappe.log_error("No default outgoing Email Account found", "FAC Invite Hook")
         return
 
-    frappe.sendmail(
-        recipients=[email_account],
-        bcc=recipients,
-        subject="Welcome to Frappe Assistant Core",
-        template="fac_welcome_invite",
-        sender=email_account,
-        delayed=False,
+    site_url = frappe.utils.get_url()
+
+    try:
+        frappe.sendmail(
+            recipients=recipients,
+            subject="Welcome to Frappe Assistant Core",
+            template="fac_welcome_invite",
+            args={"site_url": site_url},
+            sender=email_account,
+            delayed=True,
+        )
+    except Exception:
+        frappe.log_error("Failed to send FAC welcome email", "FAC Invite Hook")
+
+
+def _get_system_manager_emails():
+    """Batch-fetch emails for all enabled System Manager users."""
+    system_managers = frappe.get_all(
+        "Has Role",
+        filters={"role": "System Manager", "parenttype": "User"},
+        fields=["parent"],
     )
+
+    if not system_managers:
+        return []
+
+    user_names = [sm.parent for sm in system_managers]
+
+    users = frappe.get_all(
+        "User",
+        filters={"name": ("in", user_names), "enabled": 1},
+        fields=["email"],
+    )
+
+    return [
+        user.email
+        for user in users
+        if user.email and "@" in user.email and not user.email.endswith("@example.com")
+    ]
