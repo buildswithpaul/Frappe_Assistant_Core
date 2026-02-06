@@ -369,7 +369,7 @@ Build unlimited analysis depth via progressive artifact updates.
 
 
 @frappe.whitelist()
-def toggle_plugin_api(plugin_name, action):
+def toggle_plugin_api(plugin_name: str, action: str):
     """
     Standalone API to enable or disable a plugin.
     This is called from the HTML buttons in the plugin management UI.

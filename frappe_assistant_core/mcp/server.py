@@ -274,10 +274,7 @@ class MCPServer:
         Handle tools/call request.
 
         This is the CRITICAL method that fixes the serialization issue.
-        Also handles multimodal content: if a tool result contains an
-        'attachment' field with image data, the base64 data is returned
-        as a separate MCP image content block rather than being serialized
-        into the text result (which would exhaust the LLM context window).
+        Uses json.dumps with default=str to handle datetime, Decimal, etc.
         """
         import frappe
 
@@ -306,14 +303,6 @@ class MCPServer:
                 f"MCP Tool {tool_name} executed successfully, result type: {type(result).__name__}"
             )
 
-            content_blocks = []
-
-            # Extract image attachments before serialization to prevent
-            # base64 data from bloating the text context window
-            image_attachment = self._extract_image_attachment(result)
-            if image_attachment:
-                content_blocks.append(image_attachment)
-
             # CRITICAL FIX: Use json.dumps with default=str
             # This handles datetime, Decimal, and all other non-JSON types!
             if isinstance(result, str):
@@ -322,9 +311,7 @@ class MCPServer:
                 # The key fix: default=str converts any type to string
                 result_text = json.dumps(result, default=str, indent=2)
 
-            content_blocks.insert(0, {"type": "text", "text": result_text})
-
-            return {"content": content_blocks, "isError": False}
+            return {"content": [{"type": "text", "text": result_text}], "isError": False}
 
         except Exception as e:
             # Full traceback for debugging
@@ -332,69 +319,6 @@ class MCPServer:
             frappe.logger().error(f"MCP Tool Execution Error: {error_text}")
 
             return {"content": [{"type": "text", "text": error_text}], "isError": True}
-
-    def _extract_image_attachment(self, result: Any) -> Optional[Dict]:
-        """
-        Extract image attachment from a tool result, removing the base64 data
-        from the result dict to keep the text representation compact.
-
-        Looks for an 'attachment' field (or nested in 'result') with:
-            - type: "image"
-            - data: base64-encoded image data
-            - format: image format (jpeg, png, etc.)
-
-        Also handles legacy 'image_base64' field from older screenshot tools.
-
-        Returns an MCP image content block if found, None otherwise.
-        The base64 data is removed from the original result dict in-place.
-        """
-        if not isinstance(result, dict):
-            return None
-
-        # Check for attachment in result directly or nested under 'result' key
-        attachment = None
-
-        if isinstance(result.get("attachment"), dict):
-            attachment = result["attachment"]
-        elif isinstance(result.get("result"), dict):
-            inner = result["result"]
-            if isinstance(inner.get("attachment"), dict):
-                attachment = inner["attachment"]
-
-        if attachment and attachment.get("type") == "image" and attachment.get("data"):
-            base64_data = attachment["data"]
-            media_type = f"image/{attachment.get('format', 'jpeg')}"
-
-            # Remove the heavy base64 data from the text result, keep metadata
-            attachment["data"] = "[extracted as image content block]"
-
-            return {
-                "type": "image",
-                "data": base64_data,
-                "mimeType": media_type,
-            }
-
-        # Handle legacy 'image_base64' field from older screenshot code
-        if result.get("image_base64"):
-            base64_data = result["image_base64"]
-            result["image_base64"] = "[extracted as image content block]"
-            return {
-                "type": "image",
-                "data": base64_data,
-                "mimeType": "image/jpeg",
-            }
-
-        inner_result = result.get("result")
-        if isinstance(inner_result, dict) and inner_result.get("image_base64"):
-            base64_data = inner_result["image_base64"]
-            inner_result["image_base64"] = "[extracted as image content block]"
-            return {
-                "type": "image",
-                "data": base64_data,
-                "mimeType": "image/jpeg",
-            }
-
-        return None
 
     def _success_response(self, response: Response, request_id: Any, result: Dict) -> Response:
         """Create JSON-RPC success response."""
