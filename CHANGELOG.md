@@ -5,6 +5,61 @@ All notable changes to Frappe Assistant Core will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.1] - 2026-02-06
+
+### 🎯 Plugin & Tool Management Architecture
+
+#### Database-Backed Plugin Configuration
+- **Introduced** `FAC Plugin Configuration` DocType for atomic, database-backed plugin enable/disable control
+- **Replaced** previous JSON-based plugin state management with database-driven approach
+- **Added** audit trail for all plugin state changes via Frappe's built-in versioning
+- **Implemented** cache invalidation on state changes for multi-worker consistency
+- **Added** API functions for toggling and querying plugin states programmatically
+
+#### Database-Backed Tool Configuration
+- **Introduced** `FAC Tool Configuration` DocType for per-tool enable/disable and access control
+- **Added** tool category assignment: `read_only`, `write`, `read_write`, `privileged`
+- **Implemented** role-based access control for individual tools via `FAC Tool Role Access` child table
+- **Added** automatic tool category detection via AST parsing of tool source code
+- **Added** API functions for toggling tool states and checking access permissions
+
+#### Benefits Over Previous Approach
+- **Atomicity**: Each toggle is a single database write — no partial state corruption
+- **Audit Trail**: Full change history with timestamps, users, and previous values
+- **Cache Invalidation**: Automatic cache clearing ensures multi-worker consistency
+- **Multi-Worker Safety**: Database locks prevent race conditions across Gunicorn workers
+- **Scalability**: No file I/O bottlenecks — scales with your database
+
+### 🌐 Frappe V16 Support
+- **Added** official support for Frappe V16 alongside V15
+- **Updated** UI logic in `assistant_core_settings.json` to conditionally show OAuth settings depending on Frappe version
+- **Maintained** full backward compatibility with Frappe V15 installations
+
+### 📚 Documentation
+
+- **Updated** architecture documentation describing the new DocType-based plugin and tool configuration system
+- **Added** detailed administrator guide for tool and plugin management
+- **Added** comprehensive documentation for automatic tool category detection with examples
+- **Updated** main documentation index for easier navigation
+- **Added** developer best practices for tool category annotations
+
+### 🔧 Technical Improvements
+
+- **Added** copyright and license headers to new and updated Python modules for compliance
+- **Improved** state persistence flow: UI → API → DocType → Cache Invalidation → Consistent reads
+
+### 🔄 Migration Notes
+
+After upgrading to v2.3.1, run:
+```bash
+bench --site your-site migrate
+```
+
+This will:
+- Create `FAC Plugin Configuration` records for existing plugins
+- Create `FAC Tool Configuration` records for registered tools
+- Auto-detect tool categories via AST parsing
+
 ## [2.3.0] - 2026-01-09
 
 ### 🎯 Major Feature - Prompt Templates System
@@ -575,7 +630,8 @@ See [Git history](hhttps://github.com/buildswithpaul/Frappe_Assistant_Core/commi
 
 | Version | Release Date | Support Status | Notes |
 |---------|--------------|----------------|--------|
-| 2.3.0   | 2026-01-09   | ✅ Current     | **MCP Prompts support**, Prompt Templates, dark theme fixes |
+| 2.3.1   | 2026-02-06   | ✅ Current     | **Database-backed plugin/tool management**, Frappe V16 support |
+| 2.3.0   | 2026-01-09   | ✅ Supported   | MCP Prompts support, Prompt Templates, dark theme fixes |
 | 2.2.2   | 2025-12-03   | ✅ Supported   | Repository migration & OAuth enhancements |
 | 2.2.1   | 2025-11-24   | ✅ Supported   | Prepared report polling, multi-tool orchestration |
 | 2.2.0   | 2025-10-13   | ✅ Supported   | StreamableHTTP transport migration |
