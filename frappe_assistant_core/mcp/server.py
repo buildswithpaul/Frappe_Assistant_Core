@@ -166,6 +166,10 @@ class MCPServer:
         # Check if notification (no response needed)
         if self._is_notification(data):
             response.status_code = 202  # Accepted
+            # Echo MCP-Protocol-Version header if present (2025-06-18 spec)
+            incoming_version = frappe.request.headers.get("mcp-protocol-version")
+            if incoming_version:
+                response.headers["mcp-protocol-version"] = incoming_version
             return response
 
         # Get request ID
@@ -226,13 +230,13 @@ class MCPServer:
         """
         Handle initialize request.
 
-        Declares server capabilities according to MCP 2025-03-26 spec.
+        Declares server capabilities according to MCP 2025-06-18 spec.
         We only support tools (not prompts, resources, or sampling).
         """
         import frappe
 
         # Get protocol version from settings
-        protocol_version = "2025-03-26"  # Default
+        protocol_version = "2025-06-18"  # Default
         try:
             settings = frappe.get_single("Assistant Core Settings")
             protocol_version = settings.mcp_protocol_version or protocol_version
@@ -322,23 +326,39 @@ class MCPServer:
 
     def _success_response(self, response: Response, request_id: Any, result: Dict) -> Response:
         """Create JSON-RPC success response."""
+        import frappe
+
         response_data = {"jsonrpc": "2.0", "id": request_id, "result": result}
 
         # Use default=str here too for consistency
         response.data = json.dumps(response_data, default=str)
         response.mimetype = "application/json"
         response.status_code = 200
+
+        # Echo MCP-Protocol-Version header if present (2025-06-18 spec)
+        incoming_version = frappe.request.headers.get("mcp-protocol-version")
+        if incoming_version:
+            response.headers["mcp-protocol-version"] = incoming_version
+
         return response
 
     def _error_response(
         self, response: Response, request_id: Optional[Any], code: int, message: str
     ) -> Response:
         """Create JSON-RPC error response."""
+        import frappe
+
         response_data = {"jsonrpc": "2.0", "id": request_id, "error": {"code": code, "message": message}}
 
         response.data = json.dumps(response_data)
         response.mimetype = "application/json"
         response.status_code = 400
+
+        # Echo MCP-Protocol-Version header if present (2025-06-18 spec)
+        incoming_version = frappe.request.headers.get("mcp-protocol-version")
+        if incoming_version:
+            response.headers["mcp-protocol-version"] = incoming_version
+
         return response
 
     def _handle_prompts_list(self, params: Dict, request_id: Any) -> Dict:

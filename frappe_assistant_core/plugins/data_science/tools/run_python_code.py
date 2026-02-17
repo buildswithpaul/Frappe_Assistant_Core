@@ -452,7 +452,20 @@ Use tools API directly - no imports needed."""
         current_user: str,
         audit_info: Dict[str, Any],
     ) -> Dict[str, Any]:
-        """Execute code with timeout and proper error handling"""
+        """Execute code with timeout, memory limits, and proper error handling"""
+        from frappe_assistant_core.utils.execution_limits import (
+            ExecutionTimeoutError,
+            MemoryLimitError,
+            all_execution_limits,
+            get_execution_limits_from_settings,
+            truncate_output,
+        )
+
+        # Get limits from settings or use defaults
+        limits = get_execution_limits_from_settings()
+
+        # Use the timeout from arguments if provided, otherwise use settings
+        effective_timeout = min(timeout, limits["timeout_seconds"]) if timeout else limits["timeout_seconds"]
 
         # Capture output
         output = ""
@@ -465,26 +478,39 @@ Use tools API directly - no imports needed."""
                 stderr_capture = io.StringIO()
 
                 with redirect_stdout(stdout_capture), redirect_stderr(stderr_capture):
-                    # Execute code with user context preserved and Unicode handling
-                    try:
-                        exec(code, execution_globals)
-                    except UnicodeEncodeError as unicode_error:
-                        # Handle Unicode encoding errors during execution
-                        raise UnicodeEncodeError(
-                            unicode_error.encoding,
-                            unicode_error.object,
-                            unicode_error.start,
-                            unicode_error.end,
-                            f"Unicode encoding error during code execution. "
-                            f"Code contains characters that cannot be encoded. "
-                            f"Original error: {unicode_error.reason}",
-                        )
+                    # Execute code with all resource limits enforced
+                    with all_execution_limits(
+                        timeout_seconds=effective_timeout,
+                        max_memory_mb=limits["max_memory_mb"],
+                        max_cpu_seconds=limits["max_cpu_seconds"],
+                        max_recursion_depth=limits["max_recursion_depth"],
+                    ):
+                        try:
+                            exec(code, execution_globals)
+                        except UnicodeEncodeError as unicode_error:
+                            # Handle Unicode encoding errors during execution
+                            raise UnicodeEncodeError(
+                                unicode_error.encoding,
+                                unicode_error.object,
+                                unicode_error.start,
+                                unicode_error.end,
+                                f"Unicode encoding error during code execution. "
+                                f"Code contains characters that cannot be encoded. "
+                                f"Original error: {unicode_error.reason}",
+                            )
 
-                output = stdout_capture.getvalue()
-                error = stderr_capture.getvalue()
+                # Truncate output to prevent memory issues
+                output = truncate_output(stdout_capture.getvalue())
+                error = truncate_output(stderr_capture.getvalue())
             else:
-                # Execute without capturing output
-                exec(code, execution_globals)
+                # Execute without capturing output, but still with limits
+                with all_execution_limits(
+                    timeout_seconds=effective_timeout,
+                    max_memory_mb=limits["max_memory_mb"],
+                    max_cpu_seconds=limits["max_cpu_seconds"],
+                    max_recursion_depth=limits["max_recursion_depth"],
+                ):
+                    exec(code, execution_globals)
 
             # Extract all user-defined variables (not built-ins or system variables)
             excluded_vars = {
@@ -565,6 +591,87 @@ Use tools API directly - no imports needed."""
             }
 
             return result
+
+        except ExecutionTimeoutError as timeout_error:
+            error_msg = (
+                f"⏱️ Execution Timeout: {str(timeout_error)}\n\n"
+                f"The code exceeded the maximum allowed execution time of {effective_timeout} seconds.\n\n"
+                f"💡 Tips to fix this:\n"
+                f"   • Reduce the size of data being processed\n"
+                f"   • Add early termination conditions to loops\n"
+                f"   • Use more efficient algorithms\n"
+                f"   • Break complex operations into smaller steps"
+            )
+
+            self.logger.warning(f"Execution timeout for user {current_user}: {timeout_error}")
+
+            return {
+                "success": False,
+                "error": error_msg,
+                "output": output,
+                "variables": {},
+                "user_context": current_user,
+                "timeout_error": True,
+                "execution_info": {
+                    "execution_id": audit_info.get("execution_id"),
+                    "executed_by": current_user,
+                    "timeout_seconds": effective_timeout,
+                },
+            }
+
+        except MemoryError as memory_error:
+            error_msg = (
+                f"💾 Memory Limit Exceeded: The code attempted to use more memory than allowed.\n\n"
+                f"Maximum allowed memory: {limits['max_memory_mb']} MB\n\n"
+                f"💡 Tips to fix this:\n"
+                f"   • Process data in smaller batches\n"
+                f"   • Use generators instead of loading all data into memory\n"
+                f"   • Delete intermediate variables when no longer needed\n"
+                f"   • Use more memory-efficient data structures"
+            )
+
+            self.logger.warning(f"Memory limit exceeded for user {current_user}")
+
+            return {
+                "success": False,
+                "error": error_msg,
+                "output": output,
+                "variables": {},
+                "user_context": current_user,
+                "memory_error": True,
+                "execution_info": {
+                    "execution_id": audit_info.get("execution_id"),
+                    "executed_by": current_user,
+                    "max_memory_mb": limits["max_memory_mb"],
+                },
+            }
+
+        except RecursionError as recursion_error:
+            error_msg = (
+                f"🔄 Recursion Limit Exceeded: The code exceeded the maximum recursion depth.\n\n"
+                f"Maximum recursion depth: {limits['max_recursion_depth']}\n\n"
+                f"💡 Tips to fix this:\n"
+                f"   • Convert recursive algorithms to iterative ones\n"
+                f"   • Add proper base cases to recursive functions\n"
+                f"   • Use tail recursion optimization where possible\n"
+                f"   • Check for infinite recursion in your code"
+            )
+
+            self.logger.warning(f"Recursion limit exceeded for user {current_user}")
+
+            return {
+                "success": False,
+                "error": error_msg,
+                "output": output,
+                "variables": {},
+                "user_context": current_user,
+                "recursion_error": True,
+                "execution_info": {
+                    "execution_id": audit_info.get("execution_id"),
+                    "executed_by": current_user,
+                    "max_recursion_depth": limits["max_recursion_depth"],
+                },
+            }
 
         except UnicodeEncodeError as unicode_error:
             error_msg = (

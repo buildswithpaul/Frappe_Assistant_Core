@@ -63,7 +63,7 @@ def openid_configuration():
     settings = get_oauth_settings()
 
     # Get MCP configuration from Assistant Core Settings
-    mcp_protocol_version = "2025-03-26"
+    mcp_protocol_version = "2025-06-18"
     mcp_transport = "StreamableHTTP"
     try:
         core_settings = frappe.get_single("Assistant Core Settings")
@@ -107,7 +107,7 @@ def mcp_discovery():
     frappe_url = get_server_url()
 
     # Get MCP configuration from settings
-    mcp_protocol_version = "2025-03-26"
+    mcp_protocol_version = "2025-06-18"
     mcp_transport = "StreamableHTTP"
     mcp_server_name = "frappe-assistant-core"
     try:
@@ -275,7 +275,7 @@ def protected_resource_metadata():
             pass
 
     metadata = {
-        "resource": frappe_url,
+        "resource": frappe_url.rstrip("/") + "/",
         "authorization_servers": authorization_servers,
         "bearer_methods_supported": ["header"],
         "resource_name": settings.get("resource_name") or "Frappe Assistant Core",

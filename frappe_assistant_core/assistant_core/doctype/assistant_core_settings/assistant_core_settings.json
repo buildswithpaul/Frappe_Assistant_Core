@@ -14,6 +14,14 @@
   "plugins_section",
   "enabled_plugins_list",
   "plugin_status_html",
+  "security_tab",
+  "execution_limits_section",
+  "code_execution_timeout",
+  "code_execution_max_memory_mb",
+  "execution_limits_column_break",
+  "code_execution_max_cpu_seconds",
+  "code_execution_max_recursion",
+  "execution_limits_info",
   "streaming_tab",
   "streaming_section",
   "enforce_artifact_streaming",
@@ -95,6 +103,55 @@
    "description": "Current status of installed plugins and available tools"
   },
   {
+   "fieldname": "security_tab",
+   "fieldtype": "Tab Break",
+   "label": "Security"
+  },
+  {
+   "fieldname": "execution_limits_section",
+   "fieldtype": "Section Break",
+   "label": "Code Execution Limits",
+   "description": "Configure resource limits for the run_python_code tool to prevent runaway code from crashing the system. These limits protect against infinite loops, memory exhaustion, and excessive recursion."
+  },
+  {
+   "fieldname": "code_execution_timeout",
+   "fieldtype": "Int",
+   "label": "Execution Timeout (seconds)",
+   "default": "30",
+   "description": "Maximum wall-clock time allowed for code execution. Code that exceeds this limit will be terminated. Range: 1-300 seconds."
+  },
+  {
+   "fieldname": "code_execution_max_memory_mb",
+   "fieldtype": "Int",
+   "label": "Max Memory (MB)",
+   "default": "512",
+   "description": "Maximum memory allowed for code execution. Prevents memory exhaustion attacks. Range: 64-2048 MB."
+  },
+  {
+   "fieldname": "execution_limits_column_break",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "code_execution_max_cpu_seconds",
+   "fieldtype": "Int",
+   "label": "Max CPU Time (seconds)",
+   "default": "60",
+   "description": "Maximum CPU time allowed. Unlike wall-clock timeout, this limits actual processing time. Range: 1-300 seconds."
+  },
+  {
+   "fieldname": "code_execution_max_recursion",
+   "fieldtype": "Int",
+   "label": "Max Recursion Depth",
+   "default": "100",
+   "description": "Maximum recursion depth allowed. Prevents stack overflow from deeply recursive code. Range: 50-500."
+  },
+  {
+   "fieldname": "execution_limits_info",
+   "fieldtype": "HTML",
+   "label": "Limits Info",
+   "options": "<div class=\"alert alert-info\" style=\"margin-top: 10px;\"><strong>Note:</strong> These limits use OS-level resource controls (signals, rlimit) and only work on Unix-like systems (Linux, macOS). On Windows, limits are not enforced. Changes take effect immediately for new code executions.</div>"
+  },
+  {
    "fieldname": "streaming_tab",
    "fieldtype": "Tab Break",
    "label": "Streaming"
@@ -163,8 +220,8 @@
    "fieldtype": "Data",
    "label": "MCP Protocol Version",
    "read_only": 1,
-   "default": "2025-03-26",
-   "description": "MCP specification version this server implements. Currently supports 2025-03-26."
+   "default": "2025-06-18",
+   "description": "MCP specification version this server implements. Currently supports 2025-06-18."
   },
   {
    "fieldname": "mcp_transport_type",
@@ -268,7 +325,7 @@
  ],
  "issingle": 1,
  "links": [],
- "modified": "2025-08-12 17:50:12.690254",
+ "modified": "2026-01-21 10:00:00.000000",
  "modified_by": "Administrator",
  "module": "Assistant Core",
  "name": "Assistant Core Settings",
