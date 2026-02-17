@@ -275,7 +275,7 @@ def protected_resource_metadata():
             pass
 
     metadata = {
-        "resource": frappe_url.rstrip("/") + "/",
+        "resource": frappe_url.rstrip("/"),
         "authorization_servers": authorization_servers,
         "bearer_methods_supported": ["header"],
         "resource_name": settings.get("resource_name") or "Frappe Assistant Core",
