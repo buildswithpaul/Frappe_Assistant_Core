@@ -15,3 +15,6 @@ frappe_assistant_core.patches.v2_1.remove_old_assistant_admin_page
 
 # Version 2.2.0 - Plugin Configuration Migration
 frappe_assistant_core.patches.v2_2.migrate_plugin_settings_to_doctype
+
+# Version 2.3.0 - MCP 2025-06-18 Spec Support
+frappe_assistant_core.patches.v2_3.update_mcp_protocol_version

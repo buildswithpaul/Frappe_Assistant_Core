@@ -104,8 +104,6 @@ def get_assistant_dashboard_data():
             "server_info": {
                 "enabled": settings.get("server_enabled"),
                 "port": get_frappe_port(),
-                "enforce_artifact_streaming": settings.get("enforce_artifact_streaming", True),
-                "response_limit_prevention": settings.get("response_limit_prevention", True),
             },
             "connections": dashboard_stats.get("connections", {}),
             "tools": {**dashboard_stats.get("tools", {}), "most_used": most_used_tools},

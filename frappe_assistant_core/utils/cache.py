@@ -125,10 +125,6 @@ def get_cached_server_settings():
 
     return {
         "server_enabled": settings.server_enabled,
-        "enforce_artifact_streaming": getattr(settings, "enforce_artifact_streaming", True),
-        "response_limit_prevention": getattr(settings, "response_limit_prevention", True),
-        "streaming_line_threshold": getattr(settings, "streaming_line_threshold", 5),
-        "streaming_char_threshold": getattr(settings, "streaming_char_threshold", 1000),
         "mcp_endpoint_url": mcp_endpoint_url,
         "oauth_discovery_url": oauth_discovery_url,
     }

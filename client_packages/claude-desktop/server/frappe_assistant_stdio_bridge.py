@@ -55,13 +55,25 @@ class StdioMCPWrapper:
         try:
             self.log_debug(f"Sending to server: {request_data}")
 
-            # Reduce timeout to 5 seconds to stay under Claude's 6 second timeout
+            # Use longer timeout for tool calls (OCR, report generation, etc.)
+            # Short timeout for metadata requests (initialize, tools/list)
+            method = request_data.get("method", "")
+            if method == "tools/call":
+                timeout = int(os.environ.get("MCP_TOOL_TIMEOUT", "300"))
+            else:
+                timeout = int(os.environ.get("MCP_REQUEST_TIMEOUT", "30"))
+
             response = requests.post(
                 f"{self.server_url}/api/method/frappe_assistant_core.api.fac_endpoint.handle_mcp",
                 headers=self.headers,
                 json=request_data,
-                timeout=5,
+                timeout=timeout,
             )
+
+            # 202 = notification accepted (no response body expected)
+            if response.status_code == 202:
+                self.log_debug(f"Notification accepted (202) for method: {method}")
+                return None
 
             if response.status_code == 200:
                 result = response.json()
@@ -180,8 +192,9 @@ class StdioMCPWrapper:
                 # Forward all other requests (including prompts/*) to HTTP server
                 response = self.send_to_server(request)
 
-            # Only send response if request had an id (notifications don't get responses)
-            if request_id is not None:
+            # Only send response if request had an id and we got a response
+            # (notifications return None from send_to_server)
+            if request_id is not None and response is not None:
                 with self.output_lock:
                     print(json.dumps(response), flush=True)
             else:

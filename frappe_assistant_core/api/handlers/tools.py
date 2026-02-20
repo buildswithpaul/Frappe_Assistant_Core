@@ -23,10 +23,6 @@ from typing import Any, Dict, Optional
 
 import frappe
 
-from frappe_assistant_core.api.handlers.tools_streaming import (
-    format_for_artifact_streaming,
-    should_stream_to_artifact,
-)
 from frappe_assistant_core.constants.definitions import ErrorCodes, ErrorMessages, LogMessages
 from frappe_assistant_core.core.tool_registry import get_tool_registry
 from frappe_assistant_core.utils.logger import api_logger
@@ -152,11 +148,6 @@ def handle_tool_call(params: Dict[str, Any], request_id: Optional[Any]) -> Dict[
         # Ensure result is a string for Claude Desktop compatibility
         if not isinstance(result, str):
             result = str(result)
-
-        # Check if result should be streamed to artifacts
-        should_stream = should_stream_to_artifact(result, tool_name)
-        if should_stream:
-            result = format_for_artifact_streaming(result, tool_name, arguments)
 
         response = {"jsonrpc": "2.0", "result": {"content": [{"type": "text", "text": result}]}}
 
