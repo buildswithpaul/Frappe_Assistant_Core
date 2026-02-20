@@ -29,6 +29,15 @@
   "streaming_behavior_instructions",
   "streaming_line_threshold",
   "streaming_char_threshold",
+  "ocr_tab",
+  "ocr_section",
+  "ocr_backend",
+  "ocr_language",
+  "ollama_section",
+  "ollama_api_url",
+  "ollama_vision_model",
+  "ollama_column_break",
+  "ollama_request_timeout",
   "mcp_configuration_tab",
   "mcp_section",
   "mcp_server_name",
@@ -198,6 +207,65 @@
    "label": "Character Threshold for Streaming"
   },
   {
+   "fieldname": "ocr_tab",
+   "fieldtype": "Tab Break",
+   "label": "OCR"
+  },
+  {
+   "fieldname": "ocr_section",
+   "fieldtype": "Section Break",
+   "label": "OCR Configuration",
+   "description": "PaddleOCR is the default OCR engine for extracting text from scanned documents and images. Ollama vision LLM is available as an optional alternative for complex documents."
+  },
+  {
+   "default": "paddleocr",
+   "description": "OCR engine to use for text extraction from images and scanned PDFs.",
+   "fieldname": "ocr_backend",
+   "fieldtype": "Select",
+   "label": "OCR Backend",
+   "options": "paddleocr\nollama"
+  },
+  {
+   "default": "en",
+   "description": "Default language for PaddleOCR. Common codes: en, fr, german, es, ch. See PaddleOCR docs for full list.",
+   "fieldname": "ocr_language",
+   "fieldtype": "Data",
+   "label": "OCR Language",
+   "depends_on": "eval:doc.ocr_backend=='paddleocr'"
+  },
+  {
+   "fieldname": "ollama_section",
+   "fieldtype": "Section Break",
+   "label": "Ollama Vision Settings",
+   "depends_on": "eval:doc.ocr_backend=='ollama'",
+   "description": "Configure the Ollama server and vision model used for OCR. Requires Ollama running locally with a vision-capable model."
+  },
+  {
+   "default": "http://localhost:11434",
+   "description": "Ollama API server URL.",
+   "fieldname": "ollama_api_url",
+   "fieldtype": "Data",
+   "label": "Ollama API URL"
+  },
+  {
+   "default": "deepseek-ocr:latest",
+   "description": "Vision model to use for OCR. Must be a model that supports image input (e.g., deepseek-ocr, llava, moondream).",
+   "fieldname": "ollama_vision_model",
+   "fieldtype": "Data",
+   "label": "Vision Model"
+  },
+  {
+   "fieldname": "ollama_column_break",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "120",
+   "description": "Maximum time in seconds to wait for Ollama to process a single page. Increase for slow hardware or large documents.",
+   "fieldname": "ollama_request_timeout",
+   "fieldtype": "Int",
+   "label": "Request Timeout (seconds)"
+  },
+  {
    "fieldname": "mcp_configuration_tab",
    "fieldtype": "Tab Break",
    "label": "MCP Configuration"
@@ -325,7 +393,7 @@
  ],
  "issingle": 1,
  "links": [],
- "modified": "2026-01-21 10:00:00.000000",
+ "modified": "2026-02-20 10:00:00.000000",
  "modified_by": "Administrator",
  "module": "Assistant Core",
  "name": "Assistant Core Settings",

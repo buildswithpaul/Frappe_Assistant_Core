@@ -30,6 +30,43 @@ from frappe import _
 
 from frappe_assistant_core.core.base_tool import BaseTool
 
+# Module-level cache for PaddleOCR instance to avoid reloading models on every call.
+# PaddleOCR model loading takes several seconds; caching avoids this overhead.
+_paddle_ocr_instance = None
+_paddle_ocr_lang = None
+
+
+def _get_paddle_ocr(lang: str = "en"):
+    """Get or create a cached PaddleOCR instance.
+
+    Re-creates the instance only if the requested language differs
+    from the cached one, since PaddleOCR loads language-specific models.
+    """
+    global _paddle_ocr_instance, _paddle_ocr_lang
+
+    if _paddle_ocr_instance is not None and _paddle_ocr_lang == lang:
+        return _paddle_ocr_instance
+
+    from paddleocr import PaddleOCR
+
+    _paddle_ocr_instance = PaddleOCR(lang=lang)
+    _paddle_ocr_lang = lang
+    return _paddle_ocr_instance
+
+
+def _get_paddle_ocr_fresh(lang: str = "en"):
+    """Force-create a new PaddleOCR instance, discarding any cached one.
+
+    Used as a recovery mechanism when the cached instance hits a C++ crash.
+    """
+    global _paddle_ocr_instance, _paddle_ocr_lang
+
+    from paddleocr import PaddleOCR
+
+    _paddle_ocr_instance = PaddleOCR(lang=lang)
+    _paddle_ocr_lang = lang
+    return _paddle_ocr_instance
+
 
 class ExtractFileContent(BaseTool):
     """
@@ -87,8 +124,8 @@ class ExtractFileContent(BaseTool):
                 },
                 "language": {
                     "type": "string",
-                    "default": "eng",
-                    "description": "OCR language code (eng, fra, deu, spa, etc.)",
+                    "default": "en",
+                    "description": "OCR language code (en, fr, german, es, ch, etc.)",
                 },
                 "output_format": {
                     "type": "string",
@@ -107,7 +144,7 @@ class ExtractFileContent(BaseTool):
 
     def _get_description(self) -> str:
         """Get tool description"""
-        return """Extract text and data from various file formats for analysis and processing. SUPPORTED FORMATS: PDF (text extraction, table extraction), Images JPG/PNG (OCR with Tesseract), Spreadsheets CSV/Excel (parse data), Documents DOCX/TXT (text extraction). OPERATIONS: extract (get text content), ocr (optical character recognition on images), parse_data (structured data from CSV/Excel), extract_tables (tables from PDFs). USE CASES: Read invoices, contracts, forms, reports, spreadsheets for analysis and data processing. Requires valid file URL from Frappe file system. Returns extracted content in text or structured format suitable for further processing."""
+        return """Extract text and data from various file formats for analysis and processing. SUPPORTED FORMATS: PDF (text extraction, table extraction), Images JPG/PNG (OCR with PaddleOCR), Spreadsheets CSV/Excel (parse data), Documents DOCX/TXT (text extraction). OPERATIONS: extract (get text content), ocr (optical character recognition on images), parse_data (structured data from CSV/Excel), extract_tables (tables from PDFs). USE CASES: Read invoices, contracts, forms, reports, spreadsheets for analysis and data processing. Requires valid file URL from Frappe file system. Returns extracted content in text or structured format suitable for further processing."""
 
     def execute(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
         """Execute file content extraction"""
@@ -140,7 +177,7 @@ class ExtractFileContent(BaseTool):
             if operation == "extract":
                 result = self._extract_content(file_content, file_type, arguments)
             elif operation == "ocr":
-                result = self._perform_ocr(file_content, arguments)
+                result = self._perform_ocr(file_content, arguments, file_type=file_type)
             elif operation == "parse_data":
                 if file_type in ["csv", "excel"]:
                     result = self._extract_content(file_content, file_type, arguments)
@@ -355,14 +392,9 @@ class ExtractFileContent(BaseTool):
 
             combined_text = "\n\n".join(text_content)
 
-            # If no text extracted, might be scanned PDF
+            # If no text extracted, this is likely a scanned PDF - auto-fallback to OCR
             if not combined_text.strip():
-                return {
-                    "success": True,
-                    "content": "",
-                    "message": "No text found in PDF. This might be a scanned document. Use operation='ocr' for scanned PDFs.",
-                    "pages": num_pages,
-                }
+                return self._perform_ocr(file_content, arguments, file_type="pdf")
 
             return {
                 "success": True,
@@ -376,52 +408,372 @@ class ExtractFileContent(BaseTool):
 
     def _extract_image_content(self, file_content: bytes, arguments: Dict[str, Any]) -> Dict[str, Any]:
         """Extract content from image using OCR"""
-        return self._perform_ocr(file_content, arguments)
+        return self._perform_ocr(file_content, arguments, file_type="image")
 
-    def _perform_ocr(self, file_content: bytes, arguments: Dict[str, Any]) -> Dict[str, Any]:
-        """Perform OCR on image content"""
+    def _get_ocr_settings(self) -> Dict[str, Any]:
+        """Get OCR backend configuration from Assistant Core Settings."""
         try:
-            # Check if pytesseract is available
+            settings = frappe.get_single("Assistant Core Settings")
+            return {
+                "backend": getattr(settings, "ocr_backend", "paddleocr") or "paddleocr",
+                "ocr_language": getattr(settings, "ocr_language", "en") or "en",
+                "ollama_url": getattr(settings, "ollama_api_url", "http://localhost:11434")
+                or "http://localhost:11434",
+                "ollama_model": getattr(settings, "ollama_vision_model", "deepseek-ocr:latest")
+                or "deepseek-ocr:latest",
+                "ollama_timeout": int(getattr(settings, "ollama_request_timeout", 120) or 120),
+            }
+        except Exception:
+            return {"backend": "paddleocr", "ocr_language": "en"}
+
+    def _get_ocr_language(self, arguments: Dict[str, Any], ocr_settings: Dict[str, Any]) -> str:
+        """Get OCR language, preferring the per-request argument over settings default."""
+        return arguments.get("language") or ocr_settings.get("ocr_language", "en")
+
+    def _perform_ocr(
+        self, file_content: bytes, arguments: Dict[str, Any], file_type: str = "image"
+    ) -> Dict[str, Any]:
+        """Perform OCR on image or PDF content.
+
+        Uses the configured backend (PaddleOCR by default, Ollama optional).
+        Falls back to PaddleOCR if Ollama fails or returns empty.
+
+        Args:
+            file_content: Raw file bytes
+            arguments: Tool arguments (language, max_pages, etc.)
+            file_type: File type string ("image" or "pdf")
+        """
+        ocr_settings = self._get_ocr_settings()
+
+        # Try Ollama vision backend if configured
+        if ocr_settings.get("backend") == "ollama":
+            result = self._try_ollama_ocr(file_content, arguments, file_type, ocr_settings)
+            if result and result.get("success") and result.get("content", "").strip():
+                return result
+            # Ollama failed or returned empty — fall through to PaddleOCR
+
+        # PaddleOCR path (default)
+        return self._perform_paddle_ocr(file_content, arguments, file_type, ocr_settings)
+
+    def _perform_paddle_ocr(
+        self, file_content: bytes, arguments: Dict[str, Any], file_type: str, ocr_settings: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Perform OCR using PaddleOCR on image or PDF content."""
+        try:
+            from paddleocr import PaddleOCR  # noqa: F401
+        except ImportError:
+            return {
+                "success": False,
+                "error": "PaddleOCR is not installed. Please install paddleocr and paddlepaddle.",
+                "install_command": "pip install paddleocr paddlepaddle",
+            }
+
+        language = self._get_ocr_language(arguments, ocr_settings)
+
+        # Try with cached instance first; on C++ crash, reset cache and retry once
+        for attempt in range(2):
             try:
-                import pytesseract
+                ocr = _get_paddle_ocr(language) if attempt == 0 else _get_paddle_ocr_fresh(language)
+
+                if file_type == "pdf":
+                    return self._perform_paddle_pdf_ocr(file_content, language, arguments, ocr)
+
+                # Image path
+                import numpy as np
                 from PIL import Image
-            except ImportError:
+
+                image = Image.open(io.BytesIO(file_content))
+                if image.mode in ("RGBA", "P"):
+                    image = image.convert("RGB")
+
+                result = ocr.ocr(np.array(image))
+                extracted_text = self._paddle_result_to_text(result)
+
+                if not extracted_text.strip():
+                    return {"success": True, "content": "", "message": "No text detected in image"}
+
                 return {
-                    "success": False,
-                    "error": "OCR dependencies not installed. Please install pytesseract and Pillow.",
-                    "install_command": "pip install pytesseract pillow",
+                    "success": True,
+                    "content": extracted_text,
+                    "ocr_backend": "paddleocr",
+                    "ocr_language": language,
                 }
 
-            # Check if tesseract is installed on system
-            try:
-                pytesseract.get_tesseract_version()
-            except Exception:
+            except Exception as e:
+                if attempt == 0:
+                    # First failure — reset the cached instance and retry
+                    frappe.log_error(
+                        title="PaddleOCR Retry",
+                        message=f"PaddleOCR failed (attempt 1), resetting cache: {e}",
+                    )
+                    continue
+                # Second failure — return the actual error
                 return {
                     "success": False,
-                    "error": "Tesseract OCR not installed on system. Please install tesseract-ocr.",
-                    "install_command": "sudo apt-get install tesseract-ocr (Linux) or brew install tesseract (Mac)",
+                    "error": f"PaddleOCR failed: {str(e)}",
+                    "ocr_backend": "paddleocr",
                 }
 
-            # Open image
-            image = Image.open(io.BytesIO(file_content))
+    def _perform_paddle_pdf_ocr(
+        self, file_content: bytes, language: str, arguments: Dict[str, Any], ocr
+    ) -> Dict[str, Any]:
+        """OCR a PDF using PaddleOCR's native PDF support."""
+        import os
+        import tempfile
 
-            # Perform OCR
-            language = arguments.get("language", "eng")
-            extracted_text = pytesseract.image_to_string(image, lang=language)
+        max_pages = arguments.get("max_pages", 50)
 
-            if not extracted_text.strip():
-                return {"success": True, "content": "", "message": "No text detected in image"}
+        # PaddleOCR needs a file path for PDFs
+        tmp_file = None
+        try:
+            tmp_file = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
+            tmp_file.write(file_content)
+            tmp_file.flush()
+            tmp_file.close()
 
-            return {"success": True, "content": extracted_text, "ocr_language": language}
+            result = ocr.ocr(tmp_file.name)
+        finally:
+            if tmp_file:
+                try:
+                    os.unlink(tmp_file.name)
+                except OSError:
+                    pass
 
-        except Exception as e:
-            # Fallback message if OCR fails
+        if not result:
             return {
                 "success": True,
-                "content": "[OCR not available - image file detected]",
-                "message": f"OCR failed: {str(e)}. To enable OCR, install tesseract-ocr system package.",
-                "fallback": True,
+                "content": "",
+                "message": "OCR completed but no text was detected in the PDF pages.",
+                "pages": 0,
+                "ocr_backend": "paddleocr",
+                "ocr_language": language,
             }
+
+        num_pages = min(len(result), max_pages)
+        text_content = []
+
+        for page_num in range(num_pages):
+            page_result = result[page_num]
+            if page_result:
+                page_text = self._paddle_page_to_text(page_result)
+                if page_text.strip():
+                    text_content.append(f"--- Page {page_num + 1} ---\n{page_text}")
+
+        combined_text = "\n\n".join(text_content)
+
+        if not combined_text.strip():
+            return {
+                "success": True,
+                "content": "",
+                "message": "OCR completed but no text was detected in the PDF pages.",
+                "pages": num_pages,
+                "ocr_backend": "paddleocr",
+                "ocr_language": language,
+            }
+
+        return {
+            "success": True,
+            "content": combined_text,
+            "pages": num_pages,
+            "ocr_pages_with_text": len(text_content),
+            "ocr_backend": "paddleocr",
+            "ocr_language": language,
+        }
+
+    def _paddle_result_to_text(self, result) -> str:
+        """Convert PaddleOCR result to plain text for a single image.
+
+        PaddleOCR 3.x returns a list of OCRResult objects (one per page/image).
+        For a single image, result is a list with one OCRResult.
+        """
+        if not result:
+            return ""
+        # result is a list; first element is the page/image result
+        return self._paddle_page_to_text(result[0])
+
+    def _paddle_page_to_text(self, page_result) -> str:
+        """Convert a single page of PaddleOCR results to structured text.
+
+        PaddleOCR 3.x returns OCRResult dict-like objects with parallel arrays:
+          - rec_texts: list of recognized text strings
+          - rec_scores: list of confidence scores
+          - dt_polys: list of bounding box polygons (4-point, [[x1,y1],[x2,y2],[x3,y3],[x4,y4]])
+
+        Groups text regions into lines based on vertical position,
+        then sorts left-to-right within each line. This preserves
+        table column alignment.
+        """
+        if not page_result:
+            return ""
+
+        # Handle PaddleOCR 3.x OCRResult (dict-like with parallel arrays)
+        if hasattr(page_result, "__getitem__") and not isinstance(page_result, list):
+            texts = (
+                page_result.get("rec_texts", []) if hasattr(page_result, "get") else page_result["rec_texts"]
+            )
+            polys = (
+                page_result.get("dt_polys", []) if hasattr(page_result, "get") else page_result["dt_polys"]
+            )
+
+            if not texts:
+                return ""
+
+            # Extract (y_center, x_left, text) from parallel arrays
+            positioned_texts = []
+            for i, text in enumerate(texts):
+                if i < len(polys):
+                    bbox = polys[i]  # [[x1,y1],[x2,y2],[x3,y3],[x4,y4]]
+                    y_center = (float(bbox[0][1]) + float(bbox[3][1])) / 2
+                    x_left = float(bbox[0][0])
+                else:
+                    # No bbox available; append at end
+                    y_center = float("inf")
+                    x_left = 0.0
+                positioned_texts.append((y_center, x_left, text))
+
+        # Handle legacy PaddleOCR 2.x format: list of [bbox, (text, score)]
+        elif isinstance(page_result, list):
+            positioned_texts = []
+            for region in page_result:
+                bbox = region[0]
+                text = region[1][0] if isinstance(region[1], (list, tuple)) else str(region[1])
+                y_center = (bbox[0][1] + bbox[3][1]) / 2
+                x_left = bbox[0][0]
+                positioned_texts.append((y_center, x_left, text))
+        else:
+            return str(page_result)
+
+        if not positioned_texts:
+            return ""
+
+        # Sort by vertical position
+        positioned_texts.sort(key=lambda t: t[0])
+
+        # Group into lines: regions within 10px vertical distance
+        # are considered part of the same line
+        lines = []
+        current_line = [positioned_texts[0]]
+
+        for item in positioned_texts[1:]:
+            if abs(item[0] - current_line[0][0]) < 10:
+                current_line.append(item)
+            else:
+                lines.append(current_line)
+                current_line = [item]
+        lines.append(current_line)
+
+        # Sort each line left-to-right, join with tabs for table structure
+        text_lines = []
+        for line in lines:
+            line.sort(key=lambda t: t[1])
+            text_lines.append("\t".join(item[2] for item in line))
+
+        return "\n".join(text_lines)
+
+    def _try_ollama_ocr(
+        self, file_content: bytes, arguments: Dict[str, Any], file_type: str, ocr_settings: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
+        """Try OCR via Ollama vision model. Returns None on failure to allow PaddleOCR fallback."""
+        try:
+            from PIL import Image
+
+            if file_type == "pdf":
+                return self._perform_ollama_pdf_ocr(file_content, arguments, ocr_settings)
+            else:
+                image = Image.open(io.BytesIO(file_content))
+                return self._ollama_extract_from_image(image, ocr_settings)
+        except Exception as e:
+            frappe.log_error(
+                title="Ollama OCR Error",
+                message=f"Ollama OCR failed, falling back to PaddleOCR: {str(e)}",
+            )
+            return None
+
+    def _ollama_extract_from_image(self, pil_image, ocr_settings: Dict[str, Any]) -> Dict[str, Any]:
+        """Send a single PIL image to Ollama vision model for text extraction."""
+        import requests
+
+        buf = io.BytesIO()
+        if pil_image.mode in ("RGBA", "P"):
+            pil_image = pil_image.convert("RGB")
+        pil_image.save(buf, format="JPEG", quality=85)
+        img_b64 = base64.b64encode(buf.getvalue()).decode()
+
+        response = requests.post(
+            f"{ocr_settings['ollama_url']}/api/generate",
+            json={
+                "model": ocr_settings["ollama_model"],
+                "prompt": "Extract all text from this document image exactly as it appears.",
+                "images": [img_b64],
+                "stream": False,
+            },
+            timeout=ocr_settings["ollama_timeout"],
+        )
+        response.raise_for_status()
+        result = response.json()
+
+        content = result.get("response", "").strip()
+        if not content:
+            return {"success": True, "content": "", "message": "Ollama returned no text"}
+
+        return {
+            "success": True,
+            "content": content,
+            "ocr_backend": "ollama",
+            "ocr_model": ocr_settings["ollama_model"],
+        }
+
+    def _perform_ollama_pdf_ocr(
+        self, file_content: bytes, arguments: Dict[str, Any], ocr_settings: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Extract text from PDF via Ollama. Renders pages with PyMuPDF, then sends to Ollama."""
+        try:
+            import fitz  # PyMuPDF
+        except ImportError:
+            return {
+                "success": False,
+                "error": "PyMuPDF (fitz) is required for Ollama PDF OCR. Install with: pip install pymupdf",
+            }
+
+        try:
+            pdf_doc = fitz.open(stream=file_content, filetype="pdf")
+        except Exception as e:
+            return {"success": False, "error": f"Failed to open PDF for OCR: {str(e)}"}
+
+        max_pages = arguments.get("max_pages", 50)
+        num_pages = min(len(pdf_doc), max_pages)
+
+        text_content = []
+        for page_num in range(num_pages):
+            page = pdf_doc[page_num]
+            pix = page.get_pixmap(dpi=150)
+            pil_image = pix.pil_image()
+
+            page_result = self._ollama_extract_from_image(pil_image, ocr_settings)
+            if page_result.get("success") and page_result.get("content", "").strip():
+                text_content.append(f"--- Page {page_num + 1} ---\n{page_result['content']}")
+
+        pdf_doc.close()
+
+        combined_text = "\n\n".join(text_content)
+
+        if not combined_text.strip():
+            return {
+                "success": True,
+                "content": "",
+                "message": "Ollama OCR completed but no text was detected.",
+                "pages": num_pages,
+                "ocr_backend": "ollama",
+            }
+
+        return {
+            "success": True,
+            "content": combined_text,
+            "pages": num_pages,
+            "ocr_pages_with_text": len(text_content),
+            "ocr_backend": "ollama",
+            "ocr_model": ocr_settings["ollama_model"],
+        }
 
     def _extract_csv_content(self, file_content: bytes) -> Dict[str, Any]:
         """Extract content from CSV"""
