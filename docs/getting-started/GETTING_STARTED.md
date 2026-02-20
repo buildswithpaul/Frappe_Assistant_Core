@@ -302,6 +302,62 @@ If everything is working, you should see:
 ✅ **Document Creation**: AI can create and modify documents  
 ✅ **Analysis Capabilities**: AI can analyze and report on your data  
 
+## 📄 Step 5: Configure OCR (Optional)
+
+Frappe Assistant Core includes built-in OCR for extracting text from scanned documents and images. Two backends are available:
+
+### Option A: PaddleOCR (Default - No Extra Setup)
+
+PaddleOCR works out of the box. It runs locally and supports 80+ languages. No configuration needed — it's the default backend.
+
+### Option B: Ollama Vision (AI-Powered OCR)
+
+For better document understanding and complex layouts, you can use an Ollama vision model:
+
+#### 1. Install Ollama
+
+```bash
+# Install Ollama (Linux)
+curl -fsSL https://ollama.com/install.sh | sh
+
+# Pull a vision model for OCR
+ollama pull deepseek-ocr
+```
+
+#### 2. Configure in Assistant Core Settings
+
+1. **Login to ERPNext** as Administrator
+2. **Go to**: Setup → Integrations → Assistant Core Settings
+3. **OCR Tab:**
+   - **OCR Backend**: Select `ollama`
+   - **Ollama API URL**: `http://localhost:11434` (default)
+   - **Ollama Vision Model**: `deepseek-ocr:latest`
+   - **Request Timeout**: `120` seconds
+4. **Save**
+
+#### 3. Test OCR
+
+Try extracting text from a scanned document:
+
+> "Extract the text from the uploaded invoice PDF"
+> "OCR this scanned document image"
+
+**How it works**: When Ollama is selected, the system sends document images to the Ollama vision model for text extraction. If Ollama fails or returns empty results, it automatically falls back to PaddleOCR.
+
+### OCR Language Support
+
+Set the default OCR language in Assistant Core Settings. Common language codes:
+- `en` - English (default)
+- `fr` - French
+- `de` - German
+- `es` - Spanish
+- `ch` - Chinese (Simplified)
+- `japan` - Japanese
+
+You can also specify the language per-request when calling the `extract_file_content` tool.
+
+---
+
 ## 🎯 Understanding Core Capabilities
 
 ### Document Operations
