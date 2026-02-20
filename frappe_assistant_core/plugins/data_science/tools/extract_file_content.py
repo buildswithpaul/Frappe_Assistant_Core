@@ -486,7 +486,7 @@ class ExtractFileContent(BaseTool):
                 if image.mode in ("RGBA", "P"):
                     image = image.convert("RGB")
 
-                result = ocr.ocr(np.array(image))
+                result = ocr.predict(np.array(image))
                 extracted_text = self._paddle_result_to_text(result)
 
                 if not extracted_text.strip():
@@ -531,7 +531,7 @@ class ExtractFileContent(BaseTool):
             tmp_file.flush()
             tmp_file.close()
 
-            result = ocr.ocr(tmp_file.name)
+            result = ocr.predict(tmp_file.name)
         finally:
             if tmp_file:
                 try:
@@ -699,23 +699,21 @@ class ExtractFileContent(BaseTool):
         pil_image.save(buf, format="JPEG", quality=85)
         img_b64 = base64.b64encode(buf.getvalue()).decode()
 
-        response = requests.post(
-            f"{ocr_settings['ollama_url']}/api/generate",
-            json={
-                "model": ocr_settings["ollama_model"],
-                "prompt": "Extract all text from this document image exactly as it appears.",
-                "images": [img_b64],
-                "stream": False,
-            },
-            timeout=ocr_settings["ollama_timeout"],
-        )
+        url = f"{ocr_settings['ollama_url']}/api/generate"
+        payload = {
+            "model": ocr_settings["ollama_model"],
+            "prompt": "Extract all text from this document image exactly as it appears.",
+            "images": [img_b64],
+            "stream": False,
+        }
+
+        response = requests.post(url, json=payload, timeout=ocr_settings["ollama_timeout"])
         response.raise_for_status()
         result = response.json()
 
         content = result.get("response", "").strip()
         if not content:
             return {"success": True, "content": "", "message": "Ollama returned no text"}
-
         return {
             "success": True,
             "content": content,

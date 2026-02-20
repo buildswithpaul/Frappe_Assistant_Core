@@ -22,13 +22,6 @@
   "code_execution_max_cpu_seconds",
   "code_execution_max_recursion",
   "execution_limits_info",
-  "streaming_tab",
-  "streaming_section",
-  "enforce_artifact_streaming",
-  "response_limit_prevention",
-  "streaming_behavior_instructions",
-  "streaming_line_threshold",
-  "streaming_char_threshold",
   "ocr_tab",
   "ocr_section",
   "ocr_backend",
@@ -159,52 +152,6 @@
    "fieldtype": "HTML",
    "label": "Limits Info",
    "options": "<div class=\"alert alert-info\" style=\"margin-top: 10px;\"><strong>Note:</strong> These limits use OS-level resource controls (signals, rlimit) and only work on Unix-like systems (Linux, macOS). On Windows, limits are not enforced. Changes take effect immediately for new code executions.</div>"
-  },
-  {
-   "fieldname": "streaming_tab",
-   "fieldtype": "Tab Break",
-   "label": "Streaming"
-  },
-  {
-   "fieldname": "streaming_section",
-   "fieldtype": "Section Break",
-   "label": "Artifact Streaming Configuration",
-   "description": "Configure how Claude handles large tool responses using artifacts to prevent hitting response limits."
-  },
-  {
-   "default": "1",
-   "description": "Require Claude to use artifact streaming for data analysis operations. When enabled, large results are automatically streamed to artifacts instead of being included inline.",
-   "fieldname": "enforce_artifact_streaming",
-   "fieldtype": "Check",
-   "label": "Enforce Artifact Streaming Protocol"
-  },
-  {
-   "default": "1",
-   "description": "Automatically trigger artifact streaming when tool results exceed the thresholds below. Prevents Claude from hitting response limits on large datasets.",
-   "fieldname": "response_limit_prevention",
-   "fieldtype": "Check",
-   "label": "Enable Response Limit Prevention"
-  },
-  {
-   "default": "Always create analysis workspace artifacts before performing data analysis.\nStream all detailed work to artifacts to prevent response limits.\nKeep responses minimal with artifact references.\nBuild unlimited analysis depth via progressive artifact updates.",
-   "description": "Custom instructions sent to Claude about streaming behavior. These instructions guide how Claude structures responses when working with large datasets.",
-   "fieldname": "streaming_behavior_instructions",
-   "fieldtype": "Small Text",
-   "label": "Custom Streaming Instructions"
-  },
-  {
-   "default": "5",
-   "description": "Minimum number of lines in a tool result that triggers artifact streaming (when Response Limit Prevention is enabled)",
-   "fieldname": "streaming_line_threshold",
-   "fieldtype": "Int",
-   "label": "Line Threshold for Streaming"
-  },
-  {
-   "default": "1000",
-   "description": "Minimum number of characters in a tool result that triggers artifact streaming (when Response Limit Prevention is enabled)",
-   "fieldname": "streaming_char_threshold",
-   "fieldtype": "Int",
-   "label": "Character Threshold for Streaming"
   },
   {
    "fieldname": "ocr_tab",
@@ -393,7 +340,7 @@
  ],
  "issingle": 1,
  "links": [],
- "modified": "2026-02-20 10:00:00.000000",
+ "modified": "2026-02-20 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Assistant Core",
  "name": "Assistant Core Settings",

@@ -35,10 +35,6 @@ def update_server_settings(**kwargs):
     updated = False
     for field in [
         "server_enabled",
-        "enforce_artifact_streaming",
-        "response_limit_prevention",
-        "streaming_line_threshold",
-        "streaming_char_threshold",
     ]:
         if field in kwargs:
             setattr(settings, field, kwargs[field])

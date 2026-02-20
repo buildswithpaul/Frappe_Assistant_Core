@@ -138,7 +138,7 @@ class ExecutePythonCode(BaseTool):
         return libraries
 
     def _get_dynamic_description(self) -> str:
-        """Generate description based on current streaming settings and library availability"""
+        """Generate description based on library availability"""
         base_description = """Execute custom Python code for advanced analysis and complex calculations.
 
 CRITICAL: For ANY query requiring data fetching + analysis, use the 'tools' API INSIDE your Python code to fetch data. DO NOT call separate tools (like list_documents) and then manually copy data into code - this wastes tokens and is inefficient.
@@ -349,16 +349,7 @@ Use tools API directly - no imports needed."""
         if library_warnings:
             base_description += "\n\n" + "\n".join(library_warnings)
 
-        try:
-            from frappe_assistant_core.utils.streaming_manager import get_streaming_manager
-
-            streaming_manager = get_streaming_manager()
-            streaming_suffix = streaming_manager.get_tool_description_suffix(self.name)
-            return base_description + streaming_suffix
-
-        except Exception as e:
-            frappe.logger("execute_python_code").warning(f"Failed to load streaming configuration: {str(e)}")
-            return base_description
+        return base_description
 
     def execute(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
         """Execute Python code safely with secure user context and read-only database"""
