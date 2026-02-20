@@ -27,7 +27,9 @@ import frappe
 from frappe.oauth import get_server_url
 
 
-@frappe.whitelist(allow_guest=True, methods=["GET"])
+@frappe.whitelist(
+    allow_guest=True, methods=["GET"]
+)  # nosemgrep: frappe-semgrep-rules.rules.security.guest-whitelisted-method -- OAuth discovery must be public per OpenID Connect spec
 def openid_configuration():
     """
     Enhanced OpenID Connect Discovery endpoint.
@@ -83,7 +85,9 @@ def openid_configuration():
         )
 
 
-@frappe.whitelist(allow_guest=True, methods=["GET"])
+@frappe.whitelist(
+    allow_guest=True, methods=["GET"]
+)  # nosemgrep: frappe-semgrep-rules.rules.security.guest-whitelisted-method -- JWKS endpoint must be public per OAuth 2.0 spec
 def jwks():
     """
     JSON Web Key Set endpoint.
@@ -95,7 +99,9 @@ def jwks():
     return {"keys": []}
 
 
-@frappe.whitelist(allow_guest=True, methods=["GET"])
+@frappe.whitelist(
+    allow_guest=True, methods=["GET"]
+)  # nosemgrep: frappe-semgrep-rules.rules.security.guest-whitelisted-method -- MCP discovery must be public for client bootstrapping
 def mcp_discovery():
     """
     MCP-specific discovery endpoint.
@@ -170,7 +176,9 @@ def _get_frappe_authorization_server_metadata():
         return metadata
 
 
-@frappe.whitelist(allow_guest=True, methods=["GET"])
+@frappe.whitelist(
+    allow_guest=True, methods=["GET"]
+)  # nosemgrep: frappe-semgrep-rules.rules.security.guest-whitelisted-method -- Authorization Server Metadata must be public per RFC 8414
 def authorization_server_metadata():
     """
     OAuth 2.0 Authorization Server Metadata endpoint.
@@ -233,7 +241,9 @@ def authorization_server_metadata():
     return metadata
 
 
-@frappe.whitelist(allow_guest=True, methods=["GET"])
+@frappe.whitelist(
+    allow_guest=True, methods=["GET"]
+)  # nosemgrep: frappe-semgrep-rules.rules.security.guest-whitelisted-method -- Protected Resource Metadata must be public per RFC 9728
 def protected_resource_metadata():
     """
     OAuth 2.0 Protected Resource Metadata endpoint.
