@@ -1,0 +1,6 @@
+# OAuth/OIDC discovery and token endpoints must be publicly accessible (allow_guest=True)
+# per OpenID Connect, RFC 8414, RFC 9728, and MCP specifications.
+# Excluding from semgrep as inline nosemgrep comments are incompatible with ruff formatting.
+frappe_assistant_core/api/oauth_discovery.py
+frappe_assistant_core/api/oauth_token.py
+frappe_assistant_core/api/oauth_registration.py
