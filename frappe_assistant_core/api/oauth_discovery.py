@@ -24,7 +24,6 @@ Extends Frappe's built-in OAuth endpoints with:
 """
 
 import frappe
-from frappe.oauth import get_server_url
 
 
 @frappe.whitelist(allow_guest=True, methods=["GET"])
@@ -51,7 +50,7 @@ def openid_configuration():
     metadata = frappe.local.response
 
     # Add MCP-required fields that are missing
-    frappe_url = get_server_url()
+    frappe_url = frappe.utils.get_url()
 
     # Add jwks_uri (required by MCP Inspector)
     metadata["jwks_uri"] = f"{frappe_url}/api/method/frappe_assistant_core.api.oauth_discovery.jwks"
@@ -104,7 +103,7 @@ def mcp_discovery():
     """
     from frappe_assistant_core import hooks
 
-    frappe_url = get_server_url()
+    frappe_url = frappe.utils.get_url()
 
     # Get MCP configuration from settings
     mcp_protocol_version = "2025-06-18"
@@ -148,7 +147,7 @@ def _get_frappe_authorization_server_metadata():
         return _get_authorization_server_metadata()
     except ImportError:
         # Fallback for Frappe V15 - build metadata manually
-        frappe_url = get_server_url()
+        frappe_url = frappe.utils.get_url()
 
         # Base metadata following RFC 8414
         metadata = {
@@ -198,7 +197,7 @@ def authorization_server_metadata():
     metadata = _get_frappe_authorization_server_metadata()
 
     # Add/override custom service documentation
-    frappe_url = get_server_url()
+    frappe_url = frappe.utils.get_url()
     metadata["service_documentation"] = "https://github.com/buildswithpaul/Frappe_Assistant_Core"
 
     # Add client_secret_post as an additional auth method (Frappe V16 only has client_secret_basic)
@@ -256,7 +255,7 @@ def protected_resource_metadata():
 
         raise NotFound("Protected resource metadata is not enabled")
 
-    frappe_url = get_server_url()
+    frappe_url = frappe.utils.get_url()
 
     # Build list of authorization servers
     authorization_servers = [frappe_url]
