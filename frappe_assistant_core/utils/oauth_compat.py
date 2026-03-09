@@ -160,7 +160,6 @@ def create_oauth_client(client_metadata):
 
     For v15: Creates basic OAuth Client without custom fields
     For v16+: Uses native frappe.integrations.utils.create_new_oauth_client
-              (except for HTTP localhost URIs in production, which use manual creation)
 
     Args:
             client_metadata: OAuth2DynamicClientMetadata pydantic model
@@ -168,58 +167,57 @@ def create_oauth_client(client_metadata):
     Returns:
             dict: Client registration response with client_id and optionally client_secret
     """
-    use_manual_creation = False
-
     if is_frappe_v16_or_later():
-        if _has_http_localhost_uris(client_metadata):
-            use_manual_creation = True
-        else:
-            from frappe.integrations.utils import create_new_oauth_client
+        # Use native v16 implementation
+        from frappe.integrations.utils import create_new_oauth_client
 
-            doc = create_new_oauth_client(client_metadata)
+        doc = create_new_oauth_client(client_metadata)
 
-            redirect_uris = [str(uri) for uri in client_metadata.redirect_uris]
-            doc.redirect_uris = " ".join(redirect_uris)
-            doc.save(ignore_permissions=True)
+        # Fix Frappe v16 bug: create_new_oauth_client uses newline delimiter for redirect_uris,
+        # but oauth.py's validate_redirect_uri expects space delimiter
+        redirect_uris = [str(uri) for uri in client_metadata.redirect_uris]
+        doc.redirect_uris = " ".join(redirect_uris)
+        doc.save(ignore_permissions=True)
 
-            redirect_uris = [str(uri) for uri in client_metadata.redirect_uris]
-            response = {
-                "client_id": doc.client_id,
-                "client_secret": doc.get_password("client_secret"),
-                "client_name": doc.app_name,
-                "redirect_uris": redirect_uris,
-                "grant_types": ["authorization_code", "refresh_token"],
-                "response_types": ["code"],
-                "token_endpoint_auth_method": client_metadata.token_endpoint_auth_method
-                or "client_secret_basic",
-            }
+        # v16 returns an OAuthClient document, convert to dict for RFC 7591 response
+        redirect_uris = [str(uri) for uri in client_metadata.redirect_uris]
+        response = {
+            "client_id": doc.client_id,
+            "client_secret": doc.get_password("client_secret"),
+            "client_name": doc.app_name,
+            "redirect_uris": redirect_uris,
+            "grant_types": ["authorization_code", "refresh_token"],
+            "response_types": ["code"],
+            "token_endpoint_auth_method": client_metadata.token_endpoint_auth_method or "client_secret_basic",
+        }
 
-            if client_metadata.client_uri:
-                response["client_uri"] = str(client_metadata.client_uri)
-            if client_metadata.logo_uri:
-                response["logo_uri"] = str(client_metadata.logo_uri)
-            if client_metadata.scope:
-                response["scope"] = client_metadata.scope
-            if client_metadata.contacts:
-                response["contacts"] = client_metadata.contacts
-            if client_metadata.tos_uri:
-                response["tos_uri"] = str(client_metadata.tos_uri)
-            if client_metadata.policy_uri:
-                response["policy_uri"] = str(client_metadata.policy_uri)
-            if client_metadata.software_id:
-                response["software_id"] = client_metadata.software_id
-            if client_metadata.software_version:
-                response["software_version"] = client_metadata.software_version
+        # Add optional metadata fields if provided
+        if client_metadata.client_uri:
+            response["client_uri"] = str(client_metadata.client_uri)
+        if client_metadata.logo_uri:
+            response["logo_uri"] = str(client_metadata.logo_uri)
+        if client_metadata.scope:
+            response["scope"] = client_metadata.scope
+        if client_metadata.contacts:
+            response["contacts"] = client_metadata.contacts
+        if client_metadata.tos_uri:
+            response["tos_uri"] = str(client_metadata.tos_uri)
+        if client_metadata.policy_uri:
+            response["policy_uri"] = str(client_metadata.policy_uri)
+        if client_metadata.software_id:
+            response["software_id"] = client_metadata.software_id
+        if client_metadata.software_version:
+            response["software_version"] = client_metadata.software_version
 
-            return response
-
-    if use_manual_creation or not is_frappe_v16_or_later():
+        return response
+    else:
         from typing import cast
 
         from frappe.integrations.doctype.oauth_client.oauth_client import OAuthClient
 
         doc = cast(OAuthClient, frappe.get_doc({"doctype": "OAuth Client"}))
 
+        # Deduplicate redirect URIs
         seen = set()
         redirect_uris = []
         for uri in client_metadata.redirect_uris:
@@ -228,6 +226,7 @@ def create_oauth_client(client_metadata):
                 seen.add(uri_str)
                 redirect_uris.append(uri_str)
 
+        # Set basic fields (v15 compatible)
         doc.app_name = client_metadata.client_name
         doc.scopes = client_metadata.scope or "all"
         doc.redirect_uris = "\n".join(redirect_uris)
@@ -236,8 +235,12 @@ def create_oauth_client(client_metadata):
         doc.grant_type = "Authorization Code"
         doc.skip_authorization = False
 
+        # Insert and get credentials
         doc.insert(ignore_permissions=True)
 
+        # Build response - always include client_secret
+        # Even if token_endpoint_auth_method is "none", the client should receive
+        # the secret. They may choose not to use it for authentication, but should have it.
         response = {
             "client_id": doc.client_id,
             "client_secret": doc.get_password("client_secret"),
@@ -245,10 +248,10 @@ def create_oauth_client(client_metadata):
             "redirect_uris": redirect_uris,
             "grant_types": ["authorization_code", "refresh_token"],
             "response_types": ["code"],
-            "token_endpoint_auth_method": client_metadata.token_endpoint_auth_method
-            or "client_secret_basic",
+            "token_endpoint_auth_method": client_metadata.token_endpoint_auth_method or "client_secret_basic",
         }
 
+        # Add optional metadata fields if provided
         if client_metadata.client_uri:
             response["client_uri"] = str(client_metadata.client_uri)
         if client_metadata.logo_uri:
