@@ -311,9 +311,7 @@ def validate_dynamic_client_metadata(client_metadata):
                 "only 'authorization_code' and 'refresh_token' grant types are supported"
             )
 
-        if client_metadata.response_types and not all(
-            rt == "code" for rt in client_metadata.response_types
-        ):
+        if client_metadata.response_types and not all(rt == "code" for rt in client_metadata.response_types):
             invalidation_reasons.append("only 'code' response_type is supported")
 
         for uri in client_metadata.redirect_uris:
