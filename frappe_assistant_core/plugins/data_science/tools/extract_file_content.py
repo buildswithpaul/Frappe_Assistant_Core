@@ -583,7 +583,7 @@ class ExtractFileContent(BaseTool):
         Reads /proc/meminfo (Linux only). Advisory only — does not block the OCR call.
         """
         try:
-            with open("/proc/meminfo") as f:
+            with open("/proc/meminfo") as f:  # nosemgrep: frappe-security-file-traversal
                 for line in f:
                     if line.startswith("MemAvailable:"):
                         available_kb = int(line.split()[1])
