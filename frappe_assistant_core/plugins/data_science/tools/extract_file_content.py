@@ -21,51 +21,18 @@ Extracts content from various file formats (PDF, images, CSV, Excel, documents) 
 
 import base64
 import io
+import json
 import mimetypes
 import os
+import subprocess
+import sys
+import tempfile
 from typing import Any, Dict, Optional
 
 import frappe
 from frappe import _
 
 from frappe_assistant_core.core.base_tool import BaseTool
-
-# Module-level cache for PaddleOCR instance to avoid reloading models on every call.
-# PaddleOCR model loading takes several seconds; caching avoids this overhead.
-_paddle_ocr_instance = None
-_paddle_ocr_lang = None
-
-
-def _get_paddle_ocr(lang: str = "en"):
-    """Get or create a cached PaddleOCR instance.
-
-    Re-creates the instance only if the requested language differs
-    from the cached one, since PaddleOCR loads language-specific models.
-    """
-    global _paddle_ocr_instance, _paddle_ocr_lang
-
-    if _paddle_ocr_instance is not None and _paddle_ocr_lang == lang:
-        return _paddle_ocr_instance
-
-    from paddleocr import PaddleOCR
-
-    _paddle_ocr_instance = PaddleOCR(lang=lang)
-    _paddle_ocr_lang = lang
-    return _paddle_ocr_instance
-
-
-def _get_paddle_ocr_fresh(lang: str = "en"):
-    """Force-create a new PaddleOCR instance, discarding any cached one.
-
-    Used as a recovery mechanism when the cached instance hits a C++ crash.
-    """
-    global _paddle_ocr_instance, _paddle_ocr_lang
-
-    from paddleocr import PaddleOCR
-
-    _paddle_ocr_instance = PaddleOCR(lang=lang)
-    _paddle_ocr_lang = lang
-    return _paddle_ocr_instance
 
 
 class ExtractFileContent(BaseTool):
@@ -291,17 +258,22 @@ class ExtractFileContent(BaseTool):
         return None
 
     def _get_file_content(self, file_doc) -> Optional[bytes]:
-        """Get file content as bytes"""
+        """Get file content as bytes — supports local files and S3 (frappe_s3_attachment)."""
         try:
+            # 1. Try local filesystem
             file_path = self._get_file_path(file_doc)
             if file_path and os.path.exists(file_path):
                 with open(file_path, "rb") as f:
                     return f.read()
 
-            # Try to get from file_doc content if stored
+            # 2. Try S3 via frappe_s3_attachment
+            s3_content = self._get_s3_content(file_doc)
+            if s3_content:
+                return s3_content
+
+            # 3. Fallback: inline content on the File doc
             if hasattr(file_doc, "content"):
                 if isinstance(file_doc.content, str):
-                    # Base64 encoded content
                     return base64.b64decode(file_doc.content)
                 return file_doc.content
 
@@ -309,6 +281,36 @@ class ExtractFileContent(BaseTool):
 
         except Exception as e:
             frappe.log_error(f"Error reading file content: {str(e)}")
+            return None
+
+    def _get_s3_content(self, file_doc) -> Optional[bytes]:
+        """Fetch file bytes from S3 if frappe_s3_attachment is installed."""
+        try:
+            file_url = file_doc.file_url or ""
+            if "frappe_s3_attachment" not in file_url:
+                return None
+
+            from frappe_s3_attachment.controller import S3Operations
+
+            # S3 key: prefer content_hash, fallback to parsing file_url
+            s3_key = (getattr(file_doc, "content_hash", "") or "").strip()
+            if not s3_key:
+                from urllib.parse import parse_qs, urlparse
+
+                parsed = urlparse(file_url)
+                s3_key = parse_qs(parsed.query).get("key", [""])[0]
+
+            if not s3_key:
+                return None
+
+            s3_ops = S3Operations()
+            response = s3_ops.read_file_from_s3(s3_key)
+            return response["Body"].read()
+
+        except ImportError:
+            return None
+        except Exception as e:
+            frappe.log_error(f"S3 file read failed: {str(e)}")
             return None
 
     def _detect_file_type(self, file_doc) -> str:
@@ -417,6 +419,8 @@ class ExtractFileContent(BaseTool):
             return {
                 "backend": getattr(settings, "ocr_backend", "paddleocr") or "paddleocr",
                 "ocr_language": getattr(settings, "ocr_language", "en") or "en",
+                "paddleocr_timeout": int(getattr(settings, "paddleocr_timeout", 120) or 120),
+                "paddleocr_max_memory_mb": int(getattr(settings, "paddleocr_max_memory_mb", 2048) or 2048),
                 "ollama_url": getattr(settings, "ollama_api_url", "http://localhost:11434")
                 or "http://localhost:11434",
                 "ollama_model": getattr(settings, "ollama_vision_model", "deepseek-ocr:latest")
@@ -458,217 +462,144 @@ class ExtractFileContent(BaseTool):
     def _perform_paddle_ocr(
         self, file_content: bytes, arguments: Dict[str, Any], file_type: str, ocr_settings: Dict[str, Any]
     ) -> Dict[str, Any]:
-        """Perform OCR using PaddleOCR on image or PDF content."""
-        try:
-            from paddleocr import PaddleOCR  # noqa: F401
-        except ImportError:
-            return {
-                "success": False,
-                "error": "PaddleOCR is not installed. Please install paddleocr and paddlepaddle.",
-                "install_command": "pip install paddleocr paddlepaddle",
-            }
+        """Perform OCR using PaddleOCR in an isolated subprocess.
 
+        Spawns a child process to run PaddleOCR so that hangs or out-of-memory
+        crashes kill only the subprocess, not the Frappe worker. Communicates
+        via JSON over stdin/stdout.
+        """
         language = self._get_ocr_language(arguments, ocr_settings)
+        timeout = ocr_settings.get("paddleocr_timeout", 120)
+        max_memory_mb = ocr_settings.get("paddleocr_max_memory_mb", 2048)
+        max_pages = arguments.get("max_pages", 50)
 
-        # Try with cached instance first; on C++ crash, reset cache and retry once
-        for attempt in range(2):
-            try:
-                ocr = _get_paddle_ocr(language) if attempt == 0 else _get_paddle_ocr_fresh(language)
+        # Advisory memory check — logs a warning but does not block
+        self._check_available_memory(max_memory_mb)
 
-                if file_type == "pdf":
-                    return self._perform_paddle_pdf_ocr(file_content, language, arguments, ocr)
-
-                # Image path
-                import numpy as np
+        # Write file content to a temp file for the subprocess
+        suffix = ".pdf" if file_type == "pdf" else ".png"
+        tmp_file = tempfile.NamedTemporaryFile(suffix=suffix, prefix="fac_ocr_", delete=False)
+        try:
+            if file_type != "pdf":
+                # Save image as PNG for consistent handling
                 from PIL import Image
 
                 image = Image.open(io.BytesIO(file_content))
                 if image.mode in ("RGBA", "P"):
                     image = image.convert("RGB")
-
-                result = ocr.predict(np.array(image))
-                extracted_text = self._paddle_result_to_text(result)
-
-                if not extracted_text.strip():
-                    return {"success": True, "content": "", "message": "No text detected in image"}
-
-                return {
-                    "success": True,
-                    "content": extracted_text,
-                    "ocr_backend": "paddleocr",
-                    "ocr_language": language,
-                }
-
-            except Exception as e:
-                if attempt == 0:
-                    # First failure — reset the cached instance and retry
-                    frappe.log_error(
-                        title="PaddleOCR Retry",
-                        message=f"PaddleOCR failed (attempt 1), resetting cache: {e}",
-                    )
-                    continue
-                # Second failure — return the actual error
-                return {
-                    "success": False,
-                    "error": f"PaddleOCR failed: {str(e)}",
-                    "ocr_backend": "paddleocr",
-                }
-
-    def _perform_paddle_pdf_ocr(
-        self, file_content: bytes, language: str, arguments: Dict[str, Any], ocr
-    ) -> Dict[str, Any]:
-        """OCR a PDF using PaddleOCR's native PDF support."""
-        import os
-        import tempfile
-
-        max_pages = arguments.get("max_pages", 50)
-
-        # PaddleOCR needs a file path for PDFs
-        tmp_file = None
-        try:
-            tmp_file = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
-            tmp_file.write(file_content)
+                image.save(tmp_file, format="PNG")
+            else:
+                tmp_file.write(file_content)
             tmp_file.flush()
             tmp_file.close()
 
-            result = ocr.predict(tmp_file.name)
+            # Build the JSON request for the subprocess
+            request_data = json.dumps(
+                {
+                    "file_path": tmp_file.name,
+                    "file_type": file_type,
+                    "language": language,
+                    "max_pages": max_pages,
+                    "max_memory_mb": max_memory_mb,
+                }
+            )
+
+            # Spawn isolated subprocess
+            proc = subprocess.Popen(
+                [sys.executable, "-m", "frappe_assistant_core.utils.ocr_subprocess"],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+
+            try:
+                stdout, stderr = proc.communicate(
+                    input=request_data.encode("utf-8"),
+                    timeout=timeout,
+                )
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait()
+                frappe.log_error(
+                    title="PaddleOCR Timeout",
+                    message=f"PaddleOCR subprocess killed after {timeout}s timeout.",
+                )
+                return {
+                    "success": False,
+                    "error": (
+                        f"PaddleOCR timed out after {timeout} seconds. "
+                        "The document may be too large or complex. "
+                        "You can increase the timeout in Assistant Core Settings > OCR."
+                    ),
+                    "ocr_backend": "paddleocr",
+                }
+
+            if proc.returncode != 0:
+                error_msg = stderr.decode("utf-8", errors="replace").strip()
+                frappe.log_error(
+                    title="PaddleOCR Subprocess Error",
+                    message=f"PaddleOCR subprocess exited with code {proc.returncode}:\n{error_msg[:2000]}",
+                )
+                # Check for OOM patterns
+                if "MemoryError" in error_msg or "Cannot allocate memory" in error_msg:
+                    return {
+                        "success": False,
+                        "error": (
+                            f"PaddleOCR ran out of memory (limit: {max_memory_mb}MB). "
+                            "The document may be too large. "
+                            "You can increase the memory limit in Assistant Core Settings > OCR."
+                        ),
+                        "ocr_backend": "paddleocr",
+                    }
+                return {
+                    "success": False,
+                    "error": f"PaddleOCR failed: {error_msg[:500]}",
+                    "ocr_backend": "paddleocr",
+                }
+
+            # Parse the JSON result from stdout
+            try:
+                result = json.loads(stdout.decode("utf-8"))
+            except (json.JSONDecodeError, UnicodeDecodeError) as e:
+                return {
+                    "success": False,
+                    "error": f"Failed to parse PaddleOCR output: {str(e)}",
+                    "ocr_backend": "paddleocr",
+                }
+
+            result["ocr_backend"] = "paddleocr"
+            result["ocr_language"] = language
+            return result
+
         finally:
-            if tmp_file:
-                try:
-                    os.unlink(tmp_file.name)
-                except OSError:
-                    pass
+            try:
+                os.unlink(tmp_file.name)
+            except OSError:
+                pass
 
-        if not result:
-            return {
-                "success": True,
-                "content": "",
-                "message": "OCR completed but no text was detected in the PDF pages.",
-                "pages": 0,
-                "ocr_backend": "paddleocr",
-                "ocr_language": language,
-            }
+    def _check_available_memory(self, required_mb: int) -> None:
+        """Log a warning if available system memory is below the required threshold.
 
-        num_pages = min(len(result), max_pages)
-        text_content = []
-
-        for page_num in range(num_pages):
-            page_result = result[page_num]
-            if page_result:
-                page_text = self._paddle_page_to_text(page_result)
-                if page_text.strip():
-                    text_content.append(f"--- Page {page_num + 1} ---\n{page_text}")
-
-        combined_text = "\n\n".join(text_content)
-
-        if not combined_text.strip():
-            return {
-                "success": True,
-                "content": "",
-                "message": "OCR completed but no text was detected in the PDF pages.",
-                "pages": num_pages,
-                "ocr_backend": "paddleocr",
-                "ocr_language": language,
-            }
-
-        return {
-            "success": True,
-            "content": combined_text,
-            "pages": num_pages,
-            "ocr_pages_with_text": len(text_content),
-            "ocr_backend": "paddleocr",
-            "ocr_language": language,
-        }
-
-    def _paddle_result_to_text(self, result) -> str:
-        """Convert PaddleOCR result to plain text for a single image.
-
-        PaddleOCR 3.x returns a list of OCRResult objects (one per page/image).
-        For a single image, result is a list with one OCRResult.
+        Reads /proc/meminfo (Linux only). Advisory only — does not block the OCR call.
         """
-        if not result:
-            return ""
-        # result is a list; first element is the page/image result
-        return self._paddle_page_to_text(result[0])
-
-    def _paddle_page_to_text(self, page_result) -> str:
-        """Convert a single page of PaddleOCR results to structured text.
-
-        PaddleOCR 3.x returns OCRResult dict-like objects with parallel arrays:
-          - rec_texts: list of recognized text strings
-          - rec_scores: list of confidence scores
-          - dt_polys: list of bounding box polygons (4-point, [[x1,y1],[x2,y2],[x3,y3],[x4,y4]])
-
-        Groups text regions into lines based on vertical position,
-        then sorts left-to-right within each line. This preserves
-        table column alignment.
-        """
-        if not page_result:
-            return ""
-
-        # Handle PaddleOCR 3.x OCRResult (dict-like with parallel arrays)
-        if hasattr(page_result, "__getitem__") and not isinstance(page_result, list):
-            texts = (
-                page_result.get("rec_texts", []) if hasattr(page_result, "get") else page_result["rec_texts"]
-            )
-            polys = (
-                page_result.get("dt_polys", []) if hasattr(page_result, "get") else page_result["dt_polys"]
-            )
-
-            if not texts:
-                return ""
-
-            # Extract (y_center, x_left, text) from parallel arrays
-            positioned_texts = []
-            for i, text in enumerate(texts):
-                if i < len(polys):
-                    bbox = polys[i]  # [[x1,y1],[x2,y2],[x3,y3],[x4,y4]]
-                    y_center = (float(bbox[0][1]) + float(bbox[3][1])) / 2
-                    x_left = float(bbox[0][0])
-                else:
-                    # No bbox available; append at end
-                    y_center = float("inf")
-                    x_left = 0.0
-                positioned_texts.append((y_center, x_left, text))
-
-        # Handle legacy PaddleOCR 2.x format: list of [bbox, (text, score)]
-        elif isinstance(page_result, list):
-            positioned_texts = []
-            for region in page_result:
-                bbox = region[0]
-                text = region[1][0] if isinstance(region[1], (list, tuple)) else str(region[1])
-                y_center = (bbox[0][1] + bbox[3][1]) / 2
-                x_left = bbox[0][0]
-                positioned_texts.append((y_center, x_left, text))
-        else:
-            return str(page_result)
-
-        if not positioned_texts:
-            return ""
-
-        # Sort by vertical position
-        positioned_texts.sort(key=lambda t: t[0])
-
-        # Group into lines: regions within 10px vertical distance
-        # are considered part of the same line
-        lines = []
-        current_line = [positioned_texts[0]]
-
-        for item in positioned_texts[1:]:
-            if abs(item[0] - current_line[0][0]) < 10:
-                current_line.append(item)
-            else:
-                lines.append(current_line)
-                current_line = [item]
-        lines.append(current_line)
-
-        # Sort each line left-to-right, join with tabs for table structure
-        text_lines = []
-        for line in lines:
-            line.sort(key=lambda t: t[1])
-            text_lines.append("\t".join(item[2] for item in line))
-
-        return "\n".join(text_lines)
+        try:
+            with open("/proc/meminfo") as f:  # nosemgrep: frappe-security-file-traversal
+                for line in f:
+                    if line.startswith("MemAvailable:"):
+                        available_kb = int(line.split()[1])
+                        available_mb = available_kb // 1024
+                        if available_mb < required_mb:
+                            frappe.log_error(
+                                title="PaddleOCR Memory Warning",
+                                message=(
+                                    f"Low memory before PaddleOCR: {available_mb}MB available, "
+                                    f"may need up to {required_mb}MB. "
+                                    "OCR will proceed but may fail with out-of-memory error."
+                                ),
+                            )
+                        return
+        except Exception:
+            pass  # Non-critical; skip on non-Linux or permission errors
 
     def _try_ollama_ocr(
         self, file_content: bytes, arguments: Dict[str, Any], file_type: str, ocr_settings: Dict[str, Any]
