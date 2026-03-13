@@ -63,7 +63,7 @@ class TestAdminAPIPermissions(BaseAssistantTest):
         if frappe.db.exists("User", cls.NON_ADMIN_USER):
             # Clean up existing user to ensure clean state
             frappe.delete_doc("User", cls.NON_ADMIN_USER, force=True)
-            frappe.db.commit()
+            frappe.db.commit()  # nosemgrep: test setup requires commit before re-creating user
 
         user = frappe.get_doc(
             {
@@ -77,7 +77,7 @@ class TestAdminAPIPermissions(BaseAssistantTest):
             }
         )
         user.insert(ignore_permissions=True)
-        frappe.db.commit()
+        frappe.db.commit()  # nosemgrep: test setup requires commit so role cleanup SQL sees the user
 
         # Remove any auto-assigned roles except All and Guest
         frappe.db.sql(
@@ -85,7 +85,7 @@ class TestAdminAPIPermissions(BaseAssistantTest):
             WHERE parent = %s AND role NOT IN ('All', 'Guest')""",
             cls.NON_ADMIN_USER,
         )
-        frappe.db.commit()
+        frappe.db.commit()  # nosemgrep: test setup requires commit so role changes take effect
 
         # Clear role cache for this user
         frappe.clear_cache(user=cls.NON_ADMIN_USER)
@@ -96,7 +96,7 @@ class TestAdminAPIPermissions(BaseAssistantTest):
         frappe.set_user("Administrator")
         if frappe.db.exists("User", cls.NON_ADMIN_USER):
             frappe.delete_doc("User", cls.NON_ADMIN_USER, force=True)
-            frappe.db.commit()
+            frappe.db.commit()  # nosemgrep: test teardown requires commit to persist user cleanup
         super().tearDownClass()
 
     def setUp(self):
@@ -113,8 +113,6 @@ class TestAdminAPIPermissions(BaseAssistantTest):
         Directly monkeypatches frappe.only_for to bypass the in_test skip
         that frappe applies during test runs.
         """
-        import sys
-
         frappe.set_user(self.NON_ADMIN_USER)
         frappe.clear_cache(user=self.NON_ADMIN_USER)
         original = frappe.only_for
