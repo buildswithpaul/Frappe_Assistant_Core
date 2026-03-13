@@ -26,9 +26,10 @@ def get_server_settings():
     return get_cached_server_settings()
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def update_server_settings(**kwargs):
     """Update Assistant Core Settings."""
+    frappe.only_for(["System Manager", "Assistant Admin"])
     settings = frappe.get_single("Assistant Core Settings")
 
     # Update only the fields that are provided
@@ -60,6 +61,7 @@ def update_server_settings(**kwargs):
 @frappe.whitelist()
 def get_tool_registry():
     """Fetch assistant Tool Registry with detailed information."""
+    frappe.only_for(["System Manager", "Assistant Admin"])
     from frappe_assistant_core.utils.plugin_manager import get_plugin_manager
 
     try:
@@ -91,6 +93,7 @@ def get_tool_registry():
 @frappe.whitelist()
 def get_plugin_stats():
     """Get plugin statistics for admin dashboard."""
+    frappe.only_for(["System Manager", "Assistant Admin"])
     from frappe_assistant_core.utils.plugin_manager import get_plugin_manager
 
     try:
@@ -117,6 +120,7 @@ def get_plugin_stats():
 @frappe.whitelist()
 def get_tool_stats():
     """Get tool statistics for admin dashboard."""
+    frappe.only_for(["System Manager", "Assistant Admin"])
     from frappe_assistant_core.core.tool_registry import get_tool_registry
     from frappe_assistant_core.utils.plugin_manager import get_plugin_manager
 
@@ -142,13 +146,14 @@ def get_tool_stats():
         return {"total_tools": 0, "categories": {}}
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def toggle_plugin(plugin_name: str, enable: bool):
     """Enable or disable a plugin.
 
     Uses atomic DocType updates via FAC Plugin Configuration for
     reliable state persistence across Gunicorn workers.
     """
+    frappe.only_for(["System Manager", "Assistant Admin"])
     from frappe_assistant_core.utils.plugin_manager import get_plugin_manager
 
     try:
@@ -282,6 +287,7 @@ def get_tool_configurations():
     Returns a list of tools with their configuration status, category,
     and role access settings.
     """
+    frappe.only_for(["System Manager", "Assistant Admin"])
     from frappe_assistant_core.core.tool_registry import get_tool_registry
     from frappe_assistant_core.utils.plugin_manager import get_plugin_manager
     from frappe_assistant_core.utils.tool_category_detector import get_category_info
@@ -381,7 +387,7 @@ def get_tool_configurations():
         return {"success": False, "error": str(e), "tools": []}
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def toggle_tool(tool_name: str, enabled: bool):
     """
     Enable or disable an individual tool.
@@ -393,6 +399,7 @@ def toggle_tool(tool_name: str, enabled: bool):
     Returns:
         Success status and message
     """
+    frappe.only_for(["System Manager", "Assistant Admin"])
     from frappe_assistant_core.core.tool_registry import get_tool_registry
     from frappe_assistant_core.utils.plugin_manager import get_plugin_manager
     from frappe_assistant_core.utils.tool_category_detector import detect_tool_category
@@ -459,7 +466,7 @@ def toggle_tool(tool_name: str, enabled: bool):
         return {"success": False, "message": _(f"Error: {str(e)}")}
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def bulk_toggle_tools(tool_names: list, enabled: bool):
     """
     Enable or disable multiple tools at once.
@@ -471,6 +478,7 @@ def bulk_toggle_tools(tool_names: list, enabled: bool):
     Returns:
         Success status with details
     """
+    frappe.only_for(["System Manager", "Assistant Admin"])
     if isinstance(tool_names, str):
         import json
 
@@ -495,7 +503,7 @@ def bulk_toggle_tools(tool_names: list, enabled: bool):
     return results
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def bulk_toggle_tools_by_category(category: str = None, enabled: bool = True, plugin_name: str = None):
     """
     Enable or disable all tools in a category.
@@ -508,6 +516,7 @@ def bulk_toggle_tools_by_category(category: str = None, enabled: bool = True, pl
     Returns:
         {"success": bool, "toggled": [...], "failed": [...], "total": int, "message": str}
     """
+    frappe.only_for(["System Manager", "Assistant Admin"])
     import json
 
     # Parse JSON if passed as string
@@ -580,7 +589,7 @@ def bulk_toggle_tools_by_category(category: str = None, enabled: bool = True, pl
     return results
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def update_tool_category(tool_name: str, category: str, override: bool = True):
     """
     Update the category for a tool.
@@ -593,6 +602,7 @@ def update_tool_category(tool_name: str, category: str, override: bool = True):
     Returns:
         Success status and message
     """
+    frappe.only_for(["System Manager", "Assistant Admin"])
     from frappe_assistant_core.core.tool_registry import get_tool_registry
     from frappe_assistant_core.utils.plugin_manager import get_plugin_manager
     from frappe_assistant_core.utils.tool_category_detector import detect_tool_category
@@ -650,7 +660,7 @@ def update_tool_category(tool_name: str, category: str, override: bool = True):
         return {"success": False, "message": _(f"Error: {str(e)}")}
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def update_tool_role_access(tool_name: str, role_access_mode: str, roles: list = None):
     """
     Update role access settings for a tool.
@@ -663,6 +673,7 @@ def update_tool_role_access(tool_name: str, role_access_mode: str, roles: list =
     Returns:
         Success status and message
     """
+    frappe.only_for(["System Manager", "Assistant Admin"])
     from frappe_assistant_core.core.tool_registry import get_tool_registry
     from frappe_assistant_core.utils.plugin_manager import get_plugin_manager
     from frappe_assistant_core.utils.tool_category_detector import detect_tool_category
@@ -742,6 +753,7 @@ def get_available_roles():
     Returns:
         List of roles with names
     """
+    frappe.only_for(["System Manager", "Assistant Admin"])
     try:
         roles = frappe.get_all(
             "Role",
