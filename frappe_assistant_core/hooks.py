@@ -89,6 +89,7 @@ jenv = {
 after_install = [
     "frappe_assistant_core.utils.migration_hooks.after_install",
     "frappe_assistant_core.utils.email_invite.send_fac_admin_invite",
+    "frappe_assistant_core.utils.model_warmup.warm_paddleocr_models",
 ]
 
 

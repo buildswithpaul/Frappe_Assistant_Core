@@ -26,6 +26,9 @@
   "ocr_section",
   "ocr_backend",
   "ocr_language",
+  "paddleocr_column_break",
+  "paddleocr_timeout",
+  "paddleocr_max_memory_mb",
   "ollama_section",
   "ollama_api_url",
   "ollama_vision_model",
@@ -227,6 +230,27 @@
    "fieldname": "ocr_language",
    "fieldtype": "Data",
    "label": "OCR Language",
+   "depends_on": "eval:doc.ocr_backend=='paddleocr'"
+  },
+  {
+   "fieldname": "paddleocr_column_break",
+   "fieldtype": "Column Break",
+   "depends_on": "eval:doc.ocr_backend=='paddleocr'"
+  },
+  {
+   "default": "120",
+   "description": "Maximum time in seconds for PaddleOCR to process a document. Includes model loading time (~10s). Increase for large or complex documents.",
+   "fieldname": "paddleocr_timeout",
+   "fieldtype": "Int",
+   "label": "PaddleOCR Timeout (seconds)",
+   "depends_on": "eval:doc.ocr_backend=='paddleocr'"
+  },
+  {
+   "default": "2048",
+   "description": "Maximum memory in MB for the PaddleOCR subprocess. The process will be killed if it exceeds this limit, protecting the Frappe worker from out-of-memory crashes.",
+   "fieldname": "paddleocr_max_memory_mb",
+   "fieldtype": "Int",
+   "label": "PaddleOCR Max Memory (MB)",
    "depends_on": "eval:doc.ocr_backend=='paddleocr'"
   },
   {
