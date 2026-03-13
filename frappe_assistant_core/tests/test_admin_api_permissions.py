@@ -61,9 +61,7 @@ class TestAdminAPIPermissions(BaseAssistantTest):
     def _create_non_admin_user(cls):
         """Create a non-admin user with only basic roles (no System Manager or Assistant Admin)."""
         if frappe.db.exists("User", cls.NON_ADMIN_USER):
-            # Clean up existing user to ensure clean state
             frappe.delete_doc("User", cls.NON_ADMIN_USER, force=True)
-            frappe.db.commit()  # nosemgrep: test setup requires commit before re-creating user
 
         user = frappe.get_doc(
             {
@@ -77,17 +75,12 @@ class TestAdminAPIPermissions(BaseAssistantTest):
             }
         )
         user.insert(ignore_permissions=True)
-        frappe.db.commit()  # nosemgrep: test setup requires commit so role cleanup SQL sees the user
 
-        # Remove any auto-assigned roles except All and Guest
-        frappe.db.sql(
-            """DELETE FROM `tabHas Role`
-            WHERE parent = %s AND role NOT IN ('All', 'Guest')""",
-            cls.NON_ADMIN_USER,
-        )
-        frappe.db.commit()  # nosemgrep: test setup requires commit so role changes take effect
+        # Remove any auto-assigned roles except All and Guest via ORM
+        user.reload()
+        user.roles = [r for r in user.roles if r.role in ("All", "Guest")]
+        user.save(ignore_permissions=True)
 
-        # Clear role cache for this user
         frappe.clear_cache(user=cls.NON_ADMIN_USER)
 
     @classmethod
@@ -96,7 +89,6 @@ class TestAdminAPIPermissions(BaseAssistantTest):
         frappe.set_user("Administrator")
         if frappe.db.exists("User", cls.NON_ADMIN_USER):
             frappe.delete_doc("User", cls.NON_ADMIN_USER, force=True)
-            frappe.db.commit()  # nosemgrep: test teardown requires commit to persist user cleanup
         super().tearDownClass()
 
     def setUp(self):
