@@ -132,6 +132,9 @@ def after_install():
     # Sync tool configurations from discovered plugins
     _sync_tool_configurations()
 
+    # Set default values for Assistant Core Settings
+    _set_settings_defaults()
+
 
 def after_uninstall():
     """
@@ -540,6 +543,54 @@ def _sync_plugin_configurations():
 
     except Exception as e:
         frappe.logger("migration_hooks").error(f"Failed to sync plugin configurations: {str(e)}")
+
+
+def _set_settings_defaults():
+    """Set default values for Assistant Core Settings.
+
+    Frappe doesn't always populate JSON-defined defaults when a Single DocType
+    is first created. This ensures critical settings have sensible values.
+    """
+    defaults = {
+        "server_enabled": 1,
+        "ocr_backend": "paddleocr",
+        "ocr_language": "en",
+        "paddleocr_timeout": 120,
+        "paddleocr_max_memory_mb": 2048,
+        "ollama_api_url": "http://localhost:11434",
+        "ollama_vision_model": "deepseek-ocr:latest",
+        "ollama_request_timeout": 120,
+        "code_execution_timeout": 30,
+        "code_execution_max_memory_mb": 512,
+        "code_execution_max_cpu_seconds": 60,
+        "code_execution_max_recursion": 100,
+        "audit_log_retention_days": 180,
+        "mcp_server_name": "frappe-assistant-core",
+        "enable_dynamic_client_registration": 1,
+        "show_auth_server_metadata": 1,
+        "show_protected_resource_metadata": 1,
+        "resource_name": "Frappe Assistant Core",
+    }
+
+    try:
+        settings = frappe.get_single("Assistant Core Settings")
+        updated = False
+
+        for field, default_value in defaults.items():
+            current = getattr(settings, field, None)
+            if current is None or current == "" or current == 0:
+                # Don't overwrite intentional 0 for check fields
+                if isinstance(default_value, int) and default_value == 0:
+                    continue
+                setattr(settings, field, default_value)
+                updated = True
+
+        if updated:
+            settings.save(ignore_permissions=True)
+            frappe.logger("migration_hooks").info("Set default values for Assistant Core Settings")
+
+    except Exception as e:
+        frappe.logger("migration_hooks").warning(f"Could not set settings defaults: {e}")
 
 
 def _sync_tool_configurations():
