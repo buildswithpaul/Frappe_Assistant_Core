@@ -160,12 +160,6 @@ def start_server():
 
 
 @frappe.whitelist(allow_guest=False)
-def stop_server():
-    """Legacy: Disable the assistant MCP API"""
-    return disable_api()
-
-
-@frappe.whitelist(allow_guest=False)
 def get_server_status():
     """Get server status"""
     server = get_server_instance()
