@@ -172,14 +172,22 @@ def get_server_status():
     return server.get_status()
 
 
-@frappe.whitelist(allow_guest=False)
 def cleanup_old_logs():
-    """Cleanup old log entries (scheduled task)"""
-    try:
-        # Default to 60 days for audit log cleanup (keep longer since they're more valuable)
-        days_to_keep = 60
+    """Cleanup old audit log entries (scheduled task, runs daily).
 
-        # Cleanup audit logs only
+    Retention period is configured in Assistant Core Settings > Security > Audit Log Retention.
+    Defaults to 180 days. Set to 0 to disable automatic cleanup.
+    """
+    try:
+        days_to_keep = frappe.db.get_single_value("Assistant Core Settings", "audit_log_retention_days")
+        if days_to_keep is None:
+            days_to_keep = 180
+
+        days_to_keep = int(days_to_keep)
+        if days_to_keep <= 0:
+            frappe.logger().info("Audit log cleanup disabled (retention set to 0)")
+            return
+
         frappe.db.sql(
             """
             DELETE FROM `tabAssistant Audit Log`
