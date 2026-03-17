@@ -410,7 +410,7 @@ def _authenticate_request() -> Optional[str]:
 
     # Fallback to API key authentication for legacy clients
     auth_header = frappe.get_request_header("Authorization")
-    api_logger.debug(f"Authorization header: {auth_header}")
+    api_logger.debug(f"Authorization header present: {bool(auth_header)}")
 
     if auth_header and auth_header.startswith("token "):
         try:
@@ -418,7 +418,7 @@ def _authenticate_request() -> Optional[str]:
             token_part = auth_header[6:]  # Remove "token " prefix
             if ":" in token_part:
                 api_key, api_secret = token_part.split(":", 1)
-                api_logger.debug(f"Extracted API key: {api_key}")
+                api_logger.debug("API key extracted from token header")
 
                 # Custom validation using database lookup and password verification
                 user_data = frappe.db.get_value(

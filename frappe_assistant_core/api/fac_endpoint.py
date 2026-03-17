@@ -127,7 +127,7 @@ def _authenticate_mcp_request():
             return bearer_token.user
 
         except frappe.DoesNotExistError:
-            frappe.logger().error(f"OAuth Bearer Token not found for access_token: {token[:20]}...")
+            frappe.logger().error("OAuth Bearer Token not found")
             # Token not found - return 401
             frappe_url = get_server_url()
             metadata_url = f"{frappe_url}/.well-known/oauth-protected-resource"
@@ -172,7 +172,7 @@ def _authenticate_mcp_request():
             token_part = auth_header[6:]  # Remove "token " prefix
             if ":" in token_part:
                 api_key, api_secret = token_part.split(":", 1)
-                frappe.logger().debug(f"Attempting API key authentication for key: {api_key[:10]}...")
+                frappe.logger().debug("Attempting API key authentication")
 
                 # Validate using database lookup
                 user_data = frappe.db.get_value(
@@ -195,7 +195,7 @@ def _authenticate_mcp_request():
                         frappe.logger().warning("API secret mismatch")
                         raise frappe.AuthenticationError("Invalid API credentials")
                 else:
-                    frappe.logger().warning(f"API key not found: {api_key[:10]}...")
+                    frappe.logger().warning("API key not found")
                     raise frappe.AuthenticationError("Invalid API credentials")
             else:
                 frappe.logger().warning("Invalid API key format - missing colon separator")
