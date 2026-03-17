@@ -234,25 +234,6 @@ def get_cached_category_performance():
     return category_performance
 
 
-@frappe.whitelist()
-def clear_all_caches():
-    """Clear all assistant-related caches."""
-    try:
-        # Clear Redis caches
-        frappe.cache().delete_keys("assistant_*")
-        frappe.cache().delete_keys("tool_*")
-        frappe.cache().delete_keys("plugin_*")
-
-        # Clear site cache if available
-        if hasattr(frappe.local, "site_cache"):
-            frappe.local.site_cache.clear()
-
-        return {"success": True, "message": "All caches cleared successfully"}
-    except Exception as e:
-        frappe.log_error(f"Failed to clear caches: {str(e)}")
-        return {"success": False, "error": str(e)}
-
-
 @site_cache(ttl=CACHE_TTL["tool_registry"])
 def get_cached_tool_registry_stats():
     """Cache tool registry statistics - process-local cache"""
