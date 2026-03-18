@@ -5,6 +5,76 @@ All notable changes to Frappe Assistant Core will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.2] - 2026-03-18
+
+### 🔒 Security Hardening & Dead Code Removal
+
+- **Fixed** non-authenticated users being allowed to access protected endpoints (#108)
+- **Fixed** auth-sensitive credential values leaking into logs — replaced with non-sensitive status messages (#114)
+- **Removed** dead API endpoints (`handle_assistant_request`, `force_test_logging`, `log_assistant_connection`, `log_assistant_audit`) that were security risks (#111)
+- **Added** admin API permission regression tests to prevent future authorization bypasses (#105)
+
+### 🗂️ Audit Log Retention & Cleanup
+
+- **Added** configurable audit log retention (default 180 days) with automatic cleanup via scheduled job (#115)
+- **Added** `audit_log_retention_days` setting in Assistant Core Settings
+
+### 📄 OCR & Data Extraction Improvements
+
+- **Fixed** PaddleOCR 3.x API compatibility — updated constructor and call patterns (#107)
+- **Improved** OCR extraction with subprocess isolation, memory limits, and timeout handling (#99)
+- **Added** PaddleOCR model warmup utility for faster first-run performance
+
+### 🔗 MCP 2025-06-18 Auth Spec Support
+
+- **Updated** MCP protocol to support the 2025-06-18 authentication specification (#100)
+- **Added** migration patch to update MCP protocol version on existing sites
+
+### 🔑 OAuth Improvements
+
+- **Fixed** Dynamic Client Registration failure with HTTP localhost redirect URIs in production (#104)
+- **Bypass** Frappe v16 strict HTTPS validation for localhost URIs per RFC 8252 (native apps)
+
+### 🛡️ Code Execution Security
+
+- **Improved** `run_python_code` sandbox with execution limits (timeout, memory, CPU, recursion)
+- **Added** `execution_limits.py` utility for configurable resource constraints
+- **Fixed** overly aggressive import restrictions that broke numpy/pandas internal lazy imports
+
+### ⚙️ Settings Defaults Fix
+
+- **Fixed** Single DocType default values not being applied on fresh install or migration
+- **Added** migration patch to set defaults for all settings fields on existing sites
+- **Adopted** ERPNext pattern: fresh install reads from DocField metadata, existing sites use one-time patches
+
+### 📊 Report Tools
+
+- **Improved** report tools to provide proper feedback when incorrectly used
+- **Added** default filters in `generate_report` response
+
+### 🐛 Bug Fixes
+
+- **Fixed** duplicate Security tabs in Assistant Core Settings DocType
+
+### 🔧 Technical Improvements
+
+- **Removed** unused streaming manager and response builder modules (~940 lines of dead code)
+- **Removed** unused cache utilities and dashboard helpers
+- **Cleaned up** unused imports and constants definitions (~210 lines)
+- **Added** code execution security documentation
+
+### 🔄 Migration Notes
+
+After upgrading to v2.3.2, run:
+```bash
+bench --site your-site migrate
+```
+
+This will:
+- Apply default values for all settings fields
+- Update MCP protocol version to 2025-06-18 spec
+- Set up audit log retention (180 days default)
+
 ## [2.3.1] - 2026-02-06
 
 ### 🎯 Plugin & Tool Management Architecture
@@ -630,7 +700,8 @@ See [Git history](hhttps://github.com/buildswithpaul/Frappe_Assistant_Core/commi
 
 | Version | Release Date | Support Status | Notes |
 |---------|--------------|----------------|--------|
-| 2.3.1   | 2026-02-06   | ✅ Current     | **Database-backed plugin/tool management**, Frappe V16 support |
+| 2.3.2   | 2026-03-18   | ✅ Current     | **Security hardening**, OCR improvements, MCP 2025-06-18 spec, OAuth localhost fix |
+| 2.3.1   | 2026-02-06   | ✅ Supported   | Database-backed plugin/tool management, Frappe V16 support |
 | 2.3.0   | 2026-01-09   | ✅ Supported   | MCP Prompts support, Prompt Templates, dark theme fixes |
 | 2.2.2   | 2025-12-03   | ✅ Supported   | Repository migration & OAuth enhancements |
 | 2.2.1   | 2025-11-24   | ✅ Supported   | Prepared report polling, multi-tool orchestration |
