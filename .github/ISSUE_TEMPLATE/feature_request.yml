@@ -1,0 +1,55 @@
+name: Feature Request
+description: Suggest a new feature or enhancement for Frappe Assistant Core
+title: "[Feature]: "
+labels: ["feature"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting a feature! Please describe what you'd like and why it would be useful.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: A clear and concise description of the feature you'd like.
+      placeholder: "What do you want FAC to do?"
+    validations:
+      required: true
+
+  - type: textarea
+    id: use-case
+    attributes:
+      label: Use Case
+      description: Why do you need this? What problem does it solve for you?
+      placeholder: "I'm trying to ... but currently ..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed-solution
+    attributes:
+      label: Proposed Solution
+      description: If you have an idea of how this could work, describe it here. Optional.
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: Have you considered any workarounds or alternative approaches?
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Which part of FAC does this relate to?
+      options:
+        - MCP Tools (core, data science, visualization)
+        - OAuth / Authentication
+        - Admin UI / Settings
+        - Plugin System
+        - Prompt Templates
+        - Documentation
+        - Other
+    validations:
+      required: true

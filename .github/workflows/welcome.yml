@@ -1,0 +1,43 @@
+name: Welcome New Contributors
+
+on:
+  issues:
+    types: [opened]
+  pull_request_target:
+    types: [opened]
+
+permissions:
+  issues: write
+  pull-requests: write
+
+jobs:
+  welcome:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/first-interaction@v1
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          issue-message: >
+            Welcome to Frappe Assistant Core! Thanks for opening your first issue.
+
+
+            A maintainer will review it soon. In the meantime, please make sure you've
+            included all the details requested in the template — it helps us investigate faster.
+
+
+            If you have a question rather than a bug or feature request, consider using
+            [Discussions](https://github.com/buildswithpaul/Frappe_Assistant_Core/discussions) instead.
+          pr-message: >
+            Welcome to Frappe Assistant Core! Thanks for your first pull request.
+
+
+            A maintainer will review your changes soon. Please make sure:
+
+            - Your PR targets the `develop` branch
+
+            - Tests pass locally (`bench --site <site> run-tests --app frappe_assistant_core`)
+
+            - You've filled out the PR template
+
+
+            We appreciate your contribution!

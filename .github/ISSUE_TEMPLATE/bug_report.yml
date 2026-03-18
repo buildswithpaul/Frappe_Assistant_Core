@@ -1,0 +1,79 @@
+name: Bug Report
+description: Report a bug or unexpected behavior in Frappe Assistant Core
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this bug! Please fill out the details below so we can investigate and fix it.
+
+  - type: input
+    id: fac-version
+    attributes:
+      label: FAC Version
+      description: "Which version of Frappe Assistant Core are you using? (Check in `pyproject.toml` or run `bench version`)"
+      placeholder: "e.g., 2.3.2"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: frappe-version
+    attributes:
+      label: Frappe Version
+      description: Which version of Frappe are you running?
+      options:
+        - Frappe v15
+        - Frappe v16
+        - Other (please specify in description)
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: A clear and concise description of what the bug is.
+      placeholder: "What happened? What did you expect to happen?"
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to Reproduce
+      description: How can we reproduce this bug?
+      placeholder: |
+        1. Go to '...'
+        2. Click on '...'
+        3. Call tool '...'
+        4. See error
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What did you expect to happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / Error Output
+      description: "Paste any relevant logs, error messages, or tracebacks. Check `bench --site <site> console` or server logs."
+      render: shell
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots
+      description: If applicable, add screenshots to help explain the problem.
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional Context
+      description: "Any other context — OS, browser, MCP client (Claude Desktop, OpenCode, etc.), deployment method (bench, Docker, Frappe Cloud)."

@@ -1,0 +1,30 @@
+changelog:
+  exclude:
+    labels:
+      - skip-changelog
+    authors:
+      - dependabot
+  categories:
+    - title: New Features
+      labels:
+        - feature
+        - enhancement
+    - title: Security
+      labels:
+        - security
+    - title: Bug Fixes
+      labels:
+        - bug
+        - fix
+    - title: Improvements
+      labels:
+        - improvement
+        - refactor
+        - performance
+    - title: Documentation
+      labels:
+        - documentation
+        - docs
+    - title: Other Changes
+      labels:
+        - "*"
