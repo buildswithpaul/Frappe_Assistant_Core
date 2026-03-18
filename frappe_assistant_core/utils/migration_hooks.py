@@ -71,6 +71,9 @@ def after_migrate():
     # Sync tool configurations from discovered plugins
     _sync_tool_configurations()
 
+    # Set default values for any new settings fields added during migration
+    _set_settings_defaults()
+
 
 def before_migrate():
     """
@@ -132,8 +135,8 @@ def after_install():
     # Sync tool configurations from discovered plugins
     _sync_tool_configurations()
 
-    # Set default values for Assistant Core Settings
-    _set_settings_defaults()
+    # Set default values for Assistant Core Settings (force=True for fresh install)
+    _set_settings_defaults(force=True)
 
 
 def after_uninstall():
@@ -545,11 +548,15 @@ def _sync_plugin_configurations():
         frappe.logger("migration_hooks").error(f"Failed to sync plugin configurations: {str(e)}")
 
 
-def _set_settings_defaults():
+def _set_settings_defaults(force=False):
     """Set default values for Assistant Core Settings.
 
-    Frappe doesn't always populate JSON-defined defaults when a Single DocType
+    Frappe doesn't populate JSON-defined defaults when a Single DocType
     is first created. This ensures critical settings have sensible values.
+
+    Args:
+        force: If True, set all defaults unconditionally (fresh install).
+               If False, only set defaults for fields not yet in tabSingles (migration).
     """
     defaults = {
         "server_enabled": 1,
@@ -577,13 +584,20 @@ def _set_settings_defaults():
         updated = False
 
         for field, default_value in defaults.items():
-            current = getattr(settings, field, None)
-            if current is None or current == "" or current == 0:
-                # Don't overwrite intentional 0 for check fields
-                if isinstance(default_value, int) and default_value == 0:
-                    continue
+            if force:
                 setattr(settings, field, default_value)
                 updated = True
+            else:
+                # Only set default if field has no row in tabSingles at all.
+                # This distinguishes "never set" from "user set to 0",
+                # since Frappe's cint() casts None → 0 for Int/Check fields.
+                exists = frappe.db.sql(
+                    "SELECT 1 FROM `tabSingles` WHERE doctype=%s AND field=%s LIMIT 1",
+                    ("Assistant Core Settings", field),
+                )
+                if not exists:
+                    setattr(settings, field, default_value)
+                    updated = True
 
         if updated:
             settings.save(ignore_permissions=True)
