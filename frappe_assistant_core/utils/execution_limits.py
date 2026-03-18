@@ -104,7 +104,7 @@ def _get_current_vm_size_bytes() -> int:
     Returns 0 if unavailable (non-Linux or read error).
     """
     try:
-        with open("/proc/self/status") as f:
+        with open("/proc/self/status") as f:  # nosemgrep: frappe-security-file-traversal
             for line in f:
                 if line.startswith("VmSize:"):
                     # Format: "VmSize:    123456 kB"
