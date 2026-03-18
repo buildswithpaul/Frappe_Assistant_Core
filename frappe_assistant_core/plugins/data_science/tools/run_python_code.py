@@ -139,201 +139,33 @@ class ExecutePythonCode(BaseTool):
 
     def _get_dynamic_description(self) -> str:
         """Generate description based on library availability"""
-        base_description = """Execute custom Python code for advanced analysis and complex calculations.
+        base_description = """Execute Python code for data analysis and calculations in a sandboxed environment.
 
-CRITICAL: For ANY query requiring data fetching + analysis, use the 'tools' API INSIDE your Python code to fetch data. DO NOT call separate tools (like list_documents) and then manually copy data into code - this wastes tokens and is inefficient.
+RULES:
+- NO imports allowed — all libraries are pre-loaded
+- Use `tools` API inside code to fetch data (don't call separate tools then copy data in)
+- Read-only DB (SELECT only), permission-checked, audit-logged, no file/network access
 
-RECOMMENDED APPROACH FOR DATA ANALYSIS:
-When user asks for analysis that requires fetching and processing data:
+PRE-LOADED: pd (pandas), np (numpy), plt (matplotlib), sns (seaborn), frappe, math, datetime, json, re, statistics, random, collections, itertools, functools, operator, copy
 
-CORRECT (Token Efficient):
-  Use tools.get_documents() or tools.generate_report() INSIDE Python code
-  Data stays in sandbox, only insights return to LLM
-  Saves 80-95% tokens compared to passing raw data through LLM context
-
-INCORRECT (Token Wasteful):
-  Call list_documents tool separately, then manually copy data into code
-  Data passes through LLM context unnecessarily
-  Requires multiple tool calls and manual transcription
-
-USE HIERARCHY:
-1. For standard business reports with known filters: Use generate_report tool directly
-   Example: "Show me Sales Analytics report for Q1 2024"
-
-2. For custom analysis requiring data fetching: Use run_python_code WITH tools API
-   Example: "Show top 10 customers by revenue with collection rates"
-   Code: result = tools.get_documents("Sales Invoice", filters={...}, fields=[...])
-
-3. For simple calculations on provided data: Use run_python_code without tools API
-   Example: "Calculate average of these numbers: [1,2,3,4,5]"
-
-PRE-LOADED LIBRARIES (no imports needed):
-- Data manipulation: pd (pandas), np (numpy)
-- Visualization: plt (matplotlib), sns (seaborn)
-- Core Python: frappe, math, datetime, json, re, statistics, random
-- Utilities: collections, itertools, functools, operator, copy
-
-SECURITY:
-- Read-only database access (SELECT only)
-- User context management (respects permissions)
-- Code security scanning (dangerous operations blocked)
-- Sandboxed execution environment
-- Audit logging
-
-TOOLS API - FETCH DATA INSIDE PYTHON CODE:
-
-Document Operations:
-  tools.get_documents(doctype, filters={}, fields=["*"], limit=100)
-    Fetch multiple documents with filters (permission-checked)
-    Returns: {success: bool, data: list, count: int}
-    Example: tools.get_documents("Sales Invoice", filters={"posting_date": [">", "2024-01-01"]})
-
-  tools.get_document(doctype, name)
-    Get single document by name (permission-checked)
-    Returns: {success: bool, data: dict}
-
-Report Operations:
-  tools.generate_report(report_name, filters={}, format="json")
-    Execute Frappe report with auto-prepared-report handling
-    Returns: {success: bool, data: list, columns: list, status: str}
-    Automatically waits for prepared reports (up to 5 minutes)
-
-  tools.get_report_info(report_name)
-    Get report requirements BEFORE executing
-    Returns: {success: bool, columns: list, filter_guidance: list}
-    Use this first to discover required filters
-
-  tools.list_reports(module=None, report_type=None)
-    Get list of available reports (permission-filtered)
-    Returns: {success: bool, reports: list, count: int}
-
-Search Operations:
+TOOLS API (use inside code to fetch data — returns dicts, ready for pandas):
+  tools.get_documents(doctype, filters={}, fields=["*"], limit=100) → {success, data, count}
+  tools.get_document(doctype, name) → {success, data}
+  tools.generate_report(report_name, filters={}, format="json") → {success, data, columns}
+  tools.get_report_info(report_name) → {success, columns, filter_guidance}
+  tools.list_reports(module=None, report_type=None) → {success, reports, count}
   tools.search(query, doctype=None, limit=20)
-    Search across Frappe (permission-checked)
+  tools.get_doctype_info(doctype) → {success, fields, links}
 
-Metadata Operations:
-  tools.get_doctype_info(doctype)
-    Get field definitions, links, permissions
-    Returns: {success: bool, fields: list, links: list}
-
-DATA HANDLING BEST PRACTICES:
-
-Tools API returns plain Python dicts (already converted from frappe._dict), ready for pandas.
-However, data may contain None/null values that need handling:
-
-1. Handle None values before aggregation:
-   df['field'] = df['field'].fillna(0)  # For numeric fields
-   df['field'] = df['field'].fillna('Unknown')  # For string fields
-
-2. Use safe dictionary access when iterating:
-   value = row.get('field', 'default_value')  # Not row['field']
-
-3. Check for None before formatting:
-   if pd.notna(value):
-       print(f"{value:,.2f}")
-
-4. Handle division by zero:
-   rate = (paid / total * 100) if total > 0 else 0
-
-COMPLETE EXAMPLES:
-
-Example 1: Customer Sales Analysis (CORRECT APPROACH)
-# User asks: "Show top 10 customers by revenue for current fiscal year"
-
+EXAMPLE:
 result = tools.get_documents("Sales Invoice",
-    filters={
-        "docstatus": 1,
-        "posting_date": [">=", "2024-04-01"]
-    },
-    fields=["customer_name", "grand_total", "outstanding_amount", "status"],
-    limit=500
-)
-
+    filters={"docstatus": 1, "posting_date": [">=", "2024-04-01"]},
+    fields=["customer_name", "grand_total", "outstanding_amount"], limit=500)
 if result["success"]:
-    # Data is already plain dicts, ready for pandas
     df = pd.DataFrame(result["data"])
-
-    # Handle None values
-    df['grand_total'] = df['grand_total'].fillna(0)
-    df['outstanding_amount'] = df['outstanding_amount'].fillna(0)
-
-    # Aggregate by customer
-    customer_summary = df.groupby("customer_name").agg({
-        "grand_total": "sum",
-        "outstanding_amount": "sum"
-    }).reset_index()
-
-    # Calculate metrics with safe division
-    customer_summary["paid_amount"] = customer_summary["grand_total"] - customer_summary["outstanding_amount"]
-    customer_summary["collection_rate"] = customer_summary.apply(
-        lambda x: (x["paid_amount"] / x["grand_total"] * 100) if x["grand_total"] > 0 else 0,
-        axis=1
-    ).round(2)
-
-    # Get top 10
-    top_10 = customer_summary.sort_values("grand_total", ascending=False).head(10)
-
-    # Print insights only
-    print("TOP 10 CUSTOMERS BY REVENUE:")
-    for idx, row in enumerate(top_10.itertuples(), 1):
-        print(f"{idx}. {row.customer_name}: Revenue={row.grand_total:,.0f}, Collection={row.collection_rate:.1f}%")
-
-Example 2: Multi-Source Territory Analysis
-# Fetch sales and customer data in sandbox
-sales = tools.generate_report("Sales Analytics", filters={"doc_type": "Sales Invoice"})
-customers = tools.get_documents("Customer", fields=["name", "territory", "customer_group"])
-
-if sales["success"] and customers["success"]:
-    # Create customer lookup
-    cust_map = {c["name"]: c for c in customers["data"]}
-
-    # Aggregate by territory
-    territory_sales = {}
-    for row in sales["data"]:
-        cust = cust_map.get(row["customer"])
-        if cust:
-            territory = cust["territory"]
-            territory_sales[territory] = territory_sales.get(territory, 0) + row.get("revenue", 0)
-
-    # Return top 5 territories
-    top_5 = sorted(territory_sales.items(), key=lambda x: x[1], reverse=True)[:5]
-    print("TOP 5 TERRITORIES BY REVENUE:")
-    for territory, revenue in top_5:
-        print(f"  {territory}: {revenue:,.2f}")
-
-Example 3: Report Discovery
-# Find analytics reports
-all_reports = tools.list_reports(module="Selling")
-analytics = [r for r in all_reports["reports"] if "analytics" in r["report_name"].lower()]
-
-for report in analytics:
-    info = tools.get_report_info(report["report_name"])
-    print(f"{report['report_name']}: {len(info.get('columns', []))} columns")
-
-WHEN TO USE TOOLS API:
-USE when:
-  - User asks for data analysis (top customers, sales trends, etc.)
-  - Combining multiple data sources
-  - Processing datasets with more than 50 rows
-  - Complex calculations or aggregations needed
-  - Token efficiency is important
-
-DO NOT USE when:
-  - Simple calculations on small provided datasets
-  - User explicitly provides all data in the query
-  - Single report execution without processing (use generate_report tool directly)
-
-SECURITY GUARANTEES:
-All tools methods maintain:
-  - Permission checks (user context preserved)
-  - Read-only database access
-  - Audit logging
-  - No file system access
-  - No network access
-  - Sandboxed execution
-
-No internal directory structure or import paths exposed.
-Use tools API directly - no imports needed."""
+    df["grand_total"] = df["grand_total"].fillna(0)
+    top = df.groupby("customer_name")["grand_total"].sum().nlargest(10)
+    print(top.to_string())"""
 
         # Add library availability warnings
         library_warnings = []
