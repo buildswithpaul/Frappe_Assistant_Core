@@ -64,11 +64,16 @@ class ReportTools:
                     "suggestions": validation_result.get("suggestions", []),
                 }
 
+            # Snapshot user-provided filter keys before auto-defaults are injected
+            user_filter_keys = set((filters or {}).keys())
+            # Use a single dict so auto-defaults mutate it in-place
+            effective_filters = dict(filters) if filters else {}
+
             # Execute report based on type
             if report_doc.report_type == "Query Report":
-                result = ReportTools._execute_query_report(report_doc, filters or {})
+                result = ReportTools._execute_query_report(report_doc, effective_filters)
             elif report_doc.report_type == "Script Report":
-                result = ReportTools._execute_script_report(report_doc, filters or {})
+                result = ReportTools._execute_script_report(report_doc, effective_filters)
             elif report_doc.report_type == "Report Builder":
                 return {
                     "success": False,
@@ -77,9 +82,11 @@ class ReportTools:
             else:
                 return {"success": False, "error": f"Unsupported report type: {report_doc.report_type}"}
 
-            # Add debug information for troubleshooting
             # Handle different result structures
             if isinstance(result, dict):
+                # Extract the final filters that were actually used
+                final_filters = result.pop("_final_filters", effective_filters)
+
                 # Script/Query reports return {'result': [...], 'columns': [...]}
                 raw_data = result.get("result", [])
                 columns = result.get("columns", [])
@@ -88,6 +95,9 @@ class ReportTools:
                 # This prevents "invalid __array_struct__" errors when using with pandas
                 data = [dict(row) if isinstance(row, dict) else row for row in raw_data]
 
+                # Determine which filters were auto-injected
+                auto_added = {k: v for k, v in final_filters.items() if k not in user_filter_keys}
+
                 debug_info = {
                     "success": True,
                     "report_name": report_name,
@@ -95,8 +105,8 @@ class ReportTools:
                     "data": data,
                     "columns": columns,
                     "message": result.get("message"),
-                    "filters_applied": filters or {},
-                    "auto_filters_added": "Automatic date range and company filters applied if missing",
+                    "filters_applied": final_filters,
+                    "filters_auto_added": auto_added if auto_added else None,
                     "raw_result_keys": list(result.keys()) if result else [],
                     "data_count": len(data) if data else 0,
                     "result_type": type(result).__name__ if result else "None",
@@ -104,14 +114,20 @@ class ReportTools:
             else:
                 return {"success": False, "error": f"Unexpected result type: {type(result).__name__}"}
 
-            # Add debug info if no data found
+            # Add actionable guidance when report returns no data
             data = debug_info.get("data", [])
             if not data or len(data) == 0:
-                debug_info["debug_info"] = {
-                    "filters_used": filters,
-                    "result_structure": result,
-                    "error_from_result": result.get("error") if isinstance(result, dict) else None,
-                }
+                debug_info["suggestion"] = (
+                    f"Report returned 0 rows. This usually means the auto-defaulted filters "
+                    f"(e.g. fiscal year dates, company) don't match any data. "
+                    f"Call report_requirements('{report_name}') to see all mandatory filters "
+                    f"with their valid options, then retry with explicit filter values."
+                )
+                if auto_added:
+                    debug_info["suggestion"] += (
+                        f" Auto-added filters were: {auto_added}. "
+                        f"Check that these values match data in your system."
+                    )
 
             return debug_info
 
@@ -447,13 +463,16 @@ class ReportTools:
                         final_filters[key] = str(value)
             filters = final_filters
 
-            return run(
+            result = run(
                 report_name=report_doc.name,
                 filters=filters,
                 user=frappe.session.user,
                 is_tree=getattr(report_doc, "is_tree", 0),
                 parent_field=getattr(report_doc, "parent_field", None),
             )
+            if isinstance(result, dict):
+                result["_final_filters"] = filters
+            return result
         except Exception as e:
             # If execution fails, try to get just column info
             if "company" in str(e).lower() and "required" in str(e).lower():
@@ -570,7 +589,10 @@ class ReportTools:
             ):
                 return ReportTools._handle_prepared_report_execution(report_doc, filters)
 
-            return run(report_name=report_doc.name, filters=filters, user=frappe.session.user)
+            result = run(report_name=report_doc.name, filters=filters, user=frappe.session.user)
+            if isinstance(result, dict):
+                result["_final_filters"] = filters
+            return result
 
         except Exception as e:
             frappe.log_error(f"Script report execution error for {report_doc.name}: {str(e)}")

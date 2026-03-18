@@ -9,7 +9,7 @@
 5. [Tool System](#tool-system)
 6. [Auto-Discovery Registry](#auto-discovery-registry)
 7. [Security Framework](#security-framework)
-8. [Artifact Streaming System](#artifact-streaming-system)
+8. [OCR System Architecture](#ocr-system-architecture)
 9. [API Documentation](#api-documentation)
 10. [Installation & Setup](#installation--setup)
 11. [Testing](#testing)
@@ -176,16 +176,19 @@ requires = ["setuptools>=64", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "frappe-assistant-core"
-version = "1.2.0"
+name = "frappe_assistant_core"
+version = "2.3.1"
 requires-python = ">=3.8"
 dependencies = [
-    "frappe",
     "pandas>=1.3.0",
     "numpy>=1.20.0",
     "matplotlib>=3.4.0",
     "seaborn>=0.11.0",
-    "requests>=2.25.0"
+    "requests>=2.25.0",
+    "paddleocr>=2.9.0",
+    "paddlepaddle>=2.6.0,<3.1.0",
+    "pymupdf>=1.24.0",
+    # ... see pyproject.toml for full list
 ]
 ```
 
@@ -732,7 +735,7 @@ Advanced analytics and visualization capabilities:
 - `query_and_analyze` - SQL queries with advanced analysis
 - `extract_file_content` - Extract content from PDFs, images (OCR), CSV, Excel, DOCX for LLM processing
 
-**Dependencies:** pandas, numpy, matplotlib, seaborn, plotly, scipy, PyPDF2, Pillow, python-docx, pytesseract
+**Dependencies:** pandas, numpy, matplotlib, seaborn, plotly, scipy, pypdf, Pillow, python-docx, paddleocr, paddlepaddle, pymupdf
 
 #### 3. **Visualization Plugin Tools** (`plugins/visualization/`) - Optional
 
@@ -1719,239 +1722,128 @@ permission_query_conditions = {
 
 ---
 
-## Artifact Streaming System
+## OCR System Architecture
 
 ### Overview
 
-The Frappe Assistant Core implements an **Intelligent Artifact Streaming System** that automatically detects when tool results should be streamed to workspace artifacts instead of being displayed directly in conversations. This system prevents conversation length limits, ensures professional deliverables, and enables unlimited analysis depth.
+Frappe Assistant Core provides dual-backend OCR (Optical Character Recognition) for extracting text from scanned documents and images. The system supports both local processing via PaddleOCR and AI-powered extraction via Ollama vision models, with automatic fallback.
 
-### Problem Statement
+### OCR Backends
 
-**Challenge**: Large tool results (>5 lines, >1000 characters) cause:
+#### 1. PaddleOCR (Default)
 
-- ❌ **Conversation Length Limits**: Claude Desktop hitting maximum response length
-- ❌ **Poor User Experience**: Truncated or incomplete results
-- ❌ **Unprofessional Output**: Raw data dumps instead of structured reports
-- ❌ **Lost Work**: Analysis results lost when conversations exceed limits
+**File**: `frappe_assistant_core/plugins/data_science/tools/extract_file_content.py`
 
-**Solution**: Automatic artifact streaming with intelligent detection and guidance.
+Local OCR using PaddleOCR 3.x with PaddlePaddle inference engine. Processes images and PDFs entirely on the server.
 
-### Architecture
+**Key characteristics:**
+- Supports 80+ languages
+- No external service dependency
+- Fast processing (~5-6 seconds per page)
+- Model caching — loaded once per Gunicorn worker
+- C++ crash recovery with automatic instance reset
 
-#### 1. **Smart Detection Engine**
-
-**File**: `frappe_assistant_core/api/handlers/tools_streaming.py`
-
-```python
-def should_stream_to_artifact(result: str, tool_name: str,
-                             line_threshold: int = 5,
-                             char_threshold: int = 1000) -> bool:
-    """Multi-criteria detection for artifact streaming requirement"""
-```
-
-**Detection Criteria:**
-
-- ✅ **Line Count**: Results with >5 lines (configurable)
-- ✅ **Character Count**: Results with >1,000 characters (configurable)
-- ✅ **Analysis Tools**: Always stream for `analyze_business_data`, `run_python_code`, etc.
-- ✅ **Large Datasets**: JSON results with multiple records (`"name"` count >3)
-- ✅ **Tabular Data**: Extensive tables (pipe character count >20)
-- ✅ **List Content**: Many bullet points (>10 list items)
-
-#### 2. **Intelligent Formatting System**
-
-**Dual-Mode Response Strategy:**
-
-| Result Size       | Mode                 | Behavior                                               |
-| ----------------- | -------------------- | ------------------------------------------------------ |
-| **<10,000 chars** | **Full Result Mode** | Include complete result with streaming instructions    |
-| **>10,000 chars** | **Truncated Mode**   | Show preview only, require re-execution with artifacts |
-
-#### 3. **Tool-Specific Artifact Guidance**
-
-**Smart Category Detection:**
+**PaddleOCR 3.x API:**
 
 ```python
-if tool_name in ["analyze_business_data", "run_python_code", "query_and_analyze"]:
-    artifact_type = "Data Analysis Report"
-    sections = ["Executive Summary", "Key Findings", "Detailed Analysis", "Recommendations"]
-elif tool_name.startswith("report_"):
-    artifact_type = "Business Report"
-    sections = ["Report Summary", "Key Metrics", "Detailed Data", "Action Items"]
+from paddleocr import PaddleOCR
+
+ocr = PaddleOCR(lang='en')  # No use_angle_cls or show_log params
+result = ocr.predict(image_or_path)  # No cls param
+
+# Result is list of OCRResult dict-like objects (one per page)
+page = result[0]
+texts = page['rec_texts']    # list of strings
+scores = page['rec_scores']  # list of floats
+polys = page['dt_polys']     # list of bounding box polygons
 ```
 
-| Tool Category       | Artifact Type           | Suggested Sections                                                  |
-| ------------------- | ----------------------- | ------------------------------------------------------------------- |
-| **Analysis Tools**  | Data Analysis Report    | Executive Summary, Key Findings, Detailed Analysis, Recommendations |
-| **Report Tools**    | Business Report         | Report Summary, Key Metrics, Detailed Data, Action Items            |
-| **Search/Metadata** | Technical Documentation | Overview, Search Results, Technical Details, Usage Notes            |
-| **General Tools**   | Comprehensive Results   | Summary, Main Results, Detailed Output, Next Steps                  |
+**C++ Crash Recovery:**
 
-### Implementation Flow
-
-#### 1. **Request Processing**
-
-```mermaid
-graph LR
-    A[Tool Execution] --> B[Result Generated]
-    B --> C{Size Check}
-    C -->|>5 lines OR >1000 chars| D[Streaming Required]
-    C -->|Small Result| E[Direct Response]
-    D --> F[Format for Artifacts]
-    F --> G[Return Streaming Instructions]
-```
-
-#### 2. **Response Generation**
-
-**File**: `frappe_assistant_core/api/handlers/tools.py`
+PaddleOCR's C++ inference backend can occasionally crash (e.g., segfault). The tool handles this with a two-attempt strategy:
 
 ```python
-# Automatic streaming detection in tool handler
-should_stream = should_stream_to_artifact(result, tool_name)
-
-if should_stream:
-    artifact_result = format_for_artifact_streaming(result, tool_name, arguments)
-    result = artifact_result
+for attempt in range(2):
+    ocr = _get_paddle_ocr(lang) if attempt == 0 else _get_paddle_ocr_fresh(lang)
+    try:
+        result = ocr.predict(image)
+        # success
+    except Exception:
+        if attempt == 0:
+            continue  # retry with fresh instance
+        raise  # second failure — actual error
 ```
 
-#### 3. **User Guidance Format**
+#### 2. Ollama Vision (Optional)
 
-**Standard Streaming Response:**
+AI-powered OCR using an Ollama vision model (e.g., `deepseek-ocr`). Better at understanding document context and complex layouts.
+
+**Key characteristics:**
+- Requires a running Ollama instance
+- Uses `/api/generate` endpoint with base64-encoded images
+- PDF pages rendered to images via PyMuPDF before sending to Ollama
+- Falls back to PaddleOCR if Ollama fails or returns empty results
+- Configurable model, URL, and timeout
+
+**Ollama PDF OCR Flow:**
 
 ```
-🚨 ARTIFACT STREAMING REQUIRED - LARGE RESULT DETECTED
-
-📊 Result Statistics:
-• Lines: 15 (threshold: 5+)
-• Characters: 2,847 (threshold: 1,000+)
-• Tool: analyze_business_data
-
-📋 REQUIRED WORKFLOW:
-1. CREATE ARTIFACT - Type: Data Analysis Report
-2. ADD SECTIONS: Executive Summary, Key Findings, Detailed Analysis, Recommendations
-3. STREAM FULL RESULTS to artifact sections
-4. KEEP RESPONSE MINIMAL (only summary/confirmation)
-
-⚠️ CRITICAL: The full result below MUST be moved to an artifact to prevent response limits
-
-═══════════════════════════════════════════════════════════
-
-📄 PREVIEW:
-[First 3 lines of result]
-... (12 more lines)
-
-🔧 Tool Execution Details:
-• Tool: analyze_business_data
-• Arguments: {doctype: "Sales Invoice", analysis_type: "trends"}
-• Timestamp: 2025-06-27 14:30:22
-
-[FULL RESULT FOR ARTIFACT STREAMING]
+PDF bytes
+  → PyMuPDF renders each page to pixmap (150 DPI)
+    → Convert to PIL Image → JPEG → Base64
+      → POST to Ollama /api/generate with vision model
+        → Collect text per page → Combined result
 ```
 
-### Benefits Achieved
+### Configuration
 
-#### 1. **Conversation Continuity**
+OCR settings are managed via **Assistant Core Settings** DocType:
 
-- ✅ **No Length Limits**: Prevents "maximum conversation length" errors
-- ✅ **Unlimited Analysis**: Enable complex, multi-step analysis workflows
-- ✅ **Session Persistence**: Analysis results preserved across conversations
+| Field | Description | Default |
+|-------|-------------|---------|
+| `ocr_backend` | OCR engine: `paddleocr` or `ollama` | `paddleocr` |
+| `ocr_language` | Default language for PaddleOCR | `en` |
+| `ollama_api_url` | Ollama server URL | `http://localhost:11434` |
+| `ollama_vision_model` | Ollama vision model name | `deepseek-ocr:latest` |
+| `ollama_request_timeout` | Timeout in seconds | `120` |
 
-#### 2. **Professional Deliverables**
+### Dependencies
 
-- ✅ **Structured Reports**: Organized artifacts with proper sections
-- ✅ **Stakeholder Ready**: Professional outputs suitable for business use
-- ✅ **Reusable Results**: Artifacts can be shared and referenced
+| Package | Purpose |
+|---------|---------|
+| `paddleocr>=2.9.0` | OCR engine |
+| `paddlepaddle>=2.6.0,<3.1.0` | PaddlePaddle inference (pinned — v3.3.0 has oneDNN bug) |
+| `pymupdf>=1.24.0` | PDF page rendering for Ollama vision OCR |
+| `Pillow>=10.0.0` | Image processing |
 
-#### 3. **Enhanced User Experience**
+### OCR Routing Flow
 
-- ✅ **Automatic Guidance**: No need to remember artifact creation
-- ✅ **Tool-Specific Suggestions**: Context-aware artifact structure
-- ✅ **Clear Workflows**: Step-by-step instructions for optimal use
-
-#### 4. **System Reliability**
-
-- ✅ **Predictable Behavior**: Consistent streaming across all tools
-- ✅ **Configurable Thresholds**: Adaptable to different use cases
-- ✅ **Graceful Degradation**: Fallback modes for edge cases
-
-### Configuration Options
-
-#### Environment Variables
-
-```python
-# Configurable thresholds in tools_streaming.py
-LINE_THRESHOLD = 5       # Lines before streaming required
-CHAR_THRESHOLD = 1000    # Characters before streaming required
-MAX_INLINE_SIZE = 10000  # Maximum size for inline display
+```
+_perform_ocr(file_content, arguments, file_type)
+  │
+  ├─ if backend == "ollama":
+  │    ├─ _try_ollama_ocr()
+  │    │    ├─ PDF → _perform_ollama_pdf_ocr() (PyMuPDF + Ollama)
+  │    │    └─ Image → _ollama_extract_from_image()
+  │    │
+  │    └─ if Ollama fails or empty → fall through to PaddleOCR
+  │
+  └─ _perform_paddle_ocr()
+       ├─ PDF → _perform_paddle_pdf_ocr() (temp file + ocr.predict)
+       └─ Image → PIL → numpy array → ocr.predict
 ```
 
-#### Runtime Configuration
+### Text Layout Reconstruction
 
-```python
-# Customize streaming behavior per tool
-should_stream = should_stream_to_artifact(
-    result=tool_result,
-    tool_name="analyze_business_data",
-    line_threshold=3,      # Custom threshold
-    char_threshold=500     # Custom threshold
-)
-```
+PaddleOCR returns bounding box coordinates for each text region. The tool reconstructs document layout:
 
-### Monitoring & Analytics
+1. **Extract positions**: Get (y_center, x_left) from each bounding box
+2. **Sort vertically**: Order text regions top-to-bottom
+3. **Group into lines**: Regions within 10px vertical distance form a line
+4. **Sort horizontally**: Within each line, sort left-to-right
+5. **Join with tabs**: Preserves table column alignment
 
-#### Streaming Metrics
-
-- **Streaming Rate**: Percentage of tool results requiring artifacts
-- **Tool Distribution**: Which tools most frequently trigger streaming
-- **Size Analytics**: Average result sizes by tool category
-- **User Adoption**: Artifact creation rates following streaming guidance
-
-#### Debug Information
-
-```python
-# Included in every streaming response
-{
-    "tool": "analyze_business_data",
-    "lines": 15,
-    "characters": 2847,
-    "streaming_triggered": True,
-    "trigger_reasons": ["line_count", "analysis_tool"],
-    "artifact_type_suggested": "Data Analysis Report"
-}
-```
-
-### Future Enhancements
-
-#### Planned Improvements
-
-1. **Dynamic Thresholds**: ML-based optimization of streaming triggers
-2. **Template Library**: Pre-built artifact templates by industry/use case
-3. **Collaborative Artifacts**: Multi-user artifact editing capabilities
-4. **Version Control**: Artifact history and change tracking
-5. **Export Options**: PDF, Excel, PowerPoint export from artifacts
-
-#### Integration Opportunities
-
-1. **Frappe Reports**: Automatic artifact creation for complex reports
-2. **Dashboard Integration**: Stream analysis directly to Frappe dashboards
-3. **Email Integration**: Automated artifact sharing via email
-4. **API Access**: RESTful endpoints for artifact management
-
-### Best Practices
-
-#### For Users
-
-1. **Create Artifacts First**: Follow streaming guidance to create artifacts before re-running tools
-2. **Use Suggested Sections**: Leverage tool-specific artifact structure recommendations
-3. **Keep Responses Minimal**: Let artifacts contain detailed analysis, keep chat responses focused
-4. **Build Progressively**: Use artifacts to build comprehensive analysis across multiple tool executions
-
-#### For Developers
-
-1. **Respect Thresholds**: Design tools with streaming-friendly output
-2. **Provide Context**: Include execution parameters in streaming responses
-3. **Tool Categories**: Ensure proper tool categorization for relevant artifact suggestions
-4. **Error Handling**: Graceful fallbacks when streaming fails
+This ensures OCR output maintains the original document's spatial structure.
 
 ---
 
@@ -2151,142 +2043,6 @@ pytest --cov=frappe_assistant_core tests/
 
 ---
 
-## Recent Improvements
-
-### Version 1.3.0 - Security & Reliability Release (July 2025)
-
-#### 🔒 **Comprehensive Security Framework** ⭐ **MAJOR**
-
-**Multi-Layer Security Implementation:**
-
-- **Role-Based Access Control**: 4-tier user role system (System Manager, Assistant Admin, Assistant User, Default)
-- **Document-Level Permissions**: Deep integration with Frappe's permission system for DocType and document-specific access
-- **Row-Level Security**: Automatic company-based filtering and user-specific data access enforcement
-- **Field-Level Protection**: Sensitive field filtering with 50+ protected fields across 15+ DocTypes
-- **DocType Restrictions**: 30+ administrative DocTypes restricted for Assistant Users
-- **Comprehensive Audit Trail**: Complete logging of all tool executions with IP tracking and security monitoring
-
-**Security Validation Flow:**
-
-- **4-Layer Validation**: Role → DocType → Document → Field level security checks
-- **Permission Integration**: Uses `frappe.has_permission()` for row-level security including company filters
-- **Sensitive Data Masking**: Automatic filtering of passwords, API keys, tokens, and administrative fields
-- **Audit Logging**: Every tool execution logged with user, arguments, success/failure, and IP address
-
-**Administrator Protection:**
-
-- **Hardcoded Safeguards**: Special protection for Administrator account access
-- **Submitted Document Protection**: Prevents modification of submitted documents without proper permissions
-- **System Manager Privileges**: Full access with appropriate security logging
-
-### Version 1.2.0 - Comprehensive Refactoring (July 2025)
-
-#### 🏗️ **Architecture Modernization**
-
-- **Modular API Handlers**: Separated concerns into focused modules
-- **Centralized Constants**: All strings and configuration in dedicated module
-- **Professional Logging**: Replaced 905 print statements with structured logging
-- **Modern Packaging**: pyproject.toml with proper dependency management
-
-#### 🚀 **Artifact Streaming System** (New Feature)
-
-- **Intelligent Detection**: Automatic streaming triggers for results >5 lines or >1000 characters
-- **Smart Categorization**: Tool-specific artifact suggestions (Data Analysis, Business Reports, etc.)
-- **Dual-Mode Responses**: Full result mode (<10k chars) and truncated mode (>10k chars)
-- **Professional Deliverables**: Structured artifacts with proper sections
-- **Conversation Continuity**: Prevents "maximum length" errors and enables unlimited analysis depth
-
-#### 🐛 **Critical Bug Fixes**
-
-- **Import Errors**: Fixed missing modules causing runtime failures
-- **DocType Names**: Corrected inconsistent naming breaking tool counts
-- **Tool Execution**: Created missing executor and registry modules
-- **Notification Handling**: Implemented missing notification handlers
-- **Timestamp Serialization**: Fixed JSON serialization errors with datetime objects
-- **Import Statement Handling**: Auto-removal of import statements in run_python_code
-- **Report Execution**: Fixed NoneType startswith errors in report filtering
-
-#### 🧹 **Code Cleanup**
-
-- **File Cleanup**: Removed 26 temporary test/debug files
-- **Module Structure**: Added missing `__init__.py` files
-- **Code Quality**: 87% reduction in main API file size
-- **Dependency Management**: Fixed pip deprecation warnings
-
-#### 📊 **Performance Improvements**
-
-- **Memory Usage**: Reduced through modular loading
-- **Maintainability**: Clean separation of concerns
-- **Extensibility**: Easy to add new handlers and tools
-- **Debugging**: Structured logging for better troubleshooting
-- **Response Optimization**: Intelligent artifact streaming prevents conversation overload
-
-### Previous Improvements (2024)
-
-#### 🔧 **Tool System Enhancements**
-
-- **Enhanced Python Execution**: Comprehensive library support (30+ packages)
-- **Hybrid Streaming**: Smart artifact streaming based on output size
-- **Permission Model**: Granular role-based access control
-- **Error Handling**: Robust error handling and user feedback
-
-#### 📈 **Performance & Reliability**
-
-- **Auto-Discovery**: Zero-configuration tool loading
-- **Caching System**: Improved performance for repeated operations
-- **Audit Trail**: Comprehensive operation logging
-- **Security Model**: Enhanced sandbox for code execution
-
----
-
-## Troubleshooting
-
-### Common Issues & Solutions
-
-#### 1. **Import Errors** ✅ _Recently Fixed_
-
-**Symptoms:** `ModuleNotFoundError` for registry or executor
-**Solution:** All missing modules have been created and properly configured
-
-#### 2. **Tool Execution Failures** ✅ _Recently Fixed_
-
-**Symptoms:** Tools not found or execution errors
-**Solution:** Tool registry and executor modules now properly implemented
-
-#### 3. **Logging Issues** ✅ _Recently Fixed_
-
-**Symptoms:** Print statements appearing in production
-**Solution:** All print statements replaced with proper logging
-
-#### 4. **Package Installation Warnings** ✅ _Recently Fixed_
-
-**Symptoms:** Pip deprecation warnings during installation
-**Solution:** Modern pyproject.toml packaging implemented
-
-### Debug Mode
-
-```python
-# Enable debug logging
-from frappe_assistant_core.utils.logger import api_logger
-api_logger.setLevel('DEBUG')
-
-# Check tool registry
-from frappe_assistant_core.tools.registry import get_assistant_tools
-tools = get_assistant_tools()
-print(f"Available tools: {len(tools)}")
-```
-
-### Health Check Endpoint
-
-```bash
-# Test server connectivity
-curl -X POST http://localhost:8000/api/method/frappe_assistant_core.api.fac_endpoint.handle_mcp \
-  -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","method":"tools/list","id":1}'
-```
-
----
-
 ## Future Enhancements
 
 ### Planned Features
@@ -2296,18 +2052,7 @@ curl -X POST http://localhost:8000/api/method/frappe_assistant_core.api.fac_endp
 3. **Plugin System**: Third-party tool extensions
 4. **API Rate Limiting**: Advanced throttling mechanisms
 5. **Webhook Integration**: External service notifications
-6. **Streaming Improvements**: Enhanced artifact streaming capabilities
 
-### Contributing
-
-This is an open-source MIT licensed project. Contributions are welcome!
-
-1. Fork the repository
-2. Create a feature branch
-3. Make changes following the modular architecture
-4. Add tests for new functionality
-5. Update documentation
-6. Submit a pull request
 
 ### Architecture Guidelines for Contributors
 
@@ -2334,10 +2079,10 @@ This is an open-source MIT licensed project. Contributions are welcome!
 ### Support & Resources
 
 - **GitHub Repository**: [frappe-assistant-core](https://github.com/paulclinton/frappe-assistant-core)
-- **License**: MIT License
+- **License**: AGPLV3 License
 - **Issues**: GitHub Issues for bug reports and feature requests
 
 ---
 
-_Last Updated: July 2025 - Version 1.2.0_
+_Last Updated: February 2026 - Version 2.3.1_
 _Architecture: Modular, Modern, Maintainable_

@@ -104,8 +104,6 @@ def get_assistant_dashboard_data():
             "server_info": {
                 "enabled": settings.get("server_enabled"),
                 "port": get_frappe_port(),
-                "enforce_artifact_streaming": settings.get("enforce_artifact_streaming", True),
-                "response_limit_prevention": settings.get("response_limit_prevention", True),
             },
             "connections": dashboard_stats.get("connections", {}),
             "tools": {**dashboard_stats.get("tools", {}), "most_used": most_used_tools},
@@ -210,33 +208,3 @@ def get_system_health_check():
             "warnings": [],
             "errors": [f"System health check error: {str(e)}"],
         }
-
-
-@frappe.whitelist()
-def cleanup_old_data():
-    """Clean up old logs and data based on settings"""
-    try:
-        # Default to 30 days for log cleanup
-        cleanup_days = 30
-
-        # Clean audit logs only (connection logs no longer exist)
-        audit_cleanup_days = cleanup_days * 2
-        old_audit_logs = frappe.db.sql(
-            """
-            DELETE FROM `tabAssistant Audit Log`
-            WHERE creation < DATE_SUB(NOW(), INTERVAL %s DAY)
-        """,
-            (audit_cleanup_days,),
-        )
-
-        frappe.db.commit()
-
-        return {
-            "success": True,
-            "message": f"Cleaned up audit logs older than {audit_cleanup_days} days",
-            "audit_logs_deleted": old_audit_logs,
-        }
-
-    except Exception as e:
-        frappe.log_error(f"Cleanup error: {str(e)}", "assistant Cleanup")
-        return {"success": False, "error": str(e)}

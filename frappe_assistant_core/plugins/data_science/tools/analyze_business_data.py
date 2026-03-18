@@ -90,19 +90,8 @@ class AnalyzeFrappeData(BaseTool):
         }
 
     def _get_dynamic_description(self) -> str:
-        """Generate description based on current streaming settings"""
-        base_description = """Perform custom statistical analysis and data profiling when standard business reports are insufficient. USE HIERARCHY: First try generate_report for standard business reports, then use this tool only when reports don't provide the specific analysis needed. ANALYSIS TYPES: profile (data overview with nulls, types, unique counts, field statistics), statistics (business metrics including mean, median, standard deviation, quartiles), trends (time-series patterns with daily/monthly growth rates), quality (data health score assessing duplicates, nulls, consistency), correlations (relationships between fields). Best for custom field combinations, specialized statistical analysis, data quality research, and unique analytical requirements not covered by standard reports. Always check report_list first to find existing reports before performing custom analysis."""
-
-        try:
-            from frappe_assistant_core.utils.streaming_manager import get_streaming_manager
-
-            streaming_manager = get_streaming_manager()
-            streaming_suffix = streaming_manager.get_tool_description_suffix(self.name)
-            return base_description + streaming_suffix
-
-        except Exception as e:
-            frappe.logger("analyze_frappe_data").warning(f"Failed to load streaming configuration: {str(e)}")
-            return base_description
+        """Generate tool description"""
+        return """Perform custom statistical analysis and data profiling when standard business reports are insufficient. USE HIERARCHY: First try generate_report for standard business reports, then use this tool only when reports don't provide the specific analysis needed. ANALYSIS TYPES: profile (data overview with nulls, types, unique counts, field statistics), statistics (business metrics including mean, median, standard deviation, quartiles), trends (time-series patterns with daily/monthly growth rates), quality (data health score assessing duplicates, nulls, consistency), correlations (relationships between fields). Best for custom field combinations, specialized statistical analysis, data quality research, and unique analytical requirements not covered by standard reports. Always check report_list first to find existing reports before performing custom analysis."""
 
     def execute(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
         """Perform data analysis on Frappe data"""

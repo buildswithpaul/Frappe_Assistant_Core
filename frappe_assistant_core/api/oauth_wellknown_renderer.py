@@ -103,7 +103,7 @@ class WellKnownRenderer:
         response.headers["Content-Type"] = "application/json"
         response.headers["Access-Control-Allow-Origin"] = "*"
         response.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
-        response.headers["Access-Control-Allow-Headers"] = "Content-Type"
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type, MCP-Protocol-Version"
         response.headers["Cache-Control"] = "public, max-age=3600"  # Cache for 1 hour
         response.data = json.dumps(data, indent=2)
 

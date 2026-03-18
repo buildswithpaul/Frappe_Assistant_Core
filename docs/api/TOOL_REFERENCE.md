@@ -190,7 +190,7 @@ Tools are organized into plugins that can be enabled/disabled as needed:
 - **Example**: "Run a query to find top customers by region"
 - **Security**: SELECT-only queries with validation
 
-### extract_file_content 🆕
+### extract_file_content
 - **Description**: Extract content from various file formats for LLM processing
 - **When to use**: Need to read and analyze documents, invoices, contracts, spreadsheets
 - **Supported formats**:
@@ -209,12 +209,24 @@ Tools are organized into plugins that can be enabled/disabled as needed:
   - "OCR this scanned invoice image"
   - "Parse the data from sales.csv file"
   - "Extract tables from the financial report PDF"
+- **OCR Backends**:
+  - **PaddleOCR** (default): Local OCR using PaddleOCR 3.x with PaddlePaddle. Fast, no external service required. Supports 80+ languages. Includes C++ crash recovery with automatic instance reset.
+  - **Ollama Vision** (optional): Uses Ollama with a vision model (e.g., `deepseek-ocr`) for AI-powered text extraction. Better at understanding document context and layout. Requires a running Ollama instance. Falls back to PaddleOCR if Ollama fails or returns empty results.
+- **OCR Configuration** (via Assistant Core Settings):
+  - `ocr_backend`: Select `paddleocr` or `ollama`
+  - `ocr_language`: Default OCR language (e.g., `en`, `fr`, `de`)
+  - `ollama_api_url`: Ollama server URL (default: `http://localhost:11434`)
+  - `ollama_vision_model`: Vision model name (default: `deepseek-ocr:latest`)
+  - `ollama_request_timeout`: Timeout in seconds (default: `120`)
 - **Features**:
+  - Dual OCR backend support with automatic fallback
   - Multi-language OCR support (English, French, German, Spanish, etc.)
   - Automatic format detection
   - Table extraction with structure preservation
+  - Line grouping and column alignment for tabular OCR output
   - Integration with Frappe File DocType
   - Content preparation optimized for LLM analysis
+  - PDF page rendering via PyMuPDF for Ollama vision OCR
 
 ## Visualization Plugin Tools
 

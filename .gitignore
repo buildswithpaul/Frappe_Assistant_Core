@@ -62,7 +62,6 @@ CLAUDE.md
 *.log
 logs/
 debug_*.py
-test_*.py
 
 # Build artifacts
 build/

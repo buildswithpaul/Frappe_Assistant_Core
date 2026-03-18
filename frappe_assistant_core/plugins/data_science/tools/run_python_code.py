@@ -138,202 +138,36 @@ class ExecutePythonCode(BaseTool):
         return libraries
 
     def _get_dynamic_description(self) -> str:
-        """Generate description based on current streaming settings and library availability"""
-        base_description = """Execute custom Python code for advanced analysis and complex calculations.
+        """Generate description based on library availability"""
+        base_description = """Execute Python code in a sandboxed environment with BUILT-IN data access.
 
-CRITICAL: For ANY query requiring data fetching + analysis, use the 'tools' API INSIDE your Python code to fetch data. DO NOT call separate tools (like list_documents) and then manually copy data into code - this wastes tokens and is inefficient.
+PREFER THIS TOOL for analytics — it can fetch data AND analyze it in a single call via the `tools` API.
+Do NOT call get_documents/generate_report separately then copy data into code. Instead, fetch inside code:
 
-RECOMMENDED APPROACH FOR DATA ANALYSIS:
-When user asks for analysis that requires fetching and processing data:
-
-CORRECT (Token Efficient):
-  Use tools.get_documents() or tools.generate_report() INSIDE Python code
-  Data stays in sandbox, only insights return to LLM
-  Saves 80-95% tokens compared to passing raw data through LLM context
-
-INCORRECT (Token Wasteful):
-  Call list_documents tool separately, then manually copy data into code
-  Data passes through LLM context unnecessarily
-  Requires multiple tool calls and manual transcription
-
-USE HIERARCHY:
-1. For standard business reports with known filters: Use generate_report tool directly
-   Example: "Show me Sales Analytics report for Q1 2024"
-
-2. For custom analysis requiring data fetching: Use run_python_code WITH tools API
-   Example: "Show top 10 customers by revenue with collection rates"
-   Code: result = tools.get_documents("Sales Invoice", filters={...}, fields=[...])
-
-3. For simple calculations on provided data: Use run_python_code without tools API
-   Example: "Calculate average of these numbers: [1,2,3,4,5]"
-
-PRE-LOADED LIBRARIES (no imports needed):
-- Data manipulation: pd (pandas), np (numpy)
-- Visualization: plt (matplotlib), sns (seaborn)
-- Core Python: frappe, math, datetime, json, re, statistics, random
-- Utilities: collections, itertools, functools, operator, copy
-
-SECURITY:
-- Read-only database access (SELECT only)
-- User context management (respects permissions)
-- Code security scanning (dangerous operations blocked)
-- Sandboxed execution environment
-- Audit logging
-
-TOOLS API - FETCH DATA INSIDE PYTHON CODE:
-
-Document Operations:
-  tools.get_documents(doctype, filters={}, fields=["*"], limit=100)
-    Fetch multiple documents with filters (permission-checked)
-    Returns: {success: bool, data: list, count: int}
-    Example: tools.get_documents("Sales Invoice", filters={"posting_date": [">", "2024-01-01"]})
-
-  tools.get_document(doctype, name)
-    Get single document by name (permission-checked)
-    Returns: {success: bool, data: dict}
-
-Report Operations:
-  tools.generate_report(report_name, filters={}, format="json")
-    Execute Frappe report with auto-prepared-report handling
-    Returns: {success: bool, data: list, columns: list, status: str}
-    Automatically waits for prepared reports (up to 5 minutes)
-
-  tools.get_report_info(report_name)
-    Get report requirements BEFORE executing
-    Returns: {success: bool, columns: list, filter_guidance: list}
-    Use this first to discover required filters
-
-  tools.list_reports(module=None, report_type=None)
-    Get list of available reports (permission-filtered)
-    Returns: {success: bool, reports: list, count: int}
-
-Search Operations:
+TOOLS API (available as `tools` variable — returns dicts, ready for pandas):
+  tools.get_documents(doctype, filters={}, fields=["*"], limit=100) → {success, data, count}
+  tools.get_document(doctype, name) → {success, data}
+  tools.generate_report(report_name, filters={}, format="json") → {success, data, columns}
+  tools.get_report_info(report_name) → {success, columns, filter_guidance}
+  tools.list_reports(module=None, report_type=None) → {success, reports, count}
   tools.search(query, doctype=None, limit=20)
-    Search across Frappe (permission-checked)
+  tools.get_doctype_info(doctype) → {success, fields, links}
 
-Metadata Operations:
-  tools.get_doctype_info(doctype)
-    Get field definitions, links, permissions
-    Returns: {success: bool, fields: list, links: list}
+EXAMPLE — single call does fetch + analysis:
+invoices = tools.get_documents("Sales Invoice",
+    filters={"docstatus": 1, "posting_date": [">=", "2024-04-01"]},
+    fields=["customer_name", "grand_total", "outstanding_amount"], limit=500)
+customers = tools.get_documents("Customer", fields=["name", "customer_name", "territory"], limit=500)
+if invoices["success"] and customers["success"]:
+    df = pd.DataFrame(invoices["data"]).merge(
+        pd.DataFrame(customers["data"]), left_on="customer_name", right_on="customer_name")
+    print(df.groupby("territory")["grand_total"].sum().sort_values(ascending=False).to_string())
 
-DATA HANDLING BEST PRACTICES:
+RULES:
+- NO imports — all libraries are pre-loaded
+- Read-only DB, permission-checked, audit-logged, no file/network access
 
-Tools API returns plain Python dicts (already converted from frappe._dict), ready for pandas.
-However, data may contain None/null values that need handling:
-
-1. Handle None values before aggregation:
-   df['field'] = df['field'].fillna(0)  # For numeric fields
-   df['field'] = df['field'].fillna('Unknown')  # For string fields
-
-2. Use safe dictionary access when iterating:
-   value = row.get('field', 'default_value')  # Not row['field']
-
-3. Check for None before formatting:
-   if pd.notna(value):
-       print(f"{value:,.2f}")
-
-4. Handle division by zero:
-   rate = (paid / total * 100) if total > 0 else 0
-
-COMPLETE EXAMPLES:
-
-Example 1: Customer Sales Analysis (CORRECT APPROACH)
-# User asks: "Show top 10 customers by revenue for current fiscal year"
-
-result = tools.get_documents("Sales Invoice",
-    filters={
-        "docstatus": 1,
-        "posting_date": [">=", "2024-04-01"]
-    },
-    fields=["customer_name", "grand_total", "outstanding_amount", "status"],
-    limit=500
-)
-
-if result["success"]:
-    # Data is already plain dicts, ready for pandas
-    df = pd.DataFrame(result["data"])
-
-    # Handle None values
-    df['grand_total'] = df['grand_total'].fillna(0)
-    df['outstanding_amount'] = df['outstanding_amount'].fillna(0)
-
-    # Aggregate by customer
-    customer_summary = df.groupby("customer_name").agg({
-        "grand_total": "sum",
-        "outstanding_amount": "sum"
-    }).reset_index()
-
-    # Calculate metrics with safe division
-    customer_summary["paid_amount"] = customer_summary["grand_total"] - customer_summary["outstanding_amount"]
-    customer_summary["collection_rate"] = customer_summary.apply(
-        lambda x: (x["paid_amount"] / x["grand_total"] * 100) if x["grand_total"] > 0 else 0,
-        axis=1
-    ).round(2)
-
-    # Get top 10
-    top_10 = customer_summary.sort_values("grand_total", ascending=False).head(10)
-
-    # Print insights only
-    print("TOP 10 CUSTOMERS BY REVENUE:")
-    for idx, row in enumerate(top_10.itertuples(), 1):
-        print(f"{idx}. {row.customer_name}: Revenue={row.grand_total:,.0f}, Collection={row.collection_rate:.1f}%")
-
-Example 2: Multi-Source Territory Analysis
-# Fetch sales and customer data in sandbox
-sales = tools.generate_report("Sales Analytics", filters={"doc_type": "Sales Invoice"})
-customers = tools.get_documents("Customer", fields=["name", "territory", "customer_group"])
-
-if sales["success"] and customers["success"]:
-    # Create customer lookup
-    cust_map = {c["name"]: c for c in customers["data"]}
-
-    # Aggregate by territory
-    territory_sales = {}
-    for row in sales["data"]:
-        cust = cust_map.get(row["customer"])
-        if cust:
-            territory = cust["territory"]
-            territory_sales[territory] = territory_sales.get(territory, 0) + row.get("revenue", 0)
-
-    # Return top 5 territories
-    top_5 = sorted(territory_sales.items(), key=lambda x: x[1], reverse=True)[:5]
-    print("TOP 5 TERRITORIES BY REVENUE:")
-    for territory, revenue in top_5:
-        print(f"  {territory}: {revenue:,.2f}")
-
-Example 3: Report Discovery
-# Find analytics reports
-all_reports = tools.list_reports(module="Selling")
-analytics = [r for r in all_reports["reports"] if "analytics" in r["report_name"].lower()]
-
-for report in analytics:
-    info = tools.get_report_info(report["report_name"])
-    print(f"{report['report_name']}: {len(info.get('columns', []))} columns")
-
-WHEN TO USE TOOLS API:
-USE when:
-  - User asks for data analysis (top customers, sales trends, etc.)
-  - Combining multiple data sources
-  - Processing datasets with more than 50 rows
-  - Complex calculations or aggregations needed
-  - Token efficiency is important
-
-DO NOT USE when:
-  - Simple calculations on small provided datasets
-  - User explicitly provides all data in the query
-  - Single report execution without processing (use generate_report tool directly)
-
-SECURITY GUARANTEES:
-All tools methods maintain:
-  - Permission checks (user context preserved)
-  - Read-only database access
-  - Audit logging
-  - No file system access
-  - No network access
-  - Sandboxed execution
-
-No internal directory structure or import paths exposed.
-Use tools API directly - no imports needed."""
+PRE-LOADED: pd (pandas), np (numpy), plt (matplotlib), sns (seaborn), frappe, math, datetime, json, re, statistics, random, collections, itertools, functools, operator, copy"""
 
         # Add library availability warnings
         library_warnings = []
@@ -349,16 +183,7 @@ Use tools API directly - no imports needed."""
         if library_warnings:
             base_description += "\n\n" + "\n".join(library_warnings)
 
-        try:
-            from frappe_assistant_core.utils.streaming_manager import get_streaming_manager
-
-            streaming_manager = get_streaming_manager()
-            streaming_suffix = streaming_manager.get_tool_description_suffix(self.name)
-            return base_description + streaming_suffix
-
-        except Exception as e:
-            frappe.logger("execute_python_code").warning(f"Failed to load streaming configuration: {str(e)}")
-            return base_description
+        return base_description
 
     def execute(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
         """Execute Python code safely with secure user context and read-only database"""
@@ -452,7 +277,20 @@ Use tools API directly - no imports needed."""
         current_user: str,
         audit_info: Dict[str, Any],
     ) -> Dict[str, Any]:
-        """Execute code with timeout and proper error handling"""
+        """Execute code with timeout, memory limits, and proper error handling"""
+        from frappe_assistant_core.utils.execution_limits import (
+            ExecutionTimeoutError,
+            MemoryLimitError,
+            all_execution_limits,
+            get_execution_limits_from_settings,
+            truncate_output,
+        )
+
+        # Get limits from settings or use defaults
+        limits = get_execution_limits_from_settings()
+
+        # Use the timeout from arguments if provided, otherwise use settings
+        effective_timeout = min(timeout, limits["timeout_seconds"]) if timeout else limits["timeout_seconds"]
 
         # Capture output
         output = ""
@@ -465,26 +303,39 @@ Use tools API directly - no imports needed."""
                 stderr_capture = io.StringIO()
 
                 with redirect_stdout(stdout_capture), redirect_stderr(stderr_capture):
-                    # Execute code with user context preserved and Unicode handling
-                    try:
-                        exec(code, execution_globals)
-                    except UnicodeEncodeError as unicode_error:
-                        # Handle Unicode encoding errors during execution
-                        raise UnicodeEncodeError(
-                            unicode_error.encoding,
-                            unicode_error.object,
-                            unicode_error.start,
-                            unicode_error.end,
-                            f"Unicode encoding error during code execution. "
-                            f"Code contains characters that cannot be encoded. "
-                            f"Original error: {unicode_error.reason}",
-                        )
+                    # Execute code with all resource limits enforced
+                    with all_execution_limits(
+                        timeout_seconds=effective_timeout,
+                        max_memory_mb=limits["max_memory_mb"],
+                        max_cpu_seconds=limits["max_cpu_seconds"],
+                        max_recursion_depth=limits["max_recursion_depth"],
+                    ):
+                        try:
+                            exec(code, execution_globals)
+                        except UnicodeEncodeError as unicode_error:
+                            # Handle Unicode encoding errors during execution
+                            raise UnicodeEncodeError(
+                                unicode_error.encoding,
+                                unicode_error.object,
+                                unicode_error.start,
+                                unicode_error.end,
+                                f"Unicode encoding error during code execution. "
+                                f"Code contains characters that cannot be encoded. "
+                                f"Original error: {unicode_error.reason}",
+                            )
 
-                output = stdout_capture.getvalue()
-                error = stderr_capture.getvalue()
+                # Truncate output to prevent memory issues
+                output = truncate_output(stdout_capture.getvalue())
+                error = truncate_output(stderr_capture.getvalue())
             else:
-                # Execute without capturing output
-                exec(code, execution_globals)
+                # Execute without capturing output, but still with limits
+                with all_execution_limits(
+                    timeout_seconds=effective_timeout,
+                    max_memory_mb=limits["max_memory_mb"],
+                    max_cpu_seconds=limits["max_cpu_seconds"],
+                    max_recursion_depth=limits["max_recursion_depth"],
+                ):
+                    exec(code, execution_globals)
 
             # Extract all user-defined variables (not built-ins or system variables)
             excluded_vars = {
@@ -565,6 +416,87 @@ Use tools API directly - no imports needed."""
             }
 
             return result
+
+        except ExecutionTimeoutError as timeout_error:
+            error_msg = (
+                f"⏱️ Execution Timeout: {str(timeout_error)}\n\n"
+                f"The code exceeded the maximum allowed execution time of {effective_timeout} seconds.\n\n"
+                f"💡 Tips to fix this:\n"
+                f"   • Reduce the size of data being processed\n"
+                f"   • Add early termination conditions to loops\n"
+                f"   • Use more efficient algorithms\n"
+                f"   • Break complex operations into smaller steps"
+            )
+
+            self.logger.warning(f"Execution timeout for user {current_user}: {timeout_error}")
+
+            return {
+                "success": False,
+                "error": error_msg,
+                "output": output,
+                "variables": {},
+                "user_context": current_user,
+                "timeout_error": True,
+                "execution_info": {
+                    "execution_id": audit_info.get("execution_id"),
+                    "executed_by": current_user,
+                    "timeout_seconds": effective_timeout,
+                },
+            }
+
+        except MemoryError as memory_error:
+            error_msg = (
+                f"💾 Memory Limit Exceeded: The code attempted to use more memory than allowed.\n\n"
+                f"Maximum allowed memory: {limits['max_memory_mb']} MB\n\n"
+                f"💡 Tips to fix this:\n"
+                f"   • Process data in smaller batches\n"
+                f"   • Use generators instead of loading all data into memory\n"
+                f"   • Delete intermediate variables when no longer needed\n"
+                f"   • Use more memory-efficient data structures"
+            )
+
+            self.logger.warning(f"Memory limit exceeded for user {current_user}")
+
+            return {
+                "success": False,
+                "error": error_msg,
+                "output": output,
+                "variables": {},
+                "user_context": current_user,
+                "memory_error": True,
+                "execution_info": {
+                    "execution_id": audit_info.get("execution_id"),
+                    "executed_by": current_user,
+                    "max_memory_mb": limits["max_memory_mb"],
+                },
+            }
+
+        except RecursionError as recursion_error:
+            error_msg = (
+                f"🔄 Recursion Limit Exceeded: The code exceeded the maximum recursion depth.\n\n"
+                f"Maximum recursion depth: {limits['max_recursion_depth']}\n\n"
+                f"💡 Tips to fix this:\n"
+                f"   • Convert recursive algorithms to iterative ones\n"
+                f"   • Add proper base cases to recursive functions\n"
+                f"   • Use tail recursion optimization where possible\n"
+                f"   • Check for infinite recursion in your code"
+            )
+
+            self.logger.warning(f"Recursion limit exceeded for user {current_user}")
+
+            return {
+                "success": False,
+                "error": error_msg,
+                "output": output,
+                "variables": {},
+                "user_context": current_user,
+                "recursion_error": True,
+                "execution_info": {
+                    "execution_id": audit_info.get("execution_id"),
+                    "executed_by": current_user,
+                    "max_recursion_depth": limits["max_recursion_depth"],
+                },
+            }
 
         except UnicodeEncodeError as unicode_error:
             error_msg = (
@@ -1060,6 +992,90 @@ Use tools API directly - no imports needed."""
         frappe.logger().warning("Using legacy _setup_execution_environment - should use secure version")
         return self._setup_secure_execution_environment("legacy_user")
 
+    @staticmethod
+    def _make_restricted_import():
+        """Create a restricted __import__ that only allows submodules of known-safe packages.
+
+        This is needed because libraries like numpy and pandas internally call
+        __import__ for lazy submodule loading (e.g. np.array().mean() triggers
+        numpy.core imports). User-level import statements are already blocked by
+        _scan_for_dangerous_operations and _check_and_handle_imports, so this
+        only serves internal library machinery.
+        """
+        real_import = __builtins__.__import__ if hasattr(__builtins__, "__import__") else __import__
+
+        # Top-level packages whose submodules may be lazily imported
+        allowed_roots = frozenset(
+            {
+                "numpy",
+                "pandas",
+                "matplotlib",
+                "seaborn",
+                "plotly",
+                "scipy",
+                "dateutil",
+                "pytz",
+                "six",
+                "packaging",
+                "pyparsing",
+                "cycler",
+                "kiwisolver",
+                "PIL",
+                "decimal",
+                "fractions",
+                "numbers",
+                "encodings",
+                "codecs",
+                "unicodedata",
+                "_decimal",
+                "_strptime",
+                "calendar",
+                "locale",
+                "warnings",
+                "contextlib",
+                "abc",
+                "collections",
+                "functools",
+                "itertools",
+                "operator",
+                "copy",
+                "math",
+                "statistics",
+                "json",
+                "re",
+                "random",
+                "datetime",
+                "string",
+                "textwrap",
+                "struct",
+                "array",
+                "bisect",
+                "heapq",
+                # Internal / C-extension modules that libraries depend on
+                "_thread",
+                "threading",
+                "concurrent",
+                "queue",
+            }
+        )
+
+        def restricted_import(name, globals=None, locals=None, fromlist=(), level=0):
+            # Relative imports (level > 0) are always internal to the calling package
+            if level > 0:
+                return real_import(name, globals, locals, fromlist, level)
+
+            root = name.split(".")[0]
+            # Allow stdlib and known-safe data-science package trees
+            if root.startswith("_") or root in allowed_roots:
+                return real_import(name, globals, locals, fromlist, level)
+
+            raise ImportError(
+                f"Import of '{name}' is not allowed in the sandbox. "
+                f"All supported libraries are pre-loaded — do not use import statements."
+            )
+
+        return restricted_import
+
     def _setup_secure_execution_environment(self, current_user: str) -> Dict[str, Any]:
         """Setup secure execution environment with read-only database and user context"""
         from frappe_assistant_core.utils.read_only_db import ReadOnlyDatabase
@@ -1067,6 +1083,8 @@ Use tools API directly - no imports needed."""
         # Base environment with safe built-ins only
         env = {
             "__builtins__": {
+                # Restricted import — allows internal library lazy-loading only
+                "__import__": self._make_restricted_import(),
                 # Safe built-ins for data manipulation and analysis
                 "len": len,
                 "str": str,
