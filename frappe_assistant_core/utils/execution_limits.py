@@ -98,17 +98,39 @@ def timeout_limit(seconds: int = DEFAULT_TIMEOUT_SECONDS):
         signal.signal(signal.SIGALRM, old_handler)
 
 
+def _get_current_vm_size_bytes() -> int:
+    """Read current virtual memory size from /proc/self/status.
+
+    Returns 0 if unavailable (non-Linux or read error).
+    """
+    try:
+        with open("/proc/self/status") as f:
+            for line in f:
+                if line.startswith("VmSize:"):
+                    # Format: "VmSize:    123456 kB"
+                    return int(line.split()[1]) * 1024  # kB -> bytes
+    except Exception:
+        pass
+    return 0
+
+
 @contextmanager
 def memory_limit(max_memory_mb: int = DEFAULT_MAX_MEMORY_MB):
     """
     Context manager to enforce memory limits using resource module.
 
+    The limit is *additive*: it allows the sandboxed code to allocate up to
+    ``max_memory_mb`` of **new** virtual memory on top of whatever the process
+    already uses. This prevents false positives caused by pre-loaded libraries
+    (numpy, pandas, matplotlib …) whose mapped pages can exceed a small
+    absolute cap before any user code runs.
+
     Args:
-        max_memory_mb: Maximum memory in megabytes.
+        max_memory_mb: Maximum **additional** memory the sandboxed code may
+            allocate, in megabytes.
 
     Note:
-        This uses the resource module which only works on Unix-like systems.
-        On Windows, this is a no-op (memory limit not enforced).
+        Uses RLIMIT_AS on Linux.  No-op on Windows or when /proc is unavailable.
     """
     if platform.system() == "Windows":
         frappe.logger("execution_limits").warning("Memory limits not available on Windows")
@@ -118,17 +140,21 @@ def memory_limit(max_memory_mb: int = DEFAULT_MAX_MEMORY_MB):
     try:
         import resource
 
-        # Convert MB to bytes
-        max_memory_bytes = max_memory_mb * 1024 * 1024
+        # Current virtual-memory footprint of the worker process
+        current_vm = _get_current_vm_size_bytes()
+
+        # Allow current usage + the configured delta
+        delta_bytes = max_memory_mb * 1024 * 1024
+        new_limit = current_vm + delta_bytes if current_vm > 0 else delta_bytes
 
         # Get current limits
         soft, hard = resource.getrlimit(resource.RLIMIT_AS)
 
-        # Set new limits (soft limit is what matters for enforcement)
-        # We don't want to exceed the existing hard limit
-        new_soft = min(max_memory_bytes, hard) if hard != resource.RLIM_INFINITY else max_memory_bytes
+        # Don't exceed the existing hard limit
+        if hard != resource.RLIM_INFINITY:
+            new_limit = min(new_limit, hard)
 
-        resource.setrlimit(resource.RLIMIT_AS, (new_soft, hard))
+        resource.setrlimit(resource.RLIMIT_AS, (new_limit, hard))
 
         try:
             yield
