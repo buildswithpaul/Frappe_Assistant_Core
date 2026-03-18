@@ -82,9 +82,11 @@ class ReportTools:
             else:
                 return {"success": False, "error": f"Unsupported report type: {report_doc.report_type}"}
 
-            # Add debug information for troubleshooting
             # Handle different result structures
             if isinstance(result, dict):
+                # Extract the final filters that were actually used
+                final_filters = result.pop("_final_filters", effective_filters)
+
                 # Script/Query reports return {'result': [...], 'columns': [...]}
                 raw_data = result.get("result", [])
                 columns = result.get("columns", [])
@@ -94,7 +96,7 @@ class ReportTools:
                 data = [dict(row) if isinstance(row, dict) else row for row in raw_data]
 
                 # Determine which filters were auto-injected
-                auto_added = {k: v for k, v in effective_filters.items() if k not in user_filter_keys}
+                auto_added = {k: v for k, v in final_filters.items() if k not in user_filter_keys}
 
                 debug_info = {
                     "success": True,
@@ -103,7 +105,7 @@ class ReportTools:
                     "data": data,
                     "columns": columns,
                     "message": result.get("message"),
-                    "filters_applied": effective_filters,
+                    "filters_applied": final_filters,
                     "filters_auto_added": auto_added if auto_added else None,
                     "raw_result_keys": list(result.keys()) if result else [],
                     "data_count": len(data) if data else 0,
@@ -461,13 +463,16 @@ class ReportTools:
                         final_filters[key] = str(value)
             filters = final_filters
 
-            return run(
+            result = run(
                 report_name=report_doc.name,
                 filters=filters,
                 user=frappe.session.user,
                 is_tree=getattr(report_doc, "is_tree", 0),
                 parent_field=getattr(report_doc, "parent_field", None),
             )
+            if isinstance(result, dict):
+                result["_final_filters"] = filters
+            return result
         except Exception as e:
             # If execution fails, try to get just column info
             if "company" in str(e).lower() and "required" in str(e).lower():
@@ -584,7 +589,10 @@ class ReportTools:
             ):
                 return ReportTools._handle_prepared_report_execution(report_doc, filters)
 
-            return run(report_name=report_doc.name, filters=filters, user=frappe.session.user)
+            result = run(report_name=report_doc.name, filters=filters, user=frappe.session.user)
+            if isinstance(result, dict):
+                result["_final_filters"] = filters
+            return result
 
         except Exception as e:
             frappe.log_error(f"Script report execution error for {report_doc.name}: {str(e)}")
