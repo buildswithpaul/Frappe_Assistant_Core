@@ -990,6 +990,90 @@ if result["success"]:
         frappe.logger().warning("Using legacy _setup_execution_environment - should use secure version")
         return self._setup_secure_execution_environment("legacy_user")
 
+    @staticmethod
+    def _make_restricted_import():
+        """Create a restricted __import__ that only allows submodules of known-safe packages.
+
+        This is needed because libraries like numpy and pandas internally call
+        __import__ for lazy submodule loading (e.g. np.array().mean() triggers
+        numpy.core imports). User-level import statements are already blocked by
+        _scan_for_dangerous_operations and _check_and_handle_imports, so this
+        only serves internal library machinery.
+        """
+        real_import = __builtins__.__import__ if hasattr(__builtins__, "__import__") else __import__
+
+        # Top-level packages whose submodules may be lazily imported
+        allowed_roots = frozenset(
+            {
+                "numpy",
+                "pandas",
+                "matplotlib",
+                "seaborn",
+                "plotly",
+                "scipy",
+                "dateutil",
+                "pytz",
+                "six",
+                "packaging",
+                "pyparsing",
+                "cycler",
+                "kiwisolver",
+                "PIL",
+                "decimal",
+                "fractions",
+                "numbers",
+                "encodings",
+                "codecs",
+                "unicodedata",
+                "_decimal",
+                "_strptime",
+                "calendar",
+                "locale",
+                "warnings",
+                "contextlib",
+                "abc",
+                "collections",
+                "functools",
+                "itertools",
+                "operator",
+                "copy",
+                "math",
+                "statistics",
+                "json",
+                "re",
+                "random",
+                "datetime",
+                "string",
+                "textwrap",
+                "struct",
+                "array",
+                "bisect",
+                "heapq",
+                # Internal / C-extension modules that libraries depend on
+                "_thread",
+                "threading",
+                "concurrent",
+                "queue",
+            }
+        )
+
+        def restricted_import(name, globals=None, locals=None, fromlist=(), level=0):
+            # Relative imports (level > 0) are always internal to the calling package
+            if level > 0:
+                return real_import(name, globals, locals, fromlist, level)
+
+            root = name.split(".")[0]
+            # Allow stdlib and known-safe data-science package trees
+            if root.startswith("_") or root in allowed_roots:
+                return real_import(name, globals, locals, fromlist, level)
+
+            raise ImportError(
+                f"Import of '{name}' is not allowed in the sandbox. "
+                f"All supported libraries are pre-loaded — do not use import statements."
+            )
+
+        return restricted_import
+
     def _setup_secure_execution_environment(self, current_user: str) -> Dict[str, Any]:
         """Setup secure execution environment with read-only database and user context"""
         from frappe_assistant_core.utils.read_only_db import ReadOnlyDatabase
@@ -997,6 +1081,8 @@ if result["success"]:
         # Base environment with safe built-ins only
         env = {
             "__builtins__": {
+                # Restricted import — allows internal library lazy-loading only
+                "__import__": self._make_restricted_import(),
                 # Safe built-ins for data manipulation and analysis
                 "len": len,
                 "str": str,
