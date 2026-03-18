@@ -139,16 +139,12 @@ class ExecutePythonCode(BaseTool):
 
     def _get_dynamic_description(self) -> str:
         """Generate description based on library availability"""
-        base_description = """Execute Python code for data analysis and calculations in a sandboxed environment.
+        base_description = """Execute Python code in a sandboxed environment with BUILT-IN data access.
 
-RULES:
-- NO imports allowed — all libraries are pre-loaded
-- Use `tools` API inside code to fetch data (don't call separate tools then copy data in)
-- Read-only DB (SELECT only), permission-checked, audit-logged, no file/network access
+PREFER THIS TOOL for analytics — it can fetch data AND analyze it in a single call via the `tools` API.
+Do NOT call get_documents/generate_report separately then copy data into code. Instead, fetch inside code:
 
-PRE-LOADED: pd (pandas), np (numpy), plt (matplotlib), sns (seaborn), frappe, math, datetime, json, re, statistics, random, collections, itertools, functools, operator, copy
-
-TOOLS API (use inside code to fetch data — returns dicts, ready for pandas):
+TOOLS API (available as `tools` variable — returns dicts, ready for pandas):
   tools.get_documents(doctype, filters={}, fields=["*"], limit=100) → {success, data, count}
   tools.get_document(doctype, name) → {success, data}
   tools.generate_report(report_name, filters={}, format="json") → {success, data, columns}
@@ -157,15 +153,21 @@ TOOLS API (use inside code to fetch data — returns dicts, ready for pandas):
   tools.search(query, doctype=None, limit=20)
   tools.get_doctype_info(doctype) → {success, fields, links}
 
-EXAMPLE:
-result = tools.get_documents("Sales Invoice",
+EXAMPLE — single call does fetch + analysis:
+invoices = tools.get_documents("Sales Invoice",
     filters={"docstatus": 1, "posting_date": [">=", "2024-04-01"]},
     fields=["customer_name", "grand_total", "outstanding_amount"], limit=500)
-if result["success"]:
-    df = pd.DataFrame(result["data"])
-    df["grand_total"] = df["grand_total"].fillna(0)
-    top = df.groupby("customer_name")["grand_total"].sum().nlargest(10)
-    print(top.to_string())"""
+customers = tools.get_documents("Customer", fields=["name", "customer_name", "territory"], limit=500)
+if invoices["success"] and customers["success"]:
+    df = pd.DataFrame(invoices["data"]).merge(
+        pd.DataFrame(customers["data"]), left_on="customer_name", right_on="customer_name")
+    print(df.groupby("territory")["grand_total"].sum().sort_values(ascending=False).to_string())
+
+RULES:
+- NO imports — all libraries are pre-loaded
+- Read-only DB, permission-checked, audit-logged, no file/network access
+
+PRE-LOADED: pd (pandas), np (numpy), plt (matplotlib), sns (seaborn), frappe, math, datetime, json, re, statistics, random, collections, itertools, functools, operator, copy"""
 
         # Add library availability warnings
         library_warnings = []
