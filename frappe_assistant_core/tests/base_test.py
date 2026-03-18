@@ -117,10 +117,6 @@ class BaseAssistantTest(unittest.TestCase):
                     {
                         "doctype": "Assistant Core Settings",
                         "server_enabled": 0,
-                        "enforce_artifact_streaming": 1,
-                        "response_limit_prevention": 1,
-                        "streaming_line_threshold": 5,
-                        "streaming_char_threshold": 1000,
                         "enabled_plugins_list": json.dumps(["core"]),
                     }
                 )

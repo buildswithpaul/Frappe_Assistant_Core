@@ -21,8 +21,12 @@ Extracts content from various file formats (PDF, images, CSV, Excel, documents) 
 
 import base64
 import io
+import json
 import mimetypes
 import os
+import subprocess
+import sys
+import tempfile
 from typing import Any, Dict, Optional
 
 import frappe
@@ -87,8 +91,8 @@ class ExtractFileContent(BaseTool):
                 },
                 "language": {
                     "type": "string",
-                    "default": "eng",
-                    "description": "OCR language code (eng, fra, deu, spa, etc.)",
+                    "default": "en",
+                    "description": "OCR language code (en, fr, german, es, ch, etc.)",
                 },
                 "output_format": {
                     "type": "string",
@@ -107,7 +111,7 @@ class ExtractFileContent(BaseTool):
 
     def _get_description(self) -> str:
         """Get tool description"""
-        return """Extract text and data from various file formats for analysis and processing. SUPPORTED FORMATS: PDF (text extraction, table extraction), Images JPG/PNG (OCR with Tesseract), Spreadsheets CSV/Excel (parse data), Documents DOCX/TXT (text extraction). OPERATIONS: extract (get text content), ocr (optical character recognition on images), parse_data (structured data from CSV/Excel), extract_tables (tables from PDFs). USE CASES: Read invoices, contracts, forms, reports, spreadsheets for analysis and data processing. Requires valid file URL from Frappe file system. Returns extracted content in text or structured format suitable for further processing."""
+        return """Extract text and data from various file formats for analysis and processing. SUPPORTED FORMATS: PDF (text extraction, table extraction), Images JPG/PNG (OCR with PaddleOCR), Spreadsheets CSV/Excel (parse data), Documents DOCX/TXT (text extraction). OPERATIONS: extract (get text content), ocr (optical character recognition on images), parse_data (structured data from CSV/Excel), extract_tables (tables from PDFs). USE CASES: Read invoices, contracts, forms, reports, spreadsheets for analysis and data processing. Requires valid file URL from Frappe file system. Returns extracted content in text or structured format suitable for further processing."""
 
     def execute(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
         """Execute file content extraction"""
@@ -140,7 +144,7 @@ class ExtractFileContent(BaseTool):
             if operation == "extract":
                 result = self._extract_content(file_content, file_type, arguments)
             elif operation == "ocr":
-                result = self._perform_ocr(file_content, arguments)
+                result = self._perform_ocr(file_content, arguments, file_type=file_type)
             elif operation == "parse_data":
                 if file_type in ["csv", "excel"]:
                     result = self._extract_content(file_content, file_type, arguments)
@@ -254,17 +258,22 @@ class ExtractFileContent(BaseTool):
         return None
 
     def _get_file_content(self, file_doc) -> Optional[bytes]:
-        """Get file content as bytes"""
+        """Get file content as bytes — supports local files and S3 (frappe_s3_attachment)."""
         try:
+            # 1. Try local filesystem
             file_path = self._get_file_path(file_doc)
             if file_path and os.path.exists(file_path):
                 with open(file_path, "rb") as f:
                     return f.read()
 
-            # Try to get from file_doc content if stored
+            # 2. Try S3 via frappe_s3_attachment
+            s3_content = self._get_s3_content(file_doc)
+            if s3_content:
+                return s3_content
+
+            # 3. Fallback: inline content on the File doc
             if hasattr(file_doc, "content"):
                 if isinstance(file_doc.content, str):
-                    # Base64 encoded content
                     return base64.b64decode(file_doc.content)
                 return file_doc.content
 
@@ -272,6 +281,36 @@ class ExtractFileContent(BaseTool):
 
         except Exception as e:
             frappe.log_error(f"Error reading file content: {str(e)}")
+            return None
+
+    def _get_s3_content(self, file_doc) -> Optional[bytes]:
+        """Fetch file bytes from S3 if frappe_s3_attachment is installed."""
+        try:
+            file_url = file_doc.file_url or ""
+            if "frappe_s3_attachment" not in file_url:
+                return None
+
+            from frappe_s3_attachment.controller import S3Operations
+
+            # S3 key: prefer content_hash, fallback to parsing file_url
+            s3_key = (getattr(file_doc, "content_hash", "") or "").strip()
+            if not s3_key:
+                from urllib.parse import parse_qs, urlparse
+
+                parsed = urlparse(file_url)
+                s3_key = parse_qs(parsed.query).get("key", [""])[0]
+
+            if not s3_key:
+                return None
+
+            s3_ops = S3Operations()
+            response = s3_ops.read_file_from_s3(s3_key)
+            return response["Body"].read()
+
+        except ImportError:
+            return None
+        except Exception as e:
+            frappe.log_error(f"S3 file read failed: {str(e)}")
             return None
 
     def _detect_file_type(self, file_doc) -> str:
@@ -355,14 +394,9 @@ class ExtractFileContent(BaseTool):
 
             combined_text = "\n\n".join(text_content)
 
-            # If no text extracted, might be scanned PDF
+            # If no text extracted, this is likely a scanned PDF - auto-fallback to OCR
             if not combined_text.strip():
-                return {
-                    "success": True,
-                    "content": "",
-                    "message": "No text found in PDF. This might be a scanned document. Use operation='ocr' for scanned PDFs.",
-                    "pages": num_pages,
-                }
+                return self._perform_ocr(file_content, arguments, file_type="pdf")
 
             return {
                 "success": True,
@@ -376,52 +410,299 @@ class ExtractFileContent(BaseTool):
 
     def _extract_image_content(self, file_content: bytes, arguments: Dict[str, Any]) -> Dict[str, Any]:
         """Extract content from image using OCR"""
-        return self._perform_ocr(file_content, arguments)
+        return self._perform_ocr(file_content, arguments, file_type="image")
 
-    def _perform_ocr(self, file_content: bytes, arguments: Dict[str, Any]) -> Dict[str, Any]:
-        """Perform OCR on image content"""
+    def _get_ocr_settings(self) -> Dict[str, Any]:
+        """Get OCR backend configuration from Assistant Core Settings."""
         try:
-            # Check if pytesseract is available
-            try:
-                import pytesseract
+            settings = frappe.get_single("Assistant Core Settings")
+            return {
+                "backend": getattr(settings, "ocr_backend", "paddleocr") or "paddleocr",
+                "ocr_language": getattr(settings, "ocr_language", "en") or "en",
+                "paddleocr_timeout": int(getattr(settings, "paddleocr_timeout", 120) or 120),
+                "paddleocr_max_memory_mb": int(getattr(settings, "paddleocr_max_memory_mb", 2048) or 2048),
+                "ollama_url": getattr(settings, "ollama_api_url", "http://localhost:11434")
+                or "http://localhost:11434",
+                "ollama_model": getattr(settings, "ollama_vision_model", "deepseek-ocr:latest")
+                or "deepseek-ocr:latest",
+                "ollama_timeout": int(getattr(settings, "ollama_request_timeout", 120) or 120),
+            }
+        except Exception:
+            return {"backend": "paddleocr", "ocr_language": "en"}
+
+    def _get_ocr_language(self, arguments: Dict[str, Any], ocr_settings: Dict[str, Any]) -> str:
+        """Get OCR language, preferring the per-request argument over settings default."""
+        return arguments.get("language") or ocr_settings.get("ocr_language", "en")
+
+    def _perform_ocr(
+        self, file_content: bytes, arguments: Dict[str, Any], file_type: str = "image"
+    ) -> Dict[str, Any]:
+        """Perform OCR on image or PDF content.
+
+        Uses the configured backend (PaddleOCR by default, Ollama optional).
+        Falls back to PaddleOCR if Ollama fails or returns empty.
+
+        Args:
+            file_content: Raw file bytes
+            arguments: Tool arguments (language, max_pages, etc.)
+            file_type: File type string ("image" or "pdf")
+        """
+        ocr_settings = self._get_ocr_settings()
+
+        # Try Ollama vision backend if configured
+        if ocr_settings.get("backend") == "ollama":
+            result = self._try_ollama_ocr(file_content, arguments, file_type, ocr_settings)
+            if result and result.get("success") and result.get("content", "").strip():
+                return result
+            # Ollama failed or returned empty — fall through to PaddleOCR
+
+        # PaddleOCR path (default)
+        return self._perform_paddle_ocr(file_content, arguments, file_type, ocr_settings)
+
+    def _perform_paddle_ocr(
+        self, file_content: bytes, arguments: Dict[str, Any], file_type: str, ocr_settings: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Perform OCR using PaddleOCR in an isolated subprocess.
+
+        Spawns a child process to run PaddleOCR so that hangs or out-of-memory
+        crashes kill only the subprocess, not the Frappe worker. Communicates
+        via JSON over stdin/stdout.
+        """
+        language = self._get_ocr_language(arguments, ocr_settings)
+        timeout = ocr_settings.get("paddleocr_timeout", 120)
+        max_memory_mb = ocr_settings.get("paddleocr_max_memory_mb", 2048)
+        max_pages = arguments.get("max_pages", 50)
+
+        # Advisory memory check — logs a warning but does not block
+        self._check_available_memory(max_memory_mb)
+
+        # Write file content to a temp file for the subprocess
+        suffix = ".pdf" if file_type == "pdf" else ".png"
+        tmp_file = tempfile.NamedTemporaryFile(suffix=suffix, prefix="fac_ocr_", delete=False)
+        try:
+            if file_type != "pdf":
+                # Save image as PNG for consistent handling
                 from PIL import Image
-            except ImportError:
-                return {
-                    "success": False,
-                    "error": "OCR dependencies not installed. Please install pytesseract and Pillow.",
-                    "install_command": "pip install pytesseract pillow",
-                }
 
-            # Check if tesseract is installed on system
+                image = Image.open(io.BytesIO(file_content))
+                if image.mode in ("RGBA", "P"):
+                    image = image.convert("RGB")
+                image.save(tmp_file, format="PNG")
+            else:
+                tmp_file.write(file_content)
+            tmp_file.flush()
+            tmp_file.close()
+
+            # Build the JSON request for the subprocess
+            request_data = json.dumps(
+                {
+                    "file_path": tmp_file.name,
+                    "file_type": file_type,
+                    "language": language,
+                    "max_pages": max_pages,
+                    "max_memory_mb": max_memory_mb,
+                }
+            )
+
+            # Spawn isolated subprocess
+            proc = subprocess.Popen(
+                [sys.executable, "-m", "frappe_assistant_core.utils.ocr_subprocess"],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+
             try:
-                pytesseract.get_tesseract_version()
-            except Exception:
+                stdout, stderr = proc.communicate(
+                    input=request_data.encode("utf-8"),
+                    timeout=timeout,
+                )
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait()
+                frappe.log_error(
+                    title="PaddleOCR Timeout",
+                    message=f"PaddleOCR subprocess killed after {timeout}s timeout.",
+                )
                 return {
                     "success": False,
-                    "error": "Tesseract OCR not installed on system. Please install tesseract-ocr.",
-                    "install_command": "sudo apt-get install tesseract-ocr (Linux) or brew install tesseract (Mac)",
+                    "error": (
+                        f"PaddleOCR timed out after {timeout} seconds. "
+                        "The document may be too large or complex. "
+                        "You can increase the timeout in Assistant Core Settings > OCR."
+                    ),
+                    "ocr_backend": "paddleocr",
                 }
 
-            # Open image
-            image = Image.open(io.BytesIO(file_content))
+            if proc.returncode != 0:
+                error_msg = stderr.decode("utf-8", errors="replace").strip()
+                frappe.log_error(
+                    title="PaddleOCR Subprocess Error",
+                    message=f"PaddleOCR subprocess exited with code {proc.returncode}:\n{error_msg[:2000]}",
+                )
+                # Check for OOM patterns
+                if "MemoryError" in error_msg or "Cannot allocate memory" in error_msg:
+                    return {
+                        "success": False,
+                        "error": (
+                            f"PaddleOCR ran out of memory (limit: {max_memory_mb}MB). "
+                            "The document may be too large. "
+                            "You can increase the memory limit in Assistant Core Settings > OCR."
+                        ),
+                        "ocr_backend": "paddleocr",
+                    }
+                return {
+                    "success": False,
+                    "error": f"PaddleOCR failed: {error_msg[:500]}",
+                    "ocr_backend": "paddleocr",
+                }
 
-            # Perform OCR
-            language = arguments.get("language", "eng")
-            extracted_text = pytesseract.image_to_string(image, lang=language)
+            # Parse the JSON result from stdout
+            try:
+                result = json.loads(stdout.decode("utf-8"))
+            except (json.JSONDecodeError, UnicodeDecodeError) as e:
+                return {
+                    "success": False,
+                    "error": f"Failed to parse PaddleOCR output: {str(e)}",
+                    "ocr_backend": "paddleocr",
+                }
 
-            if not extracted_text.strip():
-                return {"success": True, "content": "", "message": "No text detected in image"}
+            result["ocr_backend"] = "paddleocr"
+            result["ocr_language"] = language
+            return result
 
-            return {"success": True, "content": extracted_text, "ocr_language": language}
+        finally:
+            try:
+                os.unlink(tmp_file.name)
+            except OSError:
+                pass
 
+    def _check_available_memory(self, required_mb: int) -> None:
+        """Log a warning if available system memory is below the required threshold.
+
+        Reads /proc/meminfo (Linux only). Advisory only — does not block the OCR call.
+        """
+        try:
+            with open("/proc/meminfo") as f:  # nosemgrep: frappe-security-file-traversal
+                for line in f:
+                    if line.startswith("MemAvailable:"):
+                        available_kb = int(line.split()[1])
+                        available_mb = available_kb // 1024
+                        if available_mb < required_mb:
+                            frappe.log_error(
+                                title="PaddleOCR Memory Warning",
+                                message=(
+                                    f"Low memory before PaddleOCR: {available_mb}MB available, "
+                                    f"may need up to {required_mb}MB. "
+                                    "OCR will proceed but may fail with out-of-memory error."
+                                ),
+                            )
+                        return
+        except Exception:
+            pass  # Non-critical; skip on non-Linux or permission errors
+
+    def _try_ollama_ocr(
+        self, file_content: bytes, arguments: Dict[str, Any], file_type: str, ocr_settings: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
+        """Try OCR via Ollama vision model. Returns None on failure to allow PaddleOCR fallback."""
+        try:
+            from PIL import Image
+
+            if file_type == "pdf":
+                return self._perform_ollama_pdf_ocr(file_content, arguments, ocr_settings)
+            else:
+                image = Image.open(io.BytesIO(file_content))
+                return self._ollama_extract_from_image(image, ocr_settings)
         except Exception as e:
-            # Fallback message if OCR fails
+            frappe.log_error(
+                title="Ollama OCR Error",
+                message=f"Ollama OCR failed, falling back to PaddleOCR: {str(e)}",
+            )
+            return None
+
+    def _ollama_extract_from_image(self, pil_image, ocr_settings: Dict[str, Any]) -> Dict[str, Any]:
+        """Send a single PIL image to Ollama vision model for text extraction."""
+        import requests
+
+        buf = io.BytesIO()
+        if pil_image.mode in ("RGBA", "P"):
+            pil_image = pil_image.convert("RGB")
+        pil_image.save(buf, format="JPEG", quality=85)
+        img_b64 = base64.b64encode(buf.getvalue()).decode()
+
+        url = f"{ocr_settings['ollama_url']}/api/generate"
+        payload = {
+            "model": ocr_settings["ollama_model"],
+            "prompt": "Extract all text from this document image exactly as it appears.",
+            "images": [img_b64],
+            "stream": False,
+        }
+
+        response = requests.post(url, json=payload, timeout=ocr_settings["ollama_timeout"])
+        response.raise_for_status()
+        result = response.json()
+
+        content = result.get("response", "").strip()
+        if not content:
+            return {"success": True, "content": "", "message": "Ollama returned no text"}
+        return {
+            "success": True,
+            "content": content,
+            "ocr_backend": "ollama",
+            "ocr_model": ocr_settings["ollama_model"],
+        }
+
+    def _perform_ollama_pdf_ocr(
+        self, file_content: bytes, arguments: Dict[str, Any], ocr_settings: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Extract text from PDF via Ollama. Renders pages with PyMuPDF, then sends to Ollama."""
+        try:
+            import fitz  # PyMuPDF
+        except ImportError:
+            return {
+                "success": False,
+                "error": "PyMuPDF (fitz) is required for Ollama PDF OCR. Install with: pip install pymupdf",
+            }
+
+        try:
+            pdf_doc = fitz.open(stream=file_content, filetype="pdf")
+        except Exception as e:
+            return {"success": False, "error": f"Failed to open PDF for OCR: {str(e)}"}
+
+        max_pages = arguments.get("max_pages", 50)
+        num_pages = min(len(pdf_doc), max_pages)
+
+        text_content = []
+        for page_num in range(num_pages):
+            page = pdf_doc[page_num]
+            pix = page.get_pixmap(dpi=150)
+            pil_image = pix.pil_image()
+
+            page_result = self._ollama_extract_from_image(pil_image, ocr_settings)
+            if page_result.get("success") and page_result.get("content", "").strip():
+                text_content.append(f"--- Page {page_num + 1} ---\n{page_result['content']}")
+
+        pdf_doc.close()
+
+        combined_text = "\n\n".join(text_content)
+
+        if not combined_text.strip():
             return {
                 "success": True,
-                "content": "[OCR not available - image file detected]",
-                "message": f"OCR failed: {str(e)}. To enable OCR, install tesseract-ocr system package.",
-                "fallback": True,
+                "content": "",
+                "message": "Ollama OCR completed but no text was detected.",
+                "pages": num_pages,
+                "ocr_backend": "ollama",
             }
+
+        return {
+            "success": True,
+            "content": combined_text,
+            "pages": num_pages,
+            "ocr_pages_with_text": len(text_content),
+            "ocr_backend": "ollama",
+            "ocr_model": ocr_settings["ollama_model"],
+        }
 
     def _extract_csv_content(self, file_content: bytes) -> Dict[str, Any]:
         """Extract content from CSV"""

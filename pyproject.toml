@@ -52,10 +52,11 @@ dependencies = [
     "pypdf>=3.0.0",
     "Pillow>=10.0.0",
     "python-docx>=0.8.11",
-    "pytesseract>=0.3.10",
     "chardet~=5.1.0",  # Compatible with frappe ~=5.1.0 requirement
-    # Advanced file processing
-    "pymupdf>=1.23.0",
+    # OCR dependencies
+    "paddleocr>=2.9.0",
+    "paddlepaddle>=2.6.0,<3.1.0",  # 3.3.0 has oneDNN/PIR bug on CPU
+    "pymupdf>=1.24.0",  # PDF page rendering for Ollama vision OCR
     "python-magic>=0.4.27",
     "beautifulsoup4~=4.12.2",  # Compatible with frappe ~=4.12.2 requirement
 ]

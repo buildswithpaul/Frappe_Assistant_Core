@@ -132,6 +132,9 @@ def after_install():
     # Sync tool configurations from discovered plugins
     _sync_tool_configurations()
 
+    # Set default values for Assistant Core Settings
+    _set_settings_defaults()
+
 
 def after_uninstall():
     """
@@ -540,6 +543,29 @@ def _sync_plugin_configurations():
 
     except Exception as e:
         frappe.logger("migration_hooks").error(f"Failed to sync plugin configurations: {str(e)}")
+
+
+def _set_settings_defaults():
+    """Set default values for Assistant Core Settings on fresh install.
+
+    Reads defaults from DocField metadata and applies them, matching
+    ERPNext's pattern. For existing sites, use migration patches instead.
+    """
+    default_values = frappe.db.sql(
+        """SELECT fieldname, `default` FROM `tabDocField`
+        WHERE parent=%s AND `default` IS NOT NULL AND `default` != ''""",
+        "Assistant Core Settings",
+    )
+    if default_values:
+        try:
+            doc = frappe.get_doc("Assistant Core Settings")
+            for fieldname, value in default_values:
+                doc.set(fieldname, value)
+            doc.flags.ignore_mandatory = True
+            doc.save(ignore_permissions=True)
+            frappe.logger("migration_hooks").info("Set default values for Assistant Core Settings")
+        except frappe.ValidationError:
+            pass
 
 
 def _sync_tool_configurations():
