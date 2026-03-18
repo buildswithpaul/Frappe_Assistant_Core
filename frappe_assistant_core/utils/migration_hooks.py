@@ -71,9 +71,6 @@ def after_migrate():
     # Sync tool configurations from discovered plugins
     _sync_tool_configurations()
 
-    # Set default values for any new settings fields added during migration
-    _set_settings_defaults()
-
 
 def before_migrate():
     """
@@ -135,8 +132,8 @@ def after_install():
     # Sync tool configurations from discovered plugins
     _sync_tool_configurations()
 
-    # Set default values for Assistant Core Settings (force=True for fresh install)
-    _set_settings_defaults(force=True)
+    # Set default values for Assistant Core Settings
+    _set_settings_defaults()
 
 
 def after_uninstall():
@@ -548,63 +545,27 @@ def _sync_plugin_configurations():
         frappe.logger("migration_hooks").error(f"Failed to sync plugin configurations: {str(e)}")
 
 
-def _set_settings_defaults(force=False):
-    """Set default values for Assistant Core Settings.
+def _set_settings_defaults():
+    """Set default values for Assistant Core Settings on fresh install.
 
-    Frappe doesn't populate JSON-defined defaults when a Single DocType
-    is first created. This ensures critical settings have sensible values.
-
-    Args:
-        force: If True, set all defaults unconditionally (fresh install).
-               If False, only set defaults for fields not yet in tabSingles (migration).
+    Reads defaults from DocField metadata and applies them, matching
+    ERPNext's pattern. For existing sites, use migration patches instead.
     """
-    defaults = {
-        "server_enabled": 1,
-        "ocr_backend": "paddleocr",
-        "ocr_language": "en",
-        "paddleocr_timeout": 120,
-        "paddleocr_max_memory_mb": 2048,
-        "ollama_api_url": "http://localhost:11434",
-        "ollama_vision_model": "deepseek-ocr:latest",
-        "ollama_request_timeout": 120,
-        "code_execution_timeout": 30,
-        "code_execution_max_memory_mb": 512,
-        "code_execution_max_cpu_seconds": 60,
-        "code_execution_max_recursion": 100,
-        "audit_log_retention_days": 180,
-        "mcp_server_name": "frappe-assistant-core",
-        "enable_dynamic_client_registration": 1,
-        "show_auth_server_metadata": 1,
-        "show_protected_resource_metadata": 1,
-        "resource_name": "Frappe Assistant Core",
-    }
-
-    try:
-        settings = frappe.get_single("Assistant Core Settings")
-        updated = False
-
-        for field, default_value in defaults.items():
-            if force:
-                setattr(settings, field, default_value)
-                updated = True
-            else:
-                # Only set default if field has no row in tabSingles at all.
-                # This distinguishes "never set" from "user set to 0",
-                # since Frappe's cint() casts None → 0 for Int/Check fields.
-                exists = frappe.db.sql(
-                    "SELECT 1 FROM `tabSingles` WHERE doctype=%s AND field=%s LIMIT 1",
-                    ("Assistant Core Settings", field),
-                )
-                if not exists:
-                    setattr(settings, field, default_value)
-                    updated = True
-
-        if updated:
-            settings.save(ignore_permissions=True)
+    default_values = frappe.db.sql(
+        """SELECT fieldname, `default` FROM `tabDocField`
+        WHERE parent=%s AND `default` IS NOT NULL AND `default` != ''""",
+        "Assistant Core Settings",
+    )
+    if default_values:
+        try:
+            doc = frappe.get_doc("Assistant Core Settings")
+            for fieldname, value in default_values:
+                doc.set(fieldname, value)
+            doc.flags.ignore_mandatory = True
+            doc.save(ignore_permissions=True)
             frappe.logger("migration_hooks").info("Set default values for Assistant Core Settings")
-
-    except Exception as e:
-        frappe.logger("migration_hooks").warning(f"Could not set settings defaults: {e}")
+        except frappe.ValidationError:
+            pass
 
 
 def _sync_tool_configurations():
