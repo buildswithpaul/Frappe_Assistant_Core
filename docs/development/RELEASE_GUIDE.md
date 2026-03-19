@@ -48,8 +48,9 @@ All commit messages must follow the [Conventional Commits](https://www.conventio
 Releases are fully automated via `semantic-release` (same toolchain as Frappe and ERPNext).
 
 1. Merge feature/bug/improvement PRs into `develop`
-2. When ready to release: merge `develop` into `main` (via PR or direct merge)
-3. **Automatic**: semantic-release runs on push to `main` and:
+2. Write the change log file (see "Change Log Files" section below)
+3. When ready to release: merge `develop` into `main` (via PR or direct merge)
+4. **Automatic**: semantic-release runs on push to `main` and:
    - Detects version bump from commit messages
    - Updates `pyproject.toml` and `frappe_assistant_core/__init__.py`
    - Commits, tags, and pushes
@@ -57,6 +58,28 @@ Releases are fully automated via `semantic-release` (same toolchain as Frappe an
 4. Merge `main` back into `develop`: `git checkout develop && git merge main`
 
 No manual version bumping, tagging, or release creation needed.
+
+## Change Log Files
+
+Frappe reads `frappe_assistant_core/change_log/v2/vX_Y_Z.md` files to show the "What's New" dialog in the UI after users upgrade. These are written manually before merging to main (same as Frappe and ERPNext).
+
+**File path**: `frappe_assistant_core/change_log/v{major}/v{major}_{minor}_{patch}.md`
+
+**Format**:
+```markdown
+## Version X.Y.Z
+
+### Features
+- **Feature name** — short description
+
+### Fixes
+- **Fix name** — short description
+
+### Improvements
+- **Improvement name** — short description
+```
+
+For hotfixes, include the change log file in the hotfix branch before merging to main.
 
 ## Hotfix Flow
 

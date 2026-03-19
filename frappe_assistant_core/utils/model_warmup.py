@@ -21,6 +21,7 @@ Pre-downloads PaddleOCR models during app installation so the first OCR
 call doesn't trigger a slow download that may exceed the subprocess timeout.
 """
 
+import importlib.util
 import json
 import subprocess
 import sys
@@ -36,6 +37,13 @@ def warm_paddleocr_models():
     downloaded on the first OCR call instead.
     """
     logger = frappe.logger("model_warmup")
+
+    if importlib.util.find_spec("paddleocr") is None:
+        logger.info(
+            "Skipping PaddleOCR model pre-download because optional OCR dependencies are not installed"
+        )
+        print("Skipping PaddleOCR model pre-download: optional OCR dependencies are not installed.")
+        return
 
     # Read configured language, falling back to "en"
     try:
@@ -53,6 +61,8 @@ def warm_paddleocr_models():
             "language": language,
         }
     )
+
+    proc = None
 
     try:
         proc = subprocess.Popen(
@@ -88,8 +98,9 @@ def warm_paddleocr_models():
             )
 
     except subprocess.TimeoutExpired:
-        proc.kill()
-        proc.wait()
+        if proc is not None:
+            proc.kill()
+            proc.wait()
         logger.warning(
             "PaddleOCR model pre-download timed out after 600s. "
             "Models will be downloaded on the first OCR call."
