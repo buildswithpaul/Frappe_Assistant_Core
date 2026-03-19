@@ -20,6 +20,7 @@ Extracts content from various file formats (PDF, images, CSV, Excel, documents) 
 """
 
 import base64
+import importlib.util
 import io
 import json
 import mimetypes
@@ -434,6 +435,22 @@ class ExtractFileContent(BaseTool):
         """Get OCR language, preferring the per-request argument over settings default."""
         return arguments.get("language") or ocr_settings.get("ocr_language", "en")
 
+    def _is_paddle_ocr_available(self) -> bool:
+        """Check whether PaddleOCR runtime dependencies are installed."""
+        return importlib.util.find_spec("paddleocr") is not None
+
+    def _missing_paddle_ocr_response(self) -> Dict[str, Any]:
+        """Return a clear error when PaddleOCR dependencies are unavailable."""
+        return {
+            "success": False,
+            "error": (
+                "PaddleOCR is not installed in this environment. "
+                "Install the optional OCR dependencies for this app environment "
+                "(paddleocr and paddlepaddle) to enable local OCR."
+            ),
+            "ocr_backend": "paddleocr",
+        }
+
     def _perform_ocr(
         self, file_content: bytes, arguments: Dict[str, Any], file_type: str = "image"
     ) -> Dict[str, Any]:
@@ -454,9 +471,16 @@ class ExtractFileContent(BaseTool):
             result = self._try_ollama_ocr(file_content, arguments, file_type, ocr_settings)
             if result and result.get("success") and result.get("content", "").strip():
                 return result
-            # Ollama failed or returned empty — fall through to PaddleOCR
+            if self._is_paddle_ocr_available():
+                # Ollama failed or returned empty — fall through to PaddleOCR
+                return self._perform_paddle_ocr(file_content, arguments, file_type, ocr_settings)
+            if result:
+                return result
+            return self._missing_paddle_ocr_response()
 
         # PaddleOCR path (default)
+        if not self._is_paddle_ocr_available():
+            return self._missing_paddle_ocr_response()
         return self._perform_paddle_ocr(file_content, arguments, file_type, ocr_settings)
 
     def _perform_paddle_ocr(
