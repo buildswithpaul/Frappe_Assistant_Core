@@ -53,15 +53,15 @@ dependencies = [
     "Pillow>=10.0.0",
     "python-docx>=0.8.11",
     "chardet~=5.1.0",  # Compatible with frappe ~=5.1.0 requirement
-    # OCR dependencies
-    "paddleocr>=2.9.0",
-    "paddlepaddle>=2.6.0,<3.1.0",  # 3.3.0 has oneDNN/PIR bug on CPU
-    "pymupdf>=1.24.0",  # PDF page rendering for Ollama vision OCR
-    "python-magic>=0.4.27",
     "beautifulsoup4~=4.12.2",  # Compatible with frappe ~=4.12.2 requirement
 ]
 
 [project.optional-dependencies]
+ocr = [
+    "paddleocr>=2.9.0",
+    "paddlepaddle>=2.6.0,<3.1.0",  # 3.3.0 has oneDNN/PIR bug on CPU; no cp314 wheels yet
+    "pymupdf>=1.24.0",  # PDF page rendering for OCR
+]
 dev = [
     "pytest>=6.0",
     "pytest-cov>=2.12",

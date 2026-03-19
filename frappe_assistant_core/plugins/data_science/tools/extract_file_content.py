@@ -468,6 +468,20 @@ class ExtractFileContent(BaseTool):
         crashes kill only the subprocess, not the Frappe worker. Communicates
         via JSON over stdin/stdout.
         """
+        # Check if PaddleOCR is installed (optional dependency)
+        try:
+            import paddleocr  # noqa: F401
+        except ImportError:
+            return {
+                "success": False,
+                "error": (
+                    "PaddleOCR is not installed. Install OCR dependencies with: "
+                    "pip install frappe-assistant-core[ocr]  — "
+                    "Or switch to Ollama vision backend in Assistant Core Settings > OCR."
+                ),
+                "ocr_backend": "paddleocr",
+            }
+
         language = self._get_ocr_language(arguments, ocr_settings)
         timeout = ocr_settings.get("paddleocr_timeout", 120)
         max_memory_mb = ocr_settings.get("paddleocr_max_memory_mb", 2048)
