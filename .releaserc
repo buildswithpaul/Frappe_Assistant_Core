@@ -1,0 +1,17 @@
+{
+  "branches": ["main"],
+  "plugins": [
+    ["@semantic-release/commit-analyzer", {
+      "preset": "angular"
+    }],
+    "@semantic-release/release-notes-generator",
+    ["@semantic-release/exec", {
+      "prepareCmd": "sed -i -E 's/^version = \"[0-9]+\\.[0-9]+\\.[0-9]+\"/version = \"${nextRelease.version}\"/' pyproject.toml && sed -i -E 's/__version__ = \"[0-9]+\\.[0-9]+\\.[0-9]+\"/__version__ = \"${nextRelease.version}\"/' frappe_assistant_core/__init__.py"
+    }],
+    ["@semantic-release/git", {
+      "assets": ["pyproject.toml", "frappe_assistant_core/__init__.py"],
+      "message": "chore(release): v${nextRelease.version}\n\n${nextRelease.notes}"
+    }],
+    "@semantic-release/github"
+  ]
+}
