@@ -24,6 +24,7 @@ controls to prevent runaway code from crashing the system.
 import platform
 import signal
 import sys
+import threading
 from contextlib import contextmanager
 from typing import Any, Dict, Optional
 
@@ -80,9 +81,8 @@ def timeout_limit(seconds: int = DEFAULT_TIMEOUT_SECONDS):
         This uses SIGALRM which only works on Unix-like systems.
         On Windows, this is a no-op (timeout not enforced).
     """
-    if platform.system() == "Windows":
-        # Windows doesn't support SIGALRM, skip timeout enforcement
-        frappe.logger("execution_limits").warning("Timeout enforcement not available on Windows")
+    if platform.system() == "Windows" or threading.current_thread() is not threading.main_thread():
+        # SIGALRM only works on Unix main thread; skip in worker threads (gunicorn) and Windows
         yield
         return
 
