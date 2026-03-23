@@ -188,5 +188,45 @@
     "status": "Published",
     "visibility": "Public",
     "content_file": "search_vector.md"
+  },
+  {
+    "skill_id": "report-list-usage",
+    "title": "How to Use report_list",
+    "description": "Discovering available reports by module — part of the report workflow (list → requirements → generate)",
+    "skill_type": "Tool Usage",
+    "linked_tool": "report_list",
+    "status": "Published",
+    "visibility": "Public",
+    "content_file": "generate_report.md"
+  },
+  {
+    "skill_id": "report-requirements-usage",
+    "title": "How to Use report_requirements",
+    "description": "Getting mandatory filters and valid options for a specific report — part of the report workflow",
+    "skill_type": "Tool Usage",
+    "linked_tool": "report_requirements",
+    "status": "Published",
+    "visibility": "Public",
+    "content_file": "generate_report.md"
+  },
+  {
+    "skill_id": "create-dashboard-usage",
+    "title": "How to Use create_dashboard",
+    "description": "Creating dashboards that link existing charts — create charts first, then assemble into a dashboard",
+    "skill_type": "Tool Usage",
+    "linked_tool": "create_dashboard",
+    "status": "Published",
+    "visibility": "Public",
+    "content_file": "create_dashboard_chart.md"
+  },
+  {
+    "skill_id": "fetch-vector-usage",
+    "title": "How to Use fetch (Vector Fetch)",
+    "description": "Retrieving full document content by ID after vector search — uses doctype/name format",
+    "skill_type": "Tool Usage",
+    "linked_tool": "fetch",
+    "status": "Published",
+    "visibility": "Public",
+    "content_file": "search_vector.md"
   }
 ]
