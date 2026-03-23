@@ -112,9 +112,8 @@
   {
    "description": "Full skill content in Markdown. This is the knowledge document that teaches the LLM how to use the tool effectively.",
    "fieldname": "content",
-   "fieldtype": "Code",
+   "fieldtype": "Markdown Editor",
    "label": "Content",
-   "options": "Markdown",
    "reqd": 1
   },
   {
