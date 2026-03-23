@@ -67,6 +67,9 @@ class CorePlugin(BasePlugin):
             "report_requirements",
             # Workflow tools
             "run_workflow",
+            # Skill tools
+            "list_skills",
+            "get_skill",
         ]
 
     def validate_environment(self):
