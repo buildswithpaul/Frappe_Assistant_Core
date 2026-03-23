@@ -41,6 +41,8 @@
   "mcp_server_name",
   "mcp_protocol_version",
   "mcp_transport_type",
+  "skills_section",
+  "skill_mode",
   "oauth_tab",
   "oauth_authorization_section",
   "enable_dynamic_client_registration",
@@ -284,6 +286,19 @@
    "read_only": 1,
    "default": "StreamableHTTP",
    "description": "Transport protocol used for MCP communication. StreamableHTTP enables OAuth-based authentication."
+  },
+  {
+   "fieldname": "skills_section",
+   "fieldtype": "Section Break",
+   "label": "Skills Configuration"
+  },
+  {
+   "default": "supplementary",
+   "description": "Supplementary: tools keep full descriptions, skills provide additional guidance. Replace: tool descriptions are minimized when a skill exists, saving tokens.",
+   "fieldname": "skill_mode",
+   "fieldtype": "Select",
+   "label": "Skill Mode",
+   "options": "supplementary\nreplace"
   },
   {
    "fieldname": "oauth_tab",
