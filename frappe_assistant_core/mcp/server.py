@@ -197,6 +197,8 @@ class MCPServer:
                 result = self._handle_resources_list(params, request_id)
             elif method == "resources/read":
                 result = self._handle_resources_read(params, request_id)
+            elif method == "resources/templates/list":
+                result = {"resourceTemplates": []}
             elif method == "prompts/list":
                 result = self._handle_prompts_list(params, request_id)
             elif method == "prompts/get":
@@ -276,8 +278,8 @@ class MCPServer:
 
             # In replace mode, minimize descriptions for tools with linked skills
             if skill_replace_map and tool["name"] in skill_replace_map:
-                one_liner = skill_replace_map[tool["name"]]
-                description = f"{tool['name']}: {one_liner}. Use get_skill tool for detailed guidance."
+                skill_info = skill_replace_map[tool["name"]]
+                description = f"{tool['name']}: {skill_info['description']}. Detailed guidance: fac://skills/{skill_info['skill_id']}"
 
             tool_spec = {
                 "name": tool["name"],
