@@ -260,13 +260,13 @@ class SkillManager:
 
         return False
 
-    def get_tool_skill_map(self) -> Dict[str, str]:
+    def get_tool_skill_map(self) -> Dict[str, Dict[str, str]]:
         """
-        Get a map of tool_name -> one-liner description for all published skills
+        Get a map of tool_name -> skill info for all published skills
         with linked tools. Used for token optimization in replace mode.
 
         Returns:
-            Dict mapping tool names to skill one-liner descriptions
+            Dict mapping tool names to {"description": ..., "skill_id": ...}
         """
         skills = frappe.get_all(
             "Skill",
@@ -275,9 +275,9 @@ class SkillManager:
                 "skill_type": "Tool Usage",
                 "linked_tool": ["is", "set"],
             },
-            fields=["linked_tool", "description"],
+            fields=["linked_tool", "description", "skill_id"],
         )
-        return {s.linked_tool: s.description for s in skills}
+        return {s.linked_tool: {"description": s.description, "skill_id": s.skill_id} for s in skills}
 
 
 # Global manager instance
