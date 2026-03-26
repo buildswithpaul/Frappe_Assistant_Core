@@ -228,5 +228,15 @@
     "status": "Published",
     "visibility": "Public",
     "content_file": "search_vector.md"
+  },
+  {
+  "skill_id": "insights-dashboard",
+  "title": "How to Create Dashboards in Frappe Insights v3",
+  "description": "Creating workbooks, queries, charts, and dashboards in Frappe Insights v3 — correct doctypes, config schemas, manifest updates, and common pitfalls",
+  "skill_type": "Workflow",
+  "linked_tool": null,
+  "status": "Published",
+  "visibility": "Public",
+  "content_file": "insight_v3_skill.md"
   }
 ]
