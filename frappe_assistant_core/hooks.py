@@ -112,7 +112,7 @@ after_uninstall = "frappe_assistant_core.utils.migration_hooks.after_uninstall"
 permission_query_conditions = {
     "Assistant Audit Log": "frappe_assistant_core.utils.permissions.get_audit_permission_query_conditions",
     "Prompt Template": "frappe_assistant_core.utils.permissions.get_prompt_permission_query_conditions",
-    "Skill": "frappe_assistant_core.utils.permissions.get_skill_permission_query_conditions",
+    "FAC Skill": "frappe_assistant_core.utils.permissions.get_skill_permission_query_conditions",
 }
 
 # has_permission = {

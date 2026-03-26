@@ -19,7 +19,7 @@ from frappe import _
 from frappe.model.document import Document
 
 
-class Skill(Document):
+class FACSkill(Document):
     def validate(self):
         """Validate skill before save."""
         self.validate_skill_id()
@@ -35,7 +35,7 @@ class Skill(Document):
             frappe.throw(_("Skill ID must contain only lowercase letters, numbers, underscores, and hyphens"))
 
         existing = frappe.db.get_value(
-            "Skill", {"skill_id": self.skill_id, "name": ["!=", self.name or ""]}, "name"
+            "FAC Skill", {"skill_id": self.skill_id, "name": ["!=", self.name or ""]}, "name"
         )
         if existing:
             frappe.throw(_("Skill ID '{0}' already exists").format(self.skill_id))
