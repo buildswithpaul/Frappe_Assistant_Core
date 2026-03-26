@@ -52,7 +52,7 @@ class SkillManager:
 
         # 1. User's own skills (any status)
         own_skills = frappe.get_all(
-            "Skill",
+            "FAC Skill",
             filters={"owner_user": user},
             fields=[
                 "name",
@@ -72,7 +72,7 @@ class SkillManager:
 
         # 2. Published public skills
         public_skills = frappe.get_all(
-            "Skill",
+            "FAC Skill",
             filters={"status": "Published", "visibility": "Public", "owner_user": ["!=", user]},
             fields=[
                 "name",
@@ -99,7 +99,7 @@ class SkillManager:
 
         # 4. System skills (is_system=1, status=Published)
         system_skills = frappe.get_all(
-            "Skill",
+            "FAC Skill",
             filters={"is_system": 1, "status": "Published", "owner_user": ["!=", user]},
             fields=[
                 "name",
@@ -129,9 +129,9 @@ class SkillManager:
                 """
                 SELECT DISTINCT sk.name, sk.skill_id, sk.title, sk.description,
                        sk.status, sk.skill_type, sk.linked_tool, sk.category
-                FROM `tabSkill` sk
+                FROM `tabFAC Skill` sk
                 INNER JOIN `tabHas Role` hr ON hr.parent = sk.name
-                    AND hr.parenttype = 'Skill'
+                    AND hr.parenttype = 'FAC Skill'
                 WHERE sk.status = 'Published'
                   AND sk.visibility = 'Shared'
                   AND hr.role IN %(roles)s
@@ -173,7 +173,7 @@ class SkillManager:
             Markdown content string, or None if not found
         """
         skill_name = frappe.db.get_value(
-            "Skill",
+            "FAC Skill",
             {"skill_id": skill_id, "status": ["in", ["Published", "Draft"]]},
             "name",
         )
@@ -181,7 +181,7 @@ class SkillManager:
         if not skill_name:
             return None
 
-        skill_doc = frappe.get_doc("Skill", skill_name)
+        skill_doc = frappe.get_doc("FAC Skill", skill_name)
 
         if not self._user_can_access_skill(skill_doc):
             frappe.throw(_("You don't have permission to access this skill"), frappe.PermissionError)
@@ -201,14 +201,14 @@ class SkillManager:
             Skill info dict or None
         """
         skill_name = frappe.db.get_value(
-            "Skill",
+            "FAC Skill",
             {"linked_tool": tool_name, "status": "Published"},
             "name",
         )
         if not skill_name:
             return None
 
-        skill_doc = frappe.get_doc("Skill", skill_name)
+        skill_doc = frappe.get_doc("FAC Skill", skill_name)
         if not self._user_can_access_skill(skill_doc):
             return None
 
@@ -227,7 +227,7 @@ class SkillManager:
         try:
             frappe.db.sql(
                 """
-                UPDATE `tabSkill`
+                UPDATE `tabFAC Skill`
                 SET use_count = use_count + 1, last_used = NOW()
                 WHERE name = %s
             """,
@@ -269,7 +269,7 @@ class SkillManager:
             Dict mapping tool names to {"description": ..., "skill_id": ...}
         """
         skills = frappe.get_all(
-            "Skill",
+            "FAC Skill",
             filters={
                 "status": "Published",
                 "skill_type": "Tool Usage",
@@ -352,11 +352,11 @@ def handle_resources_read(params: Dict[str, Any], request_id: Optional[Any] = No
 
 
 def _should_use_skills() -> bool:
-    """Check if Skill table exists and has published skills."""
+    """Check if FAC Skill table exists and has published skills."""
     try:
-        if not frappe.db.table_exists("Skill"):
+        if not frappe.db.table_exists("FAC Skill"):
             return False
-        count = frappe.db.count("Skill", {"status": "Published"})
+        count = frappe.db.count("FAC Skill", {"status": "Published"})
         return count > 0
     except Exception:
         return False

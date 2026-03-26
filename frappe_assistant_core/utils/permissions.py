@@ -152,24 +152,24 @@ def get_skill_permission_query_conditions(user=None):
     conditions = []
 
     # 1. User's own skills
-    conditions.append(f"`tabSkill`.owner_user = {escaped_user}")
+    conditions.append(f"`tabFAC Skill`.owner_user = {escaped_user}")
 
     # 2. Published + Public skills
-    conditions.append("(`tabSkill`.status = 'Published' AND `tabSkill`.visibility = 'Public')")
+    conditions.append("(`tabFAC Skill`.status = 'Published' AND `tabFAC Skill`.visibility = 'Public')")
 
     # 3. Published + System skills
-    conditions.append("(`tabSkill`.status = 'Published' AND `tabSkill`.is_system = 1)")
+    conditions.append("(`tabFAC Skill`.status = 'Published' AND `tabFAC Skill`.is_system = 1)")
 
     # 4. Published + Shared skills with user's roles
     if user_roles:
         escaped_roles = ", ".join(frappe.db.escape(r) for r in user_roles)
         conditions.append(f"""
-            (`tabSkill`.status = 'Published'
-             AND `tabSkill`.visibility = 'Shared'
+            (`tabFAC Skill`.status = 'Published'
+             AND `tabFAC Skill`.visibility = 'Shared'
              AND EXISTS (
                 SELECT 1 FROM `tabHas Role` hr
-                WHERE hr.parent = `tabSkill`.name
-                  AND hr.parenttype = 'Skill'
+                WHERE hr.parent = `tabFAC Skill`.name
+                  AND hr.parenttype = 'FAC Skill'
                   AND hr.role IN ({escaped_roles})
              ))
         """)

@@ -472,7 +472,7 @@ def _install_system_skills():
 
     try:
         # Check if Skill table exists
-        if not frappe.db.table_exists("Skill"):
+        if not frappe.db.table_exists("FAC Skill"):
             frappe.logger("migration_hooks").info(
                 "Skill table not yet created, skipping system skill installation"
             )
@@ -497,13 +497,13 @@ def _install_system_skills():
 
         # Clean up system skills that are no longer in the manifest
         existing_system_skills = frappe.get_all(
-            "Skill", filters={"is_system": 1}, fields=["name", "skill_id"]
+            "FAC Skill", filters={"is_system": 1}, fields=["name", "skill_id"]
         )
 
         deleted_count = 0
         for existing in existing_system_skills:
             if existing.skill_id not in valid_skill_ids:
-                doc = frappe.get_doc("Skill", existing.name)
+                doc = frappe.get_doc("FAC Skill", existing.name)
                 doc.flags.allow_system_delete = True
                 doc.delete(ignore_permissions=True)
                 deleted_count += 1
@@ -528,11 +528,11 @@ def _install_system_skills():
                     continue
 
             # Check if system skill already exists
-            existing = frappe.db.get_value("Skill", {"skill_id": skill_id, "is_system": 1}, "name")
+            existing = frappe.db.get_value("FAC Skill", {"skill_id": skill_id, "is_system": 1}, "name")
 
             if existing:
                 # Update existing system skill
-                doc = frappe.get_doc("Skill", existing)
+                doc = frappe.get_doc("FAC Skill", existing)
 
                 needs_update = False
                 for field in ["title", "description", "skill_type", "linked_tool", "category"]:
@@ -551,7 +551,7 @@ def _install_system_skills():
                     frappe.logger("migration_hooks").debug(f"Updated system skill: {skill_id}")
             else:
                 # Create new system skill
-                doc = frappe.new_doc("Skill")
+                doc = frappe.new_doc("FAC Skill")
                 doc.skill_id = skill_id
                 doc.title = skill_data.get("title")
                 doc.description = skill_data.get("description")
