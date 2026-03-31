@@ -56,7 +56,8 @@ class DataSciencePlugin(BasePlugin):
             "run_python_code",
             "analyze_business_data",
             "run_database_query",
-            "extract_file_content",  # File content extraction tool
+            "extract_file_content",
+            "create_visualization",
         ]
 
     def validate_environment(self) -> Tuple[bool, Optional[str]]:
