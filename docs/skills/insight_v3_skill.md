@@ -277,6 +277,139 @@ create_document(
 - `x + w` must not exceed 20 (items wrap otherwise)
 - `y` values should be sequential (no gaps); items stack vertically
 
+---
+
+## Adding Filters to a Dashboard
+
+**ALWAYS add filters to every dashboard.** A dashboard without filters forces users to look at
+all-time data with no way to slice by date, user, or any dimension. Filters are what make a
+dashboard actually useful.
+
+### How Filters Work in Insights v3
+
+Filters are **dashboard-level items** placed in the `items` JSON — the same array as charts and
+text blocks. There is no way to embed a filter inside an individual chart card. Instead, the
+recommended pattern is to place filter widgets **directly above the chart(s) they control**,
+linked only to those charts. This makes them feel per-chart even though they are technically
+dashboard-level.
+
+Each filter item has a `links` object that maps **chart name → query column reference**. The
+column reference format is: `` `<query_name>`.`<column_name>` `` (backtick-quoted, both parts).
+
+### Filter Item Schema
+
+```json
+{
+  "type": "filter",
+  "filter_name": "From Date",
+  "filter_type": "Date",
+  "layout": {"x": 0, "y": 1, "w": 4, "h": 1, "i": "flt-001", "moved": false},
+  "links": {
+    "<chart_name>": "`<query_name>`.`<column_name>`"
+  }
+}
+```
+
+**filter_type valid values:** `Date`, `String`, `Integer`, `Decimal`
+
+### Full Example: Date Range + String Filter
+
+```python
+items = [
+  # Section heading
+  {"type": "text", "text": "<b>Issues by Project</b>",
+   "layout": {"x": 0, "y": 0, "w": 20, "h": 1, "i": "sec-001", "moved": False}},
+
+  # Filter row — placed directly above the chart it controls
+  {
+    "type": "filter",
+    "filter_name": "From Date",
+    "filter_type": "Date",
+    "layout": {"x": 0, "y": 1, "w": 4, "h": 1, "i": "flt-001", "moved": False},
+    "links": {
+      "28jo5dmvrg": "`1v34po75e2`.`creation`"
+      #              ^chart name    ^query name  ^column name
+    }
+  },
+  {
+    "type": "filter",
+    "filter_name": "To Date",
+    "filter_type": "Date",
+    "layout": {"x": 4, "y": 1, "w": 4, "h": 1, "i": "flt-002", "moved": False},
+    "links": {
+      "28jo5dmvrg": "`1v34po75e2`.`creation`"
+    }
+  },
+  {
+    "type": "filter",
+    "filter_name": "Project",
+    "filter_type": "String",
+    "layout": {"x": 8, "y": 1, "w": 4, "h": 1, "i": "flt-003", "moved": False},
+    "links": {
+      "28jo5dmvrg": "`1v34po75e2`.`project_name`"
+    }
+  },
+
+  # The chart itself
+  {
+    "type": "chart",
+    "chart": "28jo5dmvrg",
+    "layout": {"x": 0, "y": 2, "w": 20, "h": 10, "i": "chart-001", "moved": False}
+  }
+]
+```
+
+### Linking One Filter to Multiple Charts
+
+A single filter can fan out to control multiple charts simultaneously — just add more entries
+to the `links` object, one per chart:
+
+```json
+{
+  "type": "filter",
+  "filter_name": "From Date",
+  "filter_type": "Date",
+  "layout": {"x": 0, "y": 0, "w": 4, "h": 1, "i": "flt-global-from", "moved": false},
+  "links": {
+    "chart_name_1": "`query_name_1`.`creation`",
+    "chart_name_2": "`query_name_2`.`creation`",
+    "chart_name_3": "`query_name_3`.`timestamp`"
+  }
+}
+```
+
+### ⚠️ Critical Filter Pitfalls
+
+**PITFALL 1 — Never link a filter to a KPI / Number card query.**
+Number card queries return a single aggregated scalar (e.g. `COUNT(*) AS Total`). They have
+no `user`, `date`, or dimension columns to filter on. Linking a `User` or `Date` filter to a
+Number card query will cause the error:
+> *"Column 'user' is not found in table. Existing columns: 'Total Calls'."*
+
+**Fix:** In the filter's `links` object, only include charts whose underlying queries actually
+SELECT the column being filtered. Omit all Number card charts from filter links entirely.
+
+**PITFALL 2 — Column name in links must match the SQL alias exactly.**
+If the SQL uses `DATE(timestamp) AS date`, the filter link must reference `` `query`.`date` ``,
+not `` `query`.`timestamp` ``.
+
+**PITFALL 3 — `i` values must be unique across ALL items** (charts, text, filters).
+Reusing an `i` value causes the grid to collapse items on top of each other silently.
+
+### Recommended Filter Layout Pattern
+
+Always place filters in a dedicated row immediately above the section they control, with a
+section heading text item above the filter row:
+
+```
+y=0  Section heading text (full width, h=1)
+y=1  Filter row: [From Date][To Date][Dimension filter]  (h=1 each)
+y=2  Chart(s) the filters apply to
+```
+
+This gives the dashboard a clear visual hierarchy and makes it obvious which filters affect
+which charts.
+
 ### Step 5: Update the Workbook Manifests
 
 This is the step most likely to be forgotten — without it the sidebar is empty.
@@ -317,6 +450,18 @@ update_document(
 
 ## Common Errors and Fixes
 
+### "Column 'X' is not found in table. Existing columns: 'Total'"
+**Cause:** A filter's `links` object points to a Number card chart. Number card queries return
+only the aggregated scalar column — they have no dimension columns like `user`, `date`, etc.
+**Fix:** Remove the Number card chart name from the filter's `links` object. Only link filters
+to charts whose SQL actually SELECTs the column being filtered.
+
+### Filter has no effect on a chart
+**Cause 1:** The chart is missing from the filter's `links` object.
+**Fix:** Add `"<chart_name>": "\`<query_name>\`.\`<column_name>\`"` to the filter's `links`.
+**Cause 2:** The column name in the link doesn't match the actual SQL alias.
+**Fix:** Check the SQL — if it uses `DATE(timestamp) AS date`, the link must use `` `query`.`date` ``.
+
 ### "Column name does not exist in the table"
 **Cause:** Using `is_builder_query=1` with a JOIN + summarize pipeline.
 **Fix:** Convert the query to native SQL (`is_native_query=1`, `is_builder_query=0`).
@@ -350,6 +495,9 @@ Donut chart which needs `label_column`/`value_column`).
 - [ ] All charts use correct doctype `Insights Chart v3`
 - [ ] Dashboard uses correct doctype `Insights Dashboard v3` with `workbook` field
 - [ ] Dashboard `items` JSON has unique `i` values per item and `x+w ≤ 20`
+- [ ] **Filters added** — every dashboard must have at least date range filters
+- [ ] **Filter links are correct** — `links` uses format `` `query_name`.`column_name` ``
+- [ ] **No filter linked to a Number card** — Number card queries have no dimension columns to filter
 - [ ] Workbook `queries`, `charts`, `dashboards` JSON manifests all updated
 - [ ] Hard refresh the browser after all changes (`Cmd+Shift+R`)
 
