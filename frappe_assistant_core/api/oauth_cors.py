@@ -320,6 +320,9 @@ def _handle_malformed_wellknown_url(request_path: str, request_method: str):
         raise ResponseException()
 
 
+_AUTH_PATCH_INSTALLED = False
+
+
 def _handle_oauth_token_endpoint_auth(request_path: str):
     """
     Bypass Frappe's API key validation for OAuth token endpoints.
@@ -328,11 +331,20 @@ def _handle_oauth_token_endpoint_auth(request_path: str):
     which is NOT a User API key. Frappe's validate_auth() incorrectly tries to
     validate this as a User API key and fails.
 
-    This function monkey-patches frappe.get_request_header to hide the
-    Authorization header from validate_auth() for OAuth token endpoints.
+    Uses a per-request flag on frappe.local (reset by Frappe at the start of
+    every request) so the bypass cannot leak into subsequent requests on the
+    same Gunicorn worker.
 
-    This runs in before_request hook, BEFORE validate_auth() is called.
+    This runs in the before_request hook, BEFORE validate_auth() is called.
     """
+    global _AUTH_PATCH_INSTALLED
+
+    # Install the wrapper once per worker process.
+    # All per-request decisions are gated on frappe.local, not re-patching.
+    if not _AUTH_PATCH_INSTALLED:
+        _install_auth_header_patch()
+        _AUTH_PATCH_INSTALLED = True
+
     # OAuth token endpoints that use client credentials in Basic auth
     oauth_token_endpoints = [
         "/api/method/frappe.integrations.oauth2.get_token",
@@ -349,22 +361,29 @@ def _handle_oauth_token_endpoint_auth(request_path: str):
     if not auth_header.startswith("Basic "):
         return
 
-    # Store original get_request_header function
+    # Set per-request flag. frappe.local is reset at the start of every request,
+    # so this flag cannot leak into subsequent requests.
+    frappe.local._bypass_oauth_basic_auth = True
+
+    frappe.logger().debug(
+        f"OAuth token endpoint: hiding Basic Authorization header from validate_auth() for {request_path}"
+    )
+
+
+def _install_auth_header_patch():
+    """
+    Install a one-time wrapper around frappe.get_request_header.
+
+    The wrapper defers to frappe.local._bypass_oauth_basic_auth to decide
+    whether to hide the Authorization header for the current request.
+    Safe to install once because all mutable state lives in frappe.local
+    (per-request), not in the closure.
+    """
     original_get_request_header = frappe.get_request_header
 
     def patched_get_request_header(key, default=None):
-        """
-        Patched version that hides Authorization header from validate_auth().
-
-        This prevents Frappe from treating OAuth client credentials as User API keys.
-        Our custom oauth_token.py endpoint reads the header directly from request.headers.
-        """
-        if key.lower() == "authorization":
-            # Hide the Basic auth header from Frappe's API key validation
+        if key.lower() == "authorization" and getattr(frappe.local, "_bypass_oauth_basic_auth", False):
             return default if default is not None else ""
         return original_get_request_header(key, default)
 
-    # Apply the monkey-patch
     frappe.get_request_header = patched_get_request_header
-
-    frappe.logger().debug(f"OAuth token endpoint auth bypass: hiding Authorization header for {request_path}")
