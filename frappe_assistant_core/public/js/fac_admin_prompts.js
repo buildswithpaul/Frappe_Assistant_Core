@@ -120,6 +120,9 @@
             method: "frappe_assistant_core.api.admin_api.toggle_prompt_template_status",
             args: { name: name, publish: publish ? 1 : 0 },
             callback: function(response) {
+                delete ns.state.toggleInProgress[stateKey];
+                ns.state.autoRefreshEnabled = true;
+
                 if (response.message && response.message.success) {
                     frappe.show_alert({ message: response.message.message, indicator: publish ? 'green' : 'orange' });
                     const tmpl = ns.state.promptsData.find(t => t.name === name);
@@ -128,18 +131,18 @@
                     ns.loadStats();
                 } else {
                     checkbox.prop('checked', originalState);
+                    checkbox.prop('disabled', false);
+                    checkbox.closest('.fac-item-card').removeClass('toggle-in-progress');
                     frappe.show_alert({ message: response.message?.message || 'Unknown error', indicator: 'red' });
                 }
             },
             error: function() {
-                checkbox.prop('checked', originalState);
-                frappe.show_alert({ message: 'Error toggling template status', indicator: 'red' });
-            },
-            always: function() {
                 delete ns.state.toggleInProgress[stateKey];
                 ns.state.autoRefreshEnabled = true;
+                checkbox.prop('checked', originalState);
                 checkbox.prop('disabled', false);
                 checkbox.closest('.fac-item-card').removeClass('toggle-in-progress');
+                frappe.show_alert({ message: 'Error toggling template status', indicator: 'red' });
             }
         });
     };
