@@ -19,7 +19,7 @@ from frappe import _
 
 
 @frappe.whitelist()
-def get_server_settings():
+def get_server_settings() -> dict:
     """Fetch assistant Server Settings with caching."""
     frappe.only_for(["System Manager", "Assistant Admin"])
     from frappe_assistant_core.utils.cache import get_cached_server_settings

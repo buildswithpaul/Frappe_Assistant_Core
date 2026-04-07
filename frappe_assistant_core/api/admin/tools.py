@@ -8,7 +8,7 @@ from frappe import _
 
 
 @frappe.whitelist()
-def get_tool_configurations():
+def get_tool_configurations() -> dict:
     """
     Get all tool configurations with detailed information.
 
@@ -473,7 +473,7 @@ def update_tool_role_access(tool_name: str, role_access_mode: str, roles: list =
 
 
 @frappe.whitelist()
-def get_available_roles():
+def get_available_roles() -> dict:
     """
     Get list of available roles for role access configuration.
 

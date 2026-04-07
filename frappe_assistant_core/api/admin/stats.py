@@ -8,7 +8,7 @@ from frappe import _
 
 
 @frappe.whitelist(methods=["GET", "POST"])
-def get_usage_statistics():
+def get_usage_statistics() -> dict:
     """Get usage statistics for the assistant."""
     from frappe_assistant_core.utils.logger import api_logger
     from frappe_assistant_core.utils.permissions import check_assistant_permission
@@ -75,7 +75,7 @@ def get_usage_statistics():
 
 
 @frappe.whitelist(methods=["GET", "POST"])
-def ping():
+def ping() -> dict:
     """Ping endpoint for testing connectivity."""
     from frappe_assistant_core.utils.logger import api_logger
     from frappe_assistant_core.utils.permissions import check_assistant_permission

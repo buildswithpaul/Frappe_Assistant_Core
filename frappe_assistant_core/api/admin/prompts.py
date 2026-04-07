@@ -7,7 +7,7 @@ import frappe
 
 
 @frappe.whitelist()
-def get_prompt_templates_list():
+def get_prompt_templates_list() -> dict:
     """
     List all Prompt Templates for the admin dashboard.
     """
@@ -41,7 +41,7 @@ def get_prompt_templates_list():
 
 
 @frappe.whitelist(methods=["POST"])
-def toggle_prompt_template_status(name, publish):
+def toggle_prompt_template_status(name: str, publish: bool):
     """
     Toggle a Prompt Template between Draft and Published.
     """
@@ -72,7 +72,7 @@ def toggle_prompt_template_status(name, publish):
 
 
 @frappe.whitelist()
-def preview_prompt_template(name):
+def preview_prompt_template(name: str):
     """
     Fetch a Prompt Template's content and arguments for inline preview in the admin UI.
     """

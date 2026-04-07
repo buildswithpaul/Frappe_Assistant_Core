@@ -7,7 +7,7 @@ import frappe
 
 
 @frappe.whitelist()
-def get_skills_list():
+def get_skills_list() -> dict:
     """
     List all FAC Skills for the admin dashboard.
     """
@@ -42,7 +42,7 @@ def get_skills_list():
 
 
 @frappe.whitelist(methods=["POST"])
-def toggle_skill_status(name, publish):
+def toggle_skill_status(name: str, publish: bool):
     """
     Toggle a FAC Skill between Draft and Published.
     """

@@ -8,7 +8,7 @@ from frappe import _
 
 
 @frappe.whitelist()
-def get_tool_registry():
+def get_tool_registry() -> dict:
     """Fetch assistant Tool Registry with detailed information."""
     frappe.only_for(["System Manager", "Assistant Admin"])
     from frappe_assistant_core.utils.plugin_manager import get_plugin_manager
@@ -39,7 +39,7 @@ def get_tool_registry():
 
 
 @frappe.whitelist()
-def get_plugin_stats():
+def get_plugin_stats() -> dict:
     """Get plugin statistics for admin dashboard."""
     frappe.only_for(["System Manager", "Assistant Admin"])
     from frappe_assistant_core.utils.plugin_manager import get_plugin_manager
@@ -66,7 +66,7 @@ def get_plugin_stats():
 
 
 @frappe.whitelist()
-def get_tool_stats():
+def get_tool_stats() -> dict:
     """Get tool statistics for admin dashboard."""
     frappe.only_for(["System Manager", "Assistant Admin"])
     from frappe_assistant_core.core.tool_registry import get_tool_registry
