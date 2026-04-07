@@ -5,14 +5,46 @@ frappe.pages['fac-admin'].on_page_load = function(wrapper) {
         single_column: true
     });
 
+    // Render markdown with proper table support.
+    // frappe.markdown() uses showdown but its whitespace preprocessing
+    // can break table syntax, and the default converter has tables disabled.
+    // We use a dedicated converter instance with tables enabled.
+    let _facMarkdownConverter = null;
+    function renderMarkdown(text) {
+        if (!text) return '';
+        if (!_facMarkdownConverter) {
+            // Initialize frappe's converter so we can access the showdown lib
+            if (!frappe.md2html) frappe.markdown('');
+            if (frappe.md2html) {
+                const Showdown = frappe.md2html.constructor;
+                _facMarkdownConverter = new Showdown({
+                    tables: true,
+                    ghCodeBlocks: true,
+                    strikethrough: true,
+                    tasklists: true,
+                    encodeEmails: true,
+                    ellipsis: true,
+                });
+            }
+        }
+        if (_facMarkdownConverter) {
+            return _facMarkdownConverter.makeHtml(text);
+        }
+        // Fallback
+        return `<pre>${frappe.utils.escape_html(text)}</pre>`;
+    }
+
     // State management to prevent race conditions
     const state = {
         toggleInProgress: {},  // Track which items are being toggled
         refreshInProgress: false,  // Track if auto-refresh is happening
         autoRefreshEnabled: true,  // Can be disabled during operations
         viewMode: 'plugins',  // 'plugins' or 'tools'
+        activeTab: 'tools',  // 'tools' | 'prompts' | 'skills'
         availableRoles: [],  // Cached list of available roles
         openConfigPanels: {},  // Track which tool config panels are open
+        promptsData: [],  // Cached prompt templates list
+        skillsData: [],  // Cached skills list
     };
 
     // Add custom styles matching Frappe theme
@@ -62,9 +94,19 @@ frappe.pages['fac-admin'].on_page_load = function(wrapper) {
             }
             .fac-stats-grid {
                 display: grid;
-                grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-                gap: 20px;
+                grid-template-columns: repeat(5, 1fr);
+                gap: 16px;
                 margin-bottom: 20px;
+            }
+            @media (max-width: 1200px) {
+                .fac-stats-grid {
+                    grid-template-columns: repeat(3, 1fr);
+                }
+            }
+            @media (max-width: 768px) {
+                .fac-stats-grid {
+                    grid-template-columns: repeat(2, 1fr);
+                }
             }
             .fac-stat-card {
                 background: var(--card-bg);
@@ -540,6 +582,287 @@ frappe.pages['fac-admin'].on_page_load = function(wrapper) {
             .fac-bulk-actions-bar .btn-warning:hover {
                 background: var(--orange-600);
             }
+
+            /* Top-level tab nav */
+            .fac-top-tabs {
+                display: flex;
+                gap: 0;
+                border-bottom: 2px solid var(--border-color);
+                margin-bottom: 0;
+            }
+            .fac-top-tab {
+                padding: 12px 20px;
+                border: none;
+                background: transparent;
+                cursor: pointer;
+                font-size: 14px;
+                font-weight: 500;
+                color: var(--text-muted);
+                border-bottom: 2px solid transparent;
+                margin-bottom: -2px;
+                transition: all 0.15s;
+                display: flex;
+                align-items: center;
+                gap: 6px;
+            }
+            .fac-top-tab:hover {
+                color: var(--heading-color);
+                background: var(--bg-color);
+            }
+            .fac-top-tab.active {
+                color: var(--primary);
+                border-bottom-color: var(--primary);
+                font-weight: 600;
+            }
+
+            /* Tab content panels */
+            .fac-tab-panel {
+                display: none;
+                padding-top: 16px;
+            }
+            .fac-tab-panel.active {
+                display: block;
+            }
+
+            /* Clean card layout for prompts and skills lists */
+            .fac-item-card {
+                padding: 16px 20px;
+                border: 1px solid var(--border-color);
+                border-radius: var(--border-radius-md);
+                margin-bottom: 10px;
+                background: var(--card-bg);
+                transition: box-shadow 0.15s, border-color 0.15s;
+            }
+            .fac-item-card:hover {
+                border-color: var(--gray-300);
+                box-shadow: var(--shadow-sm);
+            }
+            .fac-item-card.toggle-in-progress { opacity: 0.6; }
+
+            /* Top row: title + status + actions */
+            .fac-item-header {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin-bottom: 4px;
+            }
+            .fac-item-title {
+                font-weight: 600;
+                font-size: 14px;
+                color: var(--heading-color);
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                flex: 1;
+                min-width: 0;
+            }
+            .fac-item-actions {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                flex-shrink: 0;
+                margin-left: 16px;
+            }
+
+            /* Subtitle row: prompt_id / skill_id */
+            .fac-item-subtitle {
+                font-size: 12px;
+                color: var(--text-light);
+                font-family: var(--font-stack-monospace, monospace);
+                margin-bottom: 10px;
+            }
+
+            /* Bottom row: metadata chips */
+            .fac-item-meta {
+                display: flex;
+                gap: 6px;
+                flex-wrap: wrap;
+                align-items: center;
+            }
+            .fac-meta-chip {
+                display: inline-flex;
+                align-items: center;
+                gap: 4px;
+                padding: 2px 10px;
+                border-radius: 12px;
+                font-size: 11px;
+                color: var(--text-muted);
+                background: var(--bg-color);
+                border: 1px solid var(--border-color);
+            }
+            .fac-meta-chip i { font-size: 10px; }
+            .fac-meta-chip.system-chip {
+                background: var(--blue-50, #eff6ff);
+                color: var(--blue-600, #2563eb);
+                border-color: var(--blue-100, #dbeafe);
+            }
+
+            /* Inline expand panel (for skill content / template preview) */
+            .fac-expand-panel {
+                display: none;
+                margin-top: 12px;
+                padding: 12px;
+                background: var(--control-bg);
+                border-radius: var(--border-radius);
+                border: 1px solid var(--border-color);
+                font-size: 13px;
+                line-height: 1.6;
+            }
+            .fac-expand-panel.open { display: block; }
+            .fac-expand-panel pre {
+                margin: 0;
+                white-space: pre-wrap;
+                font-family: var(--font-stack-monospace, monospace);
+                font-size: 12px;
+                color: var(--text-color);
+            }
+            .fac-preview-content h1, .fac-preview-content h2,
+            .fac-preview-content h3, .fac-preview-content h4 {
+                margin-top: 12px;
+                margin-bottom: 6px;
+            }
+            .fac-preview-content p { margin-bottom: 8px; }
+            .fac-preview-content ul, .fac-preview-content ol {
+                margin-bottom: 8px;
+                padding-left: 20px;
+            }
+            .fac-preview-content code {
+                background: var(--gray-100);
+                padding: 1px 4px;
+                border-radius: 3px;
+                font-size: 12px;
+            }
+            .fac-preview-content pre code {
+                background: var(--control-bg);
+                display: block;
+                padding: 8px;
+                border-radius: var(--border-radius);
+                overflow-x: auto;
+            }
+            .fac-expand-panel table, .fac-preview-content table {
+                width: 100%;
+                border-collapse: collapse;
+                margin: 12px 0;
+                font-size: 13px;
+            }
+            .fac-expand-panel th, .fac-preview-content th {
+                background: var(--bg-color);
+                font-weight: 600;
+                text-align: left;
+                padding: 8px 12px;
+                border: 1px solid var(--border-color);
+                font-size: 12px;
+                color: var(--heading-color);
+            }
+            .fac-expand-panel td, .fac-preview-content td {
+                padding: 8px 12px;
+                border: 1px solid var(--border-color);
+                vertical-align: top;
+            }
+            .fac-expand-panel tr:hover td, .fac-preview-content tr:hover td {
+                background: var(--bg-color);
+            }
+
+            /* Status badge variants */
+            .fac-status-badge {
+                display: inline-block;
+                padding: 2px 8px;
+                border-radius: 10px;
+                font-size: 11px;
+                font-weight: 600;
+                text-transform: uppercase;
+            }
+            .fac-status-badge.published {
+                background: var(--green-100);
+                color: var(--green-700);
+            }
+            .fac-status-badge.draft {
+                background: var(--gray-100);
+                color: var(--gray-600);
+            }
+            .fac-status-badge.deprecated, .fac-status-badge.archived {
+                background: var(--orange-100);
+                color: var(--orange-600);
+            }
+
+            /* Active state for eye/book expand buttons */
+            .fac-tool-settings-btn.active {
+                background: var(--primary-light);
+                color: var(--primary);
+                border-color: var(--primary);
+            }
+
+            /* ===== Dark mode overrides ===== */
+            [data-theme="dark"] .fac-status-badge.published {
+                background: rgba(34, 197, 94, 0.15);
+                color: #4ade80;
+            }
+            [data-theme="dark"] .fac-status-badge.draft {
+                background: rgba(156, 163, 175, 0.2);
+                color: #9ca3af;
+            }
+            [data-theme="dark"] .fac-status-badge.deprecated,
+            [data-theme="dark"] .fac-status-badge.archived {
+                background: rgba(251, 146, 60, 0.15);
+                color: #fb923c;
+            }
+            [data-theme="dark"] .fac-meta-chip {
+                background: rgba(255, 255, 255, 0.06);
+                border-color: rgba(255, 255, 255, 0.1);
+                color: var(--text-muted);
+            }
+            [data-theme="dark"] .fac-meta-chip.system-chip {
+                background: rgba(96, 165, 250, 0.12);
+                color: #93bbfd;
+                border-color: rgba(96, 165, 250, 0.2);
+            }
+            [data-theme="dark"] .fac-item-card {
+                border-color: rgba(255, 255, 255, 0.08);
+            }
+            [data-theme="dark"] .fac-item-card:hover {
+                border-color: rgba(255, 255, 255, 0.15);
+            }
+            [data-theme="dark"] .fac-item-subtitle {
+                color: var(--text-muted);
+            }
+            [data-theme="dark"] .fac-expand-panel {
+                background: rgba(255, 255, 255, 0.03);
+                border-color: rgba(255, 255, 255, 0.08);
+            }
+            [data-theme="dark"] .fac-expand-panel th,
+            [data-theme="dark"] .fac-preview-content th {
+                background: rgba(255, 255, 255, 0.06);
+                border-color: rgba(255, 255, 255, 0.1);
+            }
+            [data-theme="dark"] .fac-expand-panel td,
+            [data-theme="dark"] .fac-preview-content td {
+                border-color: rgba(255, 255, 255, 0.08);
+            }
+            [data-theme="dark"] .fac-expand-panel tr:hover td,
+            [data-theme="dark"] .fac-preview-content tr:hover td {
+                background: rgba(255, 255, 255, 0.04);
+            }
+            [data-theme="dark"] .fac-preview-content code {
+                background: rgba(255, 255, 255, 0.08);
+                color: #e5a0f0;
+            }
+            [data-theme="dark"] .fac-preview-content pre code {
+                background: rgba(0, 0, 0, 0.3);
+                color: var(--text-color);
+            }
+            [data-theme="dark"] .fac-top-tab:hover {
+                background: rgba(255, 255, 255, 0.04);
+                color: var(--text-color);
+            }
+            [data-theme="dark"] .fac-top-tab.active {
+                color: #60a5fa;
+                border-bottom-color: #60a5fa;
+            }
+            [data-theme="dark"] .fac-tool-settings-btn.active {
+                background: rgba(96, 165, 250, 0.15);
+                color: #60a5fa;
+                border-color: rgba(96, 165, 250, 0.3);
+            }
         </style>
     `;
 
@@ -598,72 +921,158 @@ frappe.pages['fac-admin'].on_page_load = function(wrapper) {
                         <div class="fac-stat-label">Tool executions today</div>
                     </div>
                 </div>
+                <div class="fac-stat-card" style="border-left-color: #7c3aed;">
+                    <h3>Prompt Templates</h3>
+                    <div id="template-stats">
+                        <div class="fac-stat-value">-</div>
+                        <div class="fac-stat-label">Loading...</div>
+                    </div>
+                </div>
+                <div class="fac-stat-card" style="border-left-color: #0891b2;">
+                    <h3>Skills</h3>
+                    <div id="skill-stats">
+                        <div class="fac-stat-value">-</div>
+                        <div class="fac-stat-label">Loading...</div>
+                    </div>
+                </div>
             </div>
 
-            <!-- Tools Registry -->
-            <div class="fac-card">
-                <div class="fac-card-header">
-                    <div class="fac-card-title">
-                        <i class="fa fa-tools"></i>
-                        Tool Registry
-                    </div>
-                    <button class="btn btn-sm btn-default" id="refresh-tools">
-                        <i class="fa fa-refresh"></i> Refresh
+            <!-- Main Registry Card with Top-Level Tabs -->
+            <div class="fac-card" style="padding-bottom: 0;">
+
+                <!-- Top-Level Tab Navigation -->
+                <div class="fac-top-tabs">
+                    <button class="fac-top-tab active" data-tab="tools">
+                        <i class="fa fa-wrench"></i> Tools
+                    </button>
+                    <button class="fac-top-tab" data-tab="prompts">
+                        <i class="fa fa-file-text-o"></i> Prompt Templates
+                    </button>
+                    <button class="fac-top-tab" data-tab="skills">
+                        <i class="fa fa-graduation-cap"></i> Skills
                     </button>
                 </div>
 
-                <!-- View Mode Tabs -->
-                <div class="fac-view-tabs">
-                    <div class="fac-view-tab active" data-view="plugins">
-                        <i class="fa fa-cube"></i> Plugins
+                <!-- TOOLS TAB PANEL -->
+                <div class="fac-tab-panel active" id="tab-panel-tools">
+                    <div class="fac-card-header" style="margin-top: 0;">
+                        <div class="fac-card-title">
+                            <i class="fa fa-tools"></i>
+                            Tool Registry
+                        </div>
+                        <button class="btn btn-sm btn-default" id="refresh-tools">
+                            <i class="fa fa-refresh"></i> Refresh
+                        </button>
                     </div>
-                    <div class="fac-view-tab" data-view="tools">
-                        <i class="fa fa-wrench"></i> Individual Tools
+
+                    <!-- View Mode Tabs -->
+                    <div class="fac-view-tabs">
+                        <div class="fac-view-tab active" data-view="plugins">
+                            <i class="fa fa-cube"></i> Plugins
+                        </div>
+                        <div class="fac-view-tab" data-view="tools">
+                            <i class="fa fa-wrench"></i> Individual Tools
+                        </div>
+                    </div>
+
+                    <!-- Bulk Actions Bar (shown in tools view) -->
+                    <div class="fac-bulk-actions-bar" id="tools-bulk-actions" style="display: none;">
+                        <span class="fac-bulk-label">Bulk Actions:</span>
+                        <select class="fac-filter-select" id="bulk-category-select">
+                            <option value="">Select Category</option>
+                            <option value="read_only">Read Only</option>
+                            <option value="write">Write</option>
+                            <option value="read_write">Read & Write</option>
+                            <option value="privileged">Privileged</option>
+                        </select>
+                        <select class="fac-filter-select" id="bulk-plugin-select">
+                            <option value="">All Plugins</option>
+                        </select>
+                        <button class="btn btn-xs btn-success" id="bulk-enable-btn">
+                            <i class="fa fa-check"></i> Enable
+                        </button>
+                        <button class="btn btn-xs btn-warning" id="bulk-disable-btn">
+                            <i class="fa fa-times"></i> Disable
+                        </button>
+                    </div>
+
+                    <!-- Filter Bar (shown in tools view) -->
+                    <div class="fac-filter-bar" id="tools-filter-bar" style="display: none;">
+                        <input type="text" class="fac-filter-input" id="tool-search"
+                               placeholder="Search tools...">
+                        <select class="fac-filter-select" id="category-filter">
+                            <option value="">All Categories</option>
+                            <option value="read_only">Read Only</option>
+                            <option value="write">Write</option>
+                            <option value="read_write">Read & Write</option>
+                            <option value="privileged">Privileged</option>
+                        </select>
+                        <select class="fac-filter-select" id="plugin-filter">
+                            <option value="">All Plugins</option>
+                        </select>
+                    </div>
+
+                    <div id="tool-registry" style="max-height: 500px; overflow-y: auto;">
+                        <div style="padding: 20px; text-align: center; color: var(--text-muted);">
+                            <i class="fa fa-spinner fa-spin"></i> Loading tools...
+                        </div>
                     </div>
                 </div>
 
-                <!-- Bulk Actions Bar (shown in tools view) -->
-                <div class="fac-bulk-actions-bar" id="tools-bulk-actions" style="display: none;">
-                    <span class="fac-bulk-label">Bulk Actions:</span>
-                    <select class="fac-filter-select" id="bulk-category-select">
-                        <option value="">Select Category</option>
-                        <option value="read_only">Read Only</option>
-                        <option value="write">Write</option>
-                        <option value="read_write">Read & Write</option>
-                        <option value="privileged">Privileged</option>
-                    </select>
-                    <select class="fac-filter-select" id="bulk-plugin-select">
-                        <option value="">All Plugins</option>
-                    </select>
-                    <button class="btn btn-xs btn-success" id="bulk-enable-btn">
-                        <i class="fa fa-check"></i> Enable
-                    </button>
-                    <button class="btn btn-xs btn-warning" id="bulk-disable-btn">
-                        <i class="fa fa-times"></i> Disable
-                    </button>
-                </div>
-
-                <!-- Filter Bar (shown in tools view) -->
-                <div class="fac-filter-bar" id="tools-filter-bar" style="display: none;">
-                    <input type="text" class="fac-filter-input" id="tool-search"
-                           placeholder="Search tools...">
-                    <select class="fac-filter-select" id="category-filter">
-                        <option value="">All Categories</option>
-                        <option value="read_only">Read Only</option>
-                        <option value="write">Write</option>
-                        <option value="read_write">Read & Write</option>
-                        <option value="privileged">Privileged</option>
-                    </select>
-                    <select class="fac-filter-select" id="plugin-filter">
-                        <option value="">All Plugins</option>
-                    </select>
-                </div>
-
-                <div id="tool-registry" style="max-height: 500px; overflow-y: auto;">
-                    <div style="padding: 20px; text-align: center; color: var(--text-muted);">
-                        <i class="fa fa-spinner fa-spin"></i> Loading tools...
+                <!-- PROMPT TEMPLATES TAB PANEL -->
+                <div class="fac-tab-panel" id="tab-panel-prompts">
+                    <div class="fac-card-header" style="margin-top: 0;">
+                        <div style="display: flex; gap: 8px; flex: 1; align-items: center;">
+                            <input type="text" class="fac-filter-input" id="prompt-search"
+                                   placeholder="Search templates..." style="flex: 1; max-width: 300px;">
+                            <select class="fac-filter-select" id="prompt-status-filter">
+                                <option value="">All Statuses</option>
+                                <option value="Published">Published</option>
+                                <option value="Draft">Draft</option>
+                                <option value="Deprecated">Deprecated</option>
+                                <option value="Archived">Archived</option>
+                            </select>
+                        </div>
+                        <button class="btn btn-sm btn-default" id="refresh-prompts">
+                            <i class="fa fa-refresh"></i> Refresh
+                        </button>
+                    </div>
+                    <div id="prompt-templates-list" style="max-height: 600px; overflow-y: auto;">
+                        <div style="padding: 20px; text-align: center; color: var(--text-muted);">
+                            <i class="fa fa-spinner fa-spin"></i> Loading templates...
+                        </div>
                     </div>
                 </div>
+
+                <!-- SKILLS TAB PANEL -->
+                <div class="fac-tab-panel" id="tab-panel-skills">
+                    <div class="fac-card-header" style="margin-top: 0;">
+                        <div style="display: flex; gap: 8px; flex: 1; align-items: center;">
+                            <input type="text" class="fac-filter-input" id="skill-search"
+                                   placeholder="Search skills..." style="flex: 1; max-width: 300px;">
+                            <select class="fac-filter-select" id="skill-type-filter">
+                                <option value="">All Types</option>
+                                <option value="Tool Usage">Tool Usage</option>
+                                <option value="Workflow">Workflow</option>
+                            </select>
+                            <select class="fac-filter-select" id="skill-status-filter">
+                                <option value="">All Statuses</option>
+                                <option value="Published">Published</option>
+                                <option value="Draft">Draft</option>
+                                <option value="Deprecated">Deprecated</option>
+                            </select>
+                        </div>
+                        <button class="btn btn-sm btn-default" id="refresh-skills">
+                            <i class="fa fa-refresh"></i> Refresh
+                        </button>
+                    </div>
+                    <div id="skills-list" style="max-height: 600px; overflow-y: auto;">
+                        <div style="padding: 20px; text-align: center; color: var(--text-muted);">
+                            <i class="fa fa-spinner fa-spin"></i> Loading skills...
+                        </div>
+                    </div>
+                </div>
+
             </div>
 
             <!-- Recent Activity -->
@@ -799,6 +1208,32 @@ frappe.pages['fac-admin'].on_page_load = function(wrapper) {
                     $('#activity-stats').html(`
                         <div class="fac-stat-value">${stats.audit_logs?.today || 0}</div>
                         <div class="fac-stat-label">Tool executions today</div>
+                    `);
+                }
+            }
+        });
+
+        frappe.call({
+            method: "frappe_assistant_core.api.admin_api.get_prompt_templates_list",
+            callback: function(response) {
+                if (response.message && response.message.success) {
+                    const d = response.message;
+                    $('#template-stats').html(`
+                        <div class="fac-stat-value">${d.published || 0}</div>
+                        <div class="fac-stat-label">${d.published} published / ${d.total} total</div>
+                    `);
+                }
+            }
+        });
+
+        frappe.call({
+            method: "frappe_assistant_core.api.admin_api.get_skills_list",
+            callback: function(response) {
+                if (response.message && response.message.success) {
+                    const d = response.message;
+                    $('#skill-stats').html(`
+                        <div class="fac-stat-value">${d.published || 0}</div>
+                        <div class="fac-stat-label">${d.published} published / ${d.total} total</div>
                     `);
                 }
             }
@@ -1533,6 +1968,413 @@ frappe.pages['fac-admin'].on_page_load = function(wrapper) {
         const plugin = $('#bulk-plugin-select').val();
         bulkToggleByCategory(category, plugin, false);
     });
+
+    // =========================================================================
+    // Top-level tab switching
+    // =========================================================================
+
+    function switchTab(tabName) {
+        if (state.activeTab === tabName) return;
+        state.activeTab = tabName;
+
+        $('.fac-top-tab').removeClass('active');
+        $(`.fac-top-tab[data-tab="${tabName}"]`).addClass('active');
+
+        $('.fac-tab-panel').removeClass('active');
+        $(`#tab-panel-${tabName}`).addClass('active');
+
+        if (tabName === 'prompts' && state.promptsData.length === 0) {
+            loadPromptTemplatesView();
+        } else if (tabName === 'skills' && state.skillsData.length === 0) {
+            loadSkillsView();
+        }
+    }
+
+    $('.fac-top-tab').on('click', function() {
+        switchTab($(this).data('tab'));
+    });
+
+    // =========================================================================
+    // Prompt Templates tab
+    // =========================================================================
+
+    function loadPromptTemplatesView() {
+        $('#prompt-templates-list').html(
+            '<div style="padding:20px;text-align:center;color:var(--text-muted);"><i class="fa fa-spinner fa-spin"></i> Loading...</div>'
+        );
+        frappe.call({
+            method: "frappe_assistant_core.api.admin_api.get_prompt_templates_list",
+            callback: function(response) {
+                if (response.message && response.message.success) {
+                    state.promptsData = response.message.templates;
+                    renderPromptTemplatesList();
+                } else {
+                    $('#prompt-templates-list').html(
+                        '<div style="padding:20px;text-align:center;color:var(--red-500);">Failed to load prompt templates</div>'
+                    );
+                }
+            },
+            error: function() {
+                $('#prompt-templates-list').html(
+                    '<div style="padding:20px;text-align:center;color:var(--red-500);">Error loading prompt templates</div>'
+                );
+            }
+        });
+    }
+
+    function renderPromptTemplatesList() {
+        const searchTerm = $('#prompt-search').val().toLowerCase();
+        const statusFilter = $('#prompt-status-filter').val();
+
+        const filtered = state.promptsData.filter(t => {
+            if (searchTerm && !t.title.toLowerCase().includes(searchTerm) &&
+                !(t.prompt_id || '').toLowerCase().includes(searchTerm)) return false;
+            if (statusFilter && t.status !== statusFilter) return false;
+            return true;
+        });
+
+        if (filtered.length === 0) {
+            $('#prompt-templates-list').html(
+                '<div style="padding:20px;text-align:center;color:var(--text-muted);">No templates match the filters</div>'
+            );
+            return;
+        }
+
+        const html = filtered.map(t => {
+            const isToggling = state.toggleInProgress[`prompt_${t.name}`];
+            const isPublished = t.status === 'Published';
+            const statusClass = (t.status || 'draft').toLowerCase();
+            const lastUsed = t.last_used ? frappe.datetime.str_to_user(t.last_used) : 'Never';
+
+            return `
+            <div class="fac-item-card ${isToggling ? 'toggle-in-progress' : ''}" data-name="${t.name}">
+                <div class="fac-item-header">
+                    <div class="fac-item-title">
+                        ${frappe.utils.escape_html(t.title)}
+                        <span class="fac-status-badge ${statusClass}">${t.status}</span>
+                    </div>
+                    <div class="fac-item-actions">
+                        <button class="fac-tool-settings-btn fac-prompt-preview-btn"
+                                data-name="${t.name}" title="Preview template">
+                            <i class="fa fa-eye"></i>
+                        </button>
+                        <a href="/app/prompt-template/${encodeURIComponent(t.name)}" target="_blank"
+                           class="fac-tool-settings-btn" title="Open in DocType">
+                            <i class="fa fa-external-link"></i>
+                        </a>
+                        <label class="switch" style="margin:0;" title="${isPublished ? 'Click to unpublish' : 'Click to publish'}">
+                            <input type="checkbox" class="fac-prompt-toggle"
+                                   data-name="${t.name}"
+                                   ${isPublished ? 'checked' : ''}
+                                   ${isToggling ? 'disabled' : ''}>
+                            <span class="slider round"></span>
+                        </label>
+                    </div>
+                </div>
+                <div class="fac-item-subtitle">${frappe.utils.escape_html(t.prompt_id || t.name)}</div>
+                <div class="fac-item-meta">
+                    ${t.category ? `<span class="fac-meta-chip"><i class="fa fa-folder-o"></i> ${frappe.utils.escape_html(t.category)}</span>` : ''}
+                    <span class="fac-meta-chip"><i class="fa fa-eye"></i> ${t.visibility || 'Private'}</span>
+                    ${t.is_system ? '<span class="fac-meta-chip system-chip">System</span>' : ''}
+                    <span class="fac-meta-chip">Used ${t.use_count || 0}x</span>
+                    <span class="fac-meta-chip"><i class="fa fa-clock-o"></i> ${lastUsed}</span>
+                </div>
+                <div class="fac-expand-panel" id="prompt-preview-${t.name}"></div>
+            </div>`;
+        }).join('');
+
+        $('#prompt-templates-list').html(html);
+
+        $('.fac-prompt-toggle').off('change').on('change', function() {
+            togglePromptTemplateStatus($(this).data('name'), $(this).is(':checked'));
+        });
+
+        $('.fac-prompt-preview-btn').off('click').on('click', function() {
+            showTemplatePreview($(this).data('name'));
+        });
+    }
+
+    function togglePromptTemplateStatus(name, publish) {
+        const stateKey = `prompt_${name}`;
+        if (state.toggleInProgress[stateKey]) return;
+
+        state.toggleInProgress[stateKey] = true;
+        state.autoRefreshEnabled = false;
+
+        const checkbox = $(`.fac-prompt-toggle[data-name="${name}"]`);
+        const originalState = !publish;
+        checkbox.prop('disabled', true);
+        checkbox.closest('.fac-item-card').addClass('toggle-in-progress');
+
+        frappe.call({
+            method: "frappe_assistant_core.api.admin_api.toggle_prompt_template_status",
+            args: { name: name, publish: publish ? 1 : 0 },
+            callback: function(response) {
+                if (response.message && response.message.success) {
+                    frappe.show_alert({ message: response.message.message, indicator: publish ? 'green' : 'orange' });
+                    const tmpl = state.promptsData.find(t => t.name === name);
+                    if (tmpl) tmpl.status = response.message.new_status;
+                    renderPromptTemplatesList();
+                    loadStats();
+                } else {
+                    checkbox.prop('checked', originalState);
+                    frappe.show_alert({ message: response.message?.message || 'Unknown error', indicator: 'red' });
+                }
+            },
+            error: function() {
+                checkbox.prop('checked', originalState);
+                frappe.show_alert({ message: 'Error toggling template status', indicator: 'red' });
+            },
+            always: function() {
+                delete state.toggleInProgress[stateKey];
+                state.autoRefreshEnabled = true;
+                checkbox.prop('disabled', false);
+                checkbox.closest('.fac-item-card').removeClass('toggle-in-progress');
+            }
+        });
+    }
+
+    function showTemplatePreview(name) {
+        const panel = $(`#prompt-preview-${name}`);
+        const btn = $(`.fac-prompt-preview-btn[data-name="${name}"]`);
+
+        if (panel.hasClass('open')) {
+            panel.removeClass('open');
+            btn.removeClass('active');
+            return;
+        }
+
+        panel.addClass('open').html(
+            '<div style="color:var(--text-muted);font-size:12px;"><i class="fa fa-spinner fa-spin"></i> Loading preview...</div>'
+        );
+        btn.addClass('active');
+
+        frappe.call({
+            method: "frappe_assistant_core.api.admin_api.preview_prompt_template",
+            args: { name: name },
+            callback: function(response) {
+                if (response.message && response.message.success) {
+                    const d = response.message;
+                    const argsHtml = d.arguments && d.arguments.length > 0
+                        ? d.arguments.map(a =>
+                            `<span class="fac-tool-badge" title="${frappe.utils.escape_html(a.description || '')}">${frappe.utils.escape_html(a.argument_name)}${a.is_required ? '*' : ''}</span>`
+                        ).join(' ')
+                        : '<em style="color:var(--text-muted);">No arguments</em>';
+
+                    const content = d.template_content || '';
+                    const renderedContent = renderMarkdown(content);
+
+                    panel.html(`
+                        <div style="margin-bottom:10px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
+                            <span><strong style="font-size:11px;color:var(--text-muted);text-transform:uppercase;">Engine:</strong> ${frappe.utils.escape_html(d.rendering_engine || '')}</span>
+                            <span><strong style="font-size:11px;color:var(--text-muted);text-transform:uppercase;">Arguments:</strong> ${argsHtml}</span>
+                        </div>
+                        <div class="fac-preview-content" style="font-size:13px;">${renderedContent}</div>
+                    `);
+                } else {
+                    panel.html(`<div style="color:var(--red-500);">${response.message?.message || 'Failed to load preview'}</div>`);
+                }
+            },
+            error: function() {
+                panel.html('<div style="color:var(--red-500);">Error loading preview</div>');
+            }
+        });
+    }
+
+    $('#prompt-search').on('input', frappe.utils.debounce(function() {
+        if (state.activeTab === 'prompts') renderPromptTemplatesList();
+    }, 300));
+
+    $('#prompt-status-filter').on('change', function() {
+        if (state.activeTab === 'prompts') renderPromptTemplatesList();
+    });
+
+    $('#refresh-prompts').on('click', loadPromptTemplatesView);
+
+    // =========================================================================
+    // Skills tab
+    // =========================================================================
+
+    function loadSkillsView() {
+        $('#skills-list').html(
+            '<div style="padding:20px;text-align:center;color:var(--text-muted);"><i class="fa fa-spinner fa-spin"></i> Loading...</div>'
+        );
+        frappe.call({
+            method: "frappe_assistant_core.api.admin_api.get_skills_list",
+            callback: function(response) {
+                if (response.message && response.message.success) {
+                    state.skillsData = response.message.skills;
+                    renderSkillsList();
+                } else {
+                    $('#skills-list').html(
+                        '<div style="padding:20px;text-align:center;color:var(--red-500);">Failed to load skills</div>'
+                    );
+                }
+            },
+            error: function() {
+                $('#skills-list').html(
+                    '<div style="padding:20px;text-align:center;color:var(--red-500);">Error loading skills</div>'
+                );
+            }
+        });
+    }
+
+    function renderSkillsList() {
+        const searchTerm = $('#skill-search').val().toLowerCase();
+        const typeFilter = $('#skill-type-filter').val();
+        const statusFilter = $('#skill-status-filter').val();
+
+        const filtered = state.skillsData.filter(s => {
+            if (searchTerm && !s.title.toLowerCase().includes(searchTerm) &&
+                !(s.skill_id || '').toLowerCase().includes(searchTerm)) return false;
+            if (typeFilter && s.skill_type !== typeFilter) return false;
+            if (statusFilter && s.status !== statusFilter) return false;
+            return true;
+        });
+
+        if (filtered.length === 0) {
+            $('#skills-list').html(
+                '<div style="padding:20px;text-align:center;color:var(--text-muted);">No skills match the filters</div>'
+            );
+            return;
+        }
+
+        const html = filtered.map(s => {
+            const isToggling = state.toggleInProgress[`skill_${s.name}`];
+            const isPublished = s.status === 'Published';
+            const statusClass = (s.status || 'draft').toLowerCase();
+            const lastUsed = s.last_used ? frappe.datetime.str_to_user(s.last_used) : 'Never';
+
+            return `
+            <div class="fac-item-card ${isToggling ? 'toggle-in-progress' : ''}" data-name="${s.name}">
+                <div class="fac-item-header">
+                    <div class="fac-item-title">
+                        ${frappe.utils.escape_html(s.title)}
+                        <span class="fac-status-badge ${statusClass}">${s.status}</span>
+                    </div>
+                    <div class="fac-item-actions">
+                        <button class="fac-tool-settings-btn fac-skill-content-btn"
+                                data-name="${s.name}" title="View skill content">
+                            <i class="fa fa-book"></i>
+                        </button>
+                        <a href="/app/fac-skill/${encodeURIComponent(s.name)}" target="_blank"
+                           class="fac-tool-settings-btn" title="Open in DocType">
+                            <i class="fa fa-external-link"></i>
+                        </a>
+                        <label class="switch" style="margin:0;" title="${isPublished ? 'Click to unpublish' : 'Click to publish'}">
+                            <input type="checkbox" class="fac-skill-toggle"
+                                   data-name="${s.name}"
+                                   ${isPublished ? 'checked' : ''}
+                                   ${isToggling ? 'disabled' : ''}>
+                            <span class="slider round"></span>
+                        </label>
+                    </div>
+                </div>
+                <div class="fac-item-subtitle">${frappe.utils.escape_html(s.skill_id || s.name)}</div>
+                <div class="fac-item-meta">
+                    <span class="fac-meta-chip">${frappe.utils.escape_html(s.skill_type || '')}</span>
+                    ${s.linked_tool ? `<span class="fac-meta-chip"><i class="fa fa-wrench"></i> ${frappe.utils.escape_html(s.linked_tool)}</span>` : ''}
+                    <span class="fac-meta-chip"><i class="fa fa-eye"></i> ${s.visibility || 'Private'}</span>
+                    ${s.is_system ? '<span class="fac-meta-chip system-chip">System</span>' : ''}
+                    <span class="fac-meta-chip">Used ${s.use_count || 0}x</span>
+                    <span class="fac-meta-chip"><i class="fa fa-clock-o"></i> ${lastUsed}</span>
+                </div>
+                <div class="fac-expand-panel" id="skill-content-${s.name}"></div>
+            </div>`;
+        }).join('');
+
+        $('#skills-list').html(html);
+
+        $('.fac-skill-toggle').off('change').on('change', function() {
+            toggleSkillStatus($(this).data('name'), $(this).is(':checked'));
+        });
+
+        $('.fac-skill-content-btn').off('click').on('click', function() {
+            showSkillContent($(this).data('name'));
+        });
+    }
+
+    function toggleSkillStatus(name, publish) {
+        const stateKey = `skill_${name}`;
+        if (state.toggleInProgress[stateKey]) return;
+
+        state.toggleInProgress[stateKey] = true;
+        state.autoRefreshEnabled = false;
+
+        const checkbox = $(`.fac-skill-toggle[data-name="${name}"]`);
+        const originalState = !publish;
+        checkbox.prop('disabled', true);
+        checkbox.closest('.fac-item-card').addClass('toggle-in-progress');
+
+        frappe.call({
+            method: "frappe_assistant_core.api.admin_api.toggle_skill_status",
+            args: { name: name, publish: publish ? 1 : 0 },
+            callback: function(response) {
+                if (response.message && response.message.success) {
+                    frappe.show_alert({ message: response.message.message, indicator: publish ? 'green' : 'orange' });
+                    const skill = state.skillsData.find(s => s.name === name);
+                    if (skill) skill.status = response.message.new_status;
+                    renderSkillsList();
+                    loadStats();
+                } else {
+                    checkbox.prop('checked', originalState);
+                    frappe.show_alert({ message: response.message?.message || 'Unknown error', indicator: 'red' });
+                }
+            },
+            error: function() {
+                checkbox.prop('checked', originalState);
+                frappe.show_alert({ message: 'Error toggling skill status', indicator: 'red' });
+            },
+            always: function() {
+                delete state.toggleInProgress[stateKey];
+                state.autoRefreshEnabled = true;
+                checkbox.prop('disabled', false);
+                checkbox.closest('.fac-item-card').removeClass('toggle-in-progress');
+            }
+        });
+    }
+
+    function showSkillContent(name) {
+        const panel = $(`#skill-content-${name}`);
+        const btn = $(`.fac-skill-content-btn[data-name="${name}"]`);
+
+        if (panel.hasClass('open')) {
+            panel.removeClass('open');
+            btn.removeClass('active');
+            return;
+        }
+
+        panel.addClass('open').html(
+            '<div style="color:var(--text-muted);font-size:12px;"><i class="fa fa-spinner fa-spin"></i> Loading content...</div>'
+        );
+        btn.addClass('active');
+
+        frappe.call({
+            method: "frappe.client.get_value",
+            args: { doctype: "FAC Skill", filters: { name: name }, fieldname: "content" },
+            callback: function(response) {
+                if (response.message && response.message.content) {
+                    const rendered = renderMarkdown(response.message.content);
+                    panel.html(`<div style="font-size:13px;">${rendered}</div>`);
+                } else {
+                    panel.html('<div style="color:var(--text-muted);">No content available</div>');
+                }
+            },
+            error: function() {
+                panel.html('<div style="color:var(--red-500);">Error loading content</div>');
+            }
+        });
+    }
+
+    $('#skill-search').on('input', frappe.utils.debounce(function() {
+        if (state.activeTab === 'skills') renderSkillsList();
+    }, 300));
+
+    $('#skill-type-filter, #skill-status-filter').on('change', function() {
+        if (state.activeTab === 'skills') renderSkillsList();
+    });
+
+    $('#refresh-skills').on('click', loadSkillsView);
 
     // Initial load
     loadServerStatus();
