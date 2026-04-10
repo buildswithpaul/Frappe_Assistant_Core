@@ -81,6 +81,17 @@ def check_assistant_permission(user=None):
     return any(role in user_roles for role in assistant_roles)
 
 
+def check_assistant_admin_permission(user=None):
+    """Check if user has assistant admin access permission."""
+    if not user:
+        user = frappe.session.user
+
+    user_roles = frappe.get_roles(user)
+    admin_roles = ["System Manager", "Assistant Admin"]
+
+    return any(role in user_roles for role in admin_roles)
+
+
 def get_prompt_permission_query_conditions(user=None):
     """
     Permission query conditions for Prompt Template.
