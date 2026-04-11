@@ -307,15 +307,46 @@ class MCPServer:
                 f"MCP Tool {tool_name} executed successfully, result type: {type(result).__name__}"
             )
 
-            # CRITICAL FIX: Use json.dumps with default=str
-            # This handles datetime, Decimal, and all other non-JSON types!
+            # Extract image content for vision API (e.g., screenshot tool).
+            # Tools can include _image_content in their result to have the LLM
+            # see the image directly via vision, rather than just getting metadata.
+            # Note: BaseTool._safe_execute() wraps tool output as:
+            #   {"success": True, "result": <tool_output>, "execution_time": ...}
+            # so _image_content lives inside result["result"], not at the top level.
+            image_content = None
+            if isinstance(result, dict):
+                inner = result.get("result")
+                if isinstance(inner, dict) and "_image_content" in inner:
+                    image_content = inner.pop("_image_content")
+
+            # Serialize the text result (default=str handles datetime, Decimal, etc.)
             if isinstance(result, str):
                 result_text = result
             else:
-                # The key fix: default=str converts any type to string
                 result_text = json.dumps(result, default=str, indent=2)
 
-            return {"content": [{"type": "text", "text": result_text}], "isError": False}
+            # Build MCP content blocks
+            content = [{"type": "text", "text": result_text}]
+
+            # Add image block for vision API if tool provided one
+            if image_content and isinstance(image_content, dict):
+                mime_map = {
+                    "jpeg": "image/jpeg",
+                    "jpg": "image/jpeg",
+                    "png": "image/png",
+                    "gif": "image/gif",
+                    "webp": "image/webp",
+                }
+                fmt = image_content.get("format", "jpeg")
+                content.append(
+                    {
+                        "type": "image",
+                        "mimeType": mime_map.get(fmt, f"image/{fmt}"),
+                        "data": image_content["data"],
+                    }
+                )
+
+            return {"content": content, "isError": False}
 
         except Exception as e:
             # Full traceback for debugging
