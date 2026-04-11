@@ -12,6 +12,7 @@
   "column_break_basic",
   "status",
   "is_system",
+  "source_app",
   "skill_type",
   "category",
   "description_section",
@@ -74,6 +75,13 @@
    "fieldname": "is_system",
    "fieldtype": "Check",
    "label": "System Skill",
+   "read_only": 1
+  },
+  {
+   "description": "App that installed this skill",
+   "fieldname": "source_app",
+   "fieldtype": "Data",
+   "label": "Source App",
    "read_only": 1
   },
   {
