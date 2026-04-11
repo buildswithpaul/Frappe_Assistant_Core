@@ -332,7 +332,6 @@ class AssistantCoreSettings(Document):
 # Use StreamableHTTP (OAuth-based) transport instead
 
 
-@frappe.whitelist()
 def toggle_plugin_api(plugin_name: str, action: str):
     """
     Standalone API to enable or disable a plugin.

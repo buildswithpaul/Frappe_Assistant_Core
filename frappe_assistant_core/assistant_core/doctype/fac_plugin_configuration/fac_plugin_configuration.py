@@ -54,7 +54,7 @@ class FACPluginConfiguration(Document):
         frappe.clear_document_cache("Assistant Core Settings", "Assistant Core Settings")
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["GET"])
 def get_plugin_enabled_status(plugin_name: str) -> dict:
     """
     Check if a plugin is enabled.
@@ -65,6 +65,8 @@ def get_plugin_enabled_status(plugin_name: str) -> dict:
     Returns:
         Dict with enabled status
     """
+    frappe.only_for(["System Manager", "Assistant Admin"])
+
     try:
         if frappe.db.exists("FAC Plugin Configuration", plugin_name):
             enabled = frappe.db.get_value("FAC Plugin Configuration", plugin_name, "enabled")
@@ -90,7 +92,6 @@ def get_plugin_enabled_status(plugin_name: str) -> dict:
         }
 
 
-@frappe.whitelist()
 def toggle_plugin_state(plugin_name: str, enabled: bool) -> dict:
     """
     Enable or disable a plugin.
@@ -133,7 +134,7 @@ def toggle_plugin_state(plugin_name: str, enabled: bool) -> dict:
         return {"success": False, "message": str(e)}
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["GET"])
 def get_all_plugin_configurations() -> dict:
     """
     Get all plugin configurations.
@@ -141,6 +142,8 @@ def get_all_plugin_configurations() -> dict:
     Returns:
         Dict with list of plugin configurations
     """
+    frappe.only_for(["System Manager", "Assistant Admin"])
+
     try:
         configs = frappe.get_all(
             "FAC Plugin Configuration",

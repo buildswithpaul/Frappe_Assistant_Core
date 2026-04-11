@@ -98,7 +98,7 @@ class FACToolConfiguration(Document):
         return False
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["GET"])
 def get_tool_access_status(tool_name: str, user: str = None) -> dict:
     """
     Check if a user has access to a specific tool.
@@ -110,6 +110,8 @@ def get_tool_access_status(tool_name: str, user: str = None) -> dict:
     Returns:
         Dict with access status and reason
     """
+    frappe.only_for(["System Manager", "Assistant Admin"])
+
     user = user or frappe.session.user
 
     try:
@@ -137,7 +139,6 @@ def get_tool_access_status(tool_name: str, user: str = None) -> dict:
         }
 
 
-@frappe.whitelist()
 def toggle_tool(tool_name: str, enabled: bool) -> dict:
     """
     Enable or disable a tool.
@@ -170,7 +171,6 @@ def toggle_tool(tool_name: str, enabled: bool) -> dict:
         return {"success": False, "message": str(e)}
 
 
-@frappe.whitelist()
 def bulk_toggle_tools(tool_names: list, enabled: bool) -> dict:
     """
     Enable or disable multiple tools at once.
