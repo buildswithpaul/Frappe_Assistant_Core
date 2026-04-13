@@ -19,10 +19,8 @@ Python Code Execution Tool for Data Science Plugin.
 Executes Python code safely in a restricted environment.
 """
 
-import io
 import sys
 import traceback
-from contextlib import redirect_stderr, redirect_stdout
 from typing import Any, Dict
 
 import frappe
@@ -233,27 +231,12 @@ PRE-LOADED: pd (pandas), np (numpy), plt (matplotlib), sns (seaborn), frappe, ma
                     code = preprocess_result["code"]
                     fixes_applied = preprocess_result.get("fixes_applied", [])
 
-                    # Setup secure execution environment with read-only database
-                    execution_globals = self._setup_secure_execution_environment(current_user)
-
-                    # Handle data query if provided
-                    if data_query:
-                        try:
-                            data = self._fetch_data_from_query(data_query)
-                            execution_globals["data"] = data
-                        except Exception as e:
-                            return {
-                                "success": False,
-                                "error": f"Error fetching data: {str(e)}",
-                                "output": "",
-                                "variables": {},
-                                "user_context": current_user,
-                            }
-
-                    # Execute the code safely
+                    # Execute the code in an isolated subprocess.
+                    # The subprocess sets up its own execution environment
+                    # (read-only DB, tools API, pre-loaded libraries).
                     return self._execute_code_with_timeout(
                         code,
-                        execution_globals,
+                        data_query,
                         timeout,
                         capture_output,
                         return_variables,
@@ -270,170 +253,82 @@ PRE-LOADED: pd (pandas), np (numpy), plt (matplotlib), sns (seaborn), frappe, ma
     def _execute_code_with_timeout(
         self,
         code: str,
-        execution_globals: Dict[str, Any],
+        data_query: dict,
         timeout: int,
         capture_output: bool,
         return_variables: list,
         current_user: str,
         audit_info: Dict[str, Any],
     ) -> Dict[str, Any]:
-        """Execute code with timeout, memory limits, and proper error handling"""
-        from frappe_assistant_core.utils.execution_limits import (
-            ExecutionTimeoutError,
-            MemoryLimitError,
-            all_execution_limits,
-            get_execution_limits_from_settings,
-            truncate_output,
-        )
+        """Execute code in an isolated subprocess with resource limits.
 
-        # Get limits from settings or use defaults
+        Spawns a child process so that RLIMIT_CPU, RLIMIT_AS, and SIGALRM
+        only affect the child — the gunicorn worker is never at risk.
+        Communication is via JSON over stdin/stdout (same pattern as
+        ``ocr_subprocess.py``).
+        """
+        import json as json_mod
+        import subprocess
+
+        from frappe_assistant_core.utils.execution_limits import get_execution_limits_from_settings
+
+        # Get limits from settings
         limits = get_execution_limits_from_settings()
-
-        # Use the timeout from arguments if provided, otherwise use settings
         effective_timeout = min(timeout, limits["timeout_seconds"]) if timeout else limits["timeout_seconds"]
 
-        # Capture output
-        output = ""
-        error = ""
-        variables = {}
+        # Build the JSON request for the subprocess
+        request_data = json_mod.dumps(
+            {
+                "code": code,
+                "user": current_user,
+                "site": frappe.local.site,
+                "sites_path": str(frappe.local.sites_path),
+                "limits": {
+                    "timeout_seconds": effective_timeout,
+                    "max_memory_mb": limits["max_memory_mb"],
+                    "max_cpu_seconds": limits["max_cpu_seconds"],
+                    "max_recursion_depth": limits["max_recursion_depth"],
+                },
+                "data_query": data_query,
+                "return_variables": return_variables or [],
+                "capture_output": capture_output,
+            }
+        )
+
+        # Spawn isolated subprocess
+        proc = subprocess.Popen(
+            [sys.executable, "-m", "frappe_assistant_core.utils.code_execution_subprocess"],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+
+        # Give the child extra grace time beyond its own SIGALRM to report errors
+        parent_timeout = effective_timeout + 10
 
         try:
-            if capture_output:
-                stdout_capture = io.StringIO()
-                stderr_capture = io.StringIO()
-
-                with redirect_stdout(stdout_capture), redirect_stderr(stderr_capture):
-                    # Execute code with all resource limits enforced
-                    with all_execution_limits(
-                        timeout_seconds=effective_timeout,
-                        max_memory_mb=limits["max_memory_mb"],
-                        max_cpu_seconds=limits["max_cpu_seconds"],
-                        max_recursion_depth=limits["max_recursion_depth"],
-                    ):
-                        try:
-                            exec(code, execution_globals)
-                        except UnicodeEncodeError as unicode_error:
-                            # Handle Unicode encoding errors during execution
-                            raise UnicodeEncodeError(
-                                unicode_error.encoding,
-                                unicode_error.object,
-                                unicode_error.start,
-                                unicode_error.end,
-                                f"Unicode encoding error during code execution. "
-                                f"Code contains characters that cannot be encoded. "
-                                f"Original error: {unicode_error.reason}",
-                            )
-
-                # Truncate output to prevent memory issues
-                output = truncate_output(stdout_capture.getvalue())
-                error = truncate_output(stderr_capture.getvalue())
-            else:
-                # Execute without capturing output, but still with limits
-                with all_execution_limits(
-                    timeout_seconds=effective_timeout,
-                    max_memory_mb=limits["max_memory_mb"],
-                    max_cpu_seconds=limits["max_cpu_seconds"],
-                    max_recursion_depth=limits["max_recursion_depth"],
-                ):
-                    exec(code, execution_globals)
-
-            # Extract all user-defined variables (not built-ins or system variables)
-            excluded_vars = {
-                "frappe",
-                "pd",
-                "np",
-                "plt",
-                "sns",
-                "data",
-                "current_user",
-                "db",
-                "get_doc",
-                "get_list",
-                "get_all",
-                "get_single",
-                "math",
-                "datetime",
-                "json",
-                "re",
-                "random",
-                "statistics",
-                "decimal",
-                "fractions",
-                # Pre-loaded libraries that shouldn't appear in response
-                "pandas",
-                "numpy",
-                "matplotlib",
-                "seaborn",
-                "plotly",
-                "scipy",
-                "stats",
-                "go",
-                "px",
-                "__builtins__",
-                "__name__",
-                "__doc__",
-                "__package__",
-                "__loader__",
-                "__spec__",
-                "__annotations__",
-                "__cached__",
-            }
-
-            for var_name, var_value in execution_globals.items():
-                if (
-                    not var_name.startswith("_")
-                    and var_name not in excluded_vars
-                    and var_name not in execution_globals.get("__builtins__", {})
-                ):
-                    try:
-                        # Try to serialize the variable
-                        variables[var_name] = self._serialize_variable(var_value)
-                    except Exception as e:
-                        variables[var_name] = f"<Could not serialize: {str(e)}>"
-
-            # Also extract specifically requested variables
-            if return_variables:
-                for var_name in return_variables:
-                    if var_name in execution_globals and var_name not in variables:
-                        try:
-                            var_value = execution_globals[var_name]
-                            variables[var_name] = self._serialize_variable(var_value)
-                        except Exception as e:
-                            variables[var_name] = f"<Could not serialize: {str(e)}>"
-
-            result = {
-                "success": True,
-                "output": output,
-                "error": error,
-                "variables": variables,
-                "user_context": current_user,
-                "execution_info": {
-                    "lines_executed": len(code.split("\n")),
-                    "variables_returned": len(variables),
-                    "execution_id": audit_info.get("execution_id"),
-                    "executed_by": current_user,
-                },
-            }
-
-            return result
-
-        except ExecutionTimeoutError as timeout_error:
-            error_msg = (
-                f"⏱️ Execution Timeout: {str(timeout_error)}\n\n"
-                f"The code exceeded the maximum allowed execution time of {effective_timeout} seconds.\n\n"
-                f"💡 Tips to fix this:\n"
-                f"   • Reduce the size of data being processed\n"
-                f"   • Add early termination conditions to loops\n"
-                f"   • Use more efficient algorithms\n"
-                f"   • Break complex operations into smaller steps"
+            stdout, stderr = proc.communicate(
+                input=request_data.encode("utf-8"),
+                timeout=parent_timeout,
             )
-
-            self.logger.warning(f"Execution timeout for user {current_user}: {timeout_error}")
-
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+            self.logger.warning(
+                f"Code execution subprocess killed after {parent_timeout}s " f"(user: {current_user})"
+            )
             return {
                 "success": False,
-                "error": error_msg,
-                "output": output,
+                "error": (
+                    f"Code execution timed out after {effective_timeout} seconds.\n\n"
+                    f"The code took too long to execute and was terminated.\n\n"
+                    f"Tips to fix this:\n"
+                    f"   - Reduce the size of data being processed\n"
+                    f"   - Add early termination conditions to loops\n"
+                    f"   - Use more efficient algorithms\n"
+                    f"   - Break complex operations into smaller steps"
+                ),
+                "output": "",
                 "variables": {},
                 "user_context": current_user,
                 "timeout_error": True,
@@ -444,133 +339,112 @@ PRE-LOADED: pd (pandas), np (numpy), plt (matplotlib), sns (seaborn), frappe, ma
                 },
             }
 
-        except MemoryError as memory_error:
-            error_msg = (
-                f"💾 Memory Limit Exceeded: The code attempted to use more memory than allowed.\n\n"
-                f"Maximum allowed memory: {limits['max_memory_mb']} MB\n\n"
-                f"💡 Tips to fix this:\n"
-                f"   • Process data in smaller batches\n"
-                f"   • Use generators instead of loading all data into memory\n"
-                f"   • Delete intermediate variables when no longer needed\n"
-                f"   • Use more memory-efficient data structures"
-            )
+        # Try to parse the subprocess JSON response
+        try:
+            result = json_mod.loads(stdout.decode("utf-8", errors="replace"))
+        except (json_mod.JSONDecodeError, ValueError):
+            # Subprocess crashed without writing valid JSON
+            stderr_text = stderr.decode("utf-8", errors="replace").strip()
+            exit_code = proc.returncode
 
-            self.logger.warning(f"Memory limit exceeded for user {current_user}")
-
-            return {
-                "success": False,
-                "error": error_msg,
-                "output": output,
-                "variables": {},
-                "user_context": current_user,
-                "memory_error": True,
-                "execution_info": {
-                    "execution_id": audit_info.get("execution_id"),
-                    "executed_by": current_user,
-                    "max_memory_mb": limits["max_memory_mb"],
-                },
-            }
-
-        except RecursionError as recursion_error:
-            error_msg = (
-                f"🔄 Recursion Limit Exceeded: The code exceeded the maximum recursion depth.\n\n"
-                f"Maximum recursion depth: {limits['max_recursion_depth']}\n\n"
-                f"💡 Tips to fix this:\n"
-                f"   • Convert recursive algorithms to iterative ones\n"
-                f"   • Add proper base cases to recursive functions\n"
-                f"   • Use tail recursion optimization where possible\n"
-                f"   • Check for infinite recursion in your code"
-            )
-
-            self.logger.warning(f"Recursion limit exceeded for user {current_user}")
-
-            return {
-                "success": False,
-                "error": error_msg,
-                "output": output,
-                "variables": {},
-                "user_context": current_user,
-                "recursion_error": True,
-                "execution_info": {
-                    "execution_id": audit_info.get("execution_id"),
-                    "executed_by": current_user,
-                    "max_recursion_depth": limits["max_recursion_depth"],
-                },
-            }
-
-        except UnicodeEncodeError as unicode_error:
-            error_msg = (
-                f"🚫 Unicode Error: Code contains characters that cannot be encoded in UTF-8. "
-                f"Character '\\u{ord(unicode_error.object[unicode_error.start]):04x}' at position {unicode_error.start} "
-                f"cannot be processed. Please remove or replace non-standard Unicode characters."
-            )
-
-            self.logger.error(f"Unicode encoding error for user {current_user}: {error_msg}")
-
-            return {
-                "success": False,
-                "error": error_msg,
-                "traceback": traceback.format_exc(),
-                "output": output,
-                "variables": {},
-                "user_context": current_user,
-                "unicode_error": True,
-                "execution_info": {
-                    "execution_id": audit_info.get("execution_id"),
-                    "executed_by": current_user,
-                },
-            }
-
-        except Exception as e:
-            error_msg = str(e)
-            error_traceback = traceback.format_exc()
-
-            self.logger.error(f"Python execution error for user {current_user}: {error_msg}")
-
-            # Use enhanced error messages with context
-            if "surrogates not allowed" in error_msg or "UnicodeEncodeError" in error_msg:
-                # Special handling for Unicode errors
-                error_msg = f"""Unicode encoding error: {error_msg}
-
-🚨 This error occurs when your code contains invalid Unicode characters (surrogates).
-💡 Common causes:
-   • Copy-pasting code from Word documents, PDFs, or certain web pages
-   • Data with mixed encodings or corrupted text
-   • Special characters that aren't valid UTF-8
-
-✅ Solutions:
-   • Re-type the code manually instead of copy-pasting
-   • Check for unusual characters around position 1030 in your code
-   • Use plain text editors when preparing code"""
-
-                result = {
-                    "success": False,
-                    "error": error_msg,
-                    "traceback": error_traceback,
-                    "output": output,
-                    "variables": {},
-                    "user_context": current_user,
-                    "unicode_error": True,
-                    "execution_info": {
-                        "execution_id": audit_info.get("execution_id"),
-                        "executed_by": current_user,
-                    },
-                }
+            # Determine the likely cause from exit code and stderr
+            if exit_code and exit_code < 0:
+                # Killed by signal (e.g., SIGXCPU = -24, SIGKILL = -9)
+                sig_num = -exit_code
+                if sig_num == 24:  # SIGXCPU
+                    error_msg = (
+                        f"CPU time limit exceeded. The code used more than "
+                        f"{limits['max_cpu_seconds']} seconds of CPU time.\n\n"
+                        f"Tips: reduce computation, optimize algorithms, or process less data."
+                    )
+                elif sig_num == 9:  # SIGKILL (likely OOM killer)
+                    error_msg = (
+                        f"Code execution was killed (likely out of memory).\n\n"
+                        f"Maximum allowed memory: {limits['max_memory_mb']} MB.\n\n"
+                        f"Tips: process data in smaller batches, use generators."
+                    )
+                else:
+                    error_msg = (
+                        f"Code execution was terminated by signal {sig_num}.\n\n"
+                        f"This usually indicates a resource limit was exceeded."
+                    )
             else:
-                # Use enhanced error message for all other errors
-                result = self._enhance_error_message(error_msg, error_traceback, execution_globals, code)
+                error_msg = (
+                    f"Code execution subprocess crashed (exit code {exit_code}).\n\n"
+                    f"{stderr_text[:500] if stderr_text else 'No error details available.'}"
+                )
 
-                # Add execution context
-                result["output"] = output
-                result["variables"] = variables if "variables" in locals() else {}
-                result["user_context"] = current_user
-                result["execution_info"] = {
+            self.logger.error(
+                f"Code execution subprocess crashed: exit={exit_code}, " f"stderr={stderr_text[:200]}"
+            )
+
+            return {
+                "success": False,
+                "error": error_msg,
+                "output": "",
+                "variables": {},
+                "user_context": current_user,
+                "execution_info": {
                     "execution_id": audit_info.get("execution_id"),
                     "executed_by": current_user,
-                }
+                },
+            }
 
-            self.logger.error(f"Python execution error: {error_msg}")
-            return result
+        # Map subprocess error types to the expected result format
+        if not result.get("success"):
+            error_type = result.get("error_type", "runtime")
+            error_msg = result.get("error", "Unknown error")
+
+            if error_type == "timeout":
+                result["timeout_error"] = True
+                error_msg = (
+                    f"Execution Timeout: {error_msg}\n\n"
+                    f"The code exceeded the maximum allowed execution time of "
+                    f"{effective_timeout} seconds.\n\n"
+                    f"Tips to fix this:\n"
+                    f"   - Reduce the size of data being processed\n"
+                    f"   - Add early termination conditions to loops\n"
+                    f"   - Use more efficient algorithms\n"
+                    f"   - Break complex operations into smaller steps"
+                )
+            elif error_type == "cpu_limit":
+                error_msg = (
+                    f"CPU Time Limit Exceeded: {error_msg}\n\n"
+                    f"Maximum CPU time: {limits['max_cpu_seconds']} seconds.\n\n"
+                    f"Tips to fix this:\n"
+                    f"   - Reduce computational complexity\n"
+                    f"   - Use vectorized operations (pandas/numpy) instead of loops\n"
+                    f"   - Process less data at once"
+                )
+            elif error_type == "memory":
+                result["memory_error"] = True
+                error_msg = (
+                    f"Memory Limit Exceeded: {error_msg}\n\n"
+                    f"Maximum allowed memory: {limits['max_memory_mb']} MB.\n\n"
+                    f"Tips to fix this:\n"
+                    f"   - Process data in smaller batches\n"
+                    f"   - Use generators instead of loading all data into memory\n"
+                    f"   - Delete intermediate variables when no longer needed"
+                )
+            elif error_type == "recursion":
+                result["recursion_error"] = True
+                error_msg = (
+                    f"Recursion Limit Exceeded: {error_msg}\n\n"
+                    f"Maximum recursion depth: {limits['max_recursion_depth']}.\n\n"
+                    f"Tips to fix this:\n"
+                    f"   - Convert recursive algorithms to iterative ones\n"
+                    f"   - Add proper base cases to recursive functions"
+                )
+
+            result["error"] = error_msg
+
+        # Enrich with execution context the caller expects
+        result["user_context"] = current_user
+        result.setdefault("execution_info", {})
+        result["execution_info"]["execution_id"] = audit_info.get("execution_id")
+        result["execution_info"]["executed_by"] = current_user
+
+        return result
 
     def _preprocess_code_for_common_errors(self, code: str) -> Dict[str, Any]:
         """Auto-fix common pandas/numpy errors before execution"""
