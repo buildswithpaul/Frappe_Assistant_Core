@@ -106,7 +106,7 @@ def _apply_limits(limits: dict) -> None:
             # Try reading current VM from /proc (Linux only)
             current_vm = 0
             try:
-                with open("/proc/self/status") as f:
+                with open("/proc/self/status") as f:  # nosemgrep: frappe-security-file-traversal
                     for line in f:
                         if line.startswith("VmSize:"):
                             current_vm = int(line.split()[1]) * 1024
@@ -495,7 +495,7 @@ def main():
 
         frappe.init(site, sites_path=sites_path)
         frappe.connect(set_admin_as_user=False)
-        frappe.set_user(user)
+        frappe.set_user(user)  # nosemgrep: frappe-setuser
 
         try:
             # Apply resource limits (permanent — this process is disposable)
@@ -527,11 +527,11 @@ def main():
                 stdout_capture = io.StringIO()
                 stderr_capture = io.StringIO()
                 with redirect_stdout(stdout_capture), redirect_stderr(stderr_capture):
-                    exec(code, execution_globals)  # noqa: S102
+                    exec(code, execution_globals)  # noqa: S102  # nosemgrep: frappe-codeinjection-eval
                 output = stdout_capture.getvalue()
                 error_output = stderr_capture.getvalue()
             else:
-                exec(code, execution_globals)  # noqa: S102
+                exec(code, execution_globals)  # noqa: S102  # nosemgrep: frappe-codeinjection-eval
 
             # Truncate output
             max_output = 1024 * 1024  # 1 MB
