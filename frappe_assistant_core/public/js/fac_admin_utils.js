@@ -34,4 +34,32 @@
         // Fallback
         return `<pre>${frappe.utils.escape_html(text)}</pre>`;
     };
+
+    // Wrap occurrences of `query` in `text` with <mark>. Both inputs are escaped
+    // so the result is safe to inject as innerHTML.
+    ns.highlight = function(text, query) {
+        const safe = frappe.utils.escape_html(text || '');
+        if (!query) return safe;
+        const needle = String(query).trim();
+        if (!needle) return safe;
+        const re = new RegExp(needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+        return safe.replace(re, m => `<mark class="fac-hl">${m}</mark>`);
+    };
+
+    // Skeleton loader card HTML helper. `rows` controls how many placeholders.
+    ns.skeletonCards = function(rows) {
+        const n = rows || 4;
+        let out = '<div class="fac-skeleton-wrap">';
+        for (let i = 0; i < n; i++) {
+            out += `
+                <div class="fac-skeleton-card">
+                    <div class="fac-skeleton-line fac-skeleton-line--title"></div>
+                    <div class="fac-skeleton-line fac-skeleton-line--body"></div>
+                    <div class="fac-skeleton-line fac-skeleton-line--body short"></div>
+                </div>
+            `;
+        }
+        out += '</div>';
+        return out;
+    };
 })();

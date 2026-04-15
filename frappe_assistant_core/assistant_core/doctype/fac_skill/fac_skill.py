@@ -58,10 +58,24 @@ class FACSkill(Document):
         self.clear_skill_cache()
 
     def on_trash(self):
-        """Prevent deletion of system skills (unless explicitly allowed via flag)."""
+        """
+        Prevent deletion of system skills unless one of:
+        - ``allow_system_delete`` flag is set (internal lifecycle code), or
+        - the owning ``source_app`` is no longer installed (orphan cleanup).
+        """
         if self.is_system and not self.flags.get("allow_system_delete"):
-            frappe.throw(_("System skills cannot be deleted"))
+            if not self._source_app_is_orphaned():
+                frappe.throw(_("System skills cannot be deleted"))
         self.clear_skill_cache()
+
+    def _source_app_is_orphaned(self) -> bool:
+        """True when source_app is set and that app is no longer installed."""
+        if not self.source_app:
+            return False
+        try:
+            return self.source_app not in frappe.get_installed_apps()
+        except Exception:
+            return False
 
     def clear_skill_cache(self):
         """Clear skill-related caches."""

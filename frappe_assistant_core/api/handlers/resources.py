@@ -11,6 +11,7 @@ Resources handlers for MCP protocol - Skill-based implementation.
 Handles resources/list and resources/read requests backed by the Skill DocType.
 """
 
+import re
 from typing import Any, Dict, List, Optional
 
 import frappe
@@ -18,145 +19,105 @@ from frappe import _
 
 from frappe_assistant_core.utils.logger import api_logger
 
+_SKILL_URI_PREFIX = "fac://skills/"
+_SKILL_ID_RE = re.compile(r"^[a-z0-9_-]+$")
+
 
 class SkillManager:
     """
-    Centralized manager for skill operations.
-    Handles querying, filtering, and permission checking for skills.
+    Stateless helper for skill queries, filtering, and permission checks.
+    Construct per call — no shared state across requests.
     """
 
-    def __init__(self):
-        self.logger = frappe.logger("skill_manager")
+    _LIST_FIELDS = (
+        "name",
+        "skill_id",
+        "title",
+        "description",
+        "status",
+        "skill_type",
+        "linked_tool",
+        "category",
+        "owner_user",
+        "visibility",
+        "is_system",
+    )
 
     def get_user_accessible_skills(self, user: str = None) -> List[Dict[str, Any]]:
         """
-        Get all skills accessible to the current user.
+        Return all skills accessible to ``user``. A skill is accessible when:
 
-        Includes:
-        - User's own skills (any status)
-        - Published + Public skills
-        - Published + Shared skills (if user has required role)
-        - Published + System skills
+        - the user owns it (any status), OR
+        - it is Published AND one of: Public, is_system, or Shared with a role
+          the user has.
 
-        Args:
-            user: User email (defaults to current session user)
-
-        Returns:
-            List of skill info dicts
+        Results are deduplicated by ``skill_id``.
         """
         user = user or frappe.session.user
         user_roles = frappe.get_roles(user)
 
-        skills = []
+        # Single OR-filter covers own skills (any status) + published public/system.
+        base = frappe.get_all(
+            "FAC Skill",
+            filters={},
+            or_filters=[
+                ["owner_user", "=", user],
+                ["visibility", "=", "Public"],
+                ["is_system", "=", 1],
+            ],
+            fields=list(self._LIST_FIELDS),
+        )
+
+        # The or_filter doesn't express "status must be Published unless owner".
+        # Filter that in Python (cheap — result set is already scoped).
+        skills = [s for s in base if s.owner_user == user or s.status == "Published"]
+
+        # Add Shared-with-role skills (requires a join against Has Role).
+        if user_roles:
+            shared = self._get_shared_skills_for_user(user, user_roles)
+            seen = {s.skill_id for s in skills}
+            for s in shared:
+                if s.skill_id not in seen:
+                    skills.append(s)
+                    seen.add(s.skill_id)
+
+        # Dedup (own skill may also be Public/system).
+        deduped: List[Dict[str, Any]] = []
         seen_ids = set()
-
-        # 1. User's own skills (any status)
-        own_skills = frappe.get_all(
-            "FAC Skill",
-            filters={"owner_user": user},
-            fields=[
-                "name",
-                "skill_id",
-                "title",
-                "description",
-                "status",
-                "skill_type",
-                "linked_tool",
-                "category",
-            ],
-        )
-        for s in own_skills:
-            if s.skill_id not in seen_ids:
-                seen_ids.add(s.skill_id)
-                skills.append(s)
-
-        # 2. Published public skills
-        public_skills = frappe.get_all(
-            "FAC Skill",
-            filters={"status": "Published", "visibility": "Public", "owner_user": ["!=", user]},
-            fields=[
-                "name",
-                "skill_id",
-                "title",
-                "description",
-                "status",
-                "skill_type",
-                "linked_tool",
-                "category",
-            ],
-        )
-        for s in public_skills:
-            if s.skill_id not in seen_ids:
-                seen_ids.add(s.skill_id)
-                skills.append(s)
-
-        # 3. Published shared skills where user has required role
-        shared_skills = self._get_shared_skills_for_user(user, user_roles)
-        for s in shared_skills:
-            if s.skill_id not in seen_ids:
-                seen_ids.add(s.skill_id)
-                skills.append(s)
-
-        # 4. System skills (is_system=1, status=Published)
-        system_skills = frappe.get_all(
-            "FAC Skill",
-            filters={"is_system": 1, "status": "Published", "owner_user": ["!=", user]},
-            fields=[
-                "name",
-                "skill_id",
-                "title",
-                "description",
-                "status",
-                "skill_type",
-                "linked_tool",
-                "category",
-            ],
-        )
-        for s in system_skills:
-            if s.skill_id not in seen_ids:
-                seen_ids.add(s.skill_id)
-                skills.append(s)
-
-        return skills
+        for s in skills:
+            if s.skill_id in seen_ids:
+                continue
+            seen_ids.add(s.skill_id)
+            deduped.append(s)
+        return deduped
 
     def _get_shared_skills_for_user(self, user: str, user_roles: List[str]) -> List[Dict]:
-        """Get skills shared with roles that user has."""
-        if not user_roles:
-            return []
-
+        """Skills shared with roles the user has (Published only)."""
         try:
-            shared_skills = frappe.db.sql(
+            return frappe.db.sql(
                 """
                 SELECT DISTINCT sk.name, sk.skill_id, sk.title, sk.description,
-                       sk.status, sk.skill_type, sk.linked_tool, sk.category
+                       sk.status, sk.skill_type, sk.linked_tool, sk.category,
+                       sk.owner_user, sk.visibility, sk.is_system
                 FROM `tabFAC Skill` sk
-                INNER JOIN `tabHas Role` hr ON hr.parent = sk.name
-                    AND hr.parenttype = 'FAC Skill'
+                INNER JOIN `tabHas Role` hr
+                    ON hr.parent = sk.name AND hr.parenttype = 'FAC Skill'
                 WHERE sk.status = 'Published'
                   AND sk.visibility = 'Shared'
                   AND hr.role IN %(roles)s
                   AND sk.owner_user != %(user)s
-            """,
+                """,
                 {"roles": user_roles, "user": user},
                 as_dict=True,
             )
-            return shared_skills
         except Exception as e:
-            self.logger.warning(f"Error fetching shared skills: {e}")
+            frappe.logger("skill_manager").warning(f"Error fetching shared skills: {e}")
             return []
 
     def get_skill_as_resource(self, skill_info: Dict) -> Dict[str, Any]:
-        """
-        Convert skill info to MCP resource format.
-
-        Args:
-            skill_info: Skill info dict (from get_user_accessible_skills)
-
-        Returns:
-            Dict in MCP resources/list format
-        """
+        """Convert a skill row to an MCP resource descriptor."""
         return {
-            "uri": f"fac://skills/{skill_info['skill_id']}",
+            "uri": f"{_SKILL_URI_PREFIX}{skill_info['skill_id']}",
             "name": skill_info["title"],
             "description": skill_info["description"],
             "mimeType": "text/markdown",
@@ -164,42 +125,33 @@ class SkillManager:
 
     def read_skill_content(self, skill_id: str) -> Optional[str]:
         """
-        Read skill content by skill_id.
+        Return a skill's markdown content. Published skills are readable per
+        the standard permission model; Drafts are readable only by the owner.
 
-        Args:
-            skill_id: The skill's unique identifier
-
-        Returns:
-            Markdown content string, or None if not found
+        Raises ``frappe.PermissionError`` when the caller is not permitted.
+        Returns None when the skill does not exist.
         """
-        skill_name = frappe.db.get_value(
-            "FAC Skill",
-            {"skill_id": skill_id, "status": ["in", ["Published", "Draft"]]},
-            "name",
-        )
-
+        skill_name = frappe.db.get_value("FAC Skill", {"skill_id": skill_id}, "name")
         if not skill_name:
             return None
 
         skill_doc = frappe.get_doc("FAC Skill", skill_name)
+        user = frappe.session.user
+
+        is_owner = skill_doc.owner_user == user
+        if skill_doc.status != "Published" and not is_owner:
+            frappe.throw(_("You don't have permission to access this skill"), frappe.PermissionError)
 
         if not self._user_can_access_skill(skill_doc):
             frappe.throw(_("You don't have permission to access this skill"), frappe.PermissionError)
 
+        # TODO: batch usage-counter writes if traffic grows.
         self.increment_usage(skill_name)
 
         return skill_doc.content
 
     def get_skill_by_tool(self, tool_name: str) -> Optional[Dict[str, Any]]:
-        """
-        Find a published skill linked to a specific tool.
-
-        Args:
-            tool_name: The MCP tool name
-
-        Returns:
-            Skill info dict or None
-        """
+        """Find a Published skill linked to ``tool_name`` that the caller can see."""
         skill_name = frappe.db.get_value(
             "FAC Skill",
             {"linked_tool": tool_name, "status": "Published"},
@@ -230,11 +182,11 @@ class SkillManager:
                 UPDATE `tabFAC Skill`
                 SET use_count = use_count + 1, last_used = NOW()
                 WHERE name = %s
-            """,
+                """,
                 (skill_name,),
             )
         except Exception as e:
-            self.logger.warning(f"Failed to increment usage for {skill_name}: {e}")
+            frappe.logger("skill_manager").warning(f"Failed to increment usage for {skill_name}: {e}")
 
     def _user_can_access_skill(self, skill_doc) -> bool:
         """Check if current user can access the skill."""
@@ -262,11 +214,8 @@ class SkillManager:
 
     def get_tool_skill_map(self) -> Dict[str, Dict[str, str]]:
         """
-        Get a map of tool_name -> skill info for all published skills
-        with linked tools. Used for token optimization in replace mode.
-
-        Returns:
-            Dict mapping tool names to {"description": ..., "skill_id": ...}
+        Map of ``tool_name -> {description, skill_id}`` for all Published
+        Tool-Usage skills. Drives token-optimization in replace mode.
         """
         skills = frappe.get_all(
             "FAC Skill",
@@ -280,31 +229,21 @@ class SkillManager:
         return {s.linked_tool: {"description": s.description, "skill_id": s.skill_id} for s in skills}
 
 
-# Global manager instance
-_skill_manager = None
-
-
 def get_skill_manager() -> SkillManager:
-    """Get singleton instance of SkillManager."""
-    global _skill_manager
-    if _skill_manager is None:
-        _skill_manager = SkillManager()
-    return _skill_manager
+    """Construct a fresh SkillManager. Kept for backwards compatibility."""
+    return SkillManager()
 
 
 def handle_resources_list(request_id: Optional[Any] = None) -> Dict[str, Any]:
     """Handle resources/list request - return available skill resources."""
     try:
-        if not _should_use_skills():
+        if not frappe.db.table_exists("FAC Skill"):
             return {"resources": []}
 
-        manager = get_skill_manager()
+        manager = SkillManager()
         skill_infos = manager.get_user_accessible_skills()
 
-        resources = []
-        for skill_info in skill_infos:
-            if skill_info.get("status") == "Published":
-                resources.append(manager.get_skill_as_resource(skill_info))
+        resources = [manager.get_skill_as_resource(s) for s in skill_infos if s.get("status") == "Published"]
 
         api_logger.info(f"Resources list request completed, returned {len(resources)} resources")
         return {"resources": resources}
@@ -316,47 +255,33 @@ def handle_resources_list(request_id: Optional[Any] = None) -> Dict[str, Any]:
 
 def handle_resources_read(params: Dict[str, Any], request_id: Optional[Any] = None) -> Dict[str, Any]:
     """Handle resources/read request - return skill content by URI."""
+    uri = params.get("uri", "")
+
+    if not uri.startswith(_SKILL_URI_PREFIX):
+        raise ValueError(f"Unknown resource URI scheme: {uri}")
+
+    skill_id = uri[len(_SKILL_URI_PREFIX) :]
+    if not skill_id or not _SKILL_ID_RE.match(skill_id):
+        raise ValueError(f"Invalid skill_id in URI: {uri!r}")
+
     try:
-        uri = params.get("uri", "")
-
-        if not uri.startswith("fac://skills/"):
-            raise ValueError(f"Unknown resource URI scheme: {uri}")
-
-        skill_id = uri.replace("fac://skills/", "")
-        if not skill_id:
-            raise ValueError("Missing skill_id in URI")
-
-        manager = get_skill_manager()
+        manager = SkillManager()
         content = manager.read_skill_content(skill_id)
-
-        if content is None:
-            raise ValueError(f"Skill not found: {skill_id}")
-
-        return {
-            "contents": [
-                {
-                    "uri": uri,
-                    "mimeType": "text/markdown",
-                    "text": content,
-                }
-            ]
-        }
-
-    except frappe.PermissionError as e:
-        raise
-    except ValueError as e:
+    except frappe.PermissionError:
         raise
     except Exception as e:
         api_logger.error(f"Error in handle_resources_read: {e}")
         raise
 
+    if content is None:
+        raise ValueError(f"Skill not found: {skill_id}")
 
-def _should_use_skills() -> bool:
-    """Check if FAC Skill table exists and has published skills."""
-    try:
-        if not frappe.db.table_exists("FAC Skill"):
-            return False
-        count = frappe.db.count("FAC Skill", {"status": "Published"})
-        return count > 0
-    except Exception:
-        return False
+    return {
+        "contents": [
+            {
+                "uri": uri,
+                "mimeType": "text/markdown",
+                "text": content,
+            }
+        ]
+    }

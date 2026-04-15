@@ -7,9 +7,7 @@
 
     // Load skills view
     ns.loadSkillsView = function() {
-        $('#skills-list').html(
-            '<div style="padding:20px;text-align:center;color:var(--text-muted);"><i class="fa fa-spinner fa-spin"></i> Loading...</div>'
-        );
+        $('#skills-list').html(ns.skeletonCards(3));
         frappe.call({
             method: "frappe_assistant_core.api.admin_api.get_skills_list",
             callback: function(response) {
@@ -45,9 +43,31 @@
         });
 
         if (filtered.length === 0) {
-            $('#skills-list').html(
-                '<div style="padding:20px;text-align:center;color:var(--text-muted);">No skills match the filters</div>'
-            );
+            const zeroData = !ns.state.skillsData || ns.state.skillsData.length === 0;
+            if (zeroData) {
+                $('#skills-list').html(`
+                    <div class="fac-empty-state">
+                        <i class="fa fa-graduation-cap" aria-hidden="true"></i>
+                        <div class="fac-empty-title">No skills yet</div>
+                        <div class="fac-empty-subtitle">Skills are reusable workflows or tool-usage patterns exposed to MCP clients.</div>
+                        <a href="/app/fac-skill/new?status=Draft" class="btn btn-xs btn-primary">Create skill</a>
+                    </div>
+                `);
+            } else {
+                $('#skills-list').html(`
+                    <div class="fac-empty-state">
+                        <i class="fa fa-search" aria-hidden="true"></i>
+                        <div class="fac-empty-title">No skills match the current filters</div>
+                        <button type="button" class="btn btn-xs btn-default fac-clear-skill-filters">Clear filters</button>
+                    </div>
+                `);
+                $('.fac-clear-skill-filters').on('click', function() {
+                    $('#skill-search').val('');
+                    $('#skill-type-filter').val('');
+                    $('#skill-status-filter').val('');
+                    ns.renderSkillsList();
+                });
+            }
             return;
         }
 
@@ -66,16 +86,21 @@
                     </div>
                     <div class="fac-item-actions">
                         <button class="fac-tool-settings-btn fac-skill-content-btn"
-                                data-name="${s.name}" title="View skill content">
-                            <i class="fa fa-book"></i>
+                                data-name="${s.name}"
+                                aria-label="View content of skill ${frappe.utils.escape_html(s.title)}"
+                                title="View skill content">
+                            <i class="fa fa-book" aria-hidden="true"></i>
                         </button>
                         <a href="/app/fac-skill/${encodeURIComponent(s.name)}" target="_blank"
-                           class="fac-tool-settings-btn" title="Open in DocType">
-                            <i class="fa fa-external-link"></i>
+                           class="fac-tool-settings-btn"
+                           aria-label="Open ${frappe.utils.escape_html(s.title)} in DocType editor"
+                           title="Open in DocType">
+                            <i class="fa fa-external-link" aria-hidden="true"></i>
                         </a>
                         <label class="switch" style="margin:0;" title="${isPublished ? 'Click to unpublish' : 'Click to publish'}">
                             <input type="checkbox" class="fac-skill-toggle"
                                    data-name="${s.name}"
+                                   aria-label="Publish skill ${frappe.utils.escape_html(s.title)}"
                                    ${isPublished ? 'checked' : ''}
                                    ${isToggling ? 'disabled' : ''}>
                             <span class="slider round"></span>

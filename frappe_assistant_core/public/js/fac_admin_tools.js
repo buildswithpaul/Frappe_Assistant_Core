@@ -25,16 +25,24 @@
                     const toggleBtn = $('#toggle-server');
                     const toggleText = $('#toggle-server-text');
 
+                    const statusPill = $('#server-status-pill');
+                    statusText.text('Frappe Assistant Core');
                     if (isEnabled) {
                         statusIcon.removeClass('inactive').addClass('active');
-                        statusText.text('Frappe Assistant Core - Running');
+                        statusPill
+                            .removeClass('fac-status-pill--stopped')
+                            .addClass('fac-status-pill--running')
+                            .html('<span class="fac-status-dot" aria-hidden="true"></span> Running');
                         toggleBtn.removeClass('btn-primary').addClass('btn-warning');
-                        toggleText.html('<i class="fa fa-stop"></i> Disable');
+                        toggleText.html('<i class="fa fa-stop" aria-hidden="true"></i> Disable');
                     } else {
                         statusIcon.removeClass('active').addClass('inactive');
-                        statusText.text('Frappe Assistant Core - Stopped');
+                        statusPill
+                            .removeClass('fac-status-pill--running')
+                            .addClass('fac-status-pill--stopped')
+                            .html('<span class="fac-status-dot" aria-hidden="true"></span> Stopped');
                         toggleBtn.removeClass('btn-warning').addClass('btn-primary');
-                        toggleText.html('<i class="fa fa-play"></i> Enable');
+                        toggleText.html('<i class="fa fa-play" aria-hidden="true"></i> Enable');
                     }
 
                     // Update MCP Endpoint URL from settings (with fallback)
@@ -58,29 +66,33 @@
         frappe.call({
             method: "frappe_assistant_core.api.admin_api.get_server_settings",
             callback: function(response) {
-                if (response.message) {
-                    const currentState = response.message.server_enabled;
-                    const newState = currentState ? 0 : 1;
+                if (!response.message) return;
+                const currentState = response.message.server_enabled;
+                const newState = currentState ? 0 : 1;
 
+                const doToggle = function() {
                     frappe.call({
                         method: "frappe_assistant_core.api.admin_api.update_server_settings",
-                        args: {
-                            server_enabled: newState
-                        },
+                        args: { server_enabled: newState },
                         callback: function(result) {
                             if (result.message) {
                                 frappe.show_alert({
                                     message: newState ? 'FAC Server Enabled' : 'FAC Server Disabled',
                                     indicator: newState ? 'green' : 'orange'
                                 });
-
-                                // Reload status (cache is cleared by API)
-                                setTimeout(function() {
-                                    ns.loadServerStatus();
-                                }, 300);
+                                setTimeout(function() { ns.loadServerStatus(); }, 300);
                             }
                         }
                     });
+                };
+
+                if (newState === 0) {
+                    frappe.confirm(
+                        'Disable the FAC server? All MCP clients will lose access until it is re-enabled.',
+                        doToggle
+                    );
+                } else {
+                    doToggle();
                 }
             }
         });
@@ -194,6 +206,7 @@
                                         <label class="switch" style="margin: 0;">
                                             <input type="checkbox" class="fac-plugin-toggle"
                                                    data-plugin="${plugin.plugin_id}"
+                                                   aria-label="Enable plugin ${frappe.utils.escape_html(plugin.name)}"
                                                    ${plugin.enabled ? 'checked' : ''}
                                                    ${isToggling ? 'disabled' : ''}>
                                             <span class="slider round"></span>
@@ -211,7 +224,13 @@
                             ns.togglePlugin(pluginName, isEnabled);
                         });
                     } else {
-                        $('#tool-registry').html('<div style="padding: 20px; text-align: center; color: var(--text-muted);">No plugins available</div>');
+                        $('#tool-registry').html(`
+                            <div class="fac-empty-state">
+                                <i class="fa fa-cube" aria-hidden="true"></i>
+                                <div class="fac-empty-title">No plugins installed</div>
+                                <div class="fac-empty-subtitle">Install plugins to start registering tools with the MCP server.</div>
+                            </div>
+                        `);
                     }
                 }
             },
@@ -234,19 +253,17 @@
                 if (response.message && response.message.success) {
                     ns.toolsData = response.message.tools;
 
-                    // Populate plugin filter and bulk plugin select
+                    // Populate plugin filter
                     const plugins = [...new Set(ns.toolsData.map(t => t.plugin_name))];
                     const pluginFilter = $('#plugin-filter');
-                    const bulkPluginSelect = $('#bulk-plugin-select');
                     pluginFilter.find('option:gt(0)').remove();
-                    bulkPluginSelect.find('option:gt(0)').remove();
                     plugins.forEach(p => {
                         const label = p.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase());
                         pluginFilter.append(`<option value="${p}">${label}</option>`);
-                        bulkPluginSelect.append(`<option value="${p}">${label}</option>`);
                     });
 
                     ns.renderToolsList();
+                    ns.updateBulkScopeCount();
                 } else {
                     $('#tool-registry').html('<div style="padding: 20px; text-align: center; color: var(--red-500);">Failed to load tools</div>');
                 }
@@ -255,6 +272,14 @@
                 $('#tool-registry').html('<div style="padding: 20px; text-align: center; color: var(--red-500);">Failed to load tools</div>');
             }
         });
+    };
+
+    // Reset tool search / filters to defaults and re-render
+    ns.clearToolFilters = function() {
+        $('#tool-search').val('');
+        $('#category-filter').val('');
+        $('#plugin-filter').val('');
+        ns.renderToolsList();
     };
 
     // Render filtered tools list
@@ -285,7 +310,25 @@
         });
 
         if (filteredTools.length === 0) {
-            $('#tool-registry').html('<div style="padding: 20px; text-align: center; color: var(--text-muted);">No tools match the filters</div>');
+            const zeroData = !ns.toolsData || ns.toolsData.length === 0;
+            if (zeroData) {
+                $('#tool-registry').html(`
+                    <div class="fac-empty-state">
+                        <i class="fa fa-wrench" aria-hidden="true"></i>
+                        <div class="fac-empty-title">No tools registered</div>
+                        <div class="fac-empty-subtitle">Enable a plugin in the Plugins tab to register tools.</div>
+                    </div>
+                `);
+            } else {
+                $('#tool-registry').html(`
+                    <div class="fac-empty-state">
+                        <i class="fa fa-search" aria-hidden="true"></i>
+                        <div class="fac-empty-title">No tools match the current filters</div>
+                        <button type="button" class="btn btn-xs btn-default fac-clear-filters-btn">Clear filters</button>
+                    </div>
+                `);
+                $('.fac-clear-filters-btn').on('click', ns.clearToolFilters);
+            }
             return;
         }
 
@@ -296,33 +339,44 @@
             const roleTagsHtml = (tool.role_access || []).map(r =>
                 `<span class="fac-role-tag" data-role="${r.role}">
                     ${r.role}
-                    <i class="fa fa-times remove-role" data-tool="${tool.name}" data-role="${r.role}"></i>
+                    <button type="button" class="fac-role-remove-btn" aria-label="Remove role ${frappe.utils.escape_html(r.role)}" data-tool="${tool.name}" data-role="${r.role}">
+                        <i class="fa fa-times remove-role" data-tool="${tool.name}" data-role="${r.role}" aria-hidden="true"></i>
+                    </button>
                 </span>`
             ).join('');
 
+            const q = searchTerm;
+            const titleHtml = ns.highlight(tool.display_name, q);
+            const descHtml = ns.highlight(tool.description || 'No description available', q);
             return `
                 <div class="fac-tool-item-detailed ${isToggling ? 'toggle-in-progress' : ''} ${pluginDisabled ? 'fac-disabled-overlay' : ''}" data-tool-name="${tool.name}">
                     <div class="fac-tool-header">
                         <div class="fac-tool-title">
-                            ${tool.display_name}
+                            ${titleHtml}
                             <span class="fac-category-badge ${tool.category}">${tool.category_label}</span>
                         </div>
                         <div class="fac-tool-actions">
                             <button class="fac-tool-settings-btn ${isPanelOpen ? 'active' : ''}"
                                     data-tool="${tool.name}"
+                                    aria-label="Configure role access for ${frappe.utils.escape_html(tool.display_name)}"
+                                    aria-expanded="${isPanelOpen ? 'true' : 'false'}"
                                     title="Configure role access">
-                                <i class="fa fa-cog"></i>
+                                <i class="fa fa-cog" aria-hidden="true"></i>
                             </button>
                             <label class="switch" style="margin: 0;">
                                 <input type="checkbox" class="fac-tool-toggle"
                                        data-tool="${tool.name}"
+                                       aria-label="Enable tool ${frappe.utils.escape_html(tool.display_name)}"
                                        ${tool.tool_enabled ? 'checked' : ''}
                                        ${isToggling || pluginDisabled ? 'disabled' : ''}>
                                 <span class="slider round"></span>
                             </label>
                         </div>
                     </div>
-                    <div class="fac-tool-description">${tool.description || 'No description available'}</div>
+                    <div class="fac-tool-description-wrap">
+                        <div class="fac-tool-description">${descHtml}</div>
+                        <button type="button" class="fac-desc-toggle" aria-expanded="false">Show more</button>
+                    </div>
                     <div class="fac-tool-footer">
                         <span class="fac-tool-badge">${tool.plugin_display_name}</span>
                         ${pluginDisabled ? '<span class="fac-plugin-disabled-notice"><i class="fa fa-exclamation-circle"></i> Plugin disabled</span>' : ''}
@@ -354,9 +408,9 @@
                                 <label class="fac-config-label">Allowed Roles</label>
                                 <div class="fac-role-tags" id="role-tags-${tool.name}">
                                     ${roleTagsHtml}
-                                    <span class="fac-add-role-btn" data-tool="${tool.name}">
-                                        <i class="fa fa-plus"></i> Add Role
-                                    </span>
+                                    <button type="button" class="fac-add-role-btn" data-tool="${tool.name}" aria-label="Add role to ${frappe.utils.escape_html(tool.display_name)}">
+                                        <i class="fa fa-plus" aria-hidden="true"></i> Add Role
+                                    </button>
                                 </div>
                             </div>
                         </div>
@@ -370,6 +424,24 @@
         }).join('');
 
         $('#tool-registry').html(toolsHtml);
+
+        // Hide "Show more" toggle on descriptions that don't actually overflow.
+        $('#tool-registry .fac-tool-description-wrap').each(function() {
+            const desc = $(this).find('.fac-tool-description')[0];
+            const toggle = $(this).find('.fac-desc-toggle');
+            if (desc && desc.scrollHeight <= desc.clientHeight + 2) {
+                toggle.hide();
+            }
+        });
+
+        // Show more / Show less for long tool descriptions
+        $('.fac-desc-toggle').off('click').on('click', function() {
+            const $wrap = $(this).closest('.fac-tool-description-wrap');
+            const expanded = $wrap.toggleClass('expanded').hasClass('expanded');
+            $(this)
+                .text(expanded ? 'Show less' : 'Show more')
+                .attr('aria-expanded', expanded ? 'true' : 'false');
+        });
 
         // Add toggle handlers
         $('.fac-tool-toggle').off('change').on('change', function() {
@@ -504,7 +576,9 @@
         addBtn.before(`
             <span class="fac-role-tag" data-role="${role}">
                 ${role}
-                <i class="fa fa-times remove-role" data-tool="${toolName}" data-role="${role}"></i>
+                <button type="button" class="fac-role-remove-btn" aria-label="Remove role ${frappe.utils.escape_html(role)}" data-tool="${toolName}" data-role="${role}">
+                    <i class="fa fa-times remove-role" data-tool="${toolName}" data-role="${role}" aria-hidden="true"></i>
+                </button>
             </span>
         `);
 
@@ -746,27 +820,37 @@
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    ${activities.slice(0, 5).map(a => `
+                                    ${activities.slice(0, 5).map(a => {
+                                        const ok = a.status === 'Success';
+                                        const icon = ok ? 'fa-check-circle' : 'fa-times-circle';
+                                        return `
                                         <tr>
-                                            <td>${a.action}</td>
-                                            <td>${a.tool_name || '-'}</td>
-                                            <td>${a.user}</td>
+                                            <td>${frappe.utils.escape_html(a.action)}</td>
+                                            <td>${frappe.utils.escape_html(a.tool_name || '-')}</td>
+                                            <td>${frappe.utils.escape_html(a.user)}</td>
                                             <td>
-                                                <span class="indicator-pill ${a.status === 'Success' ? 'green' : 'red'}">
-                                                    ${a.status}
+                                                <span class="indicator-pill ${ok ? 'green' : 'red'}">
+                                                    <i class="fa ${icon}" aria-hidden="true"></i>
+                                                    ${frappe.utils.escape_html(a.status)}
                                                 </span>
                                             </td>
                                             <td style="color: var(--text-muted);">
                                                 ${frappe.datetime.str_to_user(a.timestamp)}
                                             </td>
                                         </tr>
-                                    `).join('')}
+                                    `;}).join('')}
                                 </tbody>
                             </table>
                         `;
                         $('#recent-activity').html(tableHtml);
                     } else {
-                        $('#recent-activity').html('<div style="padding: 20px; text-align: center; color: var(--text-muted);">No recent activity</div>');
+                        $('#recent-activity').html(`
+                            <div class="fac-empty-state fac-empty-state--compact">
+                                <i class="fa fa-history" aria-hidden="true"></i>
+                                <div class="fac-empty-title">No activity yet</div>
+                                <div class="fac-empty-subtitle">Tool calls will appear here.</div>
+                            </div>
+                        `);
                     }
                 }
             },
@@ -777,16 +861,57 @@
     };
 
     // Bulk toggle by category function
+    // Count tools that match the current bulk filter (category + plugin)
+    ns.countBulkScope = function(category, plugin) {
+        if (!ns.toolsData) return 0;
+        return ns.toolsData.filter(t => {
+            if (category && t.category !== category) return false;
+            if (plugin && t.plugin_name !== plugin) return false;
+            return true;
+        }).length;
+    };
+
+    // Update the "Will affect N tools" hint and toggle button disabled state.
+    // Scope reads from the unified filter bar (category + plugin).
+    ns.updateBulkScopeCount = function() {
+        const category = $('#category-filter').val();
+        const plugin = $('#plugin-filter').val();
+        const n = ns.countBulkScope(category, plugin);
+        const $hint = $('#bulk-scope-count');
+        if (n === 0) {
+            $hint.text('No tools match');
+        } else {
+            $hint.text(`${n} tool${n === 1 ? '' : 's'} match`);
+        }
+        $('#bulk-enable-btn, #bulk-disable-btn').prop('disabled', n === 0);
+    };
+
     ns.bulkToggleByCategory = function(category, plugin, enabled) {
         const actionText = enabled ? 'enable' : 'disable';
-        const categoryText = category ? category.replace('_', ' ') : 'all categories';
-        const pluginText = plugin ? ` in ${plugin}` : '';
+        const n = ns.countBulkScope(category, plugin);
+
+        const doBulk = function() {
+            ns._performBulkToggle(category, plugin, enabled);
+        };
+
+        if (!enabled && n > 0) {
+            frappe.confirm(
+                `Disable ${n} tool${n === 1 ? '' : 's'}? Users will no longer be able to invoke ${n === 1 ? 'it' : 'them'} via MCP.`,
+                doBulk
+            );
+        } else {
+            doBulk();
+        }
+    };
+
+    ns._performBulkToggle = function(category, plugin, enabled) {
+        const actionText = enabled ? 'enable' : 'disable';
 
         // Disable buttons during operation
         $('#bulk-enable-btn, #bulk-disable-btn').prop('disabled', true);
         const btn = enabled ? $('#bulk-enable-btn') : $('#bulk-disable-btn');
         const originalHtml = btn.html();
-        btn.html(`<i class="fa fa-spinner fa-spin"></i> ${enabled ? 'Enabling' : 'Disabling'}...`);
+        btn.html(`<i class="fa fa-spinner fa-spin" aria-hidden="true"></i> ${enabled ? 'Enabling' : 'Disabling'}...`);
 
         frappe.call({
             method: "frappe_assistant_core.api.admin_api.bulk_toggle_tools_by_category",
@@ -818,8 +943,11 @@
                 });
             },
             always: function() {
-                // Re-enable buttons
+                // Re-enable buttons (will be re-evaluated by updateBulkScopeCount)
                 $('#bulk-enable-btn, #bulk-disable-btn').prop('disabled', false);
+                if (typeof ns.updateBulkScopeCount === 'function') {
+                    ns.updateBulkScopeCount();
+                }
                 btn.html(originalHtml);
             }
         });

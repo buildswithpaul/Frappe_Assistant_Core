@@ -233,6 +233,45 @@ def on_app_uninstall(app_name: str):
         )
 
 
+def before_app_uninstall(app_name: str):
+    """
+    Hook fired before any app is uninstalled (``before_app_uninstall``).
+
+    Removes ``FAC Skill`` rows registered by that app via the
+    ``assistant_skills`` hook. FAC's own system skills are left alone —
+    FAC's ``after_uninstall`` handles full teardown when FAC itself is
+    removed.
+    """
+    if app_name == "frappe_assistant_core":
+        return
+
+    try:
+        if not frappe.db.table_exists("FAC Skill"):
+            return
+
+        orphans = frappe.get_all(
+            "FAC Skill",
+            filters={"source_app": app_name, "is_system": 1},
+            fields=["name", "skill_id"],
+        )
+        if not orphans:
+            return
+
+        for row in orphans:
+            doc = frappe.get_doc("FAC Skill", row.name)
+            doc.flags.allow_system_delete = True
+            doc.delete(ignore_permissions=True)
+
+        frappe.db.commit()
+        frappe.logger("migration_hooks").info(
+            f"Removed {len(orphans)} skill(s) registered by uninstalled app '{app_name}'"
+        )
+    except Exception as e:
+        frappe.logger("migration_hooks").warning(
+            f"Failed to clean up skills for uninstalled app '{app_name}': {str(e)}"
+        )
+
+
 def get_migration_status() -> Dict[str, Any]:
     """
     Get status of migration-related tool cache operations.
@@ -599,14 +638,18 @@ def _install_app_skills():
         assistant_skills = [
             {
                 "app": "my_app",
-                "manifest": "my_app/data/my_skills.json",
-                "content_dir": "docs/skills"
+                "manifest": "data/my_skills.json",
+                "content_dir": "data/skills"
             }
         ]
 
+    Path resolution:
+        Both ``manifest`` and ``content_dir`` are resolved relative to the
+        app's Python package directory (what ``frappe.get_app_path(app)``
+        returns — e.g. ``.../my_app/my_app/``). Do not prefix paths with
+        the app name.
+
     The manifest JSON has the same structure as FAC's system_skills.json.
-    Content markdown files are resolved relative to the app's root directory
-    (one level above the Python package).
 
     Skills installed via this hook have ``is_system=1`` and ``source_app``
     set to the app name for lifecycle management and cleanup.
@@ -632,9 +675,11 @@ def _install_app_skills():
             content_dir_rel = entry.get("content_dir")
 
             if not app_name or not manifest_rel:
+                frappe.logger("migration_hooks").warning(
+                    f"assistant_skills entry missing 'app' or 'manifest': {entry!r}"
+                )
                 continue
 
-            # Resolve paths relative to the app
             try:
                 app_path = frappe.get_app_path(app_name)
             except Exception:
@@ -643,11 +688,9 @@ def _install_app_skills():
                 )
                 continue
 
-            # manifest path is relative to the app package directory
-            manifest_path = os.path.join(app_path, manifest_rel.split("/", 1)[-1])
-            # content_dir is relative to the app root (one level above package)
-            app_root = os.path.dirname(app_path)
-            content_dir = os.path.join(app_root, content_dir_rel) if content_dir_rel else None
+            # Both manifest and content_dir are relative to the app's package dir.
+            manifest_path = os.path.join(app_path, manifest_rel)
+            content_dir = os.path.join(app_path, content_dir_rel) if content_dir_rel else None
 
             if not os.path.exists(manifest_path):
                 frappe.logger("migration_hooks").warning(
@@ -700,11 +743,22 @@ def _install_app_skills():
                 )
 
                 if existing_name:
-                    # Update existing skill
+                    # Update existing skill.
+                    # Manifest-owned fields are re-synced every migration so app
+                    # authors can evolve metadata. Fields NOT synced here (owner_user,
+                    # is_system) are set once on create and never overwritten.
                     doc = frappe.get_doc("FAC Skill", existing_name)
                     needs_update = False
 
-                    for field in ["title", "description", "skill_type", "linked_tool"]:
+                    for field in [
+                        "title",
+                        "description",
+                        "status",
+                        "visibility",
+                        "skill_type",
+                        "linked_tool",
+                        "category",
+                    ]:
                         if skill_data.get(field) is not None and doc.get(field) != skill_data.get(field):
                             doc.set(field, skill_data.get(field))
                             needs_update = True
@@ -732,6 +786,7 @@ def _install_app_skills():
                     doc.is_system = 1
                     doc.skill_type = skill_data.get("skill_type", "Workflow")
                     doc.linked_tool = skill_data.get("linked_tool")
+                    doc.category = skill_data.get("category")
                     doc.content = content
                     doc.owner_user = "Administrator"
                     doc.source_app = app_name

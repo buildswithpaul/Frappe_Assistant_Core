@@ -7,9 +7,7 @@
 
     // Load prompt templates view
     ns.loadPromptTemplatesView = function() {
-        $('#prompt-templates-list').html(
-            '<div style="padding:20px;text-align:center;color:var(--text-muted);"><i class="fa fa-spinner fa-spin"></i> Loading...</div>'
-        );
+        $('#prompt-templates-list').html(ns.skeletonCards(3));
         frappe.call({
             method: "frappe_assistant_core.api.admin_api.get_prompt_templates_list",
             callback: function(response) {
@@ -43,9 +41,30 @@
         });
 
         if (filtered.length === 0) {
-            $('#prompt-templates-list').html(
-                '<div style="padding:20px;text-align:center;color:var(--text-muted);">No templates match the filters</div>'
-            );
+            const zeroData = !ns.state.promptsData || ns.state.promptsData.length === 0;
+            if (zeroData) {
+                $('#prompt-templates-list').html(`
+                    <div class="fac-empty-state">
+                        <i class="fa fa-file-text-o" aria-hidden="true"></i>
+                        <div class="fac-empty-title">No prompt templates yet</div>
+                        <div class="fac-empty-subtitle">Create a prompt template to expose it to MCP clients.</div>
+                        <a href="/app/prompt-template/new?status=Draft" class="btn btn-xs btn-primary">Create template</a>
+                    </div>
+                `);
+            } else {
+                $('#prompt-templates-list').html(`
+                    <div class="fac-empty-state">
+                        <i class="fa fa-search" aria-hidden="true"></i>
+                        <div class="fac-empty-title">No templates match the current filters</div>
+                        <button type="button" class="btn btn-xs btn-default fac-clear-prompt-filters">Clear filters</button>
+                    </div>
+                `);
+                $('.fac-clear-prompt-filters').on('click', function() {
+                    $('#prompt-search').val('');
+                    $('#prompt-status-filter').val('');
+                    ns.renderPromptTemplatesList();
+                });
+            }
             return;
         }
 
@@ -64,16 +83,21 @@
                     </div>
                     <div class="fac-item-actions">
                         <button class="fac-tool-settings-btn fac-prompt-preview-btn"
-                                data-name="${t.name}" title="Preview template">
-                            <i class="fa fa-eye"></i>
+                                data-name="${t.name}"
+                                aria-label="Preview template ${frappe.utils.escape_html(t.title)}"
+                                title="Preview template">
+                            <i class="fa fa-eye" aria-hidden="true"></i>
                         </button>
                         <a href="/app/prompt-template/${encodeURIComponent(t.name)}" target="_blank"
-                           class="fac-tool-settings-btn" title="Open in DocType">
-                            <i class="fa fa-external-link"></i>
+                           class="fac-tool-settings-btn"
+                           aria-label="Open ${frappe.utils.escape_html(t.title)} in DocType editor"
+                           title="Open in DocType">
+                            <i class="fa fa-external-link" aria-hidden="true"></i>
                         </a>
                         <label class="switch" style="margin:0;" title="${isPublished ? 'Click to unpublish' : 'Click to publish'}">
                             <input type="checkbox" class="fac-prompt-toggle"
                                    data-name="${t.name}"
+                                   aria-label="Publish prompt ${frappe.utils.escape_html(t.title)}"
                                    ${isPublished ? 'checked' : ''}
                                    ${isToggling ? 'disabled' : ''}>
                             <span class="slider round"></span>
