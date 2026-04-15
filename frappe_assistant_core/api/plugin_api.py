@@ -18,6 +18,8 @@
 API endpoints for plugin management.
 """
 
+from typing import Any, Dict
+
 import frappe
 from frappe import _
 
@@ -75,7 +77,7 @@ def refresh_plugins():
 
 
 @frappe.whitelist(allow_guest=False)
-def get_plugin_info(plugin_name):
+def get_plugin_info(plugin_name: str) -> Dict[str, Any]:
     """
     Get detailed information about a specific plugin.
 
