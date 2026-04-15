@@ -18,8 +18,42 @@ import json
 from typing import Any, Dict, Optional
 
 import frappe
-from frappe import _
 from frappe.utils import now
+
+# Allowed values for Assistant Audit Log `status` — must match the DocType Select.
+AUDIT_STATUS_SUCCESS = "Success"
+AUDIT_STATUS_ERROR = "Error"
+AUDIT_STATUS_TIMEOUT = "Timeout"
+AUDIT_STATUS_PERMISSION_DENIED = "Permission Denied"
+_VALID_STATUSES = {
+    AUDIT_STATUS_SUCCESS,
+    AUDIT_STATUS_ERROR,
+    AUDIT_STATUS_TIMEOUT,
+    AUDIT_STATUS_PERMISSION_DENIED,
+}
+
+# Output data is stored as JSON text in a Code field; cap to keep audit rows
+# from bloating when a tool returns a large payload.
+_OUTPUT_DATA_MAX_BYTES = 50_000
+
+# Keys that should never appear in audit logs in cleartext. Matched
+# case-insensitively on substring, same heuristic as BaseTool._sanitize_arguments.
+_SENSITIVE_KEY_SUBSTRINGS = ("password", "api_key", "secret", "token", "auth")
+
+
+def _sanitize_arguments(arguments: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """Defensive sanitization at the audit sink — callers are expected to
+    sanitize too, but this ensures secrets never land in the table even
+    when a non-BaseTool call site forgets."""
+    if not isinstance(arguments, dict):
+        return arguments
+    sanitized: Dict[str, Any] = {}
+    for key, value in arguments.items():
+        if any(sub in key.lower() for sub in _SENSITIVE_KEY_SUBSTRINGS):
+            sanitized[key] = "***REDACTED***"
+        else:
+            sanitized[key] = value
+    return sanitized
 
 
 def log_document_change(doc, method):
@@ -105,12 +139,14 @@ def should_log_document(doctype):
 def log_tool_execution(
     tool_name: str,
     user: str,
-    arguments: Dict[str, Any],
-    success: bool,
+    arguments: Optional[Dict[str, Any]],
+    status: str,
     execution_time: float,
-    source_app: str,
+    source_app: Optional[str] = None,
     error_message: Optional[str] = None,
-    output_data: Optional[Dict[str, Any]] = None,
+    error_type: Optional[str] = None,
+    traceback_str: Optional[str] = None,
+    output_data: Optional[Any] = None,
 ):
     """
     Log tool execution for comprehensive audit trail.
@@ -118,48 +154,66 @@ def log_tool_execution(
     Args:
         tool_name: Name of the executed tool
         user: User who executed the tool
-        arguments: Tool arguments (sensitive data should be pre-sanitized)
-        success: Whether execution was successful
+        arguments: Tool arguments (sensitive data should be pre-sanitized; the
+            sink re-sanitizes defensively)
+        status: One of "Success", "Error", "Timeout", "Permission Denied".
+            Unknown values are coerced to "Error" with a warning.
         execution_time: Time taken in seconds
         source_app: App that provides the tool
         error_message: Error message if execution failed
+        error_type: Exception class name or semantic category (e.g.
+            "PermissionError", "ValidationError", "ToolReportedError")
+        traceback_str: Full Python traceback (exception paths only)
         output_data: Tool output data for audit trail
     """
     try:
-        # Extract target information from arguments
+        if status not in _VALID_STATUSES:
+            frappe.logger("audit_trail").warning(
+                f"log_tool_execution: invalid status {status!r} for tool {tool_name}; coercing to 'Error'"
+            )
+            status = AUDIT_STATUS_ERROR
+
+        sanitized_arguments = _sanitize_arguments(arguments)
+
+        # Extract target information from arguments (after sanitization so we
+        # can't leak secrets via target fields either)
         target_doctype = None
         target_name = None
+        if isinstance(sanitized_arguments, dict):
+            target_doctype = sanitized_arguments.get("doctype")
+            target_name = sanitized_arguments.get("name")
 
-        if arguments and isinstance(arguments, dict):
-            # For tools that work with specific documents
-            target_doctype = arguments.get("doctype")
-            target_name = arguments.get("name")
+        # Serialize output for storage, clamp oversized payloads
+        output_data_str, output_truncated = _serialize_for_audit(output_data)
 
-        # Use tool name directly as action (since action field is now Data type)
-        action = tool_name
-
-        # Serialize output data for storage
-        try:
-            output_data_str = json.dumps(output_data, default=str) if output_data else None
-        except (TypeError, ValueError):
-            # Fallback: convert to string and truncate for large data
-            output_data_str = str(output_data)[:2000]
+        input_data_str = None
+        if sanitized_arguments is not None:
+            try:
+                input_data_str = json.dumps(sanitized_arguments, default=str)
+            except (TypeError, ValueError):
+                input_data_str = str(sanitized_arguments)[:_OUTPUT_DATA_MAX_BYTES]
 
         audit_doc = frappe.get_doc(
             {
                 "doctype": "Assistant Audit Log",
-                "action": action,  # Now uses tool name directly
+                "action": tool_name,
                 "tool_name": tool_name,
                 "user": user,
-                "status": "Success" if success else "Failed",
+                "status": status,
                 "timestamp": now(),
                 "execution_time": execution_time,
-                "target_doctype": target_doctype,  # Populated from arguments
-                "target_name": target_name,  # Populated from arguments
+                "target_doctype": target_doctype,
+                "target_name": target_name,
+                "client_id": getattr(frappe.local, "assistant_client_id", None),
+                "session_id": getattr(frappe.local, "assistant_session_id", None),
+                "source_app": source_app,
                 "ip_address": getattr(frappe.local, "request_ip", None),
-                "input_data": json.dumps(arguments) if arguments else None,
-                "output_data": output_data_str,  # Now includes output
+                "input_data": input_data_str,
+                "output_data": output_data_str,
+                "output_truncated": 1 if output_truncated else 0,
                 "error_message": error_message,
+                "error_type": error_type,
+                "traceback": traceback_str,
             }
         )
 
@@ -168,6 +222,19 @@ def log_tool_execution(
     except Exception as e:
         # Don't fail tool execution due to audit logging issues
         frappe.logger("audit_trail").warning(f"Failed to log tool execution: {str(e)}")
+
+
+def _serialize_for_audit(output_data: Any) -> tuple:
+    """Serialize tool output for the audit row. Returns (json_str_or_none, truncated_bool)."""
+    if output_data is None:
+        return None, False
+    try:
+        serialized = json.dumps(output_data, default=str)
+    except (TypeError, ValueError):
+        serialized = str(output_data)
+    if len(serialized) > _OUTPUT_DATA_MAX_BYTES:
+        return serialized[:_OUTPUT_DATA_MAX_BYTES], True
+    return serialized, False
 
 
 def log_tool_discovery(app_name: str, tools_found: int, errors: int, discovery_time: float):
@@ -181,24 +248,26 @@ def log_tool_discovery(app_name: str, tools_found: int, errors: int, discovery_t
         discovery_time: Time taken for discovery
     """
     try:
+        payload = {
+            "app_name": app_name,
+            "tools_found": tools_found,
+            "errors": errors,
+            "discovery_time": discovery_time,
+        }
+        output_str, truncated = _serialize_for_audit(payload)
         audit_doc = frappe.get_doc(
             {
                 "doctype": "Assistant Audit Log",
                 "action": "discover_tools",
                 "user": frappe.session.user or "System",
-                "status": "Success" if errors == 0 else "Partial",
+                "status": AUDIT_STATUS_SUCCESS if errors == 0 else AUDIT_STATUS_ERROR,
                 "timestamp": now(),
+                "execution_time": discovery_time,
                 "target_doctype": "Tool Discovery",
                 "target_name": app_name,
-                "details": json.dumps(
-                    {
-                        "app_name": app_name,
-                        "tools_found": tools_found,
-                        "errors": errors,
-                        "discovery_time": discovery_time,
-                    },
-                    default=str,
-                ),
+                "source_app": app_name,
+                "output_data": output_str,
+                "output_truncated": 1 if truncated else 0,
             }
         )
 
@@ -219,19 +288,25 @@ def log_security_event(event_type: str, user: str, details: Dict[str, Any], seve
         severity: Event severity (Low, Medium, High, Critical)
     """
     try:
+        payload = {"event_type": event_type, "severity": severity, **details}
+        output_str, truncated = _serialize_for_audit(payload)
         audit_doc = frappe.get_doc(
             {
                 "doctype": "Assistant Audit Log",
                 "action": f"security_{event_type}",
                 "user": user,
-                "status": "Alert",
+                "status": AUDIT_STATUS_PERMISSION_DENIED
+                if event_type == "permission_denied"
+                else AUDIT_STATUS_ERROR,
+                "error_type": f"Security:{severity}",
                 "timestamp": now(),
                 "target_doctype": "Security Event",
                 "target_name": event_type,
+                "client_id": getattr(frappe.local, "assistant_client_id", None),
+                "session_id": getattr(frappe.local, "assistant_session_id", None),
                 "ip_address": getattr(frappe.local, "request_ip", None),
-                "details": json.dumps(
-                    {"event_type": event_type, "severity": severity, **details}, default=str
-                ),
+                "output_data": output_str,
+                "output_truncated": 1 if truncated else 0,
             }
         )
 
