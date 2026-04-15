@@ -128,7 +128,6 @@ class TestSkillsHook(BaseAssistantTest):
                 _delete_skill(sid)
             except Exception:
                 pass
-        frappe.db.commit()
         super().tearDown()
 
     def _track(self, skill_id):
@@ -280,7 +279,6 @@ class TestResourcesHandlers(BaseAssistantTest):
                 _delete_skill(sid)
             except Exception:
                 pass
-        frappe.db.commit()
         super().tearDown()
 
     def _make(self, skill_id, **kwargs):
@@ -373,7 +371,6 @@ class TestBeforeAppUninstall(BaseAssistantTest):
                 _delete_skill(sid)
             except Exception:
                 pass
-        frappe.db.commit()
         super().tearDown()
 
     def test_removes_only_source_app_skills(self):

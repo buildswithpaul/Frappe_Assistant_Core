@@ -533,6 +533,7 @@ def _install_system_skills():
             frappe.logger("migration_hooks").warning(f"System skills manifest not found at {data_path}")
             return
 
+        # nosemgrep: frappe-semgrep-rules.rules.security.frappe-security-file-traversal — app-bundled skills manifest, path derived from __file__
         with open(data_path) as f:
             skills_manifest = json.load(f)
 
@@ -568,6 +569,7 @@ def _install_system_skills():
             if content_file:
                 content_path = os.path.join(docs_skills_dir, content_file)
                 if os.path.exists(content_path):
+                    # nosemgrep: frappe-semgrep-rules.rules.security.frappe-security-file-traversal — skill markdown under app docs dir, filename from app-controlled manifest
                     with open(content_path) as f:
                         content = f.read()
                 else:
@@ -700,6 +702,7 @@ def _install_app_skills():
                 )
                 continue
 
+            # nosemgrep: frappe-semgrep-rules.rules.security.frappe-security-file-traversal — manifest path from frappe.get_app_path, not user input
             with open(manifest_path) as f:
                 skills_manifest = json.load(f)
 
@@ -732,6 +735,7 @@ def _install_app_skills():
                 if content_file and content_dir:
                     content_path = os.path.join(content_dir, content_file)
                     if os.path.exists(content_path):
+                        # nosemgrep: frappe-semgrep-rules.rules.security.frappe-security-file-traversal — skill markdown under app-controlled content_dir, filename from app-controlled manifest
                         with open(content_path) as f:
                             content = f.read()
                     else:
