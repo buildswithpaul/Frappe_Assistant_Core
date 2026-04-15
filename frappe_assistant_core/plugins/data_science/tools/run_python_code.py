@@ -25,6 +25,7 @@ from typing import Any, Dict
 
 import frappe
 from frappe import _
+from frappe.query_builder import Order
 
 from frappe_assistant_core.core.base_tool import BaseTool
 
@@ -800,7 +801,13 @@ PRE-LOADED: pd (pandas), np (numpy), plt (matplotlib), sns (seaborn), frappe, ma
         return "\n".join(cleaned_lines)
 
     def _fetch_data_from_query(self, data_query: Dict[str, Any]) -> list:
-        """Fetch data from Frappe based on query parameters"""
+        """Fetch data from Frappe based on query parameters.
+
+        Uses the Query Builder (`frappe.qb`) so that field names and filter
+        keys — which can come from LLM-generated input — cannot be used to
+        inject SQL. Unknown field names surface as a validation error via
+        `frappe.get_meta`, not as a malformed query reaching the DB.
+        """
         doctype = data_query.get("doctype")
         fields = data_query.get("fields", ["name"])
         filters = data_query.get("filters", {})
@@ -809,57 +816,57 @@ PRE-LOADED: pd (pandas), np (numpy), plt (matplotlib), sns (seaborn), frappe, ma
         if not doctype:
             raise ValueError("DocType is required for data query")
 
-        # Check permission
         if not frappe.has_permission(doctype, "read"):
             raise frappe.PermissionError(f"No permission to read {doctype}")
 
-        # Use raw SQL to avoid frappe._dict objects that cause __array_struct__ issues
-        try:
-            # Build SQL query manually to get clean data
-            field_list = ", ".join([f"`{field}`" for field in fields])
-            table_name = f"tab{doctype}"
+        # Validate doctype up-front so a bad value triggers a clean error
+        # instead of a SQL failure deeper down.
+        meta = frappe.get_meta(doctype)
 
-            # Build WHERE clause from filters
-            where_conditions = []
-            values = []
+        # Validate every field name and filter key against the DocType meta.
+        # `name`, `creation`, `modified`, `modified_by`, `owner`, `docstatus`,
+        # `idx`, `parent`, `parentfield`, `parenttype` are always valid.
+        standard_fields = {
+            "name",
+            "creation",
+            "modified",
+            "modified_by",
+            "owner",
+            "docstatus",
+            "idx",
+            "parent",
+            "parentfield",
+            "parenttype",
+        }
 
-            for key, value in filters.items():
-                if isinstance(value, (list, tuple)):
-                    placeholders = ", ".join(["%s"] * len(value))
-                    where_conditions.append(f"`{key}` IN ({placeholders})")
-                    values.extend(value)
-                elif value is None:
-                    where_conditions.append(f"`{key}` IS NULL")
-                else:
-                    where_conditions.append(f"`{key}` = %s")
-                    values.append(value)
+        def _ensure_field(field_name: str) -> None:
+            if field_name not in standard_fields and not meta.has_field(field_name):
+                raise ValueError(f"Unknown field '{field_name}' on DocType '{doctype}'")
 
-            where_clause = ""
-            if where_conditions:
-                where_clause = "WHERE " + " AND ".join(where_conditions)
+        for field in fields:
+            _ensure_field(field)
+        for key in filters:
+            _ensure_field(key)
 
-            query = f"""
-                SELECT {field_list}
-                FROM `{table_name}`
-                {where_clause}
-                ORDER BY creation DESC
-                LIMIT {limit}
-            """
+        table = frappe.qb.DocType(doctype)
+        query = frappe.qb.from_(table).select(*[table[f] for f in fields])
 
-            # Execute raw SQL to get clean data without frappe._dict objects
-            result = frappe.db.sql(query, values, as_dict=True)
+        for key, value in filters.items():
+            column = table[key]
+            if isinstance(value, (list, tuple)):
+                query = query.where(column.isin(list(value)))
+            elif value is None:
+                query = query.where(column.isnull())
+            else:
+                query = query.where(column == value)
 
-            # Convert to plain Python dicts to avoid array interface issues
-            return [dict(row) for row in result]
+        query = query.orderby(table.creation, order=Order.desc).limit(limit)
 
-        except Exception as e:
-            # Fallback to get_all with conversion if SQL approach fails
-            frappe.log_error(f"SQL data query failed: {str(e)}")
+        rows = query.run(as_dict=True)
 
-            raw_data = frappe.get_all(doctype, fields=fields, filters=filters, limit=limit)
-
-            # Convert frappe._dict objects to plain dicts
-            return [dict(row) for row in raw_data]
+        # Strip frappe._dict wrappers so numpy/pandas interop downstream
+        # doesn't trip on the __array_struct__ attribute.
+        return [dict(row) for row in rows]
 
     def _setup_execution_environment(self) -> Dict[str, Any]:
         """Legacy method - use _setup_secure_execution_environment instead"""

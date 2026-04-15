@@ -70,7 +70,7 @@ def _fetch_latest_audit_row(tool_name: str) -> Dict[str, Any]:
 
 
 def _delete_test_rows(tool_name: str):
-    frappe.db.sql("DELETE FROM `tabAssistant Audit Log` WHERE tool_name = %s", (tool_name,))
+    frappe.db.delete("Assistant Audit Log", {"tool_name": tool_name})
 
 
 class TestAuditLogStatusClassification(BaseAssistantTest):

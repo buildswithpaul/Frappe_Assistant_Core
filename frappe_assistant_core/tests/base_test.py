@@ -37,6 +37,7 @@ class BaseAssistantTest(unittest.TestCase):
 
         # Set default user
         if not hasattr(frappe, "session") or not frappe.session.user:
+            # nosemgrep: frappe-semgrep-rules.rules.security.frappe-setuser — test bootstrap; tests run in isolated transaction
             frappe.set_user("Administrator")
 
     def setUp(self):
@@ -46,6 +47,7 @@ class BaseAssistantTest(unittest.TestCase):
 
         # Set test user
         self.test_user = "Administrator"
+        # nosemgrep: frappe-semgrep-rules.rules.security.frappe-setuser — test bootstrap; tests run in isolated transaction
         frappe.set_user(self.test_user)
 
         # Ensure plugins are enabled for testing
@@ -146,7 +148,7 @@ class BaseAssistantTest(unittest.TestCase):
 
             for doctype in test_doctypes:
                 if frappe.db.exists("DocType", doctype):
-                    frappe.db.sql(f"DELETE FROM `tab{doctype}` WHERE name LIKE 'TEST_%'")
+                    frappe.db.delete(doctype, {"name": ("like", "TEST_%")})
 
             frappe.db.commit()
         except Exception:
