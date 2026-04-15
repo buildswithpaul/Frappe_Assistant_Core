@@ -71,7 +71,7 @@ class TestUsageStatisticsPermissions(BaseAssistantTest):
         frappe.set_user(self.ASSISTANT_USER)
         frappe.clear_cache(user=self.ASSISTANT_USER)
 
-        with patch.object(frappe.flags, "in_test", False):
+        with self.enforce_only_for_checks():
             with self.assertRaises(frappe.PermissionError):
                 get_usage_statistics()
 
@@ -84,7 +84,7 @@ class TestUsageStatisticsPermissions(BaseAssistantTest):
         audit_stat_counts = [3, 1, 2]  # audit log total, today, this week
 
         frappe.set_user("Administrator")
-        with patch.object(frappe.flags, "in_test", False), patch(
+        with self.enforce_only_for_checks(), patch(
             "frappe_assistant_core.api.admin_api.frappe.db.count",
             side_effect=audit_stat_counts,
         ), patch(
@@ -123,7 +123,7 @@ class TestUsageStatisticsPermissions(BaseAssistantTest):
         usage_stat_counts = [3, 1, 2, 3, 1, 2]  # connections total/today/week, audit total/today/week
 
         frappe.set_user("Administrator")
-        with patch.object(frappe.flags, "in_test", False), patch(
+        with self.enforce_only_for_checks(), patch(
             "frappe_assistant_core.api.assistant_api._authenticate_request",
             return_value="Administrator",
         ), patch(

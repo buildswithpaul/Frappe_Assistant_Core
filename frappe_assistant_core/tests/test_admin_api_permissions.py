@@ -21,8 +21,6 @@ Ensures that non-admin users cannot access admin endpoints.
 Ref: https://github.com/buildswithpaul/Frappe_Assistant_Core/issues/105
 """
 
-from unittest.mock import patch
-
 import frappe
 
 from frappe_assistant_core.tests.base_test import BaseAssistantTest
@@ -89,14 +87,14 @@ class TestAdminAPIPermissions(BaseAssistantTest):
         frappe.set_user(self.NON_ADMIN_USER)
         frappe.clear_cache(user=self.NON_ADMIN_USER)
 
-        with patch.object(frappe.flags, "in_test", False):
+        with self.enforce_only_for_checks():
             with self.assertRaises(frappe.PermissionError):
                 func(*args, **kwargs)
 
     def _assert_allowed_for_admin(self, func, *args, **kwargs):
         """Assert that calling func as Administrator does NOT raise PermissionError."""
         frappe.set_user("Administrator")
-        with patch.object(frappe.flags, "in_test", False):
+        with self.enforce_only_for_checks():
             try:
                 func(*args, **kwargs)
             except frappe.PermissionError:

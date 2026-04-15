@@ -19,6 +19,7 @@ Base test class for Frappe Assistant Core tests
 Provides common setup and utilities for all test classes
 """
 
+from contextlib import contextmanager
 import json
 import unittest
 from unittest.mock import MagicMock, patch
@@ -103,6 +104,31 @@ class BaseAssistantTest(unittest.TestCase):
         """Clean up after each test"""
         self.clear_test_data()
         self.cleanup_mocks()
+
+    @contextmanager
+    def enforce_only_for_checks(self):
+        """Run code with Frappe's test-mode permission shortcut disabled."""
+        sentinel = object()
+        flags = getattr(frappe.local, "flags", None)
+        created_flags = flags is None
+
+        if created_flags:
+            frappe.local.flags = frappe._dict()
+            flags = frappe.local.flags
+
+        original_in_test = getattr(flags, "in_test", sentinel)
+        flags.in_test = False
+
+        try:
+            yield
+        finally:
+            if original_in_test is sentinel:
+                flags.pop("in_test", None)
+            else:
+                flags.in_test = original_in_test
+
+            if created_flags and not flags:
+                del frappe.local.flags
 
     def _ensure_plugins_enabled(self):
         """Ensure core plugins are enabled for testing"""
