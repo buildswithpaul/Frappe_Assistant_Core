@@ -20,6 +20,7 @@ def validate_manifest():
 
     # Load and parse JSON
     try:
+        # nosemgrep: frappe-semgrep-rules.rules.security.frappe-security-file-traversal — bundled package manifest next to this script, not user input
         with open("manifest.json") as f:
             manifest = json.load(f)
     except json.JSONDecodeError as e:

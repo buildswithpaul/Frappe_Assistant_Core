@@ -65,6 +65,7 @@ class OAuth2DynamicClientMetadata(BaseModel):
     jwks: dict | None = None
 
 
+# nosemgrep: frappe-semgrep-rules.rules.security.guest-whitelisted-method — RFC 7591 Dynamic Client Registration is unauthenticated by design so new clients can onboard
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 def register_client():
     """
