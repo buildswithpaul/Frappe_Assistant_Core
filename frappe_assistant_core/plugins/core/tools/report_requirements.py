@@ -313,7 +313,7 @@ class ReportRequirements(BaseTool):
                 )
 
                 if os.path.exists(js_path):
-                    # Read JavaScript file
+                    # nosemgrep: frappe-semgrep-rules.rules.security.frappe-security-file-traversal — path built from frappe.get_app_path + report metadata, not user input
                     with open(js_path, encoding="utf-8") as f:
                         js_content = f.read()
 

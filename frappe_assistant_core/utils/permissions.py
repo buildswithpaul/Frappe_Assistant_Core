@@ -51,17 +51,20 @@ def get_roles(user: str) -> list:
 
 
 def get_audit_permission_query_conditions(user=None):
-    """Permission query conditions for assistant Audit Log"""
+    """Permission query conditions for Assistant Audit Log"""
     if not user:
         user = frappe.session.user
 
-    # System Manager and assistant Admin can see all audit logs
-    if "System Manager" in frappe.get_roles(user) or "assistant Admin" in frappe.get_roles(user):
+    roles = frappe.get_roles(user)
+
+    # System Manager, Assistant Admin, and Auditor can see all audit logs
+    if any(r in roles for r in ("System Manager", "Assistant Admin", "Auditor")):
         return ""
 
-    # assistant Users can only see their own audit logs
-    if "assistant User" in frappe.get_roles(user):
-        return f"`tabassistant Audit Log`.user = '{user}'"
+    # Assistant Users can only see their own audit logs
+    if "Assistant User" in roles:
+        # Escape via frappe.db.escape to avoid string-interpolation injection
+        return f"`tabAssistant Audit Log`.user = {frappe.db.escape(user)}"
 
     # No access for others
     return "1=0"

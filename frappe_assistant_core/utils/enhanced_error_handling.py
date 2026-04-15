@@ -441,23 +441,45 @@ class EnhancedErrorHandler:
     def _log_to_audit_trail(self, error_context: ErrorContext):
         """Log error to audit trail"""
         try:
+            from frappe.utils import now
+
+            # Severity + frappe context + resolution suggestions don't have
+            # dedicated columns; fold them into output_data so auditors still
+            # see them when opening the row.
+            extra_payload = {
+                "severity": error_context.severity.value,
+                "operation_id": error_context.operation_id,
+                "frappe_context": error_context.frappe_context,
+                "resolution_suggestions": error_context.resolution_suggestions,
+            }
+            try:
+                output_data_str = frappe.as_json(extra_payload)
+            except Exception:
+                output_data_str = str(extra_payload)
+
             audit_doc = frappe.get_doc(
                 {
                     "doctype": "Assistant Audit Log",
-                    "user": error_context.user,
+                    "action": error_context.tool_name or "error",
                     "tool_name": error_context.tool_name,
-                    "operation_id": error_context.operation_id,
+                    "user": error_context.user,
                     "status": "Error",
-                    "error_message": error_context.message,
                     "error_type": error_context.error_type,
-                    "severity": error_context.severity.value,
-                    "context_data": frappe.as_json(error_context.frappe_context),
-                    "stack_trace": error_context.stack_trace,
-                    "resolution_suggestions": frappe.as_json(error_context.resolution_suggestions),
+                    "error_message": error_context.message,
+                    "traceback": error_context.stack_trace,
+                    "output_data": output_data_str,
+                    "target_name": error_context.operation_id,
+                    "client_id": getattr(frappe.local, "assistant_client_id", None),
+                    "session_id": getattr(frappe.local, "assistant_session_id", None),
+                    "ip_address": getattr(frappe.local, "request_ip", None),
+                    "timestamp": now(),
                 }
             )
             audit_doc.insert(ignore_permissions=True)
-            frappe.db.commit()
+            # Error path runs while the surrounding request is unwinding; commit
+            # explicitly so the audit row survives even if the outer transaction
+            # is rolled back. nosemgrep: frappe-semgrep-rules.rules.frappe-manual-commit
+            frappe.db.commit()  # nosemgrep: frappe-semgrep-rules.rules.frappe-manual-commit
 
         except Exception as e:
             api_logger.error(f"Failed to log to audit trail: {str(e)}")

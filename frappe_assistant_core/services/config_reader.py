@@ -87,6 +87,7 @@ def get_fallback_redis_config() -> Dict[str, Any]:
 
         for config_path in config_paths:
             try:
+                # nosemgrep: frappe-semgrep-rules.rules.security.frappe-security-file-traversal — paths built from bench cwd and fixed config filenames, not user input
                 with open(config_path) as f:
                     for line in f:
                         line = line.strip()

@@ -11,9 +11,11 @@
   "naming_series",
   "action",
   "tool_name",
+  "source_app",
   "user",
   "column_break_1",
   "status",
+  "error_type",
   "execution_time",
   "timestamp",
   "target_section",
@@ -21,11 +23,14 @@
   "target_name",
   "column_break_2",
   "client_id",
+  "session_id",
   "ip_address",
   "details_section",
   "input_data",
   "output_data",
-  "error_message"
+  "output_truncated",
+  "error_message",
+  "traceback"
  ],
  "fields": [
   {
@@ -53,6 +58,13 @@
    "read_only": 1
   },
   {
+   "fieldname": "source_app",
+   "fieldtype": "Data",
+   "label": "Source App",
+   "length": 120,
+   "read_only": 1
+  },
+  {
    "fieldname": "user",
    "fieldtype": "Link",
    "in_list_view": 1,
@@ -73,6 +85,14 @@
    "options": "Success\nError\nTimeout\nPermission Denied",
    "read_only": 1,
    "reqd": 1
+  },
+  {
+   "fieldname": "error_type",
+   "fieldtype": "Data",
+   "label": "Error Type",
+   "length": 60,
+   "read_only": 1,
+   "description": "Exception class name or semantic category (e.g. PermissionError, ValidationError, ToolReportedError, ExecutionError, Timeout)"
   },
   {
    "fieldname": "execution_time",
@@ -115,7 +135,15 @@
    "fieldname": "client_id",
    "fieldtype": "Data",
    "label": "Client ID",
-   "read_only": 1
+   "read_only": 1,
+   "description": "MCP client identifier (e.g. claude-desktop) when available"
+  },
+  {
+   "fieldname": "session_id",
+   "fieldtype": "Data",
+   "label": "Session ID",
+   "read_only": 1,
+   "description": "Per-conversation correlation id. Rows sharing this id belong to the same MCP session."
   },
   {
    "fieldname": "ip_address",
@@ -144,10 +172,24 @@
    "read_only": 1
   },
   {
+   "fieldname": "output_truncated",
+   "fieldtype": "Check",
+   "label": "Output Truncated",
+   "read_only": 1,
+   "description": "Set when output_data exceeded the audit size limit and was clipped"
+  },
+  {
    "fieldname": "error_message",
    "fieldtype": "Text",
    "label": "Error Message",
    "read_only": 1
+  },
+  {
+   "fieldname": "traceback",
+   "fieldtype": "Long Text",
+   "label": "Traceback",
+   "read_only": 1,
+   "description": "Python traceback captured for unhandled exceptions"
   }
  ],
  "links": [],

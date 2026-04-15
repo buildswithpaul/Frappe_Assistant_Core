@@ -67,6 +67,7 @@ class CorePlugin(BasePlugin):
             "report_requirements",
             # Workflow tools
             "run_workflow",
+            "get_pending_approvals",
         ]
 
     def validate_environment(self):

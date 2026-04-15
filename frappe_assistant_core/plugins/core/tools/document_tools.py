@@ -312,10 +312,14 @@ class DocumentTools:
                     "user": frappe.session.user,
                     "user_roles": frappe.get_roles(),
                     "doctype_permissions": {
-                        "read": frappe.has_permission(doctype, "read"),
-                        "write": frappe.has_permission(doctype, "write"),
-                        "create": frappe.has_permission(doctype, "create"),
-                        "delete": frappe.has_permission(doctype, "delete"),
+                        # Reporting capabilities to the caller — not a security
+                        # boundary. Enforcement happens via the read check
+                        # earlier in list_documents; these booleans just tell
+                        # the LLM what actions it could take next.
+                        "read": frappe.has_permission(doctype, "read", throw=False),
+                        "write": frappe.has_permission(doctype, "write", throw=False),
+                        "create": frappe.has_permission(doctype, "create", throw=False),
+                        "delete": frappe.has_permission(doctype, "delete", throw=False),
                     },
                     "query_attempts": len(error_details) + 1,
                     "final_fields_used": safe_fields,

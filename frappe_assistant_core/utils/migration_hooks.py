@@ -323,6 +323,7 @@ def _install_system_prompt_categories():
             frappe.logger("migration_hooks").warning(f"Prompt category data not found at {data_path}")
             return
 
+        # nosemgrep: frappe-semgrep-rules.rules.security.frappe-security-file-traversal — app-bundled seed JSON, path derived from __file__
         with open(data_path) as f:
             categories = json.load(f)
 
@@ -412,6 +413,7 @@ def _install_system_prompt_templates():
             frappe.logger("migration_hooks").warning(f"Prompt template data not found at {data_path}")
             return
 
+        # nosemgrep: frappe-semgrep-rules.rules.security.frappe-security-file-traversal — app-bundled seed JSON, path derived from __file__
         with open(data_path) as f:
             templates = json.load(f)
 
