@@ -476,7 +476,10 @@ class EnhancedErrorHandler:
                 }
             )
             audit_doc.insert(ignore_permissions=True)
-            frappe.db.commit()
+            # Error path runs while the surrounding request is unwinding; commit
+            # explicitly so the audit row survives even if the outer transaction
+            # is rolled back. nosemgrep: frappe-semgrep-rules.rules.frappe-manual-commit
+            frappe.db.commit()  # nosemgrep: frappe-semgrep-rules.rules.frappe-manual-commit
 
         except Exception as e:
             api_logger.error(f"Failed to log to audit trail: {str(e)}")

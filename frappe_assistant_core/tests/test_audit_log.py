@@ -69,18 +69,20 @@ def _fetch_latest_audit_row(tool_name: str) -> Dict[str, Any]:
     return rows[0]
 
 
+def _delete_test_rows(tool_name: str):
+    frappe.db.sql("DELETE FROM `tabAssistant Audit Log` WHERE tool_name = %s", (tool_name,))
+
+
 class TestAuditLogStatusClassification(BaseAssistantTest):
     """A tool call's audit status must reflect what actually happened."""
 
     def setUp(self):
         super().setUp()
-        frappe.db.sql("DELETE FROM `tabAssistant Audit Log` WHERE tool_name = %s", (_TEST_TOOL_NAME,))
-        frappe.db.commit()
+        _delete_test_rows(_TEST_TOOL_NAME)
 
     def test_successful_execution_logs_success(self):
-        tool = _ToolBase(executor=lambda args: {"items": [1, 2, 3]})
+        tool = _ToolBase(executor=lambda arguments: {"items": [1, 2, 3]})
         response = tool._safe_execute({})
-        frappe.db.commit()
 
         self.assertTrue(response["success"])
         row = _fetch_latest_audit_row(_TEST_TOOL_NAME)
@@ -92,12 +94,11 @@ class TestAuditLogStatusClassification(BaseAssistantTest):
         """A tool returning {"success": False, ...} was previously logged as
         Success. It must now be logged as Error with ToolReportedError type."""
 
-        def executor(args):
+        def executor(arguments):
             return {"success": False, "error": "file not found"}
 
         tool = _ToolBase(executor=executor)
         response = tool._safe_execute({})
-        frappe.db.commit()
 
         self.assertFalse(response["success"])
         self.assertEqual(response["error_type"], "ToolReportedError")
@@ -108,24 +109,22 @@ class TestAuditLogStatusClassification(BaseAssistantTest):
         self.assertIn("file not found", row["error_message"] or "")
 
     def test_permission_error_logs_permission_denied(self):
-        def executor(args):
+        def executor(arguments):
             raise frappe.PermissionError("no access")
 
         tool = _ToolBase(executor=executor)
         tool._safe_execute({})
-        frappe.db.commit()
 
         row = _fetch_latest_audit_row(_TEST_TOOL_NAME)
         self.assertEqual(row["status"], "Permission Denied")
         self.assertEqual(row["error_type"], "PermissionError")
 
     def test_uncaught_exception_logs_error_with_traceback(self):
-        def executor(args):
+        def executor(arguments):
             raise RuntimeError("boom")
 
         tool = _ToolBase(executor=executor)
         tool._safe_execute({})
-        frappe.db.commit()
 
         row = _fetch_latest_audit_row(_TEST_TOOL_NAME)
         self.assertEqual(row["status"], "Error")
@@ -134,12 +133,11 @@ class TestAuditLogStatusClassification(BaseAssistantTest):
         self.assertIn("RuntimeError", row["traceback"])
 
     def test_timeout_error_logs_timeout(self):
-        def executor(args):
+        def executor(arguments):
             raise TimeoutError("tool timed out")
 
         tool = _ToolBase(executor=executor)
         tool._safe_execute({})
-        frappe.db.commit()
 
         row = _fetch_latest_audit_row(_TEST_TOOL_NAME)
         self.assertEqual(row["status"], "Timeout")
@@ -151,13 +149,11 @@ class TestAuditLogFieldCapture(BaseAssistantTest):
 
     def setUp(self):
         super().setUp()
-        frappe.db.sql("DELETE FROM `tabAssistant Audit Log` WHERE tool_name = %s", (_TEST_TOOL_NAME,))
-        frappe.db.commit()
+        _delete_test_rows(_TEST_TOOL_NAME)
 
     def test_source_app_is_written(self):
-        tool = _ToolBase(executor=lambda args: {"ok": True})
+        tool = _ToolBase(executor=lambda arguments: {"ok": True})
         tool._safe_execute({})
-        frappe.db.commit()
 
         row = _fetch_latest_audit_row(_TEST_TOOL_NAME)
         self.assertEqual(row["source_app"], "frappe_assistant_core")
@@ -166,9 +162,8 @@ class TestAuditLogFieldCapture(BaseAssistantTest):
         frappe.local.assistant_session_id = "session-abc"
         frappe.local.assistant_client_id = "claude-desktop-test"
         try:
-            tool = _ToolBase(executor=lambda args: {"ok": True})
+            tool = _ToolBase(executor=lambda arguments: {"ok": True})
             tool._safe_execute({})
-            frappe.db.commit()
 
             row = _fetch_latest_audit_row(_TEST_TOOL_NAME)
             self.assertEqual(row["session_id"], "session-abc")
@@ -184,9 +179,8 @@ class TestAuditLogFieldCapture(BaseAssistantTest):
         # 50KB sink cap. Many small items under an unrecognised key works.
         big_payload = {f"item_{i}": "padding" * 200 for i in range(60)}
 
-        tool = _ToolBase(executor=lambda args: big_payload)
+        tool = _ToolBase(executor=lambda arguments: big_payload)
         tool._safe_execute({})
-        frappe.db.commit()
 
         row = _fetch_latest_audit_row(_TEST_TOOL_NAME)
         self.assertEqual(row["output_truncated"], 1)
@@ -199,7 +193,7 @@ class TestAuditSinkSanitization(BaseAssistantTest):
         from frappe_assistant_core.utils.audit_trail import log_tool_execution
 
         tool_name = "test_audit_sanitization"
-        frappe.db.sql("DELETE FROM `tabAssistant Audit Log` WHERE tool_name = %s", (tool_name,))
+        _delete_test_rows(tool_name)
 
         log_tool_execution(
             tool_name=tool_name,
@@ -209,7 +203,6 @@ class TestAuditSinkSanitization(BaseAssistantTest):
             execution_time=0.01,
             source_app="frappe_assistant_core",
         )
-        frappe.db.commit()
 
         row = frappe.get_all(
             "Assistant Audit Log",
@@ -225,7 +218,7 @@ class TestAuditSinkSanitization(BaseAssistantTest):
         from frappe_assistant_core.utils.audit_trail import log_tool_execution
 
         tool_name = "test_audit_invalid_status"
-        frappe.db.sql("DELETE FROM `tabAssistant Audit Log` WHERE tool_name = %s", (tool_name,))
+        _delete_test_rows(tool_name)
 
         log_tool_execution(
             tool_name=tool_name,
@@ -235,7 +228,6 @@ class TestAuditSinkSanitization(BaseAssistantTest):
             execution_time=0.0,
             source_app="frappe_assistant_core",
         )
-        frappe.db.commit()
 
         row = frappe.get_all(
             "Assistant Audit Log",
