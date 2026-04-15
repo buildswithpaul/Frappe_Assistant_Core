@@ -886,6 +886,75 @@ tests/
 - **Performance**: Tool execution timing and metrics
 - **Health Checks**: Plugin validation and status
 
+## Skills Subsystem
+
+Skills are markdown knowledge documents stored in the **FAC Skill** DocType and surfaced to MCP clients as Resources. A Tool Usage skill teaches the LLM how to use one tool well; a Workflow skill describes a multi-step procedure. Either way, the markdown is fetched on demand — it doesn't inflate every `tools/list` response — and can be shipped with an app via the `assistant_skills` hook or authored by users through the FAC Admin UI.
+
+### Component flow
+
+```mermaid
+graph TB
+    subgraph "MCP Client"
+        Client[Claude Desktop / Web / Inspector]
+    end
+
+    subgraph "MCP Server"
+        ToolsList[tools/list handler]
+        ResList[resources/list handler]
+        ResRead[resources/read handler]
+    end
+
+    subgraph "Skills Subsystem"
+        SM[SkillManager<br/>stateless, per-request]
+        PermQuery[Permission query<br/>get_skill_permission_query_conditions]
+        ToolMap[get_tool_skill_map<br/>tool → skill lookup]
+    end
+
+    subgraph "Storage"
+        FACSkill[(FAC Skill DocType<br/>markdown in content field)]
+        SkillCache[(Redis cache<br/>key: skills)]
+    end
+
+    Client -->|tools/list| ToolsList
+    Client -->|resources/list| ResList
+    Client -->|resources/read uri=fac://skills/...| ResRead
+
+    ToolsList -->|skill_mode=replace| ToolMap
+    ResList --> SM
+    ResRead --> SM
+
+    SM --> PermQuery
+    SM --> FACSkill
+    ToolMap --> FACSkill
+    FACSkill -.cache invalidation on write.-> SkillCache
+```
+
+### Installation paths
+
+1. **App-bundled skills** — a Frappe app declares `assistant_skills` in its `hooks.py`, pointing to a manifest JSON + markdown content directory. `bench migrate` upserts every entry, marking rows with `is_system=1, source_app=<app>`. Obsolete entries are removed on re-migrate; all of the app's skills are removed when the app is uninstalled.
+2. **User-authored skills** — a user creates rows directly in the FAC Skill DocType via the FAC Admin UI. These have `is_system=0` and an `owner_user` that defaults to the creating user.
+
+Both paths converge on the same storage, permissions model, and MCP surface.
+
+### Skill-mode interaction with the tool list
+
+`Assistant Core Settings.skill_mode` controls how skills interact with `tools/list`:
+
+- **`supplementary`** (default) — tool descriptions are unchanged; skills appear only as separate MCP resources.
+- **`replace`** — for every tool that has a linked Published Tool Usage skill, the tool description in `tools/list` is replaced with a short pointer: `<tool_name>: <skill description>. Detailed guidance: fac://skills/<skill-id>`. The full guidance is fetched on demand via `resources/read`. This is a token-optimization path for deployments with many tools.
+
+### Caching and invalidation
+
+Skill queries go through a Redis cache keyed `"skills"` (site-scoped). The cache is invalidated automatically on `FAC Skill.on_update`, `on_trash`, and when the admin toggles a skill's status. This keeps cross-worker Gunicorn deployments consistent without manual intervention.
+
+### Related documentation
+
+- [Skills Developer Guide](../development/SKILLS_DEVELOPER_GUIDE.md) — shipping skills with your Frappe app
+- [Skills User Guide](../guides/SKILLS_USER_GUIDE.md) — creating and publishing skills through the FAC Admin UI
+- [Technical Documentation — Skills](TECHNICAL_DOCUMENTATION.md#skills) — SkillManager, caching, and MCP bindings
+
+---
+
 ## Future Architecture Considerations
 
 ### 1. Enhanced Plugin System

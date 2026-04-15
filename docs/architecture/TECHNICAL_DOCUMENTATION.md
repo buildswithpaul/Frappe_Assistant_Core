@@ -2064,6 +2064,105 @@ pytest --cov=frappe_assistant_core tests/
 
 ---
 
+## Skills
+
+The Skills subsystem adds first-class **MCP Resources** support to FAC. Skills are markdown knowledge documents stored in the `FAC Skill` DocType and surfaced to MCP clients via `resources/list` + `resources/read`. They can be authored by users through the FAC Admin UI or shipped by external Frappe apps via an `assistant_skills` hook.
+
+For end-user and developer-facing docs see the [Skills User Guide](../guides/SKILLS_USER_GUIDE.md) and the [Skills Developer Guide](../development/SKILLS_DEVELOPER_GUIDE.md). This section focuses on the technical implementation.
+
+### Storage model
+
+Skills live in the `FAC Skill` DocType ([`fac_skill.json`](../../frappe_assistant_core/assistant_core/doctype/fac_skill/fac_skill.json)). Notable columns:
+
+- `skill_id` (Data, unique) — matches `^[a-z0-9_-]+$`; used as the URI suffix in `fac://skills/<skill_id>`.
+- `content` (Markdown Editor) — the full markdown body returned by `resources/read`.
+- `status` (Select) — `Draft` / `Published` / `Deprecated`.
+- `visibility` (Select) — `Private` / `Shared` / `Public`.
+- `skill_type` (Select) — `Tool Usage` / `Workflow`.
+- `linked_tool` (Data) — MCP tool name; only meaningful for Tool Usage skills.
+- `is_system` (Check, read-only) / `source_app` (Data, read-only) — set by the installation path for hook-installed skills.
+- `owner_user` (Link → User) — row owner; default `__user`.
+- `shared_with_roles` (Table MultiSelect → Has Role) — populated when `visibility="Shared"`.
+- `use_count` (Int), `last_used` (Datetime) — analytics, bumped inside `SkillManager.read_skill_content`.
+
+DocType-level validation is in [`fac_skill.py`](../../frappe_assistant_core/assistant_core/doctype/fac_skill/fac_skill.py): `skill_id` regex + uniqueness, `shared_with_roles` required when Shared, and a system-skill deletion guard that only admits deletes from the hook loader (via `flags.allow_system_delete`) or when the owning `source_app` is no longer installed.
+
+### SkillManager
+
+[`SkillManager`](../../frappe_assistant_core/api/handlers/resources.py) is a **stateless helper** — one instance per request, no shared state. Key methods:
+
+- `get_user_accessible_skills(user=None)` — returns skills visible to the user. A single `or_filters` query fetches owner + Public + system skills; a separate SQL query joins `Has Role` for Shared skills. Results are deduplicated by `skill_id`.
+- `get_skill_as_resource(skill_info)` — converts a skill row to an MCP resource descriptor (`uri`, `name`, `description`, `mimeType`).
+- `read_skill_content(skill_id)` — resolves the skill, enforces the permission model (Drafts only readable by owner; Published subject to visibility + role matching), and increments the usage counter before returning the markdown. Raises `frappe.PermissionError` on deny; returns `None` for missing skills.
+- `get_skill_by_tool(tool_name)` — finds a Published skill linked to a tool name that the caller can see.
+- `get_tool_skill_map()` — returns `{tool_name: {description, skill_id}}` for every Published Tool Usage skill that has a `linked_tool`. Drives the `replace` skill mode.
+- `increment_usage(skill_name)` — atomic `UPDATE ... SET use_count = use_count + 1, last_used = NOW()`; errors are logged and swallowed so analytics never break a read.
+
+A module-level `get_skill_manager()` factory is kept for backwards compatibility.
+
+### MCP bindings
+
+The MCP server exposes two resource endpoints, both declared in `initialize` capabilities:
+
+- **`resources/list`** ([`resources.py:237`](../../frappe_assistant_core/api/handlers/resources.py)) — calls `SkillManager.get_user_accessible_skills()`, filters to `status == "Published"`, and returns each as an MCP resource descriptor. Returns `{"resources": []}` when the `FAC Skill` table doesn't exist yet (e.g. before first migrate).
+- **`resources/read`** ([`resources.py:256`](../../frappe_assistant_core/api/handlers/resources.py)) — validates the URI against `fac://skills/<slug>` and the `^[a-z0-9_-]+$` slug regex, then delegates to `SkillManager.read_skill_content()`. Raises `ValueError` for malformed URIs or missing skills and re-raises `frappe.PermissionError` so the MCP layer can map it to the right JSON-RPC error.
+
+Both handlers are wired into the MCPServer dispatcher at [`mcp/server.py:201-206`](../../frappe_assistant_core/mcp/server.py) (`resources/list`, `resources/read`, and a stub `resources/templates/list` that returns empty).
+
+### Tool-description replacement (`skill_mode = replace`)
+
+`tools/list` consults `Assistant Core Settings.skill_mode`:
+
+```python
+settings = frappe.get_single("Assistant Core Settings")
+if getattr(settings, "skill_mode", "supplementary") == "replace":
+    skill_replace_map = get_skill_manager().get_tool_skill_map()
+```
+
+For each registered tool in the response, if the tool name is in the replace map, its description is rewritten to:
+
+```
+<tool_name>: <skill description>. Detailed guidance: fac://skills/<skill_id>
+```
+
+See [`mcp/server.py:303-334`](../../frappe_assistant_core/mcp/server.py). Tools without a linked Published skill keep their original descriptions regardless of mode.
+
+### Installation flow for app-bundled skills
+
+The `assistant_skills` hook is processed during `after_migrate` by [`_install_app_skills`](../../frappe_assistant_core/utils/migration_hooks.py) (`migration_hooks.py:660-812`). For each entry:
+
+1. Resolve `manifest` and `content_dir` against `frappe.get_app_path(app)`.
+2. Parse the manifest JSON.
+3. Delete every existing `FAC Skill` with `is_system=1, source_app=<app>` whose `skill_id` is no longer in the manifest. Uses `flags.allow_system_delete` to bypass the system-skill deletion guard.
+4. For each manifest entry: read the markdown from `content_dir/<content_file>`, then upsert. On create, fields are set from the manifest with these defaults: `status=Published`, `visibility=Public`, `skill_type=Workflow` (note: differs from the UI default of Tool Usage), `owner_user=Administrator`, `is_system=1`. On update, only manifest-owned fields (`title`, `description`, `status`, `visibility`, `skill_type`, `linked_tool`, `category`, `content`, `source_app`) are re-synced; `owner_user` and `is_system` are preserved.
+
+Uninstall cleanup is handled by `before_app_uninstall` ([`migration_hooks.py:550-578`](../../frappe_assistant_core/utils/migration_hooks.py)): every row with `source_app=<uninstalling_app>` is deleted. FAC itself is skipped to avoid wiping system skills during self-uninstall.
+
+### Permissions
+
+Two layers enforce visibility:
+
+- **DocType layer** — [`get_skill_permission_query_conditions`](../../frappe_assistant_core/utils/permissions.py) in `utils/permissions.py:135-180`, wired in via `hooks.py:119`. Constructs a SQL WHERE clause covering owner, Public + Published, System + Published, and Shared + Published (with a `Has Role` EXISTS subquery). System Managers see everything (empty conditions). Other roles are denied (`1=0`).
+- **MCP read layer** — `SkillManager._user_can_access_skill` ([`resources.py:191-213`](../../frappe_assistant_core/api/handlers/resources.py)) runs the same logic in Python when fetching a single skill, with the additional rule that the owner can read their own Drafts.
+
+The two layers agree for Published skills; Drafts are only reachable through the owner path.
+
+### Caching
+
+Skill queries use a Redis cache under the `"skills"` key (site-scoped). The cache is invalidated on:
+
+- `FAC Skill.on_update` — every save ([`fac_skill.py:56-58`](../../frappe_assistant_core/assistant_core/doctype/fac_skill/fac_skill.py))
+- `FAC Skill.on_trash` — every delete ([`fac_skill.py:60-69`](../../frappe_assistant_core/assistant_core/doctype/fac_skill/fac_skill.py))
+- Admin UI publish/unpublish toggles
+
+This makes skills safe under multi-worker Gunicorn deployments without extra synchronization.
+
+### Analytics
+
+`use_count` and `last_used` are updated only on `resources/read`, not on `resources/list`. The update is a single atomic SQL statement inside `SkillManager.increment_usage` and failures are logged but never surfaced to the caller — analytics never block reads. Use these fields to prune unused skills that are adding noise to `resources/list`.
+
+---
+
 ## Quick Reference
 
 ### Documentation Links
