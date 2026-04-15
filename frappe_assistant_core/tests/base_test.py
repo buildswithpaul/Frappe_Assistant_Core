@@ -72,23 +72,28 @@ class BaseAssistantTest(unittest.TestCase):
         """
         Execute a tool via registry expecting tool-level failure.
         Returns the tool result for further assertions.
+
+        Works for both failure modes:
+        - Tool raised an exception — registry wrapper has success=False and
+          error_type set; no inner "result" dict.
+        - Tool returned {"success": False, ...} — registry wrapper now also
+          has success=False (since the audit-log accuracy fix) with
+          error_type="ToolReportedError" and the tool's dict under "result".
         """
         registry_result = registry.execute_tool(tool_name, arguments)
 
-        # Registry execution should succeed even if tool fails
-        self.assertTrue(
-            registry_result.get("success"), f"Registry execution failed: {registry_result.get('error')}"
-        )
-
-        # Get tool result and verify it failed
-        tool_result = registry_result.get("result", {})
         self.assertFalse(
-            tool_result.get("success"), f"Tool execution should have failed but succeeded: {tool_result}"
+            registry_result.get("success"),
+            f"Tool execution should have failed but succeeded: {registry_result}",
         )
 
-        # Check error message if provided
+        # Prefer the inner tool dict when present (ToolReportedError path);
+        # fall back to the wrapper itself for exception-raising tools.
+        tool_result = registry_result.get("result") or registry_result
+
         if expected_error_text:
-            self.assertIn(expected_error_text, tool_result.get("error", ""))
+            error_text = tool_result.get("error") or registry_result.get("error") or ""
+            self.assertIn(expected_error_text, error_text)
 
         return tool_result
 
