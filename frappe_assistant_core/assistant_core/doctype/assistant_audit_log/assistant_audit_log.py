@@ -21,7 +21,7 @@ from frappe.utils import now
 
 
 class AssistantAuditLog(Document):
-    """assistant Audit Log DocType controller"""
+    """Assistant Audit Log DocType controller"""
 
     def before_insert(self):
         """Set default values before inserting"""
@@ -57,11 +57,11 @@ def get_audit_statistics():
     today = frappe.utils.today()
 
     # Total actions today
-    total_today = frappe.db.count("assistant Audit Log", filters={"creation": [">=", today]})
+    total_today = frappe.db.count("Assistant Audit Log", filters={"creation": [">=", today]})
 
     # Success rate today
     successful_today = frappe.db.count(
-        "assistant Audit Log", filters={"creation": [">=", today], "status": "Success"}
+        "Assistant Audit Log", filters={"creation": [">=", today], "status": "Success"}
     )
 
     success_rate = (successful_today / total_today * 100) if total_today > 0 else 0
@@ -70,7 +70,7 @@ def get_audit_statistics():
     most_used_tools = frappe.db.sql(
         """
         SELECT tool_name, COUNT(*) as count
-        FROM `tabassistant Audit Log`
+        FROM `tabAssistant Audit Log`
         WHERE DATE(creation) = %s AND tool_name IS NOT NULL
         GROUP BY tool_name
         ORDER BY count DESC
@@ -85,7 +85,7 @@ def get_audit_statistics():
         frappe.db.sql(
             """
         SELECT AVG(execution_time) as avg_time
-        FROM `tabassistant Audit Log`
+        FROM `tabAssistant Audit Log`
         WHERE DATE(creation) = %s AND execution_time IS NOT NULL
     """,
             (today,),
@@ -102,9 +102,9 @@ def get_audit_statistics():
 
 
 def get_context(context):
-    context.title = _("assistant Audit Log")
+    context.title = _("Assistant Audit Log")
     context.docs = get_audit_logs()
 
 
 def get_audit_logs():
-    return frappe.get_all("assistant Audit Log", fields=["*"], order_by="creation desc")
+    return frappe.get_all("Assistant Audit Log", fields=["*"], order_by="creation desc")
