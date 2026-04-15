@@ -23,21 +23,6 @@ import frappe
 from frappe_assistant_core.tests.base_test import BaseAssistantTest
 
 
-def _strict_only_for(roles, message=False):
-    """frappe.only_for replacement that enforces checks during tests."""
-    if frappe.session.user == "Administrator":
-        return
-    if isinstance(roles, str):
-        roles = (roles,)
-    if set(roles).isdisjoint(frappe.get_roles()):
-        if not message:
-            raise frappe.PermissionError
-        frappe.throw(
-            f"This action is only allowed for {', '.join(roles)}",
-            frappe.PermissionError,
-        )
-
-
 class TestUsageStatisticsPermissions(BaseAssistantTest):
     """Ensure usage statistics are restricted to assistant admins."""
 
@@ -85,13 +70,10 @@ class TestUsageStatisticsPermissions(BaseAssistantTest):
 
         frappe.set_user(self.ASSISTANT_USER)
         frappe.clear_cache(user=self.ASSISTANT_USER)
-        original_only_for = frappe.only_for
-        frappe.only_for = _strict_only_for
-        try:
+
+        with patch.object(frappe.flags, "in_test", False):
             with self.assertRaises(frappe.PermissionError):
                 get_usage_statistics()
-        finally:
-            frappe.only_for = original_only_for
 
     def test_admin_usage_statistics_allowed_for_admin(self):
         """Administrator can access admin usage statistics."""
@@ -99,11 +81,12 @@ class TestUsageStatisticsPermissions(BaseAssistantTest):
 
         mock_plugin_manager = MagicMock()
         mock_plugin_manager.get_all_tools.return_value = {"sample_tool": object()}
+        audit_stat_counts = [3, 1, 2]  # audit log total, today, this week
 
         frappe.set_user("Administrator")
-        with patch(
+        with patch.object(frappe.flags, "in_test", False), patch(
             "frappe_assistant_core.api.admin_api.frappe.db.count",
-            side_effect=[3, 1, 2],
+            side_effect=audit_stat_counts,
         ), patch(
             "frappe_assistant_core.api.admin_api.frappe.db.get_list",
             return_value=[],
@@ -137,14 +120,15 @@ class TestUsageStatisticsPermissions(BaseAssistantTest):
 
         mock_plugin_manager = MagicMock()
         mock_plugin_manager.get_all_tools.return_value = {"sample_tool": object()}
+        usage_stat_counts = [3, 1, 2, 3, 1, 2]  # connections total/today/week, audit total/today/week
 
         frappe.set_user("Administrator")
-        with patch(
+        with patch.object(frappe.flags, "in_test", False), patch(
             "frappe_assistant_core.api.assistant_api._authenticate_request",
             return_value="Administrator",
         ), patch(
             "frappe_assistant_core.api.assistant_api.frappe.db.count",
-            side_effect=[3, 1, 2, 3, 1, 2],
+            side_effect=usage_stat_counts,
         ), patch(
             "frappe_assistant_core.api.assistant_api.frappe.db.get_list",
             return_value=[],
