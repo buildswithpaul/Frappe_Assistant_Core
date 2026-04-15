@@ -19,9 +19,9 @@ Base test class for Frappe Assistant Core tests
 Provides common setup and utilities for all test classes
 """
 
-from contextlib import contextmanager
 import json
 import unittest
+from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
 import frappe
