@@ -163,6 +163,11 @@ class MCPServer:
             )
             return self._error_response(response, None, -32700, f"Parse error: {str(e)}")
 
+        # Populate correlation ids on frappe.local so downstream audit logging
+        # can tag every tool execution with the MCP session and client. See
+        # _populate_correlation_ids for header/initialize param fallback order.
+        self._populate_correlation_ids(request, data)
+
         # Check if notification (no response needed)
         if self._is_notification(data):
             response.status_code = 202  # Accepted
@@ -225,6 +230,39 @@ class MCPServer:
             tool_dict: Dict with keys: name, description, inputSchema, fn, annotations
         """
         self._tool_registry[tool_dict["name"]] = tool_dict
+
+    def _populate_correlation_ids(self, request: Request, data: Dict):
+        """
+        Set `frappe.local.assistant_session_id` and `assistant_client_id`.
+
+        Resolution order for session id:
+            1. `Mcp-Session-Id` request header (MCP streamable HTTP transport)
+            2. `X-Assistant-Session-Id` request header (explicit override)
+            3. A freshly-generated UUID4 (per-request fallback)
+
+        Resolution order for client id:
+            1. `X-Assistant-Client-Id` request header
+            2. `clientInfo.name` from the `initialize` params when present
+            3. `None`
+        """
+        import uuid
+
+        import frappe
+
+        session_id = (
+            request.headers.get("Mcp-Session-Id")
+            or request.headers.get("X-Assistant-Session-Id")
+            or str(uuid.uuid4())
+        )
+
+        client_id = request.headers.get("X-Assistant-Client-Id")
+        if not client_id:
+            params = data.get("params") or {}
+            client_info = params.get("clientInfo") or {}
+            client_id = client_info.get("name")
+
+        frappe.local.assistant_session_id = session_id
+        frappe.local.assistant_client_id = client_id
 
     def _handle_initialize(self, params: Dict) -> Dict:
         """
