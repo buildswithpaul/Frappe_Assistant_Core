@@ -43,6 +43,7 @@ def get_frappe_port():
 
             if os.path.exists(sites_path) and os.path.isdir(sites_path):
                 if os.path.exists(config_file):
+                    # nosemgrep: frappe-semgrep-rules.rules.security.frappe-security-file-traversal — bench-local common_site_config.json discovered by traversal from cwd
                     with open(config_file) as f:
                         common_config = json.load(f)
                         if "webserver_port" in common_config:

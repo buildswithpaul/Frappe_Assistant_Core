@@ -33,6 +33,7 @@ from frappe.oauth import generate_json_error_response
 from oauthlib.oauth2 import FatalClientError, OAuth2Error
 
 
+# nosemgrep: frappe-semgrep-rules.rules.security.guest-whitelisted-method — RFC 6749 §3.2 OAuth token endpoint accepts unauthenticated public clients; credential validation happens inside the handler
 @frappe.whitelist(allow_guest=True)
 def get_token(*args, **kwargs):
     """

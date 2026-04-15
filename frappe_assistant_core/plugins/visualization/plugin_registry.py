@@ -272,6 +272,7 @@ class VisualizationPlugin(BasePlugin):
             for template_file in template_files:
                 template_path = os.path.join(template_dir, template_file)
                 if os.path.exists(template_path):
+                    # nosemgrep: frappe-semgrep-rules.rules.security.frappe-security-file-traversal — template_dir is derived from __file__ and template_file is an allow-listed constant
                     with open(template_path) as f:
                         template_data = json.load(f)
                         loaded_templates.append(template_data["name"])

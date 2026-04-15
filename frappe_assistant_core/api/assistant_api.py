@@ -206,6 +206,7 @@ def _authenticate_request() -> Optional[str]:
                             return None
 
                         # Set user context for this request
+                        # nosemgrep: frappe-semgrep-rules.rules.security.frappe-setuser — user authenticated via API key:secret comparison above
                         frappe.set_user(str(user))
                         api_logger.debug(f"API key authentication successful: {user}")
                         return str(user)

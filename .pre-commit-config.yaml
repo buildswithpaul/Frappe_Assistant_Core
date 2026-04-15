@@ -31,6 +31,20 @@ repos:
       - id: ruff-format
         name: "Run ruff formatter"
 
+  # Frappe semgrep rules — same configs the CI 'Linters' workflow uses
+  # (.github/workflows/linter.yml). Runs only on changed Python files.
+  # The wrapper script clones frappe/semgrep-rules into ~/.cache the first
+  # time and refreshes it weekly.
+  - repo: local
+    hooks:
+      - id: frappe-semgrep
+        name: "Run Frappe semgrep rules"
+        entry: scripts/run_frappe_semgrep.sh
+        language: python
+        additional_dependencies: ["semgrep==1.159.0"]
+        types: [python]
+        require_serial: true
+
   # Prettier disabled - no JavaScript/CSS files in this project
   # - repo: https://github.com/pre-commit/mirrors-prettier
   #   rev: v2.7.1

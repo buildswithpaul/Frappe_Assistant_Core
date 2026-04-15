@@ -68,6 +68,7 @@ def secure_user_context(username: Optional[str] = None, require_system_manager: 
 
         # Switch user context if different from current
         if target_user != original_user:
+            # nosemgrep: frappe-semgrep-rules.rules.security.frappe-setuser — context manager restores the previous user in the finally block below
             frappe.set_user(target_user)
             context_changed = True
 

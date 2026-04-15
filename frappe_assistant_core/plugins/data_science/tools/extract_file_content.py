@@ -295,6 +295,7 @@ class ExtractFileContent(BaseTool):
             # 1. Try local filesystem
             file_path = self._get_file_path(file_doc)
             if file_path and os.path.exists(file_path):
+                # nosemgrep: frappe-semgrep-rules.rules.security.frappe-security-file-traversal — _get_file_path scopes to /private or /files under the site directory via frappe.get_site_path
                 with open(file_path, "rb") as f:
                     return f.read()
 
