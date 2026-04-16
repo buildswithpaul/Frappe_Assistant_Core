@@ -503,13 +503,25 @@ See [Contributing Guidelines](Contributing.md) for detailed instructions.
 
 ---
 
+## 💖 Sponsor the Project
+
+Frappe Assistant Core is built and maintained in the open. If it saves your team time or powers part of your workflow, please consider sponsoring ongoing maintenance and new feature work:
+
+- [**GitHub Sponsors**](https://github.com/sponsors/buildswithpaul) — recurring or one-time contributions
+
+Every sponsorship — large or small — directly funds bug fixes, new integrations, and long-term sustainability.
+
+---
+
 ## 📄 License & Support
 
 **License**: AGPL-3.0 - Free for commercial use with source code transparency
 
 **Community Support**: [GitHub Issues](https://github.com/buildswithpaul/Frappe_Assistant_Core/issues) and [Discussions](https://github.com/buildswithpaul/Frappe_Assistant_Core/discussions)
 
-**Enterprise Support**: Need custom development or priority support? Contact us at jypaulclinton@gmail.com
+**Professional Services**: Implementation, custom development, training, and enterprise support are delivered by our partner **[Promantia](https://promantia.com)**. See [COMMERCIAL.md](COMMERCIAL.md) for details.
+
+**Licensing & Partnerships**: For dual-licensing, new partnerships, or sponsorship inquiries, contact jypaulclinton@gmail.com
 
 ---
 

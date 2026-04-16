@@ -11,12 +11,17 @@ from frappe import _
 def get_usage_statistics() -> dict:
     """Get usage statistics for the assistant."""
     from frappe_assistant_core.utils.logger import api_logger
-    from frappe_assistant_core.utils.permissions import check_assistant_permission
+    from frappe_assistant_core.utils.permissions import check_assistant_admin_permission
+
+    if not check_assistant_admin_permission(frappe.session.user):
+        api_logger.warning(
+            f"Usage statistics denied for non-admin user: {frappe.session.user} "
+            f"with roles: {frappe.get_roles(frappe.session.user)}"
+        )
+
+    frappe.only_for(["System Manager", "Assistant Admin"])
 
     try:
-        if not check_assistant_permission(frappe.session.user):
-            frappe.throw(_("Access denied - insufficient permissions"))
-
         api_logger.info(f"Usage statistics requested by user: {frappe.session.user}")
 
         today = frappe.utils.today()
