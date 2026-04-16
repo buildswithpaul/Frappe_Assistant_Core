@@ -19,6 +19,9 @@ import json
 import frappe
 from frappe import _, get_doc, has_permission
 
+ASSISTANT_ADMIN_ROLES = ("System Manager", "Assistant Admin")
+ASSISTANT_ACCESS_ROLES = ASSISTANT_ADMIN_ROLES + ("Assistant User",)
+
 
 def check_tool_permissions(tool_name: str, user: str) -> bool:
     """Check if the user has permissions to access the specified tool."""
@@ -51,20 +54,20 @@ def get_roles(user: str) -> list:
 
 
 def get_audit_permission_query_conditions(user=None):
-    """Permission query conditions for Assistant Audit Log"""
+    """Permission query conditions for Assistant Audit Log."""
     if not user:
         user = frappe.session.user
 
-    roles = frappe.get_roles(user)
+    user_roles = frappe.get_roles(user)
+    escaped_user = frappe.db.escape(user)
 
-    # System Manager, Assistant Admin, and Auditor can see all audit logs
-    if any(r in roles for r in ("System Manager", "Assistant Admin", "Auditor")):
+    # System Manager, Assistant Admin, and Auditor can see all audit logs.
+    if any(role in user_roles for role in ASSISTANT_ADMIN_ROLES + ("Auditor",)):
         return ""
 
-    # Assistant Users can only see their own audit logs
-    if "Assistant User" in roles:
-        # Escape via frappe.db.escape to avoid string-interpolation injection
-        return f"`tabAssistant Audit Log`.user = {frappe.db.escape(user)}"
+    # Assistant Users can only see their own audit logs.
+    if "Assistant User" in user_roles:
+        return f"`tabAssistant Audit Log`.user = {escaped_user}"
 
     # No access for others
     return "1=0"
@@ -76,9 +79,18 @@ def check_assistant_permission(user=None):
         user = frappe.session.user
 
     user_roles = frappe.get_roles(user)
-    assistant_roles = ["System Manager", "Assistant Admin", "Assistant User"]
 
-    return any(role in user_roles for role in assistant_roles)
+    return any(role in user_roles for role in ASSISTANT_ACCESS_ROLES)
+
+
+def check_assistant_admin_permission(user=None):
+    """Check if user has assistant admin access permission."""
+    if not user:
+        user = frappe.session.user
+
+    user_roles = frappe.get_roles(user)
+
+    return any(role in user_roles for role in ASSISTANT_ADMIN_ROLES)
 
 
 def get_prompt_permission_query_conditions(user=None):
