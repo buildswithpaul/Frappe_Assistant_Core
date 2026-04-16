@@ -159,6 +159,14 @@ rendering failures or "column does not exist" errors.
 ```
 
 #### Number card config
+
+**CRITICAL: `measure_name` is the label displayed on the card.** Do NOT use the auto-generated
+format `"sum_of_ColumnName"` — it renders literally as the label. Always set it to a clean
+human-readable string like `"Total Leads"` or `"Active Pipeline"`.
+
+Use `"shorten_numbers": true` for large values (millions, lakhs) so they display as `₹99L`
+instead of `99,34,480`.
+
 ```json
 {
   "date_column": {},
@@ -166,12 +174,13 @@ rendering failures or "column does not exist" errors.
   "limit": 100,
   "number_column_options": [],
   "number_columns": [{
-    "aggregation": "count",
-    "column_name": "name",
+    "aggregation": "sum",
+    "column_name": "Total Leads",
     "data_type": "Integer",
-    "measure_name": "Total Count"
+    "measure_name": "Total Leads"
   }],
-  "order_by": []
+  "order_by": [],
+  "shorten_numbers": true
 }
 ```
 
@@ -207,6 +216,60 @@ rendering failures or "column does not exist" errors.
   }
 }
 ```
+
+#### Table chart config
+
+**CRITICAL: An empty config `{}` causes "No data to display" even when the query has data.**
+The Table chart requires explicit `rows`, `columns`, and `values` arrays. All columns from the
+SQL that should appear as rows must be listed individually. Use `"columns": [{}]` as a
+placeholder when you don't need pivot columns, and `"values"` with an empty entry when the
+rows contain all needed data (no aggregation needed).
+
+```json
+{
+  "columns": [{}],
+  "filters": {"filters": [], "logical_operator": "And"},
+  "limit": 50,
+  "order_by": [],
+  "rows": [
+    {
+      "column_name": "Industry",
+      "data_type": "String",
+      "dimension_name": "Industry",
+      "label": "Industry",
+      "value": "Industry"
+    },
+    {
+      "column_name": "Opportunities",
+      "data_type": "Integer",
+      "dimension_name": "Opportunities",
+      "label": "Opportunities",
+      "value": "Opportunities"
+    },
+    {
+      "column_name": "Value (K)",
+      "data_type": "Integer",
+      "dimension_name": "Value (K)",
+      "label": "Value (K)",
+      "value": "Value (K)"
+    }
+  ],
+  "show_filter_row": true,
+  "show_row_totals": false,
+  "show_column_totals": false,
+  "values": [
+    {
+      "aggregation": "",
+      "column_name": "",
+      "data_type": "Decimal",
+      "measure_name": ""
+    }
+  ]
+}
+```
+
+For pivot-style tables (rows × columns × aggregated value), populate `columns` with the
+pivot dimension and `values` with the measure — same pattern as Project Projections example.
 
 **Create the chart:**
 ```python
@@ -272,10 +335,46 @@ create_document(
 ```
 
 **Grid layout rules:**
-- Grid is 20 columns wide (use `w=20` for full-width)
-- `i` must be a unique string per item — use a short readable ID like `"chart-001"`
-- `x + w` must not exceed 20 (items wrap otherwise)
-- `y` values should be sequential (no gaps); items stack vertically
+- Grid is 20 columns wide (`w=20` for full-width, `w=10` for half-width side-by-side)
+- `i` must be a unique string per item across ALL items — use short readable IDs like `"chart-001"`
+- `x + w` must not exceed 20 or items will overflow off-screen
+- `y` values must be **exactly sequential with no gaps and no overlaps**: next item's `y` = previous item's `y + h`. Never reuse a y value for a different row unless items are intentionally side-by-side (same y, different x).
+
+**CRITICAL — Side-by-side alignment:** When placing two charts next to each other (e.g., x=0,w=10 and x=10,w=10), both must share the **same `y` value** AND the **same `h` value**. If heights differ, the taller one will overlap items below it on the shorter side.
+
+**CRITICAL — Mixed-height rows:** When a tall chart (e.g. Donut h=8) sits beside short charts (e.g. Number cards h=4) at the same y, any items placed in the gap on the short side (y+4 to y+8) must stay within x=0..9 and must end at y+8 to align with the tall chart before the next full-width row begins.
+
+**RECOMMENDED — Prefer full-width sections to avoid alignment bugs entirely.** The safest
+layout is every section on its own full-width row (w=20). Only use side-by-side (w=10 each)
+when both charts have **identical h values** and there are no other items between them:
+
+```
+✅ CLEAN — each section is full-width:
+  y=0  Header text         w=20 h=2
+  y=2  Section label       w=20 h=1
+  y=3  Number card left    w=10 h=4   ← same y, same h, side-by-side OK
+       Number card right   w=10 h=4
+  y=7  Next section label  w=20 h=1   ← y = 3+4 = 7, perfectly aligned
+  y=8  Full-width chart    w=20 h=9
+
+❌ RISKY — mixed heights on same row cause gaps and overlaps:
+  y=3  Number cards (h=4) left side
+       Donut chart (h=8)  right side  ← different h, causes left-side gap
+  y=7  Section label appears in the gap — visually broken
+```
+
+**Always validate layout before creating the dashboard:**
+```python
+errors = []
+for item in items:
+    l = item["layout"]
+    if l["x"] + l["w"] > 20:
+        errors.append(f"OVERFLOW: x={l['x']} w={l['w']} sum={l['x']+l['w']}")
+if errors:
+    print("LAYOUT ERRORS:", errors)
+else:
+    print("Layout valid - no overflow")
+```
 
 ---
 
