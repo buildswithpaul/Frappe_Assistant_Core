@@ -83,6 +83,7 @@ Homepage = "https://github.com/buildswithpaul/Frappe_Assistant_Core"
 Documentation = "https://github.com/buildswithpaul/Frappe_Assistant_Core/wiki"
 Repository = "https://github.com/buildswithpaul/Frappe_Assistant_Core.git"
 "Bug Tracker" = "https://github.com/buildswithpaul/Frappe_Assistant_Core/issues"
+Funding = "https://github.com/sponsors/buildswithpaul"
 
 [tool.setuptools]
 include-package-data = true
