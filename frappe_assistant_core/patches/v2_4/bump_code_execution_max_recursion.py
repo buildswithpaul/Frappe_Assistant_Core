@@ -11,8 +11,12 @@ Raise `code_execution_max_recursion` to 500 on existing sites.
 
 The original default of 100 is too tight for Frappe internals — even a
 plain `frappe.get_doc(...)` inside `run_python_code` overflows it and
-surfaces as a misleading "Recursion limit exceeded" error. Sites that
-never touched this setting should be moved to the new default.
+surfaces as a misleading "Recursion limit exceeded" error.
+
+Follows the ERPNext pattern for Single DocType defaults: set
+unconditionally in a one-time patch. Runtime checks cannot reliably
+distinguish "admin intentionally set 100" from "never touched — still
+on the old default", so we don't try.
 """
 
 import frappe
@@ -20,9 +24,4 @@ import frappe
 
 def execute():
     frappe.reload_doc("assistant_core", "doctype", "assistant_core_settings")
-
-    current = frappe.db.get_single_value("Assistant Core Settings", "code_execution_max_recursion")
-
-    # Only bump sites still on the old default. Respect operator overrides.
-    if current in (None, 0, 100):
-        frappe.db.set_single_value("Assistant Core Settings", "code_execution_max_recursion", 500)
+    frappe.db.set_single_value("Assistant Core Settings", "code_execution_max_recursion", 500)
