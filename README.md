@@ -1,530 +1,218 @@
 # Frappe Assistant Core
 
-🔧 **LLM Integration Platform for ERPNext** - Give any Large Language Model the power to interact with your ERPNext system through standardized tools and protocols.
+> Talk to your ERPNext site. FAC lets Claude, ChatGPT, and other
+> MCP-ready LLMs work directly with your invoices, customers, stock,
+> workflows, and custom apps — inside your ERPNext permissions, with
+> every call logged.
+
+[![Version](https://img.shields.io/github/v/release/buildswithpaul/Frappe_Assistant_Core?label=version)](https://github.com/buildswithpaul/Frappe_Assistant_Core/releases)
+[![Python](https://img.shields.io/badge/python-3.8%2B-blue)](https://pypi.org/project/frappe-assistant-core)
+[![License](https://img.shields.io/badge/license-AGPL--3.0-green)](LICENSE)
+[![MCP](https://img.shields.io/badge/MCP-2025--06--18-orange)](https://modelcontextprotocol.io)
+[![Tools](https://img.shields.io/badge/tools-24-brightgreen)](docs/api/TOOL_REFERENCE.md)
+
+[![CI](https://github.com/buildswithpaul/Frappe_Assistant_Core/actions/workflows/ci.yml/badge.svg)](https://github.com/buildswithpaul/Frappe_Assistant_Core/actions/workflows/ci.yml)
+[![Frappe Cloud](https://img.shields.io/badge/Frappe%20Cloud-Marketplace-blue)](https://cloud.frappe.io/marketplace/apps/frappe_assistant_core)
+[![Stars](https://img.shields.io/github/stars/buildswithpaul/Frappe_Assistant_Core?style=social)](https://github.com/buildswithpaul/Frappe_Assistant_Core/stargazers)
+[![Forks](https://img.shields.io/github/forks/buildswithpaul/Frappe_Assistant_Core?style=social)](https://github.com/buildswithpaul/Frappe_Assistant_Core/network/members)
+[![Sponsors](https://img.shields.io/github/sponsors/buildswithpaul?logo=github)](https://github.com/sponsors/buildswithpaul)
 
 ---
 
-## 🌟 What is Frappe Assistant Core?
+## What you get
 
-**Infrastructure that connects LLMs to ERPNext.** Frappe Assistant Core works with the Model Context Protocol (MCP) to expose ERPNext functionality to any compatible Language Model, enabling:
+Once FAC is installed, your team can ask an LLM for things they'd
+normally do by hand:
 
-- **🔌 LLM-Agnostic Integration**: Works with Claude, GPT, custom models, or any MCP-compatible system
-- **📁 One-Click Claude Setup**: Generate DXT files for instant Claude Desktop integration  
-- **🔒 Enterprise Security**: ERPNext permissions, audit logging, and role-based access control
-- **🛠️ 20+ Built-in Tools**: Document operations, search, reporting, analytics, and visualization
-- **🚀 Plugin Architecture**: Extensible framework for custom business logic and integrations
-- **🆓 Open Source**: AGPL-3.0 licensed - transparent, community-driven development
+> *"Show me overdue invoices from our top five customers."*
+>
+> *"Update this lead's status to Qualified and set next action date to
+> Monday."*
+>
+> *"Run the monthly revenue report and summarise the top movers."*
+>
+> *"How much stock of SKU-1234 do we have across all warehouses?"*
+
+Behind that simple interaction, FAC exposes **24 built-in tools** for
+the things your team does every day — document CRUD, search, reports,
+workflows, analytics, file extraction, and dashboards. Admins can
+publish **Skills** (reusable instructions that teach the LLM how to
+handle a specific job) and **Prompt Templates** (saved starting points
+users can pick from the admin UI) so answers stay consistent and use
+the right reports. The LLM authenticates over **OAuth 2.0** as a real
+ERPNext user, so it only sees data that user can already see in the
+desk. Every call is recorded in the **Assistant Audit Log**.
+
+It's a Frappe app, so developers can extend the toolset from their own
+Frappe apps through a hook — your data model, your business logic,
+scoped per your app.
+
+Your data stays in your site. You control which LLM connects.
 
 ---
 
-## ⚡ Quick Installation
+## Quick start
 
-Get up and running in 3 steps:
+Two install paths depending on how you run Frappe.
+
+### On Frappe Cloud (recommended)
+
+1. Go to your site's **Apps** tab in the Frappe Cloud dashboard.
+2. Find **Frappe Assistant Core** in the marketplace and click **Install**.
+3. Frappe Cloud installs and migrates the app for you.
+
+Marketplace: <https://cloud.frappe.io/marketplace/apps/frappe_assistant_core>
+
+### On self-hosted bench
 
 ```bash
-# 1. Get the app
 cd frappe-bench
 bench get-app https://github.com/buildswithpaul/Frappe_Assistant_Core
-
-# 2. Install on your site  
-bench --site [site-name] install-app frappe_assistant_core
-
+bench --site <your-site> install-app frappe_assistant_core
 ```
 
-**That's it!** Your ERPNext system is now accessible to any MCP-compatible LLM.
+### Connect your LLM
+
+Once installed, the same four steps work for any MCP-compatible client.
+Example shown for Claude Desktop:
+
+1. Go to **Desk → FAC Admin** and copy the **MCP Endpoint URL**.
+2. In **Claude Desktop → Settings → Connectors → Add Custom Connector**,
+   paste the URL and click **Add**.
+3. Click **Connect**, log in with your ERPNext account, and authorize.
+4. Ask Claude something — for example, *"List all customers created this
+   month."*
+
+For ChatGPT, Claude Web, and MCP Inspector walkthroughs, see the
+[Getting Started guide](docs/getting-started/GETTING_STARTED.md).
 
 ---
 
-## 🎯 Core Components
+## Skills and Prompt Templates
 
-### 🔧 **MCP Server Infrastructure**
-Robust protocol handler that exposes ERPNext functionality through standardized tools.
+FAC gives you two ways to shape what the LLM does with your data.
 
-### 📦 **Client Integration Packages** 
-Ready-to-use integrations including DXT file generation for Claude Desktop setup.
+**Skills** are reusable instructions you give the LLM — stored as
+`FAC Skill` documents inside your site. Each skill has a `skill_id`,
+a description, and markdown content describing how to handle a specific
+task using the available tools. The LLM lists skills on connect and
+pulls them on demand, so every time someone asks about, say, the
+monthly sales close, the answer is consistent and uses the right
+reports.
 
-### 🛠️ **21 Built-in Tools**
-Document CRUD, search, reporting, analytics, Python execution, and visualization capabilities.
+**Prompt Templates** are saved starting points for the *user's* side
+of the conversation — Jinja-templated prompts with typed arguments
+(dropdowns, dates, booleans). Authors publish them from the admin page;
+users pick one, fill in the arguments, and the rendered prompt is sent
+to the LLM. Use them for frequently-asked analyses like "Sales
+Analysis", "Manufacturing Analysis", or your own industry-specific
+workflows.
 
-![Available Tools](screenshots/tools-available.png)
-*Comprehensive tool set for complete ERPNext integration*
-
-### 🔌 **Plugin Architecture**
-Extensible framework for custom tools, external app integration, and business-specific logic.
-
-![Admin Interface](screenshots/admin-interface.png)
-*Professional admin interface for plugin management and configuration*
-
-### 🔐 **OAuth 2.0 / OIDC Authentication**
-Full OAuth 2.0 and OpenID Connect implementation with Dynamic Client Registration (RFC 7591), PKCE support, and standardized discovery endpoints for seamless integration with MCP Inspector and third-party tools.
-
-### 🔒 **Enterprise Security Layer**
-Authentication, ERPNext permissions integration, audit logging, and role-based access.
-
-![Audit Trail](screenshots/audit-trail.png)
-*Complete audit logging tracks all LLM interactions with your ERP data*
-
-### 🌐 **LLM-Agnostic Design**
-Compatible with any MCP-enabled system - not locked to specific AI providers.
-
-### Architecture Overview
-
-```mermaid
-graph TB
-    subgraph "LLM Layer"
-        Claude[Claude Desktop]
-        GPT[GPT/Custom LLM]
-        API[LLM via API]
-        Future[Future LLMs]
-    end
-
-    subgraph "Integration Layer"
-        MCP[MCP Protocol<br/>JSON-RPC 2.0]
-        DXT[DXT File Generator<br/>One-Click Setup]
-        Bridge[STDIO Bridge]
-    end
-
-    subgraph "Frappe Assistant Core"
-        Server[MCP Server<br/>API Handler]
-        Registry[Tool Registry<br/>20+ Tools]
-        
-        subgraph "Plugin System"
-            CorePlugin[Core Plugin<br/>Always Enabled]
-            DataSci[Data Science<br/>Plugin]
-            Viz[Visualization<br/>Plugin]
-            Custom[Custom<br/>Plugins]
-        end
-        
-        Security[Security Layer<br/>Auth & Permissions]
-        Audit[Audit Trail<br/>Logging System]
-    end
-
-    subgraph "ERPNext/Frappe"
-        Database[(ERPNext<br/>Database)]
-        Docs[Documents<br/>Customers, Sales, etc.]
-        Reports[Reports<br/>Analytics]
-        Workflows[Workflows<br/>Business Logic]
-    end
-
-    %% Connections
-    Claude --> MCP
-    GPT --> MCP
-    API --> MCP
-    Future --> MCP
-    
-    Claude -.->|One-Click| DXT
-    DXT --> Bridge
-    Bridge --> Server
-    
-    MCP --> Server
-    Server --> Registry
-    Registry --> CorePlugin
-    Registry --> DataSci
-    Registry --> Viz
-    Registry --> Custom
-    
-    Server --> Security
-    Server --> Audit
-    
-    CorePlugin --> Database
-    DataSci --> Database
-    Viz --> Database
-    Custom --> Database
-    
-    Database --> Docs
-    Database --> Reports
-    Database --> Workflows
-
-    %% Styling
-    classDef llm fill:#e1f5fe,stroke:#0277bd,stroke-width:2px
-    classDef integration fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
-    classDef core fill:#e8f5e8,stroke:#2e7d32,stroke-width:2px
-    classDef plugin fill:#fff3e0,stroke:#f57c00,stroke-width:2px
-    classDef erp fill:#fce4ec,stroke:#c2185b,stroke-width:2px
-
-    class Claude,GPT,API,Future llm
-    class MCP,DXT,Bridge integration
-    class Server,Registry,Security,Audit core
-    class CorePlugin,DataSci,Viz,Custom plugin
-    class Database,Docs,Reports,Workflows erp
-```
-
-## Data Flow Architecture
-
-```mermaid
-sequenceDiagram
-    participant U as User
-    participant C as Claude/LLM
-    participant M as MCP Server
-    participant T as Tool Registry  
-    participant P as Plugin
-    participant E as ERPNext DB
-
-    U->>C: "Create customer Acme Corp"
-    C->>M: MCP Request: create_document
-    M->>T: Get tool: create_document
-    T->>P: Execute Core Plugin Tool
-    P->>E: frappe.get_doc().insert()
-    E-->>P: Document Created
-    P-->>T: Success Response
-    T-->>M: Tool Result
-    M-->>C: MCP Response
-    C-->>U: "Customer created successfully"
-    
-    Note over M,E: All operations logged in audit trail
-    Note over M: Security & permissions enforced
-```
-
-## Plugin Architecture Detail
-
-```mermaid
-graph LR
-    subgraph "External Apps"
-        App1[Custom Frappe App]
-        App2[Industry-Specific App]
-        App3[Third-Party App]
-    end
-    
-    subgraph "Tool Discovery"
-        Hooks[hooks.py<br/>assistant_tools]
-        Scanner[Plugin Scanner]
-        Registry[Tool Registry]
-    end
-    
-    subgraph "Core Plugins"
-        CoreP[Core Plugin<br/>Document Operations]
-        DataP[Data Science Plugin<br/>Python Execution]
-        VizP[Visualization Plugin<br/>Charts & Dashboards]
-    end
-    
-    subgraph "Runtime Management"
-        Manager[Plugin Manager]
-        Config[Plugin Configuration]
-        State[Enable/Disable State]
-    end
-
-    App1 --> Hooks
-    App2 --> Hooks  
-    App3 --> Hooks
-    
-    Hooks --> Scanner
-    Scanner --> Registry
-    
-    CoreP --> Registry
-    DataP --> Registry
-    VizP --> Registry
-    
-    Registry --> Manager
-    Manager --> Config
-    Manager --> State
-
-    classDef external fill:#e3f2fd,stroke:#1976d2,stroke-width:2px
-    classDef discovery fill:#f1f8e9,stroke:#388e3c,stroke-width:2px
-    classDef plugins fill:#fff8e1,stroke:#f57f17,stroke-width:2px
-    classDef management fill:#fce4ec,stroke:#c2185b,stroke-width:2px
-
-    class App1,App2,App3 external
-    class Hooks,Scanner,Registry discovery
-    class CoreP,DataP,VizP plugins
-    class Manager,Config,State management
-```
-
-## Security & Permissions Flow
-
-```mermaid
-graph TD
-    Request[LLM Request] --> Auth{Authenticated?}
-    Auth -->|No| Reject[Reject Request]
-    Auth -->|Yes| UserCheck{User Enabled?}
-    UserCheck -->|No| Reject
-    UserCheck -->|Yes| RoleCheck{Has Assistant Role?}
-    RoleCheck -->|No| Reject
-    RoleCheck -->|Yes| ToolPerm{Tool Allowed?}
-    ToolPerm -->|No| Reject
-    ToolPerm -->|Yes| DocPerm{ERPNext Permissions?}
-    DocPerm -->|No| Reject
-    DocPerm -->|Yes| Execute[Execute Tool]
-    Execute --> AuditLog[Log to Audit Trail]
-    Execute --> Response[Return Response]
-
-    classDef security fill:#ffebee,stroke:#d32f2f,stroke-width:2px
-    classDef success fill:#e8f5e8,stroke:#2e7d32,stroke-width:2px
-    classDef reject fill:#fafafa,stroke:#757575,stroke-width:2px
-
-    class Auth,UserCheck,RoleCheck,ToolPerm,DocPerm security
-    class Execute,AuditLog,Response success
-    class Reject reject
-```
-
-## Integration Patterns
-
-```mermaid
-graph LR
-    subgraph "Pattern 1: Direct Claude Desktop"
-        CD[Claude Desktop]
-        DXT[DXT File]
-        STDIO[STDIO Bridge]
-        CD --> DXT --> STDIO
-    end
-    
-    subgraph "Pattern 2: API Integration"
-        CustomLLM[Custom LLM App]
-        HTTP[HTTP API]
-        MCP_API[MCP Endpoint]
-        CustomLLM --> HTTP --> MCP_API
-    end
-    
-    subgraph "Pattern 3: Webhook/Event"
-        External[External System]
-        Webhook[Webhook Endpoint]
-        Queue[Background Queue]
-        External --> Webhook --> Queue
-    end
-    
-    subgraph "Frappe Assistant Core"
-        Core[MCP Server]
-    end
-    
-    STDIO --> Core
-    MCP_API --> Core
-    Queue --> Core
-
-    classDef pattern1 fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
-    classDef pattern2 fill:#e8f5e8,stroke:#2e7d32,stroke-width:2px  
-    classDef pattern3 fill:#fff3e0,stroke:#f57c00,stroke-width:2px
-    classDef core fill:#fce4ec,stroke:#c2185b,stroke-width:2px
-
-    class CD,DXT,STDIO pattern1
-    class CustomLLM,HTTP,MCP_API pattern2
-    class External,Webhook,Queue pattern3
-    class Core core
-```
-*Plugin-based architecture supports any MCP-compatible LLM*
+Both live in Frappe, so they're version-controlled with your site,
+shareable across users, and can be shipped by external Frappe apps
+through the `assistant_skills` hook.
 
 ---
 
-## 🚀 Getting Started
+## Tools at a glance
 
-Ready to connect your LLM to ERPNext? Follow these simple steps:
+FAC ships 24 tools across four plugins: **Core** (Frappe operations),
+**Data Science** (Python execution, analytics, file extraction),
+**Visualization** (dashboards and charts), and **Custom Tools** (the
+registry for tools contributed by external apps).
 
-### Step 1: Get Your MCP Endpoint URL
+| Category | Tools |
+|---|---|
+| Documents | `get_document`, `list_documents`, `create_document`, `update_document`, `delete_document`, `submit_document` |
+| Search | `search`, `search_documents`, `search_doctype`, `search_link`, `fetch` |
+| Reports | `report_list`, `report_requirements`, `generate_report` |
+| Approvals | `get_pending_approvals`, `run_workflow` |
+| Schema | `get_doctype_info` |
+| Analytics | `run_python_code`, `run_database_query`, `analyze_business_data` |
+| Files | `extract_file_content` |
+| Dashboards | `create_dashboard`, `create_dashboard_chart`, `list_user_dashboards` |
 
-1. **Open FAC Admin Page**
-   - After installation, go to: **Desk → Tools → FAC Admin**
-   - Or navigate directly to: `https://your-site.com/app/fac-admin`
-
-2. **Copy Your MCP Endpoint**
-   - On the FAC Admin page, you'll see your **MCP Endpoint URL**
-   - It looks like: `https://your-site.com/api/method/frappe_assistant_core.api.fac_endpoint.handle_mcp`
-   - Copy this URL - you'll need it in the next step
-
-![FAC Admin Page](screenshots/fac-admin-endpoint.png)
-*Get your MCP endpoint URL from the FAC Admin page*
-
-### Step 2: Add MCP Server to Your LLM
-
-Choose your LLM platform and follow the instructions:
-
-#### 🔷 **Claude Desktop** (Recommended)
-
-1. **In Claude Desktop**, click the settings icon (⚙️) in the bottom left
-2. Click **"Connectors"**
-3. Click **"+ Add Custom Connector""** button
-4. Fill in the details:
-   - **Name**: `Frappe Assistant Core` (or any name you prefer)
-   - **URL**: Paste your MCP endpoint URL from Step 1
-5. Click **"Add"**
-
-![Claude Add Server](screenshots/claude-add-server.png)
-
-#### 🟢 **ChatGPT** (Plus Users Only)
-
-> **Note**: Custom connectors are only available for ChatGPT Plus and above plan users with Developer Mode enabled
-
-1. **In ChatGPT**, open the side panel
-2. Go to **Connectors** menu
-3. Click **"Create"** button
-4. Fill in the connector details:
-   - **Name**: `Frappe Assistant Core` (or any name you prefer)
-   - **URL**: Paste your MCP endpoint URL from Step 1
-5. Click **"Create"**
-
-![ChatGPT Connector](screenshots/chatgpt-connector.png)
-
-#### 🌐 **Claude Web** (claude.ai)
-
-1. **On Claude Web**, click your profile icon
-2. Go to **Settings → Integrations**
-3. Click **"Add Custom Connector"**
-4. Fill in:
-   - **Name**: `Frappe Assistant`
-   - **URL**: Paste your MCP endpoint URL from Step 1
-5. Click **"Add"**
-
-### Step 3: Authenticate & Connect
-
-1. **Click "Connect"** in your LLM client
-2. **You'll be redirected** to your Frappe login page
-3. **Login** with your Frappe username and password
-4. **Click "Authenticate"** to authorize the LLM to access your ERPNext data
-5. **Done!** You'll be redirected back to your LLM
-
-![OAuth Flow](screenshots/oauth-authentication-flow.png)
-*Secure OAuth 2.0 authentication - login once, access anytime*
-
-### Step 4: Start Using Your Tools!
-
-Your LLM can now access ERPNext! Try these commands:
-
-> "List all customers in the system"
-
-> "Create a new customer called Acme Corp with email test@acme.com"
-
-> "Show me this month's sales report"
-
-> "What are the top 5 selling items?"
+Full specification for each tool is in the
+[Tool Reference](docs/api/TOOL_REFERENCE.md).
 
 ---
 
-### 🧪 For Developers: MCP Inspector Testing
+## Extend with your own tools
 
-Want to test and debug your MCP server? Use the MCP Inspector tool:
+If you have a Frappe app and want the LLM to reach into it, use the
+`assistant_tools` hook in your app's `hooks.py`. This is the recommended
+path — tools travel with the app, survive upgrades, and stay scoped to
+your data model. The same pattern works for Skills via the
+`assistant_skills` hook.
 
-**1. Enable CORS for Local Testing**
+If you need to modify core FAC behaviour instead, write an internal
+plugin.
 
-Add to your `site_config.json`:
-```json
-{
-  "oauth_cors_allowed_origins": "*"
-}
-```
-
-Or in **Assistant Core Settings** → OAuth tab → **Allowed Public Client Origins**: `http://localhost:6274`
-
-**2. Open MCP Inspector**
-
-- Go to: http://localhost:6274/
-- Select **"Streamable HTTP"** transport
-- Enter your **MCP Endpoint URL** from FAC Admin
-- Click **"Guided OAuth Flow"** and click **Continue** for each step
-- Login when prompted
-
-**3. Test Tools**
-
-- Browse available tools
-- Execute test calls
-- Debug request/response data
-- Monitor OAuth token flow
-
-![MCP Inspector](screenshots/mcp-inspector-demo.png)
-*MCP Inspector provides visual testing and debugging for developers*
+See the [External App Development guide](docs/development/EXTERNAL_APP_DEVELOPMENT.md)
+for the hook contract, and the
+[Plugin Development guide](docs/development/PLUGIN_DEVELOPMENT.md) for
+internal plugins.
 
 ---
 
-### 📚 Advanced Integration
+## Authentication & security
 
-For custom applications, advanced OAuth flows, or programmatic integration, see our comprehensive guides:
+FAC uses OAuth 2.0 with PKCE for LLM connections — the LLM never sees
+the user's Frappe password. Every tool call is scoped to the calling
+user's Frappe and ERPNext roles and permissions: if the user cannot
+read a DocType in the desk, they cannot read it through the LLM either.
+Every call is logged to `Assistant Audit Log` with caller, tool,
+arguments, and result status, so admins always have a full record of
+what the LLM did.
 
-- **[MCP StreamableHTTP Guide](docs/architecture/MCP_STREAMABLEHTTP_GUIDE.md)** - Complete OAuth + MCP implementation
-- **[OAuth Setup Guide](docs/getting-started/oauth/oauth_setup_guide.md)** - Detailed OAuth configuration
-- **[API Reference](docs/api/API_REFERENCE.md)** - All endpoints and protocols
-- **[Development Guide](docs/development/DEVELOPMENT_GUIDE.md)** - Build custom integrations
+For setup and advanced configuration:
 
----
-
-## 📚 Documentation
-
-**[📖 Complete Documentation Index](docs/README.md)** - Browse all documentation organized by category
-
-### 🚀 Quick Start Guides
-| Guide | Description |
-|-------|-------------|
-| [Getting Started](docs/getting-started/GETTING_STARTED.md) | Complete setup guide for new users |
-| [Claude Desktop Quick Start](docs/getting-started/QUICK_START_CLAUDE_DESKTOP.md) | Connect Claude Desktop in 5 minutes |
-| [Migration Guide](docs/getting-started/MIGRATION_GUIDE.md) | **New!** Migrate from STDIO to OAuth |
-| [OAuth Quick Start](docs/getting-started/oauth/oauth_quick_start.md) | OAuth 2.0 setup in 2 minutes |
-
-### 🏗️ Architecture & Technical
-| Guide | Description |
-|-------|-------------|
-| [Architecture Overview](docs/architecture/ARCHITECTURE.md) | System design and plugin architecture |
-| [MCP StreamableHTTP Guide](docs/architecture/MCP_STREAMABLEHTTP_GUIDE.md) | **New!** OAuth + StreamableHTTP integration |
-| [Technical Documentation](docs/architecture/TECHNICAL_DOCUMENTATION.md) | Complete technical reference |
-| [Performance Guide](docs/architecture/PERFORMANCE.md) | Optimization and monitoring |
-
-### 📖 API Reference
-| Guide | Description |
-|-------|-------------|
-| [API Reference](docs/api/API_REFERENCE.md) | MCP protocol endpoints and OAuth APIs |
-| [Tool Reference](docs/api/TOOL_REFERENCE.md) | Complete catalog of all 21 available tools |
-| [OAuth Setup Guide](docs/getting-started/oauth/oauth_setup_guide.md) | Comprehensive OAuth configuration |
-
-### 🛠️ Development
-| Guide | Description |
-|-------|-------------|
-| [Development Guide](docs/development/DEVELOPMENT_GUIDE.md) | Create custom tools and plugins |
-| [External App Development](docs/development/EXTERNAL_APP_DEVELOPMENT.md) | Tools in your Frappe apps (recommended) |
-| [Plugin Development](docs/development/PLUGIN_DEVELOPMENT.md) | Build internal plugins |
-| [Test Case Creation](docs/development/TEST_CASE_CREATION_GUIDE.md) | Testing patterns and best practices |
+- [OAuth Setup Guide](docs/getting-started/oauth/oauth_setup_guide.md)
+- [Code Execution Security](docs/guides/CODE_EXECUTION_SECURITY.md)
+- [MCP StreamableHTTP Guide](docs/architecture/MCP_STREAMABLEHTTP_GUIDE.md)
 
 ---
 
-## 🏢 Integration Scenarios
+## Documentation
 
-- **Business Users + Claude**: Natural language ERP operations through Claude Desktop
-- **Developers + Custom LLMs**: Build AI-powered business applications with ERPNext data
-- **System Integrators**: Deploy LLM-ERP solutions for clients across industries
-- **AI Companies**: Add ERPNext capabilities to existing AI products and services
-- **Enterprise Teams**: Create department-specific AI tools with custom plugins
-
----
-
-## 🌟 Why Choose Frappe Assistant Core?
-
-✅ **LLM-Agnostic** - Not locked to any specific AI provider or model  
-✅ **Production Ready** - Enterprise-grade security, permissions, and audit logging  
-✅ **One-Click Setup** - DXT file generation for instant Claude Desktop integration  
-✅ **20+ Built-in Tools** - Comprehensive ERPNext functionality out of the box  
-✅ **Plugin Architecture** - Unlimited extensibility for custom business logic  
-✅ **Open Source** - AGPL-3.0 licensed with transparent, community-driven development  
+- [Getting Started](docs/getting-started/GETTING_STARTED.md) — full setup walkthrough, including Claude Desktop and ChatGPT
+- [OAuth Quick Start](docs/getting-started/oauth/oauth_quick_start.md) — OAuth setup in 2 minutes
+- [Tool Reference](docs/api/TOOL_REFERENCE.md) — every tool, arguments, return format
+- [API Reference](docs/api/API_REFERENCE.md) — MCP endpoints and OAuth APIs
+- [Architecture](docs/architecture/ARCHITECTURE.md) — system design and plugin internals
+- [External App Development](docs/development/EXTERNAL_APP_DEVELOPMENT.md) — add tools from your own Frappe app
+- [Full documentation index](docs/README.md) — everything else
 
 ---
 
-## 🤝 Contributing
+## Sponsor and professional services
 
-We welcome contributions! This is an open source project under AGPL-3.0.
+Frappe Assistant Core is built and maintained in the open. If it saves
+your team time, please consider sponsoring ongoing maintenance and new
+features on [GitHub Sponsors](https://github.com/sponsors/buildswithpaul)
+— recurring or one-time contributions.
 
-1. Fork the repository
-2. Create a feature branch  
-3. Add tests for new functionality
-4. Submit a pull request
+Professional implementation, customization, training, and enterprise
+support are delivered by our official services partner
+[Promantia](https://promantia.com). Reach them at
+[ai-support@promantia.com](mailto:ai-support@promantia.com), or register
+your project at
+<https://erp.promantia.in/fac-registration/new>. Full details in
+[COMMERCIAL.md](COMMERCIAL.md).
 
-See [Contributing Guidelines](Contributing.md) for detailed instructions.
-
----
-
-## 💖 Sponsor the Project
-
-Frappe Assistant Core is built and maintained in the open. If it saves your team time or powers part of your workflow, please consider sponsoring ongoing maintenance and new feature work:
-
-- [**GitHub Sponsors**](https://github.com/sponsors/buildswithpaul) — recurring or one-time contributions
-
-Every sponsorship — large or small — directly funds bug fixes, new integrations, and long-term sustainability.
+The software itself remains completely free and open source under
+AGPL-3.0. Professional services are optional.
 
 ---
 
-## 📄 License & Support
+## License
 
-**License**: AGPL-3.0 - Free for commercial use with source code transparency
+AGPL-3.0 — see [LICENSE](LICENSE).
 
-**Community Support**: [GitHub Issues](https://github.com/buildswithpaul/Frappe_Assistant_Core/issues) and [Discussions](https://github.com/buildswithpaul/Frappe_Assistant_Core/discussions)
+For dual-licensing, new partnerships, or sponsorship inquiries, contact
+<jypaulclinton@gmail.com>.
 
-**Professional Services**: Implementation, custom development, training, and enterprise support are delivered by our partner **[Promantia](https://promantia.com)**. See [COMMERCIAL.md](COMMERCIAL.md) for details.
+## Contributing
 
-**Licensing & Partnerships**: For dual-licensing, new partnerships, or sponsorship inquiries, contact jypaulclinton@gmail.com
-
----
-
-**🚀 Ready to give LLMs access to your ERPNext data? [Get started now!](#-quick-installation)**
-
-*Built with ❤️ by the community, for developers and businesses integrating AI with ERP systems.*
+Contributions welcome. See [Contributing.md](Contributing.md) for the
+pull-request workflow and coding standards.
