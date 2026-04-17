@@ -1,8 +1,9 @@
 # Frappe Assistant Core
 
-> Connect Claude, ChatGPT, or any MCP-compatible LLM to your ERPNext system.
-> Read documents, run reports, execute Python against real data — all with
-> ERPNext's existing permissions and audit trail.
+> Infrastructure that connects LLMs to ERPNext. Tools, skills, prompt
+> templates, and OAuth — packaged as a Frappe app so any MCP-compatible
+> LLM can work with your ERPNext data, under your existing permissions
+> and audit trail.
 
 [![Version](https://img.shields.io/github/v/release/buildswithpaul/Frappe_Assistant_Core?label=version)](https://github.com/buildswithpaul/Frappe_Assistant_Core/releases)
 [![Python](https://img.shields.io/badge/python-3.8%2B-blue)](https://pypi.org/project/frappe-assistant-core)
@@ -20,9 +21,25 @@
 
 ## What you get
 
-Frappe Assistant Core is a server that sits in your Frappe site and exposes
-ERPNext to any LLM over the [Model Context Protocol](https://modelcontextprotocol.io).
-You can install it one-click from the
+Frappe Assistant Core (FAC) is infrastructure that connects Large Language
+Models to ERPNext. It runs inside your Frappe site as a regular app and
+bundles everything needed to let an LLM work with your business data:
+
+- **Tools** — 24 built-in operations (document CRUD, search, reports,
+  workflows, analytics, file extraction, dashboards) that the LLM can
+  invoke over the [Model Context Protocol](https://modelcontextprotocol.io).
+- **Skills** — reusable, markdown-authored instructions stored in Frappe
+  that teach the LLM how to handle specific tasks consistently.
+- **Prompt Templates** — Jinja-templated prompts with typed arguments,
+  published from the admin UI.
+- **OAuth 2.0 / OIDC** — authentication for MCP clients with Dynamic
+  Client Registration and PKCE.
+- **Plugin system** — so internal code and external Frappe apps can ship
+  their own tools and skills.
+- **Admin UI and audit log** — one page to manage everything, and a full
+  record of every LLM call.
+
+Install it one-click from the
 [Frappe Cloud Marketplace](https://cloud.frappe.io/marketplace/apps/frappe_assistant_core),
 or via `bench get-app` on a self-hosted deployment.
 
@@ -31,9 +48,9 @@ levels, pending approvals, or anything else you can see in your ERPNext
 desk. Claude reads the live database, constrained to your own roles and
 permissions.
 
-For **developers**: a plugin system so internal and external Frappe apps
-can register their own tools. Add a couple of hook entries in your app and
-the LLM gets new capabilities scoped to your data model.
+For **developers**: add tools or skills from your own Frappe app with a
+couple of hook entries — your data model, your business logic, scoped
+per your app.
 
 What it does **not** do: data does not leave your server unless your LLM
 provider fetches it through MCP. This is not a "send your ERP to OpenAI"
