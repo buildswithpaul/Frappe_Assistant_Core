@@ -81,7 +81,7 @@ Assistant Core Settings → Security → Max CPU Time (seconds)
 **How it works:**
 - Temporarily lowers Python's recursion limit during code execution
 - Catches `RecursionError` with helpful guidance
-- Default: 100, Range: 50-500
+- Default: 500, Range: 50-1000 (Frappe internals like `frappe.get_doc` recurse well past 100, so lower values break most real code)
 
 **Configuration:**
 ```
@@ -92,7 +92,7 @@ Assistant Core Settings → Security → Max Recursion Depth
 ```
 🔄 Recursion Limit Exceeded: The code exceeded the maximum recursion depth.
 
-Maximum recursion depth: 100
+Maximum recursion depth: 500
 
 💡 Tips to fix this:
    • Convert recursive algorithms to iterative ones
@@ -186,7 +186,7 @@ settings.save()
 | Execution Timeout | 30 sec | 1 sec | 300 sec |
 | Max Memory | 512 MB | 64 MB | 2048 MB |
 | Max CPU Time | 60 sec | 1 sec | 300 sec |
-| Max Recursion | 100 | 50 | 500 |
+| Max Recursion | 500 | 50 | 1000 |
 
 ## Best Practices
 

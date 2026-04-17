@@ -163,6 +163,11 @@ class MCPServer:
             )
             return self._error_response(response, None, -32700, f"Parse error: {str(e)}")
 
+        # Populate correlation ids on frappe.local so downstream audit logging
+        # can tag every tool execution with the MCP session and client. See
+        # _populate_correlation_ids for header/initialize param fallback order.
+        self._populate_correlation_ids(request, data)
+
         # Check if notification (no response needed)
         if self._is_notification(data):
             response.status_code = 202  # Accepted
@@ -194,8 +199,11 @@ class MCPServer:
                 )
                 result = self._handle_tools_call(params)
             elif method == "resources/list":
-                # Return empty resources list (we don't support resources)
-                result = {"resources": []}
+                result = self._handle_resources_list(params, request_id)
+            elif method == "resources/read":
+                result = self._handle_resources_read(params, request_id)
+            elif method == "resources/templates/list":
+                result = {"resourceTemplates": []}
             elif method == "prompts/list":
                 result = self._handle_prompts_list(params, request_id)
             elif method == "prompts/get":
@@ -226,6 +234,39 @@ class MCPServer:
         """
         self._tool_registry[tool_dict["name"]] = tool_dict
 
+    def _populate_correlation_ids(self, request: Request, data: Dict):
+        """
+        Set `frappe.local.assistant_session_id` and `assistant_client_id`.
+
+        Resolution order for session id:
+            1. `Mcp-Session-Id` request header (MCP streamable HTTP transport)
+            2. `X-Assistant-Session-Id` request header (explicit override)
+            3. A freshly-generated UUID4 (per-request fallback)
+
+        Resolution order for client id:
+            1. `X-Assistant-Client-Id` request header
+            2. `clientInfo.name` from the `initialize` params when present
+            3. `None`
+        """
+        import uuid
+
+        import frappe
+
+        session_id = (
+            request.headers.get("Mcp-Session-Id")
+            or request.headers.get("X-Assistant-Session-Id")
+            or str(uuid.uuid4())
+        )
+
+        client_id = request.headers.get("X-Assistant-Client-Id")
+        if not client_id:
+            params = data.get("params") or {}
+            client_info = params.get("clientInfo") or {}
+            client_id = client_info.get("name")
+
+        frappe.local.assistant_session_id = session_id
+        frappe.local.assistant_client_id = client_id
+
     def _handle_initialize(self, params: Dict) -> Dict:
         """
         Handle initialize request.
@@ -248,20 +289,39 @@ class MCPServer:
             "capabilities": {
                 "tools": {},  # We support tools
                 "prompts": {},  # We support prompts (database-driven templates)
-                # Note: We respond to resources/list with empty arrays
-                # since we don't support resources yet
+                "resources": {},  # We support resources (skill documents)
             },
             "serverInfo": {"name": self.name, "version": "2.0.0"},
         }
 
     def _handle_tools_list(self, params: Dict) -> Dict:
-        """Handle tools/list request."""
+        """Handle tools/list request with optional token optimization."""
+        import frappe
+
         tools_list = []
 
+        # Check skill_mode for token optimization
+        skill_replace_map = {}
+        try:
+            settings = frappe.get_single("Assistant Core Settings")
+            if getattr(settings, "skill_mode", "supplementary") == "replace":
+                from frappe_assistant_core.api.handlers.resources import get_skill_manager
+
+                skill_replace_map = get_skill_manager().get_tool_skill_map()
+        except Exception:
+            pass
+
         for tool in self._tool_registry.values():
+            description = tool["description"]
+
+            # In replace mode, minimize descriptions for tools with linked skills
+            if skill_replace_map and tool["name"] in skill_replace_map:
+                skill_info = skill_replace_map[tool["name"]]
+                description = f"{tool['name']}: {skill_info['description']}. Detailed guidance: fac://skills/{skill_info['skill_id']}"
+
             tool_spec = {
                 "name": tool["name"],
-                "description": tool["description"],
+                "description": description,
                 "inputSchema": tool["inputSchema"],
             }
 
@@ -307,15 +367,46 @@ class MCPServer:
                 f"MCP Tool {tool_name} executed successfully, result type: {type(result).__name__}"
             )
 
-            # CRITICAL FIX: Use json.dumps with default=str
-            # This handles datetime, Decimal, and all other non-JSON types!
+            # Extract image content for vision API (e.g., screenshot tool).
+            # Tools can include _image_content in their result to have the LLM
+            # see the image directly via vision, rather than just getting metadata.
+            # Note: BaseTool._safe_execute() wraps tool output as:
+            #   {"success": True, "result": <tool_output>, "execution_time": ...}
+            # so _image_content lives inside result["result"], not at the top level.
+            image_content = None
+            if isinstance(result, dict):
+                inner = result.get("result")
+                if isinstance(inner, dict) and "_image_content" in inner:
+                    image_content = inner.pop("_image_content")
+
+            # Serialize the text result (default=str handles datetime, Decimal, etc.)
             if isinstance(result, str):
                 result_text = result
             else:
-                # The key fix: default=str converts any type to string
                 result_text = json.dumps(result, default=str, indent=2)
 
-            return {"content": [{"type": "text", "text": result_text}], "isError": False}
+            # Build MCP content blocks
+            content = [{"type": "text", "text": result_text}]
+
+            # Add image block for vision API if tool provided one
+            if image_content and isinstance(image_content, dict):
+                mime_map = {
+                    "jpeg": "image/jpeg",
+                    "jpg": "image/jpeg",
+                    "png": "image/png",
+                    "gif": "image/gif",
+                    "webp": "image/webp",
+                }
+                fmt = image_content.get("format", "jpeg")
+                content.append(
+                    {
+                        "type": "image",
+                        "mimeType": mime_map.get(fmt, f"image/{fmt}"),
+                        "data": image_content["data"],
+                    }
+                )
+
+            return {"content": content, "isError": False}
 
         except Exception as e:
             # Full traceback for debugging
@@ -392,6 +483,26 @@ class MCPServer:
         if "error" in response:
             raise Exception(response["error"].get("message", "Unknown prompt error"))
         return {}
+
+    def _handle_resources_list(self, params: Dict, request_id: Any) -> Dict:
+        """
+        Handle resources/list request.
+
+        Returns available skill documents as MCP resources.
+        """
+        from frappe_assistant_core.api.handlers.resources import handle_resources_list
+
+        return handle_resources_list(request_id)
+
+    def _handle_resources_read(self, params: Dict, request_id: Any) -> Dict:
+        """
+        Handle resources/read request.
+
+        Returns the content of a specific skill resource by URI.
+        """
+        from frappe_assistant_core.api.handlers.resources import handle_resources_read
+
+        return handle_resources_read(params, request_id)
 
     def _is_notification(self, data: Dict) -> bool:
         """Check if request is a notification (no response needed)."""

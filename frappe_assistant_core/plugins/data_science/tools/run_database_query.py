@@ -290,7 +290,11 @@ class QueryAndAnalyse(BaseTool):
         return suggestions
 
     def _get_schema_info(self, query: str) -> Dict[str, Any]:
-        """Extract schema information for tables used in query"""
+        """Extract schema information for tables used in query.
+
+        Uses `frappe.db.get_table_columns_description` so the table name
+        never appears interpolated into raw SQL from this module.
+        """
         try:
             # Extract table names from query (basic implementation)
             tables = re.findall(r"FROM\s+`?(\w+)`?|JOIN\s+`?(\w+)`?", query, re.IGNORECASE)
@@ -301,8 +305,7 @@ class QueryAndAnalyse(BaseTool):
             schema_info = {}
             for table in table_names:
                 try:
-                    # Get column information
-                    columns = frappe.db.sql(f"DESCRIBE `{table}`", as_dict=True)
+                    columns = frappe.db.get_table_columns_description(table)
                     schema_info[table] = {"columns": columns, "total_columns": len(columns)}
                 except Exception as e:
                     schema_info[table] = {"error": f"Could not retrieve schema: {str(e)}"}

@@ -65,6 +65,12 @@ def after_migrate():
     # Install/update system prompt templates
     _install_system_prompt_templates()
 
+    # Install/update system skills
+    _install_system_skills()
+
+    # Install/update skills from other apps
+    _install_app_skills()
+
     # Sync plugin configurations from discovered plugins
     _sync_plugin_configurations()
 
@@ -125,6 +131,12 @@ def after_install():
 
     # Install system prompt templates
     _install_system_prompt_templates()
+
+    # Install system skills
+    _install_system_skills()
+
+    # Install skills from other apps
+    _install_app_skills()
 
     # Sync plugin configurations from discovered plugins
     _sync_plugin_configurations()
@@ -221,6 +233,45 @@ def on_app_uninstall(app_name: str):
         )
 
 
+def before_app_uninstall(app_name: str):
+    """
+    Hook fired before any app is uninstalled (``before_app_uninstall``).
+
+    Removes ``FAC Skill`` rows registered by that app via the
+    ``assistant_skills`` hook. FAC's own system skills are left alone —
+    FAC's ``after_uninstall`` handles full teardown when FAC itself is
+    removed.
+    """
+    if app_name == "frappe_assistant_core":
+        return
+
+    try:
+        if not frappe.db.table_exists("FAC Skill"):
+            return
+
+        orphans = frappe.get_all(
+            "FAC Skill",
+            filters={"source_app": app_name, "is_system": 1},
+            fields=["name", "skill_id"],
+        )
+        if not orphans:
+            return
+
+        for row in orphans:
+            doc = frappe.get_doc("FAC Skill", row.name)
+            doc.flags.allow_system_delete = True
+            doc.delete(ignore_permissions=True)
+
+        frappe.db.commit()
+        frappe.logger("migration_hooks").info(
+            f"Removed {len(orphans)} skill(s) registered by uninstalled app '{app_name}'"
+        )
+    except Exception as e:
+        frappe.logger("migration_hooks").warning(
+            f"Failed to clean up skills for uninstalled app '{app_name}': {str(e)}"
+        )
+
+
 def get_migration_status() -> Dict[str, Any]:
     """
     Get status of migration-related tool cache operations.
@@ -272,6 +323,7 @@ def _install_system_prompt_categories():
             frappe.logger("migration_hooks").warning(f"Prompt category data not found at {data_path}")
             return
 
+        # nosemgrep: frappe-semgrep-rules.rules.security.frappe-security-file-traversal — app-bundled seed JSON, path derived from __file__
         with open(data_path) as f:
             categories = json.load(f)
 
@@ -361,6 +413,7 @@ def _install_system_prompt_templates():
             frappe.logger("migration_hooks").warning(f"Prompt template data not found at {data_path}")
             return
 
+        # nosemgrep: frappe-semgrep-rules.rules.security.frappe-security-file-traversal — app-bundled seed JSON, path derived from __file__
         with open(data_path) as f:
             templates = json.load(f)
 
@@ -450,6 +503,313 @@ def _install_system_prompt_templates():
 
     except Exception as e:
         frappe.logger("migration_hooks").error(f"Failed to install system prompt templates: {str(e)}")
+
+
+def _install_system_skills():
+    """
+    Install system skills from manifest.
+
+    These are reference skills that come with FAC and provide guidance
+    on how to use tools effectively.
+
+    System skills have is_system=1 and cannot be deleted by users.
+    """
+    import json
+    import os
+
+    try:
+        # Check if Skill table exists
+        if not frappe.db.table_exists("FAC Skill"):
+            frappe.logger("migration_hooks").info(
+                "Skill table not yet created, skipping system skill installation"
+            )
+            return
+
+        # Load manifest
+        app_dir = os.path.dirname(os.path.dirname(__file__))
+        data_path = os.path.join(app_dir, "data", "system_skills.json")
+
+        if not os.path.exists(data_path):
+            frappe.logger("migration_hooks").warning(f"System skills manifest not found at {data_path}")
+            return
+
+        # nosemgrep: frappe-semgrep-rules.rules.security.frappe-security-file-traversal — app-bundled skills manifest, path derived from __file__
+        with open(data_path) as f:
+            skills_manifest = json.load(f)
+
+        # Skills content directory
+        docs_skills_dir = os.path.join(os.path.dirname(app_dir), "docs", "skills")
+
+        # Get list of valid skill_ids from manifest
+        valid_skill_ids = {s.get("skill_id") for s in skills_manifest}
+
+        # Clean up system skills that are no longer in the manifest
+        existing_system_skills = frappe.get_all(
+            "FAC Skill", filters={"is_system": 1}, fields=["name", "skill_id"]
+        )
+
+        deleted_count = 0
+        for existing in existing_system_skills:
+            if existing.skill_id not in valid_skill_ids:
+                doc = frappe.get_doc("FAC Skill", existing.name)
+                doc.flags.allow_system_delete = True
+                doc.delete(ignore_permissions=True)
+                deleted_count += 1
+                frappe.logger("migration_hooks").info(f"Removed obsolete system skill: {existing.skill_id}")
+
+        created_count = 0
+        updated_count = 0
+
+        for skill_data in skills_manifest:
+            skill_id = skill_data.get("skill_id")
+
+            # Read content from markdown file
+            content_file = skill_data.get("content_file")
+            content = ""
+            if content_file:
+                content_path = os.path.join(docs_skills_dir, content_file)
+                if os.path.exists(content_path):
+                    # nosemgrep: frappe-semgrep-rules.rules.security.frappe-security-file-traversal — skill markdown under app docs dir, filename from app-controlled manifest
+                    with open(content_path) as f:
+                        content = f.read()
+                else:
+                    frappe.logger("migration_hooks").warning(f"Skill content file not found: {content_path}")
+                    continue
+
+            # Check if system skill already exists
+            existing = frappe.db.get_value("FAC Skill", {"skill_id": skill_id, "is_system": 1}, "name")
+
+            if existing:
+                # Update existing system skill
+                doc = frappe.get_doc("FAC Skill", existing)
+
+                needs_update = False
+                for field in ["title", "description", "skill_type", "linked_tool", "category"]:
+                    if skill_data.get(field) is not None and doc.get(field) != skill_data.get(field):
+                        doc.set(field, skill_data.get(field))
+                        needs_update = True
+
+                if content and doc.content != content:
+                    doc.content = content
+                    needs_update = True
+
+                if doc.source_app != "frappe_assistant_core":
+                    doc.source_app = "frappe_assistant_core"
+                    needs_update = True
+
+                if needs_update:
+                    doc.flags.ignore_permissions = True
+                    doc.save()
+                    updated_count += 1
+                    frappe.logger("migration_hooks").debug(f"Updated system skill: {skill_id}")
+            else:
+                # Create new system skill
+                doc = frappe.new_doc("FAC Skill")
+                doc.skill_id = skill_id
+                doc.title = skill_data.get("title")
+                doc.description = skill_data.get("description")
+                doc.status = skill_data.get("status", "Published")
+                doc.visibility = skill_data.get("visibility", "Public")
+                doc.is_system = 1
+                doc.skill_type = skill_data.get("skill_type", "Tool Usage")
+                doc.linked_tool = skill_data.get("linked_tool")
+                doc.content = content
+                doc.owner_user = "Administrator"
+                doc.category = skill_data.get("category")
+                doc.source_app = "frappe_assistant_core"
+
+                doc.flags.ignore_permissions = True
+                doc.insert()
+                created_count += 1
+                frappe.logger("migration_hooks").debug(f"Created system skill: {skill_id}")
+
+        frappe.db.commit()
+
+        frappe.logger("migration_hooks").info(
+            f"System skills: {created_count} created, {updated_count} updated, {deleted_count} removed"
+        )
+
+    except Exception as e:
+        frappe.logger("migration_hooks").error(f"Failed to install system skills: {str(e)}")
+
+
+def _install_app_skills():
+    """
+    Install skills from other apps via the ``assistant_skills`` hook.
+
+    Any Frappe app can register skills by adding to its hooks.py::
+
+        assistant_skills = [
+            {
+                "app": "my_app",
+                "manifest": "data/my_skills.json",
+                "content_dir": "data/skills"
+            }
+        ]
+
+    Path resolution:
+        Both ``manifest`` and ``content_dir`` are resolved relative to the
+        app's Python package directory (what ``frappe.get_app_path(app)``
+        returns — e.g. ``.../my_app/my_app/``). Do not prefix paths with
+        the app name.
+
+    The manifest JSON has the same structure as FAC's system_skills.json.
+
+    Skills installed via this hook have ``is_system=1`` and ``source_app``
+    set to the app name for lifecycle management and cleanup.
+    """
+    import json
+    import os
+
+    try:
+        if not frappe.db.table_exists("FAC Skill"):
+            return
+
+        hook_entries = frappe.get_hooks("assistant_skills") or []
+        if not hook_entries:
+            return
+
+        total_created = 0
+        total_updated = 0
+        total_deleted = 0
+
+        for entry in hook_entries:
+            app_name = entry.get("app")
+            manifest_rel = entry.get("manifest")
+            content_dir_rel = entry.get("content_dir")
+
+            if not app_name or not manifest_rel:
+                frappe.logger("migration_hooks").warning(
+                    f"assistant_skills entry missing 'app' or 'manifest': {entry!r}"
+                )
+                continue
+
+            try:
+                app_path = frappe.get_app_path(app_name)
+            except Exception:
+                frappe.logger("migration_hooks").warning(
+                    f"App '{app_name}' not found, skipping skill installation"
+                )
+                continue
+
+            # Both manifest and content_dir are relative to the app's package dir.
+            manifest_path = os.path.join(app_path, manifest_rel)
+            content_dir = os.path.join(app_path, content_dir_rel) if content_dir_rel else None
+
+            if not os.path.exists(manifest_path):
+                frappe.logger("migration_hooks").warning(
+                    f"Skills manifest not found at {manifest_path} for app '{app_name}'"
+                )
+                continue
+
+            # nosemgrep: frappe-semgrep-rules.rules.security.frappe-security-file-traversal — manifest path from frappe.get_app_path, not user input
+            with open(manifest_path) as f:
+                skills_manifest = json.load(f)
+
+            # Track valid skill_ids from this app for cleanup
+            valid_ids = {s.get("skill_id") for s in skills_manifest}
+
+            # Clean up skills from this app that are no longer in its manifest
+            existing = frappe.get_all(
+                "FAC Skill",
+                filters={"is_system": 1, "source_app": app_name},
+                fields=["name", "skill_id"],
+            )
+            for e in existing:
+                if e.skill_id not in valid_ids:
+                    doc = frappe.get_doc("FAC Skill", e.name)
+                    doc.flags.allow_system_delete = True
+                    doc.delete(ignore_permissions=True)
+                    total_deleted += 1
+                    frappe.logger("migration_hooks").info(
+                        f"Removed obsolete app skill: {e.skill_id} (from {app_name})"
+                    )
+
+            # Install/update each skill
+            for skill_data in skills_manifest:
+                skill_id = skill_data.get("skill_id")
+
+                # Read content from markdown file
+                content = ""
+                content_file = skill_data.get("content_file")
+                if content_file and content_dir:
+                    content_path = os.path.join(content_dir, content_file)
+                    if os.path.exists(content_path):
+                        # nosemgrep: frappe-semgrep-rules.rules.security.frappe-security-file-traversal — skill markdown under app-controlled content_dir, filename from app-controlled manifest
+                        with open(content_path) as f:
+                            content = f.read()
+                    else:
+                        frappe.logger("migration_hooks").warning(
+                            f"Skill content file not found: {content_path}"
+                        )
+                        continue
+
+                existing_name = frappe.db.get_value(
+                    "FAC Skill", {"skill_id": skill_id, "is_system": 1}, "name"
+                )
+
+                if existing_name:
+                    # Update existing skill.
+                    # Manifest-owned fields are re-synced every migration so app
+                    # authors can evolve metadata. Fields NOT synced here (owner_user,
+                    # is_system) are set once on create and never overwritten.
+                    doc = frappe.get_doc("FAC Skill", existing_name)
+                    needs_update = False
+
+                    for field in [
+                        "title",
+                        "description",
+                        "status",
+                        "visibility",
+                        "skill_type",
+                        "linked_tool",
+                        "category",
+                    ]:
+                        if skill_data.get(field) is not None and doc.get(field) != skill_data.get(field):
+                            doc.set(field, skill_data.get(field))
+                            needs_update = True
+
+                    if content and doc.content != content:
+                        doc.content = content
+                        needs_update = True
+
+                    if doc.source_app != app_name:
+                        doc.source_app = app_name
+                        needs_update = True
+
+                    if needs_update:
+                        doc.flags.ignore_permissions = True
+                        doc.save()
+                        total_updated += 1
+                else:
+                    # Create new skill
+                    doc = frappe.new_doc("FAC Skill")
+                    doc.skill_id = skill_id
+                    doc.title = skill_data.get("title")
+                    doc.description = skill_data.get("description")
+                    doc.status = skill_data.get("status", "Published")
+                    doc.visibility = skill_data.get("visibility", "Public")
+                    doc.is_system = 1
+                    doc.skill_type = skill_data.get("skill_type", "Workflow")
+                    doc.linked_tool = skill_data.get("linked_tool")
+                    doc.category = skill_data.get("category")
+                    doc.content = content
+                    doc.owner_user = "Administrator"
+                    doc.source_app = app_name
+
+                    doc.flags.ignore_permissions = True
+                    doc.insert()
+                    total_created += 1
+
+        frappe.db.commit()
+
+        if total_created or total_updated or total_deleted:
+            frappe.logger("migration_hooks").info(
+                f"App skills: {total_created} created, {total_updated} updated, {total_deleted} removed"
+            )
+
+    except Exception as e:
+        frappe.logger("migration_hooks").error(f"Failed to install app skills: {str(e)}")
 
 
 def _sync_plugin_configurations():

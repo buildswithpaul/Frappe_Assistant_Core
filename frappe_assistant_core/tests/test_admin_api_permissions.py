@@ -21,30 +21,9 @@ Ensures that non-admin users cannot access admin endpoints.
 Ref: https://github.com/buildswithpaul/Frappe_Assistant_Core/issues/105
 """
 
-import unittest
-
 import frappe
 
 from frappe_assistant_core.tests.base_test import BaseAssistantTest
-
-
-def _strict_only_for(roles, message=False):
-    """frappe.only_for replacement that enforces checks even during tests.
-
-    The real frappe.only_for skips all checks when local.flags.in_test is True,
-    making it impossible to test permission enforcement in the test runner.
-    """
-    if frappe.session.user == "Administrator":
-        return
-    if isinstance(roles, str):
-        roles = (roles,)
-    if set(roles).isdisjoint(frappe.get_roles()):
-        if not message:
-            raise frappe.PermissionError
-        frappe.throw(
-            f"This action is only allowed for {', '.join(roles)}",
-            frappe.PermissionError,
-        )
 
 
 class TestAdminAPIPermissions(BaseAssistantTest):
@@ -102,33 +81,27 @@ class TestAdminAPIPermissions(BaseAssistantTest):
     def _assert_blocked_for_non_admin(self, func, *args, **kwargs):
         """Assert that calling func as a non-admin user raises PermissionError.
 
-        Directly monkeypatches frappe.only_for to bypass the in_test skip
-        that frappe applies during test runs.
+        Temporarily disables Frappe's test-mode shortcut so the real
+        frappe.only_for permission check executes.
         """
         frappe.set_user(self.NON_ADMIN_USER)
         frappe.clear_cache(user=self.NON_ADMIN_USER)
-        original = frappe.only_for
-        frappe.only_for = _strict_only_for
-        try:
+
+        with self.enforce_only_for_checks():
             with self.assertRaises(frappe.PermissionError):
                 func(*args, **kwargs)
-        finally:
-            frappe.only_for = original
 
     def _assert_allowed_for_admin(self, func, *args, **kwargs):
         """Assert that calling func as Administrator does NOT raise PermissionError."""
         frappe.set_user("Administrator")
-        original = frappe.only_for
-        frappe.only_for = _strict_only_for
-        try:
-            func(*args, **kwargs)
-        except frappe.PermissionError:
-            self.fail(f"{func.__name__} should be allowed for Administrator but raised PermissionError")
-        except Exception:
-            # Other errors (e.g. missing tool) are fine — we're only testing auth
-            pass
-        finally:
-            frappe.only_for = original
+        with self.enforce_only_for_checks():
+            try:
+                func(*args, **kwargs)
+            except frappe.PermissionError:
+                self.fail(f"{func.__name__} should be allowed for Administrator but raised PermissionError")
+            except Exception:
+                # Other errors (e.g. missing tool) are fine — we're only testing auth
+                pass
 
     # =========================================================================
     # State-changing endpoints (POST-only)

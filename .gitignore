@@ -36,6 +36,12 @@ venv.bak/
 node_modules/
 jspm_packages/
 
+# Frappe build artifacts — bench build auto-creates these inside apps even
+# when the app has no bundled assets. public/node_modules is a symlink that
+# `node_modules/` doesn't match.
+frappe_assistant_core/public/node_modules
+frappe_assistant_core/public/dist/
+
 # IDEs and editors
 .vscode/
 .vs/

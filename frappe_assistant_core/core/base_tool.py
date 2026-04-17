@@ -20,6 +20,7 @@ Base class for all MCP tools with configuration and dependency management.
 
 import json
 import time
+import traceback
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -162,14 +163,28 @@ class BaseTool(ABC):
             # Calculate execution time
             execution_time = time.time() - start_time
 
-            # Prepare success response
-            response = {"success": True, "result": result, "execution_time": execution_time}
+            # Detect tool-reported failure: the tool returned normally but its
+            # payload is a dict with {"success": False}. Without this, every
+            # non-raising tool call was being logged as Success even when the
+            # tool explicitly signalled an error in its return value.
+            tool_reported_failure = isinstance(result, dict) and result.get("success") is False
 
-            # Log execution
-            self.log_execution(arguments, response, execution_time)
-
-            # Log success
-            self.logger.info(f"Successfully executed {self.name} in {execution_time:.3f}s")
+            if tool_reported_failure:
+                response = {
+                    "success": False,
+                    "result": result,
+                    "error": result.get("error") or "Tool reported failure",
+                    "error_type": "ToolReportedError",
+                    "execution_time": execution_time,
+                }
+                self.log_execution(arguments, response, execution_time, status="Error")
+                self.logger.info(
+                    f"{self.name} reported failure in {execution_time:.3f}s: {response['error']}"
+                )
+            else:
+                response = {"success": True, "result": result, "execution_time": execution_time}
+                self.log_execution(arguments, response, execution_time, status="Success")
+                self.logger.info(f"Successfully executed {self.name} in {execution_time:.3f}s")
 
             return response
 
@@ -182,10 +197,8 @@ class BaseTool(ABC):
                 "execution_time": execution_time,
             }
 
-            # Log execution
-            self.log_execution(arguments, response, execution_time)
+            self.log_execution(arguments, response, execution_time, status="Permission Denied")
 
-            # Log permission error
             frappe.log_error(title=_("Permission Error"), message=f"{self.name}: {str(e)}")
 
             return response
@@ -199,16 +212,36 @@ class BaseTool(ABC):
                 "execution_time": execution_time,
             }
 
-            # Log execution
-            self.log_execution(arguments, response, execution_time)
+            self.log_execution(arguments, response, execution_time, status="Error")
 
-            # Log validation error
             frappe.log_error(title=_("Validation Error"), message=f"{self.name}: {str(e)}")
+
+            return response
+
+        except TimeoutError as e:
+            execution_time = time.time() - start_time
+            response = {
+                "success": False,
+                "error": str(e),
+                "error_type": "Timeout",
+                "execution_time": execution_time,
+            }
+
+            self.log_execution(
+                arguments,
+                response,
+                execution_time,
+                status="Timeout",
+                traceback_str=traceback.format_exc(),
+            )
+
+            frappe.log_error(title=_("Tool Timeout"), message=f"{self.name}: {str(e)}")
 
             return response
 
         except Exception as e:
             execution_time = time.time() - start_time
+            tb = traceback.format_exc()
             response = {
                 "success": False,
                 "error": str(e),
@@ -216,25 +249,18 @@ class BaseTool(ABC):
                 "execution_time": execution_time,
             }
 
-            # Log execution
-            self.log_execution(arguments, response, execution_time)
-
-            # Enhanced error logging with more diagnostic information
-            import traceback
-
-            error_details = {
-                "tool_name": self.name,
-                "error_message": str(e),
-                "error_type": type(e).__name__,
-                "execution_time": execution_time,
-                "arguments": arguments,
-                "traceback": traceback.format_exc(),
-            }
+            self.log_execution(
+                arguments,
+                response,
+                execution_time,
+                status="Error",
+                traceback_str=tb,
+            )
 
             self.logger.error(f"Tool execution failed: {self.name} - {str(e)}", exc_info=True)
             frappe.log_error(
                 title=_("Tool Execution Error"),
-                message=f"Tool: {self.name}\nError: {str(e)}\nType: {type(e).__name__}\nArgs: {arguments}\n\nFull traceback:\n{traceback.format_exc()}",
+                message=f"Tool: {self.name}\nError: {str(e)}\nType: {type(e).__name__}\nArgs: {arguments}\n\nFull traceback:\n{tb}",
             )
 
             return response
@@ -331,7 +357,14 @@ class BaseTool(ABC):
         """Clear cached configuration to force reload"""
         self._config_cache = None
 
-    def log_execution(self, arguments: Dict[str, Any], result: Dict[str, Any], execution_time: float):
+    def log_execution(
+        self,
+        arguments: Dict[str, Any],
+        result: Dict[str, Any],
+        execution_time: float,
+        status: str = "Success",
+        traceback_str: Optional[str] = None,
+    ):
         """
         Log tool execution for audit purposes.
 
@@ -339,6 +372,9 @@ class BaseTool(ABC):
             arguments: Tool arguments (sensitive data will be sanitized)
             result: Execution result
             execution_time: Time taken in seconds
+            status: Audit-log status value — one of "Success", "Error",
+                "Timeout", "Permission Denied". Must match the DocType Select.
+            traceback_str: Full Python traceback on exception paths. None otherwise.
         """
         try:
             from frappe_assistant_core.utils.audit_trail import log_tool_execution
@@ -355,11 +391,13 @@ class BaseTool(ABC):
                 tool_name=self.name,
                 user=frappe.session.user,
                 arguments=self._sanitize_arguments(arguments),
-                success=result.get("success", False),
+                status=status,
                 execution_time=execution_time,
                 source_app=self.source_app,
-                error_message=result.get("error") if not result.get("success") else None,
-                output_data=sanitized_output,  # Direct tool output, not wrapper
+                error_message=result.get("error") if status != "Success" else None,
+                error_type=result.get("error_type"),
+                traceback_str=traceback_str,
+                output_data=sanitized_output,
             )
         except Exception as e:
             # Don't fail tool execution due to logging issues

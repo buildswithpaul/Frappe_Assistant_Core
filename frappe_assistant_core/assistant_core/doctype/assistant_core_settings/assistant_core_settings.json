@@ -41,6 +41,8 @@
   "mcp_server_name",
   "mcp_protocol_version",
   "mcp_transport_type",
+  "skills_section",
+  "skill_mode",
   "oauth_tab",
   "oauth_authorization_section",
   "enable_dynamic_client_registration",
@@ -149,8 +151,8 @@
    "fieldname": "code_execution_max_recursion",
    "fieldtype": "Int",
    "label": "Max Recursion Depth",
-   "default": "100",
-   "description": "Maximum recursion depth allowed. Prevents stack overflow from deeply recursive code. Range: 50-500."
+   "default": "500",
+   "description": "Maximum recursion depth allowed. Prevents stack overflow from deeply recursive code. Range: 50-1000. Frappe internals (frappe.get_doc, frappe.get_all) recurse well past 100, so keep this at the default unless you have a reason to lower it."
   },
   {
    "fieldname": "execution_limits_info",
@@ -284,6 +286,19 @@
    "read_only": 1,
    "default": "StreamableHTTP",
    "description": "Transport protocol used for MCP communication. StreamableHTTP enables OAuth-based authentication."
+  },
+  {
+   "fieldname": "skills_section",
+   "fieldtype": "Section Break",
+   "label": "Skills Configuration"
+  },
+  {
+   "default": "supplementary",
+   "description": "Supplementary: tools keep full descriptions, skills provide additional guidance. Replace: tool descriptions are minimized when a skill exists, saving tokens.",
+   "fieldname": "skill_mode",
+   "fieldtype": "Select",
+   "label": "Skill Mode",
+   "options": "supplementary\nreplace"
   },
   {
    "fieldname": "oauth_tab",

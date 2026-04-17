@@ -9,6 +9,7 @@ import os
 import queue
 import sys
 import threading
+import uuid
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from typing import Any, Dict
 
@@ -32,9 +33,17 @@ class StdioMCPWrapper:
         # Remove trailing slash if present
         self.server_url = self.server_url.rstrip("/")
 
+        # One session id per bridge process, so all tool calls in a single
+        # Claude Desktop conversation share a correlation id in the audit log.
+        # Client id identifies which MCP client hit the server.
+        self.session_id = os.environ.get("FRAPPE_MCP_SESSION_ID") or str(uuid.uuid4())
+        self.client_id = os.environ.get("FRAPPE_MCP_CLIENT_ID") or "claude-desktop-stdio"
+
         self.headers = {
             "Authorization": f"token {self.api_key}:{self.api_secret}",
             "Content-Type": "application/json",
+            "Mcp-Session-Id": self.session_id,
+            "X-Assistant-Client-Id": self.client_id,
         }
 
         # Thread pool for handling concurrent requests

@@ -206,28 +206,59 @@ class ExtractFileContent(BaseTool):
         return {"success": True}
 
     def _get_file_document(self, arguments: Dict[str, Any]) -> Optional[Any]:
-        """Get file document from Frappe"""
+        """Get file document from Frappe, with parent document authorization."""
         file_url = arguments.get("file_url")
         file_name = arguments.get("file_name")
 
         try:
+            file_doc = None
+
             if file_url:
-                # Get file by URL
-                file_doc = frappe.get_all("File", filters={"file_url": file_url}, fields=["*"], limit=1)
-                if file_doc:
-                    return frappe.get_doc("File", file_doc[0].name)
+                results = frappe.get_all("File", filters={"file_url": file_url}, fields=["*"], limit=1)
+                if results:
+                    file_doc = frappe.get_doc("File", results[0].name)
 
             elif file_name:
-                # Get file by name
-                file_doc = frappe.get_all("File", filters={"file_name": file_name}, fields=["*"], limit=1)
-                if file_doc:
-                    return frappe.get_doc("File", file_doc[0].name)
+                results = frappe.get_all("File", filters={"file_name": file_name}, fields=["*"], limit=1)
+                if results:
+                    file_doc = frappe.get_doc("File", results[0].name)
 
-            return None
+            if not file_doc:
+                return None
 
+            self._check_file_access(file_doc)
+            return file_doc
+
+        except frappe.PermissionError:
+            raise
         except Exception as e:
             frappe.log_error(f"Error getting file document: {str(e)}")
             return None
+
+    def _check_file_access(self, file_doc) -> None:
+        """
+        Verify the user has access to a file's parent document.
+
+        Beyond the generic File DocType read permission (checked by
+        requires_permission = "File"), this ensures the user can actually
+        read the document the file is attached to.
+
+        Raises:
+            frappe.PermissionError: If user cannot access the parent document
+                or if a private unattached file is accessed by a non-admin.
+        """
+        # If attached to a document, check parent document permission
+        if file_doc.attached_to_doctype and file_doc.attached_to_name:
+            if not frappe.has_permission(file_doc.attached_to_doctype, "read", file_doc.attached_to_name):
+                frappe.throw(
+                    _("You do not have permission to access the document this file is attached to"),
+                    frappe.PermissionError,
+                )
+            return
+
+        # Private unattached files require System Manager
+        if file_doc.file_url and "/private/" in file_doc.file_url:
+            frappe.only_for("System Manager")
 
     def _check_file_size(self, file_doc) -> bool:
         """Check if file size is within limits"""
@@ -264,6 +295,7 @@ class ExtractFileContent(BaseTool):
             # 1. Try local filesystem
             file_path = self._get_file_path(file_doc)
             if file_path and os.path.exists(file_path):
+                # nosemgrep: frappe-semgrep-rules.rules.security.frappe-security-file-traversal — _get_file_path scopes to /private or /files under the site directory via frappe.get_site_path
                 with open(file_path, "rb") as f:
                     return f.read()
 

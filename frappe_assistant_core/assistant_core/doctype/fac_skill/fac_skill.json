@@ -1,0 +1,253 @@
+{
+ "actions": [],
+ "autoname": "format:SK-{#####}",
+ "creation": "2025-01-01 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "basic_section",
+  "skill_id",
+  "title",
+  "column_break_basic",
+  "status",
+  "is_system",
+  "source_app",
+  "skill_type",
+  "category",
+  "description_section",
+  "description",
+  "content_section",
+  "content",
+  "tool_section",
+  "linked_tool",
+  "organization_section",
+  "column_break_org",
+  "use_count",
+  "last_used",
+  "sharing_section",
+  "visibility",
+  "owner_user",
+  "column_break_sharing",
+  "shared_with_roles"
+ ],
+ "fields": [
+  {
+   "fieldname": "basic_section",
+   "fieldtype": "Section Break",
+   "label": "Basic Information"
+  },
+  {
+   "description": "Unique identifier for the skill (e.g., 'list-documents-usage'). Must be lowercase with hyphens or underscores.",
+   "fieldname": "skill_id",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Skill ID",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "description": "Human-readable title shown in MCP clients and tool listings",
+   "fieldname": "title",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Title",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_basic",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "Draft",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "Draft\nPublished\nDeprecated",
+   "reqd": 1
+  },
+  {
+   "default": "0",
+   "description": "System skills are created during installation and cannot be deleted",
+   "fieldname": "is_system",
+   "fieldtype": "Check",
+   "label": "System Skill",
+   "read_only": 1
+  },
+  {
+   "description": "App that installed this skill",
+   "fieldname": "source_app",
+   "fieldtype": "Data",
+   "label": "Source App",
+   "read_only": 1
+  },
+  {
+   "default": "Tool Usage",
+   "fieldname": "skill_type",
+   "fieldtype": "Select",
+   "in_standard_filter": 1,
+   "label": "Skill Type",
+   "options": "Tool Usage\nWorkflow"
+  },
+  {
+   "fieldname": "category",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Category",
+   "options": "Prompt Category"
+  },
+  {
+   "fieldname": "description_section",
+   "fieldtype": "Section Break",
+   "label": "Description"
+  },
+  {
+   "description": "One-line description shown in MCP resource listings and skill discovery",
+   "fieldname": "description",
+   "fieldtype": "Small Text",
+   "label": "Description",
+   "reqd": 1
+  },
+  {
+   "fieldname": "content_section",
+   "fieldtype": "Section Break",
+   "label": "Skill Content"
+  },
+  {
+   "description": "Full skill content in Markdown. This is the knowledge document that teaches the LLM how to use the tool effectively.",
+   "fieldname": "content",
+   "fieldtype": "Markdown Editor",
+   "label": "Content",
+   "reqd": 1
+  },
+  {
+   "collapsible": 1,
+   "depends_on": "eval:doc.skill_type=='Tool Usage'",
+   "fieldname": "tool_section",
+   "fieldtype": "Section Break",
+   "label": "Linked Tool"
+  },
+  {
+   "depends_on": "eval:doc.skill_type=='Tool Usage'",
+   "description": "The MCP tool name this skill provides guidance for (e.g., 'list_documents')",
+   "fieldname": "linked_tool",
+   "fieldtype": "Data",
+   "label": "Linked Tool"
+  },
+  {
+   "fieldname": "organization_section",
+   "fieldtype": "Section Break",
+   "label": "Organization & Analytics"
+  },
+  {
+   "fieldname": "column_break_org",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "fieldname": "use_count",
+   "fieldtype": "Int",
+   "label": "Use Count",
+   "read_only": 1
+  },
+  {
+   "fieldname": "last_used",
+   "fieldtype": "Datetime",
+   "label": "Last Used",
+   "read_only": 1
+  },
+  {
+   "fieldname": "sharing_section",
+   "fieldtype": "Section Break",
+   "label": "Sharing & Permissions"
+  },
+  {
+   "default": "Public",
+   "description": "Private: Only owner can access. Shared: Specific roles can access. Public: All users can access.",
+   "fieldname": "visibility",
+   "fieldtype": "Select",
+   "label": "Visibility",
+   "options": "Private\nShared\nPublic"
+  },
+  {
+   "default": "__user",
+   "fieldname": "owner_user",
+   "fieldtype": "Link",
+   "label": "Owner",
+   "options": "User",
+   "read_only_depends_on": "eval:!frappe.user_roles.includes('System Manager')"
+  },
+  {
+   "fieldname": "column_break_sharing",
+   "fieldtype": "Column Break"
+  },
+  {
+   "depends_on": "eval:doc.visibility=='Shared'",
+   "description": "Roles that can access this skill when visibility is 'Shared'",
+   "fieldname": "shared_with_roles",
+   "fieldtype": "Table MultiSelect",
+   "label": "Shared With Roles",
+   "options": "Has Role"
+  }
+ ],
+ "links": [],
+ "modified": "2025-01-01 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Assistant Core",
+ "name": "FAC Skill",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Assistant Admin",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Assistant User",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "if_owner": 1,
+   "read": 1,
+   "role": "Desk User",
+   "write": 1
+  }
+ ],
+ "search_fields": "title, skill_id, description",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "title",
+ "track_changes": 1
+}

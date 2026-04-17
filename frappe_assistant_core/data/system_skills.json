@@ -1,0 +1,242 @@
+[
+  {
+    "skill_id": "list-documents-usage",
+    "title": "How to Use list_documents",
+    "description": "Searching and listing Frappe documents with filters, field selection, ordering, and response format",
+    "skill_type": "Tool Usage",
+    "linked_tool": "list_documents",
+    "status": "Published",
+    "visibility": "Public",
+    "content_file": "list_documents.md"
+  },
+  {
+    "skill_id": "create-document-usage",
+    "title": "How to Use create_document",
+    "description": "Creating Frappe documents including child tables, validate_only mode, submit option, and naming",
+    "skill_type": "Tool Usage",
+    "linked_tool": "create_document",
+    "status": "Published",
+    "visibility": "Public",
+    "content_file": "create_document.md"
+  },
+  {
+    "skill_id": "get-document-usage",
+    "title": "How to Use get_document",
+    "description": "Retrieving single Frappe documents with full field and child table data",
+    "skill_type": "Tool Usage",
+    "linked_tool": "get_document",
+    "status": "Published",
+    "visibility": "Public",
+    "content_file": "get_document.md"
+  },
+  {
+    "skill_id": "update-document-usage",
+    "title": "How to Use update_document",
+    "description": "Modifying existing documents — partial updates, child tables, submitted document restrictions",
+    "skill_type": "Tool Usage",
+    "linked_tool": "update_document",
+    "status": "Published",
+    "visibility": "Public",
+    "content_file": "update_document.md"
+  },
+  {
+    "skill_id": "delete-document-usage",
+    "title": "How to Use delete_document",
+    "description": "Permanently removing documents — dependency handling, force mode, submitted document restrictions",
+    "skill_type": "Tool Usage",
+    "linked_tool": "delete_document",
+    "status": "Published",
+    "visibility": "Public",
+    "content_file": "delete_document.md"
+  },
+  {
+    "skill_id": "submit-document-usage",
+    "title": "How to Use submit_document",
+    "description": "Finalizing draft documents — submittable DocTypes, docstatus workflow, side effects",
+    "skill_type": "Tool Usage",
+    "linked_tool": "submit_document",
+    "status": "Published",
+    "visibility": "Public",
+    "content_file": "submit_document.md"
+  },
+  {
+    "skill_id": "search-documents-usage",
+    "title": "How to Use search_documents",
+    "description": "Global full-text search across multiple DocTypes — no doctype parameter, comparison with other search tools",
+    "skill_type": "Tool Usage",
+    "linked_tool": "search_documents",
+    "status": "Published",
+    "visibility": "Public",
+    "content_file": "search_documents.md"
+  },
+  {
+    "skill_id": "search-doctype-usage",
+    "title": "How to Use search_doctype",
+    "description": "Searching within a specific DocType using its configured search fields",
+    "skill_type": "Tool Usage",
+    "linked_tool": "search_doctype",
+    "status": "Published",
+    "visibility": "Public",
+    "content_file": "search_doctype.md"
+  },
+  {
+    "skill_id": "search-link-usage",
+    "title": "How to Use search_link",
+    "description": "Autocomplete-style search for Link field values — finding valid values for document creation",
+    "skill_type": "Tool Usage",
+    "linked_tool": "search_link",
+    "status": "Published",
+    "visibility": "Public",
+    "content_file": "search_link.md"
+  },
+  {
+    "skill_id": "get-doctype-info-usage",
+    "title": "How to Use get_doctype_info",
+    "description": "Retrieving DocType metadata — fields, types, required flags, link targets, and permissions",
+    "skill_type": "Tool Usage",
+    "linked_tool": "get_doctype_info",
+    "status": "Published",
+    "visibility": "Public",
+    "content_file": "get_doctype_info.md"
+  },
+  {
+    "skill_id": "run-database-query-usage",
+    "title": "How to Use run_database_query",
+    "description": "SQL queries with analysis_type, validation, table naming conventions, JOINs, and aggregations",
+    "skill_type": "Tool Usage",
+    "linked_tool": "run_database_query",
+    "status": "Published",
+    "visibility": "Public",
+    "content_file": "run_database_query.md"
+  },
+  {
+    "skill_id": "generate-report-usage",
+    "title": "How to Use generate_report",
+    "description": "Report workflow — report_list, report_requirements, and generate_report — with common reports by module",
+    "skill_type": "Tool Usage",
+    "linked_tool": "generate_report",
+    "status": "Published",
+    "visibility": "Public",
+    "content_file": "generate_report.md"
+  },
+  {
+    "skill_id": "run-python-code-usage",
+    "title": "How to Use run_python_code",
+    "description": "Sandboxed Python execution — actual available libraries, date handling pitfalls, tools API, security restrictions",
+    "skill_type": "Tool Usage",
+    "linked_tool": "run_python_code",
+    "status": "Published",
+    "visibility": "Public",
+    "content_file": "run_python_code.md"
+  },
+  {
+    "skill_id": "run-workflow-usage",
+    "title": "How to Use run_workflow",
+    "description": "Executing workflow actions — Submit, Approve, Reject, Cancel — with proper state transitions",
+    "skill_type": "Tool Usage",
+    "linked_tool": "run_workflow",
+    "status": "Published",
+    "visibility": "Public",
+    "content_file": "run_workflow.md"
+  },
+  {
+    "skill_id": "analyze-business-data-usage",
+    "title": "How to Use analyze_business_data",
+    "description": "Statistical analysis and data profiling — profile, statistics, trends, quality, correlations",
+    "skill_type": "Tool Usage",
+    "linked_tool": "analyze_business_data",
+    "status": "Published",
+    "visibility": "Public",
+    "content_file": "analyze_business_data.md"
+  },
+  {
+    "skill_id": "extract-file-content-usage",
+    "title": "How to Use extract_file_content",
+    "description": "Extracting text from PDFs, OCR on images, parsing spreadsheets, and table extraction",
+    "skill_type": "Tool Usage",
+    "linked_tool": "extract_file_content",
+    "status": "Published",
+    "visibility": "Public",
+    "content_file": "extract_file_content.md"
+  },
+  {
+    "skill_id": "create-dashboard-chart-usage",
+    "title": "How to Use create_dashboard_chart and create_dashboard",
+    "description": "Creating dashboard charts and dashboards — chart types, aggregations, field requirements, workflow",
+    "skill_type": "Tool Usage",
+    "linked_tool": "create_dashboard_chart",
+    "status": "Published",
+    "visibility": "Public",
+    "content_file": "create_dashboard_chart.md"
+  },
+  {
+    "skill_id": "list-user-dashboards-usage",
+    "title": "How to Use list_user_dashboards",
+    "description": "Listing accessible dashboards — filtering by type, checking existing dashboards before creating new ones",
+    "skill_type": "Tool Usage",
+    "linked_tool": "list_user_dashboards",
+    "status": "Published",
+    "visibility": "Public",
+    "content_file": "list_user_dashboards.md"
+  },
+  {
+    "skill_id": "search-vector-usage",
+    "title": "How to Use search and fetch (Vector Search)",
+    "description": "AI-powered semantic search and document retrieval — requires vector store, natural language queries, fetch by ID",
+    "skill_type": "Tool Usage",
+    "linked_tool": "search",
+    "status": "Published",
+    "visibility": "Public",
+    "content_file": "search_vector.md"
+  },
+  {
+    "skill_id": "report-list-usage",
+    "title": "How to Use report_list",
+    "description": "Discovering available reports by module — part of the report workflow (list → requirements → generate)",
+    "skill_type": "Tool Usage",
+    "linked_tool": "report_list",
+    "status": "Published",
+    "visibility": "Public",
+    "content_file": "generate_report.md"
+  },
+  {
+    "skill_id": "report-requirements-usage",
+    "title": "How to Use report_requirements",
+    "description": "Getting mandatory filters and valid options for a specific report — part of the report workflow",
+    "skill_type": "Tool Usage",
+    "linked_tool": "report_requirements",
+    "status": "Published",
+    "visibility": "Public",
+    "content_file": "generate_report.md"
+  },
+  {
+    "skill_id": "create-dashboard-usage",
+    "title": "How to Use create_dashboard",
+    "description": "Creating dashboards that link existing charts — create charts first, then assemble into a dashboard",
+    "skill_type": "Tool Usage",
+    "linked_tool": "create_dashboard",
+    "status": "Published",
+    "visibility": "Public",
+    "content_file": "create_dashboard_chart.md"
+  },
+  {
+    "skill_id": "fetch-vector-usage",
+    "title": "How to Use fetch (Vector Fetch)",
+    "description": "Retrieving full document content by ID after vector search — uses doctype/name format",
+    "skill_type": "Tool Usage",
+    "linked_tool": "fetch",
+    "status": "Published",
+    "visibility": "Public",
+    "content_file": "search_vector.md"
+  },
+  {
+  "skill_id": "insights-dashboard",
+  "title": "How to Create Dashboards in Frappe Insights v3",
+  "description": "Creating workbooks, queries, charts, and dashboards in Frappe Insights v3 — correct doctypes, config schemas, manifest updates, and common pitfalls",
+  "skill_type": "Workflow",
+  "linked_tool": null,
+  "status": "Published",
+  "visibility": "Public",
+  "content_file": "insight_v3_skill.md"
+  }
+]

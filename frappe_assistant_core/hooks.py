@@ -99,6 +99,10 @@ after_install = [
 # before_uninstall = "frappe_assistant_core.uninstall.before_uninstall"
 after_uninstall = "frappe_assistant_core.utils.migration_hooks.after_uninstall"
 
+# Fired before ANY app is uninstalled (including other apps). Used to clean up
+# FAC Skill rows registered by that app via its assistant_skills hook.
+before_app_uninstall = "frappe_assistant_core.utils.migration_hooks.before_app_uninstall"
+
 # Desk Notifications
 # ------------------
 # See frappe.core.notifications.get_notification_config
@@ -112,6 +116,7 @@ after_uninstall = "frappe_assistant_core.utils.migration_hooks.after_uninstall"
 permission_query_conditions = {
     "Assistant Audit Log": "frappe_assistant_core.utils.permissions.get_audit_permission_query_conditions",
     "Prompt Template": "frappe_assistant_core.utils.permissions.get_prompt_permission_query_conditions",
+    "FAC Skill": "frappe_assistant_core.utils.permissions.get_skill_permission_query_conditions",
 }
 
 # has_permission = {

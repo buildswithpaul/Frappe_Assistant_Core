@@ -14,6 +14,8 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+from typing import Any, Dict
+
 import frappe
 from frappe import _
 from frappe.model.document import Document
@@ -52,7 +54,7 @@ class AssistantCoreSettings(Document):
             # Enable API with new settings
             self.enable_assistant_api()
 
-            frappe.msgprint("assistant MCP API restarted successfully")
+            frappe.msgprint(_("Assistant MCP API restarted successfully"))
 
         except Exception as e:
             frappe.log_error(f"Failed to restart assistant MCP API: {str(e)}")
@@ -297,7 +299,7 @@ class AssistantCoreSettings(Document):
             }
 
     @frappe.whitelist()
-    def toggle_plugin(self, plugin_name, action):
+    def toggle_plugin(self, plugin_name: str, action: str) -> Dict[str, Any]:
         """Enable or disable a plugin"""
         try:
             from frappe_assistant_core.utils.plugin_manager import PluginError, get_plugin_manager
@@ -332,7 +334,6 @@ class AssistantCoreSettings(Document):
 # Use StreamableHTTP (OAuth-based) transport instead
 
 
-@frappe.whitelist()
 def toggle_plugin_api(plugin_name: str, action: str):
     """
     Standalone API to enable or disable a plugin.

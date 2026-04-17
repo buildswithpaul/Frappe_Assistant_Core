@@ -36,15 +36,17 @@ def get_usage_statistics() -> Dict[str, Any]:
             api_logger.warning("Usage statistics requested without valid authentication")
             frappe.throw(_("Authentication required"))
 
-        # SECURITY: Check if user has assistant access
-        from frappe_assistant_core.utils.permissions import check_assistant_permission
+        # SECURITY: Restrict global usage statistics to assistant admins
+        from frappe_assistant_core.utils.permissions import check_assistant_admin_permission
 
         user_roles = frappe.get_roles(authenticated_user)
         api_logger.debug(f"User {authenticated_user} has roles: {user_roles}")
 
-        if not check_assistant_permission(authenticated_user):
-            api_logger.warning(f"Access denied for user: {authenticated_user} with roles: {user_roles}")
-            frappe.throw(_("Access denied - insufficient permissions"))
+        if not check_assistant_admin_permission(authenticated_user):
+            api_logger.warning(
+                f"Usage statistics denied for non-admin user: {authenticated_user} with roles: {user_roles}"
+            )
+            frappe.throw(_("Access denied - administrator permissions required"))
 
         api_logger.info(f"Usage statistics requested by user: {authenticated_user}")
         api_logger.info(f"Current site: {frappe.local.site}")
@@ -206,6 +208,7 @@ def _authenticate_request() -> Optional[str]:
                             return None
 
                         # Set user context for this request
+                        # nosemgrep: frappe-semgrep-rules.rules.security.frappe-setuser — user authenticated via API key:secret comparison above
                         frappe.set_user(str(user))
                         api_logger.debug(f"API key authentication successful: {user}")
                         return str(user)

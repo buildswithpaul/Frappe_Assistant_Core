@@ -243,5 +243,35 @@
                 "allowed_values": "all,last_week,last_month,last_quarter,last_year"
             }
         ]
+    },
+    {
+        "doctype": "Prompt Template",
+        "prompt_id": "export_fac_skills",
+        "title": "Export FAC Skills as Claude Skills",
+        "description": "Fetch one or all published FAC Skills and package them as .skill zip files that can be installed into Claude.",
+        "status": "Published",
+        "visibility": "Public",
+        "is_system": 1,
+        "category": "system-admin",
+        "rendering_engine": "Jinja2",
+        "template_content": "Export {% if scope == 'specific' %}the FAC Skill with skill_id \"{{ skill_id }}\"{% else %}all published FAC Skills{% endif %} as {% if scope == 'specific' %}an installable .skill zip file{% else %}installable .skill zip files{% endif %}.\n\n**Target format.** A `.skill` file is a zip archive containing `<skill_id>/SKILL.md`,\nwhere SKILL.md begins with YAML frontmatter (`name`, `description`, `version`)\nfollowed by the skill's markdown content.\n\n**Step 1 — Fetch the skill{% if scope != 'specific' %}s{% endif %}** using the `list_documents` tool:\n\n    list_documents(\n        doctype=\"FAC Skill\",\n{% if scope == 'specific' %}        filters={\"status\": \"Published\", \"skill_id\": \"{{ skill_id }}\"},\n{% else %}        filters={\"status\": \"Published\"},\n{% endif %}        fields=[\"name\", \"skill_id\", \"title\", \"description\", \"content\", \"skill_type\"],\n        limit=500,\n    )\n\n{% if scope == 'specific' %}If the result is empty, stop and report that no Published skill with that\nskill_id was found.{% else %}If the result is empty, stop and report that no Published skills were found.{% endif %}\n\n**Step 2 — Build SKILL.md content** (in your own environment, NOT in run_python_code):\n\n- If `content` already starts with `---`, use it verbatim.\n- Otherwise prepend YAML frontmatter:\n      ---\n      name: <skill_id>\n      description: \"<description — escape any \\\" as \\\\\\\">\"\n      version: \"1.0.0\"\n      ---\n      <content>\n\n**Step 3 — Package and deliver** (in your own environment):\n\nUsing bash or Python available to you (not run_python_code), create a zip archive\n{% if scope == 'specific' %}named `<skill_id>.skill` containing exactly one entry: `<skill_id>/SKILL.md`.\nPresent it as a downloadable file.{% else %}for each skill, named `<skill_id>.skill`, each containing exactly one entry:\n`<skill_id>/SKILL.md`. Also build a combined `fac-skills-all.zip` that bundles\nevery individual `.skill` file. Present them as downloadable files.{% endif %}\n\n**Step 4** — Print: `Exported N skill(s): <skill_id>, ...`\n\n**Rules**\n- Use `list_documents` to fetch skill data. Do not use raw SQL.\n- Build the zip in your own execution environment, NOT inside run_python_code\n  (the Frappe sandbox blocks zipfile and io operations).\n- Skip skills with empty `content` and report them.",
+        "arguments": [
+            {
+                "argument_name": "scope",
+                "display_label": "Scope",
+                "argument_type": "select",
+                "is_required": 1,
+                "default_value": "all",
+                "description": "Export every Published skill, or just one specific skill by skill_id.",
+                "allowed_values": "all,specific"
+            },
+            {
+                "argument_name": "skill_id",
+                "display_label": "Skill ID",
+                "argument_type": "string",
+                "is_required": 0,
+                "description": "The skill_id to export when scope=specific (e.g. 'list_documents'). Ignored when scope=all."
+            }
+        ]
     }
 ]

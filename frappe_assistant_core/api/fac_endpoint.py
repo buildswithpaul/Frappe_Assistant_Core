@@ -122,6 +122,7 @@ def _authenticate_mcp_request():
                 raise frappe.AuthenticationError("Token has expired")
 
             # Set the user session
+            # nosemgrep: frappe-semgrep-rules.rules.security.frappe-setuser — user resolved from validated, non-expired OAuth bearer token
             frappe.set_user(bearer_token.user)
             frappe.logger().info(f"OAuth token validated successfully for user: {bearer_token.user}")
             return bearer_token.user
@@ -188,6 +189,7 @@ def _authenticate_mcp_request():
 
                     if api_secret == decrypted_secret:
                         # Set user context for this request
+                        # nosemgrep: frappe-semgrep-rules.rules.security.frappe-setuser — user authenticated via API key:secret comparison above
                         frappe.set_user(str(user))
                         frappe.logger().info(f"API key authentication successful for user: {user}")
                         return str(user)

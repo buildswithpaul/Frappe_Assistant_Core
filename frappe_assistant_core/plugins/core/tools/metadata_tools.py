@@ -184,14 +184,16 @@ class MetadataTools:
 
             check_user = user or frappe.session.user
 
+            # Reporting capabilities — not a security boundary. throw=False
+            # keeps this explicit and silences the unchecked-permission rule.
             permissions = {
-                "read": frappe.has_permission(doctype, "read", user=check_user),
-                "write": frappe.has_permission(doctype, "write", user=check_user),
-                "create": frappe.has_permission(doctype, "create", user=check_user),
-                "delete": frappe.has_permission(doctype, "delete", user=check_user),
-                "submit": frappe.has_permission(doctype, "submit", user=check_user),
-                "cancel": frappe.has_permission(doctype, "cancel", user=check_user),
-                "amend": frappe.has_permission(doctype, "amend", user=check_user),
+                "read": frappe.has_permission(doctype, "read", user=check_user, throw=False),
+                "write": frappe.has_permission(doctype, "write", user=check_user, throw=False),
+                "create": frappe.has_permission(doctype, "create", user=check_user, throw=False),
+                "delete": frappe.has_permission(doctype, "delete", user=check_user, throw=False),
+                "submit": frappe.has_permission(doctype, "submit", user=check_user, throw=False),
+                "cancel": frappe.has_permission(doctype, "cancel", user=check_user, throw=False),
+                "amend": frappe.has_permission(doctype, "amend", user=check_user, throw=False),
             }
 
             # Get user roles
