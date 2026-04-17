@@ -199,8 +199,11 @@ class MCPServer:
                 )
                 result = self._handle_tools_call(params)
             elif method == "resources/list":
-                # Return empty resources list (we don't support resources)
-                result = {"resources": []}
+                result = self._handle_resources_list(params, request_id)
+            elif method == "resources/read":
+                result = self._handle_resources_read(params, request_id)
+            elif method == "resources/templates/list":
+                result = {"resourceTemplates": []}
             elif method == "prompts/list":
                 result = self._handle_prompts_list(params, request_id)
             elif method == "prompts/get":
@@ -286,20 +289,39 @@ class MCPServer:
             "capabilities": {
                 "tools": {},  # We support tools
                 "prompts": {},  # We support prompts (database-driven templates)
-                # Note: We respond to resources/list with empty arrays
-                # since we don't support resources yet
+                "resources": {},  # We support resources (skill documents)
             },
             "serverInfo": {"name": self.name, "version": "2.0.0"},
         }
 
     def _handle_tools_list(self, params: Dict) -> Dict:
-        """Handle tools/list request."""
+        """Handle tools/list request with optional token optimization."""
+        import frappe
+
         tools_list = []
 
+        # Check skill_mode for token optimization
+        skill_replace_map = {}
+        try:
+            settings = frappe.get_single("Assistant Core Settings")
+            if getattr(settings, "skill_mode", "supplementary") == "replace":
+                from frappe_assistant_core.api.handlers.resources import get_skill_manager
+
+                skill_replace_map = get_skill_manager().get_tool_skill_map()
+        except Exception:
+            pass
+
         for tool in self._tool_registry.values():
+            description = tool["description"]
+
+            # In replace mode, minimize descriptions for tools with linked skills
+            if skill_replace_map and tool["name"] in skill_replace_map:
+                skill_info = skill_replace_map[tool["name"]]
+                description = f"{tool['name']}: {skill_info['description']}. Detailed guidance: fac://skills/{skill_info['skill_id']}"
+
             tool_spec = {
                 "name": tool["name"],
-                "description": tool["description"],
+                "description": description,
                 "inputSchema": tool["inputSchema"],
             }
 
@@ -461,6 +483,26 @@ class MCPServer:
         if "error" in response:
             raise Exception(response["error"].get("message", "Unknown prompt error"))
         return {}
+
+    def _handle_resources_list(self, params: Dict, request_id: Any) -> Dict:
+        """
+        Handle resources/list request.
+
+        Returns available skill documents as MCP resources.
+        """
+        from frappe_assistant_core.api.handlers.resources import handle_resources_list
+
+        return handle_resources_list(request_id)
+
+    def _handle_resources_read(self, params: Dict, request_id: Any) -> Dict:
+        """
+        Handle resources/read request.
+
+        Returns the content of a specific skill resource by URI.
+        """
+        from frappe_assistant_core.api.handlers.resources import handle_resources_read
+
+        return handle_resources_read(params, request_id)
 
     def _is_notification(self, data: Dict) -> bool:
         """Check if request is a notification (no response needed)."""

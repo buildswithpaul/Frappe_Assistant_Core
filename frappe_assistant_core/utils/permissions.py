@@ -142,3 +142,51 @@ def get_prompt_permission_query_conditions(user=None):
         """)
 
     return "(" + " OR ".join(conditions) + ")"
+
+
+def get_skill_permission_query_conditions(user=None):
+    """
+    Permission query conditions for Skill.
+
+    Users can see:
+    - Their own skills (any status)
+    - Published + Public skills
+    - Published + Shared skills (if user has required role)
+    - Published + System skills
+    """
+    if not user:
+        user = frappe.session.user
+
+    # System Manager can see all
+    if "System Manager" in frappe.get_roles(user):
+        return ""
+
+    user_roles = frappe.get_roles(user)
+    escaped_user = frappe.db.escape(user)
+
+    conditions = []
+
+    # 1. User's own skills
+    conditions.append(f"`tabFAC Skill`.owner_user = {escaped_user}")
+
+    # 2. Published + Public skills
+    conditions.append("(`tabFAC Skill`.status = 'Published' AND `tabFAC Skill`.visibility = 'Public')")
+
+    # 3. Published + System skills
+    conditions.append("(`tabFAC Skill`.status = 'Published' AND `tabFAC Skill`.is_system = 1)")
+
+    # 4. Published + Shared skills with user's roles
+    if user_roles:
+        escaped_roles = ", ".join(frappe.db.escape(r) for r in user_roles)
+        conditions.append(f"""
+            (`tabFAC Skill`.status = 'Published'
+             AND `tabFAC Skill`.visibility = 'Shared'
+             AND EXISTS (
+                SELECT 1 FROM `tabHas Role` hr
+                WHERE hr.parent = `tabFAC Skill`.name
+                  AND hr.parenttype = 'FAC Skill'
+                  AND hr.role IN ({escaped_roles})
+             ))
+        """)
+
+    return "(" + " OR ".join(conditions) + ")"

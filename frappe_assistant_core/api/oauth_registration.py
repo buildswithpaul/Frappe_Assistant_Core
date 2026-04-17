@@ -22,7 +22,7 @@ https://datatracker.ietf.org/doc/html/rfc7591
 """
 
 import frappe
-from pydantic import BaseModel, HttpUrl, ValidationError
+from pydantic import AnyUrl, BaseModel, HttpUrl, ValidationError
 from werkzeug import Response
 from werkzeug.exceptions import NotFound
 
@@ -42,7 +42,8 @@ class OAuth2DynamicClientMetadata(BaseModel):
     """
 
     # Used to identify the client to the authorization server
-    redirect_uris: list[HttpUrl]
+    # AnyUrl allows custom URI schemes for native apps (RFC 8252)
+    redirect_uris: list[AnyUrl]
     token_endpoint_auth_method: str | None = "client_secret_basic"
     grant_types: list[str] | None = ["authorization_code"]
     response_types: list[str] | None = ["code"]

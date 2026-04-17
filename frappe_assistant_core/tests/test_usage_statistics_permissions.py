@@ -85,10 +85,10 @@ class TestUsageStatisticsPermissions(BaseAssistantTest):
 
         frappe.set_user("Administrator")
         with self.enforce_only_for_checks(), patch(
-            "frappe_assistant_core.api.admin_api.frappe.db.count",
+            "frappe_assistant_core.api.admin.stats.frappe.db.count",
             side_effect=audit_stat_counts,
         ), patch(
-            "frappe_assistant_core.api.admin_api.frappe.db.get_list",
+            "frappe_assistant_core.api.admin.stats.frappe.db.get_list",
             return_value=[],
         ), patch(
             "frappe_assistant_core.utils.plugin_manager.get_plugin_manager",
