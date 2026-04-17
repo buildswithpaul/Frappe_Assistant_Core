@@ -151,8 +151,8 @@
    "fieldname": "code_execution_max_recursion",
    "fieldtype": "Int",
    "label": "Max Recursion Depth",
-   "default": "100",
-   "description": "Maximum recursion depth allowed. Prevents stack overflow from deeply recursive code. Range: 50-500."
+   "default": "500",
+   "description": "Maximum recursion depth allowed. Prevents stack overflow from deeply recursive code. Range: 50-1000. Frappe internals (frappe.get_doc, frappe.get_all) recurse well past 100, so keep this at the default unless you have a reason to lower it."
   },
   {
    "fieldname": "execution_limits_info",

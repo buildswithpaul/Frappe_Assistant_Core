@@ -32,7 +32,7 @@ def execute():
         "code_execution_timeout": 30,
         "code_execution_max_memory_mb": 512,
         "code_execution_max_cpu_seconds": 60,
-        "code_execution_max_recursion": 100,
+        "code_execution_max_recursion": 500,
         "audit_log_retention_days": 180,
         "mcp_server_name": "frappe-assistant-core",
         "enable_dynamic_client_registration": 1,
