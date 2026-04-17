@@ -20,12 +20,10 @@ Executes Python code safely in a restricted environment.
 """
 
 import sys
-import traceback
 from typing import Any, Dict
 
 import frappe
 from frappe import _
-from frappe.query_builder import Order
 
 from frappe_assistant_core.core.base_tool import BaseTool
 
@@ -55,7 +53,7 @@ class ExecutePythonCode(BaseTool):
             "properties": {
                 "code": {
                     "type": "string",
-                    "description": "Python code to execute. IMPORTANT: Do NOT use import statements - all libraries are pre-loaded and ready to use: pd (pandas), np (numpy), plt (matplotlib), sns (seaborn), frappe, math, datetime, json, re, random. Example: df = pd.DataFrame({'A': [1,2,3]}); plt.plot([1,2,3])",
+                    "description": "Python code to execute. IMPORTANT: Do NOT use import statements - all libraries are pre-loaded and ready to use: pd (pandas), np (numpy), frappe, math, datetime, json, re, random. Example: df = pd.DataFrame({'A': [1,2,3]}); print(df.describe())",
                 },
                 "data_query": {
                     "type": "object",
@@ -106,34 +104,6 @@ class ExecutePythonCode(BaseTool):
         except ImportError:
             libraries["numpy"] = False
 
-        try:
-            import matplotlib
-
-            libraries["matplotlib"] = True
-        except ImportError:
-            libraries["matplotlib"] = False
-
-        try:
-            import seaborn
-
-            libraries["seaborn"] = True
-        except ImportError:
-            libraries["seaborn"] = False
-
-        try:
-            import plotly
-
-            libraries["plotly"] = True
-        except ImportError:
-            libraries["plotly"] = False
-
-        try:
-            import scipy
-
-            libraries["scipy"] = True
-        except ImportError:
-            libraries["scipy"] = False
-
         return libraries
 
     def _get_dynamic_description(self) -> str:
@@ -165,8 +135,9 @@ if invoices["success"] and customers["success"]:
 RULES:
 - NO imports — all libraries are pre-loaded
 - Read-only DB, permission-checked, audit-logged, no file/network access
+- Plotting/visualization libraries are not available; use the dashboard tools for charts
 
-PRE-LOADED: pd (pandas), np (numpy), plt (matplotlib), sns (seaborn), frappe, math, datetime, json, re, statistics, random, collections, itertools, functools, operator, copy"""
+PRE-LOADED: pd (pandas), np (numpy), frappe, math, datetime, json, re, statistics, random"""
 
         # Add library availability warnings
         library_warnings = []
@@ -176,8 +147,6 @@ PRE-LOADED: pd (pandas), np (numpy), plt (matplotlib), sns (seaborn), frappe, ma
             )
         if not self.library_status.get("numpy"):
             library_warnings.append("⚠️  numpy NOT available - use math/statistics modules")
-        if not self.library_status.get("matplotlib"):
-            library_warnings.append("⚠️  matplotlib NOT available - visualization not supported")
 
         if library_warnings:
             base_description += "\n\n" + "\n".join(library_warnings)
@@ -525,54 +494,6 @@ PRE-LOADED: pd (pandas), np (numpy), plt (matplotlib), sns (seaborn), frappe, ma
 
         return {"success": True, "code": code, "fixes_applied": fixes_applied}
 
-    def _sanitize_unicode(self, code: str) -> Dict[str, Any]:
-        """Sanitize Unicode characters to prevent encoding errors"""
-        try:
-            # Check if the string contains surrogate characters
-            if any(0xD800 <= ord(char) <= 0xDFFF for char in code if isinstance(char, str)):
-                # Found surrogate characters - clean them
-                cleaned_chars = []
-                surrogate_count = 0
-
-                for char in code:
-                    char_code = ord(char)
-                    if 0xD800 <= char_code <= 0xDFFF:
-                        # Replace surrogate with a space or remove it
-                        cleaned_chars.append(" ")
-                        surrogate_count += 1
-                    else:
-                        cleaned_chars.append(char)
-
-                cleaned_code = "".join(cleaned_chars)
-
-                # Provide a helpful warning
-                warning_msg = f"⚠️  Code contained {surrogate_count} invalid Unicode surrogate character(s) that were replaced with spaces. This often happens when copying code from certain documents or web pages."
-
-                return {"success": True, "code": cleaned_code, "warning": warning_msg}
-
-            # Try encoding to UTF-8 to catch other encoding issues
-            try:
-                code.encode("utf-8")
-            except UnicodeEncodeError as e:
-                # Handle other encoding errors
-                cleaned_code = code.encode("utf-8", errors="replace").decode("utf-8")
-                return {
-                    "success": True,
-                    "code": cleaned_code,
-                    "warning": f"⚠️  Code contained invalid Unicode characters that were replaced. Original error: {str(e)}",
-                }
-
-            # Code is clean
-            return {"success": True, "code": code}
-
-        except Exception as e:
-            return {
-                "success": False,
-                "error": f"Error sanitizing Unicode in code: {str(e)}",
-                "output": "",
-                "variables": {},
-            }
-
     def _check_and_handle_imports(self, code: str) -> Dict[str, Any]:
         """Check for import statements and provide helpful guidance"""
         import re
@@ -585,8 +506,6 @@ PRE-LOADED: pd (pandas), np (numpy), plt (matplotlib), sns (seaborn), frappe, ma
         safe_replacements = {
             "import pandas as pd": '# pandas is pre-loaded as "pd"',
             "import numpy as np": '# numpy is pre-loaded as "np"',
-            "import matplotlib.pyplot as plt": '# matplotlib is pre-loaded as "plt"',
-            "import seaborn as sns": '# seaborn is pre-loaded as "sns"',
             "import frappe": "# frappe is pre-loaded",
             "import math": "# math is pre-loaded",
             "import datetime": "# datetime is pre-loaded",
@@ -666,6 +585,24 @@ PRE-LOADED: pd (pandas), np (numpy), plt (matplotlib), sns (seaborn), frappe, ma
                     problematic_imports.append((line_num, import_stmt))
 
             if problematic_imports:
+                # Detect attempts to use visualization / scipy libraries that
+                # are no longer available inside the sandbox.
+                removed_libs = {"matplotlib", "seaborn", "plotly", "scipy", "plt", "sns", "go", "px", "stats"}
+                hit_removed = [
+                    stmt
+                    for _, stmt in problematic_imports
+                    if any(tok in stmt.split() for tok in removed_libs)
+                    or any(f"import {lib}" in stmt or f"from {lib}" in stmt for lib in removed_libs)
+                ]
+
+                removed_note = ""
+                if hit_removed:
+                    removed_note = (
+                        "\n\n🚫 matplotlib, seaborn, plotly, and scipy are NOT available in this sandbox.\n"
+                        "   Plots cannot be rendered back to the caller. For charts, use the dashboard\n"
+                        "   tools (create_dashboard_chart, create_dashboard) instead of plotting libraries."
+                    )
+
                 error_msg = f"""Import statements detected that are not available or needed:
 
 ❌ Problematic imports found:
@@ -674,16 +611,13 @@ PRE-LOADED: pd (pandas), np (numpy), plt (matplotlib), sns (seaborn), frappe, ma
 ✅ Available pre-loaded libraries (use directly, no imports needed):
    • pd (pandas) - Data manipulation
    • np (numpy) - Numerical operations
-   • plt (matplotlib) - Plotting
-   • sns (seaborn) - Statistical visualization
    • frappe - Frappe API access
-   • math, datetime, json, re, random - Standard libraries
+   • math, datetime, json, re, random - Standard libraries{removed_note}
 
 💡 Example correct usage:
    df = pd.DataFrame({{'A': [1,2,3]}})
    arr = np.array([1,2,3])
-   plt.plot(arr)
-   plt.show()"""
+   print(df.describe())"""
 
                 return {"success": False, "error": error_msg, "output": "", "variables": {}}
 
@@ -726,18 +660,9 @@ PRE-LOADED: pd (pandas), np (numpy), plt (matplotlib), sns (seaborn), frappe, ma
             # Data science libraries
             "pandas",
             "numpy",
-            "matplotlib",
-            "seaborn",
-            "plotly",
-            "scipy",
             # Short aliases
             "pd",
             "np",
-            "plt",
-            "sns",
-            "go",
-            "px",
-            "stats",
         }
 
         # Define dangerous modules to block
@@ -799,355 +724,6 @@ PRE-LOADED: pd (pandas), np (numpy), plt (matplotlib), sns (seaborn), frappe, ma
                 cleaned_lines.append(line)
 
         return "\n".join(cleaned_lines)
-
-    def _fetch_data_from_query(self, data_query: Dict[str, Any]) -> list:
-        """Fetch data from Frappe based on query parameters.
-
-        Uses the Query Builder (`frappe.qb`) so that field names and filter
-        keys — which can come from LLM-generated input — cannot be used to
-        inject SQL. Unknown field names surface as a validation error via
-        `frappe.get_meta`, not as a malformed query reaching the DB.
-        """
-        doctype = data_query.get("doctype")
-        fields = data_query.get("fields", ["name"])
-        filters = data_query.get("filters", {})
-        limit = data_query.get("limit", 100)
-
-        if not doctype:
-            raise ValueError("DocType is required for data query")
-
-        if not frappe.has_permission(doctype, "read"):
-            raise frappe.PermissionError(f"No permission to read {doctype}")
-
-        # Validate doctype up-front so a bad value triggers a clean error
-        # instead of a SQL failure deeper down.
-        meta = frappe.get_meta(doctype)
-
-        # Validate every field name and filter key against the DocType meta.
-        # `name`, `creation`, `modified`, `modified_by`, `owner`, `docstatus`,
-        # `idx`, `parent`, `parentfield`, `parenttype` are always valid.
-        standard_fields = {
-            "name",
-            "creation",
-            "modified",
-            "modified_by",
-            "owner",
-            "docstatus",
-            "idx",
-            "parent",
-            "parentfield",
-            "parenttype",
-        }
-
-        def _ensure_field(field_name: str) -> None:
-            if field_name not in standard_fields and not meta.has_field(field_name):
-                raise ValueError(f"Unknown field '{field_name}' on DocType '{doctype}'")
-
-        for field in fields:
-            _ensure_field(field)
-        for key in filters:
-            _ensure_field(key)
-
-        table = frappe.qb.DocType(doctype)
-        query = frappe.qb.from_(table).select(*[table[f] for f in fields])
-
-        for key, value in filters.items():
-            column = table[key]
-            if isinstance(value, (list, tuple)):
-                query = query.where(column.isin(list(value)))
-            elif value is None:
-                query = query.where(column.isnull())
-            else:
-                query = query.where(column == value)
-
-        query = query.orderby(table.creation, order=Order.desc).limit(limit)
-
-        rows = query.run(as_dict=True)
-
-        # Strip frappe._dict wrappers so numpy/pandas interop downstream
-        # doesn't trip on the __array_struct__ attribute.
-        return [dict(row) for row in rows]
-
-    def _setup_execution_environment(self) -> Dict[str, Any]:
-        """Legacy method - use _setup_secure_execution_environment instead"""
-        frappe.logger().warning("Using legacy _setup_execution_environment - should use secure version")
-        return self._setup_secure_execution_environment("legacy_user")
-
-    @staticmethod
-    def _make_restricted_import():
-        """Create a restricted __import__ that only allows submodules of known-safe packages.
-
-        This is needed because libraries like numpy and pandas internally call
-        __import__ for lazy submodule loading (e.g. np.array().mean() triggers
-        numpy.core imports). User-level import statements are already blocked by
-        _scan_for_dangerous_operations and _check_and_handle_imports, so this
-        only serves internal library machinery.
-        """
-        real_import = __builtins__.__import__ if hasattr(__builtins__, "__import__") else __import__
-
-        # Top-level packages whose submodules may be lazily imported
-        allowed_roots = frozenset(
-            {
-                "numpy",
-                "pandas",
-                "matplotlib",
-                "seaborn",
-                "plotly",
-                "scipy",
-                "dateutil",
-                "pytz",
-                "six",
-                "packaging",
-                "pyparsing",
-                "cycler",
-                "kiwisolver",
-                "PIL",
-                "decimal",
-                "fractions",
-                "numbers",
-                "encodings",
-                "codecs",
-                "unicodedata",
-                "_decimal",
-                "_strptime",
-                "calendar",
-                "locale",
-                "warnings",
-                "contextlib",
-                "abc",
-                "collections",
-                "functools",
-                "itertools",
-                "operator",
-                "copy",
-                "math",
-                "statistics",
-                "json",
-                "re",
-                "random",
-                "datetime",
-                "string",
-                "textwrap",
-                "struct",
-                "array",
-                "bisect",
-                "heapq",
-                # Internal / C-extension modules that libraries depend on
-                "_thread",
-                "threading",
-                "concurrent",
-                "queue",
-            }
-        )
-
-        def restricted_import(name, globals=None, locals=None, fromlist=(), level=0):
-            # Relative imports (level > 0) are always internal to the calling package
-            if level > 0:
-                return real_import(name, globals, locals, fromlist, level)
-
-            root = name.split(".")[0]
-            # Allow stdlib and known-safe data-science package trees
-            if root.startswith("_") or root in allowed_roots:
-                return real_import(name, globals, locals, fromlist, level)
-
-            raise ImportError(
-                f"Import of '{name}' is not allowed in the sandbox. "
-                f"All supported libraries are pre-loaded — do not use import statements."
-            )
-
-        return restricted_import
-
-    def _setup_secure_execution_environment(self, current_user: str) -> Dict[str, Any]:
-        """Setup secure execution environment with read-only database and user context"""
-        from frappe_assistant_core.utils.read_only_db import ReadOnlyDatabase
-
-        # Base environment with safe built-ins only
-        env = {
-            "__builtins__": {
-                # Restricted import — allows internal library lazy-loading only
-                "__import__": self._make_restricted_import(),
-                # Safe built-ins for data manipulation and analysis
-                "len": len,
-                "str": str,
-                "int": int,
-                "float": float,
-                "bool": bool,
-                "list": list,
-                "dict": dict,
-                "tuple": tuple,
-                "set": set,
-                "range": range,
-                "enumerate": enumerate,
-                "zip": zip,
-                "map": map,
-                "filter": filter,
-                "sorted": sorted,
-                "sum": sum,
-                "min": min,
-                "max": max,
-                "abs": abs,
-                "round": round,
-                "print": print,
-                "type": type,
-                "isinstance": isinstance,
-                "hasattr": hasattr,
-                "getattr": getattr,
-                # Note: setattr removed for security
-                "Exception": Exception,
-                "ValueError": ValueError,
-                "TypeError": TypeError,
-                "KeyError": KeyError,
-                "IndexError": IndexError,
-                "AttributeError": AttributeError,
-                "NameError": NameError,
-                "ZeroDivisionError": ZeroDivisionError,
-                "StopIteration": StopIteration,
-            }
-        }
-
-        # Add standard libraries (safe mathematical and utility libraries)
-        import datetime
-        import decimal
-        import fractions
-        import json
-        import math
-        import random
-        import re
-        import statistics
-
-        env.update(
-            {
-                "math": math,
-                "statistics": statistics,
-                "decimal": decimal,
-                "fractions": fractions,
-                "datetime": datetime,
-                "json": json,
-                "re": re,
-                "random": random,
-            }
-        )
-
-        # Add data science libraries with clear availability tracking
-        available_libraries = []
-        missing_libraries = []
-
-        # Helper class for unavailable libraries
-        class LibraryNotInstalled:
-            def __init__(self, library_name):
-                self.library_name = library_name
-
-            def __getattr__(self, name):
-                raise ImportError(
-                    f"❌ {self.library_name} is not installed in this environment.\n\n"
-                    f"💡 Alternative solutions:\n"
-                    f"   • Use frappe.get_all() for data queries and manipulation\n"
-                    f"   • Use generate_report tool for business analytics and reporting\n"
-                    f"   • Use Python's built-in modules (math, statistics) for calculations\n"
-                    f"   • Contact your system administrator to install {self.library_name}\n\n"
-                    f"📚 Available libraries: {', '.join(available_libraries) if available_libraries else 'None (data science libraries)'}"
-                )
-
-            def __call__(self, *args, **kwargs):
-                return self.__getattr__("__call__")
-
-        # Try to import pandas
-        try:
-            import pandas as pd
-
-            env.update({"pd": pd, "pandas": pd})
-            available_libraries.append("pandas (pd)")
-        except ImportError:
-            missing_libraries.append("pandas")
-            env["pd"] = LibraryNotInstalled("pandas")
-            env["pandas"] = env["pd"]
-
-        # Try to import numpy
-        try:
-            import numpy as np
-
-            env.update({"np": np, "numpy": np})
-            available_libraries.append("numpy (np)")
-        except ImportError:
-            missing_libraries.append("numpy")
-            env["np"] = LibraryNotInstalled("numpy")
-            env["numpy"] = env["np"]
-
-        # Try to import matplotlib
-        try:
-            import matplotlib.pyplot as plt
-
-            env.update({"plt": plt, "matplotlib": plt})
-            available_libraries.append("matplotlib (plt)")
-        except ImportError:
-            missing_libraries.append("matplotlib")
-            env["plt"] = LibraryNotInstalled("matplotlib")
-            env["matplotlib"] = env["plt"]
-
-        # Try to import seaborn
-        try:
-            import seaborn as sns
-
-            env.update({"sns": sns, "seaborn": sns})
-            available_libraries.append("seaborn (sns)")
-        except ImportError:
-            missing_libraries.append("seaborn")
-            env["sns"] = LibraryNotInstalled("seaborn")
-            env["seaborn"] = env["sns"]
-
-        # Try to add plotly if available
-        try:
-            import plotly.express as px
-            import plotly.graph_objects as go
-
-            env.update({"go": go, "px": px, "plotly": {"graph_objects": go, "express": px}})
-            available_libraries.append("plotly (go, px)")
-        except ImportError:
-            missing_libraries.append("plotly")
-
-        # Add scipy if available
-        try:
-            import scipy
-            import scipy.stats as stats
-
-            env.update({"scipy": scipy, "stats": stats})
-            available_libraries.append("scipy (stats)")
-        except ImportError:
-            missing_libraries.append("scipy")
-
-        # Add SECURE Frappe utilities with read-only database wrapper
-        secure_db = ReadOnlyDatabase(frappe.db)
-
-        # Add secure tool orchestration API (no internal paths exposed)
-        from frappe_assistant_core.utils.tool_api import FrappeAssistantAPI
-
-        tools_api = FrappeAssistantAPI(current_user)
-
-        env.update(
-            {
-                "frappe": frappe,  # Keep frappe for utility functions
-                "get_doc": frappe.get_doc,  # Permission-checked by default
-                "get_list": frappe.get_list,  # Permission-checked by default
-                "get_all": frappe.get_all,  # Permission-checked by default
-                "get_single": frappe.get_single,  # Permission-checked by default
-                "db": secure_db,  # 🛡️ READ-ONLY database wrapper instead of frappe.db
-                "current_user": current_user,  # 👤 Current user context for reference
-                # 🔧 TOOL ORCHESTRATION API - secure multi-tool access
-                "tools": tools_api,  # Unified API for report/document/search operations
-                # Store library availability for error messages
-                "_available_libraries": available_libraries,
-                "_missing_libraries": missing_libraries,
-            }
-        )
-
-        # Log security setup with library availability
-        frappe.logger().info(
-            f"Secure execution environment setup complete - User: {current_user}, "
-            f"DB: Read-only wrapper, Available libraries: {', '.join(available_libraries) if available_libraries else 'None'}, "
-            f"Missing libraries: {', '.join(missing_libraries) if missing_libraries else 'None'}"
-        )
-
-        return env
 
     def _scan_for_dangerous_operations(self, code: str) -> Dict[str, Any]:
         """
@@ -1310,122 +886,3 @@ PRE-LOADED: pd (pandas), np (numpy), plt (matplotlib), sns (seaborn), frappe, ma
                 "variables": {},
                 "unicode_error": True,
             }
-
-    def _serialize_variable(self, value: Any) -> Any:
-        """Serialize a variable for JSON return"""
-        try:
-            # Handle pandas objects
-            if hasattr(value, "to_dict"):
-                return value.to_dict()
-            elif hasattr(value, "to_list"):
-                return value.to_list()
-            elif hasattr(value, "tolist"):
-                return value.tolist()
-
-            # Handle numpy arrays
-            import numpy as np
-
-            if isinstance(value, np.ndarray):
-                return value.tolist()
-
-            # Handle basic types
-            if isinstance(value, (str, int, float, bool, list, dict, tuple)):
-                return value
-
-            # Try to convert to string
-            return str(value)
-
-        except Exception:
-            return f"<{type(value).__name__} object>"
-
-    def _enhance_error_message(
-        self, error_msg: str, error_traceback: str, env: Dict[str, Any], code: str
-    ) -> Dict[str, Any]:
-        """Provide context-aware error messages with helpful solutions"""
-
-        # Common error patterns and their enhancements
-        error_enhancements = {
-            "name 'pd' is not defined": {
-                "reason": "pandas library is not available in this environment",
-                "solution": "Use Frappe's native data tools instead",
-                "alternative_code": "# Instead of pandas, use:\ndata = frappe.get_all('DocType', fields=['*'], limit=100)\n# Or use the generate_report tool for analytics",
-                "available_alternatives": ["frappe.get_all()", "frappe.get_list()", "generate_report tool"],
-            },
-            "name 'np' is not defined": {
-                "reason": "numpy library is not available in this environment",
-                "solution": "Use Python's math or statistics modules for calculations",
-                "alternative_code": "# Instead of numpy, use:\nimport math\nimport statistics\n# Example: statistics.mean([1,2,3]) instead of np.mean([1,2,3])",
-                "available_alternatives": ["math module", "statistics module"],
-            },
-            "name 'plt' is not defined": {
-                "reason": "matplotlib library is not available in this environment",
-                "solution": "Visualization is not supported without matplotlib",
-                "alternative_code": "# Contact your administrator to install matplotlib for visualization support",
-            },
-            "KeyError": {
-                "reason": "Column or key doesn't exist in the DataFrame/dict",
-                "solution": "Check available columns/keys before accessing",
-                "alternative_code": "# Check DataFrame columns:\nprint(df.columns.tolist())\n# Or check dict keys:\nprint(list(my_dict.keys()))",
-                "debug_tip": f"Available variables: {', '.join([k for k in env.keys() if not k.startswith('_')])[:200]}...",
-            },
-            "'DataFrame' object has no attribute 'append'": {
-                "reason": "df.append() was deprecated in pandas 2.0",
-                "solution": "Use pd.concat() instead (this should have been auto-fixed)",
-                "alternative_code": "# Instead of:\n# df = df.append(new_row, ignore_index=True)\n# Use:\ndf = pd.concat([df, new_row], ignore_index=True)",
-            },
-            "ValueError": {
-                "reason": "Value error - often due to array length mismatch or invalid value",
-                "solution": "Check array shapes and data types",
-                "alternative_code": "# Check shapes:\nprint(f'Shape: {df.shape}')\nprint(f'Length: {len(my_list)}')",
-            },
-            "AttributeError": {
-                "reason": "Attribute doesn't exist on the object",
-                "solution": "Check object type and available methods",
-                "alternative_code": "# Check object type and methods:\nprint(type(obj))\nprint(dir(obj))",
-            },
-            "IndexError": {
-                "reason": "Index out of range",
-                "solution": "Check list/array length before accessing by index",
-                "alternative_code": "# Check length first:\nif len(my_list) > index:\n    value = my_list[index]",
-            },
-            "TypeError": {
-                "reason": "Type error - operation not supported for these types",
-                "solution": "Check data types and convert if needed",
-                "alternative_code": "# Check and convert types:\nprint(type(value))\nvalue = int(value)  # or str(value), float(value), etc.",
-            },
-        }
-
-        # Find matching error pattern
-        enhanced_error = None
-        for pattern, enhancement in error_enhancements.items():
-            if pattern.lower() in error_msg.lower():
-                enhanced_error = {
-                    "success": False,
-                    "error": error_msg,
-                    "reason": enhancement.get("reason", ""),
-                    "solution": enhancement.get("solution", ""),
-                    "traceback": error_traceback,
-                    "available_libraries": env.get("_available_libraries", []),
-                    "missing_libraries": env.get("_missing_libraries", []),
-                }
-
-                if "alternative_code" in enhancement:
-                    enhanced_error["alternative_code"] = enhancement["alternative_code"]
-
-                if "available_alternatives" in enhancement:
-                    enhanced_error["available_alternatives"] = enhancement["available_alternatives"]
-
-                if "debug_tip" in enhancement:
-                    enhanced_error["debug_tip"] = enhancement["debug_tip"]
-
-                return enhanced_error
-
-        # Return standard error with context
-        return {
-            "success": False,
-            "error": error_msg,
-            "traceback": error_traceback,
-            "available_libraries": env.get("_available_libraries", []),
-            "missing_libraries": env.get("_missing_libraries", []),
-            "help": "Check that all required libraries are available and data types are correct. Use print() statements to debug variable values and types.",
-        }
