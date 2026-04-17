@@ -1,9 +1,9 @@
 # Frappe Assistant Core
 
-> Infrastructure that connects LLMs to ERPNext. Tools, skills, prompt
-> templates, and OAuth — packaged as a Frappe app so any MCP-compatible
-> LLM can work with your ERPNext data, under your existing permissions
-> and audit trail.
+> Talk to your ERPNext site. FAC lets Claude, ChatGPT, and other
+> MCP-ready LLMs work directly with your invoices, customers, stock,
+> workflows, and custom apps — inside your ERPNext permissions, with
+> every call logged.
 
 [![Version](https://img.shields.io/github/v/release/buildswithpaul/Frappe_Assistant_Core?label=version)](https://github.com/buildswithpaul/Frappe_Assistant_Core/releases)
 [![Python](https://img.shields.io/badge/python-3.8%2B-blue)](https://pypi.org/project/frappe-assistant-core)
@@ -21,41 +21,33 @@
 
 ## What you get
 
-Frappe Assistant Core (FAC) is infrastructure that connects Large Language
-Models to ERPNext. It runs inside your Frappe site as a regular app and
-bundles everything needed to let an LLM work with your business data:
+Once FAC is installed, your team can ask an LLM for things they'd
+normally do by hand:
 
-- **Tools** — 24 built-in operations (document CRUD, search, reports,
-  workflows, analytics, file extraction, dashboards) that the LLM can
-  invoke over the [Model Context Protocol](https://modelcontextprotocol.io).
-- **Skills** — reusable, markdown-authored instructions stored in Frappe
-  that teach the LLM how to handle specific tasks consistently.
-- **Prompt Templates** — Jinja-templated prompts with typed arguments,
-  published from the admin UI.
-- **OAuth 2.0 / OIDC** — authentication for MCP clients with Dynamic
-  Client Registration and PKCE.
-- **Plugin system** — so internal code and external Frappe apps can ship
-  their own tools and skills.
-- **Admin UI and audit log** — one page to manage everything, and a full
-  record of every LLM call.
+> *"Show me overdue invoices from our top five customers."*
+>
+> *"Update this lead's status to Qualified and set next action date to
+> Monday."*
+>
+> *"Run the monthly revenue report and summarise the top movers."*
+>
+> *"How much stock of SKU-1234 do we have across all warehouses?"*
 
-Install it one-click from the
-[Frappe Cloud Marketplace](https://cloud.frappe.io/marketplace/apps/frappe_assistant_core),
-or via `bench get-app` on a self-hosted deployment.
+Behind that simple interaction, FAC exposes **24 built-in tools** for
+the things your team does every day — document CRUD, search, reports,
+workflows, analytics, file extraction, and dashboards. Admins can
+publish **Skills** (reusable instructions that teach the LLM how to
+handle a specific job) and **Prompt Templates** (saved starting points
+users can pick from the admin UI) so answers stay consistent and use
+the right reports. The LLM authenticates over **OAuth 2.0** as a real
+ERPNext user, so it only sees data that user can already see in the
+desk. Every call is recorded in the **Assistant Audit Log**.
 
-For **business users**: ask Claude about sales figures, customers, stock
-levels, pending approvals, or anything else you can see in your ERPNext
-desk. Claude reads the live database, constrained to your own roles and
-permissions.
+It's a Frappe app, so developers can extend the toolset from their own
+Frappe apps through a hook — your data model, your business logic,
+scoped per your app.
 
-For **developers**: add tools or skills from your own Frappe app with a
-couple of hook entries — your data model, your business logic, scoped
-per your app.
-
-What it does **not** do: data does not leave your server unless your LLM
-provider fetches it through MCP. This is not a "send your ERP to OpenAI"
-service — you control which LLM connects, and each call is authenticated
-to a real Frappe user.
+Your data stays in your site. You control which LLM connects.
 
 ---
 
@@ -81,43 +73,53 @@ bench --site <your-site> install-app frappe_assistant_core
 
 ### Connect your LLM
 
-Once installed:
+Once installed, the same four steps work for any MCP-compatible client.
+Example shown for Claude Desktop:
 
 1. Go to **Desk → FAC Admin** and copy the **MCP Endpoint URL**.
 2. In **Claude Desktop → Settings → Connectors → Add Custom Connector**,
    paste the URL and click **Add**.
-3. Click **Connect**, log in with your Frappe account, and authorize.
+3. Click **Connect**, log in with your ERPNext account, and authorize.
 4. Ask Claude something — for example, *"List all customers created this
    month."*
 
-For ChatGPT, Claude Web, or MCP Inspector instructions, see the
+For ChatGPT, Claude Web, and MCP Inspector walkthroughs, see the
 [Getting Started guide](docs/getting-started/GETTING_STARTED.md).
 
 ---
 
-## Skills (new in v2.4.0)
+## Skills and Prompt Templates
 
-Skills are reusable instructions you give your LLM — stored as `FAC Skill`
-documents inside Frappe. Each skill has a `skill_id`, a description, and
-markdown content describing how to handle a specific task with the available
-tools.
+FAC gives you two ways to shape what the LLM does with your data.
 
-For example, a skill called `monthly-sales-report` can teach the LLM which
-reports to run, which filters to apply, and how to present the output —
-so every time someone asks *"give me the monthly sales report"*, the
-answer is consistent and uses the right data sources.
+**Skills** are reusable instructions you give the LLM — stored as
+`FAC Skill` documents inside your site. Each skill has a `skill_id`,
+a description, and markdown content describing how to handle a specific
+task using the available tools. The LLM lists skills on connect and
+pulls them on demand, so every time someone asks about, say, the
+monthly sales close, the answer is consistent and uses the right
+reports.
 
-Authors publish skills from **Desk → FAC Skill**. Published skills become
-discoverable MCP resources, so the LLM can list them and pull them on
-demand. External Frappe apps can ship their own skills through the
-`assistant_skills` hook — tools and skills travel with the app.
+**Prompt Templates** are saved starting points for the *user's* side
+of the conversation — Jinja-templated prompts with typed arguments
+(dropdowns, dates, booleans). Authors publish them from the admin page;
+users pick one, fill in the arguments, and the rendered prompt is sent
+to the LLM. Use them for frequently-asked analyses like "Sales
+Analysis", "Manufacturing Analysis", or your own industry-specific
+workflows.
+
+Both live in Frappe, so they're version-controlled with your site,
+shareable across users, and can be shipped by external Frappe apps
+through the `assistant_skills` hook.
 
 ---
 
 ## Tools at a glance
 
-FAC ships with 24 tools across the core plugin plus the data-science and
-visualization plugins:
+FAC ships 24 tools across four plugins: **Core** (Frappe operations),
+**Data Science** (Python execution, analytics, file extraction),
+**Visualization** (dashboards and charts), and **Custom Tools** (the
+registry for tools contributed by external apps).
 
 | Category | Tools |
 |---|---|
@@ -140,9 +142,11 @@ Full specification for each tool is in the
 If you have a Frappe app and want the LLM to reach into it, use the
 `assistant_tools` hook in your app's `hooks.py`. This is the recommended
 path — tools travel with the app, survive upgrades, and stay scoped to
-your data model.
+your data model. The same pattern works for Skills via the
+`assistant_skills` hook.
 
-If you need to modify core FAC behaviour instead, write an internal plugin.
+If you need to modify core FAC behaviour instead, write an internal
+plugin.
 
 See the [External App Development guide](docs/development/EXTERNAL_APP_DEVELOPMENT.md)
 for the hook contract, and the
@@ -153,12 +157,13 @@ internal plugins.
 
 ## Authentication & security
 
-FAC uses OAuth 2.0 with PKCE for LLM connections — the LLM never sees the
-user's Frappe password. Every tool call is scoped to the calling user's
-ERPNext roles and permissions: if the user cannot read a DocType in the
-Frappe UI, they cannot read it through the LLM either. Every call is
-logged to `Assistant Audit Log` with caller, tool, arguments, and result
-status, so admins always have a full record of what the LLM did.
+FAC uses OAuth 2.0 with PKCE for LLM connections — the LLM never sees
+the user's Frappe password. Every tool call is scoped to the calling
+user's Frappe and ERPNext roles and permissions: if the user cannot
+read a DocType in the desk, they cannot read it through the LLM either.
+Every call is logged to `Assistant Audit Log` with caller, tool,
+arguments, and result status, so admins always have a full record of
+what the LLM did.
 
 For setup and advanced configuration:
 
@@ -182,10 +187,10 @@ For setup and advanced configuration:
 
 ## Sponsor and professional services
 
-Frappe Assistant Core is built and maintained in the open. If it saves your
-team time, please consider sponsoring ongoing maintenance and new features
-on [GitHub Sponsors](https://github.com/sponsors/buildswithpaul) —
-recurring or one-time contributions.
+Frappe Assistant Core is built and maintained in the open. If it saves
+your team time, please consider sponsoring ongoing maintenance and new
+features on [GitHub Sponsors](https://github.com/sponsors/buildswithpaul)
+— recurring or one-time contributions.
 
 Professional implementation, customization, training, and enterprise
 support are delivered by our official services partner
