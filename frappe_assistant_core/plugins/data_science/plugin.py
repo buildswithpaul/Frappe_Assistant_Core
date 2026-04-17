@@ -46,7 +46,7 @@ class DataSciencePlugin(BasePlugin):
             "description": "Python code execution, statistical analysis, and file processing with AI capabilities",
             "version": "1.0.0",
             "author": "Frappe Assistant Core Team",
-            "dependencies": ["pandas", "numpy", "matplotlib", "seaborn", "plotly", "scipy"],
+            "dependencies": ["pandas", "numpy"],
             "requires_restart": False,
         }
 
@@ -69,16 +69,12 @@ class DataSciencePlugin(BasePlugin):
         if not can_enable:
             return can_enable, error
 
-        # Check if Python code execution is allowed
         try:
-            # Test basic imports
-            import matplotlib.pyplot as plt
             import numpy as np
             import pandas as pd
 
-            # Basic functionality test
             df = pd.DataFrame({"test": [1, 2, 3]})
-            result = df.sum()
+            df.sum()
 
             self.logger.info("Data science plugin validation passed")
             return True, None
@@ -107,40 +103,8 @@ class DataSciencePlugin(BasePlugin):
     def on_enable(self) -> None:
         """Called when plugin is enabled"""
         super().on_enable()
-
-        # Initialize any required settings
-        self._setup_matplotlib_backend()
-
-        # Log successful enable
-        self.logger.info("Data science plugin enabled with visualization support")
+        self.logger.info("Data science plugin enabled")
 
     def on_disable(self) -> None:
         """Called when plugin is disabled"""
         super().on_disable()
-
-        # Cleanup any resources
-        self._cleanup_matplotlib()
-
-    def _setup_matplotlib_backend(self):
-        """Setup matplotlib backend for server environment"""
-        try:
-            import matplotlib
-
-            matplotlib.use("Agg")  # Use non-interactive backend
-            import matplotlib.pyplot as plt
-
-            plt.ioff()  # Turn off interactive mode
-
-            self.logger.debug("Matplotlib backend configured for server environment")
-        except Exception as e:
-            self.logger.warning(f"Failed to configure matplotlib: {str(e)}")
-
-    def _cleanup_matplotlib(self):
-        """Cleanup matplotlib resources"""
-        try:
-            import matplotlib.pyplot as plt
-
-            plt.close("all")  # Close all figures
-            self.logger.debug("Matplotlib cleanup completed")
-        except Exception as e:
-            self.logger.warning(f"Failed to cleanup matplotlib: {str(e)}")

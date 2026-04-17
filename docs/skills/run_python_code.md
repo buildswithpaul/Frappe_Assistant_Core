@@ -22,11 +22,6 @@ The `run_python_code` tool executes Python code in a **heavily sandboxed** envir
 |----------|---------|-------|
 | `pd` | pandas | Yes |
 | `np` | numpy | Yes |
-| `plt` | matplotlib.pyplot | Yes |
-| `sns` | seaborn | Yes |
-| `go` | plotly.graph_objects | Yes |
-| `px` | plotly.express | Yes |
-| `stats` | scipy.stats | Yes |
 | `frappe` | Frappe framework | Yes |
 | `math` | math | Yes |
 | `datetime` | datetime module | Yes |
@@ -36,8 +31,10 @@ The `run_python_code` tool executes Python code in a **heavily sandboxed** envir
 | `statistics` | statistics | Yes |
 | `tools` | Data access API | Yes |
 
-### NOT available (despite what the tool description claims)
+### NOT available
 
+- **Plotting / visualization** — matplotlib, seaborn, plotly are NOT available. Plots cannot be rendered back to the caller. For charts and dashboards, use `create_dashboard_chart` and `create_dashboard` tools instead.
+- **scipy** — NOT available. Use `statistics` or `np` for basic stats.
 - `collections` — NOT pre-loaded. Use `dict` comprehensions or `pd.Series.value_counts()` instead of `Counter`.
 - `itertools` — NOT pre-loaded. Use list comprehensions instead.
 - `functools` — NOT pre-loaded.

@@ -141,18 +141,9 @@ def _make_restricted_import():
         {
             "numpy",
             "pandas",
-            "matplotlib",
-            "seaborn",
-            "plotly",
-            "scipy",
             "dateutil",
             "pytz",
             "six",
-            "packaging",
-            "pyparsing",
-            "cycler",
-            "kiwisolver",
-            "PIL",
             "decimal",
             "fractions",
             "numbers",
@@ -299,46 +290,6 @@ def _setup_execution_environment(user: str) -> dict:
             env[alias] = stub
             env[pkg] = stub
 
-    try:
-        import matplotlib.pyplot as plt
-
-        env.update({"plt": plt, "matplotlib": plt})
-        available.append("matplotlib (plt)")
-    except ImportError:
-        missing.append("matplotlib")
-        stub = _LibraryNotInstalled("matplotlib")
-        env["plt"] = stub
-        env["matplotlib"] = stub
-
-    try:
-        import seaborn as sns
-
-        env.update({"sns": sns, "seaborn": sns})
-        available.append("seaborn (sns)")
-    except ImportError:
-        missing.append("seaborn")
-        stub = _LibraryNotInstalled("seaborn")
-        env["sns"] = stub
-        env["seaborn"] = stub
-
-    try:
-        import plotly.express as px
-        import plotly.graph_objects as go
-
-        env.update({"go": go, "px": px, "plotly": {"graph_objects": go, "express": px}})
-        available.append("plotly (go, px)")
-    except ImportError:
-        missing.append("plotly")
-
-    try:
-        import scipy
-        import scipy.stats as _stats
-
-        env.update({"scipy": scipy, "stats": _stats})
-        available.append("scipy (stats)")
-    except ImportError:
-        missing.append("scipy")
-
     # Frappe integration — read-only
     secure_db = ReadOnlyDatabase(frappe.db)
     tools_api = FrappeAssistantAPI(user)
@@ -370,8 +321,6 @@ _EXCLUDED_VARS = frozenset(
         "frappe",
         "pd",
         "np",
-        "plt",
-        "sns",
         "data",
         "current_user",
         "db",
@@ -389,13 +338,6 @@ _EXCLUDED_VARS = frozenset(
         "fractions",
         "pandas",
         "numpy",
-        "matplotlib",
-        "seaborn",
-        "plotly",
-        "scipy",
-        "stats",
-        "go",
-        "px",
         "tools",
         "__builtins__",
         "__name__",
@@ -498,13 +440,11 @@ def main():
         frappe.set_user(user)  # nosemgrep: frappe-setuser
 
         try:
-            # Apply resource limits (permanent — this process is disposable)
-            _apply_limits(limits)
-
-            # Build execution environment
+            # Build execution environment and fetch data_query BEFORE applying
+            # resource limits — the 512 MB memory budget should govern user code,
+            # not interpreter/library setup that the user did not write.
             execution_globals = _setup_execution_environment(user)
 
-            # Handle data_query if provided
             if data_query:
                 try:
                     doctype = data_query.get("doctype")
@@ -518,6 +458,9 @@ def main():
                     result["error"] = f"Error fetching data: {e}"
                     json.dump(result, sys.stdout)
                     return
+
+            # Apply resource limits immediately before exec (disposable process).
+            _apply_limits(limits)
 
             # Execute user code
             output = ""
