@@ -23,6 +23,6 @@ frappe_assistant_core.patches.v2_3.update_mcp_protocol_version
 frappe_assistant_core.patches.v2_3.set_settings_defaults
 
 # Version 2.4.0 - Skills feature
-frappe_assistant_core.patches.v2_4.rename_skill_to_fac_skill
 frappe_assistant_core.patches.v2_4.install_system_skills
 frappe_assistant_core.patches.v2_4.bump_code_execution_max_recursion
+frappe_assistant_core.patches.v2_4.repair_hrms_skill_link_corruption
