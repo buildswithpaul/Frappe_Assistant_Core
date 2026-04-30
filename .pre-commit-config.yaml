@@ -45,6 +45,32 @@ repos:
         types: [python]
         require_serial: true
 
+  # Commitlint — mirrors .github/workflows/commitlint.yml. Runs on the
+  # commit-msg stage (not pre-commit), so devs must install that hook once:
+  #   pre-commit install --hook-type commit-msg
+  # Uses the same @commitlint/config-conventional preset declared in
+  # commitlint.config.js, so local and CI stay in sync.
+  - repo: https://github.com/alessandrojcm/commitlint-pre-commit-hook
+    rev: v9.18.0
+    hooks:
+      - id: commitlint
+        stages: [commit-msg]
+        additional_dependencies: ["@commitlint/config-conventional@20"]
+
+  # pip-audit — mirrors the 'Vulnerable Dependency Check' job in
+  # .github/workflows/linter.yml. Opt-in (manual stage) because it hits PyPI
+  # and would be slow on every commit. Run with:
+  #   pre-commit run pip-audit --hook-stage manual
+  - repo: local
+    hooks:
+      - id: pip-audit
+        name: "Check dependencies for known vulnerabilities"
+        entry: pip-audit --desc on .
+        language: python
+        additional_dependencies: ["pip-audit"]
+        pass_filenames: false
+        stages: [manual]
+
   # Prettier disabled - no JavaScript/CSS files in this project
   # - repo: https://github.com/pre-commit/mirrors-prettier
   #   rev: v2.7.1

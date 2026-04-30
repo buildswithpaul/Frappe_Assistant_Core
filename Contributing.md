@@ -60,6 +60,14 @@ Help us improve our docs!
    git checkout -b feature/your-feature-name
    ```
 
+4. **Install pre-commit hooks** — runs the same linters as CI before each commit:
+   ```bash
+   pip install pre-commit
+   pre-commit install
+   pre-commit install --hook-type commit-msg
+   ```
+   See [docs/development/PRE_COMMIT_SETUP.md](docs/development/PRE_COMMIT_SETUP.md) for the full guide, commit-message format, and troubleshooting.
+
 ## 📝 Coding Standards
 
 ### Python Code Style

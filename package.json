@@ -1,0 +1,9 @@
+{
+  "name": "frappe_assistant_core",
+  "private": true,
+  "description": "Node dev dependencies for commit-message linting. The project itself is Python — see pyproject.toml.",
+  "devDependencies": {
+    "@commitlint/cli": "^20.0.0",
+    "@commitlint/config-conventional": "^20.0.0"
+  }
+}
