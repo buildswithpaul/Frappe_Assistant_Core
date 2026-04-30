@@ -388,7 +388,7 @@ def update_tool_category(tool_name: str, category: str, override: bool = True):
 
 
 @frappe.whitelist(methods=["POST"])
-def update_tool_role_access(tool_name: str, role_access_mode: str, roles: list = None):
+def update_tool_role_access(tool_name: str, role_access_mode: str, roles: list | str = None):
     """
     Update role access settings for a tool.
 
