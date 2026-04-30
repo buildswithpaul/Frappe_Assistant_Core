@@ -387,6 +387,11 @@ class BaseTool(ABC):
 
             sanitized_output = self._sanitize_data(actual_tool_output)
 
+            # Hosted vision/LLM tools attach a `usage` dict to their result —
+            # forward it so the audit row records token counts. Sanitization
+            # leaves the dict intact (none of its keys match the secret list).
+            usage = actual_tool_output.get("usage") if isinstance(actual_tool_output, dict) else None
+
             log_tool_execution(
                 tool_name=self.name,
                 user=frappe.session.user,
@@ -398,6 +403,7 @@ class BaseTool(ABC):
                 error_type=result.get("error_type"),
                 traceback_str=traceback_str,
                 output_data=sanitized_output,
+                usage=usage,
             )
         except Exception as e:
             # Don't fail tool execution due to logging issues

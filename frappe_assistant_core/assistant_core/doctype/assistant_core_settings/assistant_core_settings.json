@@ -36,6 +36,22 @@
   "ollama_vision_model",
   "ollama_column_break",
   "ollama_request_timeout",
+  "claude_section",
+  "claude_api_key",
+  "claude_model",
+  "claude_column_break",
+  "claude_request_timeout",
+  "openai_section",
+  "openai_api_key",
+  "openai_model",
+  "openai_base_url",
+  "openai_column_break",
+  "openai_request_timeout",
+  "gemini_section",
+  "gemini_api_key",
+  "gemini_model",
+  "gemini_column_break",
+  "gemini_request_timeout",
   "mcp_configuration_tab",
   "mcp_section",
   "mcp_server_name",
@@ -182,7 +198,7 @@
    "fieldname": "ocr_section",
    "fieldtype": "Section Break",
    "label": "OCR Configuration",
-   "description": "PaddleOCR is the default OCR engine for extracting text from scanned documents and images. Ollama vision LLM is available as an optional alternative for complex documents."
+   "description": "Choose an OCR backend. PaddleOCR runs locally (best privacy, requires Python <=3.12). Ollama runs a local vision LLM. Claude / OpenAI / Gemini are hosted vision LLMs — require an API key but work on any Python version."
   },
   {
    "default": "paddleocr",
@@ -190,7 +206,7 @@
    "fieldname": "ocr_backend",
    "fieldtype": "Select",
    "label": "OCR Backend",
-   "options": "paddleocr\nollama"
+   "options": "paddleocr\nollama\nclaude\nopenai\ngemini"
   },
   {
    "default": "en",
@@ -250,6 +266,106 @@
    "default": "120",
    "description": "Maximum time in seconds to wait for Ollama to process a single page. Increase for slow hardware or large documents.",
    "fieldname": "ollama_request_timeout",
+   "fieldtype": "Int",
+   "label": "Request Timeout (seconds)"
+  },
+  {
+   "fieldname": "claude_section",
+   "fieldtype": "Section Break",
+   "label": "Anthropic Claude Vision Settings",
+   "depends_on": "eval:doc.ocr_backend=='claude'",
+   "description": "Configure Anthropic Claude as the OCR backend. Get an API key at https://console.anthropic.com/."
+  },
+  {
+   "fieldname": "claude_api_key",
+   "fieldtype": "Password",
+   "label": "Claude API Key",
+   "description": "Anthropic API key. Stored encrypted."
+  },
+  {
+   "default": "claude-sonnet-4-6",
+   "description": "Claude model to use for vision OCR. Recommended: claude-sonnet-4-6 (balanced) or claude-opus-4-7 (highest quality).",
+   "fieldname": "claude_model",
+   "fieldtype": "Data",
+   "label": "Claude Model"
+  },
+  {
+   "fieldname": "claude_column_break",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "120",
+   "description": "Maximum time in seconds to wait for the Claude API per page.",
+   "fieldname": "claude_request_timeout",
+   "fieldtype": "Int",
+   "label": "Request Timeout (seconds)"
+  },
+  {
+   "fieldname": "openai_section",
+   "fieldtype": "Section Break",
+   "label": "OpenAI Vision Settings",
+   "depends_on": "eval:doc.ocr_backend=='openai'",
+   "description": "Configure OpenAI as the OCR backend. Compatible with Azure OpenAI and OpenAI-compatible proxies (LiteLLM, OpenRouter) via Base URL override."
+  },
+  {
+   "fieldname": "openai_api_key",
+   "fieldtype": "Password",
+   "label": "OpenAI API Key",
+   "description": "OpenAI API key (or compatible proxy key). Stored encrypted."
+  },
+  {
+   "default": "gpt-4o-mini",
+   "description": "OpenAI model to use for vision OCR. Recommended: gpt-4o-mini (cheap) or gpt-4o (higher quality).",
+   "fieldname": "openai_model",
+   "fieldtype": "Data",
+   "label": "OpenAI Model"
+  },
+  {
+   "default": "https://api.openai.com/v1",
+   "description": "Override for OpenAI-compatible endpoints (Azure, LiteLLM, OpenRouter). Leave default for standard OpenAI.",
+   "fieldname": "openai_base_url",
+   "fieldtype": "Data",
+   "label": "OpenAI Base URL"
+  },
+  {
+   "fieldname": "openai_column_break",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "120",
+   "description": "Maximum time in seconds to wait for the OpenAI API per page.",
+   "fieldname": "openai_request_timeout",
+   "fieldtype": "Int",
+   "label": "Request Timeout (seconds)"
+  },
+  {
+   "fieldname": "gemini_section",
+   "fieldtype": "Section Break",
+   "label": "Google Gemini Vision Settings",
+   "depends_on": "eval:doc.ocr_backend=='gemini'",
+   "description": "Configure Google Gemini as the OCR backend. Get an API key at https://aistudio.google.com/."
+  },
+  {
+   "fieldname": "gemini_api_key",
+   "fieldtype": "Password",
+   "label": "Gemini API Key",
+   "description": "Google AI Studio API key. Stored encrypted."
+  },
+  {
+   "default": "gemini-2.5-flash",
+   "description": "Gemini model to use for vision OCR. Recommended: gemini-2.5-flash (fast/cheap) or gemini-2.5-pro (higher quality).",
+   "fieldname": "gemini_model",
+   "fieldtype": "Data",
+   "label": "Gemini Model"
+  },
+  {
+   "fieldname": "gemini_column_break",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "120",
+   "description": "Maximum time in seconds to wait for the Gemini API per page.",
+   "fieldname": "gemini_request_timeout",
    "fieldtype": "Int",
    "label": "Request Timeout (seconds)"
   },

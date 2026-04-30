@@ -147,6 +147,7 @@ def log_tool_execution(
     error_type: Optional[str] = None,
     traceback_str: Optional[str] = None,
     output_data: Optional[Any] = None,
+    usage: Optional[Dict[str, Any]] = None,
 ):
     """
     Log tool execution for comprehensive audit trail.
@@ -165,6 +166,10 @@ def log_tool_execution(
             "PermissionError", "ValidationError", "ToolReportedError")
         traceback_str: Full Python traceback (exception paths only)
         output_data: Tool output data for audit trail
+        usage: Optional LLM token usage from hosted vision/LLM providers.
+            Expected keys: input_tokens, output_tokens, total_tokens, model.
+            Empty/None for local backends — those audit rows leave the LLM
+            usage fields blank.
     """
     try:
         if status not in _VALID_STATUSES:
@@ -193,6 +198,8 @@ def log_tool_execution(
             except (TypeError, ValueError):
                 input_data_str = str(sanitized_arguments)[:_OUTPUT_DATA_MAX_BYTES]
 
+        usage_fields = _extract_usage_fields(usage)
+
         audit_doc = frappe.get_doc(
             {
                 "doctype": "Assistant Audit Log",
@@ -214,6 +221,7 @@ def log_tool_execution(
                 "error_message": error_message,
                 "error_type": error_type,
                 "traceback": traceback_str,
+                **usage_fields,
             }
         )
 
@@ -235,6 +243,38 @@ def _serialize_for_audit(output_data: Any) -> tuple:
     if len(serialized) > _OUTPUT_DATA_MAX_BYTES:
         return serialized[:_OUTPUT_DATA_MAX_BYTES], True
     return serialized, False
+
+
+def _extract_usage_fields(usage: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """Map a provider `usage` dict onto the Assistant Audit Log token fields.
+
+    Returns an empty dict if usage is missing or malformed — the audit row
+    will then leave those fields blank (correct for local backends like
+    PaddleOCR / Ollama which don't report tokens).
+    """
+    if not isinstance(usage, dict):
+        return {}
+
+    def _coerce_int(v):
+        try:
+            return int(v) if v is not None else 0
+        except (TypeError, ValueError):
+            return 0
+
+    input_tokens = _coerce_int(usage.get("input_tokens"))
+    output_tokens = _coerce_int(usage.get("output_tokens"))
+    total_tokens = _coerce_int(usage.get("total_tokens")) or (input_tokens + output_tokens)
+    model = usage.get("model")
+
+    if not (input_tokens or output_tokens or total_tokens or model):
+        return {}
+
+    return {
+        "llm_model": model,
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "total_tokens": total_tokens,
+    }
 
 
 def log_tool_discovery(app_name: str, tools_found: int, errors: int, discovery_time: float):

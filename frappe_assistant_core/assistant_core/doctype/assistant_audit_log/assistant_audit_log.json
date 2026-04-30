@@ -25,6 +25,12 @@
   "client_id",
   "session_id",
   "ip_address",
+  "llm_usage_section",
+  "llm_model",
+  "input_tokens",
+  "llm_usage_column_break",
+  "output_tokens",
+  "total_tokens",
   "details_section",
   "input_data",
   "output_data",
@@ -150,6 +156,47 @@
    "fieldtype": "Data",
    "label": "IP Address",
    "read_only": 1
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "llm_usage_section",
+   "fieldtype": "Section Break",
+   "label": "LLM Usage",
+   "description": "Token usage reported by hosted vision/LLM providers (Claude, OpenAI, Gemini). Empty for local backends (PaddleOCR, Ollama)."
+  },
+  {
+   "fieldname": "llm_model",
+   "fieldtype": "Data",
+   "label": "Model",
+   "read_only": 1,
+   "description": "Actual model used (e.g. claude-sonnet-4-6, gpt-4o-mini, gemini-2.5-flash)"
+  },
+  {
+   "fieldname": "input_tokens",
+   "fieldtype": "Int",
+   "label": "Input Tokens",
+   "read_only": 1,
+   "non_negative": 1
+  },
+  {
+   "fieldname": "llm_usage_column_break",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "output_tokens",
+   "fieldtype": "Int",
+   "label": "Output Tokens",
+   "read_only": 1,
+   "non_negative": 1
+  },
+  {
+   "fieldname": "total_tokens",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Total Tokens",
+   "read_only": 1,
+   "non_negative": 1,
+   "description": "Sum of input and output tokens. Use for cost reports."
   },
   {
    "collapsible": 1,

@@ -26,3 +26,6 @@ frappe_assistant_core.patches.v2_3.set_settings_defaults
 frappe_assistant_core.patches.v2_4.install_system_skills
 frappe_assistant_core.patches.v2_4.bump_code_execution_max_recursion
 frappe_assistant_core.patches.v2_4.repair_hrms_skill_link_corruption
+
+# Version 2.4.x - Hosted vision provider settings (Claude / OpenAI / Gemini)
+frappe_assistant_core.patches.v2_4.set_vision_provider_defaults

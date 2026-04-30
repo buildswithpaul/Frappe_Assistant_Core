@@ -446,11 +446,17 @@ class ExtractFileContent(BaseTool):
         return self._perform_ocr(file_content, arguments, file_type="image")
 
     def _get_ocr_settings(self) -> Dict[str, Any]:
-        """Get OCR backend configuration from Assistant Core Settings."""
+        """Get OCR backend configuration from Assistant Core Settings.
+
+        For hosted providers (Claude, OpenAI, Gemini), the API key is stored as
+        a Password field and fetched via get_decrypted_password — only for the
+        currently selected backend, so we don't decrypt keys we won't use.
+        """
         try:
             settings = frappe.get_single("Assistant Core Settings")
-            return {
-                "backend": getattr(settings, "ocr_backend", "paddleocr") or "paddleocr",
+            backend = getattr(settings, "ocr_backend", "paddleocr") or "paddleocr"
+            config: Dict[str, Any] = {
+                "backend": backend,
                 "ocr_language": getattr(settings, "ocr_language", "en") or "en",
                 "paddleocr_timeout": int(getattr(settings, "paddleocr_timeout", 120) or 120),
                 "paddleocr_max_memory_mb": int(getattr(settings, "paddleocr_max_memory_mb", 2048) or 2048),
@@ -459,7 +465,31 @@ class ExtractFileContent(BaseTool):
                 "ollama_model": getattr(settings, "ollama_vision_model", "deepseek-ocr:latest")
                 or "deepseek-ocr:latest",
                 "ollama_timeout": int(getattr(settings, "ollama_request_timeout", 120) or 120),
+                "claude_model": getattr(settings, "claude_model", "claude-sonnet-4-6") or "claude-sonnet-4-6",
+                "claude_timeout": int(getattr(settings, "claude_request_timeout", 120) or 120),
+                "openai_model": getattr(settings, "openai_model", "gpt-4o-mini") or "gpt-4o-mini",
+                "openai_base_url": getattr(settings, "openai_base_url", "https://api.openai.com/v1")
+                or "https://api.openai.com/v1",
+                "openai_timeout": int(getattr(settings, "openai_request_timeout", 120) or 120),
+                "gemini_model": getattr(settings, "gemini_model", "gemini-2.5-flash") or "gemini-2.5-flash",
+                "gemini_timeout": int(getattr(settings, "gemini_request_timeout", 120) or 120),
             }
+
+            if backend in ("claude", "openai", "gemini"):
+                from frappe.utils.password import get_decrypted_password
+
+                key_field = f"{backend}_api_key"
+                try:
+                    config[key_field] = get_decrypted_password(
+                        "Assistant Core Settings",
+                        "Assistant Core Settings",
+                        key_field,
+                        raise_exception=False,
+                    )
+                except Exception:
+                    config[key_field] = None
+
+            return config
         except Exception:
             return {"backend": "paddleocr", "ocr_language": "en"}
 
@@ -486,34 +516,168 @@ class ExtractFileContent(BaseTool):
     def _perform_ocr(
         self, file_content: bytes, arguments: Dict[str, Any], file_type: str = "image"
     ) -> Dict[str, Any]:
-        """Perform OCR on image or PDF content.
+        """Perform OCR on image or PDF content using the configured backend.
 
-        Uses the configured backend (PaddleOCR by default, Ollama optional).
-        Falls back to PaddleOCR if Ollama fails or returns empty.
-
-        Args:
-            file_content: Raw file bytes
-            arguments: Tool arguments (language, max_pages, etc.)
-            file_type: File type string ("image" or "pdf")
+        Backends:
+          - paddleocr: subprocess-isolated local OCR.
+          - ollama: local HTTP vision model. On error, falls back to PaddleOCR
+            if available (preserves prior behavior).
+          - claude/openai/gemini: hosted vision LLMs. Errors are surfaced to the
+            caller as-is — no PaddleOCR fallback. On Python versions where
+            PaddleOCR can't install (Frappe v16), the fallback would be
+            misleading anyway.
         """
-        ocr_settings = self._get_ocr_settings()
+        from frappe_assistant_core.utils.vision_providers import (
+            HOSTED_PROVIDERS,
+            PROVIDERS,
+            get_provider,
+        )
 
-        # Try Ollama vision backend if configured
-        if ocr_settings.get("backend") == "ollama":
-            result = self._try_ollama_ocr(file_content, arguments, file_type, ocr_settings)
-            if result and result.get("success") and result.get("content", "").strip():
-                return result
-            if self._is_paddle_ocr_available():
-                # Ollama failed or returned empty — fall through to PaddleOCR
-                return self._perform_paddle_ocr(file_content, arguments, file_type, ocr_settings)
-            if result:
-                return result
-            return self._missing_paddle_ocr_response()
+        ocr_settings = self._get_ocr_settings()
+        backend = ocr_settings.get("backend") or "paddleocr"
 
         # PaddleOCR path (default)
-        if not self._is_paddle_ocr_available():
-            return self._missing_paddle_ocr_response()
-        return self._perform_paddle_ocr(file_content, arguments, file_type, ocr_settings)
+        if backend == "paddleocr":
+            if not self._is_paddle_ocr_available():
+                return self._missing_paddle_ocr_response()
+            return self._perform_paddle_ocr(file_content, arguments, file_type, ocr_settings)
+
+        if backend not in PROVIDERS:
+            return {
+                "success": False,
+                "error": f"Unknown OCR backend: {backend!r}. Configure a valid backend in Assistant Core Settings.",
+            }
+
+        try:
+            provider = get_provider(backend, ocr_settings)
+        except Exception as e:
+            return {"success": False, "error": f"Failed to initialize {backend} provider: {e}"}
+
+        if file_type == "pdf":
+            result = self._run_pdf_through_provider(file_content, arguments, provider)
+        else:
+            result = self._run_provider_image(file_content, provider)
+
+        # Ollama keeps its historical fallback to PaddleOCR — hosted providers don't.
+        if backend == "ollama":
+            empty_or_failed = (
+                not result or not result.get("success") or not (result.get("content") or "").strip()
+            )
+            if empty_or_failed and self._is_paddle_ocr_available():
+                return self._perform_paddle_ocr(file_content, arguments, file_type, ocr_settings)
+
+        return result
+
+    def _run_provider_image(self, file_content: bytes, provider) -> Dict[str, Any]:
+        """Decode an image and run a single-image extraction through a VisionProvider."""
+        try:
+            from PIL import Image
+
+            image = Image.open(io.BytesIO(file_content))
+            return provider.extract_from_image(image)
+        except Exception as e:
+            frappe.log_error(
+                title=f"{provider.name} OCR Error",
+                message=f"{provider.name} OCR failed on image: {e}",
+            )
+            return {
+                "success": False,
+                "error": f"{provider.name} OCR failed: {e}",
+                "ocr_backend": provider.name,
+            }
+
+    def _run_pdf_through_provider(
+        self, file_content: bytes, arguments: Dict[str, Any], provider
+    ) -> Dict[str, Any]:
+        """Render PDF pages with PyMuPDF and run each through the provider.
+
+        Sums per-page token usage so the audit log gets a single total for the
+        whole document.
+        """
+        try:
+            import fitz  # PyMuPDF
+        except ImportError:
+            return {
+                "success": False,
+                "error": "PyMuPDF (fitz) is required for PDF OCR. Install with: pip install pymupdf",
+            }
+
+        try:
+            pdf_doc = fitz.open(stream=file_content, filetype="pdf")
+        except Exception as e:
+            return {"success": False, "error": f"Failed to open PDF for OCR: {e}"}
+
+        max_pages = arguments.get("max_pages", 50)
+        num_pages = min(len(pdf_doc), max_pages)
+
+        text_content = []
+        usage_total = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+        usage_seen = False
+        model_used = None
+        first_error = None
+
+        try:
+            for page_num in range(num_pages):
+                page = pdf_doc[page_num]
+                pix = page.get_pixmap(dpi=150)
+                pil_image = pix.pil_image()
+
+                try:
+                    page_result = provider.extract_from_image(pil_image)
+                except Exception as e:
+                    frappe.log_error(
+                        title=f"{provider.name} OCR Error",
+                        message=f"{provider.name} OCR failed on page {page_num + 1}: {e}",
+                    )
+                    if first_error is None:
+                        first_error = str(e)
+                    continue
+
+                if not page_result.get("success"):
+                    if first_error is None:
+                        first_error = page_result.get("error") or "unknown error"
+                    continue
+
+                content = (page_result.get("content") or "").strip()
+                if content:
+                    text_content.append(f"--- Page {page_num + 1} ---\n{content}")
+
+                page_usage = page_result.get("usage")
+                if page_usage:
+                    usage_seen = True
+                    usage_total["input_tokens"] += int(page_usage.get("input_tokens") or 0)
+                    usage_total["output_tokens"] += int(page_usage.get("output_tokens") or 0)
+                    usage_total["total_tokens"] += int(page_usage.get("total_tokens") or 0)
+                    model_used = page_usage.get("model") or model_used
+
+                model_used = model_used or page_result.get("ocr_model")
+        finally:
+            pdf_doc.close()
+
+        # Every page failed and nothing extracted — surface the first error.
+        if not text_content and first_error:
+            return {
+                "success": False,
+                "error": first_error,
+                "ocr_backend": provider.name,
+                "pages": num_pages,
+            }
+
+        combined_text = "\n\n".join(text_content)
+        result: Dict[str, Any] = {
+            "success": True,
+            "content": combined_text,
+            "pages": num_pages,
+            "ocr_pages_with_text": len(text_content),
+            "ocr_backend": provider.name,
+        }
+        if model_used:
+            result["ocr_model"] = model_used
+        if usage_seen:
+            result["usage"] = {**usage_total, "model": model_used}
+        if not combined_text.strip():
+            result["message"] = f"{provider.name} OCR completed but no text was detected."
+        return result
 
     def _perform_paddle_ocr(
         self, file_content: bytes, arguments: Dict[str, Any], file_type: str, ocr_settings: Dict[str, Any]
@@ -656,109 +820,6 @@ class ExtractFileContent(BaseTool):
                         return
         except Exception:
             pass  # Non-critical; skip on non-Linux or permission errors
-
-    def _try_ollama_ocr(
-        self, file_content: bytes, arguments: Dict[str, Any], file_type: str, ocr_settings: Dict[str, Any]
-    ) -> Optional[Dict[str, Any]]:
-        """Try OCR via Ollama vision model. Returns None on failure to allow PaddleOCR fallback."""
-        try:
-            from PIL import Image
-
-            if file_type == "pdf":
-                return self._perform_ollama_pdf_ocr(file_content, arguments, ocr_settings)
-            else:
-                image = Image.open(io.BytesIO(file_content))
-                return self._ollama_extract_from_image(image, ocr_settings)
-        except Exception as e:
-            frappe.log_error(
-                title="Ollama OCR Error",
-                message=f"Ollama OCR failed, falling back to PaddleOCR: {str(e)}",
-            )
-            return None
-
-    def _ollama_extract_from_image(self, pil_image, ocr_settings: Dict[str, Any]) -> Dict[str, Any]:
-        """Send a single PIL image to Ollama vision model for text extraction."""
-        import requests
-
-        buf = io.BytesIO()
-        if pil_image.mode in ("RGBA", "P"):
-            pil_image = pil_image.convert("RGB")
-        pil_image.save(buf, format="JPEG", quality=85)
-        img_b64 = base64.b64encode(buf.getvalue()).decode()
-
-        url = f"{ocr_settings['ollama_url']}/api/generate"
-        payload = {
-            "model": ocr_settings["ollama_model"],
-            "prompt": "Extract all text from this document image exactly as it appears.",
-            "images": [img_b64],
-            "stream": False,
-        }
-
-        response = requests.post(url, json=payload, timeout=ocr_settings["ollama_timeout"])
-        response.raise_for_status()
-        result = response.json()
-
-        content = result.get("response", "").strip()
-        if not content:
-            return {"success": True, "content": "", "message": "Ollama returned no text"}
-        return {
-            "success": True,
-            "content": content,
-            "ocr_backend": "ollama",
-            "ocr_model": ocr_settings["ollama_model"],
-        }
-
-    def _perform_ollama_pdf_ocr(
-        self, file_content: bytes, arguments: Dict[str, Any], ocr_settings: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """Extract text from PDF via Ollama. Renders pages with PyMuPDF, then sends to Ollama."""
-        try:
-            import fitz  # PyMuPDF
-        except ImportError:
-            return {
-                "success": False,
-                "error": "PyMuPDF (fitz) is required for Ollama PDF OCR. Install with: pip install pymupdf",
-            }
-
-        try:
-            pdf_doc = fitz.open(stream=file_content, filetype="pdf")
-        except Exception as e:
-            return {"success": False, "error": f"Failed to open PDF for OCR: {str(e)}"}
-
-        max_pages = arguments.get("max_pages", 50)
-        num_pages = min(len(pdf_doc), max_pages)
-
-        text_content = []
-        for page_num in range(num_pages):
-            page = pdf_doc[page_num]
-            pix = page.get_pixmap(dpi=150)
-            pil_image = pix.pil_image()
-
-            page_result = self._ollama_extract_from_image(pil_image, ocr_settings)
-            if page_result.get("success") and page_result.get("content", "").strip():
-                text_content.append(f"--- Page {page_num + 1} ---\n{page_result['content']}")
-
-        pdf_doc.close()
-
-        combined_text = "\n\n".join(text_content)
-
-        if not combined_text.strip():
-            return {
-                "success": True,
-                "content": "",
-                "message": "Ollama OCR completed but no text was detected.",
-                "pages": num_pages,
-                "ocr_backend": "ollama",
-            }
-
-        return {
-            "success": True,
-            "content": combined_text,
-            "pages": num_pages,
-            "ocr_pages_with_text": len(text_content),
-            "ocr_backend": "ollama",
-            "ocr_model": ocr_settings["ollama_model"],
-        }
 
     def _extract_csv_content(self, file_content: bytes) -> Dict[str, Any]:
         """Extract content from CSV"""
