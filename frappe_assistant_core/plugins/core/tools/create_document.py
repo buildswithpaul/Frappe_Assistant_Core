@@ -158,22 +158,6 @@ class DocumentCreate(BaseTool):
             meta = frappe.get_meta(doctype)
             table_fields = {f.fieldname: f.options for f in meta.fields if f.fieldtype == "Table"}
 
-            # Validate required fields
-            required_fields = [
-                f.fieldname for f in meta.fields if f.reqd and not f.default and f.fieldtype != "Table"
-            ]
-            missing_fields = [f for f in required_fields if f not in data or not data[f]]
-
-            if missing_fields:
-                return {
-                    "success": False,
-                    "error": f"Missing required fields: {', '.join(missing_fields)}",
-                    "required_fields": required_fields,
-                    "provided_fields": list(data.keys()),
-                    "suggestion": f"Use get_doctype_info tool with doctype='{doctype}' to see all required fields and their types",
-                    "doctype": doctype,
-                }
-
             # Set field values with proper child table handling
             for field, value in data.items():
                 if field in table_fields:
@@ -191,6 +175,24 @@ class DocumentCreate(BaseTool):
                 else:
                     # Handle regular fields
                     setattr(doc, field, value)
+
+            # Validate required fields against the populated doc, not the raw
+            # input. Fields auto-populated by new_doc() (company, naming_series,
+            # selling_price_list, etc.) carry no static `default` on the
+            # docfield, so checking `data` alone produces false "missing field"
+            # errors for values Frappe has already filled in.
+            required_fields = [f.fieldname for f in meta.fields if f.reqd and f.fieldtype != "Table"]
+            missing_fields = [f for f in required_fields if not doc.get(f)]
+
+            if missing_fields:
+                return {
+                    "success": False,
+                    "error": f"Missing required fields: {', '.join(missing_fields)}",
+                    "required_fields": required_fields,
+                    "provided_fields": list(data.keys()),
+                    "suggestion": f"Use get_doctype_info tool with doctype='{doctype}' to see all required fields and their types",
+                    "doctype": doctype,
+                }
 
             # Handle validation-only mode
             if validate_only:
