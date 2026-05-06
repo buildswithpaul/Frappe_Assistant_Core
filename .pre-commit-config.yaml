@@ -55,7 +55,9 @@ repos:
     hooks:
       - id: commitlint
         stages: [commit-msg]
-        additional_dependencies: ["@commitlint/config-conventional@20"]
+        # Pinned to v19 — v20 transitive deps require Node >=20, but bench's
+        # CI runner installs Node 18 for Frappe v15.
+        additional_dependencies: ["@commitlint/config-conventional@19"]
 
   # pip-audit — mirrors the 'Vulnerable Dependency Check' job in
   # .github/workflows/linter.yml. Opt-in (manual stage) because it hits PyPI
