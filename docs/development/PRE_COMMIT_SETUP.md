@@ -40,10 +40,12 @@ pre-commit install --hook-type commit-msg   # commit-msg stage (commitlint)
 The `alessandrojcm/commitlint-pre-commit-hook` manages its own Node runtime, so you don't normally need Node installed locally. But if you want to run `npx commitlint` manually or match the exact CI environment:
 
 ```bash
-npm install
+yarn install
 ```
 
-This pulls the versions pinned in [package.json](../../package.json) — same versions CI installs in `commitlint.yml`.
+This pulls the versions pinned in [package.json](../../package.json) — same versions CI installs in `commitlint.yml`. **Use yarn, not npm.** Bench runs `yarn install` against every app it installs, so a stray `package-lock.json` triggers warnings and resolution drift; we ship a `yarn.lock` instead.
+
+> **Why commitlint v19 (not v20)?** v20's transitive deps require Node ≥ 20. Frappe v15's bench environment runs Node 18, and `bench get-app` invokes `yarn install` unconditionally — so v20 breaks the CI install step on v15. We'll bump to v20 once Frappe v15 drops Node 18 support.
 
 ### 4. (Optional) Migrate config if you see warnings
 
