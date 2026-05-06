@@ -237,3 +237,51 @@ class TestAuditSinkSanitization(BaseAssistantTest):
             limit=1,
         )[0]
         self.assertEqual(row["status"], "Error")
+
+
+class TestSensitiveKeyMatcher(BaseAssistantTest):
+    """_is_sensitive_key redacts credentials but preserves token-count metrics.
+
+    Earlier versions used a substring blocklist that included ``token``, which
+    over-redacted ``input_tokens`` / ``output_tokens`` / ``total_tokens`` in
+    audit output_data — the regex-backed matcher fixes that without weakening
+    redaction of access_token / refresh_token / jwt_token / bearer_token.
+    """
+
+    def test_credential_keys_are_redacted(self):
+        from frappe_assistant_core.core.base_tool import _is_sensitive_key
+
+        for key in [
+            "password",
+            "old_password",
+            "api_key",
+            "apiKey",
+            "claude_api_key",
+            "secret",
+            "auth_header",
+            "token",
+            "access_token",
+            "refresh_token",
+            "jwt_token",
+            "bearer_token",
+        ]:
+            self.assertTrue(_is_sensitive_key(key), f"{key} should be flagged sensitive")
+
+    def test_token_count_metrics_are_not_redacted(self):
+        from frappe_assistant_core.core.base_tool import _is_sensitive_key
+
+        for key in ["input_tokens", "output_tokens", "total_tokens", "tokens_used"]:
+            self.assertFalse(_is_sensitive_key(key), f"{key} must not be redacted")
+
+    def test_unrelated_keys_are_not_redacted(self):
+        from frappe_assistant_core.core.base_tool import _is_sensitive_key
+
+        for key in ["model", "content", "file_url", "ocr_backend"]:
+            self.assertFalse(_is_sensitive_key(key))
+
+    def test_non_string_keys_return_false(self):
+        from frappe_assistant_core.core.base_tool import _is_sensitive_key
+
+        # Defensive: integer/None keys must not crash the matcher.
+        self.assertFalse(_is_sensitive_key(None))
+        self.assertFalse(_is_sensitive_key(42))
