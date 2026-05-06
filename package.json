@@ -1,0 +1,12 @@
+{
+  "name": "frappe_assistant_core",
+  "private": true,
+  "description": "Node dev dependencies for commit-message linting. Pinned to v19 because Frappe v15's bench environment uses Node 18, and commitlint v20's transitive deps require Node >=20.",
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "@commitlint/cli": "^19.6.0",
+    "@commitlint/config-conventional": "^19.6.0"
+  }
+}
