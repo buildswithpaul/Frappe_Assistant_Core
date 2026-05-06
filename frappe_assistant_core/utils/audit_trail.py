@@ -36,20 +36,23 @@ _VALID_STATUSES = {
 # from bloating when a tool returns a large payload.
 _OUTPUT_DATA_MAX_BYTES = 50_000
 
-# Keys that should never appear in audit logs in cleartext. Matched
-# case-insensitively on substring, same heuristic as BaseTool._sanitize_arguments.
-_SENSITIVE_KEY_SUBSTRINGS = ("password", "api_key", "secret", "token", "auth")
-
 
 def _sanitize_arguments(arguments: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     """Defensive sanitization at the audit sink — callers are expected to
     sanitize too, but this ensures secrets never land in the table even
-    when a non-BaseTool call site forgets."""
+    when a non-BaseTool call site forgets.
+
+    Uses the same _is_sensitive_key heuristic as BaseTool so token-count
+    metrics (input_tokens / output_tokens / total_tokens) are preserved while
+    credential-shaped keys still get redacted.
+    """
     if not isinstance(arguments, dict):
         return arguments
+    from frappe_assistant_core.core.base_tool import _is_sensitive_key
+
     sanitized: Dict[str, Any] = {}
     for key, value in arguments.items():
-        if any(sub in key.lower() for sub in _SENSITIVE_KEY_SUBSTRINGS):
+        if _is_sensitive_key(key):
             sanitized[key] = "***REDACTED***"
         else:
             sanitized[key] = value
