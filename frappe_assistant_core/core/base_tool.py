@@ -19,6 +19,7 @@ Base class for all MCP tools with configuration and dependency management.
 """
 
 import json
+import re
 import time
 import traceback
 from abc import ABC, abstractmethod
@@ -26,6 +27,42 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import frappe
 from frappe import _
+
+# Substrings that always indicate a credential. Matched case-insensitively
+# anywhere in the key name.
+_ALWAYS_SENSITIVE = (
+    "password",
+    "secret",
+    "api_key",
+    "apikey",
+    "auth",
+    "bearer",
+    "credential",
+    "private_key",
+)
+
+# Token-as-credential matcher: matches keys like ``token``, ``access_token``,
+# ``refresh_token``, ``jwt_token``. Excludes metric-style keys like
+# ``input_tokens`` / ``output_tokens`` / ``total_tokens`` / ``tokens_used``
+# (the trailing ``s`` distinguishes a count from a credential).
+_SENSITIVE_TOKEN_RE = re.compile(r"(?:^|[_\W])token(?:$|[_\W])", re.IGNORECASE)
+
+
+def _is_sensitive_key(key: Any) -> bool:
+    """Return True if ``key`` looks like a credential and should be redacted.
+
+    Matches the historical heuristic for password/secret/api_key/auth keys but
+    no longer over-redacts token-count metrics (``input_tokens``,
+    ``output_tokens``, ``total_tokens``) — the previous substring blocklist
+    matched any key containing ``token``, which clobbered usage data in audit
+    log output for tools that forward LLM token counts.
+    """
+    if not isinstance(key, str):
+        return False
+    lower = key.lower()
+    if any(s in lower for s in _ALWAYS_SENSITIVE):
+        return True
+    return bool(_SENSITIVE_TOKEN_RE.search(lower))
 
 
 class BaseTool(ABC):
@@ -405,15 +442,12 @@ class BaseTool(ABC):
 
     def _sanitize_arguments(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
         """Remove sensitive data from arguments for logging"""
-        sensitive_keys = ["password", "api_key", "secret", "token", "auth"]
         sanitized = {}
-
         for key, value in arguments.items():
-            if any(sensitive in key.lower() for sensitive in sensitive_keys):
+            if _is_sensitive_key(key):
                 sanitized[key] = "***REDACTED***"
             else:
                 sanitized[key] = value
-
         return sanitized
 
     def _sanitize_data(self, data: Any) -> Any:
@@ -425,10 +459,7 @@ class BaseTool(ABC):
                 if key == "data" and isinstance(value, list) and len(value) > 10:
                     sanitized[key] = f"[{len(value)} items - truncated for logging]"
                 # Redact sensitive information
-                elif any(
-                    sensitive in key.lower()
-                    for sensitive in ["password", "api_key", "secret", "token", "auth"]
-                ):
+                elif _is_sensitive_key(key):
                     sanitized[key] = "***REDACTED***"
                 # Truncate very long strings
                 elif isinstance(value, str) and len(value) > 1000:
