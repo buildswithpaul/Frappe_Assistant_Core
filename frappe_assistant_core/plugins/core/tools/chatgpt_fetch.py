@@ -77,6 +77,11 @@ class ChatGPTFetch(BaseTool):
             - url: URL for citation
             - metadata: Additional document metadata
         """
+        from frappe_assistant_core.core.security_config import (
+            filter_sensitive_fields,
+            validate_document_access,
+        )
+
         try:
             doc_id = arguments.get("id", "").strip()
 
@@ -89,17 +94,20 @@ class ChatGPTFetch(BaseTool):
 
             doctype, name = doc_id.split("/", 1)
 
-            # Get document using existing functionality
+            # Layered permission check: role-based doctype gating + Frappe perms.
+            # Mirrors the get_document tool so the ChatGPT fetch path doesn't
+            # bypass FAC's standard auth pipeline.
+            validation_result = validate_document_access(
+                user=frappe.session.user, doctype=doctype, name=name, perm_type="read"
+            )
+            if not validation_result["success"]:
+                raise frappe.PermissionError(
+                    validation_result.get("error", f"Access denied for {doctype} {name}")
+                )
+
+            user_role = validation_result["role"]
             doc = frappe.get_doc(doctype, name)
-
-            # Check permissions
-            if not doc.has_permission("read"):
-                raise frappe.PermissionError(f"No read permission for {doctype} {name}")
-
-            # Filter sensitive fields
-            from frappe_assistant_core.core.security_config import filter_sensitive_fields
-
-            doc_dict = filter_sensitive_fields(doc.as_dict(), doctype)
+            doc_dict = filter_sensitive_fields(doc.as_dict(), doctype, user_role)
 
             # Create title from name field or document name
             title = doc_dict.get("title") or doc_dict.get("name") or name
@@ -124,16 +132,17 @@ class ChatGPTFetch(BaseTool):
         except frappe.DoesNotExistError:
             error_msg = f"Document not found: {doc_id}"
             frappe.log_error(title=_("ChatGPT Fetch Error"), message=error_msg)
-            raise ValueError(error_msg)
+            raise ValueError(error_msg) from None
 
         except frappe.PermissionError as e:
             error_msg = f"Permission denied: {str(e)}"
             frappe.log_error(title=_("ChatGPT Fetch Permission Error"), message=error_msg)
-            raise ValueError(error_msg)
+            raise ValueError(error_msg) from e
 
-        except Exception as e:
-            frappe.log_error(title=_("ChatGPT Fetch Error"), message=f"Error fetching document: {str(e)}")
-            raise ValueError(f"Error fetching document: {str(e)}")
+        except ValueError:
+            # Input validation errors raised above ("Document ID is required",
+            # "Invalid document ID format", ...) — surface as-is.
+            raise
 
     def _format_document_as_text(self, doc_dict: Dict, doctype: str, name: str) -> str:
         """
