@@ -89,6 +89,11 @@ def _recover_stranded_hrms_records():
     does not match ^SK-[0-9]+$ is a stranded HRMS record from step 2 of the
     corruption. Pull the HRMS-relevant columns, INSERT into tabSkill via
     frappe.db.bulk_insert, and delete the stranded rows from tabFAC Skill.
+
+    Some HRMS releases ship a Skill doctype with a separate ``skill_name``
+    field (autoname = field:skill_name), others use ``name`` directly with
+    no skill_name column. We probe for the column on both tables at runtime
+    so the patch works against either schema.
     """
 
     if not frappe.db.exists("DocType", "Skill"):
@@ -98,22 +103,24 @@ def _recover_stranded_hrms_records():
     FACSkill = frappe.qb.DocType("FAC Skill")
     not_fac_autoname = PseudoColumn("name NOT REGEXP '^SK-[0-9]+$'")
 
-    stranded = (
-        frappe.qb.from_(FACSkill)
-        .select(
-            FACSkill.name,
-            FACSkill.skill_name,
-            FACSkill.description,
-            FACSkill.creation,
-            FACSkill.modified,
-            FACSkill.modified_by,
-            FACSkill.owner,
-            FACSkill.docstatus,
-            FACSkill.idx,
-        )
-        .where(not_fac_autoname)
-        .run(as_dict=True)
+    has_skill_name = frappe.db.has_column("FAC Skill", "skill_name") and frappe.db.has_column(
+        "Skill", "skill_name"
     )
+
+    select_query = frappe.qb.from_(FACSkill).select(
+        FACSkill.name,
+        FACSkill.description,
+        FACSkill.creation,
+        FACSkill.modified,
+        FACSkill.modified_by,
+        FACSkill.owner,
+        FACSkill.docstatus,
+        FACSkill.idx,
+    )
+    if has_skill_name:
+        select_query = select_query.select(FACSkill.skill_name)
+
+    stranded = select_query.where(not_fac_autoname).run(as_dict=True)
 
     if not stranded:
         return
@@ -126,20 +133,22 @@ def _recover_stranded_hrms_records():
 
     to_insert = [row for row in stranded if row["name"] not in existing]
 
+    insert_columns = [
+        Skill.name,
+        Skill.description,
+        Skill.creation,
+        Skill.modified,
+        Skill.modified_by,
+        Skill.owner,
+        Skill.docstatus,
+        Skill.idx,
+    ]
+    if has_skill_name:
+        insert_columns.append(Skill.skill_name)
+
     for row in to_insert:
-        frappe.qb.into(Skill).columns(
-            Skill.name,
-            Skill.skill_name,
-            Skill.description,
-            Skill.creation,
-            Skill.modified,
-            Skill.modified_by,
-            Skill.owner,
-            Skill.docstatus,
-            Skill.idx,
-        ).insert(
+        values = [
             row["name"],
-            row["skill_name"],
             row["description"],
             row["creation"],
             row["modified"],
@@ -147,7 +156,11 @@ def _recover_stranded_hrms_records():
             row["owner"],
             row["docstatus"],
             row["idx"],
-        ).run()
+        ]
+        if has_skill_name:
+            values.append(row.get("skill_name"))
+
+        frappe.qb.into(Skill).columns(*insert_columns).insert(*values).run()
 
     frappe.qb.from_(FACSkill).delete().where(not_fac_autoname).run()
 
