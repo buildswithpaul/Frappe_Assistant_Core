@@ -263,6 +263,44 @@ class TestDocumentTools(BaseAssistantTest):
             # Permission exceptions are acceptable
             pass
 
+    def test_update_document_rejects_child_doctype(self):
+        """Direct updates to a child-table doctype must be rejected with a clear suggestion.
+
+        Saving a child row in isolation bypasses the parent's validate() pipeline,
+        leaving parent totals (grand_total, total_qty, etc.) stale. The tool should
+        refuse and point the caller at the parent doc.
+
+        The tool registry raises on success=False results, so we exercise the tool
+        class directly to inspect the structured error payload.
+        """
+        from frappe_assistant_core.plugins.core.tools.update_document import DocumentUpdate
+
+        # "DocField" is a built-in child of "DocType" — guaranteed to exist.
+        if not frappe.db.exists("DocType", "DocField"):
+            self.skipTest("DocField doctype not available in this site")
+
+        existing = frappe.db.get_all("DocField", limit=1, fields=["name"])
+        row_name = existing[0].name if existing else "nonexistent-row"
+
+        result = DocumentUpdate().execute(
+            {
+                "doctype": "DocField",
+                "name": row_name,
+                "data": {"label": "Should Be Rejected"},
+            }
+        )
+
+        self.assertIsInstance(result, dict)
+        self.assertFalse(result.get("success"))
+        self.assertEqual(result.get("error_type"), "child_doctype_direct_update")
+        self.assertEqual(result.get("child_doctype"), "DocField")
+        # When the row exists we should get parent-resolution hints back.
+        if existing:
+            self.assertIn("parent_doctype", result)
+            self.assertIn("parent_name", result)
+            self.assertIn("parent_table_fieldname", result)
+            self.assertIn("suggestion", result)
+
 
 class TestDocumentToolsIntegration(BaseAssistantTest):
     """Integration tests for document tools"""
@@ -328,3 +366,199 @@ class TestDocumentToolsIntegration(BaseAssistantTest):
                 except Exception:
                     # Exceptions are also acceptable for invalid input
                     pass
+
+
+class _FakeChildRow:
+    """Stand-in for a Frappe child docrow. Captures field updates and a stable name."""
+
+    def __init__(self, name=None, **fields):
+        self.name = name
+        for k, v in fields.items():
+            setattr(self, k, v)
+
+    def set(self, key, value):
+        setattr(self, key, value)
+
+
+class _FakeDoc:
+    """Stand-in for a Frappe parent doc. Holds named child-table lists and supports
+    the subset of the doc API used by _apply_child_table_update."""
+
+    def __init__(self, tables):
+        # tables: dict[fieldname] -> list[_FakeChildRow]
+        self._tables = {k: list(v) for k, v in tables.items()}
+
+    def get(self, field):
+        return self._tables.get(field)
+
+    def set(self, field, value):
+        self._tables[field] = list(value)
+
+    def append(self, field, row_data):
+        # Mirror Frappe's behavior: append a new row built from a dict.
+        if not isinstance(row_data, dict):
+            raise TypeError(f"append expected dict, got {type(row_data).__name__}")
+        # Strip control keys before constructing the row.
+        clean = {k: v for k, v in row_data.items() if k not in ("_delete",)}
+        new_row = _FakeChildRow(**clean)
+        self._tables.setdefault(field, []).append(new_row)
+        return new_row
+
+    def remove(self, row):
+        for rows in self._tables.values():
+            if row in rows:
+                rows.remove(row)
+                return
+        raise ValueError("row not found in any table")
+
+
+class TestApplyChildTableUpdate(unittest.TestCase):
+    """Unit tests for _apply_child_table_update — DB-independent."""
+
+    def _import_helper(self):
+        from frappe_assistant_core.plugins.core.tools.update_document import (
+            _apply_child_table_update,
+        )
+
+        return _apply_child_table_update
+
+    def test_replace_mode_clears_and_appends(self):
+        helper = self._import_helper()
+        doc = _FakeDoc(
+            {
+                "items": [
+                    _FakeChildRow(name="r1", item_code="OLD-A", qty=1),
+                    _FakeChildRow(name="r2", item_code="OLD-B", qty=2),
+                ]
+            }
+        )
+        rows = [{"item_code": "NEW-A", "qty": 10}, {"item_code": "NEW-B", "qty": 20}]
+
+        err = helper(doc, "items", "Sales Order Item", rows, set())
+
+        self.assertIsNone(err)
+        items = doc.get("items")
+        self.assertEqual(len(items), 2)
+        self.assertEqual(items[0].item_code, "NEW-A")
+        self.assertEqual(items[0].qty, 10)
+        self.assertEqual(items[1].item_code, "NEW-B")
+        # No retained rows from before.
+        self.assertNotIn("OLD-A", [getattr(r, "item_code", None) for r in items])
+
+    def test_patch_mode_updates_matched_row_leaves_others(self):
+        helper = self._import_helper()
+        doc = _FakeDoc(
+            {
+                "items": [
+                    _FakeChildRow(name="r1", item_code="A", qty=1),
+                    _FakeChildRow(name="r2", item_code="B", qty=2),
+                ]
+            }
+        )
+
+        err = helper(doc, "items", "Sales Order Item", [{"name": "r1", "qty": 99}], set())
+
+        self.assertIsNone(err)
+        items = doc.get("items")
+        self.assertEqual(len(items), 2)
+        r1 = next(r for r in items if r.name == "r1")
+        r2 = next(r for r in items if r.name == "r2")
+        self.assertEqual(r1.qty, 99)
+        self.assertEqual(r1.item_code, "A")  # untouched scalar preserved
+        self.assertEqual(r2.qty, 2)  # other row untouched
+        self.assertEqual(r2.item_code, "B")
+
+    def test_patch_mode_appends_unnamed_rows(self):
+        helper = self._import_helper()
+        doc = _FakeDoc({"items": [_FakeChildRow(name="r1", item_code="A", qty=1)]})
+
+        err = helper(
+            doc,
+            "items",
+            "Sales Order Item",
+            [{"name": "r1", "qty": 5}, {"item_code": "NEW", "qty": 7}],
+            set(),
+        )
+
+        self.assertIsNone(err)
+        items = doc.get("items")
+        self.assertEqual(len(items), 2)
+        self.assertEqual(items[0].qty, 5)
+        self.assertEqual(items[1].item_code, "NEW")
+        self.assertEqual(items[1].qty, 7)
+
+    def test_patch_mode_delete_marker_removes_row(self):
+        helper = self._import_helper()
+        doc = _FakeDoc(
+            {
+                "items": [
+                    _FakeChildRow(name="r1", item_code="A", qty=1),
+                    _FakeChildRow(name="r2", item_code="B", qty=2),
+                ]
+            }
+        )
+
+        err = helper(doc, "items", "Sales Order Item", [{"name": "r1", "_delete": True}], set())
+
+        self.assertIsNone(err)
+        items = doc.get("items")
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0].name, "r2")
+
+    def test_delete_marker_without_name_errors(self):
+        helper = self._import_helper()
+        doc = _FakeDoc({"items": [_FakeChildRow(name="r1", item_code="A", qty=1)]})
+
+        err = helper(doc, "items", "Sales Order Item", [{"_delete": True, "qty": 5}], set())
+
+        self.assertIsNotNone(err)
+        self.assertFalse(err["success"])
+        self.assertEqual(err["error_type"], "child_row_not_found")
+
+    def test_patch_mode_unknown_name_errors(self):
+        helper = self._import_helper()
+        doc = _FakeDoc({"items": [_FakeChildRow(name="r1", item_code="A", qty=1)]})
+
+        err = helper(doc, "items", "Sales Order Item", [{"name": "does-not-exist", "qty": 5}], set())
+
+        self.assertIsNotNone(err)
+        self.assertFalse(err["success"])
+        self.assertEqual(err["error_type"], "child_row_not_found")
+
+    def test_restricted_field_in_child_row_rejected(self):
+        helper = self._import_helper()
+        doc = _FakeDoc({"items": [_FakeChildRow(name="r1", item_code="A", qty=1)]})
+
+        err = helper(
+            doc,
+            "items",
+            "Sales Order Item",
+            [{"name": "r1", "qty": 5, "secret_key": "leak"}],
+            {"secret_key"},
+        )
+
+        self.assertIsNotNone(err)
+        self.assertFalse(err["success"])
+        self.assertIn("secret_key", err["error"])
+        # Original row untouched on rejection.
+        self.assertEqual(doc.get("items")[0].qty, 1)
+
+    def test_value_not_a_list_errors(self):
+        helper = self._import_helper()
+        doc = _FakeDoc({"items": []})
+
+        err = helper(doc, "items", "Sales Order Item", {"item_code": "A"}, set())
+
+        self.assertIsNotNone(err)
+        self.assertFalse(err["success"])
+        self.assertEqual(err["error_type"], "child_table_handling_error")
+
+    def test_row_not_a_dict_errors(self):
+        helper = self._import_helper()
+        doc = _FakeDoc({"items": []})
+
+        err = helper(doc, "items", "Sales Order Item", ["not-a-dict"], set())
+
+        self.assertIsNotNone(err)
+        self.assertFalse(err["success"])
+        self.assertEqual(err["error_type"], "child_table_handling_error")
