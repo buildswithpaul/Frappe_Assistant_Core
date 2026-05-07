@@ -263,6 +263,65 @@ class TestDocumentTools(BaseAssistantTest):
             # Permission exceptions are acceptable
             pass
 
+    def test_create_document_no_false_positive_for_set_missing_values_fields(self):
+        """Issue #165 follow-up: fields populated by Frappe's set_missing_values()
+        during validate() must not be flagged as missing.
+
+        Quotation has reqd fields (conversion_rate, price_list_currency,
+        plc_conversion_rate) that new_doc() does NOT populate — they're filled
+        by the doctype controller's set_missing_values() during validate(),
+        which runs inside doc.insert(). A pre-flight check that inspects
+        doc.get(f) before insert() returns false positives for these.
+        """
+        from frappe_assistant_core.plugins.core.tools.create_document import DocumentCreate
+
+        if not frappe.db.exists("DocType", "Quotation"):
+            self.skipTest("Quotation doctype not available (ERPNext not installed)")
+
+        cust = frappe.get_all("Customer", limit=1, pluck="name")
+        item = frappe.get_all("Item", filters={"is_sales_item": 1, "disabled": 0}, limit=1, pluck="name")
+        if not (cust and item):
+            self.skipTest("No Customer/Item available for test")
+
+        result = DocumentCreate().execute(
+            {
+                "doctype": "Quotation",
+                "data": {
+                    "quotation_to": "Customer",
+                    "party_name": cust[0],
+                    "transaction_date": frappe.utils.nowdate(),
+                    "items": [{"item_code": item[0], "qty": 1, "rate": 100}],
+                },
+            }
+        )
+
+        # Whichever way it lands (success, or genuine missing field like
+        # enquiry_reference per site config), it must NOT report any of the
+        # set_missing_values()-populated fields as missing.
+        false_positives = {"conversion_rate", "price_list_currency", "plc_conversion_rate"}
+        if not result.get("success"):
+            missing = set(result.get("missing_fields") or [])
+            leaked = missing & false_positives
+            self.assertFalse(
+                leaked,
+                f"set_missing_values() fields incorrectly reported as missing: {leaked}. "
+                f"Full error: {result.get('error')}",
+            )
+            # If it failed, it must be for a different (genuine) reason.
+            if missing:
+                # Genuine missing field is fine — the structured error shape
+                # is the contract here.
+                self.assertEqual(result.get("error_type"), "missing_required_field")
+                self.assertIn("provided_fields", result)
+                self.assertIn("suggestion", result)
+        else:
+            # Cleanup if the create actually succeeded.
+            try:
+                frappe.delete_doc("Quotation", result["name"], ignore_permissions=True, force=True)
+                frappe.db.commit()
+            except Exception:
+                pass
+
     def test_update_document_rejects_child_doctype(self):
         """Direct updates to a child-table doctype must be rejected with a clear suggestion.
 
