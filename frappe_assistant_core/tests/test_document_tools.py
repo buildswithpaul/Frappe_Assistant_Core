@@ -322,6 +322,77 @@ class TestDocumentTools(BaseAssistantTest):
             except Exception:
                 pass
 
+    def test_create_document_mandatory_error_returns_structured_response(self):
+        """When Frappe raises MandatoryError, the tool returns the structured
+        missing-fields response (not a raw error string).
+
+        ToDo has a single mandatory field (`description`) that is NOT populated
+        by set_missing_values, so omitting it reliably triggers MandatoryError
+        across sites.
+        """
+        from frappe_assistant_core.plugins.core.tools.create_document import DocumentCreate
+
+        result = DocumentCreate().execute(
+            {
+                "doctype": "ToDo",
+                "data": {"date": frappe.utils.nowdate()},
+            }
+        )
+
+        self.assertIsInstance(result, dict)
+        self.assertFalse(result.get("success"), f"ToDo create with no description should fail: {result}")
+        self.assertEqual(result.get("error_type"), "missing_required_field")
+        self.assertIn("description", result.get("missing_fields") or [])
+        self.assertEqual(result.get("provided_fields"), ["date"])
+        self.assertIn("suggestion", result)
+
+    def test_create_document_generic_exception_does_not_crash_on_translation(self):
+        """Regression guard: the local `_, _, fields_part = ...` shadow bug.
+
+        `_` is the translation function imported at module scope. Any local
+        `_ = ...` inside execute() makes Python treat `_` as a function-local
+        for the entire body, so the later `_("Document Creation Error")` call
+        inside frappe.log_error raised UnboundLocalError on paths that didn't
+        reach the local assignment first (e.g. the generic Exception branch
+        triggered by an invalid Link reference, not by MandatoryError).
+
+        Triggering: pass an invalid `reference_type` link value to ToDo. This
+        raises a LinkValidationError (subclass of ValidationError, not
+        MandatoryError), routes through the generic `except Exception`, and
+        attempts to call `_(\"...\")` for log_error. The test asserts the call
+        completes and returns a structured dict, never an UnboundLocalError.
+        """
+        from frappe_assistant_core.plugins.core.tools.create_document import DocumentCreate
+
+        result = DocumentCreate().execute(
+            {
+                "doctype": "ToDo",
+                "data": {
+                    "description": "regression probe",
+                    "reference_type": "User",
+                    "reference_name": "this-user-definitely-does-not-exist@nowhere.invalid",
+                },
+            }
+        )
+
+        self.assertIsInstance(result, dict)
+        # The call must NOT crash with UnboundLocalError no matter what error
+        # path is taken. If the create somehow succeeded, that's also fine —
+        # the test exists to guard the error path, not to assert a specific
+        # validation outcome.
+        if not result.get("success"):
+            error_msg = str(result.get("error") or "")
+            self.assertNotIn("referenced before assignment", error_msg)
+            self.assertNotIn("UnboundLocalError", error_msg)
+            self.assertIn("error_type", result)
+        else:
+            # Cleanup if create unexpectedly succeeded.
+            try:
+                frappe.delete_doc("ToDo", result["name"], ignore_permissions=True, force=True)
+                frappe.db.commit()
+            except Exception:
+                pass
+
     def test_update_document_rejects_child_doctype(self):
         """Direct updates to a child-table doctype must be rejected with a clear suggestion.
 
