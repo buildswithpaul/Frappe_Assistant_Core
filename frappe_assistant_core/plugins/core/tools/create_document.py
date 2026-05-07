@@ -259,9 +259,14 @@ class DocumentCreate(BaseTool):
             # missing fieldnames here are genuine — not the false positives we'd see
             # from a pre-flight `reqd`-flag check on the raw input. Format:
             #   "[<doctype>, <name>]: <fieldname1>, <fieldname2>, ..."
+            # Don't bind `_` here — `_` is the translation function imported at
+            # module scope. Any local `_ = ...` would shadow it for the entire
+            # function body, raising UnboundLocalError at the later `_("...")`
+            # call inside the generic-Exception branch on paths that route
+            # through the function before reaching that local assignment.
             error_msg = str(e)
             try:
-                _, _, fields_part = error_msg.partition(": ")
+                fields_part = error_msg.partition(": ")[2]
                 missing = [f.strip() for f in fields_part.split(",") if f.strip()]
             except Exception:
                 missing = []
