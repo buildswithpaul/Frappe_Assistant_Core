@@ -190,7 +190,7 @@
    "fieldname": "ocr_backend",
    "fieldtype": "Select",
    "label": "OCR Backend",
-   "options": "paddleocr\nollama"
+   "options": "paddleocr\nollama\ntesseract"
   },
   {
    "default": "en",
