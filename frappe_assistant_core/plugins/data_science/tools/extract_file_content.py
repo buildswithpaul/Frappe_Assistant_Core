@@ -510,6 +510,10 @@ class ExtractFileContent(BaseTool):
                 return result
             return self._missing_paddle_ocr_response()
 
+        # Tesseract path — explicit choice. Body lifted from pre-#99 (commit 736b3fc).
+        if ocr_settings.get("backend") == "tesseract":
+            return self._perform_tesseract_ocr(file_content, arguments)
+
         # PaddleOCR path (default)
         if not self._is_paddle_ocr_available():
             return self._missing_paddle_ocr_response()
@@ -632,6 +636,51 @@ class ExtractFileContent(BaseTool):
                 os.unlink(tmp_file.name)
             except OSError:
                 pass
+
+    def _perform_tesseract_ocr(self, file_content: bytes, arguments: Dict[str, Any]) -> Dict[str, Any]:
+        """Perform OCR on image content"""
+        try:
+            # Check if pytesseract is available
+            try:
+                import pytesseract
+                from PIL import Image
+            except ImportError:
+                return {
+                    "success": False,
+                    "error": "OCR dependencies not installed. Please install pytesseract and Pillow.",
+                    "install_command": "pip install pytesseract pillow",
+                }
+
+            # Check if tesseract is installed on system
+            try:
+                pytesseract.get_tesseract_version()
+            except Exception:
+                return {
+                    "success": False,
+                    "error": "Tesseract OCR not installed on system. Please install tesseract-ocr.",
+                    "install_command": "sudo apt-get install tesseract-ocr (Linux) or brew install tesseract (Mac)",
+                }
+
+            # Open image
+            image = Image.open(io.BytesIO(file_content))
+
+            # Perform OCR
+            language = arguments.get("language", "eng")
+            extracted_text = pytesseract.image_to_string(image, lang=language)
+
+            if not extracted_text.strip():
+                return {"success": True, "content": "", "message": "No text detected in image"}
+
+            return {"success": True, "content": extracted_text, "ocr_language": language}
+
+        except Exception as e:
+            # Fallback message if OCR fails
+            return {
+                "success": True,
+                "content": "[OCR not available - image file detected]",
+                "message": f"OCR failed: {str(e)}. To enable OCR, install tesseract-ocr system package.",
+                "fallback": True,
+            }
 
     def _check_available_memory(self, required_mb: int) -> None:
         """Log a warning if available system memory is below the required threshold.
