@@ -25,7 +25,7 @@ Quick start guides and setup instructions for new users:
 
 System design, technical architecture, and implementation details:
 
-- **[Architecture Overview](architecture/ARCHITECTURE.md)** - System design and plugin architecture
+- **[Architecture Overview](internals/INTERNALS.md)** - System design and plugin architecture
 - **[MCP StreamableHTTP Guide](architecture/MCP_STREAMABLEHTTP_GUIDE.md)** - OAuth + StreamableHTTP integration
 - **[Technical Documentation](architecture/TECHNICAL_DOCUMENTATION.md)** - Complete technical reference
 - **[Performance Guide](architecture/PERFORMANCE.md)** - Optimization and monitoring
@@ -84,7 +84,7 @@ Additional resources and references:
 3. Explore [Tool Reference](api/TOOL_REFERENCE.md) to see what's possible
 
 **👨‍💻 Developers:**
-1. Review [Architecture Overview](architecture/ARCHITECTURE.md)
+1. Review [Architecture Overview](internals/INTERNALS.md)
 2. Study [Development Guide](development/DEVELOPMENT_GUIDE.md)
 3. Check [API Reference](api/API_REFERENCE.md) for integration details
 
@@ -103,7 +103,7 @@ Additional resources and references:
 **MCP Protocol:**
 - [MCP StreamableHTTP Guide](architecture/MCP_STREAMABLEHTTP_GUIDE.md)
 - [API Reference](api/API_REFERENCE.md)
-- [Architecture Overview](architecture/ARCHITECTURE.md)
+- [Architecture Overview](internals/INTERNALS.md)
 
 **Tool Development:**
 - [Development Guide](development/DEVELOPMENT_GUIDE.md)
@@ -113,7 +113,7 @@ Additional resources and references:
 **Tool & Plugin Management:**
 - [Tool Management Guide](guides/TOOL_MANAGEMENT_GUIDE.md) - Enable/disable tools, role-based access
 - [Plugin Management Guide](guides/PLUGIN_MANAGEMENT_GUIDE.md) - Enable/disable plugins
-- [Architecture Overview](architecture/ARCHITECTURE.md) - System design
+- [Architecture Overview](internals/INTERNALS.md) - System design
 
 ---
 

@@ -484,5 +484,5 @@ Plugin Management works in conjunction with the Tool Management System:
 
 - [Tool Management Guide](./TOOL_MANAGEMENT_GUIDE.md) - Managing individual tools
 - [Plugin Development Guide](../development/PLUGIN_DEVELOPMENT.md) - Creating new plugins
-- [Architecture Overview](../architecture/ARCHITECTURE.md) - System architecture
+- [Architecture Overview](../internals/INTERNALS.md) - System architecture
 - [Technical Documentation](../architecture/TECHNICAL_DOCUMENTATION.md) - Implementation details

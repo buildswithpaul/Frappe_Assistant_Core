@@ -169,7 +169,7 @@ For setup and advanced configuration:
 
 - [OAuth Setup Guide](docs/getting-started/oauth/oauth_setup_guide.md)
 - [Code Execution Security](docs/guides/CODE_EXECUTION_SECURITY.md)
-- [MCP StreamableHTTP Guide](docs/architecture/MCP_STREAMABLEHTTP_GUIDE.md)
+- [MCP StreamableHTTP Guide](docs/internals/MCP_STREAMABLEHTTP_GUIDE.md)
 
 ---
 
@@ -179,7 +179,7 @@ For setup and advanced configuration:
 - [OAuth Quick Start](docs/getting-started/oauth/oauth_quick_start.md) — OAuth setup in 2 minutes
 - [Tool Reference](docs/api/TOOL_REFERENCE.md) — every tool, arguments, return format
 - [API Reference](docs/api/API_REFERENCE.md) — MCP endpoints and OAuth APIs
-- [Architecture](docs/architecture/ARCHITECTURE.md) — system design and plugin internals
+- [Internals](docs/internals/INTERNALS.md) — system design and plugin internals
 - [External App Development](docs/development/EXTERNAL_APP_DEVELOPMENT.md) — add tools from your own Frappe app
 - [Full documentation index](docs/README.md) — everything else
 

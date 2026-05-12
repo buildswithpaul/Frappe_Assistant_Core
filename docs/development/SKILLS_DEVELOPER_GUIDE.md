@@ -311,4 +311,4 @@ In Claude Desktop (or MCP Inspector) the skill should appear in the resource lis
 - [Skills User Guide](../guides/SKILLS_USER_GUIDE.md) — creating skills through the FAC Admin UI
 - [External App Tool Development](EXTERNAL_APP_DEVELOPMENT.md) — shipping MCP tools from your own app
 - [Technical Documentation](../architecture/TECHNICAL_DOCUMENTATION.md) — `SkillManager`, caching, MCP bindings
-- [Architecture](../architecture/ARCHITECTURE.md) — where the skills subsystem fits in the overall design
+- [Architecture](../internals/INTERNALS.md) — where the skills subsystem fits in the overall design
