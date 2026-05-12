@@ -24,7 +24,8 @@ from typing import Any, Dict, List, Optional
 
 import frappe
 from frappe import _
-from jinja2 import BaseLoader, Environment, TemplateSyntaxError
+from jinja2 import BaseLoader, TemplateSyntaxError
+from jinja2.sandbox import SandboxedEnvironment
 
 from frappe_assistant_core.constants.definitions import (
     ErrorCodes,
@@ -42,7 +43,11 @@ class PromptTemplateManager:
 
     def __init__(self):
         self.logger = frappe.logger("prompt_template_manager")
-        self._jinja_env = Environment(loader=BaseLoader())
+        # SandboxedEnvironment blocks access to Python internals (`__class__`,
+        # `__mro__`, `__subclasses__`, etc.) and unsafe attributes/calls, so a
+        # user-authored template stored in Prompt Template can't escape into
+        # arbitrary Python via SSTI.
+        self._jinja_env = SandboxedEnvironment(loader=BaseLoader())
 
     def get_user_accessible_prompts(self, user: str = None) -> List[Dict[str, Any]]:
         """
