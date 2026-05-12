@@ -141,7 +141,7 @@
   },
   {
    "read": 1,
-   "role": "All"
+   "role": "Assistant User"
   }
  ],
  "sort_field": "modified",
