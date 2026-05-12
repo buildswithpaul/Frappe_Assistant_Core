@@ -497,5 +497,5 @@ assistant_tools = [
 
 - [Plugin Management Guide](./PLUGIN_MANAGEMENT_GUIDE.md) - Managing plugins
 - [Tool Reference](../api/TOOL_REFERENCE.md) - Complete tool documentation
-- [Architecture Overview](../architecture/ARCHITECTURE.md) - System architecture
+- [Architecture Overview](../internals/INTERNALS.md) - System architecture
 - [Security Framework](../architecture/TECHNICAL_DOCUMENTATION.md#security-framework) - Security details
