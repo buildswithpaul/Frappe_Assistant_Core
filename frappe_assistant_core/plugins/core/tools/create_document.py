@@ -207,8 +207,6 @@ class DocumentCreate(BaseTool):
 
             # Save document
             doc.insert()
-
-
             # Check for silently overridden field values
             warnings = []
             for field, input_rows in input_child_values.items():
@@ -226,14 +224,16 @@ class DocumentCreate(BaseTool):
                                     continue
                             except (ValueError, TypeError):
                                 pass
-                            warnings.append({
-                                "child_table": field,
-                                "row_idx": idx,
-                                "field": key,
-                                "requested": input_val,
-                                "saved": str(saved_val),
-                                "reason": "Value was overridden by ERPNext validation logic",
-                            })
+                            warnings.append(
+                                {
+                                    "child_table": field,
+                                    "row_idx": idx,
+                                    "field": key,
+                                    "requested": input_val,
+                                    "saved": str(saved_val),
+                                    "reason": "Value was overridden by ERPNext validation logic",
+                                }
+                            )
             # Initialize result with basic information
             result = {
                 "success": True,
