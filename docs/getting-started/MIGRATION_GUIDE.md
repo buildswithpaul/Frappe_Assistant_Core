@@ -455,7 +455,7 @@ After successful migration:
 - [MCP StreamableHTTP Guide](../architecture/MCP_STREAMABLEHTTP_GUIDE.md) - Complete OAuth and StreamableHTTP documentation
 - [OAuth Setup Guide](oauth/oauth_setup_guide.md) - Detailed OAuth configuration
 - [API Reference](../api/API_REFERENCE.md) - Updated API documentation
-- [Architecture](../architecture/ARCHITECTURE.md) - New architecture overview
+- [Architecture](../internals/INTERNALS.md) - New architecture overview
 
 ---
 

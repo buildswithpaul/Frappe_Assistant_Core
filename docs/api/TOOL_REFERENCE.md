@@ -360,4 +360,4 @@ Many tasks require multiple tools:
 
 - For development: See [DEVELOPMENT_GUIDE.md](../development/DEVELOPMENT_GUIDE.md)
 - For API details: See [API_REFERENCE.md](API_REFERENCE.md)
-- For architecture: See [ARCHITECTURE.md](../architecture/ARCHITECTURE.md)
+- For architecture: See [ARCHITECTURE.md](../internals/INTERNALS.md)
