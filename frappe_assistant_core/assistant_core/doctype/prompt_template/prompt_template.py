@@ -17,7 +17,8 @@ from typing import Any, Dict, List, Optional
 import frappe
 from frappe import _
 from frappe.model.document import Document
-from jinja2 import BaseLoader, Environment, TemplateSyntaxError
+from jinja2 import BaseLoader, TemplateSyntaxError
+from jinja2.sandbox import SandboxedEnvironment
 
 
 class PromptTemplate(Document):
@@ -53,7 +54,7 @@ class PromptTemplate(Document):
 
         if self.rendering_engine == "Jinja2":
             try:
-                env = Environment(loader=BaseLoader())
+                env = SandboxedEnvironment(loader=BaseLoader())
                 env.from_string(self.template_content)
             except TemplateSyntaxError as e:
                 frappe.throw(_("Invalid Jinja2 syntax: {0}").format(str(e)))
@@ -241,7 +242,11 @@ def preview_template(template_content: str, rendering_engine: str, arguments: di
             arguments = frappe.parse_json(arguments)
 
         if rendering_engine == "Jinja2":
-            env = Environment(loader=BaseLoader())
+            # SandboxedEnvironment blocks `__class__` / `__mro__` /
+            # `__subclasses__` lookups, attribute calls into unsafe objects,
+            # etc. — `preview_template` is whitelisted to any logged-in user,
+            # so a plain Environment would be a trivial SSTI sink.
+            env = SandboxedEnvironment(loader=BaseLoader())
             template = env.from_string(template_content)
             return template.render(**arguments)
         elif rendering_engine == "Format String":

@@ -316,4 +316,4 @@ The counter update happens in [`SkillManager.increment_usage`](../../frappe_assi
 - [Skills Developer Guide](../development/SKILLS_DEVELOPER_GUIDE.md) — shipping skills with your Frappe app
 - [Prompt Templates User Guide](prompt-templates.md) — the other user-generated content primitive in FAC
 - [Plugin Management Guide](PLUGIN_MANAGEMENT_GUIDE.md) — enabling / disabling entire tool categories
-- [Architecture Overview](../architecture/ARCHITECTURE.md) — where skills fit in the overall design
+- [Architecture Overview](../internals/INTERNALS.md) — where skills fit in the overall design
