@@ -259,6 +259,36 @@ class DocumentUpdate(BaseTool):
 
             return parent_info
 
+        # Check allow_on_submit BEFORE security validation for submitted docs
+        current_docstatus_check = frappe.db.get_value(doctype, name, "docstatus")
+        if current_docstatus_check == 1:
+            meta = frappe.get_meta(doctype)
+            non_allowed_fields = []
+            for field in data.keys():
+                field_meta = meta.get_field(field)
+                if not field_meta or not field_meta.allow_on_submit:
+                    non_allowed_fields.append(field)
+
+            if non_allowed_fields:
+                return {
+                    "success": False,
+                    "error": f"Cannot modify submitted document {doctype} '{name}'. Fields not allowed on submit: {', '.join(non_allowed_fields)}",
+                    "suggestion": "Only fields marked as 'Allow on Submit' can be updated on submitted documents.",
+                }
+
+            # All fields are allow_on_submit — update directly
+            for field, value in data.items():
+                frappe.db.set_value(doctype, name, field, value)
+            frappe.db.commit()
+            return {
+                "success": True,
+                "name": name,
+                "doctype": doctype,
+                "updated_fields": list(data.keys()),
+                "docstatus": 1,
+                "message": f"{doctype} '{name}' updated successfully (Allow on Submit fields)",
+            }
+
         # Import security validation
         from frappe_assistant_core.core.security_config import (
             validate_document_access,
@@ -286,18 +316,6 @@ class DocumentUpdate(BaseTool):
             # Enhanced document state validation
             current_docstatus = getattr(doc, "docstatus", 0)
             current_workflow_state = getattr(doc, "workflow_state", None)
-
-            # Check if document is submitted (protection against editing submitted docs)
-            if current_docstatus == 1:
-                result = {
-                    "success": False,
-                    "error": f"Cannot modify submitted document {doctype} '{name}'. Submitted documents are read-only.",
-                    "docstatus": current_docstatus,
-                    "workflow_state": current_workflow_state,
-                    "suggestion": "Use document_get to view the submitted document, or create a new document if needed.",
-                }
-                return result
-
             # Check if document is cancelled
             if current_docstatus == 2:
                 result = {
