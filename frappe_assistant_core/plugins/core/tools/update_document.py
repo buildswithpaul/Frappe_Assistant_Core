@@ -257,8 +257,7 @@ class DocumentUpdate(BaseTool):
                 except Exception:
                     pass
 
-            return parent_info       
-        
+            return parent_info
 
         # Import security validation
         from frappe_assistant_core.core.security_config import (
@@ -267,7 +266,7 @@ class DocumentUpdate(BaseTool):
 
         # Validate document access with comprehensive permission checking
         validation_result = validate_document_access(
-            user=frappe.session.user, doctype=doctype, name=name, perm_type="write",data=data
+            user=frappe.session.user, doctype=doctype, name=name, perm_type="write", data=data
         )
 
         if not validation_result["success"]:
