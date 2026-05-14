@@ -201,8 +201,19 @@ def authorization_server_metadata():
     # Get base metadata from Frappe (V16 built-in or V15 fallback)
     metadata = _get_frappe_authorization_server_metadata()
 
+    # Normalize all URLs to use host_name if configured (fixes http -> https issue #156)
+    frappe_url = (frappe.conf.get("host_name") or get_server_url()).rstrip("/")
+    if frappe_url.startswith("http://"):
+        frappe_url = "https://" + frappe_url[len("http://"):]
+
+    metadata["issuer"] = frappe_url + "/"
+    metadata["authorization_endpoint"] = f"{frappe_url}/api/method/frappe.integrations.oauth2.authorize"
+    metadata["token_endpoint"] = f"{frappe_url}/api/method/frappe.integrations.oauth2.get_token"
+    metadata["revocation_endpoint"] = f"{frappe_url}/api/method/frappe.integrations.oauth2.revoke_token"
+    metadata["introspection_endpoint"] = f"{frappe_url}/api/method/frappe.integrations.oauth2.introspect_token"
+    metadata["userinfo_endpoint"] = f"{frappe_url}/api/method/frappe.integrations.oauth2.openid_profile"
+
     # Add/override custom service documentation
-    frappe_url = get_server_url()
     metadata["service_documentation"] = "https://github.com/buildswithpaul/Frappe_Assistant_Core"
 
     # Add client_secret_post as an additional auth method (Frappe V16 only has client_secret_basic)
