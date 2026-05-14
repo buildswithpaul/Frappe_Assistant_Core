@@ -260,8 +260,8 @@ class DocumentUpdate(BaseTool):
             return parent_info
 
         # Check allow_on_submit BEFORE security validation for submitted docs
-        current_docstatus_check = frappe.db.get_value(doctype, name, "docstatus")
-        if current_docstatus_check == 1:
+        current_docstatus = frappe.db.get_value(doctype, name, "docstatus")
+        if current_docstatus == 1:
             meta = frappe.get_meta(doctype)
             non_allowed_fields = []
             for field in data.keys():
@@ -272,8 +272,10 @@ class DocumentUpdate(BaseTool):
             if non_allowed_fields:
                 return {
                     "success": False,
-                    "error": f"Cannot modify submitted document {doctype} '{name}'. Fields not allowed on submit: {', '.join(non_allowed_fields)}",
-                    "suggestion": "Only fields marked as 'Allow on Submit' can be updated on submitted documents.",
+                    "error": (
+                        f"Cannot modify submitted document {doctype} '{name}'."
+                        f" Fields not allowed on submit: {', '.join(non_allowed_fields)}"
+                    ),
                 }
 
             # All fields are allow_on_submit — update directly
