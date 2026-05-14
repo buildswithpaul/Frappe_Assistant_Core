@@ -129,7 +129,17 @@ def _apply_child_table_update(
                     "field": field,
                 }
             # New row in patch mode → append.
-            doc.append(field, row)
+            # Coerce date strings to datetime.date to avoid comparison errors in validate()
+            from frappe.utils import getdate
+            meta = frappe.get_meta(child_doctype)
+            coerced_row = {}
+            for k, v in row.items():
+                field_meta = meta.get_field(k)
+                if field_meta and field_meta.fieldtype == "Date" and isinstance(v, str) and v:
+                    coerced_row[k] = getdate(v)
+                else:
+                    coerced_row[k] = v
+            doc.append(field, coerced_row)
             continue
 
         target = existing_by_name.get(row_name)
