@@ -458,7 +458,7 @@ def is_doctype_accessible(doctype: str, user_role: str) -> bool:
     return doctype not in restricted_doctypes
 
 
-def validate_document_access(user: str, doctype: str, name: str, perm_type: str = "read") -> Dict[str, Any]:
+def validate_document_access(user: str, doctype: str, name: str, perm_type: str = "read", data : str = "") -> Dict[str, Any]:
     """
     Validate if a user can access a specific document with proper Frappe permission checking.
 
