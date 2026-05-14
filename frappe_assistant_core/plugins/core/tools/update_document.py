@@ -131,6 +131,7 @@ def _apply_child_table_update(
             # New row in patch mode → append.
             # Coerce date strings to datetime.date to avoid comparison errors in validate()
             from frappe.utils import getdate
+
             meta = frappe.get_meta(child_doctype)
             coerced_row = {}
             for k, v in row.items():
