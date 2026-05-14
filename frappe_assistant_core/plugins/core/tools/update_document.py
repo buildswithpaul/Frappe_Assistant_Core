@@ -257,39 +257,8 @@ class DocumentUpdate(BaseTool):
                 except Exception:
                     pass
 
-            return parent_info
-
-        # Check allow_on_submit BEFORE security validation for submitted docs
-        current_docstatus = frappe.db.get_value(doctype, name, "docstatus")
-        if current_docstatus == 1:
-            meta = frappe.get_meta(doctype)
-            non_allowed_fields = []
-            for field in data.keys():
-                field_meta = meta.get_field(field)
-                if not field_meta or not field_meta.allow_on_submit:
-                    non_allowed_fields.append(field)
-
-            if non_allowed_fields:
-                return {
-                    "success": False,
-                    "error": (
-                        f"Cannot modify submitted document {doctype} '{name}'."
-                        f" Fields not allowed on submit: {', '.join(non_allowed_fields)}"
-                    ),
-                }
-
-            # All fields are allow_on_submit — update directly
-            for field, value in data.items():
-                frappe.db.set_value(doctype, name, field, value)
-                frappe.db.commit()  # nosemgrep: frappe-manual-commit — required to persist allow_on_submit field updates bypassing the submit lock
-            return {
-                "success": True,
-                "name": name,
-                "doctype": doctype,
-                "updated_fields": list(data.keys()),
-                "docstatus": 1,
-                "message": f"{doctype} '{name}' updated successfully (Allow on Submit fields)",
-            }
+            return parent_info       
+        
 
         # Import security validation
         from frappe_assistant_core.core.security_config import (
@@ -318,6 +287,37 @@ class DocumentUpdate(BaseTool):
             # Enhanced document state validation
             current_docstatus = getattr(doc, "docstatus", 0)
             current_workflow_state = getattr(doc, "workflow_state", None)
+            # Check allow_on_submit BEFORE security validation for submitted docs
+
+            # if current_docstatus == 1:
+            #     meta = frappe.get_meta(doctype)
+            #     non_allowed_fields = []
+            #     for field in data.keys():
+            #         field_meta = meta.get_field(field)
+            #         if not field_meta or not field_meta.allow_on_submit:
+            #             non_allowed_fields.append(field)
+            #     if non_allowed_fields:
+            #         return {
+            #             "success": False,
+            #             "error": (
+            #                 f"Cannot modify submitted document {doctype} '{name}'."
+            #                 f" Fields not allowed on submit: {', '.join(non_allowed_fields)}"
+            #             ),
+            #         }
+
+            #     # All fields are allow_on_submit — update directly
+            #     for field, value in data.items():
+            #         frappe.db.set_value(doctype, name, field, value)
+            #         frappe.db.commit()  # nosemgrep: frappe-manual-commit — required to persist allow_on_submit field updates bypassing the submit lock
+            #     return {
+            #         "success": True,
+            #         "name": name,
+            #         "doctype": doctype,
+            #         "updated_fields": list(data.keys()),
+            #         "docstatus": 1,
+            #         "message": f"{doctype} '{name}' updated successfully (Allow on Submit fields)",
+            #     }
+
             # Check if document is cancelled
             if current_docstatus == 2:
                 result = {
