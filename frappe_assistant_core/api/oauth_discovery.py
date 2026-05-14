@@ -204,13 +204,15 @@ def authorization_server_metadata():
     # Normalize all URLs to use host_name if configured (fixes http -> https issue #156)
     frappe_url = (frappe.conf.get("host_name") or get_server_url()).rstrip("/")
     if frappe_url.startswith("http://"):
-        frappe_url = "https://" + frappe_url[len("http://"):]
+        frappe_url = "https://" + frappe_url[len("http://") :]
 
     metadata["issuer"] = frappe_url + "/"
     metadata["authorization_endpoint"] = f"{frappe_url}/api/method/frappe.integrations.oauth2.authorize"
     metadata["token_endpoint"] = f"{frappe_url}/api/method/frappe.integrations.oauth2.get_token"
     metadata["revocation_endpoint"] = f"{frappe_url}/api/method/frappe.integrations.oauth2.revoke_token"
-    metadata["introspection_endpoint"] = f"{frappe_url}/api/method/frappe.integrations.oauth2.introspect_token"
+    metadata["introspection_endpoint"] = (
+        f"{frappe_url}/api/method/frappe.integrations.oauth2.introspect_token"
+    )
     metadata["userinfo_endpoint"] = f"{frappe_url}/api/method/frappe.integrations.oauth2.openid_profile"
 
     # Add/override custom service documentation
