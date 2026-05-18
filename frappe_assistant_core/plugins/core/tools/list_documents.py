@@ -134,8 +134,8 @@ class DocumentList(BaseTool):
                     filtered_fields = ["name"]  # Always allow name field
                 fields = filtered_fields
 
-            # Get documents with proper permission checking
-            documents = frappe.get_all(
+            # Get documents with Frappe's permission-aware list API.
+            documents = frappe.get_list(
                 doctype,
                 filters=filters,
                 fields=fields,
@@ -150,8 +150,24 @@ class DocumentList(BaseTool):
                 filtered_doc = filter_sensitive_fields(doc, doctype, user_role)
                 filtered_documents.append(filtered_doc)
 
-            # Get total count for pagination info
-            total_count = frappe.db.count(doctype, filters)
+            # Get permission-aware total count for pagination info.
+            try:
+                count_result = frappe.get_list(
+                    doctype,
+                    filters=filters,
+                    fields=[{"COUNT": "name", "as": "count"}],
+                    limit=1,
+                    ignore_permissions=False,
+                )
+            except AttributeError:
+                count_result = frappe.get_list(
+                    doctype,
+                    filters=filters,
+                    fields=["count(name) as count"],
+                    limit=1,
+                    ignore_permissions=False,
+                )
+            total_count = count_result[0].get("count") if count_result else 0
 
             result = {
                 "success": True,

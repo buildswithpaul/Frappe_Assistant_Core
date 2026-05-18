@@ -21,6 +21,7 @@ Tests document operations through the tool registry
 
 import json
 import unittest
+from contextlib import ExitStack
 from unittest.mock import MagicMock, patch
 
 import frappe
@@ -122,6 +123,128 @@ class TestDocumentTools(BaseAssistantTest):
                             self.assertIn("name", doc)
         except Exception as e:
             self.fail(f"Tool execution raised exception: {str(e)}")
+
+    def test_list_documents_uses_permission_aware_queries_for_data_and_count(self):
+        """Regression guard for #189: list_documents must not use permission-bypassing APIs."""
+        from frappe_assistant_core.plugins.core.tools.list_documents import DocumentList
+
+        with ExitStack() as stack:
+            stack.enter_context(
+                patch(
+                    "frappe_assistant_core.core.security_config.validate_document_access",
+                    return_value={"success": True, "role": "Default"},
+                )
+            )
+            stack.enter_context(
+                patch(
+                    "frappe_assistant_core.core.security_config.filter_sensitive_fields",
+                    side_effect=lambda doc, _doctype, _role: doc,
+                )
+            )
+            stack.enter_context(
+                patch(
+                    "frappe_assistant_core.plugins.core.tools.list_documents.frappe.session",
+                    MagicMock(user="restricted@example.com"),
+                )
+            )
+            get_all = stack.enter_context(
+                patch(
+                    "frappe_assistant_core.plugins.core.tools.list_documents.frappe.get_all",
+                    side_effect=AssertionError("frappe.get_all bypasses DocType permissions"),
+                )
+            )
+            db_count = stack.enter_context(
+                patch(
+                    "frappe_assistant_core.plugins.core.tools.list_documents.frappe.db.count",
+                    side_effect=AssertionError("frappe.db.count bypasses DocType permissions"),
+                )
+            )
+            get_list = stack.enter_context(
+                patch("frappe_assistant_core.plugins.core.tools.list_documents.frappe.get_list")
+            )
+            get_list.side_effect = [
+                [{"name": "EMP-0001", "employee_name": "Allowed Employee"}],
+                [{"count": 1}],
+            ]
+
+            result = DocumentList().execute(
+                {
+                    "doctype": "Employee",
+                    "filters": {},
+                    "fields": ["name", "employee_name"],
+                    "limit": 20,
+                }
+            )
+
+        self.assertTrue(result.get("success"), result)
+        self.assertEqual(result.get("count"), 1)
+        self.assertEqual(result.get("total_count"), 1)
+        get_all.assert_not_called()
+        db_count.assert_not_called()
+        self.assertEqual(get_list.call_count, 2)
+
+        data_call = get_list.call_args_list[0]
+        self.assertEqual(data_call.args[0], "Employee")
+        self.assertEqual(data_call.kwargs["fields"], ["name", "employee_name"])
+        self.assertEqual(data_call.kwargs["limit"], 20)
+        self.assertFalse(data_call.kwargs["ignore_permissions"])
+
+        count_call = get_list.call_args_list[1]
+        self.assertEqual(count_call.args[0], "Employee")
+        self.assertEqual(count_call.kwargs["fields"], [{"COUNT": "name", "as": "count"}])
+        self.assertEqual(count_call.kwargs["limit"], 1)
+        self.assertFalse(count_call.kwargs["ignore_permissions"])
+
+    def test_list_documents_count_falls_back_to_legacy_aggregate_syntax(self):
+        """Frappe 15 does not support dict aggregate fields."""
+        from frappe_assistant_core.plugins.core.tools.list_documents import DocumentList
+
+        with ExitStack() as stack:
+            stack.enter_context(
+                patch(
+                    "frappe_assistant_core.core.security_config.validate_document_access",
+                    return_value={"success": True, "role": "Default"},
+                )
+            )
+            stack.enter_context(
+                patch(
+                    "frappe_assistant_core.core.security_config.filter_sensitive_fields",
+                    side_effect=lambda doc, _doctype, _role: doc,
+                )
+            )
+            stack.enter_context(
+                patch(
+                    "frappe_assistant_core.plugins.core.tools.list_documents.frappe.session",
+                    MagicMock(user="restricted@example.com"),
+                )
+            )
+            get_list = stack.enter_context(
+                patch("frappe_assistant_core.plugins.core.tools.list_documents.frappe.get_list")
+            )
+            get_list.side_effect = [
+                [{"name": "EMP-0001", "employee_name": "Allowed Employee"}],
+                AttributeError("'dict' object has no attribute 'lower'"),
+                [{"count": 1}],
+            ]
+
+            result = DocumentList().execute(
+                {
+                    "doctype": "Employee",
+                    "filters": {},
+                    "fields": ["name", "employee_name"],
+                    "limit": 20,
+                }
+            )
+
+        self.assertTrue(result.get("success"), result)
+        self.assertEqual(result.get("total_count"), 1)
+        self.assertEqual(get_list.call_count, 3)
+
+        fallback_count_call = get_list.call_args_list[2]
+        self.assertEqual(fallback_count_call.args[0], "Employee")
+        self.assertEqual(fallback_count_call.kwargs["fields"], ["count(name) as count"])
+        self.assertEqual(fallback_count_call.kwargs["limit"], 1)
+        self.assertFalse(fallback_count_call.kwargs["ignore_permissions"])
 
     def test_update_document_basic(self):
         """Test basic document update"""
