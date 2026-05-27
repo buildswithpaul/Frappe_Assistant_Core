@@ -38,7 +38,9 @@ class DeveloperToolsPlugin(BasePlugin):
 
     def get_tools(self) -> List[str]:
         return [
-            "ensure_app",
+            "bench_help",
+            "bench_execute",
+            "get_logs",
             "write_file",
             "read_file",
             "list_app_files",
