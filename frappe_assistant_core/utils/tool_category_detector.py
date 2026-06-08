@@ -234,6 +234,46 @@ def detect_tool_category(tool_instance) -> str:
     return get_detector().detect_category(tool_instance)
 
 
+def category_to_annotations(category: str) -> dict:
+    """
+    Translate a FAC tool category into MCP tool annotation hints.
+
+    MCP clients (e.g. Claude Desktop) group tools and choose default approval
+    behavior from these behavioral hints in the tools/list response. Without
+    them every tool lands in a single "Other tools" bucket. The FAC category
+    (stored on FAC Tool Configuration, admin-overridable) is the single source
+    of truth, so the admin page and the client stay in sync.
+
+    Mapping (per MCP spec; destructiveHint is only meaningful when
+    readOnlyHint is false):
+        read_only  -> {"readOnlyHint": True}                  (Read-only group)
+        write      -> {"readOnlyHint": False}                 (Write/delete group)
+        read_write -> {"readOnlyHint": False}                 (Write/delete group)
+        privileged -> {"readOnlyHint": False, "destructiveHint": True}
+
+    Args:
+        category: One of read_only, write, read_write, privileged
+            ("dangerous" is accepted as a legacy alias for privileged).
+
+    Returns:
+        Dict of MCP annotation hints. Empty dict for an unknown category, so an
+        unrecognized value degrades to "no hints" rather than a wrong hint.
+    """
+    if category == "dangerous":  # legacy alias
+        category = "privileged"
+
+    if category == "read_only":
+        return {"readOnlyHint": True}
+    if category == "write":
+        return {"readOnlyHint": False}
+    if category == "read_write":
+        return {"readOnlyHint": False}
+    if category == "privileged":
+        return {"readOnlyHint": False, "destructiveHint": True}
+
+    return {}
+
+
 def get_category_info(category: str) -> dict:
     """
     Get display information for a category.

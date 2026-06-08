@@ -62,6 +62,12 @@ def _build_tool_registry():
     executing against (issue #197). The set is also genuinely per-user, since
     ``get_available_tools`` filters by the requesting user's permissions.
 
+    Each tool dict carries MCP annotation hints derived from its FAC tool
+    category, so MCP clients (e.g. Claude Desktop) can group tools into
+    Read-only vs Write/delete instead of an undifferentiated "Other tools"
+    bucket. The category is the same one shown/overridable on the FAC admin
+    page (FAC Tool Configuration.tool_category) — single source of truth.
+
     Returns:
         OrderedDict mapping tool name to its MCP tool dict.
     """
@@ -71,17 +77,29 @@ def _build_tool_registry():
     try:
         from frappe_assistant_core.core.tool_registry import get_tool_registry
         from frappe_assistant_core.mcp.tool_adapter import build_tool_dict
+        from frappe_assistant_core.utils.tool_category_detector import category_to_annotations
 
         # Get available tools (respects enabled/disabled state and permissions)
         registry = get_tool_registry()
         available_tools = registry.get_available_tools(user=frappe.session.user)
+
+        # Resolve each tool's category once (honors admin overrides stored on
+        # FAC Tool Configuration; falls back to auto-detection).
+        categories = _resolve_tool_categories(
+            [t.get("name") for t in available_tools if t.get("name")], registry
+        )
 
         for tool_metadata in available_tools:
             tool_name = tool_metadata.get("name")
             if tool_name:
                 tool_instance = registry.get_tool(tool_name)
                 if tool_instance:
-                    registry_dict[tool_name] = build_tool_dict(tool_instance)
+                    tool_dict = build_tool_dict(tool_instance)
+                    annotations = category_to_annotations(categories.get(tool_name, "read_write"))
+                    if annotations:
+                        # Merge with any annotations the tool already declared.
+                        tool_dict["annotations"] = {**(tool_dict.get("annotations") or {}), **annotations}
+                    registry_dict[tool_name] = tool_dict
 
         frappe.logger().info(f"Built {len(registry_dict)} enabled tools for user {frappe.session.user}")
 
@@ -89,6 +107,55 @@ def _build_tool_registry():
         frappe.log_error(title="Tool Import Error", message=f"Error importing tools: {str(e)}")
 
     return registry_dict
+
+
+def _resolve_tool_categories(tool_names: list, registry) -> dict:
+    """
+    Resolve the FAC tool category for each tool name.
+
+    Resolution order per tool:
+      1. Stored ``FAC Tool Configuration.tool_category`` (honors admin override).
+      2. Auto-detected category via ``detect_tool_category`` (no config row yet).
+      3. ``"read_write"`` fallback (maps to no annotation hints — safe default).
+
+    Stored categories are batch-fetched in one query to avoid a DB read per tool.
+
+    Args:
+        tool_names: Tool names to resolve.
+        registry: The tool registry (used to fetch instances for auto-detection).
+
+    Returns:
+        Dict mapping tool name -> category string.
+    """
+    from frappe_assistant_core.utils.tool_category_detector import detect_tool_category
+
+    categories = {}
+
+    # 1. Batch-fetch stored categories.
+    try:
+        rows = frappe.get_all(
+            "FAC Tool Configuration",
+            filters={"tool_name": ["in", tool_names]} if tool_names else {},
+            fields=["tool_name", "tool_category"],
+            ignore_permissions=True,
+        )
+        for row in rows:
+            if row.get("tool_category"):
+                categories[row["tool_name"]] = row["tool_category"]
+    except Exception as e:
+        frappe.logger().warning(f"Could not batch-fetch tool categories: {e}")
+
+    # 2 & 3. Fill gaps via auto-detection, defaulting to read_write.
+    for tool_name in tool_names:
+        if tool_name in categories:
+            continue
+        try:
+            tool_instance = registry.get_tool(tool_name)
+            categories[tool_name] = detect_tool_category(tool_instance) if tool_instance else "read_write"
+        except Exception:
+            categories[tool_name] = "read_write"
+
+    return categories
 
 
 def _authenticate_mcp_request():
