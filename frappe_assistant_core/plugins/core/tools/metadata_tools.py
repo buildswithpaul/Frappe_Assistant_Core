@@ -89,6 +89,21 @@ class MetadataTools:
             raise Exception(f"Unknown metadata tool: {tool_name}")
 
     @staticmethod
+    def _serialize_field(field) -> Dict[str, Any]:
+        """Serialize a DocField row into the shape returned by get_doctype_metadata."""
+        return {
+            "fieldname": field.fieldname,
+            "label": field.label,
+            "fieldtype": field.fieldtype,
+            "options": field.options,
+            "reqd": field.reqd,
+            "read_only": field.read_only,
+            "hidden": field.hidden,
+            "default": field.default,
+            "description": field.description,
+        }
+
+    @staticmethod
     def get_doctype_metadata(doctype: str) -> Dict[str, Any]:
         """Get DocType metadata and field information"""
         try:
@@ -100,40 +115,44 @@ class MetadataTools:
 
             meta = frappe.get_meta(doctype)
 
-            # Build field information
-            fields = []
-            for field in meta.fields:
-                field_info = {
-                    "fieldname": field.fieldname,
-                    "label": field.label,
-                    "fieldtype": field.fieldtype,
-                    "options": field.options,
-                    "reqd": field.reqd,
-                    "read_only": field.read_only,
-                    "hidden": field.hidden,
-                    "default": field.default,
-                    "description": field.description,
-                }
-                fields.append(field_info)
+            fields = [MetadataTools._serialize_field(field) for field in meta.fields]
 
-            # Build link fields information
-            link_fields = []
-            for field in meta.get_link_fields():
-                link_fields.append(
-                    {"fieldname": field.fieldname, "label": field.label, "options": field.options}
-                )
+            link_fields = [
+                {"fieldname": field.fieldname, "label": field.label, "options": field.options}
+                for field in meta.get_link_fields()
+            ]
+
+            # Child tables: include the child DocType's own field metadata so the
+            # caller can build nested row objects without a second tool call (#192).
+            child_tables = []
+            for table_field in meta.get_table_fields():
+                child_doctype = table_field.options
+                child_entry = {
+                    "fieldname": table_field.fieldname,
+                    "label": table_field.label,
+                    "fieldtype": table_field.fieldtype,
+                    "options": child_doctype,
+                    "reqd": table_field.reqd,
+                    "fields": [],
+                }
+                if child_doctype and frappe.db.exists("DocType", child_doctype):
+                    child_meta = frappe.get_meta(child_doctype)
+                    child_entry["fields"] = [MetadataTools._serialize_field(f) for f in child_meta.fields]
+                child_tables.append(child_entry)
 
             return {
                 "success": True,
                 "doctype": doctype,
                 "module": meta.module,
-                "is_submittable": meta.is_submittable,
-                "is_tree": meta.is_tree,
-                "is_single": meta.istable,
+                "is_submittable": bool(meta.is_submittable),
+                "is_tree": bool(meta.is_tree),
+                "is_single": bool(meta.issingle),
+                "is_child_table": bool(meta.istable),
                 "naming_rule": meta.naming_rule,
                 "title_field": meta.title_field,
                 "fields": fields,
                 "link_fields": link_fields,
+                "child_tables": child_tables,
                 "permissions": [p.as_dict() for p in meta.permissions],
             }
 
