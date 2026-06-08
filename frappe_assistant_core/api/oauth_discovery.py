@@ -53,6 +53,21 @@ def _get_public_base_url() -> str:
     return base.rstrip("/")
 
 
+def get_public_base_url() -> str:
+    """
+    Public accessor for the canonical public base URL.
+
+    Other modules (e.g. the MCP endpoint's WWW-Authenticate header) must build
+    OAuth metadata URLs from the same host_name-aware base as the discovery
+    endpoints, so that a configured host_name including a non-standard port is
+    honored verbatim. Frappe's get_server_url() reconstructs host/port from the
+    request or the Social Login Key base_url and drops the configured port
+    (issue #196), which breaks the OAuth handshake behind port-restricted
+    networks.
+    """
+    return _get_public_base_url()
+
+
 # nosemgrep: frappe-semgrep-rules.rules.security.guest-whitelisted-method — OpenID Connect Discovery 1.0 mandates unauthenticated access to this endpoint
 @frappe.whitelist(allow_guest=True, methods=["GET"])
 def openid_configuration():

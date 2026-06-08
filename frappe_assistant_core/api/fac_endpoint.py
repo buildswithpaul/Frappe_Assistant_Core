@@ -103,8 +103,9 @@ def _authenticate_mcp_request():
         str: Authenticated username
         None: Authentication failed (returns 401 response directly)
     """
-    from frappe.oauth import get_server_url
     from werkzeug.wrappers import Response
+
+    from frappe_assistant_core.api.oauth_discovery import get_public_base_url
 
     auth_header = frappe.request.headers.get("Authorization", "")
 
@@ -140,7 +141,7 @@ def _authenticate_mcp_request():
         except frappe.DoesNotExistError:
             frappe.logger().error("OAuth Bearer Token not found")
             # Token not found - return 401
-            frappe_url = get_server_url()
+            frappe_url = get_public_base_url()
             metadata_url = f"{frappe_url}/.well-known/oauth-protected-resource"
 
             response = Response()
@@ -161,7 +162,7 @@ def _authenticate_mcp_request():
             frappe.log_error(title="OAuth Token Validation Error", message=f"{type(e).__name__}: {str(e)}")
 
             # Return 401 for invalid/expired tokens
-            frappe_url = get_server_url()
+            frappe_url = get_public_base_url()
             metadata_url = f"{frappe_url}/.well-known/oauth-protected-resource"
 
             response = Response()
@@ -215,7 +216,7 @@ def _authenticate_mcp_request():
 
         except frappe.AuthenticationError as e:
             # Return 401 for invalid API credentials
-            frappe_url = get_server_url()
+            frappe_url = get_public_base_url()
             metadata_url = f"{frappe_url}/.well-known/oauth-protected-resource"
 
             response = Response()
@@ -232,7 +233,7 @@ def _authenticate_mcp_request():
             frappe.log_error(title="API Key Authentication Error", message=f"{type(e).__name__}: {str(e)}")
 
             # Return 401 for other errors
-            frappe_url = get_server_url()
+            frappe_url = get_public_base_url()
             metadata_url = f"{frappe_url}/.well-known/oauth-protected-resource"
 
             response = Response()
@@ -246,7 +247,7 @@ def _authenticate_mcp_request():
 
     # No valid authentication method found
     frappe.logger().warning("No valid authentication method found in request")
-    frappe_url = get_server_url()
+    frappe_url = get_public_base_url()
     metadata_url = f"{frappe_url}/.well-known/oauth-protected-resource"
 
     response = Response()
@@ -274,13 +275,14 @@ def handle_mcp():
     1. OAuth 2.0 Bearer tokens: "Authorization: Bearer <token>" (for web clients)
     2. API Key/Secret: "Authorization: token <api_key>:<api_secret>" (for STDIO clients)
     """
-    from frappe.oauth import get_server_url
     from werkzeug.wrappers import Response
+
+    from frappe_assistant_core.api.oauth_discovery import get_public_base_url
 
     # Handle HEAD request for connectivity check (Claude Web uses this)
     if frappe.request.method == "HEAD":
         # Return 401 with WWW-Authenticate header to indicate auth is required
-        frappe_url = get_server_url()
+        frappe_url = get_public_base_url()
         metadata_url = f"{frappe_url}/.well-known/oauth-protected-resource"
 
         response = Response()
