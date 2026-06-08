@@ -51,34 +51,44 @@ def _check_assistant_enabled(user: str) -> bool:
         return False
 
 
-def _import_tools():
-    """Import and register all enabled tools from plugin manager."""
+def _build_tool_registry():
+    """
+    Build a per-request tool registry for the current user.
+
+    Returns a fresh ``OrderedDict`` (name -> tool_dict) built on the call stack
+    rather than mutating the module-level ``mcp`` instance. This keeps
+    concurrent MCP requests isolated from each other: one in-flight request can
+    no longer clear or overwrite the tool set another request is validating or
+    executing against (issue #197). The set is also genuinely per-user, since
+    ``get_available_tools`` filters by the requesting user's permissions.
+
+    Returns:
+        OrderedDict mapping tool name to its MCP tool dict.
+    """
+    from collections import OrderedDict
+
+    registry_dict = OrderedDict()
     try:
         from frappe_assistant_core.core.tool_registry import get_tool_registry
-        from frappe_assistant_core.mcp.tool_adapter import register_base_tool
-
-        # Clear existing tools to avoid duplicates on subsequent requests
-        # This is necessary because mcp is a module-level global instance
-        mcp._tool_registry.clear()
+        from frappe_assistant_core.mcp.tool_adapter import build_tool_dict
 
         # Get available tools (respects enabled/disabled state and permissions)
         registry = get_tool_registry()
         available_tools = registry.get_available_tools(user=frappe.session.user)
 
-        # Register each enabled tool with MCP server
-        tool_count = 0
         for tool_metadata in available_tools:
             tool_name = tool_metadata.get("name")
             if tool_name:
                 tool_instance = registry.get_tool(tool_name)
                 if tool_instance:
-                    register_base_tool(mcp, tool_instance)
-                    tool_count += 1
+                    registry_dict[tool_name] = build_tool_dict(tool_instance)
 
-        frappe.logger().info(f"Registered {tool_count} enabled tools for user {frappe.session.user}")
+        frappe.logger().info(f"Built {len(registry_dict)} enabled tools for user {frappe.session.user}")
 
     except Exception as e:
         frappe.log_error(title="Tool Import Error", message=f"Error importing tools: {str(e)}")
+
+    return registry_dict
 
 
 def _authenticate_mcp_request():
@@ -296,8 +306,6 @@ def handle_mcp():
             _("Assistant access is disabled for user {0}").format(authenticated_user), frappe.PermissionError
         )
 
-    # Import tools (they auto-register via decorators)
-    _import_tools()
-
-    # Return None to let the decorator continue with MCP handling
-    return None
+    # Build a per-request tool registry (isolated from concurrent requests) and
+    # hand it back to the MCP server wrapper, which passes it into handle().
+    return _build_tool_registry()
