@@ -108,12 +108,16 @@ class SearchTools:
                     if not frappe.has_permission(doctype, "read"):
                         continue
 
-                    # Simple search using name field
-                    doctype_results = frappe.get_all(
+                    # Simple search using name field. Use frappe.get_list (not
+                    # get_all) so DocType-level AND user/row-level permissions are
+                    # applied — get_all bypasses permissions and would leak
+                    # records the user cannot read (issue #189).
+                    doctype_results = frappe.get_list(
                         doctype,
                         filters={"name": ["like", f"%{query}%"]},
                         fields=["name"],
                         limit=5,  # Limit per doctype
+                        ignore_permissions=False,
                     )
 
                     # Add doctype info to results
@@ -179,13 +183,16 @@ class SearchTools:
             for field in search_fields:
                 filters.append([doctype, field, "like", f"%{query}%"])
 
-            # Execute search
-            results = frappe.get_all(
+            # Execute search. Use frappe.get_list (not get_all) so the results
+            # are filtered by the user's read permissions — get_all bypasses
+            # permissions and would leak inaccessible records (issue #189).
+            results = frappe.get_list(
                 doctype,
                 or_filters=filters,
                 fields=["name"] + search_fields,
                 limit=limit,
                 order_by="modified desc",
+                ignore_permissions=False,
             )
 
             return {
