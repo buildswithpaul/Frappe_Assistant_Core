@@ -116,23 +116,30 @@ class MCPServer:
             self._entry_fn = fn
 
             def wrapper() -> Response:
-                # Run user's function to import tools and perform auth checks
+                # Run user's function to perform auth checks and build the
+                # per-request tool registry. The registry is returned to keep it
+                # off any shared/global state, so concurrent requests stay
+                # isolated (see issue #197).
                 result = fn()
 
-                # If fn() returned a response (e.g., 401 auth failure), use that
-                if result is not None:
+                # If fn() returned a Response (e.g., 401 auth failure), use that.
+                if isinstance(result, Response):
                     return result
+
+                # Otherwise fn() returns the per-request tool registry (a dict),
+                # or None to fall back to the shared registry.
+                tool_registry = result if isinstance(result, dict) else None
 
                 # Handle MCP request
                 request = frappe.request
                 response = Response()
-                return self.handle(request, response)
+                return self.handle(request, response, tool_registry=tool_registry)
 
             return whitelister(wrapper)
 
         return decorator
 
-    def handle(self, request: Request, response: Response) -> Response:
+    def handle(self, request: Request, response: Response, tool_registry: Optional[Dict] = None) -> Response:
         """
         Handle MCP request - main entry point.
 
@@ -141,11 +148,23 @@ class MCPServer:
         Args:
             request: Werkzeug Request object
             response: Werkzeug Response object
+            tool_registry: Per-request tool registry (name -> tool_dict). When
+                provided, all tool routing for this request reads from it instead
+                of the shared ``self._tool_registry``. This is what keeps
+                concurrent requests isolated: each request builds its own
+                registry on the call stack rather than mutating a process-global
+                one. Falls back to ``self._tool_registry`` when not supplied
+                (e.g. tools registered directly via ``add_tool``).
 
         Returns:
             Populated Response object with MCP response
         """
         import frappe
+
+        # Per-request registry isolates concurrent requests. Never mutate the
+        # shared singleton during request handling.
+        if tool_registry is None:
+            tool_registry = self._tool_registry
 
         # Only POST allowed
         if request.method != "POST":
@@ -192,12 +211,12 @@ class MCPServer:
             if method == "initialize":
                 result = self._handle_initialize(params)
             elif method == "tools/list":
-                result = self._handle_tools_list(params)
+                result = self._handle_tools_list(params, tool_registry)
             elif method == "tools/call":
                 frappe.logger().info(
                     f"MCP tools/call: tool={params.get('name')}, args={json.dumps(params.get('arguments', {}), default=str)[:200]}"
                 )
-                result = self._handle_tools_call(params)
+                result = self._handle_tools_call(params, tool_registry)
             elif method == "resources/list":
                 result = self._handle_resources_list(params, request_id)
             elif method == "resources/read":
@@ -294,9 +313,12 @@ class MCPServer:
             "serverInfo": {"name": self.name, "version": "2.0.0"},
         }
 
-    def _handle_tools_list(self, params: Dict) -> Dict:
+    def _handle_tools_list(self, params: Dict, tool_registry: Optional[Dict] = None) -> Dict:
         """Handle tools/list request with optional token optimization."""
         import frappe
+
+        if tool_registry is None:
+            tool_registry = self._tool_registry
 
         tools_list = []
 
@@ -311,7 +333,7 @@ class MCPServer:
         except Exception:
             pass
 
-        for tool in self._tool_registry.values():
+        for tool in tool_registry.values():
             description = tool["description"]
 
             # In replace mode, minimize descriptions for tools with linked skills
@@ -333,7 +355,7 @@ class MCPServer:
 
         return {"tools": tools_list}
 
-    def _handle_tools_call(self, params: Dict) -> Dict:
+    def _handle_tools_call(self, params: Dict, tool_registry: Optional[Dict] = None) -> Dict:
         """
         Handle tools/call request.
 
@@ -342,21 +364,24 @@ class MCPServer:
         """
         import frappe
 
+        if tool_registry is None:
+            tool_registry = self._tool_registry
+
         tool_name = params.get("name")
         arguments = params.get("arguments", {})
 
         frappe.logger().debug(f"MCP _handle_tools_call: tool={tool_name}, args={arguments}")
 
         # Check tool exists
-        if tool_name not in self._tool_registry:
-            error_msg = f"Tool '{tool_name}' not found. Available tools: {list(self._tool_registry.keys())}"
+        if tool_name not in tool_registry:
+            error_msg = f"Tool '{tool_name}' not found. Available tools: {list(tool_registry.keys())}"
             frappe.logger().error(f"MCP Tool Not Found: {error_msg}")
             return {
                 "content": [{"type": "text", "text": error_msg}],
                 "isError": True,
             }
 
-        tool = self._tool_registry[tool_name]
+        tool = tool_registry[tool_name]
         fn = tool["fn"]
 
         try:
