@@ -55,7 +55,7 @@ dependencies = [
     "chardet>=5.1.0,<6.0.0",  # Compatible with frappe ~=5.1.0 requirement
     "pymupdf>=1.24.0",  # PDF page rendering for Ollama vision OCR
     "python-magic>=0.4.27",
-    "beautifulsoup4~=4.12.2",  # Compatible with frappe ~=4.12.2 requirement
+    "beautifulsoup4>=4.12,<5",  # Span Frappe v15 (~=4.12.2) and v16 (~=4.13.5) without forcing a downgrade
 ]
 
 [project.optional-dependencies]
