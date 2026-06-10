@@ -131,10 +131,13 @@ class ReportRequirements(BaseTool):
                     report_name, column_result.get("report_type")
                 )
 
-                # For Script Reports, try to parse filters from JS file and add to main response
+                # For Script Reports, discover filters from multiple sources and
+                # add to main response.
                 if column_result.get("report_type") == "Script Report":
-                    module_name = report_doc.module
-                    parsed_filters = self._parse_script_report_filters(report_name, module_name)
+                    parsed_filters, diagnostics = self._discover_script_report_filters(
+                        report_name, report_doc
+                    )
+                    result["discovery_diagnostics"] = diagnostics
 
                     if parsed_filters and parsed_filters.get("filters"):
                         result["filters_definition"] = parsed_filters["filters"]
@@ -285,80 +288,196 @@ class ReportRequirements(BaseTool):
 
         return requirements
 
-    def _parse_script_report_filters(self, report_name: str, module_name: str) -> Dict[str, Any]:
+    def _discover_script_report_filters(self, report_name: str, report_doc):
         """
-        Parse JavaScript filter definitions from Script Report .js file.
+        Discover Script Report filters from multiple sources, first non-empty
+        wins, recording a diagnostic for each attempt so a silent empty result
+        is debuggable by agents and users (issue #203).
 
-        Args:
-            report_name: Name of the report
-            module_name: Module name (e.g., "Selling", "Stock")
+        Order:
+            1. ``Report.filters`` child table (structured, no parsing).
+            2. JS — on-disk .js file, then the ``Report.javascript`` DB field.
 
         Returns:
-            Dictionary containing parsed filters, or None if parsing fails
+            (parsed_filters_or_None, discovery_diagnostics dict)
+        """
+        diagnostics = {}
+
+        # --- Source 1: Report.filters child table ---
+        child_rows = report_doc.get("filters") or []
+        diagnostics["filters_child_table"] = {
+            "row_count": len(child_rows),
+            "status": "success" if child_rows else "empty",
+        }
+        if child_rows:
+            parsed = self._parse_filters_child_table(child_rows)
+            if parsed.get("filters"):
+                diagnostics["filters_child_table"]["filters_found"] = len(parsed["filters"])
+                return parsed, diagnostics
+
+        # --- Source 2: JavaScript (disk file, then DB field) ---
+        self._last_discovery_diagnostics = {}
+        parsed = self._parse_script_report_filters(report_name, report_doc.module)
+        diagnostics["javascript"] = getattr(self, "_last_discovery_diagnostics", {})
+        return parsed, diagnostics
+
+    def _parse_filters_child_table(self, child_rows) -> Dict[str, Any]:
+        """Convert ``Report.filters`` child-table rows to the parsed-filter shape."""
+        filters = []
+        required_filters = []
+        optional_filters = []
+        for row in child_rows:
+            fieldname = row.get("fieldname")
+            if not fieldname:
+                continue
+            is_required = bool(row.get("mandatory") or row.get("reqd"))
+            filter_def = {
+                "fieldname": fieldname,
+                "label": row.get("label") or fieldname,
+                "fieldtype": row.get("fieldtype"),
+                "options": row.get("options"),
+                "default": row.get("default_value") or row.get("default"),
+                "required": is_required,
+            }
+            # Drop empty keys for a clean payload.
+            filter_def = {k: v for k, v in filter_def.items() if v not in (None, "")}
+            filter_def["required"] = is_required
+            filters.append(filter_def)
+            (required_filters if is_required else optional_filters).append(fieldname)
+
+        return {
+            "filters": filters,
+            "required_filters": required_filters,
+            "optional_filters": optional_filters,
+        }
+
+    def _resolve_report_js_path(self, report_name: str, module_name: str):
+        """
+        Resolve the on-disk path of a Script Report's .js file.
+
+        Uses Frappe's own resolution (``get_module_path`` + ``scrub``) rather
+        than reconstructing the path by looping over installed apps, so custom
+        apps with non-trivial package layouts resolve correctly. Returns None
+        for custom (DB-only) modules, which have no disk path (issue #203).
+
+        Returns:
+            Absolute path string, or None if the module has no disk location.
         """
         import os
-        import re
 
+        from frappe.modules import get_module_path, scrub
+
+        # Custom modules exist only in the DB (no files on disk).
+        if frappe.get_cached_value("Module Def", module_name, "custom"):
+            return None
+
+        module_path = get_module_path(module_name)
+        report_folder = scrub(report_name)
+        return os.path.join(module_path, "report", report_folder, f"{report_folder}.js")
+
+    def _extract_filters_from_js(self, js_content: str):
+        """
+        Extract the ``filters: [...]`` array from report JS and parse it.
+
+        Returns:
+            (parsed_filters_or_None, diagnostic_note). diagnostic_note explains
+            why nothing was parsed, so callers can surface it.
+        """
+        # Find the start of the filters array. Anchor on "filters:" then the
+        # next "[" — note this does not handle programmatically-built filters
+        # (e.g. ``filters: get_filters()``); that case is reported via the
+        # diagnostic note rather than failing silently.
+        filters_start = js_content.find("filters:")
+        if filters_start == -1:
+            filters_start = js_content.find('"filters"')
+        if filters_start == -1:
+            return None, "no 'filters:' key found in JS"
+
+        bracket_start = js_content.find("[", filters_start)
+        if bracket_start == -1:
+            return None, "no '[' after 'filters:' (filters may be built programmatically)"
+
+        # Guard against anchoring far past the key (e.g. filters: fn(); ... [ ).
+        between = js_content[filters_start:bracket_start]
+        if "(" in between or ";" in between:
+            return None, "'filters:' is not a literal array (built programmatically)"
+
+        # Count brackets to find the matching closing bracket.
+        bracket_count = 0
+        bracket_end = bracket_start
+        for i in range(bracket_start, len(js_content)):
+            if js_content[i] == "[":
+                bracket_count += 1
+            elif js_content[i] == "]":
+                bracket_count -= 1
+                if bracket_count == 0:
+                    bracket_end = i
+                    break
+
+        if bracket_count != 0:
+            return None, "mismatched brackets in filters array"
+
+        filters_text = js_content[bracket_start + 1 : bracket_end]
+        parsed = self._parse_js_filter_array(filters_text)
+        if not parsed or not parsed.get("filters"):
+            return None, "filters array found but no filter objects parsed (unexpected JS syntax)"
+        return parsed, None
+
+    def _parse_script_report_filters(self, report_name: str, module_name: str) -> Dict[str, Any]:
+        """
+        Parse JavaScript filter definitions for a Script Report.
+
+        Tries the on-disk .js file first (path resolved via Frappe), then falls
+        back to the ``Report.javascript`` DB field (covers custom DB-only
+        modules and reports whose JS lives in the doc). Stores a diagnostic of
+        what was attempted on ``frappe.local`` for the caller to surface.
+
+        Returns:
+            Dictionary containing parsed filters, or None if parsing fails.
+        """
+        import os
+
+        diag = {"js_file": {}, "js_db_field": {}}
         try:
-            # Construct path to JS file
-            # Format: apps/{app_name}/{module}/report/{report_name}/{report_name}.js
-            report_folder = report_name.lower().replace(" ", "_").replace("-", "_")
-            module_folder = module_name.lower().replace(" ", "_")
+            # --- Source 1: on-disk .js file ---
+            js_path = self._resolve_report_js_path(report_name, module_name)
+            diag["js_file"]["path"] = js_path
+            if js_path and os.path.exists(js_path):
+                diag["js_file"]["file_exists"] = True
+                diag["js_file"]["file_readable"] = os.access(js_path, os.R_OK)
+                # nosemgrep: frappe-semgrep-rules.rules.security.frappe-security-file-traversal — path built from frappe.get_module_path + scrubbed report metadata, not user input
+                with open(js_path, encoding="utf-8") as f:
+                    js_content = f.read()
+                parsed, note = self._extract_filters_from_js(js_content)
+                diag["js_file"]["status"] = "success" if parsed else "failed"
+                diag["js_file"]["filters_found"] = len(parsed["filters"]) if parsed else 0
+                if note:
+                    diag["js_file"]["note"] = note
+                if parsed:
+                    self._last_discovery_diagnostics = diag
+                    return parsed
+            else:
+                diag["js_file"]["file_exists"] = False
 
-            # Find the app that contains this module
-            for app in frappe.get_installed_apps():
-                app_path = frappe.get_app_path(app)
-                js_path = os.path.join(
-                    app_path, module_folder, "report", report_folder, f"{report_folder}.js"
-                )
+            # --- Source 2: Report.javascript DB field ---
+            js_db = frappe.db.get_value("Report", report_name, "javascript")
+            diag["js_db_field"]["present"] = bool(js_db)
+            if js_db:
+                parsed, note = self._extract_filters_from_js(js_db)
+                diag["js_db_field"]["status"] = "success" if parsed else "failed"
+                diag["js_db_field"]["filters_found"] = len(parsed["filters"]) if parsed else 0
+                if note:
+                    diag["js_db_field"]["note"] = note
+                if parsed:
+                    self._last_discovery_diagnostics = diag
+                    return parsed
 
-                if os.path.exists(js_path):
-                    # nosemgrep: frappe-semgrep-rules.rules.security.frappe-security-file-traversal — path built from frappe.get_app_path + report metadata, not user input
-                    with open(js_path, encoding="utf-8") as f:
-                        js_content = f.read()
-
-                    # Extract filter array using regex
-                    # Pattern: frappe.query_reports["Report Name"] = { filters: [...] }
-                    # Need to handle nested objects with proper bracket counting
-                    pattern = r'frappe\.query_reports\[["\'].*?["\']\]\s*=\s*\{.*?filters:\s*\[(.*?)\]'
-
-                    # Find the start of filters array
-                    filters_start = js_content.find("filters:")
-                    if filters_start == -1:
-                        frappe.logger().debug(f"No 'filters:' found in JS file for {report_name}")
-                        return None
-
-                    # Find the opening bracket
-                    bracket_start = js_content.find("[", filters_start)
-                    if bracket_start == -1:
-                        frappe.logger().debug(f"No opening bracket after 'filters:' for {report_name}")
-                        return None
-
-                    # Count brackets to find matching closing bracket
-                    bracket_count = 0
-                    bracket_end = bracket_start
-                    for i in range(bracket_start, len(js_content)):
-                        if js_content[i] == "[":
-                            bracket_count += 1
-                        elif js_content[i] == "]":
-                            bracket_count -= 1
-                            if bracket_count == 0:
-                                bracket_end = i
-                                break
-
-                    if bracket_count != 0:
-                        frappe.logger().debug(f"Mismatched brackets in filters array for {report_name}")
-                        return None
-
-                    # Extract filter content (inside the brackets)
-                    filters_text = js_content[bracket_start + 1 : bracket_end]
-                    parsed_filters = self._parse_js_filter_array(filters_text)
-                    return parsed_filters
-
-            frappe.logger().debug(f"JS file not found for {report_name}")
+            self._last_discovery_diagnostics = diag
             return None
 
         except Exception as e:
+            diag["error"] = f"{type(e).__name__}: {str(e)}"
+            self._last_discovery_diagnostics = diag
             frappe.log_error(f"Error parsing Script Report filters for {report_name}: {str(e)}")
             return None
 
@@ -399,27 +518,36 @@ class ReportRequirements(BaseTool):
         for filter_obj in filter_objects:
             filter_def = {}
 
+            # Keys may be bare (fieldname:) or quoted (JSON-style "fieldname":),
+            # and may use template literals (`x`). Tolerate optional surrounding
+            # quotes on the key so JSON-style report JS isn't silently skipped
+            # (issue #203).
             # Extract fieldname
-            fieldname_match = re.search(r'fieldname:\s*["\']([^"\']+)["\']', filter_obj)
+            fieldname_match = re.search(r'["\']?fieldname["\']?\s*:\s*["\']([^"\']+)["\']', filter_obj)
             if fieldname_match:
                 filter_def["fieldname"] = fieldname_match.group(1)
             else:
                 continue  # Skip if no fieldname
 
-            # Extract label
+            # Extract label — supports __("x"), "x", and `x` (template literal),
+            # with bare or quoted key.
             label_match = re.search(
-                r'label:\s*__\(["\']([^"\']+)["\']\)|label:\s*["\']([^"\']+)["\']', filter_obj
+                r'["\']?label["\']?\s*:\s*__\(\s*[`"\']([^`"\']+)[`"\']\s*\)'
+                r'|["\']?label["\']?\s*:\s*[`"\']([^`"\']+)[`"\']',
+                filter_obj,
             )
             if label_match:
                 filter_def["label"] = label_match.group(1) or label_match.group(2)
 
             # Extract fieldtype
-            fieldtype_match = re.search(r'fieldtype:\s*["\']([^"\']+)["\']', filter_obj)
+            fieldtype_match = re.search(r'["\']?fieldtype["\']?\s*:\s*["\']([^"\']+)["\']', filter_obj)
             if fieldtype_match:
                 filter_def["fieldtype"] = fieldtype_match.group(1)
 
             # Extract options (can be array or string)
-            options_match = re.search(r'options:\s*(\[[\s\S]*?\]|["\'][^"\']+["\'])', filter_obj)
+            options_match = re.search(
+                r'["\']?options["\']?\s*:\s*(\[[\s\S]*?\]|["\'][^"\']+["\'])', filter_obj
+            )
             if options_match:
                 options_str = options_match.group(1)
                 if options_str.startswith("["):
@@ -431,12 +559,15 @@ class ReportRequirements(BaseTool):
                     filter_def["options"] = options_str.strip("\"'")
 
             # Extract default value
-            default_match = re.search(r'default:\s*["\']([^"\']+)["\']|default:\s*(\d+)', filter_obj)
+            default_match = re.search(
+                r'["\']?default["\']?\s*:\s*["\']([^"\']+)["\']|["\']?default["\']?\s*:\s*(\d+)',
+                filter_obj,
+            )
             if default_match:
                 filter_def["default"] = default_match.group(1) or default_match.group(2)
 
             # Extract required flag
-            reqd_match = re.search(r"reqd:\s*(1|true)", filter_obj, re.IGNORECASE)
+            reqd_match = re.search(r'["\']?reqd["\']?\s*:\s*(1|true)', filter_obj, re.IGNORECASE)
             filter_def["required"] = bool(reqd_match)
 
             filters.append(filter_def)
