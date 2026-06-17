@@ -565,6 +565,7 @@ class ExtractFileContent(BaseTool):
             )
 
             # Spawn isolated subprocess
+            # nosemgrep: frappe-semgrep-rules.rules.security.frappe-subprocess-exec — static argv ([sys.executable, "-m", <fixed module>]), shell=False; request is passed as JSON over stdin, never as an argument
             proc = subprocess.Popen(
                 [sys.executable, "-m", "frappe_assistant_core.utils.ocr_subprocess"],
                 stdin=subprocess.PIPE,
