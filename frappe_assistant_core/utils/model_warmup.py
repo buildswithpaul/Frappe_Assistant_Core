@@ -65,6 +65,7 @@ def warm_paddleocr_models():
     proc = None
 
     try:
+        # nosemgrep: frappe-subprocess-exec — static argv ([sys.executable, "-m", <fixed module>]), shell=False; request is passed as JSON over stdin, never as an argument
         proc = subprocess.Popen(
             [sys.executable, "-m", "frappe_assistant_core.utils.ocr_subprocess"],
             stdin=subprocess.PIPE,

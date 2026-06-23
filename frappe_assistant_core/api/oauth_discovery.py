@@ -68,7 +68,7 @@ def get_public_base_url() -> str:
     return _get_public_base_url()
 
 
-# nosemgrep: frappe-semgrep-rules.rules.security.guest-whitelisted-method — OpenID Connect Discovery 1.0 mandates unauthenticated access to this endpoint
+# nosemgrep: guest-whitelisted-method — OpenID Connect Discovery 1.0 mandates unauthenticated access to this endpoint
 @frappe.whitelist(allow_guest=True, methods=["GET"])
 def openid_configuration():
     """
@@ -134,7 +134,7 @@ def openid_configuration():
         )
 
 
-# nosemgrep: frappe-semgrep-rules.rules.security.guest-whitelisted-method — RFC 7517 JWKS endpoint is public by specification
+# nosemgrep: guest-whitelisted-method — RFC 7517 JWKS endpoint is public by specification
 @frappe.whitelist(allow_guest=True, methods=["GET"])
 def jwks():
     """
@@ -147,7 +147,7 @@ def jwks():
     return {"keys": []}
 
 
-# nosemgrep: frappe-semgrep-rules.rules.security.guest-whitelisted-method — MCP server discovery is unauthenticated by spec so clients can find the server
+# nosemgrep: guest-whitelisted-method — MCP server discovery is unauthenticated by spec so clients can find the server
 @frappe.whitelist(allow_guest=True, methods=["GET"])
 def mcp_discovery():
     """
@@ -223,7 +223,7 @@ def _get_frappe_authorization_server_metadata():
         return metadata
 
 
-# nosemgrep: frappe-semgrep-rules.rules.security.guest-whitelisted-method — RFC 8414 OAuth 2.0 Authorization Server Metadata requires unauthenticated access
+# nosemgrep: guest-whitelisted-method — RFC 8414 OAuth 2.0 Authorization Server Metadata requires unauthenticated access
 @frappe.whitelist(allow_guest=True, methods=["GET"])
 def authorization_server_metadata():
     """
@@ -297,7 +297,7 @@ def authorization_server_metadata():
     return metadata
 
 
-# nosemgrep: frappe-semgrep-rules.rules.security.guest-whitelisted-method — RFC 9728 OAuth 2.0 Protected Resource Metadata requires unauthenticated access
+# nosemgrep: guest-whitelisted-method — RFC 9728 OAuth 2.0 Protected Resource Metadata requires unauthenticated access
 @frappe.whitelist(allow_guest=True, methods=["GET"])
 def protected_resource_metadata():
     """
