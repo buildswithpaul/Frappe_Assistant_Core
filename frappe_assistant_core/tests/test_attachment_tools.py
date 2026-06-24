@@ -39,6 +39,12 @@ class TestAttachFileTool(BaseAssistantTest):
 
     def setUp(self):
         super().setUp()
+        # Other tests in the suite leak a MagicMock onto frappe.local.request,
+        # which breaks File inserts on Frappe v16. Isolate this test class by
+        # clearing the request for each test and restoring the original in
+        # tearDown.
+        self._original_request = getattr(frappe.local, "request", None)
+        frappe.local.request = None
         self.registry = get_tool_registry()
         # A safe, always-present, attach-friendly doctype.
         self.todo = frappe.get_doc(
@@ -57,6 +63,8 @@ class TestAttachFileTool(BaseAssistantTest):
         except Exception:
             pass
         super().tearDown()
+        # Restore whatever request the suite had before this test ran.
+        frappe.local.request = self._original_request
 
     def test_tool_is_registered(self):
         """The tool should be discoverable through the registry."""
@@ -164,9 +172,7 @@ class TestAttachFileTool(BaseAssistantTest):
         self.assertIn("listme.txt", names)
 
     def test_list_attachments_missing_document(self):
-        result = ListAttachments().execute(
-            {"doctype": "ToDo", "name": "TODO-DOES-NOT-EXIST-999999"}
-        )
+        result = ListAttachments().execute({"doctype": "ToDo", "name": "TODO-DOES-NOT-EXIST-999999"})
         self.assertFalse(result["success"])
         self.assertEqual(result["error_type"], "document_not_found")
 
