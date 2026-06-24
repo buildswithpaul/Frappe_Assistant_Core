@@ -140,8 +140,7 @@ class RemoveAttachment(BaseTool):
             if len(matches) == 0:
                 return {
                     "success": False,
-                    "error": "No matching attachment found on "
-                    f"{doctype} '{name}'.",
+                    "error": "No matching attachment found on " f"{doctype} '{name}'.",
                     "error_type": "attachment_not_found",
                 }
             if len(matches) > 1:
@@ -169,15 +168,13 @@ class RemoveAttachment(BaseTool):
         if doctype and file_doc.attached_to_doctype != doctype:
             return {
                 "success": False,
-                "error": f"Attachment is linked to {file_doc.attached_to_doctype}, not "
-                f"{doctype}.",
+                "error": f"Attachment is linked to {file_doc.attached_to_doctype}, not " f"{doctype}.",
                 "error_type": "parent_mismatch",
             }
         if name and file_doc.attached_to_name != name:
             return {
                 "success": False,
-                "error": f"Attachment is linked to '{file_doc.attached_to_name}', not "
-                f"'{name}'.",
+                "error": f"Attachment is linked to '{file_doc.attached_to_name}', not " f"'{name}'.",
                 "error_type": "parent_mismatch",
             }
 
