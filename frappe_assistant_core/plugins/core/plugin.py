@@ -52,7 +52,11 @@ class CorePlugin(BasePlugin):
             "list_documents",
             "delete_document",
             "submit_document",
+            "attach_file_to_document",
+            "list_attachments",
+            "remove_attachment",
             # Search tools
+
             "search_documents",
             "search_doctype",
             "search_link",
@@ -91,6 +95,9 @@ class CorePlugin(BasePlugin):
                 "update": True,
                 "delete": True,
                 "list": True,
+				"attach": True,
+                "list_attachments": True,
+                "remove_attachment": True,
             },
             "search": {"global_search": True, "doctype_search": True, "link_search": True},
             "metadata": {
