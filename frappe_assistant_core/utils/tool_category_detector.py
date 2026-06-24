@@ -47,6 +47,8 @@ PRIVILEGED_TOOLS = {
     "query_and_analyze",
     "run_database_query",
     "delete_document",
+    "remove_attachment",
+
 }
 
 # Tools that are always categorized as read_only (hardcoded list)
@@ -54,6 +56,7 @@ READ_ONLY_TOOLS = {
     # Document tools
     "get_document",
     "list_documents",
+    "list_attachments",
     # Search tools
     "search_documents",
     "search_doctype",
@@ -85,6 +88,7 @@ WRITE_TOOLS = {
     "create_document",
     "update_document",
     "submit_document",
+    "attach_file_to_document",
     # Workflow tools
     "run_workflow",
     # Visualization tools (create/modify)
