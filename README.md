@@ -123,7 +123,7 @@ registry for tools contributed by external apps).
 
 | Category | Tools |
 |---|---|
-| Documents | `get_document`, `list_documents`, `create_document`, `update_document`, `delete_document`, `submit_document` |
+| Documents | `get_document`, `list_documents`, `create_document`, `update_document`, `delete_document`, `submit_document`, `attach_file_to_document`, `list_attachments`, `remove_attachment` |
 | Search | `search`, `search_documents`, `search_doctype`, `search_link`, `fetch` |
 | Reports | `report_list`, `report_requirements`, `generate_report` |
 | Approvals | `get_pending_approvals`, `run_workflow` |
