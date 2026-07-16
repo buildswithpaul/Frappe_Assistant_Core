@@ -24,7 +24,6 @@ class BenchHelp(BaseTool):
             "2. When user asks what operations are available, call this tool then present each action as a separate option in a question format.\n"
             "3. When user wants to remove, uninstall or install an app without specifying which app, first call bench_execute with list_apps, then present each app as a separate clickable option in a question."
         )
-        self.category = "Developer Tools"
         self.source_app = "frappe_assistant_core"
 
         self.inputSchema = {
@@ -60,27 +59,9 @@ class BenchHelp(BaseTool):
                         "2. Immediately verify the Python import works: "
                         "bench --site {site} execute \"import {app_name}; print('ok')\". "
                         "If import fails the scaffold is broken — run remove_app and recreate. "
-                        "Never proceed with a broken app. "
-                        "3. Call verify_app automatically to confirm the app is healthy "
-                        "(import, module registered, doctypes visible, site has app). "
-                        "If verify_app fails alert: "
-                        "'App {app_name} is broken — hooks.py may be missing. Attempting to fix...' "
-                        "Then write a minimal hooks.py and retry verify_app."
+                        "Never proceed with a broken app."
                     ),
                     "params": ["app_name", "app_title (optional)", "app_description (optional)"],
-                },
-                {
-                    "action": "create_site",
-                    "description": (
-                        "Create a new Frappe site on this bench, add it to /etc/hosts, "
-                        "and optionally install apps on it in one step."
-                    ),
-                    "params": [
-                        "site_name (required) — e.g. mysite.localhost",
-                        "admin_password (optional, default 'admin')",
-                        "db_root_password (optional, default 'root')",
-                        "install_apps (optional) — list of app names to install after creation",
-                    ],
                 },
                 {
                     "action": "install_app",
@@ -151,17 +132,15 @@ class BenchHelp(BaseTool):
                     ],
                 },
                 {
-                    "action": "verify_app",
+                    "action": "migrate_status",
                     "description": (
-                        "Check if an app is properly installed by running these steps in order:\n"
-                        "1. Python import — bench --site {site} execute \"import {app_name}; print('ok')\"\n"
-                        "2. Module registered — frappe.db.get_value('Module Def', {'app_name': '{app_name}'})\n"
-                        "3. DocTypes visible — frappe.db.get_all('DocType', {'module': '{app_module}'})\n"
-                        "4. Site has app — check frappe.get_installed_apps() includes {app_name}\n"
-                        "Report each check individually. If any check fails, alert the user with the "
-                        "exact step that failed and do not mark the app as healthy."
+                        "Check whether a background bench migrate is still running. "
+                        "Call this immediately after migrate returns background=True. "
+                        "If still_running=True, wait 15 seconds and call migrate_status again. "
+                        "Keep polling until still_running=False, then report migration complete to the user. "
+                        "Do NOT wait for the user to ask — poll automatically after each migrate."
                     ),
-                    "params": ["app_name", "app_module (optional — defaults to title-cased app_name)"],
+                    "params": [],
                 },
                 {
                     "action": "export_fixtures",

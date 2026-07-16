@@ -16,6 +16,7 @@ from frappe import _
 from frappe_assistant_core.core.base_tool import BaseTool
 from frappe_assistant_core.plugins.developer_tools.tools import (
     PROTECTED_APPS,
+    assert_developer_mode,
     assert_system_manager,
 )
 
@@ -61,10 +62,6 @@ class BenchExecute(BaseTool):
             "bench --site {site} execute \"import {app_name}; print('ok')\". "
             "If import fails the scaffold is broken — automatically run remove_app then create_app again. "
             "Never proceed with a broken app. "
-            "CREATE_APP FULL FLOW: After create_app and install_app always call verify_app automatically. "
-            "If verify_app fails stop and alert: "
-            "'App {app_name} is broken — hooks.py may be missing. Attempting to fix...' "
-            "Then write a minimal hooks.py and retry verify_app. "
             "MIGRATE LOCK RULE: Before running migrate, check for a stale lock: "
             "run 'ps aux' to see if bench migrate is already running. "
             "If migrate IS running, alert the user and stop — do not run a second migrate. "
@@ -83,22 +80,24 @@ class BenchExecute(BaseTool):
             "INSTALL_APP VERIFY RULE: After installing an app always verify the Python import works: "
             "bench --site {site} execute \"import {app_name}; print('ok')\". "
             "If import fails immediately alert the user and do not proceed further. "
-            "REMOVE_APP SAFETY RULE: Before removing any app: "
-            "1. Call list_apps to show what is installed. "
-            "2. Warn user: 'This will permanently delete {app_name} and all its files'. "
-            "3. Ask: 'Are you sure? (Yes/No)'. "
-            "4. Only proceed if user confirms Yes. "
-            "5. Never remove frappe, erpnext, hrms, payments, frappe_assistant_core, "
-            "or any app that other apps depend on. "
+            "REMOVE_APP: Permanently deletes an app from the bench. Requires confirm=true — "
+            "without it, remove_app returns a dry-run-style warning describing what would be "
+            "deleted, without deleting anything. Never remove frappe, erpnext, hrms, payments, "
+            "frappe_assistant_core, or any app that other apps depend on. "
             "MIGRATE VERIFY RULE: After migrate completes verify by checking: "
             "frappe.db.get_all('DocType', {'module': '{app_module}'}). "
             "If new doctypes are missing alert the user. "
             "MULTI-SITE RULE: If list_sites returns more than one site, you MUST show the list to "
             "the user and ask: 'I found these sites: [list all sites]. Which site should I use?' "
             "NEVER pick a site automatically when multiple sites exist. "
-            "NEVER proceed without the user choosing a site."
+            "NEVER proceed without the user choosing a site. "
+            "MIGRATE STATUS RULE: After migrate returns background=True, immediately call "
+            "migrate_status in the same response turn. "
+            "If still_running=True, wait 15 seconds and call migrate_status again. "
+            "Keep calling until still_running=False. "
+            "Do NOT wait for the user to ask — poll automatically. "
+            "Only tell the user migrate is complete when still_running=False."
         )
-        self.category = "Developer Tools"
         self.source_app = "frappe_assistant_core"
 
         self.inputSchema = {
@@ -111,34 +110,21 @@ class BenchExecute(BaseTool):
                         "list_apps",
                         "list_sites",
                         "create_app",
-                        "create_site",
                         "install_app",
                         "uninstall_app",
                         "remove_app",
                         "export_fixtures",
                         "migrate",
+                        "migrate_status",
                     ],
                 },
                 "app_name": {
                     "type": "string",
                     "description": "Snake-case app name (required for all actions except list_apps).",
                 },
-                "site_name": {
-                    "type": "string",
-                    "description": "Site hostname (required for create_site).",
-                },
-                "admin_password": {
-                    "type": "string",
-                    "description": "Administrator password for the new site (optional, default 'admin'). Only used by create_site.",
-                },
-                "db_root_password": {
-                    "type": "string",
-                    "description": "MariaDB root password (optional, default 'root'). Only used by create_site.",
-                },
-                "install_apps": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "List of app names to install on the new site after creation (optional). Only used by create_site.",
+                "confirm": {
+                    "type": "boolean",
+                    "description": "Must be explicitly set to true to actually delete the app. If false/missing, the action will only report what would be deleted, without deleting anything.",
                 },
                 "restart": {
                     "type": "boolean",
@@ -162,6 +148,7 @@ class BenchExecute(BaseTool):
 
     def execute(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
         assert_system_manager()
+        assert_developer_mode()
 
         action = arguments.get("action")
 
@@ -322,102 +309,36 @@ build-backend = "flit_core.buildapi"
                 "message": f"App '{app_name}' created successfully. Use install_app to install it on the site.",
             }
 
-        elif action == "create_site":
+        elif action == "install_app":
             import subprocess
 
-            site_name = arguments.get("site_name")
-            if not site_name:
-                frappe.throw(_("site_name is required for create_site."), frappe.ValidationError)
-
-            admin_password = arguments.get("admin_password") or "admin"
-            db_root_password = arguments.get("db_root_password") or "root"
-            install_apps = arguments.get("install_apps") or []
-            bench_path = frappe.utils.get_bench_path()
-
-            result = subprocess.run(
-                [
-                    "bench",
-                    "new-site",
-                    site_name,
-                    "--admin-password",
-                    admin_password,
-                    "--mariadb-root-password",
-                    db_root_password,
-                ],
-                capture_output=True,
-                text=True,
-                cwd=bench_path,
-            )
-
-            if result.returncode != 0:
-                return {
-                    "success": False,
-                    "site_name": site_name,
-                    "error": result.stderr,
-                    "message": f"bench new-site failed for '{site_name}'.",
-                }
-
-            # Add site to /etc/hosts so it resolves locally
-            hosts_updated = False
-            try:
-                with open("/etc/hosts") as f:  # fmt: skip  # nosemgrep: frappe-security-file-traversal — reading /etc/hosts to check if site already registered
-                    hosts_content = f.read()
-                if site_name not in hosts_content:
-                    with open("/etc/hosts", "a") as f:  # fmt: skip  # nosemgrep: frappe-security-file-traversal — writing to /etc/hosts to register a new site
-                        f.write(f"\n127.0.0.1\t{site_name}\n")
-                    hosts_updated = True
-            except Exception:
-                pass  # non-fatal; site was created, /etc/hosts update is best-effort
-
-            # Install requested apps on the new site
-            installed_apps = []
-            failed_apps = []
-            for app in install_apps:
-                install_result = subprocess.run(
-                    ["bench", "--site", site_name, "install-app", app],
-                    capture_output=True,
-                    text=True,
-                    cwd=bench_path,
-                )
-                if install_result.returncode == 0:
-                    installed_apps.append(app)
-                else:
-                    failed_apps.append({"app": app, "error": install_result.stderr})
-
-            # Read webserver port from common_site_config.json
-            port = 8000
-            try:
-                common_config_path = os.path.join(bench_path, "sites", "common_site_config.json")
-                if os.path.exists(common_config_path):
-                    with open(common_config_path) as f:  # fmt: skip  # nosemgrep: frappe-security-file-traversal — reading well-known bench config path
-                        common_config = json.load(f)
-                    port = common_config.get("webserver_port", 8000)
-            except Exception:
-                pass
-
-            msg = f"Site '{site_name}' created. Access at http://{site_name}:{port}"
-            if installed_apps:
-                msg += f". Installed: {', '.join(installed_apps)}"
-            if failed_apps:
-                msg += f". Failed to install: {', '.join(f['app'] for f in failed_apps)}"
-
-            return {
-                "success": True,
-                "site_name": site_name,
-                "port": port,
-                "hosts_updated": hosts_updated,
-                "installed_apps": installed_apps,
-                "failed_apps": failed_apps,
-                "message": msg,
-            }
-
-        elif action == "install_app":
             app_name = arguments.get("app_name")
             if not app_name:
                 frappe.throw(_("app_name is required for install_app."), frappe.ValidationError)
 
             site_name = frappe.local.site
+            bench_path = frappe.utils.get_bench_path()
             frappe.installer.install_app(app_name)
+
+            subprocess.run(
+                [sys.executable, "-m", "pip", "install", "-e", f"apps/{app_name}", "--no-deps"],
+                capture_output=True,
+                cwd=bench_path,
+            )
+
+            verify_result = subprocess.run(
+                [sys.executable, "-c", f"import {app_name}; print('ok')"],
+                capture_output=True,
+                text=True,
+                cwd=bench_path,
+            )
+            if verify_result.returncode != 0:
+                return {
+                    "success": False,
+                    "app_name": app_name,
+                    "site_name": site_name,
+                    "error": "App installed but import failed. hooks.py may be missing.",
+                }
 
             return {
                 "success": True,
@@ -435,52 +356,51 @@ build-backend = "flit_core.buildapi"
             build_assets = arguments.get("build_assets", False)
             app_name = arguments.get("app_name")
 
-            result = subprocess.run(
-                ["bench", "--site", site_name, "migrate"],
+            pgrep_result = subprocess.run(
+                ["pgrep", "-f", "bench migrate"],
+                capture_output=True,
+                text=True,
+            )
+            if pgrep_result.stdout.strip():
+                return {
+                    "success": False,
+                    "error": "Migrate already in progress. Please wait for it to complete.",
+                    "suggestion": "Check running processes with: ps aux | grep migrate",
+                }
+
+            lock_path = os.path.join(bench_path, "sites", site_name, "locks", "bench_migrate.lock")
+            if os.path.exists(lock_path):
+                os.remove(lock_path)
+
+            import time
+
+            subprocess.run(
+                ["bench", "--site", site_name, "purge-jobs"],
                 capture_output=True,
                 text=True,
                 cwd=bench_path,
             )
-            if result.returncode != 0:
-                return {
-                    "success": False,
-                    "error": result.stderr,
-                    "message": "bench migrate failed. Check logs for details.",
-                }
 
-            steps = ["migrate"]
+            log_file = os.path.join(bench_path, "logs", "fac_migrate.log")
 
-            if build_assets and app_name:
-                build_cmd = ["bench", "build", "--app", app_name]
-                build_result = subprocess.run(build_cmd, capture_output=True, text=True, cwd=bench_path)
-                if build_result.returncode != 0:
-                    return {
-                        "success": False,
-                        "site_name": site_name,
-                        "error": build_result.stderr,
-                        "message": f"bench migrate succeeded but bench build --app {app_name} failed.",
-                    }
-                steps.append(f"build --app {app_name}")
-
-            if restart:
-                restart_result = subprocess.run(
-                    ["bench", "restart"], capture_output=True, text=True, cwd=bench_path
+            with open(log_file, "w") as f:  # fmt: skip  # nosemgrep: frappe-security-file-traversal — writing to well-known bench logs directory
+                process = subprocess.Popen(
+                    ["bench", "--site", site_name, "migrate", "--skip-failing"],
+                    stdout=f,
+                    stderr=subprocess.STDOUT,
+                    cwd=bench_path,
+                    start_new_session=True,
                 )
-                if restart_result.returncode != 0:
-                    return {
-                        "success": False,
-                        "site_name": site_name,
-                        "error": restart_result.stderr,
-                        "message": "bench migrate succeeded but bench restart failed.",
-                    }
-                steps.append("restart")
 
-            steps_str = " → ".join(steps)
+            pid_file = os.path.join(bench_path, "logs", "fac_migrate.pid")
+            with open(pid_file, "w") as pf:  # fmt: skip  # nosemgrep: frappe-security-file-traversal — writing PID to well-known bench logs directory
+                pf.write(str(process.pid))
+
             return {
                 "success": True,
-                "site_name": site_name,
-                "steps_run": steps,
-                "message": f"Completed [{steps_str}] on site '{site_name}'. All new reports and doctypes are now registered.",
+                "background": True,
+                "status": "running",
+                "message": "Migrate started. Checking progress...",
             }
 
         elif action == "uninstall_app":
@@ -529,6 +449,14 @@ build-backend = "flit_core.buildapi"
                     _("App '{0}' directory does not exist at {1}.").format(app_name, app_path),
                     frappe.ValidationError,
                 )
+
+            if not arguments.get("confirm"):
+                return {
+                    "success": False,
+                    "message": f"This will permanently delete '{app_name}' and all its files. "
+                    f"Call remove_app again with confirm=true to proceed.",
+                    "requires_confirmation": True,
+                }
 
             # Uninstall from site first if installed
             installed_apps = frappe.get_installed_apps()
@@ -735,6 +663,53 @@ build-backend = "flit_core.buildapi"
                 "fixture_file": os.path.join(app_name, app_name, "fixtures", f"{doctype_snake}.json"),
                 "hooks_updated": hooks_updated,
                 "message": f"{len(full_records)} {doctype} records exported to {app_name}",
+            }
+
+        elif action == "migrate_status":
+            import subprocess
+
+            bench_path = frappe.utils.get_bench_path()
+            log_file = os.path.join(bench_path, "logs", "fac_migrate.log")
+            pid_file = os.path.join(bench_path, "logs", "fac_migrate.pid")
+
+            still_running = False
+            try:
+                with open(pid_file) as f:  # fmt: skip  # nosemgrep: frappe-security-file-traversal — reading PID from well-known bench logs directory
+                    pid = int(f.read().strip())
+                os.kill(pid, 0)  # signal 0 = existence check only, no actual signal sent
+                # os.kill succeeds for zombie processes too — check /proc to rule out zombies
+                try:
+                    with open(f"/proc/{pid}/status") as sf:  # fmt: skip  # nosemgrep: frappe-security-file-traversal — reading /proc pseudo-filesystem, not user files
+                        for line in sf:
+                            if line.startswith("State:"):
+                                still_running = "Z" not in line  # Z = zombie = finished
+                                break
+                        else:
+                            still_running = True  # State line not found — assume running
+                except (FileNotFoundError, PermissionError):
+                    still_running = False  # /proc entry gone = process exited
+            except (FileNotFoundError, ProcessLookupError, ValueError):
+                still_running = False
+
+            output = ""
+            try:
+                with open(log_file, "r") as f:  # fmt: skip  # nosemgrep: frappe-security-file-traversal — reading well-known bench logs directory
+                    output = f.read()[-800:]
+            except Exception:
+                output = "Log file not found"
+
+            if still_running:
+                import time
+                time.sleep(15)  # enforce 15s between polls so Claude doesn't fire back-to-back
+            else:
+                subprocess.run(["bench", "restart"], capture_output=True, cwd=bench_path)
+
+            return {
+                "success": True,
+                "still_running": still_running,
+                "status": "running" if still_running else "completed",
+                "message": "Migrate still in progress..." if still_running else "Migrate completed!",
+                "output": output,
             }
 
         else:

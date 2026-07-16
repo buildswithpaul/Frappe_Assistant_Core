@@ -10,7 +10,7 @@
         "two_factor_auth": 0
     },
     {
-        "doctype": "Role", 
+        "doctype": "Role",
         "name": "Assistant Admin",
         "role_name": "Assistant Admin",
         "description": "Full access to assistant Server configuration and management",

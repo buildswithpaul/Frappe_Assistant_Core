@@ -38,7 +38,6 @@ class ReadFile(BaseTool):
             "path from the tree → call read_file with "
             "that exact path."
         )
-        self.category = "Developer Tools"
         self.source_app = "frappe_assistant_core"
 
         self.inputSchema = {

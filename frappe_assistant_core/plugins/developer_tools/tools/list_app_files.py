@@ -41,18 +41,27 @@ class ListAppFiles(BaseTool):
         self.description = (
             "List files and directories inside a Frappe app folder on the bench. "
             "Returns a flat list of entries with name, type, and size. "
-            "IMPORTANT: Always call describe_app first to understand the app structure "
-            "before using this tool to explore specific folders. "
-            "WORKFLOW: Call describe_app to get the full app tree — identify the folder "
-            "you need — call list_app_files with that exact path — use read_file to "
-            "read specific files found. "
-            "Leave path empty to list all apps on the bench. "
-            "Use pattern to filter by file type: '*.py' for Python, '*.json' for JSON, "
-            "'*.js' for JavaScript. "
-            "When pattern is given, only matching files are returned — directories are hidden. "
-            "After showing results, ask the user before calling again with the next offset."
+            "MANDATORY WORKFLOW - NEVER SKIP: "
+            "Step 1: ALWAYS call describe_app first to get the full app tree and exact folder paths. "
+            "Step 2: Use the exact path from describe_app tree output in the 'path' parameter. "
+            "Step 3: Only then call list_app_files. "
+            "CRITICAL PATH RULE: 'path' must always be the full nested path: "
+            "CORRECT: 'erpnext/erpnext/accounts' — WRONG: 'erpnext'. "
+            "CORRECT: 'fac_custom_code/fac_custom_code' — WRONG: 'fac_custom_code'. "
+            "The app folder is always nested inside itself. Never use just the app name as path. "
+            "NEVER use 'app_name' as a parameter. This tool only has 'path' and 'pattern'. "
+            "THIS TOOL WORKS ON ALL APPS including frappe, erpnext, and custom apps. "
+            "It is NOT limited to custom apps only. "
+            "WHEN TO USE THIS TOOL: "
+            "1. When describe_app returns truncated=true — use list_app_files to explore specific folders. MANDATORY — do not ask user, just call it. "
+            "2. When user asks for files in a specific folder — use list_app_files with that exact path. "
+            "3. When user asks to filter by file type — use list_app_files with pattern filter. "
+            "NEVER call list_app_files without calling describe_app first — no exceptions. "
+            "NEVER give up and tell user the app is not accessible — always try describe_app first to find the correct path. "
+            "DISPLAY RULE: Always show the full entries list as returned. Never summarize or group the results. "
+            "Show every file name and size exactly as returned in the response. "
+            "Do not pick and choose which files to show."
         )
-        self.category = "Developer Tools"
         self.source_app = "frappe_assistant_core"
 
         self.inputSchema = {
@@ -83,6 +92,11 @@ class ListAppFiles(BaseTool):
                     "description": "Start from this entry number for pagination. Default 0.",
                     "default": 0,
                 },
+                "recursive": {
+                    "type": "boolean",
+                    "description": "If true, search all subdirectories recursively. Default false. Use with pattern to find all matching files e.g. all .py files in an app.",
+                    "default": False,
+                },
             },
             "required": [],
         }
@@ -94,6 +108,7 @@ class ListAppFiles(BaseTool):
         pattern = arguments.get("pattern", None)
         max_results = arguments.get("max_results", _MAX_RESULTS)
         offset = arguments.get("offset", 0)
+        recursive = bool(arguments.get("recursive", False))
 
         try:
             max_results = int(max_results)
@@ -125,34 +140,54 @@ class ListAppFiles(BaseTool):
                 frappe.ValidationError,
             )
 
-        try:
-            raw_entries = os.listdir(abs_path)
-        except OSError as e:
-            frappe.throw(
-                _("Cannot list directory '{0}': {1}").format(path, str(e)),
-                frappe.ValidationError,
+        all_entries = []
+
+        if recursive:
+            for dirpath, dirnames, filenames in os.walk(abs_path):
+                dirnames[:] = sorted([d for d in dirnames if not _should_skip(d)])
+                matched = (
+                    sorted(filenames)
+                    if not pattern
+                    else sorted([f for f in filenames if fnmatch.fnmatch(f, pattern)])
+                )
+                for name in matched:
+                    if _should_skip(name):
+                        continue
+                    full = os.path.join(dirpath, name)
+                    rel = os.path.relpath(full, abs_path)
+                    try:
+                        size = os.path.getsize(full)
+                    except OSError:
+                        size = 0
+                    all_entries.append({"name": rel, "type": "file", "size": size})
+        else:
+            try:
+                raw_entries = os.listdir(abs_path)
+            except OSError as e:
+                frappe.throw(
+                    _("Cannot list directory '{0}': {1}").format(path, str(e)),
+                    frappe.ValidationError,
+                )
+
+            dirs = sorted(
+                [e for e in raw_entries if os.path.isdir(os.path.join(abs_path, e)) and not _should_skip(e)]
+            )
+            files = sorted(
+                [e for e in raw_entries if os.path.isfile(os.path.join(abs_path, e)) and not _should_skip(e)]
             )
 
-        dirs = sorted(
-            [e for e in raw_entries if os.path.isdir(os.path.join(abs_path, e)) and not _should_skip(e)]
-        )
-        files = sorted(
-            [e for e in raw_entries if os.path.isfile(os.path.join(abs_path, e)) and not _should_skip(e)]
-        )
+            if pattern:
+                files = [f for f in files if fnmatch.fnmatch(f, pattern)]
+                dirs = []
 
-        if pattern:
-            files = [f for f in files if fnmatch.fnmatch(f, pattern)]
-            dirs = []
-
-        all_entries = []
-        for name in dirs:
-            all_entries.append({"name": name, "type": "dir", "size": 0})
-        for name in files:
-            try:
-                size = os.path.getsize(os.path.join(abs_path, name))
-            except OSError:
-                size = 0
-            all_entries.append({"name": name, "type": "file", "size": size})
+            for name in dirs:
+                all_entries.append({"name": name, "type": "dir", "size": 0})
+            for name in files:
+                try:
+                    size = os.path.getsize(os.path.join(abs_path, name))
+                except OSError:
+                    size = 0
+                all_entries.append({"name": name, "type": "file", "size": size})
 
         total = len(all_entries)
         page = all_entries[offset : offset + max_results]

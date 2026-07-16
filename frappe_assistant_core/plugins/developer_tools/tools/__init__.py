@@ -18,6 +18,25 @@ PROTECTED_APPS = {
 }
 
 
+DEV_MODE_REQUIRED_TOOLS = {"bench_execute", "write_file"}
+
+
+def assert_developer_mode():
+    """
+    Raises frappe.PermissionError if developer_mode is not enabled in site_config.json.
+    Call this as the first line in execute() for tools that modify the bench
+    filesystem or run bench operations (bench_execute, write_file).
+    """
+    if not frappe.conf.get("developer_mode"):
+        frappe.throw(
+            _(
+                "This tool requires developer_mode=1 in site_config.json. "
+                "It is not available on production sites."
+            ),
+            frappe.PermissionError,
+        )
+
+
 def assert_system_manager():
     """
     Raises frappe.PermissionError if current user

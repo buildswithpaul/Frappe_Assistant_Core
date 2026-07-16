@@ -129,6 +129,7 @@ def toggle_tool(tool_name: str, enabled: bool):
     """
     frappe.only_for(["System Manager", "Assistant Admin"])
     from frappe_assistant_core.core.tool_registry import get_tool_registry
+    from frappe_assistant_core.plugins.developer_tools.tools import DEV_MODE_REQUIRED_TOOLS
     from frappe_assistant_core.utils.plugin_manager import get_plugin_manager
     from frappe_assistant_core.utils.tool_category_detector import detect_tool_category
 
@@ -147,6 +148,15 @@ def toggle_tool(tool_name: str, enabled: bool):
 
         # Convert enabled to boolean
         enabled = frappe.utils.cint(enabled)
+
+        if enabled and tool_name in DEV_MODE_REQUIRED_TOOLS and not frappe.conf.get("developer_mode"):
+            return {
+                "success": False,
+                "message": _(
+                    f"Tool '{tool_name}' requires developer_mode=1 in site_config.json "
+                    "and cannot be enabled on this site."
+                ),
+            }
 
         # Use savepoint for atomic operation
         frappe.db.savepoint("toggle_tool")

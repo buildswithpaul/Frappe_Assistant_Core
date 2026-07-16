@@ -12,7 +12,7 @@ description: >
 
 # Frappe Insights v3 — Dashboard Creation Skill
 
-## Overview
+## Over4view
 
 Frappe Insights v3 uses a **Workbook-centric** architecture. Everything lives inside a Workbook:
 queries, charts, and dashboards. There are several legacy doctypes that look similar but are
@@ -42,18 +42,21 @@ but will never appear in the Insights UI. The workbook will show "Dashboard not 
 
 ```
 Insights Workbook (e.g. name=496)
-├── queries JSON field  ← manifest listing all Query v3 docs
-├── charts JSON field   ← manifest listing all Chart v3 docs
-├── dashboards JSON field ← manifest listing all Dashboard v3 docs
+├── data_backup JSON field ← the only real persisted field; contains queries/charts/
+│                             dashboards manifests as a nested JSON object
+├── queries / charts / dashboards ← virtual/computed at runtime from data_backup + child
+│                                    docs, NOT real DB columns
 │
 ├── Insights Query v3 (workbook=496)   ← SQL that fetches data
 ├── Insights Chart v3 (workbook=496)   ← visual config referencing a query
 └── Insights Dashboard v3 (workbook=496) ← grid layout referencing charts
 ```
 
-The Workbook's `queries`, `charts`, and `dashboards` fields are **JSON manifests** that the UI
-reads to populate the sidebar and tabs. If these are null or stale, the UI shows empty
-placeholders even though the underlying documents exist in the DB.
+The UI reads the Workbook's manifest (backed by `data_backup`) to populate the sidebar and
+tabs. If it's null or stale, the UI shows empty placeholders even though the underlying
+documents exist in the DB. See
+[Step 5: Update the Workbook Manifests](#step-5-update-the-workbook-manifests) for the
+correct way to write it.
 
 ---
 
@@ -135,6 +138,12 @@ rendering failures or "column does not exist" errors.
 }
 ```
 
+⚠️ Bar/Row CRITICAL rules:
+- NEVER add a `"color"` key or `"colors"` array — causes the chart to render black/broken
+- `order_by` must be at the TOP LEVEL of config (not inside `y_axis`) — this is the only
+  ordering that survives shadow query regeneration, read by `N(_)` in the rebuild pipeline
+- No other undocumented keys
+
 #### Donut / Pie chart config
 ```json
 {
@@ -158,31 +167,31 @@ rendering failures or "column does not exist" errors.
 }
 ```
 
+⚠️ Donut/Pie supports EXACTLY ONE measure (`value_column`). Cannot show multiple series.
+If you need Budget + Achievement + PY side by side, use a Bar chart instead.
+
 #### Number card config
 
-**CRITICAL: `measure_name` is the label displayed on the card.** Do NOT use the auto-generated
-format `"sum_of_ColumnName"` — it renders literally as the label. Always set it to a clean
-human-readable string like `"Total Leads"` or `"Active Pipeline"`.
-
-Use `"shorten_numbers": true` for large values (millions, lakhs) so they display as `₹99L`
-instead of `99,34,480`.
+**CRITICAL: this schema was WRONG in earlier versions of this doc.** Number cards do NOT
+use a `number_columns` array — confirmed from the compiled frontend source
+(`Number-33c2819d.js`). Do not mix the old array-based schema with the flat schema below.
 
 ```json
 {
-  "date_column": {},
-  "filters": {"filters": [], "logical_operator": "And"},
-  "limit": 100,
-  "number_column_options": [],
-  "number_columns": [{
-    "aggregation": "sum",
-    "column_name": "Total Leads",
-    "data_type": "Integer",
-    "measure_name": "Total Leads"
-  }],
-  "order_by": [],
-  "shorten_numbers": true
+  "title": "My KPI",
+  "column": "Total Count",
+  "prefix": "₹",
+  "suffix": " Cr",
+  "decimals": 0,
+  "shorten": true
 }
 ```
+
+⚠️ `column` must match the chart's **shadow query's** `measure_name` (spaces, not
+underscores) — not the raw SQL alias. The shadow auto-generates `measure_name` by
+replacing underscores in the SQL alias with spaces: SQL alias `CY_Budget_Cr` → shadow
+`measure_name` = `"CY Budget Cr"`. See
+[Shadow Query Architecture](#shadow-query-architecture--critical-to-understand) below.
 
 #### Line chart config
 ```json
@@ -339,6 +348,11 @@ create_document(
 - `i` must be a unique string per item across ALL items — use short readable IDs like `"chart-001"`
 - `x + w` must not exceed 20 or items will overflow off-screen
 - `y` values must be **exactly sequential with no gaps and no overlaps**: next item's `y` = previous item's `y + h`. Never reuse a y value for a different row unless items are intentionally side-by-side (same y, different x).
+- Text items: always use `w=20` — narrow text items placed at row-end with no neighbor to
+  their right get orphaned by the grid engine and render displaced/lower than intended
+- Filter items: always use `h=3` (not 1 or 2) — see [Filter Item Schema](#filter-item-schema)
+- Keep `vertical_compact_layout` on the `Insights Dashboard v3` doc at `0` (off) to prevent
+  the grid engine from automatically compacting rows upward and breaking your layout
 
 **CRITICAL — Side-by-side alignment:** When placing two charts next to each other (e.g., x=0,w=10 and x=10,w=10), both must share the **same `y` value** AND the **same `h` value**. If heights differ, the taller one will overlap items below it on the shorter side.
 
@@ -376,6 +390,12 @@ else:
     print("Layout valid - no overflow")
 ```
 
+**`update_document` partial-merge bug:** when overwriting the `items` field on an existing
+`Insights Dashboard v3`, array elements whose `i` matches an existing entry may silently
+retain stale layout values instead of being fully replaced — the write appears to merge by
+`i` rather than cleanly overwrite the JSON array. Fix: use fresh, unique `i` values on every
+full layout rewrite (append `-v2`, `-v3`, etc.) to force a clean write.
+
 ---
 
 ## Adding Filters to a Dashboard
@@ -397,19 +417,34 @@ column reference format is: `` `<query_name>`.`<column_name>` `` (backtick-quote
 
 ### Filter Item Schema
 
+Confirmed from the compiled frontend source (`dashboard-0f0b1cfe.js`):
+
 ```json
 {
   "type": "filter",
   "filter_name": "From Date",
   "filter_type": "Date",
-  "layout": {"x": 0, "y": 1, "w": 4, "h": 1, "i": "flt-001", "moved": false},
+  "layout": {"x": 0, "y": 2, "w": 4, "h": 3, "i": "flt-001", "moved": false},
   "links": {
-    "<chart_name>": "`<query_name>`.`<column_name>`"
+    "<chart_name>": "`<shadow_query_name>`.`<column_name>`"
   }
 }
 ```
 
 **filter_type valid values:** `Date`, `String`, `Integer`, `Decimal`
+(`String` renders a dropdown with in/not in/contains operators; `Date` renders date pickers
+with between/>=/<= operators)
+
+**Critical rules:**
+- `links` keys MUST be **chart names**, not query names — `getAdhocFilters(d)` is called
+  with `d = v.chart`
+- `links` values reference the chart's **shadow query** (the `data_query` field), not the
+  source query you created — see
+  [Shadow Query Architecture](#shadow-query-architecture--critical-to-understand)
+- `links: {}` (empty) → the dropdown renders but shows no options
+- Dropdown values come from `get_distinct_column_values(query, column_name)` run against
+  the linked shadow query — the shadow must actually output that column
+- Filter rows must be at `y ≥ 2` and `h = 3` — smaller values render cramped/misaligned
 
 ### Full Example: Date Range + String Filter
 
@@ -424,17 +459,17 @@ items = [
     "type": "filter",
     "filter_name": "From Date",
     "filter_type": "Date",
-    "layout": {"x": 0, "y": 1, "w": 4, "h": 1, "i": "flt-001", "moved": False},
+    "layout": {"x": 0, "y": 2, "w": 4, "h": 3, "i": "flt-001", "moved": False},
     "links": {
       "28jo5dmvrg": "`1v34po75e2`.`creation`"
-      #              ^chart name    ^query name  ^column name
+      #              ^chart name    ^shadow query name  ^column name
     }
   },
   {
     "type": "filter",
     "filter_name": "To Date",
     "filter_type": "Date",
-    "layout": {"x": 4, "y": 1, "w": 4, "h": 1, "i": "flt-002", "moved": False},
+    "layout": {"x": 4, "y": 2, "w": 4, "h": 3, "i": "flt-002", "moved": False},
     "links": {
       "28jo5dmvrg": "`1v34po75e2`.`creation`"
     }
@@ -443,7 +478,7 @@ items = [
     "type": "filter",
     "filter_name": "Project",
     "filter_type": "String",
-    "layout": {"x": 8, "y": 1, "w": 4, "h": 1, "i": "flt-003", "moved": False},
+    "layout": {"x": 8, "y": 2, "w": 4, "h": 3, "i": "flt-003", "moved": False},
     "links": {
       "28jo5dmvrg": "`1v34po75e2`.`project_name`"
     }
@@ -453,7 +488,7 @@ items = [
   {
     "type": "chart",
     "chart": "28jo5dmvrg",
-    "layout": {"x": 0, "y": 2, "w": 20, "h": 10, "i": "chart-001", "moved": False}
+    "layout": {"x": 0, "y": 5, "w": 20, "h": 10, "i": "chart-001", "moved": False}
   }
 ]
 ```
@@ -468,11 +503,11 @@ to the `links` object, one per chart:
   "type": "filter",
   "filter_name": "From Date",
   "filter_type": "Date",
-  "layout": {"x": 0, "y": 0, "w": 4, "h": 1, "i": "flt-global-from", "moved": false},
+  "layout": {"x": 0, "y": 2, "w": 4, "h": 3, "i": "flt-global-from", "moved": false},
   "links": {
-    "chart_name_1": "`query_name_1`.`creation`",
-    "chart_name_2": "`query_name_2`.`creation`",
-    "chart_name_3": "`query_name_3`.`timestamp`"
+    "chart_name_1": "`shadow_query_name_1`.`creation`",
+    "chart_name_2": "`shadow_query_name_2`.`creation`",
+    "chart_name_3": "`shadow_query_name_3`.`timestamp`"
   }
 }
 ```
@@ -488,9 +523,10 @@ Number card query will cause the error:
 **Fix:** In the filter's `links` object, only include charts whose underlying queries actually
 SELECT the column being filtered. Omit all Number card charts from filter links entirely.
 
-**PITFALL 2 — Column name in links must match the SQL alias exactly.**
-If the SQL uses `DATE(timestamp) AS date`, the filter link must reference `` `query`.`date` ``,
-not `` `query`.`timestamp` ``.
+**PITFALL 2 — Column name in links must match the shadow query's column exactly.**
+The link points at the chart's shadow query (`data_query`), not the source query. If the
+source SQL uses `DATE(timestamp) AS date`, the filter link must reference
+`` `shadow_query_name`.`date` ``, not `` `shadow_query_name`.`timestamp` ``.
 
 **PITFALL 3 — `i` values must be unique across ALL items** (charts, text, filters).
 Reusing an `i` value causes the grid to collapse items on top of each other silently.
@@ -502,8 +538,8 @@ section heading text item above the filter row:
 
 ```
 y=0  Section heading text (full width, h=1)
-y=1  Filter row: [From Date][To Date][Dimension filter]  (h=1 each)
-y=2  Chart(s) the filters apply to
+y=2  Filter row: [From Date][To Date][Dimension filter]  (h=3 each)
+y=5  Chart(s) the filters apply to
 ```
 
 This gives the dashboard a clear visual hierarchy and makes it obvious which filters affect
@@ -513,24 +549,30 @@ which charts.
 
 This is the step most likely to be forgotten — without it the sidebar is empty.
 
+**The `queries`, `charts`, and `dashboards` fields on `tabInsights Workbook` are
+virtual/computed at runtime from the child docs — there are no real DB columns behind
+them.** The only real persisted field is `data_backup` (a JSON string). Update that instead:
+
 ```python
 update_document(
   doctype="Insights Workbook",
   name="496",
   data={
-    "queries": json.dumps([
-      {"is_builder_query": 0, "is_native_query": 1, "is_script_query": 0,
-       "name": "1v34po75e2", "title": "Issues by Project"},
-      # ... one entry per query
-    ]),
-    "charts": json.dumps([
-      {"chart_type": "Bar", "name": "28jo5dmvrg",
-       "query": "1v34po75e2", "title": "Issues by Project"},
-      # ... one entry per chart
-    ]),
-    "dashboards": json.dumps([
-      {"name": "aj7tikqn6l", "title": "My Dashboard"}
-    ])
+    "data_backup": json.dumps({
+      "queries": [
+        {"is_builder_query": 0, "is_native_query": 1, "is_script_query": 0,
+         "name": "1v34po75e2", "title": "Issues by Project"},
+        # ... one entry per query
+      ],
+      "charts": [
+        {"chart_type": "Bar", "name": "28jo5dmvrg",
+         "query": "1v34po75e2", "title": "Issues by Project"},
+        # ... one entry per chart
+      ],
+      "dashboards": [
+        {"name": "aj7tikqn6l", "title": "My Dashboard"}
+      ]
+    })
   }
 )
 ```
@@ -544,6 +586,59 @@ update_document(
 | Workbook | `/insights/workbook/{workbook_id}` |
 | Chart in workbook | `/insights/workbook/{workbook_id}/chart/{chart_name}` |
 | Dashboard in workbook | `/insights/workbook/{workbook_id}/dashboard/{dashboard_name}` |
+
+---
+
+## Shadow Query Architecture — Critical to Understand
+
+Every `Insights Chart v3` has two query fields:
+- `query` — your source query (native SQL you created)
+- `data_query` — an auto-generated **shadow query**, rebuilt from `config.x_axis`/`y_axis`
+  on **every single dashboard page load**
+
+Rules:
+- **Never patch the shadow query directly** — it is overwritten within seconds of the next
+  page load
+- The only durable control is through the chart's `config` fields
+- `config.order_by` array at the top level IS read by the rebuild pipeline (`N(_)` in
+  `dashboard-0f0b1cfe.js`) and applied as `addOrderBy` on every regeneration — use this
+  for durable ordering
+- The shadow wraps the source SQL in a DuckDB `source`+`summarize` pipeline — unsupported
+  SQL constructs cause the shadow build to fail even if the SQL runs fine in MariaDB
+
+---
+
+## DuckDB Transpilation — Hard Limits
+
+These SQL constructs WILL FAIL in the shadow pipeline even if they work in MariaDB:
+
+| ❌ Fails | ✅ Safe alternative |
+|---|---|
+| `MONTHNAME(date)` | Pre-numbered labels: `'01. April'`, `'02. May'` |
+| Correlated subqueries | `LEFT JOIN` with a pre-aggregated subquery |
+| `ORDER BY FIELD(col, 'a','b')` | Numeric prefix ensures correct alphabetic sort |
+| Nested derived tables | Flatten to a single-level join |
+
+Safest pattern for pre-aggregated data — literal `UNION ALL SELECT`:
+```sql
+SELECT '01. April' AS Month, 1.24 AS Budget_CY, 1.16 AS Achvd_CY
+UNION ALL SELECT '02. May', 2.85, 0.79
+```
+This bypasses the transpiler entirely. Always test SQL with `run_database_query` first.
+
+---
+
+## Dashboard Auto-Save Conflict — Operational Rule
+
+If the workbook editor or dashboard viewer is open in ANY browser tab, it auto-saves its
+in-memory layout back to the database periodically, overwriting API writes made in the
+meantime — this can happen even after closing the tab if a save request was already
+in-flight.
+
+Rule: Close ALL browser tabs with the workbook or dashboard open before making layout
+changes via `update_document`. Verify the result with a fresh `JSON_TABLE` query (see
+[Reference: Inspect an Existing Working Dashboard](#reference-inspect-an-existing-working-dashboard))
+rather than trusting the browser view.
 
 ---
 
@@ -568,12 +663,15 @@ to charts whose SQL actually SELECTs the column being filtered.
 ### Dashboard tab shows "Dashboard doesn't exist"
 **Cause 1:** Dashboard was created in `Insights Dashboard` (legacy) instead of `Insights Dashboard v3`.
 **Fix:** Delete the old one, create in `Insights Dashboard v3` with `workbook` field set.
-**Cause 2:** Workbook `dashboards` manifest not updated.
-**Fix:** Update the workbook's `dashboards` JSON field.
+**Cause 2:** Workbook manifest not updated.
+**Fix:** Update the workbook's `data_backup` field with the dashboard entry included — see
+[Step 5: Update the Workbook Manifests](#step-5-update-the-workbook-manifests).
 
 ### Charts show as empty placeholders in workbook sidebar
-**Cause:** Workbook `charts` manifest is null or stale.
-**Fix:** Update the workbook's `charts` JSON field with all chart names.
+**Cause:** Workbook manifest is null or stale (`queries`/`charts`/`dashboards` are
+virtual/computed from `data_backup`, not real columns — writing to them directly does
+nothing).
+**Fix:** Update the workbook's `data_backup` field with all chart entries included.
 
 ### Chart renders but shows no data
 **Cause:** Chart config `column_name` values don't match the actual column aliases in the SQL.
@@ -597,7 +695,8 @@ Donut chart which needs `label_column`/`value_column`).
 - [ ] **Filters added** — every dashboard must have at least date range filters
 - [ ] **Filter links are correct** — `links` uses format `` `query_name`.`column_name` ``
 - [ ] **No filter linked to a Number card** — Number card queries have no dimension columns to filter
-- [ ] Workbook `queries`, `charts`, `dashboards` JSON manifests all updated
+- [ ] Workbook manifest updated via the `data_backup` field (not `queries`/`charts`/
+      `dashboards` directly — those are virtual/computed, writes to them are silently lost)
 - [ ] Hard refresh the browser after all changes (`Cmd+Shift+R`)
 
 ---
@@ -623,3 +722,24 @@ SELECT name, title, is_native_query, is_builder_query, operations
 FROM `tabInsights Query v3`
 WHERE workbook = '495'
 ```
+
+**Prefer `JSON_TABLE` over manual index reads** (`JSON_EXTRACT(items, '$[6]')`) when
+inspecting or verifying dashboard `items` — index-counting by hand is error-prone and easy
+to get off by one:
+
+```sql
+SELECT je.i, je.y, je.w, je.chart_or_filter
+FROM `tabInsights Dashboard v3` d
+JOIN JSON_TABLE(d.items, '$[*]' COLUMNS (
+  i VARCHAR(20) PATH '$.layout.i',
+  y INT PATH '$.layout.y',
+  w INT PATH '$.layout.w',
+  chart_or_filter VARCHAR(50) PATH '$.chart'
+)) je
+WHERE d.name = 'YOUR_DASHBOARD_NAME'
+ORDER BY je.y, je.i
+```
+
+Always run this after any layout write — and only after closing all browser tabs with the
+workbook/dashboard open (see
+[Dashboard Auto-Save Conflict](#dashboard-auto-save-conflict--operational-rule)).

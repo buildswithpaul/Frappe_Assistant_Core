@@ -44,4 +44,5 @@ def execute():
     }
 
     for field, value in defaults.items():
-        frappe.db.set_single_value("Assistant Core Settings", field, value)
+        if not frappe.db.get_single_value("Assistant Core Settings", field):
+            frappe.db.set_single_value("Assistant Core Settings", field, value)
