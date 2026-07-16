@@ -86,10 +86,10 @@ class WriteFile(BaseTool):
             "Never skip the .js file for any reason. "
             "REPORT SQL RULE: For all Script Reports always use frappe.db.sql() only. "
             "Never use frappe.get_all(), frappe.get_list(), or frappe.qb in report Python files. "
-            "REPORT JSON RULE: Always include \"modified\" and \"creation\" keys in report JSON files. "
-            "Set them to any valid datetime string such as \"2025-01-01 00:00:01\" as a placeholder — "
+            'REPORT JSON RULE: Always include "modified" and "creation" keys in report JSON files. '
+            'Set them to any valid datetime string such as "2025-01-01 00:00:01" as a placeholder — '
             "write_file automatically overwrites them with the real current timestamp at write time. "
-            "Never use empty string \"\" — empty string causes NoneType TypeError on Frappe v15 migrate. "
+            'Never use empty string "" — empty string causes NoneType TypeError on Frappe v15 migrate. '
             "AFTER WRITING FILES: When you have finished all write_file calls for a task, always ask: "
             "'Files created successfully. Should I run bench migrate now to register the changes "
             "in Frappe UI? (Yes/No)' "
@@ -207,6 +207,7 @@ class WriteFile(BaseTool):
         if ext == ".json":
             try:
                 import json as _json
+
                 doc = _json.loads(content)
                 now_str = frappe.utils.now()
                 changed = False

@@ -693,13 +693,14 @@ build-backend = "flit_core.buildapi"
 
             output = ""
             try:
-                with open(log_file, "r") as f:  # fmt: skip  # nosemgrep: frappe-security-file-traversal — reading well-known bench logs directory
+                with open(log_file) as f:  # fmt: skip  # nosemgrep: frappe-security-file-traversal — reading well-known bench logs directory
                     output = f.read()[-800:]
             except Exception:
                 output = "Log file not found"
 
             if still_running:
                 import time
+
                 time.sleep(15)  # enforce 15s between polls so Claude doesn't fire back-to-back
             else:
                 subprocess.run(["bench", "restart"], capture_output=True, cwd=bench_path)
