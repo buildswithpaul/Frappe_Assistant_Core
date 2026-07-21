@@ -28,6 +28,8 @@ import frappe
 from frappe.utils import cint, flt
 from frappe.utils.caching import redis_cache, site_cache
 
+from frappe_assistant_core.api.oauth_discovery import get_public_base_url
+
 # Cache TTL constants (in seconds)
 CACHE_TTL = {
     "dashboard_stats": 300,  # 5 minutes - frequently accessed
@@ -119,7 +121,7 @@ def get_cached_server_settings():
     settings = frappe.get_single("Assistant Core Settings")
 
     # Get full server URL for MCP endpoint
-    frappe_url = frappe.utils.get_url()
+    frappe_url = get_public_base_url()
     mcp_endpoint_url = f"{frappe_url}/api/method/frappe_assistant_core.api.fac_endpoint.handle_mcp"
     oauth_discovery_url = f"{frappe_url}/.well-known/openid-configuration"
 
