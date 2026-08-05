@@ -428,9 +428,7 @@ class ReportRequirements(BaseTool):
         }
 
     @staticmethod
-    def _find_matching_delimiter(
-        text: str, start: int, opening: str, closing: str
-    ) -> int:
+    def _find_matching_delimiter(text: str, start: int, opening: str, closing: str) -> int:
         """Return the matching delimiter while ignoring strings and JavaScript comments."""
         if start < 0 or start >= len(text) or text[start] != opening:
             return -1
@@ -528,9 +526,7 @@ class ReportRequirements(BaseTool):
         """
         import re
 
-        property_matches = list(
-            re.finditer(r'(?<![\w$])["\']?filters["\']?\s*:', js_content)
-        )
+        property_matches = list(re.finditer(r'(?<![\w$])["\']?filters["\']?\s*:', js_content))
         if not property_matches:
             return None, "no 'filters:' key found in JS"
 
@@ -551,12 +547,10 @@ class ReportRequirements(BaseTool):
                 notes.append("filters array found but no filter objects parsed")
                 continue
 
-            function_match = re.match(r'([A-Za-z_$][\w$]*)\s*\(', js_content[value_start:])
+            function_match = re.match(r"([A-Za-z_$][\w$]*)\s*\(", js_content[value_start:])
             if function_match:
                 function_name = function_match.group(1)
-                parsed, note = self._extract_filters_from_builder_function(
-                    js_content, function_name
-                )
+                parsed, note = self._extract_filters_from_builder_function(js_content, function_name)
                 if parsed:
                     return parsed, None
                 notes.append(note or f"unable to resolve filter builder {function_name}()")
@@ -599,9 +593,7 @@ class ReportRequirements(BaseTool):
 
         for returned_variable in re.finditer(r"\breturn\s+([A-Za-z_$][\w$]*)\s*;?", body):
             variable_name = re.escape(returned_variable.group(1))
-            assignment = re.search(
-                rf"(?:const|let|var)\s+{variable_name}\s*=\s*\[", body
-            )
+            assignment = re.search(rf"(?:const|let|var)\s+{variable_name}\s*=\s*\[", body)
             if assignment:
                 array_start = body.find("[", assignment.start())
                 array_end = self._find_matching_delimiter(body, array_start, "[", "]")
@@ -617,11 +609,10 @@ class ReportRequirements(BaseTool):
         """Return a namespace mixed into a report config, such as ``erpnext.financial_statements``."""
         import re
 
+        namespace_pattern = r"([A-Za-z_$][\w$]*(?:\s*\.\s*[A-Za-z_$][\w$]*)+)"
         patterns = [
-            r"\$\s*\.\s*extend\s*\(\s*(?:\{\s*\}\s*,\s*)?"
-            r"([A-Za-z_$][\w$]*(?:\s*\.\s*[A-Za-z_$][\w$]*)+)",
-            r"Object\s*\.\s*assign\s*\(\s*(?:\{\s*\}\s*,\s*)?"
-            r"([A-Za-z_$][\w$]*(?:\s*\.\s*[A-Za-z_$][\w$]*)+)",
+            r"\$\s*\.\s*extend\s*\(\s*(?:\{\s*\}\s*,\s*)?" + namespace_pattern,
+            r"Object\s*\.\s*assign\s*\(\s*(?:\{\s*\}\s*,\s*)?" + namespace_pattern,
         ]
         for pattern in patterns:
             match = re.search(pattern, js_content)
@@ -646,25 +637,17 @@ class ReportRequirements(BaseTool):
         import re
 
         filters = []
-        pattern = re.compile(
-            r"(?:\.\s*filters|\[\s*[\"']filters[\"']\s*\])\s*\.\s*push\s*\("
-        )
+        pattern = re.compile(r"(?:\.\s*filters|\[\s*[\"']filters[\"']\s*\])\s*\.\s*push\s*\(")
         for match in pattern.finditer(js_content):
             parenthesis_start = match.end() - 1
-            parenthesis_end = self._find_matching_delimiter(
-                js_content, parenthesis_start, "(", ")"
-            )
+            parenthesis_end = self._find_matching_delimiter(js_content, parenthesis_start, "(", ")")
             if parenthesis_end == -1:
                 continue
-            parsed = self._parse_js_filter_array(
-                js_content[parenthesis_start + 1 : parenthesis_end]
-            )
+            parsed = self._parse_js_filter_array(js_content[parenthesis_start + 1 : parenthesis_end])
             filters.extend(parsed.get("filters", []))
         return self._build_parsed_filter_result(filters)
 
-    def _merge_parsed_filters(
-        self, base: Dict[str, Any], extension: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    def _merge_parsed_filters(self, base: Dict[str, Any], extension: Dict[str, Any]) -> Dict[str, Any]:
         """Merge parsed filter sets by fieldname while keeping report-specific overrides."""
         merged = []
         positions = {}
@@ -705,9 +688,7 @@ class ReportRequirements(BaseTool):
         try:
             shared_path = self._resolve_shared_js_path(shared_reference, module_name)
         except Exception as e:
-            details["shared"].update(
-                {"status": "failed", "error": f"{type(e).__name__}: {str(e)}"}
-            )
+            details["shared"].update({"status": "failed", "error": f"{type(e).__name__}: {str(e)}"})
             return None, details
 
         details["shared"]["path"] = shared_path
@@ -721,9 +702,7 @@ class ReportRequirements(BaseTool):
             shared_content = shared_file.read()
         shared_parsed, shared_note = self._extract_filters_from_js(shared_content)
         details["shared"]["status"] = "success" if shared_parsed else "failed"
-        details["shared"]["filters_found"] = (
-            len(shared_parsed.get("filters", [])) if shared_parsed else 0
-        )
+        details["shared"]["filters_found"] = len(shared_parsed.get("filters", [])) if shared_parsed else 0
         if shared_note:
             details["shared"]["note"] = shared_note
         if not shared_parsed:
@@ -823,9 +802,7 @@ class ReportRequirements(BaseTool):
             # quotes on the key so JSON-style report JS isn't silently skipped
             # (issue #203).
             # Extract fieldname
-            fieldname_match = re.search(
-                r'["\']?fieldname["\']?\s*:\s*[`"\']([^`"\']+)[`"\']', filter_obj
-            )
+            fieldname_match = re.search(r'["\']?fieldname["\']?\s*:\s*[`"\']([^`"\']+)[`"\']', filter_obj)
             if fieldname_match:
                 filter_def["fieldname"] = fieldname_match.group(1)
             else:

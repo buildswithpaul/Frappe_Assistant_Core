@@ -169,9 +169,7 @@ class TestERPNextSharedFilters(BaseAssistantTest):
         self.tool = ReportRequirements()
 
     def test_financial_statement_fallback_uses_period_filter_names(self):
-        requirements = self.tool._analyze_filter_requirements(
-            "Profit and Loss Statement", "Script Report"
-        )
+        requirements = self.tool._analyze_filter_requirements("Profit and Loss Statement", "Script Report")
 
         rendered = str(requirements)
         self.assertIn("period_start_date", rendered)
@@ -201,7 +199,5 @@ class TestERPNextSharedFilters(BaseAssistantTest):
         self.assertIn("period_end_date", parsed["conditional_required_filters"])
 
         definitions = {item["fieldname"]: item for item in parsed["filters"]}
-        self.assertEqual(
-            definitions["filter_based_on"]["options"], ["Fiscal Year", "Date Range"]
-        )
+        self.assertEqual(definitions["filter_based_on"]["options"], ["Fiscal Year", "Date Range"])
         self.assertIn("Date Range", definitions["period_start_date"]["mandatory_depends_on"])
