@@ -23,15 +23,16 @@ real triggers and verified the fixes:
 
   * JSON-style quoted keys ("fieldname": "x") — the regex only matched bare
     keys (fieldname:), so every filter object was skipped.
-  * filters built programmatically (filters: get_filters()) — there is no
-    literal array to parse; this now surfaces a diagnostic instead of a silent
-    empty result.
+  * filters built programmatically (filters: get_filters()) — the builder's
+    returned array is resolved instead of being discarded.
 
 Also adds the Report.filters child table as a discovery source, and a
 discovery_diagnostics payload so empty results are debuggable.
 """
 
 from unittest.mock import MagicMock
+
+import frappe
 
 from frappe_assistant_core.plugins.core.tools.report_requirements import ReportRequirements
 from frappe_assistant_core.tests.base_test import BaseAssistantTest
@@ -89,13 +90,12 @@ class TestJsFilterParsing(BaseAssistantTest):
         self.assertEqual(parsed["filters"][0]["fieldname"], "company")
         self.assertEqual(parsed["filters"][0].get("label"), "Company")
 
-    def test_programmatic_filters_report_a_diagnostic_not_silence(self):
-        """Genuinely unparseable (filters built by a function) must surface a
-        note explaining why, rather than returning a bare None."""
+    def test_programmatic_filters_resolve_local_builder(self):
+        """A local get_filters() builder is a discoverable filter source."""
         parsed, note = self.tool._extract_filters_from_js(_PROGRAMMATIC)
-        self.assertIsNone(parsed)
-        self.assertTrue(note)
-        self.assertIn("programmatically", note)
+        self.assertIsNone(note)
+        self.assertEqual([f["fieldname"] for f in parsed["filters"]], ["company"])
+        self.assertEqual(parsed["required_filters"], ["company"])
 
     def test_missing_filters_key_reports_note(self):
         parsed, note = self.tool._extract_filters_from_js("frappe.query_reports['X'] = {};")
@@ -159,3 +159,49 @@ class TestDiscoveryOrchestration(BaseAssistantTest):
         self.assertEqual(diagnostics["filters_child_table"]["status"], "empty")
         # JS discovery was attempted and recorded (even though it found nothing).
         self.assertIn("javascript", diagnostics)
+
+
+class TestERPNextSharedFilters(BaseAssistantTest):
+    """Standard ERPNext financial reports inherit filters from shared JavaScript."""
+
+    def setUp(self):
+        super().setUp()
+        self.tool = ReportRequirements()
+
+    def test_financial_statement_fallback_uses_period_filter_names(self):
+        requirements = self.tool._analyze_filter_requirements(
+            "Profit and Loss Statement", "Script Report"
+        )
+
+        rendered = str(requirements)
+        self.assertIn("period_start_date", rendered)
+        self.assertIn("period_end_date", rendered)
+        self.assertIn("filter_based_on", rendered)
+        self.assertIn("does not use from_date and to_date", rendered)
+
+    def test_profit_and_loss_discovers_real_filter_contract(self):
+        if "erpnext" not in frappe.get_installed_apps():
+            self.skipTest("ERPNext is not installed")
+
+        parsed = self.tool._parse_script_report_filters("Profit and Loss Statement", "Accounts")
+
+        self.assertIsNotNone(parsed)
+        fieldnames = [filter_def["fieldname"] for filter_def in parsed["filters"]]
+        self.assertIn("company", fieldnames)
+        self.assertIn("filter_based_on", fieldnames)
+        self.assertIn("period_start_date", fieldnames)
+        self.assertIn("period_end_date", fieldnames)
+        self.assertIn("periodicity", fieldnames)
+        self.assertIn("selected_view", fieldnames)
+        self.assertNotIn("from_date", fieldnames)
+        self.assertNotIn("to_date", fieldnames)
+        self.assertIn("company", parsed["required_filters"])
+        self.assertIn("periodicity", parsed["required_filters"])
+        self.assertIn("period_start_date", parsed["conditional_required_filters"])
+        self.assertIn("period_end_date", parsed["conditional_required_filters"])
+
+        definitions = {item["fieldname"]: item for item in parsed["filters"]}
+        self.assertEqual(
+            definitions["filter_based_on"]["options"], ["Fiscal Year", "Date Range"]
+        )
+        self.assertIn("Date Range", definitions["period_start_date"]["mandatory_depends_on"])
