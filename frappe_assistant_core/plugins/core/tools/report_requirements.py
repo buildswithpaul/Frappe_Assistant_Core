@@ -445,7 +445,7 @@ class ReportRequirements(BaseTool):
             if js_path and os.path.exists(js_path):
                 diag["js_file"]["file_exists"] = True
                 diag["js_file"]["file_readable"] = os.access(js_path, os.R_OK)
-                # nosemgrep: frappe-semgrep-rules.rules.security.frappe-security-file-traversal — path built from frappe.get_module_path + scrubbed report metadata, not user input
+                # nosemgrep: frappe-security-file-traversal — path built from frappe.get_module_path + scrubbed report metadata, not user input
                 with open(js_path, encoding="utf-8") as f:
                     js_content = f.read()
                 parsed, note = self._extract_filters_from_js(js_content)
