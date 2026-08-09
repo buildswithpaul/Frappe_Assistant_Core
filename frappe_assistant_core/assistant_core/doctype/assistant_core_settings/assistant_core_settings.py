@@ -164,9 +164,16 @@ class AssistantCoreSettings(Document):
         # Handle MCP API enable/disable
         if self.server_enabled:
             if server_was_enabled or not server.running:
-                # Enable API if it was just enabled or not running
+                # Enable API if it was just enabled or not running.
+                # enqueue_after_commit is required, not cosmetic: the job calls
+                # server.enable(), which re-reads this Single via
+                # frappe.get_single and returns "MCP API is disabled in
+                # settings" if it sees the pre-save value. Without it the job
+                # races the very transaction that enabled the server.
                 frappe.enqueue(
-                    "frappe_assistant_core.assistant_core.server.enable_background_api", queue="short"
+                    "frappe_assistant_core.assistant_core.server.enable_background_api",
+                    queue="short",
+                    enqueue_after_commit=True,
                 )
         else:
             if server_was_enabled and server.running:
