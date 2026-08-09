@@ -62,7 +62,13 @@ _DOTTED_RE = re.compile(r"[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)+\Z")
 _NUMBER_RE = re.compile(r"-?(?:0[xX][0-9a-fA-F]+|\d+\.?\d*(?:[eE][-+]?\d+)?|\.\d+)(?![\w$])")
 
 # ``frappe.query_reports["Some Report"]``
-_QUERY_REPORTS_RE = re.compile(r"frappe\s*\.\s*query_reports\s*\[\s*([\"'])(.*?)\1\s*\]")
+_QUERY_REPORTS_RE = re.compile(
+    r"frappe\s*\.\s*query_reports\s*\[\s*(?:([\"']) (.*?)\1|([A-Za-z_$][\w$]*))\s*\]".replace(" ", "")
+)
+
+# ``const PL_REPORT_NAME = "Profit and Loss Statement";`` — ERPNext v16 binds
+# the report name to a module constant before subscripting query_reports.
+_STRING_CONST_TMPL = r"\b(?:const|let|var)\s+{}\s*=\s*([\"'])(.*?)\1"
 
 # ``...["filters"].push(`` / ``....filters.splice(``
 _MUTATION_RE = re.compile(
@@ -351,6 +357,24 @@ def blank_non_code(source: str) -> Tuple[str, bool]:
     """Back-compat shim returning only the fully-sanitized view."""
     sanitized, _code, clean = scan(source)
     return sanitized, clean
+
+
+def _report_name_at(match, source: str, sanitized: str, code: str) -> Optional[str]:
+    """Report name from a ``frappe.query_reports[...]`` match.
+
+    Returns None when the subscript is an identifier whose string binding
+    cannot be found. Callers treat that as "owner unknown" rather than
+    dropping the site — losing the name is not a reason to lose the filters.
+    """
+    if match.group(2) is not None:
+        return match.group(2)
+    ident = match.group(3)
+    if not ident:
+        return None
+    decl = re.search(_STRING_CONST_TMPL.format(re.escape(ident)), code)
+    if decl and _in_code(sanitized, source, decl.start()):
+        return decl.group(2)
+    return None
 
 
 def _in_code(sanitized: str, source: str, index: int) -> bool:
@@ -803,8 +827,8 @@ def _find_config_assignments(source: str, sanitized: str, code: str, report_name
             continue
         after = _skip_trivia(sanitized, match.end())
         if after < len(sanitized) and sanitized[after] == "=" and sanitized[after + 1 : after + 2] != "=":
-            name = match.group(2)
-            results.append((match, after + 1, report_name is None or name == report_name))
+            name = _report_name_at(match, source, sanitized, code)
+            results.append((match, after + 1, report_name is None or name is None or name == report_name))
     return results
 
 
@@ -1079,7 +1103,7 @@ _MEMBER_ACCESS_RE = re.compile(r"[\s.\[\]\"']*(?:filters[\s.\[\]\"']*)?\Z")
 def _owner_lookup(source, sanitized, code):
     """Build a resolver from a source offset to the report name that owns it."""
     owners = [
-        (match.end(), match.group(2))
+        (match.end(), _report_name_at(match, source, sanitized, code))
         for match in _QUERY_REPORTS_RE.finditer(code)
         if _in_code(sanitized, source, match.start())
     ]
@@ -1114,7 +1138,8 @@ def _collect_mutations(source, sanitized, code, report_name, result: Resolution)
         if not report_name:
             return True
         owner = owner_of(position)
-        return owner is not None and owner == report_name
+        # An unresolvable subscript means the owner is unknown, not foreign.
+        return owner is None or owner == report_name
 
     for match in _MUTATION_RE.finditer(code):
         if not _in_code(sanitized, source, match.start()) or not owned(match.start()):

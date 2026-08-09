@@ -510,6 +510,27 @@ class TestCrossFileComposition(unittest.TestCase):
         self.assertIn("presentation_currency", [f["fieldname"] for f in second.filters])
         self.assertIn("include_default_book_entries", [f["fieldname"] for f in first.filters])
 
+    def test_report_name_bound_to_a_constant(self):
+        """ERPNext v16 writes `const PL_REPORT_NAME = "..."` and subscripts
+        query_reports with the constant, so a quoted-string-only match finds
+        nothing and the whole contract is lost."""
+        js = """
+const PL_REPORT_NAME = "Profit and Loss Statement";
+
+frappe.query_reports[PL_REPORT_NAME] = $.extend({}, erpnext.financial_statements);
+
+frappe.query_reports[PL_REPORT_NAME]["filters"].push(
+	{ fieldname: "report_template", label: __("Report Template"), fieldtype: "Link" },
+	{ fieldname: "selected_view", label: __("Select View"), fieldtype: "Select", reqd: 1 }
+);
+"""
+        result = resolve_filters(js, report_name="Profit and Loss Statement", load_shared=FINANCIAL_LOADER)
+        self.assertEqual(result.status, "resolved")
+        names = [f["fieldname"] for f in result.filters]
+        self.assertIn("company", names)  # inherited through the constant subscript
+        self.assertIn("report_template", names)  # multiple objects in one push()
+        self.assertIn("selected_view", names)
+
     def test_push_only_report_with_no_base(self):
         js = """
 frappe.query_reports["X"] = {};
