@@ -19,12 +19,27 @@ Report Requirements Tool for Core Plugin.
 Understand report requirements, structure, and metadata before execution.
 """
 
-from typing import Any, Dict
+import os
+import re
+from typing import Any, Dict, List, Optional, Tuple
 
 import frappe
 from frappe import _
 
 from frappe_assistant_core.core.base_tool import BaseTool
+from frappe_assistant_core.plugins.core.tools.js_filter_resolver import resolve_filters
+
+# A JS namespace such as ``erpnext.financial_statements``. Anything that does
+# not look like this is never turned into a filesystem lookup.
+_NAMESPACE_RE = re.compile(r"\A[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)+\Z")
+
+# Guards for the bounded search that locates a shared namespace's source file.
+_JS_SEARCH_MAX_BYTES = 512 * 1024
+_JS_SEARCH_SKIP_DIRS = {"node_modules", "dist", "build", ".git", "__pycache__"}
+
+# Sentinel cached for a namespace that no installed app defines, so the search
+# is not repeated on every call.
+_NAMESPACE_MISS = "\x00miss"
 
 
 class ReportRequirements(BaseTool):
@@ -42,7 +57,7 @@ class ReportRequirements(BaseTool):
     def __init__(self):
         super().__init__()
         self.name = "report_requirements"
-        self.description = "Get report metadata including required and optional filters, columns, and execution requirements for Script Reports, Query Reports, and Custom Reports. Use this tool before executing reports to understand what filters are mandatory, what exact filter values are valid, and how to structure the report request. This prevents filter errors and helps plan successful report execution. Returns complete report metadata including filter definitions with field types (Link, Select, Date), valid enum options for select fields, column structure, report type, and capabilities. IMPORTANT: Use this FIRST before calling generate_report to understand what exact filter values are needed - Link fields require exact database names (e.g., exact Company name, Customer name), Select fields show valid enum values. Essential when generate_report returns filter errors or when planning complex report execution. NOTE: Report Builder reports are not supported as they are simple DocType list views without business logic."
+        self.description = "Get report metadata including required and optional filters, columns, and execution requirements for Script Reports, Query Reports, and Custom Reports. Use this tool before executing reports to understand what filters are mandatory, what exact filter values are valid, and how to structure the report request. This prevents filter errors and helps plan successful report execution. Returns complete report metadata including filter definitions with field types (Link, Select, Date), valid enum options for select fields, column structure, report type, and capabilities. IMPORTANT: Use this FIRST before calling generate_report to understand what exact filter values are needed - Link fields require exact database names (e.g., exact Company name, Customer name), Select fields show valid enum values. Essential when generate_report returns filter errors or when planning complex report execution. Filter definitions are read from the report's stored configuration and JavaScript; where a value is computed in the browser at runtime the response says so via 'default_source'/'options_source' rather than guessing. Check 'filter_discovery_status': 'no_filters_declared' means the report genuinely takes no filters, while 'unresolved' means discovery failed and 'discovery_diagnostics' explains why. NOTE: Report Builder reports store a saved filter configuration rather than a filter contract and are not yet fully supported."
         self.requires_permission = None  # Permission checked dynamically per report
 
         self.inputSchema = {
@@ -126,28 +141,25 @@ class ReportRequirements(BaseTool):
                 if "filter_guidance" in column_result:
                     result["filter_guidance"] = column_result["filter_guidance"]
 
-                # Add filter requirements analysis
-                result["filter_requirements"] = self._analyze_filter_requirements(
-                    report_name, column_result.get("report_type")
-                )
+                # Filter discovery runs for every report type. Gating it to
+                # Script Reports left Query and Custom Reports with no filter
+                # definitions AND no diagnostics — indistinguishable from a
+                # report that genuinely takes none (issue #220).
+                parsed, diagnostics = self._discover_report_filters(report_name, report_doc)
+                result["discovery_diagnostics"] = diagnostics
+                result["filter_discovery_status"] = diagnostics.get("status", "unresolved")
 
-                # For Script Reports, discover filters from multiple sources and
-                # add to main response.
-                if column_result.get("report_type") == "Script Report":
-                    parsed_filters, diagnostics = self._discover_script_report_filters(
-                        report_name, report_doc
+                if parsed is not None:
+                    result["filters_definition"] = parsed["filters"]
+                    result["required_filter_names"] = parsed["required_filters"]
+                    result["optional_filter_names"] = parsed["optional_filters"]
+                    if parsed["conditional_filters"]:
+                        result["conditional_filter_names"] = parsed["conditional_filters"]
+                    result["filter_requirements"] = self._build_requirements_from_parsed_filters(parsed)
+                else:
+                    result["filter_requirements"] = self._generic_filter_guidance(
+                        column_result.get("report_type"), diagnostics
                     )
-                    result["discovery_diagnostics"] = diagnostics
-
-                    if parsed_filters and parsed_filters.get("filters"):
-                        result["filters_definition"] = parsed_filters["filters"]
-                        result["required_filter_names"] = parsed_filters.get("required_filters", [])
-                        result["optional_filter_names"] = parsed_filters.get("optional_filters", [])
-
-                        # Override filter_requirements with parsed data instead of pattern-based guesses
-                        result["filter_requirements"] = self._build_requirements_from_parsed_filters(
-                            parsed_filters
-                        )
 
             # Add comprehensive metadata if requested
             if include_metadata:
@@ -164,168 +176,193 @@ class ReportRequirements(BaseTool):
 
             return {"success": False, "error": str(e)}
 
-    def _build_requirements_from_parsed_filters(self, parsed_filters: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Build filter requirements from parsed filter definitions.
+    # ------------------------------------------------------------------
+    # Filter discovery
+    # ------------------------------------------------------------------
 
-        Args:
-            parsed_filters: Dictionary with 'filters', 'required_filters', 'optional_filters'
+    def _discover_report_filters(self, report_name: str, report_doc) -> Tuple[Optional[Dict], Dict]:
+        """
+        Discover a report's filter contract, recording a diagnostic for every
+        source attempted so an empty result is never silent (issues #203, #220).
+
+        Order (first source that yields an answer wins):
+            1. ``Report.filters`` child table — structured, no parsing.
+            2. JavaScript — on-disk ``.js``, then the ``Report.javascript`` field.
+
+        A Custom Report carries no configuration of its own; its contract is
+        that of the report it references, so discovery follows that link.
 
         Returns:
-            Dictionary with human-readable filter requirements and guidance
+            ``(parsed_filters_or_None, diagnostics)``. ``parsed_filters`` is
+            not None even for a report with zero filters, as long as discovery
+            positively established that — see ``diagnostics["status"]``.
         """
-        requirements = {"common_required_filters": [], "common_optional_filters": [], "guidance": []}
+        diagnostics: Dict[str, Any] = {"status": "unresolved"}
 
-        # Build human-readable descriptions for each filter
-        for filter_def in parsed_filters.get("filters", []):
-            fieldname = filter_def.get("fieldname", "")
-            label = filter_def.get("label", fieldname)
-            fieldtype = filter_def.get("fieldtype", "")
-            options = filter_def.get("options")
-            default = filter_def.get("default")
-            is_required = filter_def.get("required", False)
-
-            # Build description
-            description = f"{fieldname}"
-            if label and label != fieldname:
-                description = f"{fieldname} ({label})"
-
-            # Add type and options info
-            if fieldtype == "Select" and options and isinstance(options, list):
-                options_str = ", ".join(options[:3])  # Show first 3 options
-                if len(options) > 3:
-                    options_str += f", ... ({len(options)} options)"
-                description += f" - Select: {options_str}"
-            elif fieldtype == "Link" and options:
-                description += f" - Link to {options}"
-            elif fieldtype:
-                description += f" - {fieldtype}"
-
-            # Add default value info
-            if default:
-                description += f" (default: {default})"
-
-            # Categorize
-            if is_required:
-                requirements["common_required_filters"].append(description)
-            else:
-                requirements["common_optional_filters"].append(description)
-
-        # Add guidance
-        if requirements["common_required_filters"]:
-            requirements["guidance"].append(
-                f"This report requires {len(requirements['common_required_filters'])} mandatory filters. "
-                "All required filters must be provided for successful execution."
-            )
-
-        if requirements["common_optional_filters"]:
-            requirements["guidance"].append(
-                f"Additionally, {len(requirements['common_optional_filters'])} optional filters are available "
-                "to refine results. These have default values if not specified."
-            )
-
-        return requirements
-
-    def _analyze_filter_requirements(self, report_name: str, report_type: str) -> Dict[str, Any]:
-        """Analyze filter requirements for the report (fallback for pattern-based matching)"""
-        requirements = {"common_required_filters": [], "common_optional_filters": [], "guidance": []}
-
-        # Add specific guidance based on report name patterns
-        report_lower = report_name.lower()
-
-        if "sales_analytics" in report_lower or "sales analytics" in report_lower:
-            requirements["common_required_filters"] = [
-                "doc_type (Sales Invoice, Sales Order, Quotation, etc.)",
-                "tree_type (Customer, Item, Territory, etc.)",
-                "value_quantity (Value or Quantity)",
-            ]
-            requirements["common_optional_filters"] = [
-                "from_date and to_date (defaults to current fiscal year)",
-                "company (uses default company if not specified)",
-            ]
-            requirements["guidance"].append(
-                "For Sales Analytics: Use doc_type='Sales Invoice', tree_type='Customer', and value_quantity='Value' for customer-wise revenue analysis"
-            )
-
-        elif "quotation trends" in report_lower:
-            requirements["common_required_filters"] = ["based_on (Item, Customer, Territory, etc.)"]
-            requirements["common_optional_filters"] = [
-                "from_date and to_date (defaults to current fiscal year)",
-                "company (uses default company if not specified)",
-            ]
-            requirements["guidance"].append(
-                "For Quotation Trends: based_on field is mandatory - use 'Item' for item-wise trends or 'Customer' for customer-wise analysis"
-            )
-
-        elif "profit" in report_lower and "loss" in report_lower:
-            requirements["common_required_filters"] = ["company", "from_date", "to_date"]
-            requirements["guidance"].append(
-                "P&L Statement requires company and date range for financial period analysis"
-            )
-
-        elif "receivable" in report_lower:
-            requirements["common_required_filters"] = ["company"]
-            requirements["common_optional_filters"] = ["customer", "as_on_date"]
-            requirements["guidance"].append(
-                "Accounts Receivable typically needs company filter, optionally filter by specific customer"
-            )
-
-        elif "balance_sheet" in report_lower or "balance sheet" in report_lower:
-            requirements["common_required_filters"] = ["company", "as_on_date"]
-            requirements["guidance"].append(
-                "Balance Sheet requires company and specific date for financial position"
-            )
-
-        # General guidance based on report type
-        if report_type == "Script Report":
-            requirements["guidance"].append(
-                "Script Reports often have mandatory filters - check filter definitions or use filters_definition field for exact requirements"
-            )
-        elif report_type == "Query Report":
-            requirements["guidance"].append(
-                "Query Reports may require company or date filters depending on the underlying query"
-            )
-
-        return requirements
-
-    def _discover_script_report_filters(self, report_name: str, report_doc):
-        """
-        Discover Script Report filters from multiple sources, first non-empty
-        wins, recording a diagnostic for each attempt so a silent empty result
-        is debuggable by agents and users (issue #203).
-
-        Order:
-            1. ``Report.filters`` child table (structured, no parsing).
-            2. JS — on-disk .js file, then the ``Report.javascript`` DB field.
-
-        Returns:
-            (parsed_filters_or_None, discovery_diagnostics dict)
-        """
-        diagnostics = {}
+        js_doc = report_doc
+        reference = getattr(report_doc, "reference_report", None)
+        if getattr(report_doc, "report_type", None) == "Custom Report" and reference:
+            diagnostics["reference_report"] = reference
+            try:
+                js_doc = frappe.get_doc("Report", reference)
+            except Exception as e:
+                diagnostics["reference_report_error"] = f"{type(e).__name__}: {e}"
 
         # --- Source 1: Report.filters child table ---
-        child_rows = report_doc.get("filters") or []
+        child_rows = report_doc.get("filters") or js_doc.get("filters") or []
         diagnostics["filters_child_table"] = {
             "row_count": len(child_rows),
             "status": "success" if child_rows else "empty",
         }
         if child_rows:
             parsed = self._parse_filters_child_table(child_rows)
-            if parsed.get("filters"):
+            if parsed["filters"]:
                 diagnostics["filters_child_table"]["filters_found"] = len(parsed["filters"])
+                diagnostics["status"] = "resolved"
+                diagnostics["requiredness"] = "declared_in_report_filters"
                 return parsed, diagnostics
 
         # --- Source 2: JavaScript (disk file, then DB field) ---
-        self._last_discovery_diagnostics = {}
-        parsed = self._parse_script_report_filters(report_name, report_doc.module)
-        diagnostics["javascript"] = getattr(self, "_last_discovery_diagnostics", {})
-        return parsed, diagnostics
+        js_diag = {"js_file": {}, "js_db_field": {}}
+        diagnostics["javascript"] = js_diag
+        resolution = None
+
+        try:
+            js_path = self._resolve_report_js_path(js_doc.name, js_doc.module)
+            js_diag["js_file"]["path"] = js_path
+            if js_path and os.path.exists(js_path):
+                js_diag["js_file"]["file_exists"] = True
+                js_diag["js_file"]["file_readable"] = os.access(js_path, os.R_OK)
+                # nosemgrep: frappe-security-file-traversal — path built from frappe.get_module_path + scrubbed report metadata, not user input
+                with open(js_path, encoding="utf-8") as f:
+                    js_content = f.read()
+                resolution = resolve_filters(
+                    js_content, report_name=js_doc.name, load_shared=self._load_shared_namespace
+                )
+                self._record_resolution(js_diag["js_file"], resolution)
+            else:
+                js_diag["js_file"]["file_exists"] = False
+
+            if resolution is None or resolution.status == "unresolved":
+                js_db = frappe.db.get_value("Report", js_doc.name, "javascript")
+                js_diag["js_db_field"]["present"] = bool(js_db)
+                if js_db:
+                    db_resolution = resolve_filters(
+                        js_db, report_name=js_doc.name, load_shared=self._load_shared_namespace
+                    )
+                    self._record_resolution(js_diag["js_db_field"], db_resolution)
+                    if db_resolution.status != "unresolved":
+                        resolution = db_resolution
+
+        except Exception as e:
+            js_diag["error"] = f"{type(e).__name__}: {str(e)}"
+            frappe.log_error(f"Error parsing report filters for {report_name}: {str(e)}")
+
+        # --- Source 3: Query Report SQL placeholders ---
+        # A Query Report's ``%(fieldname)s`` placeholders are a *binding*
+        # contract: frappe.db.sql() raises if one is missing. Equally, a
+        # non-empty query with no placeholders positively establishes that the
+        # report takes no filters — an answer, not a failure.
+        if resolution is None or resolution.status == "unresolved":
+            sql_parsed, sql_diag = self._filters_from_query_placeholders(js_doc)
+            if sql_diag:
+                diagnostics["query_placeholders"] = sql_diag
+            if sql_parsed is not None:
+                diagnostics["status"] = sql_diag["status"]
+                diagnostics["requiredness"] = "declared_in_sql_placeholders"
+                return sql_parsed, diagnostics
+
+        if resolution is None or resolution.status == "unresolved":
+            return None, diagnostics
+
+        diagnostics["status"] = resolution.status
+        diagnostics["requiredness"] = "declared_in_js"
+        if resolution.partial:
+            diagnostics["partial"] = True
+
+        return self._categorize_filters(resolution.filters), diagnostics
+
+    def _filters_from_query_placeholders(self, report_doc) -> Tuple[Optional[Dict], Optional[Dict]]:
+        """Derive a Query Report's filter contract from its SQL placeholders."""
+        if getattr(report_doc, "report_type", None) != "Query Report":
+            return None, None
+
+        query = (getattr(report_doc, "query", None) or "").strip()
+        if not query:
+            return None, {"status": "empty", "note": "report has no stored query"}
+
+        # Positional %s placeholders carry no names, so no contract can be read.
+        # `%%` is an escaped literal percent (e.g. LIKE '%%foo%%') and must be
+        # removed before the scan, otherwise it masks a real positional marker.
+        # The scan must NOT exclude `%s)` — `IN (%s)` is the commonest shape,
+        # and treating it as "no placeholders" would positively assert that a
+        # parameterised report takes no filters.
+        if re.search(r"%s(?!\w)", query.replace("%%", "")):
+            return None, {
+                "status": "unresolved",
+                "note": "query uses positional %s placeholders; filter names cannot be determined",
+            }
+
+        names = []
+        for name in re.findall(r"%\((\w+)\)s", query):
+            if name not in names:
+                names.append(name)
+
+        if not names:
+            return self._categorize_filters([]), {
+                "status": "no_filters_declared",
+                "note": "query defines no %(name)s placeholders, so the report takes no filters",
+            }
+
+        filters = [
+            {
+                "fieldname": name,
+                "label": name.replace("_", " ").title(),
+                "required": True,
+            }
+            for name in names
+        ]
+        return self._categorize_filters(filters), {
+            "status": "resolved",
+            "placeholders": names,
+            "note": "filters derived from %(name)s placeholders in the report SQL; every placeholder is "
+            "mandatory because the query fails without it. Field types are not declared in SQL.",
+        }
+
+    @staticmethod
+    def _record_resolution(target: Dict[str, Any], resolution) -> None:
+        """Fold a resolver outcome into the diagnostics payload."""
+        target["status"] = resolution.status
+        target["filters_found"] = len(resolution.filters)
+        if resolution.sources:
+            target["resolved_from"] = resolution.sources
+        if resolution.partial:
+            target["partial"] = True
+        if resolution.notes:
+            target["note"] = "; ".join(resolution.notes)
+
+    @staticmethod
+    def _categorize_filters(filters: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Split resolved filters into required / conditional / optional names."""
+        required, optional, conditional = [], [], []
+        for filter_def in filters:
+            name = filter_def["fieldname"]
+            if filter_def.get("required"):
+                required.append(name)
+            elif filter_def.get("mandatory_depends_on"):
+                conditional.append(name)
+            else:
+                optional.append(name)
+        return {
+            "filters": filters,
+            "required_filters": required,
+            "optional_filters": optional,
+            "conditional_filters": conditional,
+        }
 
     def _parse_filters_child_table(self, child_rows) -> Dict[str, Any]:
         """Convert ``Report.filters`` child-table rows to the parsed-filter shape."""
         filters = []
-        required_filters = []
-        optional_filters = []
         for row in child_rows:
             fieldname = row.get("fieldname")
             if not fieldname:
@@ -337,35 +374,27 @@ class ReportRequirements(BaseTool):
                 "fieldtype": row.get("fieldtype"),
                 "options": row.get("options"),
                 "default": row.get("default_value") or row.get("default"),
-                "required": is_required,
             }
             # Drop empty keys for a clean payload.
             filter_def = {k: v for k, v in filter_def.items() if v not in (None, "")}
             filter_def["required"] = is_required
             filters.append(filter_def)
-            (required_filters if is_required else optional_filters).append(fieldname)
 
-        return {
-            "filters": filters,
-            "required_filters": required_filters,
-            "optional_filters": optional_filters,
-        }
+        return self._categorize_filters(filters)
 
-    def _resolve_report_js_path(self, report_name: str, module_name: str):
+    def _resolve_report_js_path(self, report_name: str, module_name: str) -> Optional[str]:
         """
-        Resolve the on-disk path of a Script Report's .js file.
+        Resolve the on-disk path of a report's .js file.
 
         Uses Frappe's own resolution (``get_module_path`` + ``scrub``) rather
         than reconstructing the path by looping over installed apps, so custom
         apps with non-trivial package layouts resolve correctly. Returns None
         for custom (DB-only) modules, which have no disk path (issue #203).
-
-        Returns:
-            Absolute path string, or None if the module has no disk location.
         """
-        import os
-
         from frappe.modules import get_module_path, scrub
+
+        if not module_name:
+            return None
 
         # Custom modules exist only in the DB (no files on disk).
         if frappe.get_cached_value("Module Def", module_name, "custom"):
@@ -375,214 +404,246 @@ class ReportRequirements(BaseTool):
         report_folder = scrub(report_name)
         return os.path.join(module_path, "report", report_folder, f"{report_folder}.js")
 
-    def _extract_filters_from_js(self, js_content: str):
+    # ------------------------------------------------------------------
+    # Shared-namespace resolution (injected into the frappe-free resolver)
+    # ------------------------------------------------------------------
+
+    def _load_shared_namespace(self, namespace: str) -> Optional[str]:
         """
-        Extract the ``filters: [...]`` array from report JS and parse it.
+        Return the JavaScript source that defines *namespace*, or None.
 
-        Returns:
-            (parsed_filters_or_None, diagnostic_note). diagnostic_note explains
-            why nothing was parsed, so callers can surface it.
+        Report JS commonly inherits its filters from a shared object such as
+        ``erpnext.financial_statements``. The namespace does NOT reliably map
+        to a file path (``erpnext.pre_sales`` lives in ``utils/sales_common.js``,
+        ``hrms.leave_utils`` in ``utils/leave_utils.js``), so the definition
+        site is located by a bounded content search rather than by building a
+        path out of the namespace segments.
+
+        The search is confined to installed apps' ``public/js`` trees, skips
+        vendored/build directories and caps file size. Both hits and misses are
+        cached: a miss costs a full walk of every installed app's public/js
+        (~27ms on a six-app bench, and it grows with the number of apps), and
+        without a negative entry that walk would repeat on every call. Run
+        ``bench clear-cache`` after installing an app that adds a new shared
+        namespace.
         """
-        # Find the start of the filters array. Anchor on "filters:" then the
-        # next "[" — note this does not handle programmatically-built filters
-        # (e.g. ``filters: get_filters()``); that case is reported via the
-        # diagnostic note rather than failing silently.
-        filters_start = js_content.find("filters:")
-        if filters_start == -1:
-            filters_start = js_content.find('"filters"')
-        if filters_start == -1:
-            return None, "no 'filters:' key found in JS"
+        if not namespace or not _NAMESPACE_RE.match(namespace):
+            return None
 
-        bracket_start = js_content.find("[", filters_start)
-        if bracket_start == -1:
-            return None, "no '[' after 'filters:' (filters may be built programmatically)"
+        cached_path = frappe.cache().hget("fac_js_namespace_path", namespace)
+        if cached_path == _NAMESPACE_MISS:
+            return None
+        if cached_path and os.path.exists(cached_path):
+            return self._read_js(cached_path)
 
-        # Guard against anchoring far past the key (e.g. filters: fn(); ... [ ).
-        between = js_content[filters_start:bracket_start]
-        if "(" in between or ";" in between:
-            return None, "'filters:' is not a literal array (built programmatically)"
+        needles = (
+            f"{namespace} =",
+            f"{namespace}=",
+            f'frappe.provide("{namespace}")',
+            f"frappe.provide('{namespace}')",
+        )
 
-        # Count brackets to find the matching closing bracket.
-        bracket_count = 0
-        bracket_end = bracket_start
-        for i in range(bracket_start, len(js_content)):
-            if js_content[i] == "[":
-                bracket_count += 1
-            elif js_content[i] == "]":
-                bracket_count -= 1
-                if bracket_count == 0:
-                    bracket_end = i
-                    break
-
-        if bracket_count != 0:
-            return None, "mismatched brackets in filters array"
-
-        filters_text = js_content[bracket_start + 1 : bracket_end]
-        parsed = self._parse_js_filter_array(filters_text)
-        if not parsed or not parsed.get("filters"):
-            return None, "filters array found but no filter objects parsed (unexpected JS syntax)"
-        return parsed, None
-
-    def _parse_script_report_filters(self, report_name: str, module_name: str) -> Dict[str, Any]:
-        """
-        Parse JavaScript filter definitions for a Script Report.
-
-        Tries the on-disk .js file first (path resolved via Frappe), then falls
-        back to the ``Report.javascript`` DB field (covers custom DB-only
-        modules and reports whose JS lives in the doc). Stores a diagnostic of
-        what was attempted on ``frappe.local`` for the caller to surface.
-
-        Returns:
-            Dictionary containing parsed filters, or None if parsing fails.
-        """
-        import os
-
-        diag = {"js_file": {}, "js_db_field": {}}
         try:
-            # --- Source 1: on-disk .js file ---
-            js_path = self._resolve_report_js_path(report_name, module_name)
-            diag["js_file"]["path"] = js_path
-            if js_path and os.path.exists(js_path):
-                diag["js_file"]["file_exists"] = True
-                diag["js_file"]["file_readable"] = os.access(js_path, os.R_OK)
-                # nosemgrep: frappe-security-file-traversal — path built from frappe.get_module_path + scrubbed report metadata, not user input
-                with open(js_path, encoding="utf-8") as f:
-                    js_content = f.read()
-                parsed, note = self._extract_filters_from_js(js_content)
-                diag["js_file"]["status"] = "success" if parsed else "failed"
-                diag["js_file"]["filters_found"] = len(parsed["filters"]) if parsed else 0
-                if note:
-                    diag["js_file"]["note"] = note
-                if parsed:
-                    self._last_discovery_diagnostics = diag
-                    return parsed
-            else:
-                diag["js_file"]["file_exists"] = False
-
-            # --- Source 2: Report.javascript DB field ---
-            js_db = frappe.db.get_value("Report", report_name, "javascript")
-            diag["js_db_field"]["present"] = bool(js_db)
-            if js_db:
-                parsed, note = self._extract_filters_from_js(js_db)
-                diag["js_db_field"]["status"] = "success" if parsed else "failed"
-                diag["js_db_field"]["filters_found"] = len(parsed["filters"]) if parsed else 0
-                if note:
-                    diag["js_db_field"]["note"] = note
-                if parsed:
-                    self._last_discovery_diagnostics = diag
-                    return parsed
-
-            self._last_discovery_diagnostics = diag
+            installed = frappe.get_installed_apps()
+        except Exception:
             return None
 
-        except Exception as e:
-            diag["error"] = f"{type(e).__name__}: {str(e)}"
-            self._last_discovery_diagnostics = diag
-            frappe.log_error(f"Error parsing Script Report filters for {report_name}: {str(e)}")
+        # The namespace root is usually the app name; try it first, then the
+        # remaining apps, so the common case costs one directory walk.
+        root = namespace.split(".", 1)[0]
+        apps = ([root] if root in installed else []) + [a for a in installed if a != root]
+
+        for app in apps:
+            js_root = self._app_js_root(app)
+            if not js_root:
+                continue
+            for path in self._iter_js_files(js_root):
+                content = self._read_js(path)
+                if content and any(needle in content for needle in needles):
+                    frappe.cache().hset("fac_js_namespace_path", namespace, path)
+                    return content
+
+        frappe.cache().hset("fac_js_namespace_path", namespace, _NAMESPACE_MISS)
+        return None
+
+    @staticmethod
+    def _app_js_root(app: str) -> Optional[str]:
+        try:
+            js_root = os.path.realpath(frappe.get_app_path(app, "public", "js"))
+        except Exception:
+            return None
+        return js_root if os.path.isdir(js_root) else None
+
+    @staticmethod
+    def _iter_js_files(js_root: str):
+        """Yield .js files under *js_root*, staying inside it and skipping vendored trees."""
+        for dirpath, dirnames, filenames in os.walk(js_root):
+            dirnames[:] = [d for d in dirnames if d not in _JS_SEARCH_SKIP_DIRS]
+            for filename in filenames:
+                if not filename.endswith(".js") or filename.endswith(".min.js"):
+                    continue
+                path = os.path.join(dirpath, filename)
+                real = os.path.realpath(path)
+                # Containment check: a symlink must not lead outside the tree.
+                if not real.startswith(js_root + os.sep):
+                    continue
+                try:
+                    if os.path.getsize(real) > _JS_SEARCH_MAX_BYTES:
+                        continue
+                except OSError:
+                    continue
+                yield real
+
+    @staticmethod
+    def _read_js(path: str) -> Optional[str]:
+        try:
+            # nosemgrep: frappe-security-file-traversal — path is confined to an installed app's public/js tree by _iter_js_files
+            with open(path, encoding="utf-8") as f:
+                return f.read()
+        except (OSError, UnicodeDecodeError):
             return None
 
-    def _parse_js_filter_array(self, filters_text: str) -> Dict[str, Any]:
+    # ------------------------------------------------------------------
+    # Guidance
+    # ------------------------------------------------------------------
+
+    def _build_requirements_from_parsed_filters(self, parsed: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Parse JavaScript filter array text into Python dictionary.
-
-        Args:
-            filters_text: String containing JavaScript filter objects
-
-        Returns:
-            Dictionary with 'filters', 'required_filters', 'optional_filters'
+        Build human-readable filter requirements from resolved filter definitions.
         """
-        import re
+        requirements: Dict[str, Any] = {
+            "common_required_filters": [],
+            "common_optional_filters": [],
+            "conditional_filters": [],
+            "guidance": [],
+        }
 
-        filters = []
-        required_filters = []
-        optional_filters = []
-
-        # Split into individual filter objects using proper brace counting
-        filter_objects = []
-        brace_count = 0
-        current_obj_start = None
-
-        for i, char in enumerate(filters_text):
-            if char == "{":
-                if brace_count == 0:
-                    current_obj_start = i
-                brace_count += 1
-            elif char == "}":
-                brace_count -= 1
-                if brace_count == 0 and current_obj_start is not None:
-                    # Extract complete object (excluding braces)
-                    obj_content = filters_text[current_obj_start + 1 : i]
-                    filter_objects.append(obj_content)
-                    current_obj_start = None
-
-        for filter_obj in filter_objects:
-            filter_def = {}
-
-            # Keys may be bare (fieldname:) or quoted (JSON-style "fieldname":),
-            # and may use template literals (`x`). Tolerate optional surrounding
-            # quotes on the key so JSON-style report JS isn't silently skipped
-            # (issue #203).
-            # Extract fieldname
-            fieldname_match = re.search(r'["\']?fieldname["\']?\s*:\s*["\']([^"\']+)["\']', filter_obj)
-            if fieldname_match:
-                filter_def["fieldname"] = fieldname_match.group(1)
+        for filter_def in parsed["filters"]:
+            description = self._describe_filter(filter_def)
+            if filter_def.get("required"):
+                requirements["common_required_filters"].append(description)
+            elif filter_def.get("mandatory_depends_on"):
+                requirements["conditional_filters"].append(
+                    f"{description} - required when: {filter_def['mandatory_depends_on']}"
+                )
             else:
-                continue  # Skip if no fieldname
+                requirements["common_optional_filters"].append(description)
 
-            # Extract label — supports __("x"), "x", and `x` (template literal),
-            # with bare or quoted key.
-            label_match = re.search(
-                r'["\']?label["\']?\s*:\s*__\(\s*[`"\']([^`"\']+)[`"\']\s*\)'
-                r'|["\']?label["\']?\s*:\s*[`"\']([^`"\']+)[`"\']',
-                filter_obj,
+        if requirements["common_required_filters"]:
+            requirements["guidance"].append(
+                f"This report declares {len(requirements['common_required_filters'])} mandatory filters. "
+                "All of them must be provided for successful execution."
             )
-            if label_match:
-                filter_def["label"] = label_match.group(1) or label_match.group(2)
 
-            # Extract fieldtype
-            fieldtype_match = re.search(r'["\']?fieldtype["\']?\s*:\s*["\']([^"\']+)["\']', filter_obj)
-            if fieldtype_match:
-                filter_def["fieldtype"] = fieldtype_match.group(1)
-
-            # Extract options (can be array or string)
-            options_match = re.search(
-                r'["\']?options["\']?\s*:\s*(\[[\s\S]*?\]|["\'][^"\']+["\'])', filter_obj
+        if requirements["conditional_filters"]:
+            requirements["guidance"].append(
+                "Some filters are mandatory only under a condition (see conditional_filters). "
+                "Evaluate the condition against the values you intend to send."
             )
-            if options_match:
-                options_str = options_match.group(1)
-                if options_str.startswith("["):
-                    # Array format - extract string values
-                    option_values = re.findall(r'["\']([^"\']+)["\']', options_str)
-                    filter_def["options"] = option_values
-                else:
-                    # String format (e.g., Link to DocType)
-                    filter_def["options"] = options_str.strip("\"'")
 
-            # Extract default value
-            default_match = re.search(
-                r'["\']?default["\']?\s*:\s*["\']([^"\']+)["\']|["\']?default["\']?\s*:\s*(\d+)',
-                filter_obj,
+        if requirements["common_optional_filters"]:
+            requirements["guidance"].append(
+                f"{len(requirements['common_optional_filters'])} optional filters are available to refine results."
             )
-            if default_match:
-                filter_def["default"] = default_match.group(1) or default_match.group(2)
 
-            # Extract required flag
-            reqd_match = re.search(r'["\']?reqd["\']?\s*:\s*(1|true)', filter_obj, re.IGNORECASE)
-            filter_def["required"] = bool(reqd_match)
+        if not parsed["filters"]:
+            requirements["guidance"].append("This report declares no filters and can be run without any.")
 
-            filters.append(filter_def)
+        # Filters marked required here are the ones the report's own
+        # configuration declares. Server-side report code may enforce more, so
+        # an empty required list is not a guarantee.
+        requirements["guidance"].append(
+            "Requiredness reflects what the report configuration declares. Server-side report code may "
+            "enforce additional mandatory filters; if execution fails with a 'mandatory' error, supply the "
+            "field named in that error."
+        )
 
-            # Categorize as required or optional
-            if filter_def["required"]:
-                required_filters.append(filter_def["fieldname"])
-            else:
-                optional_filters.append(filter_def["fieldname"])
+        return requirements
+
+    @staticmethod
+    def _describe_filter(filter_def: Dict[str, Any]) -> str:
+        """Render one filter definition as a single readable line."""
+        fieldname = filter_def.get("fieldname", "")
+        label = filter_def.get("label", fieldname)
+        fieldtype = filter_def.get("fieldtype", "")
+        options = filter_def.get("options")
+
+        description = fieldname
+        if label and label != fieldname:
+            description = f"{fieldname} ({label})"
+
+        if fieldtype in ("Select", "Autocomplete") and isinstance(options, list) and options:
+            shown = ", ".join(str(o) for o in options[:5])
+            if len(options) > 5:
+                shown += f", ... ({len(options)} options)"
+            description += f" - {fieldtype}: {shown}"
+        elif fieldtype in ("Link", "MultiSelectList", "Dynamic Link") and options:
+            description += f" - {fieldtype} to {options}"
+        elif fieldtype:
+            description += f" - {fieldtype}"
+
+        if filter_def.get("options_source") == "runtime":
+            description += " (options computed at runtime; query the target DocType for valid values)"
+
+        if filter_def.get("default") is not None:
+            description += f" (default: {filter_def['default']})"
+        elif filter_def.get("default_source") == "runtime":
+            expr = filter_def.get("default_expr")
+            description += f" (default supplied by the UI at runtime{': ' + expr if expr else ''})"
+
+        if filter_def.get("depends_on") and not filter_def.get("mandatory_depends_on"):
+            description += f" (shown when: {filter_def['depends_on']})"
+
+        return description
+
+    @staticmethod
+    def _generic_filter_guidance(report_type: str, diagnostics: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Guidance for reports whose filter contract could not be resolved.
+
+        This deliberately asserts nothing about which filters exist. The
+        previous implementation guessed from the report's name and was wrong
+        for every report it matched on this bench — it claimed Profit and Loss
+        Statement needs ``from_date``/``to_date`` and Balance Sheet needs
+        ``as_on_date``, none of which exist on those reports. A wrong filter
+        list is worse than no list: the caller sends fabricated values, gets an
+        empty result, and reports it as a finding.
+        """
+        guidance = []
+        guidance.append(
+            "Filter definitions could not be determined for this report - see discovery_diagnostics "
+            "for what was attempted and why it failed."
+        )
+        guidance.append(
+            "Do not guess filter names. Run the report with no filters to see what the server "
+            "requires, or inspect the report definition directly."
+        )
+
+        if report_type == "Query Report":
+            guidance.append(
+                "Query Reports take their filters from the Report's filter configuration or its SQL "
+                "placeholders; the report may accept no filters at all."
+            )
+        elif report_type == "Script Report":
+            guidance.append(
+                "Script Reports define filters in JavaScript, which may build them dynamically in the browser."
+            )
+        elif report_type == "Report Builder":
+            guidance.append(
+                "Report Builder reports store a saved column/filter configuration rather than a filter "
+                "contract; use the underlying DocType's fields to filter instead."
+            )
 
         return {
-            "filters": filters,
-            "required_filters": required_filters,
-            "optional_filters": optional_filters,
+            "common_required_filters": [],
+            "common_optional_filters": [],
+            "conditional_filters": [],
+            "guidance": guidance,
         }
+
+    # ------------------------------------------------------------------
+    # Metadata
+    # ------------------------------------------------------------------
 
     def _get_comprehensive_metadata(self, report_name: str) -> Dict[str, Any]:
         """Get comprehensive report metadata - merged from get_report_data functionality"""
@@ -609,6 +670,8 @@ class ReportRequirements(BaseTool):
                     "disabled": getattr(report, "disabled", False),
                     "description": getattr(report, "description", ""),
                     "ref_doctype": getattr(report, "ref_doctype", ""),
+                    # A Custom Report inherits its contract from this report.
+                    "reference_report": getattr(report, "reference_report", ""),
                 },
                 "system_info": {
                     "creation": str(getattr(report, "creation", "")),
@@ -640,25 +703,10 @@ class ReportRequirements(BaseTool):
                     report_config = json.loads(report.json)
                     if "filters" in report_config:
                         metadata["advanced_filters"] = report_config["filters"]
-
-                elif report_type == "Script Report":
-                    # NEW: Parse JavaScript file for filter definitions
-                    module_name = report.module
-                    parsed_filters = self._parse_script_report_filters(report_name, module_name)
-
-                    if parsed_filters:
-                        metadata["advanced_filters"] = parsed_filters
-                    else:
-                        # Fallback: Try Python module (legacy support)
-                        report_module_name = f"{module_name}.report.{report.name.lower().replace(' ', '_')}"
-                        try:
-                            report_module = frappe.get_module(report_module_name)
-                            if hasattr(report_module, "get_filters"):
-                                metadata["advanced_filters"] = report_module.get_filters()
-                            elif hasattr(report_module, "filters"):
-                                metadata["advanced_filters"] = report_module.filters
-                        except Exception:
-                            pass
+                else:
+                    parsed, _diagnostics = self._discover_report_filters(report_name, report)
+                    if parsed:
+                        metadata["advanced_filters"] = parsed
             except Exception as e:
                 frappe.logger().debug(f"Error extracting filters for {report_name}: {str(e)}")
 
