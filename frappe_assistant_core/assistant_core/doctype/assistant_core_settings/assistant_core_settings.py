@@ -166,7 +166,9 @@ class AssistantCoreSettings(Document):
             if server_was_enabled or not server.running:
                 # Enable API if it was just enabled or not running
                 frappe.enqueue(
-                    "frappe_assistant_core.assistant_core.server.enable_background_api", queue="short"
+                    "frappe_assistant_core.assistant_core.server.enable_background_api",
+                    queue="short",
+                    enqueue_after_commit=True,
                 )
         else:
             if server_was_enabled and server.running:

@@ -142,6 +142,9 @@ class ReportRequirements(BaseTool):
                     if parsed_filters and parsed_filters.get("filters"):
                         result["filters_definition"] = parsed_filters["filters"]
                         result["required_filter_names"] = parsed_filters.get("required_filters", [])
+                        result["conditional_required_filter_names"] = parsed_filters.get(
+                            "conditional_required_filters", []
+                        )
                         result["optional_filter_names"] = parsed_filters.get("optional_filters", [])
 
                         # Override filter_requirements with parsed data instead of pattern-based guesses
@@ -174,7 +177,12 @@ class ReportRequirements(BaseTool):
         Returns:
             Dictionary with human-readable filter requirements and guidance
         """
-        requirements = {"common_required_filters": [], "common_optional_filters": [], "guidance": []}
+        requirements = {
+            "common_required_filters": [],
+            "conditional_required_filters": [],
+            "common_optional_filters": [],
+            "guidance": [],
+        }
 
         # Build human-readable descriptions for each filter
         for filter_def in parsed_filters.get("filters", []):
@@ -184,6 +192,7 @@ class ReportRequirements(BaseTool):
             options = filter_def.get("options")
             default = filter_def.get("default")
             is_required = filter_def.get("required", False)
+            mandatory_depends_on = filter_def.get("mandatory_depends_on")
 
             # Build description
             description = f"{fieldname}"
@@ -208,6 +217,10 @@ class ReportRequirements(BaseTool):
             # Categorize
             if is_required:
                 requirements["common_required_filters"].append(description)
+            elif mandatory_depends_on:
+                requirements["conditional_required_filters"].append(
+                    f"{description} when {mandatory_depends_on}"
+                )
             else:
                 requirements["common_optional_filters"].append(description)
 
@@ -221,14 +234,24 @@ class ReportRequirements(BaseTool):
         if requirements["common_optional_filters"]:
             requirements["guidance"].append(
                 f"Additionally, {len(requirements['common_optional_filters'])} optional filters are available "
-                "to refine results. These have default values if not specified."
+                "to refine results; defaults are shown where available."
+            )
+
+        if requirements["conditional_required_filters"]:
+            requirements["guidance"].append(
+                "Conditional filters must be supplied whenever their stated condition is selected."
             )
 
         return requirements
 
     def _analyze_filter_requirements(self, report_name: str, report_type: str) -> Dict[str, Any]:
         """Analyze filter requirements for the report (fallback for pattern-based matching)"""
-        requirements = {"common_required_filters": [], "common_optional_filters": [], "guidance": []}
+        requirements = {
+            "common_required_filters": [],
+            "conditional_required_filters": [],
+            "common_optional_filters": [],
+            "guidance": [],
+        }
 
         # Add specific guidance based on report name patterns
         report_lower = report_name.lower()
@@ -258,9 +281,18 @@ class ReportRequirements(BaseTool):
             )
 
         elif "profit" in report_lower and "loss" in report_lower:
-            requirements["common_required_filters"] = ["company", "from_date", "to_date"]
+            requirements["common_required_filters"] = [
+                "company",
+                "filter_based_on (Fiscal Year or Date Range)",
+                "periodicity (Monthly, Quarterly, Half-Yearly, or Yearly)",
+            ]
+            requirements["conditional_required_filters"] = [
+                "period_start_date and period_end_date when filter_based_on='Date Range'",
+                "from_fiscal_year and to_fiscal_year when filter_based_on='Fiscal Year'",
+            ]
             requirements["guidance"].append(
-                "P&L Statement requires company and date range for financial period analysis"
+                "For a date range, use period_start_date and period_end_date; this report does not use "
+                "from_date and to_date."
             )
 
         elif "receivable" in report_lower:
@@ -271,9 +303,33 @@ class ReportRequirements(BaseTool):
             )
 
         elif "balance_sheet" in report_lower or "balance sheet" in report_lower:
-            requirements["common_required_filters"] = ["company", "as_on_date"]
+            requirements["common_required_filters"] = [
+                "company",
+                "filter_based_on (Fiscal Year or Date Range)",
+                "periodicity (Monthly, Quarterly, Half-Yearly, or Yearly)",
+            ]
+            requirements["conditional_required_filters"] = [
+                "period_start_date and period_end_date when filter_based_on='Date Range'",
+                "from_fiscal_year and to_fiscal_year when filter_based_on='Fiscal Year'",
+            ]
             requirements["guidance"].append(
-                "Balance Sheet requires company and specific date for financial position"
+                "For a date range, use period_start_date and period_end_date; this report does not use "
+                "as_on_date."
+            )
+
+        elif "cash_flow" in report_lower or "cash flow" in report_lower:
+            requirements["common_required_filters"] = [
+                "company",
+                "filter_based_on (Fiscal Year or Date Range)",
+                "periodicity (Monthly, Quarterly, Half-Yearly, or Yearly)",
+            ]
+            requirements["conditional_required_filters"] = [
+                "period_start_date and period_end_date when filter_based_on='Date Range'",
+                "from_fiscal_year and to_fiscal_year when filter_based_on='Fiscal Year'",
+            ]
+            requirements["guidance"].append(
+                "For a date range, use period_start_date and period_end_date; this report does not use "
+                "from_date and to_date."
             )
 
         # General guidance based on report type
@@ -324,8 +380,6 @@ class ReportRequirements(BaseTool):
     def _parse_filters_child_table(self, child_rows) -> Dict[str, Any]:
         """Convert ``Report.filters`` child-table rows to the parsed-filter shape."""
         filters = []
-        required_filters = []
-        optional_filters = []
         for row in child_rows:
             fieldname = row.get("fieldname")
             if not fieldname:
@@ -338,18 +392,105 @@ class ReportRequirements(BaseTool):
                 "options": row.get("options"),
                 "default": row.get("default_value") or row.get("default"),
                 "required": is_required,
+                "depends_on": row.get("depends_on"),
+                "mandatory_depends_on": row.get("mandatory_depends_on"),
             }
             # Drop empty keys for a clean payload.
             filter_def = {k: v for k, v in filter_def.items() if v not in (None, "")}
             filter_def["required"] = is_required
             filters.append(filter_def)
-            (required_filters if is_required else optional_filters).append(fieldname)
+
+        return self._build_parsed_filter_result(filters)
+
+    @staticmethod
+    def _build_parsed_filter_result(filters: list[Dict[str, Any]]) -> Dict[str, Any]:
+        """Build the canonical parsed-filter payload and preserve conditional requirements."""
+        required_filters = []
+        conditional_required_filters = []
+        optional_filters = []
+
+        for filter_def in filters:
+            fieldname = filter_def.get("fieldname")
+            if not fieldname:
+                continue
+            if filter_def.get("required"):
+                required_filters.append(fieldname)
+            elif filter_def.get("mandatory_depends_on"):
+                conditional_required_filters.append(fieldname)
+            else:
+                optional_filters.append(fieldname)
 
         return {
             "filters": filters,
             "required_filters": required_filters,
+            "conditional_required_filters": conditional_required_filters,
             "optional_filters": optional_filters,
         }
+
+    @staticmethod
+    def _find_matching_delimiter(text: str, start: int, opening: str, closing: str) -> int:
+        """Return the matching delimiter while ignoring strings and JavaScript comments."""
+        if start < 0 or start >= len(text) or text[start] != opening:
+            return -1
+
+        depth = 0
+        quote = None
+        escaped = False
+        in_line_comment = False
+        in_block_comment = False
+        index = start
+
+        while index < len(text):
+            char = text[index]
+            next_char = text[index + 1] if index + 1 < len(text) else ""
+
+            if in_line_comment:
+                if char in "\r\n":
+                    in_line_comment = False
+                index += 1
+                continue
+
+            if in_block_comment:
+                if char == "*" and next_char == "/":
+                    in_block_comment = False
+                    index += 2
+                else:
+                    index += 1
+                continue
+
+            if quote:
+                if escaped:
+                    escaped = False
+                elif char == "\\":
+                    escaped = True
+                elif char == quote:
+                    quote = None
+                index += 1
+                continue
+
+            if char == "/" and next_char == "/":
+                in_line_comment = True
+                index += 2
+                continue
+            if char == "/" and next_char == "*":
+                in_block_comment = True
+                index += 2
+                continue
+            if char in ("'", '"', "`"):
+                quote = char
+                index += 1
+                continue
+
+            if char == opening:
+                depth += 1
+            elif char == closing:
+                depth -= 1
+                if depth == 0:
+                    return index
+
+            index += 1
+
+        return -1
 
     def _resolve_report_js_path(self, report_name: str, module_name: str):
         """
@@ -377,51 +518,198 @@ class ReportRequirements(BaseTool):
 
     def _extract_filters_from_js(self, js_content: str):
         """
-        Extract the ``filters: [...]`` array from report JS and parse it.
+        Extract filters from either a literal array or a local builder function.
 
         Returns:
             (parsed_filters_or_None, diagnostic_note). diagnostic_note explains
             why nothing was parsed, so callers can surface it.
         """
-        # Find the start of the filters array. Anchor on "filters:" then the
-        # next "[" — note this does not handle programmatically-built filters
-        # (e.g. ``filters: get_filters()``); that case is reported via the
-        # diagnostic note rather than failing silently.
-        filters_start = js_content.find("filters:")
-        if filters_start == -1:
-            filters_start = js_content.find('"filters"')
-        if filters_start == -1:
+        import re
+
+        property_matches = list(re.finditer(r'(?<![\w$])["\']?filters["\']?\s*:', js_content))
+        if not property_matches:
             return None, "no 'filters:' key found in JS"
 
-        bracket_start = js_content.find("[", filters_start)
-        if bracket_start == -1:
-            return None, "no '[' after 'filters:' (filters may be built programmatically)"
+        notes = []
+        for property_match in property_matches:
+            value_start = property_match.end()
+            while value_start < len(js_content) and js_content[value_start].isspace():
+                value_start += 1
 
-        # Guard against anchoring far past the key (e.g. filters: fn(); ... [ ).
-        between = js_content[filters_start:bracket_start]
-        if "(" in between or ";" in between:
-            return None, "'filters:' is not a literal array (built programmatically)"
+            if value_start < len(js_content) and js_content[value_start] == "[":
+                bracket_end = self._find_matching_delimiter(js_content, value_start, "[", "]")
+                if bracket_end == -1:
+                    notes.append("mismatched brackets in filters array")
+                    continue
+                parsed = self._parse_js_filter_array(js_content[value_start + 1 : bracket_end])
+                if parsed.get("filters"):
+                    return parsed, None
+                notes.append("filters array found but no filter objects parsed")
+                continue
 
-        # Count brackets to find the matching closing bracket.
-        bracket_count = 0
-        bracket_end = bracket_start
-        for i in range(bracket_start, len(js_content)):
-            if js_content[i] == "[":
-                bracket_count += 1
-            elif js_content[i] == "]":
-                bracket_count -= 1
-                if bracket_count == 0:
-                    bracket_end = i
-                    break
+            function_match = re.match(r"([A-Za-z_$][\w$]*)\s*\(", js_content[value_start:])
+            if function_match:
+                function_name = function_match.group(1)
+                parsed, note = self._extract_filters_from_builder_function(js_content, function_name)
+                if parsed:
+                    return parsed, None
+                notes.append(note or f"unable to resolve filter builder {function_name}()")
+                continue
 
-        if bracket_count != 0:
-            return None, "mismatched brackets in filters array"
+            notes.append("'filters:' value is neither a literal array nor a local builder function")
 
-        filters_text = js_content[bracket_start + 1 : bracket_end]
-        parsed = self._parse_js_filter_array(filters_text)
-        if not parsed or not parsed.get("filters"):
-            return None, "filters array found but no filter objects parsed (unexpected JS syntax)"
-        return parsed, None
+        return None, "; ".join(dict.fromkeys(notes))
+
+    def _extract_filters_from_builder_function(self, js_content: str, function_name: str):
+        """Resolve ``filters: get_filters()`` when the builder is defined in the same JS file."""
+        import re
+
+        escaped_name = re.escape(function_name)
+        patterns = [
+            rf"function\s+{escaped_name}\s*\([^)]*\)\s*\{{",
+            rf"(?:const|let|var)\s+{escaped_name}\s*=\s*(?:\([^)]*\)|[A-Za-z_$][\w$]*)\s*=>\s*\{{",
+        ]
+        function_match = next(
+            (match for pattern in patterns if (match := re.search(pattern, js_content))),
+            None,
+        )
+        if not function_match:
+            return None, f"filter builder {function_name}() is not defined in this JS file"
+
+        body_start = js_content.find("{", function_match.start())
+        body_end = self._find_matching_delimiter(js_content, body_start, "{", "}")
+        if body_end == -1:
+            return None, f"filter builder {function_name}() has mismatched braces"
+        body = js_content[body_start + 1 : body_end]
+
+        direct_return = re.search(r"\breturn\s*\[", body)
+        if direct_return:
+            array_start = body.find("[", direct_return.start())
+            array_end = self._find_matching_delimiter(body, array_start, "[", "]")
+            if array_end != -1:
+                parsed = self._parse_js_filter_array(body[array_start + 1 : array_end])
+                if parsed.get("filters"):
+                    return parsed, None
+
+        for returned_variable in re.finditer(r"\breturn\s+([A-Za-z_$][\w$]*)\s*;?", body):
+            variable_name = re.escape(returned_variable.group(1))
+            assignment = re.search(rf"(?:const|let|var)\s+{variable_name}\s*=\s*\[", body)
+            if assignment:
+                array_start = body.find("[", assignment.start())
+                array_end = self._find_matching_delimiter(body, array_start, "[", "]")
+                if array_end != -1:
+                    parsed = self._parse_js_filter_array(body[array_start + 1 : array_end])
+                    if parsed.get("filters"):
+                        return parsed, None
+
+        return None, f"filter builder {function_name}() does not return a parseable filter array"
+
+    @staticmethod
+    def _extract_shared_filter_reference(js_content: str):
+        """Return a namespace mixed into a report config, such as ``erpnext.financial_statements``."""
+        import re
+
+        namespace_pattern = r"([A-Za-z_$][\w$]*(?:\s*\.\s*[A-Za-z_$][\w$]*)+)"
+        patterns = [
+            r"\$\s*\.\s*extend\s*\(\s*(?:\{\s*\}\s*,\s*)?" + namespace_pattern,
+            r"Object\s*\.\s*assign\s*\(\s*(?:\{\s*\}\s*,\s*)?" + namespace_pattern,
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, js_content)
+            if match:
+                return "".join(match.group(1).split())
+        return None
+
+    @staticmethod
+    def _resolve_shared_js_path(reference: str, module_name: str):
+        """Resolve a conventional shared namespace to its app ``public/js`` source file."""
+        import os
+
+        from frappe.modules.utils import get_module_app
+
+        app_name = get_module_app(module_name)
+        source_name = reference.rsplit(".", 1)[-1]
+        candidate = frappe.get_app_path(app_name, "public", "js", f"{source_name}.js")
+        return candidate if os.path.isfile(candidate) else None
+
+    def _extract_pushed_filters_from_js(self, js_content: str) -> Dict[str, Any]:
+        """Parse report-specific filters appended with ``filters.push(...)``."""
+        import re
+
+        filters = []
+        pattern = re.compile(r"(?:\.\s*filters|\[\s*[\"']filters[\"']\s*\])\s*\.\s*push\s*\(")
+        for match in pattern.finditer(js_content):
+            parenthesis_start = match.end() - 1
+            parenthesis_end = self._find_matching_delimiter(js_content, parenthesis_start, "(", ")")
+            if parenthesis_end == -1:
+                continue
+            parsed = self._parse_js_filter_array(js_content[parenthesis_start + 1 : parenthesis_end])
+            filters.extend(parsed.get("filters", []))
+        return self._build_parsed_filter_result(filters)
+
+    def _merge_parsed_filters(self, base: Dict[str, Any], extension: Dict[str, Any]) -> Dict[str, Any]:
+        """Merge parsed filter sets by fieldname while keeping report-specific overrides."""
+        merged = []
+        positions = {}
+        for filter_def in [*base.get("filters", []), *extension.get("filters", [])]:
+            fieldname = filter_def.get("fieldname")
+            if not fieldname:
+                continue
+            if fieldname in positions:
+                merged[positions[fieldname]] = filter_def
+            else:
+                positions[fieldname] = len(merged)
+                merged.append(filter_def)
+        return self._build_parsed_filter_result(merged)
+
+    def _parse_report_js(self, js_content: str, module_name: str):
+        """Parse direct, locally built, or shared report filters plus appended filters."""
+        details = {}
+        appended = self._extract_pushed_filters_from_js(js_content)
+        details["appended_filters_found"] = len(appended.get("filters", []))
+
+        parsed, note = self._extract_filters_from_js(js_content)
+        details["direct"] = {
+            "status": "success" if parsed else "failed",
+            "filters_found": len(parsed.get("filters", [])) if parsed else 0,
+        }
+        if note:
+            details["direct"]["note"] = note
+        if parsed:
+            details["source"] = "report_js"
+            return self._merge_parsed_filters(parsed, appended), details
+
+        shared_reference = self._extract_shared_filter_reference(js_content)
+        details["shared"] = {"reference": shared_reference}
+        if not shared_reference:
+            details["shared"]["status"] = "not_found"
+            return None, details
+
+        try:
+            shared_path = self._resolve_shared_js_path(shared_reference, module_name)
+        except Exception as e:
+            details["shared"].update({"status": "failed", "error": f"{type(e).__name__}: {str(e)}"})
+            return None, details
+
+        details["shared"]["path"] = shared_path
+        details["shared"]["file_exists"] = bool(shared_path)
+        if not shared_path:
+            details["shared"]["status"] = "not_found"
+            return None, details
+
+        # nosemgrep: frappe-security-file-traversal — path is resolved from trusted Module Def and a validated JS namespace
+        with open(shared_path, encoding="utf-8") as shared_file:
+            shared_content = shared_file.read()
+        shared_parsed, shared_note = self._extract_filters_from_js(shared_content)
+        details["shared"]["status"] = "success" if shared_parsed else "failed"
+        details["shared"]["filters_found"] = len(shared_parsed.get("filters", [])) if shared_parsed else 0
+        if shared_note:
+            details["shared"]["note"] = shared_note
+        if not shared_parsed:
+            return None, details
+
+        details["source"] = "shared_js"
+        return self._merge_parsed_filters(shared_parsed, appended), details
 
     def _parse_script_report_filters(self, report_name: str, module_name: str) -> Dict[str, Any]:
         """
@@ -448,11 +736,10 @@ class ReportRequirements(BaseTool):
                 # nosemgrep: frappe-security-file-traversal — path built from frappe.get_module_path + scrubbed report metadata, not user input
                 with open(js_path, encoding="utf-8") as f:
                     js_content = f.read()
-                parsed, note = self._extract_filters_from_js(js_content)
+                parsed, parsing_details = self._parse_report_js(js_content, module_name)
                 diag["js_file"]["status"] = "success" if parsed else "failed"
                 diag["js_file"]["filters_found"] = len(parsed["filters"]) if parsed else 0
-                if note:
-                    diag["js_file"]["note"] = note
+                diag["js_file"]["parsing"] = parsing_details
                 if parsed:
                     self._last_discovery_diagnostics = diag
                     return parsed
@@ -463,11 +750,10 @@ class ReportRequirements(BaseTool):
             js_db = frappe.db.get_value("Report", report_name, "javascript")
             diag["js_db_field"]["present"] = bool(js_db)
             if js_db:
-                parsed, note = self._extract_filters_from_js(js_db)
+                parsed, parsing_details = self._parse_report_js(js_db, module_name)
                 diag["js_db_field"]["status"] = "success" if parsed else "failed"
                 diag["js_db_field"]["filters_found"] = len(parsed["filters"]) if parsed else 0
-                if note:
-                    diag["js_db_field"]["note"] = note
+                diag["js_db_field"]["parsing"] = parsing_details
                 if parsed:
                     self._last_discovery_diagnostics = diag
                     return parsed
@@ -494,26 +780,19 @@ class ReportRequirements(BaseTool):
         import re
 
         filters = []
-        required_filters = []
-        optional_filters = []
 
-        # Split into individual filter objects using proper brace counting
+        # Split into top-level filter objects while ignoring braces in strings/comments.
         filter_objects = []
-        brace_count = 0
-        current_obj_start = None
-
-        for i, char in enumerate(filters_text):
-            if char == "{":
-                if brace_count == 0:
-                    current_obj_start = i
-                brace_count += 1
-            elif char == "}":
-                brace_count -= 1
-                if brace_count == 0 and current_obj_start is not None:
-                    # Extract complete object (excluding braces)
-                    obj_content = filters_text[current_obj_start + 1 : i]
-                    filter_objects.append(obj_content)
-                    current_obj_start = None
+        index = 0
+        while index < len(filters_text):
+            object_start = filters_text.find("{", index)
+            if object_start == -1:
+                break
+            object_end = self._find_matching_delimiter(filters_text, object_start, "{", "}")
+            if object_end == -1:
+                break
+            filter_objects.append(filters_text[object_start + 1 : object_end])
+            index = object_end + 1
 
         for filter_obj in filter_objects:
             filter_def = {}
@@ -523,7 +802,7 @@ class ReportRequirements(BaseTool):
             # quotes on the key so JSON-style report JS isn't silently skipped
             # (issue #203).
             # Extract fieldname
-            fieldname_match = re.search(r'["\']?fieldname["\']?\s*:\s*["\']([^"\']+)["\']', filter_obj)
+            fieldname_match = re.search(r'["\']?fieldname["\']?\s*:\s*[`"\']([^`"\']+)[`"\']', filter_obj)
             if fieldname_match:
                 filter_def["fieldname"] = fieldname_match.group(1)
             else:
@@ -551,8 +830,14 @@ class ReportRequirements(BaseTool):
             if options_match:
                 options_str = options_match.group(1)
                 if options_str.startswith("["):
-                    # Array format - extract string values
-                    option_values = re.findall(r'["\']([^"\']+)["\']', options_str)
+                    # Object options have explicit values and translated labels;
+                    # return only values so callers do not receive duplicates.
+                    option_values = re.findall(
+                        r'["\']?value["\']?\s*:\s*[`"\']([^`"\']+)[`"\']',
+                        options_str,
+                    )
+                    if not option_values:
+                        option_values = re.findall(r'["\']([^"\']+)["\']', options_str)
                     filter_def["options"] = option_values
                 else:
                     # String format (e.g., Link to DocType)
@@ -570,19 +855,18 @@ class ReportRequirements(BaseTool):
             reqd_match = re.search(r'["\']?reqd["\']?\s*:\s*(1|true)', filter_obj, re.IGNORECASE)
             filter_def["required"] = bool(reqd_match)
 
+            for condition_name in ("depends_on", "mandatory_depends_on"):
+                condition_match = re.search(
+                    rf'(?<![\w$])["\']?{condition_name}["\']?\s*:\s*([`"\'])(.*?)\1',
+                    filter_obj,
+                    re.DOTALL,
+                )
+                if condition_match:
+                    filter_def[condition_name] = condition_match.group(2)
+
             filters.append(filter_def)
 
-            # Categorize as required or optional
-            if filter_def["required"]:
-                required_filters.append(filter_def["fieldname"])
-            else:
-                optional_filters.append(filter_def["fieldname"])
-
-        return {
-            "filters": filters,
-            "required_filters": required_filters,
-            "optional_filters": optional_filters,
-        }
+        return self._build_parsed_filter_result(filters)
 
     def _get_comprehensive_metadata(self, report_name: str) -> Dict[str, Any]:
         """Get comprehensive report metadata - merged from get_report_data functionality"""
