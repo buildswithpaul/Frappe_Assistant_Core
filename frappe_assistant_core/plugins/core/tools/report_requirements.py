@@ -19,6 +19,7 @@ Report Requirements Tool for Core Plugin.
 Understand report requirements, structure, and metadata before execution.
 """
 
+import re
 from typing import Any, Dict
 
 import frappe
@@ -42,7 +43,7 @@ class ReportRequirements(BaseTool):
     def __init__(self):
         super().__init__()
         self.name = "report_requirements"
-        self.description = "Get report metadata including required and optional filters, columns, and execution requirements for Script Reports, Query Reports, and Custom Reports. Use this tool before executing reports to understand what filters are mandatory, what exact filter values are valid, and how to structure the report request. This prevents filter errors and helps plan successful report execution. Returns complete report metadata including filter definitions with field types (Link, Select, Date), valid enum options for select fields, column structure, report type, and capabilities. IMPORTANT: Use this FIRST before calling generate_report to understand what exact filter values are needed - Link fields require exact database names (e.g., exact Company name, Customer name), Select fields show valid enum values. Essential when generate_report returns filter errors or when planning complex report execution. NOTE: Report Builder reports are not supported as they are simple DocType list views without business logic."
+        self.description = "Get report metadata including required and optional filters, columns, and execution requirements for Script Reports, Query Reports, and Custom Reports. Use this tool before executing reports to understand what filters are mandatory, what exact filter values are valid, and how to structure the report request. This prevents filter errors and helps plan successful report execution. Returns complete report metadata including filter definitions with field types (Link, Select, Date), valid enum options for select fields, column structure, report type, and capabilities. IMPORTANT: Use this FIRST before calling generate_report to understand what exact filter values are needed - Link fields require exact database names (e.g., exact Company name, Customer name), Select fields show valid enum values. Essential when generate_report returns filter errors or when planning complex report execution. Check 'filter_discovery_status': 'no_filters_declared' means the report genuinely takes no filters, while 'unresolved' means discovery failed and 'discovery_diagnostics' explains why. NOTE: Report Builder reports store a saved column/filter configuration rather than a filter contract and are not yet fully supported."
         self.requires_permission = None  # Permission checked dynamically per report
 
         self.inputSchema = {
@@ -131,26 +132,36 @@ class ReportRequirements(BaseTool):
                     report_name, column_result.get("report_type")
                 )
 
-                # For Script Reports, discover filters from multiple sources and
-                # add to main response.
-                if column_result.get("report_type") == "Script Report":
-                    parsed_filters, diagnostics = self._discover_script_report_filters(
-                        report_name, report_doc
+                # Discovery runs for every report type. Gating it to Script
+                # Reports left Query and Custom Reports with no filter
+                # definitions AND no discovery_diagnostics key, which is
+                # indistinguishable from a report that genuinely takes none
+                # (issue #223).
+                parsed_filters, diagnostics = self._discover_report_filters(report_name, report_doc)
+                result["discovery_diagnostics"] = diagnostics
+                result["filter_discovery_status"] = diagnostics.get("status", "unresolved")
+
+                if parsed_filters and parsed_filters.get("filters"):
+                    result["filters_definition"] = parsed_filters["filters"]
+                    result["required_filter_names"] = parsed_filters.get("required_filters", [])
+                    result["conditional_required_filter_names"] = parsed_filters.get(
+                        "conditional_required_filters", []
                     )
-                    result["discovery_diagnostics"] = diagnostics
+                    result["optional_filter_names"] = parsed_filters.get("optional_filters", [])
 
-                    if parsed_filters and parsed_filters.get("filters"):
-                        result["filters_definition"] = parsed_filters["filters"]
-                        result["required_filter_names"] = parsed_filters.get("required_filters", [])
-                        result["conditional_required_filter_names"] = parsed_filters.get(
-                            "conditional_required_filters", []
-                        )
-                        result["optional_filter_names"] = parsed_filters.get("optional_filters", [])
-
-                        # Override filter_requirements with parsed data instead of pattern-based guesses
-                        result["filter_requirements"] = self._build_requirements_from_parsed_filters(
-                            parsed_filters
-                        )
+                    # Override filter_requirements with parsed data instead of pattern-based guesses
+                    result["filter_requirements"] = self._build_requirements_from_parsed_filters(
+                        parsed_filters
+                    )
+                elif diagnostics.get("status") == "no_filters_declared":
+                    result["filters_definition"] = []
+                    result["required_filter_names"] = []
+                    result["optional_filter_names"] = []
+                    result["filter_requirements"] = {
+                        "common_required_filters": [],
+                        "common_optional_filters": [],
+                        "guidance": ["This report declares no filters and can be run without any."],
+                    }
 
             # Add comprehensive metadata if requested
             if include_metadata:
@@ -344,23 +355,38 @@ class ReportRequirements(BaseTool):
 
         return requirements
 
-    def _discover_script_report_filters(self, report_name: str, report_doc):
+    def _discover_report_filters(self, report_name: str, report_doc):
         """
-        Discover Script Report filters from multiple sources, first non-empty
-        wins, recording a diagnostic for each attempt so a silent empty result
-        is debuggable by agents and users (issue #203).
+        Discover a report's filter contract, recording a diagnostic for every
+        source attempted so an empty result is never silent (issues #203, #223).
 
-        Order:
+        Runs for every report type, not just Script Reports.
+
+        Order (first source that yields an answer wins):
             1. ``Report.filters`` child table (structured, no parsing).
             2. JS — on-disk .js file, then the ``Report.javascript`` DB field.
+            3. ``Report.query`` ``%(name)s`` placeholders, for Query Reports.
+
+        A Custom Report carries no configuration of its own; its contract is
+        that of the report named in ``reference_report``, so discovery follows
+        that link before looking anything up.
 
         Returns:
             (parsed_filters_or_None, discovery_diagnostics dict)
         """
-        diagnostics = {}
+        diagnostics = {"status": "unresolved"}
+
+        source_doc = report_doc
+        reference = getattr(report_doc, "reference_report", None)
+        if getattr(report_doc, "report_type", None) == "Custom Report" and reference:
+            diagnostics["reference_report"] = reference
+            try:
+                source_doc = frappe.get_doc("Report", reference)
+            except Exception as e:
+                diagnostics["reference_report_error"] = f"{type(e).__name__}: {e}"
 
         # --- Source 1: Report.filters child table ---
-        child_rows = report_doc.get("filters") or []
+        child_rows = report_doc.get("filters") or source_doc.get("filters") or []
         diagnostics["filters_child_table"] = {
             "row_count": len(child_rows),
             "status": "success" if child_rows else "empty",
@@ -369,13 +395,87 @@ class ReportRequirements(BaseTool):
             parsed = self._parse_filters_child_table(child_rows)
             if parsed.get("filters"):
                 diagnostics["filters_child_table"]["filters_found"] = len(parsed["filters"])
+                diagnostics["status"] = "resolved"
                 return parsed, diagnostics
 
         # --- Source 2: JavaScript (disk file, then DB field) ---
         self._last_discovery_diagnostics = {}
-        parsed = self._parse_script_report_filters(report_name, report_doc.module)
+        parsed = self._parse_script_report_filters(source_doc.name, source_doc.module)
         diagnostics["javascript"] = getattr(self, "_last_discovery_diagnostics", {})
+        if parsed and parsed.get("filters"):
+            diagnostics["status"] = "resolved"
+            return parsed, diagnostics
+
+        # --- Source 3: Query Report SQL placeholders ---
+        sql_parsed, sql_diagnostics = self._filters_from_query_placeholders(source_doc)
+        if sql_diagnostics:
+            diagnostics["query_placeholders"] = sql_diagnostics
+        if sql_parsed is not None:
+            diagnostics["status"] = sql_diagnostics["status"]
+            return (sql_parsed if sql_parsed.get("filters") else None), diagnostics
+
         return parsed, diagnostics
+
+    def _filters_from_query_placeholders(self, report_doc):
+        """
+        Derive a Query Report's filter contract from its SQL placeholders.
+
+        ``frappe.db.sql(query, filters)`` raises when a named placeholder has no
+        value, so every ``%(name)s`` in ``Report.query`` is mandatory by
+        construction — a stronger statement than anything declared in JS.
+
+        The negative case is just as useful: a non-empty query with no
+        placeholders positively establishes that the report takes no filters.
+        That is an answer, not a discovery failure.
+
+        Returns:
+            (parsed_filters_or_None, diagnostics_or_None)
+        """
+        if getattr(report_doc, "report_type", None) != "Query Report":
+            return None, None
+
+        query = (getattr(report_doc, "query", None) or "").strip()
+        if not query:
+            return None, {"status": "empty", "note": "report has no stored query"}
+
+        # ``%%`` is an escaped literal percent (LIKE '%%foo%%',
+        # date_format(t, '%%H:%%i:%%s')) and must be removed before scanning,
+        # or it masks a real positional marker.
+        if re.search(r"%s(?!\w)", query.replace("%%", "")):
+            return None, {
+                "status": "unresolved",
+                "note": "query uses positional %s placeholders; filter names cannot be determined",
+            }
+
+        names = list(dict.fromkeys(re.findall(r"%\((\w+)\)s", query)))
+
+        if not names:
+            return {
+                "filters": [],
+                "required_filters": [],
+                "conditional_required_filters": [],
+                "optional_filters": [],
+            }, {
+                "status": "no_filters_declared",
+                "note": "query defines no %(name)s placeholders, so the report takes no filters",
+            }
+
+        filters = [
+            {"fieldname": name, "label": name.replace("_", " ").title(), "required": True} for name in names
+        ]
+        return {
+            "filters": filters,
+            "required_filters": names,
+            "conditional_required_filters": [],
+            "optional_filters": [],
+        }, {
+            "status": "resolved",
+            "placeholders": names,
+            "note": (
+                "filters derived from %(name)s placeholders in the report SQL; every placeholder is "
+                "mandatory because the query fails without it. Field types are not declared in SQL."
+            ),
+        }
 
     def _parse_filters_child_table(self, child_rows) -> Dict[str, Any]:
         """Convert ``Report.filters`` child-table rows to the parsed-filter shape."""
