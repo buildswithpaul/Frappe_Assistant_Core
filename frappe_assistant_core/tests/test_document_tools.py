@@ -147,6 +147,14 @@ class TestDocumentTools(BaseAssistantTest):
                     MagicMock(user="restricted@example.com"),
                 )
             )
+            # Employee is not submittable; stubbed so meta loading does not issue
+            # queries of its own against the mocked frappe.get_list / frappe.get_all.
+            stack.enter_context(
+                patch(
+                    "frappe_assistant_core.plugins.core.tools.list_documents.frappe.get_meta",
+                    return_value=MagicMock(is_submittable=0),
+                )
+            )
             get_all = stack.enter_context(
                 patch(
                     "frappe_assistant_core.plugins.core.tools.list_documents.frappe.get_all",
@@ -216,6 +224,12 @@ class TestDocumentTools(BaseAssistantTest):
                 patch(
                     "frappe_assistant_core.plugins.core.tools.list_documents.frappe.session",
                     MagicMock(user="restricted@example.com"),
+                )
+            )
+            stack.enter_context(
+                patch(
+                    "frappe_assistant_core.plugins.core.tools.list_documents.frappe.get_meta",
+                    return_value=MagicMock(is_submittable=0),
                 )
             )
             get_list = stack.enter_context(

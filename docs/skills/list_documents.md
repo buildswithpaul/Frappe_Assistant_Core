@@ -16,6 +16,23 @@ The `list_documents` tool searches and lists Frappe documents with filtering, fi
 
 **Note:** There is no `page` parameter. Use `limit` to control result size.
 
+## Submitted-Only Default
+
+For **submittable** DocTypes (Sales Invoice, Purchase Invoice, Sales Order, Payment Entry, Stock Entry, and so on) the tool applies `docstatus: 1` automatically when you do not set `docstatus` yourself. Cancelled and draft documents keep their monetary field values, so including them silently inflates any total you compute from the result set.
+
+The applied default is echoed in `filters_applied` and called out in `message`.
+
+To opt out, pass `docstatus` explicitly:
+
+| Goal | Filter |
+|------|--------|
+| Submitted only (default) | — |
+| Cancelled only | `{"docstatus": 2}` |
+| Drafts and submitted | `{"docstatus": [0, 1]}` |
+| Everything | `{"docstatus": [0, 1, 2]}` |
+
+Non-submittable DocTypes (Customer, Item, Supplier, User, ToDo, …) have no `docstatus` semantics and are unaffected.
+
 ## Response Format
 
 ```json
@@ -93,10 +110,19 @@ Key response fields:
 ```json
 {
   "doctype": "Sales Invoice",
-  "filters": {"docstatus": 1},
   "fields": ["name", "customer", "grand_total", "posting_date"],
   "order_by": "posting_date desc",
   "limit": 10
+}
+```
+`docstatus: 1` is the default here — no need to pass it.
+
+### Include cancelled documents (audit / reconciliation)
+```json
+{
+  "doctype": "Sales Invoice",
+  "filters": {"docstatus": [0, 1, 2]},
+  "fields": ["name", "customer", "grand_total", "docstatus", "status"]
 }
 ```
 
