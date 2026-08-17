@@ -137,6 +137,40 @@ Full specification for each tool is in the
 
 ---
 
+## Schema access is live
+
+FAC reads your schema from Frappe's metadata API at the moment a tool is
+called. It keeps no schema copy of its own — no snapshot table, no
+embedded or vector index of your data model, and no sync command. There
+is nothing to re-run and no staleness window to reason about.
+
+In practice that means:
+
+- **Custom DocTypes, Custom Fields, and Property Setters are visible on
+  the next tool call.** Create a field in the desk and the LLM sees it
+  immediately. `get_doctype_info` returns custom fields merged inline
+  with standard fields, along with child-table field definitions, Link
+  targets, and the DocType's permission rules.
+- **Renames, added options, and changed labels take effect the same
+  way** — they come from the same live metadata read.
+- **Permissions are evaluated per call against the requesting user**,
+  never snapshotted. FAC asks Frappe on each call, so a role change
+  applies as soon as Frappe applies it.
+
+FAC does cache a few operational things — whether the server is
+enabled, the MCP and OAuth endpoint URLs, and dashboard/health
+statistics. None of them describe your schema or your data.
+
+If you reach FAC through another product that embeds or orchestrates it,
+that layer may maintain its own schema cache with its own refresh
+behaviour. Staleness seen through a wrapper is worth tracing there
+first; FAC itself has no such step.
+
+Implementation details are in
+[Architecture Overview](docs/internals/INTERNALS.md#schema-access).
+
+---
+
 ## Extend with your own tools
 
 If you have a Frappe app and want the LLM to reach into it, use the
