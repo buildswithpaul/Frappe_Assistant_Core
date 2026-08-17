@@ -20,6 +20,8 @@ from typing import Any, Dict, List
 import frappe
 from frappe import _
 
+from .report_requirements import VALUE_CONSTRAINED_FIELDTYPES, discover_filter_definitions
+
 
 class ReportTools:
     """
@@ -54,13 +56,18 @@ class ReportTools:
             # Get report document
             report_doc = frappe.get_doc("Report", report_name)
 
+            # Resolve the report's declared filter contract once, then use it for
+            # both validation and defaulting so every code path agrees on it.
+            definitions = ReportTools._filter_definitions(report_doc)
+
             # Validate filters before execution
-            validation_result = ReportTools._validate_filters(filters or {}, report_doc)
+            validation_result = ReportTools._validate_filters(filters or {}, report_doc, definitions)
             if not validation_result.get("valid"):
                 return {
                     "success": False,
                     "error": "Invalid filter values provided",
                     "validation_errors": validation_result.get("errors", []),
+                    "error_details": validation_result.get("error_details", []),
                     "suggestions": validation_result.get("suggestions", []),
                 }
 
@@ -73,7 +80,7 @@ class ReportTools:
             if report_doc.report_type == "Query Report":
                 result = ReportTools._execute_query_report(report_doc, effective_filters)
             elif report_doc.report_type == "Script Report":
-                result = ReportTools._execute_script_report(report_doc, effective_filters)
+                result = ReportTools._execute_script_report(report_doc, effective_filters, definitions)
             elif report_doc.report_type == "Report Builder":
                 return {
                     "success": False,
@@ -485,7 +492,7 @@ class ReportTools:
             raise e
 
     @staticmethod
-    def _execute_script_report(report_doc, filters):
+    def _execute_script_report(report_doc, filters, definitions=None):
         """Execute a Script Report"""
         from frappe.desk.query_report import run
 
@@ -567,8 +574,8 @@ class ReportTools:
             if "quotation trends" in report_name_lower and "based_on" not in filters:
                 filters["based_on"] = "Item"
 
-            # Apply default values from JavaScript filter definitions
-            filters = ReportTools._apply_filter_defaults(report_doc, filters)
+            # Apply the defaults the report itself declares
+            filters = ReportTools._apply_filter_defaults(report_doc, filters, definitions)
 
             # Final cleanup - ensure all filter values are strings or proper types
             final_filters = {}
@@ -617,193 +624,149 @@ class ReportTools:
             }
 
     @staticmethod
-    def _validate_filters(filters: Dict[str, Any], report_doc) -> Dict[str, Any]:
-        """Validate filter values against database to catch invalid references early"""
+    def _validate_filters(filters: Dict[str, Any], report_doc, definitions=None) -> Dict[str, Any]:
+        """Validate filter values against the report's own declared filter contract.
+
+        Accepted values come from the same discovery that ``report_requirements``
+        advertises, so the two tools cannot disagree about their own contract.
+
+        A hardcoded fieldname -> values map used to stand in for this, and it was
+        wrong in both directions. ``range`` alone means four different things
+        across the standard apps: ageing buckets as Data ("30, 60, 90, 120") on
+        the AR/AP and Stock Ageing reports, Weekly..Yearly on Sales/Stock
+        Analytics, Daily|Weekly|Monthly on Website Analytics, and Monthly|Quarterly
+        on Sales Pipeline Analytics. The map rejected the first group's advertised
+        defaults outright and accepted values the last two do not offer
+        (issue #229).
+
+        A filter the report does not declare is left alone: guessing is what
+        created the mismatch, and the report itself reports a real error.
+        """
         errors = []
         suggestions = []
+        details = []
 
-        # Common Link field filters to validate
-        link_validations = {
-            "company": "Company",
-            "customer": "Customer",
-            "supplier": "Supplier",
-            "item": "Item",
-            "project": "Project",
-            "cost_center": "Cost Center",
-            "warehouse": "Warehouse",
-        }
+        if definitions is None:
+            definitions = ReportTools._filter_definitions(report_doc)
 
-        for filter_key, doctype in link_validations.items():
-            if filter_key in filters and filters[filter_key]:
-                filter_value = filters[filter_key]
+        for filter_key, filter_value in filters.items():
+            if not filter_value:
+                continue
 
-                # Skip validation for list values (used in group reports)
+            definition = definitions.get(filter_key)
+            if not definition:
+                continue
+
+            fieldtype = definition.get("fieldtype")
+            options = definition.get("options")
+
+            # A constrained value set: validate membership against this report's
+            # own options, and name them in the error.
+            if fieldtype in VALUE_CONSTRAINED_FIELDTYPES and isinstance(options, list) and options:
                 if isinstance(filter_value, list):
-                    continue
-
-                # Check if the referenced document exists
-                if not frappe.db.exists(doctype, filter_value):
-                    errors.append(f"Invalid {filter_key}: '{filter_value}' does not exist in {doctype}")
-
-                    # Try to find similar names to suggest
-                    try:
-                        similar = frappe.get_all(
-                            doctype, filters={"name": ["like", f"%{filter_value}%"]}, fields=["name"], limit=3
-                        )
-                        if similar:
-                            suggestions.append(
-                                f"Did you mean one of these {doctype} names? {', '.join([s.name for s in similar])}"
-                            )
-                        else:
-                            # If no similar matches, show first few valid options
-                            valid_options = frappe.get_all(doctype, fields=["name"], limit=5)
-                            if valid_options:
-                                suggestions.append(
-                                    f"Valid {doctype} names include: {', '.join([v.name for v in valid_options])}"
-                                )
-                    except Exception:
-                        pass
-
-        # Validate Select field options
-        select_validations = {
-            "tree_type": [
-                "Customer",
-                "Supplier",
-                "Item",
-                "Customer Group",
-                "Supplier Group",
-                "Item Group",
-                "Territory",
-                "Order Type",
-                "Project",
-            ],
-            "doc_type": [
-                "Sales Invoice",
-                "Sales Order",
-                "Quotation",
-                "Purchase Invoice",
-                "Purchase Order",
-                "Purchase Receipt",
-                "Delivery Note",
-            ],
-            "value_quantity": ["Value", "Quantity"],
-            "range": ["Weekly", "Monthly", "Quarterly", "Half-Yearly", "Yearly"],
-        }
-
-        for filter_key, valid_options in select_validations.items():
-            if filter_key in filters and filters[filter_key]:
-                filter_value = filters[filter_key]
-                if filter_value not in valid_options:
+                    continue  # multi-value selection, not a single enum choice
+                if filter_value not in options:
                     errors.append(
-                        f"Invalid {filter_key}: '{filter_value}'. Must be one of: {', '.join(valid_options)}"
+                        f"Invalid {filter_key}: '{filter_value}'. Must be one of: {', '.join(options)}"
                     )
+                    details.append(
+                        {
+                            "fieldname": filter_key,
+                            "type": "invalid_option",
+                            "value": filter_value,
+                            "accepted_values": options,
+                        }
+                    )
+                continue
 
-        # Validate date formats
-        date_fields = ["from_date", "to_date", "posting_date", "transaction_date"]
-        for date_field in date_fields:
-            if date_field in filters and filters[date_field]:
+            # A Link target: validate the referenced record exists. `options` is
+            # only a DocType when the report says so — on some filters it names a
+            # companion fieldname instead (party -> party_type).
+            if fieldtype == "Link" and isinstance(options, str) and options:
+                if isinstance(filter_value, list):
+                    continue  # list values are used by grouped reports
+                if not frappe.db.exists("DocType", options):
+                    continue
+                if not frappe.db.exists(options, filter_value):
+                    errors.append(f"Invalid {filter_key}: '{filter_value}' does not exist in {options}")
+                    details.append(
+                        {
+                            "fieldname": filter_key,
+                            "type": "unknown_record",
+                            "value": filter_value,
+                            "target_doctype": options,
+                        }
+                    )
+                    suggestions.extend(ReportTools._link_value_suggestions(options, filter_value))
+                continue
+
+            if fieldtype in ("Date", "Datetime"):
                 try:
                     from frappe.utils import getdate
 
-                    getdate(filters[date_field])
+                    getdate(filter_value)
                 except Exception:
-                    errors.append(
-                        f"Invalid {date_field}: '{filters[date_field]}'. Expected format: YYYY-MM-DD"
-                    )
+                    errors.append(f"Invalid {filter_key}: '{filter_value}'. Expected format: YYYY-MM-DD")
+                    details.append({"fieldname": filter_key, "type": "invalid_date", "value": filter_value})
 
-        return {"valid": len(errors) == 0, "errors": errors, "suggestions": suggestions}
+        return {
+            "valid": len(errors) == 0,
+            "errors": errors,
+            "suggestions": suggestions,
+            "error_details": details,
+        }
 
     @staticmethod
-    def _apply_filter_defaults(report_doc, filters):
-        """Apply default filter values from JavaScript filter definitions for Script Reports"""
-        import os
-        import re
-
-        # Only apply for Script Reports
-        if report_doc.report_type != "Script Report":
-            return filters
-
+    def _filter_definitions(report_doc) -> Dict[str, Any]:
+        """The report's declared filter contract, or {} when discovery finds nothing."""
         try:
-            # Get the report's JavaScript file path
-            module_name = report_doc.module
-            report_name = report_doc.name
-            report_folder = report_name.lower().replace(" ", "_").replace("-", "_")
-            module_folder = module_name.lower().replace(" ", "_")
+            return discover_filter_definitions(report_doc)
+        except Exception as e:
+            frappe.log_error(
+                title=_("Report Filter Discovery Error"),
+                message=f"Error discovering filters for {report_doc.name}: {str(e)}",
+            )
+            return {}
 
-            # Search for the JS file in installed apps
-            for app in frappe.get_installed_apps():
-                app_path = frappe.get_app_path(app)
-                js_path = os.path.join(
-                    app_path, module_folder, "report", report_folder, f"{report_folder}.js"
-                )
+    @staticmethod
+    def _link_value_suggestions(doctype: str, filter_value) -> list:
+        """Name-like candidates for an unknown Link value, or valid examples."""
+        try:
+            similar = frappe.get_all(
+                doctype, filters={"name": ["like", f"%{filter_value}%"]}, fields=["name"], limit=3
+            )
+            if similar:
+                return [f"Did you mean one of these {doctype} names? {', '.join([s.name for s in similar])}"]
 
-                if os.path.exists(js_path):
-                    # nosemgrep: frappe-security-file-traversal — path built from frappe.get_app_path + report metadata, not user input
-                    with open(js_path, encoding="utf-8") as f:
-                        js_content = f.read()
+            valid_options = frappe.get_all(doctype, fields=["name"], limit=5)
+            if valid_options:
+                return [f"Valid {doctype} names include: {', '.join([v.name for v in valid_options])}"]
+        except Exception:
+            pass
 
-                    # Extract filter definitions
-                    filters_start = js_content.find("filters:")
-                    if filters_start == -1:
-                        continue
+        return []
 
-                    # Find the filter array using bracket counting
-                    bracket_start = js_content.find("[", filters_start)
-                    if bracket_start == -1:
-                        continue
+    @staticmethod
+    def _apply_filter_defaults(report_doc, filters, definitions=None):
+        """Apply the default filter values the report itself declares.
 
-                    bracket_count = 0
-                    bracket_end = -1
-                    for i in range(bracket_start, len(js_content)):
-                        if js_content[i] == "[":
-                            bracket_count += 1
-                        elif js_content[i] == "]":
-                            bracket_count -= 1
-                            if bracket_count == 0:
-                                bracket_end = i
-                                break
+        Uses the shared discovery rather than a private parser. A second
+        hand-rolled JS regex lived here and could disagree with the definitions
+        report_requirements advertises — the same class of divergence as the
+        validator's hardcoded value map (issue #229).
+        """
+        try:
+            if definitions is None:
+                definitions = ReportTools._filter_definitions(report_doc)
 
-                    if bracket_end == -1:
-                        continue
-
-                    filters_text = js_content[bracket_start + 1 : bracket_end]
-
-                    # Parse filter objects
-                    filter_objects = []
-                    brace_count = 0
-                    current_obj_start = None
-
-                    for i, char in enumerate(filters_text):
-                        if char == "{":
-                            if brace_count == 0:
-                                current_obj_start = i
-                            brace_count += 1
-                        elif char == "}":
-                            brace_count -= 1
-                            if brace_count == 0 and current_obj_start is not None:
-                                obj_content = filters_text[current_obj_start + 1 : i]
-                                filter_objects.append(obj_content)
-                                current_obj_start = None
-
-                    # Extract default values from each filter
-                    for filter_obj in filter_objects:
-                        # Extract fieldname
-                        fieldname_match = re.search(r'fieldname:\s*["\']([^"\']+)["\']', filter_obj)
-                        if not fieldname_match:
-                            continue
-                        fieldname = fieldname_match.group(1)
-
-                        # Skip if filter already has a value
-                        if fieldname in filters and filters[fieldname] is not None:
-                            continue
-
-                        # Extract default value
-                        default_match = re.search(r'default:\s*["\']([^"\']+)["\']', filter_obj)
-                        if default_match:
-                            default_value = default_match.group(1)
-                            filters[fieldname] = default_value
-
-                    break  # Found and processed the JS file
+            for fieldname, definition in definitions.items():
+                default = definition.get("default")
+                if default in (None, ""):
+                    continue
+                # Never override a value the caller supplied.
+                if filters.get(fieldname) is not None:
+                    continue
+                filters[fieldname] = default
 
         except Exception as e:
             # Log error but don't fail the report execution
