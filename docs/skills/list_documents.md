@@ -56,6 +56,37 @@ Key response fields:
 - `count` — number of records returned in this response
 - `total_count` — total matching records in the database
 - `has_more` — boolean indicating more records exist beyond the limit
+- `unresolved_filters` — **present only on zero-row results** when a Link filter value matched no record (see below)
+
+## Zero Results: Check `unresolved_filters` First
+
+`count: 0` has two very different causes, and reporting the wrong one to the user is a factual error:
+
+1. **The filter value is valid, there are genuinely no matching records.** "This customer has no open orders."
+2. **The filter value matched no record at all.** The correct answer is "no customer by that name exists" — *not* "this customer has no orders."
+
+When a query returns zero rows and a Link filter value resolves to nothing, the response adds `unresolved_filters`:
+
+```json
+{
+  "success": true,
+  "count": 0,
+  "unresolved_filters": {
+    "customer": {
+      "value": "Grant Plastic",
+      "matched": false,
+      "target_doctype": "Customer",
+      "suggestions": ["Grant Plastics Ltd."]
+    }
+  }
+}
+```
+
+`suggestions` are ranked record names, ready to use directly in a retry. **Never report "no records found" when `unresolved_filters` is present** — either retry with a suggestion or ask the user which they meant.
+
+The key is absent when every filter value resolves, so its absence confirms cause 1. It is only computed for zero-row results, and only for Link fields compared by equality — `like`, `in` and `!=` already say you don't know the exact value.
+
+`success` stays `true` and `count` stays `0`: an unresolved filter is metadata, not an error.
 
 ## Filter Syntax
 
@@ -145,6 +176,16 @@ Key response fields:
 }
 ```
 Then check `total_count` in the response for the full count.
+
+### Recover from an unresolved entity name
+```json
+{
+  "doctype": "Sales Order",
+  "filters": {"customer": "Grant Plastic"},
+  "fields": ["name", "customer", "grand_total"]
+}
+```
+Returns `count: 0` with `unresolved_filters.customer.suggestions: ["Grant Plastics Ltd."]`. Retry with the suggested name — do not report that the customer has no orders.
 
 ## Edge Cases
 
