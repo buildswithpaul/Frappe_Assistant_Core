@@ -129,6 +129,130 @@ def apply_default_docstatus(doctype: str, filters: Any) -> tuple:
     return {"docstatus": 1}, True
 
 
+# Ranked candidates offered per unmatched Link filter value.
+MAX_LINK_SUGGESTIONS = 5
+
+
+def equality_filter_pairs(filters: Any) -> List[tuple]:
+    """(fieldname, value) pairs for filters compared to a single value by equality.
+
+    Only these can be checked for existence — an operator like `like` or `in`
+    already expresses that the caller does not know the exact value.
+    """
+    pairs = []
+
+    if isinstance(filters, dict):
+        for fieldname, value in filters.items():
+            if isinstance(value, str):
+                pairs.append((fieldname, value))
+            elif isinstance(value, (list, tuple)) and len(value) == 2:
+                operator, operand = value
+                if isinstance(operator, str) and operator == "=" and isinstance(operand, str):
+                    pairs.append((fieldname, operand))
+        return pairs
+
+    if isinstance(filters, (list, tuple)):
+        conditions = [filters] if filters and isinstance(filters[0], str) else filters
+        for condition in conditions:
+            if not isinstance(condition, (list, tuple)) or len(condition) < 3:
+                continue
+            # ["doctype", "fieldname", op, value] or ["fieldname", op, value]
+            fieldname, operator, value = condition[1:4] if len(condition) >= 4 else condition[0:3]
+            if operator == "=" and isinstance(value, str):
+                pairs.append((fieldname, value))
+
+    return pairs
+
+
+def link_filter_targets(doctype: str, filters: Any) -> Dict[str, tuple]:
+    """Map fieldname -> (target DocType, value) for Link fields filtered by equality."""
+    pairs = equality_filter_pairs(filters)
+    if not pairs:
+        return {}
+
+    try:
+        meta = frappe.get_meta(doctype)
+    except Exception:
+        return {}
+
+    targets = {}
+    for fieldname, value in pairs:
+        if not value:
+            continue
+        field = meta.get_field(fieldname)
+        if not field or field.fieldtype != "Link" or not field.options:
+            continue
+        targets[fieldname] = (field.options, value)
+
+    return targets
+
+
+def link_suggestions(target_doctype: str, value: str) -> List[str]:
+    """Ranked candidate names for an unmatched Link value, via search_link resolution.
+
+    Falls back to the first word of a multi-word value, since search_link matches
+    on substrings and a typo late in the value would otherwise return nothing.
+    """
+    from .search_tools import SearchTools
+
+    queries = [value]
+    words = value.split()
+    if words and words[0] != value:
+        queries.append(words[0])
+
+    for query in queries:
+        response = SearchTools.search_link(doctype=target_doctype, query=query)
+        if not response.get("success"):
+            return []
+
+        suggestions = [
+            candidate.get("value") for candidate in response.get("results") or [] if candidate.get("value")
+        ]
+        if suggestions:
+            return suggestions[:MAX_LINK_SUGGESTIONS]
+
+    return []
+
+
+def resolve_unmatched_link_filters(doctype: str, filters: Any) -> Dict[str, Dict[str, Any]]:
+    """Explain a zero-row result caused by Link filter values that match no record.
+
+    "No records" and "that entity does not exist" are indistinguishable to a
+    consumer otherwise, so an approximate name passed straight into a filter reads
+    as a legitimate business answer. Only called when the result set is empty.
+    """
+    unresolved = {}
+
+    for fieldname, (target_doctype, value) in link_filter_targets(doctype, filters).items():
+        try:
+            if not frappe.db.exists("DocType", target_doctype):
+                continue
+
+            # Without read access on the target, neither existence nor candidates
+            # are ours to report.
+            if not frappe.has_permission(target_doctype, "read"):
+                continue
+
+            # The value resolves — zero rows is a real answer, not a bad filter.
+            if frappe.db.exists(target_doctype, value):
+                continue
+
+            unresolved[fieldname] = {
+                "value": value,
+                "matched": False,
+                "target_doctype": target_doctype,
+                "suggestions": link_suggestions(target_doctype, value),
+            }
+        except Exception as e:
+            # Diagnostics must never turn a successful query into a failure.
+            frappe.log_error(
+                title=_("Link Filter Resolution Error"),
+                message=f"Error resolving {doctype}.{fieldname}: {str(e)}",
+            )
+
+    return unresolved
+
+
 class DocumentList(BaseTool):
     """
     Tool for listing and searching Frappe documents.
@@ -143,7 +267,7 @@ class DocumentList(BaseTool):
     def __init__(self):
         super().__init__()
         self.name = "list_documents"
-        self.description = "Search and list Frappe documents with optional filtering. Use this when users want to find records, get lists of documents, or search for data. This is the primary tool for data exploration and discovery. For submittable DocTypes (invoices, orders, entries) only submitted documents are returned unless you pass docstatus explicitly."
+        self.description = "Search and list Frappe documents with optional filtering. Use this when users want to find records, get lists of documents, or search for data. This is the primary tool for data exploration and discovery. For submittable DocTypes (invoices, orders, entries) only submitted documents are returned unless you pass docstatus explicitly. If a query returns nothing because a Link filter value matches no record, the response carries unresolved_filters with ranked suggestions — check it before reporting that no data exists."
         self.requires_permission = None  # Permission checked dynamically per DocType
 
         self.inputSchema = {
@@ -292,6 +416,18 @@ class DocumentList(BaseTool):
                 "filters_applied": filters,
                 "message": message,
             }
+
+            # A zero-row result may mean the filter value itself never existed.
+            # Additive metadata only — the query still succeeded.
+            if not filtered_documents:
+                unresolved_filters = resolve_unmatched_link_filters(doctype, filters)
+                if unresolved_filters:
+                    result["unresolved_filters"] = unresolved_filters
+                    result["message"] += (
+                        f" — but these filter values match no record: "
+                        f"{', '.join(sorted(unresolved_filters))}. This is an unresolved filter, "
+                        "not an empty result. See unresolved_filters for candidates."
+                    )
 
             # Log successful access
             return result
