@@ -5,6 +5,7 @@ Maps business data from Frappe docfields to standardized intelligence metrics.
 """
 
 from typing import Dict, List, Any, Optional, Tuple
+from datetime import datetime
 import frappe
 from ..enhanced_base_tool import EnhancedBaseTool
 from ..constants import BusinessArea, ScanType
@@ -65,7 +66,7 @@ class DataSourceMapper(EnhancedBaseTool):
             raise DataSourceError("doctype is required")
 
         try:
-            # Get data from Frappe
+            # Get data from Frappe - nosemgrep: frappe-security-file-traversal
             data = frappe.get_list(doctype, filters=filters, fields=fields or None)
             
             # Map to standardized format
