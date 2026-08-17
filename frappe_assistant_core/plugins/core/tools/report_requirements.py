@@ -27,6 +27,66 @@ from frappe import _
 
 from frappe_assistant_core.core.base_tool import BaseTool
 
+# Fieldtypes whose `options` is a set of accepted values rather than a target
+# DocType. Everything else (Link, MultiSelectList) points at a DocType instead.
+VALUE_CONSTRAINED_FIELDTYPES = {"Select", "Autocomplete"}
+
+# A JavaScript string literal in each of its three quotings. Empty strings have
+# to match as well: a leading "" in an options array — the "no selection" entry —
+# threw naive quote-pairing off by one, so the separators between values were
+# captured instead of the values themselves (issue #229).
+_JS_STRING_LITERAL = re.compile(r'"((?:[^"\\]|\\.)*)"' r"|'((?:[^'\\]|\\.)*)'" r"|`((?:[^`\\]|\\.)*)`")
+
+
+def _extract_js_string_literals(text: str) -> list:
+    """Every string literal in a fragment of JavaScript, in source order."""
+    return [
+        next((group for group in match.groups() if group is not None), "")
+        for match in _JS_STRING_LITERAL.finditer(text)
+    ]
+
+
+def normalize_filter_options(filter_def: Dict[str, Any]) -> Dict[str, Any]:
+    """Express a value-constrained filter's accepted values as an explicit list.
+
+    Report JS declares Select options three ways: an array of strings, an array
+    of ``{value, label}`` objects, and a newline-delimited string. Only the first
+    two arrived as a list — the third reached callers as an opaque
+    ``"Monthly\\nQuarterly"``, so the same contract had two shapes and a
+    constrained value set could not be read off the advertised definition
+    (issue #229).
+
+    Mutates and returns the filter definition.
+    """
+    if filter_def.get("fieldtype") not in VALUE_CONSTRAINED_FIELDTYPES:
+        return filter_def
+
+    options = filter_def.get("options")
+    if isinstance(options, str):
+        # Read from a .js file, so an escaped newline arrives as a literal
+        # backslash-n; a child-table row carries a real newline.
+        filter_def["options"] = [value.strip() for value in re.split(r"\\n|\n", options) if value.strip()]
+    elif isinstance(options, (list, tuple)):
+        filter_def["options"] = [str(value).strip() for value in options if str(value).strip()]
+
+    return filter_def
+
+
+def discover_filter_definitions(report_doc) -> Dict[str, Dict[str, Any]]:
+    """The report's filter contract as ``{fieldname: definition}``.
+
+    The single entry point shared by ``report_requirements``, which advertises the
+    contract, and ``generate_report``, which validates against it. Deriving both
+    from here is what stops the two tools disagreeing about their own contract.
+    """
+    tool = ReportRequirements()
+    parsed, _diagnostics = tool._discover_report_filters(report_doc.name, report_doc)
+    return {
+        filter_def["fieldname"]: filter_def
+        for filter_def in (parsed or {}).get("filters", [])
+        if filter_def.get("fieldname")
+    }
+
 
 class ReportRequirements(BaseTool):
     """
@@ -43,7 +103,7 @@ class ReportRequirements(BaseTool):
     def __init__(self):
         super().__init__()
         self.name = "report_requirements"
-        self.description = "Get report metadata including required and optional filters, columns, and execution requirements for Script Reports, Query Reports, and Custom Reports. Use this tool before executing reports to understand what filters are mandatory, what exact filter values are valid, and how to structure the report request. This prevents filter errors and helps plan successful report execution. Returns complete report metadata including filter definitions with field types (Link, Select, Date), valid enum options for select fields, column structure, report type, and capabilities. IMPORTANT: Use this FIRST before calling generate_report to understand what exact filter values are needed - Link fields require exact database names (e.g., exact Company name, Customer name), Select fields show valid enum values. Essential when generate_report returns filter errors or when planning complex report execution. Check 'filter_discovery_status': 'no_filters_declared' means the report genuinely takes no filters, while 'unresolved' means discovery failed and 'discovery_diagnostics' explains why. NOTE: Report Builder reports store a saved column/filter configuration rather than a filter contract and are not yet fully supported."
+        self.description = "Get report metadata including required and optional filters, columns, and execution requirements for Script Reports, Query Reports, and Custom Reports. Use this tool before executing reports to understand what filters are mandatory, what exact filter values are valid, and how to structure the report request. This prevents filter errors and helps plan successful report execution. Returns complete report metadata including filter definitions with field types (Link, Select, Date), valid enum options for select fields, column structure, report type, and capabilities. For a value-constrained filter (Select, Autocomplete) 'options' is an explicit list of accepted values, and every 'default' returned here is guaranteed to be accepted by generate_report. Filter contracts are per-report: the same filter name can mean different things in different reports (e.g. 'range' is an ageing bucket string like '30, 60, 90, 120' on the AR/AP reports but a periodicity Select elsewhere), so never reuse a value across reports. IMPORTANT: Use this FIRST before calling generate_report to understand what exact filter values are needed - Link fields require exact database names (e.g., exact Company name, Customer name), Select fields show valid enum values. Essential when generate_report returns filter errors or when planning complex report execution. Check 'filter_discovery_status': 'no_filters_declared' means the report genuinely takes no filters, while 'unresolved' means discovery failed and 'discovery_diagnostics' explains why. NOTE: Report Builder reports store a saved column/filter configuration rather than a filter contract and are not yet fully supported."
         self.requires_permission = None  # Permission checked dynamically per report
 
         self.inputSchema = {
@@ -210,12 +270,11 @@ class ReportRequirements(BaseTool):
             if label and label != fieldname:
                 description = f"{fieldname} ({label})"
 
-            # Add type and options info
-            if fieldtype == "Select" and options and isinstance(options, list):
-                options_str = ", ".join(options[:3])  # Show first 3 options
-                if len(options) > 3:
-                    options_str += f", ... ({len(options)} options)"
-                description += f" - Select: {options_str}"
+            # Add type and options info. A constrained value set is listed in
+            # full — truncating it hides values the caller is required to choose
+            # from, which is the whole point of advertising them (issue #229).
+            if fieldtype in VALUE_CONSTRAINED_FIELDTYPES and options and isinstance(options, list):
+                description += f" - {fieldtype}, one of: {', '.join(options)}"
             elif fieldtype == "Link" and options:
                 description += f" - Link to {options}"
             elif fieldtype:
@@ -504,7 +563,11 @@ class ReportRequirements(BaseTool):
 
     @staticmethod
     def _build_parsed_filter_result(filters: list[Dict[str, Any]]) -> Dict[str, Any]:
-        """Build the canonical parsed-filter payload and preserve conditional requirements."""
+        """Build the canonical parsed-filter payload and preserve conditional requirements.
+
+        Every discovery source funnels through here, so it is also where a
+        constrained value set is normalised to an explicit list.
+        """
         required_filters = []
         conditional_required_filters = []
         optional_filters = []
@@ -513,6 +576,7 @@ class ReportRequirements(BaseTool):
             fieldname = filter_def.get("fieldname")
             if not fieldname:
                 continue
+            normalize_filter_options(filter_def)
             if filter_def.get("required"):
                 required_filters.append(fieldname)
             elif filter_def.get("mandatory_depends_on"):
@@ -937,7 +1001,7 @@ class ReportRequirements(BaseTool):
                         options_str,
                     )
                     if not option_values:
-                        option_values = re.findall(r'["\']([^"\']+)["\']', options_str)
+                        option_values = _extract_js_string_literals(options_str)
                     filter_def["options"] = option_values
                 else:
                     # String format (e.g., Link to DocType)
