@@ -565,6 +565,61 @@ Tool Registration
 Lifecycle Hook Execution
 ```
 
+## Schema Access
+
+FAC holds no representation of your data model. Every schema read goes to
+Frappe's metadata API at call time, which is why customisations need no sync
+step and there is no staleness window FAC could introduce.
+
+### 1. Where Schema Comes From
+
+| Need | Call path | Source |
+|------|-----------|--------|
+| Fields, Link targets, child tables, DocPerms | `metadata_tools.get_doctype_metadata()` → `frappe.get_meta(doctype)` | Live metadata API |
+| Child-table row structure | `frappe.get_meta(child_doctype)` per table field | Live metadata API |
+| Available DocTypes (incl. custom) | `metadata_tools.list_doctypes()` → `frappe.get_all("DocType", ...)` | Live table read |
+| Submittable / naming / title field | `frappe.get_meta(doctype)` attributes | Live metadata API |
+| Report filter contracts | `ReportRequirements._discover_report_filters()` | `Report` doc, its `filters` child table, and the report's own JS, read per call |
+
+`frappe.get_meta()` merges Custom Fields and Property Setters into the
+DocType definition, so a customisation appears in the very next tool call.
+Frappe maintains its own metadata cache and invalidates it when a DocType,
+Custom Field, or Property Setter is saved; FAC adds no second layer in
+front of it and holds no copy that could diverge.
+
+### 2. What This Rules Out
+
+FAC's DocType footprint is `Assistant Core Settings`, `Assistant Audit Log`,
+`FAC Plugin Configuration`, `FAC Tool Configuration`, `FAC Tool Role Access`,
+`FAC Skill`, and the Prompt Template family. None of them stores schema.
+
+There is no schema snapshot table, no embedding or vector index of the data
+model, and no `sync`/`refresh-schema` command — because there is nothing to
+sync. The optional ChatGPT-facing `search` and `fetch` tools run Frappe's
+own search at call time rather than querying an index FAC maintains.
+
+### 3. Permissions Are Evaluated Per Call
+
+Permission decisions are made during the call, against the requesting user:
+
+- `validate_document_access()` and `frappe.has_permission()` run per tool call
+- Document queries use `frappe.get_list(..., ignore_permissions=False)`, so
+  Frappe applies DocType permissions, User Permissions, and row-level
+  restrictions to every result set
+- DocPerms returned by `get_doctype_info` come from the live meta read
+
+FAC caches no permission decision on the request path. The role and user
+permission data underneath comes from Frappe's own cache, which Frappe
+invalidates when roles change.
+
+### 4. Downstream Caching
+
+Products that embed or orchestrate FAC may add their own schema cache with
+their own refresh semantics. That is a reasonable thing for an orchestration
+layer to do, and it is outside FAC's boundary — staleness observed through
+such a layer is best traced there, since FAC performs no caching of schema
+itself.
+
 ## Security Architecture
 
 Frappe Assistant Core implements a **comprehensive multi-layer security framework** that provides enterprise-grade security for AI assistant operations in business environments.
@@ -767,9 +822,13 @@ def audit_log_tool_access(user, tool_name, arguments, result):
 
 - **Plugin State**: Plugin states persisted in database
 - **Tool Registry**: Efficient tool discovery and registration
-- **Permission Results**: Cached with TTL through Frappe
-- **Configuration**: Hierarchical configuration caching
-- **Metadata**: DocType metadata cached through Frappe
+- **Configuration**: Server settings (enabled flag, MCP and OAuth endpoint URLs) cached for 30 minutes, invalidated on `Assistant Core Settings` update
+- **Statistics**: Dashboard, analytics, and health figures cached for 5–10 minutes
+
+**Not cached by FAC**: DocType metadata and permission decisions. Both are
+read live on every call — see [Schema Access](#schema-access). FAC stores no
+schema snapshot of its own, so there is no sync step and no staleness window
+it can introduce.
 
 ### 2. Lazy Loading
 
