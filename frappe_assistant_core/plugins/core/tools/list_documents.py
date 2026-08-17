@@ -134,6 +134,19 @@ class DocumentList(BaseTool):
                     filtered_fields = ["name"]  # Always allow name field
                 fields = filtered_fields
 
+            # For submittable DocTypes, default to submitted documents (docstatus=1)
+            # unless the caller has explicitly provided a docstatus filter.
+            # Without this, cancelled (docstatus=2) and draft (docstatus=0) documents
+            # with stale field values such as outstanding_amount appear alongside
+            # submitted ones and produce phantom balances or incorrect totals.
+            if "docstatus" not in (filters or {}):
+                try:
+                    if frappe.get_meta(doctype).is_submittable:
+                        filters = dict(filters or {})
+                        filters["docstatus"] = 1
+                except Exception:
+                    pass
+
             # Get documents with Frappe's permission-aware list API.
             documents = frappe.get_list(
                 doctype,
