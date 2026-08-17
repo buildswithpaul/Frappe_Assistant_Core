@@ -199,9 +199,41 @@ class DocumentCreate(BaseTool):
                     "next_step": "Use create_document with validate_only=false to actually create the document",
                 }
 
+            # Capture input child-table values for post-save comparison (issue #181)
+            input_child_values = {}
+            for field, value in data.items():
+                if field in table_fields and isinstance(value, list):
+                    input_child_values[field] = value
+
             # Save document
             doc.insert()
-
+            # Check for silently overridden field values
+            warnings = []
+            for field, input_rows in input_child_values.items():
+                saved_rows = doc.get(field) or []
+                for idx, input_row in enumerate(input_rows):
+                    if idx >= len(saved_rows):
+                        break
+                    saved_row = saved_rows[idx]
+                    for key, input_val in input_row.items():
+                        saved_val = getattr(saved_row, key, None)
+                        if saved_val is not None and str(saved_val) != str(input_val):
+                            # Skip numeric false positives (1 vs 1.0, 100 vs 100.0)
+                            try:
+                                if float(str(saved_val)) == float(str(input_val)):
+                                    continue
+                            except (ValueError, TypeError):
+                                pass
+                            warnings.append(
+                                {
+                                    "child_table": field,
+                                    "row_idx": idx,
+                                    "field": key,
+                                    "requested": input_val,
+                                    "saved": str(saved_val),
+                                    "reason": "Value was overridden by ERPNext validation logic",
+                                }
+                            )
             # Initialize result with basic information
             result = {
                 "success": True,
@@ -252,6 +284,10 @@ class DocumentCreate(BaseTool):
                 ]
 
             # Log successful creation
+            # Add warnings if any fields were silently overridden
+            if warnings:
+                result["warnings"] = warnings
+
             return result
 
         except frappe.MandatoryError as e:

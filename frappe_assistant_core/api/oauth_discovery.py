@@ -27,7 +27,48 @@ import frappe
 from frappe.oauth import get_server_url
 
 
-# nosemgrep: frappe-semgrep-rules.rules.security.guest-whitelisted-method — OpenID Connect Discovery 1.0 mandates unauthenticated access to this endpoint
+def _get_public_base_url() -> str:
+    """
+    Resolve the canonical public base URL for OAuth/MCP discovery metadata.
+
+    Resolution order:
+      1. site_config host_name — explicit operator override; used verbatim
+         if it includes a scheme (https://example.com).
+      2. frappe.oauth.get_server_url() — existing behavior (Social Login Key
+         "frappe" base_url, then frappe.request.url).
+      3. If force_https is set in site_config and the result still starts
+         with http://, upgrade to https://. Gated so localhost dev still works.
+
+    Trailing slash is stripped so callers can append /api/method/... safely.
+    """
+    host_name = frappe.conf.get("host_name")
+    if host_name and "://" in host_name:
+        base = host_name
+    else:
+        base = get_server_url()
+
+    if frappe.conf.get("force_https") and base.startswith("http://"):
+        base = "https://" + base[len("http://") :]
+
+    return base.rstrip("/")
+
+
+def get_public_base_url() -> str:
+    """
+    Public accessor for the canonical public base URL.
+
+    Other modules (e.g. the MCP endpoint's WWW-Authenticate header) must build
+    OAuth metadata URLs from the same host_name-aware base as the discovery
+    endpoints, so that a configured host_name including a non-standard port is
+    honored verbatim. Frappe's get_server_url() reconstructs host/port from the
+    request or the Social Login Key base_url and drops the configured port
+    (issue #196), which breaks the OAuth handshake behind port-restricted
+    networks.
+    """
+    return _get_public_base_url()
+
+
+# nosemgrep: guest-whitelisted-method — OpenID Connect Discovery 1.0 mandates unauthenticated access to this endpoint
 @frappe.whitelist(allow_guest=True, methods=["GET"])
 def openid_configuration():
     """
@@ -52,7 +93,16 @@ def openid_configuration():
     metadata = frappe.local.response
 
     # Add MCP-required fields that are missing
-    frappe_url = get_server_url()
+    frappe_url = _get_public_base_url()
+    # Override Frappe-inherited URLs with canonical public base URL
+    metadata["issuer"] = frappe_url
+    metadata["authorization_endpoint"] = f"{frappe_url}/api/method/frappe.integrations.oauth2.authorize"
+    metadata["token_endpoint"] = f"{frappe_url}/api/method/frappe.integrations.oauth2.get_token"
+    metadata["revocation_endpoint"] = f"{frappe_url}/api/method/frappe.integrations.oauth2.revoke_token"
+    metadata["introspection_endpoint"] = (
+        f"{frappe_url}/api/method/frappe.integrations.oauth2.introspect_token"
+    )
+    metadata["userinfo_endpoint"] = f"{frappe_url}/api/method/frappe.integrations.oauth2.openid_profile"
 
     # Add jwks_uri (required by MCP Inspector)
     metadata["jwks_uri"] = f"{frappe_url}/api/method/frappe_assistant_core.api.oauth_discovery.jwks"
@@ -84,7 +134,7 @@ def openid_configuration():
         )
 
 
-# nosemgrep: frappe-semgrep-rules.rules.security.guest-whitelisted-method — RFC 7517 JWKS endpoint is public by specification
+# nosemgrep: guest-whitelisted-method — RFC 7517 JWKS endpoint is public by specification
 @frappe.whitelist(allow_guest=True, methods=["GET"])
 def jwks():
     """
@@ -97,7 +147,7 @@ def jwks():
     return {"keys": []}
 
 
-# nosemgrep: frappe-semgrep-rules.rules.security.guest-whitelisted-method — MCP server discovery is unauthenticated by spec so clients can find the server
+# nosemgrep: guest-whitelisted-method — MCP server discovery is unauthenticated by spec so clients can find the server
 @frappe.whitelist(allow_guest=True, methods=["GET"])
 def mcp_discovery():
     """
@@ -107,7 +157,7 @@ def mcp_discovery():
     """
     from frappe_assistant_core import hooks
 
-    frappe_url = get_server_url()
+    frappe_url = _get_public_base_url()
 
     # Get MCP configuration from settings
     mcp_protocol_version = "2025-06-18"
@@ -151,7 +201,7 @@ def _get_frappe_authorization_server_metadata():
         return _get_authorization_server_metadata()
     except ImportError:
         # Fallback for Frappe V15 - build metadata manually
-        frappe_url = get_server_url()
+        frappe_url = _get_public_base_url()
 
         # Base metadata following RFC 8414
         metadata = {
@@ -173,7 +223,7 @@ def _get_frappe_authorization_server_metadata():
         return metadata
 
 
-# nosemgrep: frappe-semgrep-rules.rules.security.guest-whitelisted-method — RFC 8414 OAuth 2.0 Authorization Server Metadata requires unauthenticated access
+# nosemgrep: guest-whitelisted-method — RFC 8414 OAuth 2.0 Authorization Server Metadata requires unauthenticated access
 @frappe.whitelist(allow_guest=True, methods=["GET"])
 def authorization_server_metadata():
     """
@@ -201,8 +251,18 @@ def authorization_server_metadata():
     # Get base metadata from Frappe (V16 built-in or V15 fallback)
     metadata = _get_frappe_authorization_server_metadata()
 
+    # Normalize all URLs using canonical public base URL (fixes http -> https issue #156)
+    frappe_url = _get_public_base_url()
+    metadata["issuer"] = frappe_url
+    metadata["authorization_endpoint"] = f"{frappe_url}/api/method/frappe.integrations.oauth2.authorize"
+    metadata["token_endpoint"] = f"{frappe_url}/api/method/frappe.integrations.oauth2.get_token"
+    metadata["revocation_endpoint"] = f"{frappe_url}/api/method/frappe.integrations.oauth2.revoke_token"
+    metadata["introspection_endpoint"] = (
+        f"{frappe_url}/api/method/frappe.integrations.oauth2.introspect_token"
+    )
+    metadata["userinfo_endpoint"] = f"{frappe_url}/api/method/frappe.integrations.oauth2.openid_profile"
+
     # Add/override custom service documentation
-    frappe_url = get_server_url()
     metadata["service_documentation"] = "https://github.com/buildswithpaul/Frappe_Assistant_Core"
 
     # Add client_secret_post as an additional auth method (Frappe V16 only has client_secret_basic)
@@ -237,7 +297,7 @@ def authorization_server_metadata():
     return metadata
 
 
-# nosemgrep: frappe-semgrep-rules.rules.security.guest-whitelisted-method — RFC 9728 OAuth 2.0 Protected Resource Metadata requires unauthenticated access
+# nosemgrep: guest-whitelisted-method — RFC 9728 OAuth 2.0 Protected Resource Metadata requires unauthenticated access
 @frappe.whitelist(allow_guest=True, methods=["GET"])
 def protected_resource_metadata():
     """
@@ -261,7 +321,7 @@ def protected_resource_metadata():
 
         raise NotFound("Protected resource metadata is not enabled")
 
-    frappe_url = get_server_url()
+    frappe_url = _get_public_base_url()
 
     # Build list of authorization servers
     authorization_servers = [frappe_url]

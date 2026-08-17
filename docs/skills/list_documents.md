@@ -16,6 +16,23 @@ The `list_documents` tool searches and lists Frappe documents with filtering, fi
 
 **Note:** There is no `page` parameter. Use `limit` to control result size.
 
+## Submitted-Only Default
+
+For **submittable** DocTypes (Sales Invoice, Purchase Invoice, Sales Order, Payment Entry, Stock Entry, and so on) the tool applies `docstatus: 1` automatically when you do not set `docstatus` yourself. Cancelled and draft documents keep their monetary field values, so including them silently inflates any total you compute from the result set.
+
+The applied default is echoed in `filters_applied` and called out in `message`.
+
+To opt out, pass `docstatus` explicitly:
+
+| Goal | Filter |
+|------|--------|
+| Submitted only (default) | — |
+| Cancelled only | `{"docstatus": 2}` |
+| Drafts and submitted | `{"docstatus": [0, 1]}` |
+| Everything | `{"docstatus": [0, 1, 2]}` |
+
+Non-submittable DocTypes (Customer, Item, Supplier, User, ToDo, …) have no `docstatus` semantics and are unaffected.
+
 ## Response Format
 
 ```json
@@ -39,6 +56,37 @@ Key response fields:
 - `count` — number of records returned in this response
 - `total_count` — total matching records in the database
 - `has_more` — boolean indicating more records exist beyond the limit
+- `unresolved_filters` — **present only on zero-row results** when a Link filter value matched no record (see below)
+
+## Zero Results: Check `unresolved_filters` First
+
+`count: 0` has two very different causes, and reporting the wrong one to the user is a factual error:
+
+1. **The filter value is valid, there are genuinely no matching records.** "This customer has no open orders."
+2. **The filter value matched no record at all.** The correct answer is "no customer by that name exists" — *not* "this customer has no orders."
+
+When a query returns zero rows and a Link filter value resolves to nothing, the response adds `unresolved_filters`:
+
+```json
+{
+  "success": true,
+  "count": 0,
+  "unresolved_filters": {
+    "customer": {
+      "value": "Grant Plastic",
+      "matched": false,
+      "target_doctype": "Customer",
+      "suggestions": ["Grant Plastics Ltd."]
+    }
+  }
+}
+```
+
+`suggestions` are ranked record names, ready to use directly in a retry. **Never report "no records found" when `unresolved_filters` is present** — either retry with a suggestion or ask the user which they meant.
+
+The key is absent when every filter value resolves, so its absence confirms cause 1. It is only computed for zero-row results, and only for Link fields compared by equality — `like`, `in` and `!=` already say you don't know the exact value.
+
+`success` stays `true` and `count` stays `0`: an unresolved filter is metadata, not an error.
 
 ## Filter Syntax
 
@@ -93,10 +141,19 @@ Key response fields:
 ```json
 {
   "doctype": "Sales Invoice",
-  "filters": {"docstatus": 1},
   "fields": ["name", "customer", "grand_total", "posting_date"],
   "order_by": "posting_date desc",
   "limit": 10
+}
+```
+`docstatus: 1` is the default here — no need to pass it.
+
+### Include cancelled documents (audit / reconciliation)
+```json
+{
+  "doctype": "Sales Invoice",
+  "filters": {"docstatus": [0, 1, 2]},
+  "fields": ["name", "customer", "grand_total", "docstatus", "status"]
 }
 ```
 
@@ -119,6 +176,16 @@ Key response fields:
 }
 ```
 Then check `total_count` in the response for the full count.
+
+### Recover from an unresolved entity name
+```json
+{
+  "doctype": "Sales Order",
+  "filters": {"customer": "Grant Plastic"},
+  "fields": ["name", "customer", "grand_total"]
+}
+```
+Returns `count: 0` with `unresolved_filters.customer.suggestions: ["Grant Plastics Ltd."]`. Retry with the suggested name — do not report that the customer has no orders.
 
 ## Edge Cases
 

@@ -24,6 +24,35 @@ without rewriting them. This is a compatibility layer.
 from typing import Any, Dict
 
 
+def build_tool_dict(tool_instance) -> Dict[str, Any]:
+    """
+    Build the MCP tool dict for a BaseTool instance.
+
+    Returns the same dict shape that ``MCPServer.add_tool`` stores, but without
+    touching any server/global state. This lets request handlers register tools
+    into a per-request registry, keeping concurrent requests isolated (issue
+    #197).
+
+    Args:
+        tool_instance: Instance of BaseTool or compatible class
+
+    Returns:
+        Dict with keys: name, description, inputSchema, annotations, fn
+    """
+
+    def tool_wrapper(**arguments):
+        """Wrapper that calls BaseTool.execute()"""
+        return tool_instance._safe_execute(arguments)
+
+    return {
+        "name": tool_instance.name,
+        "description": tool_instance.description,
+        "inputSchema": tool_instance.inputSchema,
+        "annotations": getattr(tool_instance, "annotations", None),
+        "fn": tool_wrapper,
+    }
+
+
 def register_base_tool(mcp_server, tool_instance):
     """
     Register a BaseTool instance with the MCP server.
@@ -45,21 +74,8 @@ def register_base_tool(mcp_server, tool_instance):
         ```
     """
 
-    # Create wrapper function that calls tool's execute method
-    def tool_wrapper(**arguments):
-        """Wrapper that calls BaseTool.execute()"""
-        return tool_instance._safe_execute(arguments)
-
     # Register with MCP server
-    mcp_server.add_tool(
-        {
-            "name": tool_instance.name,
-            "description": tool_instance.description,
-            "inputSchema": tool_instance.inputSchema,
-            "annotations": getattr(tool_instance, "annotations", None),
-            "fn": tool_wrapper,
-        }
-    )
+    mcp_server.add_tool(build_tool_dict(tool_instance))
 
 
 def register_all_base_tools(mcp_server, tool_instances):

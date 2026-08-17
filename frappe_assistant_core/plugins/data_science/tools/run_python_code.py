@@ -266,6 +266,7 @@ PRE-LOADED: pd (pandas), np (numpy), frappe, math, datetime, json, re, statistic
         )
 
         # Spawn isolated subprocess
+        # nosemgrep: frappe-subprocess-exec — static argv ([sys.executable, "-m", <fixed module>]), shell=False; user code is passed as JSON over stdin, never as an argument
         proc = subprocess.Popen(
             [sys.executable, "-m", "frappe_assistant_core.utils.code_execution_subprocess"],
             stdin=subprocess.PIPE,

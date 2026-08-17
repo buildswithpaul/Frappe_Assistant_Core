@@ -110,6 +110,44 @@ class TestMetadataTools(BaseAssistantTest):
     def test_list_doctypes_with_module_filter(self):
         self.skipTest("Module filter test placeholder")
 
+    def test_get_doctype_metadata_includes_child_tables(self):
+        """Regression guard for #192: child tables must be surfaced with their own field metadata."""
+        from frappe_assistant_core.plugins.core.tools.metadata_tools import MetadataTools
+
+        # User ships with at least one Table field ("roles" -> "Has Role") in every Frappe install.
+        result = MetadataTools.get_doctype_metadata("User")
+
+        self.assertTrue(result.get("success"), result)
+        self.assertIn("child_tables", result)
+        child_tables = result["child_tables"]
+        self.assertIsInstance(child_tables, list)
+
+        roles_entry = next((c for c in child_tables if c["fieldname"] == "roles"), None)
+        self.assertIsNotNone(roles_entry, f"Expected 'roles' in child_tables, got {child_tables}")
+        self.assertEqual(roles_entry["options"], "Has Role")
+        self.assertIn(roles_entry["fieldtype"], ("Table", "Table MultiSelect"))
+
+        # Recursive child field metadata must be present so create_document has everything it needs.
+        self.assertTrue(roles_entry["fields"], "Child table 'roles' should expose its own fields")
+        child_field_names = {f["fieldname"] for f in roles_entry["fields"]}
+        self.assertIn("role", child_field_names)
+
+    def test_get_doctype_metadata_distinguishes_single_from_child_table(self):
+        """Regression guard for #192: is_single must use meta.issingle, not meta.istable."""
+        from frappe_assistant_core.plugins.core.tools.metadata_tools import MetadataTools
+
+        # System Settings is a Single doctype (issingle=1, istable=0).
+        single_result = MetadataTools.get_doctype_metadata("System Settings")
+        self.assertTrue(single_result.get("success"), single_result)
+        self.assertTrue(single_result["is_single"])
+        self.assertFalse(single_result["is_child_table"])
+
+        # Has Role is a child table (issingle=0, istable=1).
+        child_result = MetadataTools.get_doctype_metadata("Has Role")
+        self.assertTrue(child_result.get("success"), child_result)
+        self.assertFalse(child_result["is_single"])
+        self.assertTrue(child_result["is_child_table"])
+
 
 class TestMetadataToolsIntegration(BaseAssistantTest):
     """Integration tests for metadata tools"""

@@ -458,7 +458,9 @@ def is_doctype_accessible(doctype: str, user_role: str) -> bool:
     return doctype not in restricted_doctypes
 
 
-def validate_document_access(user: str, doctype: str, name: str, perm_type: str = "read") -> Dict[str, Any]:
+def validate_document_access(
+    user: str, doctype: str, name: str, perm_type: str = "read", data: str = ""
+) -> Dict[str, Any]:
     """
     Validate if a user can access a specific document with proper Frappe permission checking.
 
@@ -497,10 +499,17 @@ def validate_document_access(user: str, doctype: str, name: str, perm_type: str 
                     doc = frappe.get_doc(doctype, name)
                     if hasattr(doc, "docstatus") and doc.docstatus == 1:
                         if perm_type == "write":
-                            return {
-                                "success": False,
-                                "error": f"Cannot modify submitted document {doctype} {name}",
-                            }
+                            meta = frappe.get_meta(doctype)
+                            non_allowed_fields = []
+                            for field in data.keys():
+                                field_meta = meta.get_field(field)
+                                if not field_meta or not field_meta.allow_on_submit:
+                                    non_allowed_fields.append(field)
+                            if non_allowed_fields:
+                                return {
+                                    "success": False,
+                                    "error": f"Cannot modify submitted document {doctype} {name}",
+                                }
                         elif perm_type == "delete":
                             return {
                                 "success": False,

@@ -129,7 +129,18 @@ def _apply_child_table_update(
                     "field": field,
                 }
             # New row in patch mode → append.
-            doc.append(field, row)
+            # Coerce date strings to datetime.date to avoid comparison errors in validate()
+            from frappe.utils import getdate
+
+            meta = frappe.get_meta(child_doctype)
+            coerced_row = {}
+            for k, v in row.items():
+                field_meta = meta.get_field(k)
+                if field_meta and field_meta.fieldtype == "Date" and isinstance(v, str) and v:
+                    coerced_row[k] = getdate(v)
+                else:
+                    coerced_row[k] = v
+            doc.append(field, coerced_row)
             continue
 
         target = existing_by_name.get(row_name)
@@ -266,7 +277,7 @@ class DocumentUpdate(BaseTool):
 
         # Validate document access with comprehensive permission checking
         validation_result = validate_document_access(
-            user=frappe.session.user, doctype=doctype, name=name, perm_type="write"
+            user=frappe.session.user, doctype=doctype, name=name, perm_type="write", data=data
         )
 
         if not validation_result["success"]:
@@ -286,17 +297,6 @@ class DocumentUpdate(BaseTool):
             # Enhanced document state validation
             current_docstatus = getattr(doc, "docstatus", 0)
             current_workflow_state = getattr(doc, "workflow_state", None)
-
-            # Check if document is submitted (protection against editing submitted docs)
-            if current_docstatus == 1:
-                result = {
-                    "success": False,
-                    "error": f"Cannot modify submitted document {doctype} '{name}'. Submitted documents are read-only.",
-                    "docstatus": current_docstatus,
-                    "workflow_state": current_workflow_state,
-                    "suggestion": "Use document_get to view the submitted document, or create a new document if needed.",
-                }
-                return result
 
             # Check if document is cancelled
             if current_docstatus == 2:

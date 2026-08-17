@@ -19,6 +19,8 @@ Test suite for Search Tools using Plugin Architecture
 """
 
 import unittest
+from contextlib import ExitStack
+from unittest.mock import MagicMock, patch
 
 import frappe
 
@@ -78,11 +80,82 @@ class TestSearchTools(BaseAssistantTest):
     def test_search_documents_with_filters(self):
         self.skipTest("Search with filters test placeholder")
 
-    def test_search_documents_permissions(self):
-        self.skipTest("Search permissions test placeholder")
+    def test_global_search_uses_permission_aware_query(self):
+        """Regression guard for #189: global_search (behind the search_documents
+        tool) must use frappe.get_list, not the permission-bypassing get_all."""
+        from frappe_assistant_core.plugins.core.tools import search_tools
 
-    def test_search_specific_doctype(self):
-        self.skipTest("DocType search test placeholder")
+        with ExitStack() as stack:
+            # Make exactly one doctype exist and be readable so a single query
+            # runs. global_search calls frappe.db.exists("DocType", <doctype>),
+            # so the doctype name is the second positional arg.
+            stack.enter_context(
+                patch.object(
+                    search_tools.frappe.db,
+                    "exists",
+                    side_effect=lambda *a, **k: "Employee" in a,
+                )
+            )
+            stack.enter_context(
+                patch.object(
+                    search_tools.frappe,
+                    "has_permission",
+                    side_effect=lambda doctype, *a, **k: doctype == "Employee",
+                )
+            )
+            get_all = stack.enter_context(
+                patch.object(
+                    search_tools.frappe,
+                    "get_all",
+                    side_effect=AssertionError("frappe.get_all bypasses DocType permissions"),
+                )
+            )
+            get_list = stack.enter_context(patch.object(search_tools.frappe, "get_list"))
+            get_list.return_value = [{"name": "EMP-0001"}]
+
+            result = search_tools.SearchTools.global_search(query="EMP", limit=20)
+
+        self.assertTrue(result.get("success"), result)
+        get_all.assert_not_called()
+        self.assertTrue(get_list.called, "global_search must query via frappe.get_list")
+        for call in get_list.call_args_list:
+            self.assertFalse(
+                call.kwargs.get("ignore_permissions", True),
+                "global_search must pass ignore_permissions=False",
+            )
+
+    def test_search_doctype_uses_permission_aware_query(self):
+        """Regression guard for #189: search_doctype (behind the search_doctype
+        tool) must use frappe.get_list, not the permission-bypassing get_all."""
+        from frappe_assistant_core.plugins.core.tools import search_tools
+
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(search_tools.frappe.db, "exists", return_value=True))
+            stack.enter_context(patch.object(search_tools.frappe, "has_permission", return_value=True))
+            # Minimal meta stub: one searchable Data field, no title field.
+            meta = MagicMock()
+            meta.title_field = None
+            field = MagicMock(fieldtype="Data", hidden=False, fieldname="employee_name")
+            meta.fields = [field]
+            stack.enter_context(patch.object(search_tools.frappe, "get_meta", return_value=meta))
+            get_all = stack.enter_context(
+                patch.object(
+                    search_tools.frappe,
+                    "get_all",
+                    side_effect=AssertionError("frappe.get_all bypasses DocType permissions"),
+                )
+            )
+            get_list = stack.enter_context(patch.object(search_tools.frappe, "get_list"))
+            get_list.return_value = [{"name": "EMP-0001", "employee_name": "Allowed"}]
+
+            result = search_tools.SearchTools.search_doctype(doctype="Employee", query="All", limit=20)
+
+        self.assertTrue(result.get("success"), result)
+        get_all.assert_not_called()
+        self.assertEqual(get_list.call_count, 1)
+        call = get_list.call_args_list[0]
+        self.assertEqual(call.args[0], "Employee")
+        self.assertFalse(call.kwargs.get("ignore_permissions", True))
 
     def test_search_empty_query(self):
         self.skipTest("Empty query test placeholder")

@@ -30,6 +30,43 @@ Returns: `{ reports: [{ name, report_name, report_type, module, is_standard, dis
 
 Returns filter definitions with field types, required flags, and valid options.
 
+### Filter values are per-report, never per-fieldname
+
+`generate_report` validates your filters against **the definitions this report declares** — the same ones `report_requirements` returns. Two reports can give the same filter name completely different meanings, so never carry a value over from one report to another.
+
+`range` is the clearest example:
+
+| Report | `range` fieldtype | Accepted values |
+|--------|-------------------|-----------------|
+| Accounts Receivable / Payable (+ Summary) | `Data` | ageing buckets, e.g. `"30, 60, 90, 120"` |
+| Stock Ageing | `Data` | ageing buckets, e.g. `"30, 60, 90"` |
+| Sales Analytics, Stock Analytics | `Select` | `Weekly`, `Monthly`, `Quarterly`, `Half-Yearly`, `Yearly` |
+| Website Analytics | `Select` | `Daily`, `Weekly`, `Monthly` |
+| Sales Pipeline Analytics | `Select` | `Monthly`, `Quarterly` |
+
+For a value-constrained filter (`Select`, `Autocomplete`), `options` is always an explicit list of the accepted values — use one of them verbatim. For a `Link` filter, `options` is the target DocType and the value must be an existing record name.
+
+**Every advertised `default` is guaranteed executable.** Passing the defaults `report_requirements` returns will never be rejected as an invalid value, and omitting a filter applies that same default.
+
+When a value is rejected, `validation_errors` names the accepted values and `error_details` carries them as structured data:
+
+```json
+{
+  "success": false,
+  "validation_errors": ["Invalid range: 'Weekly'. Must be one of: Monthly, Quarterly"],
+  "error_details": [
+    {
+      "fieldname": "range",
+      "type": "invalid_option",
+      "value": "Weekly",
+      "accepted_values": ["Monthly", "Quarterly"]
+    }
+  ]
+}
+```
+
+`type` is one of `invalid_option`, `unknown_record` (a Link value with no such record — `suggestions` offers candidates), or `invalid_date`.
+
 ## generate_report Parameters
 
 | Parameter | Type | Required | Default | Description |
@@ -42,9 +79,10 @@ Returns filter definitions with field types, required flags, and valid options.
 
 1. **Always call `report_requirements` first** — missing mandatory filters often cause empty results or errors. The tool auto-defaults dates and company, but these defaults may not match what you need.
 2. **Use exact values for Link filters** — company names, customer names, etc. must match exactly what's in the database.
-3. **Use `report_list` to find reports** — don't guess report names. Common modules: Accounts, Selling, Buying, Stock, HR.
-4. **Script Reports are most powerful** — they have custom business logic. Query Reports are simpler SQL-based reports.
-5. **Use `format: "csv"` or `"excel"` for exports** — returns downloadable file links.
+3. **Take Select values from that report's own `options`** — the same filter name can accept different values in a different report.
+4. **Use `report_list` to find reports** — don't guess report names. Common modules: Accounts, Selling, Buying, Stock, HR.
+5. **Script Reports are most powerful** — they have custom business logic. Query Reports are simpler SQL-based reports.
+6. **Use `format: "csv"` or `"excel"` for exports** — returns downloadable file links.
 
 ## Common Workflow
 
