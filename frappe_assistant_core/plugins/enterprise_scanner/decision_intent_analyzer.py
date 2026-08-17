@@ -147,7 +147,7 @@ class DecisionIntentAnalyzerTool(EnhancedBaseTool):
 
     def _extract_key_metrics(self, user_input: str) -> Dict[str, Any]:
         """Extract key metrics mentioned in user input."""
-        import re
+        import re  # noqa: F401
 
         metrics = {}
 
