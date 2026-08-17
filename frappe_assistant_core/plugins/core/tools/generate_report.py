@@ -55,7 +55,7 @@ class GenerateReport(BaseTool):
                 "filters": {
                     "type": "object",
                     "default": {},
-                    "description": "Filter key-value pairs. Get valid keys and values from report_requirements first. Dates: YYYY-MM-DD. Link fields (company, customer) must be exact DB names. Select fields must match allowed options exactly.",
+                    "description": "Filter key-value pairs. Get valid keys and values from report_requirements first — values are validated against that report's own declared filters, and the same filter name can accept different values in a different report. Dates: YYYY-MM-DD. Link fields (company, customer) must be exact DB names. Select fields must match that report's advertised options exactly.",
                 },
                 "format": {
                     "type": "string",
