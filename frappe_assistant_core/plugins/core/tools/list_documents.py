@@ -26,6 +26,108 @@ from frappe import _
 
 from frappe_assistant_core.core.base_tool import BaseTool
 
+# Operators Frappe accepts as the first element of a list-style filter value.
+# Anything else in that position means the list is a set of values, not [op, value].
+FILTER_OPERATORS = {
+    "=",
+    "!=",
+    ">",
+    "<",
+    ">=",
+    "<=",
+    "like",
+    "not like",
+    "in",
+    "not in",
+    "is",
+    "between",
+    "descendants of",
+    "not descendants of",
+    "ancestors of",
+    "not ancestors of",
+}
+
+
+def is_submittable(doctype: str) -> bool:
+    """Whether the DocType carries docstatus semantics (draft/submitted/cancelled)."""
+    try:
+        return bool(frappe.get_meta(doctype).is_submittable)
+    except Exception:
+        # Missing or virtual DocTypes are treated as non-submittable — the caller's
+        # filters are then passed through untouched and Frappe reports the real error.
+        return False
+
+
+def filters_reference_docstatus(filters: Any) -> bool:
+    """True when the caller already constrained docstatus, in any supported filter form."""
+    if isinstance(filters, dict):
+        return "docstatus" in filters
+
+    if isinstance(filters, (list, tuple)):
+        # A single unwrapped condition, e.g. ["docstatus", "=", 1]
+        if filters and isinstance(filters[0], str):
+            return "docstatus" in filters
+
+        for condition in filters:
+            if not isinstance(condition, (list, tuple)) or not condition:
+                continue
+            # ["doctype", "fieldname", op, value] or ["fieldname", op, value]
+            fieldname = condition[1] if len(condition) >= 4 else condition[0]
+            if fieldname == "docstatus":
+                return True
+
+    return False
+
+
+def normalize_docstatus_filter(filters: Any) -> Any:
+    """Accept a bare list of docstatus values, e.g. [0, 1], as an `in` filter.
+
+    Frappe reads a list filter value as [operator, value], so an explicit
+    {"docstatus": [0, 1]} would otherwise be parsed as the operator "0".
+    """
+    if not isinstance(filters, dict):
+        return filters
+
+    value = filters.get("docstatus")
+    if not isinstance(value, (list, tuple)) or not value:
+        return filters
+
+    first = value[0]
+    if isinstance(first, str) and first.lower() in FILTER_OPERATORS:
+        return filters
+
+    normalized = dict(filters)
+    normalized["docstatus"] = ["in", list(value)]
+    return normalized
+
+
+def apply_default_docstatus(doctype: str, filters: Any) -> tuple:
+    """Default submittable DocTypes to submitted documents only.
+
+    Without this, cancelled (docstatus=2) and draft (docstatus=0) documents are
+    returned alongside submitted ones with their monetary fields intact, and any
+    consumer aggregating the result set gets a silently wrong total.
+
+    Returns (filters, applied) where `applied` says whether the default was added.
+    """
+    if not is_submittable(doctype):
+        return filters, False
+
+    if filters_reference_docstatus(filters):
+        return normalize_docstatus_filter(filters), False
+
+    if isinstance(filters, dict):
+        defaulted = dict(filters)
+        defaulted["docstatus"] = 1
+        return defaulted, True
+
+    if isinstance(filters, (list, tuple)):
+        # An unwrapped condition such as ["status", "=", "Paid"] has to be nested first.
+        conditions = [list(filters)] if filters and isinstance(filters[0], str) else list(filters)
+        return conditions + [["docstatus", "=", 1]], True
+
+    return {"docstatus": 1}, True
+
 
 class DocumentList(BaseTool):
     """
@@ -41,7 +143,7 @@ class DocumentList(BaseTool):
     def __init__(self):
         super().__init__()
         self.name = "list_documents"
-        self.description = "Search and list Frappe documents with optional filtering. Use this when users want to find records, get lists of documents, or search for data. This is the primary tool for data exploration and discovery."
+        self.description = "Search and list Frappe documents with optional filtering. Use this when users want to find records, get lists of documents, or search for data. This is the primary tool for data exploration and discovery. For submittable DocTypes (invoices, orders, entries) only submitted documents are returned unless you pass docstatus explicitly."
         self.requires_permission = None  # Permission checked dynamically per DocType
 
         self.inputSchema = {
@@ -54,7 +156,7 @@ class DocumentList(BaseTool):
                 "filters": {
                     "type": "object",
                     "default": {},
-                    "description": "Search filters as key-value pairs. Examples: {'status': 'Active'}, {'customer_type': 'Company'}, {'creation': ['>', '2024-01-01']}. Use empty {} to get all records.",
+                    "description": "Search filters as key-value pairs. Examples: {'status': 'Active'}, {'customer_type': 'Company'}, {'creation': ['>', '2024-01-01']}. Use empty {} to get all records. For submittable DocTypes, docstatus=1 (submitted) is applied automatically unless you set docstatus yourself — pass {'docstatus': 2} for cancelled, {'docstatus': [0, 1]} for drafts and submitted.",
                 },
                 "fields": {
                     "type": "array",
@@ -113,6 +215,10 @@ class DocumentList(BaseTool):
                 filters = {}
             filters["name"] = current_user
 
+        # Submittable DocTypes default to submitted documents only, so cancelled and
+        # draft records never reach a consumer that is summing monetary fields.
+        filters, docstatus_defaulted = apply_default_docstatus(doctype, filters)
+
         try:
             # Filter sensitive fields from requested fields for Assistant Users
             from frappe_assistant_core.core.security_config import ADMIN_ONLY_FIELDS, SENSITIVE_FIELDS
@@ -169,6 +275,13 @@ class DocumentList(BaseTool):
                 )
             total_count = count_result[0].get("count") if count_result else 0
 
+            message = f"Found {len(filtered_documents)} {doctype} records"
+            if docstatus_defaulted:
+                message += (
+                    " (submitted only — docstatus=1 applied by default; "
+                    "pass docstatus explicitly to include drafts or cancelled documents)"
+                )
+
             result = {
                 "success": True,
                 "doctype": doctype,
@@ -177,7 +290,7 @@ class DocumentList(BaseTool):
                 "total_count": total_count,
                 "has_more": total_count > limit,
                 "filters_applied": filters,
-                "message": f"Found {len(filtered_documents)} {doctype} records",
+                "message": message,
             }
 
             # Log successful access
