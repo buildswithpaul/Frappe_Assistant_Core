@@ -58,6 +58,10 @@ Every skill gets a stable URI of the form `fac://skills/<skill-id>` and is disco
 
 The skill is now surfaced to MCP clients for every user permitted to see it.
 
+Steps 5 and 6 require the **Assistant Admin** or **System Manager** role. Everyone
+else saves the skill as Draft + Private and asks an admin to publish it — see
+[Who can publish or share a skill?](#who-can-publish-or-share-a-skill).
+
 ---
 
 ## Creating a Skill
@@ -110,13 +114,47 @@ The FAC Skill form is grouped into five sections.
 
 | Field | Notes |
 |---|---|
-| **Visibility** | Private / Shared / Public. Default Public. See [Visibility and Sharing](#visibility-and-sharing). |
+| **Visibility** | Private / Shared / Public. Default Private. See [Visibility and Sharing](#visibility-and-sharing). |
 | **Owner** | Defaults to the current user. Only System Managers can change it. |
 | **Shared With Roles** | Only shown when Visibility = Shared. A table of role names that can access the skill when it's Published. **Required** if you pick Shared. |
 
 ### Who can create skills?
 
 Create permission is granted by default to **System Manager**, **Assistant Admin**, **Assistant User**, and the **All** role (for skills the user will own). Edit and delete permissions follow the row's ownership + visibility rules.
+
+### Who can publish or share a skill?
+
+Creating a skill and publishing one are separate privileges. A skill's content is
+*instructions the LLM follows*, not passive data, so a skill that reaches other
+users is effectively acting with their tool permissions. Publishing is therefore
+gated on **Assistant Admin** or **System Manager**, enforced server-side in the
+DocType controller — the same rule applies to the Desk form, the FAC Admin page,
+and the REST API alike.
+
+Without one of those roles you can:
+
+- create a skill as **Draft + Private**, and edit it freely
+- edit a skill of your own that is Published but still **Private** (nobody else sees it)
+- take your own skill *out* of circulation — set Status back to Draft, or Visibility
+  to Private, at any time
+
+Without one of those roles you cannot:
+
+- create a skill as anything other than Draft + Private
+- change Status to **Published**, or Visibility to **Shared** or **Public**
+- change the **Content**, **Title**, **Description**, or **Linked Tool** of a skill
+  that is already Published *and* Shared/Public — an admin approved that text, and
+  editing it afterwards would slip past the review. Set the status back to Draft
+  first (which un-publishes it), make your edits, then ask an admin to re-publish
+- add or remove roles in **Shared With Roles** while the skill is Published and
+  Shared/Public — that widens the audience, which is the admin's call
+- mark a skill as a **system skill** (`is_system`)
+
+Attempting any of these raises a permission error naming the field that is locked.
+
+The typical flow is: author drafts privately → admin reviews the content → admin
+publishes. If the author needs to revise afterwards, they unpublish, revise, and
+the admin re-publishes.
 
 ---
 
@@ -166,7 +204,7 @@ Additional rules:
 - **System skills** (installed via an app's `assistant_skills` hook) are visible to every user when Published, regardless of their visibility field.
 - A skill's **owner** always sees their own skill even when it's Draft.
 
-The enforcement lives in two places: row-level at the DocType layer ([`utils/permissions.py:135-180`](../../frappe_assistant_core/utils/permissions.py)) and in-memory when serving MCP `resources/list` ([`api/handlers/resources.py:46-92`](../../frappe_assistant_core/api/handlers/resources.py)).
+The enforcement lives in two places: row-level at the DocType layer ([`utils/permissions.py`](../../frappe_assistant_core/utils/permissions.py), `get_skill_permission_query_conditions`) and in-memory when serving MCP `resources/list` ([`api/handlers/resources.py`](../../frappe_assistant_core/api/handlers/resources.py), `SkillManager.get_user_accessible_skills`).
 
 ### When to use each visibility
 
@@ -188,7 +226,10 @@ To publish, either:
 - Open the skill form and change Status to Published, then Save.
 - From the FAC Admin → Skills list, toggle the publish checkbox on the row.
 
-Unpublishing (Published → Draft) immediately hides the skill from everyone except the owner.
+Both routes require **Assistant Admin** or **System Manager**. See
+[Who can publish or share a skill?](#who-can-publish-or-share-a-skill).
+
+Unpublishing (Published → Draft) immediately hides the skill from everyone except the owner. The owner can always do this, admin or not — and it is the supported way for a non-admin author to revise a skill that has already been published.
 
 ---
 
@@ -197,7 +238,7 @@ Unpublishing (Published → Draft) immediately hides the skill from everyone exc
 For a Tool Usage skill, `Linked Tool` is the single most important field — it's how the LLM connects the skill to the tool it teaches.
 
 - The value must match a registered MCP tool name exactly (e.g. `list_documents`, not `List Documents`).
-- Only **one Published Tool Usage skill per tool** is used to drive the `replace` skill mode. If you have multiple, the first one returned by the query wins — keep it to one per tool.
+- Only **one Published Tool Usage skill per tool** is used to drive the `replace` skill mode. Keep it to one per tool. If several accessible skills do target the same tool, the winner is picked deterministically: app-shipped system skills first, then the most recently modified, then by record name.
 - A Workflow skill can mention tools by name in its content but does not use the `linked_tool` field.
 
 ---
@@ -227,7 +268,9 @@ This is a **token-optimization** strategy: the tool listing becomes much shorter
 
 Tools without a linked Published skill keep their original descriptions under both modes.
 
-The implementation lives in [`mcp/server.py:303-334`](../../frappe_assistant_core/mcp/server.py) and pulls the tool → skill map from [`api/handlers/resources.py:215-229`](../../frappe_assistant_core/api/handlers/resources.py).
+The replacement map is built **per user**, from the skills that user can actually see. A skill only rewrites a tool description for people who are allowed to read it, so a Private skill never leaks its text into somebody else's tool list. One consequence worth knowing if you are upgrading: a Published + **Private** skill used to drive the replacement for everyone, and now drives it only for its owner. Make it Public or Shared if it was meant to apply site-wide. App-shipped system skills are unaffected.
+
+The implementation lives in [`mcp/server.py`](../../frappe_assistant_core/mcp/server.py) (`_handle_tools_list`) and pulls the tool → skill map from [`api/handlers/resources.py`](../../frappe_assistant_core/api/handlers/resources.py) (`SkillManager.get_tool_skill_map`).
 
 Change modes in **Assistant Core Settings** → **Skill Mode**.
 
