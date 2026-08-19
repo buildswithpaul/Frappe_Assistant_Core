@@ -24,6 +24,7 @@ jobs:
             python-version: '3.14'
             node-version: 24
     name: Server (${{ matrix.frappe-branch }})
+    timeout-minutes: 30
 
     services:
       redis-cache:
@@ -84,9 +85,12 @@ jobs:
             ${{ runner.os }}-yarn-
 
       - name: Install MariaDB Client
+        timeout-minutes: 5
+        env:
+          DEBIAN_FRONTEND: noninteractive
         run: |
-          sudo apt update
-          sudo apt-get install mariadb-client
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends mariadb-client
 
       - name: Setup
         run: |
