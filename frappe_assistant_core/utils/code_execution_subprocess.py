@@ -380,25 +380,31 @@ def _serialize_variable(value):
 
 
 def _extract_variables(execution_globals: dict, return_variables: list) -> dict:
-    """Extract user-defined variables from execution globals."""
+    """Extract user-defined variables from execution globals.
+
+    When ``return_variables`` is non-empty, only those names are serialized.
+    Otherwise every non-internal user-defined global is returned (legacy behavior).
+    """
     variables = {}
     builtins = execution_globals.get("__builtins__", {})
 
-    for var_name, var_value in execution_globals.items():
-        if var_name.startswith("_") or var_name in _EXCLUDED_VARS:
-            continue
-        if var_name in builtins:
-            continue
-        try:
-            variables[var_name] = _serialize_variable(var_value)
-        except Exception as e:
-            variables[var_name] = f"<Could not serialize: {e}>"
+    def _is_excluded(var_name):
+        return var_name.startswith("_") or var_name in _EXCLUDED_VARS or var_name in builtins
 
-    # Also extract explicitly requested variables
-    for var_name in return_variables or []:
-        if var_name in execution_globals and var_name not in variables:
+    if return_variables:
+        for var_name in return_variables:
+            if var_name not in execution_globals or _is_excluded(var_name):
+                continue
             try:
                 variables[var_name] = _serialize_variable(execution_globals[var_name])
+            except Exception as e:
+                variables[var_name] = f"<Could not serialize: {e}>"
+    else:
+        for var_name, var_value in execution_globals.items():
+            if _is_excluded(var_name):
+                continue
+            try:
+                variables[var_name] = _serialize_variable(var_value)
             except Exception as e:
                 variables[var_name] = f"<Could not serialize: {e}>"
 
