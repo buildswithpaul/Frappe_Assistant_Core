@@ -18,6 +18,8 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
+from frappe_assistant_core.utils.permissions import check_assistant_admin_permission
+
 
 class FACSkill(Document):
     def validate(self):
@@ -25,6 +27,35 @@ class FACSkill(Document):
         self.validate_skill_id()
         self.validate_visibility_settings()
         self.validate_linked_tool()
+        self.validate_publish_permission()
+
+    def validate_publish_permission(self):
+        """
+        Only System Manager / Assistant Admin may create or transition a skill
+        into a Published status or a Shared/Public visibility. Non-admins are
+        restricted to Draft + Private. Ref: security issue #225 — without this
+        gate any Desk User could publish agent-instruction content org-wide.
+        """
+        if check_assistant_admin_permission():
+            return
+
+        if self.is_new():
+            if self.status != "Draft" or self.visibility != "Private":
+                frappe.throw(
+                    _(
+                        "Only an Assistant Admin or System Manager can create a skill that is not Draft/Private"
+                    ),
+                    frappe.PermissionError,
+                )
+            return
+
+        status_elevated = self.has_value_changed("status") and self.status == "Published"
+        visibility_elevated = self.has_value_changed("visibility") and self.visibility in ("Shared", "Public")
+        if status_elevated or visibility_elevated:
+            frappe.throw(
+                _("Only an Assistant Admin or System Manager can publish or share this skill"),
+                frappe.PermissionError,
+            )
 
     def validate_skill_id(self):
         """Ensure skill_id is URL-safe and unique."""

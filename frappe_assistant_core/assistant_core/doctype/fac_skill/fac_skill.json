@@ -166,7 +166,7 @@
    "label": "Sharing & Permissions"
   },
   {
-   "default": "Public",
+   "default": "Private",
    "description": "Private: Only owner can access. Shared: Specific roles can access. Public: All users can access.",
    "fieldname": "visibility",
    "fieldtype": "Select",
