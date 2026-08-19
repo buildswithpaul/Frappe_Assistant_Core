@@ -2094,8 +2094,10 @@ DocType-level validation is in [`fac_skill.py`](../../frappe_assistant_core/assi
 - `get_user_accessible_skills(user=None)` — returns skills visible to the user. A single `or_filters` query fetches owner + Public + system skills; a separate SQL query joins `Has Role` for Shared skills. Results are deduplicated by `skill_id`.
 - `get_skill_as_resource(skill_info)` — converts a skill row to an MCP resource descriptor (`uri`, `name`, `description`, `mimeType`).
 - `read_skill_content(skill_id)` — resolves the skill, enforces the permission model (Drafts only readable by owner; Published subject to visibility + role matching), and increments the usage counter before returning the markdown. Raises `frappe.PermissionError` on deny; returns `None` for missing skills.
-- `get_skill_by_tool(tool_name)` — finds a Published skill linked to a tool name that the caller can see.
-- `get_tool_skill_map()` — returns `{tool_name: {description, skill_id}}` for every Published Tool Usage skill that has a `linked_tool`. Drives the `replace` skill mode.
+- `get_skill_by_tool(tool_name, user=None)` — finds the Published skill linked to a tool name that `user` can see.
+- `get_tool_skill_map(user=None)` — returns `{tool_name: {description, skill_id}}` for every Published Tool Usage skill with a `linked_tool` that `user` can see. Drives the `replace` skill mode.
+
+Both are scoped through `get_user_accessible_skills(user)` — a skill never rewrites a tool description for someone who cannot read it. Both resolve competing skills on the same tool through `_sort_by_precedence()`: `is_system` first, then most recently modified, then by name.
 - `increment_usage(skill_name)` — atomic `UPDATE ... SET use_count = use_count + 1, last_used = NOW()`; errors are logged and swallowed so analytics never break a read.
 
 A module-level `get_skill_manager()` factory is kept for backwards compatibility.
@@ -2116,7 +2118,7 @@ Both handlers are wired into the MCPServer dispatcher at [`mcp/server.py:201-206
 ```python
 settings = frappe.get_single("Assistant Core Settings")
 if getattr(settings, "skill_mode", "supplementary") == "replace":
-    skill_replace_map = get_skill_manager().get_tool_skill_map()
+    skill_replace_map = get_skill_manager().get_tool_skill_map(user=frappe.session.user)
 ```
 
 For each registered tool in the response, if the tool name is in the replace map, its description is rewritten to:
