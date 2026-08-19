@@ -151,19 +151,29 @@ class SkillManager:
 
         return skill_doc.content
 
-    def get_skill_by_tool(self, tool_name: str) -> Optional[Dict[str, Any]]:
-        """Find a Published skill linked to ``tool_name`` that the caller can see."""
-        skill_name = frappe.db.get_value(
-            "FAC Skill",
-            {"linked_tool": tool_name, "status": "Published"},
-            "name",
-        )
-        if not skill_name:
+    def get_skill_by_tool(self, tool_name: str, user: str = None) -> Optional[Dict[str, Any]]:
+        """
+        Find the Published skill linked to ``tool_name`` that ``user`` can see.
+
+        Scoped and ordered through the same helpers as ``get_tool_skill_map`` so the
+        two can never disagree about which skill owns a tool. The previous
+        implementation picked one arbitrary Published row with no visibility filter
+        and no ordering, so another user's Private skill on the same tool could mask
+        an accessible one — see security issue #239.
+        """
+        user = user or frappe.session.user
+        candidates = [
+            s
+            for s in self.get_user_accessible_skills(user)
+            if s.get("status") == "Published" and s.get("linked_tool") == tool_name
+        ]
+        if not candidates:
             return None
 
-        skill_doc = frappe.get_doc("FAC Skill", skill_name)
-        if not self._user_can_access_skill(skill_doc):
-            return None
+        # No further access check: get_user_accessible_skills is the authority here,
+        # and _user_can_access_skill reads frappe.session.user, which would give the
+        # wrong answer whenever ``user`` is somebody else.
+        skill_doc = frappe.get_doc("FAC Skill", self._sort_by_precedence(candidates)[0]["name"])
 
         return {
             "name": skill_doc.name,
@@ -188,6 +198,21 @@ class SkillManager:
             )
         except Exception as e:
             frappe.logger("skill_manager").warning(f"Failed to increment usage for {skill_name}: {e}")
+
+    @staticmethod
+    def _sort_by_precedence(skills: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Order skills so that competing entries for the same tool resolve the same
+        way every time: app-shipped ``is_system`` skills first, then the most
+        recently modified, then ``name`` as a final tie-break.
+
+        Implemented as a stable multi-pass sort — lowest-priority key sorted first,
+        highest last.
+        """
+        ordered = sorted(skills, key=lambda s: s.get("name") or "")
+        ordered.sort(key=lambda s: str(s.get("modified") or ""), reverse=True)
+        ordered.sort(key=lambda s: 0 if s.get("is_system") else 1)
+        return ordered
 
     def _user_can_access_skill(self, skill_doc) -> bool:
         """Check if current user can access the skill."""
@@ -233,14 +258,8 @@ class SkillManager:
             if s.get("status") == "Published" and s.get("skill_type") == "Tool Usage" and s.get("linked_tool")
         ]
 
-        # Stable multi-pass sort, lowest priority first: name (final tie-break),
-        # then modified (most recent wins), then is_system (system always wins).
-        skills.sort(key=lambda s: s.get("name") or "")
-        skills.sort(key=lambda s: str(s.get("modified") or ""), reverse=True)
-        skills.sort(key=lambda s: 0 if s.get("is_system") else 1)
-
         tool_map: Dict[str, Dict[str, str]] = {}
-        for s in skills:
+        for s in self._sort_by_precedence(skills):
             if s["linked_tool"] not in tool_map:
                 tool_map[s["linked_tool"]] = {"description": s["description"], "skill_id": s["skill_id"]}
         return tool_map
