@@ -329,7 +329,7 @@ class MCPServer:
             if getattr(settings, "skill_mode", "supplementary") == "replace":
                 from frappe_assistant_core.api.handlers.resources import get_skill_manager
 
-                skill_replace_map = get_skill_manager().get_tool_skill_map()
+                skill_replace_map = get_skill_manager().get_tool_skill_map(user=frappe.session.user)
         except Exception:
             pass
 
