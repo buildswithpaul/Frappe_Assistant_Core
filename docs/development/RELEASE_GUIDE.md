@@ -52,13 +52,13 @@ Releases are fully automated via `semantic-release` (same toolchain as Frappe an
 
 1. Merge feature/bug/improvement PRs into `develop`
 2. Write the change log file (see "Change Log Files" section below)
-3. Raise a PR from `develop` to `main` and **squash-merge** it — see "Merging develop into main" below for why the merge method matters
+3. Raise a PR from `develop` to `main` and **rebase-merge** it — `main` requires linear history, and the merge method has consequences; see "Merging develop into main" below
 4. **Automatic**: semantic-release runs on push to `main` and:
    - Detects version bump from commit messages
    - Updates `pyproject.toml` and `frappe_assistant_core/__init__.py`
    - Commits, tags, and pushes
    - Creates GitHub Release with auto-generated notes
-5. Merge `main` back into `develop`: `git checkout develop && git merge main`
+5. Reset `develop` to `main` — **not** `git merge main`, which duplicates history. See "Merging develop into main" below.
 
 No manual version bumping, tagging, or release creation needed. Do **not** hand-edit
 `__version__` or `pyproject.toml`; `.releaserc` rewrites both with `sed` and commits
@@ -66,11 +66,34 @@ them as `chore(release): vX.Y.Z`, so a hand-set value is overwritten.
 
 ## Merging develop into main
 
-**Squash-merge the release PR. Never rebase-and-merge it.**
+`main` has **Require linear history** enabled, so a merge commit is rejected outright —
+the release PR can only be rebase-merged or squash-merged. Both rewrite SHAs, and that
+is the fact the rest of this section follows from.
 
-Rebase-and-merge rewrites every commit's SHA. Step 5 then merges those rewritten
-commits back into `develop`, which still holds the originals — so `develop` ends up
-carrying two copies of every released change, permanently:
+**Use rebase-and-merge, then reset `develop` to `main`. Never merge `main` back into
+`develop`.**
+
+```bash
+# 1. release
+gh pr create --base main --head develop --title "fix: <summary of the release>"
+gh pr merge --rebase              # semantic-release then tags and commits chore(release)
+
+# 2. reconcile — replaces step 5 of the release flow
+git checkout develop
+git fetch origin
+git reset --hard origin/main
+git push --force-with-lease
+```
+
+Rebase-and-merge is preferred over squash because it keeps one commit per change on
+`main`, which is what gives the GitHub release its per-change notes. A squash collapses
+the whole release to a single line.
+
+### Why the reset, and not `git merge main`
+
+Rebase rewrites every commit's SHA. Merging those rewritten commits back into `develop`,
+which still holds the originals, leaves `develop` carrying two copies of every released
+change — permanently:
 
 ```
 main:     d07f696  fix: prevent list_documents permission leak   <- released
@@ -81,28 +104,33 @@ develop:  9c83374  fix: prevent list_documents permission leak   <- original
 semantic-release reads `git log <last-tag>..HEAD`. The tag sits on the rebased copy, so
 the originals are *not* ancestors of it — the next release makes them reachable again and
 analyzes them a second time. If any is a `feat:`, the version bumps a minor it should not,
-and the notes re-list changes that already shipped. This is exactly what happened between
+and the notes re-list changes that already shipped. That is exactly what happened between
 2.5.0 and 2.5.1: `git log main..develop` reported 24 commits when only 11 were new, and
 an already-released `feat:` would have produced 2.6.0 instead of 2.5.1.
 
-A squash commit has no parent link into `develop`'s history, so semantic-release analyzes
-exactly one subject and the problem cannot arise. Step 5's merge-back then carries only
-the `chore(release)` version bump, because the squash commit's tree already matches
-`develop`.
+The reset avoids it because at the moment of release the two branches hold the same tree
+apart from the version files semantic-release just bumped — so `reset --hard origin/main`
+discards no work and leaves `develop` an exact continuation of `main`. The next release
+then starts from a clean `git log <tag>..develop`.
 
-**The squash subject is the version.** GitHub composes it from the PR title, and
-Commit Lint does not check it — it validates the commits *inside* a PR, not the subject
-produced at merge time. A non-conventional subject means no version bump and no entry in
-the release notes. Two 2.5.1 changes were lost from the generated notes this way
-(`Fix/run python code…`, `Security/fac skill…`), one of them a security fix. Title release
-PRs and feature PRs deliberately:
+It does force-push a shared branch, so anyone with an open branch off `develop` needs to
+rebase onto the new `develop` afterwards. Worth a heads-up in the release announcement.
+
+### Commit subjects are the release notes
+
+Every commit that reaches `main` came from a PR squash-merged into `develop`, and GitHub
+composes that squash subject from the **PR title**. Commit Lint does not check it — it
+validates the commits *inside* a PR, not the subject produced at merge time. A
+non-conventional PR title therefore yields a commit that contributes nothing to the
+version and appears nowhere in the release notes.
+
+Two 2.5.1 changes were lost this way — `Fix/run python code…` (#237) and
+`Security/fac skill…` (#238), the second a security fix. Title PRs into `develop` as
+though the title were the commit message, because it becomes one:
 
 ```
-fix: report filter contract, list_documents docstatus default, and Skill publish authorization
+fix: apply return_variables as a filter in run_python_code
 ```
-
-Tracking a permanent fix for the duplicate history already on `develop` in
-[#243](https://github.com/buildswithpaul/Frappe_Assistant_Core/issues/243).
 
 ## Change Log Files
 
