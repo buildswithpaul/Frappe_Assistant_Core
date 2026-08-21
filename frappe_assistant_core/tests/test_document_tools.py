@@ -203,7 +203,6 @@ class TestDocumentTools(BaseAssistantTest):
         self.assertEqual(count_call.kwargs["limit"], 1)
         self.assertFalse(count_call.kwargs["ignore_permissions"])
 
-
     def test_update_document_basic(self):
         """Test basic document update"""
         if not self.registry.has_tool("update_document"):
