@@ -295,7 +295,7 @@ class DocumentList(BaseTool):
                 },
                 "order_by": {
                     "type": "string",
-                    "description": "Order results by field. Examples: 'creation desc', 'name asc', 'modified desc'. Default is 'creation desc'.",
+                    "description": "Order results by field. Examples: 'creation desc', 'name asc', 'modified desc'. Leave empty to use Frappe default ordering.",
                 },
             },
             "required": ["doctype"],
@@ -307,7 +307,9 @@ class DocumentList(BaseTool):
         filters = arguments.get("filters", {})
         fields = arguments.get("fields", ["name", "creation", "modified"])
         limit = arguments.get("limit", 20)
-        order_by = arguments.get("order_by", "creation desc")
+        # Use Frappe's sentinel so it applies its own intelligent default ordering.
+        # Also guard against empty string from API clients.
+        order_by = arguments.get("order_by") or "KEEP_DEFAULT_ORDERING"
 
         # Get current user context
 
@@ -381,15 +383,9 @@ class DocumentList(BaseTool):
                 filtered_documents.append(filtered_doc)
 
             # Get permission-aware total count for pagination info.
+            # Use string aggregate only — dict form causes "Unknown column 'table.scalar'"
+            # on MariaDB when filters include docstatus. See: FAC PR fix.
             try:
-                count_result = frappe.get_list(
-                    doctype,
-                    filters=filters,
-                    fields=[{"COUNT": "name", "as": "count"}],
-                    limit=1,
-                    ignore_permissions=False,
-                )
-            except AttributeError:
                 count_result = frappe.get_list(
                     doctype,
                     filters=filters,
@@ -397,6 +393,8 @@ class DocumentList(BaseTool):
                     limit=1,
                     ignore_permissions=False,
                 )
+            except Exception:
+                count_result = []
             total_count = count_result[0].get("count") if count_result else 0
 
             message = f"Found {len(filtered_documents)} {doctype} records"
