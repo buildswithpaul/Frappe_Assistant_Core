@@ -199,7 +199,7 @@ class TestDocumentTools(BaseAssistantTest):
 
         count_call = get_list.call_args_list[1]
         self.assertEqual(count_call.args[0], "Employee")
-        self.assertEqual(count_call.kwargs["fields"], [{"COUNT": "name", "as": "count"}])
+        self.assertEqual(count_call.kwargs["fields"], ["count(name) as count"])
         self.assertEqual(count_call.kwargs["limit"], 1)
         self.assertFalse(count_call.kwargs["ignore_permissions"])
 
