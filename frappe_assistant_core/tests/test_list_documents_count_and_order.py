@@ -21,6 +21,7 @@ Regression tests for:
 - Bug: order_by="" passes empty string to frappe.get_list;
   "creation desc" hardcode overrides Frappe's own smart default ordering.
 """
+
 from contextlib import ExitStack, contextmanager
 from unittest.mock import patch
 
@@ -33,18 +34,24 @@ def list_harness(submittable=False, rows=None):
     """Minimal harness: mock permissions + frappe.get_list, yield the mock."""
     rows = rows if rows is not None else [{"name": "REC-0001"}]
     with ExitStack() as stack:
-        stack.enter_context(patch(
-            "frappe_assistant_core.core.security_config.validate_document_access",
-            return_value={"success": True, "role": "Default"},
-        ))
-        stack.enter_context(patch(
-            "frappe_assistant_core.core.security_config.filter_sensitive_fields",
-            side_effect=lambda doc, *a, **kw: doc,
-        ))
-        stack.enter_context(patch(
-            "frappe_assistant_core.plugins.core.tools.list_documents.is_submittable",
-            return_value=submittable,
-        ))
+        stack.enter_context(
+            patch(
+                "frappe_assistant_core.core.security_config.validate_document_access",
+                return_value={"success": True, "role": "Default"},
+            )
+        )
+        stack.enter_context(
+            patch(
+                "frappe_assistant_core.core.security_config.filter_sensitive_fields",
+                side_effect=lambda doc, *a, **kw: doc,
+            )
+        )
+        stack.enter_context(
+            patch(
+                "frappe_assistant_core.plugins.core.tools.list_documents.is_submittable",
+                return_value=submittable,
+            )
+        )
         gl = stack.enter_context(patch("frappe.get_list"))
         # First call → document rows; second call → count result
         gl.side_effect = [rows, [{"count": len(rows)}]]
@@ -79,10 +86,12 @@ class TestCountQueryNoDict(BaseAssistantTest):
         """Item Price + docstatus filter previously triggered the scalar error."""
         tool = DocumentList()
         with list_harness(submittable=True) as gl:
-            result = tool.execute({
-                "doctype": "Item Price",
-                "filters": {"item_code": "MSE1070"},
-            })
+            result = tool.execute(
+                {
+                    "doctype": "Item Price",
+                    "filters": {"item_code": "MSE1070"},
+                }
+            )
             self.assertTrue(result.get("success"), f"Got: {result}")
 
     def test_count_does_not_raise_on_sales_invoice(self):
