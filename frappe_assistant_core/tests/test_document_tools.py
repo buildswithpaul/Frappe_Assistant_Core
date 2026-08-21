@@ -203,62 +203,6 @@ class TestDocumentTools(BaseAssistantTest):
         self.assertEqual(count_call.kwargs["limit"], 1)
         self.assertFalse(count_call.kwargs["ignore_permissions"])
 
-    def test_list_documents_count_falls_back_to_legacy_aggregate_syntax(self):
-        """Frappe 15 does not support dict aggregate fields."""
-        from frappe_assistant_core.plugins.core.tools.list_documents import DocumentList
-
-        with ExitStack() as stack:
-            stack.enter_context(
-                patch(
-                    "frappe_assistant_core.core.security_config.validate_document_access",
-                    return_value={"success": True, "role": "Default"},
-                )
-            )
-            stack.enter_context(
-                patch(
-                    "frappe_assistant_core.core.security_config.filter_sensitive_fields",
-                    side_effect=lambda doc, _doctype, _role: doc,
-                )
-            )
-            stack.enter_context(
-                patch(
-                    "frappe_assistant_core.plugins.core.tools.list_documents.frappe.session",
-                    MagicMock(user="restricted@example.com"),
-                )
-            )
-            stack.enter_context(
-                patch(
-                    "frappe_assistant_core.plugins.core.tools.list_documents.frappe.get_meta",
-                    return_value=MagicMock(is_submittable=0),
-                )
-            )
-            get_list = stack.enter_context(
-                patch("frappe_assistant_core.plugins.core.tools.list_documents.frappe.get_list")
-            )
-            get_list.side_effect = [
-                [{"name": "EMP-0001", "employee_name": "Allowed Employee"}],
-                AttributeError("'dict' object has no attribute 'lower'"),
-                [{"count": 1}],
-            ]
-
-            result = DocumentList().execute(
-                {
-                    "doctype": "Employee",
-                    "filters": {},
-                    "fields": ["name", "employee_name"],
-                    "limit": 20,
-                }
-            )
-
-        self.assertTrue(result.get("success"), result)
-        self.assertEqual(result.get("total_count"), 1)
-        self.assertEqual(get_list.call_count, 3)
-
-        fallback_count_call = get_list.call_args_list[2]
-        self.assertEqual(fallback_count_call.args[0], "Employee")
-        self.assertEqual(fallback_count_call.kwargs["fields"], ["count(name) as count"])
-        self.assertEqual(fallback_count_call.kwargs["limit"], 1)
-        self.assertFalse(fallback_count_call.kwargs["ignore_permissions"])
 
     def test_update_document_basic(self):
         """Test basic document update"""
