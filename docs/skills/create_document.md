@@ -32,7 +32,7 @@ The `create_document` tool creates new Frappe documents (records). It handles fi
 
 1. **Check required fields first** — use `get_doctype_info` to see mandatory fields before creating.
 2. **Use `validate_only: true` first** — test your data structure without actually creating the document.
-3. **Link fields expect the `name` (ID)** — not the display title. Use `search_link` to find valid values.
+3. **Link fields expect the `name` (ID)** — not the display title. Use `search_documents` with `purpose: "link_value"` to find valid values.
 4. **Don't set auto-generated fields** — `name`, `creation`, `modified`, `owner` are set automatically.
 5. **Handle naming series** — DocTypes with naming series auto-generate names; don't pass `name` unless it uses manual naming.
 6. **Use `submit: true` carefully** — only when explicitly requested. Creates and submits in one step.

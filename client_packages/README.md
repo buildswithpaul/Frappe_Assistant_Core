@@ -93,9 +93,7 @@ All packages should provide access to the same core tool set:
 - `document_list` - List and filter documents
 
 #### 🔍 **Search Tools**
-- `search_global` - Global search
-- `search_doctype` - DocType-specific search
-- `search_link` - Link field search
+- `search_documents` - Text search; global, DocType-scoped, or Link field resolution
 
 #### 📈 **Reporting Tools**
 - `report_execute` - Run reports

@@ -48,7 +48,9 @@ class ChatGPTSearch(BaseTool):
     def __init__(self):
         super().__init__()
         self.name = "search"
-        self.description = "Search for documents using OpenAI Vector Store search. Returns a list of search results with basic information. Use the fetch tool to get complete document content."
+        # Kept deliberately terse: this tool exists to satisfy ChatGPT's MCP
+        # contract, and general clients should reach for search_documents instead.
+        self.description = "Search for documents across the site. Returns a list of results with id, title, and url. Use the fetch tool to get complete document content."
 
         self.inputSchema = {
             "type": "object",

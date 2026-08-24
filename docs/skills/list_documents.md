@@ -131,7 +131,7 @@ The key is absent when every filter value resolves, so its absence confirms caus
 1. **Always specify fields** — requesting only needed fields is faster and returns cleaner results. Leave empty to get standard fields (name + title field).
 2. **Start with small limits** — use `limit: 5` for exploration, increase when you know what you need.
 3. **Use filters liberally** — filtered queries are much faster than fetching all records.
-4. **Check DocType name first** — if unsure of the exact name, use `search_doctype` or `get_doctype_info` first.
+4. **Check DocType name first** — if unsure of the exact name, use `search_documents` with `doctype: "DocType"` or `get_doctype_info` first.
 5. **Check `has_more`** — if true, there are more records matching your filters beyond the current limit.
 6. **Use `order_by`** — common patterns: `"creation desc"` (newest first), `"modified desc"`, `"name asc"`, `"grand_total desc"`.
 

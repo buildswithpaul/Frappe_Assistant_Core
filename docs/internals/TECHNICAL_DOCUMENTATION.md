@@ -94,8 +94,6 @@ frappe_assistant_core/plugins/
 │       ├── delete_document.py   # Document deletion
 │       ├── list_documents.py     # Document listing
 │       ├── search_documents.py     # Global search
-│       ├── search_doctype.py    # DocType-specific search
-│       ├── search_link.py       # Link field search
 │       ├── metadata_*.py        # Metadata tools
 │       ├── report_*.py          # Report tools
 │       └── workflow_*.py        # Workflow tools
@@ -701,8 +699,6 @@ Essential Frappe operations that are always available:
 **Search Tools** (`search_*`)
 
 - `search_documents` - Global search across all DocTypes
-- `search_doctype` - DocType-specific search
-- `search_link` - Link field search and filtering
 
 **Metadata Tools** (`metadata_*`)
 

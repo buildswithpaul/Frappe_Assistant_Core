@@ -98,7 +98,7 @@ ERPNext (and Frappe in general) computes derived fields — row `amount`, parent
 3. **Use the parent doctype for child-row edits** — never target a child-table doctype directly.
 4. **Prefer patch mode for child tables** — it's surgical and won't drop rows you didn't mean to.
 5. **Use replace mode only when you intend a wipe-and-refill** — it discards any row you omit.
-6. **Link fields use the `name`** — not the display title. Use `search_link` to find valid values.
+6. **Link fields use the `name`** — not the display title. Use `search_documents` with `purpose: "link_value"` to find valid values.
 7. **Cannot update submitted documents** — `docstatus=1` documents must be amended or cancelled first.
 
 ## Edge Cases

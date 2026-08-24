@@ -49,28 +49,23 @@ Tools are organized into plugins that can be enabled/disabled as needed:
 #### list_documents
 - **Description**: List and filter documents with pagination
 - **When to use**: Primary tool for finding and browsing records
-- **Key patterns**: "list", "show all", "find", "search_documents for", "how many"
+- **Key patterns**: "list", "show all", "find", "search for", "how many"
 - **Example**: "List all sales invoices from last month"
 
-### Search Tools (3 tools)
+### Search Tools (1 tool)
 
 #### search_documents
-- **Description**: Global search_documents across all accessible DocTypes
-- **When to use**: User doesn't know which DocType contains the information
-- **Key patterns**: "search_documents everywhere", "find across all", "global search_documents"
-- **Example**: "Search for 'electronics' across all documents"
-
-#### search_doctype
-- **Description**: Search within a specific DocType using text search_documents
-- **When to use**: User knows the DocType and wants text-based search_documents
-- **Key patterns**: "search_documents in", "find in [DocType]"
-- **Example**: "Search for 'pending' in Purchase Orders"
-
-#### search_link
-- **Description**: Get valid options for Link fields
-- **When to use**: Need to populate or validate link field values
-- **Key patterns**: "link options", "available values for", "valid options"
-- **Example**: "What are the available customer groups?"
+- **Description**: Text search for documents, in three modes selected by its arguments
+- **When to use**: The user is looking for something by text rather than by exact conditions
+- **Key patterns**: "search for", "find anything about", "look up"
+- **Modes**:
+  - omit `doctype` — global full-text search when the DocType is unknown.
+    *"Search for 'electronics' across all documents"*
+  - pass `doctype` — text search within one DocType.
+    *"Search for 'pending' in Purchase Orders"*
+  - `purpose: "link_value"` — valid values for a Link field.
+    *"What are the available customer groups?"*
+- **Not for**: exact filters, date ranges, or counts — use `list_documents`
 
 ### Metadata Tools (5 tools)
 

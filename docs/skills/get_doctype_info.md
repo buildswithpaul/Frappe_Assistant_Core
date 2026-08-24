@@ -67,7 +67,7 @@ The `get_doctype_info` tool retrieves metadata about a Frappe DocType — its fi
 1. **Always call before `create_document`** — to know which fields are required (`reqd: 1`) and what types they expect.
 2. **Check `fieldtype` for filters** — use appropriate filter operators for each field type.
 3. **Check `options` for Select fields** — Select fields only accept values from their options list.
-4. **Check Link field targets** — Link fields reference other DocTypes via their `options` value. Use `search_link` to find valid values.
+4. **Check Link field targets** — Link fields reference other DocTypes via their `options` value. Use `search_documents` with `purpose: "link_value"` to find valid values.
 5. **Look for Table fields** — these indicate child tables. The `options` value is the child DocType name.
 6. **Check `is_submittable`** — if 1, documents go through Draft → Submitted → Cancelled workflow.
 
