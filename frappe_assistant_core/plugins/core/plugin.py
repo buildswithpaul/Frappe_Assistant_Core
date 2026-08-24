@@ -52,10 +52,8 @@ class CorePlugin(BasePlugin):
             "list_documents",
             "delete_document",
             "submit_document",
-            # Search tools
+            # Search tools (one unified entry point; routes on doctype/purpose)
             "search_documents",
-            "search_doctype",
-            "search_link",
             # ChatGPT-compatible tools (wrappers for ChatGPT MCP requirements)
             "chatgpt_search",
             "chatgpt_fetch",
@@ -92,6 +90,8 @@ class CorePlugin(BasePlugin):
                 "delete": True,
                 "list": True,
             },
+            # All three search modes are reached through the single
+            # search_documents tool.
             "search": {"global_search": True, "doctype_search": True, "link_search": True},
             "metadata": {
                 "doctype_info": True,

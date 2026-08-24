@@ -121,15 +121,7 @@
     },
     {
       "name": "search_documents",
-      "description": "Global search across all accessible documents"
-    },
-    {
-      "name": "search_doctype",
-      "description": "Search within a specific DocType with filters"
-    },
-    {
-      "name": "search_link",
-      "description": "Search for link field options and references"
+      "description": "Text search for documents — global, scoped to one DocType, or resolving a Link field value"
     },
     {
       "name": "get_doctype_info",

@@ -55,9 +55,7 @@ READ_ONLY_TOOLS = {
     "get_document",
     "list_documents",
     # Search tools
-    "search_documents",
-    "search_doctype",
-    "search_link",
+    "search_documents",  # all search modes: global, doctype-scoped, link_value
     "search",  # ChatGPT search
     "fetch",  # ChatGPT fetch
     # Metadata tools
