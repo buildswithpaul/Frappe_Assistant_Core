@@ -492,35 +492,24 @@ Deletes a document.
 
 #### search_documents
 
-Searches across all accessible DocTypes.
+The single text-search tool. Three modes, selected by the arguments:
+
+| Mode | Selected by | Behaviour |
+|------|-------------|-----------|
+| global | `doctype` omitted | Full-text search across every readable DocType |
+| doctype | `doctype` given | Text match within that DocType's search fields |
+| link_value | `purpose: "link_value"` | Autocomplete-style Link field resolution |
 
 **Parameters:**
 
-- `query` (string, required): Search query
-- `limit` (integer, optional): Results per DocType
-- `doctypes` (array, optional): Specific DocTypes to search_documents
+- `query` (string, required): Search text
+- `doctype` (string, optional): DocType to search within; required for `link_value`
+- `purpose` (string, optional): `documents` (default) or `link_value`
+- `filters` (object, optional): Narrows the search; requires `doctype`
+- `limit` (integer, optional): Maximum results, default 20, capped at 100
 
-#### search_doctype
-
-Searches within a specific DocType.
-
-**Parameters:**
-
-- `doctype` (string, required): DocType to search_documents
-- `query` (string, required): Search query
-- `fields` (array, optional): Fields to search_documents in
-- `limit` (integer, optional): Maximum results
-
-#### search_link
-
-Searches for link field options.
-
-**Parameters:**
-
-- `doctype` (string, required): Target DocType
-- `query` (string, optional): Filter query
-- `filters` (object, optional): Additional filters
-- `limit` (integer, optional): Maximum options
+Replaces the former `search_doctype` and `search_link` tools, removed in v2.5.2 —
+they are now the `doctype` and `link_value` modes of this tool.
 
 #### Metadata Tools
 

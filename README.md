@@ -116,7 +116,7 @@ through the `assistant_skills` hook.
 
 ## Tools at a glance
 
-FAC ships 24 tools across four plugins: **Core** (Frappe operations),
+FAC ships 22 tools across four plugins: **Core** (Frappe operations),
 **Data Science** (Python execution, analytics, file extraction),
 **Visualization** (dashboards and charts), and **Custom Tools** (the
 registry for tools contributed by external apps).
@@ -124,7 +124,7 @@ registry for tools contributed by external apps).
 | Category | Tools |
 |---|---|
 | Documents | `get_document`, `list_documents`, `create_document`, `update_document`, `delete_document`, `submit_document` |
-| Search | `search`, `search_documents`, `search_doctype`, `search_link`, `fetch` |
+| Search | `search_documents` (global, DocType-scoped, or Link value), plus `search` / `fetch` for ChatGPT connectors |
 | Reports | `report_list`, `report_requirements`, `generate_report` |
 | Approvals | `get_pending_approvals`, `run_workflow` |
 | Schema | `get_doctype_info` |
