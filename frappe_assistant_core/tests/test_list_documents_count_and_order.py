@@ -113,6 +113,85 @@ class TestCountQueryNoDict(BaseAssistantTest):
                 "Expected 'count(name) as count' string in count query fields.",
             )
 
+    def test_count_query_failure_logs_error_and_degrades_has_more_conservatively(self):
+        """When count query fails, log error, set total_count=None, and degrade has_more to True for a full page."""
+        tool = DocumentList()
+        # Full page of 20 rows
+        full_page = [{"name": f"REC-{i:04d}"} for i in range(20)]
+        with ExitStack() as stack:
+            stack.enter_context(
+                patch(
+                    "frappe_assistant_core.core.security_config.validate_document_access",
+                    return_value={"success": True, "role": "Default"},
+                )
+            )
+            stack.enter_context(
+                patch(
+                    "frappe_assistant_core.core.security_config.filter_sensitive_fields",
+                    side_effect=lambda doc, *a, **kw: doc,
+                )
+            )
+            stack.enter_context(
+                patch(
+                    "frappe_assistant_core.plugins.core.tools.list_documents.is_submittable",
+                    return_value=False,
+                )
+            )
+            log_error_mock = stack.enter_context(
+                patch("frappe_assistant_core.plugins.core.tools.list_documents.frappe.log_error")
+            )
+            gl = stack.enter_context(
+                patch("frappe_assistant_core.plugins.core.tools.list_documents.frappe.get_list")
+            )
+            # First call succeeds with full page; second call (count) raises Exception
+            gl.side_effect = [full_page, Exception("Database connection error")]
+
+            result = tool.execute({"doctype": "Customer", "limit": 20})
+
+            self.assertTrue(result.get("success"))
+            self.assertIsNone(result.get("total_count"))
+            # On a full page (20 >= limit), has_more must degrade conservatively to True
+            self.assertTrue(result.get("has_more"))
+            log_error_mock.assert_called_once()
+
+    def test_count_query_failure_partial_page_has_more_false(self):
+        """When count query fails on a partial page (< limit), has_more is False."""
+        tool = DocumentList()
+        partial_page = [{"name": f"REC-{i:04d}"} for i in range(5)]
+        with ExitStack() as stack:
+            stack.enter_context(
+                patch(
+                    "frappe_assistant_core.core.security_config.validate_document_access",
+                    return_value={"success": True, "role": "Default"},
+                )
+            )
+            stack.enter_context(
+                patch(
+                    "frappe_assistant_core.core.security_config.filter_sensitive_fields",
+                    side_effect=lambda doc, *a, **kw: doc,
+                )
+            )
+            stack.enter_context(
+                patch(
+                    "frappe_assistant_core.plugins.core.tools.list_documents.is_submittable",
+                    return_value=False,
+                )
+            )
+            stack.enter_context(
+                patch("frappe_assistant_core.plugins.core.tools.list_documents.frappe.log_error")
+            )
+            gl = stack.enter_context(
+                patch("frappe_assistant_core.plugins.core.tools.list_documents.frappe.get_list")
+            )
+            gl.side_effect = [partial_page, Exception("Database connection error")]
+
+            result = tool.execute({"doctype": "Customer", "limit": 20})
+
+            self.assertTrue(result.get("success"))
+            self.assertIsNone(result.get("total_count"))
+            # Partial page (5 < 20), has_more is False
+            self.assertFalse(result.get("has_more"))
+
 
 class TestOrderByBehaviour(BaseAssistantTest):
     """Bug B: empty/missing order_by must not override Frappe's default ordering.

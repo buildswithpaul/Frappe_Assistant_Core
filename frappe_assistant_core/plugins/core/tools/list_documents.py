@@ -295,7 +295,7 @@ class DocumentList(BaseTool):
                 },
                 "order_by": {
                     "type": "string",
-                    "description": "Order results by field. Examples: 'creation desc', 'name asc', 'modified desc'. Leave empty to use Frappe default ordering.",
+                    "description": "Order results by field, e.g. 'creation desc', 'name asc'. Omit to use the DocType's own default ordering (usually modified desc).",
                 },
             },
             "required": ["doctype"],
@@ -393,9 +393,13 @@ class DocumentList(BaseTool):
                     limit=1,
                     ignore_permissions=False,
                 )
+                total_count = count_result[0].get("count") if count_result else 0
             except Exception:
-                count_result = []
-            total_count = count_result[0].get("count") if count_result else 0
+                frappe.log_error(
+                    title=f"list_documents: count query failed for {doctype}",
+                    message=frappe.get_traceback(),
+                )
+                total_count = None
 
             message = f"Found {len(filtered_documents)} {doctype} records"
             if docstatus_defaulted:
@@ -410,7 +414,9 @@ class DocumentList(BaseTool):
                 "data": filtered_documents,
                 "count": len(filtered_documents),
                 "total_count": total_count,
-                "has_more": total_count > limit,
+                "has_more": (total_count > limit)
+                if total_count is not None
+                else len(filtered_documents) >= limit,
                 "filters_applied": filters,
                 "message": message,
             }
