@@ -455,7 +455,6 @@ class TestDocumentTools(BaseAssistantTest):
             # Cleanup if the create actually succeeded.
             try:
                 frappe.delete_doc("Quotation", result["name"], ignore_permissions=True, force=True)
-                frappe.db.commit()
             except Exception:
                 pass
 
@@ -526,7 +525,6 @@ class TestDocumentTools(BaseAssistantTest):
             # Cleanup if create unexpectedly succeeded.
             try:
                 frappe.delete_doc("ToDo", result["name"], ignore_permissions=True, force=True)
-                frappe.db.commit()
             except Exception:
                 pass
 

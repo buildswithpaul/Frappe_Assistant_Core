@@ -9,13 +9,38 @@
 [![Python](https://img.shields.io/badge/python-3.8%2B-blue)](https://pypi.org/project/frappe-assistant-core)
 [![License](https://img.shields.io/badge/license-AGPL--3.0-green)](LICENSE)
 [![MCP](https://img.shields.io/badge/MCP-2025--06--18-orange)](https://modelcontextprotocol.io)
-[![Tools](https://img.shields.io/badge/tools-24-brightgreen)](docs/api/TOOL_REFERENCE.md)
+[![Tools](https://img.shields.io/badge/tools-24-brightgreen)](https://docs.assistantcore.cloud/api/tool-reference)
+[![Docs](https://img.shields.io/badge/docs-assistantcore.cloud-blue)](https://docs.assistantcore.cloud)
 
 [![CI](https://github.com/buildswithpaul/Frappe_Assistant_Core/actions/workflows/ci.yml/badge.svg)](https://github.com/buildswithpaul/Frappe_Assistant_Core/actions/workflows/ci.yml)
 [![Frappe Cloud](https://img.shields.io/badge/Frappe%20Cloud-Marketplace-blue)](https://cloud.frappe.io/marketplace/apps/frappe_assistant_core)
 [![Stars](https://img.shields.io/github/stars/buildswithpaul/Frappe_Assistant_Core?style=social)](https://github.com/buildswithpaul/Frappe_Assistant_Core/stargazers)
 [![Forks](https://img.shields.io/github/forks/buildswithpaul/Frappe_Assistant_Core?style=social)](https://github.com/buildswithpaul/Frappe_Assistant_Core/network/members)
 [![Sponsors](https://img.shields.io/github/sponsors/buildswithpaul?logo=github)](https://github.com/sponsors/buildswithpaul)
+
+---
+
+## New in FAC 3.0: FAC Chat
+
+FAC 3.0 introduces **FAC Chat** — an opt-in, in-Frappe AI chat assistant
+powered by our managed **Assistant Runtime SaaS**.
+
+FAC now offers two ways to use it:
+
+- **BYO-LLM (MCP server, free)** — the original FAC. Connect any
+  MCP-ready LLM client (Claude Desktop, Cursor, ChatGPT desktop, etc.)
+  to your Frappe data over MCP. You bring the LLM, you pay your own
+  LLM bill, nothing leaves your stack. Ships enabled by default.
+- **FAC Chat (in-Frappe chat UI, SaaS)** — opt-in. A native chat
+  widget on every Desk page plus a full-screen SPA at `/copilot`,
+  powered exclusively by our managed FAC Cloud. One
+  subscription covers LLM access across providers, conversation
+  memory, RAG, and workflow automation. Ships **disabled by default**.
+
+The split is intentional: BYO-LLM keeps the existing free MCP path
+untouched; FAC Chat is the managed experience for teams that want the
+chat inside Frappe without wiring up their own LLM keys. See
+[FAC Chat](#fac-chat) below for full details.
 
 ---
 
@@ -84,7 +109,66 @@ Example shown for Claude Desktop:
    month."*
 
 For ChatGPT, Claude Web, and MCP Inspector walkthroughs, see the
-[Getting Started guide](docs/getting-started/GETTING_STARTED.md).
+[Quick Start](https://docs.assistantcore.cloud/getting-started/quick-start) on the docs site.
+
+---
+
+## FAC Chat
+
+**FAC Chat is an opt-in, SaaS-powered chat experience that ships inside
+FAC.** Where the MCP server lets external LLM clients (Claude Desktop,
+Cursor, ChatGPT desktop) talk to your Frappe data with your own LLM
+keys, FAC Chat brings the conversation inside Frappe itself — a widget
+on every Desk page and a full-screen SPA at `/copilot` — powered by
+our managed **Assistant Runtime** subscription.
+
+### Two ways to use FAC
+
+| Option | What it is | LLM | Cost | Where the chat lives |
+|---|---|---|---|---|
+| **BYO-LLM (MCP server)** | The original FAC. Exposes Frappe data over MCP to any MCP-ready client. | You bring your own (Anthropic, OpenAI, Gemini, Bedrock, etc.) | Free. You pay your own LLM bill. | In your external MCP client (Claude Desktop, Cursor, etc.). No chat UI inside Frappe. |
+| **FAC Chat (SaaS)** | In-Frappe chat widget + `/copilot` SPA. Streaming, tool use, attachments, history, memory, RAG, workflows. | Managed by Assistant Runtime. One subscription, multiple providers. | Subscription required. Sign up flow runs inside the chat UI. | Inside Frappe Desk. |
+
+These are **mutually exclusive at the chat layer**: the in-Frappe chat
+UI is only available through Assistant Runtime. There is no BYO-LLM
+path for FAC Chat — if you want to bring your own LLM, use the MCP
+server.
+
+Both options share the same plugin registry, the same
+`Assistant Audit Log`, and the same OAuth-based authentication.
+Enabling FAC Chat does NOT change anything for your MCP clients — both
+can run side by side.
+
+### Enabling FAC Chat
+
+1. Go to **Assistant Core Settings → FAC Chat tab**.
+2. Toggle **Enable FAC Chat** to ✓ and save.
+3. Run `bench restart`.
+
+A discovery banner on the Desk landing page will also walk admins
+through enabling chat — it appears once per admin and can be dismissed.
+
+After enabling:
+- The chat widget appears in the corner of Frappe Desk pages.
+- The full-screen SPA is reachable at `/copilot`.
+- The first time a user opens chat, they walk through a one-time
+  onboarding that registers the tenant with Assistant Runtime and
+  links it to a subscription.
+
+### What FAC Chat is NOT
+
+- It is **not required** for MCP server users. Skip it entirely if
+  Claude Desktop or another MCP client is your only access pattern —
+  the free MCP path keeps working exactly as before.
+- It is **not a BYO-LLM frontend**. The in-Frappe chat UI talks only
+  to Assistant Runtime. If you want to bring your own LLM keys, the
+  MCP server is the path for that.
+- It does **not change** FAC's tool catalog. The same 24 built-in
+  tools are available to MCP clients and to FAC Chat alike.
+- It does **not store conversations off-site without consent**.
+  Conversation history lives in your Frappe database; only the LLM
+  request payload (messages + tool call results) is forwarded to
+  Assistant Runtime to generate the next response.
 
 ---
 
@@ -133,7 +217,7 @@ registry for tools contributed by external apps).
 | Dashboards | `create_dashboard`, `create_dashboard_chart`, `list_user_dashboards` |
 
 Full specification for each tool is in the
-[Tool Reference](docs/api/TOOL_REFERENCE.md).
+[Tool Reference](https://docs.assistantcore.cloud/api/tool-reference).
 
 ---
 
@@ -201,21 +285,27 @@ what the LLM did.
 
 For setup and advanced configuration:
 
-- [OAuth Setup Guide](docs/getting-started/oauth/oauth_setup_guide.md)
-- [Code Execution Security](docs/guides/CODE_EXECUTION_SECURITY.md)
-- [MCP StreamableHTTP Guide](docs/internals/MCP_STREAMABLEHTTP_GUIDE.md)
+- [OAuth Setup Guide](https://docs.assistantcore.cloud/getting-started/oauth/setup-guide)
+- [Code Execution Security](https://docs.assistantcore.cloud/guides/code-execution-security)
+- [MCP StreamableHTTP Guide](https://docs.assistantcore.cloud/internals/mcp-streamable-http)
 
 ---
 
 ## Documentation
 
-- [Getting Started](docs/getting-started/GETTING_STARTED.md) — full setup walkthrough, including Claude Desktop and ChatGPT
-- [OAuth Quick Start](docs/getting-started/oauth/oauth_quick_start.md) — OAuth setup in 2 minutes
-- [Tool Reference](docs/api/TOOL_REFERENCE.md) — every tool, arguments, return format
-- [API Reference](docs/api/API_REFERENCE.md) — MCP endpoints and OAuth APIs
-- [Internals](docs/internals/INTERNALS.md) — system design and plugin internals
-- [External App Development](docs/development/EXTERNAL_APP_DEVELOPMENT.md) — add tools from your own Frappe app
-- [Full documentation index](docs/README.md) — everything else
+**📚 Full docs are at [docs.assistantcore.cloud](https://docs.assistantcore.cloud)**
+
+Common entry points:
+
+- [Installation](https://docs.assistantcore.cloud/getting-started/installation) — Frappe Cloud one-click + self-hosted bench
+- [Quick Start](https://docs.assistantcore.cloud/getting-started/quick-start) — connect Claude Desktop in 5 minutes
+- [OAuth Setup Guide](https://docs.assistantcore.cloud/getting-started/oauth/setup-guide) — production OAuth configuration
+- [Tool Reference](https://docs.assistantcore.cloud/api/tool-reference) — every built-in tool
+- [API Reference](https://docs.assistantcore.cloud/api/reference) — MCP and OAuth protocol surface
+- [Architecture](https://docs.assistantcore.cloud/internals/architecture) — how FAC is put together
+- [Changelog](https://docs.assistantcore.cloud/reference/changelog) — release notes
+
+For contributors editing this repo, see [`docs/development/`](docs/development/) and [Contributing.md](Contributing.md).
 
 ---
 

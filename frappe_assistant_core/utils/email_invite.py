@@ -1,35 +1,32 @@
 import frappe
+from frappe import _
 
 
 def send_fac_admin_invite():
-    """Send a welcome email to all System Manager users after FAC installation."""
-    recipients = _get_system_manager_emails()
+    """Welcome every System Manager after installation.
 
+    Unlike every other managed email in the product, this one is sent by the
+    customer's own site to its own admins, not by the SaaS server — so it
+    must render with plain frappe.sendmail and never depend on
+    assistant_runtime being installed here.
+    """
+    recipients = _get_system_manager_emails()
     if not recipients:
         frappe.log_error("No System Manager users found for FAC invite", "FAC Invite Hook")
         return
 
-    email_account = frappe.db.get_value(
-        "Email Account", {"default_outgoing": 1, "enable_outgoing": 1}, "email_id"
-    )
-
-    if not email_account:
-        frappe.log_error("No default outgoing Email Account found", "FAC Invite Hook")
-        return
-
-    site_url = frappe.utils.get_url()
-
-    try:
-        frappe.sendmail(
-            recipients=recipients,
-            subject="Welcome to Frappe Assistant Core",
-            template="fac_welcome_invite",
-            args={"site_url": site_url},
-            sender=email_account,
-            delayed=True,
-        )
-    except Exception:
-        frappe.log_error("Failed to send FAC welcome email", "FAC Invite Hook")
+    workspace_url = frappe.utils.get_url("/copilot/")
+    for recipient in recipients:
+        try:
+            frappe.sendmail(
+                recipients=[recipient],
+                subject=_("Your FAC Cloud workspace is ready"),
+                template="fac_welcome",
+                args={"heading": _("You're all set"), "cta_url": workspace_url},
+                delayed=True,
+            )
+        except Exception:
+            frappe.log_error("Failed to send FAC welcome email", "FAC Invite Hook")
 
 
 def _get_system_manager_emails():

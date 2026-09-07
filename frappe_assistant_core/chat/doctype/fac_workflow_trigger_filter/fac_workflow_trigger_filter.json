@@ -1,0 +1,51 @@
+{
+ "actions": [],
+ "creation": "2026-04-22 00:00:00",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "istable": 1,
+ "field_order": [
+  "fieldname",
+  "operator",
+  "value"
+ ],
+ "fields": [
+  {
+   "fieldname": "fieldname",
+   "fieldtype": "Data",
+   "label": "Field",
+   "in_list_view": 1,
+   "reqd": 1,
+   "columns": 3
+  },
+  {
+   "fieldname": "operator",
+   "fieldtype": "Select",
+   "label": "Operator",
+   "options": "=\n!=\n>\n<\n>=\n<=\nin\nnot in\nis set\nis not set",
+   "in_list_view": 1,
+   "reqd": 1,
+   "columns": 2
+  },
+  {
+   "fieldname": "value",
+   "fieldtype": "Small Text",
+   "label": "Value",
+   "in_list_view": 1,
+   "description": "For 'in' / 'not in' use JSON array, e.g. [\"Paid\",\"Overdue\"]",
+   "columns": 6
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-05-22 17:00:00",
+ "modified_by": "Administrator",
+ "module": "Chat",
+ "name": "FAC Workflow Trigger Filter",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

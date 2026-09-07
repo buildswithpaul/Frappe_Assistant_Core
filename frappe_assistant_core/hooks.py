@@ -20,8 +20,7 @@ app_name = "frappe_assistant_core"
 app_title = "Frappe Assistant Core"
 app_publisher = "Paul Clinton"
 app_description = "AI Assistant integration core for Frappe Framework"
-app_icon = "octicon octicon-server"
-app_color = "blue"
+app_logo_url = "/assets/frappe_assistant_core/images/FAC_mark.svg"
 app_email = "jypaulclinton@gmail.com"
 app_license = "AGPL-3.0"
 app_version = app_version
@@ -266,6 +265,10 @@ after_migrate = [
 
 fixtures = [
     {"doctype": "Custom Field", "filters": {"dt": "User", "fieldname": ["in", ["assistant_enabled"]]}},
+    {
+        "doctype": "Custom Field",
+        "filters": {"dt": "File", "fieldname": ["in", ["fac_pending_chat_attachment"]]},
+    },
     {"doctype": "Role", "filters": {"role_name": ["in", ["Assistant User", "Assistant Admin"]]}},
     # System prompt templates - these are installed via after_migrate hook
     # because they require special handling for child table data (arguments)
@@ -287,3 +290,198 @@ assistant_tool_configs = {
     #     "timeout": 30
     # }
 }
+
+
+# --- FAC Chat: unconditional registration with runtime gates ---
+#
+# All chat hooks below are registered at every worker boot regardless of the
+# `Assistant Core Settings.enable_fac_chat` toggle. Each consumer checks the
+# gate at request time via `frappe_assistant_core.chat.gate.is_chat_enabled()`:
+#
+#   - Widget JS: `initFACOWidget()` early-returns when the gate is off
+#   - SPA `/copilot` controller: returns 404 when off
+#   - `add_to_apps_screen`: `has_permission` (can_use_faco) returns False
+#   - `doc_events` dispatcher: early-returns when off
+#   - `scheduler_events`: handlers early-return when off
+#   - Permission hooks: cheap to keep registered; only invoked when querying
+#     chat DocTypes, which doesn't happen meaningfully when chat is off
+#
+# This eliminates the boot-time gate entirely so toggling FAC Chat from the
+# admin UI takes effect immediately across all workers without `bench restart`.
+
+# Widget assets ship unhashed and Frappe serves /assets with `max-age=43200`, so
+# a browser keeps running the previous widget for up to 12h after a deploy. That
+# silently splits client and server across a release — the browser-tool progress
+# protocol was the first contract where an old cached widget actively broke the
+# new server. Stamping the app version busts the cache on every release.
+_WIDGET_ASSET_VERSION = app_version
+
+
+def _widget_asset(path: str) -> str:
+    return f"{path}?v={_WIDGET_ASSET_VERSION}"
+
+
+# CSS bundles for the chat widget. Loaded unconditionally; the widget JS
+# decides at runtime whether to mount any UI based on the chat gate.
+app_include_css = [
+    _widget_asset("/assets/frappe_assistant_core/chat/widget/widget_base.css"),
+    _widget_asset("/assets/frappe_assistant_core/chat/widget/widget_robot.css"),
+    _widget_asset("/assets/frappe_assistant_core/chat/widget/widget_messages.css"),
+    _widget_asset("/assets/frappe_assistant_core/chat/widget/widget_modals.css"),
+    _widget_asset("/assets/frappe_assistant_core/chat/widget/widget_richblocks.css"),
+]
+
+# JS bundles. Order matters: banner first (always meaningful), then the libs +
+# core utilities + UI modules + widget entry. The widget entry calls
+# `can_use_faco` (which now also reads the master `enable_fac_chat` gate)
+# and bails before rendering any UI when chat is off.
+app_include_js = [
+    _widget_asset("/assets/frappe_assistant_core/js/chat_banner.js"),
+    # Diagnostics right after the banner: it records console and network from
+    # the moment it loads, and a Desk boot error is exactly the one users
+    # complain about. Depends only on the redact helper loaded immediately
+    # above it, so it cannot fail to load.
+    _widget_asset("/assets/frappe_assistant_core/chat/widget/widget_diagnostics_redact.js"),
+    _widget_asset("/assets/frappe_assistant_core/chat/widget/widget_diagnostics_recorder.js"),
+    # html2canvas-pro, not html2canvas 1.4.1. Upstream 1.4.1 (unmaintained since
+    # 2022) throws "Error parsing CSS component value, unexpected EOF" on EVERY
+    # Frappe Desk page: it reads an empty computed style off its own synthetic
+    # <html2canvaspseudoelement> node for ::before/::after, which the Desk uses
+    # everywhere. That is inside the library's own machinery, so no onclone
+    # pruning can avoid it. The pro fork exposes the same `html2canvas` global
+    # and API, so this is a drop-in swap.
+    _widget_asset("/assets/frappe_assistant_core/chat/widget/libs/html2canvas-pro.min.js"),
+    # Vendored as-shipped except for its trailing sourceMappingURL comment, which
+    # pointed at a .map we don't ship — a 404 on every Desk page with devtools open.
+    _widget_asset("/assets/frappe_assistant_core/chat/widget/libs/purify.min.js"),
+    _widget_asset("/assets/frappe_assistant_core/chat/widget/faco_core.js"),
+    _widget_asset("/assets/frappe_assistant_core/chat/widget/faco_logger.js"),
+    _widget_asset("/assets/frappe_assistant_core/chat/widget/widget_richblocks.js"),
+    _widget_asset("/assets/frappe_assistant_core/chat/widget/widget_ui.js"),
+    _widget_asset("/assets/frappe_assistant_core/chat/widget/widget_context.js"),
+    _widget_asset("/assets/frappe_assistant_core/chat/widget/widget_streaming.js"),
+    _widget_asset("/assets/frappe_assistant_core/chat/widget/widget_plan.js"),
+    _widget_asset("/assets/frappe_assistant_core/chat/widget/widget_templates.js"),
+    _widget_asset("/assets/frappe_assistant_core/chat/widget/widget_slash_menu.js"),
+    _widget_asset("/assets/frappe_assistant_core/chat/widget/widget_quota.js"),
+    _widget_asset("/assets/frappe_assistant_core/chat/widget/widget_browser_tools.js"),
+    _widget_asset("/assets/frappe_assistant_core/chat/widget/widget_positioning.js"),
+    _widget_asset("/assets/frappe_assistant_core/chat/widget/widget_tooltips.js"),
+    _widget_asset("/assets/frappe_assistant_core/chat/widget/widget_onboarding.js"),
+    _widget_asset("/assets/frappe_assistant_core/chat/widget/widget_autofade.js"),
+    _widget_asset("/assets/frappe_assistant_core/chat/widget/widget_voice_capture.js"),
+    _widget_asset("/assets/frappe_assistant_core/chat/widget/widget_session.js"),
+    _widget_asset("/assets/frappe_assistant_core/chat/widget/widget.js"),
+]
+
+# SPA route — always registered. `www/copilot.py` returns 404 when the gate
+# is off so the route exists but is inert.
+website_route_rules = [
+    {"from_route": "/copilot/<path:app_path>", "to_route": "copilot"},
+]
+
+# Apps-screen entry. `can_use_faco` enforces the chat gate at request time.
+add_to_apps_screen = [
+    {
+        "name": "FAC",
+        "logo": "/assets/frappe_assistant_core/images/FAC_mark.svg",
+        "title": "FAC",
+        "route": "/desk/fac-admin",
+        "has_permission": "frappe_assistant_core.chat.api.settings.access.can_use_faco",
+    }
+]
+
+# Seed FAC Chat Settings defaults on fresh install.
+after_install.append("frappe_assistant_core.chat.hooks.install.after_install")
+
+# Refresh the read-only fac_cloud_url mirror from site_config, and log loudly
+# if a registered site is being repointed (see chat/cloud_url.py).
+after_migrate.append("frappe_assistant_core.chat.cloud_url.sync_cloud_url_mirror")
+
+# Permission filters for chat DocTypes — registered unconditionally; only
+# fires when someone queries these tables, which is itself a chat-on activity.
+permission_query_conditions.update(
+    {
+        "FAC Chat Message": (
+            "frappe_assistant_core.chat.utils.permissions" ".get_faco_message_permission_query_conditions"
+        ),
+        "FAC Chat Usage Log": (
+            "frappe_assistant_core.chat.utils.permissions" ".get_faco_usage_log_permission_query_conditions"
+        ),
+        "FAC Chat User Preferences": (
+            "frappe_assistant_core.chat.utils.permissions"
+            ".get_faco_user_preferences_permission_query_conditions"
+        ),
+        # Zero-retention session blob: scoped to owner only (no System Manager
+        # role exemption — only literal Administrator) to close the All-role IDOR.
+        "FAC Chat Session State": (
+            "frappe_assistant_core.chat.doctype.fac_chat_session_state"
+            ".fac_chat_session_state.get_permission_query_conditions"
+        ),
+    }
+)
+
+has_permission = {
+    "FAC Chat Message": ("frappe_assistant_core.chat.utils.permissions.has_faco_message_permission"),
+    "FAC Chat Usage Log": ("frappe_assistant_core.chat.utils.permissions.has_faco_usage_log_permission"),
+    "FAC Chat User Preferences": (
+        "frappe_assistant_core.chat.utils.permissions.has_faco_user_preferences_permission"
+    ),
+    "FAC Chat Session State": (
+        "frappe_assistant_core.chat.doctype.fac_chat_session_state" ".fac_chat_session_state.has_permission"
+    ),
+}
+
+# Wildcard doc_events dispatcher. It skips schema operations (migrate/install/
+# patch) first, then checks `is_chat_enabled()` — when chat is off, it
+# early-returns in ~microseconds.
+doc_events.update(
+    {
+        "*": {
+            "after_insert": ("frappe_assistant_core.chat.workflows.triggers.dispatcher.dispatch"),
+            "on_update": ("frappe_assistant_core.chat.workflows.triggers.dispatcher.dispatch"),
+            "on_submit": ("frappe_assistant_core.chat.workflows.triggers.dispatcher.dispatch"),
+            "on_cancel": ("frappe_assistant_core.chat.workflows.triggers.dispatcher.dispatch"),
+            "on_trash": ("frappe_assistant_core.chat.workflows.triggers.dispatcher.dispatch"),
+        }
+    }
+)
+
+# Scheduled jobs — each handler early-returns when chat is off.
+scheduler_events["cron"].update(
+    {
+        "0 */6 * * *": ["frappe_assistant_core.chat.api.billing.sync.scheduled_sync_subscription"],
+    }
+)
+scheduler_events.setdefault("daily", [])
+scheduler_events["daily"].extend(
+    [
+        "frappe_assistant_core.chat.scheduler.retention.cleanup_old_messages",
+        "frappe_assistant_core.chat.scheduler.attachment_sweep.sweep_orphan_chat_attachments",
+        "frappe_assistant_core.chat.workflows.triggers.cleanup.prune_trigger_logs",
+    ]
+)
+
+# frappe.enqueue has no retry policy, so a trigger fire lost to an AR outage is
+# gone unless something sweeps it back up.
+scheduler_events.setdefault("hourly", [])
+scheduler_events["hourly"].append(
+    "frappe_assistant_core.chat.workflows.triggers.sweeper.sweep_failed_trigger_fires"
+)
+
+default_log_clearing_doctypes = {
+    "Error Log": 30,
+}
+
+user_data_fields = [
+    {"doctype": "FAC Chat Message", "filter_by": "user", "strict": False},
+    {"doctype": "FAC Chat User Preferences", "filter_by": "user", "strict": False},
+    {"doctype": "FAC Chat Usage Log", "filter_by": "user", "strict": False},
+]
+
+# NOTE: FACO browser and document tools are discovered via the `plugins/faco/`
+# plugin directory (see `plugins/faco/plugin.py`). They must NOT be re-listed
+# in `assistant_tools` — that hook is for external apps to inject tools into
+# the "custom_tools" plugin slot, and listing them here would cause the same
+# tools to be registered twice with the wrong `plugin_name` (the hook copy
+# overwrites the directory copy, mislabelling FACO tools as "custom_tools").

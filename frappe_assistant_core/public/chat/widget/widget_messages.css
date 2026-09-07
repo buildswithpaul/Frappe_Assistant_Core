@@ -1,0 +1,1305 @@
+/* Frappe Assistant Copilot - Powered by FAC Cloud - Widget Message Styles */
+
+/* Messages Container */
+.faco-messages {
+	flex: 1;
+	min-height: 0; /* Allow flex shrinking for proper overflow */
+	overflow-y: auto;
+	padding: 20px 16px;
+	background: var(--faco-bg-secondary, #f9fafb);
+}
+
+/* Welcome Message */
+.faco-welcome {
+	text-align: center;
+	padding: 40px 20px;
+}
+
+.faco-welcome .faco-avatar {
+	width: 64px;
+	height: 64px;
+	border-radius: 50%;
+	color: white;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	margin: 0 auto 20px;
+}
+
+.faco-welcome h3 {
+	margin: 0 0 12px;
+	font-size: 24px;
+	color: var(--faco-text-primary, #111827);
+}
+
+.faco-welcome p {
+	color: var(--faco-text-secondary, #6b7280);
+	margin: 0 0 16px;
+}
+
+.faco-welcome ul {
+	text-align: left;
+	color: var(--faco-text-secondary, #6b7280);
+	font-size: 14px;
+	line-height: 1.8;
+	max-width: 280px;
+	margin: 0 auto;
+}
+
+/* Message */
+.faco-message {
+	display: flex;
+	gap: 12px;
+	padding: 12px;
+	margin-bottom: 4px;
+	border-radius: 10px;
+	animation: fadeIn 0.3s ease;
+}
+
+/* User message - subtle teal background tint (Quiet Ledger) */
+.faco-message-user {
+	background: rgba(15, 110, 92, 0.06);
+}
+
+/* Dark mode user message */
+html[data-theme="dark"] .faco-widget .faco-message-user {
+	background: rgba(45, 170, 143, 0.05);
+}
+
+@keyframes fadeIn {
+	from {
+		opacity: 0;
+		transform: translateY(10px);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
+
+.faco-message-avatar {
+	width: 32px;
+	height: 32px;
+	border-radius: 50%;
+	flex-shrink: 0;
+	overflow: hidden;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	background: #ECE9E3;
+}
+
+.faco-message-avatar img {
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
+}
+
+/* User avatar - teal like Vue app (Quiet Ledger) */
+.faco-message-avatar .avatar-placeholder {
+	width: 100%;
+	height: 100%;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	background: #0F6E5C;
+	color: white;
+	font-size: 14px;
+	font-weight: 600;
+}
+
+/* Dark mode user avatar */
+html[data-theme="dark"] .faco-widget .faco-message-avatar .avatar-placeholder {
+	background: #2DAA8F;
+}
+
+.faco-message-assistant .faco-message-avatar {
+	background: var(--gray-200);
+	color: var(--gray-800);
+}
+
+html[data-theme="dark"] .faco-widget .faco-message-assistant .faco-message-avatar {
+	background: var(--gray-800);
+	color: var(--gray-200);
+}
+
+.faco-message-content {
+	flex: 1;
+	min-width: 0;
+}
+
+/* Document links in AI responses - for SPA navigation */
+.faco-message-content a[href^="/app/"] {
+	color: var(--faco-blue, #0F6E5C);
+	text-decoration: none;
+	border-bottom: 1px dashed currentColor;
+	transition: border-color 0.15s ease;
+}
+
+.faco-message-content a[href^="/app/"]:hover {
+	border-bottom-style: solid;
+}
+
+/* Dark theme document links */
+html[data-theme="dark"] .faco-widget .faco-message-content a[href^="/app/"] {
+	color: #2DAA8F;
+}
+
+/* Message Attachments */
+.faco-message-attachments {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	margin-bottom: 8px;
+}
+
+.faco-attachment-item {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 6px 10px;
+	background: rgba(0, 0, 0, 0.03);
+	border: 1px solid rgba(0, 0, 0, 0.08);
+	border-radius: 6px;
+	font-size: 12px;
+	color: var(--faco-text-secondary, #6b7280);
+}
+
+/* User message attachments - use hover color like Vue app */
+.faco-message-user .faco-attachment-item {
+	background: var(--faco-hover, #f3f4f6);
+	border: 1px solid var(--faco-border, #e5e7eb);
+	color: var(--faco-text-secondary, #6b7280);
+}
+
+.faco-message-user .faco-attachment-item svg {
+	color: var(--faco-primary, #0F6E5C);
+	opacity: 1;
+}
+
+.faco-message-user .faco-attachment-name {
+	color: var(--faco-text-primary, #111827);
+}
+
+.faco-message-user .faco-attachment-size {
+	color: var(--faco-text-secondary, #6b7280);
+	opacity: 0.8;
+}
+
+.faco-attachment-item svg {
+	flex-shrink: 0;
+	opacity: 0.7;
+}
+
+.faco-attachment-name {
+	flex: 1;
+	font-weight: 500;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.faco-attachment-size {
+	flex-shrink: 0;
+	opacity: 0.7;
+	font-size: 11px;
+}
+
+/* Dark theme attachments */
+html[data-theme="dark"] .faco-widget .faco-attachment-item {
+	background: rgba(255, 255, 255, 0.05);
+	border-color: rgba(255, 255, 255, 0.1);
+	color: #B7B2A4;
+}
+
+html[data-theme="dark"] .faco-widget .faco-message-user .faco-attachment-item {
+	background: var(--faco-hover, #374151);
+	border-color: var(--faco-border, #4b5563);
+	color: var(--faco-text-secondary, #d1d5db);
+}
+
+html[data-theme="dark"] .faco-widget .faco-message-user .faco-attachment-item svg {
+	color: var(--faco-primary, #2DAA8F);
+}
+
+html[data-theme="dark"] .faco-widget .faco-message-user .faco-attachment-name {
+	color: var(--faco-text-primary, #f9fafb);
+}
+
+html[data-theme="dark"] .faco-widget .faco-message-user .faco-attachment-size {
+	color: var(--faco-text-secondary, #d1d5db);
+}
+
+/* Message text - consistent styling for all messages (matches Vue app) */
+.faco-message-text {
+	font-size: 14px;
+	line-height: 1.6;
+	color: var(--faco-text-primary, #111827);
+	word-wrap: break-word;
+}
+
+/* User message text - no special bubble, just text (matches Vue app) */
+.faco-message-user .faco-message-text {
+	color: var(--faco-text-primary, #111827);
+}
+
+/* Dark mode text colors */
+html[data-theme="dark"] .faco-widget .faco-message-text {
+	color: var(--faco-text-primary, #f9fafb);
+}
+
+html[data-theme="dark"] .faco-widget .faco-message-user .faco-message-text {
+	color: var(--faco-text-primary, #f9fafb);
+}
+
+/* Make assistant messages more readable with markdown support */
+.faco-message-assistant .faco-message-text {
+	white-space: normal;
+}
+
+.faco-message-assistant .faco-message-text p {
+	margin: 0 0 10px 0;
+	line-height: 1.7;
+}
+
+.faco-message-assistant .faco-message-text p:last-child {
+	margin-bottom: 0;
+}
+
+/* Markdown headings */
+.faco-message-assistant .faco-message-text h1,
+.faco-message-assistant .faco-message-text h2,
+.faco-message-assistant .faco-message-text h3,
+.faco-message-assistant .faco-message-text h4 {
+	margin: 12px 0 8px 0;
+	font-weight: 600;
+	color: #1A1A17;
+}
+
+html[data-theme="dark"] .faco-widget .faco-message-assistant .faco-message-text h1,
+html[data-theme="dark"] .faco-widget .faco-message-assistant .faco-message-text h2,
+html[data-theme="dark"] .faco-widget .faco-message-assistant .faco-message-text h3,
+html[data-theme="dark"] .faco-widget .faco-message-assistant .faco-message-text h4 {
+	color: #F2EFE6;
+}
+
+.faco-message-assistant .faco-message-text h1 { font-size: 18px; }
+.faco-message-assistant .faco-message-text h2 { font-size: 16px; }
+.faco-message-assistant .faco-message-text h3 { font-size: 15px; }
+.faco-message-assistant .faco-message-text h4 { font-size: 14px; }
+
+/* Markdown lists */
+.faco-message-assistant .faco-message-text ul,
+.faco-message-assistant .faco-message-text ol {
+	margin: 8px 0;
+	padding-left: 24px;
+}
+
+.faco-message-assistant .faco-message-text li {
+	margin: 4px 0;
+	line-height: 1.6;
+}
+
+/* Task lists (checkboxes) */
+.faco-message-assistant .faco-message-text input[type="checkbox"] {
+	margin-right: 8px;
+	cursor: default;
+	pointer-events: none;
+}
+
+.faco-message-assistant .faco-message-text .task-list-item {
+	list-style: none;
+	margin-left: -24px;
+	padding-left: 24px;
+}
+
+/* Markdown code blocks */
+.faco-message-assistant .faco-message-text pre {
+	background: var(--faco-code-bg, #f3f4f6);
+	border: 1px solid var(--faco-border-color, #e5e7eb);
+	border-radius: 6px;
+	padding: 12px;
+	margin: 8px 0;
+	overflow-x: auto;
+	font-size: 13px;
+	line-height: 1.5;
+}
+
+.faco-message-assistant .faco-message-text pre code {
+	background: none;
+	padding: 0;
+	border-radius: 0;
+}
+
+/* Markdown inline code */
+.faco-message-assistant .faco-message-text code {
+	background: var(--faco-code-bg, #f3f4f6);
+	padding: 2px 6px;
+	border-radius: 3px;
+	font-family: 'SF Mono', Monaco, monospace;
+	font-size: 13px;
+	color: var(--faco-text-primary, #111827);
+}
+
+/* Markdown blockquotes */
+.faco-message-assistant .faco-message-text blockquote {
+	border-left: 3px solid var(--faco-indigo);
+	padding-left: 12px;
+	margin: 8px 0;
+	color: #57534C;
+	font-style: italic;
+}
+
+html[data-theme="dark"] .faco-widget .faco-message-assistant .faco-message-text blockquote {
+	color: #8A857C;
+	border-left-color: #2DAA8F;
+}
+
+/* Markdown links */
+.faco-message-assistant .faco-message-text a {
+	color: var(--faco-indigo);
+	text-decoration: underline;
+}
+
+.faco-message-assistant .faco-message-text a:hover {
+	color: var(--faco-purple);
+}
+
+html[data-theme="dark"] .faco-widget .faco-message-assistant .faco-message-text a {
+	color: #2DAA8F;
+}
+
+html[data-theme="dark"] .faco-widget .faco-message-assistant .faco-message-text a:hover {
+	color: #D9B84A;
+}
+
+/* Markdown horizontal rules */
+.faco-message-assistant .faco-message-text hr {
+	border: none;
+	border-top: 1px solid #ECE9E3;
+	margin: 12px 0;
+}
+
+html[data-theme="dark"] .faco-widget .faco-message-assistant .faco-message-text hr {
+	border-top-color: #2E2C22;
+}
+
+/* Markdown tables wrapper for horizontal scrolling */
+.faco-message-assistant .faco-message-text .table-wrapper {
+	overflow-x: auto;
+	margin: 16px 0;
+	border: 1px solid #ECE9E3;
+	border-radius: 6px;
+}
+
+html[data-theme="dark"] .faco-widget .faco-message-assistant .faco-message-text .table-wrapper {
+	border-color: #2E2C22;
+}
+
+/* Markdown tables */
+.faco-message-assistant .faco-message-text table {
+	border-collapse: collapse;
+	width: 100%;
+	margin: 0;
+	font-size: 12px;
+}
+
+.faco-message-assistant .faco-message-text table th,
+.faco-message-assistant .faco-message-text table td {
+	border: 1px solid #ECE9E3;
+	padding: 6px 8px;
+	text-align: left;
+}
+
+html[data-theme="dark"] .faco-widget .faco-message-assistant .faco-message-text table th,
+html[data-theme="dark"] .faco-widget .faco-message-assistant .faco-message-text table td {
+	border-color: #2E2C22;
+}
+
+.faco-message-assistant .faco-message-text table th {
+	background: #FBFAF8;
+	font-weight: 600;
+	color: #57534C;
+}
+
+html[data-theme="dark"] .faco-widget .faco-message-assistant .faco-message-text table th {
+	background: #26241B;
+	color: #F2EFE6;
+}
+
+.faco-message-assistant .faco-message-text table tbody tr:hover {
+	background: #FBFAF8;
+	transition: background 0.15s ease;
+}
+
+html[data-theme="dark"] .faco-widget .faco-message-assistant .faco-message-text table tbody tr:hover {
+	background: #26241B;
+}
+
+.faco-message-assistant .faco-message-text table tbody tr:nth-child(even) {
+	background: #F5F3EF;
+}
+
+html[data-theme="dark"] .faco-widget .faco-message-assistant .faco-message-text table tbody tr:nth-child(even) {
+	background: #1E1D16;
+}
+
+/* Markdown strong and emphasis */
+.faco-message-assistant .faco-message-text strong {
+	font-weight: 600;
+	color: #1A1A17;
+}
+
+html[data-theme="dark"] .faco-widget .faco-message-assistant .faco-message-text strong {
+	color: #F2EFE6;
+}
+
+.faco-message-assistant .faco-message-text em {
+	font-style: italic;
+}
+
+.faco-message-error .faco-message-text {
+	background: #fef2f2;
+	color: #991b1b;
+	border: 1px solid #fecaca;
+	border-radius: 8px;
+}
+
+/* Dark mode error message */
+html[data-theme="dark"] .faco-widget .faco-message-error .faco-message-text {
+	background: rgba(153, 27, 27, 0.15);
+	color: #fca5a5;
+	border-color: rgba(248, 113, 113, 0.3);
+}
+
+/* Screenshot capture overlay */
+.faco-screenshot-overlay {
+	position: absolute;
+	inset: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	background: rgba(0, 0, 0, 0.4);
+	color: white;
+	font-size: 13px;
+	font-weight: 500;
+	z-index: 10001;
+	border-radius: 8px;
+	pointer-events: none;
+}
+
+/* Images in message content — constrain to container */
+.faco-message-text img {
+	max-width: 100%;
+	height: auto;
+	border-radius: 6px;
+	margin: 8px 0;
+	display: block;
+}
+
+.faco-message-text code {
+	background: rgba(0, 0, 0, 0.05);
+	padding: 2px 6px;
+	border-radius: 4px;
+	font-family: "SF Mono", Monaco, monospace;
+	font-size: 13px;
+}
+
+.faco-message-text a {
+	color: inherit;
+	text-decoration: underline;
+}
+
+.faco-message-time {
+	font-size: 11px;
+	color: #8A857C;
+	margin-top: 4px;
+}
+
+/* Typing Indicator */
+.faco-typing-indicator {
+	display: flex;
+	gap: 12px;
+	margin-bottom: 20px;
+}
+
+.faco-typing-dots {
+	background: var(--faco-bg-primary, white);
+	padding: 12px 16px;
+	border-radius: 12px;
+	box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+	display: flex;
+	gap: 4px;
+	align-items: center;
+}
+
+.faco-typing-dots span {
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	background: #DEDAD2;
+	animation: typing 1.4s infinite;
+}
+
+.faco-typing-dots span:nth-child(2) {
+	animation-delay: 0.2s;
+}
+
+.faco-typing-dots span:nth-child(3) {
+	animation-delay: 0.4s;
+}
+
+@keyframes typing {
+	0%, 60%, 100% {
+		transform: translateY(0);
+		opacity: 0.4;
+	}
+	30% {
+		transform: translateY(-10px);
+		opacity: 1;
+	}
+}
+
+/* Streaming indicator animations */
+@keyframes faco-pulse {
+	0%, 100% { opacity: 0.4; }
+	50% { opacity: 1; }
+}
+
+@keyframes faco-spin {
+	from { transform: rotate(0deg); }
+	to { transform: rotate(360deg); }
+}
+
+/* Thinking indicator styles */
+.faco-thinking-indicator {
+	font-size: 12px;
+	color: var(--faco-text-muted, #9ca3af);
+	padding: 4px 8px;
+	margin-bottom: 8px;
+	background: var(--faco-bg-secondary, #f9fafb);
+	border-radius: 4px;
+	display: flex;
+	align-items: center;
+	gap: 6px;
+}
+
+.faco-thinking-spinner {
+	animation: faco-pulse 1.5s ease-in-out infinite;
+}
+
+/* Tool indicator styles */
+.faco-tool-indicator {
+	font-size: 12px;
+	color: var(--faco-text-muted, #9ca3af);
+	padding: 4px 8px;
+	margin-top: 8px;
+	background: var(--faco-bg-secondary, #f9fafb);
+	border-radius: 4px;
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+}
+
+.faco-tool-spinner {
+	display: inline-block;
+	animation: faco-spin 1s linear infinite;
+}
+
+/* Dark theme for indicators */
+html[data-theme="dark"] .faco-widget .faco-thinking-indicator,
+html[data-theme="dark"] .faco-widget .faco-tool-indicator {
+	background: var(--faco-bg-tertiary, #374151);
+	color: var(--faco-text-muted, #9ca3af);
+}
+
+/* Suggested Prompts - Horizontal scrollable */
+/* Slash-command menu (popover above the input) */
+.faco-slash-menu {
+	position: absolute;
+	left: 0;
+	right: 0;
+	bottom: calc(100% + 6px);
+	background: var(--faco-bg, #ffffff);
+	border: 1px solid var(--faco-border-color, #e5e7eb);
+	border-radius: 10px;
+	box-shadow: 0 12px 32px rgba(0, 0, 0, 0.12), 0 2px 6px rgba(0, 0, 0, 0.06);
+	max-height: 280px;
+	display: flex;
+	flex-direction: column;
+	z-index: 30;
+	overflow: hidden;
+	animation: faco-slash-pop 0.12s ease-out;
+}
+
+@keyframes faco-slash-pop {
+	from { opacity: 0; transform: translateY(4px); }
+	to   { opacity: 1; transform: translateY(0); }
+}
+
+.faco-slash-body {
+	overflow-y: auto;
+	padding: 4px;
+	flex: 1;
+}
+
+.faco-slash-section-label {
+	font-size: 10px;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+	color: var(--faco-text-secondary, #6b7280);
+	padding: 6px 8px 2px;
+}
+
+.faco-slash-section-label + .faco-slash-section-label {
+	border-top: 1px solid var(--faco-border-color, #e5e7eb);
+	margin-top: 4px;
+	padding-top: 8px;
+}
+
+.faco-slash-row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 6px 8px;
+	border-radius: 6px;
+	cursor: pointer;
+	transition: background 0.1s ease;
+}
+
+.faco-slash-row-active {
+	background: var(--faco-hover-bg, #f3f4f6);
+}
+
+.faco-slash-icon {
+	font-size: 14px;
+	line-height: 1;
+	flex-shrink: 0;
+}
+
+.faco-slash-body-text {
+	flex: 1;
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 1px;
+}
+
+.faco-slash-title {
+	font-size: 13px;
+	font-weight: 500;
+	color: var(--faco-text, #111827);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.faco-slash-desc {
+	font-size: 11px;
+	color: var(--faco-text-secondary, #6b7280);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.faco-slash-enter {
+	font-size: 11px;
+	color: var(--faco-text-secondary, #6b7280);
+	opacity: 0;
+	transition: opacity 0.1s ease;
+	flex-shrink: 0;
+}
+
+.faco-slash-row-active .faco-slash-enter {
+	opacity: 1;
+}
+
+.faco-slash-empty {
+	padding: 12px 10px;
+	font-size: 12px;
+	color: var(--faco-text-secondary, #6b7280);
+	text-align: center;
+}
+
+.faco-slash-empty code {
+	font-family: 'SF Mono', 'Monaco', 'Cascadia Code', monospace;
+	padding: 1px 4px;
+	background: var(--faco-hover-bg, #f3f4f6);
+	border-radius: 3px;
+	color: var(--faco-text, #111827);
+}
+
+.faco-slash-footer {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 6px 10px;
+	border-top: 1px solid var(--faco-border-color, #e5e7eb);
+	background: var(--faco-bg-secondary, #f9fafb);
+	font-size: 10px;
+	color: var(--faco-text-secondary, #6b7280);
+	flex-shrink: 0;
+}
+
+.faco-slash-footer kbd {
+	display: inline-block;
+	padding: 1px 4px;
+	margin-right: 2px;
+	background: var(--faco-bg, #ffffff);
+	border: 1px solid var(--faco-border-color, #e5e7eb);
+	border-radius: 3px;
+	font-family: inherit;
+	font-size: 10px;
+	line-height: 1;
+}
+
+/* Template Argument Modal (full-viewport overlay, parity with SPA ParameterModal) */
+.faco-template-modal {
+	position: fixed;
+	inset: 0;
+	background: rgba(0, 0, 0, 0.5);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	z-index: 10001;
+	padding: 16px;
+	animation: faco-modal-fade-in 0.15s ease;
+}
+
+@keyframes faco-modal-fade-in {
+	from { opacity: 0; }
+	to { opacity: 1; }
+}
+
+.faco-template-modal-content {
+	background: var(--faco-bg-primary, #ffffff);
+	border-radius: 12px;
+	width: 100%;
+	max-width: 32rem;
+	max-height: 85vh;
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+	box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+	animation: faco-modal-slide-up 0.2s ease;
+}
+
+@keyframes faco-modal-slide-up {
+	from { transform: translateY(20px); opacity: 0; }
+	to { transform: translateY(0); opacity: 1; }
+}
+
+.faco-template-modal-header {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: 16px;
+	padding: 20px 24px;
+	border-bottom: 1px solid var(--faco-border-color, #e5e7eb);
+}
+
+.faco-template-modal-header h4 {
+	margin: 0;
+	font-size: 16px;
+	font-weight: 600;
+	color: var(--faco-text-primary, #111827);
+	line-height: 1.3;
+}
+
+.faco-template-modal-subtitle {
+	margin: 4px 0 0;
+	font-size: 12px;
+	color: var(--faco-text-muted, #6b7280);
+}
+
+.faco-template-modal-close {
+	background: none;
+	border: none;
+	font-size: 22px;
+	color: var(--faco-text-muted, #9ca3af);
+	cursor: pointer;
+	padding: 0;
+	line-height: 1;
+	flex-shrink: 0;
+	transition: color 0.15s;
+}
+
+.faco-template-modal-close:hover {
+	color: var(--faco-text-primary, #374151);
+}
+
+.faco-template-modal-description {
+	padding: 14px 24px;
+	background: var(--faco-bg-secondary, #f9fafb);
+	border-bottom: 1px solid var(--faco-border-color, #e5e7eb);
+	font-size: 13px;
+	color: var(--faco-text-secondary, #4b5563);
+	line-height: 1.5;
+}
+
+.faco-template-form {
+	display: flex;
+	flex-direction: column;
+	flex: 1;
+	min-height: 0;
+}
+
+.faco-template-form-body {
+	padding: 20px 24px;
+	overflow-y: auto;
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+	gap: 18px;
+}
+
+.faco-arg-field {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+
+.faco-arg-label {
+	font-size: 13px;
+	font-weight: 500;
+	color: var(--faco-text-primary, #111827);
+}
+
+.faco-arg-required {
+	color: #ef4444;
+	margin-left: 2px;
+}
+
+.faco-arg-desc {
+	margin: 0;
+	font-size: 11px;
+	color: var(--faco-text-muted, #6b7280);
+	line-height: 1.4;
+}
+
+.faco-arg-empty {
+	margin: 0;
+	padding: 12px;
+	font-size: 12px;
+	color: var(--faco-text-muted, #6b7280);
+	text-align: center;
+	background: var(--faco-bg-secondary, #f9fafb);
+	border-radius: 6px;
+}
+
+.faco-arg-input {
+	width: 100%;
+	padding: 9px 12px;
+	border: 1px solid var(--faco-border-color, #d1d5db);
+	border-radius: 8px;
+	font-size: 13px;
+	font-family: inherit;
+	background: var(--faco-bg-primary, #ffffff);
+	color: var(--faco-text-primary, #111827);
+	transition: border-color 0.15s, box-shadow 0.15s;
+	box-sizing: border-box;
+}
+
+.faco-arg-input:focus {
+	outline: none;
+	border-color: var(--faco-blue, #0F6E5C);
+	box-shadow: 0 0 0 3px rgba(15, 110, 92, 0.1);
+}
+
+.faco-arg-input::placeholder {
+	color: var(--faco-text-muted, #9ca3af);
+}
+
+.faco-arg-select {
+	appearance: none;
+	-webkit-appearance: none;
+	-moz-appearance: none;
+	background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
+	background-position: right 8px center;
+	background-repeat: no-repeat;
+	background-size: 20px 20px;
+	padding-right: 36px;
+	cursor: pointer;
+}
+
+.faco-arg-textarea {
+	resize: vertical;
+	min-height: 76px;
+}
+
+.faco-template-modal-actions {
+	display: flex;
+	justify-content: flex-end;
+	gap: 10px;
+	padding: 14px 24px;
+	border-top: 1px solid var(--faco-border-color, #e5e7eb);
+	background: var(--faco-bg-secondary, #f9fafb);
+	flex-shrink: 0;
+}
+
+.faco-template-cancel,
+.faco-template-submit {
+	padding: 9px 18px;
+	border-radius: 8px;
+	font-size: 13px;
+	font-weight: 500;
+	cursor: pointer;
+	transition: all 0.15s;
+}
+
+.faco-template-cancel {
+	background: transparent;
+	border: 1px solid var(--faco-border-color, #d1d5db);
+	color: var(--faco-text-primary, #111827);
+}
+
+.faco-template-cancel:hover {
+	background: var(--faco-hover-bg, #f3f4f6);
+}
+
+.faco-template-submit {
+	background: linear-gradient(135deg, #0F6E5C 0%, #0B5A4B 100%);
+	border: none;
+	color: white;
+}
+
+.faco-template-submit:hover {
+	background: linear-gradient(135deg, #0B5A4B 0%, #094539 100%);
+}
+
+/* Responsive — stack actions on narrow screens */
+@media (max-width: 640px) {
+	.faco-template-modal-content {
+		max-height: 92vh;
+	}
+	.faco-template-modal-actions {
+		flex-direction: column-reverse;
+	}
+	.faco-template-cancel,
+	.faco-template-submit {
+		width: 100%;
+	}
+}
+
+/* Streaming Message Styles */
+.faco-message-streaming {
+	opacity: 0.95;
+}
+
+.faco-streaming-cursor {
+	display: inline-block;
+	color: var(--faco-primary, #0F6E5C);
+	animation: faco-blink 1s infinite;
+	font-weight: 500;
+	margin-left: 1px;
+}
+
+@keyframes faco-blink {
+	0%, 49% {
+		opacity: 1;
+	}
+	50%, 100% {
+		opacity: 0;
+	}
+}
+
+.faco-message-streaming .faco-message-text {
+	line-height: 1.6;
+}
+
+/* Processing Indicator - Enhanced Loading UX */
+.faco-processing-indicator {
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+	padding: 8px 0;
+}
+
+.faco-processing-status {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.faco-processing-dot {
+	width: 8px;
+	height: 8px;
+	background-color: var(--faco-primary, #0F6E5C);
+	border-radius: 50%;
+	animation: faco-processing-pulse 1.5s ease-in-out infinite;
+}
+
+.faco-processing-text {
+	font-size: 14px;
+	color: var(--faco-text-muted, #9ca3af);
+	font-style: italic;
+}
+
+.faco-processing-tip {
+	display: none;
+	font-size: 13px;
+	color: var(--faco-text-muted, #9ca3af);
+	padding-left: 16px;
+	border-left: 2px solid var(--faco-border-color, #e5e7eb);
+	line-height: 1.5;
+	animation: faco-fade-in 0.3s ease forwards;
+}
+
+@keyframes faco-processing-pulse {
+	0%, 100% {
+		opacity: 0.4;
+		transform: scale(0.9);
+	}
+	50% {
+		opacity: 1;
+		transform: scale(1.1);
+	}
+}
+
+@keyframes faco-fade-in {
+	from { opacity: 0; }
+	to { opacity: 1; }
+}
+
+/* Dark theme for processing indicator */
+html[data-theme="dark"] .faco-widget .faco-processing-dot {
+	background-color: var(--faco-primary, #2DAA8F);
+}
+
+html[data-theme="dark"] .faco-widget .faco-processing-text,
+html[data-theme="dark"] .faco-widget .faco-processing-tip {
+	color: var(--faco-text-muted, #9ca3af);
+}
+
+html[data-theme="dark"] .faco-widget .faco-processing-tip {
+	border-left-color: var(--faco-border-color, #4b5563);
+}
+
+/* ===== HITL Interaction Cards ===== */
+
+.faco-interaction-card {
+	margin: 8px 0;
+	padding: 10px 12px;
+	border-radius: 8px;
+	border: 1px solid rgba(156, 163, 175, 0.2);
+	background: #fff;
+}
+
+.faco-interaction-approval {
+	border-color: rgba(245, 158, 11, 0.25);
+	background: rgba(245, 158, 11, 0.03);
+}
+
+.faco-interaction-header {
+	margin-bottom: 6px;
+}
+
+.faco-interaction-title {
+	font-size: 13px;
+	font-weight: 600;
+	color: var(--faco-text-color, #1f2937);
+}
+
+.faco-interaction-details {
+	font-size: 12px;
+	color: var(--faco-text-muted, #6b7280);
+	margin-bottom: 8px;
+}
+
+.faco-interaction-detail b {
+	color: var(--faco-text-color, #1f2937);
+}
+
+.faco-interaction-question-text {
+	font-size: 14px;
+	font-weight: 500;
+	color: var(--faco-text-color, #1f2937);
+	line-height: 1.4;
+	margin-bottom: 4px;
+}
+
+.faco-interaction-description {
+	font-size: 13px;
+	color: var(--faco-text-muted, #6b7280);
+	margin-bottom: 8px;
+}
+
+.faco-interaction-actions {
+	display: flex;
+	gap: 6px;
+	margin-top: 8px;
+}
+
+.faco-interaction-btn {
+	padding: 6px 14px;
+	border-radius: 6px;
+	font-size: 13px;
+	font-weight: 500;
+	border: 1px solid transparent;
+	cursor: pointer;
+	transition: all 0.15s ease;
+}
+
+.faco-btn-approve {
+	background: var(--faco-primary, #0F6E5C);
+	color: #fff;
+	border-color: var(--faco-primary, #0F6E5C);
+}
+
+.faco-btn-approve:hover { opacity: 0.9; }
+
+.faco-btn-approve:disabled {
+	opacity: 0.35;
+	cursor: not-allowed;
+}
+
+.faco-btn-reject {
+	background: transparent;
+	color: var(--faco-text-muted, #9ca3af);
+	border-color: rgba(156, 163, 175, 0.3);
+}
+
+.faco-btn-reject:hover {
+	color: #ef4444;
+	border-color: rgba(239, 68, 68, 0.3);
+	background: rgba(239, 68, 68, 0.04);
+}
+
+.faco-btn-trust {
+	background: transparent;
+	color: var(--faco-text-muted, #6b7280);
+	border-color: rgba(156, 163, 175, 0.3);
+}
+
+.faco-btn-trust:hover {
+	color: var(--faco-primary, #0F6E5C);
+	border-color: rgba(15, 110, 92, 0.3);
+}
+
+/* Pill buttons (single select) */
+.faco-interaction-pills {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	margin-top: 8px;
+}
+
+.faco-pill {
+	padding: 6px 14px;
+	border-radius: 20px;
+	font-size: 13px;
+	font-weight: 500;
+	background: transparent;
+	color: var(--faco-primary, #0F6E5C);
+	border: 1px solid rgba(15, 110, 92, 0.25);
+	cursor: pointer;
+	transition: all 0.15s ease;
+}
+
+.faco-pill:hover {
+	background: rgba(15, 110, 92, 0.08);
+	border-color: rgba(15, 110, 92, 0.45);
+}
+
+/* Multi select */
+.faco-interaction-multi {
+	margin-top: 6px;
+}
+
+.faco-multi-option {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 5px 6px;
+	border-radius: 4px;
+	cursor: pointer;
+	font-size: 13px;
+	color: var(--faco-text-color, #1f2937);
+}
+
+.faco-multi-option:hover { background: rgba(15, 110, 92, 0.04); }
+
+.faco-multi-option input {
+	width: 16px;
+	height: 16px;
+	accent-color: #0F6E5C;
+	cursor: pointer;
+}
+
+.faco-multi-submit {
+	margin-top: 8px;
+}
+
+/* Text input */
+.faco-interaction-text-input {
+	display: flex;
+	gap: 6px;
+	margin-top: 8px;
+}
+
+.faco-text-field {
+	flex: 1;
+	padding: 6px 10px;
+	border-radius: 6px;
+	border: 1px solid rgba(156, 163, 175, 0.3);
+	font-size: 13px;
+	color: var(--faco-text-color, #1f2937);
+	background: transparent;
+	outline: none;
+}
+
+.faco-text-field:focus {
+	border-color: var(--faco-primary, #0F6E5C);
+}
+
+/* Resolved indicator */
+.faco-interaction-resolved {
+	font-size: 12px;
+	color: var(--faco-text-muted, #9ca3af);
+	font-style: italic;
+	padding: 2px 4px;
+	margin: 4px 0;
+}
+
+/* Decided-but-not-yet-submitted state (waiting for sibling cards). The card
+   stays in the DOM while other parallel approval cards still need decisions;
+   we dim it and pin a small banner showing the batch progress. */
+.faco-interaction-card.faco-interaction-decided {
+	opacity: 0.75;
+}
+
+.faco-interaction-batch-hint {
+	font-size: 11px;
+	color: var(--faco-text-muted, #6b7280);
+	font-style: italic;
+	padding: 4px 8px 0 8px;
+}
+
+/* Dark mode */
+html[data-theme="dark"] .faco-widget .faco-interaction-card {
+	background: rgba(255, 255, 255, 0.03);
+	border-color: rgba(156, 163, 175, 0.15);
+}
+
+html[data-theme="dark"] .faco-widget .faco-interaction-approval {
+	background: rgba(245, 158, 11, 0.05);
+	border-color: rgba(245, 158, 11, 0.15);
+}
+
+html[data-theme="dark"] .faco-widget .faco-interaction-title,
+html[data-theme="dark"] .faco-widget .faco-interaction-question-text,
+html[data-theme="dark"] .faco-widget .faco-interaction-detail b,
+html[data-theme="dark"] .faco-widget .faco-multi-option {
+	color: #F2EFE6;
+}
+
+html[data-theme="dark"] .faco-widget .faco-interaction-details,
+html[data-theme="dark"] .faco-widget .faco-interaction-description {
+	color: #8A857C;
+}
+
+html[data-theme="dark"] .faco-widget .faco-text-field {
+	color: #F2EFE6;
+	border-color: rgba(156, 163, 175, 0.2);
+}

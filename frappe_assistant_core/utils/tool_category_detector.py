@@ -77,6 +77,15 @@ READ_ONLY_TOOLS = {
     "extract_file_content",  # Only reads file content
     # Visualization tools (read-only)
     "list_user_dashboards",  # Only lists dashboards
+    # Approval tools
+    "get_pending_approvals",  # Reads the workflow approval queue, no mutation
+    # Browser tools (read the page or move the user's view; no data mutation)
+    "browser_get_form_data",  # Reads form field values
+    "browser_get_page_context",  # Reads page type/doctype/DOM
+    "browser_take_screenshot",  # Captures the page
+    "browser_capture_diagnostics",  # Reads console/network buffers + captures the page
+    "browser_wait_for_page",  # Waits for load; no-op on data
+    "browser_navigate_to",  # Changes the viewed page only, not data
 }
 
 # Tools that are always categorized as write (hardcoded list)
@@ -85,11 +94,15 @@ WRITE_TOOLS = {
     "create_document",
     "update_document",
     "submit_document",
+    # Document generation (saves a private Frappe File — a create side effect)
+    "generate_document",  # Markdown -> PDF saved as a File record; NOT read-only
     # Workflow tools
     "run_workflow",
     # Visualization tools (create/modify)
     "create_dashboard",
     "create_dashboard_chart",
+    # Communication tools (external, irreversible side effect)
+    "send_email",
 }
 
 

@@ -1,0 +1,381 @@
+/* Frappe Assistant Copilot - Powered by FAC Cloud - Widget Modal & Onboarding Styles */
+
+/* Onboarding Styles */
+.faco-onboarding {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	padding: 32px 24px;
+	text-align: center;
+	height: 100%;
+	min-height: 400px;
+}
+
+.faco-onboarding-header {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+}
+
+.faco-onboarding-header h2 {
+	margin: 16px 0 8px;
+	font-size: 22px;
+	font-weight: 600;
+	color: var(--faco-text-primary, #111827);
+}
+
+.faco-onboarding-header p {
+	color: var(--faco-text-muted, #9ca3af);
+	margin: 0;
+	font-size: 14px;
+}
+
+.faco-robot-large {
+	transform: scale(1.6);
+	margin-bottom: 10px;
+}
+
+.faco-setup-section {
+	margin-top: 20px;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+}
+
+.faco-setup-btn {
+	padding: 12px 28px;
+	font-size: 15px;
+	font-weight: 500;
+	border-radius: 8px;
+	border: none;
+	background: var(--faco-primary, #0F6E5C);
+	color: white;
+	cursor: pointer;
+	transition: all 0.2s ease;
+	box-shadow: 0 2px 8px rgba(15, 110, 92, 0.3);
+}
+
+.faco-setup-btn:hover:not(:disabled) {
+	background: var(--faco-primary-hover, #0B5A4B);
+	transform: translateY(-1px);
+	box-shadow: 0 4px 12px rgba(15, 110, 92, 0.4);
+}
+
+.faco-setup-btn:disabled {
+	opacity: 0.7;
+	cursor: not-allowed;
+	transform: none;
+}
+
+.faco-setup-btn.btn-success {
+	background: #10b981;
+	box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3);
+}
+
+.faco-setup-hint {
+	margin-top: 10px;
+	font-size: 12px;
+	color: var(--faco-text-muted, #9ca3af);
+}
+
+.faco-contact-admin {
+	margin-top: 24px;
+	padding: 16px 20px;
+	background: #fef3c7;
+	border: 1px solid #fcd34d;
+	border-radius: 8px;
+	max-width: 280px;
+}
+
+.faco-contact-admin p {
+	margin: 0;
+	font-size: 13px;
+	color: #92400e;
+	line-height: 1.5;
+}
+
+/* Dark theme onboarding */
+html[data-theme="dark"] .faco-widget .faco-onboarding-header h2 {
+	color: #F2EFE6;
+}
+
+html[data-theme="dark"] .faco-widget .faco-contact-admin {
+	background: #78350f;
+	border-color: #92400e;
+}
+
+html[data-theme="dark"] .faco-widget .faco-contact-admin p {
+	color: #fef3c7;
+}
+
+/* ===================================
+   ONBOARDING CHAT ACTIONS
+   =================================== */
+
+/* ===================================
+   UPGRADE MODAL STYLES
+   =================================== */
+
+.faco-upgrade-modal {
+	padding: 16px 0;
+}
+
+/* Billing Toggle */
+.faco-billing-toggle {
+	display: flex;
+	justify-content: center;
+	gap: 16px;
+	margin-bottom: 24px;
+	padding: 8px;
+	background: var(--control-bg, #f1f5f9);
+	border-radius: 8px;
+}
+
+.faco-toggle-label {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 8px 16px;
+	font-size: 14px;
+	font-weight: 500;
+	color: var(--text-muted);
+	cursor: pointer;
+	border-radius: 6px;
+	transition: all 0.2s ease;
+}
+
+.faco-toggle-label:has(input:checked) {
+	background: white;
+	color: var(--text-color);
+	box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.faco-toggle-label input {
+	display: none;
+}
+
+.faco-save-badge {
+	font-size: 10px;
+	font-weight: 600;
+	color: #10b981;
+	background: rgba(16, 185, 129, 0.1);
+	padding: 2px 6px;
+	border-radius: 4px;
+	margin-left: 4px;
+}
+
+/* Plans Grid */
+.faco-plans-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+	gap: 16px;
+	margin-bottom: 20px;
+}
+
+.faco-plan-card {
+	position: relative;
+	padding: 20px 16px;
+	background: white;
+	border: 2px solid var(--border-color, #e5e7eb);
+	border-radius: 12px;
+	text-align: center;
+	transition: all 0.2s ease;
+}
+
+.faco-plan-card:hover {
+	border-color: #0F6E5C;
+	box-shadow: 0 4px 12px rgba(15, 110, 92, 0.15);
+}
+
+.faco-plan-card.faco-plan-current {
+	border-color: #1E7A52;
+	background: rgba(30, 122, 82, 0.04);
+}
+
+.faco-plan-card.faco-plan-popular {
+	border-color: #0F6E5C;
+	box-shadow: 0 4px 12px rgba(15, 110, 92, 0.2);
+}
+
+.faco-plan-badge {
+	position: absolute;
+	top: -10px;
+	left: 50%;
+	transform: translateX(-50%);
+	padding: 4px 12px;
+	font-size: 10px;
+	font-weight: 600;
+	color: white;
+	background: linear-gradient(135deg, #0F6E5C 0%, #0B5A4B 100%);
+	border-radius: 12px;
+	text-transform: uppercase;
+	letter-spacing: 0.5px;
+	white-space: nowrap;
+}
+
+.faco-plan-badge.faco-plan-badge-current {
+	background: #1E7A52;
+}
+
+.faco-plan-name {
+	margin: 8px 0 16px;
+	font-size: 18px;
+	font-weight: 600;
+	color: var(--text-color);
+}
+
+.faco-plan-price {
+	margin-bottom: 8px;
+}
+
+.faco-plan-amount {
+	font-size: 32px;
+	font-weight: 700;
+	color: var(--text-color);
+}
+
+.faco-plan-period {
+	font-size: 14px;
+	color: var(--text-muted);
+}
+
+.faco-plan-annual {
+	font-size: 12px;
+	color: var(--text-muted);
+	margin-bottom: 16px;
+}
+
+.faco-plan-savings {
+	color: #1E7A52;
+	font-weight: 600;
+}
+
+.faco-plan-features {
+	list-style: none;
+	padding: 0;
+	margin: 0 0 20px;
+	text-align: left;
+}
+
+.faco-plan-features li {
+	padding: 6px 0;
+	font-size: 13px;
+	color: var(--text-muted);
+	border-bottom: 1px solid var(--border-color, #f3f4f6);
+}
+
+.faco-plan-features li:last-child {
+	border-bottom: none;
+}
+
+.faco-plan-features li strong {
+	color: var(--text-color);
+}
+
+.faco-plan-btn {
+	width: 100%;
+	padding: 10px 16px;
+	font-size: 14px;
+	font-weight: 600;
+	border-radius: 8px;
+	cursor: pointer;
+	transition: all 0.2s ease;
+}
+
+.faco-plan-btn.btn-primary {
+	background: linear-gradient(135deg, #0F6E5C 0%, #0B5A4B 100%);
+	border: none;
+	color: white;
+}
+
+.faco-plan-btn.btn-primary:hover {
+	background: linear-gradient(135deg, #0B5A4B 0%, #094539 100%);
+	transform: translateY(-1px);
+}
+
+/* Payment Info */
+.faco-payment-info {
+	text-align: center;
+	padding-top: 16px;
+	border-top: 1px solid var(--border-color, #e5e7eb);
+}
+
+.faco-payment-info p {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	font-size: 12px;
+	color: var(--text-muted);
+	margin: 0;
+}
+
+.faco-payment-info svg {
+	color: #10b981;
+}
+
+/* ===================================
+   QUOTA WARNING MODAL STYLES
+   =================================== */
+
+.faco-quota-warning-content,
+.faco-quota-blocked-content {
+	text-align: center;
+	padding: 16px 0;
+}
+
+.faco-quota-warning-icon,
+.faco-quota-blocked-icon {
+	font-size: 48px;
+	margin-bottom: 16px;
+}
+
+.faco-quota-warning-content h4,
+.faco-quota-blocked-content h4 {
+	margin: 0 0 12px;
+	font-size: 16px;
+	font-weight: 600;
+	color: var(--text-color);
+}
+
+.faco-quota-warning-content p,
+.faco-quota-blocked-content p {
+	margin: 0;
+	font-size: 14px;
+	color: var(--text-muted);
+	line-height: 1.5;
+}
+
+/* ===================================
+   SUCCESS MODAL STYLES
+   =================================== */
+
+.faco-success-content {
+	text-align: center;
+	padding: 20px;
+}
+
+.faco-success-content h3 {
+	margin: 0 0 12px;
+	font-size: 20px;
+	font-weight: 600;
+	color: var(--text-color);
+}
+
+.faco-success-content ul {
+	list-style: none;
+	padding: 0;
+	margin: 16px 0 0;
+}
+
+.faco-success-content li {
+	padding: 8px 0;
+	font-size: 14px;
+	color: var(--text-muted);
+}
+
+.faco-success-content li::before {
+	content: "✓ ";
+	color: #10b981;
+	font-weight: 600;
+}

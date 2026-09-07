@@ -26,14 +26,14 @@
                     const toggleText = $('#toggle-server-text');
 
                     const statusPill = $('#server-status-pill');
-                    statusText.text('Frappe Assistant Core');
+                    statusText.text('FAC');
                     if (isEnabled) {
                         statusIcon.removeClass('inactive').addClass('active');
                         statusPill
                             .removeClass('fac-status-pill--stopped')
                             .addClass('fac-status-pill--running')
                             .html('<span class="fac-status-dot" aria-hidden="true"></span> Running');
-                        toggleBtn.removeClass('btn-primary').addClass('btn-warning');
+                        toggleBtn.removeClass('btn-primary').addClass('btn-danger');
                         toggleText.html('<i class="fa fa-stop" aria-hidden="true"></i> Disable');
                     } else {
                         statusIcon.removeClass('active').addClass('inactive');
@@ -41,7 +41,7 @@
                             .removeClass('fac-status-pill--running')
                             .addClass('fac-status-pill--stopped')
                             .html('<span class="fac-status-dot" aria-hidden="true"></span> Stopped');
-                        toggleBtn.removeClass('btn-warning').addClass('btn-primary');
+                        toggleBtn.removeClass('btn-danger').addClass('btn-primary');
                         toggleText.html('<i class="fa fa-play" aria-hidden="true"></i> Enable');
                     }
 
@@ -55,7 +55,7 @@
                 }
             },
             error: function(r) {
-                console.error('Failed to load server status:', r);
+                FACOLogger.error('Failed to load server status:', r);
                 $('#fac-mcp-endpoint').text('Error loading endpoint');
             }
         });
@@ -98,43 +98,208 @@
         });
     };
 
-    // Load plugin and tool stats
-    ns.loadStats = function() {
+    // ── FAC Chat enablement ────────────────────────────────────────────
+    // Reads current state from chat.api.get_chat_status and renders the
+    // pill + button. The toggle endpoint returns the widget asset bundles
+    // so we can hot-mount on enable without a manual page reload.
+
+    ns.loadChatStatus = function() {
         frappe.call({
-            method: "frappe_assistant_core.api.admin_api.get_plugin_stats",
+            method: "frappe_assistant_core.chat.api.get_chat_status",
+            type: "GET",
             callback: function(response) {
-                if (response.message) {
-                    const stats = response.message;
-                    $('#plugin-stats').html(`
-                        <div class="fac-stat-value">${stats.enabled_count || 0}</div>
-                        <div class="fac-stat-label">${stats.enabled_count} enabled / ${stats.total_count} total</div>
-                    `);
-                }
+                if (!response.message) return;
+                ns._renderChatStatus(response.message.enabled);
+            },
+            error: function() {
+                // Likely a permission denial — hide the card silently.
+                $('#fac-chat-card').hide();
             }
         });
+    };
 
+    ns._renderChatStatus = function(isEnabled) {
+        const pill = $('#fac-chat-status-pill');
+        const btn = $('#toggle-fac-chat');
+        const btnText = $('#toggle-fac-chat-text');
+
+        if (isEnabled) {
+            pill
+                .removeClass('fac-status-pill--stopped')
+                .addClass('fac-status-pill--running')
+                .html('<span class="fac-status-dot" aria-hidden="true"></span> Enabled');
+            btn.removeClass('btn-primary').addClass('btn-danger');
+            btnText.html('<i class="fa fa-power-off" aria-hidden="true"></i> Disable Chat');
+        } else {
+            pill
+                .removeClass('fac-status-pill--running')
+                .addClass('fac-status-pill--stopped')
+                .html('<span class="fac-status-dot" aria-hidden="true"></span> Disabled');
+            btn.removeClass('btn-danger').addClass('btn-primary');
+            btnText.html('<i class="fa fa-play" aria-hidden="true"></i> Enable Chat');
+        }
+    };
+
+    ns.toggleFacChat = function() {
+        // Read current state from the pill — avoids an extra round-trip.
+        const isEnabled = $('#fac-chat-status-pill').hasClass('fac-status-pill--running');
+        const newState = isEnabled ? 0 : 1;
+
+        const doToggle = function() {
+            $('#toggle-fac-chat').prop('disabled', true);
+            frappe.call({
+                method: "frappe_assistant_core.chat.api.toggle_chat",
+                type: "POST",
+                args: { enabled: newState },
+                callback: function(result) {
+                    $('#toggle-fac-chat').prop('disabled', false);
+                    if (!result.message) return;
+                    const data = result.message;
+                    ns._renderChatStatus(data.enabled);
+
+                    if (data.enabled) {
+                        // Hot-mount the widget on this page. Other open Desk
+                        // tabs will pick it up on their next navigation since
+                        // can_use_faco now returns show_widget: true.
+                        if (typeof window.facoWidgetRemount === 'function') {
+                            window.facoWidgetRemount();
+                        }
+                        frappe.show_alert({
+                            message: 'FAC Chat enabled.',
+                            indicator: 'green'
+                        });
+                    } else {
+                        // Hot-unmount the widget on this page.
+                        if (typeof window.facoWidgetTeardown === 'function') {
+                            window.facoWidgetTeardown();
+                        }
+                        frappe.show_alert({
+                            message: 'FAC Chat disabled.',
+                            indicator: 'orange'
+                        });
+                    }
+                    // Refresh the analytics card visibility — it's gated on
+                    // chat being enabled, so the card needs to appear/hide
+                    // when the toggle flips.
+                    if (typeof ns.loadChatAnalytics === 'function') {
+                        ns.loadChatAnalytics();
+                    }
+                    // The FACO Tools plugin is auto-synced with the chat
+                    // toggle on the server. Refresh the tool registry so the
+                    // plugin row reflects the new state without a page reload.
+                    if (typeof ns.loadToolRegistry === 'function') {
+                        ns.loadToolRegistry();
+                    }
+                },
+                error: function() {
+                    $('#toggle-fac-chat').prop('disabled', false);
+                }
+            });
+        };
+
+        if (newState === 0) {
+            frappe.confirm(
+                'Disable FAC Chat? The in-Frappe chat widget and /copilot SPA will become unavailable to users.',
+                doToggle
+            );
+        } else {
+            doToggle();
+        }
+    };
+
+    // ── Chat analytics ────────────────────────────────────────────────
+    // Single endpoint returns four numbers + a 30-day daily series. Card
+    // is hidden when chat is disabled (server returns enabled: false).
+
+    ns.loadChatAnalytics = function() {
+        frappe.call({
+            method: "frappe_assistant_core.chat.api.get_chat_analytics",
+            type: "GET",
+            callback: function(response) {
+                const $card = $('#fac-chat-analytics-card');
+                const data = response.message || {};
+                if (!data.enabled) {
+                    $card.hide();
+                    return;
+                }
+                $card.show();
+
+                $('#analytics-monthly').text(ns._fmtNumber(data.monthly_messages));
+                $('#analytics-total').text(ns._fmtNumber(data.total_messages));
+                $('#analytics-users').text(ns._fmtNumber(data.active_users));
+
+                const used = data.quota_used || 0;
+                const limit = data.quota_limit || 0;
+                if (limit > 0) {
+                    const pct = Math.min(100, Math.round((used / limit) * 100));
+                    $('#analytics-credits').text(`${pct}%`);
+                } else if (used > 0) {
+                    $('#analytics-credits').text(ns._fmtNumber(used));
+                } else {
+                    $('#analytics-credits').text('—');
+                }
+
+                ns._renderSparkline('#analytics-spark', data.series || []);
+            },
+            error: function() {
+                $('#fac-chat-analytics-card').hide();
+            }
+        });
+    };
+
+    // Inline sparkline — SVG, no external dep, scales to container width.
+    // Adds a 2-unit inner margin so the stroke doesn't bleed past the card
+    // edge when the first/last point sits at x=0 or x=100.
+    ns._renderSparkline = function(selector, series) {
+        const $host = $(selector);
+        if ($host.length === 0 || !series || series.length === 0) {
+            $host.empty();
+            return;
+        }
+        const counts = series.map(d => d.count || 0);
+        const max = Math.max.apply(null, counts);
+        const width = 100;
+        const height = 24;
+        const padX = 2;
+        const padY = 2;
+        const innerW = width - padX * 2;
+        const innerH = height - padY * 2;
+        const stepX = counts.length > 1 ? (innerW / (counts.length - 1)) : 0;
+        const points = counts.map((c, i) => {
+            const x = (padX + i * stepX).toFixed(2);
+            const y = max > 0
+                ? (padY + (1 - c / max) * innerH).toFixed(2)
+                : (padY + innerH);
+            return `${x},${y}`;
+        }).join(' ');
+        const last = series[series.length - 1];
+        const tip = last ? `${last.count} on ${last.day}` : '';
+        $host.html(`
+            <svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none"
+                 class="fac-spark-svg" role="img" aria-label="${frappe.utils.escape_html(tip)}">
+                <polyline points="${points}" />
+            </svg>
+        `);
+    };
+
+    ns._fmtNumber = function(n) {
+        const x = Number(n || 0);
+        if (x >= 1000000) return (x / 1000000).toFixed(1) + 'M';
+        if (x >= 1000) return (x / 1000).toFixed(1) + 'K';
+        // Round to integer for display — fractional credits look broken
+        // ("32.665"); the underlying precision isn't useful at a glance.
+        return String(Math.round(x));
+    };
+
+    // Populate the tab-count pills (Tools / Prompts / Skills) at the top of
+    // the registry card. Replaces the old standalone stat-card grid.
+    ns.loadStats = function() {
         frappe.call({
             method: "frappe_assistant_core.api.admin_api.get_tool_stats",
             callback: function(response) {
                 if (response.message) {
                     const stats = response.message;
-                    $('#tool-stats').html(`
-                        <div class="fac-stat-value">${stats.total_tools || 0}</div>
-                        <div class="fac-stat-label">Registered tools</div>
-                    `);
-                }
-            }
-        });
-
-        frappe.call({
-            method: "frappe_assistant_core.api.admin_api.get_usage_statistics",
-            callback: function(response) {
-                if (response.message && response.message.success) {
-                    const stats = response.message.data;
-                    $('#activity-stats').html(`
-                        <div class="fac-stat-value">${stats.audit_logs?.today || 0}</div>
-                        <div class="fac-stat-label">Tool executions today</div>
-                    `);
+                    $('#tab-count-tools').text(stats.total_tools || 0);
                 }
             }
         });
@@ -143,11 +308,7 @@
             method: "frappe_assistant_core.api.admin_api.get_prompt_templates_list",
             callback: function(response) {
                 if (response.message && response.message.success) {
-                    const d = response.message;
-                    $('#template-stats').html(`
-                        <div class="fac-stat-value">${d.published || 0}</div>
-                        <div class="fac-stat-label">${d.published} published / ${d.total} total</div>
-                    `);
+                    $('#tab-count-prompts').text(response.message.total || 0);
                 }
             }
         });
@@ -156,11 +317,7 @@
             method: "frappe_assistant_core.api.admin_api.get_skills_list",
             callback: function(response) {
                 if (response.message && response.message.success) {
-                    const d = response.message;
-                    $('#skill-stats').html(`
-                        <div class="fac-stat-value">${d.published || 0}</div>
-                        <div class="fac-stat-label">${d.published} published / ${d.total} total</div>
-                    `);
+                    $('#tab-count-skills').text(response.message.total || 0);
                 }
             }
         });

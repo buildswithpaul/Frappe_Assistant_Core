@@ -230,13 +230,51 @@
     "content_file": "search_vector.md"
   },
   {
-  "skill_id": "insights-dashboard",
-  "title": "How to Create Dashboards in Frappe Insights v3",
-  "description": "Creating workbooks, queries, charts, and dashboards in Frappe Insights v3 — correct doctypes, config schemas, manifest updates, and common pitfalls",
-  "skill_type": "Workflow",
-  "linked_tool": null,
-  "status": "Published",
-  "visibility": "Public",
-  "content_file": "insight_v3_skill.md"
+    "skill_id": "insights-dashboard",
+    "title": "How to Create Dashboards in Frappe Insights v3",
+    "description": "Creating workbooks, queries, charts, and dashboards in Frappe Insights v3 — correct doctypes, config schemas, manifest updates, and common pitfalls",
+    "skill_type": "Workflow",
+    "linked_tool": null,
+    "status": "Published",
+    "visibility": "Public",
+    "content_file": "insight_v3_skill.md"
+  },
+  {
+    "skill_id": "document-authoring",
+    "title": "How to Author PDF Documents with generate_document",
+    "description": "Producing styled, downloadable PDFs with generate_document — structure, rich blocks (charts, callouts, metric cards, cover pages, page breaks), and common mistakes",
+    "skill_type": "Tool Usage",
+    "linked_tool": "generate_document",
+    "status": "Published",
+    "visibility": "Public",
+    "content_file": "document_authoring.md"
+  },
+  {
+    "skill_id": "rich-components",
+    "title": "How to Use Rich Components in Chat",
+    "description": "Rendering rich chat components — callouts, metric cards, charts, steps, accordions, and tabs — with the correct fenced-block dialect and when to use each",
+    "skill_type": "Workflow",
+    "linked_tool": null,
+    "status": "Published",
+    "visibility": "Public",
+    "content_file": "rich_components.md"
+  },
+  {
+    "skill_id": "build-prompt-template",
+    "title": "Building Prompt Templates",
+    "description": "Use when asked to templatise a prompt, save one as a reusable slash-menu shortcut, or edit an existing prompt template.",
+    "skill_type": "Workflow",
+    "status": "Published",
+    "visibility": "Public",
+    "content_file": "build_prompt_template.md"
+  },
+  {
+    "skill_id": "build-skill",
+    "title": "Building Skills",
+    "description": "Use when asked to create a skill, document a process so the assistant remembers it, or edit an existing skill.",
+    "skill_type": "Workflow",
+    "status": "Published",
+    "visibility": "Public",
+    "content_file": "build_skill.md"
   }
 ]

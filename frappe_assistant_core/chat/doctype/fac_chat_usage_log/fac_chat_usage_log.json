@@ -1,0 +1,161 @@
+{
+ "actions": [],
+ "autoname": "format:USAGE-{YYYY}-{#####}",
+ "creation": "2025-12-09 00:00:00",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "user",
+  "session_id",
+  "timestamp",
+  "column_break_usage",
+  "model",
+  "tokens_prompt",
+  "tokens_completion",
+  "tokens_total",
+  "section_break_context",
+  "context_type",
+  "context_doctype",
+  "context_name",
+  "column_break_billing",
+  "llm_mode",
+  "credits_used",
+  "success",
+  "error_message"
+ ],
+ "fields": [
+  {
+   "fieldname": "user",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "User",
+   "options": "User",
+   "reqd": 1
+  },
+  {
+   "fieldname": "session_id",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Session ID",
+   "reqd": 1
+  },
+  {
+   "fieldname": "timestamp",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Timestamp",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_usage",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "model",
+   "fieldtype": "Data",
+   "in_standard_filter": 1,
+   "label": "Model"
+  },
+  {
+   "fieldname": "tokens_prompt",
+   "fieldtype": "Int",
+   "label": "Tokens (Prompt)"
+  },
+  {
+   "fieldname": "tokens_completion",
+   "fieldtype": "Int",
+   "label": "Tokens (Completion)"
+  },
+  {
+   "fieldname": "tokens_total",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Tokens (Total)"
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "section_break_context",
+   "fieldtype": "Section Break",
+   "label": "Context"
+  },
+  {
+   "fieldname": "context_type",
+   "fieldtype": "Select",
+   "label": "Context Type",
+   "options": "\nForm\nList\nReport\nDashboard\nGeneral"
+  },
+  {
+   "fieldname": "context_doctype",
+   "fieldtype": "Data",
+   "label": "Context DocType"
+  },
+  {
+   "fieldname": "context_name",
+   "fieldtype": "Data",
+   "label": "Context Name"
+  },
+  {
+   "fieldname": "column_break_billing",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "llm_mode",
+   "fieldtype": "Select",
+   "label": "LLM Mode",
+   "options": "byo_key\nproxy"
+  },
+  {
+   "description": "Credits used from proxy subscription (proxy mode only)",
+   "fieldname": "credits_used",
+   "fieldtype": "Int",
+   "label": "Credits Used"
+  },
+  {
+   "default": "1",
+   "fieldname": "success",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Success"
+  },
+  {
+   "depends_on": "eval:!doc.success",
+   "fieldname": "error_message",
+   "fieldtype": "Small Text",
+   "label": "Error Message"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2025-12-12 20:29:01.977191",
+ "modified_by": "Administrator",
+ "module": "Chat",
+ "name": "FAC Chat Usage Log",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "read": 1,
+   "report": 1,
+   "role": "All"
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

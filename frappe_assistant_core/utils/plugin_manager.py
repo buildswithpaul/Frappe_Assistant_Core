@@ -23,6 +23,7 @@ import importlib
 import inspect
 import json
 import threading
+import traceback
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -284,6 +285,11 @@ class PluginManager:
         self._discovered_plugins: Dict[str, PluginInfo] = {}
         self._enabled_plugins: Set[str] = set()
         self._loaded_tools: Dict[str, ToolInfo] = {}
+        # Diagnostic: tool_name -> reason for any tool that failed to load
+        # (dependency validation failure or import/instantiation exception).
+        # Surfaced via the get_skipped_tools API so admins can see WHY a tool is
+        # missing on a given server without shell access.
+        self.skipped_tools: Dict[str, str] = {}
         self._discovery = PluginDiscovery()
         self._persistence = PluginPersistence()
         self.logger = frappe.logger("plugin_manager")
@@ -451,6 +457,9 @@ class PluginManager:
     def _load_tools(self):
         """Load tools from all enabled plugins"""
         self._loaded_tools.clear()
+        # Reset the diagnostic record so it reflects the current load only and
+        # doesn't accumulate stale entries across reloads.
+        self.skipped_tools = {}
 
         for plugin_name in self._enabled_plugins:
             plugin_info = self._discovered_plugins.get(plugin_name)
@@ -475,7 +484,13 @@ class PluginManager:
                 tool_class = None
                 for attr_name in dir(module):
                     attr = getattr(module, attr_name)
-                    if inspect.isclass(attr) and issubclass(attr, BaseTool) and attr is not BaseTool:
+                    # Skip abstract intermediate bases (e.g. BaseBrowserTool) imported by tool modules.
+                    if (
+                        inspect.isclass(attr)
+                        and issubclass(attr, BaseTool)
+                        and attr is not BaseTool
+                        and not inspect.isabstract(attr)
+                    ):
                         tool_class = attr
                         break
 
@@ -490,6 +505,8 @@ class PluginManager:
                         self.logger.warning(
                             f"Tool {tool_instance.name} dependency validation failed: {deps_error}"
                         )
+                        self.skipped_tools = getattr(self, "skipped_tools", {})
+                        self.skipped_tools[tool_instance.name] = deps_error
                         continue
 
                     tools[tool_instance.name] = ToolInfo(
@@ -500,7 +517,15 @@ class PluginManager:
                     )
 
             except Exception as e:
-                self.logger.error(f"Failed to load tool '{tool_name}' from plugin '{plugin_name}': {e}")
+                # Surface the actual ImportError / exception with full traceback so
+                # the reason a tool silently vanished is visible in the Error Log,
+                # and record it for the get_skipped_tools diagnostic API.
+                self.logger.error(
+                    f"Failed to load tool '{tool_name}' from plugin '{plugin_name}': {e}\n"
+                    f"{traceback.format_exc()}"
+                )
+                self.skipped_tools = getattr(self, "skipped_tools", {})
+                self.skipped_tools[tool_name] = repr(e)
 
         return tools
 

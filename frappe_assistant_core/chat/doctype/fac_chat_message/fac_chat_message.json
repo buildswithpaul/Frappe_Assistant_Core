@@ -1,0 +1,210 @@
+{
+ "actions": [],
+ "autoname": "format:MSG-{YYYY}-{#####}",
+ "creation": "2025-12-09 00:00:00",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "session_id",
+  "message_id",
+  "user",
+  "role",
+  "content",
+  "timestamp",
+  "column_break_context",
+  "context_type",
+  "context_doctype",
+  "context_name",
+  "context_url",
+  "section_break_llm",
+  "model",
+  "credits_used",
+  "model_breakdown",
+  "column_break_tools",
+  "tool_calls",
+  "blocks",
+  "idx",
+  "is_archived",
+  "aborted",
+  "errored"
+ ],
+ "fields": [
+  {
+   "fieldname": "session_id",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Session ID",
+   "reqd": 1
+  },
+  {
+   "description": "FAC Cloud Message ID for linking with streaming events",
+   "fieldname": "message_id",
+   "fieldtype": "Data",
+   "label": "FAC Cloud Message ID"
+  },
+  {
+   "fieldname": "user",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "User",
+   "options": "User",
+   "reqd": 1
+  },
+  {
+   "fieldname": "role",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Role",
+   "options": "user\nassistant",
+   "reqd": 1
+  },
+  {
+   "fieldname": "content",
+   "fieldtype": "Long Text",
+   "label": "Content",
+   "reqd": 1
+  },
+  {
+   "fieldname": "timestamp",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Timestamp",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_context",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "context_type",
+   "fieldtype": "Select",
+   "label": "Context Type",
+   "options": "\nForm\nList\nReport\nTree\nWorkspace\nDashboard\nPrint\nCustom Page\nPage\nGeneral"
+  },
+  {
+   "fieldname": "context_doctype",
+   "fieldtype": "Data",
+   "label": "Context DocType"
+  },
+  {
+   "fieldname": "context_name",
+   "fieldtype": "Data",
+   "label": "Context Name"
+  },
+  {
+   "fieldname": "context_url",
+   "fieldtype": "Small Text",
+   "label": "Context URL"
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "section_break_llm",
+   "fieldtype": "Section Break",
+   "label": "LLM Metadata"
+  },
+  {
+   "fieldname": "model",
+   "fieldtype": "Data",
+   "label": "Model"
+  },
+  {
+   "fieldname": "credits_used",
+   "fieldtype": "Float",
+   "precision": "2",
+   "label": "Credits Used"
+  },
+  {
+   "description": "Per-model usage for delegating (multi-model) turns: [{model_id, role, credits, input_tokens, output_tokens}]. Null for single-model turns.",
+   "fieldname": "model_breakdown",
+   "fieldtype": "JSON",
+   "label": "Model Breakdown",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_tools",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "MCP tool calls made during this message",
+   "fieldname": "tool_calls",
+   "fieldtype": "JSON",
+   "label": "Tool Calls"
+  },
+  {
+   "description": "UI blocks snapshot for rendering tool calls, thinking, interactions, and text",
+   "fieldname": "blocks",
+   "fieldtype": "JSON",
+   "label": "Blocks"
+  },
+  {
+   "description": "Order of message in session",
+   "fieldname": "idx",
+   "fieldtype": "Int",
+   "label": "Message Order"
+  },
+  {
+   "fieldname": "is_archived",
+   "fieldtype": "Check",
+   "label": "Is Archived",
+   "default": 0,
+   "hidden": 1,
+   "search_index": 1,
+   "description": "Archived conversations are removed from the cloud but kept locally."
+  },
+  {
+   "fieldname": "aborted",
+   "fieldtype": "Check",
+   "label": "Aborted",
+   "default": 0,
+   "hidden": 1,
+   "description": "User stopped this stream before it finished. Partial content is kept."
+  },
+  {
+   "fieldname": "errored",
+   "fieldtype": "Check",
+   "label": "Errored",
+   "default": 0,
+   "hidden": 1,
+   "description": "Stream ended in an error before it finished. Partial content is kept."
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-06-30 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Chat",
+ "name": "FAC Chat Message",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "All",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}
