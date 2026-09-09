@@ -8,6 +8,7 @@
  "field_order": [
   "general_tab",
   "server_enabled",
+  "site_url",
   "mcp_endpoint_url",
   "oauth_discovery_url",
   "plugins_tab",
@@ -72,18 +73,18 @@
    "label": "Enable Assistant Core"
   },
   {
+   "description": "Main MCP StreamableHTTP endpoint URL. Use this URL when connecting Claude Desktop or MCP Inspector.",
    "fieldname": "mcp_endpoint_url",
    "fieldtype": "Data",
    "label": "MCP Endpoint URL",
-   "read_only": 1,
-   "description": "Main MCP StreamableHTTP endpoint URL. Use this URL when connecting Claude Desktop or MCP Inspector."
+   "read_only": 1
   },
   {
+   "description": "OAuth/OIDC discovery endpoint for auto-configuration. MCP clients use this to discover authentication endpoints.",
    "fieldname": "oauth_discovery_url",
    "fieldtype": "Data",
    "label": "OAuth Discovery URL",
-   "read_only": 1,
-   "description": "OAuth/OIDC discovery endpoint for auto-configuration. MCP clients use this to discover authentication endpoints."
+   "read_only": 1
   },
   {
    "fieldname": "plugins_tab",
@@ -91,25 +92,25 @@
    "label": "Plugins & Tools"
   },
   {
+   "description": "Manage MCP tool plugins. Plugins extend the MCP server with additional tools and capabilities.",
    "fieldname": "plugins_section",
    "fieldtype": "Section Break",
-   "label": "Plugin Configuration",
-   "description": "Manage MCP tool plugins. Plugins extend the MCP server with additional tools and capabilities."
+   "label": "Plugin Configuration"
   },
   {
    "default": "[\"core\"]",
+   "description": "Internal list of enabled plugin IDs",
    "fieldname": "enabled_plugins_list",
    "fieldtype": "JSON",
    "hidden": 1,
-   "label": "Enabled Plugins",
-   "description": "Internal list of enabled plugin IDs"
+   "label": "Enabled Plugins"
   },
   {
+   "description": "Current status of installed plugins and available tools",
    "fieldname": "plugin_status_html",
    "fieldtype": "HTML",
    "label": "Plugin Status",
-   "options": "<div id=\"plugin-status-container\">Loading plugin information...</div>",
-   "description": "Current status of installed plugins and available tools"
+   "options": "<div id=\"plugin-status-container\">Loading plugin information...</div>"
   },
   {
    "fieldname": "security_tab",
@@ -117,42 +118,42 @@
    "label": "Security"
   },
   {
+   "description": "Configure resource limits for the run_python_code tool to prevent runaway code from crashing the system. These limits protect against infinite loops, memory exhaustion, and excessive recursion.",
    "fieldname": "execution_limits_section",
    "fieldtype": "Section Break",
-   "label": "Code Execution Limits",
-   "description": "Configure resource limits for the run_python_code tool to prevent runaway code from crashing the system. These limits protect against infinite loops, memory exhaustion, and excessive recursion."
+   "label": "Code Execution Limits"
   },
   {
+   "default": "30",
+   "description": "Maximum wall-clock time allowed for code execution. Code that exceeds this limit will be terminated. Range: 1-300 seconds.",
    "fieldname": "code_execution_timeout",
    "fieldtype": "Int",
-   "label": "Execution Timeout (seconds)",
-   "default": "30",
-   "description": "Maximum wall-clock time allowed for code execution. Code that exceeds this limit will be terminated. Range: 1-300 seconds."
+   "label": "Execution Timeout (seconds)"
   },
   {
+   "default": "512",
+   "description": "Maximum memory allowed for code execution. Prevents memory exhaustion attacks. Range: 64-2048 MB.",
    "fieldname": "code_execution_max_memory_mb",
    "fieldtype": "Int",
-   "label": "Max Memory (MB)",
-   "default": "512",
-   "description": "Maximum memory allowed for code execution. Prevents memory exhaustion attacks. Range: 64-2048 MB."
+   "label": "Max Memory (MB)"
   },
   {
    "fieldname": "execution_limits_column_break",
    "fieldtype": "Column Break"
   },
   {
+   "default": "60",
+   "description": "Maximum CPU time allowed. Unlike wall-clock timeout, this limits actual processing time. Range: 1-300 seconds.",
    "fieldname": "code_execution_max_cpu_seconds",
    "fieldtype": "Int",
-   "label": "Max CPU Time (seconds)",
-   "default": "60",
-   "description": "Maximum CPU time allowed. Unlike wall-clock timeout, this limits actual processing time. Range: 1-300 seconds."
+   "label": "Max CPU Time (seconds)"
   },
   {
+   "default": "500",
+   "description": "Maximum recursion depth allowed. Prevents stack overflow from deeply recursive code. Range: 50-1000. Frappe internals (frappe.get_doc, frappe.get_all) recurse well past 100, so keep this at the default unless you have a reason to lower it.",
    "fieldname": "code_execution_max_recursion",
    "fieldtype": "Int",
-   "label": "Max Recursion Depth",
-   "default": "500",
-   "description": "Maximum recursion depth allowed. Prevents stack overflow from deeply recursive code. Range: 50-1000. Frappe internals (frappe.get_doc, frappe.get_all) recurse well past 100, so keep this at the default unless you have a reason to lower it."
+   "label": "Max Recursion Depth"
   },
   {
    "fieldname": "execution_limits_info",
@@ -161,10 +162,10 @@
    "options": "<div class=\"alert alert-info\" style=\"margin-top: 10px;\"><strong>Note:</strong> These limits use OS-level resource controls (signals, rlimit) and only work on Unix-like systems (Linux, macOS). On Windows, limits are not enforced. Changes take effect immediately for new code executions.</div>"
   },
   {
+   "description": "Configure how long audit logs are retained. A daily scheduled job automatically cleans up logs older than the configured retention period.",
    "fieldname": "audit_log_section",
    "fieldtype": "Section Break",
-   "label": "Audit Log Retention",
-   "description": "Configure how long audit logs are retained. A daily scheduled job automatically cleans up logs older than the configured retention period."
+   "label": "Audit Log Retention"
   },
   {
    "default": "180",
@@ -179,10 +180,10 @@
    "label": "OCR"
   },
   {
+   "description": "PaddleOCR is the default OCR engine for extracting text from scanned documents and images. Ollama vision LLM is available as an optional alternative for complex documents.",
    "fieldname": "ocr_section",
    "fieldtype": "Section Break",
-   "label": "OCR Configuration",
-   "description": "PaddleOCR is the default OCR engine for extracting text from scanned documents and images. Ollama vision LLM is available as an optional alternative for complex documents."
+   "label": "OCR Configuration"
   },
   {
    "default": "paddleocr",
@@ -194,39 +195,39 @@
   },
   {
    "default": "en",
+   "depends_on": "eval:doc.ocr_backend=='paddleocr'",
    "description": "Default language for PaddleOCR. Common codes: en, fr, german, es, ch. See PaddleOCR docs for full list.",
    "fieldname": "ocr_language",
    "fieldtype": "Data",
-   "label": "OCR Language",
-   "depends_on": "eval:doc.ocr_backend=='paddleocr'"
+   "label": "OCR Language"
   },
   {
+   "depends_on": "eval:doc.ocr_backend=='paddleocr'",
    "fieldname": "paddleocr_column_break",
-   "fieldtype": "Column Break",
-   "depends_on": "eval:doc.ocr_backend=='paddleocr'"
+   "fieldtype": "Column Break"
   },
   {
    "default": "120",
+   "depends_on": "eval:doc.ocr_backend=='paddleocr'",
    "description": "Maximum time in seconds for PaddleOCR to process a document. Includes model loading time (~10s). Increase for large or complex documents.",
    "fieldname": "paddleocr_timeout",
    "fieldtype": "Int",
-   "label": "PaddleOCR Timeout (seconds)",
-   "depends_on": "eval:doc.ocr_backend=='paddleocr'"
+   "label": "PaddleOCR Timeout (seconds)"
   },
   {
    "default": "2048",
+   "depends_on": "eval:doc.ocr_backend=='paddleocr'",
    "description": "Maximum memory in MB for the PaddleOCR subprocess. The process will be killed if it exceeds this limit, protecting the Frappe worker from out-of-memory crashes.",
    "fieldname": "paddleocr_max_memory_mb",
    "fieldtype": "Int",
-   "label": "PaddleOCR Max Memory (MB)",
-   "depends_on": "eval:doc.ocr_backend=='paddleocr'"
+   "label": "PaddleOCR Max Memory (MB)"
   },
   {
+   "depends_on": "eval:doc.ocr_backend=='ollama'",
+   "description": "Configure the Ollama server and vision model used for OCR. Requires Ollama running locally with a vision-capable model.",
    "fieldname": "ollama_section",
    "fieldtype": "Section Break",
-   "label": "Ollama Vision Settings",
-   "depends_on": "eval:doc.ocr_backend=='ollama'",
-   "description": "Configure the Ollama server and vision model used for OCR. Requires Ollama running locally with a vision-capable model."
+   "label": "Ollama Vision Settings"
   },
   {
    "default": "http://localhost:11434",
@@ -259,33 +260,33 @@
    "label": "MCP Configuration"
   },
   {
+   "description": "Configure MCP (Model Context Protocol) server identity and capabilities. These values are reported to MCP clients during initialization and discovery.",
    "fieldname": "mcp_section",
    "fieldtype": "Section Break",
-   "label": "MCP Server Settings",
-   "description": "Configure MCP (Model Context Protocol) server identity and capabilities. These values are reported to MCP clients during initialization and discovery."
+   "label": "MCP Server Settings"
   },
   {
+   "default": "frappe-assistant-core",
+   "description": "Unique identifier for this MCP server instance. Used in MCP initialization handshake.",
    "fieldname": "mcp_server_name",
    "fieldtype": "Data",
-   "label": "MCP Server Name",
-   "default": "frappe-assistant-core",
-   "description": "Unique identifier for this MCP server instance. Used in MCP initialization handshake."
+   "label": "MCP Server Name"
   },
   {
+   "default": "2025-06-18",
+   "description": "MCP specification version this server implements. Currently supports 2025-06-18.",
    "fieldname": "mcp_protocol_version",
    "fieldtype": "Data",
    "label": "MCP Protocol Version",
-   "read_only": 1,
-   "default": "2025-06-18",
-   "description": "MCP specification version this server implements. Currently supports 2025-06-18."
+   "read_only": 1
   },
   {
+   "default": "StreamableHTTP",
+   "description": "Transport protocol used for MCP communication. StreamableHTTP enables OAuth-based authentication.",
    "fieldname": "mcp_transport_type",
    "fieldtype": "Data",
    "label": "Transport Type",
-   "read_only": 1,
-   "default": "StreamableHTTP",
-   "description": "Transport protocol used for MCP communication. StreamableHTTP enables OAuth-based authentication."
+   "read_only": 1
   },
   {
    "fieldname": "skills_section",
@@ -301,16 +302,16 @@
    "options": "supplementary\nreplace"
   },
   {
+   "depends_on": "eval:!frappe.boot.versions?.frappe?.startsWith('16')",
    "fieldname": "oauth_tab",
    "fieldtype": "Tab Break",
-   "label": "OAuth",
-   "depends_on": "eval:!frappe.boot.versions?.frappe?.startsWith('16')"
+   "label": "OAuth"
   },
   {
+   "description": "Configure OAuth 2.0 settings for MCP clients (e.g., Claude Desktop, MCP Inspector)",
    "fieldname": "oauth_authorization_section",
    "fieldtype": "Section Break",
-   "label": "OAuth Configuration",
-   "description": "Configure OAuth 2.0 settings for MCP clients (e.g., Claude Desktop, MCP Inspector)"
+   "label": "OAuth Configuration"
   },
   {
    "default": "1",
@@ -320,19 +321,19 @@
    "label": "Enable Dynamic Client Registration"
   },
   {
-   "description": "<b>⚠️ EXPERIMENTAL - Use site_config.json instead (recommended)</b><br><br><b>For MCP Inspector testing only.</b> Claude and Chatgpt do NOT need this.<br><br>Use this field (one origin per line). Leave blank for production.",
+   "depends_on": "eval:doc.enable_dynamic_client_registration",
+   "description": "<b>\u26a0\ufe0f EXPERIMENTAL - Use site_config.json instead (recommended)</b><br><br><b>For MCP Inspector testing only.</b> Claude and Chatgpt do NOT need this.<br><br>Use this field (one origin per line). Leave blank for production.",
    "fieldname": "allowed_public_client_origins",
    "fieldtype": "Small Text",
-   "label": "Allowed Public Client Origins (Experimental)",
-   "depends_on": "eval:doc.enable_dynamic_client_registration"
+   "label": "Allowed Public Client Origins (Experimental)"
   },
   {
-   "fieldname": "oauth_advanced_section",
-   "fieldtype": "Section Break",
-   "label": "Advanced Discovery Settings",
    "collapsible": 1,
    "collapsible_depends_on": "eval:0",
-   "description": "Controls which OAuth discovery endpoints are exposed. Most users should leave these enabled."
+   "description": "Controls which OAuth discovery endpoints are exposed. Most users should leave these enabled.",
+   "fieldname": "oauth_advanced_section",
+   "fieldtype": "Section Break",
+   "label": "Advanced Discovery Settings"
   },
   {
    "default": "1",
@@ -349,11 +350,11 @@
    "label": "Show Protected Resource Metadata"
   },
   {
+   "collapsible": 1,
+   "collapsible_depends_on": "eval:0",
    "fieldname": "oauth_metadata_section",
    "fieldtype": "Section Break",
-   "label": "Resource Metadata (Optional)",
-   "collapsible": 1,
-   "collapsible_depends_on": "eval:0"
+   "label": "Resource Metadata (Optional)"
   },
   {
    "default": "Frappe Assistant Core",
@@ -390,11 +391,17 @@
    "fieldname": "scopes_supported",
    "fieldtype": "Small Text",
    "label": "Supported Scopes"
+  },
+  {
+   "fieldname": "site_url",
+   "fieldtype": "Data",
+   "label": "Site Url",
+   "read_only": 1
   }
  ],
  "issingle": 1,
  "links": [],
- "modified": "2026-01-21 10:00:00.000000",
+ "modified": "2026-07-27 12:21:24.791062",
  "modified_by": "Administrator",
  "module": "Assistant Core",
  "name": "Assistant Core Settings",
@@ -411,6 +418,7 @@
    "write": 1
   }
  ],
+ "row_format": "Dynamic",
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": [],

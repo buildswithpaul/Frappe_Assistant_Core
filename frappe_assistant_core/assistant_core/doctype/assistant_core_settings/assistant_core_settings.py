@@ -37,6 +37,7 @@ class AssistantCoreSettings(Document):
     def _populate_endpoint_urls(self):
         """Helper to populate endpoint URLs based on current site"""
         frappe_url = frappe.utils.get_url()
+        self.site_url = frappe_url
         self.mcp_endpoint_url = f"{frappe_url}/api/method/frappe_assistant_core.api.fac_endpoint.handle_mcp"
         self.oauth_discovery_url = f"{frappe_url}/.well-known/openid-configuration"
 
