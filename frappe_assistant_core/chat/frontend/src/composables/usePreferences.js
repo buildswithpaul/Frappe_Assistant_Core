@@ -4,6 +4,10 @@ const STORAGE_KEY = "faco-preferences";
 
 const preferences = reactive({
 	showTimestamps: false,
+	// A permanent per-message annotation naming a vendor model and a
+	// commercial grade on every reply is a standing cost reminder. On by
+	// default because it is the feature, switchable because it is standing.
+	showRoutingChip: true,
 	reduceMotion: false,
 	highContrast: false,
 	largeText: false,

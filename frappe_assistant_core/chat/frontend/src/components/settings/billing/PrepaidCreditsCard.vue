@@ -5,7 +5,15 @@
 			<span class="credit-balance-value">{{ formatCredits(creditBalance) }} credits</span>
 		</div>
 		<p class="credit-description">
-			Credits are consumed at a 1:1 rate after your monthly quota is exhausted.
+			Used automatically once your monthly quota runs out. Unused credits carry
+			over between billing cycles.
+		</p>
+		<!-- The ledger below gives every batch its own date, but nobody reads a
+		     ledger to find out their balance has a deadline — and the expiry
+		     banner stays silent until the last 30 days. This is the only place
+		     the headline figure admits that part of it lapses. -->
+		<p v-if="nextExpiryLabel" class="credit-expiry-note" :class="{ soon: expiresSoon }">
+			{{ nextExpiryLabel }}
 		</p>
 		<button class="buy-credits-btn" @click="$emit('buy-credits')">
 			<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -48,9 +56,12 @@
 					</div>
 					<div class="txn-meta">
 						<span>{{ formatTxnDate(txn.creation) }}</span>
-						<!-- Credits carried over from an upgrade expire; credits you
-						     bought outright do not. Saying which is which is the
-						     whole reason this ledger is worth showing. -->
+						<!-- Every batch carries its own window now: purchases take the
+						     configured validity, carryover its twelve months, grants
+						     whatever they were given. Batches bought before purchases
+						     expired at all still read "Never expires", which is the
+						     truth for them. Saying which is which per row is the whole
+						     reason this ledger is worth showing. -->
 						<span v-if="(txn.credits || 0) > 0" class="txn-expiry">
 							{{ expiryLabel(txn) }}
 						</span>
@@ -68,6 +79,35 @@ import { formatCredits } from "@/composables/useFormatters";
 const props = defineProps({
 	creditBalance: { type: Number, default: null },
 	transactions: { type: Array, default: () => [] },
+	// { expires_at, credits } for the soonest batch to lapse, or null when
+	// nothing is on a clock — which is still true of credits bought before
+	// purchases had a validity window.
+	nextExpiry: { type: Object, default: null },
+});
+
+const daysToExpiry = computed(() => {
+	if (!props.nextExpiry?.expires_at) return null;
+	const on = new Date(props.nextExpiry.expires_at);
+	if (Number.isNaN(on.getTime())) return null;
+	return Math.ceil((on - new Date()) / 86400000);
+});
+
+const expiresSoon = computed(() => daysToExpiry.value !== null && daysToExpiry.value <= 30);
+
+const nextExpiryLabel = computed(() => {
+	const days = daysToExpiry.value;
+	if (days === null || days < 0) return "";
+	const credits = formatCredits(props.nextExpiry.credits || 0);
+	const on = new Date(props.nextExpiry.expires_at).toLocaleDateString(undefined, {
+		year: "numeric",
+		month: "short",
+		day: "numeric",
+	});
+	// Counting down only once it is close. A year out, the date is the useful
+	// fact and "in 341 days" is noise.
+	if (days === 0) return `${credits} credits expire today (${on}).`;
+	if (days <= 30) return `${credits} credits expire in ${days} day${days === 1 ? "" : "s"} (${on}).`;
+	return `${credits} credits expire on ${on}.`;
 });
 
 defineEmits(["buy-credits"]);
@@ -151,6 +191,19 @@ function expiryLabel(txn) {
 	color: var(--ql-text-muted, #6b7280);
 	margin: 0 0 0.75rem;
 	line-height: 1.4;
+}
+
+.credit-expiry-note {
+	font-size: 0.75rem;
+	color: var(--ql-text-muted, #6b7280);
+	margin: -0.4rem 0 0.75rem;
+	line-height: 1.4;
+}
+
+/* Inside the notice window it stops being a footnote. */
+.credit-expiry-note.soon {
+	color: var(--ql-warning, #b45309);
+	font-weight: 600;
 }
 
 .buy-credits-btn {

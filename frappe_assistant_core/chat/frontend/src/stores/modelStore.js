@@ -20,7 +20,7 @@ export const useModelStore = defineStore("models", () => {
 	const autoMode = ref(null); // { enabled, description, model_id, fallback_chain_length }
 
 	// Tier order for consistent display
-	const tierOrder = ["Economy", "Standard", "Premium", "Reasoning"];
+	const tierOrder = ["Economy", "Standard", "Premium"];
 
 	// Getters
 
@@ -50,6 +50,21 @@ export const useModelStore = defineStore("models", () => {
 	const orderedTiers = computed(() =>
 		tierOrder.filter((tier) => modelsByTier.value[tier]?.length > 0)
 	);
+
+	// Whether the Thinking toggle can actually be honoured right now. Under
+	// auto, the model isn't picked yet, so it's honoured if ANY reachable
+	// model can do it; with an explicit model, it's that model's own flag.
+	// AR sets `thinking_effective` false-closed (operator flag AND a real
+	// parameter shape AND enough output-token headroom), so a lit pill here
+	// always means the toggle will do something.
+	const thinkingHonoured = computed(() => {
+		if (isAutoModeSelected.value) {
+			return models.value.some(
+				(m) => m.thinking_effective && isModelAccessible(m)
+			);
+		}
+		return Boolean(currentModel.value?.thinking_effective);
+	});
 
 	// Check if a model is accessible based on plan's max multiplier
 	function isModelAccessible(model) {
@@ -167,6 +182,14 @@ export const useModelStore = defineStore("models", () => {
 		error.value = null;
 	}
 
+	// The receipt carries a model id; every routing surface wants the name a
+	// person recognises. Null when the catalogue has not loaded or the model
+	// is no longer offered — callers fall back to the id.
+	function modelDisplayName(modelId) {
+		if (!modelId) return null;
+		return models.value.find((m) => m.model_id === modelId)?.display_name || null;
+	}
+
 	return {
 		// State
 		models,
@@ -184,8 +207,10 @@ export const useModelStore = defineStore("models", () => {
 		orderedTiers,
 		isAutoModeEnabled,
 		isAutoModeSelected,
+		thinkingHonoured,
 		// Methods
 		isModelAccessible,
+		modelDisplayName,
 		setSelectedModel,
 		clearSelectedModel,
 		loadModels,

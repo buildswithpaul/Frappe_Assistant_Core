@@ -30,6 +30,8 @@
 				role="menuitemcheckbox"
 				:aria-pressed="thinking"
 				:class="{ 'menu-item-on': thinking }"
+				:disabled="!thinkingAvailable"
+				:title="thinkingAvailable ? '' : 'This model cannot think longer'"
 				@click="$emit('toggle-thinking')"
 			>
 				<svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -51,6 +53,7 @@ const props = defineProps({
 	webSearchAvailable: { type: Boolean, default: false },
 	webSearch: { type: Boolean, default: false },
 	thinking: { type: Boolean, default: false },
+	thinkingAvailable: { type: Boolean, default: true },
 });
 
 const emit = defineEmits(["attach", "toggle-web-search", "toggle-thinking", "close"]);
@@ -121,8 +124,13 @@ onUnmounted(() => {
 	transition: background 0.1s ease;
 }
 
-.menu-item:hover {
+.menu-item:hover:not(:disabled) {
 	background: var(--ql-subtle);
+}
+
+.menu-item:disabled {
+	color: var(--ql-text-muted);
+	cursor: not-allowed;
 }
 
 .menu-item svg {

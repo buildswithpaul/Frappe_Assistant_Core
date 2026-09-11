@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "frappe_assistant_core"
-version = "3.0.0-beta.1"
+version = "3.0.0-beta.2"
 description = "AI-powered ERP assistant with comprehensive MCP integration for Frappe framework"
 readme = "README.md"
 license = {text = "AGPL-3.0-or-later"}
@@ -57,7 +57,13 @@ dependencies = [
     "python-magic>=0.4.27",
     "beautifulsoup4>=4.12,<5",  # Span Frappe v15 (~=4.12.2) and v16 (~=4.13.5) without forcing a downgrade
 
-    "assistant_runtime_sdk>=1.5.0",
+    # Exact pin, not a floor. FAC and the SDK ship as a coupled pair: FAC calls
+    # methods that only exist from a given release onward, and a floor lets pip
+    # resolve to an older published version that lacks them — which surfaces as
+    # AttributeError at runtime, in production, rather than at install time.
+    # Local dev overrides this with `pip install -e apps/assistant_runtime_sdk`;
+    # UAT pins an exact prerelease (e.g. ==1.6.0rc1).
+    "assistant_runtime_sdk==1.7.1",
 ]
 
 [project.optional-dependencies]

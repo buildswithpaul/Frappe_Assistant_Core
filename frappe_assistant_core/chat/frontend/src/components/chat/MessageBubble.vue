@@ -93,11 +93,7 @@
 				</button>
 			</div>
 
-			<!-- Message footer: timestamp + credits -->
-			<div v-if="showTimestamps || (!isUser && message.credits_used)" class="message-footer">
-				<span v-if="showTimestamps && message.timestamp" class="message-timestamp">{{ formattedTime }}</span>
-				<span v-if="!isUser && message.credits_used" class="message-credits" :title="creditsTooltip">{{ creditsLabel }}</span>
-			</div>
+			<MessageFooter :message="message" :is-user="isUser" />
 		</div>
 	</div>
 </template>
@@ -105,8 +101,8 @@
 <script setup>
 import { computed, ref, onMounted } from "vue";
 import { useUserStore } from "@/stores/userStore";
-import { usePreferences } from "@/composables/usePreferences";
 import MessageBlockRenderer from "./MessageBlockRenderer.vue";
+import MessageFooter from "./MessageFooter.vue";
 import FacoRobot from "@/components/common/FacoRobot.vue";
 import { ensureHljs } from "@/utils/markdown.js";
 import { turnLabel, userInitial as deriveInitial } from "./turns.js";
@@ -133,31 +129,6 @@ const props = defineProps({
 defineEmits(["toggleBlock", "approve", "reject", "previewDocument", "continue", "pin", "unqueue"]);
 
 const userStore = useUserStore();
-const { preferences } = usePreferences();
-const showTimestamps = computed(() => preferences.showTimestamps);
-
-const formattedTime = computed(() => {
-	if (!props.message.timestamp) return "";
-	const date = new Date(props.message.timestamp);
-	const now = new Date();
-	const diffMs = now - date;
-	const diffMin = Math.floor(diffMs / 60000);
-
-	if (diffMin < 1) return "Just now";
-	if (diffMin < 60) return `${diffMin}m ago`;
-
-	const diffHours = Math.floor(diffMin / 60);
-	if (diffHours < 24 && date.getDate() === now.getDate()) {
-		return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-	}
-
-	return date.toLocaleDateString([], {
-		month: "short",
-		day: "numeric",
-		hour: "numeric",
-		minute: "2-digit",
-	});
-});
 
 // Bump on hljs load so renderBlocks re-renders with syntax highlighting
 // once the chunk arrives.
@@ -169,20 +140,6 @@ onMounted(() => {
 });
 
 const isUser = computed(() => props.message.role === "user");
-
-// Credits are a float, so the raw value renders as e.g. "12.340000000001".
-const creditsLabel = computed(() => {
-	const credits = Number(props.message.credits_used) || 0;
-	const rounded = credits >= 10 ? Math.round(credits) : Math.round(credits * 10) / 10;
-	return `${rounded} credits`;
-});
-
-const creditsTooltip = computed(() => {
-	const model = props.message.model;
-	return model
-		? `Billed on the text in and out of this turn, at ${model}'s rate.`
-		: "Billed on the text going into and out of this turn.";
-});
 
 const userInitial = computed(() => deriveInitial(userStore.user));
 
@@ -390,25 +347,5 @@ function copyMessage() {
 .action-btn:hover {
 	color: var(--ql-text);
 	background-color: var(--ql-subtle);
-}
-
-.message-footer {
-	display: flex;
-	align-items: center;
-	gap: 0.5rem;
-	margin-top: 0.25rem;
-	font-size: 0.7rem;
-	color: var(--ql-text-muted);
-	opacity: 0.8;
-}
-
-.message-timestamp {
-	font-variant-numeric: tabular-nums;
-	font-family: var(--ql-font-mono);
-}
-
-.message-footer .message-timestamp + .message-credits::before {
-	content: "\00b7";
-	margin-right: 0.5rem;
 }
 </style>

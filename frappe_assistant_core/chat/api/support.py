@@ -35,6 +35,56 @@ def _get_client():
     return client
 
 
+MAX_TRANSCRIPT_BYTES = 200 * 1024
+MAX_TRANSCRIPT_MESSAGES = 200
+_TRUNCATION_NOTE = "\n\n---\n_Earlier turns omitted — transcript truncated._\n"
+
+_ROLE_LABELS = {"user": "User", "assistant": "Assistant", "system": "System"}
+
+
+def _render_transcript(session_id: str | None) -> str | None:
+    """Render the caller's own chat session as Markdown, or None if empty.
+
+    Only runs when the user ticked "Include this conversation". Scoped to
+    frappe.session.user because frappe.get_all bypasses permissions — this
+    filter is the only thing stopping a crafted session_id reading someone
+    else's chat.
+    """
+    if not session_id:
+        return None
+
+    rows = frappe.get_all(
+        "FAC Chat Message",
+        filters={"session_id": session_id, "user": frappe.session.user},
+        fields=["role", "content", "model", "timestamp"],
+        order_by="timestamp asc, creation asc",
+        limit=MAX_TRANSCRIPT_MESSAGES,
+    )
+    if not rows:
+        return None
+
+    parts = [f"# Conversation transcript\n\nSession: {session_id}\n"]
+    for row in rows:
+        role = _ROLE_LABELS.get((row.get("role") or "").lower(), row.get("role") or "Unknown")
+        heading = f"## {role}"
+        if row.get("model"):
+            heading += f" · {row['model']}"
+        if row.get("timestamp"):
+            heading += f" · {row['timestamp']}"
+        parts.append(f"{heading}\n\n{row.get('content') or ''}\n")
+
+    return _clip("\n".join(parts))
+
+
+def _clip(text: str) -> str:
+    """Bound the transcript so a long session can't bloat the ticket."""
+    encoded = text.encode("utf-8")
+    if len(encoded) <= MAX_TRANSCRIPT_BYTES:
+        return text
+    budget = MAX_TRANSCRIPT_BYTES - len(_TRUNCATION_NOTE.encode("utf-8"))
+    return encoded[:budget].decode("utf-8", errors="ignore") + _TRUNCATION_NOTE
+
+
 def _coerce_env(environment: dict | str | None) -> dict | None:
     """Accept a dict or a JSON string from form data; return a dict or None."""
     if environment in (None, ""):
@@ -166,10 +216,46 @@ def create_ticket(
             conversation_id=conversation_id or None,
             environment=_coerce_env(environment),
             attachment_ids=_coerce_ids(attachment_ids),
+            conversation_transcript=_render_transcript(conversation_id or None),
         )
     except Exception as e:
         frappe.log_error(title="Support create_ticket failed", message=str(e))
         frappe.throw(_("Couldn't submit your ticket. Please try again."))
+
+
+@frappe.whitelist(methods=["GET"])
+@rate_limit(session_user_or_ip, limit=120, seconds=60)
+def download_ticket_attachment(ticket_id: str | int | None = None, file_url: str | None = None):
+    """Stream a ticket attachment that physically lives on AR.
+
+    Ticket files are stored on AR, so the URLs AR writes into ticket content
+    ("/private/files/...") point at a host this site is not. The SPA rewrites
+    them to this endpoint, which fetches over the signed channel and serves the
+    bytes from this origin, where the user already has a session.
+
+    GET so it can back an <img src>. AR re-checks that the caller owns both the
+    ticket and the file, so this proxy adds no authority of its own.
+    """
+    if not ticket_id:
+        frappe.throw(_("ticket_id is required"))
+    if not file_url:
+        frappe.throw(_("file_url is required"))
+
+    client = _get_client()
+    try:
+        content, content_type, filename = client.download_ticket_attachment(
+            user_id=frappe.session.user,
+            ticket_id=str(ticket_id),
+            file_url=file_url,
+        )
+    except Exception as e:
+        frappe.log_error(title="Support download_ticket_attachment failed", message=str(e))
+        frappe.throw(_("Couldn't load that attachment."))
+
+    frappe.local.response.filename = filename or "attachment"
+    frappe.local.response.filecontent = content
+    frappe.local.response.type = "download"
+    frappe.local.response.content_type = content_type or "application/octet-stream"
 
 
 @frappe.whitelist(methods=["POST"])
@@ -231,12 +317,13 @@ def submit_feedback(
     rating: int | str | None = None,
     comment: str | None = None,
     category: str | None = None,
-    conversation_id: str | None = None,
     environment: dict | str | None = None,
 ) -> dict:
     """Submit product/service feedback for the current user.
 
-    Returns {feedback_id} from AR.
+    Returns {feedback_id} from AR. Deliberately carries no conversation
+    reference: the feedback form never asks for one, so sending it would be
+    undisclosed collection. Tickets ask, and attach the transcript.
     """
     user = frappe.session.user
     client = _get_client()
@@ -246,7 +333,6 @@ def submit_feedback(
             rating=cint(rating) if rating not in (None, "") else None,
             comment=comment or None,
             category=category or None,
-            conversation_id=conversation_id or None,
             environment=_coerce_env(environment),
         )
     except Exception as e:

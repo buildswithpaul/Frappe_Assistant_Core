@@ -27,6 +27,7 @@ import { packs } from "./domains/packs";
 import { privacy } from "./domains/privacy";
 import { profile } from "./domains/profile";
 import { registration } from "./domains/registration";
+import { routingPreferences } from "./domains/routingPreferences";
 import { sharedKnowledge } from "./domains/sharedKnowledge";
 import { suggestions } from "./domains/suggestions";
 import { support } from "./domains/support";
@@ -64,6 +65,7 @@ export const api = {
 	packs,
 	privacy,
 	tools,
+	routingPreferences,
 };
 
 export default api;

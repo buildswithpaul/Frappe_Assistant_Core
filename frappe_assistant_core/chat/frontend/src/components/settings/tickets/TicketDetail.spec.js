@@ -52,3 +52,68 @@ describe("TicketDetail attachments + rendering", () => {
 		expect(w.vm.renderContent('<img src=x><script>alert(1)<\/script>')).not.toContain("<script>");
 	});
 });
+
+describe("TicketDetail conversation link", () => {
+	const mountWith = (ticket) =>
+		mount(TicketDetail, {
+			props: { ticket },
+			global: { stubs: { TicketStatusPill: true, AttachmentPicker: true } },
+		});
+
+	it("offers a link into the chat when the ticket carries a conversation", () => {
+		const w = mountWith({ ...openTicket, conversation_id: "sess-42" });
+		const link = w.find(".conversation-link");
+		expect(link.exists()).toBe(true);
+		expect(link.text()).toContain("View conversation");
+	});
+
+	it("emits navigate to that conversation's chat route", async () => {
+		const w = mountWith({ ...openTicket, conversation_id: "sess-42" });
+		await w.find(".conversation-link").trigger("click");
+		expect(w.emitted("navigate")[0]).toEqual(["/chat/sess-42"]);
+	});
+
+	it("shows nothing when the ticket has no conversation", () => {
+		expect(mountWith(openTicket).find(".conversation-link").exists()).toBe(false);
+	});
+
+	it("never renders the raw transcript file to the customer", () => {
+		const w = mountWith({ ...openTicket, conversation_id: "sess-42" });
+		expect(w.html()).not.toContain("/private/files/");
+		expect(w.html()).not.toContain(".md");
+	});
+});
+
+describe("TicketDetail attachment URL rewriting", () => {
+	const ticket = { ...openTicket, messages: [] };
+	const mountIt = () =>
+		mount(TicketDetail, {
+			props: { ticket, ticketId: "58" },
+			global: { stubs: { TicketStatusPill: true, AttachmentPicker: true } },
+		});
+
+	it("points AR file URLs at the FAC proxy, not this site's root", () => {
+		const html = mountIt().vm.renderContent('<img src="/private/files/a.png">');
+		expect(html).toContain("download_ticket_attachment");
+		expect(html).toContain("ticket_id=58");
+		expect(html).toContain(encodeURIComponent("/private/files/a.png"));
+		expect(html).not.toContain('src="/private/files/a.png"');
+	});
+
+	it("rewrites anchor hrefs too, so PDFs open", () => {
+		const html = mountIt().vm.renderContent('<a href="/private/files/b.pdf">b.pdf</a>');
+		expect(html).toContain("download_ticket_attachment");
+		expect(html).not.toContain('href="/private/files/b.pdf"');
+	});
+
+	it("leaves unrelated links alone", () => {
+		const html = mountIt().vm.renderContent('<a href="https://example.com/x">x</a>');
+		expect(html).toContain('href="https://example.com/x"');
+		expect(html).not.toContain("download_ticket_attachment");
+	});
+
+	it("still strips dangerous markup", () => {
+		const html = mountIt().vm.renderContent('<img src="/private/files/a.png" onerror="alert(1)">');
+		expect(html).not.toContain("onerror");
+	});
+});

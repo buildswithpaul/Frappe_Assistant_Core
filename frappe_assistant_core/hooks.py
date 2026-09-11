@@ -14,6 +14,9 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+import hashlib
+import os
+
 from . import __version__ as app_version
 
 app_name = "frappe_assistant_core"
@@ -313,8 +316,41 @@ assistant_tool_configs = {
 # a browser keeps running the previous widget for up to 12h after a deploy. That
 # silently splits client and server across a release — the browser-tool progress
 # protocol was the first contract where an old cached widget actively broke the
-# new server. Stamping the app version busts the cache on every release.
-_WIDGET_ASSET_VERSION = app_version
+# new server.
+#
+# The app version busts the cache across RELEASES, but semantic-release owns it
+# (.releaserc rewrites __init__.py), so it never moves within one — which is
+# every dev rebuild and every manual same-version deploy. A short digest of the
+# widget sources covers that gap: it changes when and only when the files do,
+# and unlike an mtime it agrees across workers and machines.
+_WIDGET_ASSET_DIR = os.path.join(os.path.dirname(__file__), "public", "chat", "widget")
+
+
+def _widget_asset_revision(directory: str = None) -> str:
+    """Short digest of the widget sources, or "" when they cannot be read.
+
+    Vendor bundles under libs/ are excluded — they are pinned and move with
+    releases. A stale stamp is a caching problem; raising here is an outage,
+    so every failure degrades to the release version alone.
+    """
+    directory = directory or _WIDGET_ASSET_DIR
+    try:
+        digest = hashlib.sha1()
+        for name in sorted(os.listdir(directory)):
+            if not name.endswith((".js", ".css")):
+                continue
+            # `directory` is a module-relative constant and `name` comes from
+            # os.listdir of it, filtered to .js/.css — no request data here.
+            path = os.path.join(directory, name)
+            with open(path, "rb") as handle:  # nosemgrep: frappe-security-file-traversal
+                digest.update(handle.read())
+        return digest.hexdigest()[:10]
+    except Exception:
+        return ""
+
+
+_WIDGET_ASSET_REVISION = _widget_asset_revision()
+_WIDGET_ASSET_VERSION = f"{app_version}-{_WIDGET_ASSET_REVISION}" if _WIDGET_ASSET_REVISION else app_version
 
 
 def _widget_asset(path: str) -> str:
@@ -359,6 +395,7 @@ app_include_js = [
     _widget_asset("/assets/frappe_assistant_core/chat/widget/widget_richblocks.js"),
     _widget_asset("/assets/frappe_assistant_core/chat/widget/widget_ui.js"),
     _widget_asset("/assets/frappe_assistant_core/chat/widget/widget_context.js"),
+    _widget_asset("/assets/frappe_assistant_core/chat/widget/widget_routing.js"),
     _widget_asset("/assets/frappe_assistant_core/chat/widget/widget_streaming.js"),
     _widget_asset("/assets/frappe_assistant_core/chat/widget/widget_plan.js"),
     _widget_asset("/assets/frappe_assistant_core/chat/widget/widget_templates.js"),

@@ -24,6 +24,7 @@
 					:web-search-available="webSearchAvailable"
 					:web-search="modes.webSearch"
 					:thinking="modes.thinking"
+					:thinking-available="modelStore.thinkingHonoured"
 					@attach="onMenuAttach"
 					@toggle-web-search="composerModesStore.toggle(chatStore.currentSessionId, 'webSearch')"
 					@toggle-thinking="composerModesStore.toggle(chatStore.currentSessionId, 'thinking')"
@@ -64,6 +65,7 @@
 						:plus-open="plusOpen"
 						:web-search="modes.webSearch"
 						:thinking="modes.thinking"
+						:thinking-available="modelStore.thinkingHonoured"
 						:web-search-available="webSearchAvailable"
 						@toggle-plus="plusOpen = !plusOpen"
 						@toggle-web-search="composerModesStore.toggle(chatStore.currentSessionId, 'webSearch')"
@@ -94,6 +96,7 @@ import { useRobotMoodStore } from "@/stores/robotMoodStore";
 import { useComposerModesStore } from "@/stores/composerModesStore";
 import { useChatStore } from "@/stores/chatStore";
 import { useUserStore } from "@/stores/userStore";
+import { useModelStore } from "@/stores/modelStore";
 import { renderMarkdown, ensureHljs } from "@/utils/markdown.js";
 import { useToast } from "@/composables/useToast";
 
@@ -108,6 +111,7 @@ const robotMoodStore = useRobotMoodStore();
 const composerModesStore = useComposerModesStore();
 const chatStore = useChatStore();
 const userStore = useUserStore();
+const modelStore = useModelStore();
 
 const props = defineProps({
 	disabled: { type: Boolean, default: false },

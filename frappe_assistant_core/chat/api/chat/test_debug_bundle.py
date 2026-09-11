@@ -17,6 +17,7 @@ from unittest.mock import patch
 
 import frappe
 
+from frappe_assistant_core import __version__ as fac_version
 from frappe_assistant_core.chat.api.chat.debug_bundle import export_debug_bundle
 
 TEST_USER = "Administrator"
@@ -115,7 +116,7 @@ class TestDebugBundle(unittest.TestCase):
             versions = json.loads(z.read("versions.json"))
             self.assertIn("frappe", versions)
             self.assertIn("frappe_assistant_core", versions)
-            self.assertEqual(versions["frappe_assistant_core"], "3.0.0-beta.1")
+            self.assertEqual(versions["frappe_assistant_core"], fac_version)
 
 
 if __name__ == "__main__":

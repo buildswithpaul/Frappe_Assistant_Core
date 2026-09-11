@@ -80,6 +80,9 @@ export function useBillingData() {
 	// Prepaid credits
 	const creditBalance = ref(null);
 	const creditTransactions = ref([]);
+	// Null when nothing is on a clock, and also on the dashboard fallback
+	// below — that path has a balance but no ledger, so it cannot know.
+	const creditNextExpiry = ref(null);
 	const showCreditPurchase = ref(false);
 	const purchasingCredits = ref(false);
 
@@ -279,9 +282,11 @@ export function useBillingData() {
 				if (creditData && !creditData.error) {
 					creditBalance.value = creditData.balance || 0;
 					creditTransactions.value = creditData.transactions || [];
+					creditNextExpiry.value = creditData.next_expiry || null;
 				} else {
 					creditBalance.value = dashboard?.credit_balance ?? null;
 					creditTransactions.value = [];
+					creditNextExpiry.value = null;
 				}
 
 				if (dashboard?.error) {
@@ -763,6 +768,7 @@ export function useBillingData() {
 		purchasingCredits,
 		creditBalance,
 		creditTransactions,
+		creditNextExpiry,
 		showPromoInput,
 		promoCode,
 		appliedPromo,

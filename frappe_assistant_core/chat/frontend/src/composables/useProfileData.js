@@ -77,6 +77,21 @@ export function useProfileData() {
 		}
 	}
 
+	// Reset every field to the last saved values. No API call — _original is
+	// already the server's copy, refreshed on load and after each save.
+	function discardChanges() {
+		const o = _original.value;
+		displayName.value = o.displayName || "";
+		jobTitle.value = o.jobTitle || "";
+		department.value = o.department || "";
+		about.value = o.about || "";
+		customInstructions.value = o.customInstructions || "";
+		locale.value = o.locale || "";
+		timezone.value = o.timezone || "";
+		error.value = null;
+		successMessage.value = null;
+	}
+
 	// Save only changed fields
 	async function saveProfile() {
 		if (!isDirty.value) return;
@@ -142,5 +157,6 @@ export function useProfileData() {
 		// Actions
 		loadProfile,
 		saveProfile,
+		discardChanges,
 	};
 }

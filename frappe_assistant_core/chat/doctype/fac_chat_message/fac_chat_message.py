@@ -18,6 +18,20 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
+# Every LLM-metadata key that is persisted on a message row. Points 2-9 of the
+# receipt persistence chain all spread from this list.
+#
+# Copying these by hand is how "provider" and "fallback_attempted" came to be
+# permanently undefined in the client, and how model_breakdown came to be
+# written but never parsed. One list, or the next field is lost the same way.
+PERSISTED_LLM_KEYS = (
+    "model",
+    "credits_used",
+    "tool_calls",
+    "model_breakdown",
+    "routing",
+)
+
 
 class FACChatMessage(Document):
     """FAC Chat Message - Stores individual messages in a session"""
@@ -103,6 +117,7 @@ class FACChatMessage(Document):
                 "credits_used",
                 "model",
                 "model_breakdown",
+                "routing",
             ],
             order_by="idx asc, timestamp asc",
             limit_start=start,
@@ -164,9 +179,12 @@ class FACChatMessage(Document):
         # Add LLM metadata if provided (for assistant messages). FAC surfaces
         # credits only — token counts are recorded by AR (AR Message), not here.
         if llm_metadata:
-            doc.model = llm_metadata.get("model")
-            doc.credits_used = llm_metadata.get("credits_used")
-            doc.tool_calls = llm_metadata.get("tool_calls")
+            for key in PERSISTED_LLM_KEYS:
+                value = llm_metadata.get(key)
+                # None means "this turn had nothing to say about it" — never
+                # an instruction to erase what an earlier hop already wrote.
+                if value is not None:
+                    setattr(doc, key, value)
 
         # ignore_mandatory: assistant streaming shells start with empty content,
         # backfilled on stream_complete. Without this the reqd content field

@@ -319,19 +319,22 @@ html[data-theme="dark"] .faco-widget .faco-contact-admin p {
    =================================== */
 
 .faco-quota-warning-content,
-.faco-quota-blocked-content {
+.faco-quota-blocked-content,
+.faco-quota-overage-content {
 	text-align: center;
 	padding: 16px 0;
 }
 
 .faco-quota-warning-icon,
-.faco-quota-blocked-icon {
+.faco-quota-blocked-icon,
+.faco-quota-overage-icon {
 	font-size: 48px;
 	margin-bottom: 16px;
 }
 
 .faco-quota-warning-content h4,
-.faco-quota-blocked-content h4 {
+.faco-quota-blocked-content h4,
+.faco-quota-overage-content h4 {
 	margin: 0 0 12px;
 	font-size: 16px;
 	font-weight: 600;
@@ -339,7 +342,8 @@ html[data-theme="dark"] .faco-widget .faco-contact-admin p {
 }
 
 .faco-quota-warning-content p,
-.faco-quota-blocked-content p {
+.faco-quota-blocked-content p,
+.faco-quota-overage-content p {
 	margin: 0;
 	font-size: 14px;
 	color: var(--text-muted);

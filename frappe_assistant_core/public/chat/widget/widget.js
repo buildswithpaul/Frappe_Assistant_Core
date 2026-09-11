@@ -310,10 +310,7 @@ class FACOWidget {
 
 			// Render each message
 			messages.forEach((msg) => {
-				this.messages.push({
-					role: msg.role,
-					content: msg.content,
-				});
+				this.messages.push(this._toWidgetMessage(msg));
 
 				// Recovery reads compare against what is already on screen.
 				if (msg.message_id) {
@@ -327,6 +324,7 @@ class FACOWidget {
 				// Re-render a persisted task plan as a collapsed, expandable
 				// summary above this message's content (matches the SPA).
 				this.render_persisted_plan(msg, $msg);
+				this.render_routing_chip(msg, $msg);
 			});
 
 			// Scroll to bottom after loading history
@@ -393,11 +391,11 @@ class FACOWidget {
 						// Found the response! Remove indicator and render
 						$waitingIndicator.remove();
 
-						this.messages.push({
-							role: lastMsg.role,
-							content: lastMsg.content,
-						});
-						this.add_message_to_ui(lastMsg.role, lastMsg.content);
+						this.messages.push(this._toWidgetMessage(lastMsg));
+						const $late = this.add_message_to_ui(lastMsg.role, lastMsg.content);
+						// The recovery path after a long tool call — exactly when a
+						// user most wants to know which model ran.
+						this.render_routing_chip(lastMsg, $late);
 						return;
 					}
 				}
@@ -929,17 +927,16 @@ class FACOWidget {
 		const $input = this.$widget.find(".faco-input");
 		const $sendBtn = this.$widget.find(".faco-send-btn");
 
-		// Check if quota is exceeded (hard block) — skip for unlimited (dev mode).
+		// Refuse only when every credit is genuinely gone. FACOWidgetQuota
+		// owns that test so this surface cannot drift from AR's admission
+		// rule again — a tenant running on prepaid credits is admitted here,
+		// exactly as AR and the SPA admit them.
+		//
 		// Only intercept for admins; non-admins fall through and see the
 		// inline streaming error from the API ("Service temporarily
 		// unavailable, contact your administrator"). They have no upgrade
 		// path so a modal here would just block them with no recourse.
-		if (
-			this.quota_status &&
-			!this.quota_status.is_unlimited &&
-			this.quota_status.percentage_used >= 100 &&
-			this.quota_status.is_admin
-		) {
+		if (FACOWidgetQuota.is_blocked(this.quota_status) && this.quota_status.is_admin) {
 			this.show_quota_blocked_modal(this.quota_status.is_admin);
 			return;
 		}
@@ -1187,6 +1184,48 @@ class FACOWidget {
 		this.scroll_to_bottom();
 
 		return $message;
+	}
+
+	_toWidgetMessage(msg) {
+		// ONE field list for both history readers. Keeping two lists is how
+		// `provider` and `fallback_attempted` were lost in production before.
+		return {
+			role: msg.role,
+			content: msg.content,
+			model: msg.model,
+			credits_used: msg.credits_used,
+			routing: msg.routing,
+		};
+	}
+
+	render_routing_chip(msg, $message) {
+		let receipt = msg && msg.routing;
+		if (!receipt || msg.role === "user") return;
+		if (typeof receipt === "string") {
+			try {
+				receipt = JSON.parse(receipt);
+			} catch (e) {
+				return;
+			}
+		}
+		const routing = window.FACOWidgetRouting;
+		if (!routing) return;
+		const label = routing.chipLabel(receipt);
+		if (!label) return;
+
+		const $msg = $message && $message.length
+			? $message
+			: this.$widget.find(".faco-message").last();
+		if (!$msg.length || $msg.find(".faco-routing-chip").length) return;
+
+		// Non-interactive text, and exception-only: the widget has no panel to
+		// open, so an ordinary turn renders nothing here at all.
+		const $chip = $("<span>")
+			.addClass("faco-routing-chip")
+			.attr("title", routing.headline(receipt, null))
+			.text(label);
+		const $time = $msg.find(".faco-message-time");
+		($time.length ? $time : $msg).append($chip);
 	}
 
 	render_persisted_plan(msg, $message) {

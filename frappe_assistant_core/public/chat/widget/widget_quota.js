@@ -33,10 +33,8 @@ window.FACOWidgetQuota = {
 				return data;
 			}
 
-			const percentage = data.percentage_used || 0;
-
 			// Check for warning thresholds
-			this.check_quota_warnings(widget, percentage, data.is_admin);
+			this.check_quota_warnings(widget, data);
 
 			return data;
 		} catch (error) {
@@ -64,21 +62,47 @@ window.FACOWidgetQuota = {
 	},
 
 	/**
-	 * Check and show quota warning modals at thresholds
-	 * @param {Object} widget - Widget instance
-	 * @param {number} percentage - Percentage used
-	 * @param {boolean} is_admin - Whether user is admin
+	 * Should this turn be refused before it is even sent?
+	 *
+	 * Gates on the server's `credits_exhausted` — AR's own admission rule:
+	 * the monthly quota is spent AND no prepaid balance is left. The old
+	 * test, `percentage_used >= 100`, counted the plan quota alone, so it
+	 * refused precisely the tenants who had bought prepaid credits in order
+	 * to keep working. AR would have served them; the SPA did serve them;
+	 * only the widget said no.
+	 *
+	 * An absent answer never blocks. Widget assets are cached for 12h, so a
+	 * bundle and a server of different vintages meeting is routine, and
+	 * "the server didn't say" is not "the server said no".
+	 *
+	 * @param {Object} quota_status - Payload from get_quota_status
+	 * @returns {boolean} True only when every credit is genuinely gone
 	 */
-	check_quota_warnings(widget, percentage, is_admin) {
+	is_blocked(quota_status) {
+		if (!quota_status || quota_status.is_unlimited) {
+			return false;
+		}
+		return quota_status.credits_exhausted === true;
+	},
+
+	/**
+	 * Check and show quota modals at their thresholds.
+	 * @param {Object} widget - Widget instance
+	 * @param {Object} data - Payload from get_quota_status
+	 */
+	check_quota_warnings(widget, data) {
 		// Quota modals are admin-only. Non-admins can't act on them
 		// (the upgrade and purchase flows are admin-gated), so surfacing
 		// "you're at 80%" to them creates anxiety without agency. If a
 		// non-admin's request later fails because the tenant is at 100%,
 		// the streaming layer surfaces the API error inline — that's
 		// the right place for them to learn about it.
+		const is_admin = !!(data && data.is_admin);
 		if (!is_admin) {
 			return;
 		}
+
+		const percentage = data.percentage_used || 0;
 
 		// Use sessionStorage so warnings persist across page navigations within the same session
 		// (clears when tab closes, so admins see warnings again in a new session)
@@ -92,24 +116,85 @@ window.FACOWidgetQuota = {
 
 		const save = () => sessionStorage.setItem(storageKey, JSON.stringify(shown));
 
-		// 100% - Hard block
-		if (percentage >= 100 && !shown["100"]) {
-			shown["100"] = true;
+		const once = (key, show) => {
+			if (shown[key]) {
+				return;
+			}
+			shown[key] = true;
 			save();
-			this.show_quota_blocked_modal(widget, is_admin);
+			show();
+		};
+
+		// Every credit gone, quota and prepaid alike. The only blocking state.
+		if (data.credits_exhausted) {
+			once("100", () => this.show_quota_blocked_modal(widget, is_admin));
+			return;
 		}
-		// 90% warning
-		else if (percentage >= 90 && percentage < 100 && !shown["90"]) {
-			shown["90"] = true;
-			save();
-			this.show_quota_warning_modal(widget, 90, is_admin);
+
+		// Quota spent, prepaid credits covering the difference. This is a
+		// working state, not a failure — the tenant bought credits for exactly
+		// this. Mark the switchover once so it isn't silent (the credits are
+		// finite and now draining), then stay out of the way.
+		if (data.in_overage) {
+			once("overage", () => this.show_quota_overage_notice(widget, is_admin));
+			return;
 		}
-		// 80% warning
-		else if (percentage >= 80 && percentage < 90 && !shown["80"]) {
-			shown["80"] = true;
-			save();
-			this.show_quota_warning_modal(widget, 80, is_admin);
+
+		// 90% / 80% warnings — the nudge to top up BEFORE the overage starts.
+		// No upper bound: on the version skew above, percentage can read past
+		// 100 with no verdict attached, and a warning is the honest reading.
+		if (percentage >= 90) {
+			once("90", () => this.show_quota_warning_modal(widget, 90, is_admin));
+		} else if (percentage >= 80) {
+			once("80", () => this.show_quota_warning_modal(widget, 80, is_admin));
 		}
+	},
+
+	/**
+	 * Tell an admin, once per session, that the monthly quota is spent and
+	 * prepaid credits have taken over. Informational and dismissible — the
+	 * turn goes through either way. Admin-only for the same reason the
+	 * warnings are: a member cannot buy credits, so this would be anxiety
+	 * without agency.
+	 * @param {Object} widget - Widget instance
+	 * @param {boolean} is_admin - Whether user is admin
+	 */
+	show_quota_overage_notice(widget, is_admin) {
+		if (!is_admin) {
+			return;
+		}
+		const balance = (widget.quota_status || {}).credit_balance || 0;
+
+		const dialog = new frappe.ui.Dialog({
+			title: __("Now using prepaid credits"),
+			indicator: "blue",
+			fields: [
+				{
+					fieldtype: "HTML",
+					options: `
+						<div class="faco-quota-overage-content">
+							<div class="faco-quota-overage-icon">💳</div>
+							<h4>${__("Your monthly quota is used up")}</h4>
+							<p>${__("Requests now draw on your prepaid credits — {0} remaining.", [
+								this.format_credits(balance),
+							])}</p>
+							<p style="margin-top: 12px; color: var(--text-muted);">
+								${__("Your quota resets at the start of next month.")}
+							</p>
+						</div>
+					`,
+				},
+			],
+			primary_action_label: __("Got it"),
+			primary_action: () => dialog.hide(),
+			secondary_action_label: __("View Billing"),
+			secondary_action: () => {
+				dialog.hide();
+				window.location.href = "/copilot/chat?tab=billing";
+			},
+		});
+
+		dialog.show();
 	},
 
 	/**
@@ -161,7 +246,9 @@ window.FACOWidgetQuota = {
 	},
 
 	/**
-	 * Show hard block modal when quota is 100% exhausted.
+	 * Show hard block modal when every credit is gone — monthly quota spent
+	 * AND no prepaid balance left. Never fires while prepaid credits remain;
+	 * see `is_blocked`.
 	 * Admin-only: non-admins are intentionally not shown any quota
 	 * modal. Defensive guard so a stray future caller can't bypass
 	 * the policy. See `check_quota_warnings` for the rationale.

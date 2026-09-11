@@ -1,7 +1,7 @@
 <template>
 	<div>
 		<div class="usage-chart-header">
-			<h3 class="section-title">Credit Consumption (Last {{ days }} Days)</h3>
+			<h3 class="section-title">Prepaid Credit Consumption (Last {{ days }} Days)</h3>
 			<select v-model.number="days" class="days-select" @change="loadBreakdown">
 				<option :value="7">7 days</option>
 				<option :value="30">30 days</option>
@@ -10,9 +10,15 @@
 		</div>
 		<div class="chart-card" v-if="hasData">
 			<v-chart :option="chartOption" :autoresize="true" class="usage-chart" />
+			<p class="chart-note">
+				Credits drawn from your purchased balance only. Usage covered by your
+				monthly quota is not shown here.
+			</p>
 		</div>
 		<p v-else-if="loading" class="empty-text">Loading…</p>
-		<p v-else class="empty-text">No consumption yet.</p>
+		<p v-else class="empty-text">
+			No prepaid credits used yet — your monthly quota is covering all usage.
+		</p>
 	</div>
 </template>
 
@@ -27,23 +33,70 @@ import { api } from "@/api/client";
 import { logger } from "@/utils/logger";
 import { formatTokens } from "@/composables/useFormatters";
 import { useChartTheme } from "@/composables/useChartTheme";
-import { vizColor } from "@/composables/dataVizPalette";
+import { vizColor, vizSequence } from "@/composables/dataVizPalette";
 
 use([CanvasRenderer, BarChart, GridComponent, TooltipComponent, LegendComponent]);
 
 const { colors } = useChartTheme();
 
-// Source taxonomy is fixed by AR Token Usage.source — the chart shows one
-// stacked series per source so admins can see what is driving consumption.
-const SOURCES = ["Chat", "Memory Extraction", "Workflow", "Embedding", "Classifier"];
+// Known sources in the order they should stack, and the stable index each one
+// takes into the shared teal-anchored sequence so a source keeps a consistent,
+// on-brand hue across analytics + billing.
+//
+// This list orders and colours the chart; it does NOT decide what appears in
+// it. The chart used to draw only the sources named here and drop every other
+// row on the floor — Suggestions, Web Search and Voice Transcription were all
+// in the rollup and none of them reached a bar, so the chart under-reported
+// without ever looking wrong. AR's source enum grows over time; the chart now
+// draws whatever the data holds and this list only says how it should look.
+const SOURCE_ORDER = [
+	"Chat",
+	"Memory Extraction",
+	"Workflow",
+	"Embedding",
+	"Classifier",
+	"Voice Transcription",
+	"Web Search",
+	"Suggestions",
+];
 
-// Stable index into the shared teal-anchored sequence so each source keeps a
-// consistent, on-brand hue across analytics + billing. Unknown sources fall
-// past the known set.
-const SOURCE_ORDER = ["Chat", "Memory Extraction", "Workflow", "Embedding", "Classifier"];
-function sourceColor(name, isDark) {
-	const i = SOURCE_ORDER.indexOf(name);
-	return vizColor(i === -1 ? SOURCE_ORDER.length : i, isDark);
+// Known sources first in canonical order, then anything new, alphabetically.
+function orderedSources(rows) {
+	const rank = (s) => {
+		const i = SOURCE_ORDER.indexOf(s);
+		return i === -1 ? SOURCE_ORDER.length : i;
+	};
+	return [...new Set(rows.map((r) => r.source))].sort(
+		(a, b) => rank(a) - rank(b) || a.localeCompare(b),
+	);
+}
+
+// Known sources keep their canonical hue. An unknown source takes the first
+// hue this particular chart isn't already using, so a newly added AR source
+// is legible on sight rather than arriving as a second teal beside Chat.
+function sourceColors(sources, isDark) {
+	const palette = vizSequence(isDark).length;
+	const taken = new Set();
+	const index = new Map();
+
+	for (const name of sources) {
+		const i = SOURCE_ORDER.indexOf(name);
+		if (i !== -1) {
+			index.set(name, i);
+			taken.add(i % palette);
+		}
+	}
+
+	let probe = 0;
+	for (const name of sources) {
+		if (index.has(name)) continue;
+		while (probe < palette && taken.has(probe % palette)) probe++;
+		index.set(name, probe % palette);
+		taken.add(probe % palette);
+		probe++;
+	}
+
+	return new Map([...index].map(([name, i]) => [name, vizColor(i, isDark)]));
 }
 
 const days = ref(30);
@@ -85,7 +138,10 @@ const chartOption = computed(() => {
 		return `${dt.getMonth() + 1}/${dt.getDate()}`;
 	});
 
-	const datasets = SOURCES.map((source) => {
+	const sources = orderedSources(series.value);
+	const palette = sourceColors(sources, colors.value.isDark);
+
+	const datasets = sources.map((source) => {
 		const values = dates.map((d) => {
 			const m = series.value.find((r) => r.date === d && r.source === source);
 			return m ? Number(m.credits) : 0;
@@ -96,7 +152,7 @@ const chartOption = computed(() => {
 			stack: "credits",
 			data: values,
 			itemStyle: {
-				color: sourceColor(source, colors.value.isDark),
+				color: palette.get(source),
 			},
 			barMaxWidth: 24,
 		};
@@ -193,6 +249,13 @@ onMounted(loadBreakdown);
 
 .empty-text {
 	font-size: 0.875rem;
+	color: var(--ql-text-muted);
+}
+
+.chart-note {
+	margin: 0.75rem 0 0;
+	font-size: 0.75rem;
+	line-height: 1.4;
 	color: var(--ql-text-muted);
 }
 </style>

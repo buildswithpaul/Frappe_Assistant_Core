@@ -119,6 +119,12 @@ window.FACOWidgetStreaming = {
 					if (data.selected) {
 						FACOLogger.debug("Auto mode selected model:", data.selected);
 					}
+					// The live receipt for the turn in flight; the chip is drawn
+					// when the message lands. widget.js hardcodes model_id "auto",
+					// so this fires on every widget turn.
+					if (data.routing) {
+						widget._pending_routing = data.routing;
+					}
 					break;
 
 				case "stream_chunk":
@@ -1347,8 +1353,21 @@ window.FACOWidgetStreaming = {
 			widget.preferences.quota_used += tokensUsed;
 			widget.update_quota_display();
 
-			widget.messages.push({ role: "assistant", content: fullResponse });
+			// The live turn's landing point — a THIRD place that kept only
+			// {role, content}. It goes through the same field list as the two
+			// history readers, and draws the chip now rather than leaving it to
+			// appear only when the user comes back to the conversation.
+			const landed = widget._toWidgetMessage({
+				role: "assistant",
+				content: fullResponse,
+				routing: widget._pending_routing,
+			});
+			widget.messages.push(landed);
+			widget.render_routing_chip(landed, $streamingMsg);
 		}
+
+		// One receipt per turn — never let it leak into the next one.
+		widget._pending_routing = null;
 
 		// Re-enable send button
 		widget.$widget.find(".faco-send-btn").prop("disabled", false);

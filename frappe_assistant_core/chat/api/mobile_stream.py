@@ -385,10 +385,13 @@ def _stream_generator(
                 tokens_used = data.get("tokens_used", 0)
                 credits_used = data.get("credits_used", 0)
                 model_used = data.get("model", "")
+                routing = data.get("routing")
                 full_response = data.get("full_response", full_response)
 
                 # Log the conversation
-                _log_conversation(session_id, message, full_response, model_used, credits=credits_used)
+                _log_conversation(
+                    session_id, message, full_response, model_used, credits=credits_used, routing=routing
+                )
 
                 # Fold this turn's credits into the quota cache (credit units)
                 _update_subscription_cache(credits_used)
@@ -410,6 +413,8 @@ def _stream_generator(
                         # This turn's own cost — parity with the web relay, and
                         # the only figure that moves an individually capped member.
                         "credits_used": credits_used,
+                        "model_id": model_used,
+                        "routing": routing,
                     },
                 )
 
@@ -515,7 +520,7 @@ def _extract_file_attachments(message_name: str) -> str:
         return ""
 
 
-def _log_conversation(session_id, message, response, model, credits=None):
+def _log_conversation(session_id, message, response, model, credits=None, routing=None):
     """Log assistant response as a FACO Message. Credits-only — FAC never
     surfaces token counts (AR records those on AR Message)."""
     try:
@@ -527,6 +532,7 @@ def _log_conversation(session_id, message, response, model, credits=None):
             # Real model only; empty when unknown. Never the "ar-agent" placeholder.
             "model": model or None,
             "credits_used": credits,
+            "routing": routing,
         }
 
         FACChatMessage.create_message(
@@ -670,7 +676,7 @@ def get_messages(session_id: str, limit: int = 100, offset: int = 0) -> dict:
         messages = frappe.get_all(
             "FAC Chat Message",
             filters={"session_id": session_id, "user": user},
-            fields=["name", "role", "content", "creation", "model", "credits_used"],
+            fields=["name", "role", "content", "creation", "model", "credits_used", "routing"],
             order_by="creation asc",
             limit_page_length=limit + 1,
             limit_start=offset,
@@ -684,10 +690,13 @@ def get_messages(session_id: str, limit: int = 100, offset: int = 0) -> dict:
         formatted = []
         for msg in messages:
             metadata = None
-            if msg.model or msg.credits_used:
+            # A zero-credit turn — cached, errored, or a free model — still has
+            # a receipt worth showing. The old guard returned None and dropped it.
+            if msg.model or msg.credits_used or msg.routing:
                 metadata = {
                     "model": msg.model,
                     "credits_used": msg.credits_used,
+                    "routing": msg.routing,
                 }
 
             formatted.append(

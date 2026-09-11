@@ -20,28 +20,45 @@
 
 		<div v-if="isOpen" class="explainer-body">
 			<p>
-				Credits measure how much work a reply took, not how many messages you sent. A
-				one-line question costs very little. Asking for a long document summary, or working
-				through a long conversation, costs more — the assistant is reading and writing more
-				each time.
+				A credit measures how much work a reply took. Sending more messages isn't
+				what costs — asking for more work is.
+			</p>
+
+			<!-- The scale is the thing people actually come here for. Without a
+			     number, "costs more" tells a reader who just saw 300 credits
+			     nothing at all. These are rounded bands, never a rate card. -->
+			<dl class="scale">
+				<dt>A quick question</dt>
+				<dd>a few dozen credits — <em>"what's my stock balance for this item?"</em></dd>
+				<dt>A bigger one</dt>
+				<dd>
+					a few hundred — looking things up across your data and writing a
+					full answer
+				</dd>
+				<dt>Background work</dt>
+				<dd>a handful — remembering something you told it</dd>
+			</dl>
+
+			<p>
+				Two things move the number: how much the assistant has to read and
+				write, and how capable a model the job needs. On <strong>Auto</strong> it
+				picks the lightest model that can do the job properly, so everyday
+				questions run on an economical one without you choosing.
 			</p>
 			<p>
-				The model you choose matters too. The faster, lighter models are the most economical
-				for everyday questions; the more capable ones think harder and cost more per reply.
-				If you leave the model on <strong>Auto</strong>, the assistant picks a suitable one
-				per message — simple questions go to a lighter model on their own.
-			</p>
-			<p>
-				A little of your balance also goes to work you don't see directly: choosing that
-				model for you, and remembering things you've told it. That's why the total can move
-				slightly more than your own messages alone would suggest.
+				<strong>No single reply can run away with your month.</strong> Every reply has
+				a ceiling. If a question turns out to be much bigger than it looked, the
+				assistant finishes with what it has and tells you what it left out,
+				rather than gathering indefinitely.
 			</p>
 
 			<ul class="tips">
 				<li>Each reply shows what it cost, under the message.</li>
-				<li>The meter at the top of the screen shows what's left this month.</li>
-				<li>Starting a new conversation for a new topic keeps replies cheaper than
-					continuing one very long thread.</li>
+				<li>The meter beside the model picker shows what's left this month.</li>
+				<li>
+					A new conversation for a new topic costs less than continuing a very
+					long one — there is less to re-read each time.
+				</li>
 			</ul>
 		</div>
 	</section>
@@ -93,6 +110,23 @@ const isOpen = ref(false);
 
 .explainer-body p {
 	margin: 0 0 0.75rem;
+}
+
+.scale {
+	display: grid;
+	grid-template-columns: auto 1fr;
+	gap: 0.3rem 0.75rem;
+	margin: 0 0 0.875rem;
+}
+
+.scale dt {
+	font-weight: 600;
+	color: var(--ql-text);
+	white-space: nowrap;
+}
+
+.scale dd {
+	margin: 0;
 }
 
 .tips {

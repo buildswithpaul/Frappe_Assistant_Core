@@ -28,7 +28,6 @@ export function createBlockHandlers({
 	hasPendingInteraction,
 	activeThinkingBlockId,
 	activeToolCallId,
-	autoModeSelection,
 	streamRequestId,
 }) {
 	function getOrCreateStreamingMessage() {
@@ -117,23 +116,15 @@ export function createBlockHandlers({
 		});
 	}
 
-	function handleModelFallback(data) {
-		autoModeSelection.value = {
-			selected: data.selected,
-			provider: data.provider,
-			tier: data.tier,
-			fallbackAttempted: data.fallback_attempted || false,
-		};
+	function handleModelSelected(data) {
+		// The wire event is `model_selected`; there is no `model_fallback`.
+		// The live receipt is `incomplete: true` — stream_complete supersedes
+		// it with the same object plus what the turn actually cost.
+		if (!data?.routing) return;
 
 		const lastMsg = findActiveMessage(messages.value);
 		if (lastMsg && lastMsg.role === "assistant") {
-			lastMsg.model_info = {
-				model_id: data.selected,
-				provider: data.provider,
-				tier: data.tier,
-				auto_selected: true,
-				fallback_attempted: data.fallback_attempted || false,
-			};
+			lastMsg.routing = data.routing;
 		}
 	}
 
@@ -495,7 +486,7 @@ export function createBlockHandlers({
 	return {
 		handlePlanEvent,
 		handleWorkflowCreatedEvent,
-		handleModelFallback,
+		handleModelSelected,
 		handleThinkingEvent,
 		completeThinkingBlock,
 		handleToolCallStart,

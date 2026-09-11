@@ -38,10 +38,10 @@
 				@click="$emit('toggle-thinking')"
 				class="toolbar-btn toolbar-btn-pill"
 				:class="{ 'toolbar-btn-active': thinking }"
-				:disabled="isStreaming"
+				:disabled="isStreaming || !thinkingAvailable"
 				:aria-pressed="thinking"
 				aria-label="Toggle thinking"
-				title="Thinking"
+				:title="thinkingAvailable ? 'Think longer before answering' : 'This model cannot think longer'"
 			>
 				<svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
 					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -150,6 +150,7 @@ defineProps({
 	webSearch: { type: Boolean, default: false },
 	thinking: { type: Boolean, default: false },
 	webSearchAvailable: { type: Boolean, default: false },
+	thinkingAvailable: { type: Boolean, default: true },
 });
 
 defineEmits([

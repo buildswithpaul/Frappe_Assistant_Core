@@ -42,7 +42,31 @@
 					{{ refreshing ? "Refreshing…" : "Refresh" }}
 				</button>
 			</div>
-			<span class="detail-meta">Opened {{ formatDate(ticket.creation) }}</span>
+			<div class="detail-meta">
+				<span>Opened {{ formatDate(ticket.creation) }}</span>
+				<button
+					v-if="ticket.conversation_id"
+					type="button"
+					class="conversation-link"
+					@click="$emit('navigate', `/chat/${ticket.conversation_id}`)"
+				>
+					<svg
+						width="13"
+						height="13"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+					>
+						<path
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							d="M8 12h8m-8-4h8m-8 8h5M21 12a9 9 0 11-3.6-7.2L21 3v6h-6"
+						/>
+					</svg>
+					View conversation
+				</button>
+			</div>
 		</header>
 
 		<div class="thread">
@@ -101,11 +125,12 @@ import { useTicketAttachments } from "@/composables/useTicketAttachments.js";
 
 const props = defineProps({
 	ticket: { type: Object, default: () => ({ messages: [] }) },
+	ticketId: { type: [String, Number], default: null },
 	submitting: { type: Boolean, default: false },
 	refreshing: { type: Boolean, default: false },
 });
 
-const emit = defineEmits(["back", "reply", "refresh"]);
+const emit = defineEmits(["back", "reply", "refresh", "navigate"]);
 
 const reply = ref("");
 const attachments = useTicketAttachments();
@@ -114,13 +139,40 @@ function isUser(m) {
 	return m.sent_or_received === "Received";
 }
 
+// Ticket files live on AR, so the URLs AR writes into the content point at a
+// host this site is not. Rewrite them to the FAC proxy, which fetches over the
+// signed channel and serves from this origin, where the session already is.
+const AR_FILE_PREFIX = "/private/files/";
+const PROXY = "/api/method/frappe_assistant_core.chat.api.support.download_ticket_attachment";
+
+function proxyUrl(fileUrl) {
+	return (
+		`${PROXY}?ticket_id=${encodeURIComponent(props.ticketId)}` +
+		`&file_url=${encodeURIComponent(fileUrl)}`
+	);
+}
+
 // Explicit img/a allowlist so inline attachment media survives sanitization
-// even if DOMPurify's default profile changes upstream.
+// even if DOMPurify's default profile changes upstream. Rewriting happens on
+// the sanitized DOM, not the string, so crafted markup can't slip past it.
 function renderContent(html) {
-	return DOMPurify.sanitize(html || "", {
+	const fragment = DOMPurify.sanitize(html || "", {
 		ADD_TAGS: ["img", "a"],
 		ADD_ATTR: ["src", "href", "target", "rel"],
+		RETURN_DOM_FRAGMENT: true,
 	});
+	if (props.ticketId) {
+		fragment.querySelectorAll("img[src], a[href]").forEach((el) => {
+			const attr = el.tagName === "IMG" ? "src" : "href";
+			const value = el.getAttribute(attr);
+			if (value && value.startsWith(AR_FILE_PREFIX)) {
+				el.setAttribute(attr, proxyUrl(value));
+			}
+		});
+	}
+	const wrapper = document.createElement("div");
+	wrapper.appendChild(fragment);
+	return wrapper.innerHTML;
 }
 
 function formatDate(value) {
@@ -216,8 +268,27 @@ defineExpose({ renderContent });
 }
 
 .detail-meta {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 0.75rem;
 	font-size: 0.78rem;
 	color: var(--ql-text-muted, #94a3b8);
+}
+
+.conversation-link {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.3rem;
+	padding: 0;
+	border: none;
+	background: none;
+	font: inherit;
+	color: var(--ql-accent);
+	cursor: pointer;
+}
+.conversation-link:hover {
+	text-decoration: underline;
 }
 
 .thread {

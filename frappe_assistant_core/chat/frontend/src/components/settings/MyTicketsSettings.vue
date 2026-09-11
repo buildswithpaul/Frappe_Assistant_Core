@@ -25,11 +25,13 @@
 			<TicketDetail
 				v-if="selectedId"
 				:ticket="thread || { messages: [] }"
+				:ticket-id="selectedId"
 				:submitting="submitting"
 				:refreshing="threadLoading"
 				@back="onBack"
 				@reply="onReply"
 				@refresh="onRefresh"
+				@navigate="router.push($event)"
 			/>
 			<TicketList
 				v-else
@@ -53,7 +55,7 @@
 
 <script setup>
 import { ref, onMounted } from "vue";
-import { useRoute } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import { api } from "@/api/client";
 import { useToast } from "@/composables/useToast";
 import TicketList from "./tickets/TicketList.vue";
@@ -61,6 +63,7 @@ import TicketDetail from "./tickets/TicketDetail.vue";
 import FeedbackHistoryList from "./tickets/FeedbackHistoryList.vue";
 
 const route = useRoute();
+const router = useRouter();
 const { showError } = useToast();
 
 const tickets = ref([]);

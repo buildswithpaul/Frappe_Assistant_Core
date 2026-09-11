@@ -285,7 +285,7 @@ export function useStreaming() {
 			case "model_selected":
 				// Auto mode resolved a concrete model (only when model_id="auto" was used)
 				// Data: { mode, complexity, task_type, selected: "model-id", tier, shortlist_size }
-				chatStore.handleModelFallback(data);
+				chatStore.handleModelSelected(data);
 				break;
 			case "stream_chunk":
 				chatStore.appendStreamChunk(data.chunk);
@@ -304,6 +304,7 @@ export function useStreaming() {
 						model_id: data.model_id,
 						truncated: true,
 						blocks: data.blocks,
+						routing: data.routing,
 					});
 				} else if (data.interrupted) {
 					// HITL interrupt: stream paused, waiting for user approval.
@@ -314,12 +315,14 @@ export function useStreaming() {
 						model_id: data.model_id,
 						interrupted: true,
 						blocks: data.blocks,
+						routing: data.routing,
 					});
 				} else {
 					chatStore.completeStreaming(data.full_response, {
 						credits_used: data.credits_used,
 						model_id: data.model_id,
 						blocks: data.blocks,
+						routing: data.routing,
 					});
 				}
 				break;

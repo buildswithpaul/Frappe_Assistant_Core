@@ -20,7 +20,7 @@
 					({{ formatDate(batch.expires_at) }}).
 				</span>
 			</div>
-			<button class="expiring-dismiss" @click="dismiss(batch.name)" aria-label="Dismiss">
+			<button class="expiring-dismiss" @click="dismiss(batch)" aria-label="Dismiss">
 				×
 			</button>
 		</div>
@@ -69,10 +69,27 @@ async function loadBatches() {
 	}
 }
 
-const visibleBatches = computed(() => batches.value.filter((b) => !dismissed.value.has(b.name)));
+// Mirrors `notifications._warning_rung` server-side. Dismissal is remembered
+// per rung, not per batch: the window this banner covers is now 30 days, so a
+// single sticky dismissal would have swallowed the 7-day and final warnings
+// too — a month of silence on credits about to lapse, for one click.
+function rungOf(batch) {
+	const days = batch.days_remaining || 0;
+	if (days <= 1) return "1_day";
+	if (days <= 7) return "7_day";
+	return "30_day";
+}
 
-function dismiss(name) {
-	dismissed.value.add(name);
+function dismissKey(batch) {
+	return `${batch.name}:${rungOf(batch)}`;
+}
+
+const visibleBatches = computed(() =>
+	batches.value.filter((b) => !dismissed.value.has(dismissKey(b)))
+);
+
+function dismiss(batch) {
+	dismissed.value.add(dismissKey(batch));
 	persistDismissed();
 }
 

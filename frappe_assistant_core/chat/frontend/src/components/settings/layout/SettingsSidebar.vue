@@ -91,6 +91,14 @@ const MemoryIcon = () =>
 			d: "M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z",
 		}),
 	]);
+const RoutingIcon = () =>
+	h("svg", { viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", "stroke-width": 2 }, [
+		h("path", {
+			"stroke-linecap": "round",
+			"stroke-linejoin": "round",
+			d: "M4 6h6l4 6h6M4 18h6l2-3M18 3l3 3-3 3M18 15l3 3-3 3",
+		}),
+	]);
 const PacksIcon = () =>
 	h("svg", { viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", "stroke-width": 2 }, [
 		h("path", {
@@ -100,6 +108,14 @@ const PacksIcon = () =>
 		}),
 		h("polyline", { points: "2.32 6.16 12 11 21.68 6.16" }),
 		h("line", { x1: "12", y1: "22.76", x2: "12", y2: "11" }),
+	]);
+const AppearanceIcon = () =>
+	h("svg", { viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", "stroke-width": 2 }, [
+		h("path", {
+			"stroke-linecap": "round",
+			"stroke-linejoin": "round",
+			d: "M4 5a2 2 0 012-2h12a2 2 0 012 2v9a2 2 0 01-2 2H6a2 2 0 01-2-2V5zM8 21h8m-4-5v5",
+		}),
 	]);
 const PrivacyIcon = () =>
 	h("svg", { viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", "stroke-width": 2 }, [
@@ -145,12 +161,18 @@ const visibleGroups = computed(() => {
 	// Personal — always visible
 	const personalItems = [
 		{ to: "/settings/profile", label: "Profile", icon: ProfileIcon },
+		{ to: "/settings/appearance", label: "Appearance", icon: AppearanceIcon },
 		{ to: "/settings/privacy", label: "Privacy & Data", icon: PrivacyIcon },
 	];
 	personalItems.push({ to: "/settings/my-tickets", label: "Support", icon: TicketIcon });
 	if (userStore.memoryEnabled) {
 		personalItems.push({ to: "/settings/memory", label: "Memory", icon: MemoryIcon });
 	}
+	// Personal, not Workspace: only an admin can change these rules, but every
+	// member is governed by them and needs somewhere to read them.
+	personalItems.push({
+		to: "/settings/routing", label: "Model routing", icon: RoutingIcon,
+	});
 	groups.push({ id: "personal", label: "Personal", items: personalItems });
 
 	// Workspace — admin only

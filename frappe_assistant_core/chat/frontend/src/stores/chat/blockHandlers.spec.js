@@ -15,7 +15,6 @@ function makeHandlers(messagesArr) {
 		hasPendingInteraction: ref(false),
 		activeThinkingBlockId: ref(null),
 		activeToolCallId: ref(null),
-		autoModeSelection: ref(null),
 		streamRequestId: ref("req-1"),
 	});
 }

@@ -72,9 +72,11 @@ const showContent = computed(() => !isMobile.value || isLeaf.value);
 // Title shown in the mobile top bar for the active leaf.
 const leafTitles = {
 	profile: "Profile",
+	appearance: "Appearance",
 	privacy: "Privacy & Data",
 	"my-tickets": "Support",
 	memory: "Memory",
+	routing: "Model routing",
 	users: "Users",
 	packs: "Industry Packs",
 	"my-packs": "My Packs",

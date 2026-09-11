@@ -340,6 +340,7 @@ def _log_conversation(
     blocks=None,
     credits=None,
     model_breakdown=None,
+    routing=None,
 ):
     """Log assistant response as a FACO Message, including tool calls and blocks snapshot."""
     # FACO-M15: when processing is restricted, don't persist the assistant
@@ -395,6 +396,8 @@ def _log_conversation(
                 updates["blocks"] = json_module.dumps(blocks)
             if model_breakdown:
                 updates["model_breakdown"] = json_module.dumps(model_breakdown)
+            if routing:
+                updates["routing"] = json_module.dumps(routing)
             if updates:
                 for field, value in updates.items():
                     frappe.db.set_value("FAC Chat Message", msg.name, field, value)

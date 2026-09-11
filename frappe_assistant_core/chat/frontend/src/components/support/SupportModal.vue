@@ -115,7 +115,6 @@ async function onSubmitFeedback(payload) {
 			rating: payload.rating,
 			comment: payload.comment,
 			category: payload.category,
-			conversationId: store.conversationId,
 			environment: environment.value,
 		});
 		confirmation.value = {

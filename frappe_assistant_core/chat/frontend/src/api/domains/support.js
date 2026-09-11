@@ -24,12 +24,13 @@ export const support = {
 			attachment_ids: serializeIds(attachmentIds),
 		}),
 
-	submitFeedback: ({ rating, comment, category, conversationId, environment }) =>
+	// Feedback is a rating and a comment. It carries no conversation reference:
+	// the form never asked, so volunteering one would be undisclosed collection.
+	submitFeedback: ({ rating, comment, category, environment }) =>
 		baseCall("frappe_assistant_core.chat.api.support.submit_feedback", {
 			rating,
 			comment,
 			category,
-			conversation_id: conversationId || null,
 			environment: environment ? JSON.stringify(environment) : null,
 		}),
 

@@ -32,10 +32,16 @@
 			/>
 		</div>
 
-		<label v-if="conversationId" class="field-check">
-			<input v-model="includeConversation" type="checkbox" />
-			<span>Include this conversation</span>
-		</label>
+		<div v-if="conversationId" class="field-check-group">
+			<label class="field-check">
+				<input v-model="includeConversation" type="checkbox" />
+				<span>Include this conversation</span>
+			</label>
+			<p class="field-check-hint">
+				Attaches a transcript of this chat to your ticket so support can see
+				what happened.
+			</p>
+		</div>
 
 		<EnvironmentDisclosure :environment="environment" />
 
@@ -90,7 +96,9 @@ function onSubmit() {
 }
 .field input::placeholder, .field textarea::placeholder { color: var(--ql-text-muted); }
 .field input:focus, .field select:focus, .field textarea:focus { outline: none; border-color: var(--ql-accent); }
+.field-check-group { display: flex; flex-direction: column; gap: 0.15rem; }
 .field-check { display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem; color: var(--ql-text-secondary); }
+.field-check-hint { margin: 0 0 0 1.6rem; font-size: 0.78rem; color: var(--ql-text-muted); }
 .actions { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 0.5rem; }
 .btn-primary { padding: 0.5rem 1rem; border-radius: var(--ql-radius-sm); border: none; background: var(--ql-accent); color: #fff; cursor: pointer; }
 .btn-primary:disabled { opacity: 0.6; cursor: default; }

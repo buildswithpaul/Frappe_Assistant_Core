@@ -78,7 +78,15 @@ from ..chat.helpers import (  # noqa: E402
 # the HITL resume loop. Routing them through one function keeps the loops
 # from drifting apart — the resume loop originally had no thinking branch
 # at all because it was added to the main loop and never mirrored here.
-_SHARED_RELAY_EVENTS = frozenset({"context_summarized", "model_selected", "thinking", "thinking_complete"})
+_SHARED_RELAY_EVENTS = frozenset(
+    {
+        "context_summarized",
+        "model_selected",
+        "routing_notice",
+        "thinking",
+        "thinking_complete",
+    }
+)
 
 
 def _dispatch_relay_event(event_type: str, data: dict, session_id: str, block_builder) -> bool:
@@ -113,6 +121,26 @@ def _dispatch_relay_event(event_type: str, data: dict, session_id: str, block_bu
                 "selected": data.get("selected"),
                 "tier": data.get("tier"),
                 "shortlist_size": data.get("shortlist_size", 0),
+                "floor_tier": data.get("floor_tier"),
+                "ceiling_tier": data.get("ceiling_tier"),
+                "bound_by": data.get("bound_by"),
+                "band": data.get("band"),
+                "classification_source": data.get("classification_source"),
+                "routing": data.get("routing"),
+            },
+        )
+
+    elif event_type == "routing_notice":
+        _emit_socket_event(
+            session_id,
+            {
+                "event": "routing_notice",
+                "session_id": session_id,
+                "code": data.get("code"),
+                "tier_used": data.get("tier_used"),
+                "tier_wanted": data.get("tier_wanted"),
+                "band": data.get("band"),
+                "scope": data.get("scope"),
             },
         )
 
@@ -196,6 +224,52 @@ def _merge_model_breakdown(existing_json, incoming: list | None) -> list:
     return list(merged.values())
 
 
+def _merge_routing_receipt(existing, incoming):
+    """Fold a later resume cycle's receipt into the turn's stored one.
+
+    Keeps the FIRST cycle's decision — it chose the model the user actually
+    watched stream, and a last-cycle-wins receipt would contradict the chip
+    they saw. Only ``cycles`` and ``also_ran`` accumulate. Each AR receipt
+    always arrives claiming cycles: 1, because every resume is a fresh
+    stream_chat request and AR cannot see the whole turn — this is the only
+    hop that can.
+    """
+    import json as json_module
+
+    if not incoming:
+        return existing
+    if isinstance(incoming, str):
+        try:
+            incoming = json_module.loads(incoming)
+        except (ValueError, TypeError):
+            return existing
+    if not existing:
+        return incoming
+
+    if isinstance(existing, str):
+        try:
+            existing = json_module.loads(existing)
+        except (ValueError, TypeError):
+            return incoming
+
+    merged = dict(existing)
+    merged["cycles"] = (existing.get("cycles") or 1) + 1
+    # A distinct later model, capped — the panel names the whole-turn list
+    # under one honest label rather than "+2 more models ran".
+    later_model = incoming.get("selected_model")
+    if later_model and later_model != merged.get("selected_model"):
+        also_ran = list(merged.get("also_ran") or [])
+        if later_model not in also_ran and len(also_ran) < 5:
+            also_ran.append(later_model)
+        merged["also_ran"] = also_ran
+    # The turn's real end state: whether it is still open, and this cycle's
+    # own cost, both matter more than the earlier cycle's snapshot.
+    merged["incomplete"] = incoming.get("incomplete", merged.get("incomplete"))
+    if incoming.get("credits", {}).get("actual") is not None:
+        merged["credits"] = incoming["credits"]
+    return merged
+
+
 def _persist_resume_cycle(
     session_id: str,
     ar_message_id: str | None,
@@ -208,6 +282,7 @@ def _persist_resume_cycle(
     model_used: str = "",
     model_breakdown: dict | None = None,
     credits_used: float = 0,
+    routing: dict | None = None,
 ) -> str | None:
     """Persist one resume cycle's output onto the turn's existing row.
 
@@ -233,7 +308,7 @@ def _persist_resume_cycle(
     row = frappe.db.get_value(
         "FAC Chat Message",
         existing_faco_msg,
-        ["content", "tool_calls", "aborted", "credits_used", "model_breakdown"],
+        ["content", "tool_calls", "aborted", "credits_used", "model_breakdown", "routing"],
         as_dict=True,
     )
     if row and row.get("aborted"):
@@ -267,6 +342,10 @@ def _persist_resume_cycle(
         existing_tc = (row.tool_calls if row else None) or ""
         existing_list = json_module.loads(existing_tc) if existing_tc else []
         updates["tool_calls"] = json_module.dumps(existing_list + collected_tool_calls)
+    if routing is not None:
+        merged_routing = _merge_routing_receipt(row.routing if row else None, routing)
+        if merged_routing is not None:
+            updates["routing"] = json_module.dumps(merged_routing)
 
     _set_faco_message_with_retry(existing_faco_msg, updates)
     return existing_faco_msg
@@ -659,6 +738,7 @@ def _relay_ar_interrupt_resume(
                     model_used=model_used,
                     model_breakdown=model_breakdown,
                     credits_used=credits_used,
+                    routing=data.get("routing"),
                 )
                 if not existing_faco_msg:
                     _log_conversation(
@@ -672,6 +752,7 @@ def _relay_ar_interrupt_resume(
                         blocks=block_builder.snapshot(),
                         credits=credits_used,
                         model_breakdown=model_breakdown,
+                        routing=data.get("routing"),
                     )
 
                 # The chip must survive a reload unchanged. The row holds the
@@ -721,6 +802,7 @@ def _relay_ar_interrupt_resume(
                     # AR names it "model"; the SPA reads meta.model_id.
                     "model_id": model_used,
                     "blocks": block_builder.snapshot(),
+                    "routing": data.get("routing"),
                 }
                 if data.get("truncated"):
                     complete_event["truncated"] = True
@@ -1178,6 +1260,14 @@ def _relay_ar_stream(
                         }
                         if collected_tool_calls:
                             updates["tool_calls"] = _json_mod.dumps(collected_tool_calls)
+                        # None means the turn said nothing about it — never an
+                        # instruction to erase what an earlier hop wrote. A
+                        # continue_from_message_id turn emits no receipt at
+                        # all (AR gates model_selected on it), so this must
+                        # not null the original turn's routing.
+                        _routing_payload = data.get("routing")
+                        if _routing_payload is not None:
+                            updates["routing"] = _json_mod.dumps(_routing_payload)
                         _set_faco_message_with_retry(assistant_row, updates)
                 else:
                     _log_conversation(
@@ -1191,6 +1281,7 @@ def _relay_ar_stream(
                         blocks=block_builder.snapshot(),
                         credits=credits_used,
                         model_breakdown=model_breakdown,
+                        routing=data.get("routing"),
                     )
 
                 # Zero-retention: persist the returned signed session blob — the
@@ -1226,6 +1317,7 @@ def _relay_ar_stream(
                     # AR names it "model"; the SPA reads meta.model_id.
                     "model_id": model_used,
                     "blocks": block_builder.snapshot(),
+                    "routing": data.get("routing"),
                 }
 
                 # Pass through truncation state

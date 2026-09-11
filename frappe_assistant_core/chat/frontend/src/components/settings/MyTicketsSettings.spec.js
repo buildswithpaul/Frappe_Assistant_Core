@@ -18,7 +18,11 @@ vi.mock("@/api/client", () => ({
 vi.mock("@/composables/useToast", () => ({
 	useToast: () => ({ showError: vi.fn(), showSuccess: vi.fn() }),
 }));
-vi.mock("vue-router", () => ({ useRoute: () => ({ query: {} }) }));
+const push = vi.fn();
+vi.mock("vue-router", () => ({
+	useRoute: () => ({ query: {} }),
+	useRouter: () => ({ push }),
+}));
 
 import MyTicketsSettings from "@/components/settings/MyTicketsSettings.vue";
 
@@ -102,5 +106,24 @@ describe("MyTicketsSettings feedback tab", () => {
 		await feedbackTab.trigger("click");
 		await flushPromises();
 		expect(listMyFeedback).toHaveBeenCalledTimes(2);
+	});
+});
+
+describe("MyTicketsSettings conversation hand-off", () => {
+	it("routes to the chat when the ticket detail asks to open its conversation", async () => {
+		push.mockClear();
+		listMyTickets.mockResolvedValue([{ name: "1", subject: "S", status: "Open" }]);
+		getTicketThread.mockResolvedValue({
+			subject: "S", status: "Open", creation: "2026-09-09",
+			conversation_id: "sess-42", messages: [],
+		});
+		const w = mountSettings();
+		await flushPromises();
+
+		w.findComponent({ name: "TicketList" }).vm.$emit("select", "1");
+		await flushPromises();
+
+		w.findComponent({ name: "TicketDetail" }).vm.$emit("navigate", "/chat/sess-42");
+		expect(push).toHaveBeenCalledWith("/chat/sess-42");
 	});
 });

@@ -31,6 +31,10 @@ import * as socketIoMock from "socket.io-client";
  * never emits — it sends "model_selected") and the relay's stream_start /
  * stream_complete carried no model at all, so `meta.model_id` was always
  * undefined and every bubble rendered without its model.
+ *
+ * P3b1: the pick now lands as `message.routing` — the receipt every
+ * disclosure level reads. The old `model_info` / `autoModeSelection` pair
+ * had no production reader and is gone.
  */
 describe("model reporting over the stream socket", () => {
 	let chatStore;
@@ -65,16 +69,44 @@ describe("model reporting over the stream socket", () => {
 		onStreamEvent({ session_id: "s-model", event, ...data });
 	}
 
-	it("handles the auto-mode pick under the name the relay emits", () => {
+	it("attaches the live receipt to the streaming bubble", () => {
+		const bubble = streamingBubble();
+
+		emit("model_selected", {
+			selected: "claude-haiku-4-5",
+			tier: "Economy",
+			routing: {
+				v: 1,
+				mode: "auto",
+				incomplete: true,
+				selected_model: "claude-haiku-4-5",
+				selected_tier: "Economy",
+				bound_by: "neither",
+			},
+		});
+
+		expect(bubble.routing?.selected_model).toBe("claude-haiku-4-5");
+		expect(bubble.routing?.incomplete).toBe(true);
+	});
+
+	it("leaves the bubble alone when the event carries no receipt", () => {
+		// An explicit turn on an older AR still emits the event.
 		const bubble = streamingBubble();
 
 		emit("model_selected", { selected: "claude-haiku-4-5", tier: "Economy" });
 
-		expect(chatStore.autoModeSelection?.selected).toBe("claude-haiku-4-5");
-		expect(bubble.model_info).toMatchObject({
-			model_id: "claude-haiku-4-5",
-			auto_selected: true,
+		expect(bubble.routing).toBeFalsy();
+	});
+
+	it("no longer writes the retired model_info shape", () => {
+		const bubble = streamingBubble();
+
+		emit("model_selected", {
+			selected: "claude-haiku-4-5",
+			routing: { v: 1, mode: "auto", selected_model: "claude-haiku-4-5" },
 		});
+
+		expect(bubble.model_info).toBeUndefined();
 	});
 
 	it("pins the model at stream_start, before a single chunk arrives", () => {

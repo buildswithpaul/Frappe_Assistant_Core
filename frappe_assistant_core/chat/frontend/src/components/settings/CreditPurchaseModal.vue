@@ -20,8 +20,9 @@
 				<!-- Content -->
 				<div class="modal-body">
 					<p class="credit-description">
-						Prepaid credits are consumed after your monthly quota is exhausted. They
-						never expire and carry over across billing cycles.
+						Prepaid credits are consumed after your monthly quota is exhausted,
+						and carry over across billing cycles.
+						<template v-if="validityNote">{{ validityNote }}</template>
 					</p>
 
 					<CreditAmountPicker
@@ -112,9 +113,27 @@ const activePricing = computed(() => {
 			packPrice: Number(gw.pack_price || 0),
 			symbol: gw.currency_symbol || (currency === "INR" ? "₹" : "$"),
 			currency,
+			// Null, never a guessed default. An absent field means this AR
+			// predates the validity window, and both possible guesses are a
+			// claim about the buyer's money — the same reason the pack price
+			// above is never invented.
+			validityMonths:
+				gw.credit_validity_months === undefined || gw.credit_validity_months === null
+					? null
+					: Number(gw.credit_validity_months),
 		};
 	}
-	return { packCredits: 2000, packPrice: 0, symbol: "", currency: "" };
+	return { packCredits: 2000, packPrice: 0, symbol: "", currency: "", validityMonths: null };
+});
+
+// Says nothing at all when the window is unknown. This copy used to promise
+// credits "never expire", which stopped being true the day purchases gained
+// a validity window — a false statement on the screen that takes the money.
+const validityNote = computed(() => {
+	const months = activePricing.value.validityMonths;
+	if (months === null) return "";
+	if (months <= 0) return "They do not expire.";
+	return `They stay valid for ${months} month${months === 1 ? "" : "s"} from the date you buy them.`;
 });
 
 const calculatedPrice = computed(() => {

@@ -71,6 +71,11 @@ const routes = [
 				component: () => import("@/components/settings/ProfileSettings.vue"),
 			},
 			{
+				path: "appearance",
+				name: "settings-appearance",
+				component: () => import("@/components/settings/AppearanceSettings.vue"),
+			},
+			{
 				path: "privacy",
 				name: "settings-privacy",
 				component: () => import("@/components/settings/PrivacySettings.vue"),
@@ -79,6 +84,11 @@ const routes = [
 				path: "my-tickets",
 				name: "MyTickets",
 				component: () => import("@/components/settings/MyTicketsSettings.vue"),
+			},
+			{
+				path: "routing",
+				name: "settings-routing",
+				component: () => import("@/components/settings/RoutingSettings.vue"),
 			},
 			{
 				path: "memory",

@@ -11,6 +11,25 @@ import { isApprovalInteraction } from "./chat/interactionRegime";
 import { useComposerModesStore } from "./composerModesStore";
 import { useModelStore } from "./modelStore";
 
+// Every JSON column a message row can carry. Both parse loops below drive
+// from this, so the next JSON column is added in one place — model_breakdown
+// was written by the server but parsed by neither loop, arriving as an
+// object live and a string on reload.
+const JSON_MESSAGE_FIELDS = ["blocks", "model_breakdown", "routing"];
+
+function parseJsonFields(msg) {
+	for (const field of JSON_MESSAGE_FIELDS) {
+		if (typeof msg[field] === "string") {
+			try {
+				msg[field] = JSON.parse(msg[field]);
+			} catch {
+				msg[field] = null;
+			}
+		}
+	}
+	return msg;
+}
+
 export const useChatStore = defineStore("chat", () => {
 	// State
 	const sessions = ref([]);
@@ -37,7 +56,6 @@ export const useChatStore = defineStore("chat", () => {
 	const lastActivityTime = ref(Date.now());
 
 	// Auto mode: tracks the model selected when using model_id="auto"
-	const autoModeSelection = ref(null);
 
 	// Archived conversations
 	const archivedSessions = ref([]);
@@ -104,7 +122,6 @@ export const useChatStore = defineStore("chat", () => {
 		socketError,
 		activeThinkingBlockId,
 		activeToolCallId,
-		autoModeSelection,
 		streamRequestId,
 		currentSessionId,
 	};
@@ -164,15 +181,9 @@ export const useChatStore = defineStore("chat", () => {
 			if (currentSessionId.value !== sessionId) return;
 			messages.value = Array.isArray(result) ? result : result?.messages || [];
 
-			// Parse blocks from JSON and provide legacy fallback
+			// Parse every JSON column and provide legacy fallback
 			for (const msg of messages.value) {
-				if (msg.blocks && typeof msg.blocks === "string") {
-					try {
-						msg.blocks = JSON.parse(msg.blocks);
-					} catch {
-						msg.blocks = null;
-					}
-				}
+				parseJsonFields(msg);
 				// Legacy: messages without blocks get a text block from content
 				if (msg.role === "assistant" && !msg.blocks && msg.content) {
 					msg.blocks = [
@@ -211,13 +222,7 @@ export const useChatStore = defineStore("chat", () => {
 		if (sessionId !== currentSessionId.value) return;
 
 		for (const msg of serverMessages) {
-			if (msg.blocks && typeof msg.blocks === "string") {
-				try {
-					msg.blocks = JSON.parse(msg.blocks);
-				} catch {
-					msg.blocks = null;
-				}
-			}
+			parseJsonFields(msg);
 			if (msg.role === "assistant" && !msg.blocks && msg.content) {
 				msg.blocks = [{ type: "text", id: generateBlockId("text"), content: msg.content }];
 			}
@@ -382,7 +387,6 @@ export const useChatStore = defineStore("chat", () => {
 
 			isStreaming.value = true;
 			streamingMessage.value = "";
-			autoModeSelection.value = null;
 			streamRequestId.value = crypto.randomUUID();
 
 			stream.startStreamTimeout();
@@ -520,6 +524,9 @@ export const useChatStore = defineStore("chat", () => {
 			if (meta.credits_used) lastMsg.credits_used = meta.credits_used;
 			if (meta.model_id) lastMsg.model_id = meta.model_id;
 			if (meta.truncated) lastMsg.truncated = true;
+			// The receipt: routing.credits.actual supersedes the live estimate
+			// once the canonical stream_complete receipt has arrived.
+			if (meta.routing) lastMsg.routing = meta.routing;
 			// Replace live blocks with canonical server snapshot (if provided)
 			if (meta.blocks && Array.isArray(meta.blocks)) {
 				lastMsg.blocks = meta.blocks;
@@ -876,7 +883,6 @@ export const useChatStore = defineStore("chat", () => {
 		socketError,
 		connectionVisible: stream.connectionVisible,
 		lastActivityTime,
-		autoModeSelection,
 		// Getters
 		currentSession,
 		sortedSessions,
@@ -916,7 +922,7 @@ export const useChatStore = defineStore("chat", () => {
 		// Block-based message actions (delegated)
 		handlePlanEvent: blocks.handlePlanEvent,
 		handleWorkflowCreatedEvent: blocks.handleWorkflowCreatedEvent,
-		handleModelFallback: blocks.handleModelFallback,
+		handleModelSelected: blocks.handleModelSelected,
 		handleThinkingEvent: blocks.handleThinkingEvent,
 		completeThinkingBlock: blocks.completeThinkingBlock,
 		handleToolCallStart: blocks.handleToolCallStart,

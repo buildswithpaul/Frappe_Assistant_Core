@@ -117,3 +117,65 @@ class TestMainLoopUsesSharedDispatch(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestRoutingRelay(unittest.TestCase):
+    """Keys are copied by name here, and an unnamed key is dropped in silence —
+    so a key AR adds without a matching line below is a no-op that looks like a
+    feature. These pin the routing keys to AR's emits."""
+
+    def _dispatch(self, event_type, data):
+        from frappe_assistant_core.chat.api.chat import relay
+
+        with patch.object(relay, "_emit_socket_event") as emit:
+            handled = relay._dispatch_relay_event(event_type, data, "SESSION-1", MagicMock())
+        return handled, emit
+
+    def test_model_selected_forwards_the_routing_decision(self):
+        handled, emit = self._dispatch(
+            "model_selected",
+            {
+                "mode": "auto",
+                "selected": "m",
+                "tier": "Standard",
+                "floor_tier": "Premium",
+                "ceiling_tier": "Standard",
+                "bound_by": "ceiling",
+                "band": "conserve",
+                "classification_source": "llm",
+            },
+        )
+        self.assertTrue(handled)
+        _session, payload = emit.call_args[0]
+        self.assertEqual(payload["floor_tier"], "Premium")
+        self.assertEqual(payload["ceiling_tier"], "Standard")
+        self.assertEqual(payload["bound_by"], "ceiling")
+        self.assertEqual(payload["band"], "conserve")
+        self.assertEqual(payload["classification_source"], "llm")
+
+    def test_routing_notice_is_relayed(self):
+        handled, emit = self._dispatch(
+            "routing_notice",
+            {
+                "code": "downgraded_for_credits",
+                "tier_used": "Economy",
+                "tier_wanted": "Premium",
+                "band": "critical",
+                "scope": "tenant",
+            },
+        )
+        self.assertTrue(handled)
+        session_arg, payload = emit.call_args[0]
+        self.assertEqual(session_arg, "SESSION-1")
+        self.assertEqual(payload["event"], "routing_notice")
+        self.assertEqual(payload["code"], "downgraded_for_credits")
+        self.assertEqual(payload["tier_used"], "Economy")
+        self.assertEqual(payload["tier_wanted"], "Premium")
+        self.assertEqual(payload["band"], "critical")
+        self.assertEqual(payload["scope"], "tenant")
+
+    def test_routing_notice_reaches_the_resume_loop_too(self):
+        """The shared set is what keeps the two loops from drifting."""
+        from frappe_assistant_core.chat.api.chat import relay
+
+        self.assertIn("routing_notice", relay._SHARED_RELAY_EVENTS)

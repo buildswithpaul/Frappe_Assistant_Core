@@ -1303,3 +1303,12 @@ html[data-theme="dark"] .faco-widget .faco-text-field {
 	color: #F2EFE6;
 	border-color: rgba(156, 163, 175, 0.2);
 }
+
+/* Routing chip — L0. Non-interactive text on purpose: an identical-looking
+   chip opens a panel in the SPA, and users move between the two surfaces. */
+.faco-routing-chip {
+	margin-left: 0.5rem;
+	color: var(--faco-text-muted, #8a8a8a);
+	font-size: 0.7rem;
+	cursor: default;
+}

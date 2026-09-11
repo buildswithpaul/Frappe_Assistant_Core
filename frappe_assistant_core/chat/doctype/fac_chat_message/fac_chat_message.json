@@ -20,6 +20,7 @@
   "model",
   "credits_used",
   "model_breakdown",
+  "routing",
   "column_break_tools",
   "tool_calls",
   "blocks",
@@ -119,6 +120,13 @@
    "fieldtype": "JSON",
    "label": "Model Breakdown",
    "read_only": 1
+  },
+  {
+   "fieldname": "routing",
+   "fieldtype": "JSON",
+   "label": "Routing Receipt",
+   "read_only": 1,
+   "description": "Content-free record of why this model ran. The authority under zero-retention, where no AR Message row exists."
   },
   {
    "fieldname": "column_break_tools",

@@ -14,7 +14,6 @@ function setup(messagesValue) {
 			hasPendingInteraction,
 			activeThinkingBlockId: ref(null),
 			activeToolCallId: ref(null),
-			autoModeSelection: ref(null),
 			streamRequestId: ref("req-1"),
 		}),
 	};

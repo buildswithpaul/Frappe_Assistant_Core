@@ -10,7 +10,8 @@
 			</template>
 		</dl>
 		<p v-if="expanded" class="env-note">
-			This helps us debug. Nothing else is sent unless you include it above.
+			This helps us debug. Nothing else is sent unless you attach it or include
+			the conversation above.
 		</p>
 	</div>
 </template>

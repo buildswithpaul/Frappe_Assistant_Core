@@ -3,8 +3,10 @@ import { flushPromises, mount } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
 
 const getEnvironment = vi.fn();
+const submitFeedback = vi.fn();
+const createTicket = vi.fn();
 vi.mock("@/api/client", () => ({
-	api: { support: { getEnvironment, createTicket: vi.fn(), submitFeedback: vi.fn() } },
+	api: { support: { getEnvironment, createTicket, submitFeedback } },
 }));
 vi.mock("@/composables/useToast", () => ({
 	useToast: () => ({ showError: vi.fn(), showSuccess: vi.fn() }),
@@ -22,11 +24,11 @@ const SERVER_ENV = {
 	installed_apps: "erpnext 16.14.0, frappe 16.15.0",
 };
 
-async function openModal() {
+async function openModal({ mode = "issue", conversationId = null } = {}) {
 	const { useSupportStore } = await import("@/stores/supportStore");
 	const { default: SupportModal } = await import("@/components/support/SupportModal.vue");
 	const store = useSupportStore();
-	store.open({ mode: "issue" });
+	store.open({ mode, conversationId });
 
 	const w = mount(SupportModal, {
 		global: { stubs: { IssueForm: true, FeedbackForm: true, SupportConfirmation: true } },
@@ -62,5 +64,46 @@ describe("SupportModal environment disclosure", () => {
 		expect(w.findComponent({ name: "IssueForm" }).props("environment").model).toBe(
 			"claude-opus-5"
 		);
+	});
+});
+
+describe("SupportModal feedback scope", () => {
+	beforeEach(() => {
+		vi.resetModules();
+		getEnvironment.mockReset();
+		getEnvironment.mockResolvedValue(SERVER_ENV);
+		submitFeedback.mockReset();
+		submitFeedback.mockResolvedValue({});
+		setActivePinia(createPinia());
+	});
+
+	it("never sends the conversation with feedback, even when opened from a chat", async () => {
+		const w = await openModal({ mode: "feedback", conversationId: "sess-9" });
+		w.findComponent({ name: "FeedbackForm" }).vm.$emit("submit", {
+			rating: 5,
+			comment: "nice",
+			category: "Product",
+		});
+		await flushPromises();
+
+		expect(submitFeedback).toHaveBeenCalledTimes(1);
+		const payload = submitFeedback.mock.calls[0][0];
+		expect(payload).not.toHaveProperty("conversationId");
+		expect(JSON.stringify(payload)).not.toContain("sess-9");
+	});
+
+	it("still sends the rating, comment and environment", async () => {
+		const w = await openModal({ mode: "feedback", conversationId: "sess-9" });
+		w.findComponent({ name: "FeedbackForm" }).vm.$emit("submit", {
+			rating: 4,
+			comment: "good",
+			category: "Product",
+		});
+		await flushPromises();
+
+		const payload = submitFeedback.mock.calls[0][0];
+		expect(payload.rating).toBe(4);
+		expect(payload.comment).toBe("good");
+		expect(payload.environment.fac_version).toBe("3.0.0-beta.1");
 	});
 });

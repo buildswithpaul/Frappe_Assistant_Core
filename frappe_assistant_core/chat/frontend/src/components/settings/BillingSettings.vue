@@ -114,6 +114,7 @@
 				<PrepaidCreditsCard
 					:credit-balance="creditBalance"
 					:transactions="creditTransactions"
+					:next-expiry="creditNextExpiry"
 					@buy-credits="openCreditPurchase"
 				/>
 				<UsageChart />
@@ -289,6 +290,7 @@ const {
 	purchasingCredits,
 	creditBalance,
 	creditTransactions,
+	creditNextExpiry,
 	appliedPromo,
 	promoError,
 	validatingPromo,

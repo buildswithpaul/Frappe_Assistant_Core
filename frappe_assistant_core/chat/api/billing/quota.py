@@ -43,8 +43,16 @@ def get_quota_status():
                     "quota_used": int,
                     "quota_remaining": int,
                     "percentage_used": float,
+                    "credit_balance": float,      # prepaid, always present
+                    "in_overage": bool,           # quota spent, prepaid covering
+                    "credits_exhausted": bool,    # quota spent, prepaid gone
                     "is_admin": bool
             }
+
+    ``in_overage`` and ``credits_exhausted`` are the admission answer, and
+    clients must gate on them rather than on ``percentage_used``, which
+    measures the monthly quota alone and so reads as blocked for any tenant
+    running on purchased credits.
     """
     try:
         from frappe_assistant_core.chat.quota_cache import get_quota_snapshot
@@ -54,16 +62,25 @@ def get_quota_status():
 
         # Fetch live from AR to get current plan/quota (avoids cache staleness)
         live = _fetch_live_quota_dispatch()
+        snap = get_quota_snapshot()
         if live:
             quota_total = live.get("credit_quota") or live.get("quota", 0)
             quota_used = live.get("credits_used") or live.get("used", 0)
             plan = live.get("plan", "Free")
         else:
             # Fallback to cached quota if AR is unreachable
-            snap = get_quota_snapshot()
             quota_total = snap.get("quota_total", 0)
             quota_used = snap.get("quota_used", 0)
             plan = snap.get("plan", "Free")
+
+        # The prepaid balance is part of the admission answer, so it has to
+        # survive an AR blip. It used to be emitted only on the live path,
+        # and a client that scores "absent" as zero then turns a transient
+        # network failure into a hard block for a tenant holding credits.
+        # `_fetch_live_quota` folds the live figure into the snapshot, so the
+        # cached value is the same number one sync behind, never a guess.
+        balance_source = live if live and "credit_balance" in live else snap
+        credit_balance = float(balance_source.get("credit_balance") or 0)
 
         is_unlimited = quota_total == -1
 
@@ -73,6 +90,16 @@ def get_quota_status():
         else:
             quota_remaining = max(0, quota_total - quota_used)
             percentage_used = (quota_used / quota_total * 100) if quota_total > 0 else 0
+
+        # Say what AR's gate would say, rather than leaving each client to
+        # re-derive it. `percentage_used >= 100` is NOT that answer: it counts
+        # the monthly quota alone, so it reads as blocked for every tenant who
+        # bought credits precisely so they would not be. Mirrors
+        # payments/runtime_hooks.py — a quota of 0 is spent from the first
+        # request, and any balance above zero admits the turn.
+        quota_spent = not is_unlimited and quota_used >= quota_total
+        in_overage = quota_spent and credit_balance > 0
+        credits_exhausted = quota_spent and credit_balance <= 0
 
         # Pass through pricing info from AR. `estimated_monthly_bill` and
         # `plan_price` are currency-aware (billing country → INR/USD) —
@@ -89,7 +116,6 @@ def get_quota_status():
                 "price_per_user": live.get("price_per_user", 0),
                 "credits_per_user": live.get("credits_per_user", 0),
                 "min_users": live.get("min_users", 1),
-                "credit_balance": live.get("credit_balance", 0),
                 "currency": live.get("currency") or "USD",
                 "is_per_user": bool(live.get("is_per_user")),
                 "estimated_monthly_bill": live.get("estimated_monthly_bill") or {},
@@ -103,6 +129,9 @@ def get_quota_status():
             "quota_remaining": quota_remaining,
             "percentage_used": round(percentage_used, 1),
             "is_unlimited": is_unlimited,
+            "credit_balance": credit_balance,
+            "in_overage": in_overage,
+            "credits_exhausted": credits_exhausted,
             "is_admin": is_admin,
             "registration_status": settings.registration_status,
             **pricing,
