@@ -651,16 +651,17 @@ Layer 6: Audit Trail & Monitoring
 - **Assistant User**: 14 basic tools for standard business operations
 - **Default**: 14 basic tools for any other Frappe user roles
 
-**2. DocType Access Matrix**
+**2. DocType Write Protection**
+
+Reads are governed solely by `frappe.has_permission`. Only writes to code-execution
+and schema/permission DocTypes are blocked at the FAC layer (issue #249):
 
 ```python
-RESTRICTED_DOCTYPES = {
-    "Assistant User": [
-        # 30+ system administration DocTypes
-        "System Settings", "Role", "User Permission", "Custom Script",
-        "Server Script", "DocType", "Custom Field", etc.
-    ]
-}
+WRITE_PROTECTED_DOCTYPES = [
+    # Code execution, schema, permissions and workflow definitions
+    "Server Script", "Client Script", "Custom Script", "DocType",
+    "Custom Field", "Property Setter", "Role", "User Permission", etc.
+]
 ```
 
 **3. Sensitive Field Protection**
@@ -680,9 +681,9 @@ SENSITIVE_FIELDS = {
 
 ```python
 def validate_document_access(user, doctype, name, perm_type="read"):
-    # 1. Check role-based DocType accessibility
-    if not is_doctype_accessible(doctype, user_role):
-        return access_denied
+    # 1. FAC write protection (reads pass straight through to step 2)
+    if not is_doctype_accessible(doctype, user_role, perm_type):
+        return write_blocked
 
     # 2. Frappe DocType-level permissions
     if not frappe.has_permission(doctype, perm_type, user=user):
