@@ -273,67 +273,50 @@ ADMIN_ONLY_FIELDS = {
     "Dropbox Settings": "*",
 }
 
-# DocTypes that should be completely hidden from Assistant Users
-RESTRICTED_DOCTYPES = {
-    "Assistant User": [
-        # System administration
-        "System Settings",
-        "Print Settings",
-        "Email Domain",
-        "LDAP Settings",
-        "OAuth Settings",
-        "Social Login Key",
-        "Dropbox Settings",
-        "Connected App",
-        "OAuth Bearer Token",
-        # Security and permissions
-        "Role",
-        "User Permission",
-        "Role Permission",
-        "Custom Role",
-        "Module Profile",
-        "Role Profile",
-        "Custom DocPerm",
-        "DocShare",
-        # System logs and audit
-        "Error Log",
-        "Activity Log",
-        "Access Log",
-        "View Log",
-        "Scheduler Log",
-        "Integration Request",
-        # System customization
-        "Server Script",
-        "Client Script",
-        "Custom Script",
-        "Property Setter",
-        "Customize Form",
-        "Customize Form Field",
-        "DocType",
-        "DocField",
-        "DocPerm",
-        "Custom Field",
-        # Development tools
-        "Package",
-        "Package Release",
-        "Installed Application",
-        "Data Import",
-        "Data Export",
-        "Bulk Update",
-        "Rename Tool",
-        "Database Storage Usage By Tables",
-        # Workflows (admin level)
-        "Workflow",
-        "Workflow Action",
-        "Workflow State",
-        "Workflow Transition",
-        # Email system internals
-        "Email Queue",
-        "Email Queue Recipient",
-        "Email Alert",
-        "Auto Email Report",
-    ]
-}
+# DocTypes whose contents are executable code, or which define the schema and the
+# permission model itself. Writing to any of these over MCP is a privilege-escalation
+# or code-execution surface, so it stays blocked regardless of what DocPerms say.
+#
+# Reads are NOT blocked here: on a stock Frappe install every one of these DocTypes
+# already grants `read` to System Manager / Script Manager only, so a blocklist adds
+# nothing. It only ever fires when a site admin has deliberately granted read via a
+# Custom DocPerm, i.e. against explicit intent. Read access is therefore left to
+# frappe.has_permission(), which validate_document_access() calls a few lines down.
+# See issue #249.
+WRITE_PROTECTED_DOCTYPES = [
+    # Code execution
+    "Server Script",
+    "Client Script",
+    "Custom Script",
+    # Schema and customization
+    "DocType",
+    "DocField",
+    "DocPerm",
+    "Custom Field",
+    "Property Setter",
+    "Customize Form",
+    "Customize Form Field",
+    # Security and permissions
+    "Role",
+    "Custom Role",
+    "Role Permission",
+    "Custom DocPerm",
+    "User Permission",
+    "DocShare",
+    "Module Profile",
+    "Role Profile",
+    # Workflow definitions (control who may transition what)
+    "Workflow",
+    "Workflow State",
+    "Workflow Transition",
+]
+
+# Permission types treated as mutating for the purposes of WRITE_PROTECTED_DOCTYPES.
+WRITE_PERM_TYPES = frozenset({"write", "create", "delete", "submit", "cancel", "amend"})
+
+# DEPRECATED: retained only so external plugins importing this name keep working.
+# The read-side blocklist is no longer enforced - see WRITE_PROTECTED_DOCTYPES above.
+RESTRICTED_DOCTYPES = {"Assistant User": list(WRITE_PROTECTED_DOCTYPES)}
 
 
 def check_tool_access(user_role: str, tool_name: str) -> bool:
@@ -437,25 +420,33 @@ def filter_sensitive_fields(doc_dict: Dict[str, Any], doctype: str, user_role: s
     return filtered_doc
 
 
-def is_doctype_accessible(doctype: str, user_role: str) -> bool:
+def is_doctype_accessible(doctype: str, user_role: str, perm_type: str = "read") -> bool:
     """
-    Check if a user role can access a specific DocType.
+    Check whether a role may perform ``perm_type`` on ``doctype`` at the FAC layer.
+
+    This is a coarse guard that runs *before* Frappe's own permission check, so it may
+    only ever deny something Frappe would allow - never the reverse. It exists for one
+    purpose: to keep MCP from writing to code-execution and schema/permission DocTypes
+    even on a site whose DocPerms would permit it.
+
+    Read access is always allowed through to frappe.has_permission(), which is the real
+    control. See issue #249 for why the old read-side blocklist was removed.
 
     Args:
         doctype: DocType name
         user_role: User role name
+        perm_type: Permission being requested (read, write, create, delete, ...)
 
     Returns:
-        bool: True if access is allowed, False otherwise
+        bool: True if FAC allows the operation to proceed to the Frappe permission check
     """
     if user_role == "System Manager":
-        return True  # System Manager can access all doctypes
+        return True  # System Manager is trusted at this layer
 
-    # Default users follow the same DocType restrictions as Assistant User for safety
-    role_to_check = user_role if user_role in RESTRICTED_DOCTYPES else "Assistant User"
+    if perm_type not in WRITE_PERM_TYPES:
+        return True  # Reads and anything non-mutating defer entirely to Frappe
 
-    restricted_doctypes = RESTRICTED_DOCTYPES.get(role_to_check, [])
-    return doctype not in restricted_doctypes
+    return doctype not in WRITE_PROTECTED_DOCTYPES
 
 
 def validate_document_access(
@@ -477,9 +468,14 @@ def validate_document_access(
         # Get user's primary role (includes Default for non-assistant users)
         primary_role = get_user_primary_role(user)
 
-        # Check if DocType is accessible for this role
-        if not is_doctype_accessible(doctype, primary_role):
-            return {"success": False, "error": f"Access to {doctype} is restricted for your role"}
+        # FAC-level guard: blocks writes to code-execution / schema DocTypes only.
+        # Reads fall straight through to the Frappe permission check below.
+        if not is_doctype_accessible(doctype, primary_role, perm_type):
+            return {
+                "success": False,
+                "error": f"{perm_type.capitalize()} access to {doctype} is blocked over MCP "
+                f"because it defines executable code, schema or permissions",
+            }
 
         # Check Frappe DocType-level permissions - this is the primary security control
         if not frappe.has_permission(doctype, perm_type, user=user):
