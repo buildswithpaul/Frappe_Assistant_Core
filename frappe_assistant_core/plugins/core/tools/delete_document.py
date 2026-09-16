@@ -69,9 +69,17 @@ class DocumentDelete(BaseTool):
         name = arguments.get("name")
         force = arguments.get("force", False)
 
-        # Check permission for DocType
-        if not frappe.has_permission(doctype, "delete"):
-            return {"success": False, "error": f"Insufficient permissions to delete {doctype} document"}
+        # Same guard the other document tools use: blocks deletes of code-execution and
+        # schema/permission DocTypes, then defers to Frappe's own delete permission.
+        # Document-level permissions and the submitted-document check are enforced by
+        # frappe.delete_doc() below, so this stays at the DocType level (issue #249).
+        from frappe_assistant_core.core.security_config import validate_document_access
+
+        validation_result = validate_document_access(
+            user=frappe.session.user, doctype=doctype, name="", perm_type="delete"
+        )
+        if not validation_result["success"]:
+            return validation_result
 
         try:
             # Check if document exists

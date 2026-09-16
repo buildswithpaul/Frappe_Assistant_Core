@@ -1355,9 +1355,9 @@ Every document operation goes through comprehensive permission validation:
 def validate_document_access(user: str, doctype: str, name: str, perm_type: str = "read") -> Dict[str, Any]:
     """Multi-layer document access validation"""
 
-    # Layer 1: Role-based DocType accessibility
-    if not is_doctype_accessible(doctype, primary_role):
-        return {"success": False, "error": "Access to {doctype} is restricted for your role"}
+    # Layer 1: FAC write protection (reads always pass through to Layer 2)
+    if not is_doctype_accessible(doctype, primary_role, perm_type):
+        return {"success": False, "error": "{perm_type} access to {doctype} is blocked over MCP"}
 
     # Layer 2: Frappe DocType-level permissions
     if not frappe.has_permission(doctype, perm_type, user=user):
@@ -1423,42 +1423,36 @@ def filter_sensitive_fields(doc_dict: Dict[str, Any], doctype: str, user_role: s
 - **Admin-Only Fields**: System metadata hidden from Assistant Users
 - **Automatic Masking**: Sensitive values replaced with `***RESTRICTED***`
 
-#### 4. **DocType Access Restrictions**
+#### 4. **DocType Write Protection**
 
-**Restricted DocTypes for Assistant Users:**
+**Write-protected DocTypes:**
 
 ```python
-RESTRICTED_DOCTYPES = {
-    "Assistant User": [
-        # System administration DocTypes
-        "System Settings", "Print Settings", "Email Domain", "LDAP Settings",
-        "OAuth Settings", "Social Login Key", "Dropbox Settings",
+WRITE_PROTECTED_DOCTYPES = [
+    # Code execution
+    "Server Script", "Client Script", "Custom Script",
 
-        # Security and permissions DocTypes
-        "Role", "User Permission", "Role Permission", "Custom Role",
-        "Module Profile", "Role Profile", "Custom DocPerm", "DocShare",
+    # Schema and customization
+    "DocType", "DocField", "DocPerm", "Custom Field",
+    "Property Setter", "Customize Form", "Customize Form Field",
 
-        # System logs and audit DocTypes
-        "Error Log", "Activity Log", "Access Log", "View Log",
-        "Scheduler Log", "Integration Request",
+    # Security and permissions
+    "Role", "Custom Role", "Role Permission", "Custom DocPerm",
+    "User Permission", "DocShare", "Module Profile", "Role Profile",
 
-        # System customization DocTypes
-        "Server Script", "Client Script", "Custom Script", "Property Setter",
-        "DocType", "DocField", "DocPerm", "Custom Field",
-
-        # Development and maintenance DocTypes
-        "Package", "Data Import", "Data Export", "Bulk Update"
-        # ... 30+ restricted DocTypes total
-    ]
-}
+    # Workflow definitions
+    "Workflow", "Workflow State", "Workflow Transition",
+]
 ```
 
 **Access Control:**
 
-- **30+ Restricted DocTypes** for Assistant Users to prevent system tampering
-- **Administrative Protection**: Core system DocTypes only accessible to System Managers
-- **Security-Critical Access**: Permission and role management restricted to admins
-- **Development Tool Restriction**: System customization tools restricted appropriately
+- **Reads defer to Frappe.** There is no read-side blocklist. `frappe.has_permission(doctype, "read")` is the only control, so a site that grants a role read on `Server Script` gets read over MCP too. On a stock install every DocType above already grants read to System Manager / Script Manager only, so this changes nothing by default.
+- **Writes are hard-blocked** on the DocTypes above — `create`, `write`, `delete`, `submit`, `cancel` and `amend` are refused even where DocPerms would allow them, because these DocTypes carry executable code or define the schema and permission model.
+- **System Manager bypasses** the write block, preserving existing integrations.
+- **Enforced uniformly** across `get_document`, `list_documents`, `create_document`, `update_document`, `submit_document`, `delete_document` and `chatgpt_fetch`.
+
+> Changed in issue #249. The previous `RESTRICTED_DOCTYPES` blocklist hid ~45 DocTypes from every non-System-Manager role on reads as well as writes, which made least-privilege integration users unworkable. The name is retained as a deprecated alias.
 
 #### 5. **Row-Level Security Implementation**
 
