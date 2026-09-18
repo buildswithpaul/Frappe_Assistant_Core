@@ -122,6 +122,18 @@ export function useAddUserFlow({
 		if (seatChargeRequired(limit)) {
 			try {
 				const preview = await api.billing.previewSeatCharge();
+				// An unsettled renewal quotes no pricing at all — a stalled
+				// cycle leaves zero days remaining, so a modal here would
+				// offer the seat for 0.00 and AR would then refuse to sell
+				// it. Surface the reason instead of a figure nobody can act
+				// on. Checked before `pricing`, which is absent in this case.
+				if (preview?.pricing?.renewal_outstanding) {
+					actionError.value =
+						preview.pricing.blocked_reason ||
+						"Your last renewal payment hasn't gone through yet.";
+					clearMessageAfterDelay("error");
+					return;
+				}
 				if (preview?.success && preview.pricing) {
 					const p = preview.pricing;
 					seatPurchaseConfirm.value = {

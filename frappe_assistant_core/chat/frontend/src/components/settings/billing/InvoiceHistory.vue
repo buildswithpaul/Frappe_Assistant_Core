@@ -42,7 +42,15 @@
 						</td>
 						<td>
 							<button
-								v-if="isPaid(invoice)"
+								v-if="isOutstanding(invoice)"
+								type="button"
+								class="pay-link"
+								@click="$emit('pay', invoice)"
+							>
+								Pay
+							</button>
+							<button
+								v-else-if="isPaid(invoice)"
 								type="button"
 								class="download-link"
 								title="Download PDF"
@@ -88,13 +96,19 @@
 import { formatDate } from "@/composables/useFormatters";
 import { api } from "@/api/client";
 
-defineProps({
+const props = defineProps({
 	invoices: { type: Array, default: () => [] },
 	upcomingInvoice: { type: Object, default: null },
 	formatCurrency: { type: Function, required: true },
 	formatInvoiceDate: { type: Function, required: true },
 	formatStatus: { type: Function, required: true },
+	// AR Invoice name of the row the tenant actually owes for, when any.
+	// Matched by id rather than by status: several rows can sit unpaid while
+	// exactly one is the balance the pay button settles.
+	outstandingInvoiceId: { type: String, default: null },
 });
+
+defineEmits(["pay"]);
 
 // Only Paid invoices have a rendered PDF. Drafts / pending / failed
 // rows get no download button (the endpoint would 4xx anyway — we
@@ -103,12 +117,33 @@ function isPaid(invoice) {
 	return (invoice.status || "").toLowerCase() === "paid";
 }
 
+// `invoice.id` is AR Invoice.name (usage_dashboard.get_invoices maps
+// `"id": inv.name`), the same key the outstanding resolver reports.
+function isOutstanding(invoice) {
+	return !!props.outstandingInvoiceId && invoice.id === props.outstandingInvoiceId;
+}
+
 function downloadInvoice(invoice) {
 	api.billing.downloadInvoicePdf(invoice.id);
 }
 </script>
 
 <style scoped>
+.pay-link {
+	padding: 0.25rem 0.625rem;
+	font-size: 0.75rem;
+	font-weight: 600;
+	color: white;
+	background: #dc2626;
+	border: none;
+	border-radius: 0.375rem;
+	cursor: pointer;
+}
+
+.pay-link:hover {
+	background: #b91c1c;
+}
+
 .section-title {
 	font-size: 1rem;
 	font-weight: 600;

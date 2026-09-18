@@ -156,6 +156,7 @@
 							v-else
 							ref="partnerCard"
 							:submitting="isRegistering"
+							:initial-email="suggestedEmail"
 							@submit="handleSubmit"
 						/>
 					</template>
@@ -251,12 +252,17 @@ const termsError = ref(null);
 // Reconnect flow — returning tenant detected on boot
 const reregistration = ref(false);
 const ownerEmailMasked = ref("");
+// The registering admin's own address, resolved server-side. Prefills the
+// owner field so the mailbox and the owner identity converge on purpose in
+// the ordinary case, rather than by luck.
+const suggestedEmail = ref("");
 const reconnecting = ref(false);
 
 onMounted(async () => {
 	if (!props.isAdmin) return;
 	try {
 		const state = await api.registration.getState();
+		suggestedEmail.value = state?.suggested_owner_email || "";
 		if (state?.exists && state?.reregistration) {
 			reregistration.value = true;
 			ownerEmailMasked.value = state.owner_email_masked || "";
@@ -273,7 +279,7 @@ async function handleReconnect() {
 	try {
 		const terms = await api.registration.getTerms();
 		if (!terms?.version) throw new Error("No terms available");
-		const result = await api.registration.register(ownerEmail.value || null, terms.version, null, null);
+		const result = await api.registration.register(ownerEmail.value || null, terms.version);
 
 		if (result?.success && result?.verification_pending) {
 			reregistration.value = false;
@@ -357,7 +363,6 @@ async function handleTermsAccepted(termsVersion) {
 		const result = await api.registration.register(
 			ownerEmail.value,
 			termsVersion,
-			null,
 			referralCode.value,
 			promotionToken.value
 		);
@@ -400,7 +405,7 @@ async function handleResend() {
 		// Re-fetch terms to get the current version; AR rejects stale acceptances.
 		const terms = await api.registration.getTerms();
 		if (!terms?.version) return;
-		await api.registration.register(ownerEmail.value, terms.version, null, referralCode.value);
+		await api.registration.register(ownerEmail.value, terms.version, referralCode.value);
 	} catch (err) {
 		// Surface failures inline on the pending screen via the existing
 		// error path — bail out of the pending screen so the user sees it.

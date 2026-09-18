@@ -21,21 +21,6 @@
 			/>
 		</template>
 
-		<hr class="divider" />
-
-		<ConnectedServicesSection
-			:mcp-servers="mcpServers"
-			:loading-servers="loadingServers"
-			:is-connecting="isConnecting"
-			:is-reconnecting="isReconnecting"
-			:is-disconnecting="isDisconnecting"
-			:success-message="serverSuccessMessage"
-			:error-message="serverErrorMessage"
-			@connect="handleConnectServer"
-			@reconnect="handleReconnectServer"
-			@disconnect="handleDisconnectServer"
-		/>
-
 		<hr v-if="isSystemManager" class="divider" />
 
 		<section v-if="isSystemManager" class="tenant-policy-section">
@@ -112,7 +97,6 @@ import { storeToRefs } from "pinia";
 import { api } from "@/api/client";
 import { logger } from "@/utils/logger";
 import RegistrationStatusSection from "./account/RegistrationStatusSection.vue";
-import ConnectedServicesSection from "./account/ConnectedServicesSection.vue";
 import RegistrationDiagnostics from "./account/RegistrationDiagnostics.vue";
 import RebindWizard from "./account/RebindWizard.vue";
 
@@ -121,7 +105,7 @@ const emit = defineEmits(["notification"]);
 const showRebindWizard = ref(false);
 
 const userStore = useUserStore();
-const { mcpServers, isAdmin } = storeToRefs(userStore);
+const { isAdmin } = storeToRefs(userStore);
 const isSystemManager = computed(() => isAdmin.value);
 
 const tenantConfig = reactive({
@@ -135,23 +119,11 @@ async function handleRebound() {
 	await userStore.refreshRegistrationStatus();
 }
 
-// Server management state
-const loadingServers = ref(false);
-const isConnecting = ref(false);
-const isReconnecting = ref(false);
-const isDisconnecting = ref(false);
-const serverSuccessMessage = ref("");
-const serverErrorMessage = ref("");
-
-// Load MCP servers on mount
+// Load MCP servers on mount (still consumed elsewhere: workflowStore.js,
+// the workflow tool picker, and onboarding all read userStore.mcpServers).
 onMounted(async () => {
 	if (userStore.registrationStatus === "ready") {
-		loadingServers.value = true;
-		try {
-			await userStore.loadMCPServers();
-		} finally {
-			loadingServers.value = false;
-		}
+		await userStore.loadMCPServers();
 	}
 
 	if (isSystemManager.value) {
@@ -169,82 +141,6 @@ onMounted(async () => {
 		}
 	}
 });
-
-// Server management handlers
-async function handleConnectServer() {
-	isConnecting.value = true;
-	serverErrorMessage.value = "";
-	serverSuccessMessage.value = "";
-
-	try {
-		const result = await userStore.connectAccount();
-		if (result.success) {
-			serverSuccessMessage.value = "Successfully connected!";
-			await userStore.loadMCPServers();
-			clearServerMessageAfterDelay();
-		} else {
-			serverErrorMessage.value = result.error || "Failed to connect";
-		}
-	} catch (err) {
-		serverErrorMessage.value = err.message || "Connection failed";
-	} finally {
-		isConnecting.value = false;
-	}
-}
-
-async function handleReconnectServer(serverName) {
-	isReconnecting.value = true;
-	serverErrorMessage.value = "";
-	serverSuccessMessage.value = "";
-
-	try {
-		const result = await userStore.reconnectServer(serverName);
-		if (result.success) {
-			serverSuccessMessage.value = result.message || "Successfully reconnected!";
-			clearServerMessageAfterDelay();
-		} else {
-			serverErrorMessage.value = result.error || "Failed to reconnect";
-		}
-	} catch (err) {
-		serverErrorMessage.value = err.message || "Reconnection failed";
-	} finally {
-		isReconnecting.value = false;
-	}
-}
-
-async function handleDisconnectServer(serverName) {
-	if (
-		!confirm(
-			`Are you sure you want to disconnect from ${serverName}? You will need to reconnect to use FACO.`
-		)
-	) {
-		return;
-	}
-
-	isDisconnecting.value = true;
-	serverErrorMessage.value = "";
-	serverSuccessMessage.value = "";
-
-	try {
-		const result = await userStore.disconnectServer(serverName);
-		if (result.success) {
-			serverSuccessMessage.value = result.message || "Successfully disconnected";
-			clearServerMessageAfterDelay();
-		} else {
-			serverErrorMessage.value = result.error || "Failed to disconnect";
-		}
-	} catch (err) {
-		serverErrorMessage.value = err.message || "Disconnection failed";
-	} finally {
-		isDisconnecting.value = false;
-	}
-}
-
-function clearServerMessageAfterDelay() {
-	setTimeout(() => {
-		serverSuccessMessage.value = "";
-	}, 5000);
-}
 
 let _tenantSaveTimeout = null;
 function saveTenantConfig() {

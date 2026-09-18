@@ -140,7 +140,7 @@
 </template>
 
 <script setup>
-import { ref, computed, nextTick } from "vue";
+import { ref, computed, nextTick, watch } from "vue";
 import { api } from "@/api/client";
 import { logger } from "@/utils/logger";
 
@@ -148,6 +148,13 @@ const props = defineProps({
 	submitting: {
 		type: Boolean,
 		default: false,
+	},
+	// The registering admin's own address, when the server could resolve one.
+	// A suggestion only — the mailbox and the owner identity are separate
+	// fields and the admin may legitimately point this elsewhere.
+	initialEmail: {
+		type: String,
+		default: "",
 	},
 });
 
@@ -163,8 +170,17 @@ const codeInput = ref(null);
 // remember the intent and fire it automatically when validation resolves.
 const pendingSubmit = ref(false);
 
-const ownerEmail = ref("");
+const ownerEmail = ref(props.initialEmail || "");
 const emailTouched = ref(false);
+
+// The suggestion resolves after mount. Fill an untouched field only — never
+// overwrite an address the admin has already started typing.
+watch(
+	() => props.initialEmail,
+	(next) => {
+		if (next && !ownerEmail.value) ownerEmail.value = next;
+	}
+);
 
 // HTML5-grade email validation — we only need to catch obvious typos before
 // hitting the backend. Frappe's validate_email_address is authoritative.

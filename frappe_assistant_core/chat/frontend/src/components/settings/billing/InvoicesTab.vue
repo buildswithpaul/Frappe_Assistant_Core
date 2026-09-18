@@ -6,6 +6,8 @@
 			:format-currency="formatCurrency"
 			:format-invoice-date="formatInvoiceDate"
 			:format-status="formatStatus"
+			:outstanding-invoice-id="outstandingInvoiceId"
+			@pay="$emit('pay')"
 		/>
 	</div>
 </template>
@@ -19,7 +21,10 @@ defineProps({
 	formatCurrency: { type: Function, required: true },
 	formatInvoiceDate: { type: Function, required: true },
 	formatStatus: { type: Function, required: true },
+	outstandingInvoiceId: { type: String, default: null },
 });
+
+defineEmits(["pay"]);
 </script>
 
 <style scoped>

@@ -99,6 +99,14 @@ const RoutingIcon = () =>
 			d: "M4 6h6l4 6h6M4 18h6l2-3M18 3l3 3-3 3M18 15l3 3-3 3",
 		}),
 	]);
+const ConnectionsIcon = () =>
+	h("svg", { viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", "stroke-width": 2 }, [
+		h("path", {
+			"stroke-linecap": "round",
+			"stroke-linejoin": "round",
+			d: "M13.828 10.172a4 4 0 010 5.656l-3 3a4 4 0 01-5.656-5.656l1.5-1.5M10.172 13.828a4 4 0 010-5.656l3-3a4 4 0 015.656 5.656l-1.5 1.5",
+		}),
+	]);
 const PacksIcon = () =>
 	h("svg", { viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", "stroke-width": 2 }, [
 		h("path", {
@@ -172,6 +180,9 @@ const visibleGroups = computed(() => {
 	// member is governed by them and needs somewhere to read them.
 	personalItems.push({
 		to: "/settings/routing", label: "Model routing", icon: RoutingIcon,
+	});
+	personalItems.push({
+		to: "/settings/connections", label: "Connections", icon: ConnectionsIcon,
 	});
 	groups.push({ id: "personal", label: "Personal", items: personalItems });
 

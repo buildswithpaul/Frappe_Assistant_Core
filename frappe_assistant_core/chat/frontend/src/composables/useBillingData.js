@@ -275,6 +275,12 @@ export function useBillingData() {
 				invoices.value = pageData.invoices?.invoices || [];
 				upcomingInvoice.value = pageData.invoices?.upcoming_invoice || null;
 
+				// Same backend resolver the boot payload used, so the billing
+				// page and the sidebar cannot disagree about what is owed.
+				// Assigned unconditionally: a balance settled in this session
+				// must clear here, not linger until the next full reload.
+				userStore.outstanding = pageData.outstanding || null;
+
 				billingHistory.value = pageData.billing_history?.history || [];
 				portalUrl.value = pageData.billing_history?.portal_url || null;
 

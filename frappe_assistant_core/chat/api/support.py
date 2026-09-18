@@ -26,6 +26,7 @@ from frappe_assistant_core.chat.fac_cloud_client import get_fac_cloud_client
 
 from ._attachment_validation import is_ticket_image, validate_ticket_attachment
 from ._rate_limits import rate_limit, session_user_or_ip
+from .auth import _ar_user_id
 
 
 def _get_client():
@@ -33,6 +34,17 @@ def _get_client():
     if not client:
         frappe.throw(_("Support is not available right now."))
     return client
+
+
+def _ar_user() -> str:
+    """The caller's AR identity — an email, never a Frappe docname.
+
+    AR keys AR Tenant User by email, so a docname that is not one (only
+    Administrator, in practice) matches no member: the ticket lands with a
+    blank `raised_by` and Helpdesk never opens the email thread, and the
+    ticket list comes back empty because it was filed under a different id.
+    """
+    return _ar_user_id(frappe.session.user)
 
 
 MAX_TRANSCRIPT_BYTES = 200 * 1024
@@ -205,11 +217,10 @@ def create_ticket(
     if not description:
         frappe.throw(_("A description is required"))
 
-    user = frappe.session.user
     client = _get_client()
     try:
         return client.create_ticket(
-            user_id=user,
+            user_id=_ar_user(),
             subject=subject,
             description=description,
             category=category,
@@ -244,7 +255,7 @@ def download_ticket_attachment(ticket_id: str | int | None = None, file_url: str
     client = _get_client()
     try:
         content, content_type, filename = client.download_ticket_attachment(
-            user_id=frappe.session.user,
+            user_id=_ar_user(),
             ticket_id=str(ticket_id),
             file_url=file_url,
         )
@@ -292,7 +303,7 @@ def upload_ticket_attachment(
     client = _get_client()
     try:
         result = client.upload_ticket_attachment(
-            user_id=frappe.session.user,
+            user_id=_ar_user(),
             file_data=content,
             file_name=safe_name,
             content_type=canonical_mime,
@@ -325,11 +336,10 @@ def submit_feedback(
     reference: the feedback form never asks for one, so sending it would be
     undisclosed collection. Tickets ask, and attach the transcript.
     """
-    user = frappe.session.user
     client = _get_client()
     try:
         return client.submit_feedback(
-            user_id=user,
+            user_id=_ar_user(),
             rating=cint(rating) if rating not in (None, "") else None,
             comment=comment or None,
             category=category or None,
@@ -343,10 +353,9 @@ def submit_feedback(
 @frappe.whitelist(methods=["POST"])
 def list_my_tickets(status: str | None = None) -> list:
     """List the current user's support tickets."""
-    user = frappe.session.user
     client = _get_client()
     try:
-        return client.list_tickets(user_id=user, status=status or None) or []
+        return client.list_tickets(user_id=_ar_user(), status=status or None) or []
     except Exception as e:
         frappe.log_error(title="Support list_my_tickets failed", message=str(e))
         frappe.throw(_("Couldn't load your tickets. Please try again."))
@@ -355,10 +364,9 @@ def list_my_tickets(status: str | None = None) -> list:
 @frappe.whitelist(methods=["POST"])
 def list_my_feedback() -> list:
     """List the current user's submitted feedback."""
-    user = frappe.session.user
     client = _get_client()
     try:
-        return client.list_feedback(user_id=user) or []
+        return client.list_feedback(user_id=_ar_user()) or []
     except Exception as e:
         frappe.log_error(title="Support list_my_feedback failed", message=str(e))
         frappe.throw(_("Couldn't load your feedback. Please try again."))
@@ -370,10 +378,9 @@ def get_ticket_thread(ticket_id: str | int | None = None) -> dict:
     if not ticket_id:
         frappe.throw(_("ticket_id is required"))
 
-    user = frappe.session.user
     client = _get_client()
     try:
-        return client.get_ticket_thread(user_id=user, ticket_id=str(ticket_id))
+        return client.get_ticket_thread(user_id=_ar_user(), ticket_id=str(ticket_id))
     except Exception as e:
         frappe.log_error(title="Support get_ticket_thread failed", message=str(e))
         frappe.throw(_("Couldn't load that ticket. Please try again."))
@@ -391,11 +398,10 @@ def reply_to_ticket(
     if not message or not message.strip():
         frappe.throw(_("A message is required"))
 
-    user = frappe.session.user
     client = _get_client()
     try:
         return client.reply_to_ticket(
-            user_id=user,
+            user_id=_ar_user(),
             ticket_id=str(ticket_id),
             message=message,
             attachment_ids=_coerce_ids(attachment_ids),

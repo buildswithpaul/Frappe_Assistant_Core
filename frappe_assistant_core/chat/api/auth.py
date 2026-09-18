@@ -209,10 +209,15 @@ def _is_tenant_owner(ar_user_id):
     exactly what the connect flow sends (`_ar_user_id(session.user)`) and what
     AR's own authority check compares (`registered_by == owner_user_id`, see
     assistant_runtime .../users/registration.py). `owner_email` is a separate
-    field — the billing/verification address the admin typed, which frequently
-    differs from the account identity — so it is only a legacy fallback, never
-    the primary key. Preferring owner_email here was a bug: it locked out the
-    real owner whenever the two diverged.
+    field — the mailbox the admin typed, which may be shared and need not be
+    anyone's login — so it is only a fallback, never the primary key.
+
+    A PLACEHOLDER `owner_user_id` counts as no owner identity at all. Tenants
+    registered before the identity rule was settled carry `admin@example.com`
+    there (production's does), and that string identifies nobody: matching it
+    would hand ownership to any untouched Administrator, and not matching it
+    would leave those tenants with no reachable owner. Falling back to
+    `owner_email` resolves them to the address that was actually verified.
 
     Fails CLOSED — no client, missing owner, or an AR error all return False.
     This only ever widens access (owner bypasses the seat gate), so an
@@ -226,10 +231,12 @@ def _is_tenant_owner(ar_user_id):
     except Exception:
         return False
 
-    # owner_user_id is authoritative (mirrors AR's registered_by check).
-    # owner_email is billing metadata, not a login identity — fall back to it
-    # ONLY for a legacy tenant that has no owner_user_id at all.
-    owner = info.get("owner_user_id") or info.get("owner_email")
+    # owner_user_id is authoritative (mirrors AR's registered_by check); a
+    # missing or placeholder one is not an identity, so fall back to the
+    # verified mailbox for tenants registered before the rule was settled.
+    owner = info.get("owner_user_id")
+    if not owner or _is_placeholder_email(owner):
+        owner = info.get("owner_email")
     return bool(owner) and owner == ar_user_id
 
 
@@ -324,11 +331,14 @@ def _ensure_user_registered(client, user_id):
             # User not registered in AR — don't auto-register
             return {"registered": False, "needs_admin": True}
 
-        has_mcp = status.get("has_mcp_servers", False)
+        has_managed = status.get("has_managed_mcp_server", False)
         ready = status.get("ready_for_streaming", False)
 
-        if not has_mcp:
-            # User exists but MCP server missing — auto-recover
+        if not has_managed:
+            # User exists but the managed MCP server is missing — auto-recover.
+            # Scoped to `managed` (not `has_mcp_servers`) so a user who
+            # deliberately disabled a BYO server doesn't trigger a recovery
+            # pass that force-re-enables it (add_user_mcp_server sets enabled=1).
             _do_user_recovery(client, user_id)
             return {"registered": True}
 
@@ -405,6 +415,7 @@ def _do_user_recovery(client, user_id):
         access_token=tokens["access_token"],
         refresh_token=tokens["refresh_token"],
         token_expires_in=tokens["expires_in"],
+        managed=True,
     )
 
     frappe.logger("faco").info(f"Auto-recovered user {ar_user_id}: re-registered + MCP server created")
@@ -627,6 +638,7 @@ def _register_user_with_ar(frappe_user):
         access_token=tokens["access_token"],
         refresh_token=tokens["refresh_token"],
         token_expires_in=tokens["expires_in"],
+        managed=True,
     )
 
     if not result or not result.get("success"):
@@ -725,6 +737,17 @@ def get_user_mcp_servers() -> dict:
             }
 
         result = client.get_user_mcp_servers(user_id=_ar_user_id(frappe.session.user))
+
+        if result and result.get("_ar_unreachable"):
+            # Transient AR failure (network/timeout/5xx) — distinct from "you
+            # have zero servers configured". Surface it so a caller can avoid
+            # showing an empty-state UI during a brief outage.
+            return {
+                "success": True,
+                "mcp_servers": [],
+                "_ar_unreachable": True,
+                "error": result.get("error"),
+            }
 
         if result:
             return {"success": True, "mcp_servers": result.get("mcp_servers", [])}

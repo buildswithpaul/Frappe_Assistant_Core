@@ -8,17 +8,12 @@ export const registration = {
 			referral_code: code,
 		}),
 
-	register: (
-		ownerEmail,
-		termsVersion,
-		acceptedBy = null,
-		referralCode = null,
-		promotionToken = null
-	) =>
+	// No acceptedBy: the tenant owner is derived from the session on the
+	// server. Sending one would be a claim, not a fact.
+	register: (ownerEmail, termsVersion, referralCode = null, promotionToken = null) =>
 		baseCall("frappe_assistant_core.chat.api.register_with_ar", {
 			owner_email: ownerEmail,
 			terms_version: termsVersion,
-			accepted_by: acceptedBy,
 			referral_code: referralCode,
 			promotion_token: promotionToken,
 		}),

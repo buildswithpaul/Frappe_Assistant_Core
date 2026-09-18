@@ -25,8 +25,8 @@
 				<span class="disclosure-caret" :class="{ open: showPreview }">›</span>
 				{{ showPreview ? "Hide" : "Preview" }} resolved prompt
 			</button>
-			<span class="token-estimate" title="Rough estimate — about 4 characters per token"
-				>~{{ preview.tokens }} tokens</span
+			<span class="length-estimate" title="Length of the resolved prompt"
+				>{{ preview.text.length.toLocaleString("en-US") }} characters</span
 			>
 		</div>
 
@@ -169,7 +169,7 @@ function insertVariable(placeholder) {
 	transform: rotate(90deg);
 }
 
-.token-estimate {
+.length-estimate {
 	font-size: 0.6875rem;
 	color: var(--ql-text-muted);
 }

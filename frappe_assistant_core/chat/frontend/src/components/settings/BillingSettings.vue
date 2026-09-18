@@ -83,7 +83,17 @@
 				:period-end-date="periodEndDate"
 				@change-plan="activeTab = 'plans'"
 				@buy-credits="openCreditPurchase"
-			/>
+			>
+				<!-- Beside the usage ring, because an exhausted balance and an
+				     unpaid renewal are the same story: the cycle cannot roll
+				     over until this clears. -->
+				<OutstandingNotice
+					:outstanding="userStore.outstanding"
+					variant="inline"
+					reason="Credits stay capped until this clears."
+					@pay="activeTab = 'payment'"
+				/>
+			</BillingHero>
 
 			<!-- Plain-language pricing, next to the usage it explains -->
 			<CreditExplainer />
@@ -139,6 +149,8 @@
 				:format-currency="formatCurrency"
 				:format-invoice-date="formatInvoiceDate"
 				:format-status="formatStatus"
+				:outstanding-invoice-id="userStore.outstanding?.invoice || null"
+				@pay="activeTab = 'payment'"
 			/>
 
 			<SettingsTab
@@ -217,7 +229,7 @@
 
 <script setup>
 import { ref, computed, onMounted, watch } from "vue";
-import { useRouter } from "vue-router";
+import { useRouter, useRoute } from "vue-router";
 import { api } from "@/api/client";
 import { logger } from "@/utils/logger";
 import { useUserStore } from "../../stores/userStore";
@@ -241,10 +253,18 @@ import ConfirmSubscriptionModal from "./billing/ConfirmSubscriptionModal.vue";
 import NonAdminBillingCard from "./billing/NonAdminBillingCard.vue";
 import DowngradeConfirmModal from "./billing/DowngradeConfirmModal.vue";
 import ConfirmModal from "@/components/common/ConfirmModal.vue";
+import OutstandingNotice from "@/components/common/OutstandingNotice.vue";
 
 const userStore = useUserStore();
 const router = useRouter();
-const activeTab = ref("plans");
+const route = useRoute();
+
+// Deep-linkable so "Pay now" elsewhere in the app can land on the tab that
+// takes the payment. Validated against the known set: an unrecognised value
+// from the URL would render no panel at all and look like a blank page.
+const BILLING_TABS = ["plans", "credits", "details", "payment", "invoices", "settings"];
+const requestedTab = String(route.query.tab || "");
+const activeTab = ref(BILLING_TABS.includes(requestedTab) ? requestedTab : "plans");
 
 /**
  * Seat counts for the per-user plan cards, so a Team price is shown against

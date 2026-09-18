@@ -91,6 +91,11 @@ const routes = [
 				component: () => import("@/components/settings/RoutingSettings.vue"),
 			},
 			{
+				path: "connections",
+				name: "SettingsConnections",
+				component: () => import("@/components/settings/ConnectionsSettings.vue"),
+			},
+			{
 				path: "memory",
 				name: "settings-memory",
 				component: () => import("@/components/settings/MemorySettings.vue"),

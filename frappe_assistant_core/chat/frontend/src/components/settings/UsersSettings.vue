@@ -50,6 +50,18 @@
 				:credit-quota="userLimit?.credit_quota || 0"
 			/>
 
+			<!-- Persistent, because the alternative is what this replaces: the
+			     admin clicks Add user, AR refuses to quote a seat against a
+			     frozen cycle, and `blocked_reason` lands in an error slot that
+			     clears itself a few seconds later — no amount, no way to pay,
+			     and nothing left on screen to explain the refusal. -->
+			<OutstandingNotice
+				:outstanding="userStore.outstanding"
+				reason="Seats can't be added or priced until this clears."
+				action-label="Settle now"
+				@pay="goToPayment"
+			/>
+
 			<VacantSeatsBanner
 				:user-limit="userLimit"
 				:releasing="releasing"
@@ -250,10 +262,13 @@ import SeatPurchaseModal from "./users/SeatPurchaseModal.vue";
 import SeatLimitUpgradeBanner from "./users/SeatLimitUpgradeBanner.vue";
 import VacantSeatsBanner from "./users/VacantSeatsBanner.vue";
 import ConfirmModal from "@/components/common/ConfirmModal.vue";
+import OutstandingNotice from "@/components/common/OutstandingNotice.vue";
+import { useUserStore } from "@/stores/userStore";
 import { useAddUserFlow } from "@/composables/useAddUserFlow";
 import { useSeatRelease } from "@/composables/useSeatRelease";
 
 const router = useRouter();
+const userStore = useUserStore();
 
 // State
 const loading = ref(true);
@@ -315,6 +330,10 @@ const atSeatLimit = computed(() => {
 
 function goToBilling() {
 	router.push("/settings/billing");
+}
+
+function goToPayment() {
+	router.push({ path: "/settings/billing", query: { tab: "payment" } });
 }
 
 // Table interaction handlers

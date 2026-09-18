@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 import frappe
 
 from frappe_assistant_core.chat.api import support
+from frappe_assistant_core.chat.api.auth import _ar_user_id
 
 PNG_BYTES = b"\x89PNG\r\n\x1a\n" + b"\x00" * 32
 
@@ -27,7 +28,7 @@ class TestSupportProxy(unittest.TestCase):
         self.assertEqual(result["ticket_id"], "1")
         client.create_ticket.assert_called_once()
         kwargs = client.create_ticket.call_args.kwargs
-        self.assertEqual(kwargs["user_id"], frappe.session.user)
+        self.assertEqual(kwargs["user_id"], _ar_user_id(frappe.session.user))
         self.assertEqual(kwargs["subject"], "X")
 
     @patch("frappe_assistant_core.chat.api.support.get_fac_cloud_client")
@@ -77,7 +78,7 @@ class TestSupportProxy(unittest.TestCase):
         result = support.list_my_tickets(status="Open")
         self.assertEqual(result[0]["name"], "1")
         kwargs = client.list_tickets.call_args.kwargs
-        self.assertEqual(kwargs["user_id"], frappe.session.user)
+        self.assertEqual(kwargs["user_id"], _ar_user_id(frappe.session.user))
         self.assertEqual(kwargs["status"], "Open")
 
     @patch("frappe_assistant_core.chat.api.support.get_fac_cloud_client")
@@ -88,7 +89,9 @@ class TestSupportProxy(unittest.TestCase):
         result = support.get_ticket_thread(ticket_id="58")
         self.assertEqual(result["subject"], "X")
         self.assertEqual(client.get_ticket_thread.call_args.kwargs["ticket_id"], "58")
-        self.assertEqual(client.get_ticket_thread.call_args.kwargs["user_id"], frappe.session.user)
+        self.assertEqual(
+            client.get_ticket_thread.call_args.kwargs["user_id"], _ar_user_id(frappe.session.user)
+        )
 
     @patch("frappe_assistant_core.chat.api.support.get_fac_cloud_client")
     def test_get_ticket_thread_requires_id(self, mock_get_client):
@@ -180,7 +183,7 @@ class TestDownloadTicketAttachmentProxy(unittest.TestCase):
         support.download_ticket_attachment(ticket_id=58, file_url="/private/files/shot.png")
 
         kwargs = client.download_ticket_attachment.call_args.kwargs
-        self.assertEqual(kwargs["user_id"], frappe.session.user)
+        self.assertEqual(kwargs["user_id"], _ar_user_id(frappe.session.user))
         self.assertEqual(kwargs["ticket_id"], "58")
         self.assertEqual(kwargs["file_url"], "/private/files/shot.png")
         self.assertEqual(frappe.local.response.filecontent, PNG_BYTES)
@@ -224,7 +227,7 @@ class TestUploadTicketAttachmentProxy(unittest.TestCase):
         self.assertEqual(result["file_id"], "F1")
         self.assertTrue(result["is_image"])
         kwargs = client.upload_ticket_attachment.call_args.kwargs
-        self.assertEqual(kwargs["user_id"], frappe.session.user)
+        self.assertEqual(kwargs["user_id"], _ar_user_id(frappe.session.user))
         self.assertEqual(kwargs["file_name"], "x.png")
         self.assertEqual(kwargs["file_data"], PNG_BYTES)
 

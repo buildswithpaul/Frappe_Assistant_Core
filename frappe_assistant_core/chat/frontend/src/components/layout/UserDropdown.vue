@@ -5,6 +5,7 @@
 			<div class="user-info">
 				<div class="user-avatar">
 					{{ userInitial }}
+					<span v-if="userStore.hasOutstanding" class="due-dot" :title="dueTitle" />
 				</div>
 				<div class="user-details">
 					<div class="user-name">{{ userName }}</div>
@@ -29,6 +30,7 @@
 		<!-- Collapsed User Avatar -->
 		<div v-else class="user-avatar-collapsed" @click="toggleUserMenu">
 			{{ userInitial }}
+			<span v-if="userStore.hasOutstanding" class="due-dot" :title="dueTitle" />
 		</div>
 
 		<!-- User Dropdown Menu -->
@@ -58,6 +60,7 @@
 					/>
 				</svg>
 				Settings
+				<span v-if="userStore.hasOutstanding" class="due-pill">{{ dueLabel }}</span>
 			</button>
 			<a
 				:href="DOCS_URL"
@@ -107,6 +110,7 @@
 import { computed, ref, onMounted, onUnmounted } from "vue";
 import { useUserStore } from "@/stores/userStore";
 import { useSupportStore } from "@/stores/supportStore";
+import { formatCurrency } from "@/composables/useFormatters";
 
 defineProps({
 	collapsed: {
@@ -118,6 +122,13 @@ defineProps({
 const emit = defineEmits(["open-settings"]);
 
 const DOCS_URL = "https://fac-suite.com/";
+
+// Admin-only by construction: the backend sends no outstanding to anyone who
+// could not settle it, so a member never sees a dot they cannot clear.
+const dueLabel = computed(() =>
+	formatCurrency(userStore.outstanding?.amount || 0, userStore.outstanding?.currency || undefined)
+);
+const dueTitle = computed(() => `${dueLabel.value} outstanding`);
 
 const userStore = useUserStore();
 const supportStore = useSupportStore();
@@ -193,6 +204,32 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+.user-avatar,
+.user-avatar-collapsed {
+	position: relative;
+}
+
+.due-dot {
+	position: absolute;
+	top: -2px;
+	right: -2px;
+	width: 0.5rem;
+	height: 0.5rem;
+	background: #dc2626;
+	border: 2px solid var(--ql-surface, #fff);
+	border-radius: 50%;
+}
+
+.due-pill {
+	margin-left: auto;
+	padding: 0.0625rem 0.375rem;
+	font-size: 0.6875rem;
+	font-weight: 600;
+	color: #dc2626;
+	background: rgba(220, 38, 38, 0.12);
+	border-radius: 0.375rem;
+}
+
 .user-section {
 	margin-top: auto;
 	padding: 0.75rem;

@@ -50,25 +50,13 @@ class GenerateDocument(BaseTool):
         super().__init__()
         self.name = "generate_document"
         self.description = (
-            "Generate a downloadable PDF document from markdown content. "
-            "Use this when the user asks for a report, analysis, summary, or any content "
-            "as a downloadable file. Write the full document content in markdown format "
-            "(headings, tables, lists, code blocks are all supported). The tool converts "
-            "markdown to a professionally styled PDF and returns a download link. "
-            "IMPORTANT: Write complete, well-structured markdown — this becomes the entire "
-            "document. Include a clear structure with headings, and use markdown tables for "
-            "tabular data. The title parameter adds a styled header above the content. "
-            "RICH BLOCKS: You can embed ```chart```, ```callout```, ```metric```, ```cover```, "
-            "and ```pagebreak``` fenced blocks inside the markdown — they render as inline "
-            "SVG charts, styled call-out boxes, KPI cards, cover pages, and page breaks in "
-            "the PDF. The chart schema is identical to the chat-side dialect "
-            '({"type":"bar","data":{"categories":[...],"series":[{"name":...,"values":[...]}]}}). '
-            "Refer to the 'document_authoring' skill for a full guide to producing "
-            "visually rich PDFs with charts, cover pages, and section structure. "
-            "LINK FORMAT: The result includes a 'download_link' field — copy it VERBATIM "
-            "into your response. It is a working relative URL like [Report.pdf](/private/files/Report.pdf). "
-            "Do NOT add 'sandbox:', 'https://', or any prefix. The path starts with / and "
-            "works exactly like other Frappe links such as [SAL-ORD-001](/app/sales-order/SAL-ORD-001)."
+            "Generate a downloadable PDF from markdown content (headings, tables, lists, code blocks). "
+            "Write complete, well-structured markdown — it becomes the whole document. "
+            "RICH BLOCKS: embed ```chart```, ```callout```, ```metric```, ```cover```, ```pagebreak``` "
+            "fences for inline SVG charts, call-outs, KPI cards, cover pages, and page breaks; chart "
+            "schema matches the chat-side dialect. See the 'document_authoring' skill for a full guide. "
+            "LINK FORMAT: copy the result's 'download_link' VERBATIM, e.g. [Report.pdf](/private/files/Report.pdf) "
+            "— no 'sandbox:' or 'https://' prefix."
         )
         self.source_app = "frappe_assistant_core"
         self.category = "Document"
@@ -79,38 +67,27 @@ class GenerateDocument(BaseTool):
             "properties": {
                 "content": {
                     "type": "string",
-                    "description": (
-                        "The document body in markdown format. Supports headings (##), "
-                        "tables (| col |), lists (- item), code blocks (```), blockquotes (>), "
-                        "bold (**text**), italic (*text*), and horizontal rules (---). "
-                        "Write complete, well-structured content — this becomes the full document."
-                    ),
+                    "description": "Document body in markdown (headings, tables, lists, code blocks, etc.)",
                 },
                 "filename": {
                     "type": "string",
-                    "description": (
-                        "Filename without extension, e.g. 'Q1 Sales Report' or 'Customer Analysis'. "
-                        "The .pdf extension is added automatically."
-                    ),
+                    "description": "Filename without extension; .pdf is added automatically",
                 },
                 "title": {
                     "type": "string",
-                    "description": (
-                        "Optional title displayed as a styled header at the top of the PDF. "
-                        "If omitted, the document starts directly with the content."
-                    ),
+                    "description": "Optional styled header at the top of the PDF",
                 },
                 "orientation": {
                     "type": "string",
                     "enum": ["portrait", "landscape"],
                     "default": "portrait",
-                    "description": "Page orientation. Use 'landscape' for wide tables or charts.",
+                    "description": "Use 'landscape' for wide tables or charts",
                 },
                 "page_size": {
                     "type": "string",
                     "enum": ["A4", "Letter"],
                     "default": "A4",
-                    "description": "Paper size. A4 (210x297mm) is the international standard.",
+                    "description": "Paper size",
                 },
             },
             "required": ["content", "filename"],

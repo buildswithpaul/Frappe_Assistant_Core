@@ -59,31 +59,31 @@ class AnalyzeFrappeData(BaseTool):
             "properties": {
                 "doctype": {
                     "type": "string",
-                    "description": "🎯 DocType to analyze (e.g., 'Sales Invoice', 'Customer', 'Item', 'Quotation', 'Purchase Order'). Any Frappe DocType with business data.",
+                    "description": "DocType to analyze, e.g. 'Sales Invoice'",
                 },
                 "analysis_type": {
                     "type": "string",
                     "enum": ["profile", "statistics", "trends", "quality", "correlations"],
-                    "description": "📊 Analysis type: 'profile' (data overview + field analysis), 'statistics' (mean/median/std for numbers), 'trends' (time-series patterns), 'quality' (data issues + score), 'correlations' (relationships between fields)",
+                    "description": "Type of analysis to perform",
                 },
                 "fields": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "🎯 Specific fields to focus on (optional). If empty, analyzes all relevant fields automatically. Example: ['grand_total', 'status', 'customer']",
+                    "description": "Fields to analyze; all relevant fields if omitted",
                 },
                 "filters": {
                     "type": "object",
-                    "description": "🔍 Standard Frappe filters to narrow down data. Examples: {'status': 'Paid'}, {'company': 'Your Company'}, {'creation': ['>', '2024-01-01']}",
+                    "description": "Frappe filters to narrow down the data",
                 },
                 "date_field": {
                     "type": "string",
-                    "description": "📅 Date field for trend analysis (defaults to 'creation'). Use 'posting_date', 'delivery_date', 'due_date', etc. for specific time-series analysis",
+                    "description": "Date field for trend analysis; defaults to 'creation'",
                 },
                 "limit": {
                     "type": "integer",
                     "default": 1000,
                     "maximum": 10000,
-                    "description": "📈 Max records to analyze (default: 1000). Increase for more comprehensive analysis, decrease for faster results. Handles large datasets efficiently.",
+                    "description": "Max records to analyze",
                 },
             },
             "required": ["doctype", "analysis_type"],
@@ -91,7 +91,12 @@ class AnalyzeFrappeData(BaseTool):
 
     def _get_dynamic_description(self) -> str:
         """Generate tool description"""
-        return """Perform custom statistical analysis and data profiling when standard business reports are insufficient. USE HIERARCHY: First try generate_report for standard business reports, then use this tool only when reports don't provide the specific analysis needed. ANALYSIS TYPES: profile (data overview with nulls, types, unique counts, field statistics), statistics (business metrics including mean, median, standard deviation, quartiles), trends (time-series patterns with daily/monthly growth rates), quality (data health score assessing duplicates, nulls, consistency), correlations (relationships between fields). Best for custom field combinations, specialized statistical analysis, data quality research, and unique analytical requirements not covered by standard reports. Always check report_list first to find existing reports before performing custom analysis."""
+        return (
+            "Perform custom statistical analysis and data profiling beyond standard reports. "
+            "Try generate_report first; use this only when reports don't cover the needed analysis. "
+            "TYPES: profile (data overview), statistics (mean/median/std), trends (time-series), "
+            "quality (data health score), correlations (field relationships)."
+        )
 
     def execute(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
         """Perform data analysis on Frappe data"""

@@ -298,6 +298,7 @@ def add_user(user_id: str | None = None):
             access_token=tokens["access_token"],
             refresh_token=tokens["refresh_token"],
             token_expires_in=tokens["expires_in"],
+            managed=True,
         )
 
         return {

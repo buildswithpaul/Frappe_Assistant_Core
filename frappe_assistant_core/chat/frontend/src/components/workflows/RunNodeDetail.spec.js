@@ -63,13 +63,20 @@ describe("RunNodeDetail", () => {
 		expect(wrapper.find(".full-error").text()).toContain("send_email");
 	});
 
-	it("renders meta: duration, model, tokens, credits, tool calls", () => {
+	it("renders meta: duration, model, credits, tool calls", () => {
 		const wrapper = mount(RunNodeDetail, { props: { nodeRun: NODE_RUN } });
 		const meta = wrapper.find(".node-meta").text();
 		expect(meta).toContain("5.3s");
 		expect(meta).toContain("claude-haiku-4-5");
-		expect(meta).toContain("1234 tok");
 		expect(meta).toContain("0.42 credits");
 		expect(meta).toContain("1 tool call");
+	});
+
+	it("reports consumption in credits only, never raw tokens", () => {
+		// Credits are the unit this product bills and speaks in; the token
+		// figure alongside them said the same thing twice, once in a unit that
+		// appears nowhere else a user can see.
+		const wrapper = mount(RunNodeDetail, { props: { nodeRun: NODE_RUN } });
+		expect(wrapper.find(".node-meta").text()).not.toMatch(/tok/i);
 	});
 });

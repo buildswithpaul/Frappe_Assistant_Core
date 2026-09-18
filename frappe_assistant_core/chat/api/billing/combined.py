@@ -25,6 +25,7 @@ from ..billing._internal import (
     _build_dashboard_response,
     _infer_gateway_from_plans,
 )
+from ..billing._outstanding import resolve_outstanding
 
 
 @frappe.whitelist(methods=["GET"])
@@ -47,7 +48,8 @@ def get_billing_page_data(
 
     Returns:
             dict: Combined response with dashboard, plans, usage_history,
-                    invoices, subscription_status, billing_history, credit_balance
+                    invoices, subscription_status, billing_history,
+                    credit_balance, outstanding
     """
     _require_system_manager()
 
@@ -82,9 +84,12 @@ def get_billing_page_data(
             # Needed for partner attribution ("Referred by …") in Billing → Settings.
             # The referral block lives under response["subscription"]["referral"].
             ("tenant_info", client.get_tenant_info),
+            # Was reachable only from the Payment Method tab, so the hero, the
+            # invoice list and the sidebar could not show what the tenant owes.
+            ("outstanding", resolve_outstanding, client),
         ]
 
-        with ThreadPoolExecutor(max_workers=10) as executor:
+        with ThreadPoolExecutor(max_workers=11) as executor:
             futures = [executor.submit(_call, name, fn, *args) for name, fn, *args in tasks]
             for future in as_completed(futures):
                 name, result = future.result()
@@ -125,6 +130,8 @@ def get_billing_page_data(
             "subscription_status": results.get("subscription_status") or {},
             "billing_history": results.get("billing_history") or {},
             "credit_balance": results.get("credit_balance"),
+            # None when nothing is owed — the surfaces key on its presence.
+            "outstanding": results.get("outstanding"),
         }
 
     except ARBillingUnavailableError:

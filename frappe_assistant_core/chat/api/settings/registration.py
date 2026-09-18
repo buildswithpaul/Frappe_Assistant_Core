@@ -95,7 +95,6 @@ def validate_partner_code(referral_code: str | None = None) -> dict:
 def register_with_ar(
     owner_email: str,
     terms_version: str | None = None,
-    accepted_by: str | None = None,
     promotion_token: str | None = None,
 ) -> dict:
     """
@@ -110,11 +109,20 @@ def register_with_ar(
     the admin clicks the link. Re-registrations of an existing tenant return the
     secret immediately (legacy path).
 
+    Two different identities are in play and must not be conflated:
+
+    * ``owner_email`` is a MAILBOX — where AR sends the verification link, and
+      later the billing and rebind notices. It may be a shared address and need
+      not be anyone's login. The admin types it.
+    * ``accepted_by`` becomes AR's ``owner_user_id``, an IDENTITY — who bypasses
+      the seat gate and who may add users. Both gates match it against
+      ``_ar_user_id(frappe.session.user)``, so it is derived from the session,
+      never accepted from the caller.
+
     Args:
-            owner_email: Email address of the site owner. AR sends the verification
-                link here. Required for new registrations.
+            owner_email: Mailbox the verification link is sent to. Required for
+                new registrations; a re-registration keeps the stored one.
             terms_version: Version of terms being accepted (from get_ar_terms)
-            accepted_by: User email/username who accepted the terms
 
     Returns:
             dict: {"success": bool, "message": str}
@@ -153,6 +161,24 @@ def register_with_ar(
             ).format(owner_email),
         }
 
+    # The registering login becomes this tenant's owner_user_id, so it has to
+    # be an identity that can still be recognised later. `bench new-site` leaves
+    # Administrator on `admin@example.com`, which identifies nobody — every
+    # Frappe install shares it. Registering under it produces a tenant whose
+    # owner never matches, and `_register_user_with_ar` refuses to seat it
+    # anyway, so this is that same wall moved earlier: before the tenant exists
+    # on AR, while the remedy is still one field on a User.
+    registrant = _ar_user_id(frappe.session.user)
+    if _is_placeholder_email(registrant) or "@" not in str(registrant):
+        return {
+            "success": False,
+            "error": _(
+                "The {0} account has no email address of its own ({1} is "
+                "Frappe's default), so it cannot own this workspace. Set a real "
+                "email on that user, or sign in as a named user, then register."
+            ).format(frappe.session.user, registrant),
+        }
+
     try:
         # Validate terms acceptance
         if not terms_version:
@@ -164,15 +190,9 @@ def register_with_ar(
         settings = frappe.get_single("FAC Chat Settings")
         site_url = frappe.utils.get_url()
 
-        # accepted_by becomes the tenant's owner_user_id on AR, which the owner
-        # self-connect flow matches against. Default it to the owner address
-        # the admin actually typed and AR verifies by emailed link — NOT the
-        # session account, whose email is Frappe's `admin@example.com`
-        # placeholder on a site nobody has edited. Production's only tenant
-        # carries `owner_user_id = "admin@example.com"` beside a real
-        # `owner_email`, which is that defect.
-        if not accepted_by:
-            accepted_by = owner_email
+        # Derived above, never taken from the caller: a supplied value would
+        # let one System Manager nominate somebody else as owner.
+        accepted_by = registrant
 
         # FAC MCP endpoint on this site (for reference - actual OAuth tokens are per-user)
         fac_endpoint = f"{site_url}/api/method/frappe_assistant_core.api.fac_endpoint.handle_mcp"
@@ -335,6 +355,24 @@ def register_with_ar(
         return {"success": False, "error": _safe_error(e, "FACO Registration Error")}
 
 
+def _suggested_owner_email() -> str | None:
+    """The address to prefill the owner-email field with, or None.
+
+    The mailbox and the owner identity are separate fields and may legitimately
+    diverge, but the ordinary case — the admin owning the workspace they are
+    registering — should not depend on retyping their own address from memory.
+    Suggests nothing when the session account has no real address of its own;
+    registration refuses that anyway, and offering a placeholder would invite
+    the admin to accept it.
+    """
+    from frappe_assistant_core.chat.api.auth import _ar_user_id, _is_placeholder_email
+
+    candidate = _ar_user_id(frappe.session.user)
+    if not candidate or "@" not in str(candidate) or _is_placeholder_email(candidate):
+        return None
+    return candidate
+
+
 @frappe.whitelist(methods=["POST"])
 def get_registration_state() -> dict:
     """SPA boot lookup: is this site already a returning AR tenant?
@@ -342,19 +380,27 @@ def get_registration_state() -> dict:
     site_url and tenant_id are resolved server-side (never trusted from the
     browser), matching register_with_ar. Returns AR's classification or a
     safe {"exists": False} on any failure so first-run never breaks.
+
+    Carries `suggested_owner_email` either way — it is resolved locally, so a
+    first run with no AR reachable still gets the prefill.
     """
     frappe.only_for("System Manager")
+    # Resolved inside the guard: this endpoint promises never to break first
+    # run, and that has to hold for the local lookup too.
+    suggested = None
     try:
+        suggested = _suggested_owner_email()
         settings = frappe.get_single("FAC Chat Settings")
         from frappe_assistant_core.chat.fac_cloud_client import get_registration_state as client_state
 
-        return client_state(
+        state = client_state(
             site_url=frappe.utils.get_url(),
             tenant_id=settings.tenant_id or None,
         )
+        return {**(state or {}), "suggested_owner_email": suggested}
     except Exception as e:
         frappe.log_error(title="FAC get_registration_state", message=str(e))
-        return {"exists": False}
+        return {"exists": False, "suggested_owner_email": suggested}
 
 
 @frappe.whitelist(methods=["POST"])

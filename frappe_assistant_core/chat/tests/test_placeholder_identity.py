@@ -113,25 +113,75 @@ class TestNoSeatIsCreatedForAPlaceholder(BaseAssistantTest):
         client.register_user.assert_called_once()
 
 
-class TestOwnerIdentityComesFromTheTypedAddress(BaseAssistantTest):
-    """`accepted_by` becomes AR Tenant.owner_user_id, which the owner
-    self-connect gate matches. It must be the address the admin actually
-    typed and AR verified, not whatever the session account happens to hold.
+def _fake_resolver(*, administrator_is):
+    """Stand in for `_ar_user_id`: pass addresses through, map the docname."""
+
+    def resolve(user=None):
+        user = user or "Administrator"
+        return administrator_is if user == "Administrator" else user
+
+    return resolve
+
+
+class TestOwnerIdentityIsTheLoginNotTheMailbox(BaseAssistantTest):
+    """`accepted_by` becomes AR Tenant.owner_user_id, which both owner gates
+    match against `_ar_user_id(frappe.session.user)`. It is therefore the
+    REGISTERING LOGIN, never the address typed into the form — that address is
+    `owner_email`, a mailbox that may be shared and may be nobody's login.
+
+    Conflating the two is the bug, and it has now been made in both
+    directions: first the session account (a placeholder every Frappe install
+    shares), then the typed mailbox (an address nobody signs in as, which
+    locks the real owner out with no admin left to ask).
     """
 
-    def _accepted_by_sent_to_ar(self, **kwargs) -> str:
+    def _call(self, resolver, **kwargs):
         target = "frappe_assistant_core.chat.fac_cloud_client.register_tenant"
-        with patch(target, return_value=AR_STOP) as register_tenant:
+        with patch("frappe_assistant_core.chat.api.auth._ar_user_id", resolver), patch(
+            target, return_value=AR_STOP
+        ) as register_tenant:
             from frappe_assistant_core.chat.api.settings.registration import (
                 register_with_ar,
             )
 
-            register_with_ar(terms_version="1.0", **kwargs)
-        register_tenant.assert_called_once()
-        return register_tenant.call_args.kwargs["accepted_by"]
+            result = register_with_ar(terms_version="1.0", **kwargs)
+        return result, register_tenant
 
-    def test_accepted_by_is_the_typed_owner_email(self):
-        self.assertEqual(
-            self._accepted_by_sent_to_ar(owner_email="hari.madhavan@promantia.com"),
-            "hari.madhavan@promantia.com",
-        )
+    def test_the_typed_mailbox_does_not_become_the_owner_identity(self):
+        resolver = _fake_resolver(administrator_is="clinton@acme.com")
+        _, register_tenant = self._call(resolver, owner_email="accounts@acme.com")
+
+        kwargs = register_tenant.call_args.kwargs
+        self.assertEqual(kwargs["accepted_by"], "clinton@acme.com")
+        self.assertEqual(kwargs["owner_email"], "accounts@acme.com")
+
+    def test_the_two_agree_when_the_admin_types_their_own_address(self):
+        resolver = _fake_resolver(administrator_is="clinton@acme.com")
+        _, register_tenant = self._call(resolver, owner_email="clinton@acme.com")
+
+        kwargs = register_tenant.call_args.kwargs
+        self.assertEqual(kwargs["accepted_by"], "clinton@acme.com")
+        self.assertEqual(kwargs["owner_email"], "clinton@acme.com")
+
+    def test_a_placeholder_login_is_refused_before_a_tenant_exists(self):
+        """The wall `_register_user_with_ar` already puts up at first connect,
+        moved earlier — before it can strand a tenant that exists on AR but
+        whose owner can never be recognised."""
+        resolver = _fake_resolver(administrator_is="admin@example.com")
+        result, register_tenant = self._call(resolver, owner_email="real@acme.com")
+
+        self.assertFalse(result["success"])
+        self.assertIn("no email address", result["error"].lower())
+        register_tenant.assert_not_called()
+
+    def test_the_caller_cannot_nominate_someone_else_as_owner(self):
+        """Identity is derived, never accepted: a supplied `accepted_by` would
+        be a claim, and this endpoint would be the one place that honoured it."""
+        import inspect
+
+        from frappe_assistant_core.chat.api.settings.registration import register_with_ar
+
+        fn = register_with_ar
+        while hasattr(fn, "__wrapped__"):
+            fn = fn.__wrapped__
+        self.assertNotIn("accepted_by", inspect.signature(fn).parameters)

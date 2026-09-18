@@ -19,6 +19,7 @@ import frappe
 from frappe import _
 
 from frappe_assistant_core.chat.cloud_url import PRODUCTION_FAC_CLOUD_URL, get_fac_cloud_url
+from frappe_assistant_core.utils.cache import get_cached_server_settings
 
 if TYPE_CHECKING:
     from frappe.model.document import Document
@@ -35,8 +36,9 @@ def initialize_spa() -> dict:
 
     Returns:
             dict: {
-                    "access": { can_use, status, is_admin, user, fac_cloud_url, preferences },
+                    "access": { can_use, status, is_admin, user, fac_cloud_url, mcp_endpoint_url, preferences },
                     "quota": { plan, quota_total, quota_used, quota_remaining, ... },
+                    "outstanding": { amount, currency, invoice } | null (admins only),
                     "capabilities": { features: { billing, memory, workflows, ... } },
                     "user_auth": { ready, site_registered, user_registered, ... },
                     "onboarding": { onboarding_complete, has_conversations } | null,
@@ -50,6 +52,7 @@ def initialize_spa() -> dict:
 
     # === Phase 1: Local-only (main thread) ===
     access = _build_access(settings, user, user_roles, is_admin)
+    access["mcp_endpoint_url"] = get_cached_server_settings().get("mcp_endpoint_url")
     quota = _build_quota(settings, is_admin)
 
     # Early exit for non-ready states
@@ -61,6 +64,9 @@ def initialize_spa() -> dict:
             "user_auth": None,
             "onboarding": None,
             "sessions": [],
+            # Key present on every path so the SPA never has to distinguish
+            # "nothing owed" from "this payload predates the field".
+            "outstanding": None,
         }
 
     # Fetch sessions (local DB, main thread)
@@ -102,9 +108,18 @@ def initialize_spa() -> dict:
         # asking at boot the SPA only discovers it by watching those features
         # fail, so ask up front and let it render the acceptance surface.
         tasks.append(("terms", client.get_terms_status))
+        # Admin-only: every billing endpoint behind this is System Manager
+        # gated, a member cannot settle it, and it would cost every other
+        # user an AR round-trip on every boot to tell them so.
+        if is_admin:
+            from frappe_assistant_core.chat.api.billing._outstanding import (
+                resolve_outstanding,
+            )
+
+            tasks.append(("outstanding", resolve_outstanding, client))
 
     ar_results = {}
-    with ThreadPoolExecutor(max_workers=3) as executor:
+    with ThreadPoolExecutor(max_workers=4) as executor:
         futures = [executor.submit(_safe_call, *t) for t in tasks]
         for future in as_completed(futures):
             name, result = future.result()
@@ -125,6 +140,8 @@ def initialize_spa() -> dict:
         "terms": _format_terms(ar_results.get("terms"), is_admin),
         "onboarding": None,  # Retained for backward compat (mobile). Onboarding chat removed.
         "sessions": sessions,
+        # None when nothing is owed, and for non-admins who could not act on it.
+        "outstanding": ar_results.get("outstanding"),
     }
 
 

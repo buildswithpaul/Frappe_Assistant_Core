@@ -17,6 +17,7 @@ import { analytics } from "./domains/analytics";
 import { billing } from "./domains/billing";
 import { capabilities } from "./domains/capabilities";
 import { chat } from "./domains/chat";
+import { connections } from "./domains/connections";
 import { documents } from "./domains/documents";
 import { files } from "./domains/files";
 import { init } from "./domains/init";
@@ -48,6 +49,7 @@ export const api = {
 	user,
 	billing,
 	capabilities,
+	connections,
 	documents,
 	memories,
 	profile,

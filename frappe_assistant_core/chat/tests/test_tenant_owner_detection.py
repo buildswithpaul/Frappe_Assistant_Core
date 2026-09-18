@@ -87,6 +87,41 @@ class TestTenantOwnerDetection(BaseAssistantTest):
             # The billing email is NOT the connect identity — must not match it.
             self.assertFalse(_is_tenant_owner("paul.clinton@promantia.com"))
 
+    def test_a_placeholder_owner_user_id_falls_back_to_the_verified_mailbox(self):
+        """Production's shape, and every tenant registered before the identity
+        rule was settled: `owner_user_id = "admin@example.com"` beside a real,
+        verified `owner_email`. The placeholder identifies nobody, so it counts
+        as no owner identity and the mailbox answers instead — otherwise those
+        tenants have no reachable owner at all.
+        """
+        from frappe_assistant_core.chat.api.auth import _is_tenant_owner
+
+        client = self._client_returning_owner(
+            owner_user_id="admin@example.com",
+            owner_email="hari.madhavan@promantia.com",
+        )
+        with patch(
+            "frappe_assistant_core.chat.api.auth.get_fac_cloud_client",
+            return_value=client,
+        ):
+            self.assertTrue(_is_tenant_owner("hari.madhavan@promantia.com"))
+
+    def test_a_placeholder_never_matches_itself(self):
+        """The reason the fallback exists rather than a plain comparison: every
+        Frappe install ships an Administrator carrying this address, so matching
+        it would hand ownership to any untouched admin on any site."""
+        from frappe_assistant_core.chat.api.auth import _is_tenant_owner
+
+        client = self._client_returning_owner(
+            owner_user_id="admin@example.com",
+            owner_email="hari.madhavan@promantia.com",
+        )
+        with patch(
+            "frappe_assistant_core.chat.api.auth.get_fac_cloud_client",
+            return_value=client,
+        ):
+            self.assertFalse(_is_tenant_owner("admin@example.com"))
+
     def test_no_client_is_not_owner(self):
         from frappe_assistant_core.chat.api.auth import _is_tenant_owner
 

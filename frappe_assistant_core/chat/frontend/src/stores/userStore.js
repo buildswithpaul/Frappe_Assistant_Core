@@ -14,6 +14,9 @@ export const useUserStore = defineStore("user", () => {
 	// to track it separately. Null until loaded, or when AR is unreachable.
 	const myCreditStatus = ref(null);
 	const registrationStatus = ref("checking"); // checking | ready | not_registered | no_role | disabled | error
+	// The FAC Connect endpoint URL, for pointing Claude Desktop/Cursor/other MCP
+	// clients at this ERP. Sourced from initialize_spa's access payload.
+	const mcpEndpointUrl = ref("");
 
 	// Per-user authentication state
 	const userAuthStatus = ref(null); // Full auth status from AR
@@ -39,6 +42,14 @@ export const useUserStore = defineStore("user", () => {
 	// per-app flag). Read-only display in PrivacySettings.
 	const zeroRetention = ref(false);
 
+	// What the tenant owes right now, or null when nothing is owed. Admin-only
+	// — the backend sends null to everyone else, because every endpoint that
+	// could settle it is System Manager gated. Sourced from initialize_spa so
+	// surfaces outside the billing page (the sidebar, the Users page) can show
+	// it without a round-trip of their own; the billing page refreshes it from
+	// its own payload, which is the same resolver on the backend.
+	const outstanding = ref(null);
+
 	// Pre-fetched data from initialize_spa (consumed once by ChatView)
 	const _initialSessions = ref(null);
 
@@ -48,6 +59,10 @@ export const useUserStore = defineStore("user", () => {
 		if (!user.value) return "?";
 		return user.value.charAt(0).toUpperCase();
 	});
+
+	// Presence, not a number: every surface asks the same question, and one of
+	// them is a dot that has no room for a figure.
+	const hasOutstanding = computed(() => (outstanding.value?.amount || 0) > 0);
 
 	// Check if user needs to complete setup (connect account)
 	const needsUserSetup = computed(() => {
@@ -366,11 +381,17 @@ export const useUserStore = defineStore("user", () => {
 			user.value = access.user;
 			isAdmin.value = access.is_admin || false;
 			registrationStatus.value = access.status || "ready";
+			mcpEndpointUrl.value = access.mcp_endpoint_url || "";
 
 			// Hydrate quota
 			if (data.quota) {
 				quotaInfo.value = data.quota;
 			}
+
+			// Assigned unconditionally: the key is on every backend return path,
+			// and `if (data.outstanding)` would leave a settled balance showing
+			// until the next full reload.
+			outstanding.value = data.outstanding || null;
 
 			// Hydrate capabilities
 			if (data.capabilities) {
@@ -437,6 +458,7 @@ export const useUserStore = defineStore("user", () => {
 		quotaInfo,
 		myCreditStatus,
 		registrationStatus,
+		mcpEndpointUrl,
 		userAuthStatus,
 		mcpServers,
 		isUserSetupComplete,
@@ -447,8 +469,10 @@ export const useUserStore = defineStore("user", () => {
 		privacyConsentComplete,
 		zeroRetention,
 		termsState,
+		outstanding,
 
 		// Getters
+		hasOutstanding,
 		termsAcceptanceRequired,
 		isAuthenticated,
 		userInitial,

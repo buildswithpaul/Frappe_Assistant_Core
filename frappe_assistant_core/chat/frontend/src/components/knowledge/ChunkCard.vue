@@ -2,7 +2,7 @@
 	<div class="chunk-card">
 		<div class="chunk-meta">
 			<span class="chunk-ordinal">Chunk {{ chunk.chunk_index + 1 }}</span>
-			<span class="chunk-tokens">{{ chunk.token_count }} tokens</span>
+			<span class="chunk-size">{{ (chunk.chunk_text || "").length.toLocaleString("en-US") }} characters</span>
 			<span class="chunk-id" :title="chunk.chunk_id">{{ chunk.chunk_id }}</span>
 			<button
 				class="chunk-copy-btn"

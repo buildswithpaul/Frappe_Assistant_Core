@@ -77,6 +77,37 @@ describe("useAddUserFlow seat-purchase preview", () => {
 		expect(flow.seatPurchaseConfirm.value.newSeatCount).toBe(10);
 	});
 
+	it("refuses to open the modal while the renewal is unpaid", async () => {
+		// A stalled renewal pins current_period_end in the past, so the
+		// proration is zero days and the seat quotes at 0.00. AR sends no
+		// pricing at all in that case and refuses the purchase, so opening
+		// the modal would offer a free seat the next click cannot buy.
+		api.billing.previewSeatCharge.mockResolvedValue({
+			success: true,
+			pricing: {
+				renewal_outstanding: true,
+				invoice: "AR-INV-2026-00232",
+				blocked_reason: "Your last renewal payment hasn't gone through yet.",
+			},
+		});
+		const { ctx, flow } = harness({
+			is_per_user: true,
+			paid_seats: 3,
+			active_users: 3,
+			vacant_seats: 0,
+			min_users: 1,
+			remaining: 100,
+			is_unlimited: false,
+		});
+
+		await flow.startInvite({ user_id: "sarah@example.com", full_name: "Sarah" }, "Member");
+
+		expect(flow.seatPurchaseConfirm.value).toBeNull();
+		expect(ctx.actionError.value).toBe(
+			"Your last renewal payment hasn't gone through yet.",
+		);
+	});
+
 	it("falls back to active_users + 1 when the backend hasn't sent paid_seats", async () => {
 		const { flow } = harness({
 			is_per_user: true,

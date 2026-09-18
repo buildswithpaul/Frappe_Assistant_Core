@@ -78,6 +78,11 @@
 			</div>
 		</div>
 
+		<!-- Whatever the page wants to say about this billing period — today,
+		     an unpaid renewal. Above the actions, because "Buy Credits" is not
+		     the move while the last charge has not cleared. -->
+		<div class="hero-slot"><slot /></div>
+
 		<!-- Actions -->
 		<div class="hero-actions">
 			<button class="action-btn primary" @click="$emit('change-plan')">
@@ -187,6 +192,14 @@ function formatCredits(val) {
 </script>
 
 <style scoped>
+/* Spacing hangs off the child, not the wrapper: a v-if'd slot still leaves a
+   comment node behind, so `:empty` never matches and a margin on the wrapper
+   would reserve a gap for a notice that is not there. A comment is not an
+   element, so `> *` matches nothing when nothing renders. */
+.hero-slot > * {
+	margin-top: 1rem;
+}
+
 .billing-hero {
 	padding: 1.5rem;
 	background: var(--ql-bg);

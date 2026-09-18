@@ -56,7 +56,6 @@
 		<div class="node-meta">
 			<span v-if="nodeRun.duration_ms">{{ formatDuration(nodeRun.duration_ms) }}</span>
 			<span v-if="nodeRun.model_id" class="meta-model">{{ nodeRun.model_id }}</span>
-			<span v-if="nodeRun.tokens_used" class="meta-dim">{{ nodeRun.tokens_used }} tok</span>
 			<span v-if="nodeRun.credits_used" class="meta-dim"
 				>{{ formatCredits(nodeRun.credits_used) }} credits</span
 			>
