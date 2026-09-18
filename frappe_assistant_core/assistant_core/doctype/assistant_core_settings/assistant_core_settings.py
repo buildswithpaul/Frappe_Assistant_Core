@@ -21,6 +21,7 @@ from frappe import _
 from frappe.model.document import Document
 
 from frappe_assistant_core.assistant_core.server import assistantServer
+from frappe_assistant_core.api.oauth_discovery import get_public_base_url
 
 
 class AssistantCoreSettings(Document):
@@ -36,7 +37,7 @@ class AssistantCoreSettings(Document):
 
     def _populate_endpoint_urls(self):
         """Helper to populate endpoint URLs based on current site"""
-        frappe_url = frappe.utils.get_url()
+        frappe_url = get_public_base_url()
         self.mcp_endpoint_url = f"{frappe_url}/api/method/frappe_assistant_core.api.fac_endpoint.handle_mcp"
         self.oauth_discovery_url = f"{frappe_url}/.well-known/openid-configuration"
 
@@ -94,7 +95,7 @@ class AssistantCoreSettings(Document):
         """Get MCP server information (for backward compatibility with MCP Inspector)"""
         from frappe_assistant_core import hooks
 
-        frappe_url = frappe.utils.get_url()
+        frappe_url = get_public_base_url()
         return {
             "mcp_endpoint": f"{frappe_url}/api/method/frappe_assistant_core.api.fac_endpoint.handle_mcp",
             "mcp_transport": "StreamableHTTP",
