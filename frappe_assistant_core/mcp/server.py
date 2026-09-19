@@ -402,11 +402,15 @@ class MCPServer:
                 elif result.get("success") is False:
                     is_error = True
                     inner = result.get("result")
-                    result = inner if isinstance(inner, dict) else {
-                        "success": False,
-                        "error": result.get("error") or "Tool execution failed",
-                        "error_type": result.get("error_type") or "ExecutionError",
-                    }
+                    result = (
+                        inner
+                        if isinstance(inner, dict)
+                        else {
+                            "success": False,
+                            "error": result.get("error") or "Tool execution failed",
+                            "error_type": result.get("error_type") or "ExecutionError",
+                        }
+                    )
 
             # Extract image content for vision API (e.g., screenshot tool).
             # Tools can include _image_content in their result to have the LLM
@@ -451,9 +455,7 @@ class MCPServer:
 
         except Exception as e:
             error_text = f"Error executing {tool_name}: {str(e)}"
-            frappe.logger().error(
-                f"MCP Tool Execution Error: {error_text}\n{traceback.format_exc()}"
-            )
+            frappe.logger().error(f"MCP Tool Execution Error: {error_text}\n{traceback.format_exc()}")
 
             return {"content": [{"type": "text", "text": error_text}], "isError": True}
 

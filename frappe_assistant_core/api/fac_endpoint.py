@@ -102,9 +102,7 @@ def _build_tool_registry(profile_name=None):
 
         # Resolve each tool's category once (honors admin overrides stored on
         # FAC Tool Configuration; falls back to auto-detection).
-        categories = _resolve_tool_categories(
-            list(available_tools), registry, tool_instances=available_tools
-        )
+        categories = _resolve_tool_categories(list(available_tools), registry, tool_instances=available_tools)
 
         for tool_name, tool_instance in available_tools.items():
             tool_dict = build_tool_dict(tool_instance)
@@ -193,9 +191,10 @@ def _requested_tool_profile(registry):
     except Exception:
         pass
 
-    return str(
-        header_profile or configured_profile or registry.get_default_tool_profile_name() or ""
-    ).strip() or None
+    return (
+        str(header_profile or configured_profile or registry.get_default_tool_profile_name() or "").strip()
+        or None
+    )
 
 
 def _authenticate_mcp_request():

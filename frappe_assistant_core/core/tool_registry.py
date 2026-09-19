@@ -302,9 +302,7 @@ class ToolRegistry:
             name for name, profile in self.get_tool_profiles().items() if profile.get("default")
         )
         if len(defaults) > 1:
-            self.logger.warning(
-                "Multiple default assistant tool profiles declared; using %s", defaults[0]
-            )
+            self.logger.warning("Multiple default assistant tool profiles declared; using %s", defaults[0])
         return defaults[0] if defaults else None
 
     def get_available_tools(self, user: Optional[str] = None) -> List[Dict[str, Any]]:
@@ -479,8 +477,6 @@ class ToolRegistry:
                         tool_instance = tool_class()
 
                         # Create a ToolInfo-like object
-                        from frappe_assistant_core.utils.plugin_manager import ToolInfo
-
                         tool_info = ToolInfo(
                             name=tool_instance.name,
                             plugin_name="custom_tools",  # Use actual plugin name for proper enable/disable tracking
