@@ -96,6 +96,13 @@ class _SlowEchoTool(BaseTool):
         return None
 
 
+class _ReportedFailureTool(_SlowEchoTool):
+    """Return a semantic tool failure without raising an exception."""
+
+    def execute(self, arguments: Dict[str, Any]) -> Any:
+        return {"success": False, "error": "invalid project"}
+
+
 def _make_request(tool_name: str, doc: str, request_id: int) -> MagicMock:
     """Build a mock Werkzeug request carrying a tools/call JSON-RPC payload."""
     payload = {
@@ -197,7 +204,33 @@ class TestMCPRegistryIsolation(BaseAssistantTest):
         # A's registry must not expose B's tool, and vice versa.
         cross = _handle(server, _make_request("tool_b", "X", 3), _registry_with(tool_a))
         self.assertTrue(_result_of(cross).get("isError"))
-        self.assertIn("not found", _result_of(cross)["content"][0]["text"])
+        self.assertIn("not available", _result_of(cross)["content"][0]["text"])
+
+    def test_base_tool_envelope_is_unwrapped_and_compact(self):
+        server = MCPServer("test")
+        tool = _SlowEchoTool("compact_tool", delay=0)
+
+        response = _handle(server, _make_request(tool.name, "DOC-3", 3), _registry_with(tool))
+        result = _result_of(response)
+        text = result["content"][0]["text"]
+
+        self.assertFalse(result.get("isError"))
+        self.assertEqual(json.loads(text), {"echo": "DOC-3"})
+        self.assertNotIn("execution_time", text)
+        self.assertNotIn("\n", text)
+
+    def test_tool_reported_failure_sets_mcp_error_without_timing_envelope(self):
+        server = MCPServer("test")
+        tool = _ReportedFailureTool("failing_tool", delay=0)
+
+        response = _handle(server, _make_request(tool.name, "DOC-4", 4), _registry_with(tool))
+        result = _result_of(response)
+        payload = json.loads(result["content"][0]["text"])
+
+        self.assertTrue(result.get("isError"))
+        self.assertEqual(payload["error"], "invalid project")
+        self.assertFalse(payload["success"])
+        self.assertNotIn("execution_time", payload)
 
 
 class TestMCPConcurrentToolsCall(BaseAssistantTest):

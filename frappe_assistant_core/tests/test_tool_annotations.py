@@ -183,3 +183,110 @@ class TestBuildToolRegistryAttachesAnnotations(BaseAssistantTest):
             ann = registry["delete_document"]["annotations"]
             self.assertEqual(ann.get("readOnlyHint"), False)
             self.assertEqual(ann.get("destructiveHint"), True)
+
+    def test_registry_build_uses_single_instance_pass(self):
+        from frappe_assistant_core.api import fac_endpoint
+
+        tool = MagicMock()
+        tool.name = "single_pass_tool"
+        tool.description = "Single-pass registry test"
+        tool.inputSchema = {"type": "object", "properties": {}}
+        tool.annotations = None
+        registry = MagicMock()
+        registry.get_available_tool_instances.return_value = {tool.name: tool}
+
+        with ExitStack() as stack:
+            stack.enter_context(
+                patch(
+                    "frappe_assistant_core.core.tool_registry.get_tool_registry",
+                    return_value=registry,
+                )
+            )
+            stack.enter_context(
+                patch.object(
+                    fac_endpoint,
+                    "_resolve_tool_categories",
+                    return_value={tool.name: "read_only"},
+                )
+            )
+            built = fac_endpoint._build_tool_registry()
+
+        self.assertEqual(list(built), [tool.name])
+        registry.get_available_tool_instances.assert_called_once_with(user=frappe.session.user)
+        registry.get_tool.assert_not_called()
+
+    def test_registry_build_applies_declared_profile_before_permissions(self):
+        from frappe_assistant_core.api import fac_endpoint
+
+        tool = MagicMock()
+        tool.name = "profiled_tool"
+        tool.description = "Profiled registry test"
+        tool.inputSchema = {"type": "object", "properties": {}}
+        tool.annotations = None
+        registry = MagicMock()
+        registry.get_tool_profile.return_value = {
+            "name": "compact",
+            "tools": [tool.name],
+        }
+        registry.get_available_tool_instances.return_value = {tool.name: tool}
+
+        with ExitStack() as stack:
+            stack.enter_context(
+                patch(
+                    "frappe_assistant_core.core.tool_registry.get_tool_registry",
+                    return_value=registry,
+                )
+            )
+            stack.enter_context(
+                patch.object(
+                    fac_endpoint,
+                    "_resolve_tool_categories",
+                    return_value={tool.name: "read_only"},
+                )
+            )
+            built = fac_endpoint._build_tool_registry(profile_name="compact")
+
+        self.assertEqual(list(built), [tool.name])
+        registry.get_available_tool_instances.assert_called_once_with(
+            user=frappe.session.user,
+            tool_names=[tool.name],
+        )
+
+    def test_unknown_profile_fails_closed(self):
+        from frappe_assistant_core.api import fac_endpoint
+
+        registry = MagicMock()
+        registry.get_tool_profile.return_value = None
+        with patch(
+            "frappe_assistant_core.core.tool_registry.get_tool_registry",
+            return_value=registry,
+        ):
+            built = fac_endpoint._build_tool_registry(profile_name="missing")
+
+        self.assertEqual(built, {})
+        registry.get_available_tool_instances.assert_not_called()
+
+
+class TestToolProfiles(BaseAssistantTest):
+    def test_hook_profiles_are_validated_deduplicated_and_cached(self):
+        from frappe_assistant_core.core import tool_registry
+
+        registry = tool_registry.ToolRegistry()
+        entries = [
+            {
+                "name": "kt-compact",
+                "description": "Compact KT tools",
+                "tools": ["read_a", "read_a", "read_b"],
+                "default": True,
+                "source_app": "service_management",
+            },
+            {"name": "", "tools": ["ignored"]},
+        ]
+        with patch.object(tool_registry.frappe, "get_hooks", return_value=entries) as get_hooks:
+            first = registry.get_tool_profiles()
+            second = registry.get_tool_profiles()
+
+        self.assertEqual(first["kt-compact"]["tools"], ["read_a", "read_b"])
+        self.assertEqual(registry.get_default_tool_profile_name(), "kt-compact")
+        self.assertEqual(second, first)
+        get_hooks.assert_called_once_with("assistant_tool_profiles")

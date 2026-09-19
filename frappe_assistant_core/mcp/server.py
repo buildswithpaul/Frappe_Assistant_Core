@@ -213,8 +213,10 @@ class MCPServer:
             elif method == "tools/list":
                 result = self._handle_tools_list(params, tool_registry)
             elif method == "tools/call":
+                call_arguments = params.get("arguments", {})
+                argument_keys = sorted(call_arguments) if isinstance(call_arguments, dict) else []
                 frappe.logger().info(
-                    f"MCP tools/call: tool={params.get('name')}, args={json.dumps(params.get('arguments', {}), default=str)[:200]}"
+                    f"MCP tools/call: tool={params.get('name')}, argument_keys={argument_keys}"
                 )
                 result = self._handle_tools_call(params, tool_registry)
             elif method == "resources/list":
@@ -370,11 +372,12 @@ class MCPServer:
         tool_name = params.get("name")
         arguments = params.get("arguments", {})
 
-        frappe.logger().debug(f"MCP _handle_tools_call: tool={tool_name}, args={arguments}")
+        argument_keys = sorted(arguments) if isinstance(arguments, dict) else []
+        frappe.logger().debug(f"MCP _handle_tools_call: tool={tool_name}, argument_keys={argument_keys}")
 
         # Check tool exists
         if tool_name not in tool_registry:
-            error_msg = f"Tool '{tool_name}' not found. Available tools: {list(tool_registry.keys())}"
+            error_msg = f"Tool '{tool_name}' is not available for the current user or tool profile."
             frappe.logger().error(f"MCP Tool Not Found: {error_msg}")
             return {
                 "content": [{"type": "text", "text": error_msg}],
@@ -392,23 +395,40 @@ class MCPServer:
                 f"MCP Tool {tool_name} executed successfully, result type: {type(result).__name__}"
             )
 
+            is_error = False
+            if tool.get("safeExecuteEnvelope") and isinstance(result, dict):
+                if result.get("success") is True and "result" in result:
+                    result = result["result"]
+                elif result.get("success") is False:
+                    is_error = True
+                    inner = result.get("result")
+                    result = (
+                        inner
+                        if isinstance(inner, dict)
+                        else {
+                            "success": False,
+                            "error": result.get("error") or "Tool execution failed",
+                            "error_type": result.get("error_type") or "ExecutionError",
+                        }
+                    )
+
             # Extract image content for vision API (e.g., screenshot tool).
             # Tools can include _image_content in their result to have the LLM
             # see the image directly via vision, rather than just getting metadata.
-            # Note: BaseTool._safe_execute() wraps tool output as:
-            #   {"success": True, "result": <tool_output>, "execution_time": ...}
-            # so _image_content lives inside result["result"], not at the top level.
             image_content = None
             if isinstance(result, dict):
-                inner = result.get("result")
-                if isinstance(inner, dict) and "_image_content" in inner:
-                    image_content = inner.pop("_image_content")
+                image_content = result.pop("_image_content", None)
 
             # Serialize the text result (default=str handles datetime, Decimal, etc.)
             if isinstance(result, str):
                 result_text = result
             else:
-                result_text = json.dumps(result, default=str, indent=2)
+                result_text = json.dumps(
+                    result,
+                    default=str,
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                )
 
             # Build MCP content blocks
             content = [{"type": "text", "text": result_text}]
@@ -431,12 +451,11 @@ class MCPServer:
                     }
                 )
 
-            return {"content": content, "isError": False}
+            return {"content": content, "isError": is_error}
 
         except Exception as e:
-            # Full traceback for debugging
-            error_text = f"Error executing {tool_name}: {str(e)}\n\nTraceback:\n{traceback.format_exc()}"
-            frappe.logger().error(f"MCP Tool Execution Error: {error_text}")
+            error_text = f"Error executing {tool_name}: {str(e)}"
+            frappe.logger().error(f"MCP Tool Execution Error: {error_text}\n{traceback.format_exc()}")
 
             return {"content": [{"type": "text", "text": error_text}], "isError": True}
 
