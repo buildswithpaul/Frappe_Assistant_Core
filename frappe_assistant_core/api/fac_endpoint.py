@@ -51,7 +51,7 @@ def _check_assistant_enabled(user: str) -> bool:
         return False
 
 
-def _build_tool_registry():
+def _build_tool_registry(profile_name=None):
     """
     Build a per-request tool registry for the current user.
 
@@ -79,29 +79,46 @@ def _build_tool_registry():
         from frappe_assistant_core.mcp.tool_adapter import build_tool_dict
         from frappe_assistant_core.utils.tool_category_detector import category_to_annotations
 
-        # Get available tools (respects enabled/disabled state and permissions)
+        # Get available instances in one pass. The previous metadata -> name ->
+        # get_tool loop rediscovered every external hook tool for every item.
         registry = get_tool_registry()
-        available_tools = registry.get_available_tools(user=frappe.session.user)
+        selected_tools = None
+        if profile_name:
+            profile = registry.get_tool_profile(profile_name)
+            if not profile:
+                frappe.logger().warning(
+                    f"Unknown MCP tool profile '{profile_name}'; exposing no tools for this request"
+                )
+                return registry_dict
+            selected_tools = profile.get("tools") or []
+
+        if selected_tools is None:
+            available_tools = registry.get_available_tool_instances(user=frappe.session.user)
+        else:
+            available_tools = registry.get_available_tool_instances(
+                user=frappe.session.user,
+                tool_names=selected_tools,
+            )
 
         # Resolve each tool's category once (honors admin overrides stored on
         # FAC Tool Configuration; falls back to auto-detection).
         categories = _resolve_tool_categories(
-            [t.get("name") for t in available_tools if t.get("name")], registry
+            list(available_tools), registry, tool_instances=available_tools
         )
 
-        for tool_metadata in available_tools:
-            tool_name = tool_metadata.get("name")
-            if tool_name:
-                tool_instance = registry.get_tool(tool_name)
-                if tool_instance:
-                    tool_dict = build_tool_dict(tool_instance)
-                    annotations = category_to_annotations(categories.get(tool_name, "read_write"))
-                    if annotations:
-                        # Merge with any annotations the tool already declared.
-                        tool_dict["annotations"] = {**(tool_dict.get("annotations") or {}), **annotations}
-                    registry_dict[tool_name] = tool_dict
+        for tool_name, tool_instance in available_tools.items():
+            tool_dict = build_tool_dict(tool_instance)
+            annotations = category_to_annotations(categories.get(tool_name, "read_write"))
+            if annotations:
+                # Merge with any annotations the tool already declared.
+                tool_dict["annotations"] = {**(tool_dict.get("annotations") or {}), **annotations}
+            registry_dict[tool_name] = tool_dict
 
-        frappe.logger().info(f"Built {len(registry_dict)} enabled tools for user {frappe.session.user}")
+        profile_label = profile_name or "all"
+        frappe.logger().info(
+            f"Built {len(registry_dict)} enabled tools for user {frappe.session.user} "
+            f"with profile {profile_label}"
+        )
 
     except Exception as e:
         frappe.log_error(title="Tool Import Error", message=f"Error importing tools: {str(e)}")
@@ -109,7 +126,7 @@ def _build_tool_registry():
     return registry_dict
 
 
-def _resolve_tool_categories(tool_names: list, registry) -> dict:
+def _resolve_tool_categories(tool_names: list, registry, tool_instances=None) -> dict:
     """
     Resolve the FAC tool category for each tool name.
 
@@ -150,12 +167,35 @@ def _resolve_tool_categories(tool_names: list, registry) -> dict:
         if tool_name in categories:
             continue
         try:
-            tool_instance = registry.get_tool(tool_name)
+            tool_instance = (tool_instances or {}).get(tool_name) or registry.get_tool(tool_name)
             categories[tool_name] = detect_tool_category(tool_instance) if tool_instance else "read_write"
         except Exception:
             categories[tool_name] = "read_write"
 
     return categories
+
+
+def _requested_tool_profile(registry):
+    """Resolve an optional profile from request header, site config or hooks.
+
+    A profile only narrows the already permission-filtered registry. Unknown
+    names fail closed in `_build_tool_registry` instead of exposing all tools.
+    """
+    header_profile = ""
+    try:
+        header_profile = frappe.request.headers.get("X-Assistant-Tool-Profile") or ""
+    except Exception:
+        pass
+
+    configured_profile = ""
+    try:
+        configured_profile = frappe.conf.get("fac_mcp_tool_profile") or ""
+    except Exception:
+        pass
+
+    return str(
+        header_profile or configured_profile or registry.get_default_tool_profile_name() or ""
+    ).strip() or None
 
 
 def _authenticate_mcp_request():
@@ -375,6 +415,19 @@ def handle_mcp():
             _("Assistant access is disabled for user {0}").format(authenticated_user), frappe.PermissionError
         )
 
+    # Only tool discovery and execution need the registry. Initialisation,
+    # ping, prompt and resource calls avoid importing and permission-checking
+    # the complete tool portfolio.
+    try:
+        payload = frappe.request.get_json(silent=True) or {}
+    except Exception:
+        payload = {}
+    if payload.get("method") not in {"tools/list", "tools/call"}:
+        return None
+
     # Build a per-request tool registry (isolated from concurrent requests) and
     # hand it back to the MCP server wrapper, which passes it into handle().
-    return _build_tool_registry()
+    from frappe_assistant_core.core.tool_registry import get_tool_registry
+
+    profile_name = _requested_tool_profile(get_tool_registry())
+    return _build_tool_registry(profile_name=profile_name)

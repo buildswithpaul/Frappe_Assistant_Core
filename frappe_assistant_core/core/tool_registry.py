@@ -23,6 +23,7 @@ Now includes filtering based on:
 - Role-based access control
 """
 
+import threading
 from typing import Any, Dict, List, Optional
 
 import frappe
@@ -46,6 +47,12 @@ class ToolRegistry:
         # Cache for tool configurations - cleared when configs change
         self._tool_config_cache: Optional[Dict[str, Any]] = None
         self._cache_key = "fac_tool_registry_configs"
+        # Hook-provided tool classes are stable for the lifetime of a worker.
+        # Caching their instances avoids importing and instantiating the full
+        # external portfolio once per tool while a request registry is built.
+        self._external_tools_cache: Optional[Dict[str, ToolInfo]] = None
+        self._external_tools_lock = threading.RLock()
+        self._tool_profiles_cache: Optional[Dict[str, Dict[str, Any]]] = None
 
     def _get_tool_configurations(self) -> Dict[str, Any]:
         """
@@ -199,21 +206,106 @@ class ToolRegistry:
         """Clear the tool configuration cache."""
         frappe.cache.delete_value(self._cache_key)
         self._tool_config_cache = None
+        with self._external_tools_lock:
+            self._external_tools_cache = None
+            self._tool_profiles_cache = None
+
+    def _get_all_tool_infos(self) -> Dict[str, ToolInfo]:
+        """Return plugin and hook tools from one discovery snapshot."""
+        tools = get_plugin_manager().get_all_tools()
+        tools.update(self._get_external_tools())
+        return tools
 
     def get_tool(self, tool_name: str) -> Optional[BaseTool]:
         """Get a tool by name"""
-        plugin_manager = get_plugin_manager()
-        tools = plugin_manager.get_all_tools()
+        tool_info = self._get_all_tool_infos().get(tool_name)
+        return tool_info.instance if tool_info else None
 
-        # Check plugin tools first
-        tool_info = tools.get(tool_name)
-        if tool_info:
-            return tool_info.instance
+    def get_available_tool_instances(
+        self,
+        user: Optional[str] = None,
+        tool_names: Optional[List[str]] = None,
+    ) -> Dict[str, BaseTool]:
+        """Return accessible tool instances in one permission-filtered pass.
 
-        # Check external tools
-        external_tools = self._get_external_tools()
-        external_tool_info = external_tools.get(tool_name)
-        return external_tool_info.instance if external_tool_info else None
+        MCP registry construction needs the actual instances. Returning them
+        directly prevents the old metadata -> name -> repeated discovery loop,
+        while retaining all existing enabled, role and DocType permission
+        checks.
+        """
+        effective_user = user or frappe.session.user
+        available_tools: Dict[str, BaseTool] = {}
+        allowed_names = set(tool_names) if tool_names is not None else None
+
+        for tool_info in self._get_all_tool_infos().values():
+            try:
+                tool_name = tool_info.name
+                if allowed_names is not None and tool_name not in allowed_names:
+                    continue
+                if not self._is_tool_accessible(tool_name, effective_user):
+                    continue
+                if not self._check_tool_permission(tool_info.instance, effective_user):
+                    continue
+                available_tools[tool_name] = tool_info.instance
+            except Exception as e:
+                self.logger.warning(f"Failed to inspect tool {tool_info.name}: {e}")
+
+        return available_tools
+
+    def get_tool_profiles(self) -> Dict[str, Dict[str, Any]]:
+        """Return validated, hook-provided tool profiles.
+
+        Profiles are context filters, not authorization. Every selected tool
+        still passes FAC enablement, role and DocType permission checks.
+        """
+        with self._external_tools_lock:
+            if self._tool_profiles_cache is not None:
+                return {name: dict(value) for name, value in self._tool_profiles_cache.items()}
+
+        profiles: Dict[str, Dict[str, Any]] = {}
+        try:
+            entries = frappe.get_hooks("assistant_tool_profiles") or []
+            for entry in entries:
+                if not isinstance(entry, dict):
+                    self.logger.warning(f"Ignoring invalid assistant_tool_profiles entry: {entry!r}")
+                    continue
+                name = str(entry.get("name") or "").strip()
+                tools = entry.get("tools") or []
+                if isinstance(tools, str):
+                    tools = [tools]
+                tools = [str(tool).strip() for tool in tools if str(tool).strip()]
+                if not name or not tools:
+                    self.logger.warning(f"Ignoring incomplete assistant tool profile: {entry!r}")
+                    continue
+                profiles[name] = {
+                    "name": name,
+                    "description": str(entry.get("description") or "").strip(),
+                    "tools": list(dict.fromkeys(tools)),
+                    "default": bool(entry.get("default")),
+                    "source_app": str(entry.get("source_app") or "").strip(),
+                }
+        except Exception as e:
+            self.logger.warning(f"Failed to load assistant tool profiles: {e}")
+
+        with self._external_tools_lock:
+            self._tool_profiles_cache = profiles
+            return {name: dict(value) for name, value in profiles.items()}
+
+    def get_tool_profile(self, profile_name: str) -> Optional[Dict[str, Any]]:
+        """Return one declared profile, or None for an unknown name."""
+        profile = self.get_tool_profiles().get(str(profile_name or "").strip())
+        return dict(profile) if profile else None
+
+    def get_default_tool_profile_name(self) -> Optional[str]:
+        """Return the deterministic hook default when exactly one is declared."""
+        defaults = sorted(
+            name for name, profile in self.get_tool_profiles().items() if profile.get("default")
+        )
+        if len(defaults) > 1:
+            self.logger.warning(
+                "Multiple default assistant tool profiles declared; using %s", defaults[0]
+            )
+        return defaults[0] if defaults else None
 
     def get_available_tools(self, user: Optional[str] = None) -> List[Dict[str, Any]]:
         """
@@ -231,35 +323,10 @@ class ToolRegistry:
         Returns:
             List of tools in MCP format
         """
-        effective_user = user or frappe.session.user
-        plugin_manager = get_plugin_manager()
-
-        # Step 1: Get tools from enabled plugins
-        tools = plugin_manager.get_all_tools()
-
-        # Add external tools from hooks
-        external_tools = self._get_external_tools()
-        tools.update(external_tools)
-
-        available_tools = []
-        for tool_info in tools.values():
-            try:
-                tool_name = tool_info.name
-
-                # Step 2 & 3: Check FAC Tool Configuration (enabled + role access)
-                if not self._is_tool_accessible(tool_name, effective_user):
-                    continue
-
-                # Step 4: Check Frappe permissions for the tool
-                if not self._check_tool_permission(tool_info.instance, effective_user):
-                    continue
-
-                available_tools.append(tool_info.instance.get_metadata())
-
-            except Exception as e:
-                self.logger.warning(f"Failed to get metadata for tool {tool_info.name}: {e}")
-
-        return available_tools
+        return [
+            tool_instance.get_metadata()
+            for tool_instance in self.get_available_tool_instances(user=user).values()
+        ]
 
     def execute_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Any:
         """Execute a tool with given arguments"""
@@ -309,6 +376,9 @@ class ToolRegistry:
 
     def refresh_tools(self) -> bool:
         """Refresh tool discovery"""
+        with self._external_tools_lock:
+            self._external_tools_cache = None
+            self._tool_profiles_cache = None
         plugin_manager = get_plugin_manager()
         return plugin_manager.refresh_plugins()
 
@@ -373,7 +443,11 @@ class ToolRegistry:
 
     def _get_external_tools(self) -> Dict[str, Any]:
         """Get external tools from hooks safely"""
-        external_tools = {}
+        with self._external_tools_lock:
+            if self._external_tools_cache is not None:
+                return self._external_tools_cache.copy()
+
+        external_tools: Dict[str, ToolInfo] = {}
 
         try:
             # Only try to load external tools if frappe is properly initialized
@@ -426,7 +500,9 @@ class ToolRegistry:
         except Exception as e:
             self.logger.debug(f"Error loading external tools: {e}")
 
-        return external_tools
+        with self._external_tools_lock:
+            self._external_tools_cache = external_tools
+            return self._external_tools_cache.copy()
 
     def _check_tool_permission(self, tool_instance: BaseTool, user: str) -> bool:
         """Check if user has permission to use the tool"""

@@ -37,7 +37,8 @@ def build_tool_dict(tool_instance) -> Dict[str, Any]:
         tool_instance: Instance of BaseTool or compatible class
 
     Returns:
-        Dict with keys: name, description, inputSchema, annotations, fn
+        Dict with keys: name, description, inputSchema, annotations, fn and
+        safeExecuteEnvelope
     """
 
     def tool_wrapper(**arguments):
@@ -49,6 +50,7 @@ def build_tool_dict(tool_instance) -> Dict[str, Any]:
         "description": tool_instance.description,
         "inputSchema": tool_instance.inputSchema,
         "annotations": getattr(tool_instance, "annotations", None),
+        "safeExecuteEnvelope": True,
         "fn": tool_wrapper,
     }
 
