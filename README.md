@@ -98,6 +98,14 @@ bench get-app https://github.com/buildswithpaul/Frappe_Assistant_Core
 bench --site <your-site> install-app frappe_assistant_core
 ```
 
+**Node 22+ is needed only to build the FAC Chat UI.** The assets are
+built on your instance rather than shipped pre-built, so a bench on an
+older Node will fail that build step. Upgrade Node to 22 and re-run
+`bench build`. A site using FAC purely as an MCP server does not need
+this.
+
+Requires Frappe v15 or v16 and Python 3.10+.
+
 ### Connect your LLM
 
 Once installed, the same four steps work for any MCP-compatible client.
@@ -146,9 +154,13 @@ can run side by side.
 
 ### Enabling FAC Chat
 
-1. Go to **Assistant Core Settings → FAC Chat tab**.
-2. Toggle **Enable FAC Chat** to ✓ and save.
-3. Run `bench restart`.
+1. Open **FAC** from the Frappe apps screen.
+2. Enable chat.
+
+That is the whole thing — **no `bench restart`**. The chat hooks are
+registered unconditionally and every consumer checks the toggle at
+request time, so other workers pick up the new state on their next
+request.
 
 A discovery banner on the Desk landing page will also walk admins
 through enabling chat — it appears once per admin and can be dismissed.
