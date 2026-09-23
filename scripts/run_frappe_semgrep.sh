@@ -29,7 +29,34 @@ if [[ "$#" -eq 0 ]]; then
     --config "r/python.lang.correctness"
 fi
 
+# Drop anything .semgrepignore excludes. Semgrep applies that file only when
+# it discovers targets itself; a path named on the command line is scanned
+# regardless. Without this the hook reports findings that CI — which scans the
+# whole repo — does not, and the two disagree about the same commit.
+# Literal paths only, which is all .semgrepignore holds here.
+IGNORED=()
+if [[ -f .semgrepignore ]]; then
+  while IFS= read -r line; do
+    line="${line%%#*}"
+    line="${line#"${line%%[![:space:]]*}"}"
+    line="${line%"${line##*[![:space:]]}"}"
+    [[ -n "$line" ]] && IGNORED+=("$line")
+  done < .semgrepignore
+fi
+
+TARGETS=()
+for target in "$@"; do
+  skip=""
+  for ignored in ${IGNORED+"${IGNORED[@]}"}; do
+    [[ "$target" == "$ignored" ]] && skip=1 && break
+  done
+  [[ -z "$skip" ]] && TARGETS+=("$target")
+done
+
+# Every changed file was excluded — nothing left to scan.
+[[ "${#TARGETS[@]}" -eq 0 ]] && exit 0
+
 exec semgrep scan --error --quiet \
   --config "$CACHE_DIR/rules" \
   --config "r/python.lang.correctness" \
-  "$@"
+  "${TARGETS[@]}"

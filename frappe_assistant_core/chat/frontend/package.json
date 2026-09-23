@@ -1,0 +1,43 @@
+{
+  "name": "fac-chat-frontend",
+  "version": "0.0.1",
+  "description": "Vue.js frontend for Frappe Assistant Core",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build --base=/assets/frappe_assistant_core/frontend/",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@vue-flow/background": "^1.3.2",
+    "@vue-flow/controls": "^1.1.3",
+    "@vue-flow/core": "^1.48.2",
+    "@vue-flow/minimap": "^1.5.4",
+    "dompurify": "^3.2.4",
+    "echarts": "^5.5.0",
+    "frappe-ui": "^0.1.166",
+    "highlight.js": "^11.9.0",
+    "marked": "^12.0.0",
+    "mermaid": "^11.14.0",
+    "pinia": "^2.1.0",
+    "socket.io-client": "^4.7.0",
+    "vue": "^3.4.0",
+    "vue-echarts": "^6.7.0",
+    "vue-router": "^4.2.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.2.4",
+    "@vue/test-utils": "^2.4.10",
+    "autoprefixer": "^10.4.0",
+    "jsdom": "^24.1.3",
+    "postcss": "^8.4.0",
+    "tailwindcss": "^3.4.0",
+    "vite": "^5.0.0",
+    "vitest": "^1.6.1"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}

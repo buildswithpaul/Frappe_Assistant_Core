@@ -90,6 +90,16 @@ class TestPublicBaseUrlHonorsPort(BaseAssistantTest):
 class TestWwwAuthenticatePreservesPort(BaseAssistantTest):
     """The MCP 401 WWW-Authenticate resource_metadata URL must keep the port."""
 
+    def setUp(self):
+        super().setUp()
+        # A mock request left bound on frappe.local leaks into every later
+        # test in the process: get_url() falls through to
+        # frappe.local.request.host whenever site_config sets no host_name, so
+        # unrelated code ends up concatenating a MagicMock. A dev bench hides
+        # it because it does set host_name; CI does not.
+        original = getattr(frappe.local, "request", None)
+        self.addCleanup(setattr, frappe.local, "request", original)
+
     def _make_request(self, auth_header: str = ""):
         request = MagicMock()
         request.method = "POST"

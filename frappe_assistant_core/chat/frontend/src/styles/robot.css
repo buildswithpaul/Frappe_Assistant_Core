@@ -1,0 +1,404 @@
+/* Robot mascot animations — extracted verbatim from legacy theme.css (lines 74–476). Robot CSS/moods are FROZEN; do not edit. */
+/* ========================================
+   Robot Animation Styles - Unified Cyan/White Design
+   (Matched to widget faco_widget.css)
+   ======================================== */
+
+.faco-robot {
+  position: relative;
+  width: 50px;
+  height: 60px;
+  transform-style: preserve-3d;
+}
+
+/* Size variants */
+.faco-robot-xs {
+  transform: scale(0.35);
+  transform-origin: center center;
+}
+
+.faco-robot-sm {
+  transform: scale(0.5);
+  transform-origin: center center;
+}
+
+.faco-robot-md {
+  transform: scale(0.7);
+  transform-origin: center center;
+}
+
+.faco-robot-lg {
+  transform: scale(1.2);
+  transform-origin: center center;
+}
+
+/* Robot Shadow */
+.robot-shadow {
+  position: absolute;
+  bottom: -8px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 30px;
+  height: 8px;
+  background: radial-gradient(ellipse, rgba(0, 0, 0, 0.2), transparent);
+  border-radius: 50%;
+  animation: shadow-pulse 3s ease-in-out infinite;
+}
+
+/* Robot Antenna */
+.robot-antenna {
+  position: absolute;
+  top: -8px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 2px;
+  height: 8px;
+  background: linear-gradient(to bottom, #64b5f6, #42a5f5);
+  border-radius: 1px;
+}
+
+.robot-antenna-tip {
+  position: absolute;
+  top: -4px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 6px;
+  height: 6px;
+  background: radial-gradient(circle, #00e5ff, #00b8d4);
+  border-radius: 50%;
+  box-shadow: 0 0 8px rgba(0, 229, 255, 0.6);
+  animation: antenna-glow 2s ease-in-out infinite;
+}
+
+/* Robot Head — softer rounded chassis */
+.robot-head {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 32px;
+  height: 28px;
+  background: linear-gradient(135deg, #ffffff 0%, #f0f4f8 100%);
+  border-radius: 16px 16px 12px 12px;
+  box-shadow:
+    0 3px 6px rgba(0, 0, 0, 0.06),
+    inset 0 1px 1px rgba(255, 255, 255, 0.6),
+    inset 0 -1px 2px rgba(0, 0, 0, 0.03);
+}
+
+/* Robot Screen (Cyan glowing face) — enlarged for expression room */
+.robot-screen {
+  position: absolute;
+  top: 5px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 26px;
+  height: 18px;
+  background: linear-gradient(135deg, #4dd0e1 0%, #00acc1 100%);
+  border-radius: 7px;
+  box-shadow:
+    0 0 12px rgba(77, 208, 225, 0.4),
+    inset 0 1px 2px rgba(255, 255, 255, 0.3);
+  animation: screen-glow 2s ease-in-out infinite;
+}
+
+/* Robot Brows — invisible by default, appear for concerned mood */
+.robot-brow {
+  position: absolute;
+  top: 2px;
+  width: 5px;
+  height: 1.5px;
+  background: rgba(255, 255, 255, 0.85);
+  border-radius: 1px;
+  opacity: 0;
+  transform-origin: center;
+  transition:
+    opacity 200ms ease-out,
+    transform 200ms ease-out;
+}
+.robot-brow-left { left: 4px; }
+.robot-brow-right { right: 4px; }
+
+/* Robot Eyes — absolute-positioned for tracking + expression states */
+.robot-eye {
+  position: absolute;
+  top: 5px;
+  width: 5px;
+  height: 5px;
+  background: #ffffff;
+  border-radius: 50%;
+  box-shadow: 0 0 4px rgba(255, 255, 255, 0.8);
+  animation: eye-blink 4s ease-in-out infinite;
+  transition:
+    transform 200ms ease-out,
+    height 180ms ease-out,
+    top 180ms ease-out;
+}
+.robot-eye-left { left: 5px; }
+.robot-eye-right { right: 5px; }
+
+/* Robot Mouth — gentle smile (default) */
+.robot-mouth {
+  position: absolute;
+  bottom: 3px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 10px;
+  height: 5px;
+  border: 1.5px solid rgba(255, 255, 255, 0.75);
+  border-top: none;
+  border-left-color: transparent;
+  border-right-color: transparent;
+  border-radius: 0 0 10px 10px / 0 0 6px 6px;
+  background: transparent;
+  transition:
+    height 200ms ease-out,
+    border-radius 200ms ease-out,
+    border-color 200ms ease-out,
+    width 200ms ease-out,
+    background 200ms ease-out,
+    transform 200ms ease-out;
+}
+
+/* Robot Body */
+.robot-body {
+  position: absolute;
+  top: 26px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 28px;
+  height: 24px;
+  background: linear-gradient(135deg, #ffffff 0%, #eceff1 100%);
+  border-radius: 8px 8px 12px 12px;
+  box-shadow:
+    0 4px 8px rgba(0, 0, 0, 0.1),
+    inset 0 1px 2px rgba(255, 255, 255, 0.8),
+    inset 0 -2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.robot-body::after {
+  content: '';
+  position: absolute;
+  top: 6px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 12px;
+  height: 8px;
+  background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
+  border-radius: 4px;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+/* Robot Arms */
+.robot-arm {
+  position: absolute;
+  top: 28px;
+  width: 6px;
+  height: 16px;
+  background: linear-gradient(135deg, #ffffff 0%, #eceff1 100%);
+  border-radius: 3px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.robot-arm-left {
+  left: 4px;
+  transform-origin: top center;
+  animation: wave-left 2s ease-in-out infinite;
+}
+
+.robot-arm-right {
+  right: 4px;
+  transform-origin: top center;
+  animation: wave-right 2s ease-in-out infinite 0.5s;
+}
+
+/* Animations */
+@keyframes screen-glow {
+  0%, 100% {
+    box-shadow:
+      0 0 12px rgba(77, 208, 225, 0.4),
+      inset 0 1px 2px rgba(255, 255, 255, 0.3);
+  }
+  50% {
+    box-shadow:
+      0 0 20px rgba(77, 208, 225, 0.6),
+      inset 0 1px 2px rgba(255, 255, 255, 0.5);
+  }
+}
+
+@keyframes antenna-glow {
+  0%, 100% {
+    box-shadow: 0 0 8px rgba(0, 229, 255, 0.6);
+    transform: translateX(-50%) scale(1);
+  }
+  50% {
+    box-shadow: 0 0 16px rgba(0, 229, 255, 0.9);
+    transform: translateX(-50%) scale(1.1);
+  }
+}
+
+@keyframes eye-blink {
+  0%, 45%, 55%, 100% {
+    transform: scaleY(1);
+  }
+  50% {
+    transform: scaleY(0.1);
+  }
+}
+
+@keyframes wave-left {
+  0%, 100% { transform: rotate(0deg); }
+  25% { transform: rotate(-20deg); }
+  75% { transform: rotate(10deg); }
+}
+
+@keyframes wave-right {
+  0%, 100% { transform: rotate(0deg); }
+  25% { transform: rotate(20deg); }
+  75% { transform: rotate(-10deg); }
+}
+
+@keyframes shadow-pulse {
+  0%, 100% {
+    transform: translateX(-50%) scale(1);
+    opacity: 0.2;
+  }
+  50% {
+    transform: translateX(-50%) scale(0.85);
+    opacity: 0.15;
+  }
+}
+
+.robot-float {
+  animation: robot-float 3s ease-in-out infinite;
+}
+
+@keyframes robot-float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-6px); }
+}
+
+/* ========================================
+   Robot Moods — facial expressions driven by data-mood
+   Applied on the .faco-robot wrapper. The face elements (eyes,
+   brows, mouth) read the parent mood and morph via CSS transitions.
+   ======================================== */
+
+/* Pupil tracking — inline style sets --eye-x / --eye-y per mousemove */
+.faco-robot[data-track="1"] .robot-eye {
+  transform: translate(var(--eye-x, 0), var(--eye-y, 0));
+}
+
+/* attentive — eyes track cursor, mouth softens to a relaxed line */
+.faco-robot[data-mood="attentive"] .robot-mouth {
+  height: 2px;
+  border-radius: 1px;
+  border: none;
+  background: rgba(255, 255, 255, 0.65);
+}
+.faco-robot[data-mood="attentive"] .robot-eye {
+  animation-duration: 6s;
+}
+
+/* thinking — eyes narrow, mouth flattens into a focused dash, faster blink */
+.faco-robot[data-mood="thinking"] .robot-eye {
+  height: 2px;
+  top: 7px;
+  animation-duration: 2s;
+}
+.faco-robot[data-mood="thinking"] .robot-mouth {
+  height: 2px;
+  border-radius: 1px;
+  border: none;
+  background: rgba(255, 255, 255, 0.6);
+  width: 8px;
+}
+
+/* delighted — eye-squint smile + wider grin */
+.faco-robot[data-mood="delighted"] .robot-eye {
+  height: 2px;
+  top: 7px;
+  border-radius: 50% 50% 0 0;
+}
+.faco-robot[data-mood="delighted"] .robot-mouth {
+  height: 6px;
+  width: 12px;
+  border-width: 1.75px;
+  border-radius: 0 0 12px 12px / 0 0 8px 8px;
+}
+
+/* concerned — brows tilt inward, mouth flattens with slight downturn */
+.faco-robot[data-mood="concerned"] .robot-brow {
+  opacity: 0.9;
+}
+.faco-robot[data-mood="concerned"] .robot-brow-left {
+  transform: rotate(15deg);
+}
+.faco-robot[data-mood="concerned"] .robot-brow-right {
+  transform: rotate(-15deg);
+}
+.faco-robot[data-mood="concerned"] .robot-mouth {
+  height: 3px;
+  border-radius: 4px 4px 0 0 / 3px 3px 0 0;
+  border-top: 1.5px solid rgba(255, 255, 255, 0.7);
+  border-bottom: none;
+  border-left-color: transparent;
+  border-right-color: transparent;
+  transform: translateX(-50%) translateY(1px);
+  width: 8px;
+}
+
+/* excited — brows raised, eyes wide, big smile */
+.faco-robot[data-mood="excited"] .robot-brow {
+  opacity: 0.6;
+  top: 1px;
+}
+.faco-robot[data-mood="excited"] .robot-eye {
+  height: 6px;
+  width: 6px;
+  top: 4px;
+}
+.faco-robot[data-mood="excited"] .robot-mouth {
+  height: 7px;
+  width: 13px;
+  border-radius: 0 0 14px 14px / 0 0 10px 10px;
+}
+
+/* sleepy — half-lidded eyes, slow blink, mouth relaxed */
+.faco-robot[data-mood="sleepy"] .robot-eye {
+  height: 2.5px;
+  top: 7px;
+  animation-duration: 7s;
+  border-radius: 50% 50% 0 0;
+}
+.faco-robot[data-mood="sleepy"] .robot-mouth {
+  height: 4px;
+  width: 9px;
+  border-width: 1.25px;
+  opacity: 0.8;
+}
+
+/* Reduced-motion — pin to current mood, kill keyframe animations */
+@media (prefers-reduced-motion: reduce) {
+  .faco-robot,
+  .faco-robot *,
+  .faco-robot *::before,
+  .faco-robot *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+/* Dark theme adjustments - keep white robot with cyan glow */
+[data-theme="dark"] .robot-head,
+[data-theme="dark"] .robot-body,
+[data-theme="dark"] .robot-arm {
+  background: linear-gradient(135deg, #e8eaf6 0%, #c5cae9 100%);
+}
+
+[data-theme="dark"] .robot-screen {
+  background: linear-gradient(135deg, #5c6bc0 0%, #3f51b5 100%);
+  box-shadow:
+    0 0 16px rgba(92, 107, 192, 0.6),
+    inset 0 1px 2px rgba(255, 255, 255, 0.2);
+}

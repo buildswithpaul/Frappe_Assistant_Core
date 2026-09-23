@@ -1,0 +1,126 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <defs>
+    <linearGradient id="head" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#f0f4f8"/>
+    </linearGradient>
+    <linearGradient id="screen" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#4dd0e1"/>
+      <stop offset="100%" stop-color="#00acc1"/>
+    </linearGradient>
+    <linearGradient id="body" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#eceff1"/>
+    </linearGradient>
+    <linearGradient id="chest" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#e3f2fd"/>
+      <stop offset="100%" stop-color="#bbdefb"/>
+    </linearGradient>
+    <linearGradient id="arm" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#eceff1"/>
+    </linearGradient>
+    <linearGradient id="antenna" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#64b5f6"/>
+      <stop offset="100%" stop-color="#42a5f5"/>
+    </linearGradient>
+    <radialGradient id="tip">
+      <stop offset="0%" stop-color="#00e5ff"/>
+      <stop offset="100%" stop-color="#00b8d4"/>
+    </radialGradient>
+
+    <filter id="screenGlow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="2.5"/>
+    </filter>
+    <filter id="tipGlow" x="-100%" y="-100%" width="300%" height="300%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="1.4"/>
+    </filter>
+    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="0.6"/>
+    </filter>
+  </defs>
+
+  <!-- Floor shadow -->
+  <ellipse cx="32" cy="62" rx="15" ry="2" fill="rgba(0,0,0,0.18)"/>
+
+  <!-- Antenna stem -->
+  <rect x="31" y="4" width="2" height="8" rx="1" fill="url(#antenna)"/>
+  <!-- Antenna tip glow -->
+  <circle cx="32" cy="4" r="4" fill="rgba(0,229,255,0.55)" filter="url(#tipGlow)"/>
+  <!-- Antenna tip -->
+  <circle cx="32" cy="4" r="3" fill="url(#tip)"/>
+
+  <!-- Arms (sit behind body) -->
+  <g>
+    <rect x="11" y="40" width="6" height="16" rx="3" fill="url(#arm)" filter="url(#softShadow)"/>
+    <rect x="47" y="40" width="6" height="16" rx="3" fill="url(#arm)" filter="url(#softShadow)"/>
+    <rect x="11" y="40" width="6" height="16" rx="3" fill="url(#arm)"/>
+    <rect x="47" y="40" width="6" height="16" rx="3" fill="url(#arm)"/>
+  </g>
+
+  <!-- Body: 28x24 rect at x=18..46, y=38..62, border-radius 8/8/12/12.
+       Path goes: top-left arc (r=8), top edge, top-right arc (r=8),
+                  right edge, bottom-right arc (r=12), bottom edge,
+                  bottom-left arc (r=12), left edge close. -->
+  <path d="M 18 46
+           A 8 8 0 0 1 26 38
+           L 38 38
+           A 8 8 0 0 1 46 46
+           L 46 50
+           A 12 12 0 0 1 34 62
+           L 30 62
+           A 12 12 0 0 1 18 50
+           Z"
+        fill="url(#body)" filter="url(#softShadow)"/>
+  <path d="M 18 46
+           A 8 8 0 0 1 26 38
+           L 38 38
+           A 8 8 0 0 1 46 46
+           L 46 50
+           A 12 12 0 0 1 34 62
+           L 30 62
+           A 12 12 0 0 1 18 50
+           Z"
+        fill="url(#body)"/>
+
+  <!-- Chest panel pill -->
+  <rect x="26" y="44" width="12" height="8" rx="3" fill="url(#chest)"/>
+
+  <!-- Head: 32x28 rect at x=16..48, y=12..40, border-radius 16/16/12/12.
+       Top radii (16 each) consume the full 32px width → semicircular top.
+       Bottom radii (12 each) leave an 8px flat segment in the middle. -->
+  <path d="M 16 28
+           A 16 16 0 0 1 48 28
+           L 48 28
+           A 12 12 0 0 1 36 40
+           L 28 40
+           A 12 12 0 0 1 16 28
+           Z"
+        fill="url(#head)" filter="url(#softShadow)"/>
+  <path d="M 16 28
+           A 16 16 0 0 1 48 28
+           L 48 28
+           A 12 12 0 0 1 36 40
+           L 28 40
+           A 12 12 0 0 1 16 28
+           Z"
+        fill="url(#head)"/>
+
+  <!-- Cyan glow halo behind the screen — gives the "lit-up face" look -->
+  <rect x="19" y="17" width="26" height="18" rx="7"
+        fill="rgba(77,208,225,0.6)" filter="url(#screenGlow)"/>
+
+  <!-- Screen — the actual face -->
+  <rect x="19" y="17" width="26" height="18" rx="7" fill="url(#screen)"/>
+
+  <!-- Inner highlight on screen top edge -->
+  <rect x="20" y="18" width="24" height="1" rx="0.5" fill="rgba(255,255,255,0.3)"/>
+
+  <!-- Eyes -->
+  <circle cx="24.5" cy="24.5" r="2.5" fill="#ffffff"/>
+  <circle cx="39.5" cy="24.5" r="2.5" fill="#ffffff"/>
+
+  <!-- Smile -->
+  <path d="M 27 29 Q 32 33 37 29"
+        stroke="rgba(255,255,255,0.85)" stroke-width="1.5" stroke-linecap="round" fill="none"/>
+</svg>

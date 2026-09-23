@@ -1,0 +1,775 @@
+/* Frappe Assistant Copilot - Powered by FAC Cloud - Widget Base Styles */
+/* Theme CSS Variables - Matched to Vue app (theme.css / Quiet Ledger) for consistent UX */
+
+/* Accent Colors - Quiet Ledger family (teal + gold) */
+:root {
+	--faco-indigo: #0F6E5C;
+	--faco-purple: #C9A227;
+	--faco-blue: #0F6E5C;
+	--faco-green: #1E7A52;
+	--faco-orange: #B8791A;
+}
+
+/* Light Theme (default) - Quiet Ledger "Paper" */
+.faco-widget {
+	/* Backgrounds */
+	--faco-bg-primary: #FFFFFF;
+	--faco-bg-secondary: #FBFAF8;
+	--faco-bg-tertiary: #F5F3EF;
+	--faco-bg-input: #FFFFFF;
+
+	/* Text */
+	--faco-text-primary: #1A1A17;
+	--faco-text-secondary: #57534C;
+	--faco-text-muted: #8A857C;
+
+	/* Borders & Effects */
+	--faco-border-color: #ECE9E3;
+	--faco-hover: #F5F3EF;
+	--faco-code-bg: #F5F3EF;
+	--faco-shadow: rgba(0, 0, 0, 0.08);
+
+	/* Primary - Teal (Quiet Ledger) */
+	--faco-primary: #0F6E5C;
+	--faco-primary-hover: #0B5A4B;
+}
+
+/* Dark Theme - Quiet Ledger "Ink Ledger" (warm charcoal) */
+html[data-theme="dark"] .faco-widget {
+	/* Backgrounds */
+	--faco-bg-primary: #1E1D16;
+	--faco-bg-secondary: #16150F;
+	--faco-bg-tertiary: #26241B;
+	--faco-bg-input: #1E1D16;
+
+	/* Text */
+	--faco-text-primary: #F2EFE6;
+	--faco-text-secondary: #B7B2A4;
+	--faco-text-muted: #8A857C;
+
+	/* Borders & Effects */
+	--faco-border-color: #2E2C22;
+	--faco-hover: #26241B;
+	--faco-code-bg: #26241B;
+	--faco-shadow: rgba(0, 0, 0, 0.3);
+
+	/* Primary - Teal (Quiet Ledger, brightened for dark) */
+	--faco-primary: #2DAA8F;
+	--faco-primary-hover: #3FBBA0;
+}
+
+/* Widget Container */
+.faco-widget {
+	position: fixed;
+	bottom: 20px;
+	right: 20px;
+	left: auto;
+	z-index: 9999;
+	font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+	transition: opacity 0.2s ease;
+}
+
+/* Dragging state */
+.faco-widget.faco-dragging {
+	opacity: 0.8;
+	transition: none;
+}
+
+.faco-widget.faco-dragging .faco-chat-window {
+	box-shadow: 0 12px 48px rgba(0, 0, 0, 0.25);
+}
+
+/* Auto-fade while user is typing in a Frappe input or scrolling */
+.faco-widget.faco-fade {
+	opacity: 0.15;
+	pointer-events: none;
+}
+
+/* A pending approval outranks auto-fade: dimming the launcher to 15% at the
+   one moment the assistant is blocked on the user is how approvals get missed. */
+.faco-widget.faco-awaiting-approval.faco-fade {
+	opacity: 1;
+	pointer-events: auto;
+}
+
+/* Launcher badge — only while an approval is waiting. */
+.faco-approval-badge {
+	display: none;
+	position: absolute;
+	top: 6px;
+	right: 6px;
+	width: 14px;
+	height: 14px;
+	border-radius: 50%;
+	background: #f59e0b;
+	border: 2px solid #fff;
+	box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.faco-widget.faco-awaiting-approval .faco-approval-badge {
+	display: block;
+	animation: faco-approval-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes faco-approval-pulse {
+	0%,
+	100% {
+		transform: scale(1);
+		opacity: 1;
+	}
+	50% {
+		transform: scale(1.25);
+		opacity: 0.75;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.faco-widget.faco-awaiting-approval .faco-approval-badge {
+		animation: none;
+	}
+}
+
+/* Toggle Button */
+.faco-toggle-btn {
+	width: 70px;
+	height: 70px;
+	border-radius: 50%;
+	border: none;
+	background: transparent;
+	cursor: pointer;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	transition: all 0.3s ease;
+	position: relative;
+}
+
+.faco-toggle-btn:hover {
+	transform: scale(1.1);
+}
+
+.faco-widget.faco-open .faco-toggle-btn {
+	display: none;
+}
+
+/* Tooltip/Banner for closed state */
+.faco-tooltip {
+	position: fixed;
+	background: var(--faco-bg-primary, white);
+	border: 1px solid var(--faco-border-color, #d1d8dd);
+	border-radius: 20px;
+	padding: 10px 16px;
+	box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+	white-space: nowrap;
+	font-size: 13px;
+	color: var(--faco-text-primary, #36414c);
+	pointer-events: none;
+	opacity: 0;
+	transform: scale(0.8);
+	transition: all 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+	z-index: 9998;
+}
+
+.faco-tooltip.faco-show {
+	opacity: 1;
+	transform: scale(1);
+}
+
+.faco-tooltip::before {
+	content: '';
+	position: absolute;
+	width: 0;
+	height: 0;
+	border: 6px solid transparent;
+	top: 50%;
+	transform: translateY(-50%);
+}
+
+/* Arrow points RIGHT (tooltip is on the left of button) */
+.faco-tooltip[data-arrow="right"]::before {
+	right: -12px;
+	border-left-color: var(--faco-bg-primary, white);
+}
+
+/* Arrow points LEFT (tooltip is on the right of button) */
+.faco-tooltip[data-arrow="left"]::before {
+	left: -12px;
+	border-right-color: var(--faco-bg-primary, white);
+}
+
+.faco-tooltip-icon {
+	display: inline-block;
+	margin-right: 6px;
+	font-size: 14px;
+	animation: faco-tooltip-bounce 0.5s ease;
+}
+
+@keyframes faco-tooltip-bounce {
+	0%, 100% { transform: scale(1); }
+	50% { transform: scale(1.3); }
+}
+
+/* Chat Window */
+.faco-chat-window {
+	position: fixed;
+	/* Position is set dynamically by JavaScript to ensure it stays on screen */
+	width: 400px;
+	height: 650px;
+	max-height: calc(100vh - 100px);
+	background: var(--faco-bg-primary, white);
+	border-radius: 8px;
+	border: 1px solid var(--faco-border-color, #d1d8dd);
+	box-shadow: 0 2px 8px var(--faco-shadow, rgba(0, 0, 0, 0.08));
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+	z-index: 10000;
+}
+
+/* Minimized state - hide entire chat window, show only toggle button */
+.faco-widget.faco-minimized .faco-chat-window {
+	display: none !important;
+}
+
+.faco-widget.faco-minimized .faco-toggle-btn {
+	display: flex !important;
+}
+
+/* Header - Frappe style */
+.faco-header {
+	background: var(--faco-bg-tertiary, #f7f7f7);
+	color: var(--faco-text-primary, #36414c);
+	padding: 0px 16px;
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	border-bottom: 1px solid var(--faco-border-color, #d1d8dd);
+}
+
+.faco-header-brand {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+}
+
+.faco-logo {
+	flex-shrink: 0;
+	color: var(--faco-primary, #0F6E5C);
+}
+
+.faco-brand-text {
+	font-size: 15px;
+	font-weight: 600;
+	color: var(--faco-text-primary, #36414c);
+}
+
+.faco-close-btn {
+	background: transparent;
+	border: none;
+	color: var(--faco-text-muted, #8d99a6);
+	cursor: pointer;
+	padding: 6px;
+	border-radius: 4px;
+	transition: all 0.2s;
+}
+
+.faco-close-btn:hover {
+	background: var(--faco-hover-bg, #f5f5f5);
+	color: var(--faco-text-primary, #36414c);
+}
+
+/* Header Actions Container */
+.faco-header-actions {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+}
+
+/* Expand Button - Prominent Style */
+.faco-expand-btn {
+	background: transparent;
+	border: none;
+	color: var(--faco-text-muted, #8d99a6);
+	cursor: pointer;
+	padding: 6px;
+	border-radius: 4px;
+	transition: all 0.2s;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.faco-expand-btn:hover {
+	background: var(--faco-hover-bg, #f5f5f5);
+	color: var(--faco-text-primary, #36414c);
+}
+
+.faco-expand-btn svg {
+	width: 16px;
+	height: 16px;
+}
+
+/* Prominent expand button with text - teal gradient (Quiet Ledger) */
+.faco-expand-prominent {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 6px 12px;
+	background: linear-gradient(135deg, #0F6E5C 0%, #0B5A4B 100%);
+	color: white;
+	border-radius: 6px;
+	font-size: 12px;
+	font-weight: 500;
+	border: none;
+	cursor: pointer;
+	transition: all 0.2s ease;
+	box-shadow: 0 2px 4px rgba(15, 110, 92, 0.2);
+}
+
+.faco-expand-prominent:hover {
+	background: linear-gradient(135deg, #0B5A4B 0%, #094539 100%);
+	color: white;
+	transform: translateY(-1px);
+	box-shadow: 0 4px 8px rgba(15, 110, 92, 0.3);
+}
+
+.faco-expand-prominent svg {
+	width: 14px;
+	height: 14px;
+	flex-shrink: 0;
+}
+
+.faco-expand-prominent span {
+	white-space: nowrap;
+}
+
+/* Input Area */
+.faco-input-area {
+	background: #FBFAF8;
+	border-top: 1px solid var(--faco-border-color, #ECE9E3);
+	padding: 16px;
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+}
+
+/* Dark theme input area */
+html[data-theme="dark"] .faco-widget .faco-input-area {
+	background: #1E1D16;
+	border-top-color: #2E2C22;
+}
+
+/* Context Row - indicator and toggle on same line */
+.faco-context-row {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	gap: 8px;
+}
+
+.faco-context-indicator {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	font-size: 11px;
+	color: var(--faco-text-muted, #9ca3af);
+	overflow: hidden;
+	flex: 1;
+	min-width: 0;
+}
+
+.faco-context-indicator svg {
+	color: var(--faco-text-muted, #9ca3af);
+	flex-shrink: 0;
+}
+
+.faco-context-text {
+	color: var(--faco-text-muted, #9ca3af);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+/* File Upload Button */
+.faco-file-upload-btn {
+	width: 32px;
+	height: 32px;
+	border-radius: 8px;
+	border: none;
+	background: transparent;
+	color: var(--faco-text-muted, #8d99a6);
+	cursor: pointer;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	transition: background 0.15s ease, color 0.15s ease;
+	flex-shrink: 0;
+}
+
+.faco-file-upload-btn:hover {
+	background: var(--faco-hover, #f3f4f6);
+	color: var(--faco-text-primary, #18181b);
+}
+
+/* Dark theme file button */
+html[data-theme="dark"] .faco-widget .faco-file-upload-btn {
+	background: transparent;
+	color: #8A857C;
+}
+
+html[data-theme="dark"] .faco-widget .faco-file-upload-btn:hover {
+	background: #26241B;
+	color: #F2EFE6;
+}
+
+/* File Preview List */
+.faco-file-preview-list {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	padding-bottom: 8px;
+}
+
+.faco-file-preview {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	padding: 10px 12px;
+	background: var(--faco-bg-primary, white);
+	border: 2px solid var(--faco-border-color, #e5e7eb);
+	border-radius: 10px;
+	transition: all 0.2s;
+	box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.faco-file-preview:hover {
+	border-color: var(--faco-primary, #0F6E5C);
+	box-shadow: 0 2px 6px rgba(15, 110, 92, 0.1);
+}
+
+.faco-file-icon {
+	flex-shrink: 0;
+	color: var(--faco-primary, #0F6E5C);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.faco-file-info {
+	flex: 1;
+	min-width: 0;
+}
+
+.faco-file-name {
+	font-size: 13px;
+	font-weight: 500;
+	color: var(--faco-text-primary, #36414c);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.faco-file-size {
+	font-size: 11px;
+	color: var(--faco-text-muted, #9ca3af);
+	margin-top: 2px;
+}
+
+.faco-file-remove {
+	flex-shrink: 0;
+	width: 24px;
+	height: 24px;
+	border-radius: 4px;
+	border: none;
+	background: transparent;
+	color: var(--faco-text-muted, #9ca3af);
+	cursor: pointer;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	transition: all 0.2s;
+}
+
+.faco-file-remove:hover {
+	background: var(--faco-hover-bg, #fee);
+	color: #ef4444;
+}
+
+/* Dark theme file preview */
+html[data-theme="dark"] .faco-widget .faco-file-preview {
+	background: #26241B;
+	border-color: #2E2C22;
+}
+
+html[data-theme="dark"] .faco-widget .faco-file-preview:hover {
+	border-color: var(--faco-primary, #2DAA8F);
+	box-shadow: 0 2px 6px rgba(45, 170, 143, 0.2);
+}
+
+html[data-theme="dark"] .faco-widget .faco-file-name {
+	color: #F2EFE6;
+}
+
+html[data-theme="dark"] .faco-widget .faco-file-size {
+	color: #8A857C;
+}
+
+html[data-theme="dark"] .faco-widget .faco-file-remove {
+	color: #8A857C;
+}
+
+html[data-theme="dark"] .faco-widget .faco-file-remove:hover {
+	background: rgba(239, 68, 68, 0.1);
+	color: #f87171;
+}
+
+.faco-input-wrapper {
+	display: flex;
+	gap: 4px;
+	align-items: center;
+	background: white;
+	border: 1px solid var(--faco-border-color, #e5e7eb);
+	border-radius: 12px;
+	padding: 6px 8px;
+	transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.faco-input-wrapper:focus-within {
+	border-color: var(--faco-primary, #0F6E5C);
+	box-shadow: 0 0 0 3px rgba(15, 110, 92, 0.12);
+}
+
+html[data-theme="dark"] .faco-widget .faco-input-wrapper {
+	background: #1E1D16;
+	border-color: #2E2C22;
+}
+
+.faco-input {
+	flex: 1;
+	min-width: 0;
+	border: none;
+	background: transparent;
+	padding: 6px 4px;
+	font-size: 14px;
+	font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+	resize: none;
+	outline: none;
+	min-height: 28px;
+	max-height: 120px;
+	line-height: 1.5;
+	color: #1A1A17;
+}
+
+.faco-input::placeholder {
+	color: #8A857C;
+}
+
+/* Dark theme input */
+html[data-theme="dark"] .faco-widget .faco-input {
+	background: transparent;
+	color: #F2EFE6;
+}
+
+html[data-theme="dark"] .faco-widget .faco-input::placeholder {
+	color: #8A857C;
+}
+
+.faco-send-btn {
+	width: 32px;
+	height: 32px;
+	border-radius: 8px;
+	border: none;
+	background: transparent;
+	color: var(--faco-text-muted, #8d99a6);
+	cursor: pointer;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	transition: all 0.15s ease;
+	flex-shrink: 0;
+}
+
+.faco-send-btn:hover:not(:disabled) {
+	background: var(--faco-hover, #f3f4f6);
+	color: var(--faco-text-primary, #18181b);
+}
+
+/* Active (has text) — teal fill */
+.faco-send-btn.is-active {
+	background: var(--faco-primary, #0F6E5C);
+	color: #fff;
+}
+
+.faco-send-btn.is-active:hover:not(:disabled) {
+	background: var(--faco-primary-hover, #0B5A4B);
+	color: #fff;
+}
+
+.faco-send-btn:disabled {
+	opacity: 0.4;
+	cursor: not-allowed;
+}
+
+/* Dark theme send button */
+html[data-theme="dark"] .faco-widget .faco-send-btn {
+	background: transparent;
+	color: #8A857C;
+}
+
+html[data-theme="dark"] .faco-widget .faco-send-btn:hover:not(:disabled) {
+	background: #26241B;
+	color: #F2EFE6;
+}
+
+/* Scrollbar */
+.faco-messages::-webkit-scrollbar {
+	width: 6px;
+}
+
+.faco-messages::-webkit-scrollbar-track {
+	background: transparent;
+}
+
+.faco-messages::-webkit-scrollbar-thumb {
+	background: #DEDAD2;
+	border-radius: 3px;
+}
+
+.faco-messages::-webkit-scrollbar-thumb:hover {
+	background: #8A857C;
+}
+
+/* Context Toggle */
+.faco-context-toggle {
+	padding: 0;
+	border-bottom: none;
+	background: transparent;
+	display: flex;
+	flex-shrink: 0;
+}
+
+.faco-context-toggle label {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	font-size: 11px;
+	color: var(--faco-text-muted, #9ca3af);
+	cursor: pointer;
+	margin: 0;
+	user-select: none;
+	padding: 4px 8px;
+	border-radius: 12px;
+	transition: all 0.15s ease;
+}
+
+.faco-context-toggle input[type="checkbox"] {
+	margin: 0;
+	cursor: pointer;
+	width: 14px;
+	height: 14px;
+}
+
+.faco-context-toggle svg {
+	opacity: 0.5;
+	width: 14px;
+	height: 14px;
+}
+
+.faco-context-toggle label:hover {
+	background: var(--faco-bg-secondary, #f9fafb);
+	color: var(--faco-text-secondary, #6b7280);
+}
+
+.faco-context-toggle label:hover svg {
+	opacity: 0.7;
+}
+
+/* Phone + tablet Desk: keep the launcher in the corner and give the open
+   panel a near-full viewport so 400×650 doesn't overflow the screen. */
+@media (max-width: 1023px) {
+	.faco-widget {
+		bottom: max(16px, env(safe-area-inset-bottom, 0px));
+		right: max(12px, env(safe-area-inset-right, 0px));
+		z-index: 10050;
+	}
+	.faco-toggle-btn {
+		width: 56px;
+		height: 56px;
+	}
+	/* Sit above the launcher like a sheet. Pinning top:8px plus the 400×650
+	   box put the panel at the top of the phone with a hole under it. */
+	.faco-widget.faco-open .faco-chat-window {
+		left: 8px !important;
+		right: 8px !important;
+		top: auto !important;
+		bottom: 76px !important;
+		width: auto !important;
+		height: min(72dvh, calc(100svh - 92px)) !important;
+		max-height: min(72dvh, calc(100svh - 92px)) !important;
+		border-radius: 14px 14px 10px 10px;
+	}
+}
+
+/* Responsive */
+@media (max-width: 480px) {
+	.faco-onboarding {
+		padding: 24px 16px;
+	}
+}
+
+/* ─── Mic button (voice input) ─────────────────────────────────────── */
+.faco-mic-btn {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	height: 32px;
+	min-width: 32px;
+	padding: 0 6px;
+	background: transparent;
+	border: none;
+	border-radius: 6px;
+	color: var(--faco-text-muted, #8d99a6);
+	cursor: pointer;
+	transition: background 0.15s ease, color 0.15s ease;
+}
+
+.faco-mic-btn:hover {
+	background: var(--faco-hover-bg, #f5f5f5);
+	color: var(--faco-text-primary, #36414c);
+}
+
+.faco-mic-btn.is-recording {
+	color: #fff;
+	background: #ef4444;
+	animation: faco-mic-pulse 1.2s ease-in-out infinite;
+}
+
+.faco-mic-btn.is-recording:hover {
+	background: #dc2626;
+}
+
+.faco-mic-btn.is-transcribing .faco-mic-icon {
+	opacity: 0.5;
+	animation: faco-mic-spin 1s linear infinite;
+}
+
+.faco-mic-btn.is-error {
+	color: #ef4444;
+	background: rgba(239, 68, 68, 0.12);
+}
+
+.faco-mic-elapsed {
+	font-size: 12px;
+	font-variant-numeric: tabular-nums;
+	font-weight: 600;
+}
+
+@keyframes faco-mic-pulse {
+	0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.5); }
+	50%      { box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); }
+}
+
+@keyframes faco-mic-spin {
+	from { transform: rotate(0deg); }
+	to   { transform: rotate(360deg); }
+}

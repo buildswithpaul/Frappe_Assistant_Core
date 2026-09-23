@@ -10,6 +10,9 @@
   "server_enabled",
   "mcp_endpoint_url",
   "oauth_discovery_url",
+  "fac_chat_tab",
+  "fac_chat_description",
+  "enable_fac_chat",
   "plugins_tab",
   "plugins_section",
   "enabled_plugins_list",
@@ -84,6 +87,23 @@
    "label": "OAuth Discovery URL",
    "read_only": 1,
    "description": "OAuth/OIDC discovery endpoint for auto-configuration. MCP clients use this to discover authentication endpoints."
+  },
+  {
+   "fieldname": "fac_chat_tab",
+   "fieldtype": "Tab Break",
+   "label": "FAC Chat"
+  },
+  {
+   "fieldname": "fac_chat_description",
+   "fieldtype": "HTML",
+   "options": "<p>Opt-in in-Frappe chat UI powered by FAC Cloud. Adds a widget on every Desk page and a <code>/copilot</code> SPA. The MCP server (BYO-LLM) keeps running either way.</p>"
+  },
+  {
+   "default": "0",
+   "description": "Toggles on/off immediately — no restart needed.",
+   "fieldname": "enable_fac_chat",
+   "fieldtype": "Check",
+   "label": "Enable FAC Chat"
   },
   {
    "fieldname": "plugins_tab",

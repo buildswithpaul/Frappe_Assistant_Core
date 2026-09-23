@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
+  <meta name="csrf-token" content="">
+  <title>FAC Chat</title>
+  <link rel="icon" type="image/svg+xml" href="/assets/frappe_assistant_core/chat/widget/favicon.svg">
+  <!-- Email-verification deep link: capture the token and strip it from the
+       URL before ANY module script (including vue-router) loads. Classic
+       inline scripts in <head> execute before module scripts in <body>, so
+       this is the earliest point in the page lifecycle. The captured token
+       is read once by App.vue from the bracket lookup below.
+
+       Avoid the substring dot-underscore-underscore anywhere in this block
+       — Frappe's safe-render guard rejects any template containing that
+       sequence outright (see frappe/utils/jinja.py::render_template). That
+       is why the global is set via bracket lookup
+       `window["__facoVerifyToken"]` instead of attribute access. -->
+  <script>
+    (function () {
+      try {
+        var params = new URLSearchParams(window.location.search);
+        var action = params.get("action");
+        if (action === "verify_email") {
+          var token = params.get("verify_token");
+          if (!token) return;
+          window["__facoVerifyToken"] = token;
+          params.delete("action");
+          params.delete("verify_token");
+        } else if (action === "resume_registration") {
+          var promo = params.get("promotion_token");
+          if (!promo) return;
+          window["__facoPromotionToken"] = promo;
+          params.delete("action");
+          params.delete("promotion_token");
+        } else {
+          return;
+        }
+        var query = params.toString();
+        var clean = window.location.pathname + (query ? "?" + query : "") + window.location.hash;
+        window.history.replaceState({}, "", clean);
+      } catch (e) { /* fall through with no token captured */ }
+    })();
+  </script>
+</head>
+<body>
+  <div id="app"></div>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

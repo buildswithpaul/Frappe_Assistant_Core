@@ -2,7 +2,11 @@ name: Commit Lint
 
 on:
   pull_request:
-    branches: [develop, main]
+    branches: [develop, main, beta]
+
+# Read-only by default; commitlint only reads the commit range.
+permissions:
+  contents: read
 
 jobs:
   commitlint:

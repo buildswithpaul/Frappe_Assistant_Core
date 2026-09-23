@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <defs>
+    <linearGradient id="head" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#f0f4f8"/>
+    </linearGradient>
+    <linearGradient id="screen" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#4dd0e1"/>
+      <stop offset="100%" stop-color="#00acc1"/>
+    </linearGradient>
+    <filter id="screenGlow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="1.4"/>
+    </filter>
+  </defs>
+
+  <!-- Antenna -->
+  <rect x="15" y="2" width="2" height="5" rx="1" fill="#42a5f5"/>
+  <circle cx="16" cy="2.5" r="2.5" fill="rgba(0,229,255,0.55)" filter="url(#screenGlow)"/>
+  <circle cx="16" cy="2.5" r="1.8" fill="#00e5ff"/>
+
+  <!-- Head: 24x20 at x=4..28, y=7..27, top-radius 12 (semicircular top),
+       bottom-radius 8 (leaves 8px flat middle on bottom). -->
+  <path d="M 4 19
+           A 12 12 0 0 1 28 19
+           L 28 19
+           A 8 8 0 0 1 20 27
+           L 12 27
+           A 8 8 0 0 1 4 19
+           Z"
+        fill="url(#head)"/>
+
+  <!-- Cyan glow halo -->
+  <rect x="6" y="10" width="20" height="14" rx="4"
+        fill="rgba(77,208,225,0.65)" filter="url(#screenGlow)"/>
+
+  <!-- Screen -->
+  <rect x="6" y="10" width="20" height="14" rx="4" fill="url(#screen)"/>
+
+  <!-- Eyes -->
+  <circle cx="11.5" cy="15" r="2" fill="#ffffff"/>
+  <circle cx="20.5" cy="15" r="2" fill="#ffffff"/>
+
+  <!-- Smile -->
+  <path d="M 12 19 Q 16 22 20 19"
+        stroke="rgba(255,255,255,0.85)" stroke-width="1.4" stroke-linecap="round" fill="none"/>
+</svg>

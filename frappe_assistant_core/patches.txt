@@ -1,6 +1,8 @@
 # Patches for frappe_assistant_core
 # Format: patches.patch_file
 
+[pre_model_sync]
+
 # Version 1.0.0 - Initial setup
 frappe_assistant_core.patches.v1_0.add_user_assistant_enabled_field
 frappe_assistant_core.patches.v1_0.cleanup_duplicate_permissions
@@ -26,6 +28,24 @@ frappe_assistant_core.patches.v2_3.set_settings_defaults
 frappe_assistant_core.patches.v2_4.install_system_skills
 frappe_assistant_core.patches.v2_4.bump_code_execution_max_recursion
 frappe_assistant_core.patches.v2_4.repair_hrms_skill_link_corruption
+frappe_assistant_core.patches.v2_4.resync_tool_categories
 
 # Version 2.5.0 - Skill publish/visibility permission fix (issue #225)
 frappe_assistant_core.patches.v2_5.report_non_admin_published_skills
+
+# Version 3.0.0 - Recategorize generate_document (read_only -> write)
+frappe_assistant_core.patches.v3_0.recategorize_generate_document
+
+# Version 3.0.0 - Widen FAC Chat Message.credits_used Int -> Float (fractional credits)
+frappe_assistant_core.patches.v3_0.widen_credits_used_to_float
+
+[post_model_sync]
+
+# Version 3.0.0 - Backfill enable_browser_diagnostics default on the pre-existing
+# FAC Chat Settings Single (Frappe only applies a field's default on document
+# creation; this Single already existed when the field was added)
+frappe_assistant_core.patches.v3_0.backfill_browser_diagnostics_default
+
+# Version 3.0.0 - Bind FAC Workflow Triggers to the AR workflow docname instead
+# of the mutable display name (a rename used to orphan every trigger silently)
+frappe_assistant_core.patches.v3_0.backfill_workflow_trigger_docname

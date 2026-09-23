@@ -53,11 +53,11 @@ class ExecutePythonCode(BaseTool):
             "properties": {
                 "code": {
                     "type": "string",
-                    "description": "Python code to execute. IMPORTANT: Do NOT use import statements - all libraries are pre-loaded and ready to use: pd (pandas), np (numpy), frappe, math, datetime, json, re, random. Example: df = pd.DataFrame({'A': [1,2,3]}); print(df.describe())",
+                    "description": "Python code to run (no imports; libraries are pre-loaded)",
                 },
                 "data_query": {
                     "type": "object",
-                    "description": "Query to fetch data and make it available as 'data' variable",
+                    "description": "Query to pre-fetch data as the 'data' variable",
                     "properties": {
                         "doctype": {"type": "string"},
                         "fields": {"type": "array", "items": {"type": "string"}},
@@ -67,14 +67,14 @@ class ExecutePythonCode(BaseTool):
                 },
                 "timeout": {
                     "type": "integer",
-                    "description": "Execution timeout in seconds (default: 30)",
+                    "description": "Execution timeout in seconds",
                     "default": 30,
                     "minimum": 1,
                     "maximum": 300,
                 },
                 "capture_output": {
                     "type": "boolean",
-                    "description": "Whether to capture print output (default: true)",
+                    "description": "Capture print output",
                     "default": True,
                 },
                 "return_variables": {
@@ -108,12 +108,9 @@ class ExecutePythonCode(BaseTool):
 
     def _get_dynamic_description(self) -> str:
         """Generate description based on library availability"""
-        base_description = """Execute Python code in a sandboxed environment with BUILT-IN data access.
+        base_description = """Execute Python in a sandboxed environment with built-in data access via `tools`.
 
-PREFER THIS TOOL for analytics — it can fetch data AND analyze it in a single call via the `tools` API.
-Do NOT call get_documents/generate_report separately then copy data into code. Instead, fetch inside code:
-
-TOOLS API (available as `tools` variable — returns dicts, ready for pandas):
+PREFER THIS over get_documents/generate_report + separate code — fetch inside code instead:
   tools.get_documents(doctype, filters={}, fields=["*"], limit=100) → {success, data, count}
   tools.get_document(doctype, name) → {success, data}
   tools.generate_report(report_name, filters={}, format="json") → {success, data, columns}
@@ -122,22 +119,10 @@ TOOLS API (available as `tools` variable — returns dicts, ready for pandas):
   tools.search(query, doctype=None, limit=20)
   tools.get_doctype_info(doctype) → {success, fields, links}
 
-EXAMPLE — single call does fetch + analysis:
-invoices = tools.get_documents("Sales Invoice",
-    filters={"docstatus": 1, "posting_date": [">=", "2024-04-01"]},
-    fields=["customer_name", "grand_total", "outstanding_amount"], limit=500)
-customers = tools.get_documents("Customer", fields=["name", "customer_name", "territory"], limit=500)
-if invoices["success"] and customers["success"]:
-    df = pd.DataFrame(invoices["data"]).merge(
-        pd.DataFrame(customers["data"]), left_on="customer_name", right_on="customer_name")
-    print(df.groupby("territory")["grand_total"].sum().sort_values(ascending=False).to_string())
+RULES: no imports (libraries pre-loaded); read-only, permission-checked, audit-logged DB access;
+no file/network access; no plotting libraries — use the dashboard tools for charts.
 
-RULES:
-- NO imports — all libraries are pre-loaded
-- Read-only DB, permission-checked, audit-logged, no file/network access
-- Plotting/visualization libraries are not available; use the dashboard tools for charts
-
-PRE-LOADED: pd (pandas), np (numpy), frappe, math, datetime, json, re, statistics, random"""
+PRE-LOADED: pd, np, frappe, math, datetime, json, re, statistics, random"""
 
         # Add library availability warnings
         library_warnings = []

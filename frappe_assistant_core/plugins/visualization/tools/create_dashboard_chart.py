@@ -47,57 +47,55 @@ class CreateDashboardChart(BaseTool):
         self.inputSchema = {
             "type": "object",
             "properties": {
-                "chart_name": {"type": "string", "description": "Name for the dashboard chart"},
+                "chart_name": {"type": "string", "description": "Chart name"},
                 "chart_type": {
                     "type": "string",
                     "enum": ["line", "bar", "percentage", "pie", "donut", "heatmap"],
-                    "description": "Visual chart type: 'line' for trends, 'bar' for comparisons, 'pie'/'donut' for proportions, 'percentage' for progress, 'heatmap' for density",
+                    "description": "Visual chart type",
                 },
                 "doctype": {
                     "type": "string",
-                    "description": "DocType to create chart from (e.g., 'Sales Invoice', 'Customer', 'Item')",
+                    "description": "DocType to chart, e.g. 'Sales Invoice'",
                 },
                 "aggregate_function": {
                     "type": "string",
                     "enum": ["Count", "Sum", "Average", "Group By"],
                     "default": "Count",
-                    "description": "How to aggregate data: 'Count' for record counts, 'Sum' for totals, 'Average' for means, 'Group By' for grouping",
+                    "description": "How to aggregate the data",
                 },
                 "value_based_on": {
                     "type": "string",
-                    "description": "Field to aggregate when using Sum/Average (e.g., 'grand_total', 'qty', 'amount'). Required for Sum/Average functions.",
+                    "description": "Numeric field to aggregate; required for Sum/Average",
                 },
                 "based_on": {
                     "type": "string",
-                    "description": "Field to group data by (x-axis). For time series, use date fields. For categories, use text/link fields (e.g., 'customer', 'status', 'item_group')",
+                    "description": "Field to group/x-axis by; required for bar/pie/donut",
                 },
                 "time_series_based_on": {
                     "type": "string",
-                    "description": "Date/datetime field for time series charts (e.g., 'posting_date', 'creation', 'transaction_date'). Required for line charts.",
+                    "description": "Date field for time series; required for line/heatmap",
                 },
                 "timespan": {
                     "type": "string",
-                    "enum": ["Last Year", "Last Quarter", "Last Month", "Last Week"],
                     "default": "Last Month",
-                    "description": "Time range for the chart data (only applies to line/heatmap charts)",
+                    "description": "Time range, e.g. 'Last Month', 'Last Year'",
                 },
                 "time_interval": {
                     "type": "string",
-                    "enum": ["Yearly", "Quarterly", "Monthly", "Weekly", "Daily"],
                     "default": "Daily",
-                    "description": "Time grouping interval for time series charts",
+                    "description": "Time grouping interval, e.g. 'Daily', 'Monthly'",
                 },
                 "filters": {
                     "type": "object",
-                    "description": "Filters to apply to the data (e.g., {'status': 'Paid', 'company': 'My Company'})",
+                    "description": "Frappe filters to apply to the data",
                 },
                 "color": {
                     "type": "string",
-                    "description": "Chart color (hex code like '#5470c6' or color name)",
+                    "description": "Chart color, hex or name",
                 },
                 "dashboard_name": {
                     "type": "string",
-                    "description": "Optional: Dashboard to add this chart to",
+                    "description": "Dashboard to add this chart to",
                 },
             },
             "required": ["chart_name", "chart_type", "doctype", "aggregate_function"],
@@ -105,7 +103,12 @@ class CreateDashboardChart(BaseTool):
 
     def _get_description(self) -> str:
         """Get tool description"""
-        return """Create Dashboard Chart documents for Frappe's dashboard system with proper field mappings and aggregations. CHART TYPES: line (trends over time, requires time_series_based_on), bar (compare categories/groups, requires based_on for grouping), pie/donut (show proportions, requires based_on for categories), percentage (show progress/completion), heatmap (show data density patterns). AGGREGATION FUNCTIONS: Count (count records, no value field needed), Sum (total values, requires value_based_on), Average (average values, requires value_based_on), Group By (group by categories). FIELD REQUIREMENTS: value_based_on required for Sum/Average aggregations (numeric fields like grand_total, qty), based_on required for grouping/x-axis in bar/pie/donut charts (category fields like customer, status), time_series_based_on required ONLY for line/heatmap charts (date fields like posting_date). Use this to create visual representations of business data for dashboard displays."""
+        return (
+            "Create Dashboard Chart documents for Frappe's dashboard system. "
+            "CHART TYPES: line/heatmap need time_series_based_on; bar/pie/donut need based_on; "
+            "percentage needs neither. Sum/Average aggregation needs value_based_on. "
+            "Use this for visual representations of business data on dashboards."
+        )
 
     def execute(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
         """Create dashboard chart"""

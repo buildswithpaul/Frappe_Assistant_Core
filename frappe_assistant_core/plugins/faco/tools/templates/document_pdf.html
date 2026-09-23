@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+/* ---------------------------------------------------------------------
+   Page layout
+   ---------------------------------------------------------------------
+   WeasyPrint reads the @page rules directly; wkhtmltopdf ignores them
+   and uses the .print-format block. Keep both in sync.
+*/
+@page {
+	size: {{ page_size or 'A4' }} {{ 'landscape' if orientation == 'Landscape' else 'portrait' }};
+	margin: {{ margin_top or '18mm' }} {{ margin_right or '15mm' }} {{ margin_bottom or '22mm' }} {{ margin_left or '15mm' }};
+
+	@bottom-right {
+		content: counter(page) " / " counter(pages);
+		font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+		font-size: 8pt;
+		color: #999;
+	}
+
+	@bottom-left {
+		content: "{{ (title or '') | replace('"', '') }}";
+		font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+		font-size: 8pt;
+		color: #999;
+	}
+}
+
+/* Cover page gets its own @page rule — no header/footer, full-bleed feel. */
+@page cover {
+	margin: 0;
+	@bottom-right { content: none; }
+	@bottom-left { content: none; }
+}
+
+.print-format {
+	margin-top: {{ margin_top or '15mm' }};
+	margin-bottom: {{ margin_bottom or '20mm' }};
+	margin-left: {{ margin_left or '15mm' }};
+	margin-right: {{ margin_right or '15mm' }};
+	page-size: {{ page_size or 'A4' }};
+	{% if orientation == 'Landscape' %}orientation: Landscape;{% endif %}
+}
+
+/* ---------------------------------------------------------------------
+   Base typography
+   --------------------------------------------------------------------- */
+body {
+	font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+	font-size: 10.5pt;
+	line-height: 1.6;
+	color: #1a1a1a;
+}
+
+/* Document title (when no cover page is used) */
+.doc-title {
+	font-size: 22pt;
+	font-weight: 700;
+	color: #111;
+	margin: 0 0 4px 0;
+	padding-bottom: 10px;
+	border-bottom: 3px solid #2563eb;
+	letter-spacing: -0.02em;
+}
+
+.doc-subtitle {
+	font-size: 9pt;
+	color: #666;
+	margin: 0 0 24px 0;
+}
+
+/* Headings */
+h1 { font-size: 17pt; font-weight: 700; color: #111; margin: 28px 0 10px; letter-spacing: -0.01em; }
+h2 { font-size: 13pt; font-weight: 600; color: #1f2937; margin: 22px 0 8px; border-bottom: 1px solid #e5e7eb; padding-bottom: 4px; }
+h3 { font-size: 11.5pt; font-weight: 600; color: #374151; margin: 16px 0 6px; }
+h4 { font-size: 10.5pt; font-weight: 600; color: #4b5563; margin: 12px 0 4px; }
+
+/* Headings don't get orphaned at the bottom of a page. */
+h1, h2, h3, h4 { page-break-after: avoid; break-after: avoid; }
+
+/* Paragraphs */
+p { margin: 0 0 10px; orphans: 3; widows: 3; }
+
+/* Lists */
+ul, ol { margin: 0 0 10px; padding-left: 24px; }
+li { margin-bottom: 3px; }
+
+/* ---------------------------------------------------------------------
+   Tables
+   --------------------------------------------------------------------- */
+table {
+	width: 100%;
+	border-collapse: collapse;
+	margin: 14px 0;
+	font-size: 9.5pt;
+	page-break-inside: avoid;
+}
+
+thead {
+	display: table-header-group; /* repeat header on page break */
+}
+
+thead th {
+	background: #f3f4f6;
+	font-weight: 600;
+	text-align: left;
+	padding: 8px 10px;
+	border: 1px solid #d1d5db;
+	color: #1f2937;
+}
+
+tbody td {
+	padding: 7px 10px;
+	border: 1px solid #e5e7eb;
+	vertical-align: top;
+}
+
+tbody tr:nth-child(even) { background: #fafafa; }
+
+/* ---------------------------------------------------------------------
+   Code
+   --------------------------------------------------------------------- */
+code {
+	font-family: 'SF Mono', 'Consolas', 'Liberation Mono', 'Courier New', monospace;
+	font-size: 9pt;
+	background: #f3f4f6;
+	padding: 1px 4px;
+	border-radius: 3px;
+	border: 1px solid #e5e7eb;
+}
+
+pre {
+	background: #f9fafb;
+	padding: 12px 14px;
+	border-radius: 4px;
+	border: 1px solid #e5e7eb;
+	overflow-x: auto;
+	margin: 12px 0;
+	font-size: 8.5pt;
+	line-height: 1.5;
+	page-break-inside: avoid;
+}
+
+pre code { background: none; padding: 0; border: none; border-radius: 0; }
+
+/* Blockquotes */
+blockquote {
+	margin: 12px 0;
+	padding: 8px 14px;
+	border-left: 3px solid #9ca3af;
+	color: #4b5563;
+	background: #f9fafb;
+	font-style: italic;
+}
+blockquote p:last-child { margin-bottom: 0; }
+
+hr { border: none; border-top: 1px solid #e5e7eb; margin: 18px 0; }
+
+a { color: #2563eb; text-decoration: none; }
+
+strong { font-weight: 600; }
+em { font-style: italic; }
+
+/* ---------------------------------------------------------------------
+   Cover page
+   --------------------------------------------------------------------- */
+.cover-page {
+	page: cover;
+	page-break-after: always;
+	break-after: page;
+	height: 100vh;
+	background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 60%, #3b82f6 100%);
+	color: white;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	text-align: center;
+	box-sizing: border-box;
+	padding: 60px;
+	margin: 0;
+}
+
+.cover-inner { max-width: 80%; }
+
+.cover-title {
+	font-size: 36pt;
+	font-weight: 700;
+	margin: 0 0 12px 0;
+	letter-spacing: -0.02em;
+	color: white;
+	border: none;
+	padding: 0;
+}
+
+.cover-subtitle {
+	font-size: 14pt;
+	font-weight: 400;
+	margin: 0 0 40px 0;
+	opacity: 0.9;
+}
+
+.cover-meta {
+	margin-top: 60px;
+	font-size: 10pt;
+	opacity: 0.8;
+	letter-spacing: 0.05em;
+	text-transform: uppercase;
+}
+.cover-meta div { margin: 4px 0; }
+
+/* Explicit page break utility */
+.page-break {
+	page-break-before: always;
+	break-before: page;
+	height: 0;
+}
+
+/* ---------------------------------------------------------------------
+   Callout — info / tip / warning / success / error
+   --------------------------------------------------------------------- */
+.callout {
+	display: flex;
+	gap: 12px;
+	margin: 14px 0;
+	padding: 12px 14px;
+	border-left: 4px solid #3b82f6;
+	border-radius: 4px;
+	page-break-inside: avoid;
+}
+
+.callout-icon {
+	font-weight: 700;
+	font-size: 14pt;
+	line-height: 1;
+	flex-shrink: 0;
+	width: 22px;
+	height: 22px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border-radius: 50%;
+	background: white;
+}
+
+.callout-body { flex: 1; }
+.callout-title { font-weight: 600; color: #111; margin-bottom: 4px; font-size: 10.5pt; }
+.callout-body p { margin: 0 0 6px; }
+.callout-body p:last-child { margin-bottom: 0; }
+
+/* ---------------------------------------------------------------------
+   Metric card
+   --------------------------------------------------------------------- */
+.metric-card {
+	display: inline-block;
+	min-width: 160px;
+	margin: 8px 8px 8px 0;
+	padding: 14px 16px;
+	border: 1px solid #e5e7eb;
+	border-radius: 6px;
+	background: #fafafa;
+	vertical-align: top;
+	page-break-inside: avoid;
+}
+
+.metric-title {
+	font-size: 8.5pt;
+	color: #6b7280;
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+	margin-bottom: 4px;
+}
+
+.metric-value {
+	font-size: 18pt;
+	font-weight: 700;
+	color: #111;
+	letter-spacing: -0.02em;
+	line-height: 1.1;
+}
+
+.metric-change {
+	display: inline-block;
+	margin-top: 4px;
+	font-size: 9pt;
+	font-weight: 600;
+}
+
+.metric-description {
+	margin-top: 4px;
+	font-size: 8.5pt;
+	color: #6b7280;
+}
+
+/* ---------------------------------------------------------------------
+   Charts
+   --------------------------------------------------------------------- */
+.chart-wrap {
+	margin: 16px 0;
+	padding: 14px;
+	background: white;
+	border: 1px solid #e5e7eb;
+	border-radius: 6px;
+	page-break-inside: avoid;
+}
+
+.chart-title {
+	font-size: 11pt;
+	font-weight: 600;
+	color: #1f2937;
+	margin-bottom: 8px;
+}
+
+.chart-svg {
+	display: block;
+	width: 100%;
+	height: auto;
+	max-height: 320px;
+}
+
+.chart-legend {
+	margin-top: 8px;
+	font-size: 9pt;
+	color: #4b5563;
+	text-align: center;
+}
+
+.legend-item {
+	display: inline-block;
+	margin: 0 10px;
+	vertical-align: middle;
+}
+
+.legend-swatch {
+	display: inline-block;
+	width: 10px;
+	height: 10px;
+	margin-right: 5px;
+	border-radius: 2px;
+	vertical-align: middle;
+}
+
+.chart-error {
+	padding: 12px;
+	color: #b91c1c;
+	background: #fef2f2;
+	border: 1px solid #fecaca;
+	border-radius: 4px;
+	font-size: 9.5pt;
+}
+
+/* ---------------------------------------------------------------------
+   Footer (only used when @page footers aren't honoured by renderer)
+   --------------------------------------------------------------------- */
+.doc-footer {
+	margin-top: 32px;
+	padding-top: 8px;
+	border-top: 1px solid #e5e7eb;
+	font-size: 8pt;
+	color: #999;
+	text-align: right;
+}
+
+/* ---------------------------------------------------------------------
+   Images
+   --------------------------------------------------------------------- */
+img {
+	max-width: 100%;
+	height: auto;
+	page-break-inside: avoid;
+}
+</style>
+</head>
+<body>
+<div class="print-format">
+	{% if title %}
+	<h1 class="doc-title">{{ title }}</h1>
+	{% endif %}
+	{% if subtitle %}
+	<p class="doc-subtitle">{{ subtitle }}</p>
+	{% endif %}
+
+	{{ body }}
+
+	{% if generated_date %}
+	<div class="doc-footer">Generated on {{ generated_date }}</div>
+	{% endif %}
+</div>
+</body>
+</html>

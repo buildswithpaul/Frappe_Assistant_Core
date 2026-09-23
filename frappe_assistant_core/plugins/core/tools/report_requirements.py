@@ -103,7 +103,16 @@ class ReportRequirements(BaseTool):
     def __init__(self):
         super().__init__()
         self.name = "report_requirements"
-        self.description = "Get report metadata including required and optional filters, columns, and execution requirements for Script Reports, Query Reports, and Custom Reports. Use this tool before executing reports to understand what filters are mandatory, what exact filter values are valid, and how to structure the report request. This prevents filter errors and helps plan successful report execution. Returns complete report metadata including filter definitions with field types (Link, Select, Date), valid enum options for select fields, column structure, report type, and capabilities. For a value-constrained filter (Select, Autocomplete) 'options' is an explicit list of accepted values, and every 'default' returned here is guaranteed to be accepted by generate_report. Filter contracts are per-report: the same filter name can mean different things in different reports (e.g. 'range' is an ageing bucket string like '30, 60, 90, 120' on the AR/AP reports but a periodicity Select elsewhere), so never reuse a value across reports. IMPORTANT: Use this FIRST before calling generate_report to understand what exact filter values are needed - Link fields require exact database names (e.g., exact Company name, Customer name), Select fields show valid enum values. Essential when generate_report returns filter errors or when planning complex report execution. Check 'filter_discovery_status': 'no_filters_declared' means the report genuinely takes no filters, while 'unresolved' means discovery failed and 'discovery_diagnostics' explains why. NOTE: Report Builder reports store a saved column/filter configuration rather than a filter contract and are not yet fully supported."
+        self.description = (
+            "Get report metadata: required/optional filters, columns, and execution requirements "
+            "for Script, Query, and Custom Reports. Use this FIRST before generate_report to learn "
+            "valid filter values (exact Link names, Select options as an explicit list — every "
+            "'default' returned is guaranteed valid) and avoid filter errors. Filter contracts are "
+            "per-report: the same filter name can mean different things in different reports, so "
+            "never reuse a value across reports. Check 'filter_discovery_status': "
+            "'no_filters_declared' means genuinely no filters; 'unresolved' means discovery failed "
+            "(see 'discovery_diagnostics'). Report Builder reports are not yet fully supported."
+        )
         self.requires_permission = None  # Permission checked dynamically per report
 
         self.inputSchema = {
@@ -111,22 +120,22 @@ class ReportRequirements(BaseTool):
             "properties": {
                 "report_name": {
                     "type": "string",
-                    "description": "Exact name of the Frappe report to analyze (e.g., 'Sales Analytics', 'Accounts Receivable Summary'). This helps understand available fields, required filters, valid filter options, and report structure before execution.",
+                    "description": "Exact name of the report to analyze",
                 },
                 "include_metadata": {
                     "type": "boolean",
                     "default": False,
-                    "description": "Whether to include technical metadata (creation date, owner, SQL query, etc.) - useful for developers and administrators.",
+                    "description": "Include technical metadata (creation date, owner, SQL query, etc.)",
                 },
                 "include_columns": {
                     "type": "boolean",
                     "default": True,
-                    "description": "Whether to include column structure information.",
+                    "description": "Include column structure info",
                 },
                 "include_filters": {
                     "type": "boolean",
                     "default": True,
-                    "description": "Whether to include filter requirements and guidance.",
+                    "description": "Include filter requirements and guidance",
                 },
             },
             "required": ["report_name"],
