@@ -53,26 +53,24 @@ class CreateDashboard(BaseTool):
                 "chart_names": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "Array of existing Dashboard Chart names to add to this dashboard. Use create_dashboard_chart tool first to create charts.",
+                    "description": "Existing Dashboard Chart names to add; create them first with create_dashboard_chart",
                 },
                 "filters": {"type": "object", "description": "Global dashboard filters"},
                 "share_with": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "List of users/roles to share dashboard with",
+                    "description": "Users/roles to share the dashboard with",
                 },
                 "auto_refresh": {"type": "boolean", "default": True, "description": "Enable auto refresh"},
                 "refresh_interval": {
                     "type": "string",
-                    "enum": ["5_minutes", "15_minutes", "30_minutes", "1_hour", "24_hours"],
                     "default": "1_hour",
-                    "description": "Auto refresh interval",
+                    "description": "Auto refresh interval, e.g. '15_minutes', '1_hour'",
                 },
                 "template_type": {
                     "type": "string",
-                    "enum": ["sales", "financial", "inventory", "hr", "executive", "custom"],
                     "default": "custom",
-                    "description": "Dashboard template type",
+                    "description": "Dashboard template type, e.g. 'sales', 'financial'",
                 },
                 "mobile_optimized": {
                     "type": "boolean",
@@ -85,7 +83,11 @@ class CreateDashboard(BaseTool):
 
     def _get_description(self) -> str:
         """Get tool description"""
-        return """Create Frappe dashboards by linking existing charts into organized views. Creates standard Frappe Dashboard documents, NOT Insights dashboards. WORKFLOW: First create individual charts using create_dashboard_chart tool, then use this tool to create a dashboard container that links those charts together. IMPORTANT: Charts must already exist before creating the dashboard. CAPABILITIES: Multi-chart dashboards, user and role-based sharing, mobile responsive layout, export to PDF/Excel. Use this to organize multiple related charts (sales charts, inventory charts, financial charts) into cohesive dashboard views for business monitoring and reporting."""
+        return (
+            "Create a Frappe Dashboard that links existing charts together (not an Insights dashboard). "
+            "WORKFLOW: create charts first with create_dashboard_chart, then use this to link them. "
+            "Supports user/role sharing, mobile-responsive layout, and PDF/Excel export."
+        )
 
     def execute(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
         """Create comprehensive dashboard"""

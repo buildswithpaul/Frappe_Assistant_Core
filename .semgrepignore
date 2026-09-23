@@ -1,6 +1,31 @@
-# OAuth/OIDC discovery and token endpoints must be publicly accessible (allow_guest=True)
-# per OpenID Connect, RFC 8414, RFC 9728, and MCP specifications.
-# Excluding from semgrep as inline nosemgrep comments are incompatible with ruff formatting.
-frappe_assistant_core/api/oauth_discovery.py
-frappe_assistant_core/api/oauth_token.py
-frappe_assistant_core/api/oauth_registration.py
+# Paths excluded from Semgrep (frappe/semgrep-rules, run by
+# .github/workflows/linter.yml and the local pre-commit hook).
+#
+
+# rules/security/authorization.yml:relaxed-permissions matches any DocPerm
+# object naming the "All" role, with no way to express that the grant is
+# scoped. DocType JSON has no comment syntax, so there is nowhere to put a
+# `nosemgrep` annotation — the file is the only granularity available.
+#
+# The four DocTypes below are per-user chat records, so every user needs a
+# grant and "All" is the only role every user holds. The grant is narrowed
+# three ways:
+#
+#   1. `if_owner: 1` on the All DocPerm, so the role reaches only rows the
+#      user created. Frappe exempts `create` from if_owner, and each row is
+#      written with `user = frappe.session.user`, so owner and user always
+#      agree (see chat/doctype/fac_chat_message/fac_chat_message.py).
+#   2. `permission_query_conditions` hooks that filter every list query to
+#      `user = <session user>` (chat/utils/permissions.py).
+#   3. `has_permission` hooks that repeat the check per document.
+#
+# Each DocType also carries a separate System Manager DocPerm without
+# if_owner, so administrators are unaffected.
+#
+# Removing a file from this list is the right move the moment its "All"
+# grant stops being owner-scoped.
+
+frappe_assistant_core/chat/doctype/fac_chat_message/fac_chat_message.json
+frappe_assistant_core/chat/doctype/fac_chat_usage_log/fac_chat_usage_log.json
+frappe_assistant_core/chat/doctype/fac_chat_user_preferences/fac_chat_user_preferences.json
+frappe_assistant_core/chat/doctype/fac_chat_banner_dismissal/fac_chat_banner_dismissal.json

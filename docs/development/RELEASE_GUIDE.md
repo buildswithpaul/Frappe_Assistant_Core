@@ -4,6 +4,7 @@
 
 ```
 main          ← production-ready, auto-releases on merge
+beta          ← pre-release channel, auto-publishes X.Y.Z-beta.N
 develop       ← integration branch, all PRs target here
 feature/*     ← new features
 bug/*         ← bug fixes
@@ -154,6 +155,31 @@ Frappe reads `frappe_assistant_core/change_log/v2/vX_Y_Z.md` files to show the "
 
 For hotfixes, include the change log file in the hotfix branch before merging to main.
 
+## Pre-release (Beta) Flow
+
+For shipping a major version to early adopters before it is production-ready.
+
+`.releaserc` declares `beta` as a prerelease channel, so semantic-release
+treats pushes there exactly like `main` — except versions get a `-beta.N`
+suffix and the GitHub Release is flagged **pre-release**.
+
+1. Branch `beta` from `main` (not `develop`) so the version maths starts from
+   the last stable release
+2. Push commits using the normal conventional format. A `feat!:` or a
+   `BREAKING CHANGE:` footer on a `beta` branch at 2.5.0 produces `3.0.0-beta.1`
+3. **Automatic**: semantic-release versions, tags, and publishes the GitHub
+   Release marked as pre-release
+4. Each subsequent push to `beta` increments the suffix — `beta.2`, `beta.3`
+5. At GA: merge `beta` into `main`. semantic-release drops the suffix and cuts
+   the stable release
+
+`pip install frappe_assistant_core` will **not** resolve to a pre-release —
+users have to opt in with `--pre` or pin the exact version. That is what makes
+a beta safe to publish alongside a stable line.
+
+`main` keeps serving stable releases and `develop` stays free for work on the
+current major throughout.
+
 ## Hotfix Flow
 
 For urgent fixes that can't wait for the next release:
@@ -171,7 +197,7 @@ For urgent fixes that can't wait for the next release:
 | CI (`ci.yml`) | Push to `main`, PRs | Full test suite on Frappe v15 (Python 3.12) AND v16 (Python 3.14) |
 | Linters (`linter.yml`) | PRs | Pre-commit hooks + Frappe semgrep rules + pip-audit |
 | Commit Lint (`commitlint.yml`) | PRs | Validates conventional commit format |
-| Release (`release.yml`) | Push to `main` | Semantic-release: auto-version, tag, GitHub Release |
+| Release (`release.yml`) | Push to `main` or `beta` | Semantic-release: auto-version, tag, GitHub Release (pre-release on `beta`) |
 | Stale (`stale.yml`) | Daily | Auto-closes issues after 30+7 days of inactivity |
 | Welcome (`welcome.yml`) | First issue/PR | Greets first-time contributors |
 

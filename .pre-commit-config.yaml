@@ -32,9 +32,12 @@ repos:
         name: "Run ruff formatter"
 
   # Frappe semgrep rules — same configs the CI 'Linters' workflow uses
-  # (.github/workflows/linter.yml). Runs only on changed Python files.
-  # The wrapper script clones frappe/semgrep-rules into ~/.cache the first
-  # time and refreshes it weekly.
+  # (.github/workflows/linter.yml). The wrapper script clones
+  # frappe/semgrep-rules into ~/.cache the first time and refreshes it weekly.
+  #
+  # Every language the rule set covers, not just Python: this hook was
+  # python-only until 3.0 and so never saw the JS and DocType-JSON rules,
+  # which then failed in CI on a branch that was green locally.
   - repo: local
     hooks:
       - id: frappe-semgrep
@@ -42,7 +45,7 @@ repos:
         entry: scripts/run_frappe_semgrep.sh
         language: python
         additional_dependencies: ["semgrep==1.159.0"]
-        types: [python]
+        types_or: [python, javascript, jsx, ts, tsx, vue, json]
         require_serial: true
 
   # Commitlint — mirrors .github/workflows/commitlint.yml. Runs on the

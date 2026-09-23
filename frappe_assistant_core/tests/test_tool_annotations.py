@@ -33,7 +33,11 @@ import frappe
 from werkzeug.wrappers import Request, Response
 
 from frappe_assistant_core.tests.base_test import BaseAssistantTest
-from frappe_assistant_core.utils.tool_category_detector import category_to_annotations
+from frappe_assistant_core.utils.tool_category_detector import (
+    READ_ONLY_TOOLS,
+    WRITE_TOOLS,
+    category_to_annotations,
+)
 
 
 class TestCategoryToAnnotations(BaseAssistantTest):
@@ -63,6 +67,24 @@ class TestCategoryToAnnotations(BaseAssistantTest):
     def test_unknown_category_yields_no_hints(self):
         # Unknown -> empty dict (degrade to "no hint", never a wrong hint).
         self.assertEqual(category_to_annotations("something_else"), {})
+
+
+class TestGenerateDocumentIsWrite(BaseAssistantTest):
+    """generate_document saves a private Frappe File — it is a write tool, not
+    read-only. Mislabeling it read-only leaked it into the delegate helper's
+    write-free toolset, letting a delegated subtask produce a document unasked."""
+
+    def test_generate_document_classified_as_write(self):
+        self.assertIn("generate_document", WRITE_TOOLS)
+        self.assertNotIn("generate_document", READ_ONLY_TOOLS)
+
+    def test_generate_document_annotation_is_not_read_only(self):
+        # The read-only delegate filter trusts readOnlyHint; write must be False
+        # so the tool is excluded from the helper's read-only toolset.
+        self.assertEqual(
+            category_to_annotations("write").get("readOnlyHint"),
+            False,
+        )
 
 
 class TestResolveToolCategories(BaseAssistantTest):

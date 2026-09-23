@@ -165,8 +165,15 @@ class PromptTemplate(Document):
         self.clear_prompt_cache()
 
     def clear_prompt_cache(self):
-        """Clear prompt-related caches."""
-        frappe.cache.hdel("prompt_templates", frappe.local.site)
+        """Clear prompt-related caches.
+
+        The slash-menu catalog is assembled by FAC Cloud and cached per user,
+        so a local write here has to invalidate it or the change stays
+        invisible until the TTL expires.
+        """
+        from frappe_assistant_core.chat.api.prompts import clear_prompt_catalog_cache
+
+        clear_prompt_catalog_cache()
 
     @frappe.whitelist()
     def create_version(self, notes: str = None) -> str:

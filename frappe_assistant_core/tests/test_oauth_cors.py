@@ -49,12 +49,19 @@ class TestOAuthAuthHeaderBypass(unittest.TestCase):
 
         # Store the real get_request_header to restore after each test
         self._original_get_request_header = frappe.get_request_header
+        # A mock request left bound on frappe.local leaks into every later
+        # test in the process: get_url() falls through to
+        # frappe.local.request.host whenever site_config sets no host_name, so
+        # unrelated code ends up concatenating a MagicMock. A dev bench hides
+        # it because it does set host_name; CI does not.
+        self._original_request = getattr(frappe.local, "request", None)
 
     def tearDown(self):
         """Restore frappe.get_request_header to its original function."""
         import frappe_assistant_core.api.oauth_cors as cors_module
 
         frappe.get_request_header = self._original_get_request_header
+        frappe.local.request = self._original_request
         cors_module._AUTH_PATCH_INSTALLED = False
 
         # Clean up the per-request flag if set

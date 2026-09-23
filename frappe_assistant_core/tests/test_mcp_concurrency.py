@@ -122,8 +122,15 @@ def _handle(server: MCPServer, request: MagicMock, tool_registry) -> Response:
     worker thread must bind its own request; this helper does that for whichever
     thread calls it.
     """
+    original = getattr(frappe.local, "request", None)
     frappe.local.request = request
-    return server.handle(request, Response(), tool_registry=tool_registry)
+    try:
+        return server.handle(request, Response(), tool_registry=tool_registry)
+    finally:
+        # Unbind again. A mock left on frappe.local outlives this test and
+        # reaches get_url(), which falls through to frappe.local.request.host
+        # on any site whose config sets no host_name.
+        frappe.local.request = original
 
 
 def _registry_with(*tools) -> "OrderedDict[str, dict]":

@@ -20,19 +20,38 @@ Provides common setup and utilities for all test classes
 """
 
 import json
-import unittest
 from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
 import frappe
 
+# Frappe v16 moved IntegrationTestCase into frappe.tests.classes; on v15 the
+# same class-level transaction + rollback contract is FrappeTestCase in
+# frappe.tests.utils, and frappe.tests.classes does not exist at all. Importing
+# only the v16 path makes the whole FAC suite unimportable on v15, which is why
+# `Server (version-15)` could not collect a single test.
+try:
+    from frappe.tests.classes.integration_test_case import IntegrationTestCase
+except ImportError:  # Frappe v15
+    from frappe.tests.utils import FrappeTestCase as IntegrationTestCase
 
-class BaseAssistantTest(unittest.TestCase):
+
+class BaseAssistantTest(IntegrationTestCase):
     """Base test class with common setup and utilities"""
+
+    SHOW_TRANSACTION_COMMIT_WARNINGS = True
 
     @classmethod
     def setUpClass(cls):
-        """Set up class-level test environment"""
+        """Set up class-level test environment.
+
+        Extends IntegrationTestCase's class-level transaction setup. The
+        monkey-patched commit() runs INSIDE the IntegrationTestCase
+        transaction, so any production code that calls frappe.db.commit()
+        during a test silently no-ops and gets rolled back at class teardown.
+        """
+        super().setUpClass()
+
         # Ensure we're in test mode
         frappe.flags.in_test = True
 
@@ -40,6 +59,32 @@ class BaseAssistantTest(unittest.TestCase):
         if not hasattr(frappe, "session") or not frappe.session.user:
             # nosemgrep: frappe-setuser — test bootstrap; tests run in isolated transaction
             frappe.set_user("Administrator")
+
+        cls._block_commits()
+
+    @classmethod
+    def _block_commits(cls):
+        """Replace frappe.db.commit with a no-op for the duration of the test class.
+
+        Production code (API endpoints, scheduler jobs, doc lifecycle hooks)
+        legitimately calls frappe.db.commit(). When that code runs inside a
+        test, the commit permanently writes test data to the dev database,
+        defeating IntegrationTestCase's automatic rollback.
+
+        This method monkey-patches commit() to a no-op and registers cleanup
+        via addClassCleanup (LIFO) to restore it. Because _block_commits
+        runs AFTER super().setUpClass() (which registers _rollback_db), the
+        restore fires BEFORE _rollback_db — so the real commit is back in
+        place when the final rollback runs.
+        """
+        original_commit = frappe.db.__class__.commit
+
+        @staticmethod
+        def _noop_commit():
+            pass
+
+        frappe.db.__class__.commit = _noop_commit
+        cls.addClassCleanup(setattr, frappe.db.__class__, "commit", original_commit)
 
     def setUp(self):
         """Set up test environment for each test"""
@@ -101,7 +146,7 @@ class BaseAssistantTest(unittest.TestCase):
         return tool_result
 
     def tearDown(self):
-        """Clean up after each test"""
+        """Clean up after each test."""
         self.clear_test_data()
         self.cleanup_mocks()
 
@@ -143,7 +188,6 @@ class BaseAssistantTest(unittest.TestCase):
                     enabled_plugins.append("core")
                     settings.enabled_plugins_list = json.dumps(enabled_plugins)
                     settings.save(ignore_permissions=True)
-                    frappe.db.commit()
             else:
                 # Create settings with core plugin enabled
                 doc = frappe.get_doc(
@@ -154,7 +198,6 @@ class BaseAssistantTest(unittest.TestCase):
                     }
                 )
                 doc.insert(ignore_permissions=True)
-                frappe.db.commit()
 
             # Force plugin manager refresh to load enabled plugins
             from frappe_assistant_core.utils.plugin_manager import get_plugin_manager
@@ -175,8 +218,6 @@ class BaseAssistantTest(unittest.TestCase):
             for doctype in test_doctypes:
                 if frappe.db.exists("DocType", doctype):
                     frappe.db.delete(doctype, {"name": ("like", "TEST_%")})
-
-            frappe.db.commit()
         except Exception:
             # Ignore cleanup errors in tests
             pass

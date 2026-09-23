@@ -1,0 +1,227 @@
+/* ============================================================================
+   QUIET LEDGER — single design-token source of truth for the SPA.
+   The only token namespace; all legacy aliases have been removed.
+   Light = "Paper", Dark = "Ink Ledger" (warm charcoal). Applied via
+   [data-theme="dark"]; .high-contrast is the third theme.
+   ============================================================================ */
+
+:root {
+  /* ---- Surfaces & borders (Light / "Paper") ---- */
+  --ql-bg: #FBFAF8;
+  --ql-surface: #FFFFFF;
+  --ql-subtle: #F5F3EF;
+  --ql-border: #ECE9E3;
+  --ql-border-hover: #DEDAD2;
+
+  /* Graph edges on the agent-builder canvas. NOT --ql-border: that is a
+     hairline for panel dividers and sits at 1.16:1 on --ql-bg, which made
+     every connector invisible. A line you must trace across a canvas needs
+     the 3:1 WCAG asks of a graphical object. */
+  --ql-edge: #8A857C;
+
+  /* ---- Text ---- */
+  --ql-text: #1A1A17;
+  --ql-text-secondary: #57534C;
+  --ql-text-muted: #8A857C;
+
+  /* ---- Brand accent (teal-green) ---- */
+  --ql-accent: #0F6E5C;
+  --ql-accent-hover: #0B5A4B;
+  --ql-accent-soft: rgba(15, 110, 92, 0.08);
+
+  /* ---- Gold: trust/consequence + money ONLY ---- */
+  --ql-gold: #C9A227;
+  --ql-gold-soft: rgba(201, 162, 39, 0.14);
+
+  /* ---- Status ---- */
+  --ql-success: #1E7A52;
+  --ql-warning: #B8791A;
+  --ql-danger: #B4453A;
+
+  /* ---- Spacing scale (4px base) ---- */
+  --ql-space-1: 4px;
+  --ql-space-2: 8px;
+  --ql-space-3: 12px;
+  --ql-space-4: 16px;
+  --ql-space-6: 24px;
+  --ql-space-8: 32px;
+  --ql-space-12: 48px;
+
+  /* ---- Radius scale ---- */
+  --ql-radius-sm: 6px;
+  --ql-radius-md: 8px;
+  --ql-radius-lg: 10px;
+  --ql-radius-xl: 12px;
+  --ql-radius-2xl: 14px;
+
+  /* ---- Typography ---- */
+  --ql-font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --ql-font-serif: "Source Serif 4", Georgia, "Times New Roman", serif;
+  --ql-font-mono: ui-monospace, "SF Mono", "SFMono-Regular", Menlo, Monaco, "Cascadia Code", "Roboto Mono", Consolas, monospace;
+
+  /* ---- Data-viz palette (teal-anchored sequence, §2.4) ---- */
+  --ql-viz-1: #0F6E5C; /* brand teal */
+  --ql-viz-2: #2DAA8F; /* brightened teal */
+  --ql-viz-3: #C9A227; /* muted gold */
+  --ql-viz-4: #B8791A; /* warm amber */
+  --ql-viz-5: #8A857C; /* warm neutral */
+  --ql-viz-6: #57534C; /* deep warm neutral */
+  --ql-viz-7: #1E7A52; /* success green */
+  --ql-viz-8: #B4453A; /* danger clay */
+
+  /* Chat reading column (Quiet Ledger §3.1) — single source of truth */
+  --ql-read-width: 720px;        /* centered reading column max-width */
+  --ql-read-pad-x: 24px;         /* horizontal padding of the column */
+  --ql-turn-gap: 14px;           /* avatar rail → content gap */
+  --ql-avatar-size: 34px;        /* avatar rail width */
+  --ql-label-size: 10px;         /* uppercase turn label */
+  --ql-label-tracking: 0.08em;   /* turn label letter-spacing */
+  --ql-prompt-size: 16px;        /* user prompt font-size */
+  --ql-body-size: 15px;          /* assistant document body font-size */
+  --ql-body-leading: 1.6;        /* assistant body line-height */
+
+  /* Typography (§2.2) */
+  --ql-font-ui: "Inter", system-ui, -apple-system, sans-serif;
+  --ql-font-display: "Source Serif 4", "Fraunces", Georgia, serif;
+
+  /* ---- Layout metrics (consumed via var(--ql-nav-width, …) in components) ---- */
+  --ql-nav-width: 260px;
+  --ql-nav-collapsed-width: 60px;
+  --ql-topbar-height: 56px;
+}
+
+/* ============================================================================
+   DARK — "Ink Ledger" (warm charcoal, not cold slate)
+   ============================================================================ */
+[data-theme="dark"] {
+  --ql-bg: #16150F;
+  --ql-surface: #1E1D16;
+  --ql-subtle: #26241B;
+  --ql-border: #2E2C22;
+  --ql-border-hover: #3A382C;
+
+  --ql-edge: #8A857C;
+
+  --ql-text: #F2EFE6;
+  --ql-text-secondary: #B7B2A4;
+  --ql-text-muted: #8A857C;
+
+  --ql-accent: #2DAA8F; /* brightened for dark */
+  --ql-accent-hover: #3FBBA0;
+  --ql-accent-soft: rgba(45, 170, 143, 0.12);
+
+  --ql-gold: #D9B84A; /* brightened for dark */
+  --ql-gold-soft: rgba(217, 184, 74, 0.16);
+
+  --ql-success: #4FB585;
+  --ql-warning: #D6A14A;
+  --ql-danger: #D66A5E;
+
+  /* data-viz brightened for dark ground */
+  --ql-viz-1: #2DAA8F;
+  --ql-viz-2: #4FB585;
+  --ql-viz-3: #D9B84A;
+  --ql-viz-4: #D6A14A;
+  --ql-viz-5: #B7B2A4;
+  --ql-viz-6: #8A857C;
+  --ql-viz-7: #4FB585;
+  --ql-viz-8: #D66A5E;
+}
+
+/* ============================================================================
+   HIGH CONTRAST — third theme. Maximum legibility; keeps the warm hue family.
+   ============================================================================ */
+.high-contrast,
+[data-theme="high-contrast"] {
+  --ql-bg: #FFFFFF;
+  --ql-surface: #FFFFFF;
+  --ql-subtle: #F2F2F2;
+  --ql-border: #000000;
+  --ql-border-hover: #000000;
+
+  --ql-edge: #000000;
+
+  --ql-text: #000000;
+  --ql-text-secondary: #1A1A17;
+  --ql-text-muted: #333333;
+
+  --ql-accent: #0B5A4B;
+  --ql-accent-hover: #083F35;
+  --ql-accent-soft: rgba(11, 90, 75, 0.16);
+
+  --ql-gold: #8A6E0F;
+  --ql-gold-soft: rgba(138, 110, 15, 0.18);
+
+  --ql-success: #0E5C39;
+  --ql-warning: #8A5A0F;
+  --ql-danger: #8A2A22;
+}
+
+/* ============================================================================
+   BASE — migrated out of the retired theme.css.
+   ============================================================================ */
+html, body, #app {
+  height: 100%;
+  height: 100svh;
+  max-height: 100svh;
+  margin: 0;
+  overflow: hidden;
+}
+
+body {
+  font-family: var(--ql-font-sans);
+  background-color: var(--ql-bg);
+  color: var(--ql-text);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Global on-brand focus ring. Component focus styles (added in 5.1–5.3)
+   may override this; here we guarantee every interactive element gets a
+   consistent teal focus-visible outline for keyboard navigation. */
+:where(a, button, input, textarea, select, [tabindex]):focus-visible {
+  outline: 2px solid var(--ql-accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Smooth theme-change transitions (kept from theme.css) */
+*, *::before, *::after {
+  transition-property: background-color, border-color, color;
+  transition-duration: 150ms;
+  transition-timing-function: ease;
+}
+.no-transitions *, .no-transitions *::before, .no-transitions *::after {
+  transition: none !important;
+}
+
+/* Accessibility intent kept from the retired accessibility.css */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  /* Robot keyframes live in robot.css; neutralize them here too
+     (belt-and-suspenders — robot.css ships its own guard). */
+  .faco-robot, .faco-robot * {
+    animation: none !important;
+  }
+}
+
+/* Jump-to-message flash (Ledger Index) */
+.ql-jump-flash {
+  animation: ql-jump-flash 1.2s ease-out;
+}
+@keyframes ql-jump-flash {
+  0% { background-color: var(--ql-accent-soft); }
+  100% { background-color: transparent; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ql-jump-flash {
+    animation: none;
+    outline: 2px solid var(--ql-accent);
+    outline-offset: 2px;
+  }
+}

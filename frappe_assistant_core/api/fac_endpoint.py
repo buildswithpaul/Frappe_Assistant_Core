@@ -369,6 +369,11 @@ def handle_mcp():
     # Authentication successful - auth_result is the username
     authenticated_user = auth_result
 
+    # Conversation this call belongs to, when the caller is AR. Browser tools
+    # read it to reach the one tab that asked; absent, they fall back to the
+    # user room (every tab).
+    frappe.local.ar_session_id = frappe.request.headers.get("X-AR-Session-Id") or None
+
     # Check if user has assistant access enabled
     if not _check_assistant_enabled(authenticated_user):
         frappe.throw(
