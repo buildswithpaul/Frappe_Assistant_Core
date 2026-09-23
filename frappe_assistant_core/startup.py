@@ -27,6 +27,13 @@ from frappe_assistant_core.utils.logger import api_logger
 def startup():
     """App startup initialization"""
     try:
+        # Persist encryption_key before any Password-field write (tenant_secret).
+        # A missing/racy key corrupts FAC Chat Settings.tenant_secret on first
+        # registration and surfaces as "Encryption key is invalid" on connect.
+        from frappe_assistant_core.chat.tenant_credentials import ensure_encryption_key
+
+        ensure_encryption_key()
+
         # Initialize plugin manager - this automatically loads enabled plugins from settings
         initialize_plugin_system()
 

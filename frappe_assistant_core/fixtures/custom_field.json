@@ -46,5 +46,21 @@
   "remember_last_selected_value": 0,
   "sort_options": 0,
   "width": null
+ },
+ {
+  "doctype": "Custom Field",
+  "name": "File-fac_pending_chat_attachment",
+  "dt": "File",
+  "fieldname": "fac_pending_chat_attachment",
+  "label": "FAC Pending Chat Attachment",
+  "fieldtype": "Check",
+  "default": "0",
+  "insert_after": "is_private",
+  "description": "Uploaded for a FAC chat message but never sent; swept if still unlinked after 24h",
+  "translatable": 0,
+  "hidden": 1,
+  "no_copy": 1,
+  "print_hide": 1,
+  "report_hide": 1
  }
 ]

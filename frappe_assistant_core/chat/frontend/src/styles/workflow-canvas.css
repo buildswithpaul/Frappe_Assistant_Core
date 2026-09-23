@@ -1,0 +1,112 @@
+/* ============================================================================
+   Vue Flow canvas theming for the agent builder.
+
+   Global rather than scoped: every selector targets a Vue Flow class that our
+   own markup never emits, and the run-state rules have to cross into the
+   scoped custom node components (.workflow-node) that Vue Flow wraps.
+   ============================================================================ */
+
+.workflow-canvas .vue-flow__pane {
+  background: var(--ql-bg);
+}
+
+.workflow-canvas .vue-flow__edge-path {
+  stroke: var(--ql-edge);
+  stroke-width: 2;
+}
+
+/* The line you drag before releasing. Accent, so an in-progress connection
+   reads as different from a committed edge instead of looking identical. */
+.workflow-canvas .vue-flow__connection-path {
+  stroke: var(--ql-accent);
+  stroke-width: 2;
+}
+
+/* Arrowheads inherit their own fill, not the path stroke. */
+.workflow-canvas .vue-flow__arrowhead polyline,
+.workflow-canvas .vue-flow__arrowhead path {
+  stroke: var(--ql-edge);
+  fill: var(--ql-edge);
+}
+
+.workflow-canvas .vue-flow__edge.selected .vue-flow__edge-path,
+.workflow-canvas .vue-flow__edge:hover .vue-flow__edge-path {
+  stroke: var(--ql-accent);
+  stroke-width: 2.5;
+}
+
+.workflow-canvas .vue-flow__edge-textbg {
+  fill: var(--ql-surface);
+}
+
+.workflow-canvas .vue-flow__edge-text {
+  fill: var(--ql-text-muted);
+  font-size: 0.6875rem;
+}
+
+.workflow-canvas .vue-flow__controls {
+  background: var(--ql-surface);
+  border: 1px solid var(--ql-border);
+  border-radius: 0.5rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.workflow-canvas .vue-flow__minimap {
+  background-color: var(--ql-surface);
+  border: 1px solid var(--ql-border);
+  border-radius: 0.5rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.workflow-canvas .vue-flow__controls-button {
+  background: var(--ql-surface);
+  border-bottom: 1px solid var(--ql-border);
+  fill: var(--ql-text);
+}
+
+.workflow-canvas .vue-flow__controls-button:hover {
+  background: var(--ql-subtle);
+}
+
+.workflow-canvas .vue-flow__handle {
+  width: 10px;
+  height: 10px;
+  background: var(--ql-border);
+  border: 2px solid var(--ql-surface);
+}
+
+.workflow-canvas .vue-flow__handle:hover,
+.workflow-canvas .vue-flow__handle.connecting {
+  background: var(--ql-accent);
+}
+
+/* ---- Live run state ----------------------------------------------------
+   The status class lands on Vue Flow's node wrapper; the visible box is our
+   own .workflow-node inside it. */
+
+.workflow-canvas .run-completed .workflow-node {
+  border-color: var(--ql-success);
+}
+
+.workflow-canvas .run-running .workflow-node {
+  border-color: var(--ql-accent);
+  animation: ql-pulse-border 1.5s ease-in-out infinite;
+}
+
+.workflow-canvas .run-failed .workflow-node {
+  border-color: var(--ql-danger);
+}
+
+.workflow-canvas .run-skipped .workflow-node {
+  opacity: 0.55;
+}
+
+@keyframes ql-pulse-border {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(15, 110, 92, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(15, 110, 92, 0);
+  }
+}

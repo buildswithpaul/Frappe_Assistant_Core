@@ -1,211 +1,42 @@
-# Frappe Assistant Core Documentation
+# Frappe Assistant Core — Repository Documentation
 
-Welcome to the comprehensive documentation for **Frappe Assistant Core** - the open source AI assistant integration for Frappe Framework and ERPNext.
+> **User documentation has moved to [docs.assistantcore.cloud](https://docs.assistantcore.cloud).**
+>
+> If you're installing FAC, configuring OAuth, calling the MCP API, or looking for the tool reference, start there.
 
-## 📚 Documentation Structure
+## What lives in this folder
 
-Our documentation is organized into focused sections for easy navigation:
+This directory contains documentation that ships **with the code** — either because contributors editing FAC need it close at hand, or because the docs *are* the artefact (the bundled skill markdowns).
 
-### 🚀 [Getting Started](getting-started/)
+### Development guides — for people editing FAC
 
-Quick start guides and setup instructions for new users:
+- **[DEVELOPMENT_GUIDE.md](development/DEVELOPMENT_GUIDE.md)** — local dev setup, code style, debugging
+- **[PLUGIN_DEVELOPMENT.md](development/PLUGIN_DEVELOPMENT.md)** — write an internal plugin
+- **[EXTERNAL_APP_DEVELOPMENT.md](development/EXTERNAL_APP_DEVELOPMENT.md)** — register tools from your own Frappe app via the `assistant_tools` hook
+- **[SKILLS_DEVELOPER_GUIDE.md](development/SKILLS_DEVELOPER_GUIDE.md)** — ship markdown skills via the `assistant_skills` hook
+- **[TEST_CASE_CREATION_GUIDE.md](development/TEST_CASE_CREATION_GUIDE.md)** — test patterns and conventions
+- **[OAUTH_CORS_CONFIGURATION.md](development/OAUTH_CORS_CONFIGURATION.md)** — CORS configuration for browser-based MCP clients (development only)
+- **[PRE_COMMIT_SETUP.md](development/PRE_COMMIT_SETUP.md)** — local pre-commit hook setup
+- **[RELEASE_GUIDE.md](development/RELEASE_GUIDE.md)** — release and versioning workflow
 
-- **[Getting Started Guide](getting-started/GETTING_STARTED.md)** - Complete setup guide for new users
-- **[Quick Start: Claude Desktop](getting-started/QUICK_START_CLAUDE_DESKTOP.md)** - Connect Claude Desktop in 5 minutes
-- **[Migration Guide](getting-started/MIGRATION_GUIDE.md)** - Migrate from STDIO to OAuth
+### Bundled skill content
 
-#### OAuth Setup
-- **[OAuth Setup Guide](getting-started/oauth/oauth_setup_guide.md)** - Comprehensive OAuth configuration
-- **[OAuth Quick Start](getting-started/oauth/oauth_quick_start.md)** - OAuth setup in 2 minutes
-- **[OAuth Changelog](getting-started/oauth/OAUTH_CHANGELOG.md)** - OAuth feature updates
+The [`skills/`](skills/) folder holds the markdown bodies of the FAC Skills that ship with the app — one file per MCP tool, each one teaching the LLM how to use that tool well. They pair with the manifest at [`frappe_assistant_core/data/system_skills.json`](../frappe_assistant_core/data/system_skills.json) (which lists the `skill_id`, `linked_tool`, and `content_file` for each entry).
 
----
+These files live in the repo (not on the docs site) because they are versioned alongside the tool code — when a tool's signature changes, its skill markdown changes in the same commit.
 
-### 🏗️ [Architecture](architecture/)
+## Looking for something else?
 
-System design, technical architecture, and implementation details:
+| You want to… | Go to |
+|---|---|
+| Install FAC | [docs.assistantcore.cloud/getting-started/installation](https://docs.assistantcore.cloud/getting-started/installation) |
+| Connect Claude Desktop / ChatGPT | [Quick Start](https://docs.assistantcore.cloud/getting-started/quick-start) |
+| Configure OAuth | [OAuth Setup Guide](https://docs.assistantcore.cloud/getting-started/oauth/setup-guide) |
+| Browse the tool catalogue | [Tool Reference](https://docs.assistantcore.cloud/api/tool-reference) |
+| Read release notes | [Changelog](https://docs.assistantcore.cloud/reference/changelog) |
+| Report a bug or request a feature | [GitHub Issues](https://github.com/buildswithpaul/Frappe_Assistant_Core/issues) |
+| Sponsor ongoing development | [GitHub Sponsors](https://github.com/sponsors/buildswithpaul) |
 
-- **[Architecture Overview](internals/INTERNALS.md)** - System design and plugin architecture
-- **[MCP StreamableHTTP Guide](architecture/MCP_STREAMABLEHTTP_GUIDE.md)** - OAuth + StreamableHTTP integration
-- **[Technical Documentation](architecture/TECHNICAL_DOCUMENTATION.md)** - Complete technical reference
-- **[Performance Guide](architecture/PERFORMANCE.md)** - Optimization and monitoring
+## Contributing
 
----
-
-### 📖 [API Reference](api/)
-
-Complete API documentation and tool references:
-
-- **[API Reference](api/API_REFERENCE.md)** - MCP protocol endpoints and OAuth APIs
-- **[Tool Reference](api/TOOL_REFERENCE.md)** - Complete catalog of all 21 available tools
-
----
-
-### 📋 [Guides](guides/)
-
-User guides for administrators managing the system:
-
-- **[Tool Management Guide](guides/TOOL_MANAGEMENT_GUIDE.md)** - Enable/disable tools, configure role-based access
-- **[Plugin Management Guide](guides/PLUGIN_MANAGEMENT_GUIDE.md)** - Enable/disable plugins, manage tool groups
-- **[Skills User Guide](guides/SKILLS_USER_GUIDE.md)** - Create, publish, and share markdown skills that teach the LLM how to use your tools
-
----
-
-### 🛠️ [Development](development/)
-
-Guides for developers building custom tools and plugins:
-
-- **[Development Guide](development/DEVELOPMENT_GUIDE.md)** - Create custom tools and plugins
-- **[External App Development](development/EXTERNAL_APP_DEVELOPMENT.md)** - Create tools in your Frappe apps (recommended)
-- **[Skills Developer Guide](development/SKILLS_DEVELOPER_GUIDE.md)** - Ship markdown skills with your Frappe app via the `assistant_skills` hook
-- **[Plugin Development](development/PLUGIN_DEVELOPMENT.md)** - Create internal plugins for core features
-- **[Test Case Creation Guide](development/TEST_CASE_CREATION_GUIDE.md)** - Testing patterns and best practices
-- **[OAuth CORS Configuration](development/OAUTH_CORS_CONFIGURATION.md)** - CORS setup for MCP Inspector (development only)
-
----
-
-### 📚 [Reference](reference/)
-
-Additional resources and references:
-
-- **[Changelog](reference/CHANGELOG.md)** - Version history and changes
-- **[Capabilities Report](reference/CAPABILITIES_REPORT.md)** - Feature capabilities overview
-- **[Templates](reference/templates)** - Documentation templates
-
----
-
-## 🔍 Quick Navigation
-
-### By User Type
-
-**👤 End Users:**
-1. Start with [Getting Started Guide](getting-started/GETTING_STARTED.md)
-2. Follow [Claude Desktop Quick Start](getting-started/QUICK_START_CLAUDE_DESKTOP.md)
-3. Explore [Tool Reference](api/TOOL_REFERENCE.md) to see what's possible
-
-**👨‍💻 Developers:**
-1. Review [Architecture Overview](internals/INTERNALS.md)
-2. Study [Development Guide](development/DEVELOPMENT_GUIDE.md)
-3. Check [API Reference](api/API_REFERENCE.md) for integration details
-
-**🔧 System Administrators:**
-1. Follow [Getting Started Guide](getting-started/GETTING_STARTED.md)
-2. Configure [OAuth Setup](getting-started/oauth/oauth_setup_guide.md)
-3. Review [Performance Guide](architecture/PERFORMANCE.md)
-
-### By Topic
-
-**OAuth & Authentication:**
-- [OAuth Setup Guide](getting-started/oauth/oauth_setup_guide.md)
-- [OAuth Quick Start](getting-started/oauth/oauth_quick_start.md)
-- [MCP StreamableHTTP Guide](architecture/MCP_STREAMABLEHTTP_GUIDE.md)
-
-**MCP Protocol:**
-- [MCP StreamableHTTP Guide](architecture/MCP_STREAMABLEHTTP_GUIDE.md)
-- [API Reference](api/API_REFERENCE.md)
-- [Architecture Overview](internals/INTERNALS.md)
-
-**Tool Development:**
-- [Development Guide](development/DEVELOPMENT_GUIDE.md)
-- [External App Development](development/EXTERNAL_APP_DEVELOPMENT.md)
-- [Plugin Development](development/PLUGIN_DEVELOPMENT.md)
-
-**Tool & Plugin Management:**
-- [Tool Management Guide](guides/TOOL_MANAGEMENT_GUIDE.md) - Enable/disable tools, role-based access
-- [Plugin Management Guide](guides/PLUGIN_MANAGEMENT_GUIDE.md) - Enable/disable plugins
-- [Architecture Overview](internals/INTERNALS.md) - System design
-
----
-
-## 🔧 System Overview
-
-Frappe Assistant Core provides **21 tools** organized in a plugin-based architecture:
-
-### Core Plugins (Always Enabled)
-- **Document Operations** - CRUD operations for all Frappe DocTypes
-- **Search & Discovery** - Global and targeted search capabilities
-- **Metadata Tools** - DocType information and schema discovery
-- **Report Tools** - Execute Frappe reports and analytics
-- **Workflow Tools** - Workflow actions and queue management
-
-### Optional Plugins (Can be enabled/disabled)
-- **Data Science Plugin** - Python code execution, statistical analysis
-- **Visualization Plugin** - Charts, dashboards, and KPIs
-- **Batch Processing Plugin** - Bulk operations and data import
-- **WebSocket Plugin** - Real-time streaming (experimental)
-
-### External App Tools
-- Tools from your custom Frappe apps
-- Discovered automatically via hooks
-- Full integration with core features
-
----
-
-## 🎯 Key Features
-
-- **🔌 OAuth 2.0 Authentication** - Industry-standard security with dynamic client registration
-- **🌐 MCP StreamableHTTP** - Modern HTTP-based protocol (RFC 9728 compliant)
-- **🔒 Enterprise Security** - Role-based permissions, audit logging, sensitive data filtering
-- **📦 Plugin Architecture** - Extensible framework for custom business logic
-- **🔄 Frappe v15/v16 Compatible** - Works with both Frappe versions
-- **⚡ Performance Optimized** - Fast, stateless, and scalable
-
----
-
-## 📖 Documentation Conventions
-
-### File Naming
-- `UPPERCASE.md` - Major documentation files
-- `lowercase.md` - Supplementary files
-- Folders use `lowercase-with-hyphens`
-
-### Links
-- All internal links use relative paths
-- External links use absolute URLs
-- Broken links? [Report an issue](https://github.com/buildswithpaul/Frappe_Assistant_Core/issues)
-
-### Code Examples
-- Python examples use Frappe v15 compatible code
-- Shell commands show both development and production usage
-- Configuration examples include comments
-
----
-
-## 🆘 Need Help?
-
-### Community Support
-- 🐛 **Bug Reports**: [GitHub Issues](https://github.com/buildswithpaul/Frappe_Assistant_Core/issues)
-- 💬 **Questions**: [GitHub Discussions](https://github.com/buildswithpaul/Frappe_Assistant_Core/discussions)
-- 📧 **Email**: jypaulclinton@gmail.com
-
-### Professional Support
-- Custom development and integration
-- Priority bug fixes and features
-- Training and consulting
-
----
-
-## 🤝 Contributing
-
-Want to improve the documentation?
-
-1. **Fork the repository**
-2. **Create a branch** for your changes
-3. **Follow our documentation style**
-4. **Submit a pull request**
-
-See [Contributing Guidelines](../CONTRIBUTING.md) for details.
-
----
-
-## 📄 License
-
-This project is licensed under the **AGPL-3.0 License**.
-
-See the [LICENSE](../LICENSE) file for details.
-
----
-
-**Version:** 2.0.0+
-**Last Updated:** January 2025
-**Protocol:** MCP 2025-03-26 with OAuth 2.0
+See [`Contributing.md`](../Contributing.md) at the repository root.

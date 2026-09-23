@@ -2,8 +2,313 @@
 /* Auto-extracted from fac_admin.js */
 
 .fac-admin-container {
+    /* FAC teal accent — local page-scoped vars (no shared token plumbing). */
+    --fac-accent: #0F6E5C;
+    --fac-accent-soft: rgba(15, 110, 92, 0.12);
     max-width: 1400px;
     margin: 0 auto;
+}
+[data-theme="dark"] .fac-admin-container {
+    --fac-accent: #2DAA8F;
+    --fac-accent-soft: rgba(45, 170, 143, 0.16);
+}
+
+/* ============================================================
+   Layout — page header + two-column body + sidebar
+   ============================================================ */
+.fac-page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 4px 16px;
+    margin-bottom: 8px;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+.fac-page-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--heading-color);
+}
+.fac-page-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.fac-two-col {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 320px;
+    gap: 20px;
+    align-items: start;
+}
+@media (max-width: 1100px) {
+    .fac-two-col {
+        grid-template-columns: 1fr;
+    }
+}
+
+.fac-registry-card {
+    padding-bottom: 16px;
+    /* Override the global card padding so tab nav sits flush */
+    padding-top: 0;
+}
+
+.fac-sidebar {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    position: sticky;
+    top: 16px;
+    /* Match the registry's viewport cap so the sidebar scrolls internally
+       instead of pushing the page taller. Without this, a sidebar taller
+       than the registry leaves a tall empty stretch on the left. */
+    max-height: calc(100vh - 120px);
+    overflow-y: auto;
+    /* Reserve scrollbar gutter so the rightmost card edge doesn't shift
+       when the scrollbar appears/disappears. */
+    scrollbar-gutter: stable;
+    /* Small inside padding so the scrollbar doesn't touch card edges. */
+    padding-right: 4px;
+}
+@media (max-width: 1100px) {
+    .fac-sidebar {
+        position: static;
+        max-height: none;
+        overflow-y: visible;
+        padding-right: 0;
+    }
+}
+
+.fac-sidebar-card {
+    padding: 14px 16px;
+    margin-bottom: 0;
+}
+.fac-sidebar-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+    gap: 8px;
+}
+.fac-sidebar-title {
+    font-weight: 600;
+    color: var(--heading-color);
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.fac-sidebar-label {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    color: var(--text-muted);
+}
+.fac-sidebar-subtle {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-bottom: 10px;
+}
+.fac-sidebar-subtle code {
+    background: var(--bg-color);
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-size: 11px;
+}
+.fac-sidebar-actions {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-top: 8px;
+}
+.fac-endpoint-compact {
+    padding: 6px 8px;
+    font-size: 11px;
+    margin-bottom: 8px;
+    background: var(--control-bg);
+    border-radius: var(--border-radius);
+    border: 1px solid var(--border-color);
+    word-break: break-all;
+}
+
+/* Quick-actions list */
+.fac-quick-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+.fac-quick-list li {
+    margin: 0;
+}
+.fac-quick-list a {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px;
+    margin: 0 -8px;
+    border-radius: 6px;
+    color: var(--text-color);
+    font-size: 13px;
+    text-decoration: none;
+    border-bottom: 1px solid var(--border-color);
+    transition: color 0.15s, background 0.15s;
+}
+.fac-quick-list li:last-child a {
+    border-bottom: none;
+}
+/* Use an explicit light-blue tint that reads in both themes; var(--bg-color)
+   was the same off-white as the card so the hover was invisible. */
+.fac-quick-list a:hover {
+    color: var(--fac-accent);
+    background: var(--fac-accent-soft);
+    text-decoration: none;
+}
+.fac-quick-list a:hover i {
+    color: var(--fac-accent);
+}
+.fac-quick-list a i {
+    color: var(--text-muted);
+    width: 16px;
+    text-align: center;
+    transition: color 0.15s;
+}
+
+/* Chat analytics — 2x2 mini grid + sparkline */
+.fac-analytics-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+.fac-analytics-cell {
+    padding: 8px 10px;
+    background: var(--bg-color);
+    border-radius: var(--border-radius);
+    border: 1px solid var(--border-color);
+}
+.fac-analytics-label {
+    font-size: 10px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    margin-bottom: 2px;
+}
+.fac-analytics-value {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--heading-color);
+    line-height: 1.2;
+}
+/* Gold reserved for money: the Credits stat is the one money number. */
+.fac-analytics-value--money { color: #C9A227; }
+[data-theme="dark"] .fac-analytics-value--money { color: #D9B84A; }
+.fac-analytics-spark {
+    width: 100%;
+    height: 28px;
+    margin-top: 4px;
+}
+.fac-spark-svg {
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+.fac-spark-svg polyline {
+    fill: none;
+    stroke: var(--fac-accent);
+    stroke-width: 1.5;
+    stroke-linejoin: round;
+    stroke-linecap: round;
+    vector-effect: non-scaling-stroke;
+}
+
+/* Scroll area for registry lists.
+   Caps the list to viewport height minus the surrounding chrome (Desk navbar,
+   our page header strip, tab strip, and filter bar) so the page itself stays
+   stationary while the user scrolls the list. The sidebar then remains
+   visible next to the list instead of becoming dead whitespace. */
+.fac-scroll-area {
+    max-height: calc(100vh - 320px);
+    min-height: 320px;
+    overflow-y: auto;
+}
+/* On narrow screens the layout stacks; let the page scroll naturally. */
+@media (max-width: 1100px) {
+    .fac-scroll-area {
+        max-height: none;
+        min-height: 0;
+    }
+}
+
+/* Tab count pills */
+.fac-tab-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 22px;
+    height: 18px;
+    padding: 0 6px;
+    background: var(--bg-color);
+    color: var(--text-muted);
+    border-radius: 9px;
+    font-size: 11px;
+    font-weight: 600;
+    margin-left: 4px;
+}
+/* Use explicit blue (not var(--primary)) — in the Frappe dark theme
+   --primary resolves to near-black, which made the active count invisible
+   against the faint-blue pill background. */
+.fac-top-tab.active .fac-tab-count {
+    background: var(--fac-accent-soft);
+    color: var(--fac-accent);
+}
+
+/* Compact activity list (no thead, no table border) */
+.fac-activity-list {
+    max-height: 320px;
+    overflow-y: auto;
+    font-size: 12px;
+}
+.fac-activity-list .fac-table {
+    font-size: 12px;
+}
+.fac-activity-list .fac-table th {
+    display: none;
+}
+.fac-activity-list .fac-table td {
+    padding: 6px 4px;
+}
+[data-theme="dark"] .fac-analytics-cell {
+    background: rgba(255, 255, 255, 0.04);
+    border-color: rgba(255, 255, 255, 0.08);
+}
+[data-theme="dark"] .fac-tab-count {
+    background: rgba(255, 255, 255, 0.06);
+}
+[data-theme="dark"] .fac-quick-list a {
+    border-color: rgba(255, 255, 255, 0.08);
+}
+[data-theme="dark"] .fac-quick-list a:hover {
+    color: var(--fac-accent);
+    background: var(--fac-accent-soft);
+}
+[data-theme="dark"] .fac-quick-list a:hover i {
+    color: var(--fac-accent);
+}
+[data-theme="dark"] .fac-top-tab.active .fac-tab-count {
+    background: var(--fac-accent-soft);
+    color: var(--fac-accent);
+}
+[data-theme="dark"] .fac-endpoint-compact {
+    background: rgba(255, 255, 255, 0.04);
+    border-color: rgba(255, 255, 255, 0.08);
+}
+[data-theme="dark"] .fac-sidebar-subtle code {
+    background: rgba(255, 255, 255, 0.06);
 }
 .fac-card {
     background: var(--card-bg);
@@ -42,42 +347,6 @@
 .fac-status-indicator.inactive {
     background: var(--red-500);
     box-shadow: 0 0 0 3px var(--red-100);
-}
-.fac-stats-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-    gap: 16px;
-    margin-bottom: 20px;
-}
-.fac-stat-card {
-    background: var(--card-bg);
-    border-radius: var(--border-radius-md);
-    padding: 20px;
-    border-left: 4px solid var(--primary);
-    box-shadow: var(--shadow-sm);
-}
-.fac-stat-card--plugins { border-left-color: var(--primary); }
-.fac-stat-card--tools { border-left-color: var(--green-500); }
-.fac-stat-card--activity { border-left-color: var(--blue-500); }
-.fac-stat-card--prompts { border-left-color: #7c3aed; }
-.fac-stat-card--skills { border-left-color: #0891b2; }
-.fac-stat-card h3 {
-    margin: 0 0 12px 0;
-    font-size: 13px;
-    font-weight: 500;
-    color: var(--text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-}
-.fac-stat-value {
-    font-size: 32px;
-    font-weight: 600;
-    color: var(--heading-color);
-    margin-bottom: 8px;
-}
-.fac-stat-label {
-    font-size: 13px;
-    color: var(--text-muted);
 }
 .fac-tool-item {
     padding: 12px 16px;
@@ -146,7 +415,7 @@
     gap: 8px;
 }
 .fac-plugin-name i {
-    color: var(--primary);
+    color: var(--fac-accent);
 }
 /* Toggle Switch */
 .switch {
@@ -283,9 +552,9 @@ input:checked + .slider:before {
     background: var(--bg-color);
 }
 .fac-view-tab.active {
-    background: var(--primary);
+    background: var(--fac-accent);
     color: white;
-    border-color: var(--primary);
+    border-color: var(--fac-accent);
 }
 /* Category badges */
 .fac-category-badge {
@@ -399,14 +668,14 @@ input:checked + .slider:before {
     margin-left: 8px;
 }
 .fac-tool-settings-btn:hover {
-    background: var(--blue-100);
-    color: var(--blue-600);
-    border-color: var(--blue-400);
+    background: var(--fac-accent-soft);
+    color: var(--fac-accent);
+    border-color: var(--fac-accent);
 }
 .fac-tool-settings-btn.active {
-    background: var(--blue-500);
+    background: var(--fac-accent);
     color: white;
-    border-color: var(--blue-600);
+    border-color: var(--fac-accent);
 }
 /* Tool config panel */
 .fac-tool-config-panel {
@@ -491,7 +760,7 @@ input:checked + .slider:before {
     cursor: pointer;
 }
 .fac-role-remove-btn:focus-visible {
-    outline: 2px solid var(--primary);
+    outline: 2px solid var(--fac-accent);
     outline-offset: 1px;
     border-radius: 2px;
 }
@@ -509,8 +778,8 @@ input:checked + .slider:before {
     transition: all 0.15s;
 }
 .fac-add-role-btn:hover {
-    border-color: var(--primary);
-    color: var(--primary);
+    border-color: var(--fac-accent);
+    color: var(--fac-accent);
 }
 .fac-config-actions {
     display: flex;
@@ -603,8 +872,9 @@ input:checked + .slider:before {
 .fac-top-tabs {
     display: flex;
     gap: 0;
-    border-bottom: 2px solid var(--border-color);
-    margin-bottom: 0;
+    border-bottom: 1px solid var(--border-color);
+    margin: 0 -16px 0;
+    padding: 0 16px;
 }
 .fac-top-tab {
     padding: 12px 20px;
@@ -626,8 +896,8 @@ input:checked + .slider:before {
     background: var(--bg-color);
 }
 .fac-top-tab.active {
-    color: var(--primary);
-    border-bottom-color: var(--primary);
+    color: var(--fac-accent);
+    border-bottom-color: var(--fac-accent);
     font-weight: 600;
 }
 
@@ -638,6 +908,12 @@ input:checked + .slider:before {
 }
 .fac-tab-panel.active {
     display: block;
+}
+.fac-registry-card .fac-tab-panel {
+    padding-top: 16px;
+}
+.fac-registry-card .fac-filter-bar {
+    margin-bottom: 12px;
 }
 
 /* Clean card layout for prompts and skills lists */
@@ -803,9 +1079,9 @@ input:checked + .slider:before {
 
 /* Active state for eye/book expand buttons */
 .fac-tool-settings-btn.active {
-    background: var(--primary-light);
-    color: var(--primary);
-    border-color: var(--primary);
+    background: var(--fac-accent-soft);
+    color: var(--fac-accent);
+    border-color: var(--fac-accent);
 }
 
 /* ===== Server status pill ===== */
@@ -949,7 +1225,7 @@ mark.fac-hl {
     border: none;
     padding: 0;
     margin-top: 4px;
-    color: var(--primary);
+    color: var(--fac-accent);
     font-size: 12px;
     cursor: pointer;
 }
@@ -982,7 +1258,7 @@ mark.fac-hl {
     gap: 4px;
 }
 .fac-view-all:hover {
-    color: var(--primary);
+    color: var(--fac-accent);
     text-decoration: none;
 }
 
@@ -1049,13 +1325,13 @@ mark.fac-hl {
     color: var(--text-color);
 }
 [data-theme="dark"] .fac-top-tab.active {
-    color: #60a5fa;
-    border-bottom-color: #60a5fa;
+    color: var(--fac-accent);
+    border-bottom-color: var(--fac-accent);
 }
 [data-theme="dark"] .fac-tool-settings-btn.active {
-    background: rgba(96, 165, 250, 0.15);
-    color: #60a5fa;
-    border-color: rgba(96, 165, 250, 0.3);
+    background: var(--fac-accent-soft);
+    color: var(--fac-accent);
+    border-color: var(--fac-accent);
 }
 [data-theme="dark"] .fac-status-pill--running {
     background: rgba(34, 197, 94, 0.18);
@@ -1067,4 +1343,76 @@ mark.fac-hl {
 }
 [data-theme="dark"] .fac-empty-title {
     color: var(--text-color);
+}
+
+/* ============================================================
+   Phone (< 768px): keep every panel inside the viewport.
+   The two-column body already stacks at <=1100px; here we stop the
+   registry card from growing to its widest child's min-content (tab
+   strip, endpoint URL, tables) and force those children to scroll or
+   wrap inside their own box instead of the page.
+   ============================================================ */
+@media (max-width: 767px) {
+    /* Cards can't exceed their (stacked) grid track. */
+    .fac-two-col,
+    .fac-card,
+    .fac-registry-card,
+    .fac-sidebar,
+    .fac-tab-panel {
+        min-width: 0;
+        max-width: 100%;
+    }
+    .fac-card,
+    .fac-registry-card {
+        overflow-x: hidden;
+    }
+
+    /* Tab strips become swipeable — every tab stays reachable. */
+    .fac-top-tabs,
+    .fac-view-tabs {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+    }
+    .fac-top-tabs::-webkit-scrollbar,
+    .fac-view-tabs::-webkit-scrollbar {
+        display: none;
+    }
+    .fac-top-tab,
+    .fac-view-tab {
+        flex: 0 0 auto;
+        white-space: nowrap;
+    }
+
+    /* MCP endpoint: wrap the long URL inside its box. */
+    .fac-endpoint-compact,
+    .fac-endpoint-url {
+        max-width: 100%;
+        word-break: break-all;
+        overflow-wrap: anywhere;
+    }
+
+    /* Wide tables scroll inside their own area, not the page. */
+    .fac-scroll-area,
+    .fac-table {
+        display: block;
+        max-width: 100%;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    /* Analytics summary collapses to a single column. */
+    .fac-analytics-grid {
+        grid-template-columns: 1fr;
+    }
+
+    /* Touch targets >= 44px. */
+    .fac-top-tab,
+    .fac-view-tab,
+    .fac-plugin-toggle,
+    .fac-btn,
+    .fac-copy-endpoint {
+        min-height: 44px;
+    }
 }

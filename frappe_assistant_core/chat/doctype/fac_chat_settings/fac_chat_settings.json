@@ -1,0 +1,187 @@
+{
+ "actions": [],
+ "creation": "2025-12-09 00:00:00",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "section_break_ar",
+  "tenant_id",
+  "fac_cloud_url",
+  "registration_status",
+  "column_break_ar",
+  "tenant_secret",
+  "pending_verification_token",
+  "pending_rebind_token",
+  "ui_settings_tab",
+  "max_context_tokens",
+  "enable_dom_extraction",
+  "enable_browser_diagnostics",
+  "retention_tab",
+  "enable_retention_cleanup",
+  "message_retention_days",
+  "retention_deletes_attachments",
+  "section_break_cache",
+  "cached_capabilities",
+  "capabilities_cached_at",
+  "cached_notifications"
+ ],
+ "fields": [
+  {
+   "fieldname": "section_break_ar",
+   "fieldtype": "Section Break",
+   "label": "FAC Cloud Connection"
+  },
+  {
+   "description": "Unique tenant identifier from FAC Cloud",
+   "fieldname": "tenant_id",
+   "fieldtype": "Data",
+   "label": "Tenant ID",
+   "read_only": 1
+  },
+  {
+   "description": "Which AR server this site talks to. Read-only: set it per site with `bench --site <site> set-config fac_cloud_url <url>`. Refreshed on migrate.",
+   "fieldname": "fac_cloud_url",
+   "fieldtype": "Data",
+   "label": "FAC Cloud URL",
+   "read_only": 1
+  },
+  {
+   "default": "Not Registered",
+   "fieldname": "registration_status",
+   "fieldtype": "Select",
+   "label": "Registration Status",
+   "options": "Not Registered\nPending Email Verification\nWaitlisted\nRegistered\nError",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_ar",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "HMAC secret for FAC Cloud authentication (keep secure)",
+   "fieldname": "tenant_secret",
+   "fieldtype": "Password",
+   "label": "Tenant Secret"
+  },
+  {
+   "description": "Transient — set during email-verified registration; cleared on completion.",
+   "fieldname": "pending_verification_token",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "no_copy": 1,
+   "read_only": 1
+  },
+  {
+   "description": "Transient — set during rebind flow; cleared on completion.",
+   "fieldname": "pending_rebind_token",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "no_copy": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "ui_settings_tab",
+   "fieldtype": "Tab Break",
+   "label": "UI Settings"
+  },
+  {
+   "default": "4000",
+   "description": "Maximum tokens to use for page context",
+   "fieldname": "max_context_tokens",
+   "fieldtype": "Int",
+   "label": "Max Context Tokens"
+  },
+  {
+   "default": "1",
+   "description": "Allow extracting visible content from page DOM (recommended for better context)",
+   "fieldname": "enable_dom_extraction",
+   "fieldtype": "Check",
+   "label": "Enable DOM Content Extraction"
+  },
+  {
+   "default": "1",
+   "description": "Record browser console errors and failed requests so the assistant can diagnose on-screen problems. Nothing is sent until the user approves a capture.",
+   "fieldname": "enable_browser_diagnostics",
+   "fieldtype": "Check",
+   "label": "Enable Browser Diagnostics"
+  },
+  {
+   "fieldname": "retention_tab",
+   "fieldtype": "Tab Break",
+   "label": "Data Retention"
+  },
+  {
+   "default": "1",
+   "description": "When enabled, a daily scheduler purges old archived conversations according to the retention window below. Disable to retain messages indefinitely.",
+   "fieldname": "enable_retention_cleanup",
+   "fieldtype": "Check",
+   "label": "Enable Retention Cleanup"
+  },
+  {
+   "default": "180",
+   "description": "Archived conversations older than this many days are permanently deleted. Active (non-archived) conversations are never auto-deleted. Minimum 30 days.",
+   "fieldname": "message_retention_days",
+   "fieldtype": "Int",
+   "label": "Message Retention (days)",
+   "non_negative": 1
+  },
+  {
+   "default": "1",
+   "description": "Also delete File attachments (images, uploads) linked to purged messages. Disable to keep attachments on disk.",
+   "fieldname": "retention_deletes_attachments",
+   "fieldtype": "Check",
+   "label": "Delete Attachments on Purge"
+  },
+  {
+   "fieldname": "section_break_cache",
+   "fieldtype": "Section Break",
+   "hidden": 1,
+   "label": "Internal Cache"
+  },
+  {
+   "description": "Cached capabilities JSON from FAC Cloud (auto-managed, 1-hour TTL)",
+   "fieldname": "cached_capabilities",
+   "fieldtype": "Long Text",
+   "hidden": 1,
+   "read_only": 1
+  },
+  {
+   "description": "When capabilities were last cached",
+   "fieldname": "capabilities_cached_at",
+   "fieldtype": "Datetime",
+   "hidden": 1,
+   "read_only": 1
+  },
+  {
+   "description": "Cached notifications JSON from FAC Cloud heartbeat (auto-managed)",
+   "fieldname": "cached_notifications",
+   "fieldtype": "Long Text",
+   "hidden": 1,
+   "read_only": 1
+  }
+ ],
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-05-09 19:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Chat",
+ "name": "FAC Chat Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}
