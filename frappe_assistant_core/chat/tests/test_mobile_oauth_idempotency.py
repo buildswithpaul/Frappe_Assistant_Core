@@ -84,4 +84,12 @@ class TestMobileOAuthIdempotency(BaseAssistantTest):
         self.assertIn(self.REDIRECT, (c.redirect_uris or ""))
         self.assertEqual(c.grant_type, "Authorization Code")
         # PKCE public client: no secret auth.
-        self.assertEqual(c.token_endpoint_auth_method, "None")
+        #
+        # OAuth Client gained token_endpoint_auth_method in Frappe v16. On v15
+        # the field does not exist, so the value _register_mobile_oauth_client
+        # passes is dropped on insert and there is nothing to read back. The
+        # rest of the client is identical on both, and PKCE is enforced by
+        # FAC's own get_token override rather than by this field, so this is
+        # asserted where the field exists rather than skipped outright.
+        if frappe.get_meta("OAuth Client").get_field("token_endpoint_auth_method"):
+            self.assertEqual(c.token_endpoint_auth_method, "None")

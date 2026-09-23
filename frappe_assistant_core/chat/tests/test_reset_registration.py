@@ -90,10 +90,14 @@ class TestResetRegistration(BaseAssistantTest):
         )
 
     def test_reset_is_refused_without_system_manager(self):
+        """Frappe v15's only_for() returns early whenever flags.in_test is set,
+        so the check it is guarding never runs under tests there. v16 dropped
+        that bypass. enforce_only_for_checks clears the flag for the duration,
+        which is what makes this assert the same boundary on both."""
         # nosemgrep: frappe-setuser — permission-boundary test, restored below
         frappe.set_user("Guest")
         try:
-            with self.assertRaises(frappe.PermissionError):
+            with self.enforce_only_for_checks(), self.assertRaises(frappe.PermissionError):
                 self._reset()
         finally:
             # nosemgrep: frappe-setuser — test teardown
