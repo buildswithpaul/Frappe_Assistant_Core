@@ -142,6 +142,11 @@ class TestInitializeSpaAccess(BaseAssistantTest):
             "preferences": {},
         }
 
+        # _build_user_auth returns ready=False before reading AR at all unless
+        # the site itself is registered, so the state is set here rather than
+        # inherited from whatever the running site happens to be.
+        frappe.db.set_single_value("FAC Chat Settings", "registration_status", "Registered")
+
         with patch(
             "frappe_assistant_core.chat.api.settings.access.can_use_faco",
             return_value=gate,

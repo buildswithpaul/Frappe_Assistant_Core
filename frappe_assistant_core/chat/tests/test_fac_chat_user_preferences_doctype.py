@@ -14,6 +14,8 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+from unittest.mock import patch
+
 import frappe
 
 from frappe_assistant_core.tests.base_test import BaseAssistantTest
@@ -129,6 +131,14 @@ class TestFACChatUserPreferencesDoctype(BaseAssistantTest):
         prefs.save(ignore_permissions=True)
 
         settings = frappe.get_single("FAC Chat Settings")
-        access = _build_access(settings, "Administrator", ["System Manager"], is_admin=True)
+        # can_use_faco only reaches the preferences block for a FACO MEMBER —
+        # an admin without a seat gets status=no_role and no preferences key.
+        # Membership is an AR call, so it is stubbed rather than left to
+        # whatever seat the running site happens to hold.
+        with patch(
+            "frappe_assistant_core.chat.api.settings.access._is_faco_member",
+            return_value=True,
+        ):
+            access = _build_access(settings, "Administrator", ["System Manager"], is_admin=True)
         self.assertIn("preferences", access)
         self.assertEqual(int(access["preferences"]["hide_widget"]), 1)

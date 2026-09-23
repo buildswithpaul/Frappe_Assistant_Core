@@ -24,7 +24,16 @@ from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
 import frappe
-from frappe.tests.classes.integration_test_case import IntegrationTestCase
+
+# Frappe v16 moved IntegrationTestCase into frappe.tests.classes; on v15 the
+# same class-level transaction + rollback contract is FrappeTestCase in
+# frappe.tests.utils, and frappe.tests.classes does not exist at all. Importing
+# only the v16 path makes the whole FAC suite unimportable on v15, which is why
+# `Server (version-15)` could not collect a single test.
+try:
+    from frappe.tests.classes.integration_test_case import IntegrationTestCase
+except ImportError:  # Frappe v15
+    from frappe.tests.utils import FrappeTestCase as IntegrationTestCase
 
 
 class BaseAssistantTest(IntegrationTestCase):

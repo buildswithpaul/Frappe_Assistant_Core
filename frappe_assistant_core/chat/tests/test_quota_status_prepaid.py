@@ -18,7 +18,7 @@ network failure into a hard block for a tenant with credits in hand.
 
 from unittest.mock import patch
 
-from frappe.tests.classes.integration_test_case import IntegrationTestCase
+from frappe_assistant_core.tests.base_test import IntegrationTestCase
 
 
 def _live(quota, used, balance):
