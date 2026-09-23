@@ -6,7 +6,7 @@
 > every call logged.
 
 [![Version](https://img.shields.io/github/v/release/buildswithpaul/Frappe_Assistant_Core?label=version)](https://github.com/buildswithpaul/Frappe_Assistant_Core/releases)
-[![Python](https://img.shields.io/badge/python-3.8%2B-blue)](https://pypi.org/project/frappe-assistant-core)
+[![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://pypi.org/project/frappe-assistant-core)
 [![License](https://img.shields.io/badge/license-AGPL--3.0-green)](LICENSE)
 [![MCP](https://img.shields.io/badge/MCP-2025--06--18-orange)](https://modelcontextprotocol.io)
 [![Tools](https://img.shields.io/badge/tools-24-brightgreen)](https://docs.assistantcore.cloud/api/tool-reference)
@@ -23,7 +23,8 @@
 ## New in FAC 3.0: FAC Chat
 
 FAC 3.0 introduces **FAC Chat** — an opt-in, in-Frappe AI chat assistant
-powered by our managed **Assistant Runtime SaaS**.
+powered by **FAC Cloud**, our managed service. What it does, what it
+costs and how to sign up: **<https://fac-suite.com>**.
 
 FAC now offers two ways to use it:
 
@@ -33,9 +34,10 @@ FAC now offers two ways to use it:
   LLM bill, nothing leaves your stack. Ships enabled by default.
 - **FAC Chat (in-Frappe chat UI, SaaS)** — opt-in. A native chat
   widget on every Desk page plus a full-screen SPA at `/copilot`,
-  powered exclusively by our managed FAC Cloud. One
-  subscription covers LLM access across providers, conversation
-  memory, RAG, and workflow automation. Ships **disabled by default**.
+  powered exclusively by **FAC Cloud**. One subscription covers LLM
+  access across providers, conversation memory, RAG, and workflow
+  automation. Ships **disabled by default**. See
+  <https://fac-suite.com>.
 
 The split is intentional: BYO-LLM keeps the existing free MCP path
 untouched; FAC Chat is the managed experience for teams that want the
@@ -119,18 +121,21 @@ For ChatGPT, Claude Web, and MCP Inspector walkthroughs, see the
 FAC.** Where the MCP server lets external LLM clients (Claude Desktop,
 Cursor, ChatGPT desktop) talk to your Frappe data with your own LLM
 keys, FAC Chat brings the conversation inside Frappe itself — a widget
-on every Desk page and a full-screen SPA at `/copilot` — powered by
-our managed **Assistant Runtime** subscription.
+on every Desk page and a full-screen SPA at `/copilot` — powered by a
+**FAC Cloud** subscription.
+
+Plans, pricing and sign-up live at **<https://fac-suite.com>**; this
+section covers only what the app itself does.
 
 ### Two ways to use FAC
 
 | Option | What it is | LLM | Cost | Where the chat lives |
 |---|---|---|---|---|
 | **BYO-LLM (MCP server)** | The original FAC. Exposes Frappe data over MCP to any MCP-ready client. | You bring your own (Anthropic, OpenAI, Gemini, Bedrock, etc.) | Free. You pay your own LLM bill. | In your external MCP client (Claude Desktop, Cursor, etc.). No chat UI inside Frappe. |
-| **FAC Chat (SaaS)** | In-Frappe chat widget + `/copilot` SPA. Streaming, tool use, attachments, history, memory, RAG, workflows. | Managed by Assistant Runtime. One subscription, multiple providers. | Subscription required. Sign up flow runs inside the chat UI. | Inside Frappe Desk. |
+| **FAC Chat (SaaS)** | In-Frappe chat widget + `/copilot` SPA. Streaming, tool use, attachments, history, memory, RAG, workflows. | Managed by FAC Cloud. One subscription, multiple providers. | Subscription required. Sign up flow runs inside the chat UI. | Inside Frappe Desk. |
 
 These are **mutually exclusive at the chat layer**: the in-Frappe chat
-UI is only available through Assistant Runtime. There is no BYO-LLM
+UI is only available through FAC Cloud. There is no BYO-LLM
 path for FAC Chat — if you want to bring your own LLM, use the MCP
 server.
 
@@ -152,8 +157,8 @@ After enabling:
 - The chat widget appears in the corner of Frappe Desk pages.
 - The full-screen SPA is reachable at `/copilot`.
 - The first time a user opens chat, they walk through a one-time
-  onboarding that registers the tenant with Assistant Runtime and
-  links it to a subscription.
+  onboarding that registers the tenant with FAC Cloud and links it to
+  a subscription.
 
 ### What FAC Chat is NOT
 
@@ -161,14 +166,14 @@ After enabling:
   Claude Desktop or another MCP client is your only access pattern —
   the free MCP path keeps working exactly as before.
 - It is **not a BYO-LLM frontend**. The in-Frappe chat UI talks only
-  to Assistant Runtime. If you want to bring your own LLM keys, the
-  MCP server is the path for that.
+  to FAC Cloud. If you want to bring your own LLM keys, the MCP server
+  is the path for that.
 - It does **not change** FAC's tool catalog. The same 24 built-in
   tools are available to MCP clients and to FAC Chat alike.
 - It does **not store conversations off-site without consent**.
   Conversation history lives in your Frappe database; only the LLM
   request payload (messages + tool call results) is forwarded to
-  Assistant Runtime to generate the next response.
+  FAC Cloud to generate the next response.
 
 ---
 
@@ -298,6 +303,7 @@ Common entry points:
 - [Quick Start](https://docs.assistantcore.cloud/getting-started/quick-start) — connect Claude Desktop in 5 minutes
 - [OAuth Setup Guide](https://docs.assistantcore.cloud/getting-started/oauth/setup-guide) — production OAuth configuration
 - [Tool Reference](https://docs.assistantcore.cloud/api/tool-reference) — every built-in tool
+- [fac-suite.com](https://fac-suite.com) — FAC Chat and FAC Cloud: what they do, plans, and sign-up
 - [API Reference](https://docs.assistantcore.cloud/api/reference) — MCP and OAuth protocol surface
 - [Architecture](https://docs.assistantcore.cloud/internals/architecture) — how FAC is put together
 - [Changelog](https://docs.assistantcore.cloud/reference/changelog) — release notes
