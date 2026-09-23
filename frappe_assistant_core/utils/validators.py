@@ -25,6 +25,7 @@ from typing import Any, Dict, List, Optional, Union
 
 import frappe
 from frappe import _
+from frappe.utils.html_utils import sanitize_html
 from jsonschema import Draft7Validator, ValidationError, validate
 
 
@@ -442,13 +443,16 @@ def _is_valid_operator(operator: str) -> bool:
 
 
 def _sanitize_input(input_data: str) -> str:
-    """Sanitize user input"""
-    # Remove potential XSS patterns
-    sanitized = re.sub(r"<script[^>]*>.*?</script>", "", input_data, flags=re.IGNORECASE)
-    sanitized = re.sub(r"javascript:", "", sanitized, flags=re.IGNORECASE)
-    sanitized = re.sub(r"on\w+\s*=", "", sanitized, flags=re.IGNORECASE)
+    """Sanitize user input.
 
-    return sanitized.strip()
+    Delegates to Frappe's nh3/bleach-backed sanitizer rather than matching
+    tags with regular expressions. The three patterns this used to run could
+    not see past the first level of nesting: ``<scr<script>ipt>`` came out as
+    ``<script>``, and ``<script\n>`` was not recognised as a tag at all
+    because the pattern could not cross a newline. An allow-list parser
+    decides what a tag is by parsing, which is the only way to get this right.
+    """
+    return sanitize_html(input_data, always_sanitize=True).strip()
 
 
 def validate_email(email: str) -> bool:

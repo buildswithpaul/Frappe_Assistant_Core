@@ -125,20 +125,21 @@ window.FACOBrowserTools = {
 		 * Get form data from current page
 		 */
 		async get_form_data(params) {
-			if (!window.cur_frm) {
+			const frm = FACOCore.get_current_form();
+			if (!frm) {
 				return {
 					error: "No form is currently open. Use browser_get_page_context for non-form pages.",
 				};
 			}
 
-			const doc = cur_frm.doc;
-			const meta = cur_frm.meta;
+			const doc = frm.doc;
+			const meta = frm.meta;
 
 			const result = {
-				doctype: cur_frm.doctype,
+				doctype: frm.doctype,
 				name: doc.name,
-				is_new: cur_frm.is_new(),
-				is_dirty: cur_frm.is_dirty(),
+				is_new: frm.is_new(),
+				is_dirty: frm.is_dirty(),
 				docstatus: doc.docstatus,
 				fields: {},
 			};

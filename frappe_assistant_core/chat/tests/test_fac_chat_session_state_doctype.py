@@ -19,6 +19,12 @@
 Uses plain ``unittest.TestCase`` (not ``FrappeTestCase``) to match the rest of
 the FAC suite: this is an ERPNext site and ``FrappeTestCase.setUpClass`` can
 crash on fiscal-year fixtures. Each test cleans up its own rows in tearDown.
+
+Lives here rather than beside the DocType for the same reason. Frappe's test
+runner calls ``make_test_records`` for any ``test_*.py`` found inside a
+``doctype/`` folder, which walks that DocType's Link fields — reaching Company
+and ERPNext's default-warehouse bootstrap, which fails on a bare CI site. The
+base class is irrelevant to that; the file's location is what triggers it.
 """
 
 import unittest

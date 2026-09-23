@@ -83,15 +83,18 @@ async function renderDiagram() {
 		// Generate unique ID for this diagram
 		const id = `mermaid-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
-		// Clean content: decode HTML entities and strip <br> tags that LLMs sometimes inject
+		// Clean content: decode HTML entities and strip <br> tags that LLMs sometimes inject.
+		// &amp; is decoded LAST. Decoding it first turns "&amp;lt;" into "&lt;",
+		// which the next pass then turns into "<" — a literal "&lt;" the author
+		// escaped on purpose comes out as markup.
 		const cleaned = props.content
 			.trim()
 			.replace(/<br\s*\/?>/gi, "\n")
 			.replace(/&gt;/g, ">")
 			.replace(/&lt;/g, "<")
-			.replace(/&amp;/g, "&")
 			.replace(/&quot;/g, '"')
-			.replace(/&#039;/g, "'");
+			.replace(/&#039;/g, "'")
+			.replace(/&amp;/g, "&");
 
 		// Render the diagram
 		const { svg } = await mermaid.render(id, cleaned);

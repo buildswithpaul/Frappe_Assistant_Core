@@ -3,7 +3,8 @@
 import json
 
 import frappe
-from assistant_runtime.tests.test_base import ARTestCase
+
+from frappe_assistant_core.tests.base_test import BaseAssistantTest
 
 RECEIPT = {
     "v": 1,
@@ -23,7 +24,7 @@ RECEIPT = {
 }
 
 
-class TestTheColumnExists(ARTestCase):
+class TestTheColumnExists(BaseAssistantTest):
     def test_routing_is_a_json_column(self):
         meta = frappe.get_meta("FAC Chat Message")
         field = meta.get_field("routing")
@@ -63,7 +64,7 @@ class TestTheColumnExists(ARTestCase):
         self.assertIn("PERSISTED_LLM_KEYS", src)
 
 
-class TestRoundTrip(ARTestCase):
+class TestRoundTrip(BaseAssistantTest):
     def _message(self, **metadata):
         from frappe_assistant_core.chat.doctype.fac_chat_message.fac_chat_message import (
             FACChatMessage,
@@ -110,7 +111,7 @@ class TestRoundTrip(ARTestCase):
         self.assertNotIn("routing", updates)
 
 
-class TestEveryHopCarriesIt(ARTestCase):
+class TestEveryHopCarriesIt(BaseAssistantTest):
     def _relay(self):
         import inspect
 
@@ -192,7 +193,7 @@ class TestEveryHopCarriesIt(ARTestCase):
         self.assertIn("is not None", src)
 
 
-class TestMergeRoutingReceipt(ARTestCase):
+class TestMergeRoutingReceipt(BaseAssistantTest):
     """The pure merge logic, exercised directly."""
 
     def test_the_first_cycle_decision_survives(self):
@@ -245,7 +246,7 @@ class TestMergeRoutingReceipt(ARTestCase):
         self.assertEqual(merged["cycles"], 2)
 
 
-class TestTheThreeGates(ARTestCase):
+class TestTheThreeGates(BaseAssistantTest):
     def test_the_live_socket_payload_carries_a_complete_receipt(self):
         """Gate 3. A reload round-trip alone passes on a build where the live
         chip is dead."""

@@ -6,6 +6,10 @@ on:
       - main
   pull_request:
 
+# Read-only by default; no job here writes to the repository.
+permissions:
+  contents: read
+
 concurrency:
   group: main-frappe_assistant_core-${{ github.event.number }}
   cancel-in-progress: true

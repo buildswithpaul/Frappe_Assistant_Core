@@ -49,10 +49,18 @@ const TECHNICAL_EXC_TYPES = [
 const TECHNICAL_MESSAGE_RE =
 	/Failed to get method for command|has no attribute|Traceback \(most recent call last\)|ModuleNotFoundError|ImportError|AttributeError|Internal Server Error|DoesNotExistError:.*\bmodule\b/i;
 
-const stripHtml = (s) =>
-	String(s ?? "")
-		.replace(/<[^>]*>/g, "")
-		.trim();
+// Repeated to a fixpoint, not replaced once: removing a tag can splice a new
+// one together out of what surrounded it, so "<scr<script>ipt>" survives a
+// single pass as "<script>".
+const stripHtml = (s) => {
+	let text = String(s ?? "");
+	let previous;
+	do {
+		previous = text;
+		text = text.replace(/<[^>]*>/g, "");
+	} while (text !== previous);
+	return text.trim();
+};
 
 // Frappe's _server_messages is triple-encoded: the response body is JSON,
 // _server_messages is a JSON string, and its value is an array of JSON

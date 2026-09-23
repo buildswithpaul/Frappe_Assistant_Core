@@ -1544,7 +1544,7 @@ class FACOWidget {
 	}
 
 	generate_session_id() {
-		return "faco_" + Date.now() + "_" + Math.random().toString(36).substring(2, 11);
+		return FACOCore.generate_session_id();
 	}
 
 	/** The user this tab is currently logged in as, or null. */

@@ -128,12 +128,24 @@ function _faco_install_purify_hooks() {
 	_faco_purify_hooks_installed = true;
 }
 
+// A single pass leaves a tag behind whenever removing one splices a new one
+// together — "<scr<script>ipt>" becomes "<script>". Repeat to a fixpoint so
+// the result cannot contain a tag however the input was nested.
+function _strip_tags_completely(text) {
+	let previous;
+	do {
+		previous = text;
+		text = text.replace(/<[^>]*>/g, "");
+	} while (text !== previous);
+	return text;
+}
+
 function _faco_sanitize_html(html) {
 	if (typeof DOMPurify === "undefined" || !DOMPurify.sanitize) {
 		// Fail closed: if DOMPurify failed to load, strip ALL tags rather
 		// than serving raw Showdown output. The widget degrades to plain
 		// text but stays XSS-safe.
-		return String(html || "").replace(/<[^>]*>/g, "");
+		return _strip_tags_completely(String(html || ""));
 	}
 	_faco_install_purify_hooks();
 	return DOMPurify.sanitize(html, _FACO_PURIFY_CONFIG);
@@ -243,10 +255,20 @@ window.FACOCore = {
 
 	/**
 	 * Generate a unique session ID
+	 *
+	 * The random half comes from crypto.getRandomValues, not Math.random: a
+	 * session id names a conversation and is handed between the widget, the
+	 * SPA and AR, so it should not be predictable from the clock. Unlike
+	 * crypto.randomUUID, getRandomValues needs no secure context, so this
+	 * works on an http:// dev bench too.
+	 *
 	 * @returns {string} Session ID
 	 */
 	generate_session_id() {
-		return "faco_" + Date.now() + "_" + Math.random().toString(36).substring(2, 11);
+		const bytes = new Uint8Array(9);
+		crypto.getRandomValues(bytes);
+		const random = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+		return "faco_" + Date.now() + "_" + random;
 	},
 
 	/**
@@ -483,19 +505,46 @@ window.FACOCore = {
 	// --- Context Extraction ---
 
 	/**
+	 * The Desk form currently on screen, or null when the route is not a form.
+	 *
+	 * Single accessor for the whole widget. Resolves the form from the routed
+	 * form page rather than reading the `cur_frm` global directly: Frappe
+	 * deprecates `cur_frm` because it holds whichever form last called
+	 * refresh(), so it outlives navigation away from that form and can name a
+	 * DocType the user is no longer looking at. Gating on the route first means
+	 * the widget never hands the assistant stale form context.
+	 *
+	 * @returns {Object|null} A frappe.ui.form.Form with a loaded doc, or null.
+	 */
+	get_current_form() {
+		const route = (frappe.get_route && frappe.get_route()) || [];
+		if (route[0] !== "Form") return null;
+
+		const layout = (frappe.router && frappe.router.doctype_layout) || route[1];
+		const page = frappe.views && frappe.views.formview && frappe.views.formview[layout];
+		// Fall back to the global only when the form page has not been
+		// registered yet — the route says Form, so it cannot be stale here.
+		// nosemgrep: frappe-cur-frm-usage
+		const frm = (page && page.frm) || window.cur_frm;
+
+		return frm && frm.doc ? frm : null;
+	},
+
+	/**
 	 * Detect current page context
 	 * @returns {Object} Context object
 	 */
 	get_page_context() {
 		const route = frappe.get_route() || [];
+		const frm = this.get_current_form();
 
-		if (route && route[0] === "Form" && window.cur_frm && cur_frm.doc) {
+		if (frm) {
 			return {
 				type: "Form",
-				doctype: cur_frm.doctype,
-				name: cur_frm.doc.name,
+				doctype: frm.doctype,
+				name: frm.doc.name,
 				url: window.location.href,
-				is_new: cur_frm.is_new(),
+				is_new: frm.is_new(),
 			};
 		} else if (route && route[0] === "List") {
 			return {

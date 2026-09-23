@@ -22,6 +22,11 @@ deployment, and FAC only ever depends on `assistant_runtime_sdk`. Nothing
 under the `frappe_assistant_core` package may import `assistant_runtime` at
 module scope, or a real customer install ImportErrors — and since this exact
 email used to be sent from an install hook, it would fail the install itself.
+
+The guard covers test modules too. It did not until 3.0, and two chat tests
+duly imported AR's test base: locally they passed, because AR happens to be
+installed on the development bench, while CI could not so much as discover
+the suite.
 """
 
 import os
@@ -29,9 +34,9 @@ import re
 from unittest.mock import patch
 
 import frappe
-from assistant_runtime.tests.test_base import ARTestCase
 from frappe.utils.jinja import get_email_from_template
 
+from frappe_assistant_core.tests.base_test import BaseAssistantTest
 from frappe_assistant_core.utils.email_invite import send_fac_admin_invite
 
 RETIRED_CONTENT = (
@@ -49,9 +54,9 @@ RETIRED_CONTENT = (
 # never matches: the boundary check fails on the "_" right after "runtime".
 ASSISTANT_RUNTIME_IMPORT = re.compile(r"^(?:from|import)\s+assistant_runtime\b", re.MULTILINE)
 
-# Directories that are either test code (out of scope for this guard) or not
-# part of the importable `frappe_assistant_core` package at all.
-_SKIP_DIRS = {"tests", "test", "node_modules", "__pycache__", ".git"}
+# Directories that are not part of the importable `frappe_assistant_core`
+# package at all.
+_SKIP_DIRS = {"node_modules", "__pycache__", ".git"}
 
 
 def _rendered_message(sendmail_mock):
@@ -64,11 +69,7 @@ def _package_py_files(root):
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = [d for d in dirnames if d not in _SKIP_DIRS]
         for filename in filenames:
-            if (
-                filename.endswith(".py")
-                and not filename.startswith("test_")
-                and not filename.endswith("_test.py")
-            ):
+            if filename.endswith(".py"):
                 yield os.path.join(dirpath, filename)
 
 
@@ -83,7 +84,7 @@ def _assistant_runtime_import_violations():
     return violations
 
 
-class TestFacWelcomeEmail(ARTestCase):
+class TestFacWelcomeEmail(BaseAssistantTest):
     def test_welcome_email_is_fac_cloud_branded(self):
         with patch(
             "frappe_assistant_core.utils.email_invite._get_system_manager_emails",

@@ -383,11 +383,15 @@ function friendlyImportError(err) {
 	// SDK and may include HTML (e.g. <strong>) and the leading "Error: " from
 	// the FACO wrapper. Strip those so the toast reads cleanly.
 	const raw = err?.message || err?.toString?.() || "Something went wrong.";
-	const stripped = raw
-		.replace(/^Error:\s*/i, "")
-		.replace(/\[HTTP_\d+\]\s*/g, "")
-		.replace(/<\/?[^>]+>/g, "")
-		.trim();
+	let stripped = raw.replace(/^Error:\s*/i, "").replace(/\[HTTP_\d+\]\s*/g, "");
+	// To a fixpoint: one pass over nested tags can splice a new tag together
+	// out of the surrounding text.
+	let previous;
+	do {
+		previous = stripped;
+		stripped = stripped.replace(/<\/?[^>]+>/g, "");
+	} while (stripped !== previous);
+	stripped = stripped.trim();
 	if (/workflow name must be unique/i.test(stripped)) {
 		return "An agent with this name already exists. Pick a different name and try again.";
 	}

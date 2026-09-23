@@ -12,14 +12,15 @@ window.FACOWidgetContext = {
 	 */
 	detect_context() {
 		const route = frappe.get_route();
+		const frm = FACOCore.get_current_form();
 
-		if (route && route[0] === "Form" && window.cur_frm && cur_frm.doc) {
+		if (frm) {
 			return {
 				type: "Form",
-				doctype: cur_frm.doctype,
-				name: cur_frm.doc.name,
+				doctype: frm.doctype,
+				name: frm.doc.name,
 				url: window.location.href,
-				is_new: cur_frm.is_new(),
+				is_new: frm.is_new(),
 			};
 		}
 
@@ -170,7 +171,7 @@ window.FACOWidgetContext = {
 			}
 
 			// Type-specific extraction
-			if (context.type === "Form" && window.cur_frm) {
+			if (context.type === "Form" && FACOCore.get_current_form()) {
 				content.structured_data = this.extract_form_dom();
 			} else if (context.type === "List" && window.cur_list) {
 				content.structured_data = this.extract_list_dom(context);
@@ -196,16 +197,17 @@ window.FACOWidgetContext = {
 	},
 
 	/**
-	 * Extract form data from cur_frm
+	 * Extract form data from the form currently on screen
 	 * @returns {Object} Form data
 	 */
 	extract_form_dom() {
-		if (!window.cur_frm) return {};
+		const frm = FACOCore.get_current_form();
+		if (!frm) return {};
 
-		const doc = cur_frm.doc;
-		const meta = cur_frm.meta;
+		const doc = frm.doc;
+		const meta = frm.meta;
 		const data = {
-			doctype: cur_frm.doctype,
+			doctype: frm.doctype,
 			name: doc.name,
 			docstatus: doc.docstatus,
 			fields: {},
