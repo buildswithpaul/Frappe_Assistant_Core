@@ -205,11 +205,11 @@ function removedMeta(rule) {
 	return when ? `${scope} · removed ${when}` : scope;
 }
 
+// No match count here. match_count stays 0 even after the rule has chosen a
+// reply's model, so "Not matched yet" sat beside a Live rule that was working
+// and told an admin it wasn't.
 function metaLine(rule) {
-	const matched = rule.match_count
-		? `Matched ${rule.match_count} ${rule.match_count === 1 ? "time" : "times"}`
-		: "Not matched yet";
-	return `${matched} · set by ${rule.created_by_user_id}`;
+	return `Set by ${rule.created_by_user_id}`;
 }
 
 async function reload() {
