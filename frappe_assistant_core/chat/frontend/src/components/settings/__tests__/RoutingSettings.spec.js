@@ -169,9 +169,11 @@ describe("RoutingSettings", () => {
 		expect(w.text()).toContain("suspended");
 	});
 
-	it("says when a rule has never matched instead of showing a bare zero", async () => {
+	it("does not show a match count the server never updates", async () => {
 		const w = await render({ team: [{ ...RULE, match_count: 0 }] });
-		expect(w.text()).toContain("Not matched yet");
+		expect(w.text()).not.toContain("Not matched yet");
+		expect(w.text()).not.toMatch(/Matched \d/);
+		expect(w.text()).toContain("Set by owner@example.com");
 	});
 
 	it("does not call a failed load an empty list", async () => {
