@@ -383,16 +383,26 @@ class DocumentList(BaseTool):
                 filtered_documents.append(filtered_doc)
 
             # Get permission-aware total count for pagination info.
-            # Use string aggregate only — dict form causes "Unknown column 'table.scalar'"
-            # on MariaDB when filters include docstatus. See: FAC PR fix.
+            # Frappe v16 rejects SQL functions passed as strings in `fields`, so try the
+            # dict form first and fall back to the string form for older Frappe versions.
+            # Both go through frappe.get_list with ignore_permissions=False.
             try:
-                count_result = frappe.get_list(
-                    doctype,
-                    filters=filters,
-                    fields=["count(name) as count"],
-                    limit=1,
-                    ignore_permissions=False,
-                )
+                try:
+                    count_result = frappe.get_list(
+                        doctype,
+                        filters=filters,
+                        fields=[{"COUNT": "name", "as": "count"}],
+                        limit=1,
+                        ignore_permissions=False,
+                    )
+                except Exception:
+                    count_result = frappe.get_list(
+                        doctype,
+                        filters=filters,
+                        fields=["count(name) as count"],
+                        limit=1,
+                        ignore_permissions=False,
+                    )
                 total_count = count_result[0].get("count") if count_result else 0
             except Exception:
                 frappe.log_error(
