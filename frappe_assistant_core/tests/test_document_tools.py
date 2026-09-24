@@ -199,9 +199,89 @@ class TestDocumentTools(BaseAssistantTest):
 
         count_call = get_list.call_args_list[1]
         self.assertEqual(count_call.args[0], "Employee")
-        self.assertEqual(count_call.kwargs["fields"], ["count(name) as count"])
+        self.assertEqual(count_call.kwargs["fields"], [{"COUNT": "name", "as": "count"}])
         self.assertEqual(count_call.kwargs["limit"], 1)
         self.assertFalse(count_call.kwargs["ignore_permissions"])
+
+    def test_list_documents_count_falls_back_to_string_form_on_attribute_error(self):
+        """Dict-form COUNT isn't supported on Frappe v15; list_documents must fall
+        back to the string form, still permission-aware, and still return a count."""
+        from frappe_assistant_core.plugins.core.tools.list_documents import DocumentList
+
+        with ExitStack() as stack:
+            stack.enter_context(
+                patch(
+                    "frappe_assistant_core.core.security_config.validate_document_access",
+                    return_value={"success": True, "role": "Default"},
+                )
+            )
+            stack.enter_context(
+                patch(
+                    "frappe_assistant_core.core.security_config.filter_sensitive_fields",
+                    side_effect=lambda doc, _doctype, _role: doc,
+                )
+            )
+            stack.enter_context(
+                patch(
+                    "frappe_assistant_core.plugins.core.tools.list_documents.frappe.session",
+                    MagicMock(user="restricted@example.com"),
+                )
+            )
+            # Employee is not submittable; stubbed so meta loading does not issue
+            # queries of its own against the mocked frappe.get_list / frappe.get_all.
+            stack.enter_context(
+                patch(
+                    "frappe_assistant_core.plugins.core.tools.list_documents.frappe.get_meta",
+                    return_value=MagicMock(is_submittable=0),
+                )
+            )
+            get_all = stack.enter_context(
+                patch(
+                    "frappe_assistant_core.plugins.core.tools.list_documents.frappe.get_all",
+                    side_effect=AssertionError("frappe.get_all bypasses DocType permissions"),
+                )
+            )
+            db_count = stack.enter_context(
+                patch(
+                    "frappe_assistant_core.plugins.core.tools.list_documents.frappe.db.count",
+                    side_effect=AssertionError("frappe.db.count bypasses DocType permissions"),
+                )
+            )
+            get_list = stack.enter_context(
+                patch("frappe_assistant_core.plugins.core.tools.list_documents.frappe.get_list")
+            )
+            get_list.side_effect = [
+                [{"name": "EMP-0001", "employee_name": "Allowed Employee"}],
+                AttributeError("dict-form COUNT is not supported on this Frappe version"),
+                [{"count": 1}],
+            ]
+
+            result = DocumentList().execute(
+                {
+                    "doctype": "Employee",
+                    "filters": {},
+                    "fields": ["name", "employee_name"],
+                    "limit": 20,
+                }
+            )
+
+        self.assertTrue(result.get("success"), result)
+        self.assertEqual(result.get("count"), 1)
+        self.assertEqual(result.get("total_count"), 1)
+        get_all.assert_not_called()
+        db_count.assert_not_called()
+        self.assertEqual(get_list.call_count, 3)
+
+        failed_count_call = get_list.call_args_list[1]
+        self.assertEqual(failed_count_call.args[0], "Employee")
+        self.assertEqual(failed_count_call.kwargs["fields"], [{"COUNT": "name", "as": "count"}])
+        self.assertFalse(failed_count_call.kwargs["ignore_permissions"])
+
+        fallback_count_call = get_list.call_args_list[2]
+        self.assertEqual(fallback_count_call.args[0], "Employee")
+        self.assertEqual(fallback_count_call.kwargs["fields"], ["count(name) as count"])
+        self.assertEqual(fallback_count_call.kwargs["limit"], 1)
+        self.assertFalse(fallback_count_call.kwargs["ignore_permissions"])
 
     def test_update_document_basic(self):
         """Test basic document update"""
