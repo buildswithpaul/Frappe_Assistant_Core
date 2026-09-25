@@ -36,6 +36,7 @@ from unittest.mock import patch
 import frappe
 from frappe.utils.jinja import get_email_from_template
 
+from frappe_assistant_core.chat.gate import clear_chat_gate_cache
 from frappe_assistant_core.tests.base_test import BaseAssistantTest
 from frappe_assistant_core.utils.email_invite import send_fac_admin_invite
 
@@ -85,6 +86,38 @@ def _assistant_runtime_import_violations():
 
 
 class TestFacWelcomeEmail(BaseAssistantTest):
+    def setUp(self):
+        super().setUp()
+        frappe.db.set_single_value("Assistant Core Settings", "enable_fac_chat", 1)
+        frappe.clear_cache()
+        clear_chat_gate_cache()
+        self.addCleanup(clear_chat_gate_cache)
+
+    def test_chat_disabled_sends_nothing(self):
+        frappe.db.set_single_value("Assistant Core Settings", "enable_fac_chat", 0)
+        frappe.clear_cache()
+        clear_chat_gate_cache()
+        with patch(
+            "frappe_assistant_core.utils.email_invite._get_system_manager_emails"
+        ) as recipients, patch("frappe_assistant_core.utils.email_invite.frappe.sendmail") as sendmail:
+            send_fac_admin_invite()
+
+        recipients.assert_not_called()
+        sendmail.assert_not_called()
+
+    def test_missing_chat_field_sends_nothing(self):
+        with patch.object(
+            frappe.db,
+            "get_single_value",
+            side_effect=frappe.ValidationError("Field enable_fac_chat does not exist"),
+        ), patch("frappe_assistant_core.utils.email_invite._get_system_manager_emails") as recipients, patch(
+            "frappe_assistant_core.utils.email_invite.frappe.sendmail"
+        ) as sendmail:
+            send_fac_admin_invite()
+
+        recipients.assert_not_called()
+        sendmail.assert_not_called()
+
     def test_welcome_email_is_fac_cloud_branded(self):
         with patch(
             "frappe_assistant_core.utils.email_invite._get_system_manager_emails",
@@ -92,6 +125,13 @@ class TestFacWelcomeEmail(BaseAssistantTest):
         ), patch("frappe_assistant_core.utils.email_invite.frappe.sendmail", return_value=True) as sendmail:
             send_fac_admin_invite()
 
+        sendmail.assert_called_once_with(
+            recipients=["admin@acme.com"],
+            subject=frappe._("Your FAC Cloud workspace is ready"),
+            template="fac_welcome",
+            args={"heading": frappe._("You're all set"), "cta_url": frappe.utils.get_url("/copilot/")},
+            delayed=True,
+        )
         message = _rendered_message(sendmail)
         self.assertIn("FAC Cloud", message)
         self.assertNotIn("Frappe Assistant Core", message)
