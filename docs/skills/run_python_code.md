@@ -11,6 +11,13 @@ The `run_python_code` tool executes Python code in a sandboxed environment.
 Use it for analytics — fetch data, run calculations, and analyse results in a single call.
 **All tools.* methods and frappe.db.* methods now work reliably inside run_python_code.**
 
+## Reporting numbers
+
+Only report figures a successful run of this tool computed. Fetch the rows inside
+the code (`tools.get_documents` or `data_query`); never paste rows from an earlier
+tool result into the script as literals. If the tool returns an error, say the
+calculation failed. Do not retype or estimate the totals.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Description |
@@ -18,7 +25,7 @@ Use it for analytics — fetch data, run calculations, and analyse results in a 
 | `code` | string | **Yes** | — | Python code (NO import statements) |
 | `timeout` | integer | No | 30 | Timeout in seconds (max: 300) |
 | `capture_output` | boolean | No | `true` | Capture print output |
-| `return_variables` | array | No | — | Variable names to return values for |
+| `return_variables` | array | No | — | Variable names to return. Set this: returning every variable serialises the whole frame, and one value JSON cannot encode used to discard the printed result. |
 | `data_query` | object | No | — | Pre-fetch records as `data` list variable |
 
 ---

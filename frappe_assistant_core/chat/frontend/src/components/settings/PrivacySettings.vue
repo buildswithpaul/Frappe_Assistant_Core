@@ -62,8 +62,8 @@
 			<div class="setting-info">
 				<label class="setting-label">Archive all conversations</label>
 				<p class="setting-description">
-					Remove conversations from our servers while keeping a local copy on your
-					instance
+					Hide every conversation from your history. They stay archived in this
+					site's database.
 				</p>
 			</div>
 			<button @click="archiveAll" :disabled="clearing" class="danger-btn">
@@ -200,7 +200,7 @@ async function exportData() {
 async function archiveAll() {
 	if (
 		!confirm(
-			"Archive all conversations? They will be removed from our servers but kept locally on your instance."
+			"Archive all conversations? They will be hidden from your history and kept in this site's database."
 		)
 	) {
 		return;

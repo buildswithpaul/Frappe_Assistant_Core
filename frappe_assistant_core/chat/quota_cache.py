@@ -79,7 +79,14 @@ def update_from_ar(subscription: dict) -> None:
     snap["last_sync"] = now()
 
     # Pass through pricing info if present
-    for key in ("plan_price_usd", "price_per_user_usd", "credits_per_user", "min_users", "credit_balance"):
+    for key in (
+        "plan_price_usd",
+        "price_per_user_usd",
+        "credits_per_user",
+        "min_users",
+        "credit_balance",
+        "features",
+    ):
         if key in subscription:
             snap[key] = subscription[key]
 
@@ -114,6 +121,7 @@ def seed_from_ar() -> dict:
                 sub = info["subscription"]
                 snap = {
                     "plan": sub.get("plan", "Free"),
+                    "features": sub.get("features") or {},
                     "quota_total": sub.get("credit_quota") or sub.get("quota", 0),
                     "quota_used": sub.get("credits_used") or sub.get("used", 0),
                     "last_sync": now(),
@@ -125,10 +133,10 @@ def seed_from_ar() -> dict:
     except Exception:
         pass
 
-    # AR unreachable — return safe defaults (unlimited so users aren't blocked)
-    defaults = _safe_defaults()
-    _write(defaults)
-    return defaults
+    # AR could not answer. Returned, never cached: a signup reads this before
+    # the site is registered, and caching it kept "Unknown plan · Unlimited"
+    # on the plan card for the whole TTL.
+    return _safe_defaults()
 
 
 def clear() -> None:

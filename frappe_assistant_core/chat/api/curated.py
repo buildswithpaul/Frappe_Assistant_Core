@@ -13,6 +13,9 @@ from frappe_assistant_core.chat.api.suggestion_signals import gather_suggestion_
 from frappe_assistant_core.chat.fac_cloud_client import get_fac_cloud_client
 
 CACHE_TTL = 86400  # 24h — AR's 20h rate limit stays under this
+# An empty or failed generation is remembered briefly, so a home page that
+# keeps missing does not queue a fresh job on every visit.
+NEGATIVE_TTL = 900
 
 
 def _cache_key(user: str) -> str:
@@ -62,9 +65,8 @@ def regenerate_curated_suggestions(for_user: str) -> None:
         return
 
     suggestions = (res or {}).get("suggestions") or []
-    if suggestions:
-        frappe.cache.set_value(
-            _cache_key(for_user),
-            {"suggestions": suggestions, "generated_at": (res or {}).get("generated_at")},
-            expires_in_sec=CACHE_TTL,
-        )
+    frappe.cache.set_value(
+        _cache_key(for_user),
+        {"suggestions": suggestions, "generated_at": (res or {}).get("generated_at")},
+        expires_in_sec=CACHE_TTL if suggestions else NEGATIVE_TTL,
+    )
