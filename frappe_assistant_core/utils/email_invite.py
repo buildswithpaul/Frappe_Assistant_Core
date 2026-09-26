@@ -1,15 +1,20 @@
 import frappe
 from frappe import _
 
+from frappe_assistant_core.chat.gate import is_chat_enabled
+
 
 def send_fac_admin_invite():
-    """Welcome every System Manager after installation.
+    """Welcome every System Manager after installation when FAC Chat is enabled.
 
     Unlike every other managed email in the product, this one is sent by the
     customer's own site to its own admins, not by the SaaS server — so it
     must render with plain frappe.sendmail and never depend on
     assistant_runtime being installed here.
     """
+    if not is_chat_enabled():
+        return
+
     recipients = _get_system_manager_emails()
     if not recipients:
         frappe.log_error("No System Manager users found for FAC invite", "FAC Invite Hook")
