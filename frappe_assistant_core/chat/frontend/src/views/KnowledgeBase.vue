@@ -10,6 +10,7 @@
 			<!-- Top Bar -->
 			<KnowledgeTopBar
 				:memory-enabled="memoryEnabled"
+				:can-upload="knowledgeIncluded"
 				:storage="storage"
 				@toggle-sidebar="sidebarCollapsed = !sidebarCollapsed"
 				@upload="triggerUpload"
@@ -52,7 +53,11 @@
 										type="search"
 										placeholder="Search…"
 									/>
-									<button class="ql-primary-action" @click="triggerUpload">
+									<button
+										v-if="knowledgeIncluded"
+										class="ql-primary-action"
+										@click="triggerUpload"
+									>
 										+ Upload
 									</button>
 								</template>
@@ -115,7 +120,7 @@
 							v-if="!hasDocuments"
 							title="Your knowledge base is empty"
 							description="Upload documents and FACO will use them to give you smarter, more contextual answers."
-							cta="Upload your first document"
+							:cta="knowledgeIncluded ? 'Upload your first document' : ''"
 							@cta="triggerUpload"
 						>
 							<template #footnote>
@@ -152,7 +157,11 @@
 							@delete="confirmDelete"
 							@manage-access="openAccessModal"
 						>
-							<AddSlotCard label="Add document" @click="triggerUpload" />
+							<AddSlotCard
+								v-if="knowledgeIncluded"
+								label="Add document"
+								@click="triggerUpload"
+							/>
 						</KnowledgeDocumentGrid>
 					</ListPageShell>
 				</template>
@@ -225,7 +234,14 @@ import { api } from "@/api/client";
 
 const router = useRouter();
 const userStore = useUserStore();
-const { isAdmin, memoryEnabled } = storeToRefs(userStore);
+const { isAdmin, memoryEnabled, quotaInfo } = storeToRefs(userStore);
+
+// Absent means an older server that doesn't say. Only an explicit false hides
+// Upload, so a plan that excludes the knowledge base can't offer a button
+// whose request then fails.
+const knowledgeIncluded = computed(
+	() => quotaInfo.value?.features?.knowledge_base !== false
+);
 
 const sidebarCollapsed = ref(false);
 const loading = ref(true);
@@ -275,11 +291,17 @@ const {
 	cancelPending,
 	onDragOver,
 	onDragLeave,
-	onDrop,
+	onDrop: dropFiles,
 } = useDocumentUpload({
 	onUploaded: loadDocuments,
 	onFilesSelected: () => {},
 });
+
+// A plan that excludes the knowledge base has no upload path at all, including
+// drag-and-drop, which would otherwise fail after the file was accepted.
+function onDrop(event) {
+	if (knowledgeIncluded.value) dropFiles(event);
+}
 
 let pollInterval = null;
 

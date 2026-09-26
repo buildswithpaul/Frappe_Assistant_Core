@@ -20,7 +20,11 @@
 			</div>
 			<div class="top-bar-actions">
 				<StorageBar v-if="memoryEnabled" :storage="storage" :compact="true" />
-				<button v-if="memoryEnabled" @click="$emit('upload')" class="action-btn primary">
+				<button
+					v-if="memoryEnabled && canUpload"
+					@click="$emit('upload')"
+					class="action-btn primary"
+				>
 					<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 						<path
 							stroke-linecap="round"
@@ -42,6 +46,7 @@ import { useNavToggle } from "@/composables/useNavToggle";
 
 defineProps({
 	memoryEnabled: { type: Boolean, default: false },
+	canUpload: { type: Boolean, default: true },
 	storage: { type: Object, default: null },
 });
 
