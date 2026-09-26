@@ -83,9 +83,11 @@ export const billing = {
 			payment_method: paymentMethod,
 		}),
 
-	verifyPayment: (sessionId) =>
-		baseCall("frappe_assistant_core.chat.api.verify_payment", {
-			session_id: sessionId,
+	// Polled after FAC Cloud's checkout page sends the user back with
+	// `?fac_checkout=<session>`; refreshes the cached plan once it lands.
+	verifyCheckoutReturn: (session) =>
+		baseCall("frappe_assistant_core.chat.api.verify_checkout_return", {
+			session,
 		}),
 
 	getInvoices: (limit = 10) =>

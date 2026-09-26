@@ -48,6 +48,8 @@ import { useUserStore } from "@/stores/userStore";
 import { useTourStore } from "@/stores/tourStore";
 import { useChatStore } from "@/stores/chatStore";
 import { useApprovalAttention } from "@/composables/useApprovalAttention";
+import { useCheckoutReturn } from "@/composables/useCheckoutReturn";
+import { logger } from "@/utils/logger";
 import { storeToRefs } from "pinia";
 import FacoRobot from "@/components/common/FacoRobot.vue";
 import EmailVerificationPending from "@/components/onboarding/EmailVerificationPending.vue";
@@ -63,6 +65,10 @@ const { isDark, effectiveTheme } = storeToRefs(themeStore);
 
 // Flashes the tab title while an approval waits and the tab is hidden.
 useApprovalAttention(useChatStore());
+
+// A purchase returns to whichever page it started from, so the return from
+// FAC Cloud's checkout page is handled here rather than on the billing page.
+const checkoutReturn = useCheckoutReturn({ router, userStore });
 
 const appRootRef = ref(null);
 useVisualViewportFrame(appRootRef);
@@ -110,6 +116,8 @@ onMounted(async () => {
 	}
 
 	isCheckingAuth.value = false;
+
+	checkoutReturn.run().catch((err) => logger.error("Checkout return failed:", err));
 
 	// Auto-play the reel for returning users on a new tour version.
 	// First-time users hit the inline onboarding wizard instead.

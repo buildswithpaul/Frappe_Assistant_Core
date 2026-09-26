@@ -17,6 +17,7 @@ from .._helpers import (
     _safe_error,
 )
 from ..billing._internal import (
+    _quota_summary,
     _refresh_subscription_cache,
 )
 from ..billing.sync import sync_subscription_status
@@ -283,27 +284,14 @@ def verify_payment(session_id: str | None = None):
         result = client.verify_checkout(session_id)
 
         if result.get("success"):
-            from frappe_assistant_core.chat.quota_cache import get_quota_snapshot
-
             # Refresh quota cache from AR for accurate plan/quota/used
             _refresh_subscription_cache()
-
-            snap = get_quota_snapshot()
-            quota_total = snap.get("quota_total", 0)
-            quota_used = snap.get("quota_used", 0)
-            is_unlimited = quota_total == -1
-            plan = snap.get("plan", "Free")
+            summary = _quota_summary()
 
             return {
                 "success": True,
-                "subscription": {
-                    "plan": plan,
-                    "quota_total": quota_total,
-                    "quota_used": quota_used,
-                    "quota_remaining": -1 if is_unlimited else max(0, quota_total - quota_used),
-                    "is_unlimited": is_unlimited,
-                },
-                "message": result.get("message") or f"Successfully upgraded to {plan} plan!",
+                "subscription": summary,
+                "message": result.get("message") or f"Successfully upgraded to {summary['plan']} plan!",
                 "invoice": result.get("invoice"),
             }
 
