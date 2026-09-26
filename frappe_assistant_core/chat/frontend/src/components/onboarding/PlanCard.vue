@@ -49,7 +49,12 @@ const scope = useCreditScope();
 // from watching the team pool flash up and then shrink to their own limit.
 const ready = ref(false);
 
-const plan = computed(() => userStore.quotaInfo?.plan || "");
+// "Unknown" is the fallback served before registration finishes. It is not a
+// plan, and rendering it told every new signup they were unlimited.
+const plan = computed(() => {
+	const name = userStore.quotaInfo?.plan || "";
+	return name.toLowerCase() === "unknown" ? "" : name;
+});
 const isFree = computed(() => plan.value.toLowerCase() === "free");
 
 const title = computed(() =>

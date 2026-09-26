@@ -4,7 +4,8 @@
 		<template v-if="verificationPending">
 			<EmailVerificationPending
 				mode="awaiting-click"
-				:owner-email="ownerEmail"
+				:owner-email="ownerEmail || ownerEmailMasked"
+				:notice="pendingNotice"
 				@resend="handleResend"
 				@change-email="handleChangeEmail"
 			/>
@@ -202,7 +203,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from "vue";
+import { ref, onMounted, onBeforeUnmount, watch } from "vue";
 import { api } from "@/api/client";
 import TermsModal from "./TermsModal.vue";
 import PartnerCodeStep from "./PartnerCodeStep.vue";
@@ -252,6 +253,7 @@ const termsError = ref(null);
 // Reconnect flow — returning tenant detected on boot
 const reregistration = ref(false);
 const ownerEmailMasked = ref("");
+const pendingNotice = ref("");
 // The registering admin's own address, resolved server-side. Prefills the
 // owner field so the mailbox and the owner identity converge on purpose in
 // the ordinary case, rather than by luck.
@@ -263,9 +265,11 @@ onMounted(async () => {
 	try {
 		const state = await api.registration.getState();
 		suggestedEmail.value = state?.suggested_owner_email || "";
-		if (state?.exists && state?.reregistration) {
+		ownerEmailMasked.value = state?.owner_email_masked || "";
+		if (state?.status === "Pending Email Verification") {
+			verificationPending.value = true;
+		} else if (state?.exists && state?.reregistration) {
 			reregistration.value = true;
-			ownerEmailMasked.value = state.owner_email_masked || "";
 		}
 	} catch (_) {
 		// Lookup failed — fall through to the normal first-run funnel.
@@ -397,28 +401,77 @@ async function handleTermsAccepted(termsVersion) {
 	}
 }
 
-// "Resend email" on the pending screen re-fires the same register call —
-// AR's flow is idempotent for an already-pending owner_email + tenant.
-async function handleResend() {
-	if (!ownerEmail.value) return;
+// Resend goes to the address AR already stored. It does not re-accept terms
+// and it does not clear a secret that another tab has already saved.
+async function handleResend(done) {
+	pendingNotice.value = "";
 	try {
-		// Re-fetch terms to get the current version; AR rejects stale acceptances.
-		const terms = await api.registration.getTerms();
-		if (!terms?.version) return;
-		await api.registration.register(ownerEmail.value, terms.version, referralCode.value);
+		const result = await api.registration.resendVerification();
+		if (result?.already_verified) {
+			emit("registered");
+			return;
+		}
+		if (result?.retry_after && !result?.success) {
+			pendingNotice.value = `Wait ${result.retry_after}s before sending again.`;
+		} else if (result?.success) {
+			pendingNotice.value = "Email resent. Check your inbox.";
+			if (result.owner_email_masked) ownerEmailMasked.value = result.owner_email_masked;
+		} else {
+			pendingNotice.value = result?.error || "Could not resend the email.";
+		}
 	} catch (err) {
-		// Surface failures inline on the pending screen via the existing
-		// error path — bail out of the pending screen so the user sees it.
-		verificationPending.value = false;
-		error.value = getErrorMessage(err);
+		pendingNotice.value = getErrorMessage(err);
+	} finally {
+		if (typeof done === "function") done();
 	}
 }
 
-// "Wrong email?" link — back to the form to pick a different address.
-function handleChangeEmail() {
-	verificationPending.value = false;
-	ownerEmail.value = "";
+// Correct the address in place. Leaving the screen used to send the link to
+// the old address while saying it went to the new one.
+async function handleChangeEmail(address, done) {
+	pendingNotice.value = "";
+	try {
+		const result = await api.registration.changePendingEmail(address);
+		if (result?.success) {
+			ownerEmail.value = "";
+			ownerEmailMasked.value = result.owner_email_masked || address;
+			pendingNotice.value = "Verification email sent to the new address.";
+		} else {
+			pendingNotice.value = result?.error || "Could not change the email.";
+		}
+	} catch (err) {
+		pendingNotice.value = getErrorMessage(err);
+	} finally {
+		if (typeof done === "function") done();
+	}
 }
+
+let pendingPoll = null;
+
+async function checkVerificationLanded() {
+	if (!verificationPending.value || document.hidden) return;
+	try {
+		const state = await api.registration.getState();
+		if (state?.local_status === "Registered") emit("registered");
+	} catch (_) {
+		// A failed poll just waits for the next one.
+	}
+}
+
+function stopPendingPoll() {
+	if (pendingPoll) clearInterval(pendingPoll);
+	pendingPoll = null;
+	document.removeEventListener("visibilitychange", checkVerificationLanded);
+}
+
+watch(verificationPending, (pending) => {
+	stopPendingPoll();
+	if (!pending) return;
+	pendingPoll = setInterval(checkVerificationLanded, 5000);
+	document.addEventListener("visibilitychange", checkVerificationLanded);
+});
+
+onBeforeUnmount(stopPendingPoll);
 
 function getErrorMessage(err) {
 	const message = err.message || "";

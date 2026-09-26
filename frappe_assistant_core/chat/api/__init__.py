@@ -91,6 +91,7 @@ from .billing import (
     scheduled_sync_subscription,
     sync_subscription_status,
     update_payment_method,
+    verify_checkout_return,
     verify_payment,
     verify_razorpay_credit_payment,
     verify_razorpay_payment,
@@ -207,6 +208,7 @@ from .prompts import (
 from .settings import (
     accept_updated_terms,
     can_use_faco,
+    change_pending_owner_email,
     complete_email_verification,
     extract_screen_content,
     get_ar_terms,
@@ -218,6 +220,7 @@ from .settings import (
     poll_for_rotated_secret,
     register_with_ar,
     request_site_rebind,
+    resend_owner_verification,
     reset_registration,
     run_diagnostics,
     update_user_preference,

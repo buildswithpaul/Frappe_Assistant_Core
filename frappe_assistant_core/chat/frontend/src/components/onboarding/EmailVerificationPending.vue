@@ -13,7 +13,7 @@
 
 			<div class="hint-card">
 				<p class="hint">
-					The link is valid for 15 minutes. If it doesn't arrive, check your spam folder.
+					The link is valid for 24 hours. If it doesn't arrive, check your spam folder.
 				</p>
 			</div>
 
@@ -44,13 +44,15 @@
 					</svg>
 					<span>{{ resending ? "Resending…" : "Resend email" }}</span>
 				</button>
-				<button type="button" class="link-btn" @click="$emit('change-email')">
+				<button type="button" class="link-btn" @click="changing = !changing">
 					Wrong email?
 				</button>
 			</div>
-			<p v-if="resentAt" class="resent-toast" role="status">
-				Email resent. Check your inbox.
-			</p>
+			<form v-if="changing" class="change-email" @submit.prevent="submitChange">
+				<input v-model="newEmail" type="email" required placeholder="Correct email address" />
+				<button type="submit" class="secondary-btn">Send to this address</button>
+			</form>
+			<p v-if="notice" class="resent-toast" role="status">{{ notice }}</p>
 		</template>
 
 		<!-- Mode: verifying — landed via deep link, exchanging token for secret -->
@@ -120,6 +122,7 @@ const props = defineProps({
 		validator: (v) => ["awaiting-click", "verifying"].includes(v),
 	},
 	ownerEmail: { type: String, default: "" },
+	notice: { type: String, default: "" },
 	// Only used in mode="verifying": the token from `?verify_token=...`.
 	verificationToken: { type: String, default: "" },
 });
@@ -127,24 +130,27 @@ const props = defineProps({
 const emit = defineEmits(["resend", "change-email", "verified", "verify-failed"]);
 
 const resending = ref(false);
-const resentAt = ref(null);
+const changing = ref(false);
+const newEmail = ref("");
 
 const verifyDone = ref(false);
 const verifyError = ref(null);
 
-async function onResend() {
+function onResend() {
 	if (resending.value) return;
 	resending.value = true;
-	resentAt.value = null;
-	try {
-		// Parent owns the actual call (it has the terms version + referral code).
-		await Promise.resolve(emit("resend"));
-		resentAt.value = Date.now();
-		// Auto-dismiss the toast after 5s.
-		setTimeout(() => (resentAt.value = null), 5000);
-	} finally {
+	emit("resend", () => {
 		resending.value = false;
-	}
+	});
+}
+
+function submitChange() {
+	const address = newEmail.value.trim();
+	if (!address) return;
+	emit("change-email", address, () => {
+		changing.value = false;
+		newEmail.value = "";
+	});
 }
 
 async function runVerification() {
@@ -275,6 +281,22 @@ onMounted(() => {
 }
 
 .link-btn:hover {
+	color: var(--ql-text);
+}
+
+.change-email {
+	display: flex;
+	flex-direction: column;
+	gap: 0.5rem;
+	width: min(100%, 22rem);
+	margin-top: 0.75rem;
+}
+
+.change-email input {
+	padding: 0.625rem 0.75rem;
+	border: 1px solid var(--ql-border);
+	border-radius: 0.5rem;
+	background: var(--ql-bg);
 	color: var(--ql-text);
 }
 

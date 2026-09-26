@@ -11,6 +11,7 @@ const toasts = ref([]);
 let nextId = 0;
 
 export function useToast() {
+	/** Returns the toast's id, so a `duration` of 0 can be dismissed later. */
 	function showToast(message, type = "info", duration = 3000) {
 		const id = nextId++;
 		toasts.value.push({ id, message, type });
@@ -20,6 +21,7 @@ export function useToast() {
 				dismiss(id);
 			}, duration);
 		}
+		return id;
 	}
 
 	function showError(message) {

@@ -27,6 +27,15 @@ from frappe import _
 
 from frappe_assistant_core.core.base_tool import BaseTool
 
+# Appended to every failure the model sees, so a crashed calculation is retried
+# inside the tool instead of being retyped by hand into a new script.
+_RETRY_BY_HAND = (
+    "Re-run the calculation inside this tool, fetching the rows with "
+    "tools.get_documents or data_query. Do not retype figures from earlier "
+    "tool output by hand. If the calculation cannot be completed, tell the "
+    "user it failed instead of estimating the numbers."
+)
+
 
 class ExecutePythonCode(BaseTool):
     """
@@ -119,8 +128,13 @@ PREFER THIS over get_documents/generate_report + separate code — fetch inside 
   tools.search(query, doctype=None, limit=20)
   tools.get_doctype_info(doctype) → {success, fields, links}
 
-RULES: no imports (libraries pre-loaded); read-only, permission-checked, audit-logged DB access;
+RULES: no imports (libraries pre-loaded); read-only DB access, audit-logged;
 no file/network access; no plotting libraries — use the dashboard tools for charts.
+
+FIGURES: only report numbers this run computed. Fetch rows inside the code
+(tools.get_documents or data_query) — never retype earlier tool output by hand.
+Pass return_variables to limit what comes back. If this tool fails, say the
+calculation failed; do not estimate or retype the totals.
 
 PRE-LOADED: pd, np, frappe, math, datetime, json, re, statistics, random"""
 
@@ -295,11 +309,16 @@ PRE-LOADED: pd, np, frappe, math, datetime, json, re, statistics, random"""
                 },
             }
 
+        # stdout is kept even when it isn't valid JSON: a truncated write can
+        # still contain the printed totals.
+        stdout_text = stdout.decode("utf-8", errors="replace").strip()
+
         # Try to parse the subprocess JSON response
         try:
             result = json_mod.loads(stdout.decode("utf-8", errors="replace"))
         except (json_mod.JSONDecodeError, ValueError):
-            # Subprocess crashed without writing valid JSON
+            # Subprocess crashed without writing valid JSON. stdout may still
+            # hold the printed totals, so it is kept rather than discarded.
             stderr_text = stderr.decode("utf-8", errors="replace").strip()
             exit_code = proc.returncode
 
@@ -336,8 +355,8 @@ PRE-LOADED: pd, np, frappe, math, datetime, json, re, statistics, random"""
 
             return {
                 "success": False,
-                "error": error_msg,
-                "output": "",
+                "error": f"{error_msg}\n\n{_RETRY_BY_HAND}",
+                "output": stdout_text[:4000],
                 "variables": {},
                 "user_context": current_user,
                 "execution_info": {
@@ -392,7 +411,7 @@ PRE-LOADED: pd, np, frappe, math, datetime, json, re, statistics, random"""
                     f"   - Add proper base cases to recursive functions"
                 )
 
-            result["error"] = error_msg
+            result["error"] = f"{error_msg}\n\n{_RETRY_BY_HAND}"
 
         # Enrich with execution context the caller expects
         result["user_context"] = current_user

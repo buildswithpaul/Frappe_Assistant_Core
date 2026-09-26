@@ -27,6 +27,7 @@ Communication is via JSON over stdin/stdout, following the same pattern as
 ``ocr_subprocess.py``.
 """
 
+import datetime
 import io
 import json
 import platform
@@ -353,62 +354,125 @@ _EXCLUDED_VARS = frozenset(
 )
 
 
+def _json_key(key):
+    """JSON object keys must be strings. Pandas groupby keys are not."""
+    if isinstance(key, str):
+        return key
+    if isinstance(key, (datetime.date, datetime.datetime)):
+        return str(key)
+    return str(key)
+
+
 def _serialize_variable(value):
-    """Serialize a variable to a JSON-compatible representation."""
-    try:
-        # Pandas objects
-        if hasattr(value, "to_dict"):
-            return value.to_dict()
-        if hasattr(value, "to_list"):
-            return value.to_list()
-        if hasattr(value, "tolist"):
-            return value.tolist()
+    """Serialize a variable to a JSON-compatible representation.
 
-        # Basic types
-        if isinstance(value, (str, int, float, bool, type(None))):
-            return value
-        if isinstance(value, (list, tuple)):
-            return [_serialize_variable(v) for v in value]
-        if isinstance(value, dict):
-            return {str(k): _serialize_variable(v) for k, v in value.items()}
-        if isinstance(value, set):
-            return list(value)
+    Dict keys are always coerced to strings: a pandas groupby on more than one
+    column (or on a date) produces keys ``json.dumps`` cannot encode, and a
+    failed encode used to abort the result halfway through stdout.
+    """
+    # Plain mappings first. frappe._dict (and any dict subclass) implements
+    # __getattr__, so hasattr(row, "to_dict") is true for a reason that has
+    # nothing to do with pandas.
+    if isinstance(value, dict):
+        return {_json_key(k): _serialize_variable(v) for k, v in value.items()}
 
+    # Pandas objects. to_dict() keeps the original index as keys.
+    if hasattr(value, "to_dict") and callable(value.to_dict):
+        return _serialize_variable(value.to_dict())
+    if hasattr(value, "to_list") and callable(value.to_list):
+        return _serialize_variable(value.to_list())
+    if hasattr(value, "tolist") and callable(value.tolist):
+        return _serialize_variable(value.tolist())
+
+    if isinstance(value, (str, int, float, bool, type(None))):
+        return value
+    if isinstance(value, (datetime.date, datetime.datetime)):
         return str(value)
-    except Exception:
-        return f"<{type(value).__name__} object>"
+    if isinstance(value, (list, tuple)):
+        return [_serialize_variable(v) for v in value]
+    if isinstance(value, set):
+        return [_serialize_variable(v) for v in value]
+
+    rendered = str(value)
+    if rendered.startswith("<") and " object at " in rendered:
+        raise TypeError(f"{type(value).__name__} has no JSON representation")
+    return rendered
 
 
-def _extract_variables(execution_globals: dict, return_variables: list) -> dict:
+def _extract_variables(execution_globals: dict, return_variables: list) -> tuple:
     """Extract user-defined variables from execution globals.
 
     When ``return_variables`` is non-empty, only those names are serialized.
     Otherwise every non-internal user-defined global is returned (legacy behavior).
+
+    A variable that cannot be serialized is dropped, not substituted: one bad
+    value must not discard the whole result. Returns ``(variables, warnings)``.
     """
     variables = {}
+    warnings = []
     builtins = execution_globals.get("__builtins__", {})
 
     def _is_excluded(var_name):
         return var_name.startswith("_") or var_name in _EXCLUDED_VARS or var_name in builtins
 
+    def _take(var_name, var_value):
+        try:
+            variables[var_name] = _serialize_variable(var_value)
+        except Exception as e:
+            warnings.append(f"{var_name}: {e}")
+
     if return_variables:
         for var_name in return_variables:
             if var_name not in execution_globals or _is_excluded(var_name):
                 continue
-            try:
-                variables[var_name] = _serialize_variable(execution_globals[var_name])
-            except Exception as e:
-                variables[var_name] = f"<Could not serialize: {e}>"
+            _take(var_name, execution_globals[var_name])
     else:
         for var_name, var_value in execution_globals.items():
             if _is_excluded(var_name):
                 continue
-            try:
-                variables[var_name] = _serialize_variable(var_value)
-            except Exception as e:
-                variables[var_name] = f"<Could not serialize: {e}>"
+            _take(var_name, var_value)
 
-    return variables
+    return variables, warnings
+
+
+def _write_result(result: dict, stream) -> None:
+    """Write exactly one JSON document, or one error document that keeps output.
+
+    Building the whole document before writing means a value JSON cannot encode
+    never leaves a half-written object on stdout for the parent to fail to parse.
+    """
+    try:
+        stream.write(json.dumps(result, default=str))
+        return
+    except Exception:
+        pass
+
+    variables = result.get("variables") or {}
+    kept = {}
+    dropped = []
+    for name, value in variables.items():
+        try:
+            json.dumps(value)
+            kept[name] = value
+        except Exception:
+            dropped.append(name)
+
+    names = ", ".join(dropped) or "result"
+    fallback = {
+        "success": False,
+        "error": (
+            f"Could not serialize variables: {names}. "
+            "Re-run the calculation inside this tool, fetching the rows with "
+            "tools.get_documents or data_query. Do not retype figures from earlier "
+            "tool output by hand. If the calculation cannot be completed, tell the "
+            "user it failed instead of estimating the numbers."
+        ),
+        "error_type": "serialization",
+        "output": result.get("output", ""),
+        "variables": kept,
+        "unserializable_variables": dropped,
+    }
+    stream.write(json.dumps(fallback, default=str))
 
 
 # ---------------------------------------------------------------------------
@@ -462,7 +526,7 @@ def main():
                     )
                 except Exception as e:
                     result["error"] = f"Error fetching data: {e}"
-                    json.dump(result, sys.stdout)
+                    _write_result(result, sys.stdout)
                     return
 
             # Apply resource limits immediately before exec (disposable process).
@@ -482,6 +546,12 @@ def main():
             else:
                 exec(code, execution_globals)  # noqa: S102  # nosemgrep: frappe-codeinjection-eval
 
+            # The alarm was for the user's code. Serialization can be slow on a
+            # large frame, and a timeout firing mid-write used to leave stdout
+            # half-written.
+            if platform.system() != "Windows":
+                signal.alarm(0)
+
             # Truncate output
             max_output = 1024 * 1024  # 1 MB
             if len(output) > max_output:
@@ -491,7 +561,11 @@ def main():
                     f"Original size: {len(output) // 1024}KB]"
                 )
 
-            variables = _extract_variables(execution_globals, return_variables)
+            variables, variable_warnings = _extract_variables(execution_globals, return_variables)
+            if variable_warnings:
+                error_output = (error_output + "\n" if error_output else "") + (
+                    "Some variables could not be returned: " + "; ".join(variable_warnings)
+                )
 
             result = {
                 "success": True,
@@ -576,14 +650,8 @@ def main():
             "variables": {},
         }
 
-    # Always write valid JSON to stdout
-    try:
-        json.dump(result, sys.stdout, default=str)
-    except Exception:
-        # Last resort — ensure the parent always gets parseable JSON
-        sys.stdout.write(
-            '{"success": false, "error": "Failed to serialize result", "output": "", "variables": {}}'
-        )
+    # Always write exactly one valid JSON document, keeping any printed output.
+    _write_result(result, sys.stdout)
 
 
 if __name__ == "__main__":
