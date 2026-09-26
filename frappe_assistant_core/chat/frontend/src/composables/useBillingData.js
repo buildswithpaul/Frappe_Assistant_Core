@@ -23,7 +23,7 @@ export function useBillingData() {
 	const loading = ref(true);
 	const error = ref(null);
 
-	// Verification banner (for checkout return)
+	// Verification banner (payment-method and checkout-launch outcomes)
 	const verificationMessage = ref(null);
 	const verificationSuccess = ref(false);
 	const invoiceInfo = ref(null);
@@ -236,18 +236,19 @@ export function useBillingData() {
 		}
 	}
 
-	// Data loading
-	async function loadData() {
-		loading.value = true;
+	// Data loading. `silent` refreshes in place — used when the page is
+	// already on screen — instead of swapping it for the loading state.
+	// Returns from checkout are handled app-wide by useCheckoutReturn.
+	async function loadData({ silent = false } = {}) {
+		if (!silent) loading.value = true;
 		error.value = null;
 
 		try {
-			// Fire quota, checkout check, billing page data, and billing details
-			// all in parallel. Billing details is needed synchronously by
-			// handleUpgrade so we must have it loaded before the user can click.
-			const [, , pageData] = await Promise.all([
+			// Fire quota, billing page data, and billing details in parallel.
+			// Billing details is needed synchronously by handleUpgrade so we
+			// must have it loaded before the user can click.
+			const [, pageData] = await Promise.all([
 				userStore.loadQuota(),
-				checkForCheckoutReturn(),
 				userStore.isAdmin
 					? api.billing.getPageData({
 							usage_history_days: 30,
@@ -340,48 +341,6 @@ export function useBillingData() {
 			verificationSuccess.value = false;
 		} finally {
 			purchasingCredits.value = false;
-		}
-	}
-
-	// Checkout return handling
-	async function checkForCheckoutReturn() {
-		const urlParams = new URLSearchParams(window.location.search);
-		if (!urlParams.has("success")) {
-			// Fast path: no checkout return parameters
-			localStorage.removeItem("faco_checkout_session");
-			return;
-		}
-
-		const success = urlParams.get("success");
-		const sessionId =
-			urlParams.get("session_id") || localStorage.getItem("faco_checkout_session");
-
-		if (success === "true" && sessionId) {
-			try {
-				const result = await api.billing.verifyPayment(sessionId);
-				if (result?.success) {
-					verificationMessage.value =
-						result.message || "Payment successful! Your plan has been upgraded.";
-					verificationSuccess.value = true;
-					invoiceInfo.value = result.invoice || null;
-				} else {
-					verificationMessage.value =
-						result?.error || "Payment verification failed. Please contact support.";
-					verificationSuccess.value = false;
-				}
-			} catch (err) {
-				verificationMessage.value = "Failed to verify payment: " + err.message;
-				verificationSuccess.value = false;
-			}
-		} else if (success === "false") {
-			verificationMessage.value = "Payment was cancelled.";
-			verificationSuccess.value = false;
-		}
-
-		localStorage.removeItem("faco_checkout_session");
-
-		if (urlParams.has("success") || urlParams.has("session_id")) {
-			window.history.replaceState({}, "", window.location.pathname);
 		}
 	}
 

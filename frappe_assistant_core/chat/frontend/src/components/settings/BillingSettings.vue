@@ -235,6 +235,7 @@ import { logger } from "@/utils/logger";
 import { useUserStore } from "../../stores/userStore";
 import { useBillingData } from "@/composables/useBillingData";
 import { usePaymentMethod } from "@/composables/usePaymentMethod";
+import { useBillingAutoRefresh } from "@/composables/useBillingAutoRefresh";
 import GatewaySelectionModal from "./GatewaySelectionModal.vue";
 import CreditPurchaseModal from "./CreditPurchaseModal.vue";
 import PrepaidCreditsCard from "./billing/PrepaidCreditsCard.vue";
@@ -441,6 +442,10 @@ onMounted(() => {
 	loadData();
 	loadSeatStatus();
 });
+
+// A purchase finishing (here, in another tab, or after a checkout return)
+// and the user coming back to this tab both reload the page in place.
+useBillingAutoRefresh(loadData);
 </script>
 
 <style scoped>

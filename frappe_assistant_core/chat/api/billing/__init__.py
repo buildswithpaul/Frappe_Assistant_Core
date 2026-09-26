@@ -74,6 +74,7 @@ from frappe_assistant_core.chat.api.billing.dashboard import (
 )
 from frappe_assistant_core.chat.api.billing.hosted import (
     create_hosted_checkout,
+    verify_checkout_return,
 )
 from frappe_assistant_core.chat.api.billing.invoices import (
     download_invoice_pdf,

@@ -62,11 +62,11 @@ export function useChatViewInit(stores, routing, state) {
 
 		// Deep-link: checkout return / billing redirect from widget (preserves
 		// pre-route-migration behaviour where ?tab=billing / ?success lands on billing).
-		const urlParams = new URLSearchParams(window.location.search);
-		if (urlParams.has("success") || urlParams.get("tab") === "billing") {
-			const cleanUrl = window.location.pathname + window.location.hash;
-			window.history.replaceState({}, "", cleanUrl);
-			router.push("/settings/billing");
+		// The rest of the query rides along: the app-level checkout-return
+		// handler still needs its markers, and removes them itself.
+		const { tab, ...rest } = route.query;
+		if ("success" in route.query || tab === "billing") {
+			router.push({ path: "/settings/billing", query: rest });
 		}
 	});
 
