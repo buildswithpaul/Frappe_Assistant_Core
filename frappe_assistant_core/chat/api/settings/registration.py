@@ -397,7 +397,11 @@ def get_registration_state() -> dict:
             site_url=frappe.utils.get_url(),
             tenant_id=settings.tenant_id or None,
         )
-        return {**(state or {}), "suggested_owner_email": suggested}
+        return {
+            **(state or {}),
+            "suggested_owner_email": suggested,
+            "local_status": settings.registration_status or "",
+        }
     except Exception as e:
         frappe.log_error(title="FAC get_registration_state", message=str(e))
         return {"exists": False, "suggested_owner_email": suggested}
@@ -439,6 +443,9 @@ def reset_registration() -> dict:
         settings.tenant_secret = None
         settings.registration_status = "Not Registered"
         settings.save(ignore_permissions=True)
+        from frappe_assistant_core.chat.quota_cache import clear as clear_quota
+
+        clear_quota()
 
         # Wiping tenant credentials is a privileged, destructive act and leaves
         # no trace on AR (the credentials that would have signed an audit call
@@ -566,7 +573,38 @@ def complete_email_verification(verification_token: str) -> dict:
     settings.pending_verification_token = None
     settings.registration_status = "Registered"
     settings.save(ignore_permissions=True)
+    from frappe_assistant_core.chat.quota_cache import clear as clear_quota
+
+    clear_quota()
     return {"success": True}
+
+
+@frappe.whitelist(methods=["POST"])
+def resend_owner_verification() -> dict:
+    """Re-send the pending link. Never clears the secret or marks an error.
+
+    A failure comes back as ``success: False`` so the pending screen can say
+    so. An already-verified tenant is reported as such and left alone.
+    """
+    frappe.only_for("System Manager")
+    from frappe_assistant_core.chat.fac_cloud_client import resend_owner_verification as resend
+
+    result = resend(site_url=frappe.utils.get_url()) or {}
+    if result.get("error"):
+        return {"success": False, "error": result["error"]}
+    return result
+
+
+@frappe.whitelist(methods=["POST"])
+def change_pending_owner_email(owner_email: str) -> dict:
+    """Correct the address the verification link goes to, while still pending."""
+    frappe.only_for("System Manager")
+    from frappe_assistant_core.chat.fac_cloud_client import change_pending_owner_email as change
+
+    result = change(site_url=frappe.utils.get_url(), owner_email=owner_email) or {}
+    if result.get("error"):
+        return {"success": False, "error": result["error"]}
+    return result
 
 
 @frappe.whitelist(methods=["POST"])

@@ -63,7 +63,7 @@ dependencies = [
     # AttributeError at runtime, in production, rather than at install time.
     # Local dev overrides this with `pip install -e apps/assistant_runtime_sdk`;
     # UAT pins an exact prerelease (e.g. ==1.6.0rc1).
-    "assistant_runtime_sdk==1.9.0",
+    "assistant_runtime_sdk==1.10.0",
 ]
 
 [project.optional-dependencies]
