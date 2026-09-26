@@ -205,6 +205,22 @@ def get_registration_state(
     return sdk_state(ar_url=fac_cloud_url, site_url=site_url, tenant_id=tenant_id)
 
 
+def resend_owner_verification(site_url: str, fac_cloud_url: str | None = None) -> dict[str, Any]:
+    """Re-send the pending verification link. Never touches the local secret."""
+    from assistant_runtime_sdk.client import resend_owner_verification as sdk_resend
+
+    return sdk_resend(ar_url=fac_cloud_url or get_fac_cloud_url(), site_url=site_url)
+
+
+def change_pending_owner_email(
+    site_url: str, owner_email: str, fac_cloud_url: str | None = None
+) -> dict[str, Any]:
+    """Correct the owner address while the tenant is still unverified."""
+    from assistant_runtime_sdk.client import change_pending_owner_email as sdk_change
+
+    return sdk_change(ar_url=fac_cloud_url or get_fac_cloud_url(), site_url=site_url, owner_email=owner_email)
+
+
 def get_capabilities(fac_cloud_url: str | None = None) -> dict[str, Any] | None:
     """
     Fetch capabilities from FAC Cloud backend.

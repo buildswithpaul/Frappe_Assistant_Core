@@ -21,6 +21,14 @@ export const registration = {
 	getState: () =>
 		baseCall("frappe_assistant_core.chat.api.get_registration_state"),
 
+	resendVerification: () =>
+		baseCall("frappe_assistant_core.chat.api.resend_owner_verification"),
+
+	changePendingEmail: (ownerEmail) =>
+		baseCall("frappe_assistant_core.chat.api.change_pending_owner_email", {
+			owner_email: ownerEmail,
+		}),
+
 	acceptUpdatedTerms: (termsVersion) =>
 		baseCall("frappe_assistant_core.chat.api.accept_updated_terms", {
 			terms_version: termsVersion,

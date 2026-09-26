@@ -21,9 +21,16 @@ def get_context(context):
     # settings.py re-export this get_context unchanged.
     apply_spa_headers()
 
-    # Require authentication
+    # Require authentication. Keep the original path and query, so a
+    # verification link opened while logged out still completes after login.
     if frappe.session.user == "Guest":
-        frappe.local.flags.redirect_location = "/login"
+        import urllib.parse
+
+        target = frappe.request.path if frappe.request else "/copilot"
+        query = frappe.request.query_string if frappe.request else b""
+        if query:
+            target = f"{target}?{query.decode()}"
+        frappe.local.flags.redirect_location = "/login?redirect-to=" + urllib.parse.quote(target)
         raise frappe.Redirect
 
     csrf_token = frappe.sessions.get_csrf_token()
