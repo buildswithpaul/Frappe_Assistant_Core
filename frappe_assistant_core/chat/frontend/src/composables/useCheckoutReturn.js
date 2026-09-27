@@ -58,6 +58,19 @@ export function parseCheckoutReturn(query = {}) {
 	return legacy ? { session: null, result: legacy } : null;
 }
 
+/**
+ * The query as the address bar has it now. The seat-return handler strips its
+ * own markers with history.replaceState, which the router never hears about,
+ * so the router's query would put them straight back.
+ */
+function liveQuery() {
+	const query = {};
+	new URLSearchParams(window.location.search).forEach((value, key) => {
+		query[key] = key in query ? [].concat(query[key], value) : value;
+	});
+	return query;
+}
+
 function withoutMarkers(query) {
 	const kept = { ...query };
 	MARKERS.forEach((key) => delete kept[key]);
@@ -79,7 +92,7 @@ export function useCheckoutReturn({
 	timeoutMs = 30000,
 }) {
 	const toast = useToast();
-	// idle | confirming | applied | processing | unknown | cancelled | failed
+	// idle | confirming | applied | processing | unknown | not_found | cancelled | failed
 	const state = ref("idle");
 	let disposed = false;
 	let sleeping = null;
@@ -112,7 +125,8 @@ export function useCheckoutReturn({
 			if (disposed) break;
 			try {
 				const res = await api.billing.verifyCheckoutReturn(session);
-				if (res?.done) return res.outcome || "unknown";
+				// A session FAC Cloud has never heard of is final: nothing was bought.
+				if (res?.done) return res.found === false ? "not_found" : res.outcome || "unknown";
 			} catch (err) {
 				// A failed poll is not a failed payment; ask again.
 				logger.warn("Checkout status check failed:", err);
@@ -128,6 +142,7 @@ export function useCheckoutReturn({
 	}
 
 	function report(outcome) {
+		if (outcome === "not_found") return;
 		if (outcome === "applied") toast.showSuccess(MESSAGES.applied);
 		else if (outcome === "failed") toast.showError(MESSAGES.failed);
 		else if (outcome === "cancelled") toast.showToast(MESSAGES.cancelled, "info", 5000);
@@ -158,11 +173,11 @@ export function useCheckoutReturn({
 		if (disposed) return;
 		state.value = outcome;
 
-		if (outcome !== "cancelled" && outcome !== "failed") await refresh();
+		if (!["cancelled", "failed", "not_found"].includes(outcome)) await refresh();
 		// Stripped last, from wherever the app is by now, so a reload while
 		// polling asks again instead of forgetting the purchase.
 		const current = router.currentRoute.value;
-		await router.replace({ query: withoutMarkers(current.query), hash: current.hash });
+		await router.replace({ query: withoutMarkers(liveQuery()), hash: current.hash });
 		report(outcome);
 	}
 

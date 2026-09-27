@@ -276,10 +276,11 @@ export function useAddUserFlow({
 		params.delete("seat_purchase");
 		params.delete("session_id");
 		const cleanQuery = params.toString();
+		// Keep the router's own history state and the hash; only the markers go.
 		window.history.replaceState(
-			{},
+			window.history.state,
 			"",
-			window.location.pathname + (cleanQuery ? `?${cleanQuery}` : ""),
+			window.location.pathname + (cleanQuery ? `?${cleanQuery}` : "") + window.location.hash,
 		);
 
 		if (!pendingRaw) return;
