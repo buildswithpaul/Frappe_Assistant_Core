@@ -85,6 +85,10 @@ class BaseTool(ABC):
         self.description: str = ""
         self.inputSchema: Dict[str, Any] = {}
         self.requires_permission: Optional[str] = None
+        # If set, the user must hold at least one of these roles. Enforced in
+        # check_permission() (execution) and by the registry (listing), so it
+        # cannot be loosened by FAC Tool Configuration.
+        self.required_roles: Optional[List[str]] = None
         self.category: str = "Custom"
         self.source_app: str = "frappe_assistant_core"
         self.dependencies: List[str] = []
@@ -145,6 +149,15 @@ class BaseTool(ABC):
         Raises:
             frappe.PermissionError: If permission check fails
         """
+        if self.required_roles:
+            if not set(frappe.get_roles()).intersection(self.required_roles):
+                frappe.throw(
+                    _("Access to {0} requires one of these roles: {1}").format(
+                        self.name, ", ".join(self.required_roles)
+                    ),
+                    frappe.PermissionError,
+                )
+
         if self.requires_permission:
             if not frappe.has_permission(self.requires_permission, "read"):
                 frappe.throw(
