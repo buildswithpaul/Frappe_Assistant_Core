@@ -49,8 +49,16 @@
 				</button>
 			</div>
 			<form v-if="changing" class="change-email" @submit.prevent="submitChange">
-				<input v-model="newEmail" type="email" required placeholder="Correct email address" />
-				<button type="submit" class="secondary-btn">Send to this address</button>
+				<input
+					v-model="newEmail"
+					type="email"
+					required
+					placeholder="Correct email address"
+					:disabled="submittingChange"
+				/>
+				<button type="submit" class="secondary-btn" :disabled="submittingChange">
+					{{ submittingChange ? "Sending…" : "Send to this address" }}
+				</button>
 			</form>
 			<p v-if="notice" class="resent-toast" role="status">{{ notice }}</p>
 		</template>
@@ -132,6 +140,7 @@ const emit = defineEmits(["resend", "change-email", "verified", "verify-failed"]
 const resending = ref(false);
 const changing = ref(false);
 const newEmail = ref("");
+const submittingChange = ref(false);
 
 const verifyDone = ref(false);
 const verifyError = ref(null);
@@ -144,10 +153,15 @@ function onResend() {
 	});
 }
 
+// The parent calls back with whether the change went through; a failed one
+// keeps the form open with what was typed.
 function submitChange() {
 	const address = newEmail.value.trim();
-	if (!address) return;
-	emit("change-email", address, () => {
+	if (!address || submittingChange.value) return;
+	submittingChange.value = true;
+	emit("change-email", address, (changed) => {
+		submittingChange.value = false;
+		if (!changed) return;
 		changing.value = false;
 		newEmail.value = "";
 	});

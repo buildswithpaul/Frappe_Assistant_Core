@@ -4,58 +4,19 @@
 		<template v-if="verificationPending">
 			<EmailVerificationPending
 				mode="awaiting-click"
-				:owner-email="ownerEmail || ownerEmailMasked"
+				:owner-email="pendingEmail"
 				:notice="pendingNotice"
-				@resend="handleResend"
-				@change-email="handleChangeEmail"
+				@resend="resend"
+				@change-email="changeEmail"
 			/>
 		</template>
 
-		<!-- Success State - shown briefly after registration -->
-		<template v-else-if="registrationSuccess">
-			<div class="success-state">
-				<FacoRobot
-					size="lg"
-					mood="excited"
-					show-arms
-					show-shadow
-					extra-class="robot-celebrate"
-				/>
-
-				<div class="success-content">
-					<div class="success-icon">
-						<svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-							<path
-								stroke-linecap="round"
-								stroke-linejoin="round"
-								stroke-width="2"
-								d="M5 13l4 4L19 7"
-							/>
-						</svg>
-					</div>
-					<h1 class="success-title">Connected!</h1>
-					<p class="success-message">FACO is ready to help you.</p>
-				</div>
-			</div>
-		</template>
-
-		<!-- Waitlist State — registration is at capacity; applicant is queued -->
-		<template v-else-if="waitlisted">
-			<div class="waitlist-state" data-test="waitlist-state">
-				<FacoRobot size="lg" mood="attentive" show-arms show-shadow />
-				<div class="waitlist-content">
-					<h1 class="waitlist-title">You're on the waitlist</h1>
-					<p v-if="waitlistPosition" class="waitlist-position">
-						Position <strong>#{{ waitlistPosition }}</strong> in the queue
-					</p>
-					<p class="waitlist-message">
-						Registration is at capacity right now. We'll email
-						<strong>{{ ownerEmail }}</strong> the moment a slot opens — just
-						click the link in that email to finish setting up.
-					</p>
-				</div>
-			</div>
-		</template>
+		<RegistrationOutcome
+			v-else-if="registrationSuccess || waitlisted"
+			:kind="registrationSuccess ? 'success' : 'waitlist'"
+			:waitlist-position="waitlistPosition"
+			:owner-email="ownerEmail"
+		/>
 
 		<!-- Normal Onboarding Flow -->
 		<template v-else>
@@ -78,22 +39,12 @@
 				<!-- Registration Section -->
 				<div class="registration-section">
 					<!-- Reconnect: returning tenant detected on boot -->
-					<div v-if="reregistration" class="reconnect-card" data-test="reconnect-card">
-						<h2 class="reconnect-title">Reconnect this site</h2>
-						<p class="reconnect-text">
-							We'll email a verification link to
-							<strong>{{ ownerEmailMasked }}</strong>. Click it to finish reconnecting.
-						</p>
-						<button
-							class="reconnect-btn"
-							data-test="reconnect-send"
-							:disabled="reconnecting"
-							@click="handleReconnect"
-						>
-							<span v-if="!reconnecting">Send verification email</span>
-							<span v-else>Sending…</span>
-						</button>
-					</div>
+					<ReconnectCard
+						v-if="reregistration"
+						:owner-email-masked="ownerEmailMasked"
+						:sending="reconnecting"
+						@send="handleReconnect"
+					/>
 
 					<!-- Default: error state, or inline card with optional partner code + primary CTA -->
 					<template v-else>
@@ -203,12 +154,19 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onBeforeUnmount, watch } from "vue";
+import { ref, onMounted } from "vue";
 import { api } from "@/api/client";
+import {
+	connectionErrorMessage as getErrorMessage,
+	requestReconnectLink,
+	useVerificationResume,
+} from "@/composables/useVerificationResume";
 import TermsModal from "./TermsModal.vue";
 import PartnerCodeStep from "./PartnerCodeStep.vue";
 import EmailVerificationPending from "./EmailVerificationPending.vue";
 import SiteUnreachablePanel from "./SiteUnreachablePanel.vue";
+import ReconnectCard from "./ReconnectCard.vue";
+import RegistrationOutcome from "./RegistrationOutcome.vue";
 import FacoRobot from "@/components/common/FacoRobot.vue";
 
 const props = defineProps({
@@ -222,7 +180,6 @@ const emit = defineEmits(["registered"]);
 
 const isRegistering = ref(false);
 const registrationSuccess = ref(false);
-const verificationPending = ref(false);
 const waitlisted = ref(false);
 const waitlistPosition = ref(null);
 // Waitlist promotion deep link (?action=resume_registration&promotion_token=...)
@@ -253,12 +210,14 @@ const termsError = ref(null);
 // Reconnect flow — returning tenant detected on boot
 const reregistration = ref(false);
 const ownerEmailMasked = ref("");
-const pendingNotice = ref("");
 // The registering admin's own address, resolved server-side. Prefills the
 // owner field so the mailbox and the owner identity converge on purpose in
 // the ordinary case, rather than by luck.
 const suggestedEmail = ref("");
 const reconnecting = ref(false);
+
+const { verificationPending, pendingEmail, pendingNotice, enterPending, resume, resend, changeEmail } =
+	useVerificationResume({ onVerified: () => emit("registered") });
 
 onMounted(async () => {
 	if (!props.isAdmin) return;
@@ -266,9 +225,7 @@ onMounted(async () => {
 		const state = await api.registration.getState();
 		suggestedEmail.value = state?.suggested_owner_email || "";
 		ownerEmailMasked.value = state?.owner_email_masked || "";
-		if (state?.status === "Pending Email Verification") {
-			verificationPending.value = true;
-		} else if (state?.exists && state?.reregistration) {
+		if (!resume(state) && state?.exists && state?.reregistration) {
 			reregistration.value = true;
 		}
 	} catch (_) {
@@ -281,13 +238,11 @@ async function handleReconnect() {
 	error.value = null;
 	errorCode.value = null;
 	try {
-		const terms = await api.registration.getTerms();
-		if (!terms?.version) throw new Error("No terms available");
-		const result = await api.registration.register(ownerEmail.value || null, terms.version);
+		const result = await requestReconnectLink(ownerEmail.value || null);
 
 		if (result?.success && result?.verification_pending) {
 			reregistration.value = false;
-			verificationPending.value = true;
+			enterPending({ email: ownerEmailMasked.value, reconnect: true });
 		} else if (result?.success) {
 			registrationSuccess.value = true;
 			setTimeout(() => emit("registered"), 1500);
@@ -376,7 +331,7 @@ async function handleTermsAccepted(termsVersion) {
 			// admin clicks the link (which lands back here via the deep-link
 			// handler in App.vue → EmailVerificationPending in mode="verifying").
 			showTermsModal.value = false;
-			verificationPending.value = true;
+			enterPending({ email: ownerEmail.value });
 		} else if (result?.success && result?.waitlisted) {
 			showTermsModal.value = false;
 			waitlisted.value = true;
@@ -399,97 +354,6 @@ async function handleTermsAccepted(termsVersion) {
 	} finally {
 		isRegistering.value = false;
 	}
-}
-
-// Resend goes to the address AR already stored. It does not re-accept terms
-// and it does not clear a secret that another tab has already saved.
-async function handleResend(done) {
-	pendingNotice.value = "";
-	try {
-		const result = await api.registration.resendVerification();
-		if (result?.already_verified) {
-			emit("registered");
-			return;
-		}
-		if (result?.retry_after && !result?.success) {
-			pendingNotice.value = `Wait ${result.retry_after}s before sending again.`;
-		} else if (result?.success) {
-			pendingNotice.value = "Email resent. Check your inbox.";
-			if (result.owner_email_masked) ownerEmailMasked.value = result.owner_email_masked;
-		} else {
-			pendingNotice.value = result?.error || "Could not resend the email.";
-		}
-	} catch (err) {
-		pendingNotice.value = getErrorMessage(err);
-	} finally {
-		if (typeof done === "function") done();
-	}
-}
-
-// Correct the address in place. Leaving the screen used to send the link to
-// the old address while saying it went to the new one.
-async function handleChangeEmail(address, done) {
-	pendingNotice.value = "";
-	try {
-		const result = await api.registration.changePendingEmail(address);
-		if (result?.success) {
-			ownerEmail.value = "";
-			ownerEmailMasked.value = result.owner_email_masked || address;
-			pendingNotice.value = "Verification email sent to the new address.";
-		} else {
-			pendingNotice.value = result?.error || "Could not change the email.";
-		}
-	} catch (err) {
-		pendingNotice.value = getErrorMessage(err);
-	} finally {
-		if (typeof done === "function") done();
-	}
-}
-
-let pendingPoll = null;
-
-async function checkVerificationLanded() {
-	if (!verificationPending.value || document.hidden) return;
-	try {
-		const state = await api.registration.getState();
-		if (state?.local_status === "Registered") emit("registered");
-	} catch (_) {
-		// A failed poll just waits for the next one.
-	}
-}
-
-function stopPendingPoll() {
-	if (pendingPoll) clearInterval(pendingPoll);
-	pendingPoll = null;
-	document.removeEventListener("visibilitychange", checkVerificationLanded);
-}
-
-watch(verificationPending, (pending) => {
-	stopPendingPoll();
-	if (!pending) return;
-	pendingPoll = setInterval(checkVerificationLanded, 5000);
-	document.addEventListener("visibilitychange", checkVerificationLanded);
-});
-
-onBeforeUnmount(stopPendingPoll);
-
-function getErrorMessage(err) {
-	const message = err.message || "";
-
-	if (message.includes("Failed to fetch") || message.includes("NetworkError")) {
-		return "Cannot connect to the server. Please check your internet connection.";
-	}
-	if (message.includes("timeout") || message.includes("Timeout")) {
-		return "Connection timed out. The server may be temporarily unavailable.";
-	}
-	if (message.includes("500") || message.includes("Internal")) {
-		return "The server encountered an error. Please try again in a few moments.";
-	}
-	if (message.includes("401") || message.includes("403")) {
-		return "Authentication failed. Please refresh and try again.";
-	}
-
-	return message || "Failed to connect to the server. Please try again.";
 }
 </script>
 
@@ -612,195 +476,6 @@ function getErrorMessage(err) {
 	width: 1rem;
 	height: 1rem;
 	animation: spin 1s linear infinite;
-}
-
-/* Success State */
-.success-state {
-	display: flex;
-	flex-direction: column;
-	align-items: center;
-	justify-content: center;
-	min-height: 100%;
-	animation: success-fade-in 0.5s ease;
-}
-
-.success-content {
-	display: flex;
-	flex-direction: column;
-	align-items: center;
-	gap: 0.5rem;
-	margin-top: 1.5rem;
-}
-
-.success-icon {
-	width: 3rem;
-	height: 3rem;
-	color: var(--ql-success);
-	background: rgba(34, 197, 94, 0.1);
-	border-radius: 50%;
-	padding: 0.5rem;
-	animation: success-pop 0.5s ease 0.2s both;
-}
-
-.success-icon svg {
-	width: 100%;
-	height: 100%;
-}
-
-.success-title {
-	font-family: var(--ql-font-serif);
-	font-size: 1.75rem;
-	font-weight: 700;
-	color: var(--ql-success);
-	animation: success-slide-up 0.5s ease 0.3s both;
-}
-
-.success-message {
-	font-size: 1rem;
-	color: var(--ql-text-muted);
-	animation: success-slide-up 0.5s ease 0.4s both;
-}
-
-.waitlist-state {
-	display: flex;
-	flex-direction: column;
-	align-items: center;
-	justify-content: center;
-	min-height: 100%;
-	animation: success-fade-in 0.5s ease;
-}
-
-.waitlist-content {
-	display: flex;
-	flex-direction: column;
-	align-items: center;
-	gap: 0.5rem;
-	margin-top: 1.5rem;
-	max-width: 28rem;
-	text-align: center;
-}
-
-.waitlist-title {
-	font-family: var(--ql-font-serif);
-	font-size: 1.75rem;
-	font-weight: 700;
-	color: var(--ql-text);
-}
-
-.waitlist-position {
-	font-size: 1rem;
-	color: var(--ql-accent);
-}
-
-.waitlist-message {
-	font-size: 0.9375rem;
-	color: var(--ql-text-muted);
-	line-height: 1.5;
-}
-
-/* Robot celebrate animation — preserves the .faco-robot-lg base scale(1.2).
-   If we only wrote scale(1) here, the keyframe would override the base
-   transform and the robot would shrink mid-animation, snapping back at the
-   end. Multiplying through 1.2 keeps the size coherent. */
-.robot-celebrate {
-	animation: robot-celebrate 1s ease-in-out;
-}
-
-@keyframes robot-celebrate {
-	0%,
-	100% {
-		transform: scale(1.2) rotate(0deg);
-	}
-	25% {
-		transform: scale(1.32) rotate(-5deg);
-	}
-	50% {
-		transform: scale(1.38) rotate(5deg);
-	}
-	75% {
-		transform: scale(1.32) rotate(-3deg);
-	}
-}
-
-@keyframes success-fade-in {
-	from {
-		opacity: 0;
-	}
-	to {
-		opacity: 1;
-	}
-}
-
-@keyframes success-pop {
-	from {
-		transform: scale(0);
-		opacity: 0;
-	}
-	to {
-		transform: scale(1);
-		opacity: 1;
-	}
-}
-
-@keyframes success-slide-up {
-	from {
-		transform: translateY(20px);
-		opacity: 0;
-	}
-	to {
-		transform: translateY(0);
-		opacity: 1;
-	}
-}
-
-/* Reconnect Card */
-.reconnect-card {
-	max-width: 400px;
-	padding: 2rem;
-	background: var(--ql-surface);
-	border: 1px solid var(--ql-border);
-	border-radius: 0.75rem;
-	text-align: center;
-}
-
-.reconnect-title {
-	font-size: 1.25rem;
-	font-weight: 600;
-	color: var(--ql-text);
-	margin-bottom: 0.75rem;
-}
-
-.reconnect-text {
-	font-size: 0.875rem;
-	color: var(--ql-text-muted);
-	margin-bottom: 1.25rem;
-	line-height: 1.5;
-}
-
-.reconnect-text strong {
-	color: var(--ql-text);
-}
-
-.reconnect-btn {
-	padding: 0.625rem 1.5rem;
-	font-size: 0.875rem;
-	font-weight: 600;
-	color: white;
-	background: var(--ql-accent);
-	border: none;
-	border-radius: 0.5rem;
-	cursor: pointer;
-	transition: all 0.2s ease;
-	min-width: 200px;
-}
-
-.reconnect-btn:hover:not(:disabled) {
-	transform: translateY(-1px);
-}
-
-.reconnect-btn:disabled {
-	opacity: 0.7;
-	cursor: not-allowed;
 }
 
 /* Contact Admin Card */
