@@ -29,7 +29,7 @@ from frappe_assistant_core.core.base_tool import BaseTool
 
 # Appended to every failure the model sees, so a crashed calculation is retried
 # inside the tool instead of being retyped by hand into a new script.
-_RETRY_BY_HAND = (
+RETRY_BY_HAND = (
     "Re-run the calculation inside this tool, fetching the rows with "
     "tools.get_documents or data_query. Do not retype figures from earlier "
     "tool output by hand. If the calculation cannot be completed, tell the "
@@ -355,7 +355,7 @@ PRE-LOADED: pd, np, frappe, math, datetime, json, re, statistics, random"""
 
             return {
                 "success": False,
-                "error": f"{error_msg}\n\n{_RETRY_BY_HAND}",
+                "error": f"{error_msg}\n\n{RETRY_BY_HAND}",
                 "output": stdout_text[:4000],
                 "variables": {},
                 "user_context": current_user,
@@ -411,7 +411,7 @@ PRE-LOADED: pd, np, frappe, math, datetime, json, re, statistics, random"""
                     f"   - Add proper base cases to recursive functions"
                 )
 
-            result["error"] = f"{error_msg}\n\n{_RETRY_BY_HAND}"
+            result["error"] = f"{error_msg}\n\n{RETRY_BY_HAND}"
 
         # Enrich with execution context the caller expects
         result["user_context"] = current_user

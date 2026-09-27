@@ -64,6 +64,11 @@ def _cpu_limit_handler(signum, frame):
     raise CPUTimeLimitError("Code execution exceeded the CPU time limit and was terminated.")
 
 
+# A resource limit firing while a variable is being serialized ends the run; it
+# is not a reason to drop that one variable and report success.
+_LIMIT_ERRORS = (ExecutionTimeoutError, CPUTimeLimitError, MemoryError)
+
+
 def _apply_limits(limits: dict) -> None:
     """Apply resource limits permanently on the current (subprocess) process.
 
@@ -356,11 +361,12 @@ _EXCLUDED_VARS = frozenset(
 
 def _json_key(key):
     """JSON object keys must be strings. Pandas groupby keys are not."""
-    if isinstance(key, str):
-        return key
-    if isinstance(key, (datetime.date, datetime.datetime)):
-        return str(key)
-    return str(key)
+    return key if isinstance(key, str) else str(key)
+
+
+# ``tolist()`` renders datetime64/timedelta64 as integer nanoseconds. At
+# microsecond precision it yields datetime/timedelta objects instead.
+_NUMPY_TIME_UNITS = {"M": "datetime64[us]", "m": "timedelta64[us]"}
 
 
 def _serialize_variable(value):
@@ -381,12 +387,15 @@ def _serialize_variable(value):
         return _serialize_variable(value.to_dict())
     if hasattr(value, "to_list") and callable(value.to_list):
         return _serialize_variable(value.to_list())
+    time_unit = _NUMPY_TIME_UNITS.get(getattr(getattr(value, "dtype", None), "kind", None))
+    if time_unit and callable(getattr(value, "astype", None)):
+        return _serialize_variable(value.astype(time_unit).tolist())
     if hasattr(value, "tolist") and callable(value.tolist):
         return _serialize_variable(value.tolist())
 
     if isinstance(value, (str, int, float, bool, type(None))):
         return value
-    if isinstance(value, (datetime.date, datetime.datetime)):
+    if isinstance(value, (datetime.date, datetime.time, datetime.timedelta)):
         return str(value)
     if isinstance(value, (list, tuple)):
         return [_serialize_variable(v) for v in value]
@@ -418,6 +427,8 @@ def _extract_variables(execution_globals: dict, return_variables: list) -> tuple
     def _take(var_name, var_value):
         try:
             variables[var_name] = _serialize_variable(var_value)
+        except _LIMIT_ERRORS:
+            raise
         except Exception as e:
             warnings.append(f"{var_name}: {e}")
 
@@ -458,21 +469,126 @@ def _write_result(result: dict, stream) -> None:
             dropped.append(name)
 
     names = ", ".join(dropped) or "result"
+    # The parent appends the retry guidance to every failure it reports.
     fallback = {
         "success": False,
-        "error": (
-            f"Could not serialize variables: {names}. "
-            "Re-run the calculation inside this tool, fetching the rows with "
-            "tools.get_documents or data_query. Do not retype figures from earlier "
-            "tool output by hand. If the calculation cannot be completed, tell the "
-            "user it failed instead of estimating the numbers."
-        ),
+        "error": f"Could not serialize variables: {names}.",
         "error_type": "serialization",
         "output": result.get("output", ""),
         "variables": kept,
         "unserializable_variables": dropped,
     }
     stream.write(json.dumps(fallback, default=str))
+
+
+# ---------------------------------------------------------------------------
+# User code execution
+# ---------------------------------------------------------------------------
+
+_MAX_OUTPUT_CHARS = 1024 * 1024  # 1 MB
+
+
+def _truncate_output(output: str) -> str:
+    if len(output) <= _MAX_OUTPUT_CHARS:
+        return output
+    return (
+        output[:_MAX_OUTPUT_CHARS]
+        + f"\n\n... [OUTPUT TRUNCATED - exceeded {_MAX_OUTPUT_CHARS // 1024}KB limit. "
+        f"Original size: {len(output) // 1024}KB]"
+    )
+
+
+def _failure(error_type: str, error: str, output: str, execution_info: dict | None = None, **extra) -> dict:
+    return {
+        "success": False,
+        "error": error,
+        "error_type": error_type,
+        "output": output,
+        "variables": {},
+        "execution_info": execution_info or {},
+        **extra,
+    }
+
+
+def _exec_user_code(code, execution_globals, capture_output, stdout_capture, stderr_capture) -> None:
+    """Run the user's code, cancelling the wall-clock alarm however it ends.
+
+    The alarm governs the user's code only. Left armed, it fired during
+    serialization and was mistaken for a failure of one variable.
+    """
+    try:
+        if capture_output:
+            with redirect_stdout(stdout_capture), redirect_stderr(stderr_capture):
+                exec(code, execution_globals)  # noqa: S102  # nosemgrep: frappe-codeinjection-eval
+        else:
+            exec(code, execution_globals)  # noqa: S102  # nosemgrep: frappe-codeinjection-eval
+    finally:
+        if platform.system() != "Windows":
+            signal.alarm(0)
+
+
+def _run_user_code(code, execution_globals, limits, capture_output, return_variables) -> dict:
+    """Execute user code and build the result document.
+
+    Printed output is returned on every path: the totals a script printed
+    before it raised or hit a limit are exactly what the model must not retype.
+    """
+    stdout_capture = io.StringIO()
+    stderr_capture = io.StringIO()
+
+    def printed() -> str:
+        return _truncate_output(stdout_capture.getvalue())
+
+    try:
+        _exec_user_code(code, execution_globals, capture_output, stdout_capture, stderr_capture)
+
+        error_output = stderr_capture.getvalue()
+        variables, variable_warnings = _extract_variables(execution_globals, return_variables)
+        if variable_warnings:
+            error_output = (error_output + "\n" if error_output else "") + (
+                "Some variables could not be returned: " + "; ".join(variable_warnings)
+            )
+
+        return {
+            "success": True,
+            "output": printed(),
+            "error": error_output,
+            "variables": variables,
+            "execution_info": {
+                "lines_executed": len(code.split("\n")),
+                "variables_returned": len(variables),
+            },
+        }
+
+    except ExecutionTimeoutError as e:
+        return _failure("timeout", str(e), printed(), {"timeout_seconds": limits.get("timeout_seconds", 30)})
+
+    except CPUTimeLimitError as e:
+        return _failure(
+            "cpu_limit", str(e), printed(), {"max_cpu_seconds": limits.get("max_cpu_seconds", 60)}
+        )
+
+    except MemoryError:
+        max_memory_mb = limits.get("max_memory_mb", 512)
+        return _failure(
+            "memory",
+            "Memory limit exceeded. The code attempted to use more memory than allowed. "
+            f"Maximum allowed: {max_memory_mb} MB.",
+            printed(),
+            {"max_memory_mb": max_memory_mb},
+        )
+
+    except RecursionError:
+        max_depth = limits.get("max_recursion_depth", 100)
+        return _failure(
+            "recursion",
+            f"Recursion limit exceeded. The code exceeded the maximum recursion depth of {max_depth}.",
+            printed(),
+            {"max_recursion_depth": max_depth},
+        )
+
+    except Exception as e:
+        return _failure("runtime", f"Execution failed: {e}", printed(), traceback=traceback.format_exc())
 
 
 # ---------------------------------------------------------------------------
@@ -531,108 +647,10 @@ def main():
 
             # Apply resource limits immediately before exec (disposable process).
             _apply_limits(limits)
-
-            # Execute user code
-            output = ""
-            error_output = ""
-
-            if capture_output:
-                stdout_capture = io.StringIO()
-                stderr_capture = io.StringIO()
-                with redirect_stdout(stdout_capture), redirect_stderr(stderr_capture):
-                    exec(code, execution_globals)  # noqa: S102  # nosemgrep: frappe-codeinjection-eval
-                output = stdout_capture.getvalue()
-                error_output = stderr_capture.getvalue()
-            else:
-                exec(code, execution_globals)  # noqa: S102  # nosemgrep: frappe-codeinjection-eval
-
-            # The alarm was for the user's code. Serialization can be slow on a
-            # large frame, and a timeout firing mid-write used to leave stdout
-            # half-written.
-            if platform.system() != "Windows":
-                signal.alarm(0)
-
-            # Truncate output
-            max_output = 1024 * 1024  # 1 MB
-            if len(output) > max_output:
-                output = (
-                    output[:max_output]
-                    + f"\n\n... [OUTPUT TRUNCATED - exceeded {max_output // 1024}KB limit. "
-                    f"Original size: {len(output) // 1024}KB]"
-                )
-
-            variables, variable_warnings = _extract_variables(execution_globals, return_variables)
-            if variable_warnings:
-                error_output = (error_output + "\n" if error_output else "") + (
-                    "Some variables could not be returned: " + "; ".join(variable_warnings)
-                )
-
-            result = {
-                "success": True,
-                "output": output,
-                "error": error_output,
-                "variables": variables,
-                "execution_info": {
-                    "lines_executed": len(code.split("\n")),
-                    "variables_returned": len(variables),
-                },
-            }
-
-        except ExecutionTimeoutError as e:
-            result = {
-                "success": False,
-                "error": str(e),
-                "error_type": "timeout",
-                "output": "",
-                "variables": {},
-                "execution_info": {"timeout_seconds": limits.get("timeout_seconds", 30)},
-            }
-
-        except CPUTimeLimitError as e:
-            result = {
-                "success": False,
-                "error": str(e),
-                "error_type": "cpu_limit",
-                "output": "",
-                "variables": {},
-                "execution_info": {"max_cpu_seconds": limits.get("max_cpu_seconds", 60)},
-            }
-
-        except MemoryError:
-            result = {
-                "success": False,
-                "error": (
-                    "Memory limit exceeded. The code attempted to use more memory than allowed. "
-                    f"Maximum allowed: {limits.get('max_memory_mb', 512)} MB."
-                ),
-                "error_type": "memory",
-                "output": "",
-                "variables": {},
-                "execution_info": {"max_memory_mb": limits.get("max_memory_mb", 512)},
-            }
-
-        except RecursionError:
-            result = {
-                "success": False,
-                "error": (
-                    "Recursion limit exceeded. The code exceeded the maximum recursion depth of "
-                    f"{limits.get('max_recursion_depth', 100)}."
-                ),
-                "error_type": "recursion",
-                "output": "",
-                "variables": {},
-                "execution_info": {"max_recursion_depth": limits.get("max_recursion_depth", 100)},
-            }
+            result = _run_user_code(code, execution_globals, limits, capture_output, return_variables)
 
         except Exception as e:
-            result = {
-                "success": False,
-                "error": f"Execution failed: {e}",
-                "error_type": "runtime",
-                "output": "",
-                "variables": {},
-                "traceback": traceback.format_exc(),
-            }
+            result = _failure("runtime", f"Execution failed: {e}", "", traceback=traceback.format_exc())
 
         finally:
             try:
@@ -642,13 +660,7 @@ def main():
 
     except Exception as e:
         # Fatal error before frappe init (bad JSON, missing fields, etc.)
-        result = {
-            "success": False,
-            "error": f"Subprocess initialization failed: {e}",
-            "error_type": "init",
-            "output": "",
-            "variables": {},
-        }
+        result = _failure("init", f"Subprocess initialization failed: {e}", "")
 
     # Always write exactly one valid JSON document, keeping any printed output.
     _write_result(result, sys.stdout)
