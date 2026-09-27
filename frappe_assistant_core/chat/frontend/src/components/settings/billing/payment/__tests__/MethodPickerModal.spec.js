@@ -44,13 +44,12 @@ describe("MethodPickerModal method availability", () => {
 		expect(modal.textContent).toContain("USD 49");
 	});
 
-	it("keeps both options when the currency is not known", () => {
-		// A Razorpay tenant with no saved instrument and nothing owed carries
-		// no currency in the payload. Showing both is the pre-existing
-		// behaviour; hiding UPI here would cost an Indian customer the
-		// default method.
+	it("offers only Card when the currency is not known", () => {
+		// UPI needs an Indian bank account, and the backend refuses it for
+		// anyone billed outside India. Offering it on a guess would hand an
+		// international customer a method that can only fail.
 		const modal = mountPicker({ currency: null });
-		expect(methodNames(modal)).toEqual(["UPI Autopay", "Card"]);
+		expect(methodNames(modal)).toEqual(["Card"]);
 	});
 });
 

@@ -133,7 +133,26 @@ describe("PaymentMethodTab picker currency", () => {
 		expect(w.findComponent({ name: "MethodPickerModal" }).props("currency")).toBe("USD");
 	});
 
-	it("passes null when neither is known", async () => {
+	it("falls back to the currency the billing country bills in", async () => {
+		const paymentMethod = fakePaymentMethod({ billingCurrency: ref("INR") });
+		const w = mountTab(paymentMethod);
+		await flushPromises();
+
+		expect(w.findComponent({ name: "MethodPickerModal" }).props("currency")).toBe("INR");
+	});
+
+	it("prefers the saved instrument's currency over the billing country's", async () => {
+		const paymentMethod = fakePaymentMethod({
+			instrument: ref(usdInstrument),
+			billingCurrency: ref("INR"),
+		});
+		const w = mountTab(paymentMethod);
+		await flushPromises();
+
+		expect(w.findComponent({ name: "MethodPickerModal" }).props("currency")).toBe("USD");
+	});
+
+	it("passes null when nothing is known", async () => {
 		const paymentMethod = fakePaymentMethod();
 		const w = mountTab(paymentMethod);
 		await flushPromises();

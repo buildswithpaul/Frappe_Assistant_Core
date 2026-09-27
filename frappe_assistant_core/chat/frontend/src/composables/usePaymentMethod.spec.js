@@ -13,14 +13,14 @@ vi.mock("@/api/client", () => ({
 import { api } from "@/api/client";
 import { usePaymentMethod } from "@/composables/usePaymentMethod.js";
 
-function harness() {
+function harness(details = { billing_email: "paul@example.com" }) {
 	const ctx = {
 		verificationMessage: ref(null),
 		verificationSuccess: ref(null),
 		invoiceInfo: ref(null),
 		closeGatewayModal: vi.fn(),
 		loadData: vi.fn(),
-		billingDetails: ref({ billing_email: "paul@example.com" }),
+		billingDetails: ref(details),
 	};
 	return { ctx, pm: usePaymentMethod(ctx) };
 }
@@ -51,6 +51,21 @@ describe("usePaymentMethod", () => {
 		api.billing.getPaymentInstrument.mockResolvedValue({ update_mode: "swap" });
 	});
 	afterEach(() => vi.restoreAllMocks());
+
+	describe("billingCurrency", () => {
+		it("is INR for a billing country of India", () => {
+			expect(harness({ billing_country: "IN" }).pm.billingCurrency.value).toBe("INR");
+		});
+
+		it("is USD for any other billing country", () => {
+			expect(harness({ billing_country: "US" }).pm.billingCurrency.value).toBe("USD");
+		});
+
+		it("is unknown until a billing country is saved", () => {
+			expect(harness({ billing_email: "paul@example.com" }).pm.billingCurrency.value).toBeNull();
+			expect(harness(null).pm.billingCurrency.value).toBeNull();
+		});
+	});
 
 	describe("loadInstrument", () => {
 		it("maps a settle payload onto the tab's state", async () => {
