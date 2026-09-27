@@ -64,9 +64,9 @@
    "label": "Tenant Secret"
   },
   {
-   "description": "Transient — set during email-verified registration; cleared on completion.",
+   "description": "Transient — the token FAC Cloud returned when it created this site's pending tenant. Required to resend the verification email or change its address; cleared on completion.",
    "fieldname": "pending_verification_token",
-   "fieldtype": "Data",
+   "fieldtype": "Password",
    "hidden": 1,
    "no_copy": 1,
    "read_only": 1
@@ -162,7 +162,7 @@
  ],
  "issingle": 1,
  "links": [],
- "modified": "2026-05-09 19:00:00.000000",
+ "modified": "2026-09-27 10:00:00.000000",
  "modified_by": "Administrator",
  "module": "Chat",
  "name": "FAC Chat Settings",
