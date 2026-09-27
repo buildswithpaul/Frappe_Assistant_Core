@@ -138,7 +138,7 @@ def get_available_gateways():
                                     "display_name": "Razorpay",
                                     "currency": "INR",
                                     "currency_symbol": "₹",
-                                    "description": "UPI, Cards, NetBanking",
+                                    "description": "UPI, Cards, NetBanking (India)",
                                     "is_recommended": true,
                                     "plans": {
                                             "Starter": {"monthly": 1599, "annual": 15999},
@@ -150,6 +150,9 @@ def get_available_gateways():
                     "recommended_gateway": "razorpay",
                     "tenant_country": "IN"
             }
+
+            A tenant billed outside India gets USD prices and
+            "International Cards (USD)" instead — no UPI.
     """
     _require_system_manager()
 

@@ -1,4 +1,4 @@
-import { ref } from "vue";
+import { computed, ref } from "vue";
 
 import { api } from "@/api/client";
 import { logger } from "@/utils/logger";
@@ -38,6 +38,14 @@ export function usePaymentMethod({
 	// banner can be scrolled out of view of a button near the bottom of
 	// this tab, so the tab needs its own copy.
 	const updateError = ref(null);
+	// The currency the billing country is charged in, for when neither the
+	// saved instrument nor an outstanding invoice says. Mirrors the backend:
+	// India bills in INR, everywhere else in USD. Null until a country is saved.
+	const billingCurrency = computed(() => {
+		const country = (billingDetails?.value?.billing_country || "").trim().toUpperCase();
+		if (!country) return null;
+		return country === "IN" || country === "INDIA" ? "INR" : "USD";
+	});
 
 	async function loadInstrument() {
 		loadingInstrument.value = true;
@@ -96,6 +104,7 @@ export function usePaymentMethod({
 		updating,
 		instrumentError,
 		updateError,
+		billingCurrency,
 		loadInstrument,
 		updatePaymentMethod,
 	};

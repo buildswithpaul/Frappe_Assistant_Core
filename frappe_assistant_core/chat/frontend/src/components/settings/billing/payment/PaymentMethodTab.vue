@@ -57,6 +57,7 @@ const {
 	updating,
 	instrumentError,
 	updateError,
+	billingCurrency,
 	loadInstrument,
 	updatePaymentMethod,
 } = props.paymentMethod;
@@ -64,10 +65,15 @@ const {
 const showPicker = ref(false);
 
 // What the next charge will be denominated in — the outstanding invoice's
-// own currency when there is one, otherwise the saved instrument's. Null
-// when neither exists, which the picker reads as "unknown".
+// own currency when there is one, otherwise the saved instrument's, otherwise
+// the one the billing country bills in. Null when none is known, which the
+// picker reads as "unknown" and offers Card alone.
 const pickerCurrency = computed(
-	() => amountDue.value?.currency || instrument.value?.currency || null
+	() =>
+		amountDue.value?.currency ||
+		instrument.value?.currency ||
+		billingCurrency?.value ||
+		null
 );
 
 // Stripe's portal handles instrument choice itself, so there is nothing to

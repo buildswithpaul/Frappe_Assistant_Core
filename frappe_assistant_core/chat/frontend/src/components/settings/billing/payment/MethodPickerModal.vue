@@ -40,20 +40,18 @@ import HostedCheckoutNotice from "../HostedCheckoutNotice.vue";
 const props = defineProps({
 	isOpen: { type: Boolean, default: false },
 	amountDue: { type: Object, default: null },
-	// The subscription's currency, when the instrument payload carries one.
+	// The currency the next charge is in; null when it is not known.
 	currency: { type: String, default: null },
 	formatCurrency: { type: Function, required: true },
 });
 
 defineEmits(["select", "close"]);
 
-// Razorpay mints INR recurring orders for India and USD ones everywhere
-// else, and a USD recurring order is card-only — the backend's
-// `_resolve_currency_and_method` silently downgrades a UPI request to a
-// card there. Offer UPI unless we positively know the currency is not INR;
-// an unknown currency keeps both, so an Indian customer with no saved
-// instrument still gets their default method.
-const showUpi = computed(() => !props.currency || props.currency === "INR");
+// UPI Autopay needs an Indian bank account: Razorpay bills India in INR and
+// everyone else through card-only USD subscriptions, and the backend refuses
+// a UPI request from a customer billed outside India. So UPI is offered only
+// when the charge is known to be in INR; an unknown currency offers Card.
+const showUpi = computed(() => props.currency === "INR");
 </script>
 
 <style scoped>
