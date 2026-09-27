@@ -49,12 +49,11 @@ const scope = useCreditScope();
 // from watching the team pool flash up and then shrink to their own limit.
 const ready = ref(false);
 
-// "Unknown" is the fallback served before registration finishes. It is not a
-// plan, and rendering it told every new signup they were unlimited.
-const plan = computed(() => {
-	const name = userStore.quotaInfo?.plan || "";
-	return name.toLowerCase() === "unknown" ? "" : name;
-});
+// The fallback is what the server serves when AR never answered (typically
+// before registration finishes). Its "Unknown" plan and -1 quota are
+// placeholders, and rendering them told every new signup they were unlimited.
+const isFallback = computed(() => userStore.quotaInfo?.is_fallback === true);
+const plan = computed(() => (isFallback.value ? "" : userStore.quotaInfo?.plan || ""));
 const isFree = computed(() => plan.value.toLowerCase() === "free");
 
 const title = computed(() =>
@@ -71,9 +70,16 @@ const subtitle = computed(() => {
 	return "Start chatting now — your plan details are in Settings.";
 });
 
-const isUnlimited = computed(() => !scope.value.isPersonal && scope.value.total === -1);
+// A personal cap comes from its own endpoint and stays real under the fallback.
+const knowsQuota = computed(() => scope.value.isPersonal || !isFallback.value);
 
-const showQuota = computed(() => ready.value && (isUnlimited.value || scope.value.total > 0));
+const isUnlimited = computed(
+	() => knowsQuota.value && !scope.value.isPersonal && scope.value.total === -1
+);
+
+const showQuota = computed(
+	() => ready.value && knowsQuota.value && (isUnlimited.value || scope.value.total > 0)
+);
 
 const quotaValue = computed(() =>
 	isUnlimited.value ? "Unlimited" : scope.value.total.toLocaleString()
@@ -92,10 +98,11 @@ const perks = computed(() => [
 ]);
 
 // Onboarding must never block on billing: both loaders swallow their own
-// errors, so an unreachable AR simply leaves the quota pill hidden.
+// errors, so an unreachable AR simply leaves the quota pill hidden. A boot
+// payload holding only the fallback is asked again: get_quota_status goes to AR.
 onMounted(async () => {
 	await Promise.all([
-		userStore.quotaInfo ? Promise.resolve() : userStore.loadQuota(),
+		userStore.quotaInfo && !isFallback.value ? Promise.resolve() : userStore.loadQuota(),
 		userStore.myCreditStatus ? Promise.resolve() : userStore.loadMyCreditStatus(),
 	]);
 	ready.value = true;
