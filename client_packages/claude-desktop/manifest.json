@@ -136,10 +136,6 @@
       "description": "Execute Python code in sandbox for advanced data analysis with pandas, numpy, and matplotlib"
     },
     {
-      "name": "analyze_business_data",
-      "description": "Perform statistical analysis (profiling, trends, correlations) on business data"
-    },
-    {
       "name": "run_database_query",
       "description": "Execute custom SQL SELECT queries for complex data analysis"
     },

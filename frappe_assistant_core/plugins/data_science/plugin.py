@@ -54,7 +54,6 @@ class DataSciencePlugin(BasePlugin):
         """Get list of tools provided by this plugin"""
         return [
             "run_python_code",
-            "analyze_business_data",
             "run_database_query",
             "extract_file_content",  # File content extraction tool
         ]

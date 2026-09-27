@@ -229,7 +229,7 @@ registry for tools contributed by external apps).
 | Reports | `report_list`, `report_requirements`, `generate_report` |
 | Approvals | `get_pending_approvals`, `run_workflow` |
 | Schema | `get_doctype_info` |
-| Analytics | `run_python_code`, `run_database_query`, `analyze_business_data` |
+| Analytics | `run_python_code`, `run_database_query` |
 | Files | `extract_file_content` |
 | Dashboards | `create_dashboard`, `create_dashboard_chart`, `list_user_dashboards` |
 
