@@ -7,6 +7,7 @@
 import frappe
 from frappe import _
 
+from ._helpers import ARAPIError, _strip_noise
 from .auth import _ar_user_id
 
 
@@ -132,6 +133,13 @@ def upload_document():
     except frappe.ValidationError:
         raise
     except Exception as e:
+        # AR answers 403 when the plan excludes the knowledge base. Its message
+        # says so; reporting it as a server error (HTTP 417) hid that.
+        if isinstance(e, ARAPIError) and getattr(e, "status_code", None) == 403:
+            frappe.throw(
+                _strip_noise(getattr(e, "message", "")) or _("Your plan doesn't include the knowledge base."),
+                frappe.PermissionError,
+            )
         frappe.log_error(title="FACO Knowledge Base", message=f"Error uploading document: {e!s}")
         frappe.throw(_("Error: {0}").format(str(e)))
 
