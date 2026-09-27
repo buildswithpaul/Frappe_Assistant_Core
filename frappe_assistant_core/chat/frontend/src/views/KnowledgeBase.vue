@@ -19,7 +19,7 @@
 			<!-- Knowledge Base Content -->
 			<div
 				class="kb-content"
-				@dragover.prevent="onDragOver"
+				@dragover.prevent="onDragOverGated"
 				@dragleave.prevent="onDragLeave"
 				@drop.prevent="onDrop($event)"
 			>
@@ -67,6 +67,20 @@
 						<!-- Toolbar row: shared-knowledge banner, upload error,
 						     filter/search/view controls — full-width, above the grid. -->
 						<template #toolbar>
+							<UpgradeBanner
+								v-if="!knowledgeIncluded"
+								ref="upgradeNote"
+								data-test="kb-upgrade-note"
+								title="Your plan doesn't include the knowledge base."
+								:message="
+									isAdmin
+										? 'Upgrade to add documents FACO can draw on in its answers.'
+										: 'Ask an admin to upgrade the plan to add documents.'
+								"
+								:action-label="isAdmin ? 'View plans' : ''"
+								@upgrade="router.push('/settings/billing')"
+							/>
+
 							<SharedKnowledge :is-admin="isAdmin" />
 
 							<div v-if="uploadError" class="upload-error-banner">
@@ -119,11 +133,15 @@
 						<EmptyState
 							v-if="!hasDocuments"
 							title="Your knowledge base is empty"
-							description="Upload documents and FACO will use them to give you smarter, more contextual answers."
+							:description="
+								knowledgeIncluded
+									? 'Upload documents and FACO will use them to give you smarter, more contextual answers.'
+									: 'Documents added here give FACO smarter, more contextual answers.'
+							"
 							:cta="knowledgeIncluded ? 'Upload your first document' : ''"
 							@cta="triggerUpload"
 						>
-							<template #footnote>
+							<template v-if="knowledgeIncluded" #footnote>
 								<p class="kb-empty-foot">
 									Supports PDF, Markdown, and Text up to 10 MB — or drag and drop
 									anywhere on this page.
@@ -230,6 +248,7 @@ import ListPageShell from "@/components/common/list/ListPageShell.vue";
 import ListHeaderBand from "@/components/common/list/ListHeaderBand.vue";
 import AddSlotCard from "@/components/common/list/AddSlotCard.vue";
 import EmptyState from "@/components/common/list/EmptyState.vue";
+import UpgradeBanner from "@/components/common/UpgradeBanner.vue";
 import { api } from "@/api/client";
 
 const router = useRouter();
@@ -257,6 +276,7 @@ const activeFilter = ref("all");
 const searchQuery = ref("");
 const viewMode = ref("grid");
 const toolbarRef = ref(null);
+const upgradeNote = ref(null);
 
 const filteredDocuments = computed(() => {
 	let docs = documents.value;
@@ -298,9 +318,19 @@ const {
 });
 
 // A plan that excludes the knowledge base has no upload path at all, including
-// drag-and-drop, which would otherwise fail after the file was accepted.
+// drag-and-drop, which would otherwise fail after the file was accepted. The
+// page is not highlighted as a drop target, and a drop brings the upgrade note
+// into view instead of silently doing nothing.
+function onDragOverGated() {
+	if (knowledgeIncluded.value) onDragOver();
+}
+
 function onDrop(event) {
-	if (knowledgeIncluded.value) dropFiles(event);
+	if (knowledgeIncluded.value) {
+		dropFiles(event);
+		return;
+	}
+	upgradeNote.value?.$el?.scrollIntoView?.({ block: "nearest", behavior: "smooth" });
 }
 
 let pollInterval = null;
