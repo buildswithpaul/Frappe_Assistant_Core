@@ -41,7 +41,11 @@ let parseCheckoutReturn;
 let useCheckoutReturn;
 let billingReloadTick;
 
-function harness(query, { isAdmin = true } = {}) {
+function harness(query, { isAdmin = true, location = query } = {}) {
+	// The live URL, which can differ from the router's view once another
+	// handler has rewritten it with history.replaceState.
+	const search = new URLSearchParams(location).toString();
+	window.history.replaceState({}, "", `/copilot/settings/billing${search ? `?${search}` : ""}`);
 	const current = ref({ path: "/settings/billing", query: { ...query } });
 	const router = {
 		currentRoute: current,
@@ -258,6 +262,43 @@ describe("useCheckoutReturn", () => {
 		await checkout.run();
 
 		expect(current.value.query).toEqual({ seat_purchase: "1", session_id: "cs_1" });
+	});
+
+	it("does not bring back the markers the seat handler already stripped", async () => {
+		// The seat handler strips seat_purchase/session_id with replaceState,
+		// which the router never hears about. Rebuilding the URL from the
+		// router's stale query put them back, so a reload re-ran the seat flow.
+		api.billing.verifyCheckoutReturn.mockResolvedValue({ done: true, outcome: "applied" });
+		const { checkout, current } = harness(
+			{ fac_checkout: "CHK-1", result: "success", seat_purchase: "1", session_id: "cs_1" },
+			{ location: { fac_checkout: "CHK-1", result: "success" } },
+		);
+
+		await checkout.run();
+
+		expect(current.value.query).toEqual({});
+	});
+
+	it("ends at once, without claiming a payment, for a session the runtime does not know", async () => {
+		api.billing.verifyCheckoutReturn.mockResolvedValue({
+			done: true,
+			outcome: "unknown",
+			found: false,
+		});
+		const { checkout, userStore, current } = harness({ fac_checkout: "forged", result: "success" });
+
+		await checkout.run();
+
+		expect(api.billing.verifyCheckoutReturn).toHaveBeenCalledTimes(1);
+		expect(checkout.state.value).toBe("not_found");
+		expect(toast.showSuccess).not.toHaveBeenCalled();
+		expect(toast.showToast).not.toHaveBeenCalledWith(
+			"Payment received — your plan will update shortly.",
+			expect.anything(),
+			expect.anything(),
+		);
+		expect(userStore.loadQuota).not.toHaveBeenCalled();
+		expect(current.value.query).toEqual({});
 	});
 
 	it("does not ask a non-admin's session to verify a purchase", async () => {

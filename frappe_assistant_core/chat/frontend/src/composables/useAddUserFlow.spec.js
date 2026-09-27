@@ -182,6 +182,21 @@ describe("useAddUserFlow post-payment finalize", () => {
 		expect(ctx.refreshLimit).toHaveBeenCalledTimes(1);
 	});
 
+	it("strips its markers without discarding the router's history state or hash", async () => {
+		const { flow } = harness(null);
+		window.history.replaceState(
+			{ back: "/settings", position: 3 },
+			"",
+			"/settings/users?tab=team&seat_purchase=1&session_id=cs_test_1#members",
+		);
+
+		await flow.handleStripeSeatReturn();
+
+		expect(window.location.search).toBe("?tab=team");
+		expect(window.location.hash).toBe("#members");
+		expect(window.history.state).toEqual({ back: "/settings", position: 3 });
+	});
+
 	// Contrast case: an ordinary invite (no payment involved, plenty of
 	// vacant seats so no Stripe round-trip ever happens) must still treat
 	// "already a member" as the real conflict it is -- the narrowing above
