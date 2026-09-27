@@ -43,6 +43,8 @@ def get_quota_status():
                     "quota_used": int,
                     "quota_remaining": int,
                     "percentage_used": float,
+                    "features": dict,             # plan feature flags; {} = older AR, allow
+                    "is_fallback": bool,          # AR never answered; figures are placeholders
                     "credit_balance": float,      # prepaid, always present
                     "in_overage": bool,           # quota spent, prepaid covering
                     "credits_exhausted": bool,    # quota spent, prepaid gone
@@ -55,23 +57,23 @@ def get_quota_status():
     running on purchased credits.
     """
     try:
-        from frappe_assistant_core.chat.quota_cache import get_quota_snapshot
+        from frappe_assistant_core.chat.quota_cache import (
+            get_quota_snapshot,
+            quota_from_subscription,
+            summarize,
+        )
 
         settings = frappe.get_single("FAC Chat Settings")
         is_admin = "System Manager" in frappe.get_roles(frappe.session.user)
 
-        # Fetch live from AR to get current plan/quota (avoids cache staleness)
+        # Fetch live from AR to get current plan/quota (avoids cache staleness);
+        # the cached snapshot stands in if AR is unreachable.
         live = _fetch_live_quota_dispatch()
         snap = get_quota_snapshot()
-        if live:
-            quota_total = live.get("credit_quota") or live.get("quota", 0)
-            quota_used = live.get("credits_used") or live.get("used", 0)
-            plan = live.get("plan", "Free")
-        else:
-            # Fallback to cached quota if AR is unreachable
-            quota_total = snap.get("quota_total", 0)
-            quota_used = snap.get("quota_used", 0)
-            plan = snap.get("plan", "Free")
+        quota = summarize(quota_from_subscription(live) if live else snap)
+        quota_total = quota["quota_total"]
+        quota_used = quota["quota_used"]
+        is_unlimited = quota["is_unlimited"]
 
         # The prepaid balance is part of the admission answer, so it has to
         # survive an AR blip. It used to be emitted only on the live path,
@@ -81,15 +83,6 @@ def get_quota_status():
         # cached value is the same number one sync behind, never a guess.
         balance_source = live if live and "credit_balance" in live else snap
         credit_balance = float(balance_source.get("credit_balance") or 0)
-
-        is_unlimited = quota_total == -1
-
-        if is_unlimited:
-            quota_remaining = -1
-            percentage_used = 0
-        else:
-            quota_remaining = max(0, quota_total - quota_used)
-            percentage_used = (quota_used / quota_total * 100) if quota_total > 0 else 0
 
         # Say what AR's gate would say, rather than leaving each client to
         # re-derive it. `percentage_used >= 100` is NOT that answer: it counts
@@ -123,12 +116,7 @@ def get_quota_status():
 
         return {
             "success": True,
-            "plan": plan,
-            "quota_total": quota_total,
-            "quota_used": quota_used,
-            "quota_remaining": quota_remaining,
-            "percentage_used": round(percentage_used, 1),
-            "is_unlimited": is_unlimited,
+            **quota,
             "credit_balance": credit_balance,
             "in_overage": in_overage,
             "credits_exhausted": credits_exhausted,
