@@ -55,7 +55,10 @@ class ExecutePythonCode(BaseTool):
         self.library_status = self._check_library_availability()
 
         self.description = self._get_dynamic_description()
-        self.requires_permission = None  # Available to all users
+        self.requires_permission = None
+        # Non-bypassable role gate: hides the tool from non-admins and blocks
+        # execution before it starts. secure_user_context re-checks inside execute().
+        self.required_roles = ["System Manager"]
 
         self.inputSchema = {
             "type": "object",
@@ -119,20 +122,22 @@ class ExecutePythonCode(BaseTool):
         """Generate description based on library availability"""
         base_description = """Execute Python in a sandboxed environment with built-in data access via `tools`.
 
-PREFER THIS over get_documents/generate_report + separate code — fetch inside code instead:
-  tools.get_documents(doctype, filters={}, fields=["*"], limit=100) → {success, data, count}
-  tools.get_document(doctype, name) → {success, data}
-  tools.generate_report(report_name, filters={}, format="json") → {success, data, columns}
-  tools.get_report_info(report_name) → {success, columns, filter_guidance}
-  tools.list_reports(module=None, report_type=None) → {success, reports, count}
+PREFER THIS over separate fetch tools; fetch inside the code:
+  tools.get_documents(doctype, filters={}, fields=["*"], limit=100, group_by=None) -> {success, data, count}
+  tools.get_document(doctype, name) -> {success, data}
+  tools.generate_report(report_name, filters={}, format="json") -> {success, data, columns}
+  tools.get_report_info(report_name) -> {success, columns, filter_guidance}
+  tools.list_reports(module=None, report_type=None) -> {success, reports, count}
   tools.search(query, doctype=None, limit=20)
-  tools.get_doctype_info(doctype) → {success, fields, links}
+  tools.get_doctype_info(doctype) -> {success, fields, links}
 
-RULES: no imports (libraries pre-loaded); read-only DB access, audit-logged;
-no file/network access; no plotting libraries — use the dashboard tools for charts.
+RULES: no imports; no file/network access; no plotting (use the dashboard tools).
+DATA: read-only, with the user's roles and User Permissions. frappe.get_list/get_all/get_doc and
+frappe.db.get_value/count/exists work; frappe.db.sql does not. Aggregate:
+fields=['customer', {'SUM': 'grand_total', 'as': 'total'}], group_by='customer'.
 
 FIGURES: only report numbers this run computed. Fetch rows inside the code
-(tools.get_documents or data_query) — never retype earlier tool output by hand.
+(tools.get_documents or data_query); never retype earlier tool output by hand.
 Pass return_variables to limit what comes back. If this tool fails, say the
 calculation failed; do not estimate or retype the totals.
 
@@ -170,7 +175,7 @@ PRE-LOADED: pd, np, frappe, math, datetime, json, re, statistics, random"""
             # Use secure user context manager with audit trail
             with secure_user_context(require_system_manager=True) as current_user:
                 with audit_code_execution(code_snippet=code, user_context=current_user) as audit_info:
-                    # Perform security scan before execution
+                    # Secondary regex scan (defense in depth).
                     security_check = self._scan_for_dangerous_operations(code)
                     if not security_check["success"]:
                         frappe.logger().warning(
@@ -199,6 +204,28 @@ PRE-LOADED: pd, np, frappe, math, datetime, json, re, statistics, random"""
                         return preprocess_result
                     code = preprocess_result["code"]
                     fixes_applied = preprocess_result.get("fixes_applied", [])
+
+                    # Structural safety gate, run on the final code after imports of
+                    # pre-loaded libraries were rewritten above: rejects remaining
+                    # imports, private/dunder attribute access and eval/exec-style builtins.
+                    from frappe_assistant_core.utils.sandbox_ast import (
+                        SandboxSecurityError,
+                        validate_code,
+                    )
+
+                    try:
+                        validate_code(code)
+                    except SandboxSecurityError as exc:
+                        frappe.logger().warning(
+                            f"Security violation in code execution - User: {current_user}, Reason: {exc}"
+                        )
+                        return {
+                            "success": False,
+                            "error": f"🚫 Security: {exc}",
+                            "security_violation": True,
+                            "output": "",
+                            "variables": {},
+                        }
 
                     # Execute the code in an isolated subprocess.
                     # The subprocess sets up its own execution environment

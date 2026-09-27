@@ -29,6 +29,8 @@ from typing import Any, Dict, List, Optional
 
 import frappe
 
+from frappe_assistant_core.utils import sandbox_frappe
+
 
 class FrappeAssistantAPI:
     """
@@ -191,13 +193,8 @@ class FrappeAssistantAPI:
                 print(f"Total: {invoice['data']['grand_total']}")
         """
         try:
-            if not frappe.has_permission(doctype, "read"):
-                return {"success": False, "error": f"No permission to read {doctype}"}
-
-            doc = frappe.get_doc(doctype, name)
-
-            # Convert frappe._dict to plain Python dict for pandas compatibility
-            data = dict(doc.as_dict())
+            # Plain dict for pandas compatibility
+            data = dict(sandbox_frappe.get_doc(doctype, name))
 
             return {"success": True, "data": data}
 
@@ -212,8 +209,10 @@ class FrappeAssistantAPI:
         self,
         doctype: str,
         filters: Optional[Dict[str, Any]] = None,
-        fields: Optional[List[str]] = None,
+        fields: Optional[List[Any]] = None,
         limit: int = 100,
+        order_by: Optional[str] = None,
+        group_by: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Get multiple documents with filters (permission-checked).
@@ -221,8 +220,12 @@ class FrappeAssistantAPI:
         Args:
             doctype: Document type (e.g., "Customer", "Item")
             filters: Filter dictionary (e.g., {"territory": "USA"})
-            fields: List of fields to fetch (default: ["*"] = all fields)
+            fields: List of fields to fetch (default: ["*"] = all fields). Link fields can be
+                followed with dot notation ("customer.territory"). Aggregates are written
+                {"SUM": "grand_total", "as": "total"} (COUNT, SUM, AVG, MIN, MAX).
             limit: Maximum records to return (default: 100)
+            order_by: e.g. "creation desc" or an aggregate alias, "total desc"
+            group_by: Field to group aggregates by (e.g. "customer")
 
         Returns:
             dict with:
@@ -241,12 +244,23 @@ class FrappeAssistantAPI:
             if result["success"]:
                 for customer in result["data"]:
                     print(f"{customer['customer_name']} - {customer['customer_group']}")
+
+            # Revenue per customer, summed in the database
+            result = tools.get_documents("Sales Invoice",
+                filters={"docstatus": 1},
+                fields=["customer", {"SUM": "grand_total", "as": "total"}],
+                group_by="customer",
+                order_by="total desc",
+                limit=10)
         """
         try:
-            if not frappe.has_permission(doctype, "read"):
-                return {"success": False, "error": f"No permission to read {doctype}"}
-
-            raw_data = frappe.get_all(doctype, filters=filters or {}, fields=fields or ["*"], limit=limit)
+            # sandbox_frappe.get_list enforces read permission; its PermissionError is mapped below.
+            list_kwargs = {"filters": filters or {}, "fields": fields or ["*"], "limit": limit}
+            if order_by:
+                list_kwargs["order_by"] = order_by
+            if group_by:
+                list_kwargs["group_by"] = group_by
+            raw_data = sandbox_frappe.get_list(doctype, **list_kwargs)
 
             # Convert frappe._dict objects to plain Python dicts for pandas compatibility
             # This prevents "invalid __array_struct__" errors when using with pandas
@@ -290,7 +304,7 @@ class FrappeAssistantAPI:
 
             # Use Frappe's built-in search
             if doctype:
-                results = frappe.get_all(
+                results = sandbox_frappe.get_list(
                     doctype,
                     filters=[["name", "like", f"%{query}%"]],
                     fields=["name"],

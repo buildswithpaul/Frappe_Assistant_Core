@@ -193,4 +193,4 @@ Returns `count: 0` with `unresolved_filters.customer.suggestions: ["Grant Plasti
 - **Child tables** cannot be queried directly — query the parent DocType instead
 - **Permission filters** are applied automatically — results only include documents the user can read
 - **Link fields** store the `name` (ID), not the display value — use the ID in filters
-- **Maximum limit is 1000** — for larger datasets, use `run_database_query` with SQL
+- **Maximum limit is 1000** — for larger datasets, use `run_python_code`: `tools.get_documents` takes `group_by` and aggregate fields, so totals are computed in the database with the same permission checks
