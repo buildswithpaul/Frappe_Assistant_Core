@@ -102,7 +102,8 @@ def verify_checkout_return(session: str) -> dict:
             | "cancelled" | "unknown", "purpose", "plan", "target_plan"}``, plus
             ``"quota"`` (the refreshed snapshot) whenever the cache was refreshed,
             and ``"error"`` on a transient failure. ``unknown`` means FAC Cloud
-            cannot report on the session, so the cache was simply refreshed.
+            cannot report on the session, so the cache was simply refreshed —
+            or, with ``"found": False``, that it has no such session at all.
     """
     _require_system_manager()
 
@@ -131,6 +132,10 @@ def verify_checkout_return(session: str) -> dict:
     except ARAPIError as e:
         if _MISSING_METHOD in f"{e} {getattr(e, 'response_data', '')}":
             return _refreshed("unknown")
+        if _is_not_found(e):
+            # Final, not transient: polling a session FAC Cloud has never
+            # heard of (a forged or stale link) would end in "Payment received".
+            return {"done": True, "outcome": "unknown", "found": False}
         return _still_waiting(e)
     except ARError as e:
         return _still_waiting(e)
@@ -147,6 +152,11 @@ def verify_checkout_return(session: str) -> dict:
         _refresh_subscription_cache()
         summary["quota"] = _quota_summary()
     return summary
+
+
+def _is_not_found(e: Exception) -> bool:
+    data = getattr(e, "response_data", None) or {}
+    return getattr(e, "status_code", None) == 404 or data.get("exc_type") == "DoesNotExistError"
 
 
 def _refreshed(outcome: str) -> dict:
