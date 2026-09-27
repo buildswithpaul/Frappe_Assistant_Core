@@ -44,7 +44,11 @@ class QueryAndAnalyse(BaseTool):
         super().__init__()
         self.name = "run_database_query"
         self.description = self._get_description()
-        self.requires_permission = None  # Permission checked dynamically in execute method
+        self.requires_permission = None
+        # Raw SQL bypasses User Permissions, so it is restricted to System Manager,
+        # who already has full read access to the site. Enforced by the registry
+        # (listing + execute) and re-checked below. See docs/ for the rationale.
+        self.required_roles = ["System Manager"]
 
         self.inputSchema = {
             "type": "object",
@@ -83,14 +87,14 @@ class QueryAndAnalyse(BaseTool):
 
     def _get_description(self) -> str:
         """Get tool description"""
-        return """Execute complex SQL queries with joins and perform data analysis. Restricted to SELECT statements only. Requires System Manager role for security. Provides query validation, optimization suggestions, and statistical analysis of results."""
+        return """Execute complex SQL queries with joins and perform data analysis. Restricted to SELECT statements only. Requires System Manager role for security. Results are NOT filtered by User Permissions — when the answer should reflect what the user may see, use run_python_code or list_documents instead. Provides query validation, optimization suggestions, and statistical analysis of results."""
 
     def execute(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
         """Execute query and analyze results"""
         try:
-            # Check permissions - requires System Manager role
-            user_roles = frappe.get_roles()
-            if "System Manager" not in user_roles:
+            # System Manager is enforced by the registry via self.required_roles;
+            # re-check here so a direct call to execute() is also gated.
+            if "System Manager" not in frappe.get_roles():
                 return {
                     "success": False,
                     "error": "Insufficient permissions. System Manager role required for query execution.",
@@ -146,6 +150,11 @@ class QueryAndAnalyse(BaseTool):
 
     def _validate_query_security(self, query: str) -> Dict[str, Any]:
         """Validate query for security - only SELECT statements allowed"""
+        # MariaDB executes the body of /*! ... */ and /*M! ... */ comments, so the
+        # comment-stripped text checked below would not be what actually runs.
+        if re.search(r"/\*\s*M?!", query, re.IGNORECASE):
+            return {"is_valid": False, "error": "Executable comments (/*! ... */) are not allowed."}
+
         query_upper = query.upper().strip()
 
         # Remove comments and extra whitespace
@@ -185,6 +194,20 @@ class QueryAndAnalyse(BaseTool):
                 "is_valid": False,
                 "error": "Multiple statements not allowed. Please execute one SELECT query at a time.",
             }
+
+        # Block Frappe's internal tables (__Auth holds password hashes,
+        # __global_search, __UserSettings, …). They begin with a double underscore;
+        # DocType tables are `tab...`. Tokenised like MariaDB, so comments and
+        # string literals cannot hide or fake a name. An alias written `AS __x`
+        # names a column, not a table, and is allowed.
+        tokens = list(_sql_words(query))
+        for index, token in enumerate(tokens):
+            if token.startswith("__") and not (index and tokens[index - 1].upper() == "AS"):
+                return {
+                    "is_valid": False,
+                    "error": "Access to Frappe internal tables (those prefixed with '__') is not allowed. "
+                    "Query DocType tables (tab*) instead.",
+                }
 
         return {"is_valid": True}
 
@@ -318,3 +341,58 @@ class QueryAndAnalyse(BaseTool):
 
 # Make sure class name matches file name for discovery
 query_and_analyse = QueryAndAnalyse
+
+
+_SQL_WHITESPACE = " \t\r\n\f\v"
+
+
+def _sql_words(query: str):
+    """Yield bare words and `quoted` identifiers outside string literals and comments.
+
+    Follows MariaDB's lexer: '...' and "..." strings (backslash and doubled-quote
+    escapes), `...` identifiers, and #, "-- " and /* */ comments. A "--" not
+    followed by whitespace is not a comment in MariaDB, so it is not treated as one.
+    """
+    i, n = 0, len(query)
+    while i < n:
+        char = query[i]
+        if char in "'\"":
+            i += 1
+            while i < n:
+                if query[i] == "\\":
+                    i += 2
+                    continue
+                if query[i] == char:
+                    if i + 1 < n and query[i + 1] == char:
+                        i += 2
+                        continue
+                    break
+                i += 1
+            i += 1
+        elif char == "`":
+            j, name = i + 1, []
+            while j < n:
+                if query[j] == "`":
+                    if j + 1 < n and query[j + 1] == "`":
+                        name.append("`")
+                        j += 2
+                        continue
+                    break
+                name.append(query[j])
+                j += 1
+            yield "".join(name)
+            i = j + 1
+        elif char == "#" or (query.startswith("--", i) and (i + 2 == n or query[i + 2] in _SQL_WHITESPACE)):
+            newline = query.find("\n", i)
+            i = n if newline == -1 else newline + 1
+        elif query.startswith("/*", i):
+            close = query.find("*/", i + 2)
+            i = n if close == -1 else close + 2
+        elif char.isalnum() or char in "_$":
+            j = i
+            while j < n and (query[j].isalnum() or query[j] in "_$"):
+                j += 1
+            yield query[i:j]
+            i = j
+        else:
+            i += 1

@@ -2,7 +2,9 @@
 
 ## Overview
 
-The `run_database_query` tool executes read-only SQL queries against the Frappe/MariaDB database. It provides direct database access for complex queries that cannot be expressed through the document API. Requires **System Manager** role.
+The `run_database_query` tool executes read-only SQL queries against the Frappe/MariaDB database. It provides direct database access for complex queries that cannot be expressed through the document API.
+
+Only **System Managers** see this tool. If it is not in your tool list, the user is not a System Manager: use `list_documents`, or `run_python_code` with `frappe.get_list` / `tools.get_documents` (both support `group_by` and aggregate fields).
 
 ## Parameters
 
@@ -32,6 +34,14 @@ The `run_database_query` tool executes read-only SQL queries against the Frappe/
   }
 }
 ```
+
+## Restrictions
+
+These queries are rejected before they run:
+
+- Anything other than a single `SELECT` statement
+- Frappe's internal tables — names starting with `__` (`__Auth`, `__global_search`, …). Query DocType tables (`tab…`) instead. A column alias such as `AS __total` is fine.
+- Executable comments (`/*! … */`, `/*M! … */`)
 
 ## Best Practices
 
@@ -100,5 +110,4 @@ ORDER BY ORDINAL_POSITION
 - **Long queries may timeout** — add appropriate WHERE clauses and LIMIT
 - **Child table queries** — always JOIN through `parent` column
 - **Amended documents** — filter by `docstatus != 2` to exclude cancelled
-- **Permissions are NOT automatically applied** — results may include documents the user can't normally see
-- **Results are not permission-filtered** — unlike `list_documents`, SQL bypasses Frappe's permission system
+- **Results are not permission-filtered** — unlike `list_documents` and `run_python_code`, SQL ignores User Permissions, so a System Manager restricted to one company still sees every company's rows. When the answer should reflect what the user may see ("my company's sales", "my team's leads"), use `run_python_code` or `list_documents` instead.

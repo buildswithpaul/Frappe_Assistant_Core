@@ -431,6 +431,9 @@ class ToolRegistry:
     def _check_tool_permission(self, tool_instance: BaseTool, user: str) -> bool:
         """Check if user has permission to use the tool"""
         try:
+            required_roles = getattr(tool_instance, "required_roles", None)
+            if required_roles and not set(frappe.get_roles(user)).intersection(required_roles):
+                return False
             if tool_instance.requires_permission:
                 tool_instance.check_permission()
             return True
