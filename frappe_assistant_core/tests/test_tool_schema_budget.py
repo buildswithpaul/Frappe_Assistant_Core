@@ -7,7 +7,6 @@ BUDGETS = {
     "create_dashboard_chart": 2200,
     "run_python_code": 2200,
     "generate_document": 2000,
-    "analyze_business_data": 1900,
     "report_requirements": 1600,
     "create_dashboard": 1500,
 }

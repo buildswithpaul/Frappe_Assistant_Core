@@ -26,7 +26,7 @@ const READ_TOOLS = new Set([
  * didn't reference one.
  *
  * The rail lists records & sources — not tools. Compute-only tools like
- * run_python_code, generate_report, or analyze_business_data carry no
+ * run_python_code or generate_report carry no
  * doctype/name in their input, so they resolve to null and are dropped: the
  * rail must never degrade into a list of raw tool names (which is exactly what
  * the old tool-name fallback produced). Only tool calls that name an actual

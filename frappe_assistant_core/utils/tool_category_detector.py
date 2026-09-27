@@ -71,7 +71,6 @@ READ_ONLY_TOOLS = {
     "workflow_status",
     # Data science tools (read-only analysis)
     "analyze_frappe_data",
-    "analyze_business_data",  # Only analyzes data, no modifications
     "extract_file_content",  # Only reads file content
     # Visualization tools (read-only)
     "list_user_dashboards",  # Only lists dashboards

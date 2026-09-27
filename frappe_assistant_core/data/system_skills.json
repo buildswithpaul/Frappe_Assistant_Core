@@ -120,16 +120,6 @@
     "content_file": "run_workflow.md"
   },
   {
-    "skill_id": "analyze-business-data-usage",
-    "title": "How to Use analyze_business_data",
-    "description": "Statistical analysis and data profiling — profile, statistics, trends, quality, correlations",
-    "skill_type": "Tool Usage",
-    "linked_tool": "analyze_business_data",
-    "status": "Published",
-    "visibility": "Public",
-    "content_file": "analyze_business_data.md"
-  },
-  {
     "skill_id": "extract-file-content-usage",
     "title": "How to Use extract_file_content",
     "description": "Extracting text from PDFs, OCR on images, parsing spreadsheets, and table extraction",

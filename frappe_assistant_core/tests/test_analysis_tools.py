@@ -39,7 +39,7 @@ class TestAnalysisTools(BaseAssistantTest):
         tool_names = [tool["name"] for tool in tools]
 
         # Check for analysis tools (these might be in data science plugin)
-        expected_tools = ["run_python_code", "analyze_business_data", "run_database_query"]
+        expected_tools = ["run_python_code", "run_database_query"]
         found_tools = [tool for tool in expected_tools if tool in tool_names]
 
         # Analysis tools may not be available if data science plugin is disabled
@@ -94,15 +94,6 @@ class TestAnalysisTools(BaseAssistantTest):
 
     def test_execute_python_code_with_pandas(self):
         self.skipTest("Python pandas test placeholder")
-
-    def test_analyze_frappe_data_basic(self):
-        self.skipTest("Analyze data basic test placeholder")
-
-    def test_analyze_frappe_data_no_data(self):
-        self.skipTest("Analyze no data test placeholder")
-
-    def test_analyze_frappe_data_permissions(self):
-        self.skipTest("Analyze data permissions test placeholder")
 
     def test_create_visualization_basic(self):
         self.skipTest("Visualization basic test placeholder")
