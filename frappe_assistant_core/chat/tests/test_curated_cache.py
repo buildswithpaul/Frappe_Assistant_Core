@@ -66,7 +66,48 @@ class TestCuratedCache(unittest.TestCase):
 
         regenerate_curated_suggestions(for_user="u@example.com")  # must not raise
         mock_frappe.log_error.assert_called_once()
-        mock_frappe.cache.set_value.assert_not_called()
+        # A failure is remembered briefly, or every home load re-enqueues it.
+        mock_frappe.cache.set_value.assert_called_once()
+        self.assertEqual(mock_frappe.cache.set_value.call_args.kwargs["expires_in_sec"], 900)
+
+    @patch("frappe_assistant_core.chat.api.curated.gather_suggestion_signals", return_value={"roles": []})
+    @patch("frappe_assistant_core.chat.api.curated._ar_user_id", return_value="u@example.com")
+    @patch("frappe_assistant_core.chat.api.curated.get_fac_cloud_client")
+    @patch("frappe_assistant_core.chat.api.curated.frappe")
+    def test_a_refused_generation_is_cached_for_the_negative_ttl(
+        self, mock_frappe, mock_get_client, _uid, _sig
+    ):
+        """AR refusing admission (403) or timing out returned before the cache
+        write, so the cache stayed empty and each home load queued the same
+        failing job again."""
+        from frappe_assistant_core.chat.api.curated import (
+            NEGATIVE_TTL,
+            _cache_key,
+            get_cached_curated,
+            regenerate_curated_suggestions,
+        )
+
+        client = MagicMock()
+        client.generate_curated_suggestions.side_effect = TimeoutError("45s")
+        mock_get_client.return_value = client
+
+        regenerate_curated_suggestions(for_user="u@example.com")
+
+        key, value = mock_frappe.cache.set_value.call_args.args
+        self.assertEqual(key, _cache_key("u@example.com"))
+        self.assertEqual(mock_frappe.cache.set_value.call_args.kwargs["expires_in_sec"], NEGATIVE_TTL)
+
+        mock_frappe.cache.get_value.return_value = value
+        self.assertEqual(get_cached_curated("u@example.com"), [])
+
+    @patch("frappe_assistant_core.chat.api.curated.frappe")
+    def test_a_cached_failure_does_not_enqueue_again(self, mock_frappe):
+        mock_frappe.cache.get_value.return_value = {"suggestions": [], "generated_at": None}
+        from frappe_assistant_core.chat.api.curated import schedule_regeneration_if_stale
+
+        schedule_regeneration_if_stale("u@example.com")
+
+        mock_frappe.enqueue.assert_not_called()
 
 
 class TestCuratedSurvivesTemplateFlood(unittest.TestCase):

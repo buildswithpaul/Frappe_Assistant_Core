@@ -13,8 +13,8 @@ from frappe_assistant_core.chat.api.suggestion_signals import gather_suggestion_
 from frappe_assistant_core.chat.fac_cloud_client import get_fac_cloud_client
 
 CACHE_TTL = 86400  # 24h — AR's 20h rate limit stays under this
-# An empty or failed generation is remembered briefly, so a home page that
-# keeps missing does not queue a fresh job on every visit.
+# An empty or failed generation (AR refusal, timeout) is remembered briefly,
+# so a home page that keeps missing does not queue a fresh job on every visit.
 NEGATIVE_TTL = 900
 
 
@@ -62,7 +62,9 @@ def regenerate_curated_suggestions(for_user: str) -> None:
             title=f"Curated suggestions failed: {for_user}",
             message=frappe.get_traceback(),
         )
-        return
+        # A refusal or timeout is cached like an empty result: otherwise the
+        # cache stays empty and every home load queues the same failing job.
+        res = None
 
     suggestions = (res or {}).get("suggestions") or []
     frappe.cache.set_value(
