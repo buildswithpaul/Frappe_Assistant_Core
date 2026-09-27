@@ -34,6 +34,7 @@ import platform
 import signal
 import sys
 import traceback
+import types as _types
 from contextlib import redirect_stderr, redirect_stdout
 
 # ---------------------------------------------------------------------------
@@ -201,11 +202,46 @@ def _make_restricted_import():
     return restricted_import
 
 
+class _AttrSafeModule:
+    """Expose only a stdlib helper module's public, non-module members.
+
+    Used for the small helper modules (math, statistics, json, …) where it costs
+    no capability. pandas and numpy are exposed as-is: wrapping them breaks
+    everyday analysis (pd.offsets, pd.api.types, np.ma), and in-process
+    wrapping cannot be the security boundary. That is planned as process
+    isolation with a SELECT-only database user (follow-up).
+    """
+
+    __slots__ = ("_mod", "_label")
+
+    def __init__(self, mod, label):
+        object.__setattr__(self, "_mod", mod)
+        object.__setattr__(self, "_label", label)
+
+    def __getattr__(self, name):
+        unavailable = AttributeError(f"{self._label}.{name} is not available in run_python_code")
+        if name.startswith("_"):
+            raise unavailable
+        value = getattr(self._mod, name)
+        if isinstance(value, _types.ModuleType):
+            raise unavailable
+        return value
+
+    def __setattr__(self, name, value):
+        raise AttributeError(f"{self._label} is read-only in run_python_code")
+
+    def __dir__(self):
+        return [n for n in dir(self._mod) if not n.startswith("_")]
+
+    def __repr__(self):
+        return f"<module {self._label!r} (run_python_code)>"
+
+
 def _setup_execution_environment(user: str) -> dict:
     """Build the sandboxed globals dict for exec()."""
     import frappe
 
-    from frappe_assistant_core.utils.read_only_db import ReadOnlyDatabase
+    from frappe_assistant_core.utils.sandbox_frappe import build_sandbox_frappe
     from frappe_assistant_core.utils.tool_api import FrappeAssistantAPI
 
     env = {
@@ -235,7 +271,6 @@ def _setup_execution_environment(user: str) -> dict:
             "type": type,
             "isinstance": isinstance,
             "hasattr": hasattr,
-            "getattr": getattr,
             "Exception": Exception,
             "ValueError": ValueError,
             "TypeError": TypeError,
@@ -260,14 +295,14 @@ def _setup_execution_environment(user: str) -> dict:
 
     env.update(
         {
-            "math": math,
-            "statistics": statistics,
-            "decimal": decimal,
-            "fractions": fractions,
-            "datetime": datetime,
-            "json": _json,
-            "re": re,
-            "random": random,
+            "math": _AttrSafeModule(math, "math"),
+            "statistics": _AttrSafeModule(statistics, "statistics"),
+            "decimal": _AttrSafeModule(decimal, "decimal"),
+            "fractions": _AttrSafeModule(fractions, "fractions"),
+            "datetime": _AttrSafeModule(datetime, "datetime"),
+            "json": _AttrSafeModule(_json, "json"),
+            "re": _AttrSafeModule(re, "re"),
+            "random": _AttrSafeModule(random, "random"),
         }
     )
 
@@ -296,18 +331,18 @@ def _setup_execution_environment(user: str) -> dict:
             env[alias] = stub
             env[pkg] = stub
 
-    # Frappe integration — read-only
-    secure_db = ReadOnlyDatabase(frappe.db)
+    # Frappe integration — permission-checked and read-only, never the real module
+    sandbox_frappe = build_sandbox_frappe(user)
     tools_api = FrappeAssistantAPI(user)
 
     env.update(
         {
-            "frappe": frappe,
-            "get_doc": frappe.get_doc,
-            "get_list": frappe.get_list,
-            "get_all": frappe.get_all,
-            "get_single": frappe.get_single,
-            "db": secure_db,
+            "frappe": sandbox_frappe,
+            "get_doc": sandbox_frappe.get_doc,
+            "get_list": sandbox_frappe.get_list,
+            "get_all": sandbox_frappe.get_all,
+            "get_single": sandbox_frappe.get_single,
+            "db": sandbox_frappe.db,
             "current_user": user,
             "tools": tools_api,
             "_available_libraries": available,
@@ -626,6 +661,24 @@ def main():
         frappe.set_user(user)  # nosemgrep: frappe-setuser
 
         try:
+            # Static safety gate. The parent process runs this too; repeating it
+            # here means the exec is never reached with unvalidated code, even if
+            # this module is ever invoked directly.
+            from frappe_assistant_core.utils.sandbox_ast import SandboxSecurityError, validate_code
+
+            try:
+                validate_code(code)
+            except SandboxSecurityError as exc:
+                result = {
+                    "success": False,
+                    "error": f"🚫 Security: {exc}",
+                    "error_type": "security",
+                    "output": "",
+                    "variables": {},
+                }
+                json.dump(result, sys.stdout)
+                return
+
             # Build execution environment and fetch data_query BEFORE applying
             # resource limits — the 512 MB memory budget should govern user code,
             # not interpreter/library setup that the user did not write.
@@ -633,13 +686,9 @@ def main():
 
             if data_query:
                 try:
-                    doctype = data_query.get("doctype")
-                    fields = data_query.get("fields", ["*"])
-                    filters = data_query.get("filters", {})
-                    limit = data_query.get("limit", 100)
-                    execution_globals["data"] = frappe.get_all(
-                        doctype, filters=filters, fields=fields, limit_page_length=limit
-                    )
+                    from frappe_assistant_core.utils.sandbox_frappe import fetch_data_query
+
+                    execution_globals["data"] = fetch_data_query(data_query)
                 except Exception as e:
                     result["error"] = f"Error fetching data: {e}"
                     _write_result(result, sys.stdout)
