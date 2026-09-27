@@ -6,8 +6,17 @@ const getState = vi.fn();
 const register = vi.fn();
 const getTerms = vi.fn(() => Promise.resolve({ version: "v1" }));
 
+const getLocalStatus = vi.fn(() => Promise.resolve({ registration_status: "Pending Email Verification" }));
+
 vi.mock("@/api/client", () => ({
-	api: { registration: { getState: (...a) => getState(...a), register: (...a) => register(...a), getTerms: (...a) => getTerms(...a) } },
+	api: {
+		registration: {
+			getState: (...a) => getState(...a),
+			register: (...a) => register(...a),
+			getTerms: (...a) => getTerms(...a),
+			getLocalStatus: (...a) => getLocalStatus(...a),
+		},
+	},
 }));
 
 function mountScreen() {
@@ -113,5 +122,41 @@ describe("OnboardingScreen unreachable-site routing", () => {
 
 		expect(w.findComponent({ name: "SiteUnreachablePanel" }).exists()).toBe(false);
 		expect(w.findComponent({ name: "PartnerCodeStep" }).exists()).toBe(true);
+	});
+});
+
+// Closing the tab after "Verify email" used to drop the admin back on
+// "Reconnect this site" with no address.
+describe("OnboardingScreen resume after reload", () => {
+	beforeEach(() => { getState.mockReset(); register.mockReset(); });
+
+	it("reopens a pending signup on the pending screen with the masked address", async () => {
+		getState.mockResolvedValue({
+			exists: true,
+			status: "Pending Email Verification",
+			reregistration: false,
+			owner_email_masked: "p***@x.com",
+		});
+		const w = mountScreen();
+		await flushPromises();
+
+		const pending = w.findComponent({ name: "EmailVerificationPending" });
+		expect(pending.exists()).toBe(true);
+		expect(pending.props("ownerEmail")).toBe("p***@x.com");
+		expect(w.find('[data-test="reconnect-card"]').exists()).toBe(false);
+	});
+
+	it("reopens an unfinished reconnect on the pending screen", async () => {
+		getState.mockResolvedValue({
+			exists: true,
+			status: "Active",
+			reregistration: true,
+			local_status: "Pending Email Verification",
+			owner_email_masked: "p***@x.com",
+		});
+		const w = mountScreen();
+		await flushPromises();
+
+		expect(w.findComponent({ name: "EmailVerificationPending" }).exists()).toBe(true);
 	});
 });

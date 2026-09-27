@@ -21,6 +21,10 @@ export const registration = {
 	getState: () =>
 		baseCall("frappe_assistant_core.chat.api.get_registration_state"),
 
+	// This site's own status only; never reaches FAC Cloud. Safe to poll.
+	getLocalStatus: () =>
+		getCall("frappe_assistant_core.chat.api.get_local_registration_status"),
+
 	resendVerification: () =>
 		baseCall("frappe_assistant_core.chat.api.resend_owner_verification"),
 
