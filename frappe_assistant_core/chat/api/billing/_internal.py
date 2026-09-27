@@ -132,16 +132,6 @@ def _refresh_subscription_cache():
 
 def _quota_summary() -> dict:
     """The cached plan and quota, in the shape the billing UI reads after a purchase."""
-    from frappe_assistant_core.chat.quota_cache import get_quota_snapshot
+    from frappe_assistant_core.chat.quota_cache import get_quota_snapshot, summarize
 
-    snap = get_quota_snapshot()
-    quota_total = snap.get("quota_total", 0)
-    quota_used = snap.get("quota_used", 0)
-    is_unlimited = quota_total == -1
-    return {
-        "plan": snap.get("plan", "Free"),
-        "quota_total": quota_total,
-        "quota_used": quota_used,
-        "quota_remaining": -1 if is_unlimited else max(0, quota_total - quota_used),
-        "is_unlimited": is_unlimited,
-    }
+    return summarize(get_quota_snapshot())

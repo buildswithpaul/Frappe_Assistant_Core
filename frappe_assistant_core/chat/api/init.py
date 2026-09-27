@@ -180,28 +180,11 @@ def _build_access(settings: Document, user: str, user_roles: list[str], is_admin
 
 def _build_quota(settings: Document, is_admin: bool) -> dict:
     """Build quota status from Redis quota cache."""
-    from frappe_assistant_core.chat.quota_cache import get_quota_snapshot
-
-    snap = get_quota_snapshot()
-    quota_total = snap.get("quota_total", 0)
-    quota_used = snap.get("quota_used", 0)
-    is_unlimited = quota_total == -1
-
-    if is_unlimited:
-        quota_remaining = -1
-        percentage_used = 0
-    else:
-        quota_remaining = max(0, quota_total - quota_used)
-        percentage_used = (quota_used / quota_total * 100) if quota_total > 0 else 0
+    from frappe_assistant_core.chat.quota_cache import get_quota_snapshot, summarize
 
     return {
         "success": True,
-        "plan": snap.get("plan", "Free"),
-        "quota_total": quota_total,
-        "quota_used": quota_used,
-        "quota_remaining": quota_remaining,
-        "percentage_used": round(percentage_used, 1),
-        "is_unlimited": is_unlimited,
+        **summarize(get_quota_snapshot()),
         "is_admin": is_admin,
         "registration_status": settings.registration_status,
     }
