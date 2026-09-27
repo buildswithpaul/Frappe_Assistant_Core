@@ -93,6 +93,51 @@ describe("PlanCard", () => {
 		expect(quotaText(wrapper)).not.toContain("-1");
 	});
 
+	describe("quota fallback (AR never answered)", () => {
+		const FALLBACK = {
+			success: true,
+			plan: "Unknown",
+			quota_total: -1,
+			quota_used: 0,
+			is_unlimited: true,
+			is_fallback: true,
+		};
+
+		it("refetches the quota when the boot payload only had the fallback", async () => {
+			useUserStore().quotaInfo = FALLBACK;
+			const wrapper = await mountCard();
+			expect(getQuotaStatus).toHaveBeenCalledTimes(1);
+			expect(wrapper.text()).toContain("You're on the Free plan");
+			expect(quotaText(wrapper)).toContain("500");
+		});
+
+		it("shows a neutral card, not Unlimited, while only the fallback is known", async () => {
+			getQuotaStatus.mockResolvedValue(FALLBACK);
+			const wrapper = await mountCard();
+			expect(wrapper.text()).not.toMatch(/unlimited/i);
+			expect(wrapper.text()).not.toContain("Unknown");
+			expect(wrapper.text()).toContain("Your workspace is ready");
+			expect(wrapper.find("[data-test=plan-quota]").exists()).toBe(false);
+		});
+
+		it("still shows Unlimited for a genuinely unlimited plan", async () => {
+			getQuotaStatus.mockResolvedValue({
+				...TEAM_PRO_TENANT,
+				quota_total: -1,
+				is_unlimited: true,
+				is_fallback: false,
+			});
+			const wrapper = await mountCard();
+			expect(quotaText(wrapper)).toMatch(/unlimited/i);
+		});
+
+		it("does not refetch a real quota already loaded at boot", async () => {
+			useUserStore().quotaInfo = { ...FREE_TENANT, is_fallback: false };
+			await mountCard();
+			expect(getQuotaStatus).not.toHaveBeenCalled();
+		});
+	});
+
 	it("hides the quota rather than inventing a number when billing is unreachable", async () => {
 		getQuotaStatus.mockRejectedValue(new Error("AR unreachable"));
 		getMyCreditStatus.mockRejectedValue(new Error("AR unreachable"));
