@@ -125,6 +125,35 @@ class TestVerifyCheckoutReturn(BaseAssistantTest):
         self.assertEqual(result["outcome"], "processing")
         self.assertTrue(result["error"])
 
+    def test_a_session_the_runtime_does_not_know_is_final_not_transient(self):
+        """A forged or mistyped `?fac_checkout=` was polled for 30s as if the
+        runtime were down, then announced "Payment received"."""
+        client = MagicMock()
+        client.get_checkout_session_status.side_effect = ARAPIError(
+            "No such checkout session.",
+            status_code=404,
+            response_data={"exc_type": "DoesNotExistError"},
+        )
+
+        result, refresh = self._call(client)
+
+        refresh.assert_not_called()
+        self.assertTrue(result["done"])
+        self.assertEqual(result["outcome"], "unknown")
+        self.assertIs(result["found"], False)
+        self.assertNotIn("quota", result)
+
+    def test_a_not_found_type_without_a_status_is_still_final(self):
+        client = MagicMock()
+        client.get_checkout_session_status.side_effect = ARAPIError(
+            "No such checkout session.", response_data={"exc_type": "DoesNotExistError"}
+        )
+
+        result, _refresh = self._call(client)
+
+        self.assertTrue(result["done"])
+        self.assertIs(result["found"], False)
+
     def test_a_blank_session_is_refused(self):
         with self.assertRaises(frappe.ValidationError):
             self._call(MagicMock(), session="")
