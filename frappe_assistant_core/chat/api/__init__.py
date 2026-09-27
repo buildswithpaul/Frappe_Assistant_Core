@@ -214,6 +214,7 @@ from .settings import (
     get_ar_terms,
     get_capabilities,
     get_copilot_status,
+    get_local_registration_status,
     get_plan_comparison,
     get_registration_state,
     get_widget_settings,

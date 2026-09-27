@@ -43,6 +43,7 @@ from frappe_assistant_core.chat.api.settings.registration import (
     accept_updated_terms,
     change_pending_owner_email,
     complete_email_verification,
+    get_local_registration_status,
     get_plan_comparison,
     get_registration_state,
     poll_for_rotated_secret,

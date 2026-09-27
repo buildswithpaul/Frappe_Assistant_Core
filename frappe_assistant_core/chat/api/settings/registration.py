@@ -55,6 +55,26 @@ def _translate_registration_error(raw: str) -> str:
     return _("Registration failed. Please try again or contact support if the problem persists.")
 
 
+PENDING_TOKEN_FIELD = "pending_verification_token"
+
+
+def _pending_token(settings) -> str | None:
+    """The token AR returned when it created this site's pending tenant, if kept."""
+    return settings.get_password(PENDING_TOKEN_FIELD, raise_exception=False) or None
+
+
+def _pending_action_error(result: dict) -> str:
+    """The message to show for a failed resend or change-email.
+
+    AR's own message is written for this admin, and the SDK only sets
+    ``exc_type`` when it found one. Anything else is a transport string such as
+    "503 Server Error: ... for url: ..." and goes through the translator.
+    """
+    if result.get("exc_type") and result.get("error"):
+        return result["error"]
+    return _translate_registration_error(result.get("error") or "")
+
+
 # Signup precedes tenant credentials, so referral-code validation must work
 # pre-auth. Protected by a 20/minute per-IP rate limit; thin proxy to AR.
 @frappe.whitelist(allow_guest=True, methods=["POST"])  # nosemgrep: guest-whitelisted-method
@@ -240,6 +260,13 @@ def register_with_ar(
 
             clear_tenant_secret()
             settings.flags.clear_tenant_secret = True
+            # AR hands the pending token only to the call that created the
+            # tenant. A repeat registration of the same tenant returns none,
+            # and the one already held stays valid; another tenant's is stale.
+            if result.get("pending_token"):
+                settings.pending_verification_token = result["pending_token"]
+            elif settings.tenant_id != result["tenant_id"]:
+                settings.pending_verification_token = None
             settings.tenant_id = result["tenant_id"]
             settings.tenant_secret = None
             settings.registration_status = "Pending Email Verification"
@@ -263,6 +290,7 @@ def register_with_ar(
             settings.flags.clear_tenant_secret = True
             settings.tenant_id = None
             settings.tenant_secret = None
+            settings.pending_verification_token = None
             settings.registration_status = "Waitlisted"
             settings.save(ignore_permissions=True)
             return {
@@ -306,6 +334,7 @@ def register_with_ar(
             store_tenant_secret(tenant_secret)
             settings.tenant_id = tenant_id
             settings.tenant_secret = "*" * len(tenant_secret)
+            settings.pending_verification_token = None
             settings.registration_status = "Registered"
             settings.save(ignore_permissions=True)
 
@@ -407,6 +436,18 @@ def get_registration_state() -> dict:
         return {"exists": False, "suggested_owner_email": suggested}
 
 
+@frappe.whitelist(methods=["GET"])
+def get_local_registration_status() -> dict:
+    """This site's own registration status, without asking FAC Cloud.
+
+    The pending screen polls this. Polling AR's guest lookup instead spent the
+    per-IP budget every site behind the same hosting IP shares.
+    """
+    frappe.only_for("System Manager")
+    settings = frappe.get_single("FAC Chat Settings")
+    return {"registration_status": settings.registration_status or ""}
+
+
 @frappe.whitelist(methods=["POST"])
 def reset_registration() -> dict:
     """Drop this site's tenant credentials. Clear-only, by design.
@@ -441,6 +482,7 @@ def reset_registration() -> dict:
         settings.flags.clear_tenant_secret = True
         settings.tenant_id = None
         settings.tenant_secret = None
+        settings.pending_verification_token = None
         settings.registration_status = "Not Registered"
         settings.save(ignore_permissions=True)
         from frappe_assistant_core.chat.quota_cache import clear as clear_quota
@@ -553,7 +595,12 @@ def complete_email_verification(verification_token: str) -> dict:
         if not verify_payload.get("verified"):
             return {"success": False, "error": _("Verification failed")}
     except _requests.exceptions.RequestException as e:
-        return {"success": False, "error": str(e)}
+        frappe.log_error(title="FAC Email Verification", message=str(e))
+        return {"success": False, "error": _translate_registration_error(str(e))}
+
+    # The link names the tenant it verified. A site whose local tenant_id was
+    # lost (or never stored) would otherwise hold a secret it cannot sign with.
+    verified_tenant_id = verify_payload.get("tenant_id")
 
     # Step 2: pick up the freshly-minted secret (one-shot; consumed on first call)
     from assistant_runtime_sdk.client import get_initial_secret
@@ -569,6 +616,8 @@ def complete_email_verification(verification_token: str) -> dict:
     except frappe.ValidationError as e:
         return {"success": False, "error": str(e)}
 
+    if isinstance(verified_tenant_id, str) and verified_tenant_id:
+        settings.tenant_id = verified_tenant_id
     settings.tenant_secret = "*" * len(result["tenant_secret"])
     settings.pending_verification_token = None
     settings.registration_status = "Registered"
@@ -583,15 +632,29 @@ def complete_email_verification(verification_token: str) -> dict:
 def resend_owner_verification() -> dict:
     """Re-send the pending link. Never clears the secret or marks an error.
 
-    A failure comes back as ``success: False`` so the pending screen can say
-    so. An already-verified tenant is reported as such and left alone.
+    Returns ``reconnect_required`` when a resend cannot be the answer: this
+    site holds no pending token (registered by an older FAC, or reconnecting an
+    already-verified tenant), or AR reports the tenant already verified. The
+    screen then re-runs the reconnect, which mails the stored owner a link.
     """
     frappe.only_for("System Manager")
     from frappe_assistant_core.chat.fac_cloud_client import resend_owner_verification as resend
 
-    result = resend(site_url=frappe.utils.get_url()) or {}
+    token = _pending_token(frappe.get_single("FAC Chat Settings"))
+    if not token:
+        return {"success": False, "reconnect_required": True}
+
+    result = resend(site_url=frappe.utils.get_url(), pending_token=token) or {}
+    if result.get("already_verified"):
+        return {
+            "success": False,
+            "already_verified": True,
+            "reconnect_required": True,
+            "owner_email_masked": result.get("owner_email_masked") or "",
+        }
     if result.get("error"):
-        return {"success": False, "error": result["error"]}
+        frappe.log_error(title="FAC Resend Verification", message=str(result["error"]))
+        return {"success": False, "error": _pending_action_error(result)}
     return result
 
 
@@ -599,11 +662,26 @@ def resend_owner_verification() -> dict:
 def change_pending_owner_email(owner_email: str) -> dict:
     """Correct the address the verification link goes to, while still pending."""
     frappe.only_for("System Manager")
+    from frappe.utils import validate_email_address
+
     from frappe_assistant_core.chat.fac_cloud_client import change_pending_owner_email as change
 
-    result = change(site_url=frappe.utils.get_url(), owner_email=owner_email) or {}
+    if not owner_email or not validate_email_address(owner_email, throw=False):
+        return {"success": False, "error": _("Enter a valid email address.")}
+
+    token = _pending_token(frappe.get_single("FAC Chat Settings"))
+    if not token:
+        return {
+            "success": False,
+            "error": _(
+                "This registration cannot change its email address from here. Contact support to correct it."
+            ),
+        }
+
+    result = change(site_url=frappe.utils.get_url(), owner_email=owner_email, pending_token=token) or {}
     if result.get("error"):
-        return {"success": False, "error": result["error"]}
+        frappe.log_error(title="FAC Change Owner Email", message=str(result["error"]))
+        return {"success": False, "error": _pending_action_error(result)}
     return result
 
 
