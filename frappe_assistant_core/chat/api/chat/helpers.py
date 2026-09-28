@@ -10,6 +10,8 @@ streaming background-thread relay and the send/resume request handlers.
 
 from __future__ import annotations
 
+import json
+
 import frappe
 
 
@@ -291,6 +293,21 @@ def _find_assistant_msg_by_message_id(session_id: str, message_id: str) -> str |
         {"session_id": session_id, "role": "assistant", "message_id": message_id},
         "name",
     )
+
+
+def _parse_turn_blocks(blocks_json: str | None) -> list[dict]:
+    """Parse a FAC Chat Message row's ``blocks`` column into a list.
+
+    A malformed or absent value is handled the same way everywhere it is
+    used: as an empty list rather than a crash.
+    """
+    if not blocks_json:
+        return []
+    try:
+        blocks = json.loads(blocks_json)
+    except (ValueError, TypeError):
+        return []
+    return blocks if isinstance(blocks, list) else []
 
 
 def _ensure_assistant_msg(session_id: str, message_id: str, context: dict | None = None) -> str | None:
