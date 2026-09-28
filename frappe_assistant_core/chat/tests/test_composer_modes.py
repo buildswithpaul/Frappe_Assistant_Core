@@ -142,9 +142,9 @@ class TestFlagsSurviveResumeAndContinue(unittest.TestCase):
             return_value=client,
         ), patch("frappe.init"), patch("frappe.connect"), patch("frappe.set_user"), patch(
             "frappe.destroy"
-        ), patch("frappe.db"), patch("frappe_assistant_core.chat.api.chat.relay.clear_cancel"), patch(
-            "frappe_assistant_core.chat.api.chat.relay._emit_socket_event"
-        ):
+        ), patch("frappe.db"), patch(
+            "frappe_assistant_core.chat.api.chat.relay.is_cancelled", return_value=False
+        ), patch("frappe_assistant_core.chat.api.chat.relay._emit_socket_event"):
             _relay_ar_interrupt_resume(
                 "s1",
                 [{"interruptId": "i1", "response": "approve"}],

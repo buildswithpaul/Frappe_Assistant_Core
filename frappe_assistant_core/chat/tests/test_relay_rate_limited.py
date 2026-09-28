@@ -63,7 +63,6 @@ def _run_relay(target, events, **kwargs):
             enter(patch(f"frappe.{name}"))
         enter(patch("frappe.db.get_value", return_value=None))
         enter(patch("frappe.db.commit"))
-        enter(patch.object(relay, "clear_cancel"))
         enter(patch.object(relay, "is_cancelled", return_value=False))
         enter(patch.object(relay, "_ensure_assistant_msg"))
         enter(patch.object(relay, "_persist_session_blob"))

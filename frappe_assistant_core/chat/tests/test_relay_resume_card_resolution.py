@@ -106,7 +106,6 @@ class TestResumeResolvesCardsOnlyOnceARRuns(BaseAssistantTest):
             # the running session.
             for name in ("init", "connect", "set_user", "destroy"):
                 enter(patch(f"frappe.{name}"))
-            enter(patch.object(relay, "clear_cancel"))
             enter(patch.object(relay, "is_cancelled", return_value=False))
             enter(patch.object(relay, "_update_subscription_cache"))
             enter(

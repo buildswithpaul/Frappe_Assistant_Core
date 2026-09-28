@@ -174,7 +174,7 @@ class TestHandleStreamAbortedAppendsMarker(unittest.TestCase):
             relay, "_emit_socket_event"
         ) as emit:
             relay._handle_stream_aborted(
-                "S1", "ar-1", "Today, the", block_builder, [], "claude-sonnet-4-6", stream_iter
+                "S1", "ar-1", "Today, the", block_builder, [], "claude-sonnet-4-6", stream_iter=stream_iter
             )
 
         stream_iter.close.assert_called_once()
@@ -207,7 +207,9 @@ class TestHandleStreamAbortedAppendsMarker(unittest.TestCase):
         with patch.object(relay, "_persist_partial_assistant_turn") as persist, patch.object(
             relay, "_emit_socket_event"
         ):
-            relay._handle_stream_aborted("S1", "ar-1", "Today, the", block_builder, [], "", stream_iter)
+            relay._handle_stream_aborted(
+                "S1", "ar-1", "Today, the", block_builder, [], "", stream_iter=stream_iter
+            )
 
         persisted_blocks = persist.call_args[0][3]
         markers = [b for b in persisted_blocks if b.get("_abortMarker")]
