@@ -64,6 +64,8 @@ def get_user_sessions(limit: int = 20) -> list:
     Get user's recent chat sessions for history sidebar.
 
     Returns sessions grouped with preview (first message) and timestamps.
+    A failed read raises, so Frappe logs it and answers with an error; an
+    empty list only ever means the user has no conversations.
 
     Args:
             limit: Maximum number of sessions to return (default 20)
@@ -71,61 +73,56 @@ def get_user_sessions(limit: int = 20) -> list:
     Returns:
             list: Sessions with session_id, preview, started, last_activity
     """
-    try:
-        user = frappe.session.user
-        limit = min(int(limit), 100)  # Cap at 100
+    user = frappe.session.user
+    limit = min(int(limit), 100)  # Cap at 100
 
-        # Query 1: Get session aggregates (distinct sessions with timestamps)
-        from pypika.functions import Count, Max, Min
+    # Query 1: Get session aggregates (distinct sessions with timestamps)
+    from pypika.functions import Count, Max, Min
 
-        FM = frappe.qb.DocType("FAC Chat Message")
-        session_query = (
-            frappe.qb.from_(FM)
-            .select(
-                FM.session_id,
-                Min(FM.creation).as_("started"),
-                Max(FM.creation).as_("last_activity"),
-                Count(FM.name).as_("message_count"),
-            )
-            .where(FM.user == user)
-            .where(FM.is_archived == 0)
-            .groupby(FM.session_id)
-            .orderby("last_activity", order=frappe.qb.desc)
-            .limit(limit)
+    FM = frappe.qb.DocType("FAC Chat Message")
+    session_query = (
+        frappe.qb.from_(FM)
+        .select(
+            FM.session_id,
+            Min(FM.creation).as_("started"),
+            Max(FM.creation).as_("last_activity"),
+            Count(FM.name).as_("message_count"),
         )
-        sessions = session_query.run(as_dict=True)
+        .where(FM.user == user)
+        .where(FM.is_archived == 0)
+        .groupby(FM.session_id)
+        .orderby("last_activity", order=frappe.qb.desc)
+        .limit(limit)
+    )
+    sessions = session_query.run(as_dict=True)
 
-        if not sessions:
-            return []
-
-        # Query 2: Get first user message per session for preview
-        session_ids = [s["session_id"] for s in sessions]
-        first_messages = frappe.get_all(
-            "FAC Chat Message",
-            filters={
-                "session_id": ["in", session_ids],
-                "user": user,
-                "role": "user",
-            },
-            fields=["session_id", "content", "creation"],
-            order_by="creation asc",
-        )
-
-        # Keep only the first message per session
-        preview_map: dict[str, str] = {}
-        for msg in first_messages:
-            if msg.session_id not in preview_map:
-                content = (msg.content or "")[:100]
-                preview_map[msg.session_id] = content + ("..." if len(msg.content or "") > 100 else "")
-
-        for session in sessions:
-            session["preview"] = preview_map.get(session["session_id"], _("New conversation"))
-
-        return sessions
-
-    except Exception as e:
-        frappe.log_error(title="FACO Sessions Error", message=f"Error getting user sessions: {e!s}")
+    if not sessions:
         return []
+
+    # Query 2: Get first user message per session for preview
+    session_ids = [s["session_id"] for s in sessions]
+    first_messages = frappe.get_all(
+        "FAC Chat Message",
+        filters={
+            "session_id": ["in", session_ids],
+            "user": user,
+            "role": "user",
+        },
+        fields=["session_id", "content", "creation"],
+        order_by="creation asc",
+    )
+
+    # Keep only the first message per session
+    preview_map: dict[str, str] = {}
+    for msg in first_messages:
+        if msg.session_id not in preview_map:
+            content = (msg.content or "")[:100]
+            preview_map[msg.session_id] = content + ("..." if len(msg.content or "") > 100 else "")
+
+    for session in sessions:
+        session["preview"] = preview_map.get(session["session_id"], _("New conversation"))
+
+    return sessions
 
 
 @frappe.whitelist(methods=["POST"])
@@ -265,65 +262,61 @@ def get_archived_sessions(limit: int = 50) -> list:
     """
     Get user's archived chat sessions.
 
+    A failed read raises, as in ``get_user_sessions``: an empty list only
+    ever means the user has no archived conversations.
+
     Returns:
             list: Archived sessions with session_id, preview, started, last_activity
     """
-    try:
-        user = frappe.session.user
-        limit = min(int(limit), 100)
+    user = frappe.session.user
+    limit = min(int(limit), 100)
 
-        from pypika.functions import Count, Max, Min
+    from pypika.functions import Count, Max, Min
 
-        FM = frappe.qb.DocType("FAC Chat Message")
-        session_query = (
-            frappe.qb.from_(FM)
-            .select(
-                FM.session_id,
-                Min(FM.creation).as_("started"),
-                Max(FM.creation).as_("last_activity"),
-                Count(FM.name).as_("message_count"),
-            )
-            .where(FM.user == user)
-            .where(FM.is_archived == 1)
-            .groupby(FM.session_id)
-            .orderby("last_activity", order=frappe.qb.desc)
-            .limit(limit)
+    FM = frappe.qb.DocType("FAC Chat Message")
+    session_query = (
+        frappe.qb.from_(FM)
+        .select(
+            FM.session_id,
+            Min(FM.creation).as_("started"),
+            Max(FM.creation).as_("last_activity"),
+            Count(FM.name).as_("message_count"),
         )
-        sessions = session_query.run(as_dict=True)
+        .where(FM.user == user)
+        .where(FM.is_archived == 1)
+        .groupby(FM.session_id)
+        .orderby("last_activity", order=frappe.qb.desc)
+        .limit(limit)
+    )
+    sessions = session_query.run(as_dict=True)
 
-        if not sessions:
-            return []
-
-        # Get first user message per session for preview
-        session_ids = [s["session_id"] for s in sessions]
-        first_messages = frappe.get_all(
-            "FAC Chat Message",
-            filters={
-                "session_id": ["in", session_ids],
-                "user": user,
-                "role": "user",
-            },
-            fields=["session_id", "content", "creation"],
-            order_by="creation asc",
-        )
-
-        preview_map: dict[str, str] = {}
-        for msg in first_messages:
-            if msg.session_id not in preview_map:
-                content = (msg.content or "")[:100]
-                preview_map[msg.session_id] = content + ("..." if len(msg.content or "") > 100 else "")
-
-        for session in sessions:
-            session["preview"] = preview_map.get(session["session_id"], _("Archived conversation"))
-            session["is_archived"] = True
-
-        return sessions
-
-    except Exception as e:
-        frappe.log_error(
-            title="FACO Archived Sessions Error", message=f"Error getting archived sessions: {e!s}"
-        )
+    if not sessions:
         return []
+
+    # Get first user message per session for preview
+    session_ids = [s["session_id"] for s in sessions]
+    first_messages = frappe.get_all(
+        "FAC Chat Message",
+        filters={
+            "session_id": ["in", session_ids],
+            "user": user,
+            "role": "user",
+        },
+        fields=["session_id", "content", "creation"],
+        order_by="creation asc",
+    )
+
+    preview_map: dict[str, str] = {}
+    for msg in first_messages:
+        if msg.session_id not in preview_map:
+            content = (msg.content or "")[:100]
+            preview_map[msg.session_id] = content + ("..." if len(msg.content or "") > 100 else "")
+
+    for session in sessions:
+        session["preview"] = preview_map.get(session["session_id"], _("Archived conversation"))
+        session["is_archived"] = True
+
+    return sessions
 
 
 @frappe.whitelist(methods=["POST"])

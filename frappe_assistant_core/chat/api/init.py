@@ -43,7 +43,7 @@ def initialize_spa() -> dict:
                     "capabilities": { features: { billing, memory, workflows, ... } },
                     "user_auth": { ready, site_registered, user_registered, ... },
                     "onboarding": { onboarding_complete, has_conversations } | null,
-                    "sessions": [ { session_id, preview, started, last_activity }, ... ],
+                    "sessions": [ { session_id, preview, started, last_activity }, ... ] | None (the read failed),
                     "system_timezone": str (IANA zone of every naive server datetime)
             }
     """
@@ -200,18 +200,27 @@ def _build_quota(settings: Document, is_admin: bool) -> dict:
 # ============================================================================
 
 
-def _fetch_sessions(limit: int = 20) -> list[dict]:
-    """Conversation list for the SPA boot payload.
+def _fetch_sessions(limit: int = 20) -> list[dict] | None:
+    """Conversation list for the SPA boot payload, or None when it could not be read.
 
     Delegates to the sidebar's own endpoint so the list the SPA boots with and
     the list it refetches on every ChatView remount are the same list. A private
     copy here once drifted on the ``is_archived`` filter: a page load hydrated
     the sidebar with archived conversations and the first in-app navigation
     replaced them with the filtered list, emptying the sidebar.
+
+    A failed read must neither fail the whole boot nor pass for an empty
+    account. It is logged and answered as None, which the SPA already takes as
+    "not pre-fetched": it asks ``get_user_sessions`` itself.
     """
+    from frappe_assistant_core.chat.api._helpers import _log
     from frappe_assistant_core.chat.api.chat.sessions import get_user_sessions
 
-    return get_user_sessions(limit=limit)
+    try:
+        return get_user_sessions(limit=limit)
+    except Exception:
+        _log("FAC Chat boot: conversation list unavailable")
+        return None
 
 
 # ============================================================================
