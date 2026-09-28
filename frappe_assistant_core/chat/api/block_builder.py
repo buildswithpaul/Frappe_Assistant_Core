@@ -249,9 +249,13 @@ class BlockBuilder:
         )
 
     def add_tool_cancelled(self, tool_id: str, message: str = "Cancelled") -> None:
-        """Mark a tool call as cancelled."""
+        """Mark a tool call as cancelled.
+
+        Only the tool_call block changes. A rejected tool's approval card
+        shares its id and keeps the decision it holds.
+        """
         for block in reversed(self.blocks):
-            if block.get("id") == tool_id:
+            if block.get("type") == "tool_call" and block.get("id") == tool_id:
                 block["status"] = "cancelled"
                 block["result"] = {"message": message}
                 block["endTime"] = _now_iso()
