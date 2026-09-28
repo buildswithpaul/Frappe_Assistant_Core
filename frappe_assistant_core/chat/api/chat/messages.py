@@ -159,6 +159,7 @@ def send_message(
     web_search: bool | None = None,
     thinking_enabled: bool | None = None,
     client_signals: str | None = None,
+    client_turn_id: str | None = None,
 ) -> dict:
     """
     Send a message to FACO and stream AI response via Socket.IO.
@@ -186,6 +187,8 @@ def send_message(
                     e.g. {"recent_errors": {"console": 2, "failed_requests": 1,
                     "newest_age_s": 4}}. Counts are read; any other content is ignored.
                     The rendered wording is owned by the server, never the client.
+            client_turn_id (str): The client's id for this request. A Stop
+                    (cancel_stream) that already names it is kept by this accept.
 
     Returns:
             dict: Acknowledgment that processing has started
@@ -218,8 +221,9 @@ def send_message(
         if not access_check.get("can_use"):
             frappe.throw(access_check.get("reason", _("Cannot use FACO")))
 
-        # A Stop raised before this point belongs to an earlier turn (cancel.clear).
-        clear_cancel(session_id)
+        # A Stop raised before this point belongs to an earlier turn, unless it
+        # names this request (cancel.clear).
+        clear_cancel(session_id, keep_turn=client_turn_id)
 
         # FACO-M15: respect GDPR Article 18 processing restriction. When set,
         # skip message persistence entirely — the chat still runs (AR handles
@@ -324,6 +328,7 @@ def resume_interrupt(
     model_id: str | None = None,
     web_search: bool | None = None,
     thinking_enabled: bool | None = None,
+    client_turn_id: str | None = None,
 ) -> dict:
     """
     Resume a HITL-interrupted agent stream with the user's approval/rejection.
@@ -346,6 +351,8 @@ def resume_interrupt(
                     send_message — a resume that omits it reaches AR as absence,
                     which AR reads as "search available".
             thinking_enabled: Composer toggle for AR extended thinking, same rules.
+            client_turn_id: The client's id for this request. A Stop
+                    (cancel_stream) that already names it is kept by this accept.
 
     Returns:
             dict: Acknowledgment that resume processing has started
@@ -367,8 +374,9 @@ def resume_interrupt(
         if not access_check.get("can_use"):
             frappe.throw(access_check.get("reason", _("Cannot use FACO")))
 
-        # A Stop raised before this point belongs to an earlier turn (cancel.clear).
-        clear_cancel(session_id)
+        # A Stop raised before this point belongs to an earlier turn, unless it
+        # names this request (cancel.clear).
+        clear_cancel(session_id, keep_turn=client_turn_id)
 
         effective_client_type = client_type or "spa"
 
@@ -424,6 +432,7 @@ def continue_response(
     client_type: str | None = None,
     web_search: bool | None = None,
     thinking_enabled: bool | None = None,
+    client_turn_id: str | None = None,
 ) -> dict:
     """
     Continue a previously truncated assistant response (max_tokens stop).
@@ -440,6 +449,8 @@ def continue_response(
             web_search: Composer toggle for the conversation being continued. Same
                     None-vs-explicit semantics and ``_flag`` coercion as send_message.
             thinking_enabled: Composer toggle for AR extended thinking, same rules.
+            client_turn_id: The client's id for this request. A Stop
+                    (cancel_stream) that already names it is kept by this accept.
 
     Returns:
             dict: Acknowledgment that continuation processing has started
@@ -457,8 +468,9 @@ def continue_response(
         if not access_check.get("can_use"):
             frappe.throw(access_check.get("reason", _("Cannot use FACO")))
 
-        # A Stop raised before this point belongs to an earlier turn (cancel.clear).
-        clear_cancel(session_id)
+        # A Stop raised before this point belongs to an earlier turn, unless it
+        # names this request (cancel.clear).
+        clear_cancel(session_id, keep_turn=client_turn_id)
 
         effective_client_type = client_type or "spa"
 
