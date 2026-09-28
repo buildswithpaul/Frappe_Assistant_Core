@@ -2,8 +2,9 @@
  * Compose-while-streaming queue.
  *
  * Messages typed during a live turn are held here and dispatched one at a
- * time once the turn finalizes (complete, error, or user Stop) and no HITL
- * card is waiting. In-memory only — a reload drops the queue.
+ * time once the turn finalizes (complete, error, or user Stop), no HITL card
+ * is waiting, and a Stop's cancel_stream has been answered. In-memory only —
+ * a reload drops the queue.
  */
 import { ref, watch } from "vue";
 
@@ -13,6 +14,7 @@ export function createSendQueue({
 	isStreaming,
 	hasPendingInteraction,
 	isSubmittingInterrupts,
+	isCancelling,
 	dispatch,
 }) {
 	const queuedMessages = ref([]);
@@ -52,7 +54,15 @@ export function createSendQueue({
 		// isStreaming/hasPendingInteraction have both already gone false but
 		// the resumed turn hasn't produced its first event yet — see the
 		// comment on isSubmittingInterrupts in chatStore's submitInterruptDecision.
-		if (isStreaming.value || hasPendingInteraction.value || isSubmittingInterrupts.value) return;
+		// isCancelling holds a Stop's cancel_stream in flight: FAC clears the
+		// session's cancel flag when it accepts a turn, so the next message must
+		// not reach FAC before the Stop has (streamManager.abortStream).
+		const held =
+			isStreaming.value ||
+			hasPendingInteraction.value ||
+			isSubmittingInterrupts.value ||
+			isCancelling.value;
+		if (held) return;
 		queuedMessages.value = queuedMessages.value.filter((q) => {
 			if (q.sessionId === currentSessionId.value) return true;
 			removeBubble(q.id);
@@ -65,9 +75,9 @@ export function createSendQueue({
 	}
 
 	watch(
-		[isStreaming, hasPendingInteraction, isSubmittingInterrupts],
-		([streaming, pending, submitting]) => {
-			if (streaming || pending || submitting || !queuedMessages.value.length) return;
+		[isStreaming, hasPendingInteraction, isSubmittingInterrupts, isCancelling],
+		(gates) => {
+			if (gates.some(Boolean) || !queuedMessages.value.length) return;
 			// Defer so the finalization handlers that flipped these refs finish first.
 			Promise.resolve().then(dispatchQueued);
 		}
