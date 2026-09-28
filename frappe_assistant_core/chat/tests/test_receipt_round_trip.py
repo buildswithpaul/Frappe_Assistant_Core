@@ -184,9 +184,9 @@ class TestEveryHopCarriesIt(BaseAssistantTest):
         real guard is that routing gets the same treatment as its closest
         analogue — JSON-dumped, guarded — not that every key shares one loop."""
         src = self._relay()
-        at = src.index('model_breakdown": _json_mod.dumps(model_breakdown)')
+        at = src.index('model_breakdown": json.dumps(model_breakdown)')
         window = src[at : at + 900]
-        self.assertIn("_json_mod.dumps(_routing_payload)", window)
+        self.assertIn("json.dumps(_routing_payload)", window)
 
     def test_a_null_receipt_is_never_persisted_over_a_real_one(self):
         src = self._relay()
