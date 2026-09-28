@@ -52,7 +52,8 @@
 								:is-active="i === currentIndex"
 								:title="card.title"
 								:description="card.description"
-								v-model:memory-consent="memoryConsent"
+								:memory-consent="memoryConsent"
+								@update:memory-consent="setMemoryConsent"
 							/>
 						</template>
 					</div>
@@ -112,7 +113,8 @@
 					v-if="isLastCard"
 					type="button"
 					class="get-started-btn"
-					:disabled="saving"
+					data-test="tour-finish"
+					:disabled="saving || !policySettled"
 					@click="handleGetStarted"
 				>
 					<template v-if="saving">
@@ -127,11 +129,12 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from "vue";
+import { ref, computed } from "vue";
 import { useRouter } from "vue-router";
 import { api } from "@/api/client";
 import { logger } from "@/utils/logger";
 import { useUserStore } from "@/stores/userStore";
+import { useMemoryConsentDefault } from "@/composables/useMemoryConsentDefault";
 import WelcomeStage from "./WelcomeStage.vue";
 import FeatureReel from "@/components/onboarding/FeatureReel.vue";
 import PlanCard from "@/components/onboarding/PlanCard.vue";
@@ -145,7 +148,7 @@ const router = useRouter();
 const userStore = useUserStore();
 
 const currentIndex = ref(0);
-const memoryConsent = ref(true);
+const { memoryConsent, policySettled, setMemoryConsent } = useMemoryConsentDefault();
 const saving = ref(false);
 const showWelcome = ref(false);
 const WELCOME_DURATION_MS = 1800;
@@ -203,17 +206,6 @@ const cards = computed(() => [
 ]);
 
 const isLastCard = computed(() => currentIndex.value === cards.value.length - 1);
-
-onMounted(async () => {
-	try {
-		const config = await api.privacy.getConfig();
-		if (config?.tenant?.default_memory_consent === "Opt-In") {
-			memoryConsent.value = false;
-		}
-	} catch {
-		// Leave default ON
-	}
-});
 
 function next() {
 	if (currentIndex.value < cards.value.length - 1) {

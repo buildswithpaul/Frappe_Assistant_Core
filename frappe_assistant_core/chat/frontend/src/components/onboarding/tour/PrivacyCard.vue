@@ -58,7 +58,7 @@ defineProps({
 	isActive: { type: Boolean, default: false },
 	title: { type: String, required: true },
 	description: { type: String, required: true },
-	memoryConsent: { type: Boolean, default: true },
+	memoryConsent: { type: Boolean, default: false },
 });
 const emit = defineEmits(["update:memoryConsent"]);
 </script>
