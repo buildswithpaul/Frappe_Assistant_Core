@@ -8,47 +8,44 @@ The Socket.IO session lookup, the WebView session bridge and private-file
 download. Chat itself goes through the same endpoints as the SPA.
 """
 
+import json
+import unicodedata
+from urllib.parse import quote
+
 import frappe
 from frappe import _
 from werkzeug import Response
 
+from ._mobile_sessions import mobile_client_of_request, record_web_session
 
-def _assert_mobile_oauth_request() -> None:
-    """FACO-M5: refuse ``create_web_session`` unless the caller authenticated
-    via an OAuth Bearer Token issued to a FACO Mobile OAuth client.
+DEFAULT_REDIRECT = "/app"
 
-    The bridge plants browser cookies from a bearer token — any client not
-    issued via the mobile dynamic-registration flow (``api.auth:755``) has no
-    business minting browser sessions. API keys, session cookies, and the AR
-    integration client are refused.
+
+def _script_string(value: str) -> str:
+    """``value`` as a JS string literal that is safe inside an inline ``<script>``.
+
+    ``json.dumps`` escapes quotes, backslashes and control characters but not
+    ``<``, ``>`` or ``&``, and the HTML tokenizer ends a script element at the
+    first ``</script>`` whatever the JS string context. Their ``\\u`` escapes
+    keep the JS value identical.
     """
-    header = frappe.get_request_header("Authorization", "") or ""
-    if not header.lower().startswith("bearer "):
-        frappe.throw(
-            _("create_web_session requires OAuth Bearer authentication"),
-            frappe.AuthenticationError,
-        )
-    access_token = header.split(None, 1)[1].strip()
-    if not access_token:
-        frappe.throw(_("Missing bearer token"), frappe.AuthenticationError)
+    return json.dumps(value).replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
 
-    client_name = frappe.db.get_value(
-        "OAuth Bearer Token",
-        {"access_token": access_token, "status": "Active"},
-        "client",
-    )
-    if not client_name:
-        frappe.throw(_("Invalid bearer token"), frappe.AuthenticationError)
 
-    # FACO Mobile clients are registered with ``app_name = "FACO Mobile"``
-    # by ``api.auth:791``. The FAC Cloud integration client uses
-    # ``app_name = "FAC Cloud"``, which is correctly rejected.
-    app_name = frappe.db.get_value("OAuth Client", client_name, "app_name")
-    if app_name != "FACO Mobile":
-        frappe.throw(
-            _("This OAuth client is not allowed to use create_web_session"),
-            frappe.PermissionError,
-        )
+def _same_site_path(value: object) -> str:
+    """``value`` when it is a same-site absolute path, otherwise ``/app``.
+
+    Refuses scheme URIs (``javascript:``, ``https://evil.example``) and
+    protocol-relative ``//evil.example``. Also refuses a backslash and any
+    whitespace or control character (spec §8.3): browsers read a backslash as
+    a slash and drop tabs and newlines, so ``/`` + backslash + ``evil.example``
+    and ``/`` + tab + ``/evil.example`` both open ``//evil.example``.
+    """
+    if not isinstance(value, str) or not value.startswith("/") or value.startswith("//"):
+        return DEFAULT_REDIRECT
+    if any(ch == "\\" or ch.isspace() or unicodedata.category(ch) == "Cc" for ch in value):
+        return DEFAULT_REDIRECT
+    return value
 
 
 @frappe.whitelist(methods=["GET"])
@@ -57,8 +54,8 @@ def create_web_session() -> Response:
 
     Uses GET: the mobile WebView reaches this via a top-level page navigation,
     which can only issue GET. CSRF is a non-concern — the caller is authenticated
-    solely by the OAuth Bearer header (cross-checked to a FACO Mobile client in
-    ``_assert_mobile_oauth_request``); no ambient cookie is trusted on the way in.
+    solely by the OAuth Bearer header (cross-checked to a FAC mobile client in
+    ``mobile_client_of_request``); no ambient cookie is trusted on the way in.
 
     Mobile WebView calls this URL with Authorization header. The response
     uses Frappe's LoginManager to create a full session, then returns an
@@ -69,9 +66,7 @@ def create_web_session() -> Response:
     Query params:
             redirect_to (str): The Frappe page to open after auth (e.g. /app/sales-order/SO-001)
     """
-    import json as _json
-
-    redirect_to = frappe.form_dict.get("redirect_to") or "/app"
+    redirect_to = frappe.form_dict.get("redirect_to")
     user = frappe.session.user
 
     if user == "Guest":
@@ -81,44 +76,41 @@ def create_web_session() -> Response:
     # not generic API tokens. Require the request to have been authenticated
     # via an OAuth Bearer Token (not API key / session cookie) and cross-check
     # the token's client against the allow-list of known mobile OAuth clients.
-    _assert_mobile_oauth_request()
+    client = mobile_client_of_request()
 
-    # SECURITY: Only allow same-site absolute paths. Reject scheme URIs
-    # (javascript:, data:, http://evil.example/...) and protocol-relative URLs
-    # (//evil.example). This runs before the value is inlined into a <script>.
-    if not redirect_to.startswith("/") or redirect_to.startswith("//"):
-        redirect_to = "/app"
+    # SECURITY: only a same-site absolute path survives (_same_site_path); the
+    # page inlines it through _script_string, which stops it ending the <script>.
+    redirect_to = _same_site_path(redirect_to)
 
     # Use Frappe's official LoginManager — runs hooks, creates session, sets all cookies
     login_manager = frappe.auth.LoginManager()
     login_manager.login_as(user)
+    # Sign-out ends exactly the sessions this device minted (auth.revoke_mobile_session).
+    record_web_session(user, frappe.session.sid, client)
 
-    # Build JS cookie-setting code from all cookies LoginManager prepared
+    # Build JS cookie-setting code from all cookies LoginManager prepared.
+    # Values are percent-encoded exactly as CookieManager.flush_cookies encodes
+    # a Set-Cookie value (the desk decodes them), so a user-editable value such
+    # as full_name or user_image can carry no quote, semicolon or markup.
     cookie_lines = []
     for key, opts in frappe.local.cookie_manager.cookies.items():
-        value = opts.get("value") or ""
+        value = quote((opts.get("value") or "").encode("utf-8"))
         max_age = opts.get("max_age") or ""
         # FACO-M5: SameSite=Strict neutralizes cross-site request forgery if
         # the planted cookie ever leaks to a third-party context. The mobile
         # WebView navigates same-origin after this bridge, so Strict is safe.
-        cookie_lines.append(
-            f'document.cookie = "{key}={value}; path=/; SameSite=Strict; Secure'
-            + (f"; max-age={max_age}" if max_age else "")
-            + '";'
-        )
+        cookie = f"{key}={value}; path=/; SameSite=Strict; Secure"
+        if max_age:
+            cookie += f"; max-age={max_age}"
+        cookie_lines.append(f"document.cookie = {_script_string(cookie)};")
 
     cookies_js = "\n".join(cookie_lines)
-
-    # JSON-encode for JS string context. html.escape would be wrong here —
-    # it doesn't neutralize javascript:/data: URIs and breaks inside quoted
-    # JS literals. json.dumps emits a correctly-escaped JS string literal.
-    safe_redirect_js = _json.dumps(redirect_to)
 
     # Return HTML that sets cookies on the real origin, then redirects
     page = f"""<!DOCTYPE html>
 <html><head><script>
 {cookies_js}
-window.location.replace({safe_redirect_js});
+window.location.replace({_script_string(redirect_to)});
 </script></head><body></body></html>"""
 
     return Response(page, status=200, content_type="text/html")
