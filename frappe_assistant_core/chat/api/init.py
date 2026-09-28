@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING
 
 import frappe
 from frappe import _
+from frappe.utils import get_system_timezone
 
 from frappe_assistant_core.chat.cloud_url import PRODUCTION_FAC_CLOUD_URL, get_fac_cloud_url
 from frappe_assistant_core.utils.cache import get_cached_server_settings
@@ -42,7 +43,8 @@ def initialize_spa() -> dict:
                     "capabilities": { features: { billing, memory, workflows, ... } },
                     "user_auth": { ready, site_registered, user_registered, ... },
                     "onboarding": { onboarding_complete, has_conversations } | null,
-                    "sessions": [ { session_id, preview, started, last_activity }, ... ]
+                    "sessions": [ { session_id, preview, started, last_activity }, ... ],
+                    "system_timezone": str (IANA zone of every naive server datetime)
             }
     """
     settings = frappe.get_single("FAC Chat Settings")
@@ -67,6 +69,8 @@ def initialize_spa() -> dict:
             # Key present on every path so the SPA never has to distinguish
             # "nothing owed" from "this payload predates the field".
             "outstanding": None,
+            # Every naive server datetime is in this zone (spec §8.6).
+            "system_timezone": get_system_timezone(),
         }
 
     # Fetch sessions (local DB, main thread)
@@ -142,6 +146,7 @@ def initialize_spa() -> dict:
         "sessions": sessions,
         # None when nothing is owed, and for non-admins who could not act on it.
         "outstanding": ar_results.get("outstanding"),
+        "system_timezone": get_system_timezone(),
     }
 
 
