@@ -279,25 +279,39 @@ def update_my_consent(consent_type: str | None = None, granted: bool = True) -> 
     return client.update_user_consent(user_id=_ar_user_id(user), consent_type=consent_type, granted=granted)
 
 
+_CONSENT_POLICIES = ("Opt-In", "Opt-Out")
+
+
+def _consent_policy(tenant_config: dict | None) -> str | None:
+    """The workspace's memory-consent policy, or None when AR states no known one."""
+    if not isinstance(tenant_config, dict):
+        return None
+    policy = tenant_config.get("default_memory_consent")
+    return policy if policy in _CONSENT_POLICIES else None
+
+
 @frappe.whitelist(methods=["GET"])
 def get_privacy_config() -> dict:
     """
     Get privacy configuration for the current tenant.
 
-    Returns tenant-level config (for admins) and user-level privacy state.
+    Every user gets the workspace's ``default_memory_consent`` ("Opt-In",
+    "Opt-Out" or None): the first-run tour needs it to pick the consent
+    switch's starting state. The full tenant block (retention, privacy
+    contact) stays admin-only. User-level privacy state is always included.
     """
     user = frappe.session.user
     is_admin = "System Manager" in frappe.get_roles(user)
     client = _get_client()
 
-    result = {"is_admin": is_admin}
+    try:
+        tenant_config = client.get_tenant_privacy_config()
+    except Exception:
+        tenant_config = None
 
-    # Tenant-level config (admin only)
+    result = {"is_admin": is_admin, "default_memory_consent": _consent_policy(tenant_config)}
     if is_admin:
-        try:
-            result["tenant"] = client.get_tenant_privacy_config()
-        except Exception:
-            result["tenant"] = None
+        result["tenant"] = tenant_config
 
     # User-level privacy state (always included)
     try:
