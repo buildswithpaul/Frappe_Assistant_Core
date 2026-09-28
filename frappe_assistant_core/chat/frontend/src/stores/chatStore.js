@@ -41,6 +41,9 @@ export const useChatStore = defineStore("chat", () => {
 	// True while a batched resume_interrupt call is in flight. Used by the
 	// approval UI to disable buttons so a second click can't race the first.
 	const isSubmittingInterrupts = ref(false);
+	// True while a Stop's cancel_stream call is in flight (streamManager.abortStream).
+	// It holds the send queue, and queues a new send, until the Stop reaches FAC.
+	const isCancelling = ref(false);
 	const streamingMessage = ref("");
 	const { error, errorCode: errorCodeRef, setError, clearError } = createErrorState();
 
@@ -128,6 +131,7 @@ export const useChatStore = defineStore("chat", () => {
 
 	const stream = createStreamManager({
 		...sharedRefs,
+		isCancelling,
 		reconcile: (sessionId) => reconcileFromServer(sessionId),
 	});
 	const blocks = createBlockHandlers(sharedRefs);
@@ -137,6 +141,7 @@ export const useChatStore = defineStore("chat", () => {
 		isStreaming,
 		hasPendingInteraction,
 		isSubmittingInterrupts,
+		isCancelling,
 		dispatch: (item) =>
 			sendMessage(item.message, item.files, item.context, item.modelId, null, {
 				skipQueue: true,
@@ -348,7 +353,9 @@ export const useChatStore = defineStore("chat", () => {
 		// stream finalization does. So a caller resuming after an abandoned card
 		// (abort-then-send) must pass skipQueue explicitly; ambient state alone
 		// can't tell that case apart from a plain queue candidate.
-		if (!skipQueue && isStreaming.value) {
+		// A Stop's cancel still in flight queues the send too: the Stop button
+		// is gone, but this turn must not reach FAC before the Stop has.
+		if (!skipQueue && (isStreaming.value || isCancelling.value)) {
 			sendQueue.queueMessage(message, uploadedFiles, context, modelId);
 			return;
 		}

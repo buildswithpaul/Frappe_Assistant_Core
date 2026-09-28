@@ -16,6 +16,7 @@ describe("createSendQueue", () => {
 			isStreaming: ref(true),
 			hasPendingInteraction: ref(false),
 			isSubmittingInterrupts: ref(false),
+			isCancelling: ref(false),
 			dispatch: vi.fn(async (item) => sent.push(item.message)),
 		};
 		queue = createSendQueue(refs);
@@ -106,6 +107,31 @@ describe("createSendQueue", () => {
 		await nextTick();
 		await flush();
 		expect(sent).toEqual(["after resume"]);
+	});
+
+	it("does not dispatch while a Stop's cancel_stream is in flight", async () => {
+		// streamManager.abortStream turns isStreaming off before its cancel is
+		// answered, and FAC clears the cancel flag when it accepts the next
+		// turn. isCancelling is the only thing still gating.
+		queue.queueMessage("after stop", [], null, "m1");
+		refs.isCancelling.value = true;
+		refs.isStreaming.value = false;
+		await nextTick();
+		await flush();
+		expect(sent).toEqual([]);
+		expect(queue.queuedMessages.value).toHaveLength(1);
+	});
+
+	it("dispatches once the cancel is answered", async () => {
+		queue.queueMessage("after stop", [], null, "m1");
+		refs.isCancelling.value = true;
+		refs.isStreaming.value = false;
+		await nextTick();
+		await flush();
+		refs.isCancelling.value = false;
+		await nextTick();
+		await flush();
+		expect(sent).toEqual(["after stop"]);
 	});
 
 	it("drops queue items belonging to a session the user left", async () => {
