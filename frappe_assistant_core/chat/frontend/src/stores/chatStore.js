@@ -417,7 +417,12 @@ export const useChatStore = defineStore("chat", () => {
 				modelId,
 				systemPromptAddendum,
 				attachments,
-				{ web_search: modes.webSearch, thinking_enabled: modes.thinking }
+				{
+					web_search: modes.webSearch,
+					thinking_enabled: modes.thinking,
+					// A Stop names this request by the same id (streamManager.abortStream).
+					client_turn_id: assistantMessage._requestId,
+				}
 			);
 		} catch (err) {
 			stream.clearStreamTimeouts();
@@ -462,6 +467,7 @@ export const useChatStore = defineStore("chat", () => {
 			await api.chat.continueResponse(currentSessionId.value, messageId, {
 				web_search: modes.webSearch,
 				thinking_enabled: modes.thinking,
+				client_turn_id: lastMsg._requestId,
 			});
 		} catch (err) {
 			stream.clearStreamTimeouts();
@@ -583,6 +589,11 @@ export const useChatStore = defineStore("chat", () => {
 		const resumeMessageId =
 			lastMsg && lastMsg.role === "assistant" ? lastMsg.message_id : null;
 		const sessionId = currentSessionId.value;
+		// A resume is a request of its own, as a Continue is: from here on a
+		// Stop names it, never the request that paused the turn.
+		const clientTurnId = crypto.randomUUID();
+		streamRequestId.value = clientTurnId;
+		if (lastMsg && lastMsg.role === "assistant") lastMsg._requestId = clientTurnId;
 
 		isSubmittingInterrupts.value = true;
 		try {
@@ -598,6 +609,7 @@ export const useChatStore = defineStore("chat", () => {
 				message_id: resumeMessageId,
 				web_search: modes.webSearch,
 				thinking_enabled: modes.thinking,
+				client_turn_id: clientTurnId,
 			};
 			// Same reasoning for the model — except "auto" can never travel: a
 			// resume skips classification, so only a concrete id is a model.

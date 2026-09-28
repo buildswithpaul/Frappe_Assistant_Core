@@ -31,10 +31,11 @@ export const chat = {
 			...options,
 		}),
 
-	cancelStream: (sessionId, messageId = null) =>
+	cancelStream: (sessionId, messageId = null, clientTurnId = null) =>
 		baseCall("frappe_assistant_core.chat.api.cancel_stream", {
 			session_id: sessionId,
 			message_id: messageId,
+			client_turn_id: clientTurnId,
 		}),
 
 	continueResponse: (sessionId, messageId, options = {}) =>
