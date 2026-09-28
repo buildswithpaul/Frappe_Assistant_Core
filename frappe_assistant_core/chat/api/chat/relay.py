@@ -11,6 +11,7 @@ down on exit. Not whitelisted endpoints.
 
 from __future__ import annotations
 
+import json
 import time
 
 import frappe
@@ -71,6 +72,7 @@ from ..chat.helpers import (  # noqa: E402
     _find_assistant_msg_by_message_id,
     _log_conversation,
     _log_stream_error_detail,
+    _parse_turn_blocks,
     _update_subscription_cache,
 )
 
@@ -87,6 +89,31 @@ _SHARED_RELAY_EVENTS = frozenset(
         "thinking_complete",
     }
 )
+
+# Events only a running agent emits. A resume keeps its answered cards pending
+# until the first of these arrives: before it, AR may be unreachable or may
+# refuse the resume after its stream_start (SESSION_BUSY), and it still holds
+# the pause. heartbeat, sources and task_updated stay out on purpose: AR can
+# emit the last two ahead of a refusal — sources can attach to the first event,
+# and the task plan can update, before AR settles on the refusal.
+_RESUME_PROGRESS_EVENTS = frozenset(
+    {
+        "stream_chunk",
+        "thinking",
+        "thinking_complete",
+        "tool_call_start",
+        "tool_result",
+        "tool_call_result",
+        "tool_cancelled",
+        "approval_required",
+        "workflow_created",
+        "stream_complete",
+        "stream_cancelled",
+    }
+)
+
+# Resume refusals that mean the pause is gone for good: its cards can only expire.
+_PAUSE_GONE_CODES = frozenset({"INTERRUPT_EXPIRED", "INTERRUPT_NOT_FOUND"})
 
 
 def _dispatch_relay_event(event_type: str, data: dict, session_id: str, block_builder) -> bool:
@@ -196,15 +223,13 @@ def _merge_model_breakdown(existing_json, incoming: list | None) -> list:
     (model_id, role) — the same model can appear as both orchestrator and
     helper within a turn, and those are separate lines on the usage screen.
     """
-    import json as json_module
-
     merged: dict[tuple, dict] = {}
     for source in (existing_json, incoming):
         if not source:
             continue
         if isinstance(source, str):
             try:
-                source = json_module.loads(source)
+                source = json.loads(source)
             except (ValueError, TypeError):
                 continue
         if not isinstance(source, list):
@@ -234,13 +259,11 @@ def _merge_routing_receipt(existing, incoming):
     stream_chat request and AR cannot see the whole turn — this is the only
     hop that can.
     """
-    import json as json_module
-
     if not incoming:
         return existing
     if isinstance(incoming, str):
         try:
-            incoming = json_module.loads(incoming)
+            incoming = json.loads(incoming)
         except (ValueError, TypeError):
             return existing
     if not existing:
@@ -248,7 +271,7 @@ def _merge_routing_receipt(existing, incoming):
 
     if isinstance(existing, str):
         try:
-            existing = json_module.loads(existing)
+            existing = json.loads(existing)
         except (ValueError, TypeError):
             return incoming
 
@@ -268,6 +291,24 @@ def _merge_routing_receipt(existing, incoming):
     if incoming.get("credits", {}).get("actual") is not None:
         merged["credits"] = incoming["credits"]
     return merged
+
+
+def _merge_tool_calls(existing_tool_calls_json, new_calls: list | None) -> list:
+    """Append this cycle's tool calls onto the turn's stored list.
+
+    Shared by the resume and Continue append paths, so a malformed stored
+    value is handled the same way in both: as an empty list rather than a
+    crash.
+    """
+    if not new_calls:
+        return []
+    try:
+        prior = json.loads(existing_tool_calls_json) if existing_tool_calls_json else []
+    except (ValueError, TypeError):
+        prior = []
+    if not isinstance(prior, list):
+        prior = []
+    return prior + new_calls
 
 
 def _persist_resume_cycle(
@@ -299,8 +340,6 @@ def _persist_resume_cycle(
     Returns the FAC Chat Message name found for this turn, or None if no
     row exists yet (the caller should fall back to creating one).
     """
-    import json as json_module
-
     existing_faco_msg = _find_assistant_msg_by_message_id(session_id, ar_message_id or message_id)
     if not existing_faco_msg:
         return None
@@ -324,7 +363,7 @@ def _persist_resume_cycle(
     prior_credits = (row.credits_used if row else 0) or 0
     updates = {
         "content": updated_content,
-        "blocks": json_module.dumps(block_builder.snapshot()),
+        "blocks": json.dumps(block_builder.snapshot()),
         "credits_used": round(prior_credits + credits_used, 2),
     }
     if aborted:
@@ -335,20 +374,51 @@ def _persist_resume_cycle(
         # Merge, never replace: credits_used below is the whole turn's total, so
         # a breakdown holding only the last cycle would contradict it — the chip
         # and the usage screen would disagree on the same turn.
-        updates["model_breakdown"] = json_module.dumps(
+        updates["model_breakdown"] = json.dumps(
             _merge_model_breakdown(row.model_breakdown if row else None, model_breakdown)
         )
     if collected_tool_calls:
-        existing_tc = (row.tool_calls if row else None) or ""
-        existing_list = json_module.loads(existing_tc) if existing_tc else []
-        updates["tool_calls"] = json_module.dumps(existing_list + collected_tool_calls)
+        updates["tool_calls"] = json.dumps(
+            _merge_tool_calls(row.tool_calls if row else None, collected_tool_calls)
+        )
     if routing is not None:
         merged_routing = _merge_routing_receipt(row.routing if row else None, routing)
         if merged_routing is not None:
-            updates["routing"] = json_module.dumps(merged_routing)
+            updates["routing"] = json.dumps(merged_routing)
 
     _set_faco_message_with_retry(existing_faco_msg, updates)
     return existing_faco_msg
+
+
+def _settle_unconsumed_resume(
+    session_id: str, message_id: str | None, block_builder, error_code: str | None
+) -> list:
+    """Finish a resume that ended before AR consumed its pause; return the blocks to emit.
+
+    This cycle produced nothing, and the turn's row already holds the pause as
+    it stands, so the row is not rewritten: after a refusal or an unreachable
+    AR, AR still holds the pause and the cards stay pending for any client to
+    answer again. Only when AR says the pause is gone are the cards settled, as
+    ``expired``, unless a concurrent Stop already finalized the row.
+
+    Only the interaction cards' status is settled on the stored row — never
+    the whole ``block_builder`` snapshot. AR can still emit a ``sources`` or
+    ``plan_created``/``task_updated`` event before a refusal (both are kept
+    out of ``_RESUME_PROGRESS_EVENTS`` for exactly this reason), which lands
+    on ``block_builder`` in memory; writing that snapshot back would persist
+    those blocks onto a row this failed cycle never actually produced.
+    """
+    if error_code in _PAUSE_GONE_CODES and block_builder.settle_pending_interactions("expired"):
+        row_name = _find_assistant_msg_by_message_id(session_id, message_id)
+        if row_name:
+            row = frappe.db.get_value("FAC Chat Message", row_name, ["blocks", "aborted"], as_dict=True)
+            if row and not row.aborted:
+                from ..block_builder import BlockBuilder
+
+                stored_builder = BlockBuilder(existing_blocks=_parse_turn_blocks(row.blocks))
+                if stored_builder.settle_pending_interactions("expired"):
+                    _set_faco_message_with_retry(row_name, {"blocks": json.dumps(stored_builder.snapshot())})
+    return block_builder.snapshot()
 
 
 def _relay_ar_interrupt_resume(
@@ -402,6 +472,7 @@ def _relay_ar_interrupt_resume(
     collected_tool_calls = []
     model_used = ""
     block_builder = None
+    pause_consumed = False
 
     try:
         from frappe_assistant_core.chat.fac_cloud_client import get_fac_cloud_client
@@ -447,8 +518,6 @@ def _relay_ar_interrupt_resume(
                 existing_blocks = []
 
         block_builder = BlockBuilder(existing_blocks=existing_blocks)
-        block_builder.resolve_pending_interactions(interrupt_response)
-
         # Resume stream — no message, just interrupt_response
         stream_iter = client.stream_chat(
             session_id,
@@ -505,6 +574,11 @@ def _relay_ar_interrupt_resume(
 
             event_type = event.get("event")
             data = event.get("data", {})
+
+            if not pause_consumed and event_type in _RESUME_PROGRESS_EVENTS:
+                # AR is running the resumed turn, so it has consumed the pause.
+                block_builder.resolve_pending_interactions(interrupt_response)
+                pause_consumed = True
 
             if _dispatch_relay_event(event_type, data, session_id, block_builder):
                 continue
@@ -815,20 +889,25 @@ def _relay_ar_interrupt_resume(
 
             elif event_type == "stream_error":
                 _log_stream_error_detail(data)
-                blocks_snapshot = block_builder.snapshot()
-                if full_response or blocks_snapshot:
-                    _persist_partial_assistant_turn(
-                        session_id,
-                        ar_message_id,
-                        full_response,
-                        blocks_snapshot,
-                        collected_tool_calls,
-                        "",
-                        "errored",
+                if pause_consumed:
+                    blocks_snapshot = block_builder.snapshot()
+                    if full_response or blocks_snapshot:
+                        _persist_partial_assistant_turn(
+                            session_id,
+                            ar_message_id,
+                            full_response,
+                            blocks_snapshot,
+                            collected_tool_calls,
+                            "",
+                            "errored",
+                        )
+                else:
+                    blocks_snapshot = _settle_unconsumed_resume(
+                        session_id, ar_message_id or message_id, block_builder, data.get("error_code")
                     )
-                # The partial turn above is now in the transcript, so the carried
-                # state has to advance with it — otherwise the next turn replays a
-                # blob that has never seen this resume cycle.
+                # Store any session state AR handed back, whether or not a partial turn was
+                # written above: otherwise the next turn replays a blob that has never seen
+                # this resume cycle.
                 _persist_session_blob(session_id, user, data, zero_retention, restricted)
                 _emit_socket_event(
                     session_id,
@@ -851,7 +930,8 @@ def _relay_ar_interrupt_resume(
             message=f"Error in interrupt resume relay: {e!s}\n{traceback.format_exc()}",
         )
         blocks_snapshot = block_builder.snapshot() if block_builder is not None else []
-        if block_builder is not None and (full_response or blocks_snapshot):
+        # Before AR consumed the pause the row already holds it as it stands.
+        if pause_consumed and (full_response or blocks_snapshot):
             _persist_partial_assistant_turn(
                 session_id,
                 ar_message_id,
