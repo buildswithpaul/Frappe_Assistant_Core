@@ -7,6 +7,11 @@
 These functions run in the bounded ``_relay_pool`` defined in
 ``messages``. They re-establish a Frappe context on entry and tear it
 down on exit. Not whitelisted endpoints.
+
+Every payload names its turn: ``message_id`` is the id AR's ``stream_start``
+gave the turn (``ar_message_id``), and None until the relay has handled that
+``stream_start``. After a Stop, the stopped turn's late events share the room
+with the next turn's, and this id is how a client tells them apart.
 """
 
 from __future__ import annotations
@@ -114,12 +119,15 @@ _RESUME_PROGRESS_EVENTS = frozenset(
 _PAUSE_GONE_CODES = frozenset({"INTERRUPT_EXPIRED", "INTERRUPT_NOT_FOUND"})
 
 
-def _dispatch_relay_event(event_type: str, data: dict, session_id: str, block_builder) -> bool:
+def _dispatch_relay_event(
+    event_type: str, data: dict, session_id: str, block_builder, ar_message_id: str | None = None
+) -> bool:
     """Handle a relay event type shared by both loops.
 
     Returns True if ``event_type`` was recognized and handled (block_builder
     updated + socket event emitted), False otherwise so the caller can fall
-    through to its own loop-specific branches.
+    through to its own loop-specific branches. Every payload carries
+    ``ar_message_id`` as ``message_id`` (see the module docstring).
     """
     if event_type not in _SHARED_RELAY_EVENTS:
         return False
@@ -130,6 +138,7 @@ def _dispatch_relay_event(event_type: str, data: dict, session_id: str, block_bu
             {
                 "event": "context_summarized",
                 "session_id": session_id,
+                "message_id": ar_message_id,
                 "message": data.get("message", ""),
             },
         )
@@ -140,6 +149,7 @@ def _dispatch_relay_event(event_type: str, data: dict, session_id: str, block_bu
             {
                 "event": "model_selected",
                 "session_id": session_id,
+                "message_id": ar_message_id,
                 "mode": data.get("mode"),
                 "complexity": data.get("complexity"),
                 "task_type": data.get("task_type"),
@@ -161,6 +171,7 @@ def _dispatch_relay_event(event_type: str, data: dict, session_id: str, block_bu
             {
                 "event": "routing_notice",
                 "session_id": session_id,
+                "message_id": ar_message_id,
                 "code": data.get("code"),
                 "tier_used": data.get("tier_used"),
                 "tier_wanted": data.get("tier_wanted"),
@@ -173,12 +184,24 @@ def _dispatch_relay_event(event_type: str, data: dict, session_id: str, block_bu
         block_builder.add_thinking(data.get("content", ""))
         _emit_socket_event(
             session_id,
-            {"event": "thinking", "session_id": session_id, "content": data.get("content", "")},
+            {
+                "event": "thinking",
+                "session_id": session_id,
+                "message_id": ar_message_id,
+                "content": data.get("content", ""),
+            },
         )
 
     elif event_type == "thinking_complete":
         block_builder.complete_thinking()
-        _emit_socket_event(session_id, {"event": "thinking_complete", "session_id": session_id})
+        _emit_socket_event(
+            session_id,
+            {
+                "event": "thinking_complete",
+                "session_id": session_id,
+                "message_id": ar_message_id,
+            },
+        )
 
     return True
 
@@ -503,6 +526,7 @@ def _relay_ar_interrupt_resume(
                 {
                     "event": "stream_error",
                     "session_id": session_id,
+                    "message_id": ar_message_id,
                     "error": _not_registered_error(),
                     "action_required": "register",
                 },
@@ -608,7 +632,9 @@ def _relay_ar_interrupt_resume(
                 block_builder.resolve_pending_interactions(interrupt_response)
                 pause_consumed = True
 
-            if _dispatch_relay_event(event_type, data, session_id, block_builder):
+            if _dispatch_relay_event(
+                event_type, data, session_id, block_builder, ar_message_id=ar_message_id
+            ):
                 continue
 
             if event_type == "heartbeat":
@@ -617,6 +643,7 @@ def _relay_ar_interrupt_resume(
                     {
                         "event": "heartbeat",
                         "session_id": session_id,
+                        "message_id": ar_message_id,
                     },
                 )
 
@@ -659,6 +686,7 @@ def _relay_ar_interrupt_resume(
                     {
                         "event": "stream_chunk",
                         "session_id": session_id,
+                        "message_id": ar_message_id,
                         "chunk": chunk,
                         "accumulated": full_response,
                     },
@@ -673,6 +701,7 @@ def _relay_ar_interrupt_resume(
                     {
                         "event": "tool_call_start",
                         "session_id": session_id,
+                        "message_id": ar_message_id,
                         "tool_name": data.get("tool_name"),
                         "tool_id": tool_id,
                         "input": data.get("input", {}),
@@ -702,6 +731,7 @@ def _relay_ar_interrupt_resume(
                     {
                         "event": "tool_call_result",
                         "session_id": session_id,
+                        "message_id": ar_message_id,
                         "tool_id": tool_id,
                         "tool_name": data.get("tool_name"),
                         "result": truncate_result_for_emit(data.get("result")),
@@ -722,6 +752,7 @@ def _relay_ar_interrupt_resume(
                     {
                         "event": "approval_required",
                         "session_id": session_id,
+                        "message_id": ar_message_id,
                         "tool_id": data.get("tool_id"),
                         "tool_name": data.get("tool_name"),
                         "input": data.get("input", {}),
@@ -740,6 +771,7 @@ def _relay_ar_interrupt_resume(
                     {
                         "event": "tool_cancelled",
                         "session_id": session_id,
+                        "message_id": ar_message_id,
                         "tool_id": data.get("tool_id"),
                         "tool_name": data.get("tool_name"),
                         "message": data.get("message", "Cancelled"),
@@ -755,6 +787,7 @@ def _relay_ar_interrupt_resume(
                         {
                             "event": event_type,
                             "session_id": session_id,
+                            "message_id": ar_message_id,
                             "plan": plan,
                         },
                     )
@@ -766,6 +799,7 @@ def _relay_ar_interrupt_resume(
                     {
                         "event": "workflow_created",
                         "session_id": session_id,
+                        "message_id": ar_message_id,
                         "workflow_name": data.get("workflow_name"),
                         "docname": data.get("docname"),
                         "link": data.get("link"),
@@ -890,6 +924,7 @@ def _relay_ar_interrupt_resume(
                 complete_event = {
                     "event": "stream_complete",
                     "session_id": session_id,
+                    "message_id": ar_message_id,
                     "full_response": full_response,
                     "quota_remaining": quota_remaining,
                     # Lets the composer's credit meter move per turn instead of
@@ -1070,6 +1105,7 @@ def _relay_ar_stream(
                 {
                     "event": "stream_error",
                     "session_id": session_id,
+                    "message_id": ar_message_id,
                     "error": _not_registered_error(),
                     "action_required": "register",
                 },
@@ -1101,7 +1137,14 @@ def _relay_ar_stream(
             return
 
         # Emit start event
-        _emit_socket_event(session_id, {"event": "stream_start", "session_id": session_id})
+        _emit_socket_event(
+            session_id,
+            {
+                "event": "stream_start",
+                "session_id": session_id,
+                "message_id": ar_message_id,
+            },
+        )
 
         # Stream from AR
         # SDK signature: stream_chat(session_id, message, user_id, context=None, model_id=None,
@@ -1143,12 +1186,21 @@ def _relay_ar_stream(
             # A rate_limited refusal arrives here as a stream_error (_normalize_ar_event).
             event_type, data = _normalize_ar_event(event.get("event"), event.get("data", {}))
 
-            if _dispatch_relay_event(event_type, data, session_id, block_builder):
+            if _dispatch_relay_event(
+                event_type, data, session_id, block_builder, ar_message_id=ar_message_id
+            ):
                 continue
 
             if event_type == "heartbeat":
                 # Forward keepalive to frontend so activity timeout resets during long tool executions
-                _emit_socket_event(session_id, {"event": "heartbeat", "session_id": session_id})
+                _emit_socket_event(
+                    session_id,
+                    {
+                        "event": "heartbeat",
+                        "session_id": session_id,
+                        "message_id": ar_message_id,
+                    },
+                )
 
             elif event_type == "stream_start":
                 ar_message_id = data.get("message_id")
@@ -1202,6 +1254,7 @@ def _relay_ar_stream(
                     {
                         "event": "stream_chunk",
                         "session_id": session_id,
+                        "message_id": ar_message_id,
                         "chunk": chunk,
                         "accumulated": full_response,
                     },
@@ -1219,6 +1272,7 @@ def _relay_ar_stream(
                     {
                         "event": "tool_call_start",
                         "session_id": session_id,
+                        "message_id": ar_message_id,
                         "tool_name": data.get("tool_name"),
                         "tool_id": tool_id,
                         "input": data.get("input", {}),
@@ -1248,6 +1302,7 @@ def _relay_ar_stream(
                     {
                         "event": "tool_call_result",
                         "session_id": session_id,
+                        "message_id": ar_message_id,
                         "tool_id": tool_id,
                         "tool_name": data.get("tool_name"),
                         "result": truncate_result_for_emit(data.get("result")),
@@ -1269,6 +1324,7 @@ def _relay_ar_stream(
                     {
                         "event": "approval_required",
                         "session_id": session_id,
+                        "message_id": ar_message_id,
                         "tool_id": data.get("tool_id"),
                         "tool_name": data.get("tool_name"),
                         "input": data.get("input", {}),
@@ -1287,6 +1343,7 @@ def _relay_ar_stream(
                     {
                         "event": "tool_cancelled",
                         "session_id": session_id,
+                        "message_id": ar_message_id,
                         "tool_id": data.get("tool_id"),
                         "tool_name": data.get("tool_name"),
                         "message": data.get("message", "Cancelled"),
@@ -1302,6 +1359,7 @@ def _relay_ar_stream(
                         {
                             "event": event_type,
                             "session_id": session_id,
+                            "message_id": ar_message_id,
                             "plan": plan,
                         },
                     )
@@ -1313,6 +1371,7 @@ def _relay_ar_stream(
                     {
                         "event": "workflow_created",
                         "session_id": session_id,
+                        "message_id": ar_message_id,
                         "workflow_name": data.get("workflow_name"),
                         "docname": data.get("docname"),
                         "link": data.get("link"),
@@ -1421,6 +1480,7 @@ def _relay_ar_stream(
                 complete_event = {
                     "event": "stream_complete",
                     "session_id": session_id,
+                    "message_id": ar_message_id,
                     "full_response": full_response,
                     "quota_remaining": quota_remaining,
                     # Lets the composer's credit meter move per turn instead of

@@ -179,3 +179,32 @@ class TestRoutingRelay(unittest.TestCase):
         from frappe_assistant_core.chat.api.chat import relay
 
         self.assertIn("routing_notice", relay._SHARED_RELAY_EVENTS)
+
+
+class TestEveryPayloadNamesItsTurn(unittest.TestCase):
+    """A conversation's turns share one socket room, so a client can route a
+    stopped turn's late events only by their message_id. A payload
+    added without the key reopens that gap in silence, on one loop or both.
+    The runtime cover is test_stream_events_name_their_turn.py."""
+
+    maxDiff = None  # a failure lists every payload without the key
+
+    def test_every_socket_payload_carries_a_message_id(self):
+        import ast
+        import inspect
+
+        from frappe_assistant_core.chat.api.chat import cancel, relay
+
+        missing = []
+        for module in (relay, cancel):
+            filename = module.__name__.rsplit(".", 1)[-1] + ".py"
+            for node in ast.walk(ast.parse(inspect.getsource(module))):
+                if not isinstance(node, ast.Dict):
+                    continue
+                keys = {key.value: key for key in node.keys if isinstance(key, ast.Constant)}
+                if "event" in keys and "message_id" not in keys:
+                    value = node.values[node.keys.index(keys["event"])]
+                    name = value.value if isinstance(value, ast.Constant) else ast.unparse(value)
+                    missing.append((filename, keys["event"].lineno, name))
+
+        self.assertEqual([f"{f}:{line} {name}" for f, line, name in sorted(missing)], [])
