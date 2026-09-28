@@ -31,6 +31,9 @@ from ..chat.helpers import (
 
 CANCEL_TTL_SECONDS = 120
 
+# A longer client turn id names no request: its Stop is stored as an unnamed one.
+CLIENT_TURN_ID_MAX_LENGTH = 140
+
 ABORT_MARKER_TEXT = "\n\n_(Stopped by user)_"
 
 
@@ -66,11 +69,24 @@ def _cache_key(session_id: str) -> str:
     return f"fac_cancel:{session_id}"
 
 
-def mark_cancelled(session_id: str) -> None:
-    """Mark ``session_id`` for cancellation. Idempotent, multi-worker-safe."""
+def _named_flag(client_turn_id: str | None) -> str | None:
+    """The flag value of a Stop that names ``client_turn_id``; None when it names no request."""
+    if not client_turn_id or len(client_turn_id) > CLIENT_TURN_ID_MAX_LENGTH:
+        return None
+    return f"turn:{client_turn_id}"
+
+
+def mark_cancelled(session_id: str, client_turn_id: str | None = None) -> None:
+    """Mark ``session_id`` for cancellation. Idempotent, multi-worker-safe.
+
+    ``client_turn_id`` is the client's id for the request this Stop is for. The
+    flag keeps it, so that request's own accept leaves the flag up
+    (:func:`clear`). A Stop that names no request stores ``"1"``.
+    """
     if not session_id:
         return
-    frappe.cache().set_value(_cache_key(session_id), "1", expires_in_sec=CANCEL_TTL_SECONDS)
+    flag = _named_flag(client_turn_id) or "1"
+    frappe.cache().set_value(_cache_key(session_id), flag, expires_in_sec=CANCEL_TTL_SECONDS)
 
 
 def is_cancelled(session_id: str) -> bool:
@@ -82,15 +98,24 @@ def is_cancelled(session_id: str) -> bool:
     return bool(frappe.cache().get_value(_cache_key(session_id), expires=True))
 
 
-def clear(session_id: str) -> None:
-    """Drop the cancel marker. Only an endpoint accepting a turn calls this, before it queues the relay."""
+def clear(session_id: str, *, keep_turn: str | None = None) -> None:
+    """Drop the cancel marker. Only an endpoint accepting a turn calls this, before it queues the relay.
+
+    ``keep_turn`` is the accepted request's client turn id. A flag that names
+    it is a Stop pressed for this very request while it was on its way, so it
+    stays up and the relay stops the turn before it calls AR. Any other flag
+    belongs to an earlier request and is dropped.
+    """
     if not session_id:
+        return
+    named = _named_flag(keep_turn)
+    if named and frappe.cache().get_value(_cache_key(session_id), expires=True) == named:
         return
     frappe.cache().delete_value(_cache_key(session_id))
 
 
 @frappe.whitelist(methods=["POST"])
-def cancel_stream(session_id: str, message_id: str | None = None) -> dict:
+def cancel_stream(session_id: str, message_id: str | None = None, client_turn_id: str | None = None) -> dict:
     """User-facing endpoint: stop the current stream for ``session_id``.
 
     Two cancellation regimes are handled here:
@@ -110,6 +135,18 @@ def cancel_stream(session_id: str, message_id: str | None = None) -> dict:
 
     ``message_id`` names the turn to stop. A Stop that names no stored turn
     finalizes only a turn still open (:func:`_abort_pending_interactions`).
+
+    ``client_turn_id`` names the request to stop, as the client sent it with
+    ``send_message``, ``resume_interrupt`` or ``continue_response``. The flag
+    keeps it, so a Stop that reaches FAC before that request is accepted is
+    not cleared by its accept (:func:`clear`).
+
+    The ``stream_cancel_requested`` ping below names AR's own id for the
+    turn when :func:`_abort_pending_interactions` found one, falling back to
+    the caller's ``message_id`` only when it didn't: a caller's id can be a
+    client-side UUID with no meaning to any other client watching the same
+    session (the SPA's ``_requestId``), and echoing that back left a second
+    client unable to tell which turn had just been stopped.
     """
     if not session_id:
         frappe.throw(_("session_id is required"), frappe.ValidationError)
@@ -126,8 +163,9 @@ def cancel_stream(session_id: str, message_id: str | None = None) -> dict:
     if owner and owner != frappe.session.user and "System Manager" not in frappe.get_roles():
         frappe.throw(_("You can only cancel your own conversation"), frappe.PermissionError)
 
-    # Regime 1: signal any live relay loop to bail at its next iteration.
-    mark_cancelled(session_id)
+    # Regime 1: signal any live relay loop to bail at its next iteration, or
+    # the relay of the request this Stop names to stop before it calls AR.
+    mark_cancelled(session_id, client_turn_id)
 
     # Regime 2: also handle the HITL-pause case where no relay is alive.
     # Idempotent — if a live relay also fires, it'll re-snapshot blocks
@@ -137,8 +175,9 @@ def cancel_stream(session_id: str, message_id: str | None = None) -> dict:
     # Guarded: a local failure (DB error, retry-writer exhaustion) must not
     # stop the AR cancel below — otherwise AR keeps the agent running and
     # burning tokens on a turn the user already stopped.
+    ar_message_id = None
     try:
-        _abort_pending_interactions(session_id, message_id)
+        ar_message_id = _abort_pending_interactions(session_id, message_id)
     except Exception:
         frappe.logger("faco.chat.cancel").warning(
             f"_abort_pending_interactions failed for {session_id}", exc_info=True
@@ -152,7 +191,7 @@ def cancel_stream(session_id: str, message_id: str | None = None) -> dict:
         {
             "event": "stream_cancel_requested",
             "session_id": session_id,
-            "message_id": message_id,
+            "message_id": ar_message_id if ar_message_id is not None else message_id,
         },
     )
 

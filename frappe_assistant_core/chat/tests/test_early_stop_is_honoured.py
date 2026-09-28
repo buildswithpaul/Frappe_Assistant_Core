@@ -12,6 +12,11 @@ while the SPA already showed it stopped. On a resume, the approved tool ran.
 Each endpoint now clears the flag as it accepts the turn, the relay checks the
 flag before it contacts AR, and nothing else clears it.
 
+A Stop can also reach FAC before the accept, while its request is still on
+its way. The client then names the request by the same client turn
+id on both calls, and the accept keeps a flag that names the request it is
+accepting. A flag that names another request, or none, is still cleared.
+
 Runs as a throwaway user against real FAC Chat Message rows and the real cancel
 flag, on a session of its own per test. The relay pool, AR, the socket, the
 quota cache and the relay's worker-thread Frappe context are stubbed.
@@ -271,3 +276,33 @@ class TestAnEarlyStopIsHonoured(BaseAssistantTest):
         self._relay(queued, ar_stream())
 
         self.assertTrue(cancel_mod.is_cancelled(self.sid))
+
+    def test_a_stop_that_names_the_request_stops_it_before_ar(self):
+        """A Stop pressed while the send, resume or Continue was still on its way
+        reaches FAC before the accept. It names that request, so the
+        accept keeps it, and the relay stops the turn before AR runs or bills it."""
+        for endpoint, kwargs, events in ENDPOINTS:
+            with self.subTest(endpoint=endpoint):
+                cancel_mod.mark_cancelled(self.sid, f"req-{endpoint}")
+
+                queued = self._accept(endpoint, client_turn_id=f"req-{endpoint}", **kwargs)
+                client, emitted, billed = self._relay(queued, events)
+
+                self.assertTrue(queued[-1])  # the flag was still up when the relay was queued
+                client.stream_chat.assert_not_called()
+                billed.assert_not_called()
+                self.assertEqual([p["event"] for p in emitted], ["stream_aborted"])
+        _row, blocks = self._stored(self.paused)
+        self.assertEqual(next(b for b in blocks if b["type"] == "interaction")["status"], "aborted")
+
+    def test_a_stop_naming_another_request_or_none_is_cleared_by_the_accept(self):
+        """A Stop left by an earlier request names that request, or none (a
+        client that sends no client turn id): the accept still clears it."""
+        for endpoint, kwargs, _events in ENDPOINTS:
+            for stop_names, request in (("req-earlier", "req-now"), ("req-earlier", None), (None, "req-now")):
+                with self.subTest(endpoint=endpoint, stop_names=stop_names, request=request):
+                    cancel_mod.mark_cancelled(self.sid, stop_names)
+
+                    *_call, flag_at_queue = self._accept(endpoint, client_turn_id=request, **kwargs)
+
+                    self.assertFalse(flag_at_queue)
