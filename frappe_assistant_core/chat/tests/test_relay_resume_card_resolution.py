@@ -88,10 +88,13 @@ class TestResumeResolvesCardsOnlyOnceARRuns(BaseAssistantTest):
         frappe.set_user("Administrator")
         super().tearDown()
 
-    def _resume(self, *events, response="approve") -> list[dict]:
-        """Run one resume over ``events``; return the socket payloads it emitted."""
+    def _resume(self, *events, response="approve", stream=None, polls=None) -> list[dict]:
+        """Run one resume over ``events``, or over ``stream`` when given; return
+        the socket payloads it emitted. ``polls`` feeds the cancel flag's
+        answers in turn (the first read is the pre-AR check, then one per
+        event); omitted, the flag never reads True."""
         client = MagicMock()
-        client.stream_chat.return_value = (event for event in events)
+        client.stream_chat.return_value = stream if stream is not None else (event for event in events)
         emitted = []
         with ExitStack() as stack:
             enter = stack.enter_context
@@ -106,7 +109,10 @@ class TestResumeResolvesCardsOnlyOnceARRuns(BaseAssistantTest):
             # the running session.
             for name in ("init", "connect", "set_user", "destroy"):
                 enter(patch(f"frappe.{name}"))
-            enter(patch.object(relay, "is_cancelled", return_value=False))
+            if polls is None:
+                enter(patch.object(relay, "is_cancelled", return_value=False))
+            else:
+                enter(patch.object(relay, "is_cancelled", side_effect=polls))
             enter(patch.object(relay, "_update_subscription_cache"))
             enter(
                 patch(
@@ -130,7 +136,10 @@ class TestResumeResolvesCardsOnlyOnceARRuns(BaseAssistantTest):
 
     def _stored(self):
         row = frappe.db.get_value(
-            "FAC Chat Message", self.row, ["content", "blocks", "errored"], as_dict=True
+            "FAC Chat Message",
+            self.row,
+            ["content", "blocks", "errored", "aborted", "credits_used"],
+            as_dict=True,
         )
         return row, json.loads(row.blocks)
 
@@ -260,6 +269,169 @@ class TestResumeResolvesCardsOnlyOnceARRuns(BaseAssistantTest):
         row, blocks = self._stored()
         self.assertEqual(self._card_status(blocks), "approved")
         self.assertTrue(row.errored)
+        self.assertEqual(row.content, PAUSED_TEXT)
+
+    def test_an_error_after_the_resumed_turn_wrote_text_keeps_the_text_before_the_pause(self):
+        """The errored cycle is appended to the turn, as a Stop's is, never replacing it."""
+        self._resume(
+            RESUMED_START,
+            TOOL_RAN,
+            _event("stream_chunk", content="The ToDo is created, and"),
+            _error("LLM_UNAVAILABLE"),
+        )
+
+        row, blocks = self._stored()
+        self.assertEqual(row.content, f"{PAUSED_TEXT}\n\nThe ToDo is created, and")
+        self.assertTrue(row.errored)
+        self.assertEqual(self._card_status(blocks), "approved")
+
+    def test_a_resume_relay_that_fails_after_the_turn_ran_keeps_the_text_before_the_pause(self):
+        def ar_stream():
+            yield RESUMED_START
+            yield _event("stream_chunk", content="The ToDo is created, and")
+            raise ConnectionError("AR went away")
+
+        with patch("frappe.log_error"):
+            self._resume(stream=ar_stream())
+
+        row, _blocks = self._stored()
+        self.assertEqual(row.content, f"{PAUSED_TEXT}\n\nThe ToDo is created, and")
+        self.assertTrue(row.errored)
+
+    def test_a_stream_error_after_a_finished_resume_cycle_does_not_append_it_twice(self):
+        """The same root cause as the Continue path's own double-append bug, here
+        on the resume path. _persist_resume_cycle re-reads the row on every call,
+        so once stream_complete has persisted this
+        cycle, a later stream_error (a dropped connection after the answer
+        finished) must not append the same text a second time."""
+        self._resume(
+            RESUMED_START,
+            TOOL_RAN,
+            _event("stream_chunk", content="Done."),
+            _event("stream_complete", full_response="Done.", credits_used=2, model="m"),
+            _error("CONNECTION_INTERRUPTED"),
+        )
+
+        row, blocks = self._stored()
+        self.assertEqual(row.content, f"{PAUSED_TEXT}\n\nDone.")
+        self.assertTrue(row.errored)
+        self.assertEqual(row.credits_used, 2)
+        self.assertEqual(self._card_status(blocks), "approved")
+
+    def test_a_stop_polled_after_a_finished_resume_cycle_does_not_append_it_twice(self):
+        """Same root cause on the resume's own Stop check (relay.py ~653), which
+        polls on every loop iteration, including one after stream_complete
+        already persisted the cycle (a heartbeat while AR finishes)."""
+        emitted = self._resume(
+            RESUMED_START,
+            TOOL_RAN,
+            _event("stream_chunk", content="Done."),
+            _event("stream_complete", full_response="Done.", credits_used=2, model="m"),
+            _event("heartbeat"),
+            polls=[False, False, False, False, False, True],
+        )
+
+        row, blocks = self._stored()
+        self.assertEqual(row.content, f"{PAUSED_TEXT}\n\nDone.")
+        self.assertTrue(row.aborted)
+        self.assertEqual(row.credits_used, 2)
+        self.assertEqual(self._card_status(blocks), "approved")
+        self.assertEqual(emitted[-1]["event"], "stream_aborted")
+
+    def test_a_stop_that_cancel_py_finalized_first_keeps_the_approved_decision_and_text(self):
+        """A Stop pressed while an approved resume is running reaches cancel_stream,
+        which always does two things: it flips the Redis flag this relay polls, AND
+        it runs _abort_pending_interactions on the stored row right away. The row
+        still holds the card as pending at that point (this relay writes it only on
+        stream_complete, an error or its own Stop), so cancel.py finalizes it as
+        'Stopped by user' and appends the marker before this relay's own poll even
+        notices the flag. _persist_resume_cycle used to see the row already
+        aborted and skip entirely, losing the tool row and the streamed text and
+        leaving the approved card's own decision overwritten by cancel.py's."""
+        from frappe_assistant_core.chat.api.chat import cancel as cancel_mod
+
+        polls_seen = {"n": 0}
+
+        def poll(_session_id):
+            polls_seen["n"] += 1
+            if polls_seen["n"] == 5:
+                # cancel_stream's own finalizer wins the race and writes the
+                # row before this relay's poll notices the same flag, right
+                # after the streamed text above has already reached the
+                # block_builder (call 4, the check before this one).
+                with patch.object(cancel_mod, "_emit_socket_event"):
+                    cancel_mod._abort_pending_interactions(SESSION_ID, None)
+                return True
+            return False
+
+        emitted = self._resume(
+            RESUMED_START,
+            TOOL_RAN,
+            _event("stream_chunk", content="Creating it now, and"),
+            _event("heartbeat"),
+            polls=poll,
+        )
+
+        row, blocks = self._stored()
+        self.assertEqual(self._card_status(blocks), "approved")
+        self.assertEqual(row.content, f"{PAUSED_TEXT}\n\nCreating it now, and{cancel_mod.ABORT_MARKER_TEXT}")
+        self.assertTrue(row.aborted)
+        self.assertEqual(sum(1 for b in blocks if b.get("_abortMarker")), 1)
+        self.assertEqual(next(b for b in blocks if b["type"] == "tool_call")["status"], "success")
+        self.assertEqual(emitted[-1]["event"], "stream_aborted")
+
+    def test_an_exception_between_the_write_and_the_emit_does_not_append_it_twice(self):
+        """The reset must land with the write, not after the emit.
+        _persist_session_blob can still raise into the outer except between
+        stream_complete's persist and its own socket emit; an earlier version
+        of this code ran the reset only after that emit, so the accumulator
+        still held this cycle's text and the except appended it a second
+        time."""
+        with patch.object(relay, "_persist_session_blob", side_effect=RuntimeError("boom")), patch(
+            "frappe.log_error"
+        ):
+            self._resume(
+                RESUMED_START,
+                TOOL_RAN,
+                _event("stream_chunk", content="Done."),
+                _event("stream_complete", full_response="Done.", credits_used=2, model="m"),
+            )
+
+        row, blocks = self._stored()
+        self.assertEqual(row.content, f"{PAUSED_TEXT}\n\nDone.")
+        self.assertTrue(row.errored)
+        self.assertEqual(row.credits_used, 2)
+        self.assertEqual(self._card_status(blocks), "approved")
+
+    def test_the_write_itself_raising_a_non_1020_error_does_not_append_it_twice(self):
+        """_set_faco_message_with_retry only retries QueryDeadlockError
+        (1020); anything else propagates out of _persist_resume_cycle before
+        the accumulators reset, and before any DB write lands. The outer
+        except's own retry must then append this cycle's text exactly once."""
+        real_write = relay._set_faco_message_with_retry
+        calls = {"n": 0}
+
+        def flaky_write(name, updates, **kwargs):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise RuntimeError("lock wait timeout")
+            return real_write(name, updates, **kwargs)
+
+        with patch.object(relay, "_set_faco_message_with_retry", side_effect=flaky_write), patch(
+            "frappe.log_error"
+        ):
+            self._resume(
+                RESUMED_START,
+                TOOL_RAN,
+                _event("stream_chunk", content="Done."),
+                _event("stream_complete", full_response="Done.", credits_used=2, model="m"),
+            )
+
+        row, blocks = self._stored()
+        self.assertEqual(row.content, f"{PAUSED_TEXT}\n\nDone.")
+        self.assertTrue(row.errored)
+        self.assertEqual(row.credits_used, 0)
+        self.assertEqual(self._card_status(blocks), "approved")
 
 
 class TestSettlePendingInteractions(unittest.TestCase):

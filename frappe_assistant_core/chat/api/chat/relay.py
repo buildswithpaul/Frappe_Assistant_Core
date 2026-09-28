@@ -65,6 +65,7 @@ def _set_faco_message_with_retry(name: str, updates: dict, *, attempts: int = 3)
 
 from ..block_builder import truncate_result_for_emit  # noqa: E402
 from ..chat.cancel import (  # noqa: E402
+    ABORT_MARKER_TEXT,
     _abort_pending_interactions,
     append_abort_marker,
     is_cancelled,
@@ -73,6 +74,7 @@ from ..chat.helpers import (  # noqa: E402
     _emit_socket_event,
     _ensure_assistant_msg,
     _find_assistant_msg_by_message_id,
+    _load_turn_blocks,
     _log_conversation,
     _log_stream_error_detail,
     _parse_turn_blocks,
@@ -296,6 +298,42 @@ def _merge_model_breakdown(existing_json, incoming: list | None) -> list:
     return list(merged.values())
 
 
+def _continued_turn_updates(
+    row,
+    continuation: str,
+    credits_used: float,
+    model_breakdown: list | None,
+    *,
+    tool_calls: list | None = None,
+) -> dict:
+    """Row updates for a Continue, which appends to its turn rather than replacing it.
+
+    ``row`` is the turn as it stood at the last write (the Continue's start,
+    or wherever ``_persist_continued_turn`` rebased it after). ``continuation``
+    is the text this relay streamed since then, never AR's ``full_response``:
+    AR seeds that with its own copy of the answer, which need not match this
+    row's. ``credits_used`` is only this cycle's cost. The row keeps the whole
+    turn: the stored text followed directly by ``continuation`` (it resumes
+    mid-answer, so no separator), the summed credits, the merged model
+    breakdown and every tool call.
+    """
+
+    def stored(field):
+        return getattr(row, field, None) if row else None
+
+    updates = {
+        "content": f"{stored('content') or ''}{continuation}",
+        "credits_used": round((stored("credits_used") or 0) + (credits_used or 0), 2),
+    }
+    if model_breakdown:
+        updates["model_breakdown"] = json.dumps(
+            _merge_model_breakdown(stored("model_breakdown"), model_breakdown)
+        )
+    if tool_calls:
+        updates["tool_calls"] = json.dumps(_merge_tool_calls(stored("tool_calls"), tool_calls))
+    return updates
+
+
 def _merge_routing_receipt(existing, incoming):
     """Fold a later resume cycle's receipt into the turn's stored one.
 
@@ -367,6 +405,7 @@ def _persist_resume_cycle(
     collected_tool_calls: list,
     *,
     aborted: bool = False,
+    errored: bool = False,
     model_used: str = "",
     model_breakdown: dict | None = None,
     credits_used: float = 0,
@@ -377,12 +416,38 @@ def _persist_resume_cycle(
     Appends to (never replaces) whatever content is already on the row —
     one logical turn can span several resume cycles, and ``full_response``
     here only ever holds the current cycle's text, unlike the send
-    funnel's ``full_response`` which holds the whole turn. No-op (besides
-    logging) when the row is already ``aborted``: cancel.py's
-    ``_abort_pending_interactions`` may have written the "(Stopped by
-    user)" marker onto this same row moments ago, and overwriting it here
-    would both lose that marker and, if this call's ``full_response`` is
-    older, roll content itself backwards.
+    funnel's ``full_response`` which holds the whole turn. A cycle that
+    ends on a Stop is flagged ``aborted``, one that ends on an error
+    ``errored``; either way its text is appended.
+
+    A cycle that is NOT itself finalizing a Stop (a clean finish, or one
+    that errored) is a no-op besides logging when the row is already
+    ``aborted``: cancel.py's ``_abort_pending_interactions`` may have
+    written the "(Stopped by user)" marker onto this same row moments ago,
+    and overwriting it here would both lose that marker and, if this
+    call's ``full_response`` is older, roll content itself backwards.
+
+    A cycle that IS finalizing a Stop (``aborted=True``) never skips, even
+    when the row already reads ``aborted`` — that means cancel.py's own
+    Stop handler won the race and marked the row first, from the state it
+    read before the approved tool ran and this cycle's text streamed.
+    ``block_builder``'s snapshot already carries the real outcome (it was
+    resolved onto the turn the moment this cycle saw its first progress
+    event), so this write's blocks replace cancel.py's, and the marker is
+    applied through the idempotent ``append_abort_marker`` so exactly one
+    survives at the true end of the text — after stripping cancel.py's own
+    marker suffix first, so it is not sandwiched into the middle.
+
+    That snapshot can still hold a card as ``pending``: AR announces an
+    approved tool only once, so when the user presses Stop while it is
+    still running, this cycle has seen no more than ``stream_start`` and
+    heartbeats, and ``pause_consumed`` never flipped the card. Taking over
+    the row with a pending card would put a live Approve/Reject control
+    back onto a turn cancel.py already stopped, and approving it would hit
+    AR's ``INTERRUPT_NOT_FOUND`` (its pause is gone). So any card still
+    ``pending`` in this snapshot is settled ``aborted`` here too, exactly
+    as cancel.py settles it, before the marker is applied. A card holding
+    a real decision (``approved``/``rejected``/etc.) is left untouched.
 
     Returns the FAC Chat Message name found for this turn, or None if no
     row exists yet (the caller should fall back to creating one).
@@ -397,24 +462,48 @@ def _persist_resume_cycle(
         ["content", "tool_calls", "aborted", "credits_used", "model_breakdown", "routing"],
         as_dict=True,
     )
-    if row and row.get("aborted"):
+    row_already_aborted = bool(row and row.get("aborted"))
+    if row_already_aborted and not aborted:
         frappe.logger("faco.chat.resume").info(
             f"Skipping persist for {existing_faco_msg}: row aborted concurrently"
         )
         return existing_faco_msg
 
     current_content = (row.content if row else "") or ""
-    updated_content = f"{current_content}\n\n{full_response}" if current_content else full_response
+    if row_already_aborted and current_content.endswith(ABORT_MARKER_TEXT):
+        # cancel.py's write is being superseded below; strip its marker so
+        # it isn't left stranded ahead of this cycle's own text.
+        current_content = current_content[: -len(ABORT_MARKER_TEXT)]
+    if current_content and full_response:
+        updated_content = f"{current_content}\n\n{full_response}"
+    else:
+        updated_content = current_content or full_response
+
+    blocks_snapshot = block_builder.snapshot()
+    if aborted and row_already_aborted:
+        # cancel.py's finalizer already ran and marked the row: its marker is
+        # the one stripped above, so re-adding it here (idempotent either way)
+        # keeps the row at exactly one, now at the end of this cycle's text.
+        # Never leave an actionable card behind in a row cancel.py stopped:
+        # settle a still-pending card the same way cancel.py would.
+        for block in blocks_snapshot:
+            if block.get("type") == "interaction" and block.get("status") == "pending":
+                block["status"] = "aborted"
+                block["result"] = {"message": "Stopped by user"}
+        updated_content, blocks_snapshot = append_abort_marker(updated_content, blocks_snapshot)
+
     # Accumulate credits: a single logical turn can span several resume
     # cycles, each emitting its own credits for just that cycle.
     prior_credits = (row.credits_used if row else 0) or 0
     updates = {
         "content": updated_content,
-        "blocks": json.dumps(block_builder.snapshot()),
+        "blocks": json.dumps(blocks_snapshot),
         "credits_used": round(prior_credits + credits_used, 2),
     }
     if aborted:
         updates["aborted"] = 1
+    if errored:
+        updates["errored"] = 1
     if model_used:
         updates["model"] = model_used
     if model_breakdown:
@@ -435,6 +524,38 @@ def _persist_resume_cycle(
 
     _set_faco_message_with_retry(existing_faco_msg, updates)
     return existing_faco_msg
+
+
+def _persist_errored_resume_cycle(
+    session_id: str,
+    ar_message_id: str | None,
+    message_id: str | None,
+    full_response: str,
+    block_builder,
+    collected_tool_calls: list,
+) -> None:
+    """Record a resume cycle that errored after AR consumed the pause.
+
+    Like a Stop's cycle, it is appended to the turn and the row flagged, here
+    ``errored``: the send funnel's partial writer would replace the text the
+    turn had before the pause with this cycle's alone. Only a turn with no row
+    yet goes to that writer, which creates one.
+    """
+    if _persist_resume_cycle(
+        session_id,
+        ar_message_id,
+        message_id,
+        full_response,
+        block_builder,
+        collected_tool_calls,
+        errored=True,
+    ):
+        return
+    blocks_snapshot = block_builder.snapshot()
+    if full_response or blocks_snapshot:
+        _persist_partial_assistant_turn(
+            session_id, ar_message_id, full_response, blocks_snapshot, collected_tool_calls, "", "errored"
+        )
 
 
 def _settle_unconsumed_resume(
@@ -536,31 +657,11 @@ def _relay_ar_interrupt_resume(
         current_tool_input = {}
         zero_retention = False  # Read off the first stream_start; gates blob persistence
 
-        # Load existing blocks from FACO Message for continuation.
-        # Look up by message_id (the per-turn identifier the frontend passed
-        # in from the interrupted stream's stream_start). Falling back to
-        # "last assistant in session" here is exactly what caused resume
-        # output to leak onto the wrong turn's row — don't fall back.
-        import json as _json
-
+        # Seed the builder with the paused turn's blocks, keyed on the
+        # message_id the client took from the interrupted stream's stream_start.
         from ..block_builder import BlockBuilder
 
-        existing_blocks = []
-        _existing_row = None
-        if message_id:
-            _existing_row = frappe.db.get_value(
-                "FAC Chat Message",
-                {"session_id": session_id, "role": "assistant", "message_id": message_id},
-                ["name", "blocks"],
-                as_dict=True,
-            )
-        if _existing_row and _existing_row.blocks:
-            try:
-                existing_blocks = _json.loads(_existing_row.blocks)
-            except (ValueError, TypeError):
-                existing_blocks = []
-
-        block_builder = BlockBuilder(existing_blocks=existing_blocks)
+        block_builder = BlockBuilder(existing_blocks=_load_turn_blocks(session_id, message_id))
 
         # resume_interrupt cleared any older Stop when it accepted this resume,
         # so a flag up now is a Stop pressed while this relay waited to start.
@@ -848,6 +949,10 @@ def _relay_ar_interrupt_resume(
                 model_used = data.get("model", "")
                 model_breakdown = data.get("model_breakdown")
                 full_response = data.get("full_response", full_response)
+                # A copy for the event below, taken before the reset that
+                # follows the persist — the accumulator itself is emptied
+                # immediately once this cycle lands.
+                ar_full_response = full_response
 
                 # Drop the sources block if the model never emitted any [N]
                 # markers — retrieved context was present but unused, and a
@@ -891,6 +996,17 @@ def _relay_ar_interrupt_resume(
                         routing=data.get("routing"),
                     )
 
+                # This cycle is now persisted (appended by _persist_resume_cycle,
+                # which re-reads the row, or written fresh by _log_conversation
+                # above). Reset immediately — before the blob/quota work and
+                # the emit below, any of which can still raise into the outer
+                # except — so a later write in this same relay call (a
+                # Stop polled on the next event at the top of this loop, a
+                # stream_error, or that except) appends only what happens
+                # after this point, never this cycle again.
+                full_response = ""
+                collected_tool_calls = []
+
                 # The chip must survive a reload unchanged. The row holds the
                 # whole turn (every resume cycle summed); credits_used here is
                 # just this cycle, so reporting it would show one number live
@@ -925,7 +1041,7 @@ def _relay_ar_interrupt_resume(
                     "event": "stream_complete",
                     "session_id": session_id,
                     "message_id": ar_message_id,
-                    "full_response": full_response,
+                    "full_response": ar_full_response,
                     "quota_remaining": quota_remaining,
                     # Lets the composer's credit meter move per turn instead of
                     # only on a billing-page visit. The quota_* counters are
@@ -954,16 +1070,14 @@ def _relay_ar_interrupt_resume(
                 _log_stream_error_detail(data)
                 if pause_consumed:
                     blocks_snapshot = block_builder.snapshot()
-                    if full_response or blocks_snapshot:
-                        _persist_partial_assistant_turn(
-                            session_id,
-                            ar_message_id,
-                            full_response,
-                            blocks_snapshot,
-                            collected_tool_calls,
-                            "",
-                            "errored",
-                        )
+                    _persist_errored_resume_cycle(
+                        session_id,
+                        ar_message_id,
+                        message_id,
+                        full_response,
+                        block_builder,
+                        collected_tool_calls,
+                    )
                 else:
                     blocks_snapshot = _settle_unconsumed_resume(
                         session_id, ar_message_id or message_id, block_builder, data.get("error_code")
@@ -995,15 +1109,14 @@ def _relay_ar_interrupt_resume(
         )
         blocks_snapshot = block_builder.snapshot() if block_builder is not None else []
         # Before AR consumed the pause the row already holds it as it stands.
-        if pause_consumed and (full_response or blocks_snapshot):
-            _persist_partial_assistant_turn(
+        if pause_consumed:
+            _persist_errored_resume_cycle(
                 session_id,
                 ar_message_id,
+                message_id,
                 full_response,
-                blocks_snapshot,
+                block_builder,
                 collected_tool_calls,
-                "",
-                "errored",
             )
         _emit_socket_event(
             session_id,
@@ -1070,9 +1183,10 @@ def _relay_ar_stream(
             continue_from_message_id: When set, this is a continuation of a
                     previously truncated response rather than a new message — AR
                     is asked to pick up generation from that message. No new user
-                    message is pushed; the existing assistant row for that message_id
-                    is found and appended to via the same find-or-update-by-message_id
-                    persistence stream_complete already uses.
+                    message is pushed; the existing assistant row for that
+                    message_id is read once into ``continued_turn``, and every
+                    write of this turn — the finish, an error, a Stop or AR's
+                    own cancel — appends to it through ``_persist_continued_turn``.
             web_search: Optional composer toggle forwarded to AR. None means
                     "unspecified" (AR defaults to search available); an explicit
                     False turns it off.
@@ -1094,6 +1208,8 @@ def _relay_ar_stream(
     ar_message_id = None  # AR Message ID for event reconstruction
     collected_tool_calls = []  # Collect tool calls for persistence
     block_builder = None
+    continued_turn = None  # On a Continue: its row as it stood when the Continue started
+    seed_blocks = []
 
     try:
         from frappe_assistant_core.chat.fac_cloud_client import get_fac_cloud_client
@@ -1118,7 +1234,22 @@ def _relay_ar_stream(
 
         from ..block_builder import BlockBuilder
 
-        block_builder = BlockBuilder()
+        # A Continue extends the answer it continues. Every write below goes to
+        # that answer's row and adds this cycle to the turn as it stood now
+        # (_continued_turn_updates), and the builder starts from its blocks, so
+        # each snapshot keeps the answer's first part and its tool rows.
+        if continue_from_message_id:
+            # One read for the whole row, blocks included — fetching blocks
+            # through a second query (_load_turn_blocks) left a window between
+            # the two reads that the resume path doesn't have.
+            continued_turn = frappe.db.get_value(
+                "FAC Chat Message",
+                {"session_id": session_id, "role": "assistant", "message_id": continue_from_message_id},
+                ["name", "content", "credits_used", "model_breakdown", "tool_calls", "blocks"],
+                as_dict=True,
+            )
+            seed_blocks = _parse_turn_blocks(continued_turn.blocks if continued_turn else None)
+        block_builder = BlockBuilder(existing_blocks=seed_blocks)
 
         # send_message or continue_response cleared any older Stop when it
         # accepted this turn, so a flag up now is a Stop pressed while this
@@ -1133,6 +1264,10 @@ def _relay_ar_stream(
                 collected_tool_calls,
                 model_used,
                 stream_iter=None,
+                continued_turn=continued_turn,
+                # ar_message_id is still None here (stream_start hasn't run),
+                # but a Continue's turn is already named by the id it continues.
+                emit_message_id=ar_message_id or continue_from_message_id,
             )
             return
 
@@ -1180,6 +1315,7 @@ def _relay_ar_stream(
                     collected_tool_calls,
                     model_used,
                     stream_iter=stream_iter,
+                    continued_turn=continued_turn,
                 )
                 return
 
@@ -1385,14 +1521,16 @@ def _relay_ar_stream(
                 # same finalization as this funnel's own is_cancelled branch
                 # above (_handle_stream_aborted): its full_response holds the
                 # whole turn, so replacing the row's content is correct here.
+                # A Continue appends what this relay streamed instead.
                 _handle_stream_aborted(
                     session_id,
                     ar_message_id,
-                    data.get("full_response") or full_response,
+                    full_response if continued_turn else (data.get("full_response") or full_response),
                     block_builder,
                     collected_tool_calls,
                     model_used,
                     stream_iter=stream_iter,
+                    continued_turn=continued_turn,
                 )
                 return
 
@@ -1401,7 +1539,14 @@ def _relay_ar_stream(
                 credits_used = data.get("credits_used", 0)
                 model_used = data.get("model", "")
                 model_breakdown = data.get("model_breakdown")
-                full_response = data.get("full_response", full_response)
+                # AR's own full_response: on a Continue, AR seeds it with its
+                # stored copy of the answer, so it duplicates the row's own
+                # text. Only the event below reads it — the relay's own
+                # full_response accumulator, which every later write in this
+                # call reads, is never reassigned to it.
+                ar_full_response = data.get("full_response", full_response)
+                if not continued_turn:
+                    full_response = ar_full_response
 
                 # Drop the sources block if the model never emitted any [N]
                 # markers — avoids misleading "Sources" footers on answers
@@ -1410,9 +1555,10 @@ def _relay_ar_stream(
 
                 # Update the assistant row we created on stream_start, or
                 # create one if (defensively) stream_start never set message_id.
-                import json as _json_mod
-
-                assistant_row = _find_assistant_msg_by_message_id(session_id, ar_message_id)
+                if continued_turn:
+                    assistant_row = continued_turn.name
+                else:
+                    assistant_row = _find_assistant_msg_by_message_id(session_id, ar_message_id)
                 if assistant_row:
                     # Don't overwrite a row that the cancel path just marked
                     # aborted (race: stream_complete event arrived after the
@@ -1423,19 +1569,44 @@ def _relay_ar_stream(
                         frappe.logger("faco.chat.stream").info(
                             f"Skipping stream_complete persist for {assistant_row}: row aborted concurrently"
                         )
+                    elif continued_turn:
+                        # The event below keeps reporting AR's own text
+                        # (ar_full_response) and this cycle's cost; only the
+                        # row sums what this relay actually streamed.
+                        _persist_continued_turn(
+                            continued_turn,
+                            full_response,
+                            block_builder.snapshot(),
+                            collected_tool_calls,
+                            model_used=model_used,
+                            credits_used=credits_used,
+                            model_breakdown=model_breakdown,
+                        )
+                        # Reset immediately — before the blob/quota work and
+                        # the emit below, any of which can still raise into
+                        # the outer except — so a later write in this
+                        # same relay call (a Stop polled on the next event, a
+                        # stream_error, or that except) appends only what
+                        # happens after this point, never this cycle again.
+                        # _set_faco_message_with_retry above can itself raise
+                        # something other than a 1020; that propagates before
+                        # this line runs, so the outer except then appends
+                        # exactly what this relay streamed, once.
+                        full_response = ""
+                        collected_tool_calls = []
                     else:
                         updates = {
                             "content": full_response,
-                            "blocks": _json_mod.dumps(block_builder.snapshot()),
+                            "blocks": json.dumps(block_builder.snapshot()),
                             # Store the real model AR reported; never the old
                             # "ar-agent" placeholder. Empty is fine — the UI
                             # hides the chip when no model is known.
                             "model": model_used or None,
-                            "model_breakdown": _json_mod.dumps(model_breakdown) if model_breakdown else None,
+                            "model_breakdown": json.dumps(model_breakdown) if model_breakdown else None,
                             "credits_used": credits_used,
                         }
                         if collected_tool_calls:
-                            updates["tool_calls"] = _json_mod.dumps(collected_tool_calls)
+                            updates["tool_calls"] = json.dumps(collected_tool_calls)
                         # None means the turn said nothing about it — never an
                         # instruction to erase what an earlier hop wrote. A
                         # continue_from_message_id turn emits no receipt at
@@ -1443,7 +1614,7 @@ def _relay_ar_stream(
                         # not null the original turn's routing.
                         _routing_payload = data.get("routing")
                         if _routing_payload is not None:
-                            updates["routing"] = _json_mod.dumps(_routing_payload)
+                            updates["routing"] = json.dumps(_routing_payload)
                         _set_faco_message_with_retry(assistant_row, updates)
                 else:
                     _log_conversation(
@@ -1481,7 +1652,7 @@ def _relay_ar_stream(
                     "event": "stream_complete",
                     "session_id": session_id,
                     "message_id": ar_message_id,
-                    "full_response": full_response,
+                    "full_response": ar_full_response,
                     "quota_remaining": quota_remaining,
                     # Lets the composer's credit meter move per turn instead of
                     # only on a billing-page visit. The quota_* counters are
@@ -1516,7 +1687,9 @@ def _relay_ar_stream(
                 action_required = data.get("action_required")
 
                 blocks_snapshot = block_builder.snapshot()
-                if full_response or blocks_snapshot:
+                # A Continue refused before it produced anything leaves its
+                # answer as it stood: the clients keep it continuable.
+                if full_response or blocks_snapshot != seed_blocks:
                     _persist_partial_assistant_turn(
                         session_id,
                         ar_message_id,
@@ -1525,6 +1698,7 @@ def _relay_ar_stream(
                         collected_tool_calls,
                         model_used,
                         "errored",
+                        continued_turn=continued_turn,
                     )
                 # The partial turn above is now in the transcript, so the carried
                 # state has to advance with it — otherwise the next turn replays a
@@ -1553,7 +1727,7 @@ def _relay_ar_stream(
         frappe.log_error(title="FACO Stream Error", message=error_msg)
 
         blocks_snapshot = block_builder.snapshot() if block_builder is not None else []
-        if block_builder is not None and (full_response or blocks_snapshot):
+        if block_builder is not None and (full_response or blocks_snapshot != seed_blocks):
             _persist_partial_assistant_turn(
                 session_id,
                 ar_message_id,
@@ -1562,6 +1736,7 @@ def _relay_ar_stream(
                 collected_tool_calls,
                 model_used,
                 "errored",
+                continued_turn=continued_turn,
             )
 
         _emit_socket_event(
@@ -1593,10 +1768,16 @@ def _persist_partial_assistant_turn(
     flag_field: str,
     *,
     fall_back_to_latest: bool = True,
+    continued_turn=None,
 ) -> str | None:
     """Persist whatever the agent produced so far, marking the row with
     ``flag_field`` (``"aborted"`` or ``"errored"``) so a reload renders the
     truncated turn instead of losing it.
+
+    On a Continue (``continued_turn``, its row as it stood when the Continue
+    started) the write goes to that row, before or after AR's stream_start,
+    and adds this cycle to the turn (``_persist_continued_turn``). None of the
+    tiers below applies.
 
     Three lookup tiers, because in practice we've observed FACO Messages
     missing ``message_id`` on the row that stream_start was supposed to
@@ -1616,7 +1797,16 @@ def _persist_partial_assistant_turn(
     Returns the FAC Chat Message name that was written, or None if nothing
     could be persisted.
     """
-    import json as _json_mod
+    if continued_turn:
+        _persist_continued_turn(
+            continued_turn,
+            partial_response,
+            blocks_snapshot,
+            collected_tool_calls,
+            flag_field=flag_field,
+            model_used=model_used,
+        )
+        return continued_turn.name
 
     assistant_row = _find_assistant_msg_by_message_id(session_id, ar_message_id) if ar_message_id else None
     if not assistant_row and fall_back_to_latest:
@@ -1652,7 +1842,7 @@ def _persist_partial_assistant_turn(
     if assistant_row:
         updates = {
             "content": partial_response,
-            "blocks": _json_mod.dumps(blocks_snapshot),
+            "blocks": json.dumps(blocks_snapshot),
             flag_field: 1,
         }
         # Backfill message_id if we have it and the row is missing it. This
@@ -1663,10 +1853,63 @@ def _persist_partial_assistant_turn(
         if model_used:
             updates["model"] = model_used
         if collected_tool_calls:
-            updates["tool_calls"] = _json_mod.dumps(collected_tool_calls)
+            updates["tool_calls"] = json.dumps(collected_tool_calls)
         _set_faco_message_with_retry(assistant_row, updates)
 
     return assistant_row
+
+
+def _persist_continued_turn(
+    continued_turn,
+    continuation: str,
+    blocks_snapshot: list,
+    collected_tool_calls: list,
+    *,
+    flag_field: str | None = None,
+    model_used: str = "",
+    credits_used: float = 0,
+    model_breakdown: list | None = None,
+) -> None:
+    """Write a Continue's cycle onto the answer it continues.
+
+    ``continued_turn`` is that row as it stood at the last write (the
+    Continue's start, or wherever this function rebased it after an earlier
+    call in the same relay run), and ``blocks_snapshot`` starts from its
+    blocks, so every write holds the whole turn and a later one supersedes an
+    earlier one. That includes the marker ``cancel_stream`` may have written
+    first for a Stop naming this answer: the snapshot carries the relay's own
+    single marker.
+
+    A write with no ``flag_field`` is a clean finish, so it also clears a
+    stale ``errored`` flag an earlier failed Continue on this same answer may
+    have left set: the clients keep an errored-but-continuable answer
+    continuable, and a later successful Continue must undo it on reload too.
+
+    Once this write lands, ``continued_turn`` is rebased in place onto it —
+    its ``content``, ``credits_used`` and (when written) ``model_breakdown``/
+    ``tool_calls`` become what was just persisted. A later call in the same
+    relay run (a Stop polled after this event, a ``stream_error``, or the
+    outer ``except``) then starts from here, so it appends only what came
+    after instead of re-adding this cycle or resetting its credits.
+    """
+    updates = _continued_turn_updates(
+        continued_turn, continuation, credits_used, model_breakdown, tool_calls=collected_tool_calls
+    )
+    updates["blocks"] = json.dumps(blocks_snapshot)
+    if flag_field:
+        updates[flag_field] = 1
+    else:
+        updates["errored"] = 0
+    if model_used:
+        updates["model"] = model_used
+    _set_faco_message_with_retry(continued_turn.name, updates)
+
+    continued_turn.content = updates["content"]
+    continued_turn.credits_used = updates["credits_used"]
+    if "model_breakdown" in updates:
+        continued_turn.model_breakdown = updates["model_breakdown"]
+    if "tool_calls" in updates:
+        continued_turn.tool_calls = updates["tool_calls"]
 
 
 def _handle_stream_aborted(
@@ -1678,9 +1921,20 @@ def _handle_stream_aborted(
     model_used: str,
     *,
     stream_iter,
+    continued_turn=None,
+    emit_message_id: str | None = None,
 ) -> None:
     """Persist whatever the agent produced before the user pressed Stop,
     then emit ``stream_aborted`` so the SPA can finalize its UI state.
+    ``continued_turn`` is a Continue's row as it stood when the Continue
+    started; the Stop is then recorded on it (``_persist_partial_assistant_turn``).
+
+    ``emit_message_id`` names the turn on the emitted event only, when it
+    differs from ``ar_message_id`` — a Continue's pre-AR Stop has no
+    ``ar_message_id`` yet (``stream_start`` hasn't run), but the turn it
+    continues already has one. The row lookup below is unaffected: it still
+    keys on ``ar_message_id``, because ``continued_turn`` already names the
+    row directly in that case.
 
     Three things happen here, in order:
 
@@ -1722,9 +1976,9 @@ def _handle_stream_aborted(
     marked_response, blocks_snapshot = append_abort_marker(partial_response, block_builder.snapshot())
     # A Stop seen before AR's stream_start named the turn: the turn has no row
     # yet (stream_start creates it), and the session's latest assistant row
-    # belongs to an earlier turn (on a Continue, to the answer being continued),
-    # which this replace-write would overwrite with the bare marker. The Stop
-    # gets a row of its own instead (tier 3).
+    # belongs to an earlier turn, which this replace-write would overwrite with
+    # the bare marker. The Stop gets a row of its own instead (tier 3). A
+    # Continue's Stop, early or late, is added to the answer it continues.
     _persist_partial_assistant_turn(
         session_id,
         ar_message_id,
@@ -1734,6 +1988,7 @@ def _handle_stream_aborted(
         model_used,
         "aborted",
         fall_back_to_latest=bool(ar_message_id),
+        continued_turn=continued_turn,
     )
 
     # Step 3 — tell the SPA we're done.
@@ -1742,7 +1997,7 @@ def _handle_stream_aborted(
         {
             "event": "stream_aborted",
             "session_id": session_id,
-            "message_id": ar_message_id,
+            "message_id": emit_message_id if emit_message_id is not None else ar_message_id,
             "partial_response": marked_response,
             "blocks": blocks_snapshot,
         },
