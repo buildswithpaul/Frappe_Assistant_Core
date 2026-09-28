@@ -79,8 +79,10 @@ class BaseAssistantTest(IntegrationTestCase):
         """
         original_commit = frappe.db.__class__.commit
 
+        # Takes any arguments: Frappe itself calls commit(chain=True), for
+        # example in frappe.sessions.delete_session.
         @staticmethod
-        def _noop_commit():
+        def _noop_commit(*args, **kwargs):
             pass
 
         frappe.db.__class__.commit = _noop_commit
