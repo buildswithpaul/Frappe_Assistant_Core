@@ -185,6 +185,32 @@ def _dispatch_relay_event(event_type: str, data: dict, session_id: str, block_bu
     return True
 
 
+def _normalize_ar_event(event_type: str, data: dict) -> tuple[str, dict]:
+    """Rename an AR event the clients cannot act on into one they can.
+
+    AR refuses a turn it cannot route (every auto-mode model, or the chosen
+    model's provider, is at its rate limit) with a lone ``rate_limited`` event
+    and no ``stream_error``. The SPA, the Desk widget and the mobile app end a
+    turn only on ``stream_complete``, ``stream_error`` or ``stream_aborted``,
+    so a dropped ``rate_limited`` left them waiting out their activity
+    timeout. Both loops call this first, so the refusal becomes a
+    ``stream_error`` coded ``RATE_LIMITED`` and each loop finishes it in its
+    own ``stream_error`` branch, like AR's other refusals before a turn
+    starts. ``retry_after`` is kept only as a positive number of seconds.
+    ``models_checked`` lists internal model ids and is dropped.
+    """
+    if event_type != "rate_limited":
+        return event_type, data
+    retry_after = data.get("retry_after")
+    if not isinstance(retry_after, (int, float)) or retry_after <= 0:
+        retry_after = None
+    return "stream_error", {
+        "error": data.get("error") or _("The assistant is busy right now. Please try again in a moment."),
+        "error_code": "RATE_LIMITED",
+        "retry_after": retry_after,
+    }
+
+
 def _persist_session_blob(session_id, user, data, zero_retention, restricted):
     """Store the signed zero-retention blob AR returned on a terminal event.
 
@@ -572,8 +598,8 @@ def _relay_ar_interrupt_resume(
                 )
                 return
 
-            event_type = event.get("event")
-            data = event.get("data", {})
+            # A rate_limited refusal arrives here as a stream_error (_normalize_ar_event).
+            event_type, data = _normalize_ar_event(event.get("event"), event.get("data", {}))
 
             if not pause_consumed and event_type in _RESUME_PROGRESS_EVENTS:
                 # AR is running the resumed turn, so it has consumed the pause.
@@ -916,6 +942,7 @@ def _relay_ar_interrupt_resume(
                         "session_id": session_id,
                         "error": data.get("error", "Unknown error"),
                         "error_code": data.get("error_code", "UNKNOWN"),
+                        "retry_after": data.get("retry_after"),
                         "message_id": ar_message_id,
                         "blocks": blocks_snapshot,
                         "partial_response": full_response,
@@ -1103,8 +1130,8 @@ def _relay_ar_stream(
                 )
                 return
 
-            event_type = event.get("event")
-            data = event.get("data", {})
+            # A rate_limited refusal arrives here as a stream_error (_normalize_ar_event).
+            event_type, data = _normalize_ar_event(event.get("event"), event.get("data", {}))
 
             if _dispatch_relay_event(event_type, data, session_id, block_builder):
                 continue
@@ -1441,6 +1468,7 @@ def _relay_ar_stream(
                         "session_id": session_id,
                         "error": error_msg,
                         "error_code": error_code,
+                        "retry_after": data.get("retry_after"),
                         "action_required": action_required,
                         "message_id": ar_message_id,
                         "blocks": blocks_snapshot,
