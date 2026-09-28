@@ -60,11 +60,9 @@ def _set_faco_message_with_retry(name: str, updates: dict, *, attempts: int = 3)
 
 from ..block_builder import truncate_result_for_emit  # noqa: E402
 from ..chat.cancel import (  # noqa: E402
+    _abort_pending_interactions,
     append_abort_marker,
     is_cancelled,
-)
-from ..chat.cancel import (  # noqa: E402
-    clear as clear_cancel,
 )
 from ..chat.helpers import (  # noqa: E402
     _emit_socket_event,
@@ -488,11 +486,6 @@ def _relay_ar_interrupt_resume(
 
     ar_user = _ar_user_id(user)
 
-    # A cancel flag set before this resume started (Stop pressed during the
-    # prior pause, or racing a turn that was already completing) can never
-    # legitimately apply to a turn that hasn't started yet.
-    clear_cancel(session_id)
-
     full_response = ""
     ar_message_id = None
     collected_tool_calls = []
@@ -544,6 +537,15 @@ def _relay_ar_interrupt_resume(
                 existing_blocks = []
 
         block_builder = BlockBuilder(existing_blocks=existing_blocks)
+
+        # resume_interrupt cleared any older Stop when it accepted this resume,
+        # so a flag up now is a Stop pressed while this relay waited to start.
+        # The approval never reaches AR: the paused turn is stopped as it
+        # stands, exactly as a Stop during the pause is.
+        if is_cancelled(session_id):
+            _abort_pending_interactions(session_id, message_id)
+            return
+
         # Resume stream — no message, just interrupt_response
         stream_iter = client.stream_chat(
             session_id,
@@ -981,10 +983,8 @@ def _relay_ar_interrupt_resume(
         )
 
     finally:
-        # Clear cancel marker so the same session can stream again. Safe
-        # even when no cancel was issued — delete_value() on an absent
-        # Redis key is a no-op.
-        clear_cancel(session_id)
+        # The cancel flag stays: the next accepting endpoint clears it
+        # (cancel.clear). Clearing it here could erase the next turn's Stop.
         frappe.db.commit()  # nosemgrep: frappe-manual-commit — background thread / streaming context (not a request handler), explicit commit required to flush progress to DB.
         frappe.destroy()
 
@@ -1054,12 +1054,6 @@ def _relay_ar_stream(
 
     ar_user = _ar_user_id(user)
 
-    # A cancel flag set before this turn started (Stop pressed during a
-    # prior HITL pause, or racing a turn that was already completing)
-    # can never legitimately apply to a turn that hasn't started yet.
-    # Without this, a stale flag would abort the user's very next message.
-    clear_cancel(session_id)
-
     full_response = ""
     model_used = ""
     ar_message_id = None  # AR Message ID for event reconstruction
@@ -1089,6 +1083,22 @@ def _relay_ar_stream(
         from ..block_builder import BlockBuilder
 
         block_builder = BlockBuilder()
+
+        # send_message or continue_response cleared any older Stop when it
+        # accepted this turn, so a flag up now is a Stop pressed while this
+        # relay waited to start. Finish the turn as stopped without calling
+        # AR: nothing runs and nothing is billed.
+        if is_cancelled(session_id):
+            _handle_stream_aborted(
+                session_id,
+                ar_message_id,
+                full_response,
+                block_builder,
+                collected_tool_calls,
+                model_used,
+                stream_iter=None,
+            )
+            return
 
         # Emit start event
         _emit_socket_event(session_id, {"event": "stream_start", "session_id": session_id})
@@ -1126,7 +1136,7 @@ def _relay_ar_stream(
                     block_builder,
                     collected_tool_calls,
                     model_used,
-                    stream_iter,
+                    stream_iter=stream_iter,
                 )
                 return
 
@@ -1323,7 +1333,7 @@ def _relay_ar_stream(
                     block_builder,
                     collected_tool_calls,
                     model_used,
-                    stream_iter,
+                    stream_iter=stream_iter,
                 )
                 return
 
@@ -1507,10 +1517,8 @@ def _relay_ar_stream(
         )
 
     finally:
-        # Clear cancel marker so the same session can stream again.
-        # Safe even when no cancel was issued — delete_value() on an absent
-        # Redis key is a no-op.
-        clear_cancel(session_id)
+        # The cancel flag stays: the next accepting endpoint clears it
+        # (cancel.clear). Clearing it here could erase the next turn's Stop.
         frappe.db.commit()  # nosemgrep: frappe-manual-commit — background thread / streaming context (not a request handler), explicit commit required to flush progress to DB.
         frappe.destroy()
 
@@ -1608,6 +1616,7 @@ def _handle_stream_aborted(
     block_builder,
     collected_tool_calls: list,
     model_used: str,
+    *,
     stream_iter,
 ) -> None:
     """Persist whatever the agent produced before the user pressed Stop,
@@ -1615,7 +1624,8 @@ def _handle_stream_aborted(
 
     Three things happen here, in order:
 
-    1. Close the SDK iterator. ``stream_chat`` is a generator over an
+    1. Close the SDK iterator, unless the Stop came before AR was called
+       (``stream_iter`` is None). ``stream_chat`` is a generator over an
        HTTP/SSE response; calling ``.close()`` drops the connection,
        which is the signal AR uses to tear down its agent loop. Without
        this, the agent keeps running on the backend and we keep paying
@@ -1629,9 +1639,10 @@ def _handle_stream_aborted(
        flip ``isStreaming=false``, clear its activity timeout, and
        render the "(Stopped by user)" tail.
     """
-    # Step 1 — drop the upstream connection.
+    # Step 1 — drop the upstream connection, if AR was called.
     try:
-        stream_iter.close()
+        if stream_iter is not None:
+            stream_iter.close()
     except Exception as e:
         # Closing a half-drained generator can raise; don't let that
         # block the persistence + event emission we still need to do.

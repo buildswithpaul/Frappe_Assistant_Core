@@ -22,6 +22,7 @@ from .._rate_limits import (
     session_user_or_ip,
 )
 from .._untrusted import wrap_untrusted
+from ..chat.cancel import clear as clear_cancel
 from ..chat.helpers import (
     _attach_files_to_message,
     _extract_file_attachments,
@@ -217,6 +218,9 @@ def send_message(
         if not access_check.get("can_use"):
             frappe.throw(access_check.get("reason", _("Cannot use FACO")))
 
+        # A Stop raised before this point belongs to an earlier turn (cancel.clear).
+        clear_cancel(session_id)
+
         # FACO-M15: respect GDPR Article 18 processing restriction. When set,
         # skip message persistence entirely — the chat still runs (AR handles
         # the turn in-memory), but no content survives in FACO Message.
@@ -363,6 +367,9 @@ def resume_interrupt(
         if not access_check.get("can_use"):
             frappe.throw(access_check.get("reason", _("Cannot use FACO")))
 
+        # A Stop raised before this point belongs to an earlier turn (cancel.clear).
+        clear_cancel(session_id)
+
         effective_client_type = client_type or "spa"
 
         # Zero-retention: load the client-held session blob to round-trip on
@@ -449,6 +456,9 @@ def continue_response(
         access_check = can_use_faco()
         if not access_check.get("can_use"):
             frappe.throw(access_check.get("reason", _("Cannot use FACO")))
+
+        # A Stop raised before this point belongs to an earlier turn (cancel.clear).
+        clear_cancel(session_id)
 
         effective_client_type = client_type or "spa"
 

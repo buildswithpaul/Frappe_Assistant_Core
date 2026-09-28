@@ -65,7 +65,6 @@ def _run_relay(target, events, **kwargs):
             enter(patch(f"frappe.{name}"))
         # The resume loop looks up the interrupted turn's existing row.
         enter(patch("frappe.db.get_value", return_value=None))
-        enter(patch.object(relay, "clear_cancel"))
         enter(patch.object(relay, "is_cancelled", return_value=False))
         enter(patch.object(relay, "_ensure_assistant_msg", return_value="MSG-1"))
         enter(patch.object(relay, "_find_assistant_msg_by_message_id", return_value=None))

@@ -83,7 +83,7 @@ def is_cancelled(session_id: str) -> bool:
 
 
 def clear(session_id: str) -> None:
-    """Drop the cancel marker so the same session can stream again later."""
+    """Drop the cancel marker. Only an endpoint accepting a turn calls this, before it queues the relay."""
     if not session_id:
         return
     frappe.cache().delete_value(_cache_key(session_id))
@@ -95,10 +95,10 @@ def cancel_stream(session_id: str, message_id: str | None = None) -> dict:
 
     Two cancellation regimes are handled here:
 
-    1. **Live relay.** A relay loop is iterating ``stream_chat`` right
-       now. We flip the cancel flag; the loop observes it on its next
-       iteration and runs the proper abort handler (closes the SDK
-       iterator, persists ``aborted=1``, emits ``stream_aborted``).
+    1. **Live relay.** A relay is iterating ``stream_chat``, or is queued
+       and checks the flag before it calls AR. We flip the cancel flag;
+       the relay observes it and runs the proper abort handler (closes
+       the SDK iterator, persists ``aborted=1``, emits ``stream_aborted``).
 
     2. **HITL pause.** AR emitted ``approval_required`` followed by
        ``stream_complete interrupted=true`` — at that point the relay

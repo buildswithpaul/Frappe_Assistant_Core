@@ -128,8 +128,8 @@ class TestStopWithoutANamedTurn(BaseAssistantTest):
             # the running session.
             for name in ("init", "connect", "set_user", "destroy"):
                 enter(patch(f"frappe.{name}"))
-            enter(patch.object(relay, "clear_cancel"))
-            enter(patch.object(relay, "is_cancelled", side_effect=list(polls)))
+            # The first read is the relay's check before it calls AR.
+            enter(patch.object(relay, "is_cancelled", side_effect=[False, *polls]))
             enter(
                 patch.object(
                     relay, "_emit_socket_event", side_effect=lambda _sid, payload: emitted.append(payload)
