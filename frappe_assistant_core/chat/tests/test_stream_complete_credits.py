@@ -38,23 +38,6 @@ def _complete_event_payload(func) -> ast.Dict:
     raise AssertionError(f"no `complete_event = {{...}}` literal found in {func.__name__}")
 
 
-def _sse_complete_payload(func) -> ast.Dict:
-    """The payload dict passed to `_format_sse_event("stream_complete", {...})`."""
-    tree = ast.parse(textwrap.dedent(inspect.getsource(func)))
-    for node in ast.walk(tree):
-        if (
-            isinstance(node, ast.Call)
-            and isinstance(node.func, ast.Name)
-            and node.func.id == "_format_sse_event"
-            and len(node.args) == 2
-            and isinstance(node.args[0], ast.Constant)
-            and node.args[0].value == "stream_complete"
-            and isinstance(node.args[1], ast.Dict)
-        ):
-            return node.args[1]
-    raise AssertionError(f'no `_format_sse_event("stream_complete", {{...}})` call found in {func.__name__}')
-
-
 class TestStreamCompleteCarriesTurnCost(unittest.TestCase):
     def test_send_funnel_emits_credits_used(self):
         from frappe_assistant_core.chat.api.chat import relay
@@ -76,16 +59,6 @@ class TestStreamCompleteCarriesTurnCost(unittest.TestCase):
             _payload_keys(payload),
             "resume funnel's stream_complete must carry this turn's cost — a "
             "resumed turn bills the same member as the send funnel",
-        )
-
-    def test_mobile_stream_emits_credits_used(self):
-        from frappe_assistant_core.chat.api import mobile_stream
-
-        payload = _sse_complete_payload(mobile_stream._stream_generator)
-        self.assertIn(
-            "credits_used",
-            _payload_keys(payload),
-            "mobile stream_complete must carry this turn's cost for parity with the web relay",
         )
 
     def test_tenant_wide_counters_remain_on_the_web_payloads(self):

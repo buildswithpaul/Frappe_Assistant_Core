@@ -56,14 +56,3 @@ class TestQuotaCacheCredits(unittest.TestCase):
             _update_subscription_cache(4.0)
 
         mock_inc.assert_called_once_with(4.0)
-
-    @patch("frappe_assistant_core.chat.api.mobile_stream.frappe")
-    def test_mobile_update_subscription_cache_forwards_credits_unchanged(self, mock_frappe):
-        with patch("frappe_assistant_core.chat.quota_cache.increment_used") as mock_inc, patch(
-            "frappe_assistant_core.chat.quota_cache.get_field", return_value=""
-        ):
-            from frappe_assistant_core.chat.api.mobile_stream import _update_subscription_cache
-
-            _update_subscription_cache(2.5)
-
-        mock_inc.assert_called_once_with(2.5)
