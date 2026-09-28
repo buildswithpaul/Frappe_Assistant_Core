@@ -45,6 +45,9 @@ class TestAbortPendingInteractionsMarkerRace(unittest.TestCase):
             "frappe_assistant_core.chat.api.chat.relay._set_faco_message_with_retry"
         ) as setter:
             fm.db.get_value.side_effect = ["MSG-1", row]
+            # _is_open_turn also checks for a newer user row; no such
+            # row here, so this candidate is still open.
+            fm.db.exists.return_value = False
             cancel_mod._abort_pending_interactions("S1", None)
 
         setter.assert_called_once()
@@ -60,7 +63,9 @@ class TestAbortPendingInteractionsMarkerRace(unittest.TestCase):
 
     def test_no_op_write_when_marker_already_present(self):
         # The other writer (relay.py, post-fix) already appended the
-        # marker. cancel.py must not duplicate it or clobber content.
+        # marker to the turn this Stop names. cancel.py must not duplicate
+        # it or clobber content. (A Stop that names no turn leaves a row
+        # that already carries the marker alone: see _is_open_turn.)
         from frappe_assistant_core.chat.api.chat import cancel as cancel_mod
 
         row = frappe._dict(
@@ -84,10 +89,43 @@ class TestAbortPendingInteractionsMarkerRace(unittest.TestCase):
             cancel_mod, "_emit_socket_event"
         ) as emit, patch("frappe_assistant_core.chat.api.chat.relay._set_faco_message_with_retry") as setter:
             fm.db.get_value.side_effect = ["MSG-1", row]
-            cancel_mod._abort_pending_interactions("S1", None)
+            cancel_mod._abort_pending_interactions("S1", "ar-1")
 
         setter.assert_called_once_with("MSG-1", {"aborted": 1})
         emit.assert_not_called()
+
+    def test_returns_and_emits_the_rows_own_message_id_not_the_callers(self):
+        # The caller's message_id can be a client-side id with no meaning to
+        # another client watching the same session (the SPA's own
+        # _requestId, or nothing at all before a turn's stream_start). The
+        # stream_aborted event, and the value the caller (cancel_stream)
+        # uses to build its own ping, must name AR's own id for the turn —
+        # the row's own message_id field — not the caller's.
+        from frappe_assistant_core.chat.api.chat import cancel as cancel_mod
+
+        row = frappe._dict(
+            {
+                "blocks": json.dumps(
+                    [{"type": "interaction", "status": "pending", "tool_name": "delete_record"}]
+                ),
+                "content": "Today, the",
+                "aborted": 0,
+                "message_id": "ar-real-id",
+            }
+        )
+
+        with patch.object(cancel_mod, "frappe") as fm, patch.object(
+            cancel_mod, "_emit_socket_event"
+        ) as emit, patch("frappe_assistant_core.chat.api.chat.relay._set_faco_message_with_retry"):
+            fm.db.get_value.side_effect = ["MSG-1", row]
+            # _is_open_turn also checks for a newer user row; no such row
+            # here, so this candidate is still open.
+            fm.db.exists.return_value = False
+            result = cancel_mod._abort_pending_interactions("S1", None)
+
+        self.assertEqual(result, "ar-real-id")
+        payload = emit.call_args[0][1]
+        self.assertEqual(payload["message_id"], "ar-real-id")
 
     def test_still_resolves_pending_interaction_blocks(self):
         # Unrelated to the marker race — guards that the pre-existing HITL
@@ -109,6 +147,9 @@ class TestAbortPendingInteractionsMarkerRace(unittest.TestCase):
             "frappe_assistant_core.chat.api.chat.relay._set_faco_message_with_retry"
         ) as setter:
             fm.db.get_value.side_effect = ["MSG-1", row]
+            # _is_open_turn also checks for a newer user row; no such
+            # row here, so this candidate is still open.
+            fm.db.exists.return_value = False
             cancel_mod._abort_pending_interactions("S1", None)
 
         updates = setter.call_args[0][1]

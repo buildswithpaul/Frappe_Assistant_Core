@@ -1523,6 +1523,8 @@ def _persist_partial_assistant_turn(
     collected_tool_calls: list,
     model_used: str,
     flag_field: str,
+    *,
+    fall_back_to_latest: bool = True,
 ) -> str | None:
     """Persist whatever the agent produced so far, marking the row with
     ``flag_field`` (``"aborted"`` or ``"errored"``) so a reload renders the
@@ -1535,9 +1537,11 @@ def _persist_partial_assistant_turn(
     write was a no-op and the reload was empty:
 
       1. Look up by message_id (the canonical key).
-      2. Fall back to the most recent assistant row in this session whose
-         message_id is NULL — that's the row stream_start would have
-         created (or stream_complete would have created via _log_conversation).
+      2. Fall back to the most recent assistant row in this session, whatever
+         its message_id: the row stream_start would have created (or
+         stream_complete via _log_conversation). Skipped when
+         ``fall_back_to_latest`` is False, for a turn AR has not named yet:
+         it has no row, so the latest one belongs to an earlier turn.
       3. If no row exists at all (interruption before AR persisted anything),
          create one now so a reload still shows the partial + marker.
 
@@ -1547,7 +1551,7 @@ def _persist_partial_assistant_turn(
     import json as _json_mod
 
     assistant_row = _find_assistant_msg_by_message_id(session_id, ar_message_id) if ar_message_id else None
-    if not assistant_row:
+    if not assistant_row and fall_back_to_latest:
         # Tier 2: most recent assistant row in this session.
         assistant_row = frappe.db.get_value(
             "FAC Chat Message",
@@ -1636,11 +1640,20 @@ def _handle_stream_aborted(
         )
 
     # Step 2 — persist the partial with the marker. cancel_stream's own
-    # HITL-pause finalizer (cancel.py:_abort_pending_interactions) races
-    # this on the same row; append_abort_marker is idempotent so whichever
-    # of the two writers gets here first adds the marker and the other is
-    # a safe no-op.
+    # HITL-pause finalizer (cancel.py:_abort_pending_interactions) still
+    # races this on the same row for a named Stop, or one that lands on a
+    # row still holding a pending interaction card; append_abort_marker is
+    # idempotent so whichever of the two writers gets here first adds the
+    # marker and the other is a safe no-op. For a no-id Stop on a live send
+    # turn it no longer races here — cancel.py's own fallback only touches
+    # a row that is still open (cancel.py:_is_open_turn), and that never
+    # includes the row this call is about to create or finalize.
     marked_response, blocks_snapshot = append_abort_marker(partial_response, block_builder.snapshot())
+    # A Stop seen before AR's stream_start named the turn: the turn has no row
+    # yet (stream_start creates it), and the session's latest assistant row
+    # belongs to an earlier turn (on a Continue, to the answer being continued),
+    # which this replace-write would overwrite with the bare marker. The Stop
+    # gets a row of its own instead (tier 3).
     _persist_partial_assistant_turn(
         session_id,
         ar_message_id,
@@ -1649,6 +1662,7 @@ def _handle_stream_aborted(
         collected_tool_calls,
         model_used,
         "aborted",
+        fall_back_to_latest=bool(ar_message_id),
     )
 
     # Step 3 — tell the SPA we're done.
