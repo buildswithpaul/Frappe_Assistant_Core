@@ -146,6 +146,7 @@ describe("chatStore send queueing", () => {
 		expect(api.chat.send).toHaveBeenCalledWith("s1", "QUEUED-ONE", [], null, "m1", null, [], {
 			web_search: false,
 			thinking_enabled: false,
+			client_turn_id: expect.any(String),
 		});
 	});
 });

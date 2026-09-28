@@ -256,8 +256,12 @@ export function createStreamManager({
 		const sessionId = currentSessionId?.value;
 		if (sessionId) {
 			const release = holdQueueWhileCancelling();
+			// The bubble's request id goes as message_id, as before, and as
+			// client_turn_id: FAC then keeps this Stop even when it arrives before
+			// FAC has accepted that send, Continue or resume.
+			const requestId = lastMsg?._requestId || null;
 			try {
-				await api.chat.cancelStream(sessionId, lastMsg?._requestId || null);
+				await api.chat.cancelStream(sessionId, requestId, requestId);
 			} catch (err) {
 				// Don't block the UI on a failed cancel. The activity
 				// timeout (180s) is still the canonical liveness check.

@@ -68,6 +68,7 @@ describe("chatStore.continueMessage", () => {
 		expect(api.chat.continueResponse).toHaveBeenCalledWith("session-42", "msg-42", {
 			web_search: false,
 			thinking_enabled: false,
+			client_turn_id: expect.any(String),
 		});
 		expect(store.messages.length).toBe(lengthBefore);
 		expect(store.messages.every((m) => m.role !== "user")).toBe(true);
@@ -98,6 +99,7 @@ describe("chatStore.continueMessage", () => {
 		expect(api.chat.continueResponse).toHaveBeenCalledWith("session-42", "msg-42", {
 			web_search: false,
 			thinking_enabled: true,
+			client_turn_id: expect.any(String),
 		});
 	});
 
