@@ -14,7 +14,17 @@ Adds a field to an existing form, such as "add a vehicle number to Delivery Note
 
 ## Workflow
 
-1. **Check the field doesn't already exist.** `get_doctype_info` on the target doctype and look for a field with the same meaning, not just the same label. ERPNext already covers a lot: **Delivery Note has `vehicle_no` ("Vehicle No"), `driver`, `transporter` and `lr_no` as standard fields.** If it exists, show the user where it is (it may be hidden in a collapsed section) instead of adding a second one.
+1. **Check the field doesn't already exist, by searching rather than reading the whole form.** `get_doctype_info` on a large doctype is cut off before you see most of it. Delivery Note alone has 184 fields, about 150,000 characters. Search instead with `run_database_query`, using two or three words for the *meaning*, not just the user's wording:
+
+   ```sql
+   SELECT fieldname, label, fieldtype, 'standard' AS source FROM `tabDocField`
+   WHERE parent = '<DocType>' AND (LOWER(label) LIKE '%<word>%' OR fieldname LIKE '%<word>%')
+   UNION ALL
+   SELECT fieldname, label, fieldtype, 'custom' FROM `tabCustom Field`
+   WHERE dt = '<DocType>' AND (LOWER(label) LIKE '%<word>%' OR fieldname LIKE '%<word>%')
+   ```
+
+   ERPNext's labels are often longer than what users say, so search every form of the word. For example, "PO" also appears as "purchase order", and "GST" as "tax". If a match exists, show the user where it is instead of adding a second one. It may be hidden in a collapsed section.
 2. **Pick the right doctype.** A value for the whole document goes on the parent (`Delivery Note`). A value per line goes on the item table (`Delivery Note Item`). Ask if it's ambiguous.
 3. **Pick the fieldtype** from what the user will type:
 
@@ -30,7 +40,7 @@ Adds a field to an existing form, such as "add a vehicle number to Delivery Note
    | Another record (a Customer, an Employee) | `Link` | The DocType name |
    | A file | `Attach` | — |
 
-4. **Pick `insert_after`**: the `fieldname` of an existing field on that doctype, taken from `get_doctype_info`. It must exist, or the save fails.
+4. **Pick `insert_after`**: the `fieldname` of an existing field on that doctype, taken from your search results. Search for a neighbouring field the same way if you need one. It must exist, or the save fails.
 5. **Plan, confirm and create** through the protocol.
 
 ## Reference
@@ -66,6 +76,6 @@ Adds a field to an existing form, such as "add a vehicle number to Delivery Note
 
 ## Anti-patterns
 
-- Adding a duplicate of a standard field because you only searched by label.
+- Adding a duplicate of a standard field because you searched only the user's exact words, or read a truncated `get_doctype_info` result.
 - Setting `fieldname` by hand without the `custom_` prefix.
 - Using `Data` for something that should link to an existing record, like a customer or an employee.
