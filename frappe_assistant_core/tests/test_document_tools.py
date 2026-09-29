@@ -26,6 +26,7 @@ from typing import List
 from unittest.mock import MagicMock, patch
 
 import frappe
+from frappe.permissions import AUTOMATIC_ROLES
 
 from frappe_assistant_core.core.tool_registry import get_tool_registry
 from frappe_assistant_core.plugins.core.tools.create_document import DocumentCreate
@@ -660,13 +661,32 @@ class TestDocumentToolsIntegration(BaseAssistantTest):
                     pass
 
 
+_TODO_PERMISSION_HOOK = "frappe.desk.doctype.todo.todo.has_permission"
+
+
+def _todo_rule_before_owner_clause(doc, ptype="read", user=None):
+    """Frappe's ToDo permission hook before v16.32.0 / v15.119.0.
+
+    frappe/frappe#41869 added `or doc.owner == user`, and a user owns every document
+    they create, so newer releases refuse none of the ToDos the pinned tests expect refused.
+    """
+    user = user or frappe.session.user
+    todo_roles = set(frappe.permissions.get_doctype_roles("ToDo", ptype)) - set(AUTOMATIC_ROLES)
+    if any(role in todo_roles for role in frappe.get_roles(user)):
+        return True
+    return doc.allocated_to == user or doc.assigned_by == user
+
+
 class TestDocumentToolsAsNonAdminUser(BaseAssistantTest):
     """The write tools as a user who is not a System Manager.
 
-    Frappe's ToDo permission hook lets such a user create a ToDo only when it
-    names them (`allocated_to` or `assigned_by`). The DocType-level check still
-    passes, so the refusal comes from `doc.insert()` as a PermissionError with no
-    message: Frappe keeps the reason in `frappe.flags.error_message`.
+    Before Frappe v16.32.0 / v15.119.0, the ToDo permission hook lets such a user
+    create a ToDo only when it names them (`allocated_to` or `assigned_by`); from
+    those releases, owning it is enough. The tests that need Frappe to refuse pin
+    the older rule; the rest run against the installed Frappe. The DocType-level
+    check still passes, so the refusal comes from `doc.insert()` as a
+    PermissionError with no message: Frappe keeps the reason in
+    `frappe.flags.error_message`.
 
     Every test acts as its own throwaway user and tags its rows with a unique
     string, and `tearDown` deletes both. `frappe.log_error` is stubbed for the
@@ -735,6 +755,7 @@ class TestDocumentToolsAsNonAdminUser(BaseAssistantTest):
             return_value={"success": True, "role": "Default"},
         )
 
+    @patch(_TODO_PERMISSION_HOOK, new=_todo_rule_before_owner_clause)
     def test_user_todo_that_names_nobody_is_created_for_them(self):
         self._act_as(self.non_admin)
 
@@ -746,6 +767,15 @@ class TestDocumentToolsAsNonAdminUser(BaseAssistantTest):
                 self.assertEqual(result["owner"], self.non_admin)
                 self.assertEqual(frappe.db.get_value("ToDo", result["name"], "allocated_to"), self.non_admin)
 
+    def test_user_todo_that_names_nobody_is_theirs_on_any_frappe(self):
+        """Unpinned: the user creates a ToDo that names nobody and can read it, under either rule."""
+        self._act_as(self.non_admin)
+
+        result = self._create_todo()
+
+        self.assertTrue(result.get("success"), result)
+        self.assertTrue(frappe.get_doc("ToDo", result["name"]).has_permission("read"))
+
     def test_user_todo_assigned_by_themselves_stays_unallocated(self):
         self._act_as(self.non_admin)
 
@@ -754,6 +784,7 @@ class TestDocumentToolsAsNonAdminUser(BaseAssistantTest):
         self.assertTrue(result.get("success"), result)
         self.assertFalse(frappe.db.get_value("ToDo", result["name"], "allocated_to"))
 
+    @patch(_TODO_PERMISSION_HOOK, new=_todo_rule_before_owner_clause)
     def test_user_cannot_create_a_todo_assigned_by_someone_else(self):
         """Only a ToDo that names nobody gets the default: one assigned by someone else is still refused."""
         self._act_as(self.non_admin)
@@ -765,6 +796,7 @@ class TestDocumentToolsAsNonAdminUser(BaseAssistantTest):
         self.assertTrue(result.get("error"), result)
         self.assertFalse(self._todos_made_by_this_test())
 
+    @patch(_TODO_PERMISSION_HOOK, new=_todo_rule_before_owner_clause)
     def test_user_cannot_create_a_todo_for_someone_else(self):
         self._act_as(self.non_admin)
 
@@ -790,6 +822,7 @@ class TestDocumentToolsAsNonAdminUser(BaseAssistantTest):
                 self.assertTrue(result.get("success"), result)
                 self.assertFalse(frappe.db.get_value("ToDo", result["name"], "allocated_to"))
 
+    @patch(_TODO_PERMISSION_HOOK, new=_todo_rule_before_owner_clause)
     def test_validate_only_reports_a_refusal_the_real_create_would_hit(self):
         self._act_as(self.non_admin)
 

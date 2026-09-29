@@ -30,10 +30,13 @@ from frappe_assistant_core.core.base_tool import BaseTool, exception_message
 def _default_todo_allocation(doc: Any) -> None:
     """Allocate a ToDo that names nobody to the session user, if Frappe would refuse it otherwise.
 
-    Frappe lets a user create a ToDo only when it names them (``allocated_to`` or
-    ``assigned_by`` is that user), unless they hold a role, such as System Manager,
-    that grants ToDo create. A non-admin user's plain "add a ToDo" therefore has to
-    be a personal one; a ToDo Frappe already accepts is left exactly as it was written.
+    Before Frappe v16.32.0 / v15.119.0, a user may create a ToDo only when it names them
+    (``allocated_to`` or ``assigned_by`` is that user), unless they hold a role, such as
+    System Manager, that grants ToDo create. A non-admin user's plain "add a ToDo" therefore
+    has to be a personal one; a ToDo Frappe already accepts is left exactly as it was written.
+
+    From those releases the function changes nothing: frappe/frappe#41869 added
+    ``or doc.owner == user`` to that rule, and a user owns every document they create.
     """
     if doc.doctype != "ToDo" or doc.allocated_to or doc.assigned_by:
         return

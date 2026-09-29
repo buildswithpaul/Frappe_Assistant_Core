@@ -96,6 +96,6 @@ The `create_document` tool creates new Frappe documents (records). It handles fi
 - **Mandatory fields** that are missing cause a validation error — check with `get_doctype_info` first.
 - **Unique constraints** — if a field has `unique=1`, duplicate values will fail.
 - **Permission errors** — the current user must have "create" permission on the DocType.
-- **ToDo allocation** — a ToDo can name only you unless you are a System Manager; one that names nobody is created for you; if Frappe refuses, `error` gives its reason.
+- **ToDo** — Frappe decides who may create a ToDo. Before Frappe v16.32.0 / v15.119.0, a user without a role that grants ToDo create (such as System Manager) may create only a ToDo that names them, so one that names nobody is allocated to them; from those releases a user may create any ToDo. If Frappe refuses, `error` gives its reason.
 - **Default values** — fields with defaults are auto-populated if not specified.
 - **Child table rows** — pass as arrays of objects under the child table fieldname.
