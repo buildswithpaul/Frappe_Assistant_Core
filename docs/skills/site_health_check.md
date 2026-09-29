@@ -18,7 +18,7 @@ A read-only audit of an ERPNext site's setup. You check the configuration that m
    - Stock: any `Item` with `is_stock_item = 1` and `disabled = 0`.
    - Selling / buying: any `Sales Invoice` / `Purchase Invoice`, or the user said they sell or buy.
    - India Compliance: `get_doctype_info` on `GST Settings` succeeds (the app is installed) and the company's `country` is `India`.
-3. **Run the checks below** for the sections that apply. Batch reads: one `get_document` per company, one `list_documents` per check — never one call per record.
+3. **Run the checks below yourself** for the sections that apply. **Don't delegate them to a helper.** A delegated helper can't see this skill, so it applies the severity rules loosely and reports false Criticals. Batch reads: one `get_document` per company, one `list_documents` per check — never one call per record.
 4. **Report** (see Reporting). Then stop — don't start fixing.
 5. **Offer the next step** in one sentence: fix the critical findings (through `setup-change-protocol`), or run this check on a schedule as an agent.
 
@@ -93,7 +93,7 @@ Write findings in business language ("invoices with rounding will fail to post")
 - **A Fiscal Year with an empty `companies` table applies to every company.** Don't report it missing for a company it doesn't list.
 - **A field that is set can still be broken.** Always run the Account follow-up in section A — a disabled or group account passes an "is it filled?" check.
 - **Don't inflate severity.** Critical means a transaction fails or posts wrong today. A missing letter head is not critical.
-- **Permission errors are findings about the user, not the site.** Say "I couldn't check X — you need read access to Y" and move on.
+- **An empty or refused read is not a finding.** If a read returns a permission error, or nothing at all from a doctype you may not be able to see (Email Account, GST Settings), say "I couldn't check X". Never report it as missing.
 
 ## Anti-patterns
 
