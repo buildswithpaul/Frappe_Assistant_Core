@@ -253,7 +253,9 @@ def _abort_pending_interactions(session_id: str, message_id: str | None) -> str 
     interrupt id (AR responds "These approvals were already submitted.").
     It is also the marker-writer for a Stop during a HITL resume, whose relay
     finalizer (``_persist_resume_cycle``) writes none: see
-    :func:`append_abort_marker`.
+    :func:`append_abort_marker`. It is ALSO the writer that races the relay's
+    own abort write (``_handle_stream_aborted``) on a live send turn's row —
+    see the read-merge-write note below.
 
     The row is the assistant row ``message_id`` names, whatever its state.
     A Stop may name none: it can come before the turn's ``stream_start``,
@@ -263,9 +265,21 @@ def _abort_pending_interactions(session_id: str, message_id: str | None) -> str 
     is the previous, finished answer, which this Stop must not mark; the
     relay's ``_handle_stream_aborted`` records the Stop on a new row instead.
 
+    The read, the ``_is_open_turn`` gate, the card merge and the marker merge
+    all run inside ``_update_faco_message_merged``'s ``merge`` callback, on a
+    ``for_update=True`` locked read, and are recomputed from scratch on every
+    retry attempt. The relay's own abort write can land — full text plus
+    marker — in the gap between this function being entered and its write
+    landing; a fixed, precomputed ``updates`` dict re-applied after a
+    deadlock would silently overwrite that text with just the marker. Reading
+    the row fresh on every attempt means a retry only ever adds what's still
+    missing (typically just ``aborted``) on top of whatever the other writer
+    already committed.
+
     Returns the row's own ``message_id`` (AR's id for the turn) when a row
     was identified, so the caller can name it correctly even when it was
-    itself called with a client-side id, or none. None when no row applied.
+    itself called with a client-side id, or none. None when no row applied,
+    or the write never completed (retries exhausted; already logged).
     """
     # Locate the row: the one message_id names, else the session's latest
     # assistant row, which is finalized only while it is still open (below).
@@ -287,75 +301,78 @@ def _abort_pending_interactions(session_id: str, message_id: str | None) -> str 
     if not row_name:
         return None
 
-    row = frappe.db.get_value(
-        "FAC Chat Message",
-        row_name,
-        ["blocks", "content", "aborted", "creation", "message_id"],
-        as_dict=True,
-    )
-    if not row:
-        return None
+    def merge(row: frappe._dict | None) -> dict | None:
+        if not row:
+            return None
 
-    blocks = _parse_turn_blocks(row.blocks)
+        blocks = _parse_turn_blocks(row.blocks)
 
-    if not named and not _is_open_turn(blocks, row.aborted, session_id, row.creation):
-        # A finished answer (the Stop came before the next turn's
-        # stream_start), or a Stop already finalized it: not this Stop's row.
-        return None
+        if not named and not _is_open_turn(blocks, row.aborted, session_id, row.creation):
+            # A finished answer (the Stop came before the next turn's
+            # stream_start), or a Stop already finalized it: not this Stop's row.
+            return None
 
-    # Mark every pending interaction as aborted. The frontend renders
-    # ``aborted`` status as a resolved indicator (no action buttons), so
-    # the approve/reject/etc. buttons disappear on reload.
-    changed = False
-    for block in blocks:
-        if block.get("type") == "interaction" and block.get("status") == "pending":
-            block["status"] = "aborted"
-            block["result"] = {"message": "Stopped by user"}
+        # Mark every pending interaction as aborted. The frontend renders
+        # ``aborted`` status as a resolved indicator (no action buttons), so
+        # the approve/reject/etc. buttons disappear on reload.
+        changed = False
+        for block in blocks:
+            if block.get("type") == "interaction" and block.get("status") == "pending":
+                block["status"] = "aborted"
+                block["result"] = {"message": "Stopped by user"}
+                changed = True
+
+        # `aborted` is NOT a safe "already handled" signal here — relay.py's
+        # own abort finalizer sets it too, and often wins this race since it
+        # runs on the already-live relay thread while this handler is still
+        # doing its first DB round trip. Bailing out on `aborted` (as this
+        # used to) meant the marker was silently dropped whenever that
+        # finalizer won. Marker presence, not `aborted`, is the only
+        # idempotency check both writers can safely share.
+        had_marker = _has_abort_marker(blocks)
+        content, blocks = append_abort_marker(row.content or "", blocks)
+        if not had_marker:
             changed = True
 
-    # `aborted` is NOT a safe "already handled" signal here — relay.py's own
-    # abort finalizer sets it too, and often wins this race since it runs on
-    # the already-live relay thread while this handler is still doing its
-    # first DB round trip. Bailing out on `aborted` (as this used to) meant
-    # the marker was silently dropped whenever that finalizer won. Marker
-    # presence, not `aborted`, is the only idempotency check both writers
-    # can safely share.
-    had_marker = _has_abort_marker(blocks)
-    content, blocks = append_abort_marker(row.content or "", blocks)
-    if not had_marker:
-        changed = True
+        if not changed:
+            # No pending interaction AND a marker already existed (shouldn't
+            # happen unless cancel was double-clicked, or the relay's own
+            # write already carries both). Still flip aborted=1 so the row's
+            # state is consistent — never touch content/blocks here, so a
+            # concurrent full write already committed (or about to commit
+            # once this transaction's lock is released) is left standing.
+            return {"aborted": 1}
 
-    # Use the shared retry-aware writer so a concurrent resume relay's
-    # read+merge+write can't poison ours with InnoDB 1020 (record changed).
-    from ..chat.relay import (
-        _set_faco_message_with_retry,
+        return {"aborted": 1, "blocks": json.dumps(blocks), "content": content}
+
+    from ..chat.relay import _update_faco_message_merged
+
+    written, updates, row = _update_faco_message_merged(
+        row_name,
+        ["blocks", "content", "aborted", "creation", "message_id"],
+        merge,
     )
+    if not written:
+        # No row applied to this Stop, or every attempt deadlocked
+        # (_update_faco_message_merged already logged it).
+        return None
 
-    if not changed:
-        # No pending interaction AND a marker already existed (shouldn't
-        # happen unless cancel was double-clicked). Still flip aborted=1
-        # so the row's state is consistent.
-        _set_faco_message_with_retry(row_name, {"aborted": 1})
-        return row.message_id
-
-    updates = {
-        "aborted": 1,
-        "blocks": json.dumps(blocks),
-        "content": content,
-    }
-    _set_faco_message_with_retry(row_name, updates)
-
-    # Emit the authoritative finalize so the SPA (if open) reconciles. Named
-    # by the row's own message_id (AR's id), never the caller's — a Stop can
-    # arrive naming no turn, or a client-side id another client has never seen.
-    _emit_socket_event(
-        session_id,
-        {
-            "event": "stream_aborted",
-            "session_id": session_id,
-            "message_id": row.message_id,
-            "partial_response": content,
-            "blocks": blocks,
-        },
-    )
+    if "blocks" in updates:
+        # Emit the authoritative finalize so the SPA (if open) reconciles,
+        # only after a successful write and from the state that was written
+        # — never a snapshot the retry may have superseded. Named by the
+        # row's own message_id (AR's id), never the caller's — a Stop can
+        # arrive naming no turn, or a client-side id another client has
+        # never seen. The "not changed" branch above (bare {"aborted": 1})
+        # emits nothing.
+        _emit_socket_event(
+            session_id,
+            {
+                "event": "stream_aborted",
+                "session_id": session_id,
+                "message_id": row.message_id,
+                "partial_response": updates["content"],
+                "blocks": json.loads(updates["blocks"]),
+            },
+        )
     return row.message_id
