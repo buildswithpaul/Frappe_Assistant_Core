@@ -18,6 +18,8 @@ from __future__ import annotations
 
 import json
 import time
+from collections.abc import Callable
+from typing import NamedTuple
 
 import frappe
 from frappe import _
@@ -61,6 +63,101 @@ def _set_faco_message_with_retry(name: str, updates: dict, *, attempts: int = 3)
             # the next read sees a stable row.
             time.sleep(0.05 * (attempt + 1))
     return False
+
+
+class MergedWrite(NamedTuple):
+    """What ``_update_faco_message_merged`` did.
+
+    ``written`` is True only when ``merge`` returned fields and they were
+    committed: ``updates`` is then exactly what ``merge`` returned and ``row``
+    the locked read it was computed from. When ``merge`` chose not to write,
+    ``written`` is False, ``updates`` is None and ``row`` is the locked read it
+    declined. ``row`` is None when the row does not exist, and when every
+    attempt deadlocked (logged).
+    """
+
+    written: bool
+    updates: dict | None
+    row: frappe._dict | None
+
+
+def _update_faco_message_merged(
+    name: str,
+    fields: list[str],
+    merge: Callable[[frappe._dict | None], dict | None],
+    *,
+    attempts: int = 3,
+) -> MergedWrite:
+    """Retry a whole read-merge-write cycle for a FAC Chat Message row, with a locking read.
+
+    ``_set_faco_message_with_retry`` retries a FIXED ``updates`` dict: on a
+    deadlock it rolls back and re-applies the SAME computation, which is only
+    safe when the caller's write does not depend on the row's current state.
+    A finalizer whose write IS a function of the row it just read (cancel.py's
+    Stop handler: it merges pending-card and marker updates onto whatever the
+    row currently holds) cannot reuse that helper — re-applying a stale merge
+    after a deadlock would silently overwrite whatever the other writer
+    committed in the gap. This helper re-reads and re-merges on every attempt
+    instead of ever re-using a stale computation.
+
+    Each attempt:
+      1. Reads the row with ``frappe.db.get_value(..., for_update=True)`` — a
+         locking read. Under READ COMMITTED this blocks until any writer
+         already holding this row's lock commits or rolls back, then reads
+         the latest committed values: never a snapshot the other writer is
+         about to overwrite. Under MariaDB's default REPEATABLE READ with
+         ``innodb_snapshot_isolation`` (on by default since 11.6.2) the locked
+         read instead raises 1020 when the other writer committed after this
+         request's snapshot, and only the retry, in a new transaction, reads
+         the latest row: the retry below is not dead code.
+      2. Calls ``merge(row)``, which inspects that fresh row and returns
+         either the dict of fields to write, or ``None`` for "no write
+         needed" — a normal outcome (not a failure), so it is never retried.
+      3. A dict return is written with ``frappe.db.set_value`` and committed.
+
+    On ``frappe.QueryDeadlockError`` (1020, or a genuine deadlock) from
+    either step, the transaction is rolled back and, after a brief backoff,
+    the NEXT attempt starts over from a fresh locked read — so a retry can
+    never re-apply a merge computed against data another writer has since
+    replaced. Any other exception also rolls back, so the locking read's row
+    lock is never left held, and then propagates: the caller may swallow it
+    and go on to slow work, and until then the other writer would wait on
+    that lock.
+
+    Returns a :class:`MergedWrite`. ``written`` is False both when ``merge``
+    returned ``None`` and when every attempt deadlocked (logged, with ``row``
+    None), so a caller can unpack the result on every path.
+    """
+    for attempt in range(attempts):
+        try:
+            row = frappe.db.get_value("FAC Chat Message", name, fields, as_dict=True, for_update=True)
+            updates = merge(row)
+            if updates is None:
+                frappe.db.commit()  # nosemgrep: frappe-manual-commit — release the locking read's row lock; no write needed
+                return MergedWrite(False, None, row)
+            # A copy: set_value stamps modified/modified_by onto the dict it is given.
+            frappe.db.set_value("FAC Chat Message", name, dict(updates))
+            frappe.db.commit()  # nosemgrep: frappe-manual-commit — commit before the caller emits stream_aborted; release the row lock before it calls AR
+            return MergedWrite(True, updates, row)
+        except frappe.QueryDeadlockError:
+            frappe.db.rollback()
+            if attempt == attempts - 1:
+                frappe.log_error(
+                    title="FAC Chat Message write contention",
+                    message=(
+                        f"_update_faco_message_merged retry exhausted for {name} after {attempts} attempts."
+                    ),
+                )
+                return MergedWrite(False, None, None)
+            # Brief backoff lets the other writer's transaction commit so
+            # the next attempt's locked read sees a stable row.
+            time.sleep(0.05 * (attempt + 1))
+        except Exception:
+            # Not a deadlock: release the locking read's row lock before the
+            # error reaches a caller that may swallow it and carry on.
+            frappe.db.rollback()
+            raise
+    return MergedWrite(False, None, None)
 
 
 from ..block_builder import truncate_result_for_emit  # noqa: E402
