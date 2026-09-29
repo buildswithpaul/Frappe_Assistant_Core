@@ -18,7 +18,7 @@ A read-only audit of an ERPNext site's setup. You check the configuration that m
    - Stock: any `Item` with `is_stock_item = 1` and `disabled = 0`.
    - Selling / buying: any `Sales Invoice` / `Purchase Invoice`, or the user said they sell or buy.
    - India Compliance: `get_doctype_info` on `GST Settings` succeeds (the app is installed) and the company's `country` is `India`.
-3. **Run the checks below yourself** for the sections that apply. **Don't delegate them to a helper.** A delegated helper can't see this skill, so it applies the severity rules loosely and reports false Criticals. Batch reads: one `get_document` per company, one `list_documents` per check — never one call per record.
+3. **Run the checks below** for the sections that apply. If you hand a section to a helper, name this skill (`site-health-check`) and the section in the task, so it applies these severity rules rather than a summary of them. Batch reads: one `get_document` per company, one `list_documents` per check — never one call per record.
 4. **Report** (see Reporting). Then stop — don't start fixing.
 5. **Offer the next step** in one sentence: fix the critical findings (through `setup-change-protocol`), or run this check on a schedule as an agent.
 
