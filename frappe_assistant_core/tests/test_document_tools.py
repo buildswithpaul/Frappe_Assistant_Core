@@ -22,11 +22,15 @@ Tests document operations through the tool registry
 import json
 import unittest
 from contextlib import ExitStack
+from typing import List
 from unittest.mock import MagicMock, patch
 
 import frappe
 
 from frappe_assistant_core.core.tool_registry import get_tool_registry
+from frappe_assistant_core.plugins.core.tools.create_document import DocumentCreate
+from frappe_assistant_core.plugins.core.tools.submit_document import DocumentSubmit
+from frappe_assistant_core.plugins.core.tools.update_document import DocumentUpdate
 from frappe_assistant_core.tests.base_test import BaseAssistantTest
 
 
@@ -654,6 +658,230 @@ class TestDocumentToolsIntegration(BaseAssistantTest):
                 except Exception:
                     # Exceptions are also acceptable for invalid input
                     pass
+
+
+class TestDocumentToolsAsNonAdminUser(BaseAssistantTest):
+    """The write tools as a user who is not a System Manager.
+
+    Frappe's ToDo permission hook lets such a user create a ToDo only when it
+    names them (`allocated_to` or `assigned_by`). The DocType-level check still
+    passes, so the refusal comes from `doc.insert()` as a PermissionError with no
+    message: Frappe keeps the reason in `frappe.flags.error_message`.
+
+    Every test acts as its own throwaway user and tags its rows with a unique
+    string, and `tearDown` deletes both. `frappe.log_error` is stubbed for the
+    whole class so no Error Log rows are written; tests read `self.log_error`.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.tag = f"cd-test-{frappe.generate_hash(length=8)}"
+        self.users: List[str] = []
+        self.acting_user = frappe.session.user
+        self.non_admin = self._make_user(self.tag, roles=["Desk User"])
+        frappe.flags.pop("error_message", None)
+        self.addCleanup(lambda: frappe.flags.pop("error_message", None))
+        log_error = patch("frappe.log_error")
+        self.log_error = log_error.start()
+        self.addCleanup(log_error.stop)
+
+    def tearDown(self):
+        # nosemgrep: frappe-setuser — tests run in an isolated transaction
+        frappe.set_user(self.acting_user)
+        for name in frappe.get_all("ToDo", filters={"description": ["like", f"%{self.tag}%"]}, pluck="name"):
+            frappe.delete_doc("ToDo", name, force=True, ignore_permissions=True)
+        for email in self.users:
+            frappe.delete_doc("User", email, force=True, ignore_permissions=True)
+        super().tearDown()
+
+    def _make_user(self, local_part: str, roles: List[str]) -> str:
+        email = f"{local_part}@example.com"
+        frappe.get_doc(
+            {
+                "doctype": "User",
+                "email": email,
+                "first_name": "CD Test",
+                "enabled": 1,
+                "send_welcome_email": 0,
+                "roles": [{"role": role} for role in roles],
+            }
+        ).insert(ignore_permissions=True)
+        self.users.append(email)
+        return email
+
+    def _act_as(self, user: str) -> None:
+        # nosemgrep: frappe-setuser — tests run in an isolated transaction
+        frappe.set_user(user)
+
+    def _todo_owned_by_administrator(self) -> str:
+        return (
+            frappe.get_doc(
+                {"doctype": "ToDo", "description": f"{self.tag} theirs", "allocated_to": "Administrator"}
+            )
+            .insert()
+            .name
+        )
+
+    def _create_todo(self, **data) -> dict:
+        return DocumentCreate().execute({"doctype": "ToDo", "data": {"description": self.tag, **data}})
+
+    def _todos_made_by_this_test(self) -> bool:
+        return bool(frappe.db.exists("ToDo", {"description": ["like", f"%{self.tag}%"]}))
+
+    def _precheck_passes(self):
+        """Let the FAC pre-check pass, so the refusal has to come from Frappe itself."""
+        return patch(
+            "frappe_assistant_core.core.security_config.validate_document_access",
+            return_value={"success": True, "role": "Default"},
+        )
+
+    def test_user_todo_that_names_nobody_is_created_for_them(self):
+        self._act_as(self.non_admin)
+
+        for label, extra in (("omitted", {}), ("blank", {"allocated_to": ""})):
+            with self.subTest(allocated_to=label):
+                result = self._create_todo(description=f"{self.tag} {label}", **extra)
+
+                self.assertTrue(result.get("success"), result)
+                self.assertEqual(result["owner"], self.non_admin)
+                self.assertEqual(frappe.db.get_value("ToDo", result["name"], "allocated_to"), self.non_admin)
+
+    def test_user_todo_assigned_by_themselves_stays_unallocated(self):
+        self._act_as(self.non_admin)
+
+        result = self._create_todo(assigned_by=self.non_admin)
+
+        self.assertTrue(result.get("success"), result)
+        self.assertFalse(frappe.db.get_value("ToDo", result["name"], "allocated_to"))
+
+    def test_user_cannot_create_a_todo_assigned_by_someone_else(self):
+        """Only a ToDo that names nobody gets the default: one assigned by someone else is still refused."""
+        self._act_as(self.non_admin)
+
+        result = self._create_todo(assigned_by="Administrator")
+
+        self.assertFalse(result.get("success"), result)
+        self.assertEqual(result.get("error_type"), "permission_error")
+        self.assertTrue(result.get("error"), result)
+        self.assertFalse(self._todos_made_by_this_test())
+
+    def test_user_cannot_create_a_todo_for_someone_else(self):
+        self._act_as(self.non_admin)
+
+        result = self._create_todo(allocated_to="Administrator")
+
+        self.assertFalse(result.get("success"), result)
+        self.assertEqual(result.get("error_type"), "permission_error")
+        self.assertTrue(result.get("error"), result)
+        self.assertNotIn("<", result["error"])
+        self.assertNotIn("  ", result["error"])
+        self.assertTrue(self.log_error.call_args.kwargs["message"].endswith(result["error"]))
+        self.assertFalse(self._todos_made_by_this_test())
+
+    def test_users_who_may_create_todos_keep_them_unallocated(self):
+        system_manager = self._make_user(f"{self.tag}-sm", roles=["System Manager"])
+
+        for user in ("Administrator", system_manager):
+            with self.subTest(user=user):
+                self._act_as(user)
+
+                result = self._create_todo(description=f"{self.tag} {user}")
+
+                self.assertTrue(result.get("success"), result)
+                self.assertFalse(frappe.db.get_value("ToDo", result["name"], "allocated_to"))
+
+    def test_validate_only_reports_a_refusal_the_real_create_would_hit(self):
+        self._act_as(self.non_admin)
+
+        result = DocumentCreate().execute(
+            {
+                "doctype": "ToDo",
+                "data": {"description": self.tag, "allocated_to": "Administrator"},
+                "validate_only": True,
+            }
+        )
+
+        self.assertFalse(result.get("success"), result)
+        self.assertEqual(result.get("error_type"), "permission_error")
+        self.assertTrue(result.get("error"), result)
+
+    def test_validate_only_passes_for_the_todo_the_real_create_accepts(self):
+        self._act_as(self.non_admin)
+
+        result = DocumentCreate().execute(
+            {"doctype": "ToDo", "data": {"description": self.tag}, "validate_only": True}
+        )
+
+        self.assertTrue(result.get("success"), result)
+        self.assertTrue(result.get("validation_passed"))
+        self.assertFalse(self._todos_made_by_this_test())
+
+    def test_message_less_failure_is_returned_and_logged_with_its_type(self):
+        with patch("frappe.new_doc", side_effect=RuntimeError()):
+            result = self._create_todo()
+
+        self.assertFalse(result.get("success"), result)
+        self.assertEqual(result.get("error"), "RuntimeError")
+        self.assertEqual(self.log_error.call_args.kwargs["message"], "Error creating ToDo: RuntimeError")
+
+    def test_create_says_why_a_follow_up_submit_was_refused(self):
+        refusal = frappe.new_doc("ToDo")
+
+        with patch(
+            "frappe.model.document.Document.submit",
+            side_effect=lambda: refusal.raise_no_permission_to("submit"),
+        ):
+            result = DocumentCreate().execute(
+                {"doctype": "ToDo", "data": {"description": self.tag}, "submit": True}
+            )
+
+        self.assertTrue(result.get("success"), result)
+        self.assertTrue(result.get("submit_error"), result)
+        self.assertNotIn("<", result["submit_error"])
+        self.assertTrue(result["message"].endswith(result["submit_error"]), result)
+
+    def test_update_of_someone_elses_todo_is_refused_with_a_reason(self):
+        """Passes unfixed by design: it pins the pre-check path; the next test pins the recovered message."""
+        todo = self._todo_owned_by_administrator()
+        self._act_as(self.non_admin)
+
+        result = DocumentUpdate().execute(
+            {"doctype": "ToDo", "name": todo, "data": {"description": f"{self.tag} edited"}}
+        )
+
+        self.assertFalse(result.get("success"), result)
+        self.assertTrue(result.get("error"), result)
+
+    def test_update_says_why_frappe_refused_the_save(self):
+        todo = self._todo_owned_by_administrator()
+        self._act_as(self.non_admin)
+
+        with self._precheck_passes():
+            result = DocumentUpdate().execute(
+                {"doctype": "ToDo", "name": todo, "data": {"description": f"{self.tag} edited"}}
+            )
+
+        self.assertFalse(result.get("success"), result)
+        self.assertTrue(result.get("error"), result)
+        self.assertNotIn("<", result["error"])
+        self.assertTrue(self.log_error.call_args.kwargs["message"].endswith(result["error"]))
+
+    def test_submit_says_why_frappe_refused_the_submit(self):
+        refusal = frappe.new_doc("ToDo")
+        refusing_doc = MagicMock(docstatus=0, workflow_state=None)
+        refusing_doc.submit.side_effect = lambda: refusal.raise_no_permission_to("submit")
+
+        with ExitStack() as stack:
+            stack.enter_context(self._precheck_passes())
+            stack.enter_context(patch("frappe.db.exists", return_value=True))
+            stack.enter_context(patch("frappe.get_doc", return_value=refusing_doc))
+            stack.enter_context(patch("frappe.get_meta", return_value=MagicMock(is_submittable=1)))
+            result = DocumentSubmit().execute({"doctype": "ToDo", "name": "any"})
+
+        self.assertFalse(result.get("success"), result)
+        self.assertTrue(result.get("error"), result)
+        self.assertNotIn("<", result["error"])
+        self.assertTrue(self.log_error.call_args.kwargs["message"].endswith(result["error"]))
 
 
 class _FakeChildRow:

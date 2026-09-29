@@ -24,7 +24,7 @@ from typing import Any, Dict
 import frappe
 from frappe import _
 
-from frappe_assistant_core.core.base_tool import BaseTool
+from frappe_assistant_core.core.base_tool import BaseTool, exception_message
 
 
 class DocumentSubmit(BaseTool):
@@ -154,13 +154,14 @@ class DocumentSubmit(BaseTool):
             return result
 
         except Exception as e:
+            error_msg = exception_message(e)
             frappe.log_error(
-                title=_("Document Submit Error"), message=f"Error submitting {doctype} '{name}': {str(e)}"
+                title=_("Document Submit Error"), message=f"Error submitting {doctype} '{name}': {error_msg}"
             )
 
             result = {
                 "success": False,
-                "error": str(e),
+                "error": error_msg,
                 "doctype": doctype,
                 "name": name,
                 "suggestion": "Check if the document has all required fields filled and passes validation.",

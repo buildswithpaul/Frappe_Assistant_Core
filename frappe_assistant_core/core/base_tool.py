@@ -27,6 +27,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import frappe
 from frappe import _
+from frappe.utils import strip_html_tags
 
 # Substrings that always indicate a credential. Matched case-insensitively
 # anywhere in the key name.
@@ -63,6 +64,23 @@ def _is_sensitive_key(key: Any) -> bool:
     if any(s in lower for s in _ALWAYS_SENSITIVE):
         return True
     return bool(_SENSITIVE_TOKEN_RE.search(lower))
+
+
+def exception_message(exc: BaseException, fallback: Optional[str] = None) -> str:
+    """Return a non-empty description of ``exc`` for a tool result or a log entry.
+
+    Frappe raises a bare ``frappe.PermissionError`` for a document-level denial
+    and keeps the reason, as HTML, in ``frappe.flags.error_message``, so
+    ``str(exc)`` alone is empty. The order is: the exception's own text, that
+    reason as plain text (markup stripped, whitespace collapsed as a browser
+    would), ``fallback``, then the exception's class name.
+    """
+    text = str(exc)
+    if text:
+        return text
+
+    reason = " ".join(strip_html_tags(str(frappe.flags.get("error_message") or "")).split())
+    return reason or fallback or type(exc).__name__
 
 
 class BaseTool(ABC):
@@ -240,16 +258,17 @@ class BaseTool(ABC):
 
         except frappe.PermissionError as e:
             execution_time = time.time() - start_time
+            error_msg = exception_message(e)
             response = {
                 "success": False,
-                "error": str(e),
+                "error": error_msg,
                 "error_type": "PermissionError",
                 "execution_time": execution_time,
             }
 
             self.log_execution(arguments, response, execution_time, status="Permission Denied")
 
-            frappe.log_error(title=_("Permission Error"), message=f"{self.name}: {str(e)}")
+            frappe.log_error(title=_("Permission Error"), message=f"{self.name}: {error_msg}")
 
             return response
 
