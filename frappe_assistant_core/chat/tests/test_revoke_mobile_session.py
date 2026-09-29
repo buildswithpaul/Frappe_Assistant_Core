@@ -61,7 +61,8 @@ def _mint(user: str, client: str) -> SimpleNamespace:
 
 
 def _access_accepted(access_token: str) -> bool:
-    return bool(OAuthWebRequestValidator().validate_bearer_token(access_token, ["all"], None))
+    # Frappe's validator sets request.user on a valid token, so it needs a request-like object, not None.
+    return bool(OAuthWebRequestValidator().validate_bearer_token(access_token, ["all"], SimpleNamespace()))
 
 
 def _refresh_accepted(refresh_token: str) -> bool:
