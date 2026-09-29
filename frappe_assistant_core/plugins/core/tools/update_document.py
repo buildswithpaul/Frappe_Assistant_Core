@@ -24,7 +24,7 @@ from typing import Any, Dict, List, Optional, Set
 import frappe
 from frappe import _
 
-from frappe_assistant_core.core.base_tool import BaseTool
+from frappe_assistant_core.core.base_tool import BaseTool, exception_message
 
 
 def _restricted_fields_for_doctype(doctype: str, user_role: str) -> Set[str]:
@@ -393,11 +393,12 @@ class DocumentUpdate(BaseTool):
             return result
 
         except Exception as e:
+            error_msg = exception_message(e)
             frappe.log_error(
-                title=_("Document Update Error"), message=f"Error updating {doctype} '{name}': {str(e)}"
+                title=_("Document Update Error"), message=f"Error updating {doctype} '{name}': {error_msg}"
             )
 
-            result = {"success": False, "error": str(e), "doctype": doctype, "name": name}
+            result = {"success": False, "error": error_msg, "doctype": doctype, "name": name}
 
             # Log failed update
             return result
