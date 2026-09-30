@@ -103,11 +103,13 @@ class RunWorkflow(BaseTool):
                 workflow_name = get_workflow_name(doctype)
 
                 if not workflow_name:
+                    requested = str(action or "").strip().lower()
+                    direct_action = requested if requested in ("cancel", "amend") else "submit"
                     return {
                         "success": False,
                         "error": f"No workflow configured for {doctype}",
                         "explanation": f"The {doctype} document type doesn't have any workflows set up. Workflows are used for business processes like approval flows.",
-                        "suggestion": "Use the 'update_document' tool instead to modify document fields directly, or ask the administrator to configure a workflow for this document type.",
+                        "suggestion": f"Use the 'document_action' tool with action '{direct_action}' instead, or ask the administrator to configure a workflow for this document type.",
                     }
 
             # Get available transitions to provide helpful feedback

@@ -47,6 +47,7 @@ PRIVILEGED_TOOLS = {
     "query_and_analyze",
     "run_database_query",
     "delete_document",
+    "document_action",  # can cancel, which reverses accounting and stock entries
 }
 
 # Tools that are always categorized as read_only (hardcoded list)
@@ -90,7 +91,6 @@ WRITE_TOOLS = {
     # Document tools
     "create_document",
     "update_document",
-    "submit_document",
     # Document generation (saves a private Frappe File — a create side effect)
     "generate_document",  # Markdown -> PDF saved as a File record; NOT read-only
     # Workflow tools

@@ -116,8 +116,8 @@
       "description": "Remove documents from the system with permission checks"
     },
     {
-      "name": "submit_document",
-      "description": "Submit documents to change status from draft to submitted"
+      "name": "document_action",
+      "description": "Submit a draft document, cancel a submitted one, or amend a cancelled one"
     },
     {
       "name": "search_documents",

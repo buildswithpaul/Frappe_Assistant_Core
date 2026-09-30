@@ -23,7 +23,7 @@ const QUOTE = {
 const SUBMIT = {
 	type: "tool_call",
 	id: "c2",
-	tool_name: "submit_document",
+	tool_name: "document_action",
 	input: { doctype: "Quotation" },
 	status: "success",
 	result: "ok",
