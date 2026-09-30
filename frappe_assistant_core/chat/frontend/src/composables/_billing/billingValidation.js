@@ -53,7 +53,9 @@ export const STATE_NUMBERS = {
 
 export const INDIAN_STATES = Object.keys(STATE_NUMBERS);
 
-export const COUNTRIES = [
+// Shown only if the site's full country list cannot be loaded
+// (`get_billing_countries`), so the form is never left without options.
+export const FALLBACK_COUNTRIES = [
 	{ code: "IN", label: "India" },
 	{ code: "US", label: "United States" },
 	{ code: "GB", label: "United Kingdom" },

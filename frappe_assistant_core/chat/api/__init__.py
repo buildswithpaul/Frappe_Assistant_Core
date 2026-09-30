@@ -66,6 +66,7 @@ from .billing import (
     downgrade_to_free,
     download_invoice_pdf,
     get_available_gateways,
+    get_billing_countries,
     get_billing_dashboard,
     get_billing_details,
     get_billing_history,

@@ -57,6 +57,7 @@ from frappe_assistant_core.chat.api.billing.checkout import (
     verify_razorpay_payment,
 )
 from frappe_assistant_core.chat.api.billing.combined import (
+    get_billing_countries,
     get_billing_details,
     get_billing_page_data,
     save_billing_details,
