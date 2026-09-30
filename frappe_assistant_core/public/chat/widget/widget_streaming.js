@@ -755,7 +755,7 @@ window.FACOWidgetStreaming = {
 				create_document: "Create Document",
 				update_document: "Update Document",
 				delete_document: "Delete Document",
-				submit_document: "Submit Document",
+				document_action: "Document Action",
 			};
 			const title = titleMap[toolName] || toolName.replace(/_/g, " ");
 			const action = reason.action || title;

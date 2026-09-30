@@ -111,7 +111,7 @@ describe("grouping edge cases", () => {
 			tool("X", "create_document", "Customer"),
 			{ id: "x2", type: "text", content: "Waiting for your approval." },
 			{ id: "X", type: "interaction", status: "approved", tool_name: "create_document" },
-			tool("Y", "submit_document", "Customer"),
+			tool("Y", "document_action", "Customer"),
 		]);
 
 		const list = cards(w);
@@ -129,9 +129,9 @@ describe("grouping edge cases", () => {
 		// arrive consecutively and all belong to the card that did the work.
 		const w = mountRenderer([
 			tool("A", "create_document", "Customer"),
-			tool("B", "submit_document", "Customer"),
+			tool("B", "document_action", "Customer"),
 			{ id: "A", type: "interaction", status: "approved", tool_name: "create_document" },
-			{ id: "B", type: "interaction", status: "approved", tool_name: "submit_document" },
+			{ id: "B", type: "interaction", status: "approved", tool_name: "document_action" },
 		]);
 
 		expect(cards(w)).toHaveLength(1);
@@ -148,7 +148,7 @@ describe("grouping edge cases", () => {
 		const w = mountRenderer([
 			tool("A", "create_document", "Customer"),
 			{ id: "A", type: "interaction", status: "approved", tool_name: "create_document" },
-			tool("B", "submit_document", "Customer"),
+			tool("B", "document_action", "Customer"),
 		]);
 
 		expect(cards(w)).toHaveLength(2);

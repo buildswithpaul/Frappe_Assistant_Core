@@ -92,7 +92,7 @@ const approvalTitle = computed(() => {
 		create_document: "Create Document",
 		update_document: "Update Document",
 		delete_document: "Delete Document",
-		submit_document: "Submit Document",
+		document_action: "Document Action",
 	};
 	return map[props.block.tool_name] || formatToolName(props.block.tool_name);
 });
@@ -116,12 +116,29 @@ const fieldSplit = computed(() => {
 // ignore it on calls that genuinely do mutate data. For unmapped tools we show
 // no consequence line — the title, tool description and input table already
 // convey what is about to happen.
+// document_action submits, cancels or amends, so its warning follows the requested action.
+const DOCUMENT_ACTION_CONSEQUENCES = {
+	submit: "This will submit a record — it becomes immutable",
+	cancel: "This will cancel a submitted record and reverse its accounting and stock entries",
+	amend: "This will create a new draft copy of a cancelled record",
+};
+
+function documentActionConsequence(input) {
+	const action = input && typeof input === "object" ? String(input.action || "submit") : "";
+	return (
+		DOCUMENT_ACTION_CONSEQUENCES[action.trim().toLowerCase()] ||
+		"This will submit, cancel or amend a record in your ERP"
+	);
+}
+
 const consequence = computed(() => {
+	if (props.block.tool_name === "document_action") {
+		return documentActionConsequence(props.block.input);
+	}
 	const map = {
 		create_document: "This will write a new record to your ERP",
 		update_document: "This will modify an existing record in your ERP",
 		delete_document: "This will permanently delete a record from your ERP",
-		submit_document: "This will submit a record — it becomes immutable",
 	};
 	return map[props.block.tool_name] || "";
 });

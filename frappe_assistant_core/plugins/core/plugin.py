@@ -51,7 +51,7 @@ class CorePlugin(BasePlugin):
             "update_document",
             "list_documents",
             "delete_document",
-            "submit_document",
+            "document_action",
             # Search tools (one unified entry point; routes on doctype/purpose)
             "search_documents",
             # ChatGPT-compatible tools (wrappers for ChatGPT MCP requirements)

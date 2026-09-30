@@ -92,7 +92,7 @@ The `create_document` tool creates new Frappe documents (records). It handles fi
 
 ## Edge Cases
 
-- **Submittable DocTypes** are created in Draft state (`docstatus=0`) by default — use `submit: true` or `submit_document` tool separately.
+- **Submittable DocTypes** are created in Draft state (`docstatus=0`) by default — use `submit: true` or `document_action` tool separately.
 - **Mandatory fields** that are missing cause a validation error — check with `get_doctype_info` first.
 - **Unique constraints** — if a field has `unique=1`, duplicate values will fail.
 - **Permission errors** — the current user must have "create" permission on the DocType.

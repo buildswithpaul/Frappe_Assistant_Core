@@ -34,9 +34,11 @@ from werkzeug.wrappers import Request, Response
 
 from frappe_assistant_core.tests.base_test import BaseAssistantTest
 from frappe_assistant_core.utils.tool_category_detector import (
+    PRIVILEGED_TOOLS,
     READ_ONLY_TOOLS,
     WRITE_TOOLS,
     category_to_annotations,
+    detect_tool_category,
 )
 
 
@@ -85,6 +87,37 @@ class TestGenerateDocumentIsWrite(BaseAssistantTest):
             category_to_annotations("write").get("readOnlyHint"),
             False,
         )
+
+
+class TestDocumentActionIsPrivileged(BaseAssistantTest):
+    """document_action can cancel, which reverses accounting and stock entries, so MCP
+    clients must see it as destructive. It keeps asking for approval by default."""
+
+    def test_document_action_classified_as_privileged(self):
+        from frappe_assistant_core.plugins.core.tools.document_action import DocumentAction
+
+        self.assertIn("document_action", PRIVILEGED_TOOLS)
+        self.assertNotIn("document_action", WRITE_TOOLS)
+        self.assertEqual(detect_tool_category(DocumentAction()), "privileged")
+
+    def test_document_action_annotation_is_destructive(self):
+        from frappe_assistant_core.api import fac_endpoint
+        from frappe_assistant_core.plugins.core.tools.document_action import DocumentAction
+
+        registry = MagicMock()
+        registry.get_tool.return_value = DocumentAction()
+        with patch.object(fac_endpoint.frappe, "get_all", return_value=[]):
+            categories = fac_endpoint._resolve_tool_categories(["document_action"], registry)
+
+        self.assertEqual(
+            category_to_annotations(categories["document_action"]),
+            {"readOnlyHint": False, "destructiveHint": True},
+        )
+
+    def test_document_action_still_requires_approval_by_default(self):
+        from frappe_assistant_core.chat.api.tools import _DEFAULT_APPROVAL_TOOLS
+
+        self.assertIn("document_action", _DEFAULT_APPROVAL_TOOLS)
 
 
 class TestResolveToolCategories(BaseAssistantTest):

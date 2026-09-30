@@ -35,5 +35,5 @@ The `run_workflow` tool executes workflow actions on documents — Submit, Appro
 
 - **Document not found** — returns `{"success": false, "error": "Document Sales Order 'X' not found"}`.
 - **Invalid action** — returns error with list of available actions for the current state.
-- **No workflow defined** — some DocTypes don't have workflows; use `submit_document` for simple submit.
+- **No workflow defined** — some DocTypes don't have workflows; use `document_action` for simple submit.
 - **Permission denied** — workflow actions are permission-controlled per state/role.

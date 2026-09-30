@@ -83,7 +83,7 @@ Then filter response fields where `reqd: 1` to know what's mandatory.
 If `get_doctype_info("Sales Invoice")` shows a Table field with `options: "Sales Invoice Item"`, call `get_doctype_info("Sales Invoice Item")` to see the child table's fields.
 
 ### Check if DocType is submittable
-Look at `is_submittable` in the response — if 1, use `submit_document` after creation.
+Look at `is_submittable` in the response — if 1, use `document_action` after creation.
 
 ## Edge Cases
 

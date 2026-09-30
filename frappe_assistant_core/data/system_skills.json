@@ -50,14 +50,14 @@
     "content_file": "delete_document.md"
   },
   {
-    "skill_id": "submit-document-usage",
-    "title": "How to Use submit_document",
-    "description": "Finalizing draft documents — submittable DocTypes, docstatus workflow, side effects",
+    "skill_id": "document-action-usage",
+    "title": "How to Use document_action",
+    "description": "Submitting drafts, cancelling submitted documents (reason required, workflow and linked-document rules) and amending cancelled ones",
     "skill_type": "Tool Usage",
-    "linked_tool": "submit_document",
+    "linked_tool": "document_action",
     "status": "Published",
     "visibility": "Public",
-    "content_file": "submit_document.md"
+    "content_file": "document_action.md"
   },
   {
     "skill_id": "search-documents-usage",

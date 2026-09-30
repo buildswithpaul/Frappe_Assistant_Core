@@ -393,10 +393,10 @@ with patch('frappe.db.exists', return_value=True), \
 - ✅ `get_document(doctype, name)`
 - ✅ `update_document(doctype, name, data)`
 - ✅ `list_documents(**arguments)` (via execute_tool)
+- ✅ `document_action(doctype, name, action="submit", reason=None)` (submit, cancel or amend)
 
 ### DocumentTools - What Tests Expected But Don't Exist:
 - ❌ `cancel_document` - Not implemented
-- ❌ `submit_document` - Not implemented
 - ❌ `duplicate_document` - Not implemented
 - ❌ `get_document_attachments` - Not implemented
 - ❌ `get_linked_documents` - Not implemented

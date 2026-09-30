@@ -18,7 +18,7 @@ const TOOL_PHRASING = {
 	run_database_query: { verb: "Queried", noun: "the database" },
 	create_document: { verb: "Prepared", noun: "new record" },
 	update_document: { verb: "Prepared", noun: "update" },
-	submit_document: { verb: "Prepared", noun: "submission" },
+	document_action: { verb: "Prepared", noun: "submission" },
 	generate_report: { verb: "Generated", noun: "report" },
 };
 

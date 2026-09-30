@@ -36,6 +36,14 @@ from typing import Any, Dict, Optional
 
 from werkzeug.wrappers import Request, Response
 
+# TEMPORARY: old tool names still accepted by tools/call, mapped to their new name.
+# Resolved before the tool is looked up, so an old name gets exactly the new tool's
+# registry entry: the same enabled/role-access filtering, category annotations and
+# execution path. Aliases are never listed in tools/list.
+# Remove "submit_document" in the release after the one that ships this rename to
+# document_action, once clients have picked up the new name from tools/list.
+TOOL_NAME_ALIASES = {"submit_document": "document_action"}
+
 
 class MCPServer:
     """
@@ -369,6 +377,13 @@ class MCPServer:
 
         tool_name = params.get("name")
         arguments = params.get("arguments", {})
+
+        # Before any check sees the name, so an old name can't be treated differently.
+        if tool_name in TOOL_NAME_ALIASES:
+            frappe.logger().info(
+                f"MCP tool alias used: {tool_name} -> {TOOL_NAME_ALIASES[tool_name]} (deprecated name)"
+            )
+            tool_name = TOOL_NAME_ALIASES[tool_name]
 
         frappe.logger().debug(f"MCP _handle_tools_call: tool={tool_name}, args={arguments}")
 

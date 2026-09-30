@@ -26,7 +26,7 @@ _DEFAULT_APPROVAL_TOOLS = frozenset(
         "create_document",
         "update_document",
         "delete_document",
-        "submit_document",
+        "document_action",
     }
 )
 
