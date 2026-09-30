@@ -3,11 +3,13 @@ import { flushPromises, mount } from "@vue/test-utils";
 
 const getBillingDetails = vi.fn();
 const saveBillingDetails = vi.fn();
+const getBillingCountries = vi.fn();
 
 vi.mock("@/api/client", () => ({
 	api: {
 		billing: {
 			getBillingDetails: (...a) => getBillingDetails(...a),
+			getBillingCountries: (...a) => getBillingCountries(...a),
 			saveBillingDetails: (...a) => saveBillingDetails(...a),
 		},
 	},
@@ -30,6 +32,12 @@ const SAVED = {
 	billing_address_line2: "Old Airport Road",
 };
 
+const COUNTRY_LIST = [
+	{ code: "IN", label: "India" },
+	{ code: "KE", label: "Kenya" },
+	{ code: "US", label: "United States" },
+];
+
 async function mountForm(details = SAVED) {
 	getBillingDetails.mockResolvedValue(details);
 	const w = mount(BillingDetailsForm);
@@ -42,6 +50,31 @@ describe("BillingDetailsForm", () => {
 		getBillingDetails.mockReset();
 		saveBillingDetails.mockReset();
 		saveBillingDetails.mockResolvedValue({ ok: true });
+		getBillingCountries.mockReset();
+		getBillingCountries.mockResolvedValue(COUNTRY_LIST);
+	});
+
+	it("offers countries beyond the nine it used to hardcode", async () => {
+		// A customer in Nairobi could only pick "United States" (prod, 2026-09-29).
+		const w = await mountForm();
+		const countries = w.findAll("#bd-country option").map((o) => o.text());
+		expect(countries).toContain("Kenya");
+	});
+
+	it("maps a saved country from the full list back to its code, and saves it", async () => {
+		const w = await mountForm({ ...SAVED, billing_country: "Kenya", billing_state: "" });
+		expect(w.find("#bd-country").element.value).toBe("KE");
+		await w.find("form").trigger("submit");
+		await flushPromises();
+		expect(saveBillingDetails.mock.calls[0][0].billing_country).toBe("KE");
+	});
+
+	it("still offers the built-in countries when the list cannot load", async () => {
+		getBillingCountries.mockRejectedValue(new Error("offline"));
+		const w = await mountForm();
+		const countries = w.findAll("#bd-country option").map((o) => o.text());
+		expect(countries).toContain("India");
+		expect(countries.length).toBeGreaterThan(1);
 	});
 
 	it("renders the saved legal name so it is not silently re-typed", async () => {

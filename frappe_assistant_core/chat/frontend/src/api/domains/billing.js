@@ -22,6 +22,9 @@ export const billing = {
 	getBillingDetails: () =>
 		getCall("frappe_assistant_core.chat.api.get_billing_details"),
 
+	getBillingCountries: () =>
+		getCall("frappe_assistant_core.chat.api.get_billing_countries"),
+
 	saveBillingDetails: (payload) =>
 		baseCall(
 			"frappe_assistant_core.chat.api.save_billing_details",
