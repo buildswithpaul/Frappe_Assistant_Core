@@ -706,6 +706,20 @@ window.FACOWidgetStreaming = {
 		}, ms);
 	},
 
+	// The (key, value) pairs an approval card lists. document_action only uses "reason"
+	// for cancel; on submit or amend (or with no reason) that row would just be empty.
+	_approval_detail_entries(toolName, input) {
+		let entries = Object.entries(input || {}).filter(([, v]) => typeof v !== "object");
+		if (toolName === "document_action") {
+			const action = String(input.action || "submit")
+				.trim()
+				.toLowerCase();
+			const reason = input.reason == null ? "" : String(input.reason).trim();
+			if (action !== "cancel" || !reason) entries = entries.filter(([k]) => k !== "reason");
+		}
+		return entries;
+	},
+
 	/**
 	 * Show an interaction card (approval or question) in the chat
 	 * @param {Object} widget - Widget instance
@@ -760,8 +774,7 @@ window.FACOWidgetStreaming = {
 			const title = titleMap[toolName] || toolName.replace(/_/g, " ");
 			const action = reason.action || title;
 			const input = data.input || {};
-			const detailsHtml = Object.entries(input)
-				.filter(([, v]) => typeof v !== "object")
+			const detailsHtml = this._approval_detail_entries(toolName, input)
 				.slice(0, 5)
 				.map(
 					([k, v]) =>

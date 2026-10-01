@@ -97,15 +97,31 @@ const approvalTitle = computed(() => {
 	return map[props.block.tool_name] || formatToolName(props.block.tool_name);
 });
 
+// document_action only uses "reason" for cancel. On submit or amend (or with no reason)
+// the row would just show "—", so it is left out.
+function detailInputFor(block) {
+	const input = block.input;
+	if (block.tool_name !== "document_action" || !input || typeof input !== "object") return input;
+	const action = String(input.action || "submit")
+		.trim()
+		.toLowerCase();
+	const reason = input.reason == null ? "" : String(input.reason).trim();
+	if (action === "cancel" && reason) return input;
+	const { reason: _unused, ...rest } = input;
+	return rest;
+}
+
+const detailInput = computed(() => detailInputFor(props.block));
+
 const hasDetails = computed(
-	() => props.block.input && Object.keys(flattenInput(props.block.input)).length > 0,
+	() => detailInput.value && Object.keys(flattenInput(detailInput.value)).length > 0,
 );
 
 const showAllFields = ref(false);
 
 const fieldSplit = computed(() => {
-	if (!props.block.input) return { primary: [], overflow: [], overflowCount: 0 };
-	return splitDetailFields(flattenInput(props.block.input), 4);
+	if (!detailInput.value) return { primary: [], overflow: [], overflowCount: 0 };
+	return splitDetailFields(flattenInput(detailInput.value), 4);
 });
 
 // Consequence subtitle — states the concrete write effect, but ONLY for tools
