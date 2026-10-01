@@ -83,6 +83,8 @@ class DocumentAction(BaseTool):
             "submitted documents. If the document is a draft, do not submit it: tell the user it is a "
             "draft and offer to delete it or leave it. REQUIRES 'reason': the user's reason copied word "
             "for word; do not summarize, shorten or rephrase it. If they gave none, ask before calling. "
+            "Don't suggest or draft a reason for the user to confirm, even if they ask you to pick one. "
+            "Ask them to type their own reason. A short one is fine. "
             "Refused if the DocType has an active Workflow (use run_workflow) or submitted documents "
             "are linked to it (they are listed; let the user decide).\n"
             "- 'amend': cancelled -> new draft copy with amended_from set. Fix it with update_document, "
@@ -118,7 +120,9 @@ class DocumentAction(BaseTool):
                     "description": (
                         "REQUIRED when action is 'cancel'. The user's reason for cancelling, copied word "
                         "for word from their message. Do not summarize, shorten or rephrase it. If the "
-                        "user hasn't given a reason, ask them before calling this tool."
+                        "user hasn't given a reason, ask them before calling this tool. Don't suggest or "
+                        "draft a reason for the user to confirm, even if they ask you to pick one. Ask "
+                        "them to type their own reason. A short one is fine."
                     ),
                 },
             },
@@ -308,7 +312,9 @@ class DocumentAction(BaseTool):
                 "error": "A reason is required to cancel a document.",
                 "suggestion": (
                     "Ask the user why they want to cancel this document, then call document_action "
-                    "again with action 'cancel' and their answer as 'reason'. Do not make up a reason."
+                    "again with action 'cancel' and their answer as 'reason'. Do not make up a reason. "
+                    "Don't suggest or draft a reason for the user to confirm, even if they ask you to "
+                    "pick one. Ask them to type their own reason. A short one is fine."
                 ),
             }
 

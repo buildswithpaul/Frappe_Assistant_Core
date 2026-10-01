@@ -27,7 +27,7 @@ Choose the action from what the user asked for, not from the document's state.
 | `doctype` | string | **Yes** | Exact DocType name |
 | `name` | string | **Yes** | Document name/ID |
 | `action` | string | No | `"submit"` (default), `"cancel"` or `"amend"`. `"submit"` only when the user explicitly asks to submit, never as a step toward cancelling. `"cancel"` only works on submitted documents: if it is a draft, do not submit it; tell the user it is a draft and offer to delete it or leave it |
-| `reason` | string | For `cancel` | REQUIRED when action is `cancel`. The user's reason for cancelling, copied word for word from their message. Do not summarize, shorten or rephrase it. If the user hasn't given a reason, ask them before calling this tool. Recorded on the document's timeline. Ignored for other actions |
+| `reason` | string | For `cancel` | REQUIRED when action is `cancel`. The user's reason for cancelling, copied word for word from their message. Do not summarize, shorten or rephrase it. If the user hasn't given a reason, ask them before calling this tool. Don't suggest or draft a reason for the user to confirm, even if they ask you to pick one. Ask them to type their own reason. A short one is fine. Recorded on the document's timeline. Ignored for other actions |
 
 Calls without `action` submit, exactly as before.
 
@@ -109,7 +109,7 @@ On non-submittable DocType:
 
 ## Cancel Rules
 
-1. **The reason is never skipped and never reworded** — `reason` is required and must not be blank. Copy it word for word from the user's message; do not summarize, shorten or rephrase it. If the user hasn't given a reason, ask them before calling this tool. Never invent one. It is added to the document's timeline as "Cancelled via FAC by <user>. Reason given by user: <reason>", and returned as `saved_reason`.
+1. **The reason is never skipped and never reworded** — `reason` is required and must not be blank. Copy it word for word from the user's message; do not summarize, shorten or rephrase it. If the user hasn't given a reason, ask them before calling this tool. Never invent one. Don't suggest or draft a reason for the user to confirm, even if they ask you to pick one. Ask them to type their own reason. A short one is fine. It is added to the document's timeline as "Cancelled via FAC by <user>. Reason given by user: <reason>", and returned as `saved_reason`.
 2. **Only submitted documents** — drafts (`docstatus=0`) and already-cancelled documents (`docstatus=2`) are refused.
    - **Never submit a draft as a step toward cancelling it.** A draft has nothing to cancel. Tell the user it is a draft and offer to delete it (`delete_document`) or leave it as it is.
 3. **Workflow DocTypes use `run_workflow`** — if the DocType has an active Workflow, the tool refuses:

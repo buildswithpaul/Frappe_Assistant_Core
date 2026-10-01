@@ -194,6 +194,7 @@ class TestCancelAction(DocumentActionTestCase):
                 self.assertFalse(result.get("success"))
                 self.assertIn("reason is required", result["error"])
                 self.assertIn("Ask the user", result["suggestion"])
+                self.assertIn("Don't suggest or draft a reason for the user to confirm", result["suggestion"])
                 self.assertNotIn("saved_reason", result)
                 self.assertEqual(self.db_docstatus(doc.name), 1)
                 self.assertEqual(self.fac_comments(doc.name), [])
@@ -228,6 +229,18 @@ class TestCancelAction(DocumentActionTestCase):
         ):
             with self.subTest(expected=expected):
                 self.assertIn(expected, text)
+
+    def test_tool_docs_forbid_suggesting_a_reason(self):
+        """The LLM must not propose a reason for the user to accept, even when asked to pick one."""
+        reason_doc = self.tool.inputSchema["properties"]["reason"]["description"]
+        for where, text in (("description", self.tool.description), ("reason parameter", reason_doc)):
+            for expected in (
+                "Don't suggest or draft a reason for the user to confirm, even if they ask you to pick one.",
+                "Ask them to type their own reason. A short one is fine.",
+                "word for word",
+            ):
+                with self.subTest(where=where, expected=expected):
+                    self.assertIn(expected, text)
 
     def test_cancel_already_cancelled_doc_is_refused(self):
         doc = self.make_doc(docstatus=2)
