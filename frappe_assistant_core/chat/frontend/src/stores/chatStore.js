@@ -778,6 +778,11 @@ export const useChatStore = defineStore("chat", () => {
 		// handleStreamResumed, so this flag must be cleared here too.
 		isSubmittingInterrupts.value = false;
 		setError(errorMessage || "Stream error occurred", errorCode || null);
+		if (errorCode === "quota_exhausted") {
+			// Lazy import: spotlightStore imports userStore/notificationStore,
+			// and a static import here would close an import cycle.
+			import("@/stores/spotlightStore").then(({ useSpotlightStore }) => useSpotlightStore().onQuotaExhausted());
+		}
 
 		// INTERRUPT_ALREADY_RESOLVED: a stale approval card was clicked
 		// (commonly because Stop was pressed in another tab, or the previous
