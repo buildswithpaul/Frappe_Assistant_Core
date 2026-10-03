@@ -12,6 +12,7 @@ const emit = defineEmits(["primary", "secondary", "dismiss"]);
 const cardRef = ref(null);
 const primaryRef = ref(null);
 const mediaFailed = ref(false);
+let openerEl = null;
 const titleId = computed(() => `spotlight-title-${props.content?.id || "x"}`);
 const bodyHtml = computed(() => (props.content?.body ? renderNotificationMarkdown(props.content.body) : ""));
 const hasMedia = computed(() => !!props.content?.media && !mediaFailed.value);
@@ -20,7 +21,12 @@ watch(
 	() => props.content?.id,
 	async (id) => {
 		mediaFailed.value = false;
-		if (!id) return;
+		if (!id) {
+			if (openerEl?.isConnected) openerEl.focus();
+			openerEl = null;
+			return;
+		}
+		openerEl ??= document.activeElement;
 		await nextTick();
 		primaryRef.value?.focus();
 	},
@@ -57,6 +63,7 @@ function onKeydown(e) {
 					:class="{ 'is-text-only': !hasMedia }"
 					data-test="spotlight-card"
 					role="dialog"
+					tabindex="-1"
 					aria-modal="true"
 					:aria-labelledby="titleId"
 					@keydown="onKeydown"
@@ -120,6 +127,7 @@ function onKeydown(e) {
 	color: var(--ql-text);
 	box-shadow: 0 24px 64px rgba(0, 0, 0, 0.35);
 }
+.spot-card:focus { outline: none; }
 .spot-card.is-text-only {
 	grid-template-columns: 1fr;
 	max-width: 520px;

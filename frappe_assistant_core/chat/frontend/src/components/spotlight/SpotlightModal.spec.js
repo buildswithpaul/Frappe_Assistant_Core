@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import { mount } from "@vue/test-utils";
 import SpotlightModal from "./SpotlightModal.vue";
 
@@ -13,6 +13,8 @@ function mountModal(props = {}) {
 }
 
 describe("SpotlightModal", () => {
+	afterEach(() => vi.unstubAllGlobals());
+
 	it("renders eyebrow, title, markdown body, highlights and both buttons", () => {
 		const w = mountModal();
 		expect(w.text()).toContain("New");
@@ -56,7 +58,7 @@ describe("SpotlightModal", () => {
 	});
 
 	it("video respects reduced motion", () => {
-		window.matchMedia = vi.fn().mockImplementation((q) => ({ matches: q.includes("reduce"), addEventListener() {}, removeEventListener() {} }));
+		vi.stubGlobal("matchMedia", vi.fn().mockImplementation((q) => ({ matches: q.includes("reduce"), addEventListener() {}, removeEventListener() {} })));
 		const w = mountModal({ content: { ...content, media: { url: "https://x/a.mp4", type: "video", alt: "Demo" } } });
 		const video = w.find("video");
 		expect(video.attributes("autoplay")).toBeUndefined();
@@ -83,5 +85,28 @@ describe("SpotlightModal", () => {
 		await w.find("[role='dialog']").trigger("keydown", { key: "Tab", shiftKey: true });
 		expect(document.activeElement).toBe(close);
 		w.unmount();
+	});
+
+	it("dismisses on Escape when focus is on the card itself", async () => {
+		const w = mountModal();
+		const card = w.find("[role='dialog']");
+		expect(card.attributes("tabindex")).toBe("-1");
+		card.element.focus();
+		await card.trigger("keydown", { key: "Escape" });
+		expect(w.emitted("dismiss")).toHaveLength(1);
+		w.unmount();
+	});
+
+	it("restores focus to the opener when closed", async () => {
+		const opener = document.createElement("button");
+		document.body.appendChild(opener);
+		opener.focus();
+		const w = mountModal();
+		await new Promise((r) => setTimeout(r, 0));
+		expect(document.activeElement).not.toBe(opener);
+		await w.setProps({ content: null });
+		expect(document.activeElement).toBe(opener);
+		w.unmount();
+		opener.remove();
 	});
 });
