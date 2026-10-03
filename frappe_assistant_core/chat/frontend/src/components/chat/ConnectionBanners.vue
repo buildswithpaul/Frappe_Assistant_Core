@@ -35,10 +35,10 @@
 			/>
 		</svg>
 		<span>{{ isQuota && !isAdmin ? memberQuotaText : error }}</span>
-		<template v-if="isQuota && isAdmin">
+		<span v-if="isQuota && isAdmin" class="banner-ctas">
 			<router-link :to="PLANS_ROUTE" class="banner-cta">See plans</router-link>
-			<router-link :to="CREDITS_ROUTE" class="banner-cta banner-cta-secondary">Buy credits</router-link>
-		</template>
+			<router-link :to="CREDITS_ROUTE" class="banner-cta">Buy credits</router-link>
+		</span>
 		<button @click="$emit('dismiss-error')" class="dismiss-btn" aria-label="Dismiss error">
 			<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 				<path
@@ -149,8 +149,7 @@ const memberQuotaText =
 }
 
 .dismiss-btn,
-.retry-btn,
-.banner-cta {
+.retry-btn {
 	margin-left: auto;
 	padding: 0.25rem 0.5rem;
 	border-radius: 0.25rem;
@@ -160,22 +159,42 @@ const memberQuotaText =
 	cursor: pointer;
 }
 
-.retry-btn,
-.banner-cta {
+.retry-btn {
 	background: rgba(146, 64, 14, 0.15);
 	border: 1px solid rgba(146, 64, 14, 0.3);
+	color: inherit;
+}
+
+.banner-ctas {
+	margin-left: auto;
+	display: inline-flex;
+	gap: 0.5rem;
+}
+
+.error-banner .banner-cta {
+	padding: 0.25rem 0.5rem;
+	border-radius: 0.25rem;
+	opacity: 0.7;
+	transition: opacity 0.15s;
+	font-size: 0.75rem;
+	cursor: pointer;
+	background: rgba(153, 27, 27, 0.12);
+	border: 1px solid rgba(153, 27, 27, 0.3);
 	color: inherit;
 	text-decoration: none;
 	display: inline-block;
 }
 
-.banner-cta-secondary {
+.error-banner .banner-cta:hover {
+	opacity: 1;
+}
+
+.banner-ctas + .dismiss-btn {
 	margin-left: 0.5rem;
 }
 
 .dismiss-btn:hover,
-.retry-btn:hover,
-.banner-cta:hover {
+.retry-btn:hover {
 	opacity: 1;
 }
 
@@ -211,8 +230,7 @@ const memberQuotaText =
 	border-bottom-color: rgba(251, 191, 36, 0.3);
 }
 
-[data-theme="dark"] .retry-btn,
-[data-theme="dark"] .banner-cta {
+[data-theme="dark"] .retry-btn {
 	background: rgba(251, 191, 36, 0.15);
 	border-color: rgba(251, 191, 36, 0.3);
 }
@@ -221,5 +239,10 @@ const memberQuotaText =
 	background-color: rgba(239, 68, 68, 0.15);
 	color: #f87171;
 	border-bottom-color: rgba(239, 68, 68, 0.3);
+}
+
+[data-theme="dark"] .error-banner .banner-cta {
+	background: rgba(248, 113, 113, 0.15);
+	border-color: rgba(248, 113, 113, 0.3);
 }
 </style>
