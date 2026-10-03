@@ -1,0 +1,147 @@
+/* Widget Spotlight: a card inside the open panel and a dot on the launcher.
+   Nothing here overlays the Desk page. */
+
+.faco-widget .faco-spotlight-dot {
+	position: absolute;
+	top: 0;
+	right: 0;
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	background: var(--faco-primary);
+	box-shadow: 0 0 0 2px #fff;
+	pointer-events: none;
+}
+
+html[data-theme="dark"] .faco-widget .faco-spotlight-dot {
+	box-shadow: 0 0 0 2px var(--faco-bg-secondary);
+}
+
+.faco-widget .faco-spotlight-card {
+	position: relative;
+	margin: 12px;
+	padding: 14px;
+	background: var(--faco-bg-primary);
+	color: var(--faco-text-primary);
+	border: 1px solid var(--faco-border-color);
+	border-radius: 12px;
+	box-shadow: 0 1px 3px var(--faco-shadow);
+}
+
+.faco-widget .faco-spot-close {
+	position: absolute;
+	top: 8px;
+	right: 8px;
+	width: 24px;
+	height: 24px;
+	padding: 0;
+	border: 0;
+	border-radius: 6px;
+	background: transparent;
+	color: var(--faco-text-muted);
+	font-size: 12px;
+	line-height: 24px;
+	cursor: pointer;
+}
+
+.faco-widget .faco-spot-close:hover {
+	background: var(--faco-hover);
+	color: var(--faco-text-primary);
+}
+
+.faco-widget .faco-spot-media {
+	display: block;
+	width: 100%;
+	max-height: 140px;
+	margin-bottom: 10px;
+	border-radius: 10px;
+	object-fit: cover;
+}
+
+.faco-widget .faco-spot-eyebrow {
+	margin-bottom: 4px;
+	padding-right: 24px;
+	color: var(--faco-text-muted);
+	font-size: 11px;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+}
+
+.faco-widget .faco-spot-title {
+	padding-right: 24px;
+	font-size: 15px;
+	font-weight: 600;
+	line-height: 1.3;
+}
+
+.faco-widget .faco-spot-body {
+	margin-top: 6px;
+	color: var(--faco-text-secondary);
+	font-size: 13px;
+	line-height: 1.45;
+	white-space: pre-wrap;
+}
+
+.faco-widget .faco-spot-highlights {
+	margin: 10px 0 0;
+	padding: 0;
+	list-style: none;
+	color: var(--faco-text-secondary);
+	font-size: 13px;
+}
+
+.faco-widget .faco-spot-highlights li {
+	padding: 2px 0 2px 18px;
+	position: relative;
+}
+
+.faco-widget .faco-spot-highlights li::before {
+	content: "\2726";
+	position: absolute;
+	left: 0;
+	color: var(--faco-primary);
+}
+
+.faco-widget .faco-spot-primary,
+.faco-widget .faco-spot-secondary {
+	display: block;
+	width: 100%;
+	padding: 8px 12px;
+	border-radius: 8px;
+	font-size: 13px;
+	cursor: pointer;
+}
+
+.faco-widget .faco-spot-primary {
+	margin-top: 12px;
+	border: 0;
+	background: var(--faco-primary);
+	color: #fff;
+	font-weight: 600;
+}
+
+.faco-widget .faco-spot-primary:hover {
+	background: var(--faco-primary-hover);
+}
+
+.faco-widget .faco-spot-secondary {
+	margin-top: 6px;
+	border: 0;
+	background: transparent;
+	color: var(--faco-text-secondary);
+}
+
+.faco-widget .faco-spot-secondary:hover {
+	background: var(--faco-hover);
+}
+
+.faco-widget .faco-spotlight-notice {
+	margin: 12px 12px 0;
+	padding: 8px 12px;
+	background: var(--faco-bg-tertiary);
+	color: var(--faco-text-secondary);
+	border: 1px solid var(--faco-border-color);
+	border-radius: 8px;
+	font-size: 12px;
+	line-height: 1.4;
+}
