@@ -31,6 +31,11 @@ describe("cycleStart / nextResetDate", () => {
 		expect(nextResetDate({ billing_cycle_start: "2026-09-24" })).toBe("2026-10-24");
 		expect(nextResetDate({})).toBeNull();
 	});
+	it("clamps month-end overflow", () => {
+		expect(nextResetDate({ billing_cycle_start: "2026-01-31" })).toBe("2026-02-28");
+		expect(nextResetDate({ billing_cycle_start: "2025-12-31" })).toBe("2026-01-31");
+		expect(nextResetDate({ billing_cycle_start: "2026-03-31" })).toBe("2026-04-30");
+	});
 	it("localDate is the viewer's calendar day", () => {
 		expect(localDate(NOW)).toBe("2026-10-03");
 	});
@@ -98,6 +103,22 @@ describe("announcementContent", () => {
 		const c = announcementContent({ id: "n2", title: "t", action_label: "Read", action_url: "https://x.com" });
 		expect(c.media).toBeNull();
 		expect(c.primary).toEqual({ label: "Read", url: "https://x.com" });
+	});
+	it("rejects malicious route and url targets", () => {
+		const c1 = announcementContent({ id: "n3", title: "t", action_label: "Go", action_route: "//evil.com" });
+		expect(c1.primary).toEqual({ label: "Go" });
+		const c2 = announcementContent({ id: "n4", title: "t", action_label: "Go", action_route: "https://evil" });
+		expect(c2.primary).toEqual({ label: "Go" });
+		const c3 = announcementContent({ id: "n5", title: "t", action_label: "Go", action_url: "javascript:alert(1)" });
+		expect(c3.primary).toEqual({ label: "Go" });
+	});
+	it("uses 'Got it' when action_label is empty", () => {
+		const c = announcementContent({ id: "n6", title: "t", action_label: "", action_route: "/test" });
+		expect(c.primary).toEqual({ label: "Got it", route: "/test" });
+	});
+	it("no targets and no label uses 'Got it'", () => {
+		const c = announcementContent({ id: "n7", title: "t", action_label: "" });
+		expect(c.primary).toEqual({ label: "Got it" });
 	});
 });
 

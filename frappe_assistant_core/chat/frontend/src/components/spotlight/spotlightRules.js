@@ -25,8 +25,8 @@ export function nextResetDate(status) {
 	const raw = status?.billing_cycle_start;
 	if (!raw) return null;
 	const [y, m, d] = String(raw).slice(0, 10).split("-").map(Number);
-	const next = new Date(y, m, d); // month index m = next month
-	return localDate(next);
+	const last = new Date(y, m + 1, 0).getDate();
+	return localDate(new Date(y, m, Math.min(d, last)));
 }
 
 export function quotaThreshold(status) {
@@ -61,10 +61,10 @@ export function quotaContent(status) {
 		kind: "quota",
 		id: `quota-${threshold}`,
 		threshold,
-		eyebrow: upgrade ? `With ${upgrade.plan} you get` : "Credits",
+		eyebrow: upgrade?.plan ? `With ${upgrade.plan} you get` : "Credits",
 		title,
 		body,
-		highlights: upgrade?.benefits ? [...upgrade.benefits] : [],
+		highlights: Array.isArray(upgrade?.benefits) ? [...upgrade.benefits] : [],
 		media: { art: "quota" },
 		primary: topPlan
 			? { label: "Buy credits", route: CREDITS_ROUTE }
@@ -74,9 +74,24 @@ export function quotaContent(status) {
 }
 
 export function announcementContent(n) {
-	const primary = { label: n.action_label };
-	if (n.action_route) primary.route = n.action_route;
-	else if (n.action_url) primary.url = n.action_url;
+	const label = n.action_label && String(n.action_label).trim() ? n.action_label : "Got it";
+	const primary = { label };
+
+	// Validate route: must start with / (not // or /\) and have no whitespace
+	if (n.action_route && /^\/(?![/\\])/.test(n.action_route) && !/\s/.test(n.action_route)) {
+		primary.route = n.action_route;
+	} else if (n.action_url) {
+		// Validate URL: must parse and have http/https protocol
+		try {
+			const url = new URL(n.action_url);
+			if (url.protocol === "http:" || url.protocol === "https:") {
+				primary.url = n.action_url;
+			}
+		} catch {
+			// Invalid URL or not a URL, skip
+		}
+	}
+
 	return {
 		kind: "announcement",
 		id: n.id,
