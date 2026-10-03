@@ -950,6 +950,7 @@ class FACOWidget {
 					is_unlimited: false,
 				}),
 			);
+			this.$widget.find(".faco-messages").scrollTop(0);
 			return;
 		}
 

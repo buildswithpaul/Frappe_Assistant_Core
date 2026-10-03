@@ -256,7 +256,6 @@
 				this._open(content.secondary);
 			});
 			$card.find("[data-spot='dismiss']").on("click", () => this._dismiss(widget, content));
-			$messages.scrollTop(0);
 		},
 
 		render_notice(widget, text) {

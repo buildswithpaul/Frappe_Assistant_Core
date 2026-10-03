@@ -170,12 +170,11 @@ describe("widget spotlight DOM", () => {
 		expect(document.querySelector(".faco-spotlight-card")).toBeNull();
 	});
 
-	it("rendering a card scrolls the messages back to the top", () => {
+	it("rendering a card leaves the conversation scroll position alone", () => {
 		const w = fakeWidget({ quota: { credits_exhausted: true } });
-		document.querySelector(".faco-messages").scrollTop = 500;
 		const spy = vi.spyOn(document.querySelector(".faco-messages"), "scrollTop", "set");
 		W.render_in_panel(w);
-		expect(spy).toHaveBeenCalledWith(0);
+		expect(spy).not.toHaveBeenCalled();
 	});
 
 	it("rendering an announcement clears the launcher dot", () => {
