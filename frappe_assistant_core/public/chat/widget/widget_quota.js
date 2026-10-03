@@ -35,14 +35,13 @@ window.FACOWidgetQuota = {
 			}
 
 			const moment = this.check_quota_warnings(widget, data);
-			if (moment && moment.kind === "overage" && widget.is_open) {
-				window.FACOWidgetSpotlight.render_notice(
-					widget,
-					__(
-						"Your monthly credits are used up — FAC Chat is now drawing on your prepaid credits ({0} left).",
-						[this.format_credits(data.credit_balance)],
-					),
-				);
+			if (moment && moment.kind === "overage") {
+				// Decided at Desk load, usually with the panel closed: the notice
+				// is shown (and the once-per-cycle key written) on the next open.
+				widget.overage_notice_due = true;
+				if (widget.is_open) {
+					this.show_pending_overage_notice(widget);
+				}
 			}
 			window.FACOWidgetSpotlight.update_dot(widget);
 
@@ -51,6 +50,35 @@ window.FACOWidgetQuota = {
 			FACOLogger.error("Error fetching quota status:", error);
 			return null;
 		}
+	},
+
+	/**
+	 * Render the overage notice if one is due, and only then mark it shown
+	 * for this billing cycle, so a notice decided while the panel was closed
+	 * is not spent unseen.
+	 * @param {Object} widget - Widget instance
+	 */
+	show_pending_overage_notice(widget) {
+		const data = widget.quota_status;
+		if (!widget.overage_notice_due || !data) {
+			return;
+		}
+		const S = window.FACOWidgetSpotlight;
+		widget.overage_notice_due = false;
+		S.render_notice(
+			widget,
+			__(
+				"Your monthly credits are used up — FAC Chat is now drawing on your prepaid credits ({0} left).",
+				[this.format_credits(data.credit_balance)],
+			),
+		);
+		S.storage_set(this.overage_key(widget, data), "1");
+	},
+
+	overage_key(widget, data) {
+		const S = window.FACOWidgetSpotlight;
+		const user = widget.user || (window.frappe && window.frappe.session && window.frappe.session.user) || "";
+		return `fac_quota_moment:${user}:${S.cycle_start(data)}:overage`;
 	},
 
 	/**
@@ -103,8 +131,9 @@ window.FACOWidgetQuota = {
 	 * purchase flows are admin-gated); if their request later fails because
 	 * the tenant is at 100%, the streaming layer surfaces the API error inline.
 	 *
-	 * The overage switchover is marked here as shown, so it is announced once
-	 * per billing cycle. The 80/100 moments are marked when dismissed.
+	 * The overage switchover is marked shown by show_pending_overage_notice
+	 * when it renders, so it is announced once per billing cycle. The 80/100
+	 * moments are marked when dismissed.
 	 * @param {Object} widget - Widget instance
 	 * @param {Object} data - Payload from get_quota_status
 	 * @returns {Object|null} {kind: "overage"}, a quota_content object, or null
@@ -120,12 +149,7 @@ window.FACOWidgetQuota = {
 		// Quota spent, prepaid credits covering the difference: a working
 		// state, not a failure. Mark the switchover once, then stay quiet.
 		if (data.in_overage && !data.credits_exhausted) {
-			const key = `fac_quota_moment:${user}:${cycle}:overage`;
-			if (S.storage_get(key)) {
-				return null;
-			}
-			S.storage_set(key, "1");
-			return { kind: "overage" };
+			return S.storage_get(this.overage_key(widget, data)) ? null : { kind: "overage" };
 		}
 
 		const threshold = S.quota_threshold(data);

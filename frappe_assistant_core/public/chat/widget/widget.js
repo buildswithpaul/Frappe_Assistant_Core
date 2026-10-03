@@ -943,7 +943,12 @@ class FACOWidget {
 		if (FACOWidgetQuota.is_blocked(this.quota_status) && this.quota_status.is_admin) {
 			FACOWidgetSpotlight.render_in_panel(
 				this,
-				FACOWidgetSpotlight.quota_content({ ...this.quota_status, credits_exhausted: true }),
+				FACOWidgetSpotlight.quota_content({
+					...this.quota_status,
+					credits_exhausted: true,
+					is_fallback: false,
+					is_unlimited: false,
+				}),
 			);
 			return;
 		}
@@ -1343,6 +1348,7 @@ class FACOWidget {
 				FACOWidgetOnboarding.show_setup_required(this, "needs_consent");
 			} else {
 				FACOWidgetSpotlight.render_in_panel(this);
+				FACOWidgetQuota.show_pending_overage_notice(this);
 				this.$widget.find(".faco-input").focus();
 			}
 		});

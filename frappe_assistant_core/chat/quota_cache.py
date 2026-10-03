@@ -96,6 +96,7 @@ def update_from_ar(subscription: dict) -> None:
         "credits_per_user",
         "min_users",
         "credit_balance",
+        "billing_cycle_start",
         "features",
     ):
         if key in subscription:

@@ -231,6 +231,7 @@
 			if (!content) return;
 			if (content.kind === "announcement") {
 				this.storage_set(this.daily_key(this._user(widget)), this.local_date());
+				this.update_dot(widget);
 			}
 			const highlights = (content.highlights || []).map((h) => `<li>${esc(h)}</li>`).join("");
 			const html = `
@@ -255,6 +256,7 @@
 				this._open(content.secondary);
 			});
 			$card.find("[data-spot='dismiss']").on("click", () => this._dismiss(widget, content));
+			$messages.scrollTop(0);
 		},
 
 		render_notice(widget, text) {

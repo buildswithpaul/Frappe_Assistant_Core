@@ -55,7 +55,7 @@ export const useSpotlightStore = defineStore("spotlight", () => {
 			}
 		}
 
-		const announcement = pickAnnouncement(useNotificationStore().notifications);
+		const announcement = pickAnnouncement(useNotificationStore().activeNotifications);
 		if (announcement && storage.get(DAILY_KEY(who)) !== localDate()) {
 			current.value = announcementContent(announcement);
 			storage.set(DAILY_KEY(who), localDate());
@@ -66,7 +66,12 @@ export const useSpotlightStore = defineStore("spotlight", () => {
 	async function onQuotaExhausted() {
 		if (!useUserStore().isAdmin || blockedShownThisLoad) return;
 		blockedShownThisLoad = true;
-		quotaStatus = { ...((await fetchQuota()) || {}), credits_exhausted: true };
+		quotaStatus = {
+			...((await fetchQuota()) || {}),
+			credits_exhausted: true,
+			is_fallback: false,
+			is_unlimited: false,
+		};
 		current.value = quotaContent(quotaStatus);
 		shownThisLoad = true;
 	}

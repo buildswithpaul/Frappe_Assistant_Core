@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
@@ -91,11 +91,11 @@ describe("widget quota moments", () => {
 		expect(moment).toEqual({ kind: "overage" });
 	});
 
-	it("announces the overage only once per cycle", () => {
+	it("keeps announcing the overage until the notice actually renders", () => {
 		const status = { ...admin, percentage_used: 100, in_overage: true, credit_balance: 500, billing_cycle_start: "2026-09-24" };
 		expect(check(status)).toEqual({ kind: "overage" });
-		expect(localStorage.getItem(`fac_quota_moment:${USER}:2026-09-24:overage`)).toBe("1");
-		expect(check(status)).toBeNull();
+		expect(check(status)).toEqual({ kind: "overage" });
+		expect(localStorage.getItem(`fac_quota_moment:${USER}:2026-09-24:overage`)).toBeNull();
 	});
 
 	it("returns the 100 moment once every credit is gone", () => {
@@ -127,19 +127,48 @@ describe("widget quota moments", () => {
 });
 
 describe("overage notice", () => {
-	it("names the remaining balance so the admin knows the runway", async () => {
-		const status = { success: true, is_admin: true, percentage_used: 100, in_overage: true, credit_balance: 25000 };
-		const render_notice = vi.fn();
-		const update_dot = vi.fn();
-		window.FACOWidgetSpotlight = { ...Spotlight, render_notice, update_dot };
+	const status = { success: true, is_admin: true, percentage_used: 100, in_overage: true, credit_balance: 25000, billing_cycle_start: "2026-09-24" };
+	const key = `fac_quota_moment:${USER}:2026-09-24:overage`;
+	let render_notice;
+
+	beforeEach(() => {
+		render_notice = vi.fn();
+		window.FACOWidgetSpotlight = { ...Spotlight, render_notice, update_dot: vi.fn() };
 		globalThis.frappe = { session: { user: USER }, call: vi.fn(async () => ({ message: status })) };
 		globalThis.FACOLogger = { error: vi.fn() };
+	});
 
+	afterEach(() => {
+		window.FACOWidgetSpotlight = Spotlight;
+	});
+
+	it("names the remaining balance and marks the cycle once it renders", async () => {
 		await Quota.fetch_quota_status({ user: USER, is_open: true });
 
 		expect(render_notice).toHaveBeenCalledTimes(1);
 		expect(render_notice.mock.calls[0][1]).toContain("25.0K");
-		expect(update_dot).toHaveBeenCalled();
-		window.FACOWidgetSpotlight = Spotlight;
+		expect(localStorage.getItem(key)).toBe("1");
+	});
+
+	it("holds the notice while the panel is closed and shows it on the next open", async () => {
+		const widget = { user: USER, is_open: false };
+		await Quota.fetch_quota_status(widget);
+
+		expect(render_notice).not.toHaveBeenCalled();
+		expect(localStorage.getItem(key)).toBeNull();
+
+		widget.is_open = true;
+		Quota.show_pending_overage_notice(widget);
+		expect(render_notice).toHaveBeenCalledTimes(1);
+		expect(localStorage.getItem(key)).toBe("1");
+
+		Quota.show_pending_overage_notice(widget);
+		expect(render_notice).toHaveBeenCalledTimes(1);
+	});
+
+	it("does not show it again in a cycle where it was already seen", async () => {
+		localStorage.setItem(key, "1");
+		await Quota.fetch_quota_status({ user: USER, is_open: true });
+		expect(render_notice).not.toHaveBeenCalled();
 	});
 });
