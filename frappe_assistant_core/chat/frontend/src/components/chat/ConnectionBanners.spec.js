@@ -14,11 +14,17 @@ describe("ConnectionBanners quota CTA", () => {
 	it("members are told to ask their admin, with no links", () => {
 		const w = mk({ errorCode: "quota_exhausted", isAdmin: false });
 		expect(w.text()).toContain("Ask your workspace admin");
+		expect(w.text()).not.toContain(AR_TEXT);
 		expect(w.findAllComponents(RouterLinkStub)).toHaveLength(0);
 	});
 	it("other errors are unchanged", () => {
 		const w = mk({ errorCode: "network", isAdmin: true });
 		expect(w.text()).toContain(AR_TEXT);
 		expect(w.findAllComponents(RouterLinkStub)).toHaveLength(0);
+	});
+	it("dismiss emits dismiss-error even for quota errors", () => {
+		const w = mk({ errorCode: "quota_exhausted", isAdmin: false });
+		w.find(".dismiss-btn").trigger("click");
+		expect(w.emitted("dismiss-error")).toBeTruthy();
 	});
 });
