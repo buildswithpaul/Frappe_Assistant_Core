@@ -81,6 +81,14 @@ describe("spotlightStore", () => {
 		expect(s.current).toBeNull();
 	});
 
+	it("fetches quota status at most once per page load", async () => {
+		const s = setup({ quota: { percentage_used: 10 } });
+		await s.evaluate();
+		await s.evaluate();
+		await s.evaluate();
+		expect(getQuotaStatus).toHaveBeenCalledTimes(1);
+	});
+
 	it("does nothing while the tour is open", async () => {
 		const s = setup({ admin: false, notifications: [modalN] });
 		useTourStore().isOpen = true;

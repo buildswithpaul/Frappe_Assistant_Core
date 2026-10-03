@@ -23,6 +23,7 @@ export const useSpotlightStore = defineStore("spotlight", () => {
 	let shownThisLoad = false;
 	let blockedShownThisLoad = false;
 	let quotaStatus = null;
+	let quotaState = "idle"; // idle | pending | done
 
 	async function fetchQuota() {
 		try {
@@ -39,8 +40,13 @@ export const useSpotlightStore = defineStore("spotlight", () => {
 		if (shownThisLoad || current.value || useTourStore().isOpen || user.registrationStatus !== "ready") return;
 		const who = user.user;
 
-		if (user.isAdmin) {
-			quotaStatus = await fetchQuota();
+		if (user.isAdmin && quotaState === "pending") return; // the in-flight check decides first
+		if (user.isAdmin && quotaState === "idle") {
+			quotaState = "pending";
+			const status = await fetchQuota();
+			quotaState = "done";
+			if (shownThisLoad || current.value) return;
+			quotaStatus = status;
 			const threshold = quotaThreshold(quotaStatus);
 			if (threshold && !storage.get(QUOTA_KEY(who, cycleStart(quotaStatus), threshold))) {
 				current.value = quotaContent(quotaStatus);
