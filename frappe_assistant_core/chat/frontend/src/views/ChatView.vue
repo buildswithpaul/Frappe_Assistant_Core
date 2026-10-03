@@ -53,6 +53,8 @@
 					:connection-visible="connectionVisible"
 					:socket-error="socketError"
 					:error="error"
+					:error-code="chatStore.errorCode"
+					:is-admin="isAdmin"
 					:needs-reconnect="needsReconnect"
 					:reconnecting="reconnecting"
 					@retry="retryConnection"

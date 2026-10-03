@@ -34,7 +34,11 @@
 				d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
 			/>
 		</svg>
-		<span>{{ error }}</span>
+		<span>{{ isQuota && !isAdmin ? memberQuotaText : error }}</span>
+		<template v-if="isQuota && isAdmin">
+			<router-link :to="PLANS_ROUTE" class="banner-cta">See plans</router-link>
+			<router-link :to="CREDITS_ROUTE" class="banner-cta banner-cta-secondary">Buy credits</router-link>
+		</template>
 		<button @click="$emit('dismiss-error')" class="dismiss-btn" aria-label="Dismiss error">
 			<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 				<path
@@ -67,15 +71,24 @@
 </template>
 
 <script setup>
-defineProps({
+import { computed } from "vue";
+import { PLANS_ROUTE, CREDITS_ROUTE } from "@/components/spotlight/spotlightRules";
+
+const props = defineProps({
 	connectionVisible: { type: Boolean, default: false },
 	socketError: { type: String, default: null },
 	error: { type: String, default: null },
 	needsReconnect: { type: Boolean, default: false },
 	reconnecting: { type: Boolean, default: false },
+	errorCode: { type: String, default: null },
+	isAdmin: { type: Boolean, default: false },
 });
 
 defineEmits(["retry", "dismiss-error", "reconnect"]);
+
+const isQuota = computed(() => props.errorCode === "quota_exhausted");
+const memberQuotaText =
+	"Your workspace has used all of this month's credits. Ask your workspace admin to upgrade or buy credits.";
 </script>
 
 <style scoped>
@@ -136,7 +149,8 @@ defineEmits(["retry", "dismiss-error", "reconnect"]);
 }
 
 .dismiss-btn,
-.retry-btn {
+.retry-btn,
+.banner-cta {
 	margin-left: auto;
 	padding: 0.25rem 0.5rem;
 	border-radius: 0.25rem;
@@ -146,14 +160,22 @@ defineEmits(["retry", "dismiss-error", "reconnect"]);
 	cursor: pointer;
 }
 
-.retry-btn {
+.retry-btn,
+.banner-cta {
 	background: rgba(146, 64, 14, 0.15);
 	border: 1px solid rgba(146, 64, 14, 0.3);
 	color: inherit;
+	text-decoration: none;
+	display: inline-block;
+}
+
+.banner-cta-secondary {
+	margin-left: 0.5rem;
 }
 
 .dismiss-btn:hover,
-.retry-btn:hover {
+.retry-btn:hover,
+.banner-cta:hover {
 	opacity: 1;
 }
 
@@ -189,7 +211,8 @@ defineEmits(["retry", "dismiss-error", "reconnect"]);
 	border-bottom-color: rgba(251, 191, 36, 0.3);
 }
 
-[data-theme="dark"] .retry-btn {
+[data-theme="dark"] .retry-btn,
+[data-theme="dark"] .banner-cta {
 	background: rgba(251, 191, 36, 0.15);
 	border-color: rgba(251, 191, 36, 0.3);
 }
