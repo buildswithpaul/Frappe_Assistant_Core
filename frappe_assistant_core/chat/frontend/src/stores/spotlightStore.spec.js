@@ -138,6 +138,20 @@ describe("spotlightStore", () => {
 		expect(s.current).toBeNull();
 	});
 
+	it("quota_exhausted forces the 100 moment even when the status is a fallback", async () => {
+		const s = setup({ quota: { is_fallback: true, percentage_used: 0, is_unlimited: true } });
+		await s.onQuotaExhausted();
+		expect(s.current.threshold).toBe(100);
+		expect(s.current.title).not.toContain("0%");
+	});
+
+	it("evaluate respects locally dismissed notifications", async () => {
+		const s = setup({ admin: false, notifications: [modalN] });
+		useNotificationStore().dismiss("n1");
+		await s.evaluate();
+		expect(s.current).toBeNull();
+	});
+
 	it("quota_exhausted is ignored for non-admins", async () => {
 		const s = setup({ admin: false, quota: { credits_exhausted: true } });
 		await s.onQuotaExhausted();

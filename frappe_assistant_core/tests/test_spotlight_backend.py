@@ -2,7 +2,6 @@
 
 from unittest.mock import patch
 
-import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from frappe_assistant_core.chat.api.billing.quota import get_quota_status
@@ -38,11 +37,17 @@ class TestQuotaSpotlightFields(FrappeTestCase):
         self.assertNotIn("upgrade", get_quota_status())
 
     @patch("frappe_assistant_core.chat.api.billing._fetch_live_quota", return_value=None)
-    def test_fallback_path_has_cycle_key(self, _live):
+    @patch("frappe_assistant_core.chat.quota_cache.get_quota_snapshot")
+    def test_fallback_path_has_cycle_key(self, snapshot, _live):
+        snapshot.return_value = {
+            "plan": "Free",
+            "quota_total": 1000,
+            "quota_used": 850,
+            "billing_cycle_start": "2026-09-24",
+        }
         out = get_quota_status()
-        # Only check billing_cycle_start when success is True (fallback may fail)
-        if out.get("success"):
-            self.assertIn("billing_cycle_start", out)
+        self.assertTrue(out["success"])
+        self.assertEqual(out["billing_cycle_start"], "2026-09-24")
 
 
 class TestSpaCsp(FrappeTestCase):

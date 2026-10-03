@@ -30,6 +30,12 @@ class Wrapped {
 		this.els.forEach((el) => el.insertAdjacentHTML("afterbegin", html));
 		return this;
 	}
+	scrollTop(value) {
+		this.els.forEach((el) => {
+			el.scrollTop = value;
+		});
+		return this;
+	}
 	on(event, handler) {
 		this.els.forEach((el) => el.addEventListener(event, handler));
 		return this;
@@ -162,6 +168,22 @@ describe("widget spotlight DOM", () => {
 			}),
 		);
 		expect(document.querySelector(".faco-spotlight-card")).toBeNull();
+	});
+
+	it("rendering a card scrolls the messages back to the top", () => {
+		const w = fakeWidget({ quota: { credits_exhausted: true } });
+		document.querySelector(".faco-messages").scrollTop = 500;
+		const spy = vi.spyOn(document.querySelector(".faco-messages"), "scrollTop", "set");
+		W.render_in_panel(w);
+		expect(spy).toHaveBeenCalledWith(0);
+	});
+
+	it("rendering an announcement clears the launcher dot", () => {
+		const w = fakeWidget({ admin: false, notifications: LISTS[2] });
+		W.update_dot(w);
+		expect(document.querySelector(".faco-spotlight-dot")).not.toBeNull();
+		W.render_in_panel(w);
+		expect(document.querySelector(".faco-spotlight-dot")).toBeNull();
 	});
 
 	it("rendering again replaces the card instead of stacking", () => {

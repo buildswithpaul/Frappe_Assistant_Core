@@ -83,6 +83,14 @@ class TestQuotaFallbackNeverPersisted(unittest.TestCase):
         self.assertEqual(cached["quota_total"], 0)
         self.assertNotIn("is_fallback", cached)
 
+    def test_update_from_ar_keeps_the_billing_cycle_start(self):
+        with self._ar_down():
+            quota_cache.update_from_ar(
+                {"plan": "Free", "credit_quota": 10, "billing_cycle_start": "2026-09-24"}
+            )
+
+        self.assertEqual(self.store[quota_cache.CACHE_KEY]["billing_cycle_start"], "2026-09-24")
+
     def test_real_seed_is_cached_with_features(self):
         with patch(CLIENT, return_value=_client(TENANT_INFO)):
             snap = quota_cache.get_quota_snapshot()
