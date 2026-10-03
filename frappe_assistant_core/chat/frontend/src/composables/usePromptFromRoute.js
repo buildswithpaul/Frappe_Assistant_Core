@@ -9,9 +9,22 @@ export const MAX_PROMPT_CHARS = 2000;
  */
 export function usePromptFromRoute({ route, router, pendingPrompt, isNewChat }) {
 	function apply(prompt) {
-		if (typeof prompt !== "string" || !prompt.trim() || !isNewChat()) return;
-		pendingPrompt.value = prompt.slice(0, MAX_PROMPT_CHARS);
-		router.replace({ ...route, query: { ...route.query, prompt: undefined } });
+		// Always strip the prompt query param to prevent reloads from re-filling
+		const hasPromptParam = typeof prompt === "string";
+		const shouldApply = hasPromptParam && prompt.trim() && isNewChat();
+
+		if (shouldApply) {
+			pendingPrompt.value = prompt.slice(0, MAX_PROMPT_CHARS);
+		}
+
+		// Strip query param whether accepted or rejected
+		if (hasPromptParam) {
+			router.replace({
+				path: route.path,
+				query: { ...route.query, prompt: undefined },
+				hash: route.hash,
+			});
+		}
 	}
 	watch(() => route.query.prompt, apply, { immediate: true });
 }
