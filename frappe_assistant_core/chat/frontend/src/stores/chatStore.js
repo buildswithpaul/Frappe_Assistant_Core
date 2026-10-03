@@ -10,6 +10,7 @@ import { createSendQueue } from "./chat/sendQueue";
 import { isApprovalInteraction } from "./chat/interactionRegime";
 import { useComposerModesStore } from "./composerModesStore";
 import { useModelStore } from "./modelStore";
+import { useSpotlightStore } from "./spotlightStore";
 
 // Every JSON column a message row can carry. Both parse loops below drive
 // from this, so the next JSON column is added in one place — model_breakdown
@@ -779,9 +780,7 @@ export const useChatStore = defineStore("chat", () => {
 		isSubmittingInterrupts.value = false;
 		setError(errorMessage || "Stream error occurred", errorCode || null);
 		if (errorCode === "quota_exhausted") {
-			// Lazy import: spotlightStore imports userStore/notificationStore,
-			// and a static import here would close an import cycle.
-			import("@/stores/spotlightStore").then(({ useSpotlightStore }) => useSpotlightStore().onQuotaExhausted());
+			useSpotlightStore().onQuotaExhausted();
 		}
 
 		// INTERRUPT_ALREADY_RESOLVED: a stale approval card was clicked
