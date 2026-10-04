@@ -52,10 +52,8 @@
 			</div>
 
 			<!-- Summary Text -->
-			<span class="thinking-summary">
-				<template v-if="block.isStreaming">Thinking...</template>
-				<template v-else>{{ summaryText }}</template>
-			</span>
+			<span v-if="block.isStreaming" class="thinking-summary">Thinking...</span>
+			<span v-else class="thinking-summary" v-html="summaryHtml"></span>
 
 			<!-- Duration -->
 			<span v-if="duration" class="thinking-duration">{{ duration }}</span>
@@ -88,6 +86,7 @@
 import { computed } from "vue";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
+import { thinkingHeaderHtml } from "./thinkingHeader";
 
 const props = defineProps({
 	block: {
@@ -98,22 +97,7 @@ const props = defineProps({
 
 defineEmits(["toggle"]);
 
-// Extract a meaningful summary from thinking content
-const summaryText = computed(() => {
-	const content = (props.block.content || "").trim();
-	if (!content) return "Thought about the request";
-
-	// Take the first line or first sentence
-	const firstLine = content.split("\n")[0].trim();
-
-	// If the first line is short enough, use it
-	if (firstLine.length <= 100) return firstLine;
-
-	// Otherwise truncate at a word boundary
-	const truncated = firstLine.substring(0, 100);
-	const lastSpace = truncated.lastIndexOf(" ");
-	return (lastSpace > 40 ? truncated.substring(0, lastSpace) : truncated) + "...";
-});
+const summaryHtml = computed(() => thinkingHeaderHtml(props.block.content));
 
 // Render markdown for expanded view
 const renderedContent = computed(() => {
@@ -200,6 +184,18 @@ const duration = computed(() => {
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
+}
+
+.thinking-summary :deep(strong) {
+	font-weight: 600;
+}
+
+.thinking-summary :deep(code) {
+	padding: 0 0.25rem;
+	background-color: var(--ql-subtle);
+	border-radius: 0.1875rem;
+	font-size: 0.9em;
+	font-family: "SF Mono", "Monaco", "Cascadia Code", monospace;
 }
 
 .thinking-streaming .thinking-summary {
