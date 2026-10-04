@@ -72,6 +72,19 @@ describe("notificationStore", () => {
 		expect(store.unreadCount).toBe(2); // o1 + h1; d1 is dismissed
 	});
 
+	it("a high-priority modal item is not the banner; a banner item still is", async () => {
+		api.notifications.get.mockResolvedValue({
+			notifications: [
+				N({ id: "m1", priority: "high", display_style: "modal" }),
+				N({ id: "h1", priority: "high" }),
+			],
+			user: "a@x.com",
+		});
+		const store = useNotificationStore();
+		await store.refresh();
+		expect(store.bannerNotification.id).toBe("h1");
+	});
+
 	it("dismiss is optimistic, hits the wire, and refuses non-dismissible", async () => {
 		api.notifications.get.mockResolvedValue({
 			notifications: [N({ id: "h1" }), N({ id: "o1", type: "outage", dismissible: false })],

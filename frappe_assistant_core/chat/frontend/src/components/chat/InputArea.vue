@@ -281,7 +281,8 @@ watch(
 				textInput.value?.focus();
 			});
 		}
-	}
+	},
+	{ immediate: true }
 );
 
 function autoResize() {

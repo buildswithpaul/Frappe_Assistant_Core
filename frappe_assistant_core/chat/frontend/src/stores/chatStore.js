@@ -10,6 +10,7 @@ import { createSendQueue } from "./chat/sendQueue";
 import { isApprovalInteraction } from "./chat/interactionRegime";
 import { useComposerModesStore } from "./composerModesStore";
 import { useModelStore } from "./modelStore";
+import { useSpotlightStore } from "./spotlightStore";
 
 // Every JSON column a message row can carry. Both parse loops below drive
 // from this, so the next JSON column is added in one place — model_breakdown
@@ -787,6 +788,9 @@ export const useChatStore = defineStore("chat", () => {
 		// The hand-picked model failed or is resting: the remedy is another model.
 		if (errorCode === "MODEL_FAILED" || errorCode === "MODEL_TEMPORARILY_UNAVAILABLE") {
 			useModelStore().openPicker();
+		}
+		if (errorCode === "quota_exhausted") {
+			useSpotlightStore().onQuotaExhausted();
 		}
 
 		// INTERRUPT_ALREADY_RESOLVED: a stale approval card was clicked

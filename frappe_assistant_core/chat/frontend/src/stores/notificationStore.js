@@ -41,7 +41,7 @@ export const useNotificationStore = defineStore("notifications", () => {
 	const bannerNotification = computed(
 		() =>
 			activeNotifications.value.find(
-				(n) => n.priority === "high" && !OUTAGE_TYPES.has(n.type)
+				(n) => n.priority === "high" && !OUTAGE_TYPES.has(n.type) && n.display_style !== "modal"
 			) || null
 	);
 	const unreadCount = computed(

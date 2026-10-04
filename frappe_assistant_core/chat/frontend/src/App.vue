@@ -36,6 +36,7 @@
 
 		<!-- Global tour modal — opens via tourStore.open() from anywhere -->
 		<TourPlayer />
+		<SpotlightHost />
 	</div>
 </template>
 
@@ -55,6 +56,7 @@ import FacoRobot from "@/components/common/FacoRobot.vue";
 import EmailVerificationPending from "@/components/onboarding/EmailVerificationPending.vue";
 import ToastContainer from "@/components/ui/ToastContainer.vue";
 import TourPlayer from "@/components/onboarding/TourPlayer.vue";
+import SpotlightHost from "@/components/spotlight/SpotlightHost.vue";
 import NotificationHost from "@/components/notifications/NotificationHost.vue";
 
 const router = useRouter();
