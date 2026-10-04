@@ -39,6 +39,15 @@
 			return this.local_date(new Date(y, m, Math.min(d, last)));
 		},
 
+		format_reset_date(iso) {
+			const [y, m, d] = iso.split("-").map(Number);
+			return new Date(y, m - 1, d).toLocaleDateString("en-US", {
+				month: "short",
+				day: "numeric",
+				year: "numeric",
+			});
+		},
+
 		quota_threshold(status) {
 			if (!status || status.is_unlimited || status.is_fallback) return 0;
 			if (status.credits_exhausted === true) return 100;
@@ -55,7 +64,7 @@
 			const has_upgrade_key = Object.prototype.hasOwnProperty.call(status || {}, "upgrade");
 			const upgrade = has_upgrade_key ? status.upgrade : undefined;
 			const reset = this.next_reset_date(status);
-			const reset_line = reset ? ` Credits reset on ${reset}.` : "";
+			const reset_line = reset ? ` Credits reset on ${this.format_reset_date(reset)}.` : "";
 
 			const title =
 				threshold === 100
@@ -151,6 +160,9 @@
 		},
 
 		pending(widget) {
+			if (!(widget.can_use && widget.user_setup_complete && widget.privacy_consent_complete)) {
+				return null;
+			}
 			const quota = this._quota_moment(widget);
 			if (quota) return quota;
 			const n = this.pick_announcement(widget.spotlight_notifications);
@@ -236,7 +248,7 @@
 			const highlights = (content.highlights || []).map((h) => `<li>${esc(h)}</li>`).join("");
 			const html = `
 				<div class="faco-spotlight-card" role="region" aria-label="${esc(content.title)}">
-					<button class="faco-spot-close" data-spot="dismiss" aria-label="${esc(__("Close"))}">&#10005;</button>
+					<button class="faco-spot-close" data-spot="dismiss" aria-label="${esc(__("Dismiss"))}">&#10005;</button>
 					${this._media_html(content.media)}
 					${content.eyebrow ? `<div class="faco-spot-eyebrow">${esc(content.eyebrow)}</div>` : ""}
 					<div class="faco-spot-title">${esc(content.title)}</div>

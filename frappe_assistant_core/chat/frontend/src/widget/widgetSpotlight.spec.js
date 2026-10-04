@@ -85,6 +85,11 @@ describe("parity with the SPA rules", () => {
 		for (const s of STATUSES) expect(W.cycle_start(s, NOW)).toBe(Rules.cycleStart(s, NOW));
 	});
 
+	it("formats the reset date identically", () => {
+		expect(W.format_reset_date("2026-10-26")).toBe(Rules.formatResetDate("2026-10-26"));
+		expect(W.format_reset_date("2026-10-26")).toBe("Oct 26, 2026");
+	});
+
 	it("reset date, thresholds and content match", () => {
 		for (const s of STATUSES) {
 			expect(W.next_reset_date(s)).toBe(Rules.nextResetDate(s));
@@ -102,7 +107,7 @@ describe("parity with the SPA rules", () => {
 	});
 });
 
-function fakeWidget({ admin = true, quota = null, notifications = [] } = {}) {
+function fakeWidget({ admin = true, quota = null, notifications = [], ...access } = {}) {
 	document.body.innerHTML = `<div id="w"><button class="faco-toggle-btn"></button><div class="faco-messages"></div></div>`;
 	const root = new Wrapped([document.getElementById("w")]);
 	return {
@@ -110,6 +115,10 @@ function fakeWidget({ admin = true, quota = null, notifications = [] } = {}) {
 		quota_status: quota ? { ...quota, is_admin: admin } : null,
 		spotlight_notifications: structuredClone(notifications),
 		user: "owner@acme.com",
+		can_use: true,
+		user_setup_complete: true,
+		privacy_consent_complete: true,
+		...access,
 	};
 }
 
@@ -140,6 +149,23 @@ describe("widget spotlight DOM", () => {
 	it("non-admin never gets a quota card or dot", () => {
 		const w = fakeWidget({ admin: false, quota: { credits_exhausted: true } });
 		expect(W.pending(w)).toBeNull();
+	});
+
+	it.each([
+		["cannot use the widget", { can_use: false }],
+		["has not finished setup", { user_setup_complete: false }],
+		["has not given privacy consent", { privacy_consent_complete: false }],
+	])("nothing is pending (no dot, no card) when the user %s", (_label, access) => {
+		const w = fakeWidget({ quota: { credits_exhausted: true }, notifications: LISTS[2], ...access });
+		expect(W.pending(w)).toBeNull();
+		W.update_dot(w);
+		expect(document.querySelector(".faco-spotlight-dot")).toBeNull();
+	});
+
+	it("labels the card's dismiss button differently from the panel's Close", () => {
+		const w = fakeWidget({ quota: { credits_exhausted: true } });
+		W.render_in_panel(w);
+		expect(document.querySelector("[data-spot='dismiss']").getAttribute("aria-label")).toBe("Dismiss");
 	});
 
 	it("quota outranks an announcement", () => {
