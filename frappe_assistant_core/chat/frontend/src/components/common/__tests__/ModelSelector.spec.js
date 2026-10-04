@@ -25,4 +25,13 @@ describe("ModelSelector", () => {
 		expect(wrapper.find(".model-dropdown").exists()).toBe(false);
 		wrapper.unmount();
 	});
+
+	it("closes the picker when it unmounts, so it cannot reopen by itself", async () => {
+		const modelStore = useModelStore();
+		const wrapper = mount(ModelSelector);
+		modelStore.openPicker();
+		await nextTick();
+		wrapper.unmount();
+		expect(modelStore.pickerOpen).toBe(false);
+	});
 });

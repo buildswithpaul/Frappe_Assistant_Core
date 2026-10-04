@@ -30,18 +30,35 @@ from .._helpers import (
     _safe_error,
 )
 
+_reasoning_effort_drop_logged = False
+
+
+def _accepts_reasoning_effort(stream_chat) -> bool:
+    try:
+        parameters = inspect.signature(stream_chat).parameters
+    except (TypeError, ValueError):
+        return False
+    return "reasoning_effort" in parameters or any(
+        p.kind is inspect.Parameter.VAR_KEYWORD for p in parameters.values()
+    )
+
 
 def _sdk_composer_kwargs(stream_chat, web_search, thinking_enabled, reasoning_effort) -> dict:
     """Keyword args for the SDK's stream_chat, omitting reasoning_effort when
     the installed SDK predates it (it would raise TypeError on an unknown kwarg).
     FAC pins the SDK exactly, so this only matters for editable / mispinned installs."""
+    global _reasoning_effort_drop_logged
     kwargs = {"web_search": web_search, "thinking_enabled": thinking_enabled}
-    try:
-        accepts = "reasoning_effort" in inspect.signature(stream_chat).parameters
-    except (TypeError, ValueError):
-        accepts = False
-    if accepts and reasoning_effort is not None:
+    if reasoning_effort is None:
+        return kwargs
+    if _accepts_reasoning_effort(stream_chat):
         kwargs["reasoning_effort"] = reasoning_effort
+    elif not _reasoning_effort_drop_logged:
+        _reasoning_effort_drop_logged = True
+        frappe.logger("fac.chat").warning(
+            "Installed assistant_runtime_sdk has no reasoning_effort parameter; "
+            "the thinking level is dropped and thinking_enabled decides the turn."
+        )
     return kwargs
 
 
@@ -1397,10 +1414,7 @@ def _relay_ar_stream(
         )
 
         # Stream from AR
-        # SDK signature: stream_chat(session_id, message, user_id, context=None, model_id=None,
-        # attachments=None, system_prompt_addendum=None, client_type=None, interrupt_response=None,
-        # message_id=None, session_state=None, continue_from_message_id=None, *, web_search=None,
-        # thinking_enabled=None) — web_search/thinking_enabled are keyword-only.
+        # web_search / thinking_enabled / reasoning_effort are keyword-only on the SDK.
         stream_iter = client.stream_chat(
             session_id,
             full_prompt,

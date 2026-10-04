@@ -62,7 +62,7 @@ describe("chatStore.submitInterruptDecision — composer modes", () => {
 
 	it("forwards the conversation's toggles on resume", async () => {
 		const modes = useComposerModesStore();
-		modes.toggle("s1", "thinking");
+		modes.setEffort("s1", "high");
 		pauseOnAnApproval();
 
 		const payload = await approve();

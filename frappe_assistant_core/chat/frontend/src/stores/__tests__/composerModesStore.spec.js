@@ -36,14 +36,6 @@ describe("composerModesStore", () => {
 		expect(store.modesFor("s2").effort).toBe("off");
 	});
 
-	it("the legacy on/off toggle flips between off and high", () => {
-		const store = useComposerModesStore();
-		store.toggle("s1", "thinking");
-		expect(store.modesFor("s1").effort).toBe("high");
-		store.toggle("s1", "thinking");
-		expect(store.modesFor("s1").effort).toBe("off");
-	});
-
 	it("keeps modes separate per session", () => {
 		const store = useComposerModesStore();
 		store.toggle("s1", "webSearch");

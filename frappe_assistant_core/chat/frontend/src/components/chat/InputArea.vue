@@ -25,6 +25,7 @@
 					:web-search="modes.webSearch"
 					:thinking-level="modes.effort"
 					:thinking-state-text="thinkingStateText"
+					:thinking-open="thinkingMenuOpen"
 					:thinking-available="modelStore.thinkingHonoured"
 					@attach="onMenuAttach"
 					@toggle-web-search="composerModesStore.toggle(chatStore.currentSessionId, 'webSearch')"
@@ -77,6 +78,7 @@
 						:web-search="modes.webSearch"
 						:thinking-level="modes.effort"
 						:thinking-label="thinkingLabel"
+						:thinking-open="thinkingMenuOpen"
 						:thinking-available="modelStore.thinkingHonoured"
 						:web-search-available="webSearchAvailable"
 						@toggle-plus="plusOpen = !plusOpen"
@@ -159,12 +161,20 @@ const slashMenuRef = ref(null);
 const plusOpen = ref(false);
 const modes = computed(() => composerModesStore.modesFor(chatStore.currentSessionId));
 const thinkingMenuOpen = ref(false);
+// Until the model list arrives every model is "legacy", so a saved level would
+// read as "On"; and a model that cannot think shows no level at all.
+const showThinkingLevel = computed(
+	() => modelStore.models.length > 0 && modelStore.thinkingHonoured,
+);
 const thinkingStateText = computed(() => {
+	if (modelStore.models.length === 0) return "";
 	if (modelStore.legacyMode) return modes.value.effort === "off" ? "Off" : "On";
 	return LEVEL_LABELS[modes.value.effort] || modes.value.effort;
 });
 const thinkingLabel = computed(() =>
-	modes.value.effort === "off" ? "Thinking" : `Thinking: ${thinkingStateText.value}`,
+	modes.value.effort === "off" || !showThinkingLevel.value
+		? "Thinking"
+		: `Thinking: ${thinkingStateText.value}`,
 );
 
 watch(

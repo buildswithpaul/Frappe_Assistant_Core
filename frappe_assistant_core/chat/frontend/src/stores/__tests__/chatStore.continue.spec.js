@@ -81,7 +81,7 @@ describe("chatStore.continueMessage", () => {
 		// search-off would finish with search silently back on.
 		const modes = useComposerModesStore();
 		modes.toggle("session-42", "webSearch");
-		modes.toggle("session-42", "thinking");
+		modes.setEffort("session-42", "high");
 		modes.toggle("session-42", "webSearch"); // back off — the state the pill shows
 
 		const store = useChatStore();

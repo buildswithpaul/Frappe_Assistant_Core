@@ -217,6 +217,7 @@ onMounted(() => {
 onUnmounted(() => {
 	document.removeEventListener("click", handleClickOutside);
 	document.removeEventListener("keydown", handleKeydown);
+	modelStore.closePicker();
 });
 </script>
 

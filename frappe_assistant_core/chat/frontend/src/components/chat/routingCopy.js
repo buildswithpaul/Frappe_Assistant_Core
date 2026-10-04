@@ -7,7 +7,7 @@
  * and carries nothing extra.
  */
 
-import { EFFORT_LEVELS, LEVEL_LABELS } from "@/stores/composerModesStore";
+import { LEVEL_LABELS } from "@/stores/composerModesStore";
 
 export const TIER_LABELS = {
 	Economy: "Economy",
@@ -259,12 +259,8 @@ export function routingRows(receipt, name) {
 		if (!t.applied) {
 			parts.push(notApplied);
 		} else if (effort.applied && effort.applied !== effort.requested) {
-			const bound =
-				EFFORT_LEVELS.indexOf(effort.applied) < EFFORT_LEVELS.indexOf(effort.requested)
-					? "highest"
-					: "lowest";
 			parts.push(
-				`Thinking: ${LEVEL_LABELS[effort.requested]} (ran at ${LEVEL_LABELS[effort.applied]}, this model's ${bound}).`
+				`Thinking: ${LEVEL_LABELS[effort.requested]} (ran at ${LEVEL_LABELS[effort.applied]} on this model).`
 			);
 		} else {
 			parts.push(`Thinking: ${LEVEL_LABELS[effort.requested]}.`);

@@ -262,12 +262,12 @@ describe("L1 — the one line", () => {
 
 	it("says when a level stepped down", () => {
 		const rows = routingRows({ pick_reason: "cost_weighted", thinking: { requested: true, applied: true, effort: { requested: "max", applied: "high" } } });
-		expect(JSON.stringify(rows)).toContain("Thinking: Max (ran at High, this model's highest).");
+		expect(JSON.stringify(rows)).toContain("Thinking: Max (ran at High on this model).");
 	});
 
-	it("says when a level stepped up to the model's floor", () => {
+	it("says when a level stepped up", () => {
 		const rows = routingRows({ pick_reason: "cost_weighted", thinking: { requested: true, applied: true, effort: { requested: "low", applied: "medium" } } });
-		expect(JSON.stringify(rows)).toContain("Thinking: Low (ran at Medium, this model's lowest).");
+		expect(JSON.stringify(rows)).toContain("Thinking: Low (ran at Medium on this model).");
 	});
 
 	it("says when off still thought a little", () => {

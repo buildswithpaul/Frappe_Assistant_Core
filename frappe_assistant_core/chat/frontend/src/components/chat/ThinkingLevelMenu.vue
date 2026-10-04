@@ -17,7 +17,7 @@
 			<p v-if="offFloor && selected === 'off'" class="menu-note">
 				This model always thinks a little, even when Thinking is off.
 			</p>
-			<p class="menu-note">Higher levels think longer and use more credits.</p>
+			<p v-if="!legacy" class="menu-note">Higher levels think longer and use more credits.</p>
 		</div>
 	</Transition>
 </template>

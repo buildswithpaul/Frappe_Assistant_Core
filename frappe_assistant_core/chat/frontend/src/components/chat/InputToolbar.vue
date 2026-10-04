@@ -39,7 +39,8 @@
 				class="toolbar-btn toolbar-btn-pill"
 				:class="{ 'toolbar-btn-active': thinkingLevel !== 'off' }"
 				:disabled="isStreaming || !thinkingAvailable"
-				:aria-pressed="thinkingLevel !== 'off'"
+				aria-haspopup="menu"
+				:aria-expanded="thinkingOpen"
 				aria-label="Thinking level"
 				data-thinking-trigger
 				:title="thinkingAvailable ? 'Think longer before answering' : 'This model cannot think longer'"
@@ -151,6 +152,7 @@ defineProps({
 	webSearch: { type: Boolean, default: false },
 	thinkingLevel: { type: String, default: "off" },
 	thinkingLabel: { type: String, default: "Thinking" },
+	thinkingOpen: { type: Boolean, default: false },
 	webSearchAvailable: { type: Boolean, default: false },
 	thinkingAvailable: { type: Boolean, default: true },
 });

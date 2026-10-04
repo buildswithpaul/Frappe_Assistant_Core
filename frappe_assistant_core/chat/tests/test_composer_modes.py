@@ -6,9 +6,12 @@
 
 import inspect
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, create_autospec, patch
+
+from assistant_runtime_sdk.client import AssistantRuntimeClient
 
 from frappe_assistant_core.chat.api.chat import messages
+from frappe_assistant_core.chat.api.chat import relay as relay_module
 from frappe_assistant_core.chat.api.chat.relay import (
     _relay_ar_interrupt_resume,
     _relay_ar_stream,
@@ -53,6 +56,33 @@ class TestSdkCompat(unittest.TestCase):
             _sdk_composer_kwargs(old_stream_chat, False, True, "max"),
             {"web_search": False, "thinking_enabled": True},
         )
+
+    def test_a_kwargs_wrapper_gets_the_level(self):
+        def wrapped_stream_chat(*a, **kw): ...
+
+        self.assertEqual(
+            _sdk_composer_kwargs(wrapped_stream_chat, None, True, "low"),
+            {"web_search": None, "thinking_enabled": True, "reasoning_effort": "low"},
+        )
+
+    def test_dropping_a_level_is_logged_once_per_process(self):
+        def old_stream_chat(*a, web_search=None, thinking_enabled=None): ...
+
+        with patch.object(relay_module, "_reasoning_effort_drop_logged", False), patch(
+            "frappe.logger"
+        ) as logger:
+            _sdk_composer_kwargs(old_stream_chat, None, True, "max")
+            _sdk_composer_kwargs(old_stream_chat, None, True, "max")
+        self.assertEqual(logger.return_value.warning.call_count, 1)
+
+    def test_no_level_to_drop_logs_nothing(self):
+        def old_stream_chat(*a, web_search=None, thinking_enabled=None): ...
+
+        with patch.object(relay_module, "_reasoning_effort_drop_logged", False), patch(
+            "frappe.logger"
+        ) as logger:
+            _sdk_composer_kwargs(old_stream_chat, None, True, None)
+        logger.assert_not_called()
 
 
 class TestFlagsReachTheRelay(unittest.TestCase):
@@ -211,6 +241,56 @@ class TestFlagsSurviveResumeAndContinue(unittest.TestCase):
         kwargs = client.stream_chat.call_args.kwargs
         self.assertIs(kwargs["web_search"], False)
         self.assertIs(kwargs["thinking_enabled"], True)
+
+    def test_the_resume_relay_hands_the_level_to_the_real_sdk_signature(self):
+        """MagicMock accepts anything; the real signature is what proves the hop."""
+        client = create_autospec(AssistantRuntimeClient, instance=True)
+        client.stream_chat.return_value = iter(())
+        with patch(
+            "frappe_assistant_core.chat.fac_cloud_client.get_fac_cloud_client",
+            return_value=client,
+        ), patch("frappe.init"), patch("frappe.connect"), patch("frappe.set_user"), patch(
+            "frappe.destroy"
+        ), patch("frappe.db"), patch(
+            "frappe_assistant_core.chat.api.chat.relay.is_cancelled", return_value=False
+        ), patch("frappe_assistant_core.chat.api.chat.relay._emit_socket_event"):
+            _relay_ar_interrupt_resume(
+                "s1",
+                [{"interruptId": "i1", "response": "approve"}],
+                "u@x.com",
+                "site",
+                thinking_enabled=True,
+                reasoning_effort="low",
+            )
+
+        self.assertEqual(client.stream_chat.call_args.kwargs["reasoning_effort"], "low")
+
+    def test_the_send_relay_hands_the_level_to_the_real_sdk_signature(self):
+        client = create_autospec(AssistantRuntimeClient, instance=True)
+        client.stream_chat.return_value = iter(())
+        with patch(
+            "frappe_assistant_core.chat.fac_cloud_client.get_fac_cloud_client",
+            return_value=client,
+        ), patch("frappe.init"), patch("frappe.connect"), patch("frappe.set_user"), patch(
+            "frappe.destroy"
+        ), patch("frappe.db"), patch(
+            "frappe_assistant_core.chat.api.chat.relay.is_cancelled", side_effect=[False, True, True]
+        ), patch("frappe_assistant_core.chat.api.chat.relay._emit_socket_event"), patch.object(
+            relay_module, "_handle_stream_aborted"
+        ):
+            relay_module._relay_ar_stream(
+                session_id="s1",
+                full_prompt="hi",
+                original_message="hi",
+                context=None,
+                message_name=None,
+                user="u@x.com",
+                site="site",
+                thinking_enabled=True,
+                reasoning_effort="low",
+            )
+
+        self.assertEqual(client.stream_chat.call_args.kwargs["reasoning_effort"], "low")
 
 
 if __name__ == "__main__":

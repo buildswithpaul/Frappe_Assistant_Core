@@ -72,11 +72,6 @@ export const useComposerModesStore = defineStore("composerModes", () => {
 
 	function toggle(sessionId, mode) {
 		const current = modesFor(sessionId);
-		if (mode === "thinking") {
-			// The legacy on/off control, shown when AR publishes no levels.
-			save(sessionId, { ...current, effort: current.effort === "off" ? "high" : "off" });
-			return;
-		}
 		save(sessionId, { ...current, [mode]: !current[mode] });
 	}
 

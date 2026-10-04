@@ -27,8 +27,9 @@
 
 			<button
 				class="menu-item menu-thinking"
-				role="menuitemcheckbox"
-				:aria-pressed="thinkingLevel !== 'off'"
+				role="menuitem"
+				aria-haspopup="menu"
+				:aria-expanded="thinkingOpen"
 				:class="{ 'menu-item-on': thinkingLevel !== 'off' }"
 				data-thinking-trigger
 				:disabled="!thinkingAvailable"
@@ -55,6 +56,7 @@ const props = defineProps({
 	webSearch: { type: Boolean, default: false },
 	thinkingLevel: { type: String, default: "off" },
 	thinkingStateText: { type: String, default: "Off" },
+	thinkingOpen: { type: Boolean, default: false },
 	thinkingAvailable: { type: Boolean, default: true },
 });
 

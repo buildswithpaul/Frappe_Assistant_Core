@@ -33,6 +33,12 @@ describe("ThinkingLevelMenu", () => {
 		expect(tagged).toEqual(["uses more credits", "uses more credits"]);
 	});
 
+	it("shows no credits note or cost tags in legacy Off/On mode", () => {
+		const wrapper = mountMenu({ legacy: true, levels: ["off", "high"], selected: "high" });
+		expect(wrapper.text()).not.toContain("use more credits");
+		expect(wrapper.findAll(".level-cost")).toHaveLength(0);
+	});
+
 	it("shows the step-down hint for a level the model lacks", () => {
 		const wrapper = mountMenu({ hintFor: (l) => (l === "max" ? "Runs at High on this model" : null) });
 		expect(wrapper.text()).toContain("Runs at High on this model");

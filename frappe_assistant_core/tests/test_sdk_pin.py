@@ -64,6 +64,13 @@ class TestSDKPin(unittest.TestCase):
         for name in CONNECT_METHODS:
             self.assertTrue(hasattr(AssistantRuntimeClient, name), name)
 
+    def test_the_installed_sdk_streams_with_a_reasoning_effort(self):
+        import inspect
+
+        from assistant_runtime_sdk.client import AssistantRuntimeClient
+
+        self.assertIn("reasoning_effort", inspect.signature(AssistantRuntimeClient.stream_chat).parameters)
+
 
 if __name__ == "__main__":
     unittest.main()

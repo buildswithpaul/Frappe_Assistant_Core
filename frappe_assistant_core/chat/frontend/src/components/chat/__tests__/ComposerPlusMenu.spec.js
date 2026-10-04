@@ -33,11 +33,20 @@ describe("ComposerPlusMenu", () => {
 		expect(wrapper.find(".menu-web-search").attributes("aria-pressed")).toBe("true");
 	});
 
-	it("shows the thinking level text and marks a non-off level as pressed", () => {
+	it("shows the thinking level text", () => {
 		const wrapper = mount(ComposerPlusMenu, {
 			props: { open: true, thinkingLevel: "high", thinkingStateText: "High" },
 		});
 		expect(wrapper.find(".menu-thinking .menu-state").text()).toBe("High");
-		expect(wrapper.find(".menu-thinking").attributes("aria-pressed")).toBe("true");
+	});
+
+	it("exposes the thinking item as a menu trigger bound to its menu's open state", async () => {
+		const wrapper = mount(ComposerPlusMenu, { props: { open: true, thinkingOpen: false } });
+		const item = wrapper.find(".menu-thinking");
+		expect(item.attributes("aria-haspopup")).toBe("menu");
+		expect(item.attributes("aria-expanded")).toBe("false");
+		expect(item.attributes("aria-pressed")).toBeUndefined();
+		await wrapper.setProps({ thinkingOpen: true });
+		expect(item.attributes("aria-expanded")).toBe("true");
 	});
 });
