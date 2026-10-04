@@ -8,9 +8,32 @@ describe("composerModesStore", () => {
 		localStorage.clear();
 	});
 
-	it("defaults both modes to off", () => {
+	it("defaults web search off and thinking to off", () => {
 		const store = useComposerModesStore();
-		expect(store.modesFor("s1")).toEqual({ webSearch: false, thinking: false });
+		expect(store.modesFor("s1")).toEqual({ webSearch: false, effort: "off" });
+	});
+
+	it("sets a thinking level per session", () => {
+		const store = useComposerModesStore();
+		store.setEffort("s1", "xhigh");
+		expect(store.modesFor("s1").effort).toBe("xhigh");
+		expect(store.modesFor("s2").effort).toBe("off");
+	});
+
+	it("ignores an unknown level", () => {
+		const store = useComposerModesStore();
+		store.setEffort("s1", "turbo");
+		expect(store.modesFor("s1").effort).toBe("off");
+	});
+
+	it("migrates a saved boolean from before the selector", () => {
+		localStorage.setItem(
+			"faco_composer_modes",
+			JSON.stringify({ s1: { thinking: true }, s2: { thinking: false } })
+		);
+		const store = useComposerModesStore();
+		expect(store.modesFor("s1").effort).toBe("high");
+		expect(store.modesFor("s2").effort).toBe("off");
 	});
 
 	it("keeps modes separate per session", () => {
@@ -21,9 +44,9 @@ describe("composerModesStore", () => {
 	});
 
 	it("survives a store rebuild", () => {
-		useComposerModesStore().toggle("s1", "thinking");
+		useComposerModesStore().setEffort("s1", "high");
 		setActivePinia(createPinia());
-		expect(useComposerModesStore().modesFor("s1").thinking).toBe(true);
+		expect(useComposerModesStore().modesFor("s1").effort).toBe("high");
 	});
 
 	it("migrates modes chosen before the session existed", () => {

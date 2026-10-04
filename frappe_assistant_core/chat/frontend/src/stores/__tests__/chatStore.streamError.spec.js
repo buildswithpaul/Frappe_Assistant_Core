@@ -1,10 +1,25 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { setActivePinia, createPinia } from "pinia";
 import { useChatStore } from "../chatStore";
+import { useModelStore } from "../modelStore";
 
 describe("chatStore.handleStreamError", () => {
 	beforeEach(() => {
 		setActivePinia(createPinia());
+	});
+
+	it.each(["MODEL_FAILED", "MODEL_TEMPORARILY_UNAVAILABLE"])("opens the model picker on %s", (code) => {
+		const chatStore = useChatStore();
+		const modelStore = useModelStore();
+		chatStore.handleStreamError("Model X couldn't answer right now. Choose another model and send again.", code, {});
+		expect(modelStore.pickerOpen).toBe(true);
+	});
+
+	it("leaves the picker closed for other errors", () => {
+		const chatStore = useChatStore();
+		const modelStore = useModelStore();
+		chatStore.handleStreamError("Something went wrong", "LLM_UNAVAILABLE", {});
+		expect(modelStore.pickerOpen).toBe(false);
 	});
 
 	it("keeps and finalizes the partial message when blocks were streamed", () => {

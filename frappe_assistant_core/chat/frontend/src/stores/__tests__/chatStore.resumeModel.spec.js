@@ -111,6 +111,7 @@ describe("chatStore.submitInterruptDecision — model", () => {
 		expect(payload).toMatchObject({
 			session_id: "s1",
 			web_search: false,
+			reasoning_effort: "off",
 			thinking_enabled: false,
 		});
 	});

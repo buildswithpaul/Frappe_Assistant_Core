@@ -34,6 +34,7 @@
 		only_candidate: "The only model available at this grade.",
 		unpriced_shortlist: "One of several models at this grade.",
 		fallback_rate_limited: "The first choice was busy.",
+		fallback_error: "The first choice couldn't answer.",
 		capability: "You chose it.",
 	};
 
@@ -129,7 +130,9 @@
 		if (receipt.fallback_from) {
 			const from =
 				fallbackName || receipt.fallback_from_name || receipt.fallback_from;
-			return `Started on ${from}; it was busy, so ${ran} answered.`;
+			return receipt.pick_reason === "fallback_error"
+				? `Started on ${from}; it couldn't answer, so ${ran} did.`
+				: `Started on ${from}; it was busy, so ${ran} answered.`;
 		}
 
 		const grade = tier(receipt.selected_tier);

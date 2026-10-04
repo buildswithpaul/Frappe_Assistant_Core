@@ -37,17 +37,19 @@
 			<button
 				@click="$emit('toggle-thinking')"
 				class="toolbar-btn toolbar-btn-pill"
-				:class="{ 'toolbar-btn-active': thinking }"
+				:class="{ 'toolbar-btn-active': thinkingLevel !== 'off' }"
 				:disabled="isStreaming || !thinkingAvailable"
-				:aria-pressed="thinking"
-				aria-label="Toggle thinking"
+				aria-haspopup="menu"
+				:aria-expanded="thinkingOpen"
+				aria-label="Thinking level"
+				data-thinking-trigger
 				:title="thinkingAvailable ? 'Think longer before answering' : 'This model cannot think longer'"
 			>
 				<svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
 					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
 						d="M12 3l1.9 4.6L18.5 9l-4.6 1.9L12 15.5l-1.9-4.6L5.5 9l4.6-1.4L12 3z" />
 				</svg>
-				<span class="pill-label">Thinking</span>
+				<span class="pill-label">{{ thinkingLabel }}</span>
 			</button>
 
 			<MicButton
@@ -148,7 +150,9 @@ defineProps({
 	context: { type: Object, default: null },
 	plusOpen: { type: Boolean, default: false },
 	webSearch: { type: Boolean, default: false },
-	thinking: { type: Boolean, default: false },
+	thinkingLevel: { type: String, default: "off" },
+	thinkingLabel: { type: String, default: "Thinking" },
+	thinkingOpen: { type: Boolean, default: false },
 	webSearchAvailable: { type: Boolean, default: false },
 	thinkingAvailable: { type: Boolean, default: true },
 });
