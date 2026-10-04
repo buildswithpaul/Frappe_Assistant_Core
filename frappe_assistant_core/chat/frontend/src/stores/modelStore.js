@@ -16,6 +16,7 @@ export const useModelStore = defineStore("models", () => {
 	const maxTierRank = ref(999);
 	const isLoading = ref(false);
 	const error = ref(null);
+	const pickerOpen = ref(false);
 
 	// Auto mode configuration from AR
 	const autoMode = ref(null); // { enabled, description, model_id, fallback_chain_length }
@@ -223,8 +224,17 @@ export const useModelStore = defineStore("models", () => {
 		return models.value.find((m) => m.model_id === modelId)?.display_name || null;
 	}
 
+	function openPicker() {
+		pickerOpen.value = true;
+	}
+
+	function closePicker() {
+		pickerOpen.value = false;
+	}
+
 	return {
 		// State
+		pickerOpen,
 		models,
 		modelsByTier,
 		selectedModel,
@@ -252,5 +262,7 @@ export const useModelStore = defineStore("models", () => {
 		clearSelectedModel,
 		loadModels,
 		clearError,
+		openPicker,
+		closePicker,
 	};
 });

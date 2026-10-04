@@ -784,6 +784,10 @@ export const useChatStore = defineStore("chat", () => {
 		// handleStreamResumed, so this flag must be cleared here too.
 		isSubmittingInterrupts.value = false;
 		setError(errorMessage || "Stream error occurred", errorCode || null);
+		// The hand-picked model failed or is resting: the remedy is another model.
+		if (errorCode === "MODEL_FAILED" || errorCode === "MODEL_TEMPORARILY_UNAVAILABLE") {
+			useModelStore().openPicker();
+		}
 
 		// INTERRUPT_ALREADY_RESOLVED: a stale approval card was clicked
 		// (commonly because Stop was pressed in another tab, or the previous
