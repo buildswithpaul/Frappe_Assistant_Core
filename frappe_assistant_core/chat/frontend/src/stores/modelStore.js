@@ -66,6 +66,38 @@ export const useModelStore = defineStore("models", () => {
 		return Boolean(currentModel.value?.thinking_effective);
 	});
 
+	const LEVEL_LABELS = { off: "Off", low: "Low", medium: "Medium", high: "High", xhigh: "Extra high", max: "Max" };
+	const ORDER = ["off", "low", "medium", "high", "xhigh", "max"];
+
+	// An AR that predates the selector publishes no reasoning_levels. Then the
+	// composer keeps the old on/off control, and "on" travels as thinking_enabled.
+	const legacyMode = computed(() => !models.value.some((m) => Array.isArray(m.reasoning_levels)));
+
+	const effortLevels = computed(() => {
+		if (legacyMode.value) return thinkingHonoured.value ? ["off", "high"] : ["off"];
+		const lists = isAutoModeSelected.value
+			? models.value.filter(isModelAccessible).map((m) => m.reasoning_levels || [])
+			: [currentModel.value?.reasoning_levels || []];
+		const offered = new Set(lists.flat());
+		return ORDER.filter((level) => offered.has(level));
+	});
+
+	// Under auto every level is enabled (the model is not chosen yet); for a
+	// picked model, a level it does not accept runs at the nearest lower one.
+	function hintFor(level) {
+		if (legacyMode.value || isAutoModeSelected.value || level === "off") return null;
+		const accepted = currentModel.value?.reasoning_levels || [];
+		if (accepted.includes(level) || accepted.length <= 1) return null;
+		const rank = ORDER.indexOf(level);
+		const lower = accepted.filter((l) => l !== "off" && ORDER.indexOf(l) < rank);
+		const runsAt = lower.length ? lower[lower.length - 1] : accepted.find((l) => l !== "off");
+		return runsAt ? `Runs at ${LEVEL_LABELS[runsAt]} on this model` : null;
+	}
+
+	const offFloor = computed(
+		() => !isAutoModeSelected.value && Boolean(currentModel.value?.reasoning_off_floor)
+	);
+
 	// Check if a model is accessible based on plan's max multiplier
 	function isModelAccessible(model) {
 		return model.tier_rank <= maxTierRank.value;
@@ -208,6 +240,10 @@ export const useModelStore = defineStore("models", () => {
 		isAutoModeEnabled,
 		isAutoModeSelected,
 		thinkingHonoured,
+		effortLevels,
+		legacyMode,
+		offFloor,
+		hintFor,
 		// Methods
 		isModelAccessible,
 		modelDisplayName,

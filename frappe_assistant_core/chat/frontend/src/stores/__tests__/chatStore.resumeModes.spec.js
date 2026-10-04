@@ -68,6 +68,7 @@ describe("chatStore.submitInterruptDecision — composer modes", () => {
 		const payload = await approve();
 
 		expect(payload.web_search).toBe(false);
+		expect(payload.reasoning_effort).toBe("high");
 		expect(payload.thinking_enabled).toBe(true);
 	});
 
@@ -79,6 +80,7 @@ describe("chatStore.submitInterruptDecision — composer modes", () => {
 		const payload = await approve();
 
 		expect(payload).toHaveProperty("web_search", false);
+		expect(payload).toHaveProperty("reasoning_effort", "off");
 		expect(payload).toHaveProperty("thinking_enabled", false);
 	});
 
