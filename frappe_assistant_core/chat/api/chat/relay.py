@@ -16,6 +16,7 @@ with the next turn's, and this id is how a client tells them apart.
 
 from __future__ import annotations
 
+import inspect
 import json
 import time
 from collections.abc import Callable
@@ -34,8 +35,6 @@ def _sdk_composer_kwargs(stream_chat, web_search, thinking_enabled, reasoning_ef
     """Keyword args for the SDK's stream_chat, omitting reasoning_effort when
     the installed SDK predates it (it would raise TypeError on an unknown kwarg).
     FAC pins the SDK exactly, so this only matters for editable / mispinned installs."""
-    import inspect
-
     kwargs = {"web_search": web_search, "thinking_enabled": thinking_enabled}
     try:
         accepts = "reasoning_effort" in inspect.signature(stream_chat).parameters
