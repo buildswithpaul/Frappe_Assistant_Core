@@ -27,7 +27,7 @@ from typing import Any, Dict, List, Optional
 import frappe
 from frappe import _
 
-from frappe_assistant_core.core.base_tool import BaseTool
+from frappe_assistant_core.core.base_tool import BaseTool, exception_message, permission_error_result
 
 
 class CreateDashboard(BaseTool):
@@ -131,13 +131,24 @@ class CreateDashboard(BaseTool):
 
             return dashboard_result
 
-        except Exception as e:
+        except frappe.PermissionError as e:
+            error_msg = exception_message(e, _("Insufficient permission to create a Dashboard"))
             frappe.log_error(
                 title=_("Dashboard Creation Error"),
-                message=f"Error creating dashboard {dashboard_name}: {str(e)}",
+                message=f"Error creating dashboard {dashboard_name}: {error_msg}",
             )
 
-            return {"success": False, "error": str(e), "dashboard_name": dashboard_name}
+            result = permission_error_result("Dashboard", error_msg)
+            result["dashboard_name"] = dashboard_name
+            return result
+        except Exception as e:
+            error_msg = exception_message(e)
+            frappe.log_error(
+                title=_("Dashboard Creation Error"),
+                message=f"Error creating dashboard {dashboard_name}: {error_msg}",
+            )
+
+            return {"success": False, "error": error_msg, "dashboard_name": dashboard_name}
 
     def _create_frappe_dashboard(
         self,
@@ -180,8 +191,18 @@ class CreateDashboard(BaseTool):
                 "permissions": share_with,
             }
 
+        except frappe.PermissionError as e:
+            # dashboard_doc.insert() refuses a Dashboard this user may not create and
+            # raises with no message, so str(e) alone leaves the reason blank.
+            return permission_error_result(
+                "Dashboard",
+                exception_message(e, _("Insufficient permission to create a Dashboard")),
+            )
         except Exception as e:
-            return {"success": False, "error": f"Frappe dashboard creation failed: {str(e)}"}
+            return {
+                "success": False,
+                "error": f"Frappe dashboard creation failed: {exception_message(e)}",
+            }
 
     def _setup_dashboard_sharing(self, dashboard_id: str, share_with: List[str]) -> Dict[str, Any]:
         """Setup dashboard sharing and permissions"""
@@ -198,7 +219,9 @@ class CreateDashboard(BaseTool):
                         frappe.share.add("Dashboard", dashboard_id, role_user.parent, read=1)
                         users_with_access.append(role_user.parent)
             except Exception as e:
-                frappe.logger("dashboard_manager").warning(f"Failed to share with {user_or_role}: {str(e)}")
+                frappe.logger("dashboard_manager").warning(
+                    f"Failed to share with {user_or_role}: {exception_message(e)}"
+                )
 
         return {
             "users_with_access": list(set(users_with_access)),

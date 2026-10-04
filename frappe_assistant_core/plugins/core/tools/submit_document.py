@@ -24,7 +24,7 @@ from typing import Any, Dict
 import frappe
 from frappe import _
 
-from frappe_assistant_core.core.base_tool import BaseTool, exception_message
+from frappe_assistant_core.core.base_tool import BaseTool, exception_message, permission_error_result
 
 
 class DocumentSubmit(BaseTool):
@@ -153,6 +153,18 @@ class DocumentSubmit(BaseTool):
             # Log successful submission
             return result
 
+        except frappe.PermissionError as e:
+            # A submit the user may not perform raises with no message. Returning the
+            # "required fields" suggestion below for it sends the model editing fields
+            # that were never the problem.
+            error_msg = exception_message(
+                e, _("Insufficient permission to submit {0} '{1}'").format(doctype, name)
+            )
+            frappe.log_error(
+                title=_("Document Submit Error"), message=f"Error submitting {doctype} '{name}': {error_msg}"
+            )
+
+            return permission_error_result(doctype, error_msg, name)
         except Exception as e:
             error_msg = exception_message(e)
             frappe.log_error(

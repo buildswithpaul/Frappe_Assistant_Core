@@ -30,6 +30,7 @@ from frappe.permissions import AUTOMATIC_ROLES
 
 from frappe_assistant_core.core.tool_registry import get_tool_registry
 from frappe_assistant_core.plugins.core.tools.create_document import DocumentCreate
+from frappe_assistant_core.plugins.core.tools.delete_document import DocumentDelete
 from frappe_assistant_core.plugins.core.tools.submit_document import DocumentSubmit
 from frappe_assistant_core.plugins.core.tools.update_document import DocumentUpdate
 from frappe_assistant_core.tests.base_test import BaseAssistantTest
@@ -677,6 +678,20 @@ def _todo_rule_before_owner_clause(doc, ptype="read", user=None):
     return doc.allocated_to == user or doc.assigned_by == user
 
 
+def _todo_rule_with_owner_clause(doc, ptype="read", user=None):
+    """Frappe's ToDo permission hook from v16.32.0 / v15.119.0 on.
+
+    frappe/frappe#41869 added `or doc.owner == user`. `insert()` sets `owner`
+    (`Document.set_user_and_timestamp`) before it checks create permission, so under
+    this rule a user may create a ToDo that names nobody and it stays unallocated.
+    """
+    user = user or frappe.session.user
+    todo_roles = set(frappe.permissions.get_doctype_roles("ToDo", ptype)) - set(AUTOMATIC_ROLES)
+    if any(role in todo_roles for role in frappe.get_roles(user)):
+        return True
+    return doc.allocated_to == user or doc.assigned_by == user or doc.owner == user
+
+
 class TestDocumentToolsAsNonAdminUser(BaseAssistantTest):
     """The write tools as a user who is not a System Manager.
 
@@ -766,6 +781,22 @@ class TestDocumentToolsAsNonAdminUser(BaseAssistantTest):
                 self.assertTrue(result.get("success"), result)
                 self.assertEqual(result["owner"], self.non_admin)
                 self.assertEqual(frappe.db.get_value("ToDo", result["name"], "allocated_to"), self.non_admin)
+
+    @patch(_TODO_PERMISSION_HOOK, new=_todo_rule_with_owner_clause)
+    def test_user_todo_that_names_nobody_stays_unallocated_on_new_frappe(self):
+        """From v16.32.0 / v15.119.0 ownership alone carries the create, so nothing is allocated.
+
+        The pre-flight permission probe has to mirror the order `insert()` uses, which sets
+        `owner` before checking create. A probe that reads `owner` unset returns False on
+        every release and allocates a ToDo these releases accept exactly as written.
+        """
+        self._act_as(self.non_admin)
+
+        result = self._create_todo()
+
+        self.assertTrue(result.get("success"), result)
+        self.assertEqual(result["owner"], self.non_admin)
+        self.assertFalse(frappe.db.get_value("ToDo", result["name"], "allocated_to"))
 
     def test_user_todo_that_names_nobody_is_theirs_on_any_frappe(self):
         """Unpinned: the user creates a ToDo that names nobody and can read it, under either rule."""
@@ -895,6 +926,7 @@ class TestDocumentToolsAsNonAdminUser(BaseAssistantTest):
             )
 
         self.assertFalse(result.get("success"), result)
+        self.assertEqual(result.get("error_type"), "permission_error")
         self.assertTrue(result.get("error"), result)
         self.assertNotIn("<", result["error"])
         self.assertTrue(self.log_error.call_args.kwargs["message"].endswith(result["error"]))
@@ -912,9 +944,36 @@ class TestDocumentToolsAsNonAdminUser(BaseAssistantTest):
             result = DocumentSubmit().execute({"doctype": "ToDo", "name": "any"})
 
         self.assertFalse(result.get("success"), result)
+        self.assertEqual(result.get("error_type"), "permission_error")
         self.assertTrue(result.get("error"), result)
         self.assertNotIn("<", result["error"])
         self.assertTrue(self.log_error.call_args.kwargs["message"].endswith(result["error"]))
+        # The old handler blamed the document's fields for a permission denial, which
+        # sent the model editing fields that were never the problem.
+        self.assertNotIn("required fields", result.get("suggestion", ""))
+
+    def test_delete_says_why_frappe_refused_the_delete(self):
+        """delete_document reported a bare "Permission denied" and dropped Frappe's reason."""
+        todo = self._todo_owned_by_administrator()
+        self._act_as(self.non_admin)
+
+        refusal = frappe.new_doc("ToDo")
+        with ExitStack() as stack:
+            stack.enter_context(self._precheck_passes())
+            stack.enter_context(
+                patch(
+                    "frappe.delete_doc",
+                    side_effect=lambda *a, **k: refusal.raise_no_permission_to("delete"),
+                )
+            )
+            result = DocumentDelete().execute({"doctype": "ToDo", "name": todo})
+
+        self.assertFalse(result.get("success"), result)
+        self.assertTrue(result.get("permission_error"), result)
+        self.assertIn("delete", result["error"])
+        # Frappe's own reason, not the generic fallback.
+        self.assertNotIn("Permission denied", result["error"])
+        self.assertNotIn("<", result["error"])
 
 
 class _FakeChildRow:

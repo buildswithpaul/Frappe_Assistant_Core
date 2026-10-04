@@ -24,7 +24,7 @@ from typing import Any, Dict
 import frappe
 from frappe import _
 
-from frappe_assistant_core.core.base_tool import BaseTool, exception_message
+from frappe_assistant_core.core.base_tool import BaseTool, exception_message, permission_error_result
 
 
 def _default_todo_allocation(doc: Any) -> None:
@@ -43,17 +43,6 @@ def _default_todo_allocation(doc: Any) -> None:
 
     if not doc.has_permission("create"):
         doc.allocated_to = frappe.session.user
-
-
-def _permission_error(doctype: str, error: str) -> Dict[str, Any]:
-    return {
-        "success": False,
-        "error": error,
-        "error_type": "permission_error",
-        "doctype": doctype,
-        "guidance": _("Insufficient permissions for this operation."),
-        "suggestion": _("Contact your system administrator to grant necessary permissions for this DocType"),
-    }
 
 
 class DocumentCreate(BaseTool):
@@ -371,7 +360,7 @@ class DocumentCreate(BaseTool):
                 title=_("Document Creation Error"), message=f"Error creating {doctype}: {error_msg}"
             )
 
-            return _permission_error(doctype, error_msg)
+            return permission_error_result(doctype, error_msg)
         except Exception as e:
             error_msg = exception_message(e)
             frappe.log_error(
@@ -400,7 +389,7 @@ class DocumentCreate(BaseTool):
                     }
                 )
             elif "permission" in error_msg.lower():
-                return _permission_error(doctype, error_msg)
+                return permission_error_result(doctype, error_msg)
             else:
                 result.update(
                     {

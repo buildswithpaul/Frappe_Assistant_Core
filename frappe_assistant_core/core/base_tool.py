@@ -83,6 +83,27 @@ def exception_message(exc: BaseException, fallback: Optional[str] = None) -> str
     return reason or fallback or type(exc).__name__
 
 
+def permission_error_result(doctype: str, error: str, name: Optional[str] = None) -> Dict[str, Any]:
+    """Return the tool result for a permission denial.
+
+    Every write tool reports a denial in this shape, so the model is told to stop rather
+    than to retry with different field values. Pair it with ``exception_message()``:
+    Frappe's document-level denial carries its reason in ``frappe.flags.error_message``,
+    not in the exception.
+    """
+    result: Dict[str, Any] = {
+        "success": False,
+        "error": error,
+        "error_type": "permission_error",
+        "doctype": doctype,
+        "guidance": _("Insufficient permissions for this operation."),
+        "suggestion": _("Contact your system administrator to grant necessary permissions for this DocType"),
+    }
+    if name:
+        result["name"] = name
+    return result
+
+
 class BaseTool(ABC):
     """
     Base class for all Frappe Assistant Core tools.

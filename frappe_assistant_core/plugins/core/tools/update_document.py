@@ -24,7 +24,7 @@ from typing import Any, Dict, List, Optional, Set
 import frappe
 from frappe import _
 
-from frappe_assistant_core.core.base_tool import BaseTool, exception_message
+from frappe_assistant_core.core.base_tool import BaseTool, exception_message, permission_error_result
 
 
 def _restricted_fields_for_doctype(doctype: str, user_role: str) -> Set[str]:
@@ -392,6 +392,17 @@ class DocumentUpdate(BaseTool):
             # Log successful update
             return result
 
+        except frappe.PermissionError as e:
+            # doc.save() refuses a document this user may not write and raises with no
+            # message; exception_message() recovers Frappe's reason.
+            error_msg = exception_message(
+                e, _("Insufficient permission to update {0} '{1}'").format(doctype, name)
+            )
+            frappe.log_error(
+                title=_("Document Update Error"), message=f"Error updating {doctype} '{name}': {error_msg}"
+            )
+
+            return permission_error_result(doctype, error_msg, name)
         except Exception as e:
             error_msg = exception_message(e)
             frappe.log_error(
