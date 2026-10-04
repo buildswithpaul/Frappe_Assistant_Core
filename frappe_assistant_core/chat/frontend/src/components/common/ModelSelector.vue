@@ -146,12 +146,16 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted } from "vue";
+import { ref, computed, onMounted, onUnmounted } from "vue";
 import { useModelStore } from "@/stores/modelStore";
 
 const modelStore = useModelStore();
 const selectorRef = ref(null);
-const isOpen = ref(false);
+// Store-held, so a failed hand-picked model can open the picker (chatStore.handleStreamError).
+const isOpen = computed({
+	get: () => modelStore.pickerOpen,
+	set: (value) => (value ? modelStore.openPicker() : modelStore.closePicker()),
+});
 
 function toggleDropdown() {
 	isOpen.value = !isOpen.value;
@@ -213,6 +217,7 @@ onMounted(() => {
 onUnmounted(() => {
 	document.removeEventListener("click", handleClickOutside);
 	document.removeEventListener("keydown", handleKeydown);
+	modelStore.closePicker();
 });
 </script>
 

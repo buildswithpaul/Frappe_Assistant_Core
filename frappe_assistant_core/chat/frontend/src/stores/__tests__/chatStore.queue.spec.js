@@ -145,6 +145,7 @@ describe("chatStore send queueing", () => {
 		await flush();
 		expect(api.chat.send).toHaveBeenCalledWith("s1", "QUEUED-ONE", [], null, "m1", null, [], {
 			web_search: false,
+			reasoning_effort: "off",
 			thinking_enabled: false,
 			client_turn_id: expect.any(String),
 		});

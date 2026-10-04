@@ -67,6 +67,7 @@ describe("chatStore.continueMessage", () => {
 
 		expect(api.chat.continueResponse).toHaveBeenCalledWith("session-42", "msg-42", {
 			web_search: false,
+			reasoning_effort: "off",
 			thinking_enabled: false,
 			client_turn_id: expect.any(String),
 		});
@@ -80,7 +81,7 @@ describe("chatStore.continueMessage", () => {
 		// search-off would finish with search silently back on.
 		const modes = useComposerModesStore();
 		modes.toggle("session-42", "webSearch");
-		modes.toggle("session-42", "thinking");
+		modes.setEffort("session-42", "high");
 		modes.toggle("session-42", "webSearch"); // back off — the state the pill shows
 
 		const store = useChatStore();
@@ -98,6 +99,7 @@ describe("chatStore.continueMessage", () => {
 
 		expect(api.chat.continueResponse).toHaveBeenCalledWith("session-42", "msg-42", {
 			web_search: false,
+			reasoning_effort: "high",
 			thinking_enabled: true,
 			client_turn_id: expect.any(String),
 		});

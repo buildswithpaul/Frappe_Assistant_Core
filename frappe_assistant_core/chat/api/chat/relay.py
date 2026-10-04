@@ -16,6 +16,7 @@ with the next turn's, and this id is how a client tells them apart.
 
 from __future__ import annotations
 
+import inspect
 import json
 import time
 from collections.abc import Callable
@@ -28,6 +29,37 @@ from .._helpers import (
     _not_registered_error,
     _safe_error,
 )
+
+_reasoning_effort_drop_logged = False
+
+
+def _accepts_reasoning_effort(stream_chat) -> bool:
+    try:
+        parameters = inspect.signature(stream_chat).parameters
+    except (TypeError, ValueError):
+        return False
+    return "reasoning_effort" in parameters or any(
+        p.kind is inspect.Parameter.VAR_KEYWORD for p in parameters.values()
+    )
+
+
+def _sdk_composer_kwargs(stream_chat, web_search, thinking_enabled, reasoning_effort) -> dict:
+    """Keyword args for the SDK's stream_chat, omitting reasoning_effort when
+    the installed SDK predates it (it would raise TypeError on an unknown kwarg).
+    FAC pins the SDK exactly, so this only matters for editable / mispinned installs."""
+    global _reasoning_effort_drop_logged
+    kwargs = {"web_search": web_search, "thinking_enabled": thinking_enabled}
+    if reasoning_effort is None:
+        return kwargs
+    if _accepts_reasoning_effort(stream_chat):
+        kwargs["reasoning_effort"] = reasoning_effort
+    elif not _reasoning_effort_drop_logged:
+        _reasoning_effort_drop_logged = True
+        frappe.logger("fac.chat").warning(
+            "Installed assistant_runtime_sdk has no reasoning_effort parameter; "
+            "the thinking level is dropped and thinking_enabled decides the turn."
+        )
+    return kwargs
 
 
 def _set_faco_message_with_retry(name: str, updates: dict, *, attempts: int = 3) -> bool:
@@ -698,6 +730,7 @@ def _relay_ar_interrupt_resume(
     model_id=None,
     web_search=None,
     thinking_enabled=None,
+    reasoning_effort=None,
 ):
     """
     Resume an interrupted AR stream by sending interrupt responses.
@@ -778,8 +811,7 @@ def _relay_ar_interrupt_resume(
             message_id=message_id,
             session_state=session_state,
             model_id=model_id,
-            web_search=web_search,
-            thinking_enabled=thinking_enabled,
+            **_sdk_composer_kwargs(client.stream_chat, web_search, thinking_enabled, reasoning_effort),
         )
         for event in stream_iter:
             # Cooperative cancellation: same treatment as the send funnel.
@@ -1251,6 +1283,7 @@ def _relay_ar_stream(
     continue_from_message_id=None,
     web_search=None,
     thinking_enabled=None,
+    reasoning_effort=None,
 ):
     """
     Relay SSE stream from AR to frontend via Socket.IO.
@@ -1289,6 +1322,8 @@ def _relay_ar_stream(
                     False turns it off.
             thinking_enabled: Optional composer toggle forwarded to AR. Same
                     None-vs-False semantics as web_search.
+            reasoning_effort: Optional composer thinking level forwarded to AR when
+                    the installed SDK supports it.
     """
     # Set up Frappe context for background thread
     frappe.init(site=site)
@@ -1379,10 +1414,7 @@ def _relay_ar_stream(
         )
 
         # Stream from AR
-        # SDK signature: stream_chat(session_id, message, user_id, context=None, model_id=None,
-        # attachments=None, system_prompt_addendum=None, client_type=None, interrupt_response=None,
-        # message_id=None, session_state=None, continue_from_message_id=None, *, web_search=None,
-        # thinking_enabled=None) — web_search/thinking_enabled are keyword-only.
+        # web_search / thinking_enabled / reasoning_effort are keyword-only on the SDK.
         stream_iter = client.stream_chat(
             session_id,
             full_prompt,
@@ -1395,8 +1427,7 @@ def _relay_ar_stream(
             session_state=session_state,
             continue_from_message_id=continue_from_message_id,
             message_id=continue_from_message_id,
-            web_search=web_search,
-            thinking_enabled=thinking_enabled,
+            **_sdk_composer_kwargs(client.stream_chat, web_search, thinking_enabled, reasoning_effort),
         )
         for event in stream_iter:
             # Cooperative cancellation: the cancel_stream endpoint sets a

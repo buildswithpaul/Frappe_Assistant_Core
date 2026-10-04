@@ -419,7 +419,9 @@ export const useChatStore = defineStore("chat", () => {
 				attachments,
 				{
 					web_search: modes.webSearch,
-					thinking_enabled: modes.thinking,
+					reasoning_effort: modes.effort,
+					// Older AR servers only read the boolean.
+					thinking_enabled: modes.effort !== "off",
 					// A Stop names this request by the same id (streamManager.abortStream).
 					client_turn_id: assistantMessage._requestId,
 				}
@@ -466,7 +468,9 @@ export const useChatStore = defineStore("chat", () => {
 			const modes = useComposerModesStore().modesFor(currentSessionId.value);
 			await api.chat.continueResponse(currentSessionId.value, messageId, {
 				web_search: modes.webSearch,
-				thinking_enabled: modes.thinking,
+				reasoning_effort: modes.effort,
+				// Older AR servers only read the boolean.
+				thinking_enabled: modes.effort !== "off",
 				client_turn_id: lastMsg._requestId,
 			});
 		} catch (err) {
@@ -608,7 +612,9 @@ export const useChatStore = defineStore("chat", () => {
 				interrupt_response: JSON.stringify(batch.responses),
 				message_id: resumeMessageId,
 				web_search: modes.webSearch,
-				thinking_enabled: modes.thinking,
+				reasoning_effort: modes.effort,
+				// Older AR servers only read the boolean.
+				thinking_enabled: modes.effort !== "off",
 				client_turn_id: clientTurnId,
 			};
 			// Same reasoning for the model — except "auto" can never travel: a
@@ -778,6 +784,10 @@ export const useChatStore = defineStore("chat", () => {
 		// handleStreamResumed, so this flag must be cleared here too.
 		isSubmittingInterrupts.value = false;
 		setError(errorMessage || "Stream error occurred", errorCode || null);
+		// The hand-picked model failed or is resting: the remedy is another model.
+		if (errorCode === "MODEL_FAILED" || errorCode === "MODEL_TEMPORARILY_UNAVAILABLE") {
+			useModelStore().openPicker();
+		}
 
 		// INTERRUPT_ALREADY_RESOLVED: a stale approval card was clicked
 		// (commonly because Stop was pressed in another tab, or the previous

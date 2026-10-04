@@ -51,6 +51,17 @@ def _flag(value) -> bool:
     return bool(value)
 
 
+EFFORT_LEVELS = ("off", "low", "medium", "high", "xhigh", "max")
+
+
+def _effort(value) -> str | None:
+    """A composer thinking level, or None when absent or not one we know."""
+    if not isinstance(value, str):
+        return None
+    level = value.strip().lower()
+    return level if level in EFFORT_LEVELS else None
+
+
 _MAX_SIGNAL_COUNT = 999
 _MAX_SIGNAL_AGE_S = 3600
 
@@ -158,6 +169,7 @@ def send_message(
     client_type: str | None = None,
     web_search: bool | None = None,
     thinking_enabled: bool | None = None,
+    reasoning_effort: str | None = None,
     client_signals: str | None = None,
     client_turn_id: str | None = None,
 ) -> dict:
@@ -183,6 +195,7 @@ def send_message(
                     "false" strings from the form-encoded Desk widget; coerced via ``_flag``.
             thinking_enabled (bool): Composer toggle for AR extended thinking. Same None-vs-explicit
                     semantics and coercion as web_search.
+            reasoning_effort (str): Composer thinking level — off/low/medium/high/xhigh/max. When valid it also sets thinking_enabled, so an AR that predates levels still honours on/off.
             client_signals (str): JSON of counts-only browser signals from the widget,
                     e.g. {"recent_errors": {"console": 2, "failed_requests": 1,
                     "newest_age_s": 4}}. Counts are read; any other content is ignored.
@@ -282,6 +295,10 @@ def send_message(
 
         # Process in background via bounded pool (FACO-H14) — relay from AR.
         # user_msg_name may be None under M15 restriction — relay tolerates.
+        effort = _effort(reasoning_effort)
+        if effort is not None:
+            thinking_enabled = effort != "off"
+
         _relay_pool.submit(
             _relay_ar_stream,
             session_id,
@@ -301,6 +318,7 @@ def send_message(
             # off — only coerce when the caller actually supplied a value.
             web_search=_flag(web_search) if web_search is not None else None,
             thinking_enabled=_flag(thinking_enabled) if thinking_enabled is not None else None,
+            reasoning_effort=effort,
         )
 
         return {
@@ -328,6 +346,7 @@ def resume_interrupt(
     model_id: str | None = None,
     web_search: bool | None = None,
     thinking_enabled: bool | None = None,
+    reasoning_effort: str | None = None,
     client_turn_id: str | None = None,
 ) -> dict:
     """
@@ -351,6 +370,7 @@ def resume_interrupt(
                     send_message — a resume that omits it reaches AR as absence,
                     which AR reads as "search available".
             thinking_enabled: Composer toggle for AR extended thinking, same rules.
+            reasoning_effort (str): Composer thinking level — off/low/medium/high/xhigh/max. When valid it also sets thinking_enabled, so an AR that predates levels still honours on/off.
             client_turn_id: The client's id for this request. A Stop
                     (cancel_stream) that already names it is kept by this accept.
 
@@ -392,6 +412,10 @@ def resume_interrupt(
 
         # Resume in background via bounded pool (FACO-H14) — same relay
         # pattern as send_message.
+        effort = _effort(reasoning_effort)
+        if effort is not None:
+            thinking_enabled = effort != "off"
+
         _relay_pool.submit(
             _relay_ar_interrupt_resume,
             session_id,
@@ -407,6 +431,7 @@ def resume_interrupt(
             model_id=model_id,
             web_search=_flag(web_search) if web_search is not None else None,
             thinking_enabled=_flag(thinking_enabled) if thinking_enabled is not None else None,
+            reasoning_effort=effort,
         )
 
         return {
@@ -432,6 +457,7 @@ def continue_response(
     client_type: str | None = None,
     web_search: bool | None = None,
     thinking_enabled: bool | None = None,
+    reasoning_effort: str | None = None,
     client_turn_id: str | None = None,
 ) -> dict:
     """
@@ -449,6 +475,7 @@ def continue_response(
             web_search: Composer toggle for the conversation being continued. Same
                     None-vs-explicit semantics and ``_flag`` coercion as send_message.
             thinking_enabled: Composer toggle for AR extended thinking, same rules.
+            reasoning_effort (str): Composer thinking level — off/low/medium/high/xhigh/max. When valid it also sets thinking_enabled, so an AR that predates levels still honours on/off.
             client_turn_id: The client's id for this request. A Stop
                     (cancel_stream) that already names it is kept by this accept.
 
@@ -487,6 +514,10 @@ def continue_response(
         # Continue in background via bounded pool (FACO-H14) — reuses the
         # normal stream relay; continue_from_message_id tells it to skip
         # pushing a user message and ask AR to resume from message_id.
+        effort = _effort(reasoning_effort)
+        if effort is not None:
+            thinking_enabled = effort != "off"
+
         _relay_pool.submit(
             _relay_ar_stream,
             session_id,
@@ -504,6 +535,7 @@ def continue_response(
             # same toggles, not fall back to AR's absence defaults.
             web_search=_flag(web_search) if web_search is not None else None,
             thinking_enabled=_flag(thinking_enabled) if thinking_enabled is not None else None,
+            reasoning_effort=effort,
         )
 
         return {
