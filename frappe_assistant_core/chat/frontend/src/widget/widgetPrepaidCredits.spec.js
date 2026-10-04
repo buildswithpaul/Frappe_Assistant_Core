@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
@@ -15,31 +15,27 @@ import { resolve } from "node:path";
 
 const quotaJs = resolve(process.cwd(), "../../public/chat/widget/widget_quota.js");
 
+const spotlightJs = resolve(process.cwd(), "../../public/chat/widget/widget_spotlight.js");
+
 let Quota;
+let Spotlight;
 
 beforeAll(() => {
 	globalThis.__ = (s, args) =>
 		args ? s.replace(/\{(\d+)\}/g, (_m, i) => args[i]) : s;
 	// eslint-disable-next-line no-new-func
+	new Function(readFileSync(spotlightJs, "utf8"))();
 	new Function(readFileSync(quotaJs, "utf8"))();
 	Quota = window.FACOWidgetQuota;
+	Spotlight = window.FACOWidgetSpotlight;
 });
 
 beforeEach(() => {
-	sessionStorage.clear();
+	localStorage.clear();
 });
 
-function fired(status) {
-	const calls = { blocked: 0, overage: 0, warning: [] };
-	const stub = {
-		...Quota,
-		show_quota_blocked_modal: () => calls.blocked++,
-		show_quota_overage_notice: () => calls.overage++,
-		show_quota_warning_modal: (_w, t) => calls.warning.push(t),
-	};
-	stub.check_quota_warnings({}, status);
-	return calls;
-}
+const USER = "owner@acme.com";
+const check = (status) => Quota.check_quota_warnings({ user: USER }, status);
 
 describe("widget send gate", () => {
 	it("allows the turn when prepaid credits are covering the overage", () => {
@@ -80,65 +76,99 @@ describe("widget send gate", () => {
 	});
 });
 
-describe("widget quota modals", () => {
+describe("widget quota moments", () => {
 	const admin = { is_admin: true };
 
-	it("shows the overage notice, not the block, while prepaid credits remain", () => {
-		const calls = fired({
+	it("announces the overage switchover, not a block, while prepaid credits remain", () => {
+		const moment = check({
 			...admin,
 			percentage_used: 100,
 			in_overage: true,
 			credits_exhausted: false,
 			credit_balance: 25000,
+			billing_cycle_start: "2026-09-24",
 		});
-		expect(calls.overage).toBe(1);
-		expect(calls.blocked).toBe(0);
+		expect(moment).toEqual({ kind: "overage" });
 	});
 
-	it("shows the overage notice only once per session", () => {
-		const status = { ...admin, percentage_used: 100, in_overage: true, credit_balance: 500 };
-		expect(fired(status).overage).toBe(1);
-		expect(fired(status).overage).toBe(0);
+	it("keeps announcing the overage until the notice actually renders", () => {
+		const status = { ...admin, percentage_used: 100, in_overage: true, credit_balance: 500, billing_cycle_start: "2026-09-24" };
+		expect(check(status)).toEqual({ kind: "overage" });
+		expect(check(status)).toEqual({ kind: "overage" });
+		expect(localStorage.getItem(`fac_quota_moment:${USER}:2026-09-24:overage`)).toBeNull();
 	});
 
-	it("blocks once every credit is gone", () => {
-		const calls = fired({
-			...admin,
-			percentage_used: 100,
-			in_overage: false,
-			credits_exhausted: true,
-			credit_balance: 0,
-		});
-		expect(calls.blocked).toBe(1);
-		expect(calls.overage).toBe(0);
+	it("returns the 100 moment once every credit is gone", () => {
+		const moment = check({ ...admin, percentage_used: 100, credits_exhausted: true, credit_balance: 0 });
+		expect(moment.kind).toBe("quota");
+		expect(moment.threshold).toBe(100);
 	});
 
-	it("keeps the 80 and 90 percent warnings — they are the nudge to buy", () => {
-		expect(fired({ ...admin, percentage_used: 85 }).warning).toEqual([80]);
-		expect(fired({ ...admin, percentage_used: 95 }).warning).toEqual([90]);
+	it("returns the 80 moment at 85 percent", () => {
+		expect(check({ ...admin, percentage_used: 85 }).threshold).toBe(80);
+	});
+
+	it("has no 90 moment: 95 percent is still the 80 moment", () => {
+		expect(check({ ...admin, percentage_used: 95 }).threshold).toBe(80);
+	});
+
+	it("stays quiet once the cycle key is set, and below 80", () => {
+		const status = { ...admin, percentage_used: 85, billing_cycle_start: "2026-09-24" };
+		expect(check(status)).not.toBeNull();
+		Spotlight.storage_set(Spotlight.quota_key(USER, "2026-09-24", 80), "1");
+		expect(check(status)).toBeNull();
+		expect(check({ ...admin, percentage_used: 50 })).toBeNull();
 	});
 
 	it("tells a non-admin nothing at all", () => {
-		const calls = fired({
-			is_admin: false,
-			percentage_used: 100,
-			in_overage: true,
-			credit_balance: 25000,
-		});
-		expect(calls.overage).toBe(0);
-		expect(calls.blocked).toBe(0);
+		expect(check({ is_admin: false, percentage_used: 100, in_overage: true, credit_balance: 25000 })).toBeNull();
+		expect(check({ is_admin: false, credits_exhausted: true })).toBeNull();
 	});
 });
 
-describe("overage notice content", () => {
-	it("names the remaining balance so the admin knows the runway", () => {
-		let opts;
-		globalThis.frappe = { ui: { Dialog: class { constructor(o) { opts = o; } show() {} } } };
+describe("overage notice", () => {
+	const status = { success: true, is_admin: true, percentage_used: 100, in_overage: true, credit_balance: 25000, billing_cycle_start: "2026-09-24" };
+	const key = `fac_quota_moment:${USER}:2026-09-24:overage`;
+	let render_notice;
 
-		Quota.show_quota_overage_notice({ quota_status: { credit_balance: 25000 } }, true);
+	beforeEach(() => {
+		render_notice = vi.fn();
+		window.FACOWidgetSpotlight = { ...Spotlight, render_notice, update_dot: vi.fn() };
+		globalThis.frappe = { session: { user: USER }, call: vi.fn(async () => ({ message: status })) };
+		globalThis.FACOLogger = { error: vi.fn() };
+	});
 
-		const html = opts.fields[0].options;
-		expect(html).toContain("25.0K");
-		expect(opts.primary_action_label).toBeTruthy();
+	afterEach(() => {
+		window.FACOWidgetSpotlight = Spotlight;
+	});
+
+	it("names the remaining balance and marks the cycle once it renders", async () => {
+		await Quota.fetch_quota_status({ user: USER, is_open: true });
+
+		expect(render_notice).toHaveBeenCalledTimes(1);
+		expect(render_notice.mock.calls[0][1]).toContain("25.0K");
+		expect(localStorage.getItem(key)).toBe("1");
+	});
+
+	it("holds the notice while the panel is closed and shows it on the next open", async () => {
+		const widget = { user: USER, is_open: false };
+		await Quota.fetch_quota_status(widget);
+
+		expect(render_notice).not.toHaveBeenCalled();
+		expect(localStorage.getItem(key)).toBeNull();
+
+		widget.is_open = true;
+		Quota.show_pending_overage_notice(widget);
+		expect(render_notice).toHaveBeenCalledTimes(1);
+		expect(localStorage.getItem(key)).toBe("1");
+
+		Quota.show_pending_overage_notice(widget);
+		expect(render_notice).toHaveBeenCalledTimes(1);
+	});
+
+	it("does not show it again in a cycle where it was already seen", async () => {
+		localStorage.setItem(key, "1");
+		await Quota.fetch_quota_status({ user: USER, is_open: true });
+		expect(render_notice).not.toHaveBeenCalled();
 	});
 });

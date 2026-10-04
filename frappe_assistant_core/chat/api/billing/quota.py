@@ -48,7 +48,9 @@ def get_quota_status():
                     "credit_balance": float,      # prepaid, always present
                     "in_overage": bool,           # quota spent, prepaid covering
                     "credits_exhausted": bool,    # quota spent, prepaid gone
-                    "is_admin": bool
+                    "is_admin": bool,
+                    "billing_cycle_start": str | None,  # first day of billing cycle in AR
+                    "upgrade": dict | None              # AR's upgrade pitch ({plan, benefits}), or None (top plan), or absent (older AR)
             }
 
     ``in_overage`` and ``credits_exhausted`` are the admission answer, and
@@ -114,6 +116,14 @@ def get_quota_status():
                 "estimated_monthly_bill": live.get("estimated_monthly_bill") or {},
             }
 
+        # Spotlight's once-per-cycle key and AR's upgrade pitch. `upgrade` is
+        # passed only when AR sent it: absent means an older AR (clients fall
+        # back to a plain "See plans"), None means the top plan.
+        cycle_source = live if live else snap
+        spotlight = {"billing_cycle_start": (cycle_source or {}).get("billing_cycle_start")}
+        if live and "upgrade" in live:
+            spotlight["upgrade"] = live.get("upgrade")
+
         return {
             "success": True,
             **quota,
@@ -123,6 +133,7 @@ def get_quota_status():
             "is_admin": is_admin,
             "registration_status": settings.registration_status,
             **pricing,
+            **spotlight,
         }
 
     except Exception as e:

@@ -53,6 +53,8 @@
 					:connection-visible="connectionVisible"
 					:socket-error="socketError"
 					:error="error"
+					:error-code="chatStore.errorCode"
+					:is-admin="isAdmin"
 					:needs-reconnect="needsReconnect"
 					:reconnecting="reconnecting"
 					@retry="retryConnection"
@@ -249,6 +251,7 @@ const ParameterModal = defineAsyncComponent(
 import { useStreaming, reconnectSocket } from "@/composables/useStreaming";
 import { useAutoScroll } from "@/composables/useAutoScroll";
 import { useTemplateExecution } from "@/composables/useTemplateExecution";
+import { usePromptFromRoute } from "@/composables/usePromptFromRoute";
 import { useChatViewInit } from "@/composables/useChatViewInit";
 import { useMessageFileUpload } from "@/composables/useMessageFileUpload";
 import { useChatSessionActions } from "@/composables/useChatSessionActions";
@@ -332,6 +335,13 @@ const {
 	submitParameters,
 	closeParameterModal,
 } = useTemplateExecution();
+
+usePromptFromRoute({
+	route,
+	router,
+	pendingPrompt,
+	isNewChat: () => !route.params.sessionId && messages.value.length === 0,
+});
 
 // File pre-upload flow (matches widget — upload on select, attach on send)
 const { handleFileUpload, consumeUploadedFiles } = useMessageFileUpload();

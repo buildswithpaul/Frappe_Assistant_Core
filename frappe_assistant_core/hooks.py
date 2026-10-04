@@ -364,6 +364,7 @@ app_include_css = [
     _widget_asset("/assets/frappe_assistant_core/chat/widget/widget_robot.css"),
     _widget_asset("/assets/frappe_assistant_core/chat/widget/widget_messages.css"),
     _widget_asset("/assets/frappe_assistant_core/chat/widget/widget_modals.css"),
+    _widget_asset("/assets/frappe_assistant_core/chat/widget/widget_spotlight.css"),
     _widget_asset("/assets/frappe_assistant_core/chat/widget/widget_richblocks.css"),
 ]
 
@@ -400,6 +401,7 @@ app_include_js = [
     _widget_asset("/assets/frappe_assistant_core/chat/widget/widget_plan.js"),
     _widget_asset("/assets/frappe_assistant_core/chat/widget/widget_templates.js"),
     _widget_asset("/assets/frappe_assistant_core/chat/widget/widget_slash_menu.js"),
+    _widget_asset("/assets/frappe_assistant_core/chat/widget/widget_spotlight.js"),
     _widget_asset("/assets/frappe_assistant_core/chat/widget/widget_quota.js"),
     _widget_asset("/assets/frappe_assistant_core/chat/widget/widget_browser_tools.js"),
     _widget_asset("/assets/frappe_assistant_core/chat/widget/widget_positioning.js"),

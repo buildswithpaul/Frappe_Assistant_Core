@@ -23,6 +23,7 @@ class FACOWidget {
 		// may belong to another live tab, which only that tab can answer.
 		this.session_id = null;
 		this.session_restored = false;
+		this.user = frappe.session.user;
 
 		this.messages = [];
 		// Turn-in-flight state, read by the reconnect recovery in
@@ -599,6 +600,9 @@ class FACOWidget {
 
 		// Update quota display
 		this.update_quota_display();
+
+		// Announcements: sets the launcher dot when something is pending
+		FACOWidgetSpotlight.refresh(this);
 	}
 
 	bind_events() {
@@ -937,7 +941,16 @@ class FACOWidget {
 		// unavailable, contact your administrator"). They have no upgrade
 		// path so a modal here would just block them with no recourse.
 		if (FACOWidgetQuota.is_blocked(this.quota_status) && this.quota_status.is_admin) {
-			this.show_quota_blocked_modal(this.quota_status.is_admin);
+			FACOWidgetSpotlight.render_in_panel(
+				this,
+				FACOWidgetSpotlight.quota_content({
+					...this.quota_status,
+					credits_exhausted: true,
+					is_fallback: false,
+					is_unlimited: false,
+				}),
+			);
+			this.$widget.find(".faco-messages").scrollTop(0);
 			return;
 		}
 
@@ -1294,10 +1307,6 @@ class FACOWidget {
 		return FACOWidgetQuota.fetch_quota_status(this);
 	}
 
-	show_quota_blocked_modal(is_admin) {
-		FACOWidgetQuota.show_quota_blocked_modal(this, is_admin);
-	}
-
 	scroll_to_bottom() {
 		const $messages = this.$widget.find(".faco-messages");
 		$messages.scrollTop($messages[0].scrollHeight);
@@ -1339,6 +1348,8 @@ class FACOWidget {
 			} else if (!this.privacy_consent_complete) {
 				FACOWidgetOnboarding.show_setup_required(this, "needs_consent");
 			} else {
+				FACOWidgetSpotlight.render_in_panel(this);
+				FACOWidgetQuota.show_pending_overage_notice(this);
 				this.$widget.find(".faco-input").focus();
 			}
 		});
