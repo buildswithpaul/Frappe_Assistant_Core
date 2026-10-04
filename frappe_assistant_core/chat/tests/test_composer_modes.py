@@ -12,6 +12,7 @@ from frappe_assistant_core.chat.api.chat import messages
 from frappe_assistant_core.chat.api.chat.relay import (
     _relay_ar_interrupt_resume,
     _relay_ar_stream,
+    _sdk_composer_kwargs,
 )
 
 
@@ -22,6 +23,36 @@ class TestFlagCoercion(unittest.TestCase):
         self.assertIs(messages._flag("false"), False)
         self.assertIs(messages._flag(True), True)
         self.assertIs(messages._flag(None), False)
+
+
+class TestReasoningEffort(unittest.TestCase):
+    def test_valid_levels_are_normalised(self):
+        self.assertEqual(messages._effort(" High "), "high")
+        self.assertEqual(messages._effort("off"), "off")
+
+    def test_invalid_effort_is_dropped(self):
+        for bad in ("turbo", "", None, 3):
+            self.assertIsNone(messages._effort(bad), bad)
+
+
+class TestSdkCompat(unittest.TestCase):
+    """An older SDK has no reasoning_effort parameter; FAC must not pass it one."""
+
+    def test_new_sdk_gets_both(self):
+        def new_stream_chat(*a, web_search=None, thinking_enabled=None, reasoning_effort=None): ...
+
+        self.assertEqual(
+            _sdk_composer_kwargs(new_stream_chat, None, True, "max"),
+            {"web_search": None, "thinking_enabled": True, "reasoning_effort": "max"},
+        )
+
+    def test_old_sdk_gets_only_the_flag(self):
+        def old_stream_chat(*a, web_search=None, thinking_enabled=None): ...
+
+        self.assertEqual(
+            _sdk_composer_kwargs(old_stream_chat, False, True, "max"),
+            {"web_search": False, "thinking_enabled": True},
+        )
 
 
 class TestFlagsReachTheRelay(unittest.TestCase):
@@ -69,6 +100,21 @@ class TestFlagsReachTheRelay(unittest.TestCase):
         bound = self._send()
         self.assertIsNone(bound.arguments.get("web_search"))
         self.assertIsNone(bound.arguments.get("thinking_enabled"))
+
+    def test_a_level_reaches_the_relay_and_sets_the_flag(self):
+        bound = self._send(reasoning_effort="medium", thinking_enabled=None)
+        self.assertEqual(bound.arguments.get("reasoning_effort"), "medium")
+        self.assertIs(bound.arguments.get("thinking_enabled"), True)
+
+    def test_off_level_turns_the_flag_off_over_a_stale_true(self):
+        bound = self._send(reasoning_effort="off", thinking_enabled=True)
+        self.assertEqual(bound.arguments.get("reasoning_effort"), "off")
+        self.assertIs(bound.arguments.get("thinking_enabled"), False)
+
+    def test_an_invalid_level_falls_back_to_the_flag(self):
+        bound = self._send(reasoning_effort="turbo", thinking_enabled=True)
+        self.assertIsNone(bound.arguments.get("reasoning_effort"))
+        self.assertIs(bound.arguments.get("thinking_enabled"), True)
 
 
 class TestFlagsSurviveResumeAndContinue(unittest.TestCase):
@@ -121,6 +167,14 @@ class TestFlagsSurviveResumeAndContinue(unittest.TestCase):
         bound = self._continue(web_search=False, thinking_enabled=True)
         self.assertIs(bound.arguments.get("web_search"), False)
         self.assertIs(bound.arguments.get("thinking_enabled"), True)
+
+    def test_a_resume_and_a_continue_forward_the_level(self):
+        for bound in (
+            self._resume(reasoning_effort="high"),
+            self._continue(reasoning_effort="high"),
+        ):
+            self.assertEqual(bound.arguments.get("reasoning_effort"), "high")
+            self.assertIs(bound.arguments.get("thinking_enabled"), True)
 
     def test_a_resume_still_lets_absence_stay_absence(self):
         """Non-SPA callers that never set a toggle keep today's behaviour."""

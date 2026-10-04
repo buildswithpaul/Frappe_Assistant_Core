@@ -30,6 +30,22 @@ from .._helpers import (
 )
 
 
+def _sdk_composer_kwargs(stream_chat, web_search, thinking_enabled, reasoning_effort) -> dict:
+    """Keyword args for the SDK's stream_chat, omitting reasoning_effort when
+    the installed SDK predates it (it would raise TypeError on an unknown kwarg).
+    FAC pins the SDK exactly, so this only matters for editable / mispinned installs."""
+    import inspect
+
+    kwargs = {"web_search": web_search, "thinking_enabled": thinking_enabled}
+    try:
+        accepts = "reasoning_effort" in inspect.signature(stream_chat).parameters
+    except (TypeError, ValueError):
+        accepts = False
+    if accepts and reasoning_effort is not None:
+        kwargs["reasoning_effort"] = reasoning_effort
+    return kwargs
+
+
 def _set_faco_message_with_retry(name: str, updates: dict, *, attempts: int = 3) -> bool:
     """Update a FACO Message row, retrying on InnoDB record-changed (1020).
 
@@ -698,6 +714,7 @@ def _relay_ar_interrupt_resume(
     model_id=None,
     web_search=None,
     thinking_enabled=None,
+    reasoning_effort=None,
 ):
     """
     Resume an interrupted AR stream by sending interrupt responses.
@@ -778,8 +795,7 @@ def _relay_ar_interrupt_resume(
             message_id=message_id,
             session_state=session_state,
             model_id=model_id,
-            web_search=web_search,
-            thinking_enabled=thinking_enabled,
+            **_sdk_composer_kwargs(client.stream_chat, web_search, thinking_enabled, reasoning_effort),
         )
         for event in stream_iter:
             # Cooperative cancellation: same treatment as the send funnel.
@@ -1251,6 +1267,7 @@ def _relay_ar_stream(
     continue_from_message_id=None,
     web_search=None,
     thinking_enabled=None,
+    reasoning_effort=None,
 ):
     """
     Relay SSE stream from AR to frontend via Socket.IO.
@@ -1289,6 +1306,8 @@ def _relay_ar_stream(
                     False turns it off.
             thinking_enabled: Optional composer toggle forwarded to AR. Same
                     None-vs-False semantics as web_search.
+            reasoning_effort: Optional composer thinking level forwarded to AR when
+                    the installed SDK supports it.
     """
     # Set up Frappe context for background thread
     frappe.init(site=site)
@@ -1395,8 +1414,7 @@ def _relay_ar_stream(
             session_state=session_state,
             continue_from_message_id=continue_from_message_id,
             message_id=continue_from_message_id,
-            web_search=web_search,
-            thinking_enabled=thinking_enabled,
+            **_sdk_composer_kwargs(client.stream_chat, web_search, thinking_enabled, reasoning_effort),
         )
         for event in stream_iter:
             # Cooperative cancellation: the cancel_stream endpoint sets a
