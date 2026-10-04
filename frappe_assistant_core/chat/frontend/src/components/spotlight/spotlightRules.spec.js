@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
 	cycleStart, quotaThreshold, pickAnnouncement, quotaContent, announcementContent,
-	nextResetDate, localDate, storage, PLANS_ROUTE, CREDITS_ROUTE,
+	formatResetDate, nextResetDate, localDate, storage, PLANS_ROUTE, CREDITS_ROUTE,
 } from "./spotlightRules";
 
 const NOW = new Date(2026, 9, 3, 12, 0, 0); // 3 Oct 2026 local
@@ -35,6 +35,12 @@ describe("cycleStart / nextResetDate", () => {
 		expect(nextResetDate({ billing_cycle_start: "2026-01-31" })).toBe("2026-02-28");
 		expect(nextResetDate({ billing_cycle_start: "2025-12-31" })).toBe("2026-01-31");
 		expect(nextResetDate({ billing_cycle_start: "2026-03-31" })).toBe("2026-04-30");
+	});
+	it("formats the reset date for the body copy", () => {
+		expect(formatResetDate("2026-10-26")).toBe("Oct 26, 2026");
+		expect(quotaContent({ percentage_used: 85, billing_cycle_start: "2026-09-26" }).body).toContain(
+			"Credits reset on Oct 26, 2026.",
+		);
 	});
 	it("localDate is the viewer's calendar day", () => {
 		expect(localDate(NOW)).toBe("2026-10-03");

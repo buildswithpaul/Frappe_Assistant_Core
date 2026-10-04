@@ -29,6 +29,11 @@ export function nextResetDate(status) {
 	return localDate(new Date(y, m, Math.min(d, last)));
 }
 
+export function formatResetDate(iso) {
+	const [y, m, d] = iso.split("-").map(Number);
+	return new Date(y, m - 1, d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
 export function quotaThreshold(status) {
 	if (!status || status.is_unlimited || status.is_fallback) return 0;
 	if (status.credits_exhausted === true) return 100;
@@ -47,7 +52,7 @@ export function quotaContent(status) {
 	const hasUpgradeKey = Object.prototype.hasOwnProperty.call(status || {}, "upgrade");
 	const upgrade = hasUpgradeKey ? status.upgrade : undefined;
 	const reset = nextResetDate(status);
-	const resetLine = reset ? ` Credits reset on ${reset}.` : "";
+	const resetLine = reset ? ` Credits reset on ${formatResetDate(reset)}.` : "";
 
 	const title = threshold === 100
 		? "You've used all of this month's credits"
