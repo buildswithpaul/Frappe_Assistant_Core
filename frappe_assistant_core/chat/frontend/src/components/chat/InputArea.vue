@@ -106,7 +106,7 @@ import {
 	UPLOAD_ACCEPT_ATTR,
 } from "@/composables/useComposerAttachments";
 import { useRobotMoodStore } from "@/stores/robotMoodStore";
-import { useComposerModesStore } from "@/stores/composerModesStore";
+import { useComposerModesStore, LEVEL_LABELS } from "@/stores/composerModesStore";
 import { useChatStore } from "@/stores/chatStore";
 import { useUserStore } from "@/stores/userStore";
 import { useModelStore } from "@/stores/modelStore";
@@ -159,13 +159,19 @@ const slashMenuRef = ref(null);
 const plusOpen = ref(false);
 const modes = computed(() => composerModesStore.modesFor(chatStore.currentSessionId));
 const thinkingMenuOpen = ref(false);
-const EFFORT_LABELS = { off: "Off", low: "Low", medium: "Medium", high: "High", xhigh: "Extra high", max: "Max" };
 const thinkingStateText = computed(() => {
 	if (modelStore.legacyMode) return modes.value.effort === "off" ? "Off" : "On";
-	return EFFORT_LABELS[modes.value.effort] || modes.value.effort;
+	return LEVEL_LABELS[modes.value.effort] || modes.value.effort;
 });
 const thinkingLabel = computed(() =>
 	modes.value.effort === "off" ? "Thinking" : `Thinking: ${thinkingStateText.value}`,
+);
+
+watch(
+	() => modelStore.thinkingHonoured,
+	(honoured) => {
+		if (!honoured) thinkingMenuOpen.value = false;
+	},
 );
 
 function toggleThinkingMenu() {

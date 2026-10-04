@@ -24,6 +24,7 @@
 
 <script setup>
 import { ref, onMounted, onUnmounted } from "vue";
+import { LEVEL_LABELS } from "@/stores/composerModesStore";
 
 const props = defineProps({
 	open: { type: Boolean, default: false },
@@ -36,14 +37,13 @@ const props = defineProps({
 const emit = defineEmits(["select", "close"]);
 const menuRef = ref(null);
 
-const LABELS = { off: "Off", low: "Low", medium: "Medium", high: "High", xhigh: "Extra high", max: "Max" };
 const COSTLY = ["xhigh", "max"];
 // Triggers own their own toggle, as in ComposerPlusMenu.
 const TRIGGER_SELECTOR = "[data-thinking-trigger]";
 
 function labelFor(level) {
 	if (props.legacy) return level === "off" ? "Off" : "On";
-	return LABELS[level] || level;
+	return LEVEL_LABELS[level] || level;
 }
 
 function choose(level) {

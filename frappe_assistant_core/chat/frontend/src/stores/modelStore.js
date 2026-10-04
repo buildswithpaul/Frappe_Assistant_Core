@@ -2,6 +2,7 @@ import { defineStore } from "pinia";
 import { ref, computed } from "vue";
 import { api } from "@/api/client";
 import { logger } from "@/utils/logger";
+import { EFFORT_LEVELS, LEVEL_LABELS } from "@/stores/composerModesStore";
 
 // localStorage key for persisting user's model selection
 const STORAGE_KEY = "faco_selected_model";
@@ -66,8 +67,7 @@ export const useModelStore = defineStore("models", () => {
 		return Boolean(currentModel.value?.thinking_effective);
 	});
 
-	const LEVEL_LABELS = { off: "Off", low: "Low", medium: "Medium", high: "High", xhigh: "Extra high", max: "Max" };
-	const ORDER = ["off", "low", "medium", "high", "xhigh", "max"];
+	const ORDER = EFFORT_LEVELS;
 
 	// An AR that predates the selector publishes no reasoning_levels. Then the
 	// composer keeps the old on/off control, and "on" travels as thinking_enabled.
@@ -75,10 +75,11 @@ export const useModelStore = defineStore("models", () => {
 
 	const effortLevels = computed(() => {
 		if (legacyMode.value) return thinkingHonoured.value ? ["off", "high"] : ["off"];
-		const lists = isAutoModeSelected.value
-			? models.value.filter(isModelAccessible).map((m) => m.reasoning_levels || [])
-			: [currentModel.value?.reasoning_levels || []];
-		const offered = new Set(lists.flat());
+		if (!isAutoModeSelected.value) {
+			// Unsupported levels stay listed; hintFor says where they actually run.
+			return currentModel.value?.reasoning_levels?.length ? [...ORDER] : ["off"];
+		}
+		const offered = new Set(models.value.filter(isModelAccessible).flatMap((m) => m.reasoning_levels || []));
 		return ORDER.filter((level) => offered.has(level));
 	});
 

@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { mount } from "@vue/test-utils";
+import { setActivePinia, createPinia } from "pinia";
+import { useModelStore } from "@/stores/modelStore";
 import ThinkingLevelMenu from "../ThinkingLevelMenu.vue";
 
 const ALL = ["off", "low", "medium", "high", "xhigh", "max"];
@@ -34,6 +36,18 @@ describe("ThinkingLevelMenu", () => {
 	it("shows the step-down hint for a level the model lacks", () => {
 		const wrapper = mountMenu({ hintFor: (l) => (l === "max" ? "Runs at High on this model" : null) });
 		expect(wrapper.text()).toContain("Runs at High on this model");
+	});
+
+	it("renders the step-down hint for Max on a model that tops out at High", () => {
+		setActivePinia(createPinia());
+		const store = useModelStore();
+		store.models = [
+			{ model_id: "a", tier: "Standard", tier_rank: 1, reasoning_levels: ["off", "low", "medium", "high"] },
+		];
+		store.selectedModel = "a";
+		const wrapper = mountMenu({ levels: store.effortLevels, hintFor: store.hintFor });
+		const max = wrapper.findAll("[role=menuitemradio]")[5];
+		expect(max.text()).toContain("Runs at High on this model");
 	});
 
 	it("legacy mode shows Off and On only", () => {

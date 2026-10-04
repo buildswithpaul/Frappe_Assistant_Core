@@ -9,6 +9,15 @@ const PENDING = "__pending__";
 
 export const EFFORT_LEVELS = ["off", "low", "medium", "high", "xhigh", "max"];
 
+export const LEVEL_LABELS = {
+	off: "Off",
+	low: "Low",
+	medium: "Medium",
+	high: "High",
+	xhigh: "Extra high",
+	max: "Max",
+};
+
 function emptyModes() {
 	return { webSearch: false, effort: "off" };
 }

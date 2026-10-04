@@ -33,13 +33,20 @@ describe("modelStore effort levels", () => {
 		expect(store.legacyMode).toBe(false);
 	});
 
-	it("a picked model offers its own levels and hints a step-down", () => {
+	it("a picked model lists every level and hints the ones it lacks", () => {
 		const store = useModelStore();
 		store.models = NEW;
 		store.selectedModel = "a";
-		expect(store.effortLevels).toEqual(["off", "low", "medium", "high"]);
+		expect(store.effortLevels).toEqual(["off", "low", "medium", "high", "xhigh", "max"]);
 		expect(store.hintFor("max")).toBe("Runs at High on this model");
 		expect(store.hintFor("medium")).toBeNull();
+	});
+
+	it("a picked model without levels offers only off", () => {
+		const store = useModelStore();
+		store.models = [...NEW, { model_id: "c", tier: "Standard", tier_rank: 1, reasoning_levels: [] }];
+		store.selectedModel = "c";
+		expect(store.effortLevels).toEqual(["off"]);
 	});
 
 	it("an AR without levels falls back to the legacy on/off control", () => {
