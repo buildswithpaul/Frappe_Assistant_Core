@@ -16,7 +16,7 @@ const dash = computed(() => {
 		<span class="coin coin-1"></span>
 		<span class="coin coin-2"></span>
 		<span class="coin coin-3"></span>
-		<svg viewBox="0 0 200 200" class="ring">
+		<svg viewBox="0 0 200 200" class="spot-ring">
 			<circle class="ring-track" cx="100" cy="100" :r="RADIUS" />
 			<circle
 				class="ring-fill"
@@ -42,11 +42,11 @@ const dash = computed(() => {
 	overflow: hidden;
 	background: linear-gradient(160deg, var(--ql-subtle), var(--ql-accent-soft));
 }
-.ring {
+.spot-ring {
 	width: 62%;
 	max-width: 280px;
 }
-.ring circle {
+.spot-ring circle {
 	fill: none;
 	stroke-width: 14;
 	stroke-linecap: round;
