@@ -34,6 +34,7 @@ const CODES = {
 		"only_candidate",
 		"unpriced_shortlist",
 		"fallback_rate_limited",
+		"fallback_error",
 		"capability",
 	],
 	CLASSIFICATION_SOURCES: ["llm", "greeting", "ack", "continuation", "short"],
@@ -241,6 +242,42 @@ describe("L1 — the one line", () => {
 		const line = routingHeadline(r, "Sonnet 4.6", "Opus 4.6");
 		expect(line).toContain("Opus 4.6");
 		expect(line).toContain("Sonnet 4.6");
+	});
+
+	it("an error fallback says the first model couldn't answer", () => {
+		const r = { selected_model: "b", fallback_from: "a", fallback_from_name: "Model A", pick_reason: "fallback_error" };
+		expect(routingHeadline(r, "Model B")).toBe("Started on Model A; it couldn't answer, so Model B did.");
+		expect(PICK_REASONS.fallback_error).toBe("The first choice couldn't answer.");
+	});
+
+	it("a rate-limit fallback keeps the busy wording", () => {
+		const r = { selected_model: "b", fallback_from: "a", fallback_from_name: "Model A", pick_reason: "fallback_rate_limited" };
+		expect(routingHeadline(r, "Model B")).toBe("Started on Model A; it was busy, so Model B answered.");
+	});
+
+	it("names the thinking level that ran", () => {
+		const rows = routingRows({ pick_reason: "cost_weighted", thinking: { requested: true, applied: true, effort: { requested: "high", applied: "high" } } });
+		expect(JSON.stringify(rows)).toContain("Thinking: High.");
+	});
+
+	it("says when a level stepped down", () => {
+		const rows = routingRows({ pick_reason: "cost_weighted", thinking: { requested: true, applied: true, effort: { requested: "max", applied: "high" } } });
+		expect(JSON.stringify(rows)).toContain("Thinking: Max (ran at High, this model's highest).");
+	});
+
+	it("says when off still thought a little", () => {
+		const rows = routingRows({ pick_reason: "cost_weighted", thinking: { requested: false, applied: false, effort: { requested: "off", applied: "low" } } });
+		expect(JSON.stringify(rows)).toContain("Thinking was off; this model always thinks a little (Low).");
+	});
+
+	it("keeps the plain wording for a receipt with no effort", () => {
+		const rows = routingRows({ pick_reason: "cost_weighted", thinking: { requested: true, applied: true } });
+		expect(JSON.stringify(rows)).toContain("Thinking was on.");
+	});
+
+	it("explains why a requested level did not apply", () => {
+		const rows = routingRows({ pick_reason: "cost_weighted", thinking: { requested: true, applied: false, not_applied_reason: "model_unsupported", effort: { requested: "high", applied: null } } });
+		expect(JSON.stringify(rows)).toContain("Thinking was on, but this model cannot think out loud.");
 	});
 
 	it("names the rule when a rule is what moved the turn", () => {
