@@ -28,8 +28,9 @@
 			<button
 				class="menu-item menu-thinking"
 				role="menuitemcheckbox"
-				:aria-pressed="thinking"
-				:class="{ 'menu-item-on': thinking }"
+				:aria-pressed="thinkingLevel !== 'off'"
+				:class="{ 'menu-item-on': thinkingLevel !== 'off' }"
+				data-thinking-trigger
 				:disabled="!thinkingAvailable"
 				:title="thinkingAvailable ? '' : 'This model cannot think longer'"
 				@click="$emit('toggle-thinking')"
@@ -39,7 +40,7 @@
 						d="M12 3l1.9 4.6L18.5 9l-4.6 1.9L12 15.5l-1.9-4.6L5.5 9l4.6-1.4L12 3z" />
 				</svg>
 				<span>Thinking</span>
-				<span class="menu-state">{{ thinking ? "On" : "Off" }}</span>
+				<span class="menu-state">{{ thinkingStateText }}</span>
 			</button>
 		</div>
 	</Transition>
@@ -52,7 +53,8 @@ const props = defineProps({
 	open: { type: Boolean, default: false },
 	webSearchAvailable: { type: Boolean, default: false },
 	webSearch: { type: Boolean, default: false },
-	thinking: { type: Boolean, default: false },
+	thinkingLevel: { type: String, default: "off" },
+	thinkingStateText: { type: String, default: "Off" },
 	thinkingAvailable: { type: Boolean, default: true },
 });
 

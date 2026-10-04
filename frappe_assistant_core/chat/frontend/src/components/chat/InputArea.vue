@@ -23,12 +23,23 @@
 					:open="plusOpen"
 					:web-search-available="webSearchAvailable"
 					:web-search="modes.webSearch"
-					:thinking="modes.effort !== 'off'"
+					:thinking-level="modes.effort"
+					:thinking-state-text="thinkingStateText"
 					:thinking-available="modelStore.thinkingHonoured"
 					@attach="onMenuAttach"
 					@toggle-web-search="composerModesStore.toggle(chatStore.currentSessionId, 'webSearch')"
-					@toggle-thinking="composerModesStore.toggle(chatStore.currentSessionId, 'thinking')"
+					@toggle-thinking="toggleThinkingMenu"
 					@close="plusOpen = false"
+				/>
+				<ThinkingLevelMenu
+					:open="thinkingMenuOpen"
+					:levels="modelStore.effortLevels"
+					:selected="modes.effort"
+					:legacy="modelStore.legacyMode"
+					:off-floor="modelStore.offFloor"
+					:hint-for="modelStore.hintFor"
+					@select="(level) => composerModesStore.setEffort(chatStore.currentSessionId, level)"
+					@close="thinkingMenuOpen = false"
 				/>
 				<div class="input-box">
 					<!-- Hidden File Input -->
@@ -64,12 +75,13 @@
 						:context="context"
 						:plus-open="plusOpen"
 						:web-search="modes.webSearch"
-						:thinking="modes.effort !== 'off'"
+						:thinking-level="modes.effort"
+						:thinking-label="thinkingLabel"
 						:thinking-available="modelStore.thinkingHonoured"
 						:web-search-available="webSearchAvailable"
 						@toggle-plus="plusOpen = !plusOpen"
 						@toggle-web-search="composerModesStore.toggle(chatStore.currentSessionId, 'webSearch')"
-						@toggle-thinking="composerModesStore.toggle(chatStore.currentSessionId, 'thinking')"
+						@toggle-thinking="toggleThinkingMenu"
 						@transcribed="onTranscribed"
 						@voice-error="onVoiceError"
 						@toggle-markdown="showMarkdownPreview = !showMarkdownPreview"
@@ -86,6 +98,7 @@
 import { ref, computed, nextTick, watch, onMounted, onBeforeUnmount, defineAsyncComponent } from "vue";
 import SlashMenu from "@/components/chat/SlashMenu.vue";
 import ComposerPlusMenu from "@/components/chat/ComposerPlusMenu.vue";
+import ThinkingLevelMenu from "@/components/chat/ThinkingLevelMenu.vue";
 import AttachedFilePreview from "@/components/chat/AttachedFilePreview.vue";
 import InputToolbar from "@/components/chat/InputToolbar.vue";
 import {
@@ -145,6 +158,20 @@ const slashMenuRef = ref(null);
 // and recreated when composerInHero flips at first send.
 const plusOpen = ref(false);
 const modes = computed(() => composerModesStore.modesFor(chatStore.currentSessionId));
+const thinkingMenuOpen = ref(false);
+const EFFORT_LABELS = { off: "Off", low: "Low", medium: "Medium", high: "High", xhigh: "Extra high", max: "Max" };
+const thinkingStateText = computed(() => {
+	if (modelStore.legacyMode) return modes.value.effort === "off" ? "Off" : "On";
+	return EFFORT_LABELS[modes.value.effort] || modes.value.effort;
+});
+const thinkingLabel = computed(() =>
+	modes.value.effort === "off" ? "Thinking" : `Thinking: ${thinkingStateText.value}`,
+);
+
+function toggleThinkingMenu() {
+	thinkingMenuOpen.value = !thinkingMenuOpen.value;
+	plusOpen.value = false;
+}
 const webSearchAvailable = computed(() => userStore.capabilities?.features?.web_search === true);
 
 function onMenuAttach() {
