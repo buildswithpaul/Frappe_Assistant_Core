@@ -10,6 +10,7 @@ import { createSendQueue } from "./chat/sendQueue";
 import { isApprovalInteraction } from "./chat/interactionRegime";
 import { useComposerModesStore } from "./composerModesStore";
 import { useModelStore } from "./modelStore";
+import { useSpotlightStore } from "./spotlightStore";
 
 // Every JSON column a message row can carry. Both parse loops below drive
 // from this, so the next JSON column is added in one place — model_breakdown
@@ -41,6 +42,9 @@ export const useChatStore = defineStore("chat", () => {
 	// True while a batched resume_interrupt call is in flight. Used by the
 	// approval UI to disable buttons so a second click can't race the first.
 	const isSubmittingInterrupts = ref(false);
+	// True while a Stop's cancel_stream call is in flight (streamManager.abortStream).
+	// It holds the send queue, and queues a new send, until the Stop reaches FAC.
+	const isCancelling = ref(false);
 	const streamingMessage = ref("");
 	const { error, errorCode: errorCodeRef, setError, clearError } = createErrorState();
 
@@ -128,6 +132,7 @@ export const useChatStore = defineStore("chat", () => {
 
 	const stream = createStreamManager({
 		...sharedRefs,
+		isCancelling,
 		reconcile: (sessionId) => reconcileFromServer(sessionId),
 	});
 	const blocks = createBlockHandlers(sharedRefs);
@@ -137,6 +142,7 @@ export const useChatStore = defineStore("chat", () => {
 		isStreaming,
 		hasPendingInteraction,
 		isSubmittingInterrupts,
+		isCancelling,
 		dispatch: (item) =>
 			sendMessage(item.message, item.files, item.context, item.modelId, null, {
 				skipQueue: true,
@@ -348,7 +354,9 @@ export const useChatStore = defineStore("chat", () => {
 		// stream finalization does. So a caller resuming after an abandoned card
 		// (abort-then-send) must pass skipQueue explicitly; ambient state alone
 		// can't tell that case apart from a plain queue candidate.
-		if (!skipQueue && isStreaming.value) {
+		// A Stop's cancel still in flight queues the send too: the Stop button
+		// is gone, but this turn must not reach FAC before the Stop has.
+		if (!skipQueue && (isStreaming.value || isCancelling.value)) {
 			sendQueue.queueMessage(message, uploadedFiles, context, modelId);
 			return;
 		}
@@ -410,7 +418,14 @@ export const useChatStore = defineStore("chat", () => {
 				modelId,
 				systemPromptAddendum,
 				attachments,
-				{ web_search: modes.webSearch, thinking_enabled: modes.thinking }
+				{
+					web_search: modes.webSearch,
+					reasoning_effort: modes.effort,
+					// Older AR servers only read the boolean.
+					thinking_enabled: modes.effort !== "off",
+					// A Stop names this request by the same id (streamManager.abortStream).
+					client_turn_id: assistantMessage._requestId,
+				}
 			);
 		} catch (err) {
 			stream.clearStreamTimeouts();
@@ -454,7 +469,10 @@ export const useChatStore = defineStore("chat", () => {
 			const modes = useComposerModesStore().modesFor(currentSessionId.value);
 			await api.chat.continueResponse(currentSessionId.value, messageId, {
 				web_search: modes.webSearch,
-				thinking_enabled: modes.thinking,
+				reasoning_effort: modes.effort,
+				// Older AR servers only read the boolean.
+				thinking_enabled: modes.effort !== "off",
+				client_turn_id: lastMsg._requestId,
 			});
 		} catch (err) {
 			stream.clearStreamTimeouts();
@@ -576,6 +594,11 @@ export const useChatStore = defineStore("chat", () => {
 		const resumeMessageId =
 			lastMsg && lastMsg.role === "assistant" ? lastMsg.message_id : null;
 		const sessionId = currentSessionId.value;
+		// A resume is a request of its own, as a Continue is: from here on a
+		// Stop names it, never the request that paused the turn.
+		const clientTurnId = crypto.randomUUID();
+		streamRequestId.value = clientTurnId;
+		if (lastMsg && lastMsg.role === "assistant") lastMsg._requestId = clientTurnId;
 
 		isSubmittingInterrupts.value = true;
 		try {
@@ -590,7 +613,10 @@ export const useChatStore = defineStore("chat", () => {
 				interrupt_response: JSON.stringify(batch.responses),
 				message_id: resumeMessageId,
 				web_search: modes.webSearch,
-				thinking_enabled: modes.thinking,
+				reasoning_effort: modes.effort,
+				// Older AR servers only read the boolean.
+				thinking_enabled: modes.effort !== "off",
+				client_turn_id: clientTurnId,
 			};
 			// Same reasoning for the model — except "auto" can never travel: a
 			// resume skips classification, so only a concrete id is a model.
@@ -759,6 +785,13 @@ export const useChatStore = defineStore("chat", () => {
 		// handleStreamResumed, so this flag must be cleared here too.
 		isSubmittingInterrupts.value = false;
 		setError(errorMessage || "Stream error occurred", errorCode || null);
+		// The hand-picked model failed or is resting: the remedy is another model.
+		if (errorCode === "MODEL_FAILED" || errorCode === "MODEL_TEMPORARILY_UNAVAILABLE") {
+			useModelStore().openPicker();
+		}
+		if (errorCode === "quota_exhausted") {
+			useSpotlightStore().onQuotaExhausted();
+		}
 
 		// INTERRUPT_ALREADY_RESOLVED: a stale approval card was clicked
 		// (commonly because Stop was pressed in another tab, or the previous

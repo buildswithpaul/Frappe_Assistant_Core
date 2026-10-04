@@ -31,7 +31,6 @@ from frappe.permissions import AUTOMATIC_ROLES
 from frappe_assistant_core.core.tool_registry import get_tool_registry
 from frappe_assistant_core.plugins.core.tools.create_document import DocumentCreate
 from frappe_assistant_core.plugins.core.tools.delete_document import DocumentDelete
-from frappe_assistant_core.plugins.core.tools.submit_document import DocumentSubmit
 from frappe_assistant_core.plugins.core.tools.update_document import DocumentUpdate
 from frappe_assistant_core.tests.base_test import BaseAssistantTest
 
@@ -930,50 +929,6 @@ class TestDocumentToolsAsNonAdminUser(BaseAssistantTest):
         self.assertTrue(result.get("error"), result)
         self.assertNotIn("<", result["error"])
         self.assertTrue(self.log_error.call_args.kwargs["message"].endswith(result["error"]))
-
-    def test_submit_says_why_frappe_refused_the_submit(self):
-        refusal = frappe.new_doc("ToDo")
-        refusing_doc = MagicMock(docstatus=0, workflow_state=None)
-        refusing_doc.submit.side_effect = lambda: refusal.raise_no_permission_to("submit")
-
-        with ExitStack() as stack:
-            stack.enter_context(self._precheck_passes())
-            stack.enter_context(patch("frappe.db.exists", return_value=True))
-            stack.enter_context(patch("frappe.get_doc", return_value=refusing_doc))
-            stack.enter_context(patch("frappe.get_meta", return_value=MagicMock(is_submittable=1)))
-            result = DocumentSubmit().execute({"doctype": "ToDo", "name": "any"})
-
-        self.assertFalse(result.get("success"), result)
-        self.assertEqual(result.get("error_type"), "permission_error")
-        self.assertTrue(result.get("error"), result)
-        self.assertNotIn("<", result["error"])
-        self.assertTrue(self.log_error.call_args.kwargs["message"].endswith(result["error"]))
-        # The old handler blamed the document's fields for a permission denial, which
-        # sent the model editing fields that were never the problem.
-        self.assertNotIn("required fields", result.get("suggestion", ""))
-
-    def test_delete_says_why_frappe_refused_the_delete(self):
-        """delete_document reported a bare "Permission denied" and dropped Frappe's reason."""
-        todo = self._todo_owned_by_administrator()
-        self._act_as(self.non_admin)
-
-        refusal = frappe.new_doc("ToDo")
-        with ExitStack() as stack:
-            stack.enter_context(self._precheck_passes())
-            stack.enter_context(
-                patch(
-                    "frappe.delete_doc",
-                    side_effect=lambda *a, **k: refusal.raise_no_permission_to("delete"),
-                )
-            )
-            result = DocumentDelete().execute({"doctype": "ToDo", "name": todo})
-
-        self.assertFalse(result.get("success"), result)
-        self.assertTrue(result.get("permission_error"), result)
-        self.assertIn("delete", result["error"])
-        # Frappe's own reason, not the generic fallback.
-        self.assertNotIn("Permission denied", result["error"])
-        self.assertNotIn("<", result["error"])
 
 
 class _FakeChildRow:

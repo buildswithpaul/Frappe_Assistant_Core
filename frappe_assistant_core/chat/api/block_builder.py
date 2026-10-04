@@ -12,8 +12,8 @@ stream_complete, the snapshot is persisted on the FACO Message so the
 frontend can render it directly on page refresh — no event reconstruction.
 
 For HITL resume, the builder is initialized with the existing blocks from
-the previous stream, pending interactions are resolved, and new blocks are
-appended on top.
+the previous stream, its pending interactions are resolved once AR shows it
+is running the resumed turn, and new blocks are appended on top.
 """
 
 import copy
@@ -249,9 +249,13 @@ class BlockBuilder:
         )
 
     def add_tool_cancelled(self, tool_id: str, message: str = "Cancelled") -> None:
-        """Mark a tool call as cancelled."""
+        """Mark a tool call as cancelled.
+
+        Only the tool_call block changes. A rejected tool's approval card
+        shares its id and keeps the decision it holds.
+        """
         for block in reversed(self.blocks):
-            if block.get("id") == tool_id:
+            if block.get("type") == "tool_call" and block.get("id") == tool_id:
                 block["status"] = "cancelled"
                 block["result"] = {"message": message}
                 block["endTime"] = _now_iso()
@@ -399,7 +403,7 @@ class BlockBuilder:
 
     def resolve_pending_interactions(self, interrupt_responses: list[dict]) -> None:
         """
-        Resolve pending interaction blocks at the start of a HITL resume.
+        Resolve pending interaction blocks once AR is running a HITL resume.
 
         Called with the user's interrupt_response array. Each response has:
         {"interruptId": str, "response": "approve"|"rejected"|"trust"|<user_answer>}
@@ -435,6 +439,20 @@ class BlockBuilder:
                         block["status"] = "answered"
                         block["userResponse"] = user_response
                     break
+
+    def settle_pending_interactions(self, status: str) -> bool:
+        """Close every still-pending interaction with ``status`` (e.g. ``expired``).
+
+        For a pause AR reports gone: nothing can answer its cards any more.
+        Returns True when a block changed.
+        """
+        changed = False
+        for block in self.blocks:
+            if block.get("type") == "interaction" and block.get("status") == "pending":
+                block["status"] = status
+                block["endTime"] = _now_iso()
+                changed = True
+        return changed
 
     def snapshot(self) -> list[dict]:
         """Return a deep copy of the blocks array for persistence."""

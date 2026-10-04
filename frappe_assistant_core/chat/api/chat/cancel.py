@@ -19,14 +19,20 @@ which may not be the worker that received this POST.
 
 from __future__ import annotations
 
+import json
+
 import frappe
 from frappe import _
 
 from ..chat.helpers import (
     _emit_socket_event,
+    _parse_turn_blocks,
 )
 
 CANCEL_TTL_SECONDS = 120
+
+# A longer client turn id names no request: its Stop is stored as an unnamed one.
+CLIENT_TURN_ID_MAX_LENGTH = 140
 
 ABORT_MARKER_TEXT = "\n\n_(Stopped by user)_"
 
@@ -63,11 +69,24 @@ def _cache_key(session_id: str) -> str:
     return f"fac_cancel:{session_id}"
 
 
-def mark_cancelled(session_id: str) -> None:
-    """Mark ``session_id`` for cancellation. Idempotent, multi-worker-safe."""
+def _named_flag(client_turn_id: str | None) -> str | None:
+    """The flag value of a Stop that names ``client_turn_id``; None when it names no request."""
+    if not client_turn_id or len(client_turn_id) > CLIENT_TURN_ID_MAX_LENGTH:
+        return None
+    return f"turn:{client_turn_id}"
+
+
+def mark_cancelled(session_id: str, client_turn_id: str | None = None) -> None:
+    """Mark ``session_id`` for cancellation. Idempotent, multi-worker-safe.
+
+    ``client_turn_id`` is the client's id for the request this Stop is for. The
+    flag keeps it, so that request's own accept leaves the flag up
+    (:func:`clear`). A Stop that names no request stores ``"1"``.
+    """
     if not session_id:
         return
-    frappe.cache().set_value(_cache_key(session_id), "1", expires_in_sec=CANCEL_TTL_SECONDS)
+    flag = _named_flag(client_turn_id) or "1"
+    frappe.cache().set_value(_cache_key(session_id), flag, expires_in_sec=CANCEL_TTL_SECONDS)
 
 
 def is_cancelled(session_id: str) -> bool:
@@ -79,23 +98,32 @@ def is_cancelled(session_id: str) -> bool:
     return bool(frappe.cache().get_value(_cache_key(session_id), expires=True))
 
 
-def clear(session_id: str) -> None:
-    """Drop the cancel marker so the same session can stream again later."""
+def clear(session_id: str, *, keep_turn: str | None = None) -> None:
+    """Drop the cancel marker. Only an endpoint accepting a turn calls this, before it queues the relay.
+
+    ``keep_turn`` is the accepted request's client turn id. A flag that names
+    it is a Stop pressed for this very request while it was on its way, so it
+    stays up and the relay stops the turn before it calls AR. Any other flag
+    belongs to an earlier request and is dropped.
+    """
     if not session_id:
+        return
+    named = _named_flag(keep_turn)
+    if named and frappe.cache().get_value(_cache_key(session_id), expires=True) == named:
         return
     frappe.cache().delete_value(_cache_key(session_id))
 
 
 @frappe.whitelist(methods=["POST"])
-def cancel_stream(session_id: str, message_id: str | None = None) -> dict:
+def cancel_stream(session_id: str, message_id: str | None = None, client_turn_id: str | None = None) -> dict:
     """User-facing endpoint: stop the current stream for ``session_id``.
 
     Two cancellation regimes are handled here:
 
-    1. **Live relay.** A relay loop is iterating ``stream_chat`` right
-       now. We flip the cancel flag; the loop observes it on its next
-       iteration and runs the proper abort handler (closes the SDK
-       iterator, persists ``aborted=1``, emits ``stream_aborted``).
+    1. **Live relay.** A relay is iterating ``stream_chat``, or is queued
+       and checks the flag before it calls AR. We flip the cancel flag;
+       the relay observes it and runs the proper abort handler (closes
+       the SDK iterator, persists ``aborted=1``, emits ``stream_aborted``).
 
     2. **HITL pause.** AR emitted ``approval_required`` followed by
        ``stream_complete interrupted=true`` — at that point the relay
@@ -105,8 +133,20 @@ def cancel_stream(session_id: str, message_id: str | None = None) -> dict:
        here has no relay to signal; we mark the row aborted ourselves
        so the reload renders the cards as resolved instead of live.
 
-    ``message_id`` is accepted for forward-compat / audit but not
-    required — there is at most one active stream per session.
+    ``message_id`` names the turn to stop. A Stop that names no stored turn
+    finalizes only a turn still open (:func:`_abort_pending_interactions`).
+
+    ``client_turn_id`` names the request to stop, as the client sent it with
+    ``send_message``, ``resume_interrupt`` or ``continue_response``. The flag
+    keeps it, so a Stop that reaches FAC before that request is accepted is
+    not cleared by its accept (:func:`clear`).
+
+    The ``stream_cancel_requested`` ping below names AR's own id for the
+    turn when :func:`_abort_pending_interactions` found one, falling back to
+    the caller's ``message_id`` only when it didn't: a caller's id can be a
+    client-side UUID with no meaning to any other client watching the same
+    session (the SPA's ``_requestId``), and echoing that back left a second
+    client unable to tell which turn had just been stopped.
     """
     if not session_id:
         frappe.throw(_("session_id is required"), frappe.ValidationError)
@@ -123,8 +163,9 @@ def cancel_stream(session_id: str, message_id: str | None = None) -> dict:
     if owner and owner != frappe.session.user and "System Manager" not in frappe.get_roles():
         frappe.throw(_("You can only cancel your own conversation"), frappe.PermissionError)
 
-    # Regime 1: signal any live relay loop to bail at its next iteration.
-    mark_cancelled(session_id)
+    # Regime 1: signal any live relay loop to bail at its next iteration, or
+    # the relay of the request this Stop names to stop before it calls AR.
+    mark_cancelled(session_id, client_turn_id)
 
     # Regime 2: also handle the HITL-pause case where no relay is alive.
     # Idempotent — if a live relay also fires, it'll re-snapshot blocks
@@ -134,8 +175,9 @@ def cancel_stream(session_id: str, message_id: str | None = None) -> dict:
     # Guarded: a local failure (DB error, retry-writer exhaustion) must not
     # stop the AR cancel below — otherwise AR keeps the agent running and
     # burning tokens on a turn the user already stopped.
+    ar_message_id = None
     try:
-        _abort_pending_interactions(session_id, message_id)
+        ar_message_id = _abort_pending_interactions(session_id, message_id)
     except Exception:
         frappe.logger("faco.chat.cancel").warning(
             f"_abort_pending_interactions failed for {session_id}", exc_info=True
@@ -149,7 +191,7 @@ def cancel_stream(session_id: str, message_id: str | None = None) -> dict:
         {
             "event": "stream_cancel_requested",
             "session_id": session_id,
-            "message_id": message_id,
+            "message_id": ar_message_id if ar_message_id is not None else message_id,
         },
     )
 
@@ -170,26 +212,77 @@ def cancel_stream(session_id: str, message_id: str | None = None) -> dict:
     return {"status": "cancel_requested", "session_id": session_id}
 
 
-def _abort_pending_interactions(session_id: str, message_id: str | None) -> None:
-    """Transition pending interaction blocks on the latest assistant row to
-    ``aborted`` and make sure the "(Stopped by user)" marker is present,
-    then emit ``stream_aborted``.
+def _is_open_turn(blocks: list, aborted: int | bool | None, session_id: str, row_creation) -> bool:
+    """True while a Stop that names no turn may still finalize this stored one.
+
+    The turn holds a pending interaction card (paused at an approval, or a
+    resume whose relay has not rewritten the row yet), or a relay abort
+    finalizer that writes no marker (``_persist_resume_cycle``) has just
+    flagged it ``aborted`` and the marker is still owed. A finished answer
+    is neither.
+
+    A stale pending card or an unmarked ``aborted`` flag can also belong to
+    an *older* turn nobody ever settled — AR expired the pause, or a new
+    turn started without going through the SPA's abort-then-send composer.
+    A new turn's prompt always lands after the previous answer, so once a
+    ``user`` row newer than this candidate exists, this row is no longer
+    the open one and a no-id Stop must not reach back into it.
+    """
+    still_open = any(b.get("type") == "interaction" and b.get("status") == "pending" for b in blocks) or (
+        bool(aborted) and not _has_abort_marker(blocks)
+    )
+    if not still_open:
+        return False
+    newer_user_row = frappe.db.exists(
+        "FAC Chat Message",
+        {"session_id": session_id, "role": "user", "creation": [">", row_creation]},
+    )
+    return not newer_user_row
+
+
+def _abort_pending_interactions(session_id: str, message_id: str | None) -> str | None:
+    """Finalize a Stop on the stored turn it applies to: pending interaction
+    blocks become ``aborted``, the "(Stopped by user)" marker is appended
+    unless present, the row is flagged ``aborted=1``, and ``stream_aborted``
+    is emitted.
 
     Primarily handles the case where Stop is pressed while the conversation
     is paused at an HITL approval — there is no relay loop alive to do this
     for us. The persisted blocks would otherwise render an active approval
     card on reload, and clicking Approve there would hit AR with a stale
     interrupt id (AR responds "These approvals were already submitted.").
-    It is also the fallback marker-writer for a live relay stream: see
-    :func:`append_abort_marker`.
+    It is also the marker-writer for a Stop during a HITL resume, whose relay
+    finalizer (``_persist_resume_cycle``) writes none: see
+    :func:`append_abort_marker`. It is ALSO the writer that races the relay's
+    own abort write (``_handle_stream_aborted``) on a live send turn's row —
+    see the read-merge-write note below.
 
-    No-op when the row has no pending interactions and already carries the
-    marker, so this is safe to call unconditionally from ``cancel_stream``.
+    The row is the assistant row ``message_id`` names, whatever its state.
+    A Stop may name none: it can come before the turn's ``stream_start``,
+    and the SPA sends an id of its own (``_requestId``). Then the session's
+    latest assistant row is finalized only while it is still open
+    (:func:`_is_open_turn`). Before a new turn's ``stream_start`` that row
+    is the previous, finished answer, which this Stop must not mark; the
+    relay's ``_handle_stream_aborted`` records the Stop on a new row instead.
+
+    The read, the ``_is_open_turn`` gate, the card merge and the marker merge
+    all run inside ``_update_faco_message_merged``'s ``merge`` callback, on a
+    ``for_update=True`` locked read, and are recomputed from scratch on every
+    retry attempt. The relay's own abort write can land — full text plus
+    marker — in the gap between this function being entered and its write
+    landing; a fixed, precomputed ``updates`` dict re-applied after a
+    deadlock would silently overwrite that text with just the marker. Reading
+    the row fresh on every attempt means a retry only ever adds what's still
+    missing (typically just ``aborted``) on top of whatever the other writer
+    already committed.
+
+    Returns the row's own ``message_id`` (AR's id for the turn) when a row
+    was identified, so the caller can name it correctly even when it was
+    itself called with a client-side id, or none. None when no row applied,
+    or the write never completed (retries exhausted; already logged).
     """
-    import json as _json
-
-    # Locate the row: prefer message_id, fall back to most recent assistant
-    # row in this session (matches the lookup tiers in _handle_stream_aborted).
+    # Locate the row: the one message_id names, else the session's latest
+    # assistant row, which is finalized only while it is still open (below).
     row_name = None
     if message_id:
         row_name = frappe.db.get_value(
@@ -197,6 +290,7 @@ def _abort_pending_interactions(session_id: str, message_id: str | None) -> None
             {"session_id": session_id, "role": "assistant", "message_id": message_id},
             "name",
         )
+    named = bool(row_name)
     if not row_name:
         row_name = frappe.db.get_value(
             "FAC Chat Message",
@@ -205,67 +299,80 @@ def _abort_pending_interactions(session_id: str, message_id: str | None) -> None
             order_by="creation desc",
         )
     if not row_name:
-        return
+        return None
 
-    row = frappe.db.get_value("FAC Chat Message", row_name, ["blocks", "content", "aborted"], as_dict=True)
-    if not row:
-        return
+    def merge(row: frappe._dict | None) -> dict | None:
+        if not row:
+            return None
 
-    try:
-        blocks = _json.loads(row.blocks) if row.blocks else []
-    except (ValueError, TypeError):
-        blocks = []
+        blocks = _parse_turn_blocks(row.blocks)
 
-    # Mark every pending interaction as aborted. The frontend renders
-    # ``aborted`` status as a resolved indicator (no action buttons), so
-    # the approve/reject/etc. buttons disappear on reload.
-    changed = False
-    for block in blocks:
-        if block.get("type") == "interaction" and block.get("status") == "pending":
-            block["status"] = "aborted"
-            block["result"] = {"message": "Stopped by user"}
+        if not named and not _is_open_turn(blocks, row.aborted, session_id, row.creation):
+            # A finished answer (the Stop came before the next turn's
+            # stream_start), or a Stop already finalized it: not this Stop's row.
+            return None
+
+        # Mark every pending interaction as aborted. The frontend renders
+        # ``aborted`` status as a resolved indicator (no action buttons), so
+        # the approve/reject/etc. buttons disappear on reload.
+        changed = False
+        for block in blocks:
+            if block.get("type") == "interaction" and block.get("status") == "pending":
+                block["status"] = "aborted"
+                block["result"] = {"message": "Stopped by user"}
+                changed = True
+
+        # `aborted` is NOT a safe "already handled" signal here — relay.py's
+        # own abort finalizer sets it too, and often wins this race since it
+        # runs on the already-live relay thread while this handler is still
+        # doing its first DB round trip. Bailing out on `aborted` (as this
+        # used to) meant the marker was silently dropped whenever that
+        # finalizer won. Marker presence, not `aborted`, is the only
+        # idempotency check both writers can safely share.
+        had_marker = _has_abort_marker(blocks)
+        content, blocks = append_abort_marker(row.content or "", blocks)
+        if not had_marker:
             changed = True
 
-    # `aborted` is NOT a safe "already handled" signal here — relay.py's own
-    # abort finalizer sets it too, and often wins this race since it runs on
-    # the already-live relay thread while this handler is still doing its
-    # first DB round trip. Bailing out on `aborted` (as this used to) meant
-    # the marker was silently dropped whenever that finalizer won. Marker
-    # presence, not `aborted`, is the only idempotency check both writers
-    # can safely share.
-    had_marker = _has_abort_marker(blocks)
-    content, blocks = append_abort_marker(row.content or "", blocks)
-    if not had_marker:
-        changed = True
+        if not changed:
+            # No pending interaction AND a marker already existed (shouldn't
+            # happen unless cancel was double-clicked, or the relay's own
+            # write already carries both). Still flip aborted=1 so the row's
+            # state is consistent — never touch content/blocks here, so a
+            # concurrent full write already committed (or about to commit
+            # once this transaction's lock is released) is left standing.
+            return {"aborted": 1}
 
-    # Use the shared retry-aware writer so a concurrent resume relay's
-    # read+merge+write can't poison ours with InnoDB 1020 (record changed).
-    from ..chat.relay import (
-        _set_faco_message_with_retry,
+        return {"aborted": 1, "blocks": json.dumps(blocks), "content": content}
+
+    from ..chat.relay import _update_faco_message_merged
+
+    written, updates, row = _update_faco_message_merged(
+        row_name,
+        ["blocks", "content", "aborted", "creation", "message_id"],
+        merge,
     )
+    if not written:
+        # No row applied to this Stop, or every attempt deadlocked
+        # (_update_faco_message_merged already logged it).
+        return None
 
-    if not changed:
-        # No pending interaction AND a marker already existed (shouldn't
-        # happen unless cancel was double-clicked). Still flip aborted=1
-        # so the row's state is consistent.
-        _set_faco_message_with_retry(row_name, {"aborted": 1})
-        return
-
-    updates = {
-        "aborted": 1,
-        "blocks": _json.dumps(blocks),
-        "content": content,
-    }
-    _set_faco_message_with_retry(row_name, updates)
-
-    # Emit the authoritative finalize so the SPA (if open) reconciles.
-    _emit_socket_event(
-        session_id,
-        {
-            "event": "stream_aborted",
-            "session_id": session_id,
-            "message_id": message_id,
-            "partial_response": content,
-            "blocks": blocks,
-        },
-    )
+    if "blocks" in updates:
+        # Emit the authoritative finalize so the SPA (if open) reconciles,
+        # only after a successful write and from the state that was written
+        # — never a snapshot the retry may have superseded. Named by the
+        # row's own message_id (AR's id), never the caller's — a Stop can
+        # arrive naming no turn, or a client-side id another client has
+        # never seen. The "not changed" branch above (bare {"aborted": 1})
+        # emits nothing.
+        _emit_socket_event(
+            session_id,
+            {
+                "event": "stream_aborted",
+                "session_id": session_id,
+                "message_id": row.message_id,
+                "partial_response": updates["content"],
+                "blocks": json.loads(updates["blocks"]),
+            },
+        )
+    return row.message_id

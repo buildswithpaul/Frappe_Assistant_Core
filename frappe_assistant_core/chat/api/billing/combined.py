@@ -166,6 +166,27 @@ def get_billing_details():
         frappe.throw(_safe_error(e, "FACO Billing Error"))
 
 
+@frappe.whitelist(methods=["GET"])
+def get_billing_countries() -> list[dict]:
+    """Every country the billing form may offer, as ``{code, label}``.
+
+    Read from this site's Country table, which is the same Frappe data the AR
+    server resolves the saved code against, so the label is exactly the
+    country name the backend stores. India comes first; the rest follow by
+    name.
+    """
+    _require_system_manager()
+
+    countries = [
+        {"code": row.code.upper(), "label": row.name}
+        for row in frappe.get_all(
+            "Country", fields=["name", "code"], filters={"code": ["is", "set"]}, order_by="name asc"
+        )
+    ]
+    countries.sort(key=lambda c: (c["code"] != "IN", c["label"].lower()))
+    return countries
+
+
 @frappe.whitelist(methods=["POST"])
 def save_billing_details(
     billing_email: str,

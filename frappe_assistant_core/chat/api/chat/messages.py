@@ -22,6 +22,7 @@ from .._rate_limits import (
     session_user_or_ip,
 )
 from .._untrusted import wrap_untrusted
+from ..chat.cancel import clear as clear_cancel
 from ..chat.helpers import (
     _attach_files_to_message,
     _extract_file_attachments,
@@ -48,6 +49,17 @@ def _flag(value) -> bool:
     if isinstance(value, str):
         return value.strip().lower() in ("1", "true", "yes")
     return bool(value)
+
+
+EFFORT_LEVELS = ("off", "low", "medium", "high", "xhigh", "max")
+
+
+def _effort(value) -> str | None:
+    """A composer thinking level, or None when absent or not one we know."""
+    if not isinstance(value, str):
+        return None
+    level = value.strip().lower()
+    return level if level in EFFORT_LEVELS else None
 
 
 _MAX_SIGNAL_COUNT = 999
@@ -157,7 +169,9 @@ def send_message(
     client_type: str | None = None,
     web_search: bool | None = None,
     thinking_enabled: bool | None = None,
+    reasoning_effort: str | None = None,
     client_signals: str | None = None,
+    client_turn_id: str | None = None,
 ) -> dict:
     """
     Send a message to FACO and stream AI response via Socket.IO.
@@ -181,10 +195,13 @@ def send_message(
                     "false" strings from the form-encoded Desk widget; coerced via ``_flag``.
             thinking_enabled (bool): Composer toggle for AR extended thinking. Same None-vs-explicit
                     semantics and coercion as web_search.
+            reasoning_effort (str): Composer thinking level — off/low/medium/high/xhigh/max. When valid it also sets thinking_enabled, so an AR that predates levels still honours on/off.
             client_signals (str): JSON of counts-only browser signals from the widget,
                     e.g. {"recent_errors": {"console": 2, "failed_requests": 1,
                     "newest_age_s": 4}}. Counts are read; any other content is ignored.
                     The rendered wording is owned by the server, never the client.
+            client_turn_id (str): The client's id for this request. A Stop
+                    (cancel_stream) that already names it is kept by this accept.
 
     Returns:
             dict: Acknowledgment that processing has started
@@ -216,6 +233,10 @@ def send_message(
         access_check = can_use_faco()
         if not access_check.get("can_use"):
             frappe.throw(access_check.get("reason", _("Cannot use FACO")))
+
+        # A Stop raised before this point belongs to an earlier turn, unless it
+        # names this request (cancel.clear).
+        clear_cancel(session_id, keep_turn=client_turn_id)
 
         # FACO-M15: respect GDPR Article 18 processing restriction. When set,
         # skip message persistence entirely — the chat still runs (AR handles
@@ -274,6 +295,10 @@ def send_message(
 
         # Process in background via bounded pool (FACO-H14) — relay from AR.
         # user_msg_name may be None under M15 restriction — relay tolerates.
+        effort = _effort(reasoning_effort)
+        if effort is not None:
+            thinking_enabled = effort != "off"
+
         _relay_pool.submit(
             _relay_ar_stream,
             session_id,
@@ -293,6 +318,7 @@ def send_message(
             # off — only coerce when the caller actually supplied a value.
             web_search=_flag(web_search) if web_search is not None else None,
             thinking_enabled=_flag(thinking_enabled) if thinking_enabled is not None else None,
+            reasoning_effort=effort,
         )
 
         return {
@@ -320,6 +346,8 @@ def resume_interrupt(
     model_id: str | None = None,
     web_search: bool | None = None,
     thinking_enabled: bool | None = None,
+    reasoning_effort: str | None = None,
+    client_turn_id: str | None = None,
 ) -> dict:
     """
     Resume a HITL-interrupted agent stream with the user's approval/rejection.
@@ -342,6 +370,9 @@ def resume_interrupt(
                     send_message — a resume that omits it reaches AR as absence,
                     which AR reads as "search available".
             thinking_enabled: Composer toggle for AR extended thinking, same rules.
+            reasoning_effort (str): Composer thinking level — off/low/medium/high/xhigh/max. When valid it also sets thinking_enabled, so an AR that predates levels still honours on/off.
+            client_turn_id: The client's id for this request. A Stop
+                    (cancel_stream) that already names it is kept by this accept.
 
     Returns:
             dict: Acknowledgment that resume processing has started
@@ -363,6 +394,10 @@ def resume_interrupt(
         if not access_check.get("can_use"):
             frappe.throw(access_check.get("reason", _("Cannot use FACO")))
 
+        # A Stop raised before this point belongs to an earlier turn, unless it
+        # names this request (cancel.clear).
+        clear_cancel(session_id, keep_turn=client_turn_id)
+
         effective_client_type = client_type or "spa"
 
         # Zero-retention: load the client-held session blob to round-trip on
@@ -377,6 +412,10 @@ def resume_interrupt(
 
         # Resume in background via bounded pool (FACO-H14) — same relay
         # pattern as send_message.
+        effort = _effort(reasoning_effort)
+        if effort is not None:
+            thinking_enabled = effort != "off"
+
         _relay_pool.submit(
             _relay_ar_interrupt_resume,
             session_id,
@@ -392,6 +431,7 @@ def resume_interrupt(
             model_id=model_id,
             web_search=_flag(web_search) if web_search is not None else None,
             thinking_enabled=_flag(thinking_enabled) if thinking_enabled is not None else None,
+            reasoning_effort=effort,
         )
 
         return {
@@ -417,6 +457,8 @@ def continue_response(
     client_type: str | None = None,
     web_search: bool | None = None,
     thinking_enabled: bool | None = None,
+    reasoning_effort: str | None = None,
+    client_turn_id: str | None = None,
 ) -> dict:
     """
     Continue a previously truncated assistant response (max_tokens stop).
@@ -433,6 +475,9 @@ def continue_response(
             web_search: Composer toggle for the conversation being continued. Same
                     None-vs-explicit semantics and ``_flag`` coercion as send_message.
             thinking_enabled: Composer toggle for AR extended thinking, same rules.
+            reasoning_effort (str): Composer thinking level — off/low/medium/high/xhigh/max. When valid it also sets thinking_enabled, so an AR that predates levels still honours on/off.
+            client_turn_id: The client's id for this request. A Stop
+                    (cancel_stream) that already names it is kept by this accept.
 
     Returns:
             dict: Acknowledgment that continuation processing has started
@@ -450,6 +495,10 @@ def continue_response(
         if not access_check.get("can_use"):
             frappe.throw(access_check.get("reason", _("Cannot use FACO")))
 
+        # A Stop raised before this point belongs to an earlier turn, unless it
+        # names this request (cancel.clear).
+        clear_cancel(session_id, keep_turn=client_turn_id)
+
         effective_client_type = client_type or "spa"
 
         # Zero-retention: load the client-held session blob to round-trip on
@@ -465,6 +514,10 @@ def continue_response(
         # Continue in background via bounded pool (FACO-H14) — reuses the
         # normal stream relay; continue_from_message_id tells it to skip
         # pushing a user message and ask AR to resume from message_id.
+        effort = _effort(reasoning_effort)
+        if effort is not None:
+            thinking_enabled = effort != "off"
+
         _relay_pool.submit(
             _relay_ar_stream,
             session_id,
@@ -482,6 +535,7 @@ def continue_response(
             # same toggles, not fall back to AR's absence defaults.
             web_search=_flag(web_search) if web_search is not None else None,
             thinking_enabled=_flag(thinking_enabled) if thinking_enabled is not None else None,
+            reasoning_effort=effort,
         )
 
         return {

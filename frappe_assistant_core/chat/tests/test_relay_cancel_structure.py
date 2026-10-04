@@ -1,22 +1,27 @@
-"""Structural pin for the Redis cancel-flag regression: moving the flag
-from a process-local set to frappe.cache() made a stale flag poison
-EVERY gunicorn worker for the full 120s TTL, unless both relay funnels
-clear it before touching a new turn's events. That fix is an omission
-bug by nature — nothing at runtime distinguishes "clears at the top"
-from "doesn't", so only a source-level check catches a future edit that
-silently drops the call.
+"""Structural pins for the Redis cancel flag in both relay funnels. The
+flag lives in frappe.cache(), so every gunicorn worker sees it. Only
+the endpoint that accepts a turn clears it (pinned at runtime by
+test_early_stop_is_honoured.py), and a funnel only reads it: once before
+it contacts AR, then between events. A funnel that cleared it again, at
+its top or in its `finally`, would erase a Stop pressed while it waited
+in the relay pool, or the next turn's Stop. Nothing at runtime marks the
+difference until a stopped turn runs and bills, so only a source-level
+check catches a future edit that adds the call back.
 
-Also pins which finalizer each funnel's TWO cancellation branches call —
-the local `if is_cancelled(session_id):` poll and the `elif event_type
-== "stream_cancelled":` branch that reacts to AR's own authoritative
-cancel confirmation. The send funnel's `full_response` holds the whole
-turn, so its branches must call `_handle_stream_aborted` (replace
-semantics). The resume funnel's `full_response` holds only the current
-resume cycle, so its branches must call `_persist_resume_cycle` (append
-semantics) and never `_handle_stream_aborted` — using the replace helper
-there would erase every earlier resume cycle's text. Each branch gets
-its own scoped assertion (not a whole-function scan) so a mutation in
-one branch can't hide behind a correct call in the other.
+Also pins which finalizer each funnel's cancellation branches call —
+the check above the event loop, the local `if is_cancelled(session_id):`
+poll inside it and the `elif event_type == "stream_cancelled":` branch
+that reacts to AR's own authoritative cancel confirmation. The send
+funnel's `full_response` holds the whole turn, so its branches must call
+`_handle_stream_aborted` (replace semantics). The resume funnel's
+`full_response` holds only the current resume cycle, so its branches in
+the loop must call `_persist_resume_cycle` (append semantics) and never
+`_handle_stream_aborted` — using the replace helper there would erase
+every earlier resume cycle's text. Its check above the loop runs before
+anything of the resume has, so it stops the paused turn exactly as
+cancel_stream does during the pause (`_abort_pending_interactions`).
+Each branch gets its own scoped assertion (not a whole-function scan) so
+a mutation in one branch can't hide behind a correct call in the other.
 
 Uses AST rather than substring position (inspect.getsource + assertIn,
 the pattern in test_relay_event_passthrough.py / test_relay_workflow_
@@ -50,18 +55,49 @@ def _stream_iter_for_linenos(tree: ast.AST) -> list[int]:
     ]
 
 
-def _is_cancelled_branch(func) -> ast.If:
-    """The `if is_cancelled(session_id):` node at the top of func's event loop."""
+def _attr_call_linenos(tree: ast.AST, attr: str) -> list[int]:
+    """Line numbers of every `<anything>.attr(...)` call in the tree."""
+    return [
+        node.lineno
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == attr
+    ]
+
+
+def _is_cancelled_ifs(func) -> tuple[list[ast.If], int]:
+    """Every `if is_cancelled(...):` node in func, in source order, and the
+    line of func's `for event in stream_iter:` loop."""
     tree = ast.parse(inspect.getsource(func))
-    for node in ast.walk(tree):
-        if (
-            isinstance(node, ast.If)
+    checks = sorted(
+        (
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.If)
             and isinstance(node.test, ast.Call)
             and isinstance(node.test.func, ast.Name)
             and node.test.func.id == "is_cancelled"
-        ):
+        ),
+        key=lambda node: node.lineno,
+    )
+    return checks, min(_stream_iter_for_linenos(tree))
+
+
+def _is_cancelled_branch(func) -> ast.If:
+    """The `if is_cancelled(session_id):` poll at the top of func's event loop."""
+    checks, loop_line = _is_cancelled_ifs(func)
+    for node in checks:
+        if node.lineno > loop_line:
             return node
-    raise AssertionError(f"no `if is_cancelled(...):` branch found in {func.__name__}")
+    raise AssertionError(f"no `if is_cancelled(...):` poll found in {func.__name__}'s event loop")
+
+
+def _pre_start_check(func) -> ast.If:
+    """The `if is_cancelled(session_id):` check above func's event loop."""
+    checks, loop_line = _is_cancelled_ifs(func)
+    for node in checks:
+        if node.lineno < loop_line:
+            return node
+    raise AssertionError(f"no `if is_cancelled(...):` check found above {func.__name__}'s event loop")
 
 
 def _stream_cancelled_branch(func) -> ast.If:
@@ -100,39 +136,30 @@ class TestCancelWiringPresentAndOrderedInBothFunnels(unittest.TestCase):
     def _tree(self, func) -> ast.AST:
         return ast.parse(inspect.getsource(func))
 
-    def test_send_funnel_clears_cancel_flag_before_iterating(self):
+    def test_neither_funnel_clears_the_cancel_flag(self):
         from frappe_assistant_core.chat.api.chat import relay
 
-        tree = self._tree(relay._relay_ar_stream)
-        clear_lines = _call_linenos(tree, "clear_cancel")
-        loop_lines = _stream_iter_for_linenos(tree)
+        for func in (relay._relay_ar_stream, relay._relay_ar_interrupt_resume):
+            with self.subTest(funnel=func.__name__):
+                tree = self._tree(func)
+                self.assertFalse(
+                    _call_linenos(tree, "clear_cancel") + _call_linenos(tree, "clear"),
+                    "only the endpoint that accepts a turn clears the flag: a relay-side "
+                    "clear erases a Stop pressed while the relay waited to start, or, "
+                    "from its finally, the next turn's Stop",
+                )
 
-        self.assertTrue(clear_lines, "_relay_ar_stream must call clear_cancel somewhere")
-        self.assertTrue(loop_lines, "_relay_ar_stream must iterate a `stream_iter`")
-        self.assertLess(
-            min(clear_lines),
-            min(loop_lines),
-            "clear_cancel must run before the event loop starts — a flag set "
-            "before this turn began (Stop during a prior HITL pause, or a "
-            "race with a turn that was already completing) can never "
-            "legitimately apply to a turn that hasn't started yet",
-        )
-
-    def test_resume_funnel_clears_cancel_flag_before_iterating(self):
+    def test_both_funnels_check_the_flag_before_they_call_ar(self):
         from frappe_assistant_core.chat.api.chat import relay
 
-        tree = self._tree(relay._relay_ar_interrupt_resume)
-        clear_lines = _call_linenos(tree, "clear_cancel")
-        loop_lines = _stream_iter_for_linenos(tree)
-
-        self.assertTrue(clear_lines, "_relay_ar_interrupt_resume must call clear_cancel somewhere")
-        self.assertTrue(loop_lines, "_relay_ar_interrupt_resume must iterate a `stream_iter`")
-        self.assertLess(
-            min(clear_lines),
-            min(loop_lines),
-            "clear_cancel must run before the event loop starts — a flag set "
-            "before this resume began can never legitimately apply to it",
-        )
+        for func in (relay._relay_ar_stream, relay._relay_ar_interrupt_resume):
+            with self.subTest(funnel=func.__name__):
+                self.assertLess(
+                    _pre_start_check(func).lineno,
+                    min(_attr_call_linenos(self._tree(func), "stream_chat")),
+                    "a Stop pressed after the endpoint accepted the turn, before the relay "
+                    "started, must stop it before AR runs (and bills) it",
+                )
 
     def test_send_funnel_polls_is_cancelled(self):
         from frappe_assistant_core.chat.api.chat import relay
@@ -151,7 +178,7 @@ class TestCancelWiringPresentAndOrderedInBothFunnels(unittest.TestCase):
     def _assert_branch_finalizes_via(
         self, branch: ast.If, expected: str, forbidden: str, reason: str
     ) -> None:
-        """Shared shape for the four funnel x branch finalizer pins below:
+        """Shared shape for the six funnel x branch finalizer pins below:
         each cancellation branch must call its funnel's correct helper and
         must not call the other funnel's helper."""
         self.assertTrue(_calls_in_branch(branch, expected), f"branch must call {expected}")
@@ -210,6 +237,31 @@ class TestCancelWiringPresentAndOrderedInBothFunnels(unittest.TestCase):
             "_handle_stream_aborted",
             "_persist_resume_cycle",
             "append semantics; belongs to the resume funnel only",
+        )
+
+    def test_send_funnel_pre_start_check_uses_replace_helper(self):
+        # Before AR is called the turn has no row: _handle_stream_aborted with
+        # no AR message_id writes the Stop on a row of its own (tier 3).
+        from frappe_assistant_core.chat.api.chat import relay
+
+        self._assert_branch_finalizes_via(
+            _pre_start_check(relay._relay_ar_stream),
+            "_handle_stream_aborted",
+            "_persist_resume_cycle",
+            "append semantics; belongs to the resume funnel only",
+        )
+
+    def test_resume_funnel_pre_start_check_stops_the_pause_as_it_stands(self):
+        # Nothing of the resume has run: the paused turn's pending cards become
+        # aborted and it gets the marker, as cancel_stream does during a pause.
+        # The replace helper would overwrite the paused turn's text.
+        from frappe_assistant_core.chat.api.chat import relay
+
+        self._assert_branch_finalizes_via(
+            _pre_start_check(relay._relay_ar_interrupt_resume),
+            "_abort_pending_interactions",
+            "_handle_stream_aborted",
+            "replace semantics would overwrite the paused turn",
         )
 
     def test_send_funnel_stream_cancelled_branch_uses_replace_helper(self):

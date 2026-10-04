@@ -12,6 +12,12 @@ from frappe_assistant_core.chat.fac_cloud_client import get_fac_cloud_client
 from frappe_assistant_core.chat.gate import is_chat_enabled
 
 from ._helpers import _safe_error
+from ._mobile_sessions import (
+    MOBILE_APP_NAME,
+    end_web_sessions,
+    mobile_client_of_request,
+    revoke_client_tokens,
+)
 
 
 def _get_or_create_ar_oauth_client():
@@ -930,7 +936,7 @@ def _register_mobile_oauth_client(redirect_uri: str, device_id: str | None = Non
     client = frappe.get_doc(
         {
             "doctype": "OAuth Client",
-            "app_name": "FACO Mobile",
+            "app_name": MOBILE_APP_NAME,
             "scopes": "all openid",
             "redirect_uris": redirect_uri,
             "default_redirect_uri": redirect_uri,
@@ -1057,3 +1063,25 @@ def register_mobile_client(redirect_uri: str | None = None, device_id: str | Non
 def ensure_mobile_oauth_client() -> dict:
     """Legacy alias - use register_mobile_client instead."""
     return register_mobile_client()
+
+
+@frappe.whitelist(methods=["POST"])
+def revoke_mobile_session() -> dict:
+    """Sign this device out on the server (spec §8.3, F13).
+
+    Revokes every Active OAuth Bearer Token of (session user, the calling
+    device's client), because Frappe keeps each pre-refresh token Active, and
+    ends the desk sessions ``create_web_session`` minted for that client. The
+    user's browser sessions and other devices on their own clients are untouched.
+
+    Over HTTP, a repeat call with the now-revoked bearer is refused 401 by
+    Frappe before this runs; in process, a repeat call finds nothing left and
+    returns zero counts.
+    """
+    user = frappe.session.user
+    client = mobile_client_of_request(require_active=False)
+    # Order matters: the revocation is the durable half, and delete_session
+    # (inside end_web_sessions) commits it together with each ended session.
+    revoked = revoke_client_tokens(user, client)
+    ended = end_web_sessions(user, client)
+    return {"success": True, "revoked_tokens": revoked, "ended_sessions": ended}

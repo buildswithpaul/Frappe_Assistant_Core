@@ -120,7 +120,8 @@ ERPNext (and Frappe in general) computes derived fields — row `amount`, parent
 - **Patch references a row `name` that doesn't exist** → `error_type: "child_row_not_found"`. No silent skipping.
 - **`_delete: true` without a `name`** → rejected. Deletion is only meaningful for rows already on the doc.
 - **Restricted fields in a child row** — sensitive fields registered for the *child* doctype (e.g., `secret_key`) are blocked the same way as on the parent. Error names the offending field and child doctype.
-- **Submitted documents** (`docstatus=1`) — cannot update. Use `run_workflow` to amend/cancel.
+- **Submitted documents** (`docstatus=1`) — cannot update. Cancel with `document_action` action `"cancel"` (it needs the user's reason), then `document_action` action `"amend"` creates a new draft you can update. If the DocType has an active Workflow, cancel through `run_workflow` instead.
+- **Cancelled documents** (`docstatus=2`) — read-only. Use `document_action` action `"amend"` to create a new draft, then update that draft.
 - **Read-only fields** — computed fields (e.g., `grand_total`) cannot be set; they recompute on save.
 - **Validation runs on save** — invalid field combinations will fail.
 - **`workflow_state`** — don't update directly, use `run_workflow` instead.

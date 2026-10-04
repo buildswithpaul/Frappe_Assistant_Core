@@ -7,6 +7,8 @@
  * and carries nothing extra.
  */
 
+import { LEVEL_LABELS } from "@/stores/composerModesStore";
+
 export const TIER_LABELS = {
 	Economy: "Economy",
 	Standard: "Standard",
@@ -38,6 +40,7 @@ export const PICK_REASONS = {
 	// receipt recorded three candidates.
 	unpriced_shortlist: "One of several models at this grade.",
 	fallback_rate_limited: "The first choice was busy.",
+	fallback_error: "The first choice couldn't answer.",
 	capability: "You chose it.",
 };
 
@@ -167,7 +170,9 @@ export function routingHeadline(receipt, name, fallbackName) {
 	if (receipt.fallback_from) {
 		const from =
 			fallbackName || receipt.fallback_from_name || receipt.fallback_from;
-		return `Started on ${from}; it was busy, so ${ran} answered.`;
+		return receipt.pick_reason === "fallback_error"
+			? `Started on ${from}; it couldn't answer, so ${ran} did.`
+			: `Started on ${from}; it was busy, so ${ran} answered.`;
 	}
 
 	const grade = tier(receipt.selected_tier);
@@ -246,14 +251,27 @@ export function routingRows(receipt, name) {
 
 	const t = receipt.thinking || {};
 	const parts = [PICK_REASONS[receipt.pick_reason]];
-	if (t.requested) {
+	const effort = t.effort;
+	const notApplied = `Thinking was on, but ${
+		THINKING_NOT_APPLIED[t.not_applied_reason] || "it did not apply here"
+	}.`;
+	if (effort?.requested && effort.requested !== "off") {
+		if (!t.applied) {
+			parts.push(notApplied);
+		} else if (effort.applied && effort.applied !== effort.requested) {
+			parts.push(
+				`Thinking: ${LEVEL_LABELS[effort.requested]} (ran at ${LEVEL_LABELS[effort.applied]} on this model).`
+			);
+		} else {
+			parts.push(`Thinking: ${LEVEL_LABELS[effort.requested]}.`);
+		}
+	} else if (effort?.requested === "off" && effort.applied && effort.applied !== "off") {
 		parts.push(
-			t.applied
-				? "Thinking was on."
-				: `Thinking was on, but ${
-						THINKING_NOT_APPLIED[t.not_applied_reason] || "it did not apply here"
-				  }.`
+			`Thinking was off; this model always thinks a little (${LEVEL_LABELS[effort.applied]}).`
 		);
+	} else if (t.requested) {
+		// Receipts from an AR that predates levels carry no effort.
+		parts.push(t.applied ? "Thinking was on." : notApplied);
 	}
 	if (receipt.also_ran?.length) {
 		parts.push(`This turn also ran: ${receipt.also_ran.join(", ")}.`);

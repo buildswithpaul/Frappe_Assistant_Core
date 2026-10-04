@@ -224,7 +224,7 @@ registry for tools contributed by external apps).
 
 | Category | Tools |
 |---|---|
-| Documents | `get_document`, `list_documents`, `create_document`, `update_document`, `delete_document`, `submit_document` |
+| Documents | `get_document`, `list_documents`, `create_document`, `update_document`, `delete_document`, `document_action` |
 | Search | `search_documents` (global, DocType-scoped, or Link value), plus `search` / `fetch` for ChatGPT connectors |
 | Reports | `report_list`, `report_requirements`, `generate_report` |
 | Approvals | `get_pending_approvals`, `run_workflow` |

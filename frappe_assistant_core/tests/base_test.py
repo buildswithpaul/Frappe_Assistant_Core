@@ -79,8 +79,10 @@ class BaseAssistantTest(IntegrationTestCase):
         """
         original_commit = frappe.db.__class__.commit
 
+        # Takes any arguments: Frappe itself calls commit(chain=True), for
+        # example in frappe.sessions.delete_session.
         @staticmethod
-        def _noop_commit():
+        def _noop_commit(*args, **kwargs):
             pass
 
         frappe.db.__class__.commit = _noop_commit
@@ -262,6 +264,26 @@ class BaseAssistantTest(IntegrationTestCase):
 
         user_doc.insert(ignore_permissions=True)
         return user_doc
+
+    def make_throwaway_user(self, prefix: str, roles: tuple = ()) -> str:
+        """A fresh enabled user with a unique email and only ``roles``.
+
+        For tests that must act as someone other than Administrator. The row
+        is rolled back with the test transaction. With no ``roles`` it is a
+        Website User; pass roles explicitly for role-gated endpoints.
+        """
+        email = f"{prefix}-{frappe.generate_hash(length=8)}@example.com"
+        frappe.get_doc(
+            {
+                "doctype": "User",
+                "email": email,
+                "first_name": prefix,
+                "enabled": 1,
+                "send_welcome_email": 0,
+                "roles": [{"role": role} for role in roles],
+            }
+        ).insert(ignore_permissions=True)
+        return email
 
     def create_test_document(self, doctype, data):
         """Create a test document"""

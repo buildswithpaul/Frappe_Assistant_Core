@@ -2,6 +2,7 @@ import { defineStore } from "pinia";
 import { ref, computed } from "vue";
 import { api } from "@/api/client";
 import { logger } from "@/utils/logger";
+import { EFFORT_LEVELS, LEVEL_LABELS } from "@/stores/composerModesStore";
 
 // localStorage key for persisting user's model selection
 const STORAGE_KEY = "faco_selected_model";
@@ -15,6 +16,7 @@ export const useModelStore = defineStore("models", () => {
 	const maxTierRank = ref(999);
 	const isLoading = ref(false);
 	const error = ref(null);
+	const pickerOpen = ref(false);
 
 	// Auto mode configuration from AR
 	const autoMode = ref(null); // { enabled, description, model_id, fallback_chain_length }
@@ -65,6 +67,38 @@ export const useModelStore = defineStore("models", () => {
 		}
 		return Boolean(currentModel.value?.thinking_effective);
 	});
+
+	const ORDER = EFFORT_LEVELS;
+
+	// An AR that predates the selector publishes no reasoning_levels. Then the
+	// composer keeps the old on/off control, and "on" travels as thinking_enabled.
+	const legacyMode = computed(() => !models.value.some((m) => Array.isArray(m.reasoning_levels)));
+
+	const effortLevels = computed(() => {
+		if (legacyMode.value) return thinkingHonoured.value ? ["off", "high"] : ["off"];
+		if (!isAutoModeSelected.value) {
+			// Unsupported levels stay listed; hintFor says where they actually run.
+			return currentModel.value?.reasoning_levels?.length ? [...ORDER] : ["off"];
+		}
+		const offered = new Set(models.value.filter(isModelAccessible).flatMap((m) => m.reasoning_levels || []));
+		return ORDER.filter((level) => offered.has(level));
+	});
+
+	// Under auto every level is enabled (the model is not chosen yet); for a
+	// picked model, a level it does not accept runs at the nearest lower one.
+	function hintFor(level) {
+		if (legacyMode.value || isAutoModeSelected.value || level === "off") return null;
+		const accepted = currentModel.value?.reasoning_levels || [];
+		if (accepted.includes(level) || accepted.length <= 1) return null;
+		const rank = ORDER.indexOf(level);
+		const lower = accepted.filter((l) => l !== "off" && ORDER.indexOf(l) < rank);
+		const runsAt = lower.length ? lower[lower.length - 1] : accepted.find((l) => l !== "off");
+		return runsAt ? `Runs at ${LEVEL_LABELS[runsAt]} on this model` : null;
+	}
+
+	const offFloor = computed(
+		() => !isAutoModeSelected.value && Boolean(currentModel.value?.reasoning_off_floor)
+	);
 
 	// Check if a model is accessible based on plan's max multiplier
 	function isModelAccessible(model) {
@@ -190,8 +224,17 @@ export const useModelStore = defineStore("models", () => {
 		return models.value.find((m) => m.model_id === modelId)?.display_name || null;
 	}
 
+	function openPicker() {
+		pickerOpen.value = true;
+	}
+
+	function closePicker() {
+		pickerOpen.value = false;
+	}
+
 	return {
 		// State
+		pickerOpen,
 		models,
 		modelsByTier,
 		selectedModel,
@@ -208,6 +251,10 @@ export const useModelStore = defineStore("models", () => {
 		isAutoModeEnabled,
 		isAutoModeSelected,
 		thinkingHonoured,
+		effortLevels,
+		legacyMode,
+		offFloor,
+		hintFor,
 		// Methods
 		isModelAccessible,
 		modelDisplayName,
@@ -215,5 +262,7 @@ export const useModelStore = defineStore("models", () => {
 		clearSelectedModel,
 		loadModels,
 		clearError,
+		openPicker,
+		closePicker,
 	};
 });

@@ -305,7 +305,7 @@ class DocumentUpdate(BaseTool):
                     "error": f"Cannot modify cancelled document {doctype} '{name}'. Cancelled documents are read-only.",
                     "docstatus": current_docstatus,
                     "workflow_state": current_workflow_state,
-                    "suggestion": "Use document_get to view the cancelled document, or create a new document if needed.",
+                    "suggestion": "To correct it, use document_action with action 'amend' to create a new draft copy, then update that draft.",
                 }
                 return result
 

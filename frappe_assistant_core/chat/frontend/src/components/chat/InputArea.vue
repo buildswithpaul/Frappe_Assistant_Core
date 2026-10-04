@@ -23,12 +23,24 @@
 					:open="plusOpen"
 					:web-search-available="webSearchAvailable"
 					:web-search="modes.webSearch"
-					:thinking="modes.thinking"
+					:thinking-level="modes.effort"
+					:thinking-state-text="thinkingStateText"
+					:thinking-open="thinkingMenuOpen"
 					:thinking-available="modelStore.thinkingHonoured"
 					@attach="onMenuAttach"
 					@toggle-web-search="composerModesStore.toggle(chatStore.currentSessionId, 'webSearch')"
-					@toggle-thinking="composerModesStore.toggle(chatStore.currentSessionId, 'thinking')"
+					@toggle-thinking="toggleThinkingMenu"
 					@close="plusOpen = false"
+				/>
+				<ThinkingLevelMenu
+					:open="thinkingMenuOpen"
+					:levels="modelStore.effortLevels"
+					:selected="modes.effort"
+					:legacy="modelStore.legacyMode"
+					:off-floor="modelStore.offFloor"
+					:hint-for="modelStore.hintFor"
+					@select="(level) => composerModesStore.setEffort(chatStore.currentSessionId, level)"
+					@close="thinkingMenuOpen = false"
 				/>
 				<div class="input-box">
 					<!-- Hidden File Input -->
@@ -64,12 +76,14 @@
 						:context="context"
 						:plus-open="plusOpen"
 						:web-search="modes.webSearch"
-						:thinking="modes.thinking"
+						:thinking-level="modes.effort"
+						:thinking-label="thinkingLabel"
+						:thinking-open="thinkingMenuOpen"
 						:thinking-available="modelStore.thinkingHonoured"
 						:web-search-available="webSearchAvailable"
 						@toggle-plus="plusOpen = !plusOpen"
 						@toggle-web-search="composerModesStore.toggle(chatStore.currentSessionId, 'webSearch')"
-						@toggle-thinking="composerModesStore.toggle(chatStore.currentSessionId, 'thinking')"
+						@toggle-thinking="toggleThinkingMenu"
 						@transcribed="onTranscribed"
 						@voice-error="onVoiceError"
 						@toggle-markdown="showMarkdownPreview = !showMarkdownPreview"
@@ -86,6 +100,7 @@
 import { ref, computed, nextTick, watch, onMounted, onBeforeUnmount, defineAsyncComponent } from "vue";
 import SlashMenu from "@/components/chat/SlashMenu.vue";
 import ComposerPlusMenu from "@/components/chat/ComposerPlusMenu.vue";
+import ThinkingLevelMenu from "@/components/chat/ThinkingLevelMenu.vue";
 import AttachedFilePreview from "@/components/chat/AttachedFilePreview.vue";
 import InputToolbar from "@/components/chat/InputToolbar.vue";
 import {
@@ -93,7 +108,7 @@ import {
 	UPLOAD_ACCEPT_ATTR,
 } from "@/composables/useComposerAttachments";
 import { useRobotMoodStore } from "@/stores/robotMoodStore";
-import { useComposerModesStore } from "@/stores/composerModesStore";
+import { useComposerModesStore, LEVEL_LABELS } from "@/stores/composerModesStore";
 import { useChatStore } from "@/stores/chatStore";
 import { useUserStore } from "@/stores/userStore";
 import { useModelStore } from "@/stores/modelStore";
@@ -145,6 +160,34 @@ const slashMenuRef = ref(null);
 // and recreated when composerInHero flips at first send.
 const plusOpen = ref(false);
 const modes = computed(() => composerModesStore.modesFor(chatStore.currentSessionId));
+const thinkingMenuOpen = ref(false);
+// Until the model list arrives every model is "legacy", so a saved level would
+// read as "On"; and a model that cannot think shows no level at all.
+const showThinkingLevel = computed(
+	() => modelStore.models.length > 0 && modelStore.thinkingHonoured,
+);
+const thinkingStateText = computed(() => {
+	if (modelStore.models.length === 0) return "";
+	if (modelStore.legacyMode) return modes.value.effort === "off" ? "Off" : "On";
+	return LEVEL_LABELS[modes.value.effort] || modes.value.effort;
+});
+const thinkingLabel = computed(() =>
+	modes.value.effort === "off" || !showThinkingLevel.value
+		? "Thinking"
+		: `Thinking: ${thinkingStateText.value}`,
+);
+
+watch(
+	() => modelStore.thinkingHonoured,
+	(honoured) => {
+		if (!honoured) thinkingMenuOpen.value = false;
+	},
+);
+
+function toggleThinkingMenu() {
+	thinkingMenuOpen.value = !thinkingMenuOpen.value;
+	plusOpen.value = false;
+}
 const webSearchAvailable = computed(() => userStore.capabilities?.features?.web_search === true);
 
 function onMenuAttach() {
@@ -238,7 +281,8 @@ watch(
 				textInput.value?.focus();
 			});
 		}
-	}
+	},
+	{ immediate: true }
 );
 
 function autoResize() {

@@ -66,6 +66,7 @@ from .billing import (
     downgrade_to_free,
     download_invoice_pdf,
     get_available_gateways,
+    get_billing_countries,
     get_billing_dashboard,
     get_billing_details,
     get_billing_history,
@@ -171,17 +172,6 @@ from .memories import (
     get_memory_stats,
     list_memories,
     update_memory,
-)
-
-# ── Mobile Streaming ────────────────────────────────────────────────
-from .mobile_stream import (
-    get_available_models as mobile_get_available_models,
-)
-from .mobile_stream import (
-    get_messages,
-    get_sessions,
-    search_sessions,
-    stream_chat,
 )
 
 # ── Models ───────────────────────────────────────────────────────────

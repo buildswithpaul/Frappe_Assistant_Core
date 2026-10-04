@@ -15,6 +15,12 @@
 // 180s tolerates ~18 missed heartbeats before declaring the stream dead.
 const STREAM_ACTIVITY_TIMEOUT_MS = 180000; // 180 seconds - reset on each event (including heartbeats)
 
+// A Stop's cancel_stream holds the send queue until it is answered, and for
+// this long at most: baseCall has no timeout, and a hung cancel must not hold
+// the queue forever. FAC's own AR client and the phone's cancel request both
+// give up after 30 s too.
+export const CANCEL_HOLD_MS = 30000;
+
 import { ref } from "vue";
 import { api } from "@/api/client";
 import { logger } from "@/utils/logger";
@@ -29,9 +35,11 @@ export function createStreamManager({
 	socketConnected,
 	socketError,
 	currentSessionId,
+	isCancelling,
 	reconcile,
 }) {
 	let activityTimeoutId = null;
+	let cancelsInFlight = 0;
 
 	// Debounced visibility — only show UI after sustained disconnect (3s)
 	const connectionVisible = ref(false);
@@ -173,6 +181,25 @@ export function createStreamManager({
 		connectionVisible.value = false;
 	}
 
+	// Hold the send queue while a Stop's cancel_stream is in flight: FAC clears
+	// the session's cancel flag when it accepts the next turn, so that turn must
+	// not reach FAC before the Stop has. Returns the release, which is
+	// idempotent and also runs by itself after CANCEL_HOLD_MS.
+	function holdQueueWhileCancelling() {
+		cancelsInFlight += 1;
+		isCancelling.value = true;
+		let boundId = null;
+		const release = () => {
+			if (boundId === null) return;
+			clearTimeout(boundId);
+			boundId = null;
+			cancelsInFlight -= 1;
+			isCancelling.value = cancelsInFlight > 0;
+		};
+		boundId = setTimeout(release, CANCEL_HOLD_MS);
+		return release;
+	}
+
 	async function abortStream() {
 		if (!isStreaming.value) return;
 
@@ -224,15 +251,23 @@ export function createStreamManager({
 
 		// Tell the server to actually stop processing. Without this the
 		// agent keeps running, tools keep firing, and tokens keep getting
-		// billed even though we've stopped showing the events.
+		// billed even though we've stopped showing the events. The next
+		// message waits in the send queue until this call is answered.
 		const sessionId = currentSessionId?.value;
 		if (sessionId) {
+			const release = holdQueueWhileCancelling();
+			// The bubble's request id goes as message_id, as before, and as
+			// client_turn_id: FAC then keeps this Stop even when it arrives before
+			// FAC has accepted that send, Continue or resume.
+			const requestId = lastMsg?._requestId || null;
 			try {
-				await api.chat.cancelStream(sessionId, lastMsg?._requestId || null);
+				await api.chat.cancelStream(sessionId, requestId, requestId);
 			} catch (err) {
 				// Don't block the UI on a failed cancel. The activity
 				// timeout (180s) is still the canonical liveness check.
 				logger.warn("cancel_stream call failed:", err);
+			} finally {
+				release();
 			}
 		}
 	}

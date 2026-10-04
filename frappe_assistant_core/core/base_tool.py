@@ -66,21 +66,26 @@ def _is_sensitive_key(key: Any) -> bool:
     return bool(_SENSITIVE_TOKEN_RE.search(lower))
 
 
+def _plain_text(value: Any) -> str:
+    """Return ``value`` with markup stripped and whitespace collapsed, as a browser renders it."""
+    return " ".join(strip_html_tags(str(value or "")).split())
+
+
 def exception_message(exc: BaseException, fallback: Optional[str] = None) -> str:
-    """Return a non-empty description of ``exc`` for a tool result or a log entry.
+    """Return a non-empty, readable description of ``exc`` for a tool result or a log entry.
 
-    Frappe raises a bare ``frappe.PermissionError`` for a document-level denial
-    and keeps the reason, as HTML, in ``frappe.flags.error_message``, so
-    ``str(exc)`` alone is empty. The order is: the exception's own text, that
-    reason as plain text (markup stripped, whitespace collapsed as a browser
-    would), ``fallback``, then the exception's class name.
+    Frappe raises a bare ``frappe.PermissionError`` for a document-level denial and keeps
+    the reason in ``frappe.flags.error_message``, so ``str(exc)`` alone is empty. Frappe and
+    ERPNext messages also carry markup — ``frappe.bold()`` emits ``<strong>``, and link
+    errors embed ``<a href>`` — so both sources are reduced to plain text rather than shown
+    to the model as markup.
+
+    The order is: the exception's own text, then Frappe's reason, then ``fallback``, then the
+    exception's class name.
     """
-    text = str(exc)
-    if text:
-        return text
-
-    reason = " ".join(strip_html_tags(str(frappe.flags.get("error_message") or "")).split())
-    return reason or fallback or type(exc).__name__
+    return (
+        _plain_text(exc) or _plain_text(frappe.flags.get("error_message")) or fallback or type(exc).__name__
+    )
 
 
 def permission_error_result(doctype: str, error: str, name: Optional[str] = None) -> Dict[str, Any]:

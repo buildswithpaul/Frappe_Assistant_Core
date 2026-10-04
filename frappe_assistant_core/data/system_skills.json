@@ -50,14 +50,14 @@
     "content_file": "delete_document.md"
   },
   {
-    "skill_id": "submit-document-usage",
-    "title": "How to Use submit_document",
-    "description": "Finalizing draft documents — submittable DocTypes, docstatus workflow, side effects",
+    "skill_id": "document-action-usage",
+    "title": "How to Use document_action",
+    "description": "Submitting drafts, cancelling submitted documents (reason required, workflow and linked-document rules) and amending cancelled ones",
     "skill_type": "Tool Usage",
-    "linked_tool": "submit_document",
+    "linked_tool": "document_action",
     "status": "Published",
     "visibility": "Public",
-    "content_file": "submit_document.md"
+    "content_file": "document_action.md"
   },
   {
     "skill_id": "search-documents-usage",
@@ -246,5 +246,59 @@
     "status": "Published",
     "visibility": "Public",
     "content_file": "build_skill.md"
+  },
+  {
+    "skill_id": "site-health-check",
+    "title": "Site Health Check",
+    "description": "Use when asked to check, audit or health-check the site's setup, find what's missing or misconfigured before go-live, or review a site someone else set up.",
+    "skill_type": "Workflow",
+    "status": "Published",
+    "visibility": "Public",
+    "content_file": "site_health_check.md"
+  },
+  {
+    "skill_id": "setup-change-protocol",
+    "title": "Setup Change Protocol",
+    "description": "Use before creating or changing any setup or configuration record — company, fiscal year, account, warehouse, tax template, custom field, workflow, naming series or a Settings page — or when fixing a health-check finding.",
+    "skill_type": "Workflow",
+    "status": "Published",
+    "visibility": "Public",
+    "content_file": "setup_change_protocol.md"
+  },
+  {
+    "skill_id": "guided-setup",
+    "title": "Guided Setup",
+    "description": "Use when the user wants help setting up ERPNext for their business, has just installed it, or is adding a branch, warehouse or new company.",
+    "skill_type": "Workflow",
+    "status": "Published",
+    "visibility": "Public",
+    "content_file": "guided_setup.md"
+  },
+  {
+    "skill_id": "add-custom-field",
+    "title": "Adding a Custom Field",
+    "description": "Use when asked to add a field to a form, capture extra information on a document, or put a new field on a DocType such as Delivery Note or Sales Invoice.",
+    "skill_type": "Workflow",
+    "status": "Published",
+    "visibility": "Public",
+    "content_file": "add_custom_field.md"
+  },
+  {
+    "skill_id": "set-up-approval-workflow",
+    "title": "Setting Up an Approval Workflow",
+    "description": "Use when asked to require approval before a document is submitted, add an approval step or an amount threshold (\"approval needed above ₹50,000\"), or change who approves what.",
+    "skill_type": "Workflow",
+    "status": "Published",
+    "visibility": "Public",
+    "content_file": "set_up_approval_workflow.md"
+  },
+  {
+    "skill_id": "configure-naming-series",
+    "title": "Configuring Naming Series",
+    "description": "Use when asked to change how documents are numbered, add a numbering series for a branch or company, put the financial year in document numbers, or start numbering from a given value.",
+    "skill_type": "Workflow",
+    "status": "Published",
+    "visibility": "Public",
+    "content_file": "configure_naming_series.md"
   }
 ]

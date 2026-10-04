@@ -125,6 +125,15 @@ describe("the widget presenters agree with the SPA's", () => {
 		expect(loadRouting().headline(platform, "S")).not.toMatch(/workspace/);
 	});
 
+	it("agrees on an error fallback and a rate-limit fallback", () => {
+		for (const pick_reason of ["fallback_error", "fallback_rate_limited"]) {
+			const r = { selected_model: "b", fallback_from: "a", fallback_from_name: "Model A", pick_reason };
+			expect(loadRouting().headline(r, "Model B")).toBe(spaCopy.routingHeadline(r, "Model B"));
+		}
+		const r = { selected_model: "b", fallback_from: "a", fallback_from_name: "Model A", pick_reason: "fallback_error" };
+		expect(loadRouting().headline(r, "Model B")).toBe("Started on Model A; it couldn't answer, so Model B did.");
+	});
+
 	it("agrees when a rule moved the turn", () => {
 		const r = { ...RECEIPT, bound_by: "neither",
 			preference: { applied: true, scope: "Tenant", target_tier: "Economy" } };

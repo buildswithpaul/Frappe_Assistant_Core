@@ -105,7 +105,7 @@
 					:class="{ 'input-error': errorFor('billing_country') }"
 					@change="clearFieldError('billing_country')"
 				>
-					<option v-for="c in COUNTRIES" :key="c.code" :value="c.code">
+					<option v-for="c in countries" :key="c.code" :value="c.code">
 						{{ c.label }}
 					</option>
 				</select>
@@ -199,7 +199,7 @@ import { logger } from "@/utils/logger";
 import BillingField from "./BillingField.vue";
 import BillingGstFields from "./BillingGstFields.vue";
 import {
-	COUNTRIES,
+	FALLBACK_COUNTRIES,
 	INDIAN_STATES,
 	normalisePhone,
 	validateBillingForm,
@@ -234,6 +234,7 @@ const FIELD_IDS = {
 	billing_pincode: "bd-pincode",
 };
 const errorFor = (field) => fieldErrors.value[field] || "";
+const countries = ref(FALLBACK_COUNTRIES);
 
 const form = ref({
 	billing_legal_name: "",
@@ -305,15 +306,24 @@ watch(
 	}
 );
 
+async function loadCountries() {
+	try {
+		const list = await api.billing.getBillingCountries();
+		if (Array.isArray(list) && list.length) countries.value = list;
+	} catch (e) {
+		logger.warn("Failed to load billing countries; using the built-in list:", e);
+	}
+}
+
 async function load() {
 	loading.value = true;
 	try {
-		const result = await api.billing.getBillingDetails();
+		const [, result] = await Promise.all([loadCountries(), api.billing.getBillingDetails()]);
 		if (result) {
 			Object.assign(form.value, result);
 			// `billing_country` comes back as the ERPNext country name (e.g.
 			// "India") — map it back to the ISO code the <select> expects.
-			const match = COUNTRIES.find(
+			const match = countries.value.find(
 				(c) => c.label.toLowerCase() === String(form.value.billing_country).toLowerCase()
 			);
 			if (match) form.value.billing_country = match.code;
