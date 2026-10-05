@@ -79,27 +79,22 @@ def _build_tool_registry():
         from frappe_assistant_core.mcp.tool_adapter import build_tool_dict
         from frappe_assistant_core.utils.tool_category_detector import category_to_annotations
 
-        # Get available tools (respects enabled/disabled state and permissions)
+        # Get available instances in one pass. The previous metadata -> name ->
+        # get_tool loop rediscovered every external hook tool for every item.
         registry = get_tool_registry()
-        available_tools = registry.get_available_tools(user=frappe.session.user)
+        available_tools = registry.get_available_tool_instances(user=frappe.session.user)
 
         # Resolve each tool's category once (honors admin overrides stored on
         # FAC Tool Configuration; falls back to auto-detection).
-        categories = _resolve_tool_categories(
-            [t.get("name") for t in available_tools if t.get("name")], registry
-        )
+        categories = _resolve_tool_categories(list(available_tools), registry, tool_instances=available_tools)
 
-        for tool_metadata in available_tools:
-            tool_name = tool_metadata.get("name")
-            if tool_name:
-                tool_instance = registry.get_tool(tool_name)
-                if tool_instance:
-                    tool_dict = build_tool_dict(tool_instance)
-                    annotations = category_to_annotations(categories.get(tool_name, "read_write"))
-                    if annotations:
-                        # Merge with any annotations the tool already declared.
-                        tool_dict["annotations"] = {**(tool_dict.get("annotations") or {}), **annotations}
-                    registry_dict[tool_name] = tool_dict
+        for tool_name, tool_instance in available_tools.items():
+            tool_dict = build_tool_dict(tool_instance)
+            annotations = category_to_annotations(categories.get(tool_name, "read_write"))
+            if annotations:
+                # Merge with any annotations the tool already declared.
+                tool_dict["annotations"] = {**(tool_dict.get("annotations") or {}), **annotations}
+            registry_dict[tool_name] = tool_dict
 
         frappe.logger().info(f"Built {len(registry_dict)} enabled tools for user {frappe.session.user}")
 
@@ -109,7 +104,7 @@ def _build_tool_registry():
     return registry_dict
 
 
-def _resolve_tool_categories(tool_names: list, registry) -> dict:
+def _resolve_tool_categories(tool_names: list, registry, tool_instances=None) -> dict:
     """
     Resolve the FAC tool category for each tool name.
 
@@ -150,7 +145,7 @@ def _resolve_tool_categories(tool_names: list, registry) -> dict:
         if tool_name in categories:
             continue
         try:
-            tool_instance = registry.get_tool(tool_name)
+            tool_instance = (tool_instances or {}).get(tool_name) or registry.get_tool(tool_name)
             categories[tool_name] = detect_tool_category(tool_instance) if tool_instance else "read_write"
         except Exception:
             categories[tool_name] = "read_write"
