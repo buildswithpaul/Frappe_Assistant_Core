@@ -53,3 +53,42 @@ describe("EmailVerificationPending change-email form", () => {
 		expect(w.find(".change-email input").attributes("disabled")).toBeUndefined();
 	});
 });
+
+describe("EmailVerificationPending verifying a dead link", () => {
+	async function mountVerifying(result) {
+		const { api } = await import("@/api/client");
+		api.registration.completeEmailVerification = vi.fn().mockResolvedValue(result);
+		const w = mount(EmailVerificationPending, {
+			props: { mode: "verifying", verificationToken: "dead-link" },
+			global: { stubs: { FacoRobot: true } },
+		});
+		await flushPromises();
+		return w;
+	}
+
+	it("offers a new link instead of retrying one that can never work", async () => {
+		const w = await mountVerifying({
+			success: false,
+			link_expired: true,
+			error: "This verification link has expired or was already used.",
+		});
+
+		expect(w.find(".error-text").text()).toContain("expired");
+		const button = w.find(".retry-btn");
+		expect(button.text()).toBe("Get a new link");
+
+		await button.trigger("click");
+		expect(w.emitted("start-over")).toHaveLength(1);
+		expect(w.emitted("verify-failed")).toHaveLength(1);
+	});
+
+	it("keeps Try again for a failure a retry can fix", async () => {
+		const w = await mountVerifying({ success: false, error: "Couldn't reach the FAC Cloud server." });
+
+		const button = w.find(".retry-btn");
+		expect(button.text()).toBe("Try again");
+		await button.trigger("click");
+		await flushPromises();
+		expect(w.emitted("start-over")).toBeUndefined();
+	});
+});

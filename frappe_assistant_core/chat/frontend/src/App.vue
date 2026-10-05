@@ -14,6 +14,7 @@
 				:verification-token="verifyToken"
 				@verified="onVerified"
 				@verify-failed="onVerifyFailed"
+				@start-over="onVerifyStartOver"
 			/>
 		</div>
 
@@ -86,6 +87,13 @@ if (window.__facoVerifyToken) {
 async function onVerified() {
 	// Tenant is active. Refresh registration state so OnboardingScreen
 	// disappears and ChatStagePicker advances to UserSetup / chat.
+	verifyToken.value = null;
+	await userStore.refreshRegistrationStatus();
+}
+
+async function onVerifyStartOver() {
+	// The link is dead; drop it so the onboarding screen offers Resend and
+	// Change email for the pending registration.
 	verifyToken.value = null;
 	await userStore.refreshRegistrationStatus();
 }

@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+import json
+
 import frappe
 from frappe import _
 
@@ -53,6 +55,20 @@ def _translate_registration_error(raw: str) -> str:
         return _("Registration was rejected by the server. Please contact support.")
 
     return _("Registration failed. Please try again or contact support if the problem persists.")
+
+
+def _ar_error_message(response) -> str:
+    """The message AR raised, read from a Frappe error response body."""
+    try:
+        body = response.json()
+    except (AttributeError, ValueError):
+        return ""
+    try:
+        messages = json.loads(body.get("_server_messages") or "[]")
+        text = " ".join(json.loads(m).get("message", "") for m in messages)
+    except (TypeError, ValueError, AttributeError):
+        text = ""
+    return text or str(body.get("exception") or "")
 
 
 PENDING_TOKEN_FIELD = "pending_verification_token"
@@ -594,6 +610,20 @@ def complete_email_verification(verification_token: str) -> dict:
         verify_payload = verify_resp.json().get("message", verify_resp.json())
         if not verify_payload.get("verified"):
             return {"success": False, "error": _("Verification failed")}
+    except _requests.exceptions.HTTPError as e:
+        # A used or superseded link: retrying it can never work, so the screen
+        # sends the owner back to request a fresh one.
+        if "invalid or expired token" in _ar_error_message(e.response).lower():
+            return {
+                "success": False,
+                "link_expired": True,
+                "error": _(
+                    "This verification link has expired or was already used. "
+                    "Request a new one, and check the email address it goes to."
+                ),
+            }
+        frappe.log_error(title="FAC Email Verification", message=str(e))
+        return {"success": False, "error": _translate_registration_error(str(e))}
     except _requests.exceptions.RequestException as e:
         frappe.log_error(title="FAC Email Verification", message=str(e))
         return {"success": False, "error": _translate_registration_error(str(e))}
