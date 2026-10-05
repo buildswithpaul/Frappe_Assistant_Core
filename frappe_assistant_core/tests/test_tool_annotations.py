@@ -238,3 +238,34 @@ class TestBuildToolRegistryAttachesAnnotations(BaseAssistantTest):
             ann = registry["delete_document"]["annotations"]
             self.assertEqual(ann.get("readOnlyHint"), False)
             self.assertEqual(ann.get("destructiveHint"), True)
+
+    def test_registry_build_uses_single_instance_pass(self):
+        from frappe_assistant_core.api import fac_endpoint
+
+        tool = MagicMock()
+        tool.name = "single_pass_tool"
+        tool.description = "Single-pass registry test"
+        tool.inputSchema = {"type": "object", "properties": {}}
+        tool.annotations = None
+        registry = MagicMock()
+        registry.get_available_tool_instances.return_value = {tool.name: tool}
+
+        with ExitStack() as stack:
+            stack.enter_context(
+                patch(
+                    "frappe_assistant_core.core.tool_registry.get_tool_registry",
+                    return_value=registry,
+                )
+            )
+            stack.enter_context(
+                patch.object(
+                    fac_endpoint,
+                    "_resolve_tool_categories",
+                    return_value={tool.name: "read_only"},
+                )
+            )
+            built = fac_endpoint._build_tool_registry()
+
+        self.assertEqual(list(built), [tool.name])
+        registry.get_available_tool_instances.assert_called_once_with(user=frappe.session.user)
+        registry.get_tool.assert_not_called()

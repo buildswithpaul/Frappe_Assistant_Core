@@ -200,20 +200,40 @@ class ToolRegistry:
         frappe.cache.delete_value(self._cache_key)
         self._tool_config_cache = None
 
+    def _get_all_tool_infos(self) -> Dict[str, ToolInfo]:
+        """Return plugin and hook tools from one discovery snapshot."""
+        tools = get_plugin_manager().get_all_tools()
+        tools.update(self._get_external_tools())
+        return tools
+
     def get_tool(self, tool_name: str) -> Optional[BaseTool]:
         """Get a tool by name"""
-        plugin_manager = get_plugin_manager()
-        tools = plugin_manager.get_all_tools()
+        tool_info = self._get_all_tool_infos().get(tool_name)
+        return tool_info.instance if tool_info else None
 
-        # Check plugin tools first
-        tool_info = tools.get(tool_name)
-        if tool_info:
-            return tool_info.instance
+    def get_available_tool_instances(self, user: Optional[str] = None) -> Dict[str, BaseTool]:
+        """Return accessible tool instances in one permission-filtered pass.
 
-        # Check external tools
-        external_tools = self._get_external_tools()
-        external_tool_info = external_tools.get(tool_name)
-        return external_tool_info.instance if external_tool_info else None
+        MCP registry construction needs the actual instances. Returning them
+        directly prevents the old metadata -> name -> repeated discovery loop,
+        while retaining all existing enabled, role and DocType permission
+        checks.
+        """
+        effective_user = user or frappe.session.user
+        available_tools: Dict[str, BaseTool] = {}
+
+        for tool_info in self._get_all_tool_infos().values():
+            try:
+                tool_name = tool_info.name
+                if not self._is_tool_accessible(tool_name, effective_user):
+                    continue
+                if not self._check_tool_permission(tool_info.instance, effective_user):
+                    continue
+                available_tools[tool_name] = tool_info.instance
+            except Exception as e:
+                self.logger.warning(f"Failed to inspect tool {tool_info.name}: {e}")
+
+        return available_tools
 
     def get_available_tools(self, user: Optional[str] = None) -> List[Dict[str, Any]]:
         """
@@ -231,35 +251,10 @@ class ToolRegistry:
         Returns:
             List of tools in MCP format
         """
-        effective_user = user or frappe.session.user
-        plugin_manager = get_plugin_manager()
-
-        # Step 1: Get tools from enabled plugins
-        tools = plugin_manager.get_all_tools()
-
-        # Add external tools from hooks
-        external_tools = self._get_external_tools()
-        tools.update(external_tools)
-
-        available_tools = []
-        for tool_info in tools.values():
-            try:
-                tool_name = tool_info.name
-
-                # Step 2 & 3: Check FAC Tool Configuration (enabled + role access)
-                if not self._is_tool_accessible(tool_name, effective_user):
-                    continue
-
-                # Step 4: Check Frappe permissions for the tool
-                if not self._check_tool_permission(tool_info.instance, effective_user):
-                    continue
-
-                available_tools.append(tool_info.instance.get_metadata())
-
-            except Exception as e:
-                self.logger.warning(f"Failed to get metadata for tool {tool_info.name}: {e}")
-
-        return available_tools
+        return [
+            tool_instance.get_metadata()
+            for tool_instance in self.get_available_tool_instances(user=user).values()
+        ]
 
     def execute_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Any:
         """Execute a tool with given arguments"""
@@ -373,7 +368,7 @@ class ToolRegistry:
 
     def _get_external_tools(self) -> Dict[str, Any]:
         """Get external tools from hooks safely"""
-        external_tools = {}
+        external_tools: Dict[str, ToolInfo] = {}
 
         try:
             # Only try to load external tools if frappe is properly initialized
@@ -404,9 +399,9 @@ class ToolRegistry:
                     if hasattr(tool_class, "__bases__") and issubclass(tool_class, BaseTool):
                         tool_instance = tool_class()
 
-                        # Create a ToolInfo-like object
-                        from frappe_assistant_core.utils.plugin_manager import ToolInfo
-
+                        # ToolInfo is imported at module scope; a local re-import here
+                        # would shadow it and make the annotation above a forward
+                        # reference to an unassigned local.
                         tool_info = ToolInfo(
                             name=tool_instance.name,
                             plugin_name="custom_tools",  # Use actual plugin name for proper enable/disable tracking
