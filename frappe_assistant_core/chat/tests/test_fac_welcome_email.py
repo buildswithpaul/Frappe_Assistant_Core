@@ -49,6 +49,17 @@ RETIRED_CONTENT = (
     "ask Claude",
 )
 
+# Claims the email used to make that are untrue the moment it is sent. FAC Chat is
+# off on every fresh install (`enable_fac_chat` defaults to 0 and only the
+# `toggle_chat` admin action turns it on), so a workspace the admin is told to open
+# does not exist yet and `/copilot/` raises PageDoesNotExistError.
+FALSE_AT_INSTALL = (
+    "workspace is ready",
+    "Open your workspace",
+    "Everything lives in your workspace",
+    "/copilot/",
+)
+
 # Anchored at column 0 (true module scope, not an indented/lazy import) and
 # word-bounded so `assistant_runtime_sdk` — the allowed client library —
 # never matches: the boundary check fails on the "_" right after "runtime".
@@ -116,6 +127,59 @@ class TestFacWelcomeEmail(BaseAssistantTest):
             send_fac_admin_invite()
 
         sendmail.assert_not_called()
+
+    def test_install_email_is_sent_even_though_chat_is_off(self):
+        """The install hook's own reality: chat is disabled when this email goes out.
+
+        `enable_fac_chat` defaults to 0 and nothing enables it during
+        `after_install` — the only writer is the `toggle_chat` admin action. Gating
+        this email on the chat gate therefore suppresses it on every install, not
+        just on BYO-LLM ones.
+        """
+        frappe.db.set_single_value("Assistant Core Settings", "enable_fac_chat", 0)
+        with patch(
+            "frappe_assistant_core.utils.email_invite._get_system_manager_emails",
+            return_value=["admin@acme.com"],
+        ), patch("frappe_assistant_core.utils.email_invite.frappe.sendmail", return_value=True) as sendmail:
+            send_fac_admin_invite()
+
+        sendmail.assert_called_once()
+
+    def test_email_claims_nothing_that_is_untrue_before_chat_is_enabled(self):
+        with patch(
+            "frappe_assistant_core.utils.email_invite._get_system_manager_emails",
+            return_value=["admin@acme.com"],
+        ), patch("frappe_assistant_core.utils.email_invite.frappe.sendmail", return_value=True) as sendmail:
+            send_fac_admin_invite()
+
+        subject = sendmail.call_args.kwargs["subject"]
+        message = _rendered_message(sendmail)
+        for claim in FALSE_AT_INSTALL:
+            with self.subTest(claim=claim):
+                self.assertNotIn(claim, message)
+                self.assertNotIn(claim, subject)
+
+    def test_cta_opens_fac_admin(self):
+        """FAC Admin is reachable with chat off; /copilot/ 404s until chat is on."""
+        with patch(
+            "frappe_assistant_core.utils.email_invite._get_system_manager_emails",
+            return_value=["admin@acme.com"],
+        ), patch("frappe_assistant_core.utils.email_invite.frappe.sendmail", return_value=True) as sendmail:
+            send_fac_admin_invite()
+
+        self.assertEqual(sendmail.call_args.kwargs["args"]["cta_url"], frappe.utils.get_url("/app/fac-admin"))
+        self.assertIn("/app/fac-admin", _rendered_message(sendmail))
+
+    def test_email_names_fac_chat_as_something_to_turn_on(self):
+        with patch(
+            "frappe_assistant_core.utils.email_invite._get_system_manager_emails",
+            return_value=["admin@acme.com"],
+        ), patch("frappe_assistant_core.utils.email_invite.frappe.sendmail", return_value=True) as sendmail:
+            send_fac_admin_invite()
+
+        message = _rendered_message(sendmail)
+        self.assertIn("FAC Chat", message)
+        self.assertIn("FAC Admin", message)
 
     def test_package_never_imports_assistant_runtime_at_module_scope(self):
         self.assertEqual(_assistant_runtime_import_violations(), [])
