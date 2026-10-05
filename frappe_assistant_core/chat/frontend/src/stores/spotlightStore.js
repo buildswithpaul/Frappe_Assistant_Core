@@ -18,6 +18,10 @@ import {
 	storage,
 } from "@/components/spotlight/spotlightRules";
 
+// The Desk widget keeps its own daily cap under its own surface, so one surface
+// showing a Spotlight never consumes the other's.
+const SURFACE = "spa";
+
 export const useSpotlightStore = defineStore("spotlight", () => {
 	const current = ref(null);
 	let shownThisLoad = false;
@@ -56,9 +60,9 @@ export const useSpotlightStore = defineStore("spotlight", () => {
 		}
 
 		const announcement = pickAnnouncement(useNotificationStore().activeNotifications);
-		if (announcement && storage.get(DAILY_KEY(who)) !== localDate()) {
+		if (announcement && storage.get(DAILY_KEY(who, SURFACE)) !== localDate()) {
 			current.value = announcementContent(announcement);
-			storage.set(DAILY_KEY(who), localDate());
+			storage.set(DAILY_KEY(who, SURFACE), localDate());
 			shownThisLoad = true;
 		}
 	}
@@ -74,6 +78,11 @@ export const useSpotlightStore = defineStore("spotlight", () => {
 		};
 		current.value = quotaContent(quotaStatus);
 		shownThisLoad = true;
+	}
+
+	/** Close for this page load only: no dismissal is recorded, so it returns tomorrow. */
+	function close() {
+		current.value = null;
 	}
 
 	function dismiss() {
@@ -109,5 +118,5 @@ export const useSpotlightStore = defineStore("spotlight", () => {
 		go(target, router);
 	}
 
-	return { current, evaluate, onQuotaExhausted, dismiss, primary, secondary };
+	return { current, evaluate, onQuotaExhausted, close, dismiss, primary, secondary };
 });

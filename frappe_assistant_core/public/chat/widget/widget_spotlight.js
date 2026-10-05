@@ -18,7 +18,8 @@
 			: String(s ?? "").replace(/[&<>"']/g, (c) => HTML_ESCAPES[c]);
 
 	window.FACOWidgetSpotlight = {
-		daily_key: (user) => `fac_spotlight_last_shown:${user}`,
+		SURFACE: "widget",
+		daily_key: (user, surface) => `fac_spotlight_last_shown:${user}:${surface}`,
 		quota_key: (user, cycle, threshold) => `fac_quota_moment:${user}:${cycle}:${threshold}`,
 
 		local_date(now = new Date()) {
@@ -166,7 +167,7 @@
 			const quota = this._quota_moment(widget);
 			if (quota) return quota;
 			const n = this.pick_announcement(widget.spotlight_notifications);
-			if (n && this.storage_get(this.daily_key(this._user(widget))) !== this.local_date()) {
+			if (n && this.storage_get(this.daily_key(this._user(widget), this.SURFACE)) !== this.local_date()) {
 				return this.announcement_content(n);
 			}
 			return null;
@@ -242,7 +243,7 @@
 			$messages.find(".faco-spotlight-card").remove();
 			if (!content) return;
 			if (content.kind === "announcement") {
-				this.storage_set(this.daily_key(this._user(widget)), this.local_date());
+				this.storage_set(this.daily_key(this._user(widget), this.SURFACE), this.local_date());
 				this.update_dot(widget);
 			}
 			const highlights = (content.highlights || []).map((h) => `<li>${esc(h)}</li>`).join("");

@@ -7,7 +7,7 @@ import SpotlightQuotaArt from "./SpotlightQuotaArt.vue";
 const FOCUSABLE = "button, [href], video[controls]";
 
 const props = defineProps({ content: { type: Object, default: null } });
-const emit = defineEmits(["primary", "secondary", "dismiss"]);
+const emit = defineEmits(["primary", "secondary", "dismiss", "close"]);
 
 const cardRef = ref(null);
 const primaryRef = ref(null);
@@ -35,7 +35,7 @@ watch(
 
 function onKeydown(e) {
 	if (e.key === "Escape") {
-		emit("dismiss");
+		emit("close");
 		return;
 	}
 	if (e.key !== "Tab" || !cardRef.value) return;
@@ -56,7 +56,7 @@ function onKeydown(e) {
 <template>
 	<Teleport to="body">
 		<Transition name="spot">
-			<div v-if="content" class="spot-overlay" data-test="spotlight-overlay" @click.self="emit('dismiss')">
+			<div v-if="content" class="spot-overlay" data-test="spotlight-overlay" @click.self="emit('close')">
 				<div
 					ref="cardRef"
 					class="spot-card"

@@ -25,5 +25,6 @@ watch([notifications, registrationStatus, tourOpen], () => spotlight.evaluate())
 		@primary="spotlight.primary(router)"
 		@secondary="spotlight.secondary(router)"
 		@dismiss="spotlight.dismiss()"
+		@close="spotlight.close()"
 	/>
 </template>
