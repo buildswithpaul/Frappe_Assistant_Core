@@ -66,10 +66,36 @@ describe("spotlightStore", () => {
 	});
 
 	it("announcement obeys the daily cap", async () => {
-		localStorage.setItem("fac_spotlight_last_shown:owner@acme.com", today());
+		localStorage.setItem("fac_spotlight_last_shown:owner@acme.com:spa", today());
 		const s = setup({ admin: false, notifications: [modalN] });
 		await s.evaluate();
 		expect(s.current).toBeNull();
+	});
+
+	it("the widget's showing does not consume the SPA's", async () => {
+		localStorage.setItem("fac_spotlight_last_shown:owner@acme.com:widget", today());
+		const s = setup({ admin: false, notifications: [modalN] });
+		await s.evaluate();
+		expect(s.current.kind).toBe("announcement");
+	});
+
+	it("close() defers without dismissing server-side", async () => {
+		const s = setup({ admin: false, notifications: [modalN] });
+		await s.evaluate();
+		expect(s.current).not.toBeNull();
+		s.close();
+		expect(s.current).toBeNull();
+		expect(dismissApi).not.toHaveBeenCalled();
+	});
+
+	it("a closed announcement returns on the next day", async () => {
+		let s = setup({ admin: false, notifications: [modalN] });
+		await s.evaluate();
+		s.close();
+		localStorage.clear(); // a later day: the stamp no longer matches
+		s = setup({ admin: false, notifications: [modalN] });
+		await s.evaluate();
+		expect(s.current.kind).toBe("announcement");
 	});
 
 	it("only one spotlight per page load", async () => {

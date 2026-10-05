@@ -79,7 +79,8 @@ const LISTS = [
 
 describe("parity with the SPA rules", () => {
 	it("keys and dates match", () => {
-		expect(W.daily_key("u")).toBe(Rules.DAILY_KEY("u"));
+		expect(W.daily_key("u", "widget")).toBe(Rules.DAILY_KEY("u", "widget"));
+		expect(W.daily_key("u", "spa")).toBe(Rules.DAILY_KEY("u", "spa"));
 		expect(W.quota_key("u", "2026-09-24", 80)).toBe(Rules.QUOTA_KEY("u", "2026-09-24", 80));
 		expect(W.local_date(NOW)).toBe(Rules.localDate(NOW));
 		for (const s of STATUSES) expect(W.cycle_start(s, NOW)).toBe(Rules.cycleStart(s, NOW));
@@ -176,8 +177,20 @@ describe("widget spotlight DOM", () => {
 	it("an announcement already shown today is not pending again", () => {
 		const w = fakeWidget({ admin: false, notifications: LISTS[2] });
 		W.render_in_panel(w);
-		expect(localStorage.getItem("fac_spotlight_last_shown:owner@acme.com")).toBe(W.local_date());
+		expect(localStorage.getItem("fac_spotlight_last_shown:owner@acme.com:widget")).toBe(W.local_date());
 		expect(W.pending(w)).toBeNull();
+	});
+
+	it("does not consume the SPA's showing", () => {
+		const w = fakeWidget({ admin: false, notifications: LISTS[2] });
+		W.render_in_panel(w);
+		expect(localStorage.getItem("fac_spotlight_last_shown:owner@acme.com:spa")).toBeNull();
+	});
+
+	it("is unaffected by a stamp the SPA left today", () => {
+		const w = fakeWidget({ admin: false, notifications: LISTS[2] });
+		localStorage.setItem("fac_spotlight_last_shown:owner@acme.com:spa", W.local_date());
+		expect(W.pending(w)).not.toBeNull();
 	});
 
 	it("renders the card in the panel, and Not now dismisses it via the FAC endpoint", async () => {

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
 	cycleStart, quotaThreshold, pickAnnouncement, quotaContent, announcementContent,
-	formatResetDate, nextResetDate, localDate, storage, PLANS_ROUTE, CREDITS_ROUTE,
+	formatResetDate, nextResetDate, localDate, storage, PLANS_ROUTE, CREDITS_ROUTE, DAILY_KEY,
 } from "./spotlightRules";
 
 const NOW = new Date(2026, 9, 3, 12, 0, 0); // 3 Oct 2026 local
@@ -135,5 +135,16 @@ describe("storage", () => {
 		vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("blocked"); });
 		expect(storage.get("k")).toBeNull();
 		expect(() => storage.set("k", "v")).not.toThrow();
+	});
+});
+
+describe("DAILY_KEY", () => {
+	it("scopes the daily cap to one surface", () => {
+		expect(DAILY_KEY("u@acme.com", "spa")).toBe("fac_spotlight_last_shown:u@acme.com:spa");
+		expect(DAILY_KEY("u@acme.com", "widget")).toBe("fac_spotlight_last_shown:u@acme.com:widget");
+	});
+
+	it("keeps the two surfaces from consuming each other's showing", () => {
+		expect(DAILY_KEY("u@acme.com", "spa")).not.toBe(DAILY_KEY("u@acme.com", "widget"));
 	});
 });

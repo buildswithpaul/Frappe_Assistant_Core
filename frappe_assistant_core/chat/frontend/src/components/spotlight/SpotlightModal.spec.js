@@ -36,11 +36,18 @@ describe("SpotlightModal", () => {
 		await w.find("[data-test='spotlight-primary']").trigger("click");
 		await w.find("[data-test='spotlight-secondary']").trigger("click");
 		await w.find("[aria-label='Close']").trigger("click");
-		await w.find("[data-test='spotlight-overlay']").trigger("click");
-		await w.find("[role='dialog']").trigger("keydown", { key: "Escape" });
 		expect(w.emitted("primary")).toHaveLength(1);
 		expect(w.emitted("secondary")).toHaveLength(1);
-		expect(w.emitted("dismiss")).toHaveLength(3);
+		expect(w.emitted("dismiss")).toHaveLength(1);
+		w.unmount();
+	});
+
+	it("backdrop and Escape defer instead of dismissing", async () => {
+		const w = mountModal();
+		await w.find("[data-test='spotlight-overlay']").trigger("click");
+		await w.find("[role='dialog']").trigger("keydown", { key: "Escape" });
+		expect(w.emitted("close")).toHaveLength(2);
+		expect(w.emitted("dismiss")).toBeUndefined();
 		w.unmount();
 	});
 
@@ -87,13 +94,14 @@ describe("SpotlightModal", () => {
 		w.unmount();
 	});
 
-	it("dismisses on Escape when focus is on the card itself", async () => {
+	it("defers on Escape when focus is on the card itself", async () => {
 		const w = mountModal();
 		const card = w.find("[role='dialog']");
 		expect(card.attributes("tabindex")).toBe("-1");
 		card.element.focus();
 		await card.trigger("keydown", { key: "Escape" });
-		expect(w.emitted("dismiss")).toHaveLength(1);
+		expect(w.emitted("close")).toHaveLength(1);
+		expect(w.emitted("dismiss")).toBeUndefined();
 		w.unmount();
 	});
 

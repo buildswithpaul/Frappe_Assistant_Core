@@ -4,7 +4,7 @@
  * widgetSpotlight.spec.js asserts the two agree. Change both or neither.
  */
 
-export const DAILY_KEY = (user) => `fac_spotlight_last_shown:${user}`;
+export const DAILY_KEY = (user, surface) => `fac_spotlight_last_shown:${user}:${surface}`;
 export const QUOTA_KEY = (user, cycle, threshold) => `fac_quota_moment:${user}:${cycle}:${threshold}`;
 export const PLANS_ROUTE = "/settings/billing?tab=plans";
 export const CREDITS_ROUTE = "/settings/billing?tab=credits";
