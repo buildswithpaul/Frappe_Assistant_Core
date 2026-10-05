@@ -9,20 +9,28 @@ def send_fac_admin_invite():
     customer's own site to its own admins, not by the SaaS server — so it
     must render with plain frappe.sendmail and never depend on
     assistant_runtime being installed here.
+
+    It is deliberately NOT gated on the FAC Chat gate. `enable_fac_chat`
+    defaults to 0 and nothing enables it during `after_install` — the only
+    writer is the `toggle_chat` admin action — so gating this on the gate would
+    suppress the email on every install rather than only on BYO-LLM ones. The
+    copy instead describes what is true at install time and points at FAC
+    Admin, which is reachable whether or not chat is on; `/copilot/` raises
+    PageDoesNotExistError until an administrator enables chat.
     """
     recipients = _get_system_manager_emails()
     if not recipients:
         frappe.log_error("No System Manager users found for FAC invite", "FAC Invite Hook")
         return
 
-    workspace_url = frappe.utils.get_url("/copilot/")
+    admin_url = frappe.utils.get_url("/app/fac-admin")
     for recipient in recipients:
         try:
             frappe.sendmail(
                 recipients=[recipient],
-                subject=_("Your FAC Cloud workspace is ready"),
+                subject=_("FAC Cloud is installed on your site"),
                 template="fac_welcome",
-                args={"heading": _("You're all set"), "cta_url": workspace_url},
+                args={"heading": _("FAC Cloud is installed"), "cta_url": admin_url},
                 delayed=True,
             )
         except Exception:
