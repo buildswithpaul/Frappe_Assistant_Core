@@ -392,7 +392,7 @@ class MCPServer:
 
         # Check tool exists
         if tool_name not in tool_registry:
-            error_msg = f"Tool '{tool_name}' is not available for the current user."
+            error_msg = f"Tool '{tool_name}' not found or not available for the current user."
             # The full list stays in the log rather than the model-facing error, which
             # would otherwise repeat every tool name on each miss.
             frappe.logger().error(f"MCP Tool Not Found: {error_msg} Available: {sorted(tool_registry)}")

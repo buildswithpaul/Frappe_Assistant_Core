@@ -572,9 +572,12 @@ class TestSubmitDocumentAlias(DocumentActionTestCase):
         result = self.call("submit_document", {"doctype": TEST_DOCTYPE, "name": doc.name})
 
         self.assertFalse(result["isError"], result)
+        # tools/call returns the tool's own output; the _safe_execute envelope
+        # (success / result / execution_time) stays server-side.
         payload = json.loads(result["content"][0]["text"])
         self.assertTrue(payload["success"], payload)
-        self.assertEqual(payload["result"]["docstatus"], 1)
+        self.assertEqual(payload["docstatus"], 1)
+        self.assertNotIn("execution_time", payload)
         self.assertEqual(self.db_docstatus(doc.name), 1)
 
     def test_old_name_goes_through_the_document_action_entry(self):
