@@ -24,7 +24,25 @@ from typing import Any, Dict
 import frappe
 from frappe import _
 
-from frappe_assistant_core.core.base_tool import BaseTool
+from frappe_assistant_core.core.base_tool import BaseTool, exception_message, permission_error_result
+
+
+def _default_todo_allocation(doc: Any) -> None:
+    """Allocate a ToDo that names nobody to the session user, if Frappe would refuse it otherwise.
+
+    Before Frappe v16.32.0 / v15.119.0, a user may create a ToDo only when it names them
+    (``allocated_to`` or ``assigned_by`` is that user), unless they hold a role, such as
+    System Manager, that grants ToDo create. A non-admin user's plain "add a ToDo" therefore
+    has to be a personal one; a ToDo Frappe already accepts is left exactly as it was written.
+
+    From those releases the function changes nothing: frappe/frappe#41869 added
+    ``or doc.owner == user`` to that rule, and a user owns every document they create.
+    """
+    if doc.doctype != "ToDo" or doc.allocated_to or doc.assigned_by:
+        return
+
+    if not doc.has_permission("create"):
+        doc.allocated_to = frappe.session.user
 
 
 class DocumentCreate(BaseTool):
@@ -176,6 +194,8 @@ class DocumentCreate(BaseTool):
                     # Handle regular fields
                     setattr(doc, field, value)
 
+            _default_todo_allocation(doc)
+
             # Required-field checks are deferred to Frappe's own validation pipeline
             # via doc.insert()/doc.run_method("validate"). A pre-flight check here is
             # unreliable: many "reqd" fields (e.g. Quotation.conversion_rate,
@@ -186,6 +206,10 @@ class DocumentCreate(BaseTool):
 
             # Handle validation-only mode
             if validate_only:
+                # insert() refuses a document this user may not create, so say so here
+                # instead of reporting a validation the real create would then fail.
+                doc.check_permission("create")
+
                 # Run validation without saving
                 doc.run_method("validate")
 
@@ -254,8 +278,11 @@ class DocumentCreate(BaseTool):
                     result["docstatus"] = 1
                     result["message"] = f"{doctype} '{doc.name}' created and submitted successfully"
                 except Exception as e:
-                    result["message"] = f"{doctype} '{doc.name}' created as draft. Submit failed: {str(e)}"
-                    result["submit_error"] = str(e)
+                    submit_error = exception_message(e)
+                    result["message"] = (
+                        f"{doctype} '{doc.name}' created as draft. Submit failed: {submit_error}"
+                    )
+                    result["submit_error"] = submit_error
             else:
                 result["message"] = f"{doctype} '{doc.name}' created successfully as draft"
 
@@ -325,12 +352,20 @@ class DocumentCreate(BaseTool):
                     else f"Use get_doctype_info tool with doctype='{doctype}' to see all required fields."
                 ),
             }
-        except Exception as e:
+        except frappe.PermissionError as e:
+            # Frappe raises this with no message and keeps the reason in
+            # frappe.flags.error_message; exception_message() recovers it.
+            error_msg = exception_message(e, _("Insufficient permission to create {0}").format(doctype))
             frappe.log_error(
-                title=_("Document Creation Error"), message=f"Error creating {doctype}: {str(e)}"
+                title=_("Document Creation Error"), message=f"Error creating {doctype}: {error_msg}"
             )
 
-            error_msg = str(e)
+            return permission_error_result(doctype, error_msg)
+        except Exception as e:
+            error_msg = exception_message(e)
+            frappe.log_error(
+                title=_("Document Creation Error"), message=f"Error creating {doctype}: {error_msg}"
+            )
 
             # Provide specific guidance based on error type
             result = {"success": False, "error": error_msg, "doctype": doctype}
@@ -354,13 +389,7 @@ class DocumentCreate(BaseTool):
                     }
                 )
             elif "permission" in error_msg.lower():
-                result.update(
-                    {
-                        "error_type": "permission_error",
-                        "guidance": "Insufficient permissions for this operation.",
-                        "suggestion": "Contact your system administrator to grant necessary permissions for this DocType",
-                    }
-                )
+                return permission_error_result(doctype, error_msg)
             else:
                 result.update(
                     {

@@ -452,6 +452,80 @@ class TestAmendAction(DocumentActionTestCase):
         self.assertFalse(frappe.db.exists(TEST_DOCTYPE, {"amended_from": doc.name}))
 
 
+class TestPermissionDenials(DocumentActionTestCase):
+    """A refused submit / cancel / amend says why.
+
+    The DocType-level pre-check already returns a clear "Insufficient <action>
+    permissions" message, covered by the tests above. These cover the step after it:
+    Frappe refusing the operation on the document itself, which it signals by raising
+    `frappe.PermissionError` with no message and keeping the reason in
+    `frappe.flags.error_message`. Reporting `str(e)` gave an empty error, and reporting
+    `error_type` from the class name rendered a bare "PermissionError" with nothing to
+    act on.
+    """
+
+    def setUp(self):
+        super().setUp()
+        frappe.flags.pop("error_message", None)
+        self.addCleanup(lambda: frappe.flags.pop("error_message", None))
+        log_error = patch("frappe.log_error")
+        self.log_error = log_error.start()
+        self.addCleanup(log_error.stop)
+
+    @contextmanager
+    def _refused_by_frappe(self, method, ptype):
+        """Let the pre-check pass, then have Frappe refuse the document itself."""
+        refusal = frappe.new_doc(TEST_DOCTYPE)
+        with patch(
+            "frappe_assistant_core.core.security_config.validate_document_access",
+            return_value={"success": True, "role": "Default"},
+        ), patch.object(Document, method, side_effect=lambda *a, **k: refusal.raise_no_permission_to(ptype)):
+            yield
+
+    def assert_reported_as_a_denial(self, result):
+        self.assertFalse(result.get("success"), result)
+        self.assertEqual(result.get("error_type"), "permission_error", result)
+        self.assertTrue(result.get("error"), result)
+        # Frappe's reason — not an empty string, and not the bare class name.
+        self.assertNotEqual(result["error"], "PermissionError")
+        self.assertNotIn("<", result["error"])
+        self.assertTrue(self.log_error.call_args.kwargs["message"].endswith(result["error"]))
+
+    def test_a_refused_submit_says_why(self):
+        doc = self.make_doc()
+
+        with self._refused_by_frappe("submit", "submit"):
+            result = self.tool.execute({"doctype": TEST_DOCTYPE, "name": doc.name, "action": "submit"})
+
+        self.assert_reported_as_a_denial(result)
+        # The old handler blamed the document's required fields for a permission denial.
+        self.assertNotIn("required fields", result.get("suggestion", ""))
+        self.assertEqual(self.db_docstatus(doc.name), 0)
+
+    def test_a_refused_cancel_says_why_and_leaves_the_document_submitted(self):
+        doc = self.make_doc(docstatus=1)
+
+        with self._refused_by_frappe("cancel", "cancel"):
+            result = self.tool.execute(
+                {"doctype": TEST_DOCTYPE, "name": doc.name, "action": "cancel", "reason": "Duplicate"}
+            )
+
+        self.assert_reported_as_a_denial(result)
+        self.assertEqual(result.get("docstatus"), 1)
+        # The savepoint is rolled back, so no on_cancel side effect survives.
+        self.assertEqual(self.db_docstatus(doc.name), 1)
+        self.assertEqual(self.fac_comments(doc.name), [])
+
+    def test_a_refused_amend_says_why_and_creates_no_draft(self):
+        doc = self.make_doc(docstatus=2)
+
+        with self._refused_by_frappe("insert", "create"):
+            result = self.tool.execute({"doctype": TEST_DOCTYPE, "name": doc.name, "action": "amend"})
+
+        self.assert_reported_as_a_denial(result)
+        self.assertFalse(frappe.db.exists(TEST_DOCTYPE, {"amended_from": doc.name}))
+
+
 class TestCancelAndAmendGuidance(DocumentActionTestCase):
     """Other tools send the LLM to document_action for cancel and amend."""
 

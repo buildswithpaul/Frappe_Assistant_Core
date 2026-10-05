@@ -22,6 +22,7 @@ tool subclass, so they do not depend on any specific plugin being loaded.
 """
 
 from typing import Any, Dict
+from unittest.mock import patch
 
 import frappe
 
@@ -118,6 +119,40 @@ class TestAuditLogStatusClassification(BaseAssistantTest):
         row = _fetch_latest_audit_row(_TEST_TOOL_NAME)
         self.assertEqual(row["status"], "Permission Denied")
         self.assertEqual(row["error_type"], "PermissionError")
+
+    def test_permission_error_without_a_message_reports_the_frappe_reason(self):
+        """A bare PermissionError reports Frappe's reason instead of an empty string.
+
+        Frappe keeps the reason, as HTML, in frappe.flags.error_message. The
+        response, the audit row and the Error Log must all carry it."""
+        frappe.flags.error_message = "You need the 'create' permission on <b>ToDo</b> to perform this action."
+        self.addCleanup(lambda: frappe.flags.pop("error_message", None))
+        reason = "You need the 'create' permission on ToDo to perform this action."
+
+        def executor(arguments):
+            raise frappe.PermissionError
+
+        tool = _ToolBase(executor=executor)
+        with patch("frappe.log_error") as log_error:
+            response = tool._safe_execute({})
+
+        self.assertEqual(response["error"], reason)
+        self.assertEqual(_fetch_latest_audit_row(_TEST_TOOL_NAME)["error_message"], reason)
+        self.assertTrue(log_error.call_args.kwargs["message"].endswith(reason))
+
+    def test_permission_error_with_no_reason_at_all_is_still_reported(self):
+        frappe.flags.pop("error_message", None)
+
+        def executor(arguments):
+            raise frappe.PermissionError()
+
+        tool = _ToolBase(executor=executor)
+        with patch("frappe.log_error") as log_error:
+            response = tool._safe_execute({})
+
+        self.assertEqual(response["error"], "PermissionError")
+        self.assertEqual(_fetch_latest_audit_row(_TEST_TOOL_NAME)["error_message"], "PermissionError")
+        self.assertTrue(log_error.call_args.kwargs["message"].endswith("PermissionError"))
 
     def test_uncaught_exception_logs_error_with_traceback(self):
         def executor(arguments):
@@ -285,3 +320,58 @@ class TestSensitiveKeyMatcher(BaseAssistantTest):
         # Defensive: integer/None keys must not crash the matcher.
         self.assertFalse(_is_sensitive_key(None))
         self.assertFalse(_is_sensitive_key(42))
+
+
+class TestExceptionMessage(BaseAssistantTest):
+    """exception_message never returns an empty string for an exception.
+
+    Frappe raises a bare ``frappe.PermissionError`` for a document-level denial
+    and stores the reason, as HTML, in ``frappe.flags.error_message``.
+    """
+
+    def setUp(self):
+        super().setUp()
+        frappe.flags.pop("error_message", None)
+        self.addCleanup(lambda: frappe.flags.pop("error_message", None))
+
+    def test_the_exception_text_wins(self):
+        from frappe_assistant_core.core.base_tool import exception_message
+
+        frappe.flags.error_message = "from the flag"
+
+        self.assertEqual(exception_message(ValueError("own text"), "fallback"), "own text")
+
+    def test_the_frappe_reason_is_used_with_its_markup_stripped(self):
+        from frappe_assistant_core.core.base_tool import exception_message
+
+        frappe.flags.error_message = "You need <b>write</b> permission on <b>ToDo</b>"
+
+        self.assertEqual(exception_message(frappe.PermissionError()), "You need write permission on ToDo")
+
+    def test_whitespace_left_by_the_markup_is_collapsed(self):
+        from frappe_assistant_core.core.base_tool import exception_message
+
+        # Frappe leaves a double space when the document has no name yet.
+        frappe.flags.error_message = (
+            "You need the 'create' permission on <b>ToDo</b>  to perform this action."
+        )
+
+        self.assertEqual(
+            exception_message(frappe.PermissionError()),
+            "You need the 'create' permission on ToDo to perform this action.",
+        )
+
+    def test_a_reason_that_is_only_markup_counts_as_missing(self):
+        from frappe_assistant_core.core.base_tool import exception_message
+
+        frappe.flags.error_message = "<b> </b>"
+
+        self.assertEqual(exception_message(frappe.PermissionError(), "fallback"), "fallback")
+
+    def test_the_fallback_comes_before_the_class_name(self):
+        from frappe_assistant_core.core.base_tool import exception_message
+
+        self.assertEqual(
+            exception_message(frappe.PermissionError(), "Insufficient permission"), "Insufficient permission"
+        )
+        self.assertEqual(exception_message(frappe.PermissionError()), "PermissionError")

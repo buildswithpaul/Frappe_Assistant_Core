@@ -27,7 +27,7 @@ from typing import Any, Dict, List, Optional
 import frappe
 from frappe import _
 
-from frappe_assistant_core.core.base_tool import BaseTool
+from frappe_assistant_core.core.base_tool import BaseTool, exception_message, permission_error_result
 
 
 class CreateDashboardChart(BaseTool):
@@ -169,7 +169,7 @@ class CreateDashboardChart(BaseTool):
                         validation_result["data_points"] = total_data_points
                         validation_result["chart_validated"] = True
             except Exception as e:
-                frappe.logger("dashboard_chart").warning(f"Failed to get chart data: {str(e)}")
+                frappe.logger("dashboard_chart").warning(f"Failed to get chart data: {exception_message(e)}")
 
             # Add to dashboard if specified
             dashboard_added = False
@@ -203,13 +203,24 @@ class CreateDashboardChart(BaseTool):
 
             return result
 
-        except Exception as e:
+        except frappe.PermissionError as e:
+            # chart_doc.insert() refuses a chart this user may not create and raises with
+            # no message, so a bare str(e) returned an empty error to the model.
+            error_msg = exception_message(e, _("Insufficient permission to create a Dashboard Chart"))
             frappe.log_error(
                 title=_("Dashboard Chart Creation Error"),
-                message=f"Error creating chart {arguments.get('chart_name')}: {str(e)}",
+                message=f"Error creating chart {arguments.get('chart_name')}: {error_msg}",
             )
 
-            return {"success": False, "error": str(e)}
+            return permission_error_result("Dashboard Chart", error_msg)
+        except Exception as e:
+            error_msg = exception_message(e)
+            frappe.log_error(
+                title=_("Dashboard Chart Creation Error"),
+                message=f"Error creating chart {arguments.get('chart_name')}: {error_msg}",
+            )
+
+            return {"success": False, "error": error_msg}
 
     def _validate_required_fields(
         self, arguments: Dict, available_fields: Dict, chart_type: str, aggregate_function: str
@@ -438,7 +449,9 @@ class CreateDashboardChart(BaseTool):
             return {"success": True, "data_points": len(test_result.get("data", [])), "chart_validated": True}
 
         except Exception as e:
-            error_msg = str(e)
+            # A bare PermissionError would otherwise leave this empty, and the
+            # "permission" test below would miss it.
+            error_msg = exception_message(e)
 
             # Provide specific guidance based on error
             if "does not exist" in error_msg.lower():
@@ -593,5 +606,7 @@ class CreateDashboardChart(BaseTool):
             dashboard.save()
             return True
         except Exception as e:
-            frappe.logger("dashboard_chart").warning(f"Failed to add chart to dashboard: {str(e)}")
+            frappe.logger("dashboard_chart").warning(
+                f"Failed to add chart to dashboard: {exception_message(e)}"
+            )
             return False

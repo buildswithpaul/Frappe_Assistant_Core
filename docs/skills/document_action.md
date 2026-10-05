@@ -139,6 +139,7 @@ On non-submittable DocType:
 
 - **Non-submittable DocTypes** — Customer, Item, ToDo, etc. cannot be submitted. The tool returns a clear error.
 - **Validation errors** — submission runs all validations. Missing mandatory fields or invalid data will fail.
+- **Permission errors** — a refused `submit`, `cancel` or `amend` returns `error_type: "permission_error"` with Frappe's own reason in `error`. The request was refused, not malformed: retrying with different field values cannot succeed, and nothing is changed.
 - **Already submitted** — submitting a `docstatus=1` document will fail.
 - **Invalid action** — anything other than `submit`, `cancel` or `amend` is refused with the list of valid actions.
 - **Alternative** — use `create_document` with `submit: true` to create and submit in one step.

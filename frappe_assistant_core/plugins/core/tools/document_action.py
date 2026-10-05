@@ -24,7 +24,11 @@ from typing import Any, Dict, List
 import frappe
 from frappe import _
 
-from frappe_assistant_core.core.base_tool import BaseTool
+from frappe_assistant_core.core.base_tool import (
+    BaseTool,
+    exception_message,
+    permission_error_result,
+)
 
 VALID_ACTIONS = ("submit", "cancel", "amend")
 
@@ -32,11 +36,6 @@ VALID_ACTIONS = ("submit", "cancel", "amend")
 # back-link check can raise, and MCP requests are POSTs that Frappe commits at the end.
 # Cancel and amend therefore run inside this savepoint so a refused call leaves nothing behind.
 _SAVEPOINT = "fac_document_action"
-
-
-def _error_message(error: Exception) -> str:
-    """Readable text of a Frappe/ERPNext exception, whose messages often carry HTML links."""
-    return frappe.utils.strip_html(str(error)).strip() or type(error).__name__
 
 
 def _rollback_to_savepoint(doctype: str, name: str) -> None:
@@ -239,14 +238,29 @@ class DocumentAction(BaseTool):
             # Log successful submission
             return result
 
-        except Exception as e:
+        except frappe.PermissionError as e:
+            # A submit the user may not perform raises with no message. Returning the
+            # "required fields" suggestion below for it sends the model editing fields
+            # that were never the problem.
+            error_msg = exception_message(
+                e, _("Insufficient permission to submit {0} '{1}'").format(doctype, name)
+            )
             frappe.log_error(
-                title=_("Document Submit Error"), message=f"Error submitting {doctype} '{name}': {str(e)}"
+                title=_("Document Submit Error"),
+                message=f"Error submitting {doctype} '{name}': {error_msg}",
+            )
+
+            return permission_error_result(doctype, error_msg, name)
+        except Exception as e:
+            error_msg = exception_message(e)
+            frappe.log_error(
+                title=_("Document Submit Error"),
+                message=f"Error submitting {doctype} '{name}': {error_msg}",
             )
 
             result = {
                 "success": False,
-                "error": str(e),
+                "error": error_msg,
                 "doctype": doctype,
                 "name": name,
                 "suggestion": "Check if the document has all required fields filled and passes validation.",
@@ -324,7 +338,7 @@ class DocumentAction(BaseTool):
             return {
                 "success": False,
                 "error": f"Cannot cancel {doctype} '{name}' because submitted documents are linked to it. "
-                f"{_error_message(e)}",
+                f"{exception_message(e)}",
                 "error_type": "LinkExistsError",
                 "doctype": doctype,
                 "name": name,
@@ -335,14 +349,28 @@ class DocumentAction(BaseTool):
                     "cancelled before this one; this tool never cancels them automatically."
                 ),
             }
+        except frappe.PermissionError as e:
+            _rollback_to_savepoint(doctype, name)
+            error_msg = exception_message(
+                e, _("Insufficient permission to cancel {0} '{1}'").format(doctype, name)
+            )
+            frappe.log_error(
+                title=_("Document Cancel Error"),
+                message=f"Error cancelling {doctype} '{name}': {error_msg}",
+            )
+            result = permission_error_result(doctype, error_msg, name)
+            result["docstatus"] = current_docstatus
+            return result
         except Exception as e:
             _rollback_to_savepoint(doctype, name)
+            error_msg = exception_message(e)
             frappe.log_error(
-                title=_("Document Cancel Error"), message=f"Error cancelling {doctype} '{name}': {str(e)}"
+                title=_("Document Cancel Error"),
+                message=f"Error cancelling {doctype} '{name}': {error_msg}",
             )
             return {
                 "success": False,
-                "error": _error_message(e),
+                "error": error_msg,
                 "error_type": type(e).__name__,
                 "doctype": doctype,
                 "name": name,
@@ -493,14 +521,26 @@ class DocumentAction(BaseTool):
         try:
             # Frappe names it from amended_from (e.g. '-1'), per Document Naming Settings.
             amended_doc.insert()
+        except frappe.PermissionError as e:
+            _rollback_to_savepoint(doctype, name)
+            error_msg = exception_message(
+                e, _("Insufficient permission to amend {0} '{1}'").format(doctype, name)
+            )
+            frappe.log_error(
+                title=_("Document Amend Error"),
+                message=f"Error amending {doctype} '{name}': {error_msg}",
+            )
+            return permission_error_result(doctype, error_msg, name)
         except Exception as e:
             _rollback_to_savepoint(doctype, name)
+            error_msg = exception_message(e)
             frappe.log_error(
-                title=_("Document Amend Error"), message=f"Error amending {doctype} '{name}': {str(e)}"
+                title=_("Document Amend Error"),
+                message=f"Error amending {doctype} '{name}': {error_msg}",
             )
             return {
                 "success": False,
-                "error": _error_message(e),
+                "error": error_msg,
                 "error_type": type(e).__name__,
                 "doctype": doctype,
                 "name": name,
