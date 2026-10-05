@@ -113,6 +113,32 @@
 		</div>
 	</div>
 
+	<!-- Retrying: from the first failed charge, before retries run out.
+	     The reason is the gateway's own text, rendered as plain text. -->
+	<div
+		v-if="failureLines && !failureLines.pastDue && !paymentFailed"
+		class="payment-failed-banner payment-retry-banner"
+	>
+		<svg class="banner-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+			<path
+				stroke-linecap="round"
+				stroke-linejoin="round"
+				stroke-width="2"
+				d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+			/>
+		</svg>
+		<div class="banner-content">
+			<p>
+				<strong>{{ failureLines.headline }}</strong>
+			</p>
+			<p v-if="failureLines.reason" class="failure-reason">{{ failureLines.reason }}</p>
+			<p v-if="failureLines.retry" class="grace-info">{{ failureLines.retry }}</p>
+			<button class="update-payment-btn" @click="$emit('manage-payment')">
+				Update Payment Method
+			</button>
+		</div>
+	</div>
+
 	<!-- Payment Failure Banner -->
 	<div v-if="paymentFailed" class="payment-failed-banner">
 		<svg class="banner-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -128,6 +154,7 @@
 				<strong>Payment failed.</strong> Please update your payment method to avoid service
 				interruption.
 			</p>
+			<p v-if="failureLines?.reason" class="failure-reason">{{ failureLines.reason }}</p>
 			<p class="grace-info" v-if="graceDaysRemaining > 0">
 				{{ graceDaysRemaining }} days remaining in grace period.
 			</p>
@@ -139,7 +166,10 @@
 </template>
 
 <script setup>
-defineProps({
+import { computed } from "vue";
+import { paymentFailureLines } from "./paymentFailureCopy";
+
+const props = defineProps({
 	verificationMessage: { type: String, default: null },
 	verificationSuccess: { type: Boolean, default: false },
 	invoiceInfo: { type: Object, default: null },
@@ -150,10 +180,13 @@ defineProps({
 	scheduledChangeMessage: { type: String, default: "" },
 	cancelling: { type: Boolean, default: false },
 	paymentFailed: { type: Boolean, default: false },
+	paymentFailure: { type: Object, default: null },
 	graceDaysRemaining: { type: Number, default: 0 },
 	needsMandateReauth: { type: Boolean, default: false },
 	reauthorizing: { type: Boolean, default: false },
 });
+
+const failureLines = computed(() => paymentFailureLines(props.paymentFailure));
 
 defineEmits([
 	"dismiss-verification",
@@ -386,6 +419,11 @@ defineEmits([
 	font-size: 0.8125rem;
 	color: #991b1b;
 	line-height: 1.5;
+}
+
+.failure-reason {
+	margin: 0.25rem 0 0;
+	font-size: 0.8125rem;
 }
 
 .payment-failed-banner .grace-info {

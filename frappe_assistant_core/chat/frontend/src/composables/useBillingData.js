@@ -127,6 +127,7 @@ export function useBillingData() {
 				dash.billing_cycle_start ||
 				null,
 			referral: dash.referral || null,
+			payment_failure: status.payment_failure || null,
 		};
 	});
 	const currentPlan = computed(() => subscription.value?.plan || quota.value?.plan || "Free");
@@ -147,6 +148,9 @@ export function useBillingData() {
 	const referral = computed(() => subscription.value?.referral || null);
 
 	const paymentFailed = computed(() => subscription.value?.payment_status === "past_due");
+	// AR's account of the last failed charge (reason, retry date), from the
+	// first failure on. Null when nothing is failing or AR predates it.
+	const paymentFailure = computed(() => subscription.value?.payment_failure || null);
 	const graceDaysRemaining = computed(() => {
 		if (!paymentFailed.value) return 0;
 		const periodEnd = subscription.value?.current_period_end;
@@ -756,6 +760,7 @@ export function useBillingData() {
 		periodEndDate,
 		referral,
 		paymentFailed,
+		paymentFailure,
 		graceDaysRemaining,
 		needsMandateReauth,
 		reauthorizing,

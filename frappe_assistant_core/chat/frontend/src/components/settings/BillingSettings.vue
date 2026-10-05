@@ -60,6 +60,7 @@
 				:cancelling="cancelling"
 				:payment-failed="paymentFailed"
 				:grace-days-remaining="graceDaysRemaining"
+				:payment-failure="paymentFailure"
 				:needs-mandate-reauth="needsMandateReauth"
 				:reauthorizing="reauthorizing"
 				@dismiss-verification="dismissVerification"
@@ -329,6 +330,7 @@ const {
 	periodEndDate,
 	referral,
 	paymentFailed,
+	paymentFailure,
 	graceDaysRemaining,
 	needsMandateReauth,
 	reauthorizing,
