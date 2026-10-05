@@ -253,6 +253,45 @@ class CompleteEmailVerificationTests(PendingVerificationTestCase):
 
         self.clear_quota.assert_called_once()
 
+    def _rejected(self, message):
+        """AR's verify endpoint answering 417 with a Frappe ValidationError body."""
+        import json
+
+        import requests
+
+        from frappe_assistant_core.chat.api.settings.registration import complete_email_verification
+
+        resp = requests.Response()
+        resp.status_code = 417
+        resp.url = "https://ar/api/method/assistant_runtime.api.verify_owner_email"
+        resp._content = json.dumps(
+            {
+                "exc_type": "ValidationError",
+                "exception": f"frappe.exceptions.ValidationError: {message}",
+                "_server_messages": json.dumps([json.dumps({"message": message})]),
+            }
+        ).encode()
+        with patch("requests.post", return_value=resp), patch(
+            f"{REG}.get_fac_cloud_url", return_value="https://ar"
+        ):
+            return complete_email_verification(verification_token="dead-link")
+
+    def test_a_used_or_expired_link_says_so_and_offers_a_new_one(self):
+        out = self._rejected("Invalid or expired token")
+
+        self.assertFalse(out["success"])
+        self.assertTrue(out["link_expired"])
+        self.assertIn("expired", out["error"])
+        self.assertNotIn("417", out["error"])
+        self.assert_registration_untouched()
+
+    def test_another_rejection_is_not_reported_as_an_expired_link(self):
+        out = self._rejected("Missing token")
+
+        self.assertFalse(out["success"])
+        self.assertNotIn("link_expired", out)
+        self.assertNotIn("417", out["error"])
+
     def test_a_failed_pickup_leaves_the_registration_pending(self):
         out = self._complete({"verified": True, "tenant_id": "tenant-1"}, {"error": "Token already used"})
 

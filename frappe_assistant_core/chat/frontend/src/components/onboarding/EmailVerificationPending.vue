@@ -108,7 +108,10 @@
 						</svg>
 					</div>
 					<p class="error-text">{{ verifyError }}</p>
-					<button type="button" class="retry-btn" @click="runVerification">
+					<button v-if="linkExpired" type="button" class="retry-btn" @click="emit('start-over')">
+						Get a new link
+					</button>
+					<button v-else type="button" class="retry-btn" @click="runVerification">
 						Try again
 					</button>
 				</div>
@@ -135,7 +138,7 @@ const props = defineProps({
 	verificationToken: { type: String, default: "" },
 });
 
-const emit = defineEmits(["resend", "change-email", "verified", "verify-failed"]);
+const emit = defineEmits(["resend", "change-email", "verified", "verify-failed", "start-over"]);
 
 const resending = ref(false);
 const changing = ref(false);
@@ -144,6 +147,9 @@ const submittingChange = ref(false);
 
 const verifyDone = ref(false);
 const verifyError = ref(null);
+// A used or superseded link: retrying it cannot work, so the owner goes back
+// to the setup screen to resend or correct the address.
+const linkExpired = ref(false);
 
 function onResend() {
 	if (resending.value) return;
@@ -183,6 +189,7 @@ async function runVerification() {
 			// transitions us out.
 			setTimeout(() => emit("verified"), 1200);
 		} else {
+			linkExpired.value = Boolean(result?.link_expired);
 			verifyError.value =
 				result?.error || "Couldn't activate your tenant. The link may have expired.";
 			emit("verify-failed", verifyError.value);
