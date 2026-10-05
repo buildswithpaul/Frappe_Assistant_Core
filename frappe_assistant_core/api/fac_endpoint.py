@@ -21,6 +21,8 @@ Custom MCP implementation that properly handles JSON serialization
 and integrates seamlessly with Frappe's existing tool infrastructure.
 """
 
+from typing import Optional
+
 import frappe
 from frappe import _
 
@@ -49,6 +51,10 @@ def _check_assistant_enabled(user: str) -> bool:
         return bool(int(assistant_enabled)) if assistant_enabled else False
     except Exception:
         return False
+
+
+# Only these JSON-RPC methods touch a tool, so only they need the registry built.
+_REGISTRY_METHODS = frozenset({"tools/list", "tools/call"})
 
 
 def _build_tool_registry():
@@ -151,6 +157,32 @@ def _resolve_tool_categories(tool_names: list, registry, tool_instances=None) ->
             categories[tool_name] = "read_write"
 
     return categories
+
+
+def _requested_mcp_method() -> Optional[str]:
+    """Return the JSON-RPC method of the current request, or None if there is none.
+
+    Parsed the way ``MCPServer.handle()`` parses it — ``force=True``, so the
+    Content-Type header is ignored — because the two must never disagree. A
+    client that posts without ``application/json`` is still dispatched there; a
+    guard that failed to see the method would skip the per-request registry,
+    leaving ``handle()`` to fall back to the empty shared one and answer
+    ``tools/list`` with no tools and no error.
+    """
+    request = getattr(frappe.local, "request", None)
+    if request is None:
+        return None
+
+    try:
+        payload = request.get_json(force=True, silent=True)
+    except Exception:
+        return None
+
+    if not isinstance(payload, dict):
+        return None
+
+    method = payload.get("method")
+    return method if isinstance(method, str) else None
 
 
 def _authenticate_mcp_request():
@@ -284,7 +316,7 @@ def _authenticate_mcp_request():
             response = Response()
             response.status_code = 401
             response.headers["WWW-Authenticate"] = (
-                f'Bearer realm="Frappe Assistant Core", ' f'resource_metadata="{metadata_url}"'
+                f'Bearer realm="Frappe Assistant Core", resource_metadata="{metadata_url}"'
             )
             response.headers["Content-Type"] = "application/json"
             response.data = frappe.as_json({"error": "invalid_credentials", "message": str(e)})
@@ -301,7 +333,7 @@ def _authenticate_mcp_request():
             response = Response()
             response.status_code = 401
             response.headers["WWW-Authenticate"] = (
-                f'Bearer realm="Frappe Assistant Core", ' f'resource_metadata="{metadata_url}"'
+                f'Bearer realm="Frappe Assistant Core", resource_metadata="{metadata_url}"'
             )
             response.headers["Content-Type"] = "application/json"
             response.data = frappe.as_json({"error": "authentication_error", "message": str(e)})
@@ -315,7 +347,7 @@ def _authenticate_mcp_request():
     response = Response()
     response.status_code = 401
     response.headers["WWW-Authenticate"] = (
-        f'Bearer realm="Frappe Assistant Core", ' f'resource_metadata="{metadata_url}"'
+        f'Bearer realm="Frappe Assistant Core", resource_metadata="{metadata_url}"'
     )
     response.headers["Content-Type"] = "application/json"
     response.data = frappe.as_json({"error": "unauthorized", "message": "Authentication required"})
@@ -350,7 +382,7 @@ def handle_mcp():
         response = Response()
         response.status_code = 401
         response.headers["WWW-Authenticate"] = (
-            f'Bearer realm="Frappe Assistant Core", ' f'resource_metadata="{metadata_url}"'
+            f'Bearer realm="Frappe Assistant Core", resource_metadata="{metadata_url}"'
         )
         return response
 
@@ -374,6 +406,13 @@ def handle_mcp():
         frappe.throw(
             _("Assistant access is disabled for user {0}").format(authenticated_user), frappe.PermissionError
         )
+
+    # initialize, ping, prompts/* and resources/* never touch a tool, so they
+    # skip importing and permission-checking the whole tool portfolio. Returning
+    # None makes the wrapper fall through to the shared registry, which is only
+    # correct for methods that never read it.
+    if _requested_mcp_method() not in _REGISTRY_METHODS:
+        return None
 
     # Build a per-request tool registry (isolated from concurrent requests) and
     # hand it back to the MCP server wrapper, which passes it into handle().
