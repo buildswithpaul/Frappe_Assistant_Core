@@ -421,11 +421,6 @@ defineEmits([
 	line-height: 1.5;
 }
 
-.failure-reason {
-	margin: 0.25rem 0 0;
-	font-size: 0.8125rem;
-}
-
 .payment-failed-banner .grace-info {
 	font-size: 0.75rem;
 	color: #b91c1c;
