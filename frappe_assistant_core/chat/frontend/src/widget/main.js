@@ -7,7 +7,7 @@ import { installFontFaces } from "./launcher/fonts.js";
 import { restorePosition, enableDrag, consumeDrag } from "./launcher/position.js";
 import { setupAutofade, isUserActive } from "./launcher/autofade.js";
 import { startTooltips } from "./launcher/tooltips.js";
-import { bindShortcut } from "./launcher/shortcut.js";
+import { bindShortcut, bindMicShortcut } from "./launcher/shortcut.js";
 import { raiseAttention, clearAttention } from "./launcher/attention.js";
 import { hasPendingInterrupt } from "./launcher/pending.js";
 import { refreshSpotlightDot } from "./launcher/spotlightDot.js";
@@ -102,7 +102,20 @@ export async function boot(config) {
 	bridge.on("mood", (m) => view.setMood(m));
 	bridge.on("attention", (info) => raiseAttention(view, info));
 	bridge.on("attention-clear", () => clearAttention(view));
-	if (prefs.keyboard_shortcut) bindShortcut(prefs.keyboard_shortcut, toggle);
+	const unbindToggle = prefs.keyboard_shortcut ? bindShortcut(prefs.keyboard_shortcut, toggle) : () => {};
+	// Bound here, not in the lazy panel, so it works on a fresh page before the panel has ever opened.
+	// The panel consumes micRequested when it mounts, or the "mic" event if it is already up.
+	const unbindMic = bindMicShortcut(() => {
+		bridge.state.micRequested = true;
+		bridge.emit("open");
+		bridge.emit("mic");
+	});
+	// "Hide assistant" must also stop the shortcuts reopening what the user just hid.
+	bridge.on("hide", () => {
+		unbindToggle();
+		unbindMic();
+		view.destroy();
+	});
 
 	const syncVisibility = () => {
 		const route = window.frappe && window.frappe.get_route ? window.frappe.get_route() : [];

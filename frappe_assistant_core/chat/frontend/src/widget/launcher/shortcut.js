@@ -6,6 +6,22 @@ export function parseShortcut(s) {
 	return { key, ctrl: parts.includes("ctrl"), shift: parts.includes("shift"), alt: parts.includes("alt") };
 }
 
+/**
+ * Ctrl+Shift+Space: open the panel and start voice input. Typing in some other input on the Desk
+ * page is left alone; the panel's own composer lives in a shadow root, so its events retarget to the host.
+ */
+export function bindMicShortcut(onFire) {
+	const handler = (e) => {
+		if (!(e.ctrlKey && e.shiftKey && (e.key === " " || e.code === "Space"))) return;
+		const tag = e.target && e.target.tagName;
+		if (tag === "INPUT" || tag === "TEXTAREA") return;
+		e.preventDefault();
+		onFire();
+	};
+	document.addEventListener("keydown", handler);
+	return () => document.removeEventListener("keydown", handler);
+}
+
 /** A modifier the shortcut does not name must NOT be held, so Ctrl+K never fires on Ctrl+Shift+K. */
 export function bindShortcut(s, onFire) {
 	const want = parseShortcut(s);

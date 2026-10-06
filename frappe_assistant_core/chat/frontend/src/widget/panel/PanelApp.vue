@@ -51,9 +51,9 @@ const ready = computed(
 
 onMounted(async () => {
 	await userStore.init();
-	// Widget turns always route automatically; set in memory only — never
-	// setSelectedModel(), which would overwrite FAC Chat's saved choice.
-	modelStore.selectedModel = "auto";
+	// Widget turns always route automatically; pinned in memory only — never
+	// setSelectedModel() or loadModels(), which would read or overwrite FAC Chat's saved choice.
+	modelStore.pinModel("auto");
 	modelStore.loadModels();
 	if (!ready.value) return;
 	if (bridge.state.restored) {

@@ -4,7 +4,7 @@ import { logger } from "@/utils/logger";
 const listeners = new Map();
 
 export const bridge = {
-	state: { sessionId: null, restored: false, open: false, access: null, attention: false },
+	state: { sessionId: null, restored: false, open: false, access: null, attention: false, micRequested: false },
 	on(event, fn) {
 		if (!listeners.has(event)) listeners.set(event, new Set());
 		listeners.get(event).add(fn);

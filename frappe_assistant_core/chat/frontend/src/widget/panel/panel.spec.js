@@ -9,7 +9,8 @@ vi.mock("@/api/client", () => ({
 		chat: { getMessages: vi.fn().mockResolvedValue({ messages: [] }), send: vi.fn().mockResolvedValue({}) },
 		init: { initialize: vi.fn().mockResolvedValue(null) },
 		models: { getAvailable: vi.fn().mockResolvedValue({ models: [] }) },
-		billing: { getQuotaStatus: (...a) => getQuotaStatus(...a), getMyCreditStatus: vi.fn().mockResolvedValue(null) },
+		billing: { getQuotaStatus: (...a) => getQuotaStatus(...a) },
+		users: { getMyCreditStatus: vi.fn().mockResolvedValue(null) },
 		get: vi.fn(),
 	},
 }));
@@ -89,11 +90,9 @@ describe("widget panel", () => {
 		expect(assign).toHaveBeenCalledWith("/copilot");
 	});
 
-	it("hides the launcher for good through the user preference", async () => {
-		window.frappe.call = vi.fn().mockResolvedValue({});
-		const launcher = document.createElement("div");
-		launcher.id = "fac-widget-launcher";
-		document.body.appendChild(launcher);
+	it("tells the launcher to hide for good once the preference is saved", async () => {
+		window.frappe.call = vi.fn().mockResolvedValue({ message: { success: true } });
+		const emit = vi.spyOn(bridge, "emit");
 		const w = mount(WidgetPanel, { global: { stubs } });
 		await w.find('[data-test="hide"]').trigger("click");
 		await flushPromises();
@@ -101,7 +100,19 @@ describe("widget panel", () => {
 			method: "frappe_assistant_core.chat.api.settings.widget.update_user_preference",
 			args: { field: "hide_widget", value: "1" },
 		});
-		expect(document.getElementById("fac-widget-launcher")).toBeNull();
+		expect(emit).toHaveBeenCalledWith("close");
+		expect(emit).toHaveBeenCalledWith("hide");
+	});
+
+	it("keeps the widget when saving the preference fails", async () => {
+		// update_user_preference answers 200 {success:false} on a validation error.
+		window.frappe.call = vi.fn().mockResolvedValue({ message: { success: false, message: "nope" } });
+		const emit = vi.spyOn(bridge, "emit");
+		const w = mount(WidgetPanel, { global: { stubs } });
+		await w.find('[data-test="hide"]').trigger("click");
+		await flushPromises();
+		expect(emit).not.toHaveBeenCalledWith("hide");
+		expect(emit).not.toHaveBeenCalledWith("close");
 	});
 
 	it("shows the welcome until there is a conversation", async () => {
@@ -140,21 +151,34 @@ describe("widget panel", () => {
 		expect(w.text()).toContain("Read form data");
 	});
 
-	it("refuses a send when credits are exhausted and raises the quota Spotlight", async () => {
+	it("refuses an admin's send when credits are exhausted and raises the quota Spotlight", async () => {
 		const chat = useChatStore();
 		const send = vi.spyOn(chat, "sendMessage").mockResolvedValue();
 		const spot = vi.spyOn(useSpotlightStore(), "onQuotaExhausted").mockResolvedValue();
-		useUserStore().quotaInfo = { credits_exhausted: true };
+		useUserStore().quotaInfo = { credits_exhausted: true, is_admin: true };
 		const w = mount(WidgetPanel, { global: { stubs: { ...stubs, InputArea: SendStub } } });
 		await w.findComponent(SendStub).vm.$emit("send", { message: "hello" });
 		expect(spot).toHaveBeenCalled();
 		expect(send).not.toHaveBeenCalled();
 	});
 
+	it("still sends a member's message when credits are exhausted, so they see the server's error", async () => {
+		// The Spotlight is admin-only; refusing here would swallow the text with nothing shown.
+		const chat = useChatStore();
+		const send = vi.spyOn(chat, "sendMessage").mockResolvedValue();
+		const spot = vi.spyOn(useSpotlightStore(), "onQuotaExhausted").mockResolvedValue();
+		useUserStore().quotaInfo = { credits_exhausted: true, is_admin: false };
+		const w = mount(WidgetPanel, { global: { stubs: { ...stubs, InputArea: SendStub } } });
+		await w.findComponent(SendStub).vm.$emit("send", { message: "hello" });
+		await flushPromises();
+		expect(send).toHaveBeenCalled();
+		expect(spot).not.toHaveBeenCalled();
+	});
+
 	it("sends through the store when credits remain", async () => {
 		const chat = useChatStore();
 		const send = vi.spyOn(chat, "sendMessage").mockResolvedValue();
-		useUserStore().quotaInfo = { credits_exhausted: false };
+		useUserStore().quotaInfo = { credits_exhausted: false, is_admin: true };
 		const w = mount(WidgetPanel, { global: { stubs: { ...stubs, InputArea: SendStub } } });
 		await w.findComponent(SendStub).vm.$emit("send", { message: "hello" });
 		await flushPromises();
@@ -163,10 +187,11 @@ describe("widget panel", () => {
 
 	it("fetches the full quota once on mount, because the boot payload lacks the admission flags", async () => {
 		getQuotaStatus.mockResolvedValue({ credits_exhausted: true, is_admin: true });
-		mount(WidgetPanel, { global: { stubs } });
+		const pinia = createPinia();
+		mount(WidgetPanel, { global: { plugins: [pinia], stubs } });
 		await flushPromises();
 		expect(getQuotaStatus).toHaveBeenCalledTimes(1);
-		expect(useUserStore().quotaInfo.credits_exhausted).toBe(true);
+		expect(useUserStore(pinia).quotaInfo.credits_exhausted).toBe(true);
 	});
 
 	describe("overage notice", () => {
@@ -193,57 +218,50 @@ describe("widget panel", () => {
 		});
 	});
 
-	describe("Ctrl+Shift+Space", () => {
-		const press = (target = document.body) =>
-			target.dispatchEvent(new KeyboardEvent("keydown", { key: " ", code: "Space", ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true }));
-		const Input = { template: '<div><textarea class="own" /><button class="mic-btn" @click="$emit(\'mic\')" /></div>', emits: ["mic"] };
+	describe("mic requested by the launcher's Ctrl+Shift+Space", () => {
+		const Input = { template: '<div><button class="mic-btn" /></div>' };
+		const mountWith = () => mount(WidgetPanel, { attachTo: document.body, global: { stubs: { ...stubs, InputArea: Input } } });
+		afterEach(() => (bridge.state.micRequested = false));
 
-		beforeEach(() => (bridge.state.open = true));
-		afterEach(() => (bridge.state.open = false));
+		// Production: the launcher sets the flag on a fresh Desk page, opens the panel, and the chat
+		// mounts only after bootstrap, so the flag is already there when WidgetPanel mounts.
+		it("clicks the mic once on mount and clears the request", () => {
+			bridge.state.micRequested = true;
+			const click = vi.spyOn(HTMLElement.prototype, "click");
+			mountWith();
+			expect(click).toHaveBeenCalledTimes(1);
+			expect(click.mock.instances[0].className).toBe("mic-btn");
+			expect(bridge.state.micRequested).toBe(false);
+		});
 
-		it("opens a closed panel first, then toggles the mic", async () => {
-			bridge.state.open = false;
+		it("does nothing on mount when no mic was requested", () => {
+			const click = vi.spyOn(HTMLElement.prototype, "click");
+			mountWith();
+			expect(click).not.toHaveBeenCalled();
+		});
+
+		it("clicks the mic for a later request while mounted, once the open has landed", () => {
 			vi.useFakeTimers();
-			const emit = vi.spyOn(bridge, "emit");
-			const onClick = vi.fn();
-			const w = mount(WidgetPanel, { attachTo: document.body, global: { stubs: { ...stubs, InputArea: Input } } });
-			w.find(".mic-btn").element.addEventListener("click", onClick);
-			press();
-			expect(emit).toHaveBeenCalledWith("open");
+			const click = vi.spyOn(HTMLElement.prototype, "click");
+			mountWith();
+			bridge.state.micRequested = true;
+			bridge.emit("mic");
+			expect(click).not.toHaveBeenCalled();
 			vi.runAllTimers();
-			expect(onClick).toHaveBeenCalledTimes(1);
+			expect(click).toHaveBeenCalledTimes(1);
+			expect(click.mock.instances[0].className).toBe("mic-btn");
+			expect(bridge.state.micRequested).toBe(false);
 			vi.useRealTimers();
-			w.unmount();
 		});
 
-		it("toggles the composer's mic", async () => {
-			const onClick = vi.fn();
-			const w = mount(WidgetPanel, { attachTo: document.body, global: { stubs: { ...stubs, InputArea: Input } } });
-			w.find(".mic-btn").element.addEventListener("click", onClick);
-			press();
-			expect(onClick).toHaveBeenCalledTimes(1);
-			w.unmount();
-		});
-
-		it("leaves other inputs on the Desk page alone", async () => {
-			const onClick = vi.fn();
-			const w = mount(WidgetPanel, { attachTo: document.body, global: { stubs: { ...stubs, InputArea: Input } } });
-			w.find(".mic-btn").element.addEventListener("click", onClick);
-			const other = document.createElement("input");
-			document.body.appendChild(other);
-			press(other);
-			expect(onClick).not.toHaveBeenCalled();
-			other.remove();
-			w.unmount();
-		});
-
-		it("stops listening once the panel is gone", async () => {
-			const w = mount(WidgetPanel, { attachTo: document.body, global: { stubs: { ...stubs, InputArea: Input } } });
-			w.unmount();
-			bridge.state.open = false;
-			const emit = vi.spyOn(bridge, "emit");
-			press();
-			expect(emit).not.toHaveBeenCalledWith("open");
+		it("stops listening once the panel is gone", () => {
+			vi.useFakeTimers();
+			const click = vi.spyOn(HTMLElement.prototype, "click");
+			mountWith().unmount();
+			bridge.emit("mic");
+			vi.runAllTimers();
+			expect(click).not.toHaveBeenCalled();
+			vi.useRealTimers();
 		});
 	});
 });
@@ -296,12 +314,34 @@ describe("panel bootstrap", () => {
 	afterEach(() => resetSurface());
 
 	it("routes automatically in memory and leaves FAC Chat's saved model choice alone", async () => {
-		// A FAC Chat user who picked a model; the widget must neither use nor overwrite it.
+		// A FAC Chat user who picked a model, then opens the widget on Desk (same localStorage).
+		// A real catalogue answers: restoreAllMocks would otherwise reset getAvailable to undefined
+		// and send loadModels down its error branch, which never touches the saved choice.
+		api.models.getAvailable.mockResolvedValue({
+			models: [{ model_id: "gpt-saved", tier: "Standard", tier_rank: 1, display_name: "GPT" }],
+			default_model: "gpt-saved",
+			max_tier_rank: 3,
+			auto_mode: { enabled: true },
+		});
 		localStorage.setItem("faco_selected_model", "gpt-saved");
 		mount(PanelApp, { global: { stubs: gateless } });
 		await flushPromises();
+		expect(useModelStore().models).toHaveLength(1);
 		expect(useModelStore().currentModelId).toBe("auto");
 		expect(localStorage.getItem("faco_selected_model")).toBe("gpt-saved");
+	});
+
+	it("does not clear FAC Chat's saved model when it has been retired", async () => {
+		api.models.getAvailable.mockResolvedValue({
+			models: [{ model_id: "other", tier: "Standard", tier_rank: 1 }],
+			max_tier_rank: 3,
+			auto_mode: { enabled: true },
+		});
+		localStorage.setItem("faco_selected_model", "retired-model");
+		mount(PanelApp, { global: { stubs: gateless } });
+		await flushPromises();
+		expect(useModelStore().currentModelId).toBe("auto");
+		expect(localStorage.getItem("faco_selected_model")).toBe("retired-model");
 	});
 
 	it("adopts the launcher's session and publishes it back", async () => {

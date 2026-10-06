@@ -83,6 +83,7 @@ import { handOffToFullPage } from "../desk/session.js";
 import { isBlocked, overageNoticeDue, markOverageNoticeShown } from "../desk/quotaGate.js";
 import { confirms, settleConfirm } from "./confirmQueue.js";
 import { t } from "./i18n.js";
+import { logger } from "@/utils/logger";
 
 const chatStore = useChatStore();
 const userStore = useUserStore();
@@ -110,7 +111,9 @@ function dismissOverage() {
 
 // Same routing as ChatView.handleSendMessage: answer a pending question, abandon a card, or send.
 async function onSend({ message }) {
-	if (isBlocked(userStore.quotaInfo)) {
+	// Only an admin gets the Spotlight that explains a block; a member who is refused would just lose
+	// their text, so theirs goes through and the server's own error shows inline.
+	if (isBlocked(userStore.quotaInfo) && userStore.quotaInfo.is_admin) {
 		spotlight.onQuotaExhausted();
 		return;
 	}
@@ -159,12 +162,17 @@ function expand() {
 }
 
 async function hideWidget() {
-	await window.frappe.call({
+	const response = await window.frappe.call({
 		method: "frappe_assistant_core.chat.api.settings.widget.update_user_preference",
 		args: { field: "hide_widget", value: "1" },
 	});
+	// The endpoint answers 200 {success:false} on a validation error: not saved, so do not hide.
+	if (response?.message?.success === false) {
+		logger.error("[FAC widget] hide not saved", response.message.message);
+		return;
+	}
 	bridge.emit("close");
-	document.getElementById("fac-widget-launcher")?.remove();
+	bridge.emit("hide");
 }
 
 // Desk links in answers go through Desk's router: a full navigation would reload the page
@@ -178,29 +186,20 @@ function interceptDeskLinks(event) {
 	window.frappe.set_route(...href.replace("/app/", "").split("/").map(decodeURIComponent));
 }
 
-// Ctrl+Shift+Space toggles the composer's mic, as the old widget did. Typing in some other
-// input on the Desk page is left alone; the panel's own composer is retargeted to the host.
+// The launcher owns Ctrl+Shift+Space (it must work before this panel exists) and asks for the mic
+// through the bridge: a flag for a request made before we mounted, an event for later ones.
 function toggleMic() {
+	bridge.state.micRequested = false;
 	scroller.value?.getRootNode().querySelector(".mic-btn")?.click();
 }
-function onShortcut(e) {
-	if (!(e.ctrlKey && e.shiftKey && (e.key === " " || e.code === "Space"))) return;
-	const tag = e.target?.tagName;
-	if (tag === "INPUT" || tag === "TEXTAREA") return;
-	e.preventDefault();
-	if (bridge.state.open) {
-		toggleMic();
-		return;
-	}
-	// The launcher opens asynchronously; the mic only exists on screen once it has.
-	bridge.emit("open");
-	setTimeout(toggleMic, 0);
-}
+// The launcher emits "open" just before "mic"; the panel only becomes visible a tick later.
+const onMicRequest = () => setTimeout(toggleMic, 0);
+const stopMic = bridge.on("mic", onMicRequest);
 onMounted(() => {
-	document.addEventListener("keydown", onShortcut);
+	if (bridge.state.micRequested) toggleMic();
 	userStore.loadQuota();
 });
-onUnmounted(() => document.removeEventListener("keydown", onShortcut));
+onUnmounted(stopMic);
 </script>
 
 <style scoped>

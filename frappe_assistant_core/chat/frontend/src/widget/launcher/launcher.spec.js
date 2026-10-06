@@ -229,6 +229,63 @@ describe("boot", () => {
 		expect(startTooltips).toHaveBeenCalledTimes(2);
 	});
 
+	describe("Ctrl+Shift+Space", () => {
+		const press = (target = document.body) =>
+			target.dispatchEvent(
+				new KeyboardEvent("keydown", { key: " ", code: "Space", ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true })
+			);
+
+		it("opens the panel and requests the mic before the panel has ever been mounted", async () => {
+			const bridge = await bootAndGetBridge();
+			const events = [];
+			bridge.on("open", () => events.push("open"));
+			bridge.on("mic", () => events.push("mic"));
+			expect(ensurePanel).not.toHaveBeenCalled();
+			press();
+			expect(bridge.state.micRequested).toBe(true);
+			expect(events).toEqual(["open", "mic"]);
+		});
+
+		it("leaves typing in another input on the Desk page alone", async () => {
+			const bridge = await bootAndGetBridge();
+			const other = document.createElement("input");
+			document.body.appendChild(other);
+			press(other);
+			expect(bridge.state.micRequested).toBeFalsy();
+			other.remove();
+		});
+
+		it("is not bound when the widget is not shown", async () => {
+			access = { show_widget: false };
+			const bridge = await bootAndGetBridge();
+			press();
+			expect(bridge.state.micRequested).toBeFalsy();
+		});
+
+		it("stops opening the widget once it has been hidden, for both shortcuts", async () => {
+			access = { show_widget: true, can_use: false, preferences: { keyboard_shortcut: "ctrl+k" } };
+			const bridge = await bootAndGetBridge();
+			const open = vi.fn();
+			bridge.on("open", open);
+			const ctrlK = () =>
+				document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "k", ctrlKey: true, bubbles: true, cancelable: true }));
+			ctrlK();
+			await new Promise((r) => setTimeout(r, 0));
+			expect(panel.open).toHaveBeenCalledTimes(1);
+
+			bridge.emit("hide");
+			expect(document.getElementById("fac-widget-launcher")).toBeNull();
+			panel.open.mockClear();
+			bridge.state.micRequested = false;
+			press();
+			ctrlK();
+			await new Promise((r) => setTimeout(r, 0));
+			expect(open).not.toHaveBeenCalled();
+			expect(bridge.state.micRequested).toBe(false);
+			expect(panel.open).not.toHaveBeenCalled();
+		});
+	});
+
 	it("writes the diagnostics switch once, from access alone, even when the widget is hidden", async () => {
 		access = { show_widget: false, enable_browser_diagnostics: false };
 		await boot({ entry: "", css: [] });

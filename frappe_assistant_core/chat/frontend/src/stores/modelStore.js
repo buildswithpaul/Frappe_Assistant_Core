@@ -12,6 +12,9 @@ export const useModelStore = defineStore("models", () => {
 	const models = ref([]);
 	const modelsByTier = ref({});
 	const selectedModel = ref(null); // User's selected model (from localStorage)
+	// A surface that must not follow (or touch) FAC Chat's saved choice, e.g. the Desk widget
+	// routing automatically. While set it wins and nothing below reads or writes localStorage.
+	const pinned = ref(null);
 	const defaultModel = ref(null); // Tenant's default model (from AR)
 	const maxTierRank = ref(999);
 	const isLoading = ref(false);
@@ -33,7 +36,7 @@ export const useModelStore = defineStore("models", () => {
 	const isAutoModeSelected = computed(() => selectedModel.value === "auto");
 
 	// The model ID to use for API requests - selected or fallback to default
-	const currentModelId = computed(() => selectedModel.value || defaultModel.value);
+	const currentModelId = computed(() => pinned.value || selectedModel.value || defaultModel.value);
 
 	// Get the full model object for the current selection
 	// Returns null for auto mode since it dynamically selects
@@ -107,6 +110,7 @@ export const useModelStore = defineStore("models", () => {
 
 	// Load selected model from localStorage
 	function loadSelectedModel() {
+		if (pinned.value) return;
 		try {
 			const stored = localStorage.getItem(STORAGE_KEY);
 			if (stored) {
@@ -119,6 +123,7 @@ export const useModelStore = defineStore("models", () => {
 
 	// Save selected model to localStorage
 	function saveSelectedModel(modelId) {
+		if (pinned.value) return;
 		try {
 			if (modelId) {
 				localStorage.setItem(STORAGE_KEY, modelId);
@@ -132,8 +137,15 @@ export const useModelStore = defineStore("models", () => {
 
 	// Actions
 
+	// Hold `modelId` in memory only; FAC Chat's saved selection is left exactly as it is.
+	function pinModel(modelId) {
+		pinned.value = modelId;
+		selectedModel.value = modelId;
+	}
+
 	// Set selected model (synchronous - just updates localStorage)
 	function setSelectedModel(modelId) {
+		if (pinned.value) return false;
 		// Special case: "auto" is always valid if auto mode is enabled
 		if (modelId === "auto" && isAutoModeEnabled.value) {
 			selectedModel.value = modelId;
@@ -153,6 +165,7 @@ export const useModelStore = defineStore("models", () => {
 
 	// Clear selected model (reverts to default)
 	function clearSelectedModel() {
+		if (pinned.value) return;
 		selectedModel.value = null;
 		saveSelectedModel(null);
 	}
@@ -177,8 +190,8 @@ export const useModelStore = defineStore("models", () => {
 				// Load user's selection from localStorage
 				loadSelectedModel();
 
-				// Validate stored selection is still valid
-				if (selectedModel.value) {
+				// Validate stored selection is still valid (a pin is not a stored selection)
+				if (selectedModel.value && !pinned.value) {
 					// Special case: "auto" is valid if auto mode is enabled
 					if (selectedModel.value === "auto" && isAutoModeEnabled.value) {
 						// Keep auto mode selection
@@ -197,7 +210,7 @@ export const useModelStore = defineStore("models", () => {
 				}
 
 				// Default to auto mode if enabled and no model selected
-				if (!selectedModel.value && isAutoModeEnabled.value) {
+				if (!selectedModel.value && !pinned.value && isAutoModeEnabled.value) {
 					selectedModel.value = "auto";
 					saveSelectedModel("auto");
 				}
@@ -256,6 +269,7 @@ export const useModelStore = defineStore("models", () => {
 		offFloor,
 		hintFor,
 		// Methods
+		pinModel,
 		isModelAccessible,
 		modelDisplayName,
 		setSelectedModel,
