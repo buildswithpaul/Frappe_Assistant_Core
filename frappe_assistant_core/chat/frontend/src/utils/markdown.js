@@ -52,6 +52,28 @@ export function highlightCode(code, lang) {
 	return escapeHtml(code);
 }
 
+const NOWRAP_MAX = 40;
+
+// A cell holding one token (an invoice number, a date, an amount) is
+// unreadable once the browser breaks it at a hyphen. Prose cells may wrap.
+function isNowrapCell(html) {
+	const text = html.replace(/<[^>]+>/g, "").trim();
+	return text.length > 0 && text.length <= NOWRAP_MAX && !/\s/.test(text);
+}
+
+const tableRenderer = {
+	table(header, body) {
+		const tbody = body ? `<tbody>${body}</tbody>` : "";
+		return `<div class="md-table-scroll"><table><thead>${header}</thead>${tbody}</table></div>\n`;
+	},
+	tablecell(content, flags) {
+		const tag = flags.header ? "th" : "td";
+		const align = flags.align ? ` align="${flags.align}"` : "";
+		const cls = isNowrapCell(content) ? ' class="md-nowrap"' : "";
+		return `<${tag}${align}${cls}>${content}</${tag}>\n`;
+	},
+};
+
 let configured = false;
 function configure() {
 	if (configured) return;
@@ -64,7 +86,7 @@ function configure() {
 			highlight: (code, lang) => highlightCode(code, lang),
 		})
 	);
-	marked.use({ breaks: true, gfm: true });
+	marked.use({ breaks: true, gfm: true, renderer: tableRenderer });
 }
 
 /**

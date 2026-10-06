@@ -492,6 +492,21 @@ function onCitationNavigate(n) {
 	font-weight: 600;
 }
 
+.text-block :deep(.md-table-scroll) {
+	max-width: 100%;
+	overflow-x: auto;
+	margin: 0.75rem 0;
+}
+
+.text-block :deep(.md-table-scroll table) {
+	margin: 0;
+	display: table;
+}
+
+.text-block :deep(.md-nowrap) {
+	white-space: nowrap;
+}
+
 /* Streaming indicator */
 .streaming-indicator {
 	display: flex;
