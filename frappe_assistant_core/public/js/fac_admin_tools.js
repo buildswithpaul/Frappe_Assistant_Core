@@ -55,7 +55,10 @@
                 }
             },
             error: function(r) {
-                FACOLogger.error('Failed to load server status:', r);
+                frappe.show_alert({
+                    message: __('Failed to load server status'),
+                    indicator: 'red'
+                });
                 $('#fac-mcp-endpoint').text('Error loading endpoint');
             }
         });

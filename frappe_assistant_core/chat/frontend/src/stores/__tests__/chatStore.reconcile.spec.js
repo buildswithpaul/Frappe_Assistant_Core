@@ -436,17 +436,34 @@ describe("reconcileFromServer", () => {
 			expect(store.isStreaming).toBe(true);
 		});
 
-		it("refuses a trailing row with no message_id to dedupe on", async () => {
-			store.messages = [{ role: "user", content: "hi" }, liveBubble()];
+		it("refuses an id-less finished row that does not follow the live turn's user row", async () => {
+			store.messages = [liveBubble()];
 			api.chat.getMessages.mockResolvedValue([
-				{ role: "user", content: "hi" },
-				{ role: "assistant", content: "unidentifiable" },
+				{ role: "assistant", content: "old answer" },
 			]);
 
 			await store.reconcileFromServer("s1");
 
 			expect(store.messages.some((m) => m.isStreaming)).toBe(true);
 			expect(store.isStreaming).toBe(true);
+		});
+
+		it("adopts the id-less errored row AR never named (relay tier-3 shape)", async () => {
+			// relay._persist_partial_assistant_turn persists an errored/aborted assistant row with
+			// no message_id when a turn fails or is stopped before stream_start named it.
+			store.messages = [{ role: "user", content: "hi" }, liveBubble()];
+			api.chat.getMessages.mockResolvedValue([
+				{ role: "user", content: "hi" },
+				{ role: "assistant", content: "", errored: 1 },
+			]);
+
+			await store.reconcileFromServer("s1");
+
+			const assistants = store.messages.filter((m) => m.role === "assistant");
+			expect(assistants).toHaveLength(1);
+			expect(assistants[0].errored).toBe(1);
+			expect(store.messages.some((m) => m.isStreaming)).toBe(false);
+			expect(store.isStreaming).toBe(false);
 		});
 
 		it("waits while the server only has the user row", async () => {
@@ -470,6 +487,23 @@ describe("reconcileFromServer", () => {
 			await expect(store.reconcileFromServer("s1")).resolves.toBeUndefined();
 
 			expect(store.messages).toHaveLength(1);
+			expect(store.isStreaming).toBe(true);
+		});
+
+		it("drops the result when the session switches while the history read is in flight", async () => {
+			store.currentSessionId = "s1";
+			store.isStreaming = true;
+			store.messages = [{ role: "assistant", message_id: "m1", isStreaming: true, blocks: [] }];
+			api.chat.getMessages.mockImplementation(async () => {
+				store.currentSessionId = "s2";
+				return [{ role: "assistant", message_id: "m1", content: "done", blocks: null }];
+			});
+
+			await store.reconcileFromServer("s1");
+
+			expect(store.messages).toHaveLength(1);
+			expect(store.messages[0].isStreaming).toBe(true);
+			expect(store.messages[0].content).toBeUndefined();
 			expect(store.isStreaming).toBe(true);
 		});
 

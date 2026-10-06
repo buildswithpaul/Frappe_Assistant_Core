@@ -278,11 +278,19 @@ export const useChatStore = defineStore("chat", () => {
 		if (orphans.length === 1) {
 			const knownIds = new Set(prevMessages.map((m) => m.message_id).filter(Boolean));
 			const lastRow = serverMessages[serverMessages.length - 1];
-			// A row without an id cannot be deduped against what is on screen.
+			// A failed or stopped turn that AR never named is persisted without a
+			// message_id, so an id-less row has nothing to dedupe on. It is this turn's
+			// only when it directly follows the user message the live turn answers.
+			const priorRow = serverMessages[serverMessages.length - 2];
+			const userMsg = prevMessages[prevMessages.indexOf(orphans[0]) - 1];
+			const answersLiveTurn =
+				priorRow?.role === "user" &&
+				userMsg?.role === "user" &&
+				priorRow.content === userMsg.content;
 			if (
-				lastRow?.message_id &&
+				lastRow &&
 				isFinalizedRow(lastRow) &&
-				!knownIds.has(lastRow.message_id)
+				(lastRow.message_id ? !knownIds.has(lastRow.message_id) : answersLiveTurn)
 			) {
 				stillLive = stillLive.filter((m) => m !== orphans[0]);
 			}
