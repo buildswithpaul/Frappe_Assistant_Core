@@ -1,8 +1,8 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-const toolsJs = resolve(process.cwd(), "../../public/chat/widget/widget_browser_tools.js");
+const toolsJs = resolve(process.cwd(), "src/widget/desk/browserTools.js");
 const src = () => readFileSync(toolsJs, "utf8");
 
 /**
@@ -48,24 +48,11 @@ describe("browser tool progress reports", () => {
 });
 
 describe("capture library", () => {
-	const hooks = () =>
-		readFileSync(resolve(process.cwd(), "../../hooks.py"), "utf8");
-
-	it("loads html2canvas-pro, never the unmaintained 1.4.1", () => {
-		// 1.4.1 throws "Error parsing CSS component value, unexpected EOF" on
-		// EVERY Frappe Desk page: it reads an empty computed style off its own
-		// synthetic <html2canvaspseudoelement> node for ::before/::after, which
-		// the Desk uses everywhere. Verified live — the screenshot tool could
-		// never succeed with it, regardless of timeouts or capture size.
-		const src = hooks();
-		expect(src).toMatch(/libs\/html2canvas-pro\.min\.js/);
-		expect(src).not.toMatch(/libs\/html2canvas\.min\.js["']/);
-	});
-
-	it("version-stamps widget assets so a 12h cached client cannot outlive a deploy", () => {
-		const src = hooks();
-		expect(src).toMatch(/def _widget_asset\(/);
-		expect(src).toMatch(/\?v=\{_WIDGET_ASSET_VERSION\}/);
+	it("bundles html2canvas-pro, never the unmaintained 1.4.1", () => {
+		const pkg = JSON.parse(readFileSync(resolve(process.cwd(), "package.json"), "utf8"));
+		expect(pkg.dependencies["html2canvas-pro"]).toBe("2.3.8");
+		expect(pkg.dependencies.html2canvas).toBeUndefined();
+		expect(src()).toMatch(/import\("html2canvas-pro"\)/);
 	});
 });
 
@@ -104,5 +91,25 @@ describe("screenshot capture bounds", () => {
 
 		expect(guardAt).toBeGreaterThan(blobAt);
 		expect(body.slice(guardAt, guardAt + 400)).toMatch(/Screenshot too large/);
+	});
+});
+
+describe("a call arriving while the panel is closed", () => {
+	it("acknowledges receipt first, then asks to open the panel for confirmation", async () => {
+		const handlers = {};
+		const calls = [];
+		globalThis.frappe = {
+			realtime: { socket: { connected: true }, on: (e, fn) => (handlers[e] = fn) },
+			call: vi.fn(async ({ method, args }) => {
+				calls.push([method.split(".").pop(), args && args.state]);
+				return { message: [] };
+			}),
+		};
+		const { startBrowserTools } = await import("./browserTools.js");
+		const confirm = vi.fn(async () => "deny");
+		startBrowserTools({ getSessionId: () => "s1", confirm });
+		await handlers.faco_browser_tool_call({ call_id: "c1", session_id: "s1", tool_name: "take_screenshot", params: {} });
+		expect(calls[0]).toEqual(["submit_browser_tool_ack", "received"]);
+		expect(confirm).toHaveBeenCalledWith(expect.objectContaining({ tool_name: "take_screenshot" }));
 	});
 });

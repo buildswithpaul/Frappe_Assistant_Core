@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-const SRC = resolve(process.cwd(), "../../public/chat/widget/widget_browser_tools.js");
+const SRC = resolve(process.cwd(), "src/widget/desk/browserTools.js");
 const src = () => readFileSync(SRC, "utf8");
 
 /**
