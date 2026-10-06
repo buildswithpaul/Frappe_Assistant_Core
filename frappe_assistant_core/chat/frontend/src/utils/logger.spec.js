@@ -19,6 +19,7 @@ const SKIP_DIRS = new Set([
 	"node_modules",
 	"libs", // vendored html2canvas-pro / DOMPurify
 	"spa", // public/chat/spa — Vite build output, gitignored
+	"widget-app", // public/chat/widget-app — second Vite build output, gitignored
 	"__pycache__",
 ]);
 

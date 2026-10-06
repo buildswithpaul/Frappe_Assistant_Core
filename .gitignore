@@ -52,6 +52,7 @@ frappe_assistant_core/public/dist/
 frappe_assistant_core/public/chat/spa/assets/
 frappe_assistant_core/public/chat/spa/index.html
 frappe_assistant_core/public/chat/spa/.vite/
+frappe_assistant_core/public/chat/widget-app/
 frappe_assistant_core/chat/frontend/dist/
 .vite/
 
@@ -86,5 +87,6 @@ debug_*.py
 
 # Build artifacts
 build/
+!frappe_assistant_core/chat/frontend/build/
 client_packages/*/build/
 
