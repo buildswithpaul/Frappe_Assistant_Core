@@ -74,6 +74,13 @@ def _build_tool_registry():
     bucket. The category is the same one shown/overridable on the FAC admin
     page (FAC Tool Configuration.tool_category) — single source of truth.
 
+    Tools from FAC-Cloud-only plugins are dropped unless FAC Cloud is the caller.
+    The filter belongs here and not in the registry: the registry answers "what
+    may this *user* access", which FAC Chat's own tool-preferences UI asks over a
+    session cookie, while this answers "what may this *caller* see". Dropping a
+    tool here also makes it uninvokable, because ``_handle_tools_call`` refuses
+    any name absent from the registry it was handed — one gate, not two.
+
     Returns:
         OrderedDict mapping tool name to its MCP tool dict.
     """
@@ -83,12 +90,18 @@ def _build_tool_registry():
     try:
         from frappe_assistant_core.core.tool_registry import get_tool_registry
         from frappe_assistant_core.mcp.tool_adapter import build_tool_dict
+        from frappe_assistant_core.utils.mcp_caller import request_is_from_fac_cloud
+        from frappe_assistant_core.utils.plugin_manager import get_plugin_manager
         from frappe_assistant_core.utils.tool_category_detector import category_to_annotations
 
         # Get available instances in one pass. The previous metadata -> name ->
         # get_tool loop rediscovered every external hook tool for every item.
         registry = get_tool_registry()
         available_tools = registry.get_available_tool_instances(user=frappe.session.user)
+
+        if not request_is_from_fac_cloud():
+            for tool_name in get_plugin_manager().get_fac_cloud_only_tools():
+                available_tools.pop(tool_name, None)
 
         # Resolve each tool's category once (honors admin overrides stored on
         # FAC Tool Configuration; falls back to auto-detection).

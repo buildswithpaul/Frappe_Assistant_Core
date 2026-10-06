@@ -43,10 +43,16 @@ class FacoPlugin(BasePlugin):
     Plugin bundling tools originally shipped in frappe_assistant_copilot.
 
     The chat UI itself lives in frappe_assistant_core/chat/ and is gated
-    by Assistant Core Settings.enable_fac_chat. This plugin's tools are
-    available to MCP clients (Claude Desktop etc.) and to the chat UI
-    when enabled; the plugin can also be enabled standalone for users
-    who only want the extra tools via BYO-LLM.
+    by Assistant Core Settings.enable_fac_chat.
+
+    These tools reach FAC Cloud only. Each of them needs something no other
+    MCP client can supply: the browser tools run inside the FAC Chat page over
+    Socket.IO, and generate_document renders through FAC Chat's rich-block
+    renderer. Offered to Claude Desktop, a browser tool would publish a
+    realtime request nobody is listening for and fail only after the 30 second
+    timeout, so they are hidden from every caller that is not FAC Cloud —
+    see utils/mcp_caller.py. send_email carried no such dependency and now
+    lives in the core plugin, where every client can still use it.
     """
 
     def get_info(self) -> Dict[str, Any]:
@@ -54,10 +60,10 @@ class FacoPlugin(BasePlugin):
             "name": "faco",
             "display_name": "FACO Tools",
             "description": (
-                "Tools migrated from frappe_assistant_copilot — email, "
-                "document generation, rich-block rendering, and browser "
-                "automation. Available to both MCP clients and the optional "
-                "FAC Chat UI."
+                "Document generation and browser automation for FAC Chat. "
+                "These tools run inside the FAC Chat page, so they are "
+                "available to FAC Cloud only and stay hidden from other MCP "
+                "clients such as Claude Desktop."
             ),
             "version": "1.0.0",
             "author": "Paul Clinton",
@@ -70,7 +76,6 @@ class FacoPlugin(BasePlugin):
         # base_browser_tool, browser_bridge, and rich_blocks are utility modules
         # imported by tools above; they are NOT themselves tools.
         return [
-            "send_email",
             "generate_document",
             "browser_get_form_data",
             "browser_get_page_context",
@@ -79,6 +84,9 @@ class FacoPlugin(BasePlugin):
             "browser_take_screenshot",
             "browser_wait_for_page",
         ]
+
+    def is_fac_cloud_only(self) -> bool:
+        return True
 
     def validate_environment(self) -> Tuple[bool, Optional[str]]:
         # No environment dependencies for these tools.

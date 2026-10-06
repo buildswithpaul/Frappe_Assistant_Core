@@ -40,8 +40,9 @@ class TestFacoPlugin(BaseAssistantTest):
 
     def test_plugin_get_tools_returns_registered_tools(self):
         tools = FacoPlugin().get_tools()
-        # Communication / document tools
-        self.assertIn("send_email", tools)
+        # send_email moved to the core plugin: it needs nothing from FAC Chat, so
+        # restricting the faco plugin must not take it away from other clients.
+        self.assertNotIn("send_email", tools)
         self.assertIn("generate_document", tools)
         # Browser automation tools
         for name in (
@@ -81,14 +82,14 @@ class TestFacoPlugin(BaseAssistantTest):
 
 class TestFacoToolDiscovery(BaseAssistantTest):
     def test_send_email_tool_module_importable(self):
-        """The send_email tool module must be importable from the plugin path."""
-        from frappe_assistant_core.plugins.faco.tools import send_email
+        """send_email lives in the core plugin — it has no FAC Chat dependency."""
+        from frappe_assistant_core.plugins.core.tools import send_email
 
         self.assertTrue(hasattr(send_email, "SendEmail"))
 
     def test_send_email_tool_class_metadata(self):
         """SendEmail tool must declare its name and source_app correctly."""
-        from frappe_assistant_core.plugins.faco.tools.send_email import SendEmail
+        from frappe_assistant_core.plugins.core.tools.send_email import SendEmail
 
         tool = SendEmail()
         self.assertEqual(tool.name, "send_email")

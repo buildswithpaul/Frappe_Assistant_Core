@@ -18,6 +18,8 @@ import redis
 from frappe import _
 from frappe.sessions import delete_session, get_expiry_in_seconds
 
+from frappe_assistant_core.utils.mcp_caller import presented_bearer_token
+
 MOBILE_APP_NAME = "FACO Mobile"
 SIGN_OUT_REASON = "Signed out of the FAC mobile app"
 
@@ -27,10 +29,8 @@ def _web_sessions_key(user: str) -> str:
 
 
 def _presented_bearer() -> str:
-    header = frappe.get_request_header("Authorization", "") or ""
-    scheme, _space, token = header.partition(" ")
-    token = token.strip()
-    if scheme.lower() != "bearer" or not token:
+    token = presented_bearer_token()
+    if not token:
         frappe.throw(_("This endpoint requires OAuth Bearer authentication"), frappe.AuthenticationError)
     return token
 

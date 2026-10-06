@@ -93,6 +93,22 @@ class BasePlugin(ABC):
         """
         pass
 
+    def is_fac_cloud_only(self) -> bool:
+        """
+        Whether this plugin's tools are reachable only through FAC Cloud.
+
+        FAC Cloud calls the same MCP endpoint every other client does, so a tool
+        that needs something only FAC Cloud provides — a live FAC Chat page, for
+        instance — is otherwise offered to Claude Desktop and friends, which can
+        never satisfy it. Returning True hides the plugin's tools from
+        ``tools/list`` and makes ``tools/call`` refuse them for any caller that
+        is not FAC Cloud.
+
+        Defaults to False: a plugin is visible to every client unless it says
+        otherwise.
+        """
+        return False
+
     def get_capabilities(self) -> Dict[str, Any]:
         """
         Get plugin capabilities for MCP protocol.

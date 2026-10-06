@@ -178,3 +178,17 @@ A new tool subclasses `BaseTool`, lives under the right plugin's `tools/`, and g
 matching page in `docs/skills/`. If you change a tool's behaviour, update that page in the
 same pull request — it is what the model is told about the tool, so a stale page is a
 behaviour bug.
+
+**FAC Cloud is not an inside caller.** It reaches this site over the same
+`fac_endpoint.handle_mcp` URL as Claude Desktop — `chat/api/auth.py` registers that URL
+with it. So a tool that only FAC Cloud can satisfy is otherwise offered to every client
+and fails for them; the faco plugin's browser tools used to hang for 30 seconds that way.
+A plugin keeps its tools to FAC Cloud by overriding `BasePlugin.is_fac_cloud_only()`, and
+`utils/mcp_caller.py` recognises FAC Cloud by the OAuth client its bearer token belongs
+to — never by anything the client says about itself. Put such a filter at the endpoint,
+not in the tool registry: the registry answers "what may this *user* access", which FAC
+Chat's own preferences UI asks over a session cookie.
+
+**Never enable or disable a plugin from a test.** `PluginPersistence.save_plugin_state`
+calls `frappe.db.commit()`, so the toggle escapes the test rollback and permanently
+changes the site it ran against.
