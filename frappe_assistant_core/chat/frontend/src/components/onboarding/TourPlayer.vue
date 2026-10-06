@@ -2,6 +2,9 @@
 import { storeToRefs } from "pinia";
 import { useTourStore } from "@/stores/tourStore";
 import FeatureReel from "@/components/onboarding/FeatureReel.vue";
+import { useTeleportTarget } from "@/composables/useTeleportTarget";
+
+const teleportTarget = useTeleportTarget();
 
 const tourStore = useTourStore();
 const { isOpen } = storeToRefs(tourStore);
@@ -12,7 +15,7 @@ function onComplete() {
 </script>
 
 <template>
-	<Teleport to="body">
+	<Teleport :to="teleportTarget">
 		<Transition name="tour-fade">
 			<FeatureReel v-if="isOpen" @complete="onComplete" />
 		</Transition>

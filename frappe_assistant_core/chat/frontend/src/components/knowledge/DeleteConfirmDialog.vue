@@ -1,5 +1,5 @@
 <template>
-	<Teleport to="body">
+	<Teleport :to="teleportTarget">
 		<Transition name="modal-fade">
 			<div v-if="doc" class="modal-overlay" @click.self="$emit('cancel')">
 				<Transition name="modal-scale" appear>
@@ -29,6 +29,10 @@
 </template>
 
 <script setup>
+import { useTeleportTarget } from "@/composables/useTeleportTarget";
+
+const teleportTarget = useTeleportTarget();
+
 defineProps({
 	doc: { type: Object, default: null },
 	deleting: { type: Boolean, default: false },

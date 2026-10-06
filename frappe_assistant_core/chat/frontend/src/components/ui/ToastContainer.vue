@@ -1,5 +1,5 @@
 <template>
-	<Teleport to="body">
+	<Teleport :to="teleportTarget">
 		<div class="toast-container" v-if="toasts.length > 0">
 			<TransitionGroup name="toast">
 				<div
@@ -66,6 +66,9 @@
 
 <script setup>
 import { useToast } from "@/composables/useToast";
+import { useTeleportTarget } from "@/composables/useTeleportTarget";
+
+const teleportTarget = useTeleportTarget();
 
 const { toasts, dismiss } = useToast();
 </script>

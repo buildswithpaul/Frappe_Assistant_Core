@@ -1,5 +1,5 @@
 <template>
-	<Teleport to="body">
+	<Teleport :to="teleportTarget">
 		<div
 			v-if="modelValue"
 			class="modal-overlay"
@@ -75,6 +75,9 @@ import TriggerCard from "./TriggerCard.vue";
 import TriggerEditor from "./TriggerEditor.vue";
 import TriggerFireLog from "./TriggerFireLog.vue";
 import { logger } from "@/utils/logger";
+import { useTeleportTarget } from "@/composables/useTeleportTarget";
+
+const teleportTarget = useTeleportTarget();
 
 const props = defineProps({
 	modelValue: { type: Boolean, required: true },

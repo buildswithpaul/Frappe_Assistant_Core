@@ -1,5 +1,5 @@
 <template>
-	<Teleport to="body">
+	<Teleport :to="teleportTarget">
 		<div
 			v-if="modelValue"
 			class="modal-overlay"
@@ -29,6 +29,10 @@
 </template>
 
 <script setup>
+import { useTeleportTarget } from "@/composables/useTeleportTarget";
+
+const teleportTarget = useTeleportTarget();
+
 defineProps({
 	modelValue: { type: Boolean, default: false },
 	workflow: { type: Object, default: null },

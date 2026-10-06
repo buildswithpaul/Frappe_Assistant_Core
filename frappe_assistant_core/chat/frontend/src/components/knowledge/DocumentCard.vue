@@ -75,7 +75,7 @@
 							/>
 						</svg>
 					</button>
-					<Teleport to="body">
+					<Teleport :to="teleportTarget">
 						<Transition name="dropdown-fade">
 							<div
 								v-if="showActions"
@@ -178,6 +178,9 @@
 import { ref, computed, onMounted, onUnmounted } from "vue";
 import { formatRelativeTime, formatFileSizeMb } from "@/composables/useFormatters";
 import { api } from "@/api/client";
+import { useTeleportTarget } from "@/composables/useTeleportTarget";
+
+const teleportTarget = useTeleportTarget();
 
 const props = defineProps({
 	doc: { type: Object, required: true },

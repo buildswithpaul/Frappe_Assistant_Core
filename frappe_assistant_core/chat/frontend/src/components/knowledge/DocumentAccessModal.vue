@@ -1,5 +1,5 @@
 <template>
-	<Teleport to="body">
+	<Teleport :to="teleportTarget">
 		<Transition name="modal-fade">
 			<div v-if="doc" class="modal-overlay" @click.self="$emit('close')">
 				<Transition name="modal-scale" appear>
@@ -187,6 +187,9 @@
 <script setup>
 import { ref, watch } from "vue";
 import { api } from "@/api/client";
+import { useTeleportTarget } from "@/composables/useTeleportTarget";
+
+const teleportTarget = useTeleportTarget();
 
 const props = defineProps({
 	doc: { type: Object, default: null },

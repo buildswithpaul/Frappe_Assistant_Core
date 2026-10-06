@@ -1,5 +1,5 @@
 <template>
-	<Teleport to="body">
+	<Teleport :to="teleportTarget">
 		<div v-if="isOpen" class="modal-overlay" @click.self="handleOverlayClick">
 			<div class="rebind-modal" role="dialog" aria-modal="true">
 				<button type="button" class="close-btn" aria-label="Close" @click="handleClose">
@@ -170,6 +170,9 @@
 import { ref, computed, watch, onBeforeUnmount } from "vue";
 import { api } from "@/api/client";
 import { logger } from "@/utils/logger";
+import { useTeleportTarget } from "@/composables/useTeleportTarget";
+
+const teleportTarget = useTeleportTarget();
 
 const props = defineProps({
 	isOpen: { type: Boolean, default: false },

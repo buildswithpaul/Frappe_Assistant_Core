@@ -1,5 +1,5 @@
 <template>
-	<Teleport to="body">
+	<Teleport :to="teleportTarget">
 		<Transition name="chunk-fade">
 			<div v-if="doc" class="chunk-backdrop" @click.self="$emit('close')">
 				<Transition name="chunk-slide">
@@ -74,6 +74,9 @@
 import { ref, watch, onMounted, onUnmounted } from "vue";
 import { api } from "@/api/client";
 import ChunkCard from "./ChunkCard.vue";
+import { useTeleportTarget } from "@/composables/useTeleportTarget";
+
+const teleportTarget = useTeleportTarget();
 
 const props = defineProps({
 	doc: { type: Object, default: null },

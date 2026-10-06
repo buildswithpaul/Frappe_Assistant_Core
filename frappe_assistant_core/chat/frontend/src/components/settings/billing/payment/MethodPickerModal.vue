@@ -1,5 +1,5 @@
 <template>
-	<Teleport to="body">
+	<Teleport :to="teleportTarget">
 		<div v-if="isOpen" class="modal-overlay" @click.self="$emit('close')">
 			<div class="picker-modal">
 				<h3>Choose how to pay</h3>
@@ -36,6 +36,9 @@
 import { computed } from "vue";
 
 import HostedCheckoutNotice from "../HostedCheckoutNotice.vue";
+import { useTeleportTarget } from "@/composables/useTeleportTarget";
+
+const teleportTarget = useTeleportTarget();
 
 const props = defineProps({
 	isOpen: { type: Boolean, default: false },

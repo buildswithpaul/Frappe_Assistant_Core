@@ -1,5 +1,5 @@
 <template>
-	<Teleport to="body">
+	<Teleport :to="teleportTarget">
 		<div v-if="isOpen" class="modal-overlay" @click.self="$emit('close')">
 			<div class="credit-modal-container">
 				<!-- Header -->
@@ -68,6 +68,9 @@ import { ref, computed, watch } from "vue";
 import CreditAmountPicker from "./billing/CreditAmountPicker.vue";
 import CreditPriceSummary from "./billing/CreditPriceSummary.vue";
 import HostedCheckoutNotice from "./billing/HostedCheckoutNotice.vue";
+import { useTeleportTarget } from "@/composables/useTeleportTarget";
+
+const teleportTarget = useTeleportTarget();
 
 const props = defineProps({
 	isOpen: {

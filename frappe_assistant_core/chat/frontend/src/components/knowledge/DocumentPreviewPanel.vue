@@ -1,5 +1,5 @@
 <template>
-	<Teleport to="body">
+	<Teleport :to="teleportTarget">
 		<Transition name="preview-fade">
 			<div v-if="doc" class="preview-backdrop" @click.self="$emit('close')">
 				<Transition name="preview-slide">
@@ -131,6 +131,9 @@ import { marked } from "marked";
 import DOMPurify from "dompurify";
 import { formatFileSizeMb } from "@/composables/useFormatters";
 import { api } from "@/api/client";
+import { useTeleportTarget } from "@/composables/useTeleportTarget";
+
+const teleportTarget = useTeleportTarget();
 
 const props = defineProps({
 	doc: { type: Object, default: null },
