@@ -358,4 +358,135 @@ describe("reconcileFromServer", () => {
 		await store.reconcileFromServer("s1");
 		expect(store.isLoading).toBe(false);
 	});
+
+	// Carried over from the deleted jQuery widget's recovery suite: the SPA store now owns
+	// these behaviours for both the Chat page and the Desk widget.
+	describe("recovery row selection", () => {
+		const liveBubble = (extra = {}) => ({
+			role: "assistant",
+			isStreaming: true,
+			blocks: [],
+			_requestId: "req-live",
+			...extra,
+		});
+
+		beforeEach(() => {
+			store.currentSessionId = "s1";
+			store.isStreaming = true;
+		});
+
+		it("adopts a row whose answer exists only in its blocks JSON string", async () => {
+			store.messages = [{ role: "user", content: "hi" }, liveBubble({ message_id: "m1" })];
+			api.chat.getMessages.mockResolvedValue([
+				{
+					role: "assistant",
+					message_id: "m1",
+					content: "",
+					blocks: JSON.stringify([{ type: "text", id: "t1", content: "from blocks" }]),
+				},
+			]);
+
+			await store.reconcileFromServer("s1");
+
+			expect(store.messages.filter((m) => m.message_id === "m1")).toHaveLength(1);
+			expect(store.messages.find((m) => m.message_id === "m1").isStreaming).toBeFalsy();
+			expect(store.isStreaming).toBe(false);
+		});
+
+		it("keeps waiting when the blocks string is not valid JSON", async () => {
+			store.messages = [{ role: "user", content: "hi" }, liveBubble({ message_id: "m1" })];
+			api.chat.getMessages.mockResolvedValue([
+				{ role: "assistant", message_id: "m1", content: "", blocks: "not json" },
+			]);
+
+			await store.reconcileFromServer("s1");
+
+			expect(store.messages.find((m) => m.message_id === "m1").isStreaming).toBe(true);
+			expect(store.isStreaming).toBe(true);
+		});
+
+		it("ignores a finished row that belongs to an earlier turn", async () => {
+			store.messages = [
+				{ role: "assistant", message_id: "m0", content: "old", blocks: [] },
+				liveBubble({ message_id: "m1" }),
+			];
+			api.chat.getMessages.mockResolvedValue([
+				{ role: "assistant", message_id: "m0", content: "old" },
+				{ role: "assistant", message_id: "m1", content: "", blocks: null },
+			]);
+
+			await store.reconcileFromServer("s1");
+
+			expect(store.messages.find((m) => m.message_id === "m1").isStreaming).toBe(true);
+			expect(store.isStreaming).toBe(true);
+		});
+
+		it("does not re-adopt an answer already on screen for an idless bubble", async () => {
+			store.messages = [
+				{ role: "assistant", message_id: "m0", content: "old", blocks: [] },
+				liveBubble(),
+			];
+			api.chat.getMessages.mockResolvedValue([
+				{ role: "assistant", message_id: "m0", content: "old" },
+			]);
+
+			await store.reconcileFromServer("s1");
+
+			expect(store.messages.some((m) => m.isStreaming)).toBe(true);
+			expect(store.isStreaming).toBe(true);
+		});
+
+		it("refuses a trailing row with no message_id to dedupe on", async () => {
+			store.messages = [{ role: "user", content: "hi" }, liveBubble()];
+			api.chat.getMessages.mockResolvedValue([
+				{ role: "user", content: "hi" },
+				{ role: "assistant", content: "unidentifiable" },
+			]);
+
+			await store.reconcileFromServer("s1");
+
+			expect(store.messages.some((m) => m.isStreaming)).toBe(true);
+			expect(store.isStreaming).toBe(true);
+		});
+
+		it("waits while the server only has the user row", async () => {
+			store.messages = [{ role: "user", content: "hi" }, liveBubble()];
+			api.chat.getMessages.mockResolvedValue([{ role: "user", content: "hi" }]);
+
+			await store.reconcileFromServer("s1");
+
+			expect(store.messages.some((m) => m.isStreaming)).toBe(true);
+			expect(store.isStreaming).toBe(true);
+		});
+	});
+
+	describe("failure and repetition", () => {
+		it("survives a failed history read without touching the turn", async () => {
+			store.currentSessionId = "s1";
+			store.isStreaming = true;
+			store.messages = [{ role: "assistant", message_id: "m1", isStreaming: true, blocks: [] }];
+			api.chat.getMessages.mockRejectedValue(new Error("offline"));
+
+			await expect(store.reconcileFromServer("s1")).resolves.toBeUndefined();
+
+			expect(store.messages).toHaveLength(1);
+			expect(store.isStreaming).toBe(true);
+		});
+
+		it("is idempotent when two reconciles overlap", async () => {
+			store.currentSessionId = "s1";
+			store.isStreaming = true;
+			store.messages = [{ role: "assistant", message_id: "m1", isStreaming: true, blocks: [] }];
+			api.chat.getMessages.mockImplementation(async () => [
+				{ role: "assistant", message_id: "m1", content: "done", blocks: null },
+			]);
+
+			await Promise.all([store.reconcileFromServer("s1"), store.reconcileFromServer("s1")]);
+
+			const rows = store.messages.filter((m) => m.message_id === "m1");
+			expect(rows).toHaveLength(1);
+			expect(rows[0].content).toBe("done");
+			expect(store.isStreaming).toBe(false);
+		});
+	});
 });

@@ -278,7 +278,12 @@ export const useChatStore = defineStore("chat", () => {
 		if (orphans.length === 1) {
 			const knownIds = new Set(prevMessages.map((m) => m.message_id).filter(Boolean));
 			const lastRow = serverMessages[serverMessages.length - 1];
-			if (lastRow && isFinalizedRow(lastRow) && !knownIds.has(lastRow.message_id)) {
+			// A row without an id cannot be deduped against what is on screen.
+			if (
+				lastRow?.message_id &&
+				isFinalizedRow(lastRow) &&
+				!knownIds.has(lastRow.message_id)
+			) {
 				stillLive = stillLive.filter((m) => m !== orphans[0]);
 			}
 		}
