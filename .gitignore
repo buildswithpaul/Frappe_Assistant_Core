@@ -76,9 +76,8 @@ frappe_assistant_core/www/copilot.html
 # Aider AI Chat
 .aider*
 
-# claude
+# claude — local settings only; CLAUDE.md and AGENTS.md are tracked instructions
 .claude/
-CLAUDE.md
 
 # Logs and temporary files
 *.log
