@@ -27,6 +27,8 @@ Configuration on `plugin_name`, so a row left saying "faco" is toggled by the wr
 bulk action in both directions.
 """
 
+import json
+
 import frappe
 
 from frappe_assistant_core.patches.v3_1.move_send_email_to_core_plugin import execute
@@ -70,6 +72,15 @@ class TestMoveSendEmailToCorePatch(BaseAssistantTest):
         frappe.get_doc({"doctype": PLUGIN_DOCTYPE, "plugin_name": "faco", "enabled": enabled}).insert(
             ignore_permissions=True
         )
+
+    def _no_plugin_row(self) -> None:
+        """A site whose plugin rows after_migrate has not written yet."""
+        frappe.db.delete(PLUGIN_DOCTYPE, {"plugin_name": "faco"})
+
+    def _legacy_plugins(self, plugins) -> None:
+        """The pre-DocType record of plugin state, on Assistant Core Settings."""
+        value = None if plugins is None else json.dumps(plugins)
+        frappe.db.set_single_value("Assistant Core Settings", "enabled_plugins_list", value)
 
     def _row(self) -> dict:
         return frappe.db.get_value(DOCTYPE, TOOL, ["plugin_name", "enabled", "module_path"], as_dict=True)
@@ -127,10 +138,62 @@ class TestMoveSendEmailToCorePatch(BaseAssistantTest):
 
         self.assertFalse(self._row().enabled)
 
-    def test_an_unconfigured_faco_plugin_counts_as_enabled(self):
-        """No plugin row means a fresh install, which the sync enables — not 'disabled'."""
+    def test_no_plugin_row_and_no_legacy_state_counts_as_enabled(self):
+        """Nothing recorded either way is a fresh install, which the sync enables."""
         self._tool_row(enabled=1)
-        frappe.db.delete(PLUGIN_DOCTYPE, {"plugin_name": "faco"})
+        self._no_plugin_row()
+        self._legacy_plugins(None)
+
+        execute()
+
+        self.assertTrue(self._row().enabled)
+
+    def test_legacy_json_that_omits_faco_is_disabled(self):
+        """The fail-open path. Patches run BEFORE the after_migrate step that writes
+        plugin rows, so on a site upgrading from the legacy JSON era the row is absent
+        and that field is the only record of the administrator's choice."""
+        self._tool_row(enabled=1)
+        self._no_plugin_row()
+        self._legacy_plugins(["core", "visualization"])
+
+        execute()
+
+        self.assertFalse(self._row().enabled, "a site that had faco off in legacy JSON gained send_email")
+
+    def test_legacy_json_that_includes_faco_stays_enabled(self):
+        self._tool_row(enabled=1)
+        self._no_plugin_row()
+        self._legacy_plugins(["core", "faco"])
+
+        execute()
+
+        self.assertTrue(self._row().enabled)
+
+    def test_an_empty_legacy_list_counts_as_enabled(self):
+        """`not legacy_enabled` is how the sync reads this: a fresh install."""
+        self._tool_row(enabled=1)
+        self._no_plugin_row()
+        self._legacy_plugins([])
+
+        execute()
+
+        self.assertTrue(self._row().enabled)
+
+    def test_unreadable_legacy_json_keeps_the_tool_off(self):
+        """Unable to tell: grant nothing. An admin can switch it on in FAC Admin."""
+        self._tool_row(enabled=1)
+        self._no_plugin_row()
+        frappe.db.set_single_value("Assistant Core Settings", "enabled_plugins_list", "{not json")
+
+        execute()
+
+        self.assertFalse(self._row().enabled)
+
+    def test_the_plugin_row_outranks_the_legacy_field(self):
+        """Once the row exists it is authoritative, however stale the JSON is."""
+        self._tool_row(enabled=1)
+        self._faco_plugin(enabled=1)
+        self._legacy_plugins(["core"])
 
         execute()
 
