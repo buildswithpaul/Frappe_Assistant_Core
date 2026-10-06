@@ -155,4 +155,25 @@ describe("stream manager dead-socket grace window", () => {
 
 		expect(store.connectionVisible).toBe(true);
 	});
+
+	it("forgets the grace dot once the socket owns the banner again", async () => {
+		store.setSocketProbe(makeProbe(false));
+		store.resetActivityTimeout();
+		await elapseWindow();
+		expect(store.connectionVisible).toBe(true);
+
+		store.setSocketConnected(true);
+		expect(store.connectionVisible).toBe(false);
+
+		store.handleSocketDisconnect("transport close");
+		await vi.advanceTimersByTimeAsync(3000);
+		expect(store.connectionVisible).toBe(true);
+
+		store.messages = [
+			{ role: "assistant", message_id: "m2", content: "cut", truncated: true, blocks: [] },
+		];
+		await store.continueMessage("m2");
+
+		expect(store.connectionVisible).toBe(true);
+	});
 });

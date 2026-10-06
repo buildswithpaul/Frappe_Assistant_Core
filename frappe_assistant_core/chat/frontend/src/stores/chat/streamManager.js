@@ -181,6 +181,7 @@ export function createStreamManager({
 		if (connectionDebounceId) clearTimeout(connectionDebounceId);
 		connectionDebounceId = setTimeout(() => {
 			if (!socketConnected.value) {
+				graceRaisedDot = false;
 				connectionVisible.value = true;
 			}
 		}, 3000);
@@ -205,6 +206,7 @@ export function createStreamManager({
 		if (connected) {
 			socketError.value = null;
 			connectionVisible.value = false;
+			graceRaisedDot = false;
 			if (connectionDebounceId) {
 				clearTimeout(connectionDebounceId);
 				connectionDebounceId = null;
@@ -215,6 +217,7 @@ export function createStreamManager({
 	function clearSocketError() {
 		socketError.value = null;
 		connectionVisible.value = false;
+		graceRaisedDot = false;
 	}
 
 	// Hold the send queue while a Stop's cancel_stream is in flight: FAC clears
