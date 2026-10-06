@@ -55,6 +55,7 @@ class PluginInfo:
     state: PluginState
     tools: List[str]
     error_message: Optional[str] = None
+    fac_cloud_only: bool = False
 
 
 @dataclass
@@ -160,6 +161,7 @@ class PluginDiscovery:
                     version=info.get("version", "1.0.0"),
                     state=PluginState.DISCOVERED,
                     tools=plugin_instance.get_tools(),
+                    fac_cloud_only=plugin_instance.is_fac_cloud_only(),
                 )
 
         return None
@@ -373,6 +375,21 @@ class PluginManager:
                 self._load_tools()
 
             return self._loaded_tools.copy()
+
+    def get_fac_cloud_only_tools(self) -> Set[str]:
+        """Names of loaded tools whose plugin declared ``is_fac_cloud_only()``.
+
+        Callers other than FAC Cloud must neither see nor be able to invoke these.
+        Tools registered by other apps through the ``assistant_tools`` hook belong to
+        no FAC plugin, so they are never restricted by this.
+        """
+        with self._lock:
+            tools = self.get_all_tools()
+            return {
+                name
+                for name, tool_info in tools.items()
+                if getattr(self._discovered_plugins.get(tool_info.plugin_name), "fac_cloud_only", False)
+            }
 
     def enable_plugin(self, plugin_name: str) -> bool:
         """Enable a plugin atomically using DocType-based persistence."""

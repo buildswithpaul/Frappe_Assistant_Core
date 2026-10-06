@@ -10,6 +10,7 @@ from frappe.rate_limiter import rate_limit
 
 from frappe_assistant_core.chat.fac_cloud_client import get_fac_cloud_client
 from frappe_assistant_core.chat.gate import is_chat_enabled
+from frappe_assistant_core.utils.mcp_caller import FAC_CLOUD_OAUTH_CLIENT_ID
 
 from ._helpers import _safe_error
 from ._mobile_sessions import (
@@ -44,7 +45,10 @@ def _get_or_create_ar_oauth_client():
     # names) are left inert — they still own any tokens issued against them and
     # self-heal as those tokens roll over; they can be cleaned up manually. We
     # never auto-delete live rows.
-    CLIENT_ID = "fac-cloud-integration"
+    #
+    # The id is shared with the MCP endpoint, which recognises FAC Cloud by it to
+    # keep FAC-Cloud-only tools away from other clients. Two literals would drift.
+    CLIENT_ID = FAC_CLOUD_OAUTH_CLIENT_ID
 
     existing = frappe.db.get_value("OAuth Client", {"client_id": CLIENT_ID}, "name")
     if existing:
