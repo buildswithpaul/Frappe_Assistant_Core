@@ -68,6 +68,13 @@ Help us improve our docs!
    ```
    See [docs/development/PRE_COMMIT_SETUP.md](docs/development/PRE_COMMIT_SETUP.md) for the full guide, commit-message format, and troubleshooting.
 
+## 🤖 Working with a coding agent
+
+If you are using Claude Code, Codex or a similar tool, read [AGENTS.md](AGENTS.md) first.
+It collects the things that are not guessable from the code — how to run the tests, what
+the commit linter rejects, and the Frappe traps that have actually broken pull requests
+here.
+
 ## 📝 Coding Standards
 
 ### Python Code Style
@@ -89,7 +96,7 @@ Help us improve our docs!
 2. **Run all tests and ensure they pass**
 3. **Update documentation if needed**
 4. **Test your changes manually**
-5. **Rebase your branch on latest main**
+5. **Rebase your branch on latest `develop`** — all pull requests target `develop`, not `main`
 
 ## 📄 License
 
