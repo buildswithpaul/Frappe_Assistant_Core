@@ -15,6 +15,7 @@ import { useChatStore } from "@/stores/chatStore";
 import { useUserStore } from "@/stores/userStore";
 import { logger } from "@/utils/logger";
 import { writeHandoff } from "@/utils/sessionHandoff";
+import { getSurface } from "@/stores/chat/surface";
 import { findActiveMessage } from "@/stores/chat/utils";
 import { io } from "socket.io-client";
 
@@ -400,8 +401,10 @@ export function useStreaming() {
 				chatStore.handleToolCallStart(data);
 
 				// Handle browser navigation from SPA — server returns success
-				// immediately (fire-and-forget), SPA does the actual navigation
-				if (data.tool_name === "browser_navigate_to") {
+				// immediately (fire-and-forget), SPA does the actual navigation.
+				// The Desk widget skips this: its launcher's browser tools already
+				// routed in place, and a hard reload would kill the turn.
+				if (data.tool_name === "browser_navigate_to" && getSurface().clientType === "spa") {
 					// Store session for widget to pick up on the target page.
 					// Same-tab navigation only — sessionStorage scopes the hand-off
 					// to this tab so other tabs don't inherit the session id, and

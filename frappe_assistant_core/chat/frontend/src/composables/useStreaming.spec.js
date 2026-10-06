@@ -204,3 +204,86 @@ describe("SPA socket wiring", () => {
 		expect(fake.connect).toHaveBeenCalledTimes(1);
 	});
 });
+
+describe("browser_navigate_to hand-off", () => {
+	let handler;
+	let hrefSet;
+	let originalLocation;
+
+	beforeEach(async () => {
+		const { resetSurface } = await import("@/stores/chat/surface");
+		resetSurface();
+		sessionStorage.clear();
+		vi.useFakeTimers();
+		// Desk's realtime client: the same path production takes on a Frappe page.
+		window.frappe = {
+			realtime: {
+				on: vi.fn((name, fn) => {
+					if (name === "faco_message_stream") handler = fn;
+				}),
+				off: vi.fn(),
+				task_subscribe: vi.fn(),
+				task_unsubscribe: vi.fn(),
+			},
+		};
+		originalLocation = window.location;
+		hrefSet = vi.fn();
+		Object.defineProperty(window, "location", {
+			configurable: true,
+			value: {
+				origin: "http://localhost",
+				get href() {
+					return "http://localhost/";
+				},
+				set href(v) {
+					hrefSet(v);
+				},
+			},
+		});
+	});
+
+	afterEach(async () => {
+		const { resetSurface } = await import("@/stores/chat/surface");
+		resetSurface();
+		Object.defineProperty(window, "location", { configurable: true, value: originalLocation });
+		delete window.frappe;
+		vi.useRealTimers();
+	});
+
+	function fireNavigate() {
+		const pinia = createPinia();
+		mount(
+			defineComponent({
+				setup() {
+					useStreaming();
+					return () => null;
+				},
+			}),
+			{ global: { plugins: [pinia] } }
+		);
+		const chatStore = useChatStore(pinia);
+		chatStore.currentSessionId = "s-nav";
+		handler({
+			event: "tool_call_start",
+			session_id: "s-nav",
+			tool_name: "browser_navigate_to",
+			tool_id: "t1",
+			input: { url: "/app/todo" },
+		});
+		vi.advanceTimersByTime(1000);
+	}
+
+	it("hard-navigates and stores the hand-off on the SPA", () => {
+		fireNavigate();
+		expect(hrefSet).toHaveBeenCalledWith("/app/todo");
+		expect(sessionStorage.getItem("faco_widget_session")).toContain("s-nav");
+	});
+
+	it("leaves Desk alone in the widget: the launcher's navigate_to already routed", async () => {
+		const { configureSurface } = await import("@/stores/chat/surface");
+		configureSurface({ name: "widget", clientType: "widget" });
+		fireNavigate();
+		expect(hrefSet).not.toHaveBeenCalled();
+		expect(sessionStorage.getItem("faco_widget_session")).toBeNull();
+	});
+});
