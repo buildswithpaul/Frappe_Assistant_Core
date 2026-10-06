@@ -1,21 +1,5 @@
-import { describe, it, expect, beforeAll } from "vitest";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, resolve } from "node:path";
-
-const here = dirname(fileURLToPath(import.meta.url));
-const WIDGET_SESSION_PATH = resolve(
-	here,
-	"../../../../../public/chat/widget/widget_session.js"
-);
-
-let FACOWidgetSession;
-
-beforeAll(() => {
-	const source = readFileSync(WIDGET_SESSION_PATH, "utf8");
-	new Function(source).call(globalThis);
-	FACOWidgetSession = globalThis.FACOWidgetSession;
-});
+import { describe, it, expect, beforeEach } from "vitest";
+import * as FACOWidgetSession from "./session.js";
 
 const generate = () => "faco_fresh_1";
 const OWNER = "paul@x.test";
@@ -211,5 +195,27 @@ describe("FACOWidgetSession.encode / decode", () => {
 			id: "sess-a",
 			user: OWNER,
 		});
+	});
+});
+
+describe("resolveWidgetSession", () => {
+	beforeEach(() => {
+		sessionStorage.clear();
+		globalThis.frappe = { session: { user: OWNER } };
+	});
+
+	it("consumes the FAC Chat hand-off once and persists what it adopted", async () => {
+		sessionStorage.setItem("faco_widget_session", FACOWidgetSession.encode("faco_from_spa", OWNER));
+		const out = await FACOWidgetSession.resolveWidgetSession({ isClaimed: async () => false });
+		expect(out).toEqual({ session_id: "faco_from_spa", restored: true });
+		expect(sessionStorage.getItem("faco_widget_session")).toBeNull();
+		expect(FACOWidgetSession.decode(sessionStorage.getItem("faco_widget_persistent_session")).id).toBe("faco_from_spa");
+	});
+
+	it("starts fresh when another live tab holds the persisted session", async () => {
+		sessionStorage.setItem("faco_widget_persistent_session", FACOWidgetSession.encode("faco_held", OWNER));
+		const out = await FACOWidgetSession.resolveWidgetSession({ isClaimed: async () => true });
+		expect(out.restored).toBe(false);
+		expect(out.session_id).toMatch(/^faco_\d+_[0-9a-f]{18}$/);
 	});
 });
