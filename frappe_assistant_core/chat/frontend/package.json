@@ -20,6 +20,7 @@
     "frappe-ui": "^0.1.166",
     "highlight.js": "^11.9.0",
     "marked": "^12.0.0",
+    "marked-highlight": "2.2.1",
     "mermaid": "^11.14.0",
     "pinia": "^2.1.0",
     "socket.io-client": "^4.7.0",

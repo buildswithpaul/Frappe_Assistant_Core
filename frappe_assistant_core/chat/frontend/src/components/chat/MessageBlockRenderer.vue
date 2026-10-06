@@ -103,6 +103,7 @@ import WorkflowCreatedBlock from "./WorkflowCreatedBlock.vue";
 import CitationPill from "./CitationPill.vue";
 import { parseRichBlocks } from "./richBlocks/parser";
 import { renderMarkdown as renderMd, ensureHljs } from "@/utils/markdown.js";
+import "@/styles/hljs-theme.css";
 import { shouldShowProcessingIndicator } from "./indicatorVisibility";
 
 const props = defineProps({

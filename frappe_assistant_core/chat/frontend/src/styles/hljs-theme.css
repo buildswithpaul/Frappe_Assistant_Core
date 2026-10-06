@@ -1,0 +1,33 @@
+/* Token colours for FAC Chat's code block. The block itself is always dark
+   (#1e293b, see MessageBlockRenderer .text-block pre) in both themes, so one
+   palette serves light and dark. */
+.hljs-comment,
+.hljs-quote { color: #94a3b8; font-style: italic; }
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-literal,
+.hljs-section,
+.hljs-link { color: #c4b5fd; }
+.hljs-string,
+.hljs-regexp,
+.hljs-addition,
+.hljs-attribute,
+.hljs-meta .hljs-string { color: #86efac; }
+.hljs-number,
+.hljs-symbol,
+.hljs-bullet { color: #fdba74; }
+.hljs-title,
+.hljs-title.function_,
+.hljs-title.class_ { color: #7dd3fc; }
+.hljs-built_in,
+.hljs-type,
+.hljs-params { color: #f9a8d4; }
+.hljs-attr,
+.hljs-variable,
+.hljs-template-variable,
+.hljs-name,
+.hljs-tag { color: #fca5a5; }
+.hljs-meta { color: #a5b4fc; }
+.hljs-deletion { color: #fca5a5; }
+.hljs-emphasis { font-style: italic; }
+.hljs-strong { font-weight: 600; }
