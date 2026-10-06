@@ -23,7 +23,7 @@ jobs:
         include:
           - frappe-branch: version-15
             python-version: '3.12'
-            node-version: 18
+            node-version: 22
           - frappe-branch: version-16
             python-version: '3.14'
             node-version: 24
