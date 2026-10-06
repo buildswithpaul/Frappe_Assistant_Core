@@ -32,8 +32,14 @@ mail from its own Email Account without anyone asking for it. Where faco is
 disabled, the tool is therefore disabled at the tool level, which preserves what
 the site had and leaves an administrator free to turn it on from FAC Admin.
 
+Establishing "was faco disabled?" is the delicate part, because patches run before
+after_migrate and it is after_migrate that writes the plugin rows this would like to
+read. See `_faco_was_disabled`.
+
 A site where faco is enabled keeps whatever it had, enabled or not.
 """
+
+import json
 
 import frappe
 
@@ -65,13 +71,43 @@ def execute():
 def _faco_was_disabled() -> bool:
     """Whether this site had the faco plugin switched off.
 
-    An absent row means the plugin was never configured, which the plugin sync
-    treats as enabled on a fresh install — so absence is not "disabled".
+    A `FAC Plugin Configuration` row is authoritative when there is one. There
+    often is not: patches run BEFORE after_migrate, and it is
+    `_sync_plugin_configurations` — an after_migrate step — that creates those
+    rows. So on a site upgrading from the era when plugin state lived in
+    `Assistant Core Settings.enabled_plugins_list`, the row is still absent here
+    and the JSON field is the only record of what the administrator chose.
+
+    Reading an absent row as "enabled" would therefore hand send_email to exactly
+    the sites this is meant to protect. The legacy field is read with the same
+    rule the sync applies: a non-empty list that omits the plugin means disabled,
+    while an empty or absent list means a fresh install, which is enabled.
+
+    If neither source can be read, the conservative answer wins. Disabling a tool
+    an administrator can switch back on in FAC Admin is recoverable; silently
+    granting the ability to send mail from their domain is not.
     """
-    if not frappe.db.table_exists(PLUGIN_DOCTYPE):
+    if frappe.db.table_exists(PLUGIN_DOCTYPE):
+        enabled = frappe.db.get_value(PLUGIN_DOCTYPE, OLD_PLUGIN, "enabled")
+        if enabled is not None:
+            return not int(enabled)
+
+    try:
+        legacy = frappe.db.get_single_value("Assistant Core Settings", "enabled_plugins_list")
+    except Exception:
+        frappe.logger().warning(
+            f"{__name__}: could not read plugin state; keeping {TOOL} off so the move grants nothing"
+        )
+        return True
+
+    if not legacy:
+        # No record either way: a fresh install, which the sync enables.
         return False
 
-    enabled = frappe.db.get_value(PLUGIN_DOCTYPE, OLD_PLUGIN, "enabled")
-    if enabled is None:
-        return False
-    return not int(enabled)
+    try:
+        enabled_plugins = set(json.loads(legacy))
+    except (ValueError, TypeError):
+        frappe.logger().warning(f"{__name__}: enabled_plugins_list is not readable JSON; keeping {TOOL} off")
+        return True
+
+    return bool(enabled_plugins) and OLD_PLUGIN not in enabled_plugins
