@@ -148,6 +148,7 @@ describe("chatStore send queueing", () => {
 			reasoning_effort: "off",
 			thinking_enabled: false,
 			client_turn_id: expect.any(String),
+			client_type: "spa",
 		});
 	});
 });

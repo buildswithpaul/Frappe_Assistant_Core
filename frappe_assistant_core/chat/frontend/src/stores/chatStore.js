@@ -8,6 +8,7 @@ import { createStreamManager } from "./chat/streamManager";
 import { createBlockHandlers } from "./chat/blockHandlers";
 import { createSendQueue } from "./chat/sendQueue";
 import { isApprovalInteraction } from "./chat/interactionRegime";
+import { getSurface, surfaceClientSignals } from "./chat/surface";
 import { useComposerModesStore } from "./composerModesStore";
 import { useModelStore } from "./modelStore";
 import { useSpotlightStore } from "./spotlightStore";
@@ -410,12 +411,14 @@ export const useChatStore = defineStore("chat", () => {
 			messages.value.push(assistantMessage);
 
 			const modes = useComposerModesStore().modesFor(currentSessionId.value);
+			const surface = getSurface();
+			const signals = surfaceClientSignals();
 			await api.chat.send(
 				currentSessionId.value,
 				message,
 				fileUrls,
 				context,
-				modelId,
+				modelId ?? surface.modelId,
 				systemPromptAddendum,
 				attachments,
 				{
@@ -425,6 +428,8 @@ export const useChatStore = defineStore("chat", () => {
 					thinking_enabled: modes.effort !== "off",
 					// A Stop names this request by the same id (streamManager.abortStream).
 					client_turn_id: assistantMessage._requestId,
+					client_type: surface.clientType,
+					...(signals ? { client_signals: signals } : {}),
 				}
 			);
 		} catch (err) {
@@ -473,6 +478,7 @@ export const useChatStore = defineStore("chat", () => {
 				// Older AR servers only read the boolean.
 				thinking_enabled: modes.effort !== "off",
 				client_turn_id: lastMsg._requestId,
+				client_type: getSurface().clientType,
 			});
 		} catch (err) {
 			stream.clearStreamTimeouts();
@@ -617,6 +623,7 @@ export const useChatStore = defineStore("chat", () => {
 				// Older AR servers only read the boolean.
 				thinking_enabled: modes.effort !== "off",
 				client_turn_id: clientTurnId,
+				client_type: getSurface().clientType,
 			};
 			// Same reasoning for the model — except "auto" can never travel: a
 			// resume skips classification, so only a concrete id is a model.

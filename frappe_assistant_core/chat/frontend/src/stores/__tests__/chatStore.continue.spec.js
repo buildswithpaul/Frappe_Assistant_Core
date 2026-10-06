@@ -70,6 +70,7 @@ describe("chatStore.continueMessage", () => {
 			reasoning_effort: "off",
 			thinking_enabled: false,
 			client_turn_id: expect.any(String),
+			client_type: "spa",
 		});
 		expect(store.messages.length).toBe(lengthBefore);
 		expect(store.messages.every((m) => m.role !== "user")).toBe(true);
@@ -102,6 +103,7 @@ describe("chatStore.continueMessage", () => {
 			reasoning_effort: "high",
 			thinking_enabled: true,
 			client_turn_id: expect.any(String),
+			client_type: "spa",
 		});
 	});
 
