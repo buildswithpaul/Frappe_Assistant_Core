@@ -194,6 +194,27 @@ export function createVisibilityHandler(chatStore, getSocket) {
 }
 
 /**
+ * Tab-foreground handler for the frappe.realtime path (Desk). Frappe's client
+ * stops after 3 reconnection attempts and never revives on its own, so a dead
+ * socket is nudged here and recovery rides the "connect" handler; a throttled
+ * socket that still reports connected recovers directly.
+ *
+ * Exported for tests.
+ */
+export function createDeskVisibilityHandler(chatStore, getSocket, recover) {
+	return () => {
+		if (document.visibilityState !== "visible") return;
+		const socket = getSocket();
+		if (!socket) return;
+		if (!socket.connected) {
+			if (typeof socket.connect === "function") socket.connect();
+			return;
+		}
+		if (chatStore.isStreaming) recover();
+	};
+}
+
+/**
  * Build the SPA socket "connect" handler. "connect" fires on the first
  * connection AND on every re-connection (automatic or via the retry button),
  * so post-reconnect recovery lives here. The first connection skips recovery
@@ -460,6 +481,7 @@ export function useStreaming() {
 
 	let stopWatch = null;
 	let frappeRealtimeConnectHandler = null;
+	let deskVisibilityHandler = null;
 
 	onMounted(() => {
 		// Try Frappe's realtime first (works on normal Frappe pages)
@@ -485,6 +507,12 @@ export function useStreaming() {
 			if (typeof frappe.realtime.on === "function") {
 				frappe.realtime.on("connect", frappeRealtimeConnectHandler);
 			}
+			deskVisibilityHandler = createDeskVisibilityHandler(
+				chatStore,
+				() => window.frappe?.realtime?.socket,
+				frappeRealtimeConnectHandler
+			);
+			document.addEventListener("visibilitychange", deskVisibilityHandler);
 		} else {
 			// Fallback: Initialize our own socket.io connection for the Vue SPA
 			const socket = initializeSpaSocket(chatStore);
@@ -515,6 +543,7 @@ export function useStreaming() {
 			if (frappeRealtimeConnectHandler && typeof frappe.realtime.off === "function") {
 				frappe.realtime.off("connect", frappeRealtimeConnectHandler);
 			}
+			if (deskVisibilityHandler) document.removeEventListener("visibilitychange", deskVisibilityHandler);
 		} else if (spaSocket) {
 			spaSocket.off("faco_message_stream", handleStreamEvent);
 			spaSocket.off("ar_interrupt_event", handleArInterruptEvent);
