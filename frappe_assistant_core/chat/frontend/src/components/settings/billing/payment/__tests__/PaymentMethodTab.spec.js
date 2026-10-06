@@ -169,3 +169,43 @@ describe("PaymentMethodTab loading state", () => {
 		expect(w.findComponent({ name: "AutopayCard" }).exists()).toBe(false);
 	});
 });
+
+describe("PaymentMethodTab last payment failure", () => {
+	const failure = {
+		reason: "Card declined by issuer.",
+		failed_at: "2026-10-05 00:02:47",
+		invoice: "AR-INV-1",
+		dunning_level: "Warning",
+		attempt: 1,
+		total_attempts: 4,
+		next_retry_on: "2026-10-06",
+		past_due: false,
+	};
+
+	it("shows the reason and the retry line above the card", async () => {
+		const w = mountTab(fakePaymentMethod({ paymentFailure: ref(failure) }));
+		await flushPromises();
+		const notice = w.find(".failure-notice");
+		expect(notice.text()).toContain("Last payment failed:");
+		expect(notice.text()).toContain("Card declined by issuer.");
+		expect(notice.text()).toContain("We'll try again on 6 Oct (attempt 2 of 4).");
+	});
+
+	it("uses the generic sentence when there is no reason", async () => {
+		const w = mountTab(fakePaymentMethod({ paymentFailure: ref({ ...failure, reason: "" }) }));
+		await flushPromises();
+		expect(w.find(".failure-notice").text()).toContain("Your last payment didn't go through.");
+	});
+
+	it("renders nothing new without the block (an older payments app)", async () => {
+		const w = mountTab(fakePaymentMethod());
+		await flushPromises();
+		expect(w.find(".failure-notice").exists()).toBe(false);
+	});
+
+	it("renders a reason as text", async () => {
+		const w = mountTab(fakePaymentMethod({ paymentFailure: ref({ ...failure, reason: "<b>x</b>" }) }));
+		await flushPromises();
+		expect(w.find(".failure-notice b").exists()).toBe(false);
+	});
+});

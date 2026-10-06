@@ -86,6 +86,28 @@ describe("usePaymentMethod", () => {
 			expect(pm.instrumentError.value).toBeNull();
 			expect(pm.loadingInstrument.value).toBe(false);
 		});
+
+		it("exposes the last payment failure, and clears it on error", async () => {
+			const { pm } = harness();
+			const failure = { reason: "Card declined by issuer.", past_due: false };
+			api.billing.getPaymentInstrument.mockResolvedValue({ autopay: null, payment_failure: failure });
+
+			await pm.loadInstrument();
+			expect(pm.paymentFailure.value).toEqual(failure);
+
+			api.billing.getPaymentInstrument.mockRejectedValue(new Error("boom"));
+			await pm.loadInstrument();
+			expect(pm.paymentFailure.value).toBeNull();
+		});
+
+		it("has no payment failure when the payments app sends none", async () => {
+			const { pm } = harness();
+			api.billing.getPaymentInstrument.mockResolvedValue({ autopay: null });
+
+			await pm.loadInstrument();
+
+			expect(pm.paymentFailure.value).toBeNull();
+		});
 	});
 
 	describe("updating the instrument", () => {

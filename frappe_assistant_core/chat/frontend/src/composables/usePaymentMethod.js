@@ -27,6 +27,8 @@ export function usePaymentMethod({
 	// tenant on neither gateway (e.g. Free plan, no payment_gateway set).
 	// Defaults true so the button isn't disabled before the first load.
 	const canUpdate = ref(true);
+	// AR's account of why the last charge failed, or null when none did.
+	const paymentFailure = ref(null);
 	const loadingInstrument = ref(false);
 	const updating = ref(false);
 	// Distinct from "no instrument" (which is a legitimate, cheerful empty
@@ -57,9 +59,11 @@ export function usePaymentMethod({
 			updateMode.value = result?.update_mode || "swap";
 			amountDue.value = result?.amount_due || null;
 			canUpdate.value = result?.can_update !== false;
+			paymentFailure.value = result?.payment_failure || null;
 		} catch (err) {
 			logger.error("Payment instrument load error:", err);
 			instrument.value = null;
+			paymentFailure.value = null;
 			instrumentError.value = err.message || "Failed to load your payment method";
 		} finally {
 			loadingInstrument.value = false;
@@ -100,6 +104,7 @@ export function usePaymentMethod({
 		updateMode,
 		amountDue,
 		canUpdate,
+		paymentFailure,
 		loadingInstrument,
 		updating,
 		instrumentError,

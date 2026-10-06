@@ -11,6 +11,16 @@
 		</template>
 
 		<template v-else>
+			<!-- Why the last charge failed — the admin may have missed the email.
+			     Plain text: the reason is the gateway's own wording. -->
+			<div v-if="failureLines" class="failure-notice" role="status">
+				<p>
+					<strong>{{ failureLines.reason ? "Last payment failed:" : "Your last payment didn't go through." }}</strong>
+					<template v-if="failureLines.reason"> {{ failureLines.reason }}</template>
+				</p>
+				<p v-if="failureLines.retry">{{ failureLines.retry }}</p>
+			</div>
+
 			<AutopayCard
 				:instrument="instrument"
 				:update-mode="updateMode"
@@ -40,6 +50,7 @@
 <script setup>
 import { computed, onMounted, ref } from "vue";
 
+import { paymentFailureLines } from "../paymentFailureCopy";
 import AutopayCard from "./AutopayCard.vue";
 import MethodPickerModal from "./MethodPickerModal.vue";
 
@@ -53,6 +64,7 @@ const {
 	updateMode,
 	amountDue,
 	canUpdate,
+	paymentFailure,
 	loadingInstrument,
 	updating,
 	instrumentError,
@@ -63,6 +75,10 @@ const {
 } = props.paymentMethod;
 
 const showPicker = ref(false);
+
+// `paymentFailure` is optional: a caller built against an older composable
+// does not supply the ref.
+const failureLines = computed(() => paymentFailureLines(paymentFailure?.value));
 
 // What the next charge will be denominated in — the outstanding invoice's
 // own currency when there is one, otherwise the saved instrument's, otherwise
@@ -114,6 +130,16 @@ onMounted(loadInstrument);
 	margin: 0.75rem 0 0;
 	font-size: 0.8125rem;
 	color: var(--ql-danger, #ef4444);
+}
+
+.failure-notice {
+	margin: 0.75rem 0;
+	font-size: 0.8125rem;
+	color: var(--ql-danger, #ef4444);
+}
+
+.failure-notice p {
+	margin: 0;
 }
 
 .retry-btn {
