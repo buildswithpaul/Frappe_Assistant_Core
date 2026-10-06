@@ -8,6 +8,7 @@ import json
 import os
 import tempfile
 import unittest
+from unittest.mock import patch
 
 import frappe
 
@@ -84,6 +85,34 @@ class TestWidgetBoot(unittest.TestCase):
             bootinfo = frappe._dict()
             widget_boot.extend_bootinfo(bootinfo, manifest_path=path)
             self.assertEqual(bootinfo.fac_widget, {"entry": BASE + "assets/main.abc.js", "css": []})
+
+    def test_a_non_string_entry_file_means_no_widget(self):
+        for bad in (None, "", 7, ["a.js"]):
+            widget_boot._cache.clear()
+            with tempfile.TemporaryDirectory() as d:
+                path = _manifest(d, {"src/widget/main.js": {"file": bad}})
+                self.assertIsNone(widget_boot.widget_entry(path), repr(bad))
+
+    def test_malformed_css_values_are_skipped_not_fatal(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = _manifest(
+                d,
+                {
+                    "src/widget/main.js": {
+                        "file": "assets/main.abc.js",
+                        "css": [{"x": 1}, "assets/ok.css", 3],
+                    },
+                    "other.js": {"file": "assets/o.js", "css": "ab.css"},
+                    "style.css": {"file": 5},
+                },
+            )
+            self.assertEqual(widget_boot.widget_entry(path)["css"], [BASE + "assets/ok.css"])
+
+    def test_extend_bootinfo_never_raises(self):
+        bootinfo = frappe._dict()
+        with patch.object(widget_boot, "widget_entry", side_effect=RuntimeError("boom")):
+            widget_boot.extend_bootinfo(bootinfo)
+        self.assertNotIn("fac_widget", bootinfo)
 
     def test_the_hook_is_registered(self):
         from frappe_assistant_core import hooks

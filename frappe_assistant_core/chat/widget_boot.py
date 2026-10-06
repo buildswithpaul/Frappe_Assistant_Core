@@ -12,6 +12,8 @@ A site whose frontend was never built gets no widget — never an error.
 import json
 import os
 
+import frappe
+
 ASSET_BASE = "/assets/frappe_assistant_core/chat/widget-app/"
 ENTRY_KEY = "src/widget/main.js"
 MANIFEST_PATH = os.path.join(
@@ -27,13 +29,15 @@ def _stylesheets(manifest: dict) -> list[str]:
 
     With `cssCodeSplit: false` Vite emits the stylesheet as its own record
     (`"style.css": {"file": "assets/style.<hash>.css"}`); a split build lists
-    them under each record's `css` array. Accept both.
+    them under each record's `css` array. Accept both, and skip anything that
+    is not a string: a malformed manifest must never reach Desk boot.
     """
     css: list[str] = []
     for record in manifest.values():
         if not isinstance(record, dict):
             continue
-        found = list(record.get("css", []))
+        listed = record.get("css")
+        found = [h for h in listed if isinstance(h, str)] if isinstance(listed, list) else []
         file = record.get("file")
         if isinstance(file, str) and file.endswith(".css"):
             found.append(file)
@@ -57,15 +61,20 @@ def widget_entry(manifest_path: str | None = None) -> dict | None:
         with open(path) as fh:  # nosemgrep: frappe-security-file-traversal
             manifest = json.load(fh)
         entry = manifest[ENTRY_KEY]["file"]
-        css = _stylesheets(manifest)
+        if not isinstance(entry, str) or not entry:
+            return None
+        value = {"entry": ASSET_BASE + entry, "css": [ASSET_BASE + c for c in _stylesheets(manifest)]}
     except (OSError, ValueError, KeyError, TypeError, AttributeError):
         return None
-    value = {"entry": ASSET_BASE + entry, "css": [ASSET_BASE + c for c in css]}
     _cache[path] = (mtime, value)
     return value
 
 
 def extend_bootinfo(bootinfo, manifest_path: str | None = None) -> None:
-    entry = widget_entry(manifest_path)
-    if entry:
-        bootinfo.fac_widget = entry
+    # Frappe does not guard boot hooks: an exception here would break Desk for everyone.
+    try:
+        entry = widget_entry(manifest_path)
+        if entry:
+            bootinfo.fac_widget = entry
+    except Exception:
+        frappe.logger("frappe_assistant_core").warning("FAC widget boot info skipped", exc_info=True)
