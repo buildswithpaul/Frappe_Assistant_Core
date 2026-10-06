@@ -33,7 +33,13 @@ import pageContext from "./pageContext.js";
 const loadHtml2canvas = () => import("html2canvas-pro").then((m) => m.default || m);
 
 // Replaced by startBrowserTools(); the default denies so an unwired host fails closed.
-let deps = { getSessionId: () => null, confirm: async () => "deny" };
+// getWidgetSettings fails closed (DOM extraction off) until the launcher supplies the
+// real operator settings; pageContext treats only `enable_dom_extraction === false` as off.
+let deps = {
+	getSessionId: () => null,
+	confirm: async () => "deny",
+	getWidgetSettings: () => ({ privacy: { enable_dom_extraction: false } }),
+};
 
 // ---------------------------------------------------------------------------
 // Browser-tool HITL confirmation (FACO-H5 remediation)
@@ -81,6 +87,14 @@ const TOOLS_REQUIRING_CONFIRMATION = new Set([
 const MAX_SCREENSHOT_SCALE = 1.5;
 const MAX_SCREENSHOT_HEIGHT_PX = 8000;
 const SCREENSHOT_IMAGE_TIMEOUT_MS = 3000;
+const SCREENSHOT_OVERLAY_ID = "fac-screenshot-overlay";
+// Keep the widget out of its own screenshot; .faco-widget is the legacy jQuery host.
+const SCREENSHOT_HIDDEN_SELECTORS = [
+	"#fac-widget-launcher",
+	"#fac-widget-panel",
+	`#${SCREENSHOT_OVERLAY_ID}`,
+	".faco-widget",
+];
 
 export const TOOL_CONFIRMATION_COPY = {
 	take_screenshot: {
@@ -119,10 +133,9 @@ const FACOBrowserTools = {
 				...context,
 			};
 
-			// Honour the operator's privacy toggle. This used to be a literal,
-			// which silently made the FAC Chat Settings switch a no-op for
-			// browser tools while still appearing to work in the admin UI.
-			const settings = (window.faco_widget && window.faco_widget.widget_settings) || {};
+			// Honour the operator's privacy toggle (privacy.enable_dom_extraction),
+			// supplied by the host via startBrowserTools; the default denies.
+			const settings = deps.getWidgetSettings() || {};
 			const dom_content = await pageContext.extract_screen_content(context, settings);
 			result.dom_content = dom_content;
 
@@ -306,10 +319,14 @@ const FACOBrowserTools = {
 				}
 
 				// Show overlay so user knows capture is in progress
-				const $overlay = window.$(
-					'<div class="faco-screenshot-overlay">Capturing screenshot...</div>'
-				);
-				window.$(".faco-widget").append($overlay);
+				const overlay = document.createElement("div");
+				overlay.id = SCREENSHOT_OVERLAY_ID;
+				overlay.textContent = window.__ ? window.__("Capturing screenshot...") : "Capturing screenshot...";
+				overlay.style.cssText =
+					"position:fixed;bottom:16px;right:16px;z-index:2147483647;padding:8px 14px;" +
+					"border-radius:999px;background:#1f2937;color:#fff;font:13px/1.2 sans-serif;" +
+					"pointer-events:none;";
+				document.body.appendChild(overlay);
 
 				// Yield to browser render loop so overlay paints before html2canvas blocks the thread
 				await new Promise((resolve) =>
@@ -339,12 +356,14 @@ const FACOBrowserTools = {
 							? Math.min(document.body.scrollHeight, MAX_SCREENSHOT_HEIGHT_PX)
 							: window.innerHeight,
 						onclone: (clonedDoc) => {
-							const widget = clonedDoc.querySelector(".faco-widget");
-							if (widget) widget.style.display = "none";
+							for (const selector of SCREENSHOT_HIDDEN_SELECTORS) {
+								const el = clonedDoc.querySelector(selector);
+								if (el) el.style.display = "none";
+							}
 						},
 					});
 				} finally {
-					$overlay.remove();
+					overlay.remove();
 				}
 
 				const quality = (params.quality || 80) / 100;
@@ -882,7 +901,11 @@ const FACOBrowserTools = {
 };
 
 export function startBrowserTools(nextDeps) {
-	deps = { ...deps, ...nextDeps };
+	// An omitted dep keeps its fail-closed default rather than becoming undefined.
+	const provided = Object.fromEntries(
+		Object.entries(nextDeps || {}).filter(([, v]) => v !== undefined)
+	);
+	deps = { ...deps, ...provided };
 	// frappe.realtime.on() is a silent no-op until the socket exists, so wait
 	// for it (up to 10s), exactly as the old self-starting script did.
 	let polls = 0;

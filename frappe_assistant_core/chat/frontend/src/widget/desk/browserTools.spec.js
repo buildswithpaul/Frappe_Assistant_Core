@@ -1,4 +1,12 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+
+const h2c = vi.hoisted(() => ({ options: null }));
+vi.mock("html2canvas-pro", () => ({
+	default: async (_el, options) => {
+		h2c.options = options;
+		return { width: 1, height: 1, toBlob: (cb) => cb(null) };
+	},
+}));
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
@@ -111,5 +119,68 @@ describe("a call arriving while the panel is closed", () => {
 		await handlers.faco_browser_tool_call({ call_id: "c1", session_id: "s1", tool_name: "take_screenshot", params: {} });
 		expect(calls[0]).toEqual(["submit_browser_tool_ack", "received"]);
 		expect(confirm).toHaveBeenCalledWith(expect.objectContaining({ tool_name: "take_screenshot" }));
+	});
+});
+
+describe("get_page_context honours the DOM-extraction privacy switch", () => {
+	let pageContext;
+	let tools;
+	let jq;
+	beforeEach(async () => {
+		vi.resetModules(); // deps live at module scope; each case starts from the defaults
+		globalThis.frappe = { get_route: () => [] };
+		jq = vi.fn(() => {
+			throw new Error("DOM must not be read");
+		});
+		window.$ = jq;
+		const mod = await import("./browserTools.js");
+		tools = mod;
+		pageContext = (await import("./pageContext.js")).default;
+	});
+	afterEach(() => {
+		vi.restoreAllMocks();
+		delete window.$;
+	});
+
+	it("extracts no DOM when the operator switched it off", async () => {
+		tools.startBrowserTools({
+			getWidgetSettings: () => ({ privacy: { enable_dom_extraction: false } }),
+		});
+		const result = await tools.default.handlers.get_page_context();
+		expect(jq).not.toHaveBeenCalled();
+		expect(result.dom_content).not.toMatch(/Visible Text|Structured Data/);
+	});
+
+	it("does not extract by default, before the launcher supplies settings", async () => {
+		tools.startBrowserTools({});
+		await tools.default.handlers.get_page_context();
+		expect(jq).not.toHaveBeenCalled();
+	});
+
+	it("attempts extraction, with the settings it was given, when enabled", async () => {
+		const settings = { privacy: { enable_dom_extraction: true } };
+		const spy = vi.spyOn(pageContext, "extract_screen_content").mockResolvedValue("EXTRACTED");
+		tools.startBrowserTools({ getWidgetSettings: () => settings });
+		const result = await tools.default.handlers.get_page_context();
+		expect(spy).toHaveBeenCalledWith(expect.anything(), settings);
+		expect(result.dom_content).toBe("EXTRACTED");
+	});
+});
+
+describe("take_screenshot hides the widget hosts from the capture", () => {
+	it("hides both shadow hosts, the capture overlay and the legacy widget in the clone", async () => {
+		const { default: tools } = await import("./browserTools.js");
+		await tools.handlers.take_screenshot({});
+		const els = {};
+		const sel = ["#fac-widget-launcher", "#fac-widget-panel", "#fac-screenshot-overlay", ".faco-widget"];
+		sel.forEach((q) => (els[q] = { style: {} }));
+		h2c.options.onclone({ querySelector: (q) => els[q] || null });
+		sel.forEach((q) => expect(els[q].style.display).toBe("none"));
+	});
+
+	it("removes its overlay when the capture ends", async () => {
+		const { default: tools } = await import("./browserTools.js");
+		await tools.handlers.take_screenshot({});
+		expect(document.getElementById("fac-screenshot-overlay")).toBeNull();
 	});
 });
