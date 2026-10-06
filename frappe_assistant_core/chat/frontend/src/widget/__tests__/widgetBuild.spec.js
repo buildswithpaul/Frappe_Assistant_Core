@@ -12,6 +12,9 @@ describe("widget build", () => {
 		const manifest = JSON.parse(readFileSync(resolve(out, ".vite/manifest.json"), "utf8"));
 		const entry = manifest["src/widget/main.js"];
 		expect(entry && entry.isEntry).toBe(true);
+		// widget_loader.js calls m.boot(cfg); Vite drops entry exports unless told to keep them.
+		const entryJs = readFileSync(resolve(out, entry.file), "utf8");
+		expect(entryJs).toMatch(/export\s*\{[^}]*\bas boot\b|export\s*\{[^}]*\bboot\b/);
 		// cssCodeSplit:false lists the stylesheet as its own record, not under a chunk's `css`.
 		const css = Object.values(manifest).flatMap((r) => (r.file.endsWith(".css") ? [r.file] : r.css || []));
 		expect(new Set(css).size).toBe(1);

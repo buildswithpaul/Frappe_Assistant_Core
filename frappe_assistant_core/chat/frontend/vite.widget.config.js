@@ -11,11 +11,16 @@ export default defineConfig({
 	base: "/assets/frappe_assistant_core/chat/widget-app/",
 	plugins: [widgetGuards(), vue()],
 	resolve: {
-		alias: {
-			"@": resolve(__dirname, "src"),
-			"frappe-ui": resolve(__dirname, "build/frappeUiCallShim.js"),
-			"vue-echarts": resolve(__dirname, "node_modules/vue-echarts/dist/csp/index.esm.js"),
-		},
+		// Exact matches: the object form prefix-matches, which would rewrite subpath imports
+		// such as vue-echarts/dist/csp/style.css.
+		alias: [
+			{ find: /^@\//, replacement: resolve(__dirname, "src") + "/" },
+			{ find: /^frappe-ui$/, replacement: resolve(__dirname, "build/frappeUiCallShim.js") },
+			{
+				find: /^vue-echarts$/,
+				replacement: resolve(__dirname, "node_modules/vue-echarts/dist/csp/index.esm.js"),
+			},
+		],
 	},
 	css: { postcss: { plugins: [postcssShadowHost()] } },
 	build: {
