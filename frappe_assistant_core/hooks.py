@@ -301,7 +301,7 @@ assistant_tool_configs = {
 # `Assistant Core Settings.enable_fac_chat` toggle. Each consumer checks the
 # gate at request time via `frappe_assistant_core.chat.gate.is_chat_enabled()`:
 #
-#   - Widget JS: `initFACOWidget()` early-returns when the gate is off
+#   - Widget JS: the launcher mounts nothing when the gate is off
 #   - SPA `/copilot` controller: returns 404 when off
 #   - `add_to_apps_screen`: `has_permission` (can_use_faco) returns False
 #   - `doc_events` dispatcher: early-returns when off

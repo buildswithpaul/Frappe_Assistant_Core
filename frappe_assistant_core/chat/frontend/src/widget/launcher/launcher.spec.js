@@ -180,8 +180,8 @@ describe("boot", () => {
 	});
 
 	it("fails closed when the server's fallback answers without a privacy block", async () => {
-		// get_widget_settings' except-branch returns 200 with button/window/messages only.
-		settingsReply = { button: {}, window: {}, messages: {}, custom_css: "" };
+		// get_widget_settings' except-branch returns 200 with an empty object.
+		settingsReply = {};
 		await boot({ entry: "", css: [] });
 		expect(settings().privacy.enable_dom_extraction).toBe(false);
 	});
