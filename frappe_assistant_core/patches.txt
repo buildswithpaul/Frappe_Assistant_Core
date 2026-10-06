@@ -54,3 +54,8 @@ frappe_assistant_core.patches.v3_0.backfill_workflow_trigger_docname
 # Configuration row so its settings survive (after_migrate would otherwise replace them
 # with defaults), and re-detect its category (privileged: it can cancel) unless overridden
 frappe_assistant_core.patches.v3_1.rename_submit_document_to_document_action
+
+# Version 3.1.0 - send_email moved faco -> core: correct the stored plugin on its FAC Tool
+# Configuration row (bulk_toggle_tools_by_category filters on it), and where the faco plugin
+# was disabled keep the tool off, since the core plugin cannot be disabled
+frappe_assistant_core.patches.v3_1.move_send_email_to_core_plugin
