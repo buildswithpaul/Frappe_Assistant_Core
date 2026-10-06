@@ -30,7 +30,10 @@ async function loadWidgetSettings() {
 			type: "GET",
 			args: {},
 		});
-		widgetSettings = r.message || null;
+		// The server's except-branch answers 200 without `privacy`; treating that as loaded
+		// would read as "extraction on", so only a response carrying `privacy` counts.
+		const message = r.message;
+		widgetSettings = message && typeof message.privacy === "object" && message.privacy ? message : null;
 	} catch (err) {
 		logger.error("[FAC widget] settings", err);
 	}
@@ -58,27 +61,44 @@ export async function boot(config) {
 	restorePosition(view.widgetEl);
 	enableDrag(view.widgetEl, view.button);
 	setupAutofade(view.widgetEl);
-	startTooltips(view, isUserActive);
 
-	const open = async () => {
-		const panel = await ensurePanel(config);
-		bridge.state.open = true;
-		view.setOpen(true);
-		panel.open();
+	let stopTooltips = startTooltips(view, isUserActive);
+
+	// One in-flight open: raiseAttention, the pending-interrupt path and a browser-tool
+	// confirm can all ask at once, and panel.open() must run a single time.
+	let opening = null;
+	const open = () => {
+		if (bridge.state.open) return Promise.resolve();
+		if (!opening) {
+			opening = (async () => {
+				const panel = await ensurePanel(config);
+				bridge.state.open = true;
+				view.setOpen(true);
+				stopTooltips();
+				panel.open();
+			})().finally(() => (opening = null));
+		}
+		return opening;
 	};
 	const close = async () => {
 		const panel = await ensurePanel(config);
 		bridge.state.open = false;
 		view.setOpen(false);
 		panel.close();
+		// Closing starts a fresh tooltip cycle.
+		stopTooltips();
+		stopTooltips = startTooltips(view, isUserActive);
 	};
-	const toggle = () => (bridge.state.open ? close() : open());
+	// Desk must never see a rejection from a panel that failed to load.
+	const guarded = (fn) => () =>
+		fn().catch((err) => logger.error("[FAC widget] panel", err));
+	const toggle = guarded(() => (bridge.state.open ? close() : open()));
 	view.button.addEventListener("click", () => {
 		if (consumeDrag()) return;
 		toggle();
 	});
-	bridge.on("open", open);
-	bridge.on("close", close);
+	bridge.on("open", guarded(open));
+	bridge.on("close", guarded(close));
 	bridge.on("mood", (m) => view.setMood(m));
 	bridge.on("attention", (info) => raiseAttention(view, info));
 	bridge.on("attention-clear", () => clearAttention(view));
@@ -99,16 +119,23 @@ export async function boot(config) {
 		getWidgetSettings: () => widgetSettings || FAIL_CLOSED_SETTINGS,
 		confirm: (request) =>
 			new Promise((resolve) => {
-				open().then(() => bridge.emit("confirm", { request, resolve }));
+				open()
+					.then(() => bridge.emit("confirm", { request, resolve }))
+					.catch((err) => {
+						logger.error("[FAC widget] confirm", err);
+						resolve("deny");
+					});
 			}),
 	});
 
 	refreshSpotlightDot(view, access);
 
-	// A pause that survived a reload must not wait for a click.
-	if (access.can_use && (await hasPendingInterrupt(bridge.state.sessionId))) {
-		await ensurePanel(config);
-		raiseAttention(view, {});
-		open();
+	// A pause that survived a reload must not wait for a click; raiseAttention opens the panel.
+	try {
+		if (access.can_use && (await hasPendingInterrupt(bridge.state.sessionId))) {
+			raiseAttention(view, {});
+		}
+	} catch (err) {
+		logger.error("[FAC widget] pending", err);
 	}
 }
