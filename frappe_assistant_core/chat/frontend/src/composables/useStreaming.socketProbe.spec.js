@@ -59,4 +59,31 @@ describe("useStreaming on the frappe.realtime path", () => {
 		socket.connected = true;
 		expect(probe.connected()).toBe(true);
 	});
+
+	it("clears the reconnecting indicator when the realtime socket reconnects", () => {
+		const on = vi.fn();
+		window.frappe = { realtime: { on, off: vi.fn(), socket: { connected: true } } };
+		const pinia = createPinia();
+		setActivePinia(pinia);
+		const chatStore = useChatStore(pinia);
+		const Dummy = defineComponent({
+			setup() {
+				useStreaming();
+				return () => null;
+			},
+		});
+		mount(Dummy, { global: { plugins: [pinia] } });
+
+		// Production raises the indicator after a sustained disconnect (or a grace).
+		vi.useFakeTimers();
+		chatStore.handleSocketDisconnect("transport close");
+		vi.advanceTimersByTime(3000);
+		vi.useRealTimers();
+		expect(chatStore.connectionVisible).toBe(true);
+		const connect = on.mock.calls.find((c) => c[0] === "connect")[1];
+		connect();
+
+		expect(chatStore.socketConnected).toBe(true);
+		expect(chatStore.connectionVisible).toBe(false);
+	});
 });

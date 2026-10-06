@@ -100,6 +100,9 @@ export function createStreamManager({
 
 	function resetActivityTimeout() {
 		socketGraceUsed = false;
+		// Any stream event proves the link is alive, so a grace-time indicator
+		// must not outlive the recovery.
+		connectionVisible.value = false;
 		lastActivityTime.value = Date.now();
 
 		if (error.value && error.value.includes("No response received")) {

@@ -513,6 +513,7 @@ export function useStreaming() {
 			// socket's "reconnect" listener provides. Mirror the SPA path by
 			// re-subscribing + hydrating on the "connect" event.
 			frappeRealtimeConnectHandler = () => {
+				chatStore.setSocketConnected(true);
 				const sid = chatStore.currentSessionId;
 				if (sid) {
 					subscribeSession(sid);

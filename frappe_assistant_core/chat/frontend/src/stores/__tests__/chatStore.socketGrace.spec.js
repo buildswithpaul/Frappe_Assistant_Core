@@ -3,7 +3,9 @@ import { setActivePinia, createPinia } from "pinia";
 import { useChatStore } from "../chatStore";
 import { api } from "@/api/client";
 
-vi.mock("@/api/client", () => ({ api: { chat: { getMessages: vi.fn() } } }));
+vi.mock("@/api/client", () => ({ api: {
+		chat: { getMessages: vi.fn(), continueResponse: vi.fn().mockResolvedValue({ success: true }) },
+	} }));
 
 const WINDOW_MS = 180000;
 const STILL_RUNNING = [{ role: "user", content: "hi" }];
@@ -102,5 +104,34 @@ describe("stream manager dead-socket grace window", () => {
 		expect(probe.nudge).not.toHaveBeenCalled();
 		expect(store.error).toBeNull();
 		expect(store.isStreaming).toBe(false);
+	});
+
+	it("clears the reconnecting indicator when a stream event arrives after a grace", async () => {
+		store.setSocketProbe(makeProbe(false));
+		store.resetActivityTimeout();
+		await elapseWindow();
+		expect(store.connectionVisible).toBe(true);
+
+		store.resetActivityTimeout();
+		expect(store.connectionVisible).toBe(false);
+	});
+
+	it("gives a new turn a fresh grace", async () => {
+		const probe = makeProbe(false);
+		store.setSocketProbe(probe);
+		store.resetActivityTimeout();
+		await elapseWindow();
+		expect(probe.nudge).toHaveBeenCalledTimes(1);
+
+		// Grace spent, then the turn ends and the user continues a truncated
+		// answer: continueMessage starts a new turn via startStreamTimeout.
+		store.isStreaming = false;
+		store.messages = [
+			{ role: "assistant", message_id: "m2", content: "cut", truncated: true, blocks: [] },
+		];
+		await store.continueMessage("m2");
+		await elapseWindow();
+		expect(probe.nudge).toHaveBeenCalledTimes(2);
+		expect(store.error).toBeNull();
 	});
 });
