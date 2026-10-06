@@ -741,6 +741,11 @@ const FACOBrowserTools = {
 			logger.warn("Confirmation failed; denying tool call by default.", e);
 			return "deny";
 		}
+		// Anything but an explicit approve/trust is a refusal: the gate must not
+		// read an undefined or misspelt decision as consent.
+		if (decision !== "approve" && decision !== "trust") {
+			return "deny";
+		}
 		if (decision === "trust") {
 			this._trustedThisSession.add(tool_name);
 		}

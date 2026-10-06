@@ -1,9 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
-const h2c = vi.hoisted(() => ({ options: null }));
+const h2c = vi.hoisted(() => ({ options: null, overlayDuringCapture: null, fail: false }));
 vi.mock("html2canvas-pro", () => ({
 	default: async (_el, options) => {
 		h2c.options = options;
+		h2c.overlayDuringCapture = document.getElementById("fac-screenshot-overlay");
+		if (h2c.fail) throw new Error("capture exploded");
 		return { width: 1, height: 1, toBlob: (cb) => cb(null) };
 	},
 }));
@@ -178,9 +180,100 @@ describe("take_screenshot hides the widget hosts from the capture", () => {
 		sel.forEach((q) => expect(els[q].style.display).toBe("none"));
 	});
 
-	it("removes its overlay when the capture ends", async () => {
+	it("shows its overlay only while capturing", async () => {
 		const { default: tools } = await import("./browserTools.js");
+		h2c.overlayDuringCapture = null;
 		await tools.handlers.take_screenshot({});
+		expect(h2c.overlayDuringCapture).not.toBeNull();
 		expect(document.getElementById("fac-screenshot-overlay")).toBeNull();
+	});
+
+	it("removes its overlay even when the capture throws", async () => {
+		const { default: tools } = await import("./browserTools.js");
+		h2c.fail = true;
+		try {
+			const result = await tools.handlers.take_screenshot({});
+			expect(result.error).toMatch(/capture exploded/);
+		} finally {
+			h2c.fail = false;
+		}
+		expect(h2c.overlayDuringCapture).not.toBeNull();
+		expect(document.getElementById("fac-screenshot-overlay")).toBeNull();
+	});
+});
+
+describe("the confirmation gate fails closed", () => {
+	let tools;
+	let calls;
+	let run;
+	const DECLINED = /declined/;
+
+	beforeEach(async () => {
+		vi.resetModules();
+		calls = [];
+		globalThis.frappe = {
+			get_route: () => [],
+			realtime: { socket: {}, on: () => {} },
+			call: vi.fn(async ({ method, args }) => {
+				calls.push({ name: method.split(".").pop(), args });
+				return { message: [] };
+			}),
+		};
+		tools = (await import("./browserTools.js")).default;
+		run = vi.spyOn(tools.handlers, "take_screenshot").mockResolvedValue({ success: true });
+	});
+	afterEach(() => vi.restoreAllMocks());
+
+	const start = async (confirm) => {
+		(await import("./browserTools.js")).startBrowserTools({
+			getSessionId: () => "s1",
+			confirm,
+		});
+	};
+	const call = (id, extra = {}) =>
+		tools._handleToolCall({ call_id: id, tool_name: "take_screenshot", params: {}, ...extra });
+	const submits = () => calls.filter((c) => c.name === "submit_browser_tool_result");
+
+	it("denies and never runs the tool when confirm throws", async () => {
+		await start(async () => {
+			throw new Error("card crashed");
+		});
+		await call("a1");
+		expect(run).not.toHaveBeenCalled();
+		expect(submits()[0].args.error).toMatch(DECLINED);
+	});
+
+	it.each([undefined, null, "rejected", "Approve", ""])(
+		"denies on the unexpected decision %j",
+		async (decision) => {
+			await start(async () => decision);
+			await call("b1");
+			expect(run).not.toHaveBeenCalled();
+			expect(submits()[0].args.error).toMatch(DECLINED);
+		}
+	);
+
+	it("runs on approve", async () => {
+		await start(async () => "approve");
+		await call("p1");
+		expect(run).toHaveBeenCalledTimes(1);
+	});
+
+	it("trust runs the tool and is not asked again for the same tool", async () => {
+		const confirm = vi.fn(async () => "trust");
+		await start(confirm);
+		await call("t1");
+		await call("t2");
+		expect(confirm).toHaveBeenCalledTimes(1);
+		expect(run).toHaveBeenCalledTimes(2);
+	});
+
+	it("ignores a call addressed to another session: no ack, no prompt, no result", async () => {
+		const confirm = vi.fn(async () => "approve");
+		await start(confirm);
+		await call("o1", { session_id: "other" });
+		expect(calls).toEqual([]);
+		expect(confirm).not.toHaveBeenCalled();
+		expect(run).not.toHaveBeenCalled();
 	});
 });
