@@ -37,8 +37,11 @@ export function createStreamManager({
 	currentSessionId,
 	isCancelling,
 	reconcile,
+	getSocketProbe,
 }) {
 	let activityTimeoutId = null;
+	// One extra window per silence for a dead socket; any activity re-earns it.
+	let socketGraceUsed = false;
 	let cancelsInFlight = 0;
 
 	// Debounced visibility — only show UI after sustained disconnect (3s)
@@ -96,38 +99,57 @@ export function createStreamManager({
 	}
 
 	function resetActivityTimeout() {
-		if (activityTimeoutId) {
-			clearTimeout(activityTimeoutId);
-		}
-
+		socketGraceUsed = false;
 		lastActivityTime.value = Date.now();
 
 		if (error.value && error.value.includes("No response received")) {
 			error.value = null;
 		}
 
+		armActivityTimer();
+	}
+
+	function armActivityTimer() {
+		if (activityTimeoutId) {
+			clearTimeout(activityTimeoutId);
+			activityTimeoutId = null;
+		}
+
 		if (!isStreaming.value) {
 			return;
 		}
 
-		activityTimeoutId = setTimeout(async () => {
-			if (!isStreaming.value) return;
-			// Silence here means "no events reached us", which is not the same
-			// as "the turn failed" — the finalizer is fire-and-forget too. Ask
-			// the server before blaming the connection; reconcile adopts a
-			// finished turn and clears isStreaming.
-			if (reconcile && currentSessionId?.value) {
-				try {
-					await reconcile(currentSessionId.value);
-				} catch (err) {
-					logger.warn("Pre-timeout reconcile failed:", err);
-				}
-				if (!isStreaming.value) return;
+		activityTimeoutId = setTimeout(onActivityTimeout, STREAM_ACTIVITY_TIMEOUT_MS);
+	}
+
+	async function onActivityTimeout() {
+		if (!isStreaming.value) return;
+		// Silence here means "no events reached us", which is not the same
+		// as "the turn failed" — the finalizer is fire-and-forget too. Ask
+		// the server before blaming the connection; reconcile adopts a
+		// finished turn and clears isStreaming.
+		if (reconcile && currentSessionId?.value) {
+			try {
+				await reconcile(currentSessionId.value);
+			} catch (err) {
+				logger.warn("Pre-timeout reconcile failed:", err);
 			}
-			handleStreamTimeout(
-				"No response received for 3 minutes. The connection may have been lost."
-			);
-		}, STREAM_ACTIVITY_TIMEOUT_MS);
+			if (!isStreaming.value) return;
+		}
+		// A dead socket may be the only reason the relay went quiet (Desk's
+		// realtime client stops retrying after 3 attempts): nudge it and wait
+		// one more window before failing.
+		const probe = getSocketProbe?.();
+		if (probe && !socketGraceUsed && !probe.connected()) {
+			socketGraceUsed = true;
+			probe.nudge();
+			connectionVisible.value = true;
+			armActivityTimer();
+			return;
+		}
+		handleStreamTimeout(
+			"No response received for 3 minutes. The connection may have been lost."
+		);
 	}
 
 	function clearStreamTimeouts() {

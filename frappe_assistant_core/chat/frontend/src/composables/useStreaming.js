@@ -238,6 +238,22 @@ export function createSpaConnectHandler(chatStore, socket) {
 	};
 }
 
+/**
+ * Liveness probe the stream manager consults before failing a silent turn.
+ * `getSocket` is read lazily because the socket can be replaced or absent.
+ *
+ * Exported for tests.
+ */
+export function createSocketProbe(getSocket) {
+	return {
+		connected: () => !!getSocket()?.connected,
+		nudge: () => {
+			const socket = getSocket();
+			if (socket && typeof socket.connect === "function") socket.connect();
+		},
+	};
+}
+
 export function useStreaming() {
 	const chatStore = useChatStore();
 	const userStore = useUserStore();
@@ -513,11 +529,13 @@ export function useStreaming() {
 				frappeRealtimeConnectHandler
 			);
 			document.addEventListener("visibilitychange", deskVisibilityHandler);
+			chatStore.setSocketProbe(createSocketProbe(() => window.frappe?.realtime?.socket));
 		} else {
 			// Fallback: Initialize our own socket.io connection for the Vue SPA
 			const socket = initializeSpaSocket(chatStore);
 			socket.on("faco_message_stream", handleStreamEvent);
 			socket.on("ar_interrupt_event", handleArInterruptEvent);
+			chatStore.setSocketProbe(createSocketProbe(() => spaSocket));
 		}
 
 		// Subscribe to the current session room and track changes.

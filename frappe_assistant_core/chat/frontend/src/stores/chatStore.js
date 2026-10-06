@@ -131,10 +131,18 @@ export const useChatStore = defineStore("chat", () => {
 		currentSessionId,
 	};
 
+	// Registered by useStreaming once the socket exists; read lazily so a probe
+	// set after store creation is seen by the stream manager.
+	let socketProbe = null;
+	function setSocketProbe(probe) {
+		socketProbe = probe;
+	}
+
 	const stream = createStreamManager({
 		...sharedRefs,
 		isCancelling,
 		reconcile: (sessionId) => reconcileFromServer(sessionId),
+		getSocketProbe: () => socketProbe,
 	});
 	const blocks = createBlockHandlers(sharedRefs);
 	const sendQueue = createSendQueue({
@@ -971,6 +979,7 @@ export const useChatStore = defineStore("chat", () => {
 		handleSocketDisconnect: stream.handleSocketDisconnect,
 		handleSocketError: stream.handleSocketError,
 		setSocketConnected: stream.setSocketConnected,
+		setSocketProbe,
 		clearSocketError: stream.clearSocketError,
 		// Block-based message actions (delegated)
 		handlePlanEvent: blocks.handlePlanEvent,
