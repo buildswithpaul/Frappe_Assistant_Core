@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import * as FACOWidgetSession from "./session.js";
 
 const generate = () => "faco_fresh_1";
@@ -217,5 +217,48 @@ describe("resolveWidgetSession", () => {
 		const out = await FACOWidgetSession.resolveWidgetSession({ isClaimed: async () => true });
 		expect(out.restored).toBe(false);
 		expect(out.session_id).toMatch(/^faco_\d+_[0-9a-f]{18}$/);
+	});
+});
+
+describe("claim protocol", () => {
+	let stops = [];
+	const respond = (getter) => {
+		const stop = FACOWidgetSession.startClaimResponder(getter);
+		stops.push(stop);
+		return stop;
+	};
+
+	afterEach(() => {
+		stops.forEach((stop) => stop());
+		stops = [];
+	});
+
+	it("reports a session another live tab holds", async () => {
+		respond(() => "s1");
+		expect(await FACOWidgetSession.makeClaimProbe(50)("s1")).toBe(true);
+	});
+
+	it("does not report a session the responder does not hold", async () => {
+		respond(() => "s1");
+		expect(await FACOWidgetSession.makeClaimProbe(50)("s2")).toBe(false);
+	});
+
+	it("stops answering once the responder is stopped", async () => {
+		const stop = respond(() => "s1");
+		stop();
+		expect(await FACOWidgetSession.makeClaimProbe(50)("s1")).toBe(false);
+	});
+
+	it("does not answer while the tab holds no session", async () => {
+		respond(() => null);
+		expect(await FACOWidgetSession.makeClaimProbe(50)("s1")).toBe(false);
+	});
+
+	it("reads the held session at message time", async () => {
+		let held = "s1";
+		respond(() => held);
+		held = "s3";
+		expect(await FACOWidgetSession.makeClaimProbe(50)("s3")).toBe(true);
+		expect(await FACOWidgetSession.makeClaimProbe(50)("s1")).toBe(false);
 	});
 });
