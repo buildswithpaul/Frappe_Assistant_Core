@@ -3,9 +3,14 @@ import { setActivePinia, createPinia } from "pinia";
 import { useChatStore } from "../chatStore";
 import { api } from "@/api/client";
 
-vi.mock("@/api/client", () => ({ api: {
-		chat: { getMessages: vi.fn(), continueResponse: vi.fn().mockResolvedValue({ success: true }) },
-	} }));
+vi.mock("@/api/client", () => ({
+	api: {
+		chat: {
+			getMessages: vi.fn(),
+			continueResponse: vi.fn().mockResolvedValue({ success: true }),
+		},
+	},
+}));
 
 const WINDOW_MS = 180000;
 const STILL_RUNNING = [{ role: "user", content: "hi" }];
@@ -133,5 +138,21 @@ describe("stream manager dead-socket grace window", () => {
 		await elapseWindow();
 		expect(probe.nudge).toHaveBeenCalledTimes(2);
 		expect(store.error).toBeNull();
+	});
+
+	it("keeps a disconnected banner when a turn starts while the socket is still down", async () => {
+		// Production: the SPA socket drops, the 3 s debounce raises the banner,
+		// and the user then sends over HTTP.
+		store.isStreaming = false;
+		store.handleSocketDisconnect("transport close");
+		await vi.advanceTimersByTimeAsync(3000);
+		expect(store.connectionVisible).toBe(true);
+
+		store.messages = [
+			{ role: "assistant", message_id: "m2", content: "cut", truncated: true, blocks: [] },
+		];
+		await store.continueMessage("m2");
+
+		expect(store.connectionVisible).toBe(true);
 	});
 });

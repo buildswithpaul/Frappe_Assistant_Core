@@ -42,6 +42,10 @@ export function createStreamManager({
 	let activityTimeoutId = null;
 	// One extra window per silence for a dead socket; any activity re-earns it.
 	let socketGraceUsed = false;
+	// True while the visible connection dot was raised by the grace, so only
+	// activity proof clears it; a dot from the disconnect debounce is left to
+	// the socket's own reconnect.
+	let graceRaisedDot = false;
 	let cancelsInFlight = 0;
 
 	// Debounced visibility — only show UI after sustained disconnect (3s)
@@ -100,9 +104,13 @@ export function createStreamManager({
 
 	function resetActivityTimeout() {
 		socketGraceUsed = false;
-		// Any stream event proves the link is alive, so a grace-time indicator
-		// must not outlive the recovery.
-		connectionVisible.value = false;
+		// Activity proves the link is alive, so a grace-time indicator must not
+		// outlive the recovery. Starting a turn over HTTP proves nothing about
+		// a socket that is still down, so its banner stays.
+		if (graceRaisedDot || socketConnected.value) {
+			connectionVisible.value = false;
+			graceRaisedDot = false;
+		}
 		lastActivityTime.value = Date.now();
 
 		if (error.value && error.value.includes("No response received")) {
@@ -146,7 +154,10 @@ export function createStreamManager({
 		if (probe && !socketGraceUsed && !probe.connected()) {
 			socketGraceUsed = true;
 			probe.nudge();
-			connectionVisible.value = true;
+			if (!connectionVisible.value) {
+				connectionVisible.value = true;
+				graceRaisedDot = true;
+			}
 			armActivityTimer();
 			return;
 		}
