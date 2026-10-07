@@ -5,6 +5,7 @@
  */
 
 import { isInternalTool } from "@/utils/internalTools";
+import { delegationOutcome } from "./delegationOutcome";
 
 export function formatToolName(name) {
 	if (!name) return "Tool";
@@ -16,7 +17,12 @@ export function formatToolName(name) {
 		.join(" ");
 }
 
-export function processingSummary(blocks, isStreaming) {
+function delegateBlocks(list) {
+	return list.filter((b) => b.type === "tool_call" && b.tool_name === "delegate");
+}
+
+// `live` is false once the turn has ended: not streaming and not paused on a card.
+export function processingSummary(blocks, isStreaming, live = isStreaming) {
 	const list = blocks || [];
 	const lastBlock = list[list.length - 1];
 
@@ -40,11 +46,12 @@ export function processingSummary(blocks, isStreaming) {
 	const errorSuffix = errorCount > 0 ? ` (${errorCount} failed)` : "";
 
 	if (ext.length === 0) {
-		const delegated = internal.filter((b) => b.tool_name === "delegate");
+		const delegated = delegateBlocks(internal);
 		if (delegated.length > 0) {
-			const failed = delegated.filter((b) => b.status === "error").length;
-			const suffix = failed > 0 ? ` (${failed} failed)` : "";
-			return `Delegated ${delegated.length} subtask${delegated.length === 1 ? "" : "s"}${suffix}`;
+			const { total, done, stopped } = delegationOutcome(delegated, live);
+			if (stopped) return "Delegation stopped";
+			if (done < total) return `Delegated ${done} of ${total} subtasks`;
+			return `Delegated ${total} subtask${total === 1 ? "" : "s"}`;
 		}
 		if (internal.length === 0) return "Thought about the request";
 		// Thinking outranks the internal-prep labels below it. A gpt-5.x turn
@@ -72,4 +79,23 @@ export function processingSummary(blocks, isStreaming) {
 	}
 
 	return `Used ${ext.length} tools${errorSuffix}`;
+}
+
+/**
+ * The header icon's state once the card is not active: "error" when a tool
+ * failed or delegation ran fewer subtasks than it was given, "stopped" when the
+ * turn ended with a tool (delegation included) still running, else "complete".
+ */
+export function processingStatus(blocks, isStreaming, live = isStreaming) {
+	const list = blocks || [];
+	const toolBlocks = list.filter((b) => b.type === "tool_call");
+	if (toolBlocks.some((b) => b.status === "error")) return "error";
+	if (!live && toolBlocks.some((b) => b.status === "running")) return "stopped";
+	const delegated = delegateBlocks(toolBlocks);
+	if (delegated.length) {
+		const { total, done, stopped } = delegationOutcome(delegated, live);
+		if (stopped) return "stopped";
+		if (done < total) return "error";
+	}
+	return "complete";
 }
