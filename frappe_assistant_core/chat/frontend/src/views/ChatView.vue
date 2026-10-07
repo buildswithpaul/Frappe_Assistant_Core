@@ -134,6 +134,7 @@
 				<ContextRail
 					:artifacts="activeArtifacts"
 					:live="activeTurnIsLive"
+					:stopped="activeTurnStopped"
 					collapsible
 					@review-approval="handleRailReviewApproval"
 					@collapse="collapseRailDock"
@@ -165,6 +166,7 @@
 					<ContextRail
 						:artifacts="activeArtifacts"
 						:live="activeTurnIsLive"
+						:stopped="activeTurnStopped"
 						@review-approval="handleRailReviewApproval"
 					/>
 				</aside>
@@ -195,6 +197,7 @@
 						<ContextRail
 						:artifacts="activeArtifacts"
 						:live="activeTurnIsLive"
+						:stopped="activeTurnStopped"
 						@review-approval="handleRailReviewApproval"
 					/>
 					</div>
@@ -394,6 +397,9 @@ const activeArtifacts = computed(() => deriveArtifacts(activeAssistantMessage.va
 // Drives whether the rail still presents work as in flight. A hydrated message
 // carries no isStreaming flag, so a reloaded conversation reads as finished.
 const activeTurnIsLive = computed(() => Boolean(activeAssistantMessage.value?.isStreaming));
+// Stop sets `aborted` on the live message, and the row persists it (aborted=1),
+// so a stopped turn's open tasks read as stopped live and after a reload.
+const activeTurnStopped = computed(() => Boolean(activeAssistantMessage.value?.aborted));
 
 const railHasArtifacts = computed(() => activeArtifacts.value.hasArtifacts);
 const {

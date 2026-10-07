@@ -68,3 +68,25 @@ describe("WidgetPlanStrip", () => {
 		expect(mountStrip({ plan: { tasks: [] }, live: true }).html()).toBe("<!--v-if-->");
 	});
 });
+
+describe("WidgetPlanStrip on a stopped turn", () => {
+	it("heads the strip as stopped and hands the stopped state to its rows", async () => {
+		const w = mountStrip({
+			plan: {
+				tasks: [
+					{ id: "1", title: "Plan the comparison", status: "done" },
+					{ id: "a", title: "Customer A", status: "running", helper: true },
+					{ id: "4", title: "Compare the totals", status: "pending" },
+				],
+			},
+			live: false,
+			stopped: true,
+		});
+		const toggle = w.find(".wps-heading");
+		expect(toggle.text()).toBe("⊘ Stopped after 1 of 3 steps");
+
+		await toggle.trigger("click");
+		expect(w.findAll(".task-row.is-stopped")).toHaveLength(2);
+		expect(w.find(".task-row.is-unfinished").exists()).toBe(false);
+	});
+});

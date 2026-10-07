@@ -183,6 +183,33 @@ describe("widget panel", () => {
 		expect(w.find(".wps .activity").text()).toBe("Reading Sales Invoice list…");
 	});
 
+	it("presents a stopped turn's plan as stopped", async () => {
+		const w = mount(WidgetPanel, { global: { stubs } });
+		const chatStore = useChatStore();
+		// get_session_history returns the row's `aborted` flag as 1; Stop's optimistic path
+		// (abortStream) sets it to true on the live message. The plan keeps the statuses AR
+		// last streamed before the stream closed.
+		chatStore.messages = [
+			{ role: "user", content: "compare A and B", blocks: [] },
+			{
+				role: "assistant",
+				aborted: 1,
+				blocks: [
+					{
+						type: "plan",
+						status: "running",
+						tasks: [
+							{ id: "a", title: "Customer A", status: "running", helper: true },
+							{ id: "b", title: "Customer B", status: "pending" },
+						],
+					},
+				],
+			},
+		];
+		await nextTick();
+		expect(w.find(".wps-heading").text()).toBe("⊘ Stopped after 0 of 2 steps");
+	});
+
 	it("shows the welcome until there is a conversation", async () => {
 		const w = mount(WidgetPanel, { global: { stubs } });
 		expect(w.find(".ww").exists()).toBe(true);
