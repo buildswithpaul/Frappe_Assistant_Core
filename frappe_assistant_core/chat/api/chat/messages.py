@@ -23,6 +23,7 @@ from .._rate_limits import (
 )
 from .._untrusted import wrap_untrusted
 from ..chat import live_turn
+from ..chat.cancel import _is_open_turn
 from ..chat.cancel import clear as clear_cancel
 from ..chat.helpers import (
     _attach_files_to_message,
@@ -366,27 +367,39 @@ def send_message(
 
 
 def _paused_message_id(session_id: str) -> str | None:
-    """The message_id of the caller's latest assistant row in this session that
-    holds a pending interaction: the turn a resume continues."""
+    """The row a resume continues when the client could not name it.
+
+    While the paused turn still streams (AR sends the resume's stream_start
+    before it waits on the session lock) its card is not persisted yet, so the
+    live-turn entry is the one that knows the row. Read it before
+    ``_mark_turn_started`` replaces the entry with the resume's. Otherwise only
+    the caller's latest assistant row qualifies, and only while it is still the
+    open turn (``_is_open_turn``): an older pending card behind a newer question
+    belongs to a pause AR already let go.
+    """
+    try:
+        entry = live_turn.get(session_id) or {}
+    except Exception:
+        entry = {}
+    if entry.get("message_id"):
+        return entry["message_id"]
+
     rows = frappe.get_all(
         "FAC Chat Message",
         filters={"session_id": session_id, "role": "assistant", "user": frappe.session.user},
-        fields=["message_id", "blocks"],
+        fields=["message_id", "blocks", "aborted", "creation"],
         order_by="creation desc",
-        limit_page_length=20,
+        limit_page_length=1,
     )
-    for row in rows:
-        try:
-            blocks = json.loads(row.blocks) if isinstance(row.blocks, str) else row.blocks
-        except ValueError:
-            continue
-        pending = any(
-            isinstance(b, dict) and b.get("type") == "interaction" and b.get("status") == "pending"
-            for b in blocks or []
-        )
-        if pending and row.message_id:
-            return row.message_id
-    return None
+    if not rows or not rows[0].message_id:
+        return None
+    row = rows[0]
+    try:
+        blocks = json.loads(row.blocks) if isinstance(row.blocks, str) else row.blocks
+    except ValueError:
+        return None
+    blocks = [b for b in blocks or [] if isinstance(b, dict)]
+    return row.message_id if _is_open_turn(blocks, row.aborted, session_id, row.creation) else None
 
 
 @frappe.whitelist(methods=["POST"])
