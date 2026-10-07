@@ -17,7 +17,11 @@
 		</div>
 
 		<!-- Live tool-activity ticker for the current turn -->
-		<ActivityTimeline v-if="artifacts.activity && artifacts.activity.length" :rows="artifacts.activity" />
+		<ActivityTimeline
+			v-if="artifacts.activity && artifacts.activity.length"
+			:rows="artifacts.activity"
+			:live="live"
+		/>
 
 		<!-- Task list (live status for the current turn) -->
 		<TaskList

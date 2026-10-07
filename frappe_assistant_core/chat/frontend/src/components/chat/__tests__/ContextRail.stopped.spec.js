@@ -29,3 +29,19 @@ describe("ContextRail on a stopped turn", () => {
 		expect(wrapper.find(".task-summary").text()).toBe("Stopped after 0 of 2 steps");
 	});
 });
+
+describe("ContextRail on a finished turn", () => {
+	beforeEach(() => setActivePinia(createPinia()));
+
+	it("hands the finished state to the activity timeline", () => {
+		const blocks = [
+			{ type: "tool_call", id: "d1", tool_name: "delegate", status: "running", startTime: "2026-07-20T09:00:00.000Z" },
+		];
+		const wrapper = mount(ContextRail, {
+			props: { artifacts: deriveArtifacts(blocks), live: false, stopped: true },
+		});
+
+		expect(wrapper.find(".tl-row.is-running").exists()).toBe(false);
+		expect(wrapper.find(".tl-row .tl-duration").text()).toBe("stopped");
+	});
+});

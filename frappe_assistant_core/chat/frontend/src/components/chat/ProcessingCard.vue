@@ -84,7 +84,11 @@
 						v-else-if="entry.kind === 'interaction'"
 						:block="entry.block"
 					/>
-					<ProcessingToolRow v-else-if="entry.kind === 'tool'" :row="entry.row" />
+					<ProcessingToolRow
+						v-else-if="entry.kind === 'tool'"
+						:row="entry.row"
+						:live="isStreaming"
+					/>
 				</template>
 			</div>
 		</div>
