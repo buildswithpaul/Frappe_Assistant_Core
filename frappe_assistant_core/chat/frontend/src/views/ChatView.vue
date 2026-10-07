@@ -79,6 +79,7 @@
 						:messages="messages"
 						:is-loading="isLoading"
 						:is-streaming="isStreaming"
+						:is-resuming="chatStore.isSubmittingInterrupts"
 						@registration-complete="handleRegistrationComplete"
 						@user-connected="handleUserConnected"
 						@feature-tour-complete="handleFeatureTourComplete"
@@ -402,7 +403,11 @@ const activeArtifacts = computed(() => deriveArtifacts(activeAssistantMessage.va
 // carries no isStreaming flag, so a reloaded conversation reads as finished.
 const activeTurnIsLive = computed(() => Boolean(activeAssistantMessage.value?.isStreaming));
 const activeTurnStopped = computed(() => isStoppedTurn(activeAssistantMessage.value));
-const activeTurnPaused = computed(() => isPausedTurn(activeAssistantMessage.value?.blocks));
+// Waiting on a card, or on the resume an answered card started (the card is
+// already resolved, but the message streams again only once the resume lands).
+const activeTurnPaused = computed(
+	() => isPausedTurn(activeAssistantMessage.value?.blocks) || chatStore.isSubmittingInterrupts
+);
 
 const railHasArtifacts = computed(() => activeArtifacts.value.hasArtifacts);
 const {

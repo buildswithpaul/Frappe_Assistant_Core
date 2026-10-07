@@ -36,6 +36,7 @@
 				:blocks="renderBlocks"
 				:message-index="messageIndex"
 				:is-streaming="isStreaming"
+				:is-resuming="isResuming"
 				@toggle-block="(msgIdx, blockId) => $emit('toggleBlock', msgIdx, blockId)"
 				@approve="(blockId, responses) => $emit('approve', blockId, responses)"
 				@reject="(blockId, responses) => $emit('reject', blockId, responses)"
@@ -121,6 +122,11 @@ const props = defineProps({
 		default: false,
 	},
 	isLatest: {
+		type: Boolean,
+		default: false,
+	},
+	// An answered card's resume is in flight for this turn.
+	isResuming: {
 		type: Boolean,
 		default: false,
 	},

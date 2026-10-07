@@ -39,7 +39,7 @@ describe("ContextRail on a finished turn", () => {
 			{ type: "tool_call", id: "t1", tool_name: "list_documents", status: "running", startTime: "2026-07-20T09:00:00.000Z" },
 		];
 		const wrapper = mount(ContextRail, {
-			props: { artifacts: deriveArtifacts(blocks), live: false, stopped: true },
+			props: { artifacts: deriveArtifacts(blocks), live: false },
 		});
 
 		expect(wrapper.find(".tl-row.is-running").exists()).toBe(false);

@@ -25,9 +25,9 @@ const PENDING_CARD = {
 };
 const ABORT_MARKER = { type: "text", id: "m1", content: "\n\n_(Stopped by user)_", _abortMarker: true };
 
-async function toolRow(blocks) {
+async function toolRow(blocks, { isResuming = false } = {}) {
 	const wrapper = mount(MessageBlockRenderer, {
-		props: { blocks, messageIndex: 0, isStreaming: false },
+		props: { blocks, messageIndex: 0, isStreaming: false, isResuming },
 	});
 	await wrapper.find(".processing-card-header").trigger("click");
 	return wrapper.find(".timeline-row");
@@ -51,6 +51,29 @@ describe("MessageBlockRenderer tool rows once the message stops streaming", () =
 
 	it("presents a finished turn's tool left running as stopped", async () => {
 		const row = await toolRow([GATED_TOOL]);
+
+		expect(row.classes()).toContain("timeline-stopped");
+	});
+});
+
+// After the user approves, applyInteractionDecisions flips the card to
+// `approved` at once, but the message stays non-streaming until the resume
+// stream's first event (handleStreamResumed). isSubmittingInterrupts spans
+// exactly that round trip.
+describe("MessageBlockRenderer tool rows while a resume is in flight", () => {
+	const APPROVED_CARD = { ...PENDING_CARD, status: "approved" };
+
+	beforeEach(() => setActivePinia(createPinia()));
+
+	it("keeps the just-approved tool from reading as stopped", async () => {
+		const row = await toolRow([GATED_TOOL, APPROVED_CARD], { isResuming: true });
+
+		expect(row.classes()).toContain("timeline-running");
+		expect(row.find(".chip-stopped").exists()).toBe(false);
+	});
+
+	it("reads as stopped once the resume is no longer in flight", async () => {
+		const row = await toolRow([GATED_TOOL, APPROVED_CARD, ABORT_MARKER]);
 
 		expect(row.classes()).toContain("timeline-stopped");
 	});
