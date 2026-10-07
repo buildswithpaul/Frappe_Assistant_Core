@@ -234,6 +234,77 @@ describe("widget panel", () => {
 		expect(w.find(".wps-heading").text()).toBe("✓ Completed 0 of 1 step");
 	});
 
+	describe("plan strip across turns", () => {
+		// A conversation keeps every turn's blocks; a hydrated turn carries no isStreaming flag.
+		const olderTurn = {
+			role: "assistant",
+			blocks: [
+				{
+					type: "plan",
+					status: "done",
+					tasks: [
+						{ id: "1", title: "Old step one", status: "done" },
+						{ id: "2", title: "Old step two", status: "done" },
+					],
+				},
+			],
+		};
+
+		it("hides the strip when the latest turn has no plan, even if an older one did", async () => {
+			const w = mount(WidgetPanel, { global: { stubs } });
+			useChatStore().messages = [
+				{ role: "user", content: "plan it", blocks: [] },
+				olderTurn,
+				{ role: "user", content: "thanks", blocks: [] },
+				{ role: "assistant", content: "You're welcome.", blocks: [{ type: "text", id: "t", content: "You're welcome." }] },
+			];
+			await nextTick();
+			expect(w.find(".wps").exists()).toBe(false);
+		});
+
+		it("follows the newer turn's plan live, then collapses it when that turn ends", async () => {
+			const w = mount(WidgetPanel, { global: { stubs } });
+			const chatStore = useChatStore();
+			const newer = {
+				role: "assistant",
+				isStreaming: true,
+				blocks: [
+					{
+						type: "plan",
+						status: "running",
+						tasks: [
+							{ id: "a", title: "New step", status: "running" },
+							{ id: "b", title: "Next step", status: "pending" },
+							{ id: "c", title: "Last step", status: "pending" },
+						],
+					},
+				],
+			};
+			chatStore.messages = [
+				{ role: "user", content: "plan it", blocks: [] },
+				olderTurn,
+				{ role: "user", content: "now the next one", blocks: [] },
+				newer,
+			];
+			await nextTick();
+			expect(w.find(".wps-heading").text()).toBe("Working through 3 steps…");
+			expect(w.findAll(".task-row").map((r) => r.find(".title").text())).toEqual([
+				"New step",
+				"Next step",
+				"Last step",
+			]);
+
+			// stream_complete flips the message's isStreaming off and closes the first task.
+			chatStore.messages[3].isStreaming = false;
+			chatStore.messages[3].blocks[0].tasks[0].status = "done";
+			await nextTick();
+			const toggle = w.find(".wps-heading");
+			expect(toggle.text()).toBe("✓ Completed 1 of 3 steps");
+			expect(toggle.attributes("aria-expanded")).toBe("false");
+			expect(w.find(".task-row").exists()).toBe(false);
+		});
+	});
+
 	it("shows the welcome until there is a conversation", async () => {
 		const w = mount(WidgetPanel, { global: { stubs } });
 		expect(w.find(".ww").exists()).toBe(true);
