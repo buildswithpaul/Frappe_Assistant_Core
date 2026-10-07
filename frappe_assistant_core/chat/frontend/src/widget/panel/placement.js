@@ -65,10 +65,18 @@ export function computePlacement({ btnRect, width, height }) {
 const RESET = { left: "", right: "", top: "", bottom: "", width: "", height: "", maxHeight: "" };
 
 /** Position the panel host next to the launcher (the launcher keeps its own saved drag position). */
-export function placePanel(host) {
+const hasSize = (r) => !!r && r.width > 0 && r.height > 0;
+
+/**
+ * `anchorRect` is the launcher button's rect captured before the open state hid it: a hidden
+ * button measures 0x0, which would centre the panel instead of anchoring it. Returns the rect used.
+ */
+export function placePanel(host, anchorRect = null) {
 	const launcher = document.getElementById("fac-widget-launcher");
 	const widget = launcher && launcher.shadowRoot && launcher.shadowRoot.querySelector(".faco-toggle-btn");
-	const btnRect = widget ? widget.getBoundingClientRect() : null;
+	const measured = widget ? widget.getBoundingClientRect() : null;
+	const btnRect = hasSize(measured) ? measured : anchorRect;
 	const css = computePlacement({ btnRect, width: window.innerWidth, height: window.innerHeight });
 	Object.assign(host.style, RESET, css);
+	return hasSize(btnRect) ? btnRect : null;
 }

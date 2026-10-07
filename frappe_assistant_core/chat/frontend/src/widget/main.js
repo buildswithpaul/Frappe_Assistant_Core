@@ -72,10 +72,12 @@ export async function boot(config) {
 		if (!opening) {
 			opening = (async () => {
 				const panel = await ensurePanel(config);
+				// Measured before setOpen hides the button (display:none reads 0x0).
+				const anchorRect = view.button.getBoundingClientRect();
 				bridge.state.open = true;
 				view.setOpen(true);
 				stopTooltips();
-				panel.open();
+				panel.open({ anchorRect });
 			})().finally(() => (opening = null));
 		}
 		return opening;

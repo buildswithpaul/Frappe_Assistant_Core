@@ -60,11 +60,16 @@ export async function mountPanel(config) {
 	app.mount(mountEl);
 
 	// The launcher can be dragged or the window resized while the panel is open.
-	const place = () => placePanel(host);
+	// The launcher button is hidden while open, so remember where it last had a size.
+	let anchor = null;
+	const place = () => {
+		anchor = placePanel(host, anchor) || anchor;
+	};
 	window.addEventListener("resize", place);
 
 	return {
-		open() {
+		open({ anchorRect } = {}) {
+			if (anchorRect && anchorRect.width > 0 && anchorRect.height > 0) anchor = anchorRect;
 			place();
 			host.hidden = false;
 		},

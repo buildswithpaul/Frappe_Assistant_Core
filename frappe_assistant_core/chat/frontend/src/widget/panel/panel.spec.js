@@ -21,7 +21,7 @@ import PanelApp from "./PanelApp.vue";
 import WidgetWelcome from "./WidgetWelcome.vue";
 import BrowserToolConfirm from "./BrowserToolConfirm.vue";
 import { createRouterShim } from "./routerShim.js";
-import { computePlacement } from "./placement.js";
+import { computePlacement, placePanel } from "./placement.js";
 import { resetConfirms, listenForConfirms } from "./confirmQueue.js";
 import { bridge } from "../bridge.js";
 import { useChatStore } from "@/stores/chatStore";
@@ -398,6 +398,22 @@ describe("placement", () => {
 		expect(css.top).toBe("82px");
 		expect(css.bottom).toBe("auto");
 		expect(css.left).toBe("20px");
+	});
+
+	it("anchors to the rect it is handed when the launcher button is hidden (0x0)", () => {
+		document.body.innerHTML = "";
+		const launcher = document.createElement("div");
+		launcher.id = "fac-widget-launcher";
+		launcher.attachShadow({ mode: "open" }).innerHTML = '<button class="faco-toggle-btn"></button>';
+		document.body.appendChild(launcher);
+		window.innerWidth = 1600;
+		window.innerHeight = 1000;
+		const host = document.createElement("div");
+		const used = placePanel(host, btn({ left: 1500, right: 1556, top: 900, bottom: 956 }));
+		expect(used.width).toBe(56);
+		expect(host.style.bottom).toBe("110px");
+		expect(host.style.right).toBe("44px");
+		launcher.remove();
 	});
 
 	it("leaves a phone-width screen to the full-screen stylesheet rule", () => {

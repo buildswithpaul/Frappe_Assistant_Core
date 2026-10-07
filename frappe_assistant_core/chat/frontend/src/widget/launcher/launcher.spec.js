@@ -202,6 +202,17 @@ describe("boot", () => {
 		expect(panel.open).toHaveBeenCalledTimes(1);
 	});
 
+	it("hands the panel the launcher button's rect measured before the open state hides it", async () => {
+		const bridge = await bootAndGetBridge();
+		const btn = document.getElementById("fac-widget-launcher").shadowRoot.querySelector(".faco-toggle-btn");
+		const rect = { left: 1500, right: 1556, top: 900, bottom: 956, width: 56, height: 56 };
+		btn.getBoundingClientRect = () =>
+			btn.closest(".faco-widget").classList.contains("faco-open") ? { width: 0, height: 0 } : rect;
+		bridge.emit("open");
+		await new Promise((r) => setTimeout(r, 0));
+		expect(panel.open).toHaveBeenCalledWith({ anchorRect: rect });
+	});
+
 	it("opens once for two quick open requests", async () => {
 		const bridge = await bootAndGetBridge();
 		bridge.emit("open");
