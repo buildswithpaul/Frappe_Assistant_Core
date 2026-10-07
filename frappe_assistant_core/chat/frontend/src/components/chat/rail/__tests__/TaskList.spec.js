@@ -174,3 +174,16 @@ describe("TaskList parallel helpers", () => {
 		expect(wrapper.find(".delegated").exists()).toBe(true);
 	});
 });
+
+describe("TaskList bare", () => {
+	it("leaves the heading and the tally to its host", () => {
+		const tasks = [{ id: "a", title: "A", status: "running" }];
+		const framed = mount(TaskList, { props: { tasks, live: false } });
+		expect(framed.find(".task-head").exists()).toBe(true);
+		expect(framed.find(".task-summary").exists()).toBe(true);
+		const bare = mount(TaskList, { props: { tasks, live: false, bare: true } });
+		expect(bare.find(".task-head").exists()).toBe(false);
+		expect(bare.find(".task-summary").exists()).toBe(false);
+		expect(bare.find(".task-row").exists()).toBe(true);
+	});
+});

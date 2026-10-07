@@ -65,6 +65,12 @@
 				@decide="(decision) => settleConfirm(c, decision)"
 			/>
 		</div>
+		<WidgetPlanStrip
+			:key="latestTurn.index"
+			:plan="latestTurn.plan"
+			:live="latestTurn.live"
+			:activity="chatStore.taskActivity"
+		/>
 		<OverageNotice
 			v-if="overageVisible"
 			:credit-balance="Number(userStore.quotaInfo?.credit_balance) || 0"
@@ -97,6 +103,7 @@ import CreditMeter from "@/components/chat/CreditMeter.vue";
 import WidgetWelcome from "./WidgetWelcome.vue";
 import BrowserToolConfirm from "./BrowserToolConfirm.vue";
 import OverageNotice from "./OverageNotice.vue";
+import WidgetPlanStrip from "./WidgetPlanStrip.vue";
 import { bridge } from "../bridge.js";
 import { handOffToFullPage } from "../desk/session.js";
 import { isBlocked, overageNoticeDue, markOverageNoticeShown } from "../desk/quotaGate.js";
@@ -114,6 +121,20 @@ useAutoScroll(
 	computed(() => chatStore.messages),
 	computed(() => chatStore.isStreaming)
 );
+
+// The plan strip follows the latest assistant turn, as FAC Chat's Context Rail does. It is keyed by
+// the turn's position so a new turn starts collapsed state afresh; a hydrated turn carries no
+// isStreaming flag and so reads as finished.
+const latestTurn = computed(() => {
+	const list = chatStore.messages || [];
+	for (let i = list.length - 1; i >= 0; i--) {
+		const msg = list[i];
+		if (msg?.role !== "assistant") continue;
+		const plan = (msg.blocks || []).find((b) => b?.type === "plan") || null;
+		return { index: i, plan, live: Boolean(msg.isStreaming) };
+	}
+	return { index: -1, plan: null, live: false };
+});
 
 const deskUser = () => window.frappe?.session?.user || "";
 

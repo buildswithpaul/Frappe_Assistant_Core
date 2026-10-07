@@ -154,6 +154,35 @@ describe("widget panel", () => {
 		expect(assign).toHaveBeenCalledWith("/copilot");
 	});
 
+	it("shows the latest turn's plan above the composer, with its helpers' live labels", async () => {
+		const w = mount(WidgetPanel, { global: { stubs } });
+		expect(w.find(".wps").exists()).toBe(false);
+		const chatStore = useChatStore();
+		// The stream handlers build this shape: plan_created adds the block to the streaming
+		// assistant message, and task_activity fills taskActivity by task id.
+		chatStore.messages = [
+			{ role: "user", content: "compare A and B", blocks: [] },
+			{
+				role: "assistant",
+				isStreaming: true,
+				blocks: [
+					{
+						type: "plan",
+						status: "running",
+						tasks: [
+							{ id: "a", title: "Customer A", status: "running", helper: true },
+							{ id: "b", title: "Customer B", status: "running", helper: true },
+						],
+					},
+				],
+			},
+		];
+		chatStore.handleTaskActivity({ task_id: "a", label: "Reading Sales Invoice list…" });
+		await nextTick();
+		expect(w.find(".wps-heading").text()).toBe("Running 2 in parallel…");
+		expect(w.find(".wps .activity").text()).toBe("Reading Sales Invoice list…");
+	});
+
 	it("shows the welcome until there is a conversation", async () => {
 		const w = mount(WidgetPanel, { global: { stubs } });
 		expect(w.find(".ww").exists()).toBe(true);
