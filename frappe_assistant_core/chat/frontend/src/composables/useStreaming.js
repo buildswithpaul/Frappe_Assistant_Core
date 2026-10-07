@@ -31,7 +31,7 @@ function getCookieValue(name) {
 
 /**
  * Same-origin navigation guard. Matches the server-side check in
- * browser_tools/navigate_to.py and the widget's widget_browser_tools.js.
+ * browser_tools/navigate_to.py and the widget's desk/browserTools.js.
  * Rejects javascript:/data:/protocol-relative/cross-origin URLs.
  */
 function isSafeUrl(url) {

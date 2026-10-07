@@ -58,8 +58,8 @@ repos:
     hooks:
       - id: commitlint
         stages: [commit-msg]
-        # Pinned to v19 — v20 transitive deps require Node >=20, but bench's
-        # CI runner installs Node 18 for Frappe v15.
+        # Pinned to v19 for older local tooling (v20 needs Node >=20). Building FAC's
+        # frontend on a v15 bench needs Node >= 22; CI installs that.
         additional_dependencies: ["@commitlint/config-conventional@19"]
 
   # pip-audit — mirrors the 'Vulnerable Dependency Check' job in

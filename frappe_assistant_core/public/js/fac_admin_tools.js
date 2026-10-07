@@ -103,8 +103,9 @@
 
     // ── FAC Chat enablement ────────────────────────────────────────────
     // Reads current state from chat.api.get_chat_status and renders the
-    // pill + button. The toggle endpoint returns the widget asset bundles
-    // so we can hot-mount on enable without a manual page reload.
+    // pill + button. Enabling hot-mounts the widget through the launcher's
+    // window.facoWidgetRemount (disabling calls window.facoWidgetTeardown), so no
+    // page reload is needed once the launcher has been loaded.
 
     ns.loadChatStatus = function() {
         frappe.call({
@@ -161,8 +162,10 @@
                     ns._renderChatStatus(data.enabled);
 
                     if (data.enabled) {
-                        // Hot-mount the widget on this page. Other open Desk
-                        // tabs will pick it up on their next navigation since
+                        // Hot-mount the widget on this page via the launcher (or the
+                        // classic loader when chat was off at page load; that needs
+                        // the Desk boot info to carry the built entry). Other open
+                        // Desk tabs pick it up on their next navigation since
                         // can_use_faco now returns show_widget: true.
                         if (typeof window.facoWidgetRemount === 'function') {
                             window.facoWidgetRemount();
@@ -172,7 +175,7 @@
                             indicator: 'green'
                         });
                     } else {
-                        // Hot-unmount the widget on this page.
+                        // Hot-unmount the widget on this page (the launcher's teardown).
                         if (typeof window.facoWidgetTeardown === 'function') {
                             window.facoWidgetTeardown();
                         }

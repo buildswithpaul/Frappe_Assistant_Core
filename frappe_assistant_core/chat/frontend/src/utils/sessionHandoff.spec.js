@@ -6,7 +6,7 @@ import { readHandoff, writeHandoff } from "./sessionHandoff";
  * sessionStorage, which survives a logout and is cloned into duplicated tabs.
  * Both ends stamp the id with the user who minted it and refuse to adopt one
  * minted by anybody else — this is the SPA half of the shape implemented in
- * public/chat/widget/widget_session.js.
+ * src/widget/desk/session.js.
  */
 const KEY = "faco_active_session";
 

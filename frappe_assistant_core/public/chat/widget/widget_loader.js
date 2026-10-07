@@ -13,12 +13,19 @@
 //
 // app_include_js loads classic scripts, so this stays one: it reads the
 // built entry from Desk boot info and imports it. No boot info means the
-// frontend was not built on this site — no launcher, no error.
+// frontend was not built on this site — no launcher, one console line.
 (function () {
 	"use strict";
+	var loggedMissing = false;
 	function start() {
 		var cfg = window.frappe && window.frappe.boot && window.frappe.boot.fac_widget;
-		if (!cfg || !cfg.entry) return;
+		if (!cfg || !cfg.entry) {
+			if (!loggedMissing) {
+				loggedMissing = true;
+				console.info("[FAC widget] no built entry in Desk boot info; the launcher is not loaded");
+			}
+			return;
+		}
 		import(cfg.entry)
 			.then(function (m) {
 				return m.boot(cfg);
@@ -27,6 +34,9 @@
 				console.warn("[FAC widget] failed to start", err);
 			});
 	}
+	// FAC Admin's chat toggle calls this when chat was off at page load and the launcher never
+	// loaded. Once the launcher boots it replaces this with its own teardown-then-boot.
+	if (!window.facoWidgetRemount) window.facoWidgetRemount = start;
 	if (document.readyState === "complete") start();
 	else window.addEventListener("load", start, { once: true });
 })();

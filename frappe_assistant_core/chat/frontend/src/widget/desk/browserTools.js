@@ -51,9 +51,8 @@ let deps = {
 // signal.
 //
 // The widget already has a HITL path for server-initiated approvals:
-// `widget_streaming.js::show_interaction_card` handles `approval_required`
-// events emitted by the Strands `ApprovalHook` and renders a
-// `.faco-interaction-card.faco-interaction-approval`. Browser tools can't
+// the panel's useStreaming handles `approval_required` events emitted by the Strands
+// `ApprovalHook` and renders an approval card. Browser tools can't
 // go through that path because execution happens client-side and the
 // server never sees the tool call until the result is submitted — the AR
 // side literally cannot know what's on the user's screen to judge

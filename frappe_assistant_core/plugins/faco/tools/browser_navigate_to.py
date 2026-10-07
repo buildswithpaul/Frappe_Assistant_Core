@@ -33,7 +33,7 @@ def _is_safe_navigation_url(url: str) -> bool:
     Validate a navigation target: only same-site http(s) URLs or relative
     absolute paths (not protocol-relative) are allowed.
 
-    Mirrors the widget-side check in public/js/faco/widget_browser_tools.js
+    Mirrors the widget-side check in chat/frontend/src/widget/desk/browserTools.js
     so the server refuses attacker-supplied javascript:/data:/cross-origin
     URLs before the Socket.IO event is dispatched.
     """
