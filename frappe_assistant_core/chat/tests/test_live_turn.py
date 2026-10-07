@@ -226,3 +226,47 @@ class TestLiveTurnModule(BaseAssistantTest):
         # Both deltas should be in the stored thinking block
         thinking_block = next(b for b in entry["blocks"] if b.get("type") == "thinking")
         self.assertEqual(thinking_block["content"], "Let me think")
+
+
+class TestGetLiveTurn(BaseAssistantTest):
+    def setUp(self):
+        super().setUp()
+        self.owner = self.make_throwaway_user("live-owner")
+        self.other = self.make_throwaway_user("live-other")
+        self.sid = f"live-ep-{frappe.generate_hash(length=8)}"
+        # Production: send_message saves the user row before the relay is queued.
+        frappe.get_doc(
+            {
+                "doctype": "FAC Chat Message",
+                "session_id": self.sid,
+                "user": self.owner,
+                "role": "user",
+                "content": "hello",
+            }
+        ).insert(ignore_permissions=True)
+
+    def tearDown(self):
+        live_turn.clear(self.sid)
+        frappe.set_user("Administrator")
+        super().tearDown()
+
+    def test_the_owner_reads_the_running_turn(self):
+        turn = live_turn.start(self.sid)
+        frappe.set_user(self.owner)
+        self.assertEqual(live_turn.get_live_turn(self.sid)["turn"], turn)
+
+    def test_nothing_running_reads_as_none(self):
+        frappe.set_user(self.owner)
+        self.assertIsNone(live_turn.get_live_turn(self.sid))
+
+    def test_another_user_is_refused(self):
+        live_turn.start(self.sid)
+        frappe.set_user(self.other)
+        with self.assertRaises(frappe.PermissionError):
+            live_turn.get_live_turn(self.sid)
+
+    def test_it_is_a_get_endpoint_on_the_chat_api_path(self):
+        from frappe_assistant_core.chat.api import chat as chat_api
+
+        self.assertIs(chat_api.get_live_turn, live_turn.get_live_turn)
+        self.assertIn("GET", frappe.allowed_http_methods_for_whitelisted_func[live_turn.get_live_turn])

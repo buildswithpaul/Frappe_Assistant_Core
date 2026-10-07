@@ -189,3 +189,14 @@ def unbind(session_id: str, turn: str | None = None) -> None:
 
 def current(session_id: str) -> LiveTurn | None:
     return _registry().get(session_id)
+
+
+@frappe.whitelist(methods=["GET"])
+def get_live_turn(session_id: str) -> dict | None:
+    """The running turn of a conversation the caller owns, or None."""
+    if not session_id:
+        frappe.throw(_("session_id is required"), frappe.ValidationError)
+    from frappe_assistant_core.chat.api.chat.messages import _assert_session_owner
+
+    _assert_session_owner(session_id)
+    return get(session_id)

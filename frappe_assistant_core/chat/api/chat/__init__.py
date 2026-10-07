@@ -47,6 +47,9 @@ from frappe_assistant_core.chat.api.chat.helpers import (
 from frappe_assistant_core.chat.api.chat.hitl import (
     get_pending_interrupt,
 )
+from frappe_assistant_core.chat.api.chat.live_turn import (
+    get_live_turn,
+)
 from frappe_assistant_core.chat.api.chat.messages import (
     _relay_pool,
     continue_response,
