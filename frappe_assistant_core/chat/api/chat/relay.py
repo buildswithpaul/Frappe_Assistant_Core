@@ -25,6 +25,8 @@ from typing import NamedTuple
 import frappe
 from frappe import _
 
+from frappe_assistant_core.chat.api.chat import live_turn
+
 from .._helpers import (
     _not_registered_error,
     _safe_error,
@@ -792,6 +794,7 @@ def _relay_ar_interrupt_resume(
         from ..block_builder import BlockBuilder
 
         block_builder = BlockBuilder(existing_blocks=_load_turn_blocks(session_id, message_id))
+        live_turn.bind(session_id, block_builder, message_id=message_id, enabled=not restricted)
 
         # resume_interrupt cleared any older Stop when it accepted this resume,
         # so a flag up now is a Stop pressed while this relay waited to start.
@@ -1260,6 +1263,7 @@ def _relay_ar_interrupt_resume(
         )
 
     finally:
+        live_turn.unbind(session_id)
         # The cancel flag stays: the next accepting endpoint clears it
         # (cancel.clear). Clearing it here could erase the next turn's Stop.
         frappe.db.commit()  # nosemgrep: frappe-manual-commit — background thread / streaming context (not a request handler), explicit commit required to flush progress to DB.
@@ -1382,6 +1386,9 @@ def _relay_ar_stream(
             )
             seed_blocks = _parse_turn_blocks(continued_turn.blocks if continued_turn else None)
         block_builder = BlockBuilder(existing_blocks=seed_blocks)
+        # From here every emitted event is numbered and the turn's snapshot kept,
+        # so a surface opening this conversation mid-turn can join it.
+        live_turn.bind(session_id, block_builder, message_id=continue_from_message_id, enabled=not restricted)
 
         # send_message or continue_response cleared any older Stop when it
         # accepted this turn, so a flag up now is a Stop pressed while this
@@ -1880,6 +1887,7 @@ def _relay_ar_stream(
         )
 
     finally:
+        live_turn.unbind(session_id)
         # The cancel flag stays: the next accepting endpoint clears it
         # (cancel.clear). Clearing it here could erase the next turn's Stop.
         frappe.db.commit()  # nosemgrep: frappe-manual-commit — background thread / streaming context (not a request handler), explicit commit required to flush progress to DB.
