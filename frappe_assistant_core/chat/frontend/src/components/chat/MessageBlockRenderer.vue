@@ -121,11 +121,18 @@ const props = defineProps({
 		type: Boolean,
 		default: false,
 	},
+	// An answered card's resume is in flight for this turn: the card is already
+	// resolved, but the message streams again only once the resume's first event
+	// lands (chatStore.isSubmittingInterrupts spans that round trip).
+	isResuming: {
+		type: Boolean,
+		default: false,
+	},
 });
 
 defineEmits(["toggleBlock", "approve", "reject", "previewDocument"]);
 
-const turnPaused = computed(() => isPausedTurn(props.blocks));
+const turnPaused = computed(() => isPausedTurn(props.blocks) || props.isResuming);
 
 // Bump on hljs load so computed renders re-run with syntax highlighting
 // once the chunk arrives. First paint uses plain escaped code (instant);
