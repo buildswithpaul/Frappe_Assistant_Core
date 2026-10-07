@@ -2,9 +2,11 @@
  * Builds plain-language activity-timeline rows from a turn's tool_call blocks.
  * Each row = one external tool call, phrased as *what the AI did* rather than
  * "Used <Tool> ›" (spec §3.2). Pure + side-effect free so it can be unit
- * tested and reused. Internal tools (block.isInternal) are skipped — they're
+ * tested and reused. Internal tools (isInternalTool) are skipped — they're
  * plumbing, not user-facing actions.
  */
+
+import { isInternalTool } from "@/utils/internalTools";
 
 // Friendly verb + object phrasing per known MCP tool. Falls back to a
 // humanized tool name. `target` is pulled from the tool input when present
@@ -56,7 +58,7 @@ function extractTarget(block) {
  */
 export function toolRowFrom(block) {
 	if (!block || block.type !== "tool_call") return null;
-	if (block.isInternal) return null;
+	if (isInternalTool(block)) return null;
 
 	const phrasing = TOOL_PHRASING[block.tool_name];
 	const target = extractTarget(block);
