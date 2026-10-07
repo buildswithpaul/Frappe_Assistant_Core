@@ -210,6 +210,30 @@ describe("widget panel", () => {
 		expect(w.find(".wps-heading").text()).toBe("⊘ Stopped after 0 of 2 steps");
 	});
 
+	it("does not present a turn still waiting on a card as stopped", async () => {
+		const w = mount(WidgetPanel, { global: { stubs } });
+		const chatStore = useChatStore();
+		// handleStreamAborted keeps the local blocks when the stream_aborted event carries no
+		// snapshot, so an aborted message can still hold the pending card it was paused on.
+		chatStore.messages = [
+			{ role: "user", content: "create it", blocks: [] },
+			{
+				role: "assistant",
+				aborted: true,
+				blocks: [
+					{
+						type: "plan",
+						status: "running",
+						tasks: [{ id: "a", title: "Create the quotation", status: "running" }],
+					},
+					{ type: "interaction", id: "tu-1", status: "pending" },
+				],
+			},
+		];
+		await nextTick();
+		expect(w.find(".wps-heading").text()).toBe("✓ Completed 0 of 1 step");
+	});
+
 	it("shows the welcome until there is a conversation", async () => {
 		const w = mount(WidgetPanel, { global: { stubs } });
 		expect(w.find(".ww").exists()).toBe(true);

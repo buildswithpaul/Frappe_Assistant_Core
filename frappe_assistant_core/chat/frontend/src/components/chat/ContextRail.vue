@@ -20,7 +20,7 @@
 		<ActivityTimeline
 			v-if="artifacts.activity && artifacts.activity.length"
 			:rows="artifacts.activity"
-			:live="live"
+			:live="live || paused"
 		/>
 
 		<!-- Task list (live status for the current turn) -->
@@ -118,6 +118,12 @@ defineProps({
 	},
 	// True when the user stopped the turn — its open tasks then read as stopped.
 	stopped: {
+		type: Boolean,
+		default: false,
+	},
+	// True while the turn waits on an approval or question card: not streaming,
+	// but not ended, so its tools keep their in-flight presentation.
+	paused: {
 		type: Boolean,
 		default: false,
 	},

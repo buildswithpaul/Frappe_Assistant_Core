@@ -87,7 +87,7 @@
 					<ProcessingToolRow
 						v-else-if="entry.kind === 'tool'"
 						:row="entry.row"
-						:live="isStreaming"
+						:live="isStreaming || paused"
 					/>
 				</template>
 			</div>
@@ -109,6 +109,12 @@ const props = defineProps({
 		required: true,
 	},
 	isStreaming: {
+		type: Boolean,
+		default: false,
+	},
+	// The turn waits on an approval or question card: not streaming, but not
+	// ended, so a running tool keeps its spinner rather than reading as stopped.
+	paused: {
 		type: Boolean,
 		default: false,
 	},
