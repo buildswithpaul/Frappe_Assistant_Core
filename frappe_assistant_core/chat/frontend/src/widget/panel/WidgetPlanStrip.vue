@@ -30,13 +30,23 @@ const props = defineProps({
 	activity: { type: Object, default: () => ({}) },
 	// The user pressed Stop on this turn: its open rows read as stopped, not as work left over.
 	stopped: { type: Boolean, default: false },
+	// A turn paused on the user: "approval" or "question" while a card waits, "resume" while an
+	// answered card's resume is in flight, "" otherwise.
+	waitingOn: { type: String, default: "" },
 });
+
+const WAITING_HEADINGS = {
+	approval: "Waiting for your approval…",
+	question: "Waiting for your answer…",
+	resume: "Resuming…",
+};
 
 const expanded = ref(false);
 const tasks = computed(() => props.plan?.tasks || []);
 
 const heading = computed(() => {
 	const total = tasks.value.length;
+	if (!props.live && WAITING_HEADINGS[props.waitingOn]) return t(WAITING_HEADINGS[props.waitingOn]);
 	if (!props.live) {
 		const done = tasks.value.filter((task) => task.status === "done").length;
 		if (props.stopped) {
