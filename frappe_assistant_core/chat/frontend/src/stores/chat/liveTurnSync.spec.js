@@ -4,7 +4,7 @@ import { applyLiveSnapshot, createLiveTurnSync, GAP_REREAD_MS } from "./liveTurn
 
 const ev = (seq, extra = {}) => ({ event: "stream_chunk", turn: "T1", seq, chunk: `c${seq}`, ...extra });
 
-function harness({ snapshot = null, streaming = false } = {}) {
+function harness({ snapshot = null, streaming = false, reloadHistory = undefined } = {}) {
 	const handled = [];
 	const timers = [];
 	const deps = {
@@ -13,6 +13,7 @@ function harness({ snapshot = null, streaming = false } = {}) {
 		onNoLiveTurn: vi.fn(),
 		dispatch: (e) => handled.push(e),
 		isStreaming: () => streaming,
+		reloadHistory,
 		setTimer: (fn) => timers.push(fn),
 		clearTimer: () => {},
 	};
@@ -148,5 +149,56 @@ describe("createLiveTurnSync", () => {
 		await expect(joined).rejects.toThrow("offline");
 		expect(h.handled).toHaveLength(1);
 		expect(h.sync.admit({ event: "heartbeat" })).toBe(true);
+	});
+
+	it("a turn begun elsewhere reloads history before showing the snapshot", async () => {
+		const reloadHistory = vi.fn().mockResolvedValue();
+		const h = harness({ snapshot: { turn: "T2", seq: 1 }, streaming: false, reloadHistory });
+		expect(h.sync.admit(ev(2, { turn: "T2" }))).toBe(false);
+		await vi.waitFor(() => expect(h.deps.onSnapshot).toHaveBeenCalled());
+		expect(reloadHistory).toHaveBeenCalledTimes(1);
+		expect(h.handled.map((e) => e.seq)).toEqual([2]);
+	});
+
+	it("a gap re-read does not call reloadHistory", async () => {
+		const reloadHistory = vi.fn().mockResolvedValue();
+		const h = harness({ streaming: true, reloadHistory });
+		h.deliver(ev(1));
+		h.deliver(ev(4)); // 2 and 3 missed
+		expect(h.timers).toHaveLength(1);
+		h.deps.fetchSnapshot.mockResolvedValue({ turn: "T1", seq: 3 });
+		await h.timers[0]();
+		expect(reloadHistory).not.toHaveBeenCalled();
+	});
+
+	it("replays only the snapshot's turn", async () => {
+		const h = harness({ snapshot: { turn: "T3", seq: 3 } });
+		const joined = h.sync.join(async () => {
+			h.deliver(ev(9, { turn: "T1", event: "stream_complete" }));
+			h.deliver(ev(4, { turn: "T3" }));
+		});
+		expect(await joined).toBe(true);
+		expect(h.handled.map((e) => e.seq)).toEqual([4]);
+		expect(h.deps.fetchSnapshot).toHaveBeenCalledTimes(1);
+	});
+
+	it("a turn with no snapshot stops asking", async () => {
+		const h = harness({ snapshot: null });
+		expect(h.sync.admit(ev(5, { turn: "T9" }))).toBe(false);
+		await vi.waitFor(() => expect(h.deps.onNoLiveTurn).toHaveBeenCalled());
+		expect(h.sync.admit(ev(6, { turn: "T9" }))).toBe(true);
+		expect(h.deps.fetchSnapshot).toHaveBeenCalledTimes(1);
+	});
+
+	it("a failed reload is logged, not thrown", async () => {
+		const reloadHistory = vi.fn().mockRejectedValue(new Error("offline"));
+		const h = harness({ snapshot: null, streaming: false, reloadHistory });
+		// Admit a foreign turn to trigger startJoin(reloadHistory), which should log but not throw
+		h.sync.admit(ev(2, { turn: "T2" }));
+		// Give the async join time to complete and log the error
+		await new Promise((r) => setTimeout(r, 50));
+		// The held event should have been released even though the join failed
+		expect(h.handled.map((e) => e.seq)).toEqual([2]);
+		// Verify no unhandled rejection by the test passing
 	});
 });

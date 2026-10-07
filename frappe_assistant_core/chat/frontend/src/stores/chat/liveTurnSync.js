@@ -3,6 +3,7 @@
 // that opens the conversation mid-turn holds incoming events, shows the
 // snapshot as a live bubble, then applies only the events numbered after it.
 import { findActiveMessage } from "./utils";
+import { logger } from "@/utils/logger";
 
 // Text is written to the snapshot at most every 500ms server-side; a re-read
 // after this long always covers a gap.
@@ -34,6 +35,7 @@ export function createLiveTurnSync({
 	onNoLiveTurn,
 	dispatch,
 	isStreaming,
+	reloadHistory,
 	setTimer = setTimeout,
 	clearTimer = clearTimeout,
 }) {
@@ -44,6 +46,7 @@ export function createLiveTurnSync({
 	let gapTimer = null;
 	let held = [];
 	const recent = [];
+	const settledTurns = [];
 
 	function remember(event) {
 		recent.push(event);
@@ -59,8 +62,12 @@ export function createLiveTurnSync({
 		if (gapTimer) return;
 		gapTimer = setTimer(() => {
 			gapTimer = null;
-			return join();
+			return startJoin();
 		}, GAP_REREAD_MS);
+	}
+
+	function startJoin(prepare) {
+		return join(prepare).catch((err) => logger.warn("Live turn join failed:", err));
 	}
 
 	function admit(event) {
@@ -70,10 +77,11 @@ export function createLiveTurnSync({
 		}
 		if (event.turn == null || event.seq == null) return true;
 		if (event.turn !== turn) {
+			if (settledTurns.includes(event.turn)) return true;
 			if (!isStreaming()) {
 				// A turn started on another surface: catch up before showing it.
 				held.push(event);
-				join();
+				startJoin(reloadHistory);
 				return false;
 			}
 			turn = event.turn;
@@ -119,6 +127,12 @@ export function createLiveTurnSync({
 			turn = null;
 			lastSeq = null;
 			recent.length = 0;
+			for (const e of pending) {
+				if (e.turn != null && !settledTurns.includes(e.turn)) {
+					settledTurns.push(e.turn);
+					if (settledTurns.length > 20) settledTurns.shift();
+				}
+			}
 			release(pending);
 			onNoLiveTurn({ sawTerminal: pending.some((e) => TERMINAL_EVENTS.has(e.event)) });
 			return false;
@@ -128,7 +142,8 @@ export function createLiveTurnSync({
 		onSnapshot(snap);
 		const shownPastSnapshot = recent.filter((e) => e.turn === snap.turn && e.seq > snap.seq);
 		recent.length = 0;
-		for (const event of [...shownPastSnapshot, ...pending]) {
+		const toReplay = [...shownPastSnapshot, ...pending].filter((e) => e.turn == null || e.turn === snap.turn);
+		for (const event of toReplay) {
 			if (admit(event)) dispatch(event);
 		}
 		return true;
@@ -141,6 +156,7 @@ export function createLiveTurnSync({
 		lastSeq = null;
 		held = [];
 		recent.length = 0;
+		settledTurns.length = 0;
 		cancelGap();
 	}
 
