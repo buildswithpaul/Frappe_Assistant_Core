@@ -21,11 +21,13 @@ class TestRelayKeepsTheLiveTurn(BaseAssistantTest):
         frappe.set_user("Administrator")
         super().tearDown()
 
-    def _run(self, events, *, restricted=False, publish=None):
+    def _run(self, events, *, restricted=False, publish=None, live_turn_token=None, resume=False):
         """Drive _relay_ar_stream over ``events`` (a generator may peek at the
         snapshot between events). Returns the payloads that reached publish_realtime."""
-        client = MagicMock()
-        client.stream_chat.return_value = events
+        # events=None stands for a site that is not registered with FAC Cloud.
+        client = None if events is None else MagicMock()
+        if client is not None:
+            client.stream_chat.return_value = events
         published = []
 
         def collect(event, message, **kw):
@@ -58,16 +60,28 @@ class TestRelayKeepsTheLiveTurn(BaseAssistantTest):
                     side_effect=publish or collect,
                 )
             )
-            relay._relay_ar_stream(
-                self.sid,
-                full_prompt="hi",
-                original_message="hi",
-                context=None,
-                message_name=None,
-                user=self.user,
-                site=frappe.local.site,
-                restricted=restricted,
-            )
+            if resume:
+                relay._relay_ar_interrupt_resume(
+                    self.sid,
+                    "[]",
+                    self.user,
+                    frappe.local.site,
+                    message_id="m-live",
+                    restricted=restricted,
+                    live_turn_token=live_turn_token,
+                )
+            else:
+                relay._relay_ar_stream(
+                    self.sid,
+                    full_prompt="hi",
+                    original_message="hi",
+                    context=None,
+                    message_name=None,
+                    user=self.user,
+                    site=frappe.local.site,
+                    restricted=restricted,
+                    live_turn_token=live_turn_token,
+                )
         return published
 
     def _turn(self, peeks):
@@ -135,6 +149,33 @@ class TestRelayKeepsTheLiveTurn(BaseAssistantTest):
         self.assertIn("stream_complete", [p["event"] for p in published])
         self.assertGreater(len(calls), 1, "the failure must hit a mid-turn write, not the bind")
 
+    def test_the_relay_adopts_the_endpoints_turn_token(self):
+        turn = live_turn.start(self.sid)
+        published = self._run(self._turn([]), live_turn_token=turn)
+        self.assertEqual({p["turn"] for p in published}, {turn})
+
+    def test_a_relay_that_ends_before_binding_clears_the_endpoints_entry(self):
+        # The endpoint writes the starting entry; an unregistered site returns before bind.
+        turn = live_turn.start(self.sid)
+        self._run(None, live_turn_token=turn)
+        self.assertIsNone(live_turn.get(self.sid))
+
+    def test_a_resume_that_ends_before_binding_clears_the_endpoints_entry(self):
+        turn = live_turn.start(self.sid, message_id="m-live")
+        self._run(None, live_turn_token=turn, resume=True)
+        self.assertIsNone(live_turn.get(self.sid))
+
+    def test_a_failed_bind_leaves_no_orphaned_starting_entry(self):
+        turn = live_turn.start(self.sid)
+
+        def write_only_start(session_id, entry):
+            # start() already wrote; the bind's first write fails.
+            raise ConnectionError("redis down")
+
+        with patch.object(live_turn, "_write", side_effect=write_only_start):
+            self._run(self._turn([]), live_turn_token=turn)
+        self.assertIsNone(live_turn.get(self.sid))
+
 
 class TestEndpointsMarkTheTurnStarted(BaseAssistantTest):
     """send / continue / resume write the starting entry before the relay is queued."""
@@ -178,10 +219,18 @@ class TestEndpointsMarkTheTurnStarted(BaseAssistantTest):
         self.assertEqual(self.seen_at_submit[0]["status"], "starting")
         self.assertIsNone(self.seen_at_submit[0]["message_id"])
 
+    def test_the_relay_is_handed_the_turn_token_the_endpoint_wrote(self):
+        with self._patched():
+            messages.send_message(session_id=self.sid, message="hello")
+        self.assertEqual(self.submit_mock.call_args.kwargs["live_turn_token"], self.seen_at_submit[0]["turn"])
+
     def test_continue_and_resume_name_the_turn_they_extend(self):
         with self._patched():
             messages.continue_response(session_id=self.sid, message_id="m1")
         self.assertEqual(self.seen_at_submit[-1]["message_id"], "m1")
+        self.assertEqual(
+            self.submit_mock.call_args.kwargs["live_turn_token"], self.seen_at_submit[-1]["turn"]
+        )
         live_turn.clear(self.sid)
         with self._patched():
             messages.resume_interrupt(
@@ -190,6 +239,9 @@ class TestEndpointsMarkTheTurnStarted(BaseAssistantTest):
                 message_id="m2",
             )
         self.assertEqual(self.seen_at_submit[-1]["message_id"], "m2")
+        self.assertEqual(
+            self.submit_mock.call_args.kwargs["live_turn_token"], self.seen_at_submit[-1]["turn"]
+        )
 
     def test_a_restricted_user_gets_no_entry(self):
         with self._patched(restricted=True):

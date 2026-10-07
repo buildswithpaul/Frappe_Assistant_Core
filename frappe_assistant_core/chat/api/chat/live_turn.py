@@ -90,12 +90,13 @@ def _trimmed(blocks: list[dict]) -> list[dict]:
 class LiveTurn:
     """One relay run's view of its entry: numbers events and writes snapshots."""
 
-    def __init__(self, session_id: str, builder, message_id: str | None = None):
+    def __init__(self, session_id: str, builder, message_id: str | None = None, turn: str | None = None):
         self.session_id = session_id
         self.builder = builder
         self.message_id = message_id
-        self.turn = uuid.uuid4().hex
+        self.turn = turn or uuid.uuid4().hex
         self.seq = 0
+        self._ended = False
         self._written_at = None
         self._save()
 
@@ -106,9 +107,12 @@ class LiveTurn:
 
     def record(self, data: dict) -> None:
         """Fold an emitted event into the snapshot. Never raises."""
+        if self._ended:
+            return
         try:
             event = data.get("event")
             if event in TERMINAL_EVENTS:
+                self._ended = True
                 clear(self.session_id, self.turn)
                 return
             if event == "stream_start" and data.get("message_id"):
@@ -143,12 +147,23 @@ def _registry() -> dict:
     return _bound.turns
 
 
-def bind(session_id: str, builder, *, message_id: str | None = None, enabled: bool = True) -> LiveTurn | None:
-    """Start keeping this relay run's snapshot; None (and nothing written) when disabled."""
+def bind(
+    session_id: str,
+    builder,
+    *,
+    message_id: str | None = None,
+    enabled: bool = True,
+    turn: str | None = None,
+) -> LiveTurn | None:
+    """Start keeping this relay run's snapshot; None (and nothing written) when disabled.
+
+    ``turn`` is the token the endpoint's ``start()`` returned, so one token covers
+    the turn from send to finish.
+    """
     if not enabled:
         return None
     try:
-        live = LiveTurn(session_id, builder, message_id)
+        live = LiveTurn(session_id, builder, message_id, turn)
     except Exception as e:
         _logger().warning(f"live turn not started for {session_id}: {e!s}")
         return None
@@ -156,12 +171,18 @@ def bind(session_id: str, builder, *, message_id: str | None = None, enabled: bo
     return live
 
 
-def unbind(session_id: str) -> None:
+def unbind(session_id: str, turn: str | None = None) -> None:
+    """Stop keeping this relay's snapshot and delete the entry it leaves behind.
+
+    When the relay ended before ``bind`` (or bind failed), ``turn`` is the endpoint's
+    token; clearing under it removes the starting entry without touching a newer turn.
+    """
     live = _registry().pop(session_id, None)
-    if live is None:
+    token = live.turn if live is not None else turn
+    if token is None:
         return
     try:
-        clear(session_id, live.turn)
+        clear(session_id, token)
     except Exception as e:
         _logger().warning(f"live turn not cleared for {session_id}: {e!s}")
 

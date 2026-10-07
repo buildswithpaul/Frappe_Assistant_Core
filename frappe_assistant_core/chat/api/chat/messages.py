@@ -340,6 +340,7 @@ def send_message(
                 web_search=_flag(web_search) if web_search is not None else None,
                 thinking_enabled=_flag(thinking_enabled) if thinking_enabled is not None else None,
                 reasoning_effort=effort,
+                live_turn_token=turn,
             )
         except Exception:
             if turn:
@@ -459,6 +460,7 @@ def resume_interrupt(
                 web_search=_flag(web_search) if web_search is not None else None,
                 thinking_enabled=_flag(thinking_enabled) if thinking_enabled is not None else None,
                 reasoning_effort=effort,
+                live_turn_token=turn,
             )
         except Exception:
             if turn:
@@ -569,6 +571,7 @@ def continue_response(
                 web_search=_flag(web_search) if web_search is not None else None,
                 thinking_enabled=_flag(thinking_enabled) if thinking_enabled is not None else None,
                 reasoning_effort=effort,
+                live_turn_token=turn,
             )
         except Exception:
             if turn:

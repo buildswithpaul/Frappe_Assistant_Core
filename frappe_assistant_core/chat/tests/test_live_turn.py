@@ -132,6 +132,42 @@ class TestLiveTurnModule(BaseAssistantTest):
                 self.assertIsNone(live_turn.get(self.sid))
                 live_turn.unbind(self.sid)
 
+    def test_an_event_after_the_terminal_one_does_not_recreate_the_entry(self):
+        live = live_turn.bind(self.sid, BlockBuilder())
+        for event in ({"event": "stream_complete"}, {"event": "tool_call_start", "tool_id": "t1"}):
+            live.stamp(event)
+            live.record(event)
+        self.assertIsNone(live_turn.get(self.sid))
+
+    def test_an_ended_turn_never_overwrites_the_next_turns_entry(self):
+        live = live_turn.bind(self.sid, BlockBuilder())
+        end = {"event": "stream_complete"}
+        live.stamp(end)
+        live.record(end)
+        newer = live_turn.start(self.sid)
+        late = {"event": "tool_call_start", "tool_id": "t1"}
+        live.stamp(late)
+        live.record(late)
+        self.assertEqual(live_turn.get(self.sid)["turn"], newer)
+        self.assertEqual(live_turn.get(self.sid)["status"], "starting")
+
+    def test_bind_adopts_the_turn_token_it_is_given(self):
+        turn = live_turn.start(self.sid)
+        live = live_turn.bind(self.sid, BlockBuilder(), turn=turn)
+        self.assertEqual(live.turn, turn)
+        self.assertEqual(live_turn.get(self.sid)["turn"], turn)
+
+    def test_unbind_with_nothing_bound_clears_that_turns_entry(self):
+        turn = live_turn.start(self.sid)
+        live_turn.unbind(self.sid, turn=turn)
+        self.assertIsNone(live_turn.get(self.sid))
+
+    def test_unbind_with_nothing_bound_spares_a_newer_turn(self):
+        live_turn.start(self.sid)
+        newer = live_turn.start(self.sid)
+        live_turn.unbind(self.sid, turn="old-token")
+        self.assertEqual(live_turn.get(self.sid)["turn"], newer)
+
     def test_a_stale_turn_never_clears_a_newer_turn(self):
         # The previous relay's finally runs after the next send's start().
         live_turn.bind(self.sid, BlockBuilder())
