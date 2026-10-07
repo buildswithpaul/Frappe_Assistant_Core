@@ -36,6 +36,7 @@ export function createStreamManager({
 	socketError,
 	currentSessionId,
 	isCancelling,
+	isSubmittingInterrupts,
 	reconcile,
 	getSocketProbe,
 }) {
@@ -69,15 +70,23 @@ export function createStreamManager({
 		}
 	}
 
+	// An approved card's resume is awaited like a stream: the resume POST only
+	// queues it, and nothing streams until its first event arrives.
+	function awaitingEvents() {
+		return isStreaming.value || Boolean(isSubmittingInterrupts?.value);
+	}
+
 	function handleStreamTimeout(message) {
 		logger.error("Stream timeout:", message);
 		clearStreamTimeouts();
 
+		const wasResuming = Boolean(isSubmittingInterrupts?.value);
 		isStreaming.value = false;
+		if (isSubmittingInterrupts) isSubmittingInterrupts.value = false;
 		error.value = message;
 
 		const lastMsg = findActiveMessage(messages.value);
-		if (lastMsg && lastMsg.role === "assistant" && lastMsg.isStreaming) {
+		if (lastMsg && lastMsg.role === "assistant" && (lastMsg.isStreaming || wasResuming)) {
 			lastMsg.isStreaming = false;
 			finalizeRunningBlocks(lastMsg);
 			if (lastMsg._continuing) {
@@ -126,7 +135,7 @@ export function createStreamManager({
 			activityTimeoutId = null;
 		}
 
-		if (!isStreaming.value) {
+		if (!awaitingEvents()) {
 			return;
 		}
 
@@ -134,7 +143,7 @@ export function createStreamManager({
 	}
 
 	async function onActivityTimeout() {
-		if (!isStreaming.value) return;
+		if (!awaitingEvents()) return;
 		// Silence here means "no events reached us", which is not the same
 		// as "the turn failed" — the finalizer is fire-and-forget too. Ask
 		// the server before blaming the connection; reconcile adopts a
@@ -145,7 +154,7 @@ export function createStreamManager({
 			} catch (err) {
 				logger.warn("Pre-timeout reconcile failed:", err);
 			}
-			if (!isStreaming.value) return;
+			if (!awaitingEvents()) return;
 		}
 		// A dead socket may be the only reason the relay went quiet (Desk's
 		// realtime client stops retrying after 3 attempts): nudge it and wait
