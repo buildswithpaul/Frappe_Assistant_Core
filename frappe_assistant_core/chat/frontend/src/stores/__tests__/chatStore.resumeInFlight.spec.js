@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { setActivePinia, createPinia } from "pinia";
 import { useChatStore } from "@/stores/chatStore";
 import { api } from "@/api/client";
+import { call } from "frappe-ui";
 
 vi.mock("@/api/client", () => ({
 	api: {
@@ -222,5 +223,26 @@ describe("chatStore resume in flight", () => {
 		expect(store.isSubmittingInterrupts).toBe(false);
 		expect(store.error).toBeFalsy();
 		expect(store.messages[0].blocks.find((b) => b.type === "interaction").status).toBe("expired");
+	});
+
+	// isSubmittingInterrupts goes true before the resume_interrupt call
+	// returns; a socket reconnect in that window reconciles the session.
+	it("keeps the paused turn local when a reconcile lands before the resume is acknowledged", async () => {
+		pauseOnAnApproval();
+		let acknowledge;
+		call.mockImplementationOnce(() => new Promise((resolve) => (acknowledge = resolve)));
+		const approving = approve();
+		await vi.waitFor(() => expect(acknowledge).toBeTypeOf("function"));
+		const local = store.messages[0];
+		api.chat.getMessages.mockResolvedValueOnce({ messages: [pausedRow()] });
+
+		await store.reconcileFromServer("s1");
+
+		expect(store.isSubmittingInterrupts).toBe(true);
+		expect(store.messages[0]).toBe(local);
+
+		acknowledge({});
+		await approving;
+		expect(store.messages[0].blocks.find((b) => b.type === "interaction").status).toBe("approved");
 	});
 });
