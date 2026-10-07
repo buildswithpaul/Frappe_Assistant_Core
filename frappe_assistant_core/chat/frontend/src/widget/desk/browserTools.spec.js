@@ -12,6 +12,14 @@ vi.mock("html2canvas-pro", () => ({
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
+// startBrowserTools polls for the realtime socket for 10 s and registers its listener once per
+// module, so a test that starts it must not leave either behind for the next test or the runner.
+afterEach(async () => {
+	const tools = await import("./browserTools.js");
+	tools.stopBrowserTools();
+	tools.default._initialized = false;
+});
+
 const toolsJs = resolve(process.cwd(), "src/widget/desk/browserTools.js");
 const src = () => readFileSync(toolsJs, "utf8");
 

@@ -599,6 +599,13 @@ const FACOBrowserTools = {
 	_initialized: false,
 
 	/**
+	 * The realtime listener is registered once and cannot be removed, so a stopped launcher
+	 * (teardown, test cleanup) turns it inert instead.
+	 */
+	_enabled: true,
+	_pendingTimer: null,
+
+	/**
 	 * Unique instance ID to track which browser tab is processing
 	 */
 	_instanceId: Math.random().toString(36).substring(2, 8),
@@ -631,7 +638,7 @@ const FACOBrowserTools = {
 
 		// Register Socket.IO listener (fast path — immediate delivery)
 		window.frappe.realtime.on("faco_browser_tool_call", (data) => {
-			self._handleToolCall(data);
+			if (self._enabled) self._handleToolCall(data);
 		});
 
 		this._initialized = true;
@@ -639,7 +646,7 @@ const FACOBrowserTools = {
 
 		// Check for pending calls that arrived before the widget was ready
 		// (e.g., after page navigation from SPA, or tool call during page load)
-		setTimeout(() => self._processPendingCalls(), 500);
+		self._pendingTimer = setTimeout(() => self._processPendingCalls(), 500);
 	},
 
 	/**
@@ -905,7 +912,15 @@ const FACOBrowserTools = {
 	},
 };
 
+let stopCurrent = null;
+
+/** Stop the socket poll and make the realtime listener inert. Safe to call when not started. */
+export function stopBrowserTools() {
+	if (stopCurrent) stopCurrent();
+}
+
 export function startBrowserTools(nextDeps) {
+	stopBrowserTools();
 	// An omitted dep keeps its fail-closed default rather than becoming undefined.
 	const provided = Object.fromEntries(
 		Object.entries(nextDeps || {}).filter(([, v]) => v !== undefined)
@@ -913,8 +928,11 @@ export function startBrowserTools(nextDeps) {
 	deps = { ...deps, ...provided };
 	// frappe.realtime.on() is a silent no-op until the socket exists, so wait
 	// for it (up to 10s), exactly as the old self-starting script did.
+	FACOBrowserTools._enabled = true;
 	let polls = 0;
+	let pollTimer = null;
 	const tick = () => {
+		pollTimer = null;
 		if (window.frappe && window.frappe.realtime && window.frappe.realtime.socket) {
 			FACOBrowserTools.initialize();
 			return;
@@ -923,9 +941,17 @@ export function startBrowserTools(nextDeps) {
 			logger.warn("Browser tools: frappe.realtime.socket not available after 10s");
 			return;
 		}
-		setTimeout(tick, 100);
+		pollTimer = setTimeout(tick, 100);
 	};
 	tick();
+	stopCurrent = () => {
+		FACOBrowserTools._enabled = false;
+		clearTimeout(pollTimer);
+		clearTimeout(FACOBrowserTools._pendingTimer);
+		pollTimer = null;
+		stopCurrent = null;
+	};
+	return stopBrowserTools;
 }
 
 export default FACOBrowserTools;
