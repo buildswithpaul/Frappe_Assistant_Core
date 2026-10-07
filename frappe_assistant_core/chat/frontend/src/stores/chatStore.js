@@ -2,7 +2,7 @@ import { defineStore } from "pinia";
 import { ref, computed, watch } from "vue";
 import { api } from "@/api/client";
 import { logger } from "@/utils/logger";
-import { generateBlockId, findActiveMessage, isFinalizedRow } from "./chat/utils";
+import { generateBlockId, findActiveMessage, isFinalizedRow, resumeHasSettled } from "./chat/utils";
 import { createErrorState } from "./chat/errorState";
 import { createStreamManager } from "./chat/streamManager";
 import { createBlockHandlers } from "./chat/blockHandlers";
@@ -254,8 +254,11 @@ export const useChatStore = defineStore("chat", () => {
 			messages.value = [];
 			// Live labels belong to the previous session's helpers.
 			blocks.taskActivity.value = {};
-			// A resume in flight belongs to the previous session's turn.
+			// A resume in flight belongs to the previous session's turn, and so
+			// does its watchdog. A stream's watchdog stays: it is what releases
+			// a send lock the previous session's turn still holds.
 			isSubmittingInterrupts.value = false;
+			if (!isStreaming.value) stream.clearStreamTimeouts();
 			// History and the running turn's snapshot are read together; events
 			// that arrive meanwhile are held and applied after the snapshot.
 			await liveSync.join(() => readHistory(sessionId));
@@ -370,7 +373,18 @@ export const useChatStore = defineStore("chat", () => {
 		const localByMsgId = new Map(
 			prevMessages.filter((m) => m.message_id).map((m) => [m.message_id, m])
 		);
+		// A resume in flight continues the paused turn's own row, which is not
+		// streaming yet. Until that row has moved past the pause it is the paused
+		// snapshot, and adopting it would reopen the card the user just answered.
+		const resumingId = isSubmittingInterrupts.value
+			? findActiveMessage(prevMessages)?.message_id
+			: null;
+		const resumedRow = resumingId && serverMessages.find((m) => m.message_id === resumingId);
+		const resumeSettled = resumeHasSettled(resumedRow);
 		const merged = tail.map((m) => {
+			if (resumingId && m.message_id === resumingId && !resumeSettled) {
+				return localByMsgId.get(m.message_id) || m;
+			}
 			if (m.role !== "assistant" || isFinalizedRow(m)) return m;
 			const local = localByMsgId.get(m.message_id);
 			const localHasContent =
@@ -395,6 +409,12 @@ export const useChatStore = defineStore("chat", () => {
 			stream.clearStreamTimeouts();
 			isStreaming.value = false;
 			streamingMessage.value = "";
+		}
+		// Likewise for a resume whose events were missed: the server row holds
+		// its outcome, so there is nothing left to wait for.
+		if (resumeSettled && !isStreaming.value) {
+			stream.clearStreamTimeouts();
+			isSubmittingInterrupts.value = false;
 		}
 	}
 
@@ -718,7 +738,8 @@ export const useChatStore = defineStore("chat", () => {
 			clearExpiryTimer();
 			blocks.applyInteractionDecisions(batch.blocks);
 			// Await the resume's first event like a stream's, so a resume that
-			// never produces one times out instead of spinning forever.
+			// never produces one times out instead of spinning forever. The
+			// window includes the time the resume waits in the server's queue.
 			stream.startStreamTimeout();
 			// Deliberately NOT cleared here. This HTTP call only acknowledges
 			// that the resume was queued server-side (a bounded thread pool
@@ -861,6 +882,7 @@ export const useChatStore = defineStore("chat", () => {
 		sessions.value = [];
 		messages.value = [];
 		clearExpiryTimer();
+		isSubmittingInterrupts.value = false;
 		currentSessionId.value = null;
 	}
 
