@@ -155,16 +155,6 @@ export async function boot(config) {
 		bridge.emit("mic");
 	});
 	cleanups.push(unbindToggle, unbindMic);
-	// "Hide assistant" must also stop the shortcuts, and any later browser-tool prompt, reopening what the user hid.
-	cleanups.push(
-		bridge.on("hide", () => {
-			hidden = true;
-			unbindToggle();
-			unbindMic();
-			view.destroy();
-			destroyPanel();
-		})
-	);
 	cleanups.push(() => destroyPanel());
 
 	const syncVisibility = () => {

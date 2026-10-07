@@ -5,20 +5,6 @@
 			<div class="wp-actions">
 				<button
 					type="button"
-					data-test="hide"
-					:title="t('Hide assistant (you can re-enable in My Preferences)')"
-					:aria-label="t('Hide assistant (you can re-enable in My Preferences)')"
-					@click="hideWidget"
-				>
-					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-						<path
-							d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"
-						/>
-						<line x1="1" y1="1" x2="23" y2="23" />
-					</svg>
-				</button>
-				<button
-					type="button"
 					data-test="expand"
 					:title="t('Open Full Assistant')"
 					:aria-label="t('Open Full Assistant')"
@@ -57,7 +43,11 @@
 			@reconnect="reconnectServer"
 		/>
 		<div ref="scroller" class="wp-messages">
-			<WidgetWelcome v-if="chatStore.messages.length === 0" />
+			<WidgetWelcome
+				v-if="chatStore.messages.length === 0"
+				@suggestion="(text) => onSend({ message: text })"
+				@open-session="openSession"
+			/>
 			<ChatInterface
 				v-else
 				:messages="chatStore.messages"
@@ -113,7 +103,6 @@ import { isBlocked, overageNoticeDue, markOverageNoticeShown } from "../desk/quo
 import { confirms, settleConfirm } from "./confirmQueue.js";
 import { t } from "./i18n.js";
 import { deskRouteFor } from "./deskLinks.js";
-import { logger } from "@/utils/logger";
 
 const chatStore = useChatStore();
 const userStore = useUserStore();
@@ -191,18 +180,10 @@ function expand() {
 	window.location.assign("/copilot");
 }
 
-async function hideWidget() {
-	const response = await window.frappe.call({
-		method: "frappe_assistant_core.chat.api.settings.widget.update_user_preference",
-		args: { field: "hide_widget", value: "1" },
-	});
-	// The endpoint answers 200 {success:false} on a validation error: not saved, so do not hide.
-	if (response?.message?.success === false) {
-		logger.error("[FAC widget] hide not saved", response.message.message);
-		return;
-	}
-	bridge.emit("close");
-	bridge.emit("hide");
+// The PanelApp watch on currentSessionId persists the choice and tells the launcher.
+async function openSession(sessionId) {
+	await chatStore.loadMessages(sessionId);
+	chatStore.hydratePendingInterrupt(sessionId);
 }
 
 // Desk links in answers go through Desk's router: a full navigation would reload the page

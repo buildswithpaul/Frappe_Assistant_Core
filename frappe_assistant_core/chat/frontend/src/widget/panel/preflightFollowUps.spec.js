@@ -11,12 +11,6 @@ const style = (file) => {
 const rule = (css, selector) => css.match(new RegExp(`(?:^|\\n)${selector}\\s*\\{([^}]*)\\}`))?.[1] || "";
 
 describe("widget-only styles under preflight", () => {
-	it("keeps the welcome list bullets and bold heading", () => {
-		const css = style("WidgetWelcome.vue");
-		expect(rule(css, "ul")).toMatch(/list-style:\s*disc/);
-		expect(rule(css, "h3")).toMatch(/font-weight:\s*600/);
-	});
-
 	it("keeps the setup gate heading bold", () => {
 		expect(rule(style("WidgetSetupGate.vue"), "h2")).toMatch(/font-weight:\s*600/);
 	});
@@ -27,5 +21,11 @@ describe("widget-only styles under preflight", () => {
 
 	it("rests the header actions on the secondary text colour", () => {
 		expect(rule(style("WidgetPanel.vue"), "\\.wp-actions button")).toMatch(/color:\s*var\(--ql-text-secondary\)/);
+	});
+
+	// FAC Chat loads robot.css from its own entry, so a shared FacoRobot in the panel draws nothing without it.
+	it("loads the robot's stylesheet for the welcome masthead", () => {
+		const entry = readFileSync(resolve(__dirname, "main.js"), "utf8");
+		expect(entry).toMatch(/import\s+["']@\/styles\/robot\.css["']/);
 	});
 });

@@ -247,12 +247,12 @@ describe("boot", () => {
 		});
 	});
 
-	describe("hiding and the FAC Admin toggle", () => {
-		it("denies a browser-tool confirmation after Hide without opening the panel, and removes the panel", async () => {
-			const bridge = await bootAndGetBridge();
-			bridge.emit("hide");
-			expect(destroyPanel).toHaveBeenCalled();
+	describe("the FAC Admin toggle", () => {
+		it("denies a browser-tool confirmation after teardown without opening the panel, and removes the panel", async () => {
+			await bootAndGetBridge();
 			const { confirm } = startBrowserTools.mock.calls[0][0];
+			window.facoWidgetTeardown();
+			expect(destroyPanel).toHaveBeenCalled();
 			await expect(confirm({ tool_name: "take_screenshot" })).resolves.toBe("deny");
 			expect(panel.open).not.toHaveBeenCalled();
 		});
@@ -337,7 +337,7 @@ describe("boot", () => {
 			expect(bridge.state.micRequested).toBeFalsy();
 		});
 
-		it("stops opening the widget once it has been hidden, for both shortcuts", async () => {
+		it("stops opening the widget once FAC Admin has torn it down, for both shortcuts", async () => {
 			access = { show_widget: true, can_use: false, preferences: { keyboard_shortcut: "ctrl+k" } };
 			const bridge = await bootAndGetBridge();
 			const open = vi.fn();
@@ -348,7 +348,7 @@ describe("boot", () => {
 			await new Promise((r) => setTimeout(r, 0));
 			expect(panel.open).toHaveBeenCalledTimes(1);
 
-			bridge.emit("hide");
+			window.facoWidgetTeardown();
 			expect(document.getElementById("fac-widget-launcher")).toBeNull();
 			panel.open.mockClear();
 			bridge.state.micRequested = false;

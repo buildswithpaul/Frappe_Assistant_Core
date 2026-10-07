@@ -6,7 +6,12 @@ import { nextTick } from "vue";
 const getQuotaStatus = vi.fn();
 vi.mock("@/api/client", () => ({
 	api: {
-		chat: { getMessages: vi.fn().mockResolvedValue({ messages: [] }), send: vi.fn().mockResolvedValue({}) },
+		chat: {
+			getMessages: vi.fn().mockResolvedValue({ messages: [] }),
+			getSessions: vi.fn().mockResolvedValue([]),
+			send: vi.fn().mockResolvedValue({}),
+		},
+		suggestions: { get: vi.fn().mockResolvedValue({ suggestions: [] }) },
 		init: { initialize: vi.fn().mockResolvedValue(null) },
 		models: { getAvailable: vi.fn().mockResolvedValue({ models: [] }) },
 		billing: { getQuotaStatus: (...a) => getQuotaStatus(...a) },
@@ -118,7 +123,6 @@ describe("widget panel", () => {
 	it("draws the header actions as icons that keep their accessible names", () => {
 		const w = mount(WidgetPanel, { global: { stubs } });
 		for (const [test, name] of [
-			["hide", "Hide assistant (you can re-enable in My Preferences)"],
 			["expand", "Open Full Assistant"],
 			["close", "Close"],
 		]) {
@@ -128,6 +132,12 @@ describe("widget panel", () => {
 			expect(button.attributes("title")).toBe(name);
 			expect(button.attributes("aria-label")).toBe(name);
 		}
+	});
+
+	// A one-click Hide left users with no visible way back; the preference stays in My Preferences.
+	it("offers no way to hide the widget from its header", () => {
+		const w = mount(WidgetPanel, { global: { stubs } });
+		expect(w.findAll(".wp-actions button").map((b) => b.attributes("data-test"))).toEqual(["expand", "close"]);
 	});
 
 	it("asks the launcher to close, and hands the session to FAC Chat on expand", async () => {
@@ -144,37 +154,34 @@ describe("widget panel", () => {
 		expect(assign).toHaveBeenCalledWith("/copilot");
 	});
 
-	it("tells the launcher to hide for good once the preference is saved", async () => {
-		window.frappe.call = vi.fn().mockResolvedValue({ message: { success: true } });
-		const emit = vi.spyOn(bridge, "emit");
-		const w = mount(WidgetPanel, { global: { stubs } });
-		await w.find('[data-test="hide"]').trigger("click");
-		await flushPromises();
-		expect(window.frappe.call).toHaveBeenCalledWith({
-			method: "frappe_assistant_core.chat.api.settings.widget.update_user_preference",
-			args: { field: "hide_widget", value: "1" },
-		});
-		expect(emit).toHaveBeenCalledWith("close");
-		expect(emit).toHaveBeenCalledWith("hide");
-	});
-
-	it("keeps the widget when saving the preference fails", async () => {
-		// update_user_preference answers 200 {success:false} on a validation error.
-		window.frappe.call = vi.fn().mockResolvedValue({ message: { success: false, message: "nope" } });
-		const emit = vi.spyOn(bridge, "emit");
-		const w = mount(WidgetPanel, { global: { stubs } });
-		await w.find('[data-test="hide"]').trigger("click");
-		await flushPromises();
-		expect(emit).not.toHaveBeenCalledWith("hide");
-		expect(emit).not.toHaveBeenCalledWith("close");
-	});
-
 	it("shows the welcome until there is a conversation", async () => {
 		const w = mount(WidgetPanel, { global: { stubs } });
-		expect(w.text()).toContain("Hi! I'm FACO");
+		expect(w.find(".ww").exists()).toBe(true);
 		useChatStore().messages = [{ role: "user", content: "hi", blocks: [] }];
 		await nextTick();
-		expect(w.text()).not.toContain("Hi! I'm FACO");
+		expect(w.find(".ww").exists()).toBe(false);
+	});
+
+	it("sends a suggestion picked on the welcome", async () => {
+		const chatStore = useChatStore();
+		chatStore.sendMessage = vi.fn().mockResolvedValue();
+		const w = mount(WidgetPanel, { global: { stubs } });
+		w.findComponent(WidgetWelcome).vm.$emit("suggestion", "Show me my pending tasks");
+		await flushPromises();
+		expect(chatStore.sendMessage).toHaveBeenCalledWith("Show me my pending tasks", [], null, null, null, {
+			skipQueue: false,
+		});
+	});
+
+	it("opens a continued conversation in the widget, with any pending approval", async () => {
+		const chatStore = useChatStore();
+		chatStore.loadMessages = vi.fn().mockResolvedValue();
+		chatStore.hydratePendingInterrupt = vi.fn();
+		const w = mount(WidgetPanel, { global: { stubs } });
+		w.findComponent(WidgetWelcome).vm.$emit("open-session", "faco_old");
+		await flushPromises();
+		expect(chatStore.loadMessages).toHaveBeenCalledWith("faco_old");
+		expect(chatStore.hydratePendingInterrupt).toHaveBeenCalledWith("faco_old");
 	});
 
 	it("puts a browser-tool confirmation in the message list and resolves the launcher's promise", async () => {
@@ -321,14 +328,59 @@ describe("widget panel", () => {
 });
 
 describe("welcome", () => {
+	beforeEach(() => {
+		setActivePinia(createPinia());
+		api.chat.getSessions.mockReset().mockResolvedValue([]);
+		api.suggestions.get.mockReset().mockResolvedValue({ suggestions: [] });
+		window.frappe = { get_route: () => ["List", "Sales Invoice"], router: { on: vi.fn(), off: vi.fn() } };
+	});
 	afterEach(() => delete window.frappe);
 
 	it("names the page the user is on", async () => {
-		window.frappe = { get_route: () => ["List", "Sales Invoice"], router: { on: vi.fn(), off: vi.fn() } };
 		const w = mount(WidgetWelcome);
 		await nextTick();
 		expect(w.find(".ww-context").exists()).toBe(true);
 		expect(w.find(".ww-context").text()).toContain("Sales Invoice");
+	});
+
+	it("greets the user by name, as FAC Chat's home does", async () => {
+		useUserStore().user = "avery.shah@northwind.example";
+		const w = mount(WidgetWelcome);
+		await nextTick();
+		expect(w.find(".wh-greeting").text()).toContain("Avery");
+	});
+
+	it("offers the two latest conversations and emits the one picked", async () => {
+		api.chat.getSessions.mockResolvedValue([
+			{ session_id: "s_old", preview: "Oldest", last_activity: "2026-10-01 09:00:00" },
+			{ session_id: "s_new", preview: "Newest", last_activity: "2026-10-07 09:00:00" },
+			{ session_id: "s_mid", preview: "Middle", last_activity: "2026-10-05 09:00:00" },
+		]);
+		const w = mount(WidgetWelcome);
+		await flushPromises();
+		const rows = w.findAll(".cl-row");
+		expect(rows.map((r) => r.text())).toEqual([expect.stringContaining("Newest"), expect.stringContaining("Middle")]);
+		await rows[0].trigger("click");
+		expect(w.emitted("open-session")).toEqual([["s_new"]]);
+	});
+
+	it("asks for suggestions that fit the page and emits the one picked", async () => {
+		api.suggestions.get.mockResolvedValue({
+			suggestions: [{ name: "Overdue invoices", description: "List overdue invoices", source: "contextual" }],
+		});
+		const w = mount(WidgetWelcome);
+		await flushPromises();
+		expect(api.suggestions.get).toHaveBeenCalledWith({ type: "List", doctype: "Sales Invoice" });
+		const tile = w.findAll(".st-tile").find((t) => t.text().includes("List overdue invoices"));
+		await tile.trigger("click");
+		expect(w.emitted("suggestion")).toEqual([["List overdue invoices"]]);
+	});
+
+	it("hides the tiles when the operator turned suggestions off", async () => {
+		api.suggestions.get.mockResolvedValue({ suggestions: [], suggestions_disabled: true });
+		const w = mount(WidgetWelcome);
+		await flushPromises();
+		expect(w.find(".st").exists()).toBe(false);
 	});
 });
 

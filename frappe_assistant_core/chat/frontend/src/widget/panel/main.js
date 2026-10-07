@@ -3,6 +3,7 @@ import { createPinia } from "pinia";
 import "vue-echarts/dist/csp/style.css";
 import "./preflight.css";
 import "@/styles/quiet-ledger.css";
+import "@/styles/robot.css";
 import "./panel.css";
 import PanelApp from "./PanelApp.vue";
 import { createRouterShim } from "./routerShim.js";
