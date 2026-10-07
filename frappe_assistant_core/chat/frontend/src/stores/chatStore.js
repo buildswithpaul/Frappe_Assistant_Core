@@ -2,7 +2,14 @@ import { defineStore } from "pinia";
 import { ref, computed, watch } from "vue";
 import { api } from "@/api/client";
 import { logger } from "@/utils/logger";
-import { generateBlockId, findActiveMessage, isFinalizedRow, resumeHasSettled } from "./chat/utils";
+import {
+	answeredCardIds,
+	generateBlockId,
+	findActiveMessage,
+	isFinalizedRow,
+	resumeHasSettled,
+} from "./chat/utils";
+import { isPausedTurn } from "@/utils/turnState";
 import { createErrorState } from "./chat/errorState";
 import { createStreamManager } from "./chat/streamManager";
 import { createBlockHandlers } from "./chat/blockHandlers";
@@ -376,11 +383,10 @@ export const useChatStore = defineStore("chat", () => {
 		// A resume in flight continues the paused turn's own row, which is not
 		// streaming yet. Until that row has moved past the pause it is the paused
 		// snapshot, and adopting it would reopen the card the user just answered.
-		const resumingId = isSubmittingInterrupts.value
-			? findActiveMessage(prevMessages)?.message_id
-			: null;
+		const resumingMsg = isSubmittingInterrupts.value ? findActiveMessage(prevMessages) : null;
+		const resumingId = resumingMsg?.message_id;
 		const resumedRow = resumingId && serverMessages.find((m) => m.message_id === resumingId);
-		const resumeSettled = resumeHasSettled(resumedRow);
+		const resumeSettled = resumeHasSettled(resumedRow, answeredCardIds(resumingMsg));
 		const merged = tail.map((m) => {
 			if (resumingId && m.message_id === resumingId && !resumeSettled) {
 				return localByMsgId.get(m.message_id) || m;
@@ -415,6 +421,8 @@ export const useChatStore = defineStore("chat", () => {
 		if (resumeSettled && !isStreaming.value) {
 			stream.clearStreamTimeouts();
 			isSubmittingInterrupts.value = false;
+			// A resume that paused again on a further card locks the composer to it.
+			hasPendingInteraction.value = isPausedTurn(resumedRow.blocks);
 		}
 	}
 

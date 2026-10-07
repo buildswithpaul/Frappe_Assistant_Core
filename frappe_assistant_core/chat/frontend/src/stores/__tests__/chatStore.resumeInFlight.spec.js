@@ -170,4 +170,57 @@ describe("chatStore resume in flight", () => {
 
 		expect(store.isSubmittingInterrupts).toBe(false);
 	});
+
+	// relay.py persists a resume that re-interrupts (a nested approval) at its
+	// interrupted stream_complete: the answered card approved, the next gated
+	// tool running, and a NEW card pending.
+	it("adopts a resume that paused again on a new card", async () => {
+		vi.useFakeTimers();
+		pauseOnAnApproval();
+		await approve();
+		api.chat.getMessages.mockResolvedValueOnce({
+			messages: [
+				{
+					role: "assistant",
+					message_id: "m-1",
+					content: "partial",
+					blocks: [
+						{ type: "tool_call", id: "call_1", tool_name: "create_document", status: "success" },
+						{ type: "interaction", id: "call_1", status: "approved", interactionType: "approval" },
+						{ type: "tool_call", id: "call_2", tool_name: "document_action", status: "running" },
+						{
+							type: "interaction",
+							id: "call_2",
+							status: "pending",
+							interactionType: "approval",
+							interrupts: [{ id: "int2" }],
+						},
+					],
+				},
+			],
+		});
+
+		await vi.advanceTimersByTimeAsync(180000);
+
+		expect(store.isSubmittingInterrupts).toBe(false);
+		expect(store.error).toBeFalsy();
+		expect(store.pendingInteractionBlock?.block.id).toBe("call_2");
+	});
+
+	// _settle_unconsumed_resume writes the answered cards `expired` when the
+	// pause was gone server-side, leaving the gated tool running and no flag.
+	it("adopts a resume whose pause was already gone", async () => {
+		vi.useFakeTimers();
+		pauseOnAnApproval();
+		await approve();
+		const row = pausedRow();
+		row.blocks[1].status = "expired";
+		api.chat.getMessages.mockResolvedValueOnce({ messages: [row] });
+
+		await vi.advanceTimersByTimeAsync(180000);
+
+		expect(store.isSubmittingInterrupts).toBe(false);
+		expect(store.error).toBeFalsy();
+		expect(store.messages[0].blocks.find((b) => b.type === "interaction").status).toBe("expired");
+	});
 });

@@ -2,8 +2,6 @@
  * Shared utilities for chat store modules.
  */
 
-import { isPausedTurn } from "@/utils/turnState";
-
 let blockIdCounter = 0;
 
 export function generateBlockId(prefix = "block") {
@@ -20,15 +18,29 @@ export function isFinalizedRow(msg) {
 	return Boolean(msg.content) || (Array.isArray(msg.blocks) && msg.blocks.length > 0);
 }
 
-// Whether a paused turn's server row shows its resume got past the pause. The
-// relay persists blocks only at terminal boundaries, so until the resume ends
-// the row is the paused snapshot: its card pending and the gated tool running.
-export function resumeHasSettled(row) {
+// The ids of the cards the user answered on a turn: decided locally, and no
+// longer pending here (the batch went out with the resume).
+export function answeredCardIds(msg) {
+	const blocks = Array.isArray(msg?.blocks) ? msg.blocks : [];
+	return new Set(
+		blocks
+			.filter((b) => b?.type === "interaction" && b.decision && b.status !== "pending")
+			.map((b) => b.id)
+	);
+}
+
+// Whether a paused turn's server row shows the outcome of the resume that
+// answered `answeredIds`. The relay persists nothing mid-resume, so until the
+// resume ends those cards are still pending on the row. Any other shape is an
+// outcome: an answer, a new pause on a further card, or the answered cards
+// written `expired` because the pause was already gone.
+export function resumeHasSettled(row, answeredIds) {
 	if (!row) return false;
 	if (row.errored || row.aborted) return true;
 	const blocks = Array.isArray(row.blocks) ? row.blocks : [];
-	if (isPausedTurn(blocks)) return false;
-	return !blocks.some((b) => b?.type === "tool_call" && b.status === "running");
+	return !blocks.some(
+		(b) => b?.type === "interaction" && b.status === "pending" && answeredIds.has(b.id)
+	);
 }
 
 // `messages[length-1]` stops being "the active turn" the instant a non-turn
