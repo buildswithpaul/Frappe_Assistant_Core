@@ -9,6 +9,7 @@ import {
 	findActiveMessage,
 	isFinalizedRow,
 	resumeHasSettled,
+	resumeMessageId,
 } from "./chat/utils";
 import { isPausedTurn } from "@/utils/turnState";
 import { createErrorState } from "./chat/errorState";
@@ -708,8 +709,10 @@ export const useChatStore = defineStore("chat", () => {
 		if (!batch) return;
 
 		const lastMsg = findActiveMessage(messages.value);
-		const resumeMessageId =
-			lastMsg && lastMsg.role === "assistant" ? lastMsg.message_id : null;
+		const resumingRowId = resumeMessageId(
+			messages.value,
+			new Set(batch.blocks.map((b) => b.id))
+		);
 		const sessionId = currentSessionId.value;
 		// A resume is a request of its own, as a Continue is: from here on a
 		// Stop names it, never the request that paused the turn.
@@ -728,7 +731,7 @@ export const useChatStore = defineStore("chat", () => {
 			const payload = {
 				session_id: sessionId,
 				interrupt_response: JSON.stringify(batch.responses),
-				message_id: resumeMessageId,
+				message_id: resumingRowId,
 				web_search: modes.webSearch,
 				reasoning_effort: modes.effort,
 				// Older AR servers only read the boolean.

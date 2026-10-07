@@ -43,6 +43,20 @@ function sameInterrupts(a, b) {
 	return ids(a) === ids(b);
 }
 
+// The message_id a resume continues: the latest row holding one of the decided
+// cards that has an id. A rebuilt list can put the card on a bubble without
+// one (a snapshot that carried none) after the history row that has it. Null
+// when none has: the server then resolves the paused row itself.
+export function resumeMessageId(messages, cardIds) {
+	for (let i = (messages?.length || 0) - 1; i >= 0; i--) {
+		const msg = messages[i];
+		if (msg?.role !== "assistant" || !msg.message_id) continue;
+		const holds = (msg.blocks || []).some((b) => b?.type === "interaction" && cardIds.has(b.id));
+		if (holds) return msg.message_id;
+	}
+	return null;
+}
+
 // The ids of the cards the user answered on a turn. recordInteractionDecision
 // sets `decision` at once, and only a fully decided batch is resumed; the
 // status flips later, once the resume_interrupt call returns.
