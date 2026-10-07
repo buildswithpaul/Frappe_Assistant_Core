@@ -291,6 +291,14 @@ export function useStreaming() {
 		// surface joins a running turn, dropped when already shown.
 		if (!admitted && !chatStore.admitStreamEvent(data)) return;
 
+		// The end of an own turn its resume already carries on (liveTurnSync marks it): finishing
+		// the streaming state here would stop the resume's watchdog and open the send queue while
+		// the resume runs. Only its usage counts; the resume's own end brings the blocks.
+		if (data.superseded) {
+			if (data.event === "stream_complete") userStore.applyQuotaFromStream(data);
+			return;
+		}
+
 		// Reset activity timeout on any stream event (indicates connection is alive)
 		chatStore.resetActivityTimeout();
 
