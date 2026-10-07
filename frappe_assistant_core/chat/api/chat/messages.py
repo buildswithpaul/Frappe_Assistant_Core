@@ -365,6 +365,30 @@ def send_message(
         frappe.throw(_("Error processing message: {0}").format(str(e)))
 
 
+def _paused_message_id(session_id: str) -> str | None:
+    """The message_id of the caller's latest assistant row in this session that
+    holds a pending interaction: the turn a resume continues."""
+    rows = frappe.get_all(
+        "FAC Chat Message",
+        filters={"session_id": session_id, "role": "assistant", "user": frappe.session.user},
+        fields=["message_id", "blocks"],
+        order_by="creation desc",
+        limit_page_length=20,
+    )
+    for row in rows:
+        try:
+            blocks = json.loads(row.blocks) if isinstance(row.blocks, str) else row.blocks
+        except ValueError:
+            continue
+        pending = any(
+            isinstance(b, dict) and b.get("type") == "interaction" and b.get("status") == "pending"
+            for b in blocks or []
+        )
+        if pending and row.message_id:
+            return row.message_id
+    return None
+
+
 @frappe.whitelist(methods=["POST"])
 @rate_limit(session_user_or_ip, limit=30, seconds=60)
 def resume_interrupt(
@@ -444,6 +468,10 @@ def resume_interrupt(
         effort = _effort(reasoning_effort)
         if effort is not None:
             thinking_enabled = effort != "off"
+
+        # A client whose list was rebuilt can lose the paused row's id; without it
+        # AR mints a new one and the decision lands on the wrong row.
+        message_id = message_id or _paused_message_id(session_id)
 
         turn = _mark_turn_started(
             session_id, restricted=restricted, message_id=message_id, client_turn=client_turn_id
