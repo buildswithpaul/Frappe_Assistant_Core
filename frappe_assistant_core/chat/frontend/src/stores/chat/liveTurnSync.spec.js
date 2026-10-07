@@ -2,6 +2,11 @@ import { describe, it, expect, vi } from "vitest";
 import { reactive } from "vue";
 import { applyLiveSnapshot, createLiveTurnSync, GAP_REREAD_MS } from "./liveTurnSync";
 
+vi.mock("@/utils/logger", () => ({
+	logger: { warn: vi.fn(), error: vi.fn(), info: vi.fn(), debug: vi.fn() },
+}));
+import { logger } from "@/utils/logger";
+
 const ev = (seq, extra = {}) => ({ event: "stream_chunk", turn: "T1", seq, chunk: `c${seq}`, ...extra });
 
 function harness({ snapshot = null, streaming = false, reloadHistory = undefined } = {}) {
@@ -23,6 +28,10 @@ function harness({ snapshot = null, streaming = false, reloadHistory = undefined
 }
 
 describe("applyLiveSnapshot", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
 	const snap = {
 		turn: "T1", seq: 5, message_id: "m1", text: "Hi",
 		blocks: [{ type: "text", id: "t1", content: "Hi" }], active_thinking_id: null,
@@ -68,6 +77,10 @@ describe("applyLiveSnapshot", () => {
 });
 
 describe("createLiveTurnSync", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
 	it("passes events without a turn straight through", () => {
 		const h = harness();
 		expect(h.sync.admit({ event: "stream_cancel_requested" })).toBe(true);
@@ -195,10 +208,9 @@ describe("createLiveTurnSync", () => {
 		const h = harness({ snapshot: null, streaming: false, reloadHistory });
 		// Admit a foreign turn to trigger startJoin(reloadHistory), which should log but not throw
 		h.sync.admit(ev(2, { turn: "T2" }));
-		// Give the async join time to complete and log the error
-		await new Promise((r) => setTimeout(r, 50));
+		// Wait for the error to be logged
+		await vi.waitFor(() => expect(logger.warn).toHaveBeenCalledWith("Live turn join failed:", expect.any(Error)));
 		// The held event should have been released even though the join failed
 		expect(h.handled.map((e) => e.seq)).toEqual([2]);
-		// Verify no unhandled rejection by the test passing
 	});
 });
