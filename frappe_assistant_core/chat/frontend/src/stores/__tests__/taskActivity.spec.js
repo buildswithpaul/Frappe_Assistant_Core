@@ -66,4 +66,30 @@ describe("task activity labels", () => {
 
 		expect(store.taskActivity).toEqual({});
 	});
+
+	it("remembers which task reported last, even within one tick", async () => {
+		await store.sendMessage("Compare customers A and B", [], null, "m1");
+		store.handleTaskActivity({ task_id: "t-1", label: "x" });
+		store.handleTaskActivity({ task_id: "t-2", label: "y" });
+		store.handleTaskActivity({ task_id: "t-1", label: "z" });
+
+		expect(store.lastActivityTaskId).toBe("t-1");
+	});
+
+	it("forgets the last reporter with the labels", async () => {
+		await store.sendMessage("Compare customers A and B", [], null, "m1");
+		store.handleTaskActivity({ task_id: "t-1", label: "x" });
+		store.completeStreaming("Done.");
+		expect(store.lastActivityTaskId).toBeNull();
+
+		await store.sendMessage("Again", [], null, "m2");
+		store.handleTaskActivity({ task_id: "t-2", label: "y" });
+		await store.loadMessages("s2");
+		expect(store.lastActivityTaskId).toBeNull();
+
+		store.lastActivityTaskId = "t-3";
+		store.clearSessions();
+		expect(store.lastActivityTaskId).toBeNull();
+	});
 });
+

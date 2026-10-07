@@ -73,6 +73,7 @@
 			:stopped="latestTurn.stopped"
 			:waiting-on="latestTurn.waitingOn"
 			:activity="chatStore.taskActivity"
+			:latest-activity-id="chatStore.lastActivityTaskId"
 		/>
 		<OverageNotice
 			v-if="overageVisible"
