@@ -1,6 +1,6 @@
 <template>
 	<section v-if="tasks.length" class="task-section">
-		<div class="task-head">Tasks · this turn</div>
+		<div v-if="!bare" class="task-head">Tasks · this turn</div>
 		<ul class="task-list">
 			<li
 				v-for="t in rows"
@@ -28,7 +28,7 @@
 				</p>
 			</li>
 		</ul>
-		<p v-if="summary" class="task-summary">{{ summary }}</p>
+		<p v-if="summary && !bare" class="task-summary">{{ summary }}</p>
 	</section>
 </template>
 
@@ -44,6 +44,8 @@ const props = defineProps({
 	live: { type: Boolean, default: true },
 	// Latest live label per running task id (the `task_activity` stream event).
 	activity: { type: Object, default: () => ({}) },
+	// The host draws its own heading and tally (the Desk widget's plan strip).
+	bare: { type: Boolean, default: false },
 });
 
 const GLYPHS = {
