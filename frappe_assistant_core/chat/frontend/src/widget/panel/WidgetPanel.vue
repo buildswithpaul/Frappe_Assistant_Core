@@ -113,7 +113,7 @@ import { isBlocked, overageNoticeDue, markOverageNoticeShown } from "../desk/quo
 import { confirms, settleConfirm } from "./confirmQueue.js";
 import { t } from "./i18n.js";
 import { deskRouteFor } from "./deskLinks.js";
-import { isPausedTurn, isStoppedTurn } from "@/utils/turnState";
+import { isStoppedTurn, turnWaitingOn } from "@/utils/turnState";
 
 const chatStore = useChatStore();
 const userStore = useUserStore();
@@ -140,18 +140,12 @@ const latestTurn = computed(() => {
 			plan,
 			live: Boolean(msg.isStreaming),
 			stopped: isStoppedTurn(msg),
-			waitingOn: waitingOn(msg),
+			waitingOn: turnWaitingOn(msg.blocks, chatStore.isSubmittingInterrupts),
 		};
 	}
 	return { index: -1, plan: null, live: false, stopped: false, waitingOn: "" };
 });
 
-// What a turn that is not streaming but has not ended waits on: a pending card's answer, or the
-// resume an answered card started (the card is resolved before the resume stream's first event).
-function waitingOn(msg) {
-	if (isPausedTurn(msg.blocks)) return chatStore.pendingInteractionBlock?.regime || "approval";
-	return chatStore.isSubmittingInterrupts ? "resume" : "";
-}
 
 const deskUser = () => window.frappe?.session?.user || "";
 

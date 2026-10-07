@@ -78,3 +78,32 @@ describe("MessageBlockRenderer tool rows while a resume is in flight", () => {
 		expect(row.classes()).toContain("timeline-stopped");
 	});
 });
+
+// Live-test repro (round 2, P1): a turn paused at an approval card read
+// "✓ Used Create Document" in the card header, as if the gated tool had run.
+describe("MessageBlockRenderer header while a turn waits on a card", () => {
+	beforeEach(() => setActivePinia(createPinia()));
+
+	const header = (blocks) =>
+		mount(MessageBlockRenderer, { props: { blocks, messageIndex: 0, isStreaming: false } });
+
+	it("says it waits for the approval instead of claiming the tool ran", () => {
+		const w = header([GATED_TOOL, PENDING_CARD]);
+
+		expect(w.find(".processing-summary").text()).toBe("Waiting for your approval…");
+		const icon = w.find(".processing-status-icon");
+		expect(icon.classes()).toContain("status-waiting");
+		expect(icon.classes()).not.toContain("status-complete");
+	});
+
+	it("reads the normal summary once the turn has completed", () => {
+		const w = header([
+			{ ...GATED_TOOL, status: "success", endTime: "2026-07-20T09:00:02.000Z" },
+			{ ...PENDING_CARD, status: "approved" },
+		]);
+
+		expect(w.find(".processing-summary").text()).toBe("Used Create Document");
+		expect(w.find(".processing-status-icon").classes()).toContain("status-complete");
+	});
+});
+

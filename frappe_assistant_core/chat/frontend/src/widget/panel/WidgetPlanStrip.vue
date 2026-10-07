@@ -20,6 +20,7 @@
 import { computed, ref } from "vue";
 import TaskList from "@/components/chat/rail/TaskList.vue";
 import { t } from "./i18n.js";
+import { WAITING_LABELS } from "@/utils/turnState";
 
 const props = defineProps({
 	// The turn's plan block ({ status, tasks }), or null when the turn has none.
@@ -35,18 +36,12 @@ const props = defineProps({
 	waitingOn: { type: String, default: "" },
 });
 
-const WAITING_HEADINGS = {
-	approval: "Waiting for your approval…",
-	question: "Waiting for your answer…",
-	resume: "Resuming…",
-};
-
 const expanded = ref(false);
 const tasks = computed(() => props.plan?.tasks || []);
 
 const heading = computed(() => {
 	const total = tasks.value.length;
-	if (!props.live && WAITING_HEADINGS[props.waitingOn]) return t(WAITING_HEADINGS[props.waitingOn]);
+	if (!props.live && WAITING_LABELS[props.waitingOn]) return t(WAITING_LABELS[props.waitingOn]);
 	if (!props.live) {
 		const done = tasks.value.filter((task) => task.status === "done").length;
 		if (props.stopped) {

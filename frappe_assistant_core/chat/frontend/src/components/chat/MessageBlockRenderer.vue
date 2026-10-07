@@ -6,7 +6,7 @@
 				v-if="segment.type === 'processing_group'"
 				:blocks="segment.blocks"
 				:is-streaming="isStreaming"
-				:paused="turnPaused"
+				:waiting-on="waitingOn"
 				:is-expanded="processingGroupExpanded[segment.id] ?? (isStreaming && !userCollapsed)"
 				:message-index="messageIndex"
 				@toggle="toggleProcessingGroup(segment.id)"
@@ -106,7 +106,7 @@ import { parseRichBlocks } from "./richBlocks/parser";
 import { renderMarkdown as renderMd, ensureHljs } from "@/utils/markdown.js";
 import "@/styles/hljs-theme.css";
 import { shouldShowProcessingIndicator } from "./indicatorVisibility";
-import { isPausedTurn } from "@/utils/turnState";
+import { turnWaitingOn } from "@/utils/turnState";
 
 const props = defineProps({
 	blocks: {
@@ -132,7 +132,7 @@ const props = defineProps({
 
 defineEmits(["toggleBlock", "approve", "reject", "previewDocument"]);
 
-const turnPaused = computed(() => isPausedTurn(props.blocks) || props.isResuming);
+const waitingOn = computed(() => turnWaitingOn(props.blocks, props.isResuming));
 
 // Bump on hljs load so computed renders re-run with syntax highlighting
 // once the chunk arrives. First paint uses plain escaped code (instant);
