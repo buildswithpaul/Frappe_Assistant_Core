@@ -43,7 +43,8 @@ describe("processingSummary — completed", () => {
 			{ ...runningDelegate, status: "success" },
 			{ ...runningDelegate, status: "error" },
 		];
-		expect(processingSummary(blocks, false)).toBe("Delegated 2 subtasks (1 failed)");
+		// The failed call ran none of its subtasks.
+		expect(processingSummary(blocks, false)).toBe("Delegated 1 of 2 subtasks");
 	});
 
 	it("lets the external Used... line win when external tools also ran", () => {
