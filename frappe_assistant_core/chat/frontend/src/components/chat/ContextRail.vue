@@ -25,6 +25,7 @@
 			:tasks="artifacts.plan.tasks"
 			:activity="chatStore.taskActivity"
 			:live="live"
+			:stopped="stopped"
 		/>
 
 		<!-- Pending approval (mirrors the in-thread card) -->
@@ -110,6 +111,11 @@ defineProps({
 	live: {
 		type: Boolean,
 		default: true,
+	},
+	// True when the user stopped the turn — its open tasks then read as stopped.
+	stopped: {
+		type: Boolean,
+		default: false,
 	},
 });
 defineEmits(["review-approval", "collapse"]);

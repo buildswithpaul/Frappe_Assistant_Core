@@ -11,7 +11,7 @@
 			{{ heading }}
 		</button>
 		<div v-if="live || expanded" class="wps-rows">
-			<TaskList :tasks="tasks" :live="live" :activity="activity" bare />
+			<TaskList :tasks="tasks" :live="live" :stopped="stopped" :activity="activity" bare />
 		</div>
 	</section>
 </template>
@@ -28,6 +28,8 @@ const props = defineProps({
 	live: { type: Boolean, default: false },
 	// Latest live label per running task id (chatStore.taskActivity).
 	activity: { type: Object, default: () => ({}) },
+	// The user pressed Stop on this turn: its open rows read as stopped, not as work left over.
+	stopped: { type: Boolean, default: false },
 });
 
 const expanded = ref(false);
@@ -37,6 +39,11 @@ const heading = computed(() => {
 	const total = tasks.value.length;
 	if (!props.live) {
 		const done = tasks.value.filter((task) => task.status === "done").length;
+		if (props.stopped) {
+			return total === 1
+				? t("⊘ Stopped after {0} of {1} step", [done, total])
+				: t("⊘ Stopped after {0} of {1} steps", [done, total]);
+		}
 		return total === 1
 			? t("✓ Completed {0} of {1} step", [done, total])
 			: t("✓ Completed {0} of {1} steps", [done, total]);

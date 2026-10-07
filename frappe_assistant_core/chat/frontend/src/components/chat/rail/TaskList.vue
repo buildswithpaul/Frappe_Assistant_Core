@@ -7,7 +7,7 @@
 				:key="t.id || t.title"
 				class="task-row"
 				:class="[`is-${t.displayStatus}`, { 'is-child': t.parentId }]"
-				:aria-label="`${t.title} — ${t.displayStatus}${t.note ? ': ' + t.note : ''}`"
+				:aria-label="`${t.title} — ${t.displayStatus}${t.displayNote ? ': ' + t.displayNote : ''}`"
 			>
 				<div class="task-line">
 					<span class="glyph" aria-hidden="true">{{ glyph(t.displayStatus) }}</span>
@@ -20,11 +20,11 @@
 					</span>
 					<span v-else-if="t.delegated && !t.helper" class="delegated">↳ specialist</span>
 				</div>
-				<p v-if="live && t.status === 'running' && activity[t.id]" class="activity">
+				<p v-if="inFlight && t.status === 'running' && activity[t.id]" class="activity">
 					{{ activity[t.id] }}
 				</p>
-				<p v-if="t.note" class="note" :class="{ 'is-reason': t.status === 'failed' }">
-					{{ t.note }}
+				<p v-if="t.displayNote" class="note" :class="{ 'is-reason': t.status === 'failed' }">
+					{{ t.displayNote }}
 				</p>
 			</li>
 		</ul>
@@ -46,7 +46,13 @@ const props = defineProps({
 	activity: { type: Object, default: () => ({}) },
 	// The host draws its own heading and tally (the Desk widget's plan strip).
 	bare: { type: Boolean, default: false },
+	// The user pressed Stop (the message's `aborted` flag). AR closes the rows it
+	// was still working on only after the stream has ended, so FAC never receives
+	// them: every row still running or pending is presented as stopped.
+	stopped: { type: Boolean, default: false },
 });
+
+const OPEN_STATUSES = new Set(["running", "pending"]);
 
 const GLYPHS = {
 	pending: "☐",
@@ -55,6 +61,7 @@ const GLYPHS = {
 	done: "✓",
 	failed: "✗",
 	skipped: "⊘",
+	stopped: "⊘",
 };
 
 function glyph(status) {
@@ -73,21 +80,30 @@ function helperMeta(t) {
 	return parts.join(" · ");
 }
 
+const inFlight = computed(() => props.live && !props.stopped);
+
+function displayStatus(t) {
+	if (props.stopped && OPEN_STATUSES.has(t.status)) return "stopped";
+	if (!inFlight.value && t.status === "running") return "unfinished";
+	return t.status;
+}
+
 const rows = computed(() =>
-	props.tasks.map((t) => ({
-		...t,
-		displayStatus: !props.live && t.status === "running" ? "unfinished" : t.status,
-	}))
+	props.tasks.map((t) => {
+		const status = displayStatus(t);
+		return { ...t, displayStatus: status, displayNote: status === "stopped" ? "Stopped" : t.note };
+	})
 );
 
 // Only worth saying when the plan didn't finish cleanly — otherwise the
 // checkmarks already say it.
 const summary = computed(() => {
-	if (props.live) return "";
+	if (inFlight.value) return "";
 	const total = props.tasks.length;
 	const done = props.tasks.filter((t) => t.status === "done").length;
 	if (!total || done === total) return "";
-	return `Completed ${done} of ${total} step${total === 1 ? "" : "s"}`;
+	const verb = props.stopped ? "Stopped after" : "Completed";
+	return `${verb} ${done} of ${total} step${total === 1 ? "" : "s"}`;
 });
 </script>
 
@@ -169,7 +185,9 @@ const summary = computed(() => {
 	color: var(--ql-danger, #b4453a);
 }
 .task-row.is-skipped .glyph,
-.task-row.is-skipped .title {
+.task-row.is-skipped .title,
+.task-row.is-stopped .glyph,
+.task-row.is-stopped .title {
 	color: var(--ql-text-muted, #8a857c);
 	opacity: 0.65;
 }
