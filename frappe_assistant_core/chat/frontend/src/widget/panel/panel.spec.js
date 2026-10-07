@@ -179,8 +179,8 @@ describe("widget panel", () => {
 		];
 		chatStore.handleTaskActivity({ task_id: "a", label: "Reading Sales Invoice list…" });
 		await nextTick();
-		expect(w.find(".wps-heading").text()).toBe("Running 2 in parallel…");
-		expect(w.find(".wps .activity").text()).toBe("Reading Sales Invoice list…");
+		expect(w.find(".wps-status").text()).toBe("⠿ Running 2 in parallel · 0 of 2 done");
+		expect(w.find(".wps-activity").text()).toBe("— Reading Sales Invoice list…");
 	});
 
 	it("presents a stopped turn's plan as stopped", async () => {
@@ -287,7 +287,7 @@ describe("widget panel", () => {
 			expect(w.find(".wps").exists()).toBe(false);
 		});
 
-		it("follows the newer turn's plan live, then collapses it when that turn ends", async () => {
+		it("follows the newer turn's plan live, then reads its tally when that turn ends", async () => {
 			const w = mount(WidgetPanel, { global: { stubs } });
 			const chatStore = useChatStore();
 			const newer = {
@@ -312,12 +312,9 @@ describe("widget panel", () => {
 				newer,
 			];
 			await nextTick();
-			expect(w.find(".wps-heading").text()).toBe("Working through 3 steps…");
-			expect(w.findAll(".task-row").map((r) => r.find(".title").text())).toEqual([
-				"New step",
-				"Next step",
-				"Last step",
-			]);
+			expect(w.find(".wps-status").text()).toBe("⠿ Working through 3 steps · 0 of 3 done");
+			// The newer turn's running row, not the older turn's.
+			expect(w.find(".wps-activity").text()).toBe("— New step");
 
 			// stream_complete flips the message's isStreaming off and closes the first task.
 			chatStore.messages[3].isStreaming = false;
