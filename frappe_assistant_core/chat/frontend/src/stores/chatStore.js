@@ -148,6 +148,7 @@ export const useChatStore = defineStore("chat", () => {
 	const stream = createStreamManager({
 		...sharedRefs,
 		isCancelling,
+		isSubmittingInterrupts,
 		reconcile: (sessionId) => reconcileFromServer(sessionId),
 		getSocketProbe: () => socketProbe,
 	});
@@ -253,6 +254,8 @@ export const useChatStore = defineStore("chat", () => {
 			messages.value = [];
 			// Live labels belong to the previous session's helpers.
 			blocks.taskActivity.value = {};
+			// A resume in flight belongs to the previous session's turn.
+			isSubmittingInterrupts.value = false;
 			// History and the running turn's snapshot are read together; events
 			// that arrive meanwhile are held and applied after the snapshot.
 			await liveSync.join(() => readHistory(sessionId));
@@ -714,6 +717,9 @@ export const useChatStore = defineStore("chat", () => {
 			// Socket.IO; flip the local card status now so the UI matches.
 			clearExpiryTimer();
 			blocks.applyInteractionDecisions(batch.blocks);
+			// Await the resume's first event like a stream's, so a resume that
+			// never produces one times out instead of spinning forever.
+			stream.startStreamTimeout();
 			// Deliberately NOT cleared here. This HTTP call only acknowledges
 			// that the resume was queued server-side (a bounded thread pool
 			// picks it up); the agent hasn't produced a single event yet.
@@ -724,7 +730,7 @@ export const useChatStore = defineStore("chat", () => {
 			// exactly the window the send queue would dispatch into.
 			// handleStreamResumed() clears it once that first event lands;
 			// handleStreamError/handleStreamAborted clear it if the resume
-			// never gets that far.
+			// never gets that far, and handleStreamTimeout if nothing arrives.
 		} catch (err) {
 			logger.error("Failed to resume interrupt:", err);
 			blocks.revertInteractionDecisions(batch.blocks);
