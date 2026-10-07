@@ -115,6 +115,21 @@ describe("widget panel", () => {
 		expect(window.frappe.set_route).toHaveBeenCalledWith("todo", "T-1");
 	});
 
+	it("draws the header actions as icons that keep their accessible names", () => {
+		const w = mount(WidgetPanel, { global: { stubs } });
+		for (const [test, name] of [
+			["hide", "Hide assistant (you can re-enable in My Preferences)"],
+			["expand", "Open Full Assistant"],
+			["close", "Close"],
+		]) {
+			const button = w.find(`[data-test="${test}"]`);
+			expect(button.find("svg").exists()).toBe(true);
+			expect(button.text()).toBe("");
+			expect(button.attributes("title")).toBe(name);
+			expect(button.attributes("aria-label")).toBe(name);
+		}
+	});
+
 	it("asks the launcher to close, and hands the session to FAC Chat on expand", async () => {
 		const emit = vi.spyOn(bridge, "emit");
 		const assign = vi.fn();

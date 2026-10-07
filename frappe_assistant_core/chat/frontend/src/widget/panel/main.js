@@ -1,6 +1,7 @@
 import { createApp } from "vue";
 import { createPinia } from "pinia";
 import "vue-echarts/dist/csp/style.css";
+import "./preflight.css";
 import "@/styles/quiet-ledger.css";
 import "./panel.css";
 import PanelApp from "./PanelApp.vue";

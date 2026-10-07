@@ -7,12 +7,41 @@
 					type="button"
 					data-test="hide"
 					:title="t('Hide assistant (you can re-enable in My Preferences)')"
+					:aria-label="t('Hide assistant (you can re-enable in My Preferences)')"
 					@click="hideWidget"
 				>
-					⤓
+					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+						<path
+							d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"
+						/>
+						<line x1="1" y1="1" x2="23" y2="23" />
+					</svg>
 				</button>
-				<button type="button" data-test="expand" :title="t('Open Full Assistant')" @click="expand">⤢</button>
-				<button type="button" data-test="close" :title="t('Close')" @click="bridge.emit('close')">✕</button>
+				<button
+					type="button"
+					data-test="expand"
+					:title="t('Open Full Assistant')"
+					:aria-label="t('Open Full Assistant')"
+					@click="expand"
+				>
+					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+						<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+						<polyline points="15 3 21 3 21 9" />
+						<line x1="10" y1="14" x2="21" y2="3" />
+					</svg>
+				</button>
+				<button
+					type="button"
+					data-test="close"
+					:title="t('Close')"
+					:aria-label="t('Close')"
+					@click="bridge.emit('close')"
+				>
+					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+						<line x1="18" y1="6" x2="6" y2="18" />
+						<line x1="6" y1="6" x2="18" y2="18" />
+					</svg>
+				</button>
 			</div>
 		</header>
 		<ConnectionBanners
@@ -235,13 +264,27 @@ onUnmounted(stopMic);
 	border: none;
 	border-radius: 6px;
 	background: transparent;
-	color: var(--ql-text-secondary);
-	font-size: 14px;
+	color: var(--ql-text-muted);
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
 	cursor: pointer;
+}
+.wp-actions svg {
+	width: 16px;
+	height: 16px;
 }
 .wp-actions button:hover {
 	background: var(--ql-accent-soft);
 	color: var(--ql-text);
+}
+/* FAC Chat's composer is laid out for the SPA's wide page: its 64px gutters and the keyboard
+   hint squeeze the toolbar pills under the right-hand group at 400px. */
+:deep(.input-area-container) {
+	padding: 12px 12px 14px;
+}
+:deep(.kbd-hint) {
+	display: none;
 }
 .wp-messages {
 	flex: 1;

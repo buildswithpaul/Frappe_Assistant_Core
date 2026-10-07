@@ -24,5 +24,9 @@ describe("widget build", () => {
 			.join("\n");
 		expect(js).not.toMatch(/reka-ui/);
 		expect(existsSync(resolve(out, entry.file))).toBe(true);
+		// Tailwind's preflight is not shipped, so the widget carries its own: without it the
+		// components' content-box defaults overflow the 400px panel.
+		const stylesheet = readFileSync(resolve(out, css[0]), "utf8");
+		expect(stylesheet).toMatch(/box-sizing:\s*border-box/);
 	}, 120000);
 });
