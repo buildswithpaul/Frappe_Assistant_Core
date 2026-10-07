@@ -23,4 +23,14 @@ describe("tables", () => {
 		const html = renderMarkdown(TABLE);
 		expect(html).toMatch(/<td>Acme Corp<\/td>/);
 	});
+
+	it("measures decoded text, so an entity does not count as several characters", () => {
+		const html = renderMarkdown("| Ref |\n|---|\n| AT&amp;T-0041 |");
+		expect(html).toMatch(/<td class="md-nowrap">AT&amp;T-0041<\/td>/);
+	});
+
+	it("lets a cell wrap when markup surrounds one word of several", () => {
+		const html = renderMarkdown("| Name |\n|---|\n| **Acme** Corp |");
+		expect(html).toMatch(/<td><strong>Acme<\/strong> Corp<\/td>/);
+	});
 });

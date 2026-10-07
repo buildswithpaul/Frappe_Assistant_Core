@@ -13,7 +13,7 @@ describe("code highlighting", () => {
 		await ensureHljs();
 		const html = renderMarkdown("```nosuchlang\n<script>alert(1)</script>\n```");
 		expect(html).toContain("&lt;script&gt;");
-		expect(html).not.toMatch(/<script>/);
+		expect(html).not.toMatch(/<script/i);
 	});
 
 	it("ships only the languages we chose, not all 190", async () => {

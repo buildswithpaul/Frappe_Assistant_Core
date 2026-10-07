@@ -57,7 +57,9 @@ const NOWRAP_MAX = 40;
 // A cell holding one token (an invoice number, a date, an amount) is
 // unreadable once the browser breaks it at a hyphen. Prose cells may wrap.
 function isNowrapCell(html) {
-	const text = html.replace(/<[^>]+>/g, "").trim();
+	// No DOM (SSR/worker): keep wrapping, the safe default.
+	if (typeof DOMParser === "undefined") return false;
+	const text = (new DOMParser().parseFromString(html, "text/html").body.textContent || "").trim();
 	return text.length > 0 && text.length <= NOWRAP_MAX && !/\s/.test(text);
 }
 
