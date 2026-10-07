@@ -373,7 +373,10 @@ export const useChatStore = defineStore("chat", () => {
 				(local.content || (Array.isArray(local.blocks) && local.blocks.length > 0));
 			return localHasContent ? local : m;
 		});
-		messages.value = stillLive.length ? [...merged, ...stillLive] : merged;
+		// Queued rows are local-only (sent when the turn ends) and are neither server
+		// rows nor streaming, so carry them over or they vanish while still queued.
+		const queued = prevMessages.filter((m) => m.queued && !m.isStreaming);
+		messages.value = [...merged, ...stillLive, ...queued];
 
 		if (truncatedIds.size) {
 			for (const m of messages.value) {

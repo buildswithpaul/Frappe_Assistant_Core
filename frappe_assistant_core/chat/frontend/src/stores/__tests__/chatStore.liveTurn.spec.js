@@ -136,6 +136,35 @@ describe("joining a running turn", () => {
 		expect(last.content).toBe("Invoices: ");
 	});
 
+	// Production: the user types while a turn streams (sendMessage queues it), then the
+	// tab regains visibility and recovers while isStreaming is still true.
+	it.each([
+		["a live snapshot", snapshot],
+		["no snapshot", null],
+	])("keeps a queued message visible and cancellable across a recovery with %s", async (_n, live) => {
+		// A real read returns fresh rows each time, not the store's own objects.
+		api.chat.getMessages.mockImplementation(async () => history.map((m) => ({ ...m })));
+		api.chat.getLiveTurn.mockResolvedValue(snapshot);
+		await store.loadMessages("s1");
+		await store.sendMessage("and the invoices?");
+		const queuedId = store.messages.at(-1)._queueId;
+		expect(store.messages.at(-1).queued).toBe(true);
+
+		api.chat.getLiveTurn.mockResolvedValue(live);
+		await store.recoverLiveTurn("s1");
+
+		const queued = store.messages.filter((m) => m.queued);
+		expect(queued.map((m) => m.content)).toEqual(["and the invoices?"]);
+		expect(store.messages.indexOf(queued[0])).toBeGreaterThan(
+			store.messages.findIndex((m) => m.message_id === "m1")
+		);
+		expect(store.queuedMessages).toHaveLength(1);
+
+		store.unqueueMessage(queuedId);
+		expect(store.messages.some((m) => m.queued)).toBe(false);
+		expect(store.queuedMessages).toHaveLength(0);
+	});
+
 	// Production reaches this when the user sends from the other surface: this
 	// surface is idle on the session and receives numbered events for a turn it
 	// never started.
