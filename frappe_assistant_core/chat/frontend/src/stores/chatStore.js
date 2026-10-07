@@ -251,6 +251,8 @@ export const useChatStore = defineStore("chat", () => {
 			// set; leaving the previous conversation's rows in place would let it
 			// append to them, since block targeting is positional.
 			messages.value = [];
+			// Live labels belong to the previous session's helpers.
+			blocks.taskActivity.value = {};
 			// History and the running turn's snapshot are read together; events
 			// that arrive meanwhile are held and applied after the snapshot.
 			await liveSync.join(() => readHistory(sessionId));
@@ -1037,6 +1039,8 @@ export const useChatStore = defineStore("chat", () => {
 		clearSocketError: stream.clearSocketError,
 		// Block-based message actions (delegated)
 		handlePlanEvent: blocks.handlePlanEvent,
+		taskActivity: blocks.taskActivity,
+		handleTaskActivity: blocks.handleTaskActivity,
 		handleWorkflowCreatedEvent: blocks.handleWorkflowCreatedEvent,
 		handleModelSelected: blocks.handleModelSelected,
 		handleThinkingEvent: blocks.handleThinkingEvent,

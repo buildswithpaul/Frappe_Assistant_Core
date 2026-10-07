@@ -20,7 +20,12 @@
 		<ActivityTimeline v-if="artifacts.activity && artifacts.activity.length" :rows="artifacts.activity" />
 
 		<!-- Task list (live status for the current turn) -->
-		<TaskList v-if="artifacts.plan" :tasks="artifacts.plan.tasks" :live="live" />
+		<TaskList
+			v-if="artifacts.plan"
+			:tasks="artifacts.plan.tasks"
+			:activity="chatStore.taskActivity"
+			:live="live"
+		/>
 
 		<!-- Pending approval (mirrors the in-thread card) -->
 		<div v-if="artifacts.approval" class="rail-approval">
@@ -85,6 +90,9 @@
 <script setup>
 import ActivityTimeline from "./rail/ActivityTimeline.vue";
 import TaskList from "./rail/TaskList.vue";
+import { useChatStore } from "@/stores/chatStore";
+
+const chatStore = useChatStore();
 
 defineProps({
 	artifacts: {

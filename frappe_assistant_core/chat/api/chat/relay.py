@@ -221,6 +221,7 @@ _SHARED_RELAY_EVENTS = frozenset(
         "context_summarized",
         "model_selected",
         "routing_notice",
+        "task_activity",
         "thinking",
         "thinking_complete",
     }
@@ -235,6 +236,7 @@ _SHARED_RELAY_EVENTS = frozenset(
 _RESUME_PROGRESS_EVENTS = frozenset(
     {
         "stream_chunk",
+        "task_activity",
         "thinking",
         "thinking_complete",
         "tool_call_start",
@@ -310,6 +312,18 @@ def _dispatch_relay_event(
                 "tier_wanted": data.get("tier_wanted"),
                 "band": data.get("band"),
                 "scope": data.get("scope"),
+            },
+        )
+
+    elif event_type == "task_activity":
+        _emit_socket_event(
+            session_id,
+            {
+                "event": "task_activity",
+                "session_id": session_id,
+                "message_id": ar_message_id,
+                "task_id": data.get("task_id"),
+                "label": data.get("label", ""),
             },
         )
 

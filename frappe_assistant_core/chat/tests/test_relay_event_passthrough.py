@@ -91,6 +91,33 @@ class TestDispatchRelayEvent(unittest.TestCase):
         self.assertFalse(handled)
         emit.assert_not_called()
 
+    def test_task_activity_is_forwarded_socket_only(self):
+        from frappe_assistant_core.chat.api.chat import relay
+
+        block_builder = MagicMock()
+        with patch.object(relay, "_emit_socket_event") as emit:
+            handled = relay._dispatch_relay_event(
+                "task_activity",
+                {"session_id": "S", "task_id": "t-1", "label": "Reading Item list…"},
+                "SESSION-1",
+                block_builder,
+                ar_message_id="AR-MSG-1",
+            )
+        self.assertTrue(handled)
+        block_builder.assert_not_called()
+        self.assertEqual(block_builder.method_calls, [])
+        _session, payload = emit.call_args[0]
+        self.assertEqual(
+            payload,
+            {
+                "event": "task_activity",
+                "session_id": "SESSION-1",
+                "message_id": "AR-MSG-1",
+                "task_id": "t-1",
+                "label": "Reading Item list…",
+            },
+        )
+
 
 class TestMainLoopUsesSharedDispatch(unittest.TestCase):
     """Regression guard: both loops must route through the same helper
