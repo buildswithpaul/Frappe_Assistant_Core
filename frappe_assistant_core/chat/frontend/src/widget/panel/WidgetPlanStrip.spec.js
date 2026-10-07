@@ -6,7 +6,7 @@ const mountStrip = (props) => mount(WidgetPlanStrip, { props });
 const labels = (w) => w.findAll(".activity").map((n) => n.text());
 
 describe("WidgetPlanStrip", () => {
-	it("heads two running helpers as parallel work and shows both live labels", () => {
+	it("heads two running helpers as parallel work and shows both live labels when opened", async () => {
 		const w = mountStrip({
 			plan: {
 				tasks: [
@@ -17,11 +17,12 @@ describe("WidgetPlanStrip", () => {
 			live: true,
 			activity: { a: "Reading Sales Invoice list…", b: "Opening Customer B…" },
 		});
-		expect(w.find(".wps-heading").text()).toBe("Running 2 in parallel…");
+		expect(w.find(".wps-status").text()).toBe("⠿ Running 2 in parallel · 0 of 2 done");
+		await w.find(".wps-heading").trigger("click");
 		expect(labels(w)).toEqual(["Reading Sales Invoice list…", "Opening Customer B…"]);
 	});
 
-	it("heads main-agent work as working through the plan's steps", () => {
+	it("heads main-agent work as working through the plan's steps", async () => {
 		const w = mountStrip({
 			plan: {
 				tasks: [
@@ -31,7 +32,8 @@ describe("WidgetPlanStrip", () => {
 			},
 			live: true,
 		});
-		expect(w.find(".wps-heading").text()).toBe("Working through 2 steps…");
+		expect(w.find(".wps-status").text()).toBe("⠿ Working through 2 steps · 0 of 2 done");
+		await w.find(".wps-heading").trigger("click");
 		expect(w.findAll(".task-row")).toHaveLength(2);
 	});
 
@@ -88,5 +90,78 @@ describe("WidgetPlanStrip on a stopped turn", () => {
 		await toggle.trigger("click");
 		expect(w.findAll(".task-row.is-stopped")).toHaveLength(2);
 		expect(w.find(".task-row.is-unfinished").exists()).toBe(false);
+	});
+});
+
+// The strip used to list every row while the turn ran, so four helpers and the
+// label took half the panel. It is now one status line, expandable on demand.
+describe("WidgetPlanStrip one-line status", () => {
+	const parallelPlan = {
+		tasks: [
+			{ id: "1", title: "Plan the comparison", status: "done" },
+			{ id: "a", title: "Customer A", status: "running", helper: true },
+			{ id: "b", title: "Customer B", status: "running", helper: true },
+			{ id: "c", title: "Customer C", status: "pending", helper: true },
+		],
+	};
+
+	it("collapses a running parallel turn to counts and the latest helper label", async () => {
+		const w = mountStrip({ plan: parallelPlan, live: true, activity: {} });
+		// task_activity events replace chatStore.taskActivity with a new object each time.
+		await w.setProps({ activity: { a: "Reading Sales Invoice list…" } });
+		await w.setProps({ activity: { a: "Reading Sales Invoice list…", b: "Opening Customer B…" } });
+
+		const line = w.find(".wps-heading");
+		expect(line.find(".wps-status").text()).toBe("⠿ Running 2 in parallel · 1 of 4 done");
+		expect(line.find(".wps-activity").text()).toBe("— Opening Customer B…");
+		expect(line.classes()).toContain("wps-oneline");
+		expect(line.attributes("aria-expanded")).toBe("false");
+		expect(w.find(".task-row").exists()).toBe(false);
+	});
+
+	it("names the running row when there is no parallel work or label", () => {
+		const w = mountStrip({
+			plan: {
+				tasks: [
+					{ id: "1", title: "Inspect fields", status: "done" },
+					{ id: "2", title: "Create the invoice", status: "running" },
+				],
+			},
+			live: true,
+		});
+		expect(w.find(".wps-status").text()).toBe("⠿ Working through 2 steps · 1 of 2 done");
+		expect(w.find(".wps-activity").text()).toBe("— Create the invoice");
+	});
+
+	it("expands and collapses the rows on click, keeping live labels", async () => {
+		const w = mountStrip({ plan: parallelPlan, live: true, activity: { a: "Reading…" } });
+		const line = w.find(".wps-heading");
+
+		await line.trigger("click");
+		expect(line.attributes("aria-expanded")).toBe("true");
+		expect(w.findAll(".task-row")).toHaveLength(4);
+		expect(labels(w)).toEqual(["Reading…"]);
+
+		await line.trigger("click");
+		expect(line.attributes("aria-expanded")).toBe("false");
+		expect(w.find(".task-row").exists()).toBe(false);
+	});
+
+	it("keeps the paused, stopped and finished lines as they read", () => {
+		const tasks = [
+			{ id: "1", title: "A", status: "done" },
+			{ id: "2", title: "B", status: "running" },
+		];
+		const heading = (props) => mountStrip({ plan: { tasks }, ...props }).find(".wps-heading");
+		for (const [props, text] of [
+			[{ live: false, waitingOn: "approval" }, "Waiting for your approval…"],
+			[{ live: false, stopped: true }, "⊘ Stopped after 1 of 2 steps"],
+			[{ live: false }, "✓ Completed 1 of 2 steps"],
+		]) {
+			const line = heading(props);
+			expect(line.text()).toBe(text);
+			expect(line.attributes("aria-expanded")).toBe("false");
+			expect(line.find(".wps-activity").exists()).toBe(false);
+		}
 	});
 });
