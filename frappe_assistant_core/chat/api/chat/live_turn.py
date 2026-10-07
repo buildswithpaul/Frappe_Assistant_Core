@@ -66,6 +66,7 @@ def start(session_id: str, *, message_id: str | None = None) -> str:
             "text": None,
             "blocks": None,
             "active_thinking_id": None,
+            "user": frappe.session.user,
         },
     )
     return turn
@@ -136,6 +137,7 @@ class LiveTurn:
                 "text": "".join(b.get("content") or "" for b in blocks if b.get("type") == "text"),
                 "blocks": blocks,
                 "active_thinking_id": self.builder.active_thinking_id,
+                "user": frappe.session.user,
             },
         )
         self._written_at = _clock()
@@ -199,4 +201,7 @@ def get_live_turn(session_id: str) -> dict | None:
     from frappe_assistant_core.chat.api.chat.messages import _assert_session_owner
 
     _assert_session_owner(session_id)
-    return get(session_id)
+    entry = get(session_id)
+    if entry and entry.get("user") != frappe.session.user and "System Manager" not in frappe.get_roles():
+        frappe.throw(_("You can only view your own conversation"), frappe.PermissionError)
+    return entry

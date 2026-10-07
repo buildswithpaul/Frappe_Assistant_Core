@@ -251,15 +251,26 @@ class TestGetLiveTurn(BaseAssistantTest):
         super().tearDown()
 
     def test_the_owner_reads_the_running_turn(self):
-        turn = live_turn.start(self.sid)
         frappe.set_user(self.owner)
-        self.assertEqual(live_turn.get_live_turn(self.sid)["turn"], turn)
+        turn = live_turn.start(self.sid)
+        entry = live_turn.get_live_turn(self.sid)
+        self.assertEqual(entry["turn"], turn)
+        self.assertEqual(entry["user"], self.owner)
 
     def test_nothing_running_reads_as_none(self):
         frappe.set_user(self.owner)
         self.assertIsNone(live_turn.get_live_turn(self.sid))
 
     def test_another_user_is_refused(self):
+        live_turn.start(self.sid)
+        frappe.set_user(self.other)
+        with self.assertRaises(frappe.PermissionError):
+            live_turn.get_live_turn(self.sid)
+
+    def test_another_user_is_refused_even_when_the_conversation_has_no_rows(self):
+        # Production: owner deletes the conversation while its turn is still running.
+        frappe.db.delete("FAC Chat Message", {"session_id": self.sid})
+        frappe.set_user(self.owner)
         live_turn.start(self.sid)
         frappe.set_user(self.other)
         with self.assertRaises(frappe.PermissionError):
