@@ -28,6 +28,11 @@
 						stroke-linecap="round"
 					/>
 				</svg>
+				<!-- Clock while a gated tool waits for its card -->
+				<svg v-else-if="isWaiting" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+					<circle cx="12" cy="12" r="9" stroke-width="2" />
+					<path stroke-linecap="round" stroke-width="2" d="M12 7v5l3 2" />
+				</svg>
 				<!-- Warning when errors -->
 				<svg v-else-if="status === 'error'" viewBox="0 0 24 24" fill="none" stroke="currentColor">
 					<path
@@ -107,6 +112,7 @@ import InteractionCard from "./InteractionCard.vue";
 import ProcessingToolRow from "./processing/ProcessingToolRow.vue";
 import { toolRowFrom } from "@/composables/useActivityTimeline";
 import { processingStatus, processingSummary } from "./processingSummary";
+import { WAITING_LABELS } from "@/utils/turnState";
 
 const props = defineProps({
 	blocks: {
@@ -117,11 +123,11 @@ const props = defineProps({
 		type: Boolean,
 		default: false,
 	},
-	// The turn waits on an approval or question card: not streaming, but not
-	// ended, so a running tool keeps its spinner rather than reading as stopped.
-	paused: {
-		type: Boolean,
-		default: false,
+	// What the turn waits on when it is not streaming but has not ended
+	// (turnWaitingOn): "approval", "question", "resume", or "".
+	waitingOn: {
+		type: String,
+		default: "",
 	},
 	isExpanded: {
 		type: Boolean,
@@ -136,8 +142,15 @@ const props = defineProps({
 defineEmits(["toggle", "toggleBlock"]);
 
 // Derived state
-// The turn is still in flight while it streams or waits on a card.
-const live = computed(() => props.isStreaming || props.paused);
+// The turn is still in flight while it streams or waits on the user.
+const live = computed(() => props.isStreaming || Boolean(props.waitingOn));
+// A gated tool waits for its card: neither running nor done.
+const isWaiting = computed(
+	() =>
+		!props.isStreaming &&
+		Boolean(WAITING_LABELS[props.waitingOn]) &&
+		props.blocks.some((b) => b.type === "tool_call" && b.status === "running")
+);
 const status = computed(() => processingStatus(props.blocks, props.isStreaming, live.value));
 
 // One render list in the order the blocks arrived. The array is already
@@ -169,12 +182,18 @@ const isActive = computed(() => {
 	);
 });
 
-const statusIconClass = computed(() => (isActive.value ? "status-active" : `status-${status.value}`));
+const statusIconClass = computed(() => {
+	if (isActive.value) return "status-active";
+	if (isWaiting.value) return "status-waiting";
+	return `status-${status.value}`;
+});
 
 // Smart summary generation — pure logic lives in processingSummary.js so the
 // live/completed phrasing (incl. delegate activity) is unit testable.
 const summaryText = computed(() =>
-	processingSummary(props.blocks, props.isStreaming, live.value)
+	isWaiting.value
+		? WAITING_LABELS[props.waitingOn]
+		: processingSummary(props.blocks, props.isStreaming, live.value)
 );
 </script>
 
@@ -240,6 +259,10 @@ const summaryText = computed(() =>
 
 .processing-status-icon.status-stopped {
 	color: var(--ql-text-muted);
+}
+
+.processing-status-icon.status-waiting {
+	color: var(--ql-gold, #c9a227);
 }
 
 @keyframes processing-spin {
