@@ -43,6 +43,8 @@ export function createLiveTurnSync({
 	clearTimer = clearTimeout,
 }) {
 	let turn = null;
+	// Whether `turn` is one this surface sent (adopted by its client turn id), not one it joined.
+	let turnIsOwn = false;
 	let lastSeq = null;
 	let joining = false;
 	let joinId = 0;
@@ -95,7 +97,12 @@ export function createLiveTurnSync({
 		if (event.turn !== turn) {
 			if (settledTurns.includes(event.turn)) return true;
 			if (previousOwnTurns.includes(event.turn)) {
-				if (TERMINAL_EVENTS.has(event.event)) settle([event]);
+				// Passed without lastSeq dedupe: lastSeq tracks the current turn only.
+				if (TERMINAL_EVENTS.has(event.event)) {
+					// The resume already carries this turn on; its end must not end the resume.
+					event.superseded = true;
+					settle([event]);
+				}
 				return true;
 			}
 			if (event.client_turn == null || event.client_turn !== ownClientTurn()) {
@@ -104,11 +111,12 @@ export function createLiveTurnSync({
 				startJoin(reloadHistory);
 				return false;
 			}
-			if (turn != null) {
+			if (turn != null && turnIsOwn) {
 				previousOwnTurns.push(turn);
 				if (previousOwnTurns.length > 5) previousOwnTurns.shift();
 			}
 			turn = event.turn;
+			turnIsOwn = true;
 			lastSeq = null;
 			recent.length = 0;
 		}
@@ -120,6 +128,7 @@ export function createLiveTurnSync({
 			// Whatever of this turn still arrives is late, not a new turn to adopt.
 			settle([event]);
 			turn = null;
+			turnIsOwn = false;
 			lastSeq = null;
 			recent.length = 0;
 		}
@@ -158,6 +167,7 @@ export function createLiveTurnSync({
 		held = [];
 		if (!snap) {
 			turn = null;
+			turnIsOwn = false;
 			lastSeq = null;
 			recent.length = 0;
 			settle(pending);
@@ -166,6 +176,7 @@ export function createLiveTurnSync({
 			return false;
 		}
 		turn = snap.turn;
+		turnIsOwn = false;
 		lastSeq = snap.seq;
 		onSnapshot(snap);
 		const shownPastSnapshot = recent.filter((e) => e.turn === snap.turn && e.seq > snap.seq);
@@ -181,6 +192,7 @@ export function createLiveTurnSync({
 		joinId++;
 		joining = false;
 		turn = null;
+		turnIsOwn = false;
 		lastSeq = null;
 		held = [];
 		recent.length = 0;

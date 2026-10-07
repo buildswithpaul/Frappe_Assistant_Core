@@ -7,10 +7,16 @@ import { useChatStore } from "@/stores/chatStore";
 
 vi.mock("@/api/client", () => ({
 	api: {
-		chat: { getMessages: vi.fn().mockResolvedValue([]), getLiveTurn: vi.fn().mockResolvedValue(null) },
+		chat: {
+			getMessages: vi.fn().mockResolvedValue([]),
+			getLiveTurn: vi.fn().mockResolvedValue(null),
+			send: vi.fn().mockResolvedValue({}),
+		},
 		get: vi.fn().mockResolvedValue({}),
 	},
 }));
+
+vi.mock("frappe-ui", () => ({ call: vi.fn().mockResolvedValue({}) }));
 
 vi.mock("socket.io-client", () => {
 	const fakeSocket = {
@@ -362,6 +368,34 @@ describe("live-turn gate on the realtime dispatcher", () => {
 		await store.loadMessages("s-gate");
 		handler(chunk(5, "12."));
 		expect(store.messages[1].content).toBe("There are 12.");
+	});
+
+	// Live round 3 (L4): AR sends the resume's stream_start before it waits on
+	// the session lock, so the paused turn's own stream_complete(interrupted)
+	// arrives after the resume began. Finishing the streaming state on it
+	// stopped the watchdog and opened the send queue while the resume ran.
+	it("lets a superseded turn's late stream_complete leave the resume streaming", async () => {
+		store.currentSessionId = "s-gate";
+		api.chat.getLiveTurn.mockResolvedValue(null);
+		await store.sendMessage("Create a ToDo");
+		const paused = store.messages.at(-1);
+		const sent = paused._requestId;
+		const t1 = (seq, extra) => ({ session_id: "s-gate", turn: "T1", client_turn: sent, seq, ...extra });
+
+		handler(t1(1, { event: "stream_start", message_id: "m1" }));
+		handler(t1(2, { event: "approval_required", tool_id: "call_1", tool_name: "create_document", interrupts: [{ id: "int1" }] }));
+		await store.submitInterruptDecision({ blockId: "call_1", resolution: "approved", userResponse: null, response: "approve" });
+		const resumed = paused._requestId;
+		expect(resumed).not.toBe(sent);
+		handler({ event: "stream_start", session_id: "s-gate", turn: "T2", client_turn: resumed, seq: 1, message_id: "m1", resumed: true });
+		expect(store.isStreaming).toBe(true);
+
+		handler(t1(3, { event: "stream_complete", interrupted: true, full_response: "", blocks: [] }));
+
+		expect(store.isStreaming).toBe(true);
+		expect(paused.isStreaming).toBe(true);
+		await store.sendMessage("And another");
+		expect(store.queuedMessages).toHaveLength(1);
 	});
 
 	it("stops dispatching to an unmounted composable", async () => {

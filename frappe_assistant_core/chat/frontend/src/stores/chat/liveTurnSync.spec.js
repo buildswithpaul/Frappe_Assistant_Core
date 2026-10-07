@@ -260,6 +260,34 @@ describe("createLiveTurnSync", () => {
 		expect(h.deps.fetchSnapshot).not.toHaveBeenCalled();
 	});
 
+	it("marks a superseded own turn's end as superseded and settles it", () => {
+		const h = harness({ own: "c1" });
+		h.sync.admit(ev(1));
+		h.setOwn("c-resume");
+		h.sync.admit(ev(1, { turn: "T2", client_turn: "c-resume" }));
+
+		const end = ev(2, { event: "stream_complete" });
+		expect(h.sync.admit(end)).toBe(true);
+		expect(end.superseded).toBe(true);
+		// The resume's own end is not superseded.
+		const resumeEnd = ev(2, { turn: "T2", client_turn: "c-resume", event: "stream_complete" });
+		expect(h.sync.admit(resumeEnd)).toBe(true);
+		expect(resumeEnd.superseded).toBeUndefined();
+	});
+
+	// A joined turn began on another surface; only a turn this surface sent is its own.
+	it("does not treat a joined foreign turn as its own once its own turn starts", async () => {
+		const reloadHistory = vi.fn().mockResolvedValue();
+		const h = harness({ own: "c-mine", snapshot: { turn: "T1", seq: 1 }, reloadHistory });
+		h.sync.admit(ev(2, { client_turn: "other" }));
+		await vi.waitFor(() => expect(h.deps.onSnapshot).toHaveBeenCalled());
+		h.sync.admit(ev(1, { turn: "T2", client_turn: "c-mine" }));
+		reloadHistory.mockClear();
+
+		expect(h.sync.admit(ev(3, { client_turn: "other" }))).toBe(false);
+		expect(reloadHistory).toHaveBeenCalledTimes(1);
+	});
+
 	it("joins with a history reload when a foreign turn arrives while this surface thinks it is streaming", async () => {
 		const reloadHistory = vi.fn().mockResolvedValue();
 		const h = harness({ own: "c1", snapshot: { turn: "T2", seq: 1 }, reloadHistory });
