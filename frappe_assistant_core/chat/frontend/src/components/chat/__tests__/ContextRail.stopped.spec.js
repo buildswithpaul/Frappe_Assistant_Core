@@ -34,8 +34,9 @@ describe("ContextRail on a finished turn", () => {
 	beforeEach(() => setActivePinia(createPinia()));
 
 	it("hands the finished state to the activity timeline", () => {
+		// A tool whose result never arrived is persisted `running` with no end time.
 		const blocks = [
-			{ type: "tool_call", id: "d1", tool_name: "delegate", status: "running", startTime: "2026-07-20T09:00:00.000Z" },
+			{ type: "tool_call", id: "t1", tool_name: "list_documents", status: "running", startTime: "2026-07-20T09:00:00.000Z" },
 		];
 		const wrapper = mount(ContextRail, {
 			props: { artifacts: deriveArtifacts(blocks), live: false, stopped: true },

@@ -4,6 +4,8 @@
  * component. Mirrors the live SSE block shape produced by blockHandlers.js.
  */
 
+import { isInternalTool } from "@/utils/internalTools";
+
 export function formatToolName(name) {
 	if (!name) return "Tool";
 	return name
@@ -25,14 +27,14 @@ export function processingSummary(blocks, isStreaming) {
 		}
 		if (lastBlock.type === "tool_call" && lastBlock.status === "running") {
 			if (lastBlock.tool_name === "delegate") return "Delegating subtask…";
-			if (lastBlock.isInternal) return "Preparing...";
+			if (isInternalTool(lastBlock)) return "Preparing...";
 			return `Running ${formatToolName(lastBlock.tool_name)}...`;
 		}
 	}
 
 	const toolBlocks = list.filter((b) => b.type === "tool_call");
-	const ext = toolBlocks.filter((b) => !b.isInternal);
-	const internal = toolBlocks.filter((b) => b.isInternal);
+	const ext = toolBlocks.filter((b) => !isInternalTool(b));
+	const internal = toolBlocks.filter((b) => isInternalTool(b));
 
 	const errorCount = ext.filter((b) => b.status === "error").length;
 	const errorSuffix = errorCount > 0 ? ` (${errorCount} failed)` : "";

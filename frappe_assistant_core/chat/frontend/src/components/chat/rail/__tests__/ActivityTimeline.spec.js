@@ -37,14 +37,14 @@ describe("ActivityTimeline", () => {
 	});
 });
 
-// Live-bug repro: a stopped turn persisted its `delegate` tool block with
-// status `running` and no end time. After a reload the rail showed
-// "Delegate 1m 5s…" behind a pulsing live dot, and the timer kept ticking on
-// a turn that had long ended.
+// Live-bug repro: a stopped turn persisted a tool block (it was `delegate`,
+// now internal) with status `running` and no end time. After a reload the rail
+// showed "Delegate 1m 5s…" behind a pulsing live dot, and the timer kept
+// ticking on a turn that had long ended. Any tool left running does the same.
 describe("ActivityTimeline after the turn ends", () => {
 	const leftRunning = {
-		id: "d1", status: "running", label: "Delegate",
-		target: null, toolName: "delegate", hasTarget: false,
+		id: "t9", status: "running", label: "Listed records",
+		target: null, toolName: "list_documents", hasTarget: false,
 		block: { startTime: "2026-07-20T09:00:00.000Z", endTime: null },
 	};
 

@@ -7,21 +7,9 @@
 
 import { ref, watch } from "vue";
 import { generateBlockId, findActiveMessage } from "./utils";
+import { INTERNAL_TOOLS } from "@/utils/internalTools";
 
-/**
- * Internal tools — housekeeping operations that should render as slim
- * inline indicators rather than full expandable tool call blocks.
- * These are things the agent does "behind the scenes" to prepare.
- */
-export const INTERNAL_TOOLS = new Set([
-	"get_skill",
-	"workspace_read_file",
-	"workspace_write_file",
-	"workspace_list_files",
-	"workspace_delete_file",
-	"ask_user",
-	"delegate",
-]);
+export { INTERNAL_TOOLS };
 
 export function createBlockHandlers({
 	messages,

@@ -1,3 +1,5 @@
+import { isInternalTool } from "@/utils/internalTools";
+
 const FILLER = /^(hi|hey|hello|thanks|thank you|please|ok|okay|so|also|and|can you|could you|would you|will you|help me)[,!.\s]+/i;
 const MAX_HEADING = 48;
 
@@ -27,7 +29,7 @@ function formatTime(ts) {
 function mergeAssistant(entry, msg) {
 	const blocks = Array.isArray(msg.blocks) ? msg.blocks : [];
 	for (const b of blocks) {
-		if (b.type === "tool_call" && !b.isInternal) entry.toolCount += 1;
+		if (b.type === "tool_call" && !isInternalTool(b)) entry.toolCount += 1;
 		if (b.type === "text" && /```chart/.test(b.content || "")) entry.hasChart = true;
 		if (b.type === "generated_documents") entry.hasFiles = true;
 		if (b.type === "interaction") {

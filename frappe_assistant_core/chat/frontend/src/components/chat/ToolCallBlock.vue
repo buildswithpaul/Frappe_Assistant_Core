@@ -1,6 +1,6 @@
 <template>
 	<!-- Internal tools: slim inline indicator -->
-	<div v-if="block.isInternal" class="internal-tool">
+	<div v-if="isInternalTool(block)" class="internal-tool">
 		<div class="internal-tool-icon" :class="`icon-${block.status}`">
 			<svg
 				v-if="block.status === 'running'"
@@ -226,6 +226,7 @@
 
 <script setup>
 import { ref, computed, watch, nextTick } from "vue";
+import { isInternalTool } from "@/utils/internalTools";
 
 const props = defineProps({
 	block: {
