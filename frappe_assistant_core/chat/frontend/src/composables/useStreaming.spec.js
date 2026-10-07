@@ -7,7 +7,7 @@ import { useChatStore } from "@/stores/chatStore";
 
 vi.mock("@/api/client", () => ({
 	api: {
-		chat: { getMessages: vi.fn().mockResolvedValue([]) },
+		chat: { getMessages: vi.fn().mockResolvedValue([]), getLiveTurn: vi.fn().mockResolvedValue(null) },
 		get: vi.fn().mockResolvedValue({}),
 	},
 }));
@@ -285,5 +285,99 @@ describe("browser_navigate_to hand-off", () => {
 		fireNavigate();
 		expect(hrefSet).not.toHaveBeenCalled();
 		expect(sessionStorage.getItem("faco_widget_session")).toBeNull();
+	});
+});
+
+describe("live-turn gate on the realtime dispatcher", () => {
+	let handler;
+	let store;
+	let api;
+
+	beforeEach(async () => {
+		({ api } = await import("@/api/client"));
+		vi.clearAllMocks();
+		// Desk's realtime client: the same path production takes on a Frappe page.
+		window.frappe = {
+			realtime: {
+				on: vi.fn((name, fn) => {
+					if (name === "faco_message_stream") handler = fn;
+				}),
+				off: vi.fn(),
+				task_subscribe: vi.fn(),
+				task_unsubscribe: vi.fn(),
+			},
+		};
+		const pinia = createPinia();
+		mount(
+			defineComponent({
+				setup() {
+					useStreaming();
+					return () => null;
+				},
+			}),
+			{ global: { plugins: [pinia] } }
+		);
+		store = useChatStore(pinia);
+		api.chat.getMessages.mockResolvedValue([
+			{ role: "user", content: "Count the orders" },
+			{ role: "assistant", message_id: "m1", content: "", blocks: null },
+		]);
+	});
+
+	afterEach(() => {
+		delete window.frappe;
+	});
+
+	const chunk = (seq, text) => ({
+		event: "stream_chunk", session_id: "s-gate", turn: "T1", client_turn: "other", seq, chunk: text,
+	});
+
+	it("holds a numbered event while the snapshot is read, then applies it once after the snapshot", async () => {
+		let resolveSnapshot;
+		api.chat.getLiveTurn.mockReturnValue(new Promise((r) => (resolveSnapshot = r)));
+		const loading = store.loadMessages("s-gate");
+		await vi.waitFor(() => expect(api.chat.getLiveTurn).toHaveBeenCalled());
+
+		handler(chunk(5, "12."));
+		expect(store.streamingMessage).toBe("");
+
+		resolveSnapshot({
+			turn: "T1", seq: 4, message_id: "m1", status: "streaming", text: "There are ",
+			blocks: [{ type: "text", id: "tx1", content: "There are " }], active_thinking_id: null,
+		});
+		await loading;
+
+		expect(store.messages[1].content).toBe("There are 12.");
+		expect(store.streamingMessage).toBe("There are 12.");
+		// A re-delivery of the same event is dropped, so nothing is applied twice.
+		handler(chunk(5, "12."));
+		expect(store.messages[1].content).toBe("There are 12.");
+	});
+
+	it("keeps streaming onto the joined answer through the dispatcher", async () => {
+		api.chat.getLiveTurn.mockResolvedValue({
+			turn: "T1", seq: 4, message_id: "m1", status: "streaming", text: "There are ",
+			blocks: [{ type: "text", id: "tx1", content: "There are " }], active_thinking_id: null,
+		});
+		await store.loadMessages("s-gate");
+		handler(chunk(5, "12."));
+		expect(store.messages[1].content).toBe("There are 12.");
+	});
+
+	it("stops dispatching to an unmounted composable", async () => {
+		const pinia = createPinia();
+		const wrapper = mount(
+			defineComponent({
+				setup() {
+					useStreaming();
+					return () => null;
+				},
+			}),
+			{ global: { plugins: [pinia] } }
+		);
+		const other = useChatStore(pinia);
+		const spy = vi.spyOn(other, "setStreamDispatcher");
+		wrapper.unmount();
+		expect(spy).toHaveBeenCalledWith(null);
 	});
 });

@@ -99,7 +99,8 @@ describe("joining a running turn", () => {
 		api.chat.getLiveTurn.mockResolvedValue({ ...snapshot, seq: 9, text: "There are 12 orders." });
 		await store.recoverLiveTurn("s1");
 		expect(store.messages[1].content).toBe("There are 12 orders.");
-		expect(api.chat.getMessages).toHaveBeenCalledTimes(1);
+		// Recovery reconciles with the server whether or not a turn is still running.
+		expect(api.chat.getMessages).toHaveBeenCalledTimes(2);
 
 		api.chat.getLiveTurn.mockResolvedValue(null);
 		api.chat.getMessages.mockResolvedValue([
@@ -107,7 +108,32 @@ describe("joining a running turn", () => {
 			{ role: "assistant", message_id: "m1", content: "There are 12 orders.", blocks: "[]" },
 		]);
 		await store.recoverLiveTurn("s1");
-		expect(api.chat.getMessages).toHaveBeenCalledTimes(2);
+		expect(api.chat.getMessages).toHaveBeenCalledTimes(3);
+	});
+
+	// Production: this tab's socket drops during T1, T1 finishes, the user sends T2
+	// from the other surface, and this tab (isStreaming still true) comes back.
+	it("does not overwrite a finished turn's answer when recovery finds a different turn running", async () => {
+		api.chat.getLiveTurn.mockResolvedValue(snapshot);
+		await store.loadMessages("s1");
+		expect(store.messages[1].message_id).toBe("m1");
+
+		api.chat.getMessages.mockResolvedValue([
+			{ role: "user", content: "Count the orders" },
+			{ role: "assistant", message_id: "m1", content: "There are 12 orders.", blocks: "[]" },
+			{ role: "user", content: "And the invoices?" },
+		]);
+		api.chat.getLiveTurn.mockResolvedValue({
+			...snapshot, turn: "T2", message_id: "m2", seq: 2, text: "Invoices: ", blocks: [{ type: "text", id: "i1", content: "Invoices: " }],
+		});
+		await store.recoverLiveTurn("s1");
+
+		const first = store.messages.find((m) => m.message_id === "m1");
+		expect(first.content).toBe("There are 12 orders.");
+		expect(store.messages.some((m) => m.role === "user" && m.content === "And the invoices?")).toBe(true);
+		const last = store.messages.at(-1);
+		expect(last.message_id).toBe("m2");
+		expect(last.content).toBe("Invoices: ");
 	});
 
 	// Production reaches this when the user sends from the other surface: this

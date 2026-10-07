@@ -560,6 +560,7 @@ export function useStreaming() {
 	});
 
 	onUnmounted(() => {
+		chatStore.setStreamDispatcher(null);
 		if (stopWatch) stopWatch();
 		unsubscribeSession(chatStore.currentSessionId);
 

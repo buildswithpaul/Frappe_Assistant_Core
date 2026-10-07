@@ -171,7 +171,7 @@ export const useChatStore = defineStore("chat", () => {
 			if (sawTerminal) reconcileFromServer(currentSessionId.value);
 		},
 		dispatch: (event) => streamDispatch?.(event, { admitted: true }),
-		isStreaming: () => isStreaming.value,
+		ownClientTurn: () => streamRequestId.value,
 		reloadHistory: () => readHistory(currentSessionId.value),
 	});
 	// sync: a join started right after the switch must not be reset by it.
@@ -183,8 +183,9 @@ export const useChatStore = defineStore("chat", () => {
 
 	async function recoverLiveTurn(sessionId) {
 		if (!sessionId || sessionId !== currentSessionId.value) return;
-		if (isStreaming.value && (await liveSync.join())) return;
-		await reconcileFromServer(sessionId);
+		// Reconcile merges what the server has and keeps the live bubble; a running turn's
+		// snapshot then lands on that bubble, or on a new one after a different turn's question.
+		await liveSync.join(() => reconcileFromServer(sessionId));
 	}
 	const sendQueue = createSendQueue({
 		messages,

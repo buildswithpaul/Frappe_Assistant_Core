@@ -7,9 +7,10 @@ vi.mock("@/utils/logger", () => ({
 }));
 import { logger } from "@/utils/logger";
 
-const ev = (seq, extra = {}) => ({ event: "stream_chunk", turn: "T1", seq, chunk: `c${seq}`, ...extra });
+const ev = (seq, extra = {}) => ({ event: "stream_chunk", turn: "T1", client_turn: "c1", seq, chunk: `c${seq}`, ...extra });
 
-function harness({ snapshot = null, streaming = false, reloadHistory = undefined } = {}) {
+// own: the client turn id this surface has in flight ("c1" is what ev() carries).
+function harness({ snapshot = null, own = "mine", reloadHistory = undefined } = {}) {
 	const handled = [];
 	const timers = [];
 	const deps = {
@@ -17,14 +18,14 @@ function harness({ snapshot = null, streaming = false, reloadHistory = undefined
 		onSnapshot: vi.fn(),
 		onNoLiveTurn: vi.fn(),
 		dispatch: (e) => handled.push(e),
-		isStreaming: () => streaming,
+		ownClientTurn: () => own,
 		reloadHistory,
 		setTimer: (fn) => timers.push(fn),
 		clearTimer: () => {},
 	};
 	const sync = createLiveTurnSync(deps);
 	const deliver = (e) => sync.admit(e) && handled.push(e);
-	return { sync, deps, handled, timers, deliver, setStreaming: (v) => (streaming = v) };
+	return { sync, deps, handled, timers, deliver, setOwn: (v) => (own = v) };
 }
 
 describe("applyLiveSnapshot", () => {
@@ -52,6 +53,24 @@ describe("applyLiveSnapshot", () => {
 		expect(messages).toHaveLength(2);
 		expect(msg.role).toBe("assistant");
 		expect(msg.isStreaming).toBe(true);
+	});
+
+	it("adds a bubble rather than overwrite a streaming answer of a different turn", () => {
+		const messages = reactive([
+			{ role: "assistant", message_id: "m0", content: "T1 answer", blocks: [], isStreaming: true },
+		]);
+		applyLiveSnapshot(messages, { ...snap, turn: "T2", message_id: "m2" });
+		expect(messages[0].content).toBe("T1 answer");
+		expect(messages[0].message_id).toBe("m0");
+		expect(messages).toHaveLength(2);
+		expect(messages[1].message_id).toBe("m2");
+	});
+
+	it("fills a streaming placeholder that has no message_id yet", () => {
+		const messages = reactive([{ role: "user", content: "q" }, { role: "assistant", content: "", blocks: [], isStreaming: true }]);
+		applyLiveSnapshot(messages, snap);
+		expect(messages).toHaveLength(2);
+		expect(messages[1].message_id).toBe("m1");
 	});
 
 	it("adds a bubble rather than overwrite an earlier turn's answer", () => {
@@ -87,7 +106,7 @@ describe("createLiveTurnSync", () => {
 	});
 
 	it("adopts the sending tab's own turn from its first event", () => {
-		const h = harness({ streaming: true });
+		const h = harness({ own: "c1" });
 		expect(h.sync.admit(ev(1))).toBe(true);
 		expect(h.sync.admit(ev(2))).toBe(true);
 		expect(h.sync.admit(ev(2))).toBe(false); // duplicate
@@ -114,14 +133,14 @@ describe("createLiveTurnSync", () => {
 	});
 
 	it("joins a turn that started elsewhere", async () => {
-		const h = harness({ snapshot: { turn: "T2", seq: 1 }, streaming: false });
+		const h = harness({ snapshot: { turn: "T2", seq: 1 } });
 		expect(h.sync.admit(ev(2, { turn: "T2" }))).toBe(false);
 		await vi.waitFor(() => expect(h.deps.onSnapshot).toHaveBeenCalled());
 		expect(h.handled.map((e) => e.seq)).toEqual([2]);
 	});
 
 	it("re-reads the snapshot after a gap, then replays what it had already shown past it", async () => {
-		const h = harness({ streaming: true });
+		const h = harness({ own: "c1" });
 		h.deliver(ev(1));
 		h.deliver(ev(4)); // 2 and 3 missed
 		expect(h.timers).toHaveLength(1);
@@ -135,7 +154,7 @@ describe("createLiveTurnSync", () => {
 		const setTimer = vi.fn();
 		const sync = createLiveTurnSync({
 			fetchSnapshot: vi.fn(), onSnapshot: vi.fn(), onNoLiveTurn: vi.fn(),
-			dispatch: vi.fn(), isStreaming: () => true, setTimer, clearTimer: vi.fn(),
+			dispatch: vi.fn(), ownClientTurn: () => "c1", setTimer, clearTimer: vi.fn(),
 		});
 		sync.admit(ev(1));
 		sync.admit(ev(3));
@@ -166,7 +185,7 @@ describe("createLiveTurnSync", () => {
 
 	it("a turn begun elsewhere reloads history before showing the snapshot", async () => {
 		const reloadHistory = vi.fn().mockResolvedValue();
-		const h = harness({ snapshot: { turn: "T2", seq: 1 }, streaming: false, reloadHistory });
+		const h = harness({ snapshot: { turn: "T2", seq: 1 }, reloadHistory });
 		expect(h.sync.admit(ev(2, { turn: "T2" }))).toBe(false);
 		await vi.waitFor(() => expect(h.deps.onSnapshot).toHaveBeenCalled());
 		expect(reloadHistory).toHaveBeenCalledTimes(1);
@@ -175,7 +194,7 @@ describe("createLiveTurnSync", () => {
 
 	it("a gap re-read does not call reloadHistory", async () => {
 		const reloadHistory = vi.fn().mockResolvedValue();
-		const h = harness({ streaming: true, reloadHistory });
+		const h = harness({ own: "c1", reloadHistory });
 		h.deliver(ev(1));
 		h.deliver(ev(4)); // 2 and 3 missed
 		expect(h.timers).toHaveLength(1);
@@ -203,9 +222,45 @@ describe("createLiveTurnSync", () => {
 		expect(h.deps.fetchSnapshot).toHaveBeenCalledTimes(1);
 	});
 
+	it("adopts its own resume without a history reload or a snapshot read", () => {
+		const h = harness({ own: "c-resume" });
+		const first = ev(1, { turn: "T2", client_turn: "c-resume" });
+		expect(h.sync.admit(first)).toBe(true);
+		expect(h.sync.admit(ev(2, { turn: "T2", client_turn: "c-resume" }))).toBe(true);
+		expect(h.deps.fetchSnapshot).not.toHaveBeenCalled();
+	});
+
+	it("joins with a history reload when a foreign turn arrives while this surface thinks it is streaming", async () => {
+		const reloadHistory = vi.fn().mockResolvedValue();
+		const h = harness({ own: "c1", snapshot: { turn: "T2", seq: 1 }, reloadHistory });
+		h.deliver(ev(1));
+		expect(h.sync.admit(ev(2, { turn: "T2", client_turn: "other" }))).toBe(false);
+		await vi.waitFor(() => expect(h.deps.onSnapshot).toHaveBeenCalled());
+		expect(reloadHistory).toHaveBeenCalledTimes(1);
+	});
+
+	it("passes a late event of a finished turn through without adopting it again", () => {
+		const h = harness({ own: "c1" });
+		h.deliver(ev(1));
+		h.deliver(ev(2, { event: "stream_complete" }));
+		expect(h.sync.admit(ev(3, { event: "context_summarized" }))).toBe(true);
+		expect(h.sync.admit(ev(3, { event: "context_summarized" }))).toBe(true);
+		expect(h.timers).toHaveLength(0);
+		expect(h.deps.fetchSnapshot).not.toHaveBeenCalled();
+	});
+
+	it("does not restart a failed history reload on the next event of that turn", async () => {
+		const reloadHistory = vi.fn().mockRejectedValue(new Error("offline"));
+		const h = harness({ reloadHistory });
+		h.sync.admit(ev(2, { turn: "T2", client_turn: "other" }));
+		await vi.waitFor(() => expect(logger.warn).toHaveBeenCalled());
+		expect(h.sync.admit(ev(3, { turn: "T2", client_turn: "other" }))).toBe(true);
+		expect(reloadHistory).toHaveBeenCalledTimes(1);
+	});
+
 	it("a failed reload is logged, not thrown", async () => {
 		const reloadHistory = vi.fn().mockRejectedValue(new Error("offline"));
-		const h = harness({ snapshot: null, streaming: false, reloadHistory });
+		const h = harness({ snapshot: null, reloadHistory });
 		// Admit a foreign turn to trigger startJoin(reloadHistory), which should log but not throw
 		h.sync.admit(ev(2, { turn: "T2" }));
 		// Wait for the error to be logged

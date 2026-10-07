@@ -14,9 +14,11 @@ const TERMINAL_EVENTS = new Set(["stream_complete", "stream_error", "stream_abor
 
 export function applyLiveSnapshot(messages, snap) {
 	const last = findActiveMessage(messages);
+	// A streaming row is the snapshot's unless it already carries another turn's id.
+	const otherAnswer = snap.message_id && last?.message_id && last.message_id !== snap.message_id;
 	const sameTurn =
 		last?.role === "assistant" &&
-		(last.isStreaming || (snap.message_id && last.message_id === snap.message_id));
+		((last.isStreaming && !otherAnswer) || (snap.message_id && last.message_id === snap.message_id));
 	if (!sameTurn) {
 		messages.push({ role: "assistant", content: "", blocks: [], timestamp: new Date().toISOString() });
 	}
@@ -34,7 +36,7 @@ export function createLiveTurnSync({
 	onSnapshot,
 	onNoLiveTurn,
 	dispatch,
-	isStreaming,
+	ownClientTurn,
 	reloadHistory,
 	setTimer = setTimeout,
 	clearTimer = clearTimeout,
@@ -47,6 +49,15 @@ export function createLiveTurnSync({
 	let held = [];
 	const recent = [];
 	const settledTurns = [];
+
+	function settle(events) {
+		for (const e of events) {
+			if (e.turn != null && !settledTurns.includes(e.turn)) {
+				settledTurns.push(e.turn);
+				if (settledTurns.length > 20) settledTurns.shift();
+			}
+		}
+	}
 
 	function remember(event) {
 		recent.push(event);
@@ -78,8 +89,8 @@ export function createLiveTurnSync({
 		if (event.turn == null || event.seq == null) return true;
 		if (event.turn !== turn) {
 			if (settledTurns.includes(event.turn)) return true;
-			if (!isStreaming()) {
-				// A turn started on another surface: catch up before showing it.
+			if (event.client_turn == null || event.client_turn !== ownClientTurn()) {
+				// A turn this surface did not send: catch up before showing it.
 				held.push(event);
 				startJoin(reloadHistory);
 				return false;
@@ -92,6 +103,13 @@ export function createLiveTurnSync({
 		if (lastSeq !== null && event.seq > lastSeq + 1) scheduleGap();
 		lastSeq = event.seq;
 		remember(event);
+		if (TERMINAL_EVENTS.has(event.event)) {
+			// Whatever of this turn still arrives is late, not a new turn to adopt.
+			settle([event]);
+			turn = null;
+			lastSeq = null;
+			recent.length = 0;
+		}
 		return true;
 	}
 
@@ -115,6 +133,8 @@ export function createLiveTurnSync({
 				joining = false;
 				const pending = held;
 				held = [];
+				// The failure may last: let these events through rather than re-join on each.
+				settle(pending);
 				release(pending);
 			}
 			throw err;
@@ -127,12 +147,7 @@ export function createLiveTurnSync({
 			turn = null;
 			lastSeq = null;
 			recent.length = 0;
-			for (const e of pending) {
-				if (e.turn != null && !settledTurns.includes(e.turn)) {
-					settledTurns.push(e.turn);
-					if (settledTurns.length > 20) settledTurns.shift();
-				}
-			}
+			settle(pending);
 			release(pending);
 			onNoLiveTurn({ sawTerminal: pending.some((e) => TERMINAL_EVENTS.has(e.event)) });
 			return false;
