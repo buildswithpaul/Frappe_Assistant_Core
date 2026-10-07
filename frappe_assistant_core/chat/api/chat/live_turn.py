@@ -48,8 +48,12 @@ def get(session_id: str) -> dict | None:
     return frappe.cache().get_value(_key(session_id), expires=True)
 
 
-def start(session_id: str, *, message_id: str | None = None) -> str:
+def start(session_id: str, *, message_id: str | None = None, client_turn: str | None = None) -> str:
     """Mark a turn as accepted before its relay runs.
+
+    ``client_turn`` is the id the requesting surface gave the request
+    (``client_turn_id``); every event of the turn carries it, so that surface
+    can tell its own turn from one another surface started.
 
     ``blocks`` and ``text`` stay None: a joining client keeps what the row shows
     until the relay writes its first snapshot.
@@ -60,6 +64,7 @@ def start(session_id: str, *, message_id: str | None = None) -> str:
         {
             "turn": turn,
             "message_id": message_id,
+            "client_turn": client_turn,
             "status": "starting",
             "started_at": frappe.utils.now(),
             "seq": 0,
@@ -91,8 +96,16 @@ def _trimmed(blocks: list[dict]) -> list[dict]:
 class LiveTurn:
     """One relay run's view of its entry: numbers events and writes snapshots."""
 
-    def __init__(self, session_id: str, builder, message_id: str | None = None, turn: str | None = None):
+    def __init__(
+        self,
+        session_id: str,
+        builder,
+        message_id: str | None = None,
+        turn: str | None = None,
+        client_turn: str | None = None,
+    ):
         self.session_id = session_id
+        self.client_turn = client_turn
         self.builder = builder
         self.message_id = message_id
         self.turn = turn or uuid.uuid4().hex
@@ -105,6 +118,8 @@ class LiveTurn:
         self.seq += 1
         data["turn"] = self.turn
         data["seq"] = self.seq
+        if self.client_turn is not None:
+            data["client_turn"] = self.client_turn
 
     def record(self, data: dict) -> None:
         """Fold an emitted event into the snapshot. Never raises."""
@@ -131,6 +146,7 @@ class LiveTurn:
             {
                 "turn": self.turn,
                 "message_id": self.message_id,
+                "client_turn": self.client_turn,
                 "status": "streaming",
                 "started_at": frappe.utils.now(),
                 "seq": self.seq,
@@ -160,12 +176,15 @@ def bind(
     """Start keeping this relay run's snapshot; None (and nothing written) when disabled.
 
     ``turn`` is the token the endpoint's ``start()`` returned, so one token covers
-    the turn from send to finish.
+    the turn from send to finish; the client's own id for the turn is read off that
+    starting entry, so ``start()`` stays its one source.
     """
     if not enabled:
         return None
     try:
-        live = LiveTurn(session_id, builder, message_id, turn)
+        starting = get(session_id) if turn is not None else None
+        client_turn = starting.get("client_turn") if starting and starting.get("turn") == turn else None
+        live = LiveTurn(session_id, builder, message_id, turn, client_turn)
     except Exception as e:
         _logger().warning(f"live turn not started for {session_id}: {e!s}")
         return None

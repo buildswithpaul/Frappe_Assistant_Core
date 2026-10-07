@@ -29,6 +29,25 @@ class TestLiveTurnModule(BaseAssistantTest):
         self.assertIsNone(entry["blocks"])
         self.assertIsNone(entry["text"])
 
+    def test_start_keeps_the_clients_own_id_for_the_turn(self):
+        live_turn.start(self.sid, client_turn="c-1")
+        self.assertEqual(live_turn.get(self.sid)["client_turn"], "c-1")
+
+    def test_bind_carries_the_clients_id_from_the_starting_entry_onto_every_event(self):
+        turn = live_turn.start(self.sid, client_turn="c-1")
+        live = live_turn.bind(self.sid, BlockBuilder(), turn=turn)
+        data = {"event": "stream_chunk"}
+        live.stamp(data)
+        self.assertEqual(data["client_turn"], "c-1")
+        self.assertEqual(live_turn.get(self.sid)["client_turn"], "c-1")
+
+    def test_a_turn_without_a_client_id_stamps_none(self):
+        turn = live_turn.start(self.sid)
+        live = live_turn.bind(self.sid, BlockBuilder(), turn=turn)
+        data = {"event": "stream_chunk"}
+        live.stamp(data)
+        self.assertNotIn("client_turn", data)
+
     def test_get_is_none_when_no_turn_runs(self):
         self.assertIsNone(live_turn.get(self.sid))
 

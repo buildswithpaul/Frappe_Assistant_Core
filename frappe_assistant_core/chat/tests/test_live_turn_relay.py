@@ -132,7 +132,8 @@ class TestRelayKeepsTheLiveTurn(BaseAssistantTest):
         peeks = []
         published = self._run(self._turn(peeks), restricted=True)
         self.assertIsNone(peeks[0])
-        self.assertTrue(all("seq" not in p for p in published))
+        self.assertTrue(published)
+        self.assertTrue(all("seq" not in p and "client_turn" not in p for p in published))
 
     def test_a_redis_failure_never_stops_the_stream(self):
         # Redis answers the bind, then goes down mid-turn.
@@ -153,6 +154,12 @@ class TestRelayKeepsTheLiveTurn(BaseAssistantTest):
         turn = live_turn.start(self.sid)
         published = self._run(self._turn([]), live_turn_token=turn)
         self.assertEqual({p["turn"] for p in published}, {turn})
+
+    def test_every_relay_event_carries_the_clients_turn_id(self):
+        turn = live_turn.start(self.sid, client_turn="c-1")
+        published = self._run(self._turn([]), live_turn_token=turn)
+        self.assertTrue(published)
+        self.assertEqual({p["client_turn"] for p in published}, {"c-1"})
 
     def test_a_relay_that_ends_before_binding_clears_the_endpoints_entry(self):
         # The endpoint writes the starting entry; an unregistered site returns before bind.
@@ -210,6 +217,8 @@ class TestEndpointsMarkTheTurnStarted(BaseAssistantTest):
                 return_value=user_msg,
             )
         )
+        # Production reaches this through the GDPR Article 18 processing-restriction
+        # flag on the user's FAC Chat preferences; the patch stands in for that flag.
         stack.enter_context(patch.object(messages, "_is_processing_restricted", return_value=restricted))
         return stack
 
@@ -218,6 +227,24 @@ class TestEndpointsMarkTheTurnStarted(BaseAssistantTest):
             messages.send_message(session_id=self.sid, message="hello")
         self.assertEqual(self.seen_at_submit[0]["status"], "starting")
         self.assertIsNone(self.seen_at_submit[0]["message_id"])
+
+    def test_the_entry_carries_the_clients_turn_id_for_send_continue_and_resume(self):
+        with self._patched():
+            messages.send_message(session_id=self.sid, message="hello", client_turn_id="c-send")
+        self.assertEqual(self.seen_at_submit[-1]["client_turn"], "c-send")
+        live_turn.clear(self.sid)
+        with self._patched():
+            messages.continue_response(session_id=self.sid, message_id="m1", client_turn_id="c-cont")
+        self.assertEqual(self.seen_at_submit[-1]["client_turn"], "c-cont")
+        live_turn.clear(self.sid)
+        with self._patched():
+            messages.resume_interrupt(
+                session_id=self.sid,
+                interrupt_response='[{"interruptId": "i1", "response": "approve"}]',
+                message_id="m2",
+                client_turn_id="c-resume",
+            )
+        self.assertEqual(self.seen_at_submit[-1]["client_turn"], "c-resume")
 
     def test_the_relay_is_handed_the_turn_token_the_endpoint_wrote(self):
         with self._patched():

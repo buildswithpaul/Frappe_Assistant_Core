@@ -34,9 +34,19 @@ from ..chat.relay import (
     _relay_ar_stream,
 )
 
+# Bounded thread pool for relaying AR SSE streams to Socket.IO. Replaces
+# unbounded ``threading.Thread`` spawning (FACO-H14). Workers are daemon
+# so they don't block process shutdown. Overflow currently queues inside
+# the executor — bounded-queue rejection is a documented follow-up.
+_relay_pool = ThreadPoolExecutor(max_workers=20, thread_name_prefix="faco-relay")
+
 
 def _mark_turn_started(
-    session_id: str, *, message_id: str | None = None, restricted: bool = False
+    session_id: str,
+    *,
+    message_id: str | None = None,
+    restricted: bool = False,
+    client_turn: str | None = None,
 ) -> str | None:
     """Write the starting live-turn entry; never let a Redis failure block the turn.
 
@@ -46,17 +56,10 @@ def _mark_turn_started(
     if restricted:
         return None
     try:
-        return live_turn.start(session_id, message_id=message_id)
+        return live_turn.start(session_id, message_id=message_id, client_turn=client_turn)
     except Exception as e:
         frappe.logger("fac_live_turn").warning(f"Could not mark turn started for {session_id}: {e!s}")
         return None
-
-
-# Bounded thread pool for relaying AR SSE streams to Socket.IO. Replaces
-# unbounded ``threading.Thread`` spawning (FACO-H14). Workers are daemon
-# so they don't block process shutdown. Overflow currently queues inside
-# the executor — bounded-queue rejection is a documented follow-up.
-_relay_pool = ThreadPoolExecutor(max_workers=20, thread_name_prefix="faco-relay")
 
 
 def _flag(value) -> bool:
@@ -318,7 +321,7 @@ def send_message(
         if effort is not None:
             thinking_enabled = effort != "off"
 
-        turn = _mark_turn_started(session_id, restricted=restricted)
+        turn = _mark_turn_started(session_id, restricted=restricted, client_turn=client_turn_id)
         try:
             _relay_pool.submit(
                 _relay_ar_stream,
@@ -442,7 +445,9 @@ def resume_interrupt(
         if effort is not None:
             thinking_enabled = effort != "off"
 
-        turn = _mark_turn_started(session_id, restricted=restricted, message_id=message_id)
+        turn = _mark_turn_started(
+            session_id, restricted=restricted, message_id=message_id, client_turn=client_turn_id
+        )
         try:
             _relay_pool.submit(
                 _relay_ar_interrupt_resume,
@@ -551,7 +556,9 @@ def continue_response(
         if effort is not None:
             thinking_enabled = effort != "off"
 
-        turn = _mark_turn_started(session_id, restricted=restricted, message_id=message_id)
+        turn = _mark_turn_started(
+            session_id, restricted=restricted, message_id=message_id, client_turn=client_turn_id
+        )
         try:
             _relay_pool.submit(
                 _relay_ar_stream,
