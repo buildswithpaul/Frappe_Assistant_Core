@@ -52,4 +52,21 @@ describe("widget setup screen", () => {
 
 		expect(w.find("button").text()).toContain("Get Started Free");
 	});
+
+	it("shows only a loading status while access is still being checked", () => {
+		const w = render({ status: "checking", userSetupComplete: false });
+
+		expect(w.find("[role=status]").exists()).toBe(true);
+		expect(w.text()).not.toContain("administrator");
+		expect(w.text()).not.toContain("Welcome to FACO");
+		expect(w.find("button").exists()).toBe(false);
+	});
+
+	it("says FACO is unavailable, not unregistered, when the access check failed", () => {
+		const w = render({ status: "error" });
+
+		expect(w.text()).toContain("FACO is unavailable right now. Try again later.");
+		expect(w.text()).not.toContain("administrator");
+		expect(w.find("button").exists()).toBe(false);
+	});
 });

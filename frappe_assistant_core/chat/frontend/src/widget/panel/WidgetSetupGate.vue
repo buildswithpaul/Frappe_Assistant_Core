@@ -1,5 +1,12 @@
 <template>
-	<div class="wsg">
+	<div v-if="state === 'checking'" class="wsg" role="status" aria-live="polite">
+		<span class="wsg-spinner" aria-hidden="true"></span>
+		<p class="wsg-hint">{{ t("Loading…") }}</p>
+	</div>
+	<div v-else-if="state === 'error'" class="wsg" role="status" aria-live="polite">
+		<p>{{ t("FACO is unavailable right now. Try again later.") }}</p>
+	</div>
+	<div v-else class="wsg">
 		<h2>{{ copy.title }}</h2>
 		<p>{{ copy.subtitle }}</p>
 		<div v-if="showButton" class="wsg-action">
@@ -24,7 +31,11 @@ const props = defineProps({
 // Connecting the site is the only step that belongs to an admin. The other two
 // belong to the person in front of us: this gate is reached only when can_use is
 // true, and can_use IS the membership check, so they already hold a seat.
+// "checking" is the userStore default until initialize_spa resolves; "error" is a failed
+// access call. Neither says anything about registration, so neither may show its copy.
 const state = computed(() => {
+	if (props.status === "checking") return "checking";
+	if (props.status === "error") return "error";
 	if (props.status !== "ready") return "not_registered";
 	if (!props.userSetupComplete) return "needs_user_auth";
 	return "needs_consent";
@@ -103,6 +114,24 @@ p {
 }
 .wsg-btn:hover {
 	background: var(--ql-accent-hover);
+}
+.wsg-spinner {
+	width: 18px;
+	height: 18px;
+	border: 2px solid var(--ql-border, var(--ql-text-muted));
+	border-top-color: var(--ql-accent);
+	border-radius: 50%;
+	animation: wsg-spin 0.8s linear infinite;
+}
+@keyframes wsg-spin {
+	to {
+		transform: rotate(360deg);
+	}
+}
+@media (prefers-reduced-motion: reduce) {
+	.wsg-spinner {
+		animation: none;
+	}
 }
 .wsg-hint {
 	font-size: 12px;
