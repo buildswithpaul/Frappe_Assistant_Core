@@ -52,6 +52,7 @@
 				v-else
 				:messages="chatStore.messages"
 				:is-streaming="chatStore.isStreaming"
+				:is-resuming="chatStore.isSubmittingInterrupts"
 				@toggle-block="chatStore.toggleBlockExpansion"
 				@approve="onDecision"
 				@reject="onDecision"
@@ -70,6 +71,7 @@
 			:plan="latestTurn.plan"
 			:live="latestTurn.live"
 			:stopped="latestTurn.stopped"
+			:waiting-on="latestTurn.waitingOn"
 			:activity="chatStore.taskActivity"
 		/>
 		<OverageNotice
@@ -111,7 +113,7 @@ import { isBlocked, overageNoticeDue, markOverageNoticeShown } from "../desk/quo
 import { confirms, settleConfirm } from "./confirmQueue.js";
 import { t } from "./i18n.js";
 import { deskRouteFor } from "./deskLinks.js";
-import { isStoppedTurn } from "@/utils/turnState";
+import { isPausedTurn, isStoppedTurn } from "@/utils/turnState";
 
 const chatStore = useChatStore();
 const userStore = useUserStore();
@@ -133,10 +135,23 @@ const latestTurn = computed(() => {
 		const msg = list[i];
 		if (msg?.role !== "assistant") continue;
 		const plan = (msg.blocks || []).find((b) => b?.type === "plan") || null;
-		return { index: i, plan, live: Boolean(msg.isStreaming), stopped: isStoppedTurn(msg) };
+		return {
+			index: i,
+			plan,
+			live: Boolean(msg.isStreaming),
+			stopped: isStoppedTurn(msg),
+			waitingOn: waitingOn(msg),
+		};
 	}
-	return { index: -1, plan: null, live: false, stopped: false };
+	return { index: -1, plan: null, live: false, stopped: false, waitingOn: "" };
 });
+
+// What a turn that is not streaming but has not ended waits on: a pending card's answer, or the
+// resume an answered card started (the card is resolved before the resume stream's first event).
+function waitingOn(msg) {
+	if (isPausedTurn(msg.blocks)) return chatStore.pendingInteractionBlock?.regime || "approval";
+	return chatStore.isSubmittingInterrupts ? "resume" : "";
+}
 
 const deskUser = () => window.frappe?.session?.user || "";
 

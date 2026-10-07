@@ -210,28 +210,53 @@ describe("widget panel", () => {
 		expect(w.find(".wps-heading").text()).toBe("⊘ Stopped after 0 of 2 steps");
 	});
 
-	it("does not present a turn still waiting on a card as stopped", async () => {
-		const w = mount(WidgetPanel, { global: { stubs } });
-		const chatStore = useChatStore();
-		// handleStreamAborted keeps the local blocks when the stream_aborted event carries no
-		// snapshot, so an aborted message can still hold the pending card it was paused on.
-		chatStore.messages = [
+	describe("plan strip on a turn waiting on the user", () => {
+		const plan = {
+			type: "plan",
+			status: "running",
+			tasks: [{ id: "a", title: "Create the quotation", status: "running" }],
+		};
+		const turn = (extra, blocks) => [
 			{ role: "user", content: "create it", blocks: [] },
-			{
-				role: "assistant",
-				aborted: true,
-				blocks: [
-					{
-						type: "plan",
-						status: "running",
-						tasks: [{ id: "a", title: "Create the quotation", status: "running" }],
-					},
-					{ type: "interaction", id: "tu-1", status: "pending" },
-				],
-			},
+			{ role: "assistant", ...extra, blocks: [plan, ...blocks] },
 		];
-		await nextTick();
-		expect(w.find(".wps-heading").text()).toBe("✓ Completed 0 of 1 step");
+
+		it("says it is waiting for the approval, not a completed tally", async () => {
+			const w = mount(WidgetPanel, { global: { stubs } });
+			// handleApprovalRequired adds the pending card; the paused message is not streaming.
+			useChatStore().messages = turn({}, [{ type: "interaction", id: "tu-1", interactionType: "approval", status: "pending" }]);
+			await nextTick();
+			expect(w.find(".wps-heading").text()).toBe("Waiting for your approval…");
+		});
+
+		it("says it is waiting for an answer on a question card", async () => {
+			const w = mount(WidgetPanel, { global: { stubs } });
+			useChatStore().messages = turn({}, [{ type: "interaction", id: "tu-1", interactionType: "question", status: "pending" }]);
+			await nextTick();
+			expect(w.find(".wps-heading").text()).toBe("Waiting for your answer…");
+		});
+
+		it("does not present an aborted turn still holding its card as stopped", async () => {
+			const w = mount(WidgetPanel, { global: { stubs } });
+			// handleStreamAborted keeps the local blocks when the stream_aborted event carries no
+			// snapshot, so an aborted message can still hold the pending card it was paused on.
+			useChatStore().messages = turn({ aborted: true }, [
+				{ type: "interaction", id: "tu-1", interactionType: "approval", status: "pending" },
+			]);
+			await nextTick();
+			expect(w.find(".wps-heading").text()).toBe("Waiting for your approval…");
+		});
+
+		it("says it is resuming while the approved card's resume is in flight", async () => {
+			const w = mount(WidgetPanel, { global: { stubs } });
+			const chatStore = useChatStore();
+			// applyInteractionDecisions flips the card to approved before the resume stream starts;
+			// isSubmittingInterrupts spans that round trip.
+			chatStore.messages = turn({}, [{ type: "interaction", id: "tu-1", interactionType: "approval", status: "approved" }]);
+			chatStore.isSubmittingInterrupts = true;
+			await nextTick();
+			expect(w.find(".wps-heading").text()).toBe("Resuming…");
+		});
 	});
 
 	describe("plan strip across turns", () => {
