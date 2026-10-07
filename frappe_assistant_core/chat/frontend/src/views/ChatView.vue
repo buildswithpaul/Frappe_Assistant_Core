@@ -135,6 +135,7 @@
 					:artifacts="activeArtifacts"
 					:live="activeTurnIsLive"
 					:stopped="activeTurnStopped"
+					:paused="activeTurnPaused"
 					collapsible
 					@review-approval="handleRailReviewApproval"
 					@collapse="collapseRailDock"
@@ -167,6 +168,7 @@
 						:artifacts="activeArtifacts"
 						:live="activeTurnIsLive"
 						:stopped="activeTurnStopped"
+						:paused="activeTurnPaused"
 						@review-approval="handleRailReviewApproval"
 					/>
 				</aside>
@@ -198,6 +200,7 @@
 						:artifacts="activeArtifacts"
 						:live="activeTurnIsLive"
 						:stopped="activeTurnStopped"
+						:paused="activeTurnPaused"
 						@review-approval="handleRailReviewApproval"
 					/>
 					</div>
@@ -262,6 +265,7 @@ import { useRobotMoodWiring } from "@/composables/useRobotMoodWiring";
 import { useContextRail } from "@/composables/useContextRail";
 import { useSheetDismiss } from "@/composables/useSheetDismiss";
 import { deriveArtifacts } from "@/utils/contextArtifacts";
+import { isPausedTurn, isStoppedTurn } from "@/utils/turnState";
 import ContextRail from "@/components/chat/ContextRail.vue";
 import { logger } from "@/utils/logger";
 import { usePreferences } from "@/composables/usePreferences";
@@ -397,9 +401,8 @@ const activeArtifacts = computed(() => deriveArtifacts(activeAssistantMessage.va
 // Drives whether the rail still presents work as in flight. A hydrated message
 // carries no isStreaming flag, so a reloaded conversation reads as finished.
 const activeTurnIsLive = computed(() => Boolean(activeAssistantMessage.value?.isStreaming));
-// Stop sets `aborted` on the live message, and the row persists it (aborted=1),
-// so a stopped turn's open tasks read as stopped live and after a reload.
-const activeTurnStopped = computed(() => Boolean(activeAssistantMessage.value?.aborted));
+const activeTurnStopped = computed(() => isStoppedTurn(activeAssistantMessage.value));
+const activeTurnPaused = computed(() => isPausedTurn(activeAssistantMessage.value?.blocks));
 
 const railHasArtifacts = computed(() => activeArtifacts.value.hasArtifacts);
 const {

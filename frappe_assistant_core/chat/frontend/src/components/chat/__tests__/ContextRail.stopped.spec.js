@@ -46,3 +46,23 @@ describe("ContextRail on a finished turn", () => {
 		expect(wrapper.find(".tl-row .tl-duration").text()).toBe("stopped");
 	});
 });
+
+describe("ContextRail on a turn paused at a card", () => {
+	beforeEach(() => setActivePinia(createPinia()));
+
+	it("does not present the paused turn's tool as stopped", () => {
+		// AR emits tool_call_start for the model's tool use before the approval
+		// hook interrupts it, so a paused turn holds the gated tool as `running`
+		// next to its pending card, and the message is not streaming.
+		const blocks = [
+			{ type: "tool_call", id: "tu-1", tool_name: "create_document", status: "running", startTime: "2026-07-20T09:00:00.000Z" },
+			{ type: "interaction", id: "tu-1", status: "pending", tool_name: "create_document" },
+		];
+		const wrapper = mount(ContextRail, {
+			props: { artifacts: deriveArtifacts(blocks), live: false, paused: true },
+		});
+
+		expect(wrapper.find(".tl-row.is-running").exists()).toBe(true);
+		expect(wrapper.find(".tl-row.is-stopped").exists()).toBe(false);
+	});
+});

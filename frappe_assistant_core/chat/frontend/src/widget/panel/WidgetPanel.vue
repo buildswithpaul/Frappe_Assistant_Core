@@ -111,6 +111,7 @@ import { isBlocked, overageNoticeDue, markOverageNoticeShown } from "../desk/quo
 import { confirms, settleConfirm } from "./confirmQueue.js";
 import { t } from "./i18n.js";
 import { deskRouteFor } from "./deskLinks.js";
+import { isStoppedTurn } from "@/utils/turnState";
 
 const chatStore = useChatStore();
 const userStore = useUserStore();
@@ -125,15 +126,14 @@ useAutoScroll(
 
 // The plan strip follows the latest assistant turn, as FAC Chat's Context Rail does. It is keyed by
 // the turn's position so a new turn starts collapsed state afresh; a hydrated turn carries no
-// isStreaming flag and so reads as finished. `aborted` is set by Stop on the live message and
-// persisted on the row, so a stopped turn reads as stopped live and after a reload.
+// isStreaming flag and so reads as finished.
 const latestTurn = computed(() => {
 	const list = chatStore.messages || [];
 	for (let i = list.length - 1; i >= 0; i--) {
 		const msg = list[i];
 		if (msg?.role !== "assistant") continue;
 		const plan = (msg.blocks || []).find((b) => b?.type === "plan") || null;
-		return { index: i, plan, live: Boolean(msg.isStreaming), stopped: Boolean(msg.aborted) };
+		return { index: i, plan, live: Boolean(msg.isStreaming), stopped: isStoppedTurn(msg) };
 	}
 	return { index: -1, plan: null, live: false, stopped: false };
 });
