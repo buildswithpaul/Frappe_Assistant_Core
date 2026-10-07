@@ -5,7 +5,7 @@
  */
 
 import { isInternalTool } from "@/utils/internalTools";
-import { delegationOutcome } from "./delegationOutcome";
+import { describeDelegation } from "./delegationOutcome";
 
 export function formatToolName(name) {
 	if (!name) return "Tool";
@@ -48,10 +48,7 @@ export function processingSummary(blocks, isStreaming, live = isStreaming) {
 	if (ext.length === 0) {
 		const delegated = delegateBlocks(internal);
 		if (delegated.length > 0) {
-			const { total, done, stopped } = delegationOutcome(delegated, live);
-			if (stopped) return "Delegation stopped";
-			if (done < total) return `Delegated ${done} of ${total} subtasks`;
-			return `Delegated ${total} subtask${total === 1 ? "" : "s"}`;
+			return describeDelegation(delegated, live).text;
 		}
 		if (internal.length === 0) return "Thought about the request";
 		// Thinking outranks the internal-prep labels below it. A gpt-5.x turn
@@ -83,8 +80,8 @@ export function processingSummary(blocks, isStreaming, live = isStreaming) {
 
 /**
  * The header icon's state once the card is not active: "error" when a tool
- * failed or delegation ran fewer subtasks than it was given, "stopped" when the
- * turn ended with a tool (delegation included) still running, else "complete".
+ * failed, "stopped" when the turn ended with a tool still running, else the
+ * delegation's own state (describeDelegation), or "complete".
  */
 export function processingStatus(blocks, isStreaming, live = isStreaming) {
 	const list = blocks || [];
@@ -92,10 +89,5 @@ export function processingStatus(blocks, isStreaming, live = isStreaming) {
 	if (toolBlocks.some((b) => b.status === "error")) return "error";
 	if (!live && toolBlocks.some((b) => b.status === "running")) return "stopped";
 	const delegated = delegateBlocks(toolBlocks);
-	if (delegated.length) {
-		const { total, done, stopped } = delegationOutcome(delegated, live);
-		if (stopped) return "stopped";
-		if (done < total) return "error";
-	}
-	return "complete";
+	return delegated.length ? describeDelegation(delegated, live).status : "complete";
 }

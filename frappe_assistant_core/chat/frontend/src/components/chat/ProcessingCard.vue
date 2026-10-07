@@ -47,6 +47,10 @@
 					<circle cx="12" cy="12" r="9" stroke-width="2" />
 					<path stroke-linecap="round" stroke-width="2" d="M6 18L18 6" />
 				</svg>
+				<!-- A dash when the outcome is not known yet -->
+				<svg v-else-if="status === 'neutral'" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+					<path stroke-linecap="round" stroke-width="2" d="M7 12h10" />
+				</svg>
 				<!-- Checkmark when complete -->
 				<svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor">
 					<path
@@ -258,6 +262,10 @@ const summaryText = computed(() =>
 }
 
 .processing-status-icon.status-stopped {
+	color: var(--ql-text-muted);
+}
+
+.processing-status-icon.status-neutral {
 	color: var(--ql-text-muted);
 }
 
