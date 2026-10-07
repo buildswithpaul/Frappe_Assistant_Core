@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { answeredCardIds, isFinalizedRow, resumeHasSettled } from "./utils";
+import { answeredCardIds, carryCardDecisions, isFinalizedRow, resumeHasSettled } from "./utils";
 
 describe("isFinalizedRow", () => {
 	it("treats an assistant row with content as finished", () => {
@@ -59,5 +59,28 @@ describe("answeredCardIds", () => {
 	it("counts a decided card whose status has not flipped yet", () => {
 		const msg = { blocks: [{ type: "interaction", id: "call_1", status: "pending", decision: {} }] };
 		expect(answeredCardIds(msg)).toEqual(new Set(["call_1"]));
+	});
+});
+
+describe("carryCardDecisions", () => {
+	const decided = {
+		type: "interaction",
+		id: "call_1",
+		status: "pending",
+		interrupts: [{ id: "int1" }],
+		decision: { resolution: "approved" },
+	};
+	const snapshotCard = (interrupts) => ({ type: "interaction", id: "call_1", status: "pending", interrupts });
+
+	it("carries a decision onto the same pending card", () => {
+		const [card] = carryCardDecisions([decided], [snapshotCard([{ id: "int1" }])]);
+		expect(card.decision).toEqual({ resolution: "approved" });
+	});
+
+	// A card id is the gated tool's id, which a re-interrupt of the same tool can
+	// reuse; the interrupt ids are what the decision answers.
+	it("does not carry a decision onto a card asking about other interrupts", () => {
+		const [card] = carryCardDecisions([decided], [snapshotCard([{ id: "int2" }])]);
+		expect(card.decision).toBeUndefined();
 	});
 });

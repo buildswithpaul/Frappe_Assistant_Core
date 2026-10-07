@@ -67,3 +67,21 @@ describe("QuestionCard single_select", () => {
 		expect(wrapper.find(".custom-input-row button").attributes("disabled")).toBeDefined();
 	});
 });
+
+// recordInteractionDecision sets `decision` on the card the moment the user
+// answers; the card stays `pending` until the resume is acknowledged, and a
+// paused stream's snapshot can land in between (carryCardDecisions).
+describe("QuestionCard once answered", () => {
+	const decided = { ...singleSelectBlock, placeholder: "", decision: { resolution: "answered" } };
+
+	it("locks every input of a decided card", async () => {
+		for (const interactionType of ["single_select", "multi_select", "confirm", "text_input"]) {
+			const w = mount(QuestionCard, { props: { block: decided, interactionType } });
+			const controls = w.findAll("button, input");
+			expect(controls.length).toBeGreaterThan(0);
+			for (const control of controls) {
+				expect(control.attributes("disabled"), `${interactionType}`).toBeDefined();
+			}
+		}
+	});
+});

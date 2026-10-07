@@ -8,7 +8,7 @@
 				v-for="option in block.options"
 				:key="option"
 				class="pill"
-				:disabled="submitting"
+				:disabled="locked"
 				@click="emit('respond', option)"
 			>
 				{{ option }}
@@ -18,7 +18,7 @@
 			     label like "Something else — I'll type the exact dates" verbatim. -->
 			<button
 				class="pill pill-custom"
-				:disabled="submitting"
+				:disabled="locked"
 				@click="showCustom = true"
 			>
 				Type a different answer
@@ -30,13 +30,13 @@
 				v-model="textValue"
 				type="text"
 				class="text-field"
-				:disabled="submitting"
+				:disabled="locked"
 				:placeholder="block.placeholder || 'Type your answer…'"
-				@keydown.enter="!submitting && textValue.trim() && emit('respond', textValue.trim())"
+				@keydown.enter="!locked && textValue.trim() && emit('respond', textValue.trim())"
 			/>
 			<button
 				class="ql-btn ql-btn-approve"
-				:disabled="!textValue.trim() || submitting"
+				:disabled="!textValue.trim() || locked"
 				@click="emit('respond', textValue.trim())"
 			>
 				Send
@@ -59,6 +59,7 @@
 					type="checkbox"
 					:value="option"
 					v-model="selectedOptions"
+					:disabled="locked"
 					class="multi-check"
 				/>
 				<span>{{ option }}</span>
@@ -66,7 +67,7 @@
 		</div>
 		<button
 			class="ql-btn ql-btn-approve submit-btn"
-			:disabled="selectedOptions.length === 0 || submitting"
+			:disabled="selectedOptions.length === 0 || locked"
 			@click="emit('respond', selectedOptions)"
 		>
 			Submit{{ selectedOptions.length ? ` (${selectedOptions.length})` : "" }}
@@ -78,10 +79,10 @@
 		<div class="question-text">{{ block.question }}</div>
 		<div v-if="block.description" class="question-description">{{ block.description }}</div>
 		<div class="confirm-actions">
-			<button class="ql-btn ql-btn-reject" :disabled="submitting" @click="emit('respond', 'no')">
+			<button class="ql-btn ql-btn-reject" :disabled="locked" @click="emit('respond', 'no')">
 				No
 			</button>
-			<button class="ql-btn ql-btn-approve" :disabled="submitting" @click="emit('respond', 'yes')">
+			<button class="ql-btn ql-btn-approve" :disabled="locked" @click="emit('respond', 'yes')">
 				Yes
 			</button>
 		</div>
@@ -96,13 +97,13 @@
 				v-model="textValue"
 				type="text"
 				class="text-field"
-				:disabled="submitting"
+				:disabled="locked"
 				:placeholder="block.placeholder || 'Type your answer...'"
-				@keydown.enter="!submitting && textValue.trim() && emit('respond', textValue.trim())"
+				@keydown.enter="!locked && textValue.trim() && emit('respond', textValue.trim())"
 			/>
 			<button
 				class="ql-btn ql-btn-approve"
-				:disabled="!textValue.trim() || submitting"
+				:disabled="!textValue.trim() || locked"
 				@click="emit('respond', textValue.trim())"
 			>
 				Send
@@ -112,7 +113,7 @@
 </template>
 
 <script setup>
-import { nextTick, ref, watch } from "vue";
+import { computed, nextTick, ref, watch } from "vue";
 
 const props = defineProps({
 	block: { type: Object, required: true },
@@ -120,6 +121,9 @@ const props = defineProps({
 	submitting: { type: Boolean, default: false },
 });
 const emit = defineEmits(["respond"]);
+
+// Answered (a decision is recorded) or being sent: the card takes no more input.
+const locked = computed(() => props.submitting || Boolean(props.block.decision));
 
 const selectedOptions = ref([]);
 const textValue = ref("");

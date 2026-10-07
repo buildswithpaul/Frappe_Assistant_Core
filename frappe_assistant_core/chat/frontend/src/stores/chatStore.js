@@ -396,7 +396,7 @@ export const useChatStore = defineStore("chat", () => {
 				const blocks = carryCardDecisions(localByMsgId.get(m.message_id)?.blocks, m.blocks);
 				return blocks === m.blocks ? m : { ...m, blocks };
 			}
-			if (m.role !== "assistant" || isFinalizedRow(m)) return m;
+			if (m.role !== "assistant") return m;
 			const local = localByMsgId.get(m.message_id);
 			const localHasContent =
 				local &&
