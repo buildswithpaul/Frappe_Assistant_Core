@@ -2,7 +2,7 @@
 // (get_live_turn) and numbers every streamed event with {turn, seq}. A surface
 // that opens the conversation mid-turn holds incoming events, shows the
 // snapshot as a live bubble, then applies only the events numbered after it.
-import { findActiveMessage } from "./utils";
+import { carryCardDecisions, findActiveMessage } from "./utils";
 import { logger } from "@/utils/logger";
 
 // Text is written to the snapshot at most every 500ms server-side; a re-read
@@ -25,7 +25,8 @@ export function applyLiveSnapshot(messages, snap) {
 	// The reactive element, not the pushed literal.
 	const msg = sameTurn ? last : messages[messages.length - 1];
 	if (snap.message_id) msg.message_id = snap.message_id;
-	if (Array.isArray(snap.blocks)) msg.blocks = structuredClone(snap.blocks);
+	// A snapshot taken before the user decided a card still holds it pending.
+	if (Array.isArray(snap.blocks)) msg.blocks = carryCardDecisions(msg.blocks, structuredClone(snap.blocks));
 	if (typeof snap.text === "string") msg.content = snap.text;
 	msg.isStreaming = true;
 	return msg;
@@ -49,6 +50,10 @@ export function createLiveTurnSync({
 	let held = [];
 	const recent = [];
 	const settledTurns = [];
+	// Own turns this surface moved on from. Approving a card starts the resume
+	// as a new turn whose first event can arrive while the paused turn is still
+	// streaming under the old client id; those late events stay this surface's.
+	const previousOwnTurns = [];
 
 	function settle(events) {
 		for (const e of events) {
@@ -89,11 +94,19 @@ export function createLiveTurnSync({
 		if (event.turn == null || event.seq == null) return true;
 		if (event.turn !== turn) {
 			if (settledTurns.includes(event.turn)) return true;
+			if (previousOwnTurns.includes(event.turn)) {
+				if (TERMINAL_EVENTS.has(event.event)) settle([event]);
+				return true;
+			}
 			if (event.client_turn == null || event.client_turn !== ownClientTurn()) {
 				// A turn this surface did not send: catch up before showing it.
 				held.push(event);
 				startJoin(reloadHistory);
 				return false;
+			}
+			if (turn != null) {
+				previousOwnTurns.push(turn);
+				if (previousOwnTurns.length > 5) previousOwnTurns.shift();
 			}
 			turn = event.turn;
 			lastSeq = null;
@@ -172,6 +185,7 @@ export function createLiveTurnSync({
 		held = [];
 		recent.length = 0;
 		settledTurns.length = 0;
+		previousOwnTurns.length = 0;
 		cancelGap();
 	}
 

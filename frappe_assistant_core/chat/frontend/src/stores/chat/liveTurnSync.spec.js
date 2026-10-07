@@ -87,6 +87,16 @@ describe("applyLiveSnapshot", () => {
 		expect(msg.isStreaming).toBe(true);
 	});
 
+	// A snapshot taken before the user decided a card still holds it pending.
+	it("keeps the user's card decision when a snapshot replaces the blocks", () => {
+		const card = { type: "interaction", id: "call_1", status: "pending", interrupts: [{ id: "int1" }] };
+		const messages = reactive([
+			{ role: "assistant", message_id: "m1", isStreaming: true, blocks: [{ ...card, decision: { resolution: "approved" } }] },
+		]);
+		const msg = applyLiveSnapshot(messages, { turn: "T1", seq: 9, message_id: "m1", blocks: [card] });
+		expect(msg.blocks[0].decision).toEqual({ resolution: "approved" });
+	});
+
 	it("does not share block objects with the snapshot", () => {
 		const messages = reactive([{ role: "user", content: "q" }]);
 		const msg = applyLiveSnapshot(messages, snap);
@@ -227,6 +237,26 @@ describe("createLiveTurnSync", () => {
 		const first = ev(1, { turn: "T2", client_turn: "c-resume" });
 		expect(h.sync.admit(first)).toBe(true);
 		expect(h.sync.admit(ev(2, { turn: "T2", client_turn: "c-resume" }))).toBe(true);
+		expect(h.deps.fetchSnapshot).not.toHaveBeenCalled();
+	});
+
+	// Live round 3 (B1): Approve sets a new client turn id and starts the resume
+	// (T2), whose stream_start AR sends before it waits on the session lock, so
+	// the original turn (T1) keeps streaming afterwards under the old id. Read
+	// as a foreign turn, each T1 event reloaded history and re-applied T1's
+	// snapshot, with the approved card pending again.
+	it("keeps passing its previous own turn's events once its resume has started", () => {
+		const reloadHistory = vi.fn().mockResolvedValue();
+		const h = harness({ own: "c1", reloadHistory });
+		expect(h.sync.admit(ev(1))).toBe(true);
+
+		h.setOwn("c-resume");
+		expect(h.sync.admit(ev(1, { turn: "T2", client_turn: "c-resume" }))).toBe(true);
+		expect(h.sync.admit(ev(2))).toBe(true);
+		expect(h.sync.admit(ev(3, { event: "heartbeat" }))).toBe(true);
+		expect(h.sync.admit(ev(2, { turn: "T2", client_turn: "c-resume" }))).toBe(true);
+
+		expect(reloadHistory).not.toHaveBeenCalled();
 		expect(h.deps.fetchSnapshot).not.toHaveBeenCalled();
 	});
 
