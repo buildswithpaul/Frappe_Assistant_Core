@@ -12,6 +12,7 @@ export function parseShortcut(s) {
  */
 export function bindMicShortcut(onFire) {
 	const handler = (e) => {
+		if (!e.key) return;
 		if (!(e.ctrlKey && e.shiftKey && (e.key === " " || e.code === "Space"))) return;
 		const tag = e.target && e.target.tagName;
 		if (tag === "INPUT" || tag === "TEXTAREA") return;
@@ -27,6 +28,7 @@ export function bindShortcut(s, onFire) {
 	const want = parseShortcut(s);
 	if (!want.key) return () => {};
 	const handler = (e) => {
+		if (!e.key) return;
 		if (e.key.toLowerCase() !== want.key) return;
 		if (want.ctrl !== (e.ctrlKey || e.metaKey) || want.shift !== e.shiftKey || want.alt !== e.altKey) return;
 		e.preventDefault();

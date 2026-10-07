@@ -25,12 +25,15 @@ function stopTitleFlash() {
 /**
  * Make a pending approval impossible to miss: a card in a closed panel is hidden DOM, so
  * pop the panel open, badge the launcher (which also suppresses autofade), toast, and
- * flash the tab title. Safe to call repeatedly.
+ * flash the tab title. Safe to call repeatedly: only the first call toasts and flashes.
  */
 export function raiseAttention(view, info) {
 	view.setAttention(true);
+	const alreadyRaised = bridge.state.attention;
 	bridge.state.attention = true;
 	bridge.emit("open");
+	// The boot-time check and the panel's own watcher both raise the same pause; one toast is enough.
+	if (alreadyRaised) return;
 
 	const toolName = info && info.tool_name;
 	if (window.frappe && window.frappe.show_alert) {

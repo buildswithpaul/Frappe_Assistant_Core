@@ -107,7 +107,7 @@ describe("tooltips", () => {
 });
 
 describe("boot", () => {
-	let startBrowserTools, ensurePanel, panel, startTooltips, stopTooltips, access, settingsReply, pending;
+	let startBrowserTools, stopBrowserTools, destroyPanel, ensurePanel, panel, startTooltips, stopTooltips, access, settingsReply, pending;
 	let boot;
 
 	const callImpl = async ({ method }) => {
@@ -131,16 +131,18 @@ describe("boot", () => {
 		settingsReply = { privacy: { enable_dom_extraction: true, enable_browser_diagnostics: true } };
 		pending = { pending: false };
 		startBrowserTools = vi.fn();
+		stopBrowserTools = vi.fn();
+		destroyPanel = vi.fn();
 		panel = { open: vi.fn(), close: vi.fn() };
 		ensurePanel = vi.fn(async () => panel);
 		stopTooltips = vi.fn();
 		startTooltips = vi.fn(() => stopTooltips);
-		vi.doMock("../desk/browserTools.js", () => ({ startBrowserTools }));
+		vi.doMock("../desk/browserTools.js", () => ({ startBrowserTools, stopBrowserTools }));
 		vi.doMock("../desk/session.js", () => ({
 			resolveWidgetSession: async () => ({ session_id: "s1", restored: true }),
 			startClaimResponder: () => () => {},
 		}));
-		vi.doMock("./panelLoader.js", () => ({ ensurePanel }));
+		vi.doMock("./panelLoader.js", () => ({ ensurePanel, destroyPanel }));
 		vi.doMock("./tooltips.js", () => ({ startTooltips }));
 		window.FACODiagnostics = { setEnabled: vi.fn() };
 		window.frappe = {
@@ -211,6 +213,68 @@ describe("boot", () => {
 		bridge.emit("open");
 		await new Promise((r) => setTimeout(r, 0));
 		expect(panel.open).toHaveBeenCalledWith({ anchorRect: rect });
+	});
+
+	describe("events before the panel's first open", () => {
+		let realtimeHandlers;
+		beforeEach(() => {
+			realtimeHandlers = {};
+			window.frappe.realtime = {
+				socket: {},
+				on: vi.fn((n, fn) => (realtimeHandlers[n] = fn)),
+				off: vi.fn(),
+				task_subscribe: vi.fn(),
+			};
+		});
+
+		it("never subscribes when the access gate did not pass", async () => {
+			access = { show_widget: true, can_use: false };
+			await boot({ entry: "", css: [] });
+			expect(window.frappe.realtime.task_subscribe).not.toHaveBeenCalled();
+		});
+
+		it("mounts the panel when a stream event for the session arrives, and opens it for an approval", async () => {
+			access = { show_widget: true, can_use: true };
+			const config = { entry: "", css: [] };
+			await boot(config);
+			expect(window.frappe.realtime.task_subscribe).toHaveBeenCalledWith("s1");
+			realtimeHandlers.faco_message_stream({ session_id: "s1", event: "stream_start" });
+			expect(ensurePanel).toHaveBeenCalledWith(config);
+			expect(panel.open).not.toHaveBeenCalled();
+			realtimeHandlers.faco_message_stream({ session_id: "s1", event: "approval_required", tool_name: "x" });
+			await new Promise((r) => setTimeout(r, 0));
+			expect(panel.open).toHaveBeenCalledTimes(1);
+		});
+	});
+
+	describe("hiding and the FAC Admin toggle", () => {
+		it("denies a browser-tool confirmation after Hide without opening the panel, and removes the panel", async () => {
+			const bridge = await bootAndGetBridge();
+			bridge.emit("hide");
+			expect(destroyPanel).toHaveBeenCalled();
+			const { confirm } = startBrowserTools.mock.calls[0][0];
+			await expect(confirm({ tool_name: "take_screenshot" })).resolves.toBe("deny");
+			expect(panel.open).not.toHaveBeenCalled();
+		});
+
+		it("facoWidgetTeardown removes the launcher, stops the tools and lets boot run again", async () => {
+			await boot({ entry: "", css: [] });
+			expect(typeof window.facoWidgetTeardown).toBe("function");
+			window.facoWidgetTeardown();
+			expect(document.getElementById("fac-widget-launcher")).toBeNull();
+			expect(stopBrowserTools).toHaveBeenCalled();
+			expect(destroyPanel).toHaveBeenCalled();
+			expect(window.__facWidgetBooted).toBeFalsy();
+		});
+
+		it("facoWidgetRemount boots the widget again with the last config", async () => {
+			await boot({ entry: "", css: [] });
+			window.facoWidgetTeardown();
+			expect(document.getElementById("fac-widget-launcher")).toBeNull();
+			await window.facoWidgetRemount();
+			expect(document.getElementById("fac-widget-launcher")).not.toBeNull();
+			expect(startBrowserTools).toHaveBeenCalledTimes(2);
+		});
 	});
 
 	it("opens once for two quick open requests", async () => {
@@ -332,5 +396,16 @@ describe("boot", () => {
 		await new Promise((r) => setTimeout(r, 0));
 		process.off("unhandledRejection", unhandled);
 		expect(unhandled).not.toHaveBeenCalled();
+	});
+});
+
+describe("keydown without a key (browser autofill)", () => {
+	it("does not throw in either shortcut handler", async () => {
+		const { bindMicShortcut } = await import("./shortcut.js");
+		const stops = [bindShortcut("Ctrl+K", vi.fn()), bindMicShortcut(vi.fn())];
+		const e = new KeyboardEvent("keydown", { ctrlKey: true });
+		Object.defineProperty(e, "key", { value: undefined });
+		expect(() => document.dispatchEvent(e)).not.toThrow();
+		stops.forEach((s) => s());
 	});
 });

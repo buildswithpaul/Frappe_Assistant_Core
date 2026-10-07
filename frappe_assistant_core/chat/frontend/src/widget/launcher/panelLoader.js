@@ -15,3 +15,16 @@ export function ensurePanel(config, load = () => import("../panel/main.js")) {
 	}
 	return panelPromise;
 }
+
+/** Unmount and remove the panel, if one was ever mounted, so the next ensurePanel starts fresh. */
+export async function destroyPanel() {
+	const pending = panelPromise;
+	panelPromise = null;
+	if (!pending) return;
+	try {
+		const panel = await pending;
+		panel.destroy();
+	} catch {
+		// It never mounted; there is nothing to remove.
+	}
+}

@@ -76,5 +76,10 @@ export async function mountPanel(config) {
 		close() {
 			host.hidden = true;
 		},
+		destroy() {
+			window.removeEventListener("resize", place);
+			app.unmount();
+			host.remove();
+		},
 	};
 }
