@@ -2,6 +2,8 @@
  * Shared utilities for chat store modules.
  */
 
+import { isPausedTurn } from "@/utils/turnState";
+
 let blockIdCounter = 0;
 
 export function generateBlockId(prefix = "block") {
@@ -16,6 +18,17 @@ export function isFinalizedRow(msg) {
 	if (!msg || msg.role !== "assistant") return false;
 	if (msg.errored || msg.aborted) return true;
 	return Boolean(msg.content) || (Array.isArray(msg.blocks) && msg.blocks.length > 0);
+}
+
+// Whether a paused turn's server row shows its resume got past the pause. The
+// relay persists blocks only at terminal boundaries, so until the resume ends
+// the row is the paused snapshot: its card pending and the gated tool running.
+export function resumeHasSettled(row) {
+	if (!row) return false;
+	if (row.errored || row.aborted) return true;
+	const blocks = Array.isArray(row.blocks) ? row.blocks : [];
+	if (isPausedTurn(blocks)) return false;
+	return !blocks.some((b) => b?.type === "tool_call" && b.status === "running");
 }
 
 // `messages[length-1]` stops being "the active turn" the instant a non-turn
