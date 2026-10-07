@@ -104,3 +104,73 @@ describe("TaskList after the turn ends", () => {
 		expect(wrapper.find(".task-summary").exists()).toBe(false);
 	});
 });
+
+describe("TaskList parallel helpers", () => {
+	it("shows a live label under each running helper row while live", () => {
+		const wrapper = mount(TaskList, {
+			props: {
+				tasks: [
+					{ id: "a", title: "Customer A", status: "running", helper: true },
+					{ id: "b", title: "Customer B", status: "running", helper: true },
+				],
+				activity: { a: "Reading Sales Invoice list…", b: "Opening Customer B…" },
+				live: true,
+			},
+		});
+		const labels = wrapper.findAll(".activity").map((n) => n.text());
+		expect(labels).toEqual(["Reading Sales Invoice list…", "Opening Customer B…"]);
+	});
+
+	it("shows helper meta on a finished helper row and no label after the turn", () => {
+		const wrapper = mount(TaskList, {
+			props: {
+				tasks: [
+					{
+						id: "a",
+						title: "Customer A",
+						status: "done",
+						helper: true,
+						duration_ms: 12400,
+						credits: 0.4,
+					},
+				],
+				activity: { a: "stale label" },
+				live: false,
+			},
+		});
+		expect(wrapper.find(".helper-meta").text()).toBe("↳ helper · 12s · 0.4 credits");
+		expect(wrapper.find(".activity").exists()).toBe(false);
+	});
+
+	it("rounds helper credits like the widget, singular for exactly one", () => {
+		const meta = (credits) =>
+			mount(TaskList, {
+				props: { tasks: [{ id: "a", title: "A", status: "done", helper: true, credits }] },
+			})
+				.find(".helper-meta")
+				.text();
+		expect(meta(0.123456)).toBe("↳ helper · 0.12 credits");
+		expect(meta(1)).toBe("↳ helper · 1 credit");
+		expect(meta(0.999)).toBe("↳ helper · 1 credit");
+		expect(meta(NaN)).toBe("↳ helper");
+		expect(meta(Infinity)).toBe("↳ helper");
+	});
+
+	it("drops the live label from a helper the turn left running", () => {
+		const wrapper = mount(TaskList, {
+			props: {
+				tasks: [{ id: "a", title: "Customer A", status: "running", helper: true }],
+				activity: { a: "Reading Sales Invoice list…" },
+				live: false,
+			},
+		});
+		expect(wrapper.find(".activity").exists()).toBe(false);
+	});
+
+	it("keeps the old specialist tag for legacy delegated rows without helper fields", () => {
+		const wrapper = mount(TaskList, {
+			props: { tasks: [{ id: "a", title: "A", status: "done", delegated: true }] },
+		});
+		expect(wrapper.find(".delegated").exists()).toBe(true);
+	});
+});

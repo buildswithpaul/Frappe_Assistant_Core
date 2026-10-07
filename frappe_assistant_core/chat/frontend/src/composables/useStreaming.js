@@ -467,6 +467,10 @@ export function useStreaming() {
 				chatStore.resetActivityTimeout();
 				chatStore.handlePlanEvent(data);
 				break;
+			case "task_activity":
+				chatStore.resetActivityTimeout();
+				chatStore.handleTaskActivity(data);
+				break;
 
 			case "workflow_created":
 				chatStore.resetActivityTimeout();

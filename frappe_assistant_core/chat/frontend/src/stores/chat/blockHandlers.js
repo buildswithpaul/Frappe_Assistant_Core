@@ -5,6 +5,7 @@
  * and model fallback tracking during streaming responses.
  */
 
+import { ref, watch } from "vue";
 import { generateBlockId, findActiveMessage } from "./utils";
 
 /**
@@ -100,6 +101,23 @@ export function createBlockHandlers({
 		} else {
 			msg.blocks.unshift(block);
 		}
+	}
+
+	// Live label per running task, keyed by task_id. Labels only describe work
+	// in flight, so every path that ends a turn (complete, error, abort,
+	// timeout, reconcile) drops them by flipping isStreaming off.
+	const taskActivity = ref({});
+	watch(
+		isStreaming,
+		(streaming) => {
+			if (!streaming) taskActivity.value = {};
+		},
+		{ flush: "sync" }
+	);
+
+	function handleTaskActivity(data) {
+		if (!data?.task_id) return;
+		taskActivity.value = { ...taskActivity.value, [data.task_id]: data.label || "" };
 	}
 
 	function handleWorkflowCreatedEvent(data) {
@@ -484,7 +502,9 @@ export function createBlockHandlers({
 	}
 
 	return {
+		taskActivity,
 		handlePlanEvent,
+		handleTaskActivity,
 		handleWorkflowCreatedEvent,
 		handleModelSelected,
 		handleThinkingEvent,

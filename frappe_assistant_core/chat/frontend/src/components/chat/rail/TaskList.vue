@@ -12,8 +12,17 @@
 				<div class="task-line">
 					<span class="glyph" aria-hidden="true">{{ glyph(t.displayStatus) }}</span>
 					<span class="title">{{ t.title }}</span>
-					<span v-if="t.delegated" class="delegated">↳ specialist</span>
+					<span
+						v-if="t.helper && t.status !== 'running' && t.status !== 'pending'"
+						class="helper-meta"
+					>
+						{{ helperMeta(t) }}
+					</span>
+					<span v-else-if="t.delegated && !t.helper" class="delegated">↳ specialist</span>
 				</div>
+				<p v-if="live && t.status === 'running' && activity[t.id]" class="activity">
+					{{ activity[t.id] }}
+				</p>
 				<p v-if="t.note" class="note" :class="{ 'is-reason': t.status === 'failed' }">
 					{{ t.note }}
 				</p>
@@ -33,6 +42,8 @@ const props = defineProps({
 	// streams, and nothing closes it. AR deliberately never fakes it to `done`,
 	// so the client must stop presenting it as work still in flight.
 	live: { type: Boolean, default: true },
+	// Latest live label per running task id (the `task_activity` stream event).
+	activity: { type: Object, default: () => ({}) },
 });
 
 const GLYPHS = {
@@ -46,6 +57,18 @@ const GLYPHS = {
 
 function glyph(status) {
 	return GLYPHS[status] || GLYPHS.pending;
+}
+
+function helperMeta(t) {
+	const parts = ["↳ helper"];
+	if (typeof t.duration_ms === "number") {
+		parts.push(`${Math.max(1, Math.round(t.duration_ms / 1000))}s`);
+	}
+	if (Number.isFinite(t.credits)) {
+		const credits = Number(t.credits.toFixed(2));
+		parts.push(`${credits} credit${credits === 1 ? "" : "s"}`);
+	}
+	return parts.join(" · ");
 }
 
 const rows = computed(() =>
@@ -149,7 +172,8 @@ const summary = computed(() => {
 	opacity: 0.65;
 }
 
-.delegated {
+.delegated,
+.helper-meta {
 	flex-shrink: 0;
 	font-size: 10px;
 	color: var(--ql-gold, #c9a227);
@@ -161,6 +185,16 @@ const summary = computed(() => {
 	font-size: 10.5px;
 	line-height: 1.45;
 	color: var(--ql-text-muted, #8a857c);
+	overflow-wrap: anywhere;
+}
+.activity {
+	margin: 1px 0 0;
+	margin-left: 20px;
+	font-size: 10.5px;
+	font-style: italic;
+	line-height: 1.45;
+	color: var(--ql-text-muted, #8a857c);
+	opacity: 0.85;
 	overflow-wrap: anywhere;
 }
 .note.is-reason {
