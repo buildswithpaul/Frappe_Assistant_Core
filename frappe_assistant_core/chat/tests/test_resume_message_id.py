@@ -18,7 +18,7 @@ from unittest.mock import patch
 
 import frappe
 
-from frappe_assistant_core.chat.api.chat import messages
+from frappe_assistant_core.chat.api.chat import live_turn, messages
 from frappe_assistant_core.chat.api.chat.relay import _relay_ar_interrupt_resume
 from frappe_assistant_core.tests.base_test import BaseAssistantTest
 
@@ -68,6 +68,11 @@ class TestResumeNamesThePausedRow(BaseAssistantTest):
             [{"type": "tool_call", "id": "call_1", "status": "running"}, PENDING_CARD],
         )
 
+    def tearDown(self):
+        # resume_interrupt marks the turn started in Redis, outside the rollback.
+        live_turn.clear(SESSION)
+        super().tearDown()
+
     def test_a_resume_without_a_message_id_continues_the_paused_row(self):
         self.assertEqual(self._relayed_message_id(), "m-paused")
 
@@ -77,3 +82,18 @@ class TestResumeNamesThePausedRow(BaseAssistantTest):
     def test_no_paused_row_leaves_it_absent(self):
         frappe.db.delete("FAC Chat Message", {"session_id": SESSION, "message_id": "m-paused"})
         self.assertIsNone(self._relayed_message_id())
+
+    def test_a_stale_pending_row_behind_a_newer_question_is_not_chosen(self):
+        # AR expired that pause and the user asked something new; the current
+        # answer's row is the empty shell the relay writes at stream_start.
+        self._row("user")
+        self._row("assistant", "m-current", [])
+        self.assertIsNone(self._relayed_message_id())
+
+    def test_the_turn_still_in_flight_names_the_row(self):
+        # Live round 3 (L4): the resume is sent while the paused turn still streams,
+        # so its card is not persisted yet; the live-turn entry knows the row.
+        self._row("user")
+        self._row("assistant", None, [])
+        live_turn.start(SESSION, message_id="m-live")
+        self.assertEqual(self._relayed_message_id(), "m-live")
