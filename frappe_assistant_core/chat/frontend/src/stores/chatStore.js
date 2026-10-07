@@ -1,5 +1,5 @@
 import { defineStore } from "pinia";
-import { ref, computed } from "vue";
+import { ref, computed, watch } from "vue";
 import { api } from "@/api/client";
 import { logger } from "@/utils/logger";
 import { generateBlockId, findActiveMessage, isFinalizedRow } from "./chat/utils";
@@ -7,6 +7,7 @@ import { createErrorState } from "./chat/errorState";
 import { createStreamManager } from "./chat/streamManager";
 import { createBlockHandlers } from "./chat/blockHandlers";
 import { createSendQueue } from "./chat/sendQueue";
+import { applyLiveSnapshot, createLiveTurnSync } from "./chat/liveTurnSync";
 import { isApprovalInteraction } from "./chat/interactionRegime";
 import { getSurface, surfaceClientSignals } from "./chat/surface";
 import { useComposerModesStore } from "./composerModesStore";
@@ -138,6 +139,12 @@ export const useChatStore = defineStore("chat", () => {
 		socketProbe = probe;
 	}
 
+	// Registered by useStreaming: how held events are handled once a join lets them through.
+	let streamDispatch = null;
+	function setStreamDispatcher(fn) {
+		streamDispatch = fn;
+	}
+
 	const stream = createStreamManager({
 		...sharedRefs,
 		isCancelling,
@@ -145,6 +152,40 @@ export const useChatStore = defineStore("chat", () => {
 		getSocketProbe: () => socketProbe,
 	});
 	const blocks = createBlockHandlers(sharedRefs);
+
+	// Joining a turn that is running elsewhere (another surface, or this one
+	// before a reload or a lost socket). See stores/chat/liveTurnSync.js.
+	function adoptLiveTurn(snap) {
+		const msg = applyLiveSnapshot(messages.value, snap);
+		isStreaming.value = true;
+		stream.startStreamTimeout();
+		streamingMessage.value = msg.content || "";
+		activeThinkingBlockId.value = snap.active_thinking_id || null;
+	}
+
+	const liveSync = createLiveTurnSync({
+		fetchSnapshot: () => api.chat.getLiveTurn(currentSessionId.value),
+		onSnapshot: adoptLiveTurn,
+		onNoLiveTurn: ({ sawTerminal }) => {
+			// A turn ended before this surface could see its row: re-read it.
+			if (sawTerminal) reconcileFromServer(currentSessionId.value);
+		},
+		dispatch: (event) => streamDispatch?.(event, { admitted: true }),
+		isStreaming: () => isStreaming.value,
+		reloadHistory: () => readHistory(currentSessionId.value),
+	});
+	// sync: a join started right after the switch must not be reset by it.
+	watch(currentSessionId, () => liveSync.reset(), { flush: "sync" });
+
+	function admitStreamEvent(event) {
+		return liveSync.admit(event);
+	}
+
+	async function recoverLiveTurn(sessionId) {
+		if (!sessionId || sessionId !== currentSessionId.value) return;
+		if (isStreaming.value && (await liveSync.join())) return;
+		await reconcileFromServer(sessionId);
+	}
 	const sendQueue = createSendQueue({
 		messages,
 		currentSessionId,
@@ -183,6 +224,23 @@ export const useChatStore = defineStore("chat", () => {
 		sessions.value = sessionsData || [];
 	}
 
+	async function readHistory(sessionId) {
+		const result = await api.chat.getMessages(sessionId);
+		if (currentSessionId.value !== sessionId) return;
+		messages.value = Array.isArray(result) ? result : result?.messages || [];
+
+		// Parse every JSON column and provide legacy fallback
+		for (const msg of messages.value) {
+			parseJsonFields(msg);
+			// Legacy: messages without blocks get a text block from content
+			if (msg.role === "assistant" && !msg.blocks && msg.content) {
+				msg.blocks = [
+					{ type: "text", id: generateBlockId("text"), content: msg.content },
+				];
+			}
+		}
+	}
+
 	async function loadMessages(sessionId) {
 		try {
 			isLoading.value = true;
@@ -192,20 +250,9 @@ export const useChatStore = defineStore("chat", () => {
 			// set; leaving the previous conversation's rows in place would let it
 			// append to them, since block targeting is positional.
 			messages.value = [];
-			const result = await api.chat.getMessages(sessionId);
-			if (currentSessionId.value !== sessionId) return;
-			messages.value = Array.isArray(result) ? result : result?.messages || [];
-
-			// Parse every JSON column and provide legacy fallback
-			for (const msg of messages.value) {
-				parseJsonFields(msg);
-				// Legacy: messages without blocks get a text block from content
-				if (msg.role === "assistant" && !msg.blocks && msg.content) {
-					msg.blocks = [
-						{ type: "text", id: generateBlockId("text"), content: msg.content },
-					];
-				}
-			}
+			// History and the running turn's snapshot are read together; events
+			// that arrive meanwhile are held and applied after the snapshot.
+			await liveSync.join(() => readHistory(sessionId));
 		} catch (err) {
 			setError(err.message);
 			logger.error("Failed to load messages:", err);
@@ -980,6 +1027,9 @@ export const useChatStore = defineStore("chat", () => {
 		handleSocketError: stream.handleSocketError,
 		setSocketConnected: stream.setSocketConnected,
 		setSocketProbe,
+		setStreamDispatcher,
+		admitStreamEvent,
+		recoverLiveTurn,
 		clearSocketError: stream.clearSocketError,
 		// Block-based message actions (delegated)
 		handlePlanEvent: blocks.handlePlanEvent,

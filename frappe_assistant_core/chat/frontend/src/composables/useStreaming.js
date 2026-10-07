@@ -165,7 +165,7 @@ export function recoverSession(chatStore, socket) {
 	if (!sid) return;
 	socket.emit("task_subscribe", sid);
 	chatStore.hydratePendingInterrupt(sid);
-	chatStore.reconcileFromServer(sid);
+	chatStore.recoverLiveTurn(sid);
 }
 
 /**
@@ -282,11 +282,14 @@ export function useStreaming() {
 		}
 	}
 
-	function handleStreamEvent(data) {
+	function handleStreamEvent(data, { admitted = false } = {}) {
 		// Ignore events for other sessions
 		if (data.session_id !== chatStore.currentSessionId) {
 			return;
 		}
+		// Numbered events pass through the live-turn sync: held while this
+		// surface joins a running turn, dropped when already shown.
+		if (!admitted && !chatStore.admitStreamEvent(data)) return;
 
 		// Reset activity timeout on any stream event (indicates connection is alive)
 		chatStore.resetActivityTimeout();
@@ -503,6 +506,7 @@ export function useStreaming() {
 	let deskVisibilityHandler = null;
 
 	onMounted(() => {
+		chatStore.setStreamDispatcher(handleStreamEvent);
 		// Try Frappe's realtime first (works on normal Frappe pages)
 		if (window.frappe?.realtime) {
 			frappe.realtime.on("faco_message_stream", handleStreamEvent);
@@ -521,7 +525,7 @@ export function useStreaming() {
 				if (sid) {
 					subscribeSession(sid);
 					chatStore.hydratePendingInterrupt(sid);
-					chatStore.reconcileFromServer(sid);
+					chatStore.recoverLiveTurn(sid);
 				}
 			};
 			if (typeof frappe.realtime.on === "function") {

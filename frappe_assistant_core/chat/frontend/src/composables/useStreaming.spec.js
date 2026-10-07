@@ -31,7 +31,7 @@ function makeChatStore(sessionId = "session-1") {
 		isStreaming: false,
 		setSocketConnected: vi.fn(),
 		hydratePendingInterrupt: vi.fn(),
-		reconcileFromServer: vi.fn(),
+		recoverLiveTurn: vi.fn(),
 	};
 }
 
@@ -64,14 +64,14 @@ describe("createVisibilityHandler", () => {
 
 		expect(socket.connect).not.toHaveBeenCalled();
 		expect(socket.emit).toHaveBeenCalledWith("task_subscribe", "s-vis");
-		expect(chatStore.reconcileFromServer).toHaveBeenCalledWith("s-vis");
+		expect(chatStore.recoverLiveTurn).toHaveBeenCalledWith("s-vis");
 	});
 
 	it("leaves an idle tab alone", () => {
 		createVisibilityHandler(chatStore, () => socket)();
 
 		expect(socket.emit).not.toHaveBeenCalled();
-		expect(chatStore.reconcileFromServer).not.toHaveBeenCalled();
+		expect(chatStore.recoverLiveTurn).not.toHaveBeenCalled();
 	});
 
 	it("revives a dead socket and lets the connect handler do the recovery", () => {
@@ -113,7 +113,7 @@ describe("createSpaConnectHandler", () => {
 		expect(chatStore.setSocketConnected).toHaveBeenCalledWith(true);
 		expect(socket.emit).not.toHaveBeenCalled();
 		expect(chatStore.hydratePendingInterrupt).not.toHaveBeenCalled();
-		expect(chatStore.reconcileFromServer).not.toHaveBeenCalled();
+		expect(chatStore.recoverLiveTurn).not.toHaveBeenCalled();
 	});
 
 	it("re-joins the session room and reconciles on every re-connection", () => {
@@ -123,11 +123,11 @@ describe("createSpaConnectHandler", () => {
 		expect(socket.emit).toHaveBeenCalledTimes(1);
 		expect(socket.emit).toHaveBeenCalledWith("task_subscribe", "session-1");
 		expect(chatStore.hydratePendingInterrupt).toHaveBeenCalledWith("session-1");
-		expect(chatStore.reconcileFromServer).toHaveBeenCalledWith("session-1");
+		expect(chatStore.recoverLiveTurn).toHaveBeenCalledWith("session-1");
 
 		handler(); // second reconnect recovers again
 		expect(socket.emit).toHaveBeenCalledTimes(2);
-		expect(chatStore.reconcileFromServer).toHaveBeenCalledTimes(2);
+		expect(chatStore.recoverLiveTurn).toHaveBeenCalledTimes(2);
 	});
 
 	it("reads the session id at reconnect time, not registration time", () => {
@@ -136,7 +136,7 @@ describe("createSpaConnectHandler", () => {
 		handler();
 
 		expect(socket.emit).toHaveBeenCalledWith("task_subscribe", "session-2");
-		expect(chatStore.reconcileFromServer).toHaveBeenCalledWith("session-2");
+		expect(chatStore.recoverLiveTurn).toHaveBeenCalledWith("session-2");
 	});
 
 	it("recovers on the FIRST connection when a turn is already in flight (send raced the socket)", () => {
@@ -144,7 +144,7 @@ describe("createSpaConnectHandler", () => {
 		handler();
 
 		expect(socket.emit).toHaveBeenCalledWith("task_subscribe", "session-1");
-		expect(chatStore.reconcileFromServer).toHaveBeenCalledWith("session-1");
+		expect(chatStore.recoverLiveTurn).toHaveBeenCalledWith("session-1");
 	});
 
 	it("does nothing beyond connection state when no session is active", () => {
@@ -154,7 +154,7 @@ describe("createSpaConnectHandler", () => {
 
 		expect(chatStore.setSocketConnected).toHaveBeenCalledTimes(2);
 		expect(socket.emit).not.toHaveBeenCalled();
-		expect(chatStore.reconcileFromServer).not.toHaveBeenCalled();
+		expect(chatStore.recoverLiveTurn).not.toHaveBeenCalled();
 	});
 });
 
