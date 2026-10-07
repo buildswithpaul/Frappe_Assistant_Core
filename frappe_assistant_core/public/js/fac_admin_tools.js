@@ -162,11 +162,13 @@
                     ns._renderChatStatus(data.enabled);
 
                     if (data.enabled) {
-                        // Hot-mount the widget on this page via the launcher (or the
-                        // classic loader when chat was off at page load; that needs
-                        // the Desk boot info to carry the built entry). Other open
-                        // Desk tabs pick it up on their next navigation since
-                        // can_use_faco now returns show_widget: true.
+                        // Hot-mount the widget on this page. The boot hook always sets
+                        // the widget entry and the launcher registers
+                        // facoWidgetRemount before its access check, so this works even
+                        // if chat was off at page load: remount re-runs the access
+                        // check and mounts the widget. Other open Desk tabs pick it up
+                        // on their next navigation since can_use_faco now returns
+                        // show_widget: true.
                         if (typeof window.facoWidgetRemount === 'function') {
                             window.facoWidgetRemount();
                         }
@@ -175,7 +177,7 @@
                             indicator: 'green'
                         });
                     } else {
-                        // Hot-unmount the widget on this page (the launcher's teardown).
+                        // Hot-unmount the widget on this page (the launcher's teardown on disable).
                         if (typeof window.facoWidgetTeardown === 'function') {
                             window.facoWidgetTeardown();
                         }
