@@ -67,9 +67,55 @@ describe("processingSummary for delegation", () => {
 		expect(processingStatus([block], false, true)).not.toBe("stopped");
 	});
 
-	it("trusts a successful call whose result it cannot read", () => {
+	// No result text yet (a hydrated block whose result was not kept): the
+	// count is known, the outcome is not, so no checkmark.
+	it("stays neutral about a call whose result it has not got", () => {
 		expect(processingSummary([delegate({ result: null })], false)).toBe("Delegated 4 subtasks");
-		expect(processingStatus([delegate({ result: null })], false)).toBe("complete");
+		expect(processingStatus([delegate({ result: null })], false)).toBe("neutral");
+	});
+});
+
+// AR answers some delegate calls with plain text and status success
+// (delegation_batch.BATCH_ALREADY_RUNNING, run_batch's "Nothing to delegate.",
+// delegation.TASKS_NOT_A_LIST). Readable text without task sections ran nothing.
+const BATCH_ALREADY_RUNNING =
+	"A delegate batch is already running for this turn; put all independent tasks in ONE " +
+	"delegate call and wait for its result.";
+const TASKS_NOT_A_LIST =
+	'Nothing delegated: tasks must be a list of {"task_id": "<plan task id>", ' +
+	'"instructions": "<full description>"} objects.';
+
+describe("processingSummary for delegate calls AR turned away", () => {
+	it("counts a concurrent call AR refused as none run", () => {
+		const blocks = [
+			delegate({ result: allDone }),
+			delegate({ id: "d2", result: BATCH_ALREADY_RUNNING }),
+		];
+		expect(processingSummary(blocks, false)).toBe("Delegated 4 of 8 subtasks");
+		expect(processingStatus(blocks, false)).toBe("error");
+	});
+
+	it("counts a call with nothing to delegate as none run", () => {
+		const block = delegate({ result: "Nothing to delegate." });
+		expect(processingSummary([block], false)).toBe("Delegated 0 of 4 subtasks");
+		expect(processingStatus([block], false)).toBe("error");
+	});
+
+	it("does not invent a subtask for tasks it cannot read", () => {
+		const block = delegate({ input: { tasks: "not json" }, result: TASKS_NOT_A_LIST });
+		expect(processingSummary([block], false)).toBe("Delegated no subtasks");
+		expect(processingStatus([block], false)).toBe("error");
+	});
+
+	// truncate_result_for_emit caps the live socket copy; the persisted block
+	// keeps the full result, which the stream_complete snapshot brings.
+	it("stays neutral about a result cut short on the socket", () => {
+		const listCut = delegate({ result: { _truncated: true, preview: "[{\"text\": \"## t-1", _note: "full result available on reload" } });
+		const textCut = delegate({ result: `${section("t-1", "done")}\n\n…[truncated — full result available on reload]` });
+		for (const block of [listCut, textCut]) {
+			expect(processingSummary([block], false)).toBe("Delegated 4 subtasks");
+			expect(processingStatus([block], false)).toBe("neutral");
+		}
 	});
 });
 
