@@ -26,7 +26,7 @@ from frappe_assistant_core.chat.api.block_builder import truncate_result_for_emi
 ENTRY_TTL_SECONDS = 600
 TEXT_WRITE_INTERVAL = 0.5
 TERMINAL_EVENTS = frozenset({"stream_complete", "stream_error", "stream_aborted"})
-_THROTTLED_EVENTS = frozenset({"stream_chunk"})
+_THROTTLED_EVENTS = frozenset({"stream_chunk", "thinking"})
 
 _clock = time.monotonic
 _bound = threading.local()

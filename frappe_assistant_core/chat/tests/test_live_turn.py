@@ -98,11 +98,15 @@ class TestLiveTurnModule(BaseAssistantTest):
 
     def test_the_open_thinking_block_is_named(self):
         builder = BlockBuilder()
-        live = live_turn.bind(self.sid, builder)
-        builder.add_thinking("Let me see")
-        event = {"event": "thinking", "content": "Let me see"}
-        live.stamp(event)
-        live.record(event)
+        clock = iter(
+            [100.0, 100.7, 100.7]
+        )  # bind at 100.0, thinking event throttle check at 100.7, _save at 100.7
+        with patch.object(live_turn, "_clock", side_effect=lambda: next(clock)):
+            live = live_turn.bind(self.sid, builder)
+            builder.add_thinking("Let me see")
+            event = {"event": "thinking", "content": "Let me see"}
+            live.stamp(event)
+            live.record(event)
         entry = live_turn.get(self.sid)
         self.assertEqual(entry["active_thinking_id"], builder.active_thinking_id)
         self.assertIsNotNone(entry["active_thinking_id"])
@@ -152,3 +156,37 @@ class TestLiveTurnModule(BaseAssistantTest):
         live_turn.unbind(self.sid)
         self.assertIsNone(live_turn.current(self.sid))
         self.assertIsNone(live_turn.get(self.sid))
+
+    def test_thinking_deltas_are_written_at_most_every_interval(self):
+        builder = BlockBuilder()
+        clock = iter([100.0, 100.1, 100.7, 100.7, 100.8])
+        with patch.object(live_turn, "_clock", side_effect=lambda: next(clock)):
+            live = live_turn.bind(self.sid, builder)  # write at 100.0
+            # First thinking delta at 100.1 (throttled, skipped)
+            builder.add_thinking("Let me")
+            event = {"event": "thinking", "content": "Let me"}
+            live.stamp(event)
+            live.record(event)
+            # After first thinking, seq incremented to 1 in live object, but stored entry still seq 0
+            self.assertEqual(live.seq, 1)
+            self.assertEqual(live_turn.get(self.sid)["seq"], 0)
+            # Second thinking delta at 100.7 (not throttled, 0.7s after bind)
+            builder.add_thinking(" think")
+            event = {"event": "thinking", "content": " think"}
+            live.stamp(event)
+            live.record(event)
+            # After second thinking, stored seq should be 2
+            self.assertEqual(live.seq, 2)
+            entry = live_turn.get(self.sid)
+            self.assertEqual(entry["seq"], 2)
+            # thinking_complete at 100.8 (written immediately, not throttled)
+            builder.complete_thinking()
+            event = {"event": "thinking_complete"}
+            live.stamp(event)
+            live.record(event)
+        entry = live_turn.get(self.sid)
+        # Final seq should be 3 (thinking_complete increments it)
+        self.assertEqual(entry["seq"], 3)
+        # Both deltas should be in the stored thinking block
+        thinking_block = next(b for b in entry["blocks"] if b.get("type") == "thinking")
+        self.assertEqual(thinking_block["content"], "Let me think")
