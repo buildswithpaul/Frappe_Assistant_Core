@@ -95,10 +95,17 @@ export function createBlockHandlers({
 	// in flight, so every path that ends a turn (complete, error, abort,
 	// timeout, reconcile) drops them by flipping isStreaming off.
 	const taskActivity = ref({});
+	// The task whose label arrived last. Several events can land in one tick, and the
+	// label object's key order is first-reported order, so recency is kept here.
+	const lastActivityTaskId = ref(null);
+	function clearTaskActivity() {
+		taskActivity.value = {};
+		lastActivityTaskId.value = null;
+	}
 	watch(
 		isStreaming,
 		(streaming) => {
-			if (!streaming) taskActivity.value = {};
+			if (!streaming) clearTaskActivity();
 		},
 		{ flush: "sync" }
 	);
@@ -106,6 +113,7 @@ export function createBlockHandlers({
 	function handleTaskActivity(data) {
 		if (!data?.task_id) return;
 		taskActivity.value = { ...taskActivity.value, [data.task_id]: data.label || "" };
+		lastActivityTaskId.value = data.task_id;
 	}
 
 	function handleWorkflowCreatedEvent(data) {
@@ -501,6 +509,8 @@ export function createBlockHandlers({
 
 	return {
 		taskActivity,
+		lastActivityTaskId,
+		clearTaskActivity,
 		handlePlanEvent,
 		handleTaskActivity,
 		handleWorkflowCreatedEvent,

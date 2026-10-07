@@ -107,16 +107,52 @@ describe("WidgetPlanStrip one-line status", () => {
 
 	it("collapses a running parallel turn to counts and the latest helper label", async () => {
 		const w = mountStrip({ plan: parallelPlan, live: true, activity: {} });
-		// task_activity events replace chatStore.taskActivity with a new object each time.
-		await w.setProps({ activity: { a: "Reading Sales Invoice list…" } });
-		await w.setProps({ activity: { a: "Reading Sales Invoice list…", b: "Opening Customer B…" } });
+		// Two task_activity events in one tick: B, then A. Vue delivers one change, and the key
+		// order (A first reported) cannot tell which came last; chatStore.lastActivityTaskId can.
+		await w.setProps({
+			activity: { a: "Reading Sales Invoice list…", b: "Opening Customer B…" },
+			latestActivityId: "a",
+		});
 
 		const line = w.find(".wps-heading");
 		expect(line.find(".wps-status").text()).toBe("⠿ Running 2 in parallel · 1 of 4 done");
-		expect(line.find(".wps-activity").text()).toBe("— Opening Customer B…");
+		expect(line.find(".wps-activity").text()).toBe("— Reading Sales Invoice list…");
 		expect(line.classes()).toContain("wps-oneline");
 		expect(line.attributes("aria-expanded")).toBe("false");
 		expect(w.find(".task-row").exists()).toBe(false);
+	});
+
+	it("shows the latest reporter even when it is not the first running helper", () => {
+		const w = mountStrip({
+			plan: parallelPlan,
+			live: true,
+			activity: { a: "Reading Sales Invoice list…", b: "Opening Customer B…" },
+			latestActivityId: "b",
+		});
+		expect(w.find(".wps-activity").text()).toBe("— Opening Customer B…");
+	});
+
+	it("falls back to another running helper once the latest one has finished", () => {
+		const plan = {
+			tasks: parallelPlan.tasks.map((task) => (task.id === "a" ? { ...task, status: "done" } : task)),
+		};
+		const w = mountStrip({
+			plan,
+			live: true,
+			activity: { b: "Opening Customer B…", a: "Reading Sales Invoice list…" },
+			latestActivityId: "a",
+		});
+		expect(w.find(".wps-activity").text()).toBe("— Opening Customer B…");
+	});
+
+	it("announces the status from a live region outside the button, only while running", async () => {
+		const w = mountStrip({ plan: parallelPlan, live: true });
+		expect(w.find(".wps-heading [aria-live]").exists()).toBe(false);
+		expect(w.find(".wps-live").attributes("aria-live")).toBe("polite");
+		expect(w.find(".wps-live").text()).toBe("⠿ Running 2 in parallel · 1 of 4 done");
+
+		await w.setProps({ live: false });
+		expect(w.find(".wps-live").exists()).toBe(false);
 	});
 
 	it("names the running row when there is no parallel work or label", () => {

@@ -261,7 +261,7 @@ export const useChatStore = defineStore("chat", () => {
 			// append to them, since block targeting is positional.
 			messages.value = [];
 			// Live labels belong to the previous session's helpers.
-			blocks.taskActivity.value = {};
+			blocks.clearTaskActivity();
 			// A resume in flight belongs to the previous session's turn, and so
 			// does its watchdog. A stream's watchdog stays: it is what releases
 			// a send lock the previous session's turn still holds.
@@ -895,6 +895,7 @@ export const useChatStore = defineStore("chat", () => {
 	function clearSessions() {
 		sessions.value = [];
 		messages.value = [];
+		blocks.clearTaskActivity();
 		clearExpiryTimer();
 		isSubmittingInterrupts.value = false;
 		currentSessionId.value = null;
@@ -1082,6 +1083,7 @@ export const useChatStore = defineStore("chat", () => {
 		// Block-based message actions (delegated)
 		handlePlanEvent: blocks.handlePlanEvent,
 		taskActivity: blocks.taskActivity,
+		lastActivityTaskId: blocks.lastActivityTaskId,
 		handleTaskActivity: blocks.handleTaskActivity,
 		handleWorkflowCreatedEvent: blocks.handleWorkflowCreatedEvent,
 		handleModelSelected: blocks.handleModelSelected,

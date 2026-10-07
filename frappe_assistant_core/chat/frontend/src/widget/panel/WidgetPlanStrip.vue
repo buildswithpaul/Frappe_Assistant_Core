@@ -8,9 +8,11 @@
 			:aria-expanded="String(expanded)"
 			@click="expanded = !expanded"
 		>
-			<span class="wps-status" :aria-live="live ? 'polite' : null">{{ heading }}</span>
+			<span class="wps-status">{{ heading }}</span>
 			<span v-if="activityLine" class="wps-activity"> — {{ activityLine }}</span>
 		</button>
+		<!-- Announces the status, not the label churn, and only while the turn runs. -->
+		<p v-if="live" class="wps-live" aria-live="polite">{{ heading }}</p>
 		<div v-if="expanded" class="wps-rows">
 			<TaskList :tasks="tasks" :live="live" :stopped="stopped" :activity="activity" bare />
 		</div>
@@ -18,7 +20,7 @@
 </template>
 
 <script setup>
-import { computed, ref, watch } from "vue";
+import { computed, ref } from "vue";
 import TaskList from "@/components/chat/rail/TaskList.vue";
 import { t } from "./i18n.js";
 import { WAITING_LABELS } from "@/utils/turnState";
@@ -30,6 +32,9 @@ const props = defineProps({
 	live: { type: Boolean, default: false },
 	// Latest live label per running task id (chatStore.taskActivity).
 	activity: { type: Object, default: () => ({}) },
+	// The task whose label arrived last (chatStore.lastActivityTaskId), so a strip mounted
+	// mid-turn shows the newest label too.
+	latestActivityId: { type: String, default: null },
 	// The user pressed Stop on this turn: its open rows read as stopped, not as work left over.
 	stopped: { type: Boolean, default: false },
 	// A turn paused on the user: "approval" or "question" while a card waits, "resume" while an
@@ -41,23 +46,12 @@ const expanded = ref(false);
 const tasks = computed(() => props.plan?.tasks || []);
 const running = computed(() => tasks.value.filter((task) => task.status === "running"));
 
-// Which task's label changed last. Each task_activity event replaces chatStore.taskActivity with
-// a new object, so the changed key is the one whose label differs from the previous object.
-const latestActivityId = ref(null);
-watch(
-	() => props.activity,
-	(now, before) => {
-		const changed = Object.keys(now || {}).filter((id) => now[id] !== before?.[id]);
-		if (changed.length) latestActivityId.value = changed[changed.length - 1];
-	}
-);
-
-// The muted tail of a running line: the newest label among running helpers, else any running
+// The muted tail of a running line: the newest label if its task still runs, else any running
 // helper's label, else the title of the row being worked on.
 const activityLine = computed(() => {
 	if (!props.live) return "";
 	const labelled = running.value.filter((task) => props.activity[task.id]);
-	const latest = labelled.find((task) => task.id === latestActivityId.value) || labelled[0];
+	const latest = labelled.find((task) => task.id === props.latestActivityId) || labelled[0];
 	if (latest) return props.activity[latest.id];
 	return running.value[0]?.title || "";
 });
@@ -116,6 +110,17 @@ const heading = computed(() => {
 }
 .wps-activity {
 	color: var(--ql-text-muted);
+}
+.wps-live {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	margin: -1px;
+	padding: 0;
+	overflow: hidden;
+	clip: rect(0 0 0 0);
+	white-space: nowrap;
+	border: 0;
 }
 /* A long plan must not squeeze the conversation above it. */
 .wps-rows {
