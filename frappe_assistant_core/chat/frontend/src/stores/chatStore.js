@@ -4,6 +4,7 @@ import { api } from "@/api/client";
 import { logger } from "@/utils/logger";
 import {
 	answeredCardIds,
+	carryCardDecisions,
 	generateBlockId,
 	findActiveMessage,
 	isFinalizedRow,
@@ -391,6 +392,10 @@ export const useChatStore = defineStore("chat", () => {
 			if (resumingId && m.message_id === resumingId && !resumeSettled) {
 				return localByMsgId.get(m.message_id) || m;
 			}
+			if (m.role === "assistant" && isFinalizedRow(m)) {
+				const blocks = carryCardDecisions(localByMsgId.get(m.message_id)?.blocks, m.blocks);
+				return blocks === m.blocks ? m : { ...m, blocks };
+			}
 			if (m.role !== "assistant" || isFinalizedRow(m)) return m;
 			const local = localByMsgId.get(m.message_id);
 			const localHasContent =
@@ -656,9 +661,10 @@ export const useChatStore = defineStore("chat", () => {
 			// The receipt: routing.credits.actual supersedes the live estimate
 			// once the canonical stream_complete receipt has arrived.
 			if (meta.routing) lastMsg.routing = meta.routing;
-			// Replace live blocks with canonical server snapshot (if provided)
+			// Replace live blocks with canonical server snapshot (if provided),
+			// keeping any card decision the user made while the stream was open.
 			if (meta.blocks && Array.isArray(meta.blocks)) {
-				lastMsg.blocks = meta.blocks;
+				lastMsg.blocks = carryCardDecisions(lastMsg.blocks, meta.blocks);
 			}
 		}
 		streamingMessage.value = "";

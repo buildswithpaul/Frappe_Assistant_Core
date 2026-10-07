@@ -8,6 +8,12 @@ describe("isPausedTurn", () => {
 		expect(isPausedTurn([{ type: "tool_call", status: "running" }, PENDING_CARD])).toBe(true);
 	});
 
+	// recordInteractionDecision marks the card decided before the resume goes
+	// out; from then on the turn waits on the resume, not on the user.
+	it("is false once every pending card carries the user's decision", () => {
+		expect(isPausedTurn([{ ...PENDING_CARD, decision: { resolution: "approved" } }])).toBe(false);
+	});
+
 	it("is false once every card is resolved, and for a turn without blocks", () => {
 		expect(isPausedTurn([{ ...PENDING_CARD, status: "approved" }])).toBe(false);
 		expect(isPausedTurn(undefined)).toBe(false);

@@ -4,8 +4,12 @@
  * either: it is neither in flight nor stopped.
  */
 
+// A card the user has decided waits on the resume, not on the user.
 export function isPausedTurn(blocks) {
-	return Array.isArray(blocks) && blocks.some((b) => b?.type === "interaction" && b.status === "pending");
+	return (
+		Array.isArray(blocks) &&
+		blocks.some((b) => b?.type === "interaction" && b.status === "pending" && !b.decision)
+	);
 }
 
 // Stop sets `aborted` on the live message, and the row persists it (aborted=1).

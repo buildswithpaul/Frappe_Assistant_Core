@@ -422,10 +422,14 @@ export function createBlockHandlers({
 		const lastMsg = findActiveMessage(messages.value);
 		if (!lastMsg || !lastMsg.blocks) return;
 
-		for (const block of blocks) {
-			if (!block.decision) continue;
-			block.status = block.decision.resolution;
-			block.userResponse = block.decision.userResponse;
+		for (const decided of blocks) {
+			if (!decided.decision) continue;
+			// A snapshot may have replaced the card since it was decided; resolve
+			// the one on screen.
+			const block = onScreenCard(lastMsg, decided);
+			block.decision = decided.decision;
+			block.status = decided.decision.resolution;
+			block.userResponse = decided.decision.userResponse;
 			block.endTime = new Date().toISOString();
 		}
 
@@ -442,9 +446,15 @@ export function createBlockHandlers({
 	 * fails — the user can retry by clicking the buttons again).
 	 */
 	function revertInteractionDecisions(blocks) {
+		const lastMsg = findActiveMessage(messages.value);
 		for (const block of blocks) {
 			block.decision = null;
+			onScreenCard(lastMsg, block).decision = null;
 		}
+	}
+
+	function onScreenCard(msg, card) {
+		return (msg?.blocks || []).find((b) => b.type === "interaction" && b.id === card.id) || card;
 	}
 
 	/**
