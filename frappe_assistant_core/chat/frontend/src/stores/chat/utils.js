@@ -18,6 +18,24 @@ export function isFinalizedRow(msg) {
 	return Boolean(msg.content) || (Array.isArray(msg.blocks) && msg.blocks.length > 0);
 }
 
+// Carry the user's card decisions from the blocks on screen onto a server
+// snapshot of the same turn. A paused stream can end after the user decided
+// (a helper kept it open), and its snapshot still holds those cards pending.
+export function carryCardDecisions(localBlocks, snapshotBlocks) {
+	const decided = new Map(
+		(Array.isArray(localBlocks) ? localBlocks : [])
+			.filter((b) => b?.type === "interaction" && b.decision)
+			.map((b) => [b.id, b])
+	);
+	if (!decided.size || !Array.isArray(snapshotBlocks)) return snapshotBlocks;
+	return snapshotBlocks.map((b) => {
+		const local = b?.type === "interaction" && b.status === "pending" && decided.get(b.id);
+		if (!local) return b;
+		const { decision, status, userResponse, endTime, isExpanded } = local;
+		return { ...b, decision, status, userResponse, endTime, isExpanded };
+	});
+}
+
 // The ids of the cards the user answered on a turn. recordInteractionDecision
 // sets `decision` at once, and only a fully decided batch is resumed; the
 // status flips later, once the resume_interrupt call returns.
