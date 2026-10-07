@@ -30,10 +30,17 @@ export function carryCardDecisions(localBlocks, snapshotBlocks) {
 	if (!decided.size || !Array.isArray(snapshotBlocks)) return snapshotBlocks;
 	return snapshotBlocks.map((b) => {
 		const local = b?.type === "interaction" && b.status === "pending" && decided.get(b.id);
-		if (!local) return b;
+		if (!local || !sameInterrupts(local, b)) return b;
 		const { decision, status, userResponse, endTime, isExpanded } = local;
 		return { ...b, decision, status, userResponse, endTime, isExpanded };
 	});
+}
+
+// A decision answers specific interrupts; a card id alone (the gated tool's id)
+// can come back on a later pause.
+function sameInterrupts(a, b) {
+	const ids = (card) => (card.interrupts || []).map((i) => i?.id).sort().join("\n");
+	return ids(a) === ids(b);
 }
 
 // The ids of the cards the user answered on a turn. recordInteractionDecision

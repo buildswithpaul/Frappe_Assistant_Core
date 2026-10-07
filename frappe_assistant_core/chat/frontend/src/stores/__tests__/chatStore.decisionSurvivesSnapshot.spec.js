@@ -96,4 +96,19 @@ describe("a decision made while the paused stream is still open", () => {
 
 		expect(card().decision?.resolution).toBe("approved");
 	});
+
+	it("brings the buttons back when the resume is refused after the snapshot landed", async () => {
+		let refuse;
+		call.mockImplementationOnce(() => new Promise((_, reject) => (refuse = reject)));
+		const approving = approve();
+		await vi.waitFor(() => expect(refuse).toBeTypeOf("function"));
+		finishInterrupted();
+
+		refuse(new Error("resume_interrupt failed"));
+		await approving;
+
+		expect(card().decision).toBeFalsy();
+		expect(card().status).toBe("pending");
+		expect(mount(InteractionCard, { props: { block: card() } }).find(".ql-btn-approve").exists()).toBe(true);
+	});
 });
