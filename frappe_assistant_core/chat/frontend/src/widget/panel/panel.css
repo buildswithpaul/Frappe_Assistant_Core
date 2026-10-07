@@ -9,6 +9,8 @@
 	max-height: calc(100vh - 120px);
 	--ql-font-sans: "FAC Inter", Inter, -apple-system, "Segoe UI", Roboto, sans-serif;
 	--ql-font-display: "FAC Source Serif 4", Georgia, serif;
+	--ql-font-ui: "FAC Inter", Inter, system-ui, -apple-system, sans-serif;
+	--ql-font-serif: "FAC Source Serif 4", Georgia, "Times New Roman", serif;
 }
 
 :host([hidden]) {

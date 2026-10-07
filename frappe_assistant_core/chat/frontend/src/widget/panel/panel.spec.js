@@ -49,6 +49,22 @@ describe("router shim", () => {
 	});
 });
 
+describe("router shim named routes", () => {
+	it("resolves a push by route name to FAC Chat's path (WorkflowCreatedBlock's button)", async () => {
+		const open = vi.spyOn(window, "open").mockImplementation(() => null);
+		await createRouterShim().push({ name: "agent-builder", params: { id: "wf-1" } });
+		expect(open).toHaveBeenCalledWith("/copilot/agents/wf-1", "_blank", "noopener");
+	});
+
+	it("knows every named route FAC Chat's router has, so a rename there cannot silently break Desk", async () => {
+		const real = (await import("@/router/index.js")).default;
+		const shim = createRouterShim();
+		for (const r of real.getRoutes().filter((r) => r.name)) {
+			expect(shim.getRoutes().find((s) => s.name === r.name)?.path, String(r.name)).toBe(r.path);
+		}
+	});
+});
+
 describe("widget panel", () => {
 	beforeEach(() => {
 		setActivePinia(createPinia());
@@ -74,6 +90,29 @@ describe("widget panel", () => {
 		await flushPromises();
 		await w.find('a[href="/app/sales-invoice/INV-1"]').trigger("click");
 		expect(window.frappe.set_route).toHaveBeenCalledWith("sales-invoice", "INV-1");
+	});
+
+	it("routes v16 /desk links and leaves external and modified clicks alone", async () => {
+		const w = mount(WidgetPanel, {
+			global: {
+				stubs: {
+					ChatInterface: {
+						template:
+							'<div><a id="d" href="/desk/todo/T-1" @click.stop>d</a><a id="x" href="https://example.org/app/todo" @click.stop>x</a></div>',
+					},
+					InputArea: true,
+					CreditMeter: true,
+				},
+			},
+		});
+		useChatStore().messages = [{ role: "user", content: "hi", blocks: [] }];
+		await flushPromises();
+		await w.find("#x").trigger("click");
+		expect(window.frappe.set_route).not.toHaveBeenCalled();
+		await w.find("#d").trigger("click", { ctrlKey: true });
+		expect(window.frappe.set_route).not.toHaveBeenCalled();
+		await w.find("#d").trigger("click");
+		expect(window.frappe.set_route).toHaveBeenCalledWith("todo", "T-1");
 	});
 
 	it("asks the launcher to close, and hands the session to FAC Chat on expand", async () => {

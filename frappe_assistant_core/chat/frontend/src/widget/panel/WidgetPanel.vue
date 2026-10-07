@@ -83,6 +83,7 @@ import { handOffToFullPage } from "../desk/session.js";
 import { isBlocked, overageNoticeDue, markOverageNoticeShown } from "../desk/quotaGate.js";
 import { confirms, settleConfirm } from "./confirmQueue.js";
 import { t } from "./i18n.js";
+import { deskRouteFor } from "./deskLinks.js";
 import { logger } from "@/utils/logger";
 
 const chatStore = useChatStore();
@@ -181,9 +182,10 @@ function interceptDeskLinks(event) {
 	if (event.button || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
 	const a = event.composedPath().find((el) => el.tagName === "A");
 	const href = a && a.getAttribute("href");
-	if (!href || !href.startsWith("/app/")) return;
+	const route = deskRouteFor(href);
+	if (!route) return;
 	event.preventDefault();
-	window.frappe.set_route(...href.replace("/app/", "").split("/").map(decodeURIComponent));
+	window.frappe.set_route(...route);
 }
 
 // The launcher owns Ctrl+Shift+Space (it must work before this panel exists) and asks for the mic
