@@ -458,6 +458,11 @@ class BlockBuilder:
         """Return a deep copy of the blocks array for persistence."""
         return copy.deepcopy(self.blocks)
 
+    @property
+    def active_thinking_id(self) -> str | None:
+        """Id of the thinking block still open, so a joining client can keep appending to it."""
+        return self._active_thinking_id
+
     def _close_thinking(self) -> None:
         """Close any active thinking block."""
         if self._active_thinking_id:
