@@ -35,6 +35,7 @@ h3 {
 	margin: 0 0 8px;
 	font-family: var(--ql-font-display);
 	font-size: 18px;
+	font-weight: 600;
 	color: var(--ql-text);
 }
 p {
@@ -43,6 +44,7 @@ p {
 ul {
 	margin: 0 0 12px;
 	padding-left: 20px;
+	list-style: disc;
 }
 .ww-context {
 	display: inline-block;

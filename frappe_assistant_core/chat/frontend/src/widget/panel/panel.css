@@ -1,3 +1,5 @@
+/* .panel-shell owns the type base (font, size, line-height): all: initial resets the :host
+   rule preflight sets. */
 :host {
 	all: initial;
 	position: fixed;

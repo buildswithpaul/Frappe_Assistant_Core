@@ -77,6 +77,7 @@ h2 {
 	margin: 0;
 	font-family: var(--ql-font-display);
 	font-size: 20px;
+	font-weight: 600;
 	color: var(--ql-text);
 }
 p {

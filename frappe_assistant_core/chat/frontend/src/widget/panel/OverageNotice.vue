@@ -48,6 +48,7 @@ const text = computed(() =>
 }
 .on-dismiss {
 	margin-left: auto;
+	padding: 2px 4px;
 	border: none;
 	background: transparent;
 	color: var(--ql-text-muted);

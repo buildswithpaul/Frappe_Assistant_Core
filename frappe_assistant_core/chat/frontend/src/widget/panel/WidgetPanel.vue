@@ -264,7 +264,7 @@ onUnmounted(stopMic);
 	border: none;
 	border-radius: 6px;
 	background: transparent;
-	color: var(--ql-text-muted);
+	color: var(--ql-text-secondary);
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
