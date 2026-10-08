@@ -75,7 +75,10 @@ def create_workflow(
     error_strategy: str = "fail_fast",
     timeout_seconds: int = 600,
 ):
-    """Create a new workflow. Admin only."""
+    """Create a new workflow. Admin only.
+
+    A workflow runs as its runtime user; it defaults to the creator.
+    """
     _require_admin()
 
     if not workflow_name:
@@ -121,7 +124,7 @@ def create_workflow(
             graph_json=graph_json,
             description=description,
             default_model_id=default_model_id,
-            default_user_id=default_user_id,
+            default_user_id=_ar_user_id(default_user_id or frappe.session.user),
             error_strategy=error_strategy,
             timeout_seconds=int(timeout_seconds),
         )
@@ -198,7 +201,8 @@ def update_workflow(
         if default_model_id is not None:
             kwargs["default_model_id"] = default_model_id
         if default_user_id is not None:
-            kwargs["default_user_id"] = default_user_id
+            # "" clears the runtime user; anything else becomes its AR identity.
+            kwargs["default_user_id"] = _ar_user_id(default_user_id) if default_user_id else ""
         if error_strategy is not None:
             kwargs["error_strategy"] = error_strategy
         if timeout_seconds is not None:
@@ -474,7 +478,7 @@ def test_workflow_node(
             node_json=node_json,
             input_text=input_text,
             default_model_id=default_model_id,
-            default_user_id=default_user_id,
+            default_user_id=_ar_user_id(default_user_id) if default_user_id else None,
         )
 
     except frappe.PermissionError:
@@ -491,9 +495,13 @@ def run_workflow_node(
     name: str | None = None,
     node_id: str | None = None,
     input_text: str = "Test input",
-    user_id: str | None = None,
 ):
-    """Run a single node from a saved workflow. Admin only."""
+    """Run a single node from a saved workflow. Admin only.
+
+    The node runs as the workflow's runtime user (or the node's own user
+    override), never as the caller: a test that used the admin's tools would
+    pass while the real run, with the runtime user's tools, failed.
+    """
     _require_admin()
 
     if not name:
@@ -508,15 +516,7 @@ def run_workflow_node(
         if not client:
             frappe.throw(_("Not connected to FAC Cloud"))
 
-        # AR keys tenant users by email, and on this endpoint user_id OVERRIDES
-        # the workflow's configured runtime user — so it is normalised when the
-        # caller sends one, and left absent when they do not.
-        return client.run_workflow_node(
-            name=name,
-            node_id=node_id,
-            input_text=input_text,
-            user_id=_ar_user_id(user_id) if user_id else None,
-        )
+        return client.run_workflow_node(name=name, node_id=node_id, input_text=input_text)
 
     except frappe.PermissionError:
         raise

@@ -108,43 +108,6 @@ class TestWorkflowPermissions(BaseAssistantTest):
             self.assertEqual(workflows.list_workflows()["workflows"], [])
 
 
-class TestRunNodeIdentity(BaseAssistantTest):
-    """run_workflow_node's user_id OVERRIDES the workflow's runtime user."""
-
-    def setUp(self):
-        super().setUp()
-        frappe.set_user("Administrator")
-
-    def test_user_id_is_normalised_to_the_ar_identity(self):
-        client = _RecordingClient()
-        with patch(
-            "frappe_assistant_core.chat.fac_cloud_client.get_fac_cloud_client",
-            return_value=client,
-        ), patch.object(workflows, "_ar_user_id", return_value="owner@example.com"):
-            workflows.run_workflow_node(name="WF-00001", node_id="n1", user_id="Administrator")
-
-        self.assertEqual(client.calls[0]["user_id"], "owner@example.com")
-
-    def test_absent_user_id_stays_absent(self):
-        client = _RecordingClient()
-        with patch(
-            "frappe_assistant_core.chat.fac_cloud_client.get_fac_cloud_client",
-            return_value=client,
-        ):
-            workflows.run_workflow_node(name="WF-00001", node_id="n1")
-
-        self.assertIsNone(client.calls[0]["user_id"])
-
-
-class _RecordingClient:
-    def __init__(self):
-        self.calls = []
-
-    def run_workflow_node(self, **kwargs):
-        self.calls.append(kwargs)
-        return {"status": "ok"}
-
-
 class TestToolDiscoveryFailureSurfaces(BaseAssistantTest):
     """An expired token must reach the SPA as a reconnect CTA, not "no tools"."""
 
