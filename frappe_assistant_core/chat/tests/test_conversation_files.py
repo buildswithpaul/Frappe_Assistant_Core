@@ -37,15 +37,16 @@ class ConversationFilesTestCase(BaseAssistantTest):
         self.session = f"conversation-files-{frappe.generate_hash(length=8)}"
         self.addCleanup(live_turn.clear, self.session)
 
-    def _upload(self, file_name: str, body: str) -> dict:
+    def _upload(self, file_name: str, body: str | bytes, content_type: str = "text/plain") -> dict:
+        data = body if isinstance(body, bytes) else body.encode()
         with patch(
             "frappe_assistant_core.chat.api.settings.access.can_use_faco",
             return_value={"can_use": True},
         ):
             uploaded = upload_message_file(
-                file_data=base64.b64encode(body.encode()).decode(),
+                file_data=base64.b64encode(data).decode(),
                 file_name=file_name,
-                content_type="text/plain",
+                content_type=content_type,
             )
         self.addCleanup(frappe.cache.delete_value, f"fac_chat_file_text:{uploaded['file']['name']}")
         return uploaded["file"]
@@ -156,3 +157,18 @@ class TestTheSameFileInTwoConversations(ConversationFilesTestCase):
         self.assertIn(
             f"File ID: {first_file}", conversation_files_addendum(self.session, frappe.session.user)
         )
+
+
+class TestFilesWithoutText(ConversationFilesTestCase):
+    def test_an_image_with_no_text_says_the_model_has_already_seen_it(self):
+        # A site without the OCR dependencies extracts nothing from an image.
+        msg = FACChatMessage.create_message(session_id=self.session, role="user", content="What is this?")
+        png = b"\x89PNG\r\n\x1a\n" + frappe.generate_hash(length=32).encode()
+        self.file = self._upload("photo.png", png, content_type="image/png")
+        _attach_files_to_message([self.file["file_url"]], msg.name)
+
+        with patch.object(conversation_files, "_extract", return_value=""):
+            addendum = conversation_files_addendum(self.session, frappe.session.user)
+
+        self.assertIn(f"File ID: {self.file['name']}", addendum)
+        self.assertIn("Content: an image, shown to you", addendum)

@@ -25,6 +25,9 @@ MAX_TOTAL_CHARS = 60_000
 # extracted once and reused on later turns.
 TEXT_CACHE_TTL = 7 * 24 * 3600
 
+# The image types the composer accepts (ALLOWED_UPLOAD_EXTENSIONS); they reach the model as images.
+IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".gif", ".webp")
+
 PREAMBLE = (
     "\n\nThe user attached the files below to their messages in this conversation. "
     "Refer to a file by its File ID when a tool needs it."
@@ -114,7 +117,16 @@ def _describe(file_info, text: str) -> str:
     ]
     if text:
         lines += ["Content:", text]
+    elif _is_image(file_info.file_name):
+        # Without OCR an image has no text, but the model already saw it with its message.
+        lines.append("Content: an image, shown to you with the message it was attached to.")
+    else:
+        lines.append("Content: its text could not be extracted.")
     return "\n".join(lines)
+
+
+def _is_image(file_name: str) -> bool:
+    return (file_name or "").lower().endswith(IMAGE_EXTENSIONS)
 
 
 def _human_size(size_bytes: int) -> str:
