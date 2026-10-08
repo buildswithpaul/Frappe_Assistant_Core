@@ -10,7 +10,7 @@ The `update_document` tool modifies field values on an existing Frappe document.
 |-----------|------|----------|-------------|
 | `doctype` | string | **Yes** | Exact **parent** DocType name (e.g., `Sales Order`, not `Sales Order Item`) |
 | `name` | string | **Yes** | Document name/ID to update |
-| `data` | object | **Yes** | Only the fields to change. For child tables, pass a list of row dicts under the table fieldname |
+| `data` | object | **Yes** | Only the fields to change. For child tables, pass a list of row dicts under the table fieldname; a Table MultiSelect also takes its link values |
 
 ## Response Format
 
@@ -87,6 +87,13 @@ Clears the child table and re-fills it with the rows you supply. Use this for fi
 }
 ```
 
+### Table MultiSelect fields
+
+Both modes work the same way. A bare value is a new row whose `link_field` (see `get_doctype_info`) holds that value.
+
+- Replace: `{"user_group_members": ["jane@example.com", "raj@example.com"]}` sets exactly those two.
+- Patch: `{"user_group_members": [{"name": "<existing row>"}, "raj@example.com"]}` keeps the named row and adds Raj. `{"name": "<row>", "_delete": true}` removes one.
+
 ### Why call on the parent, not the child
 
 ERPNext (and Frappe in general) computes derived fields — row `amount`, parent `total`, `total_qty`, `grand_total`, taxes, etc. — inside the parent doc's `validate()` pipeline. Calling `update_document` directly on a child-table doctype like `Sales Order Item` saves the row in isolation and **bypasses that pipeline**, leaving the row's `amount` and the parent's totals stale. The tool detects this and refuses.
@@ -103,7 +110,7 @@ ERPNext (and Frappe in general) computes derived fields — row `amount`, parent
 
 ## Edge Cases
 
-- **Direct child-doctype updates are rejected.** Calling `update_document` with `doctype: "Sales Order Item"` (or any other child-table doctype) returns `error_type: "child_doctype_direct_update"` along with the parent doctype, parent name, and parent table fieldname so you can retry on the parent.
+- **Direct child-doctype updates are rejected.** Calling `update_document` with `doctype: "Sales Order Item"` (or any other child-table doctype) returns `error_type: "child_doctype_direct_update"`. If you can read the parent document, the response also names the parent doctype, parent name, and parent table fieldname so you can retry on the parent.
 
   ```json
   {

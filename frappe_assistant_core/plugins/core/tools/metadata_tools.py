@@ -19,6 +19,8 @@ from typing import Any, Dict, List
 import frappe
 from frappe import _
 
+from .child_tables import multiselect_link_field
+
 
 class MetadataTools:
     """assistant tools for Frappe metadata operations"""
@@ -110,8 +112,19 @@ class MetadataTools:
             if not frappe.db.exists("DocType", doctype):
                 return {"success": False, "error": f"DocType '{doctype}' not found"}
 
-            if not frappe.has_permission(doctype, "read"):
-                return {"success": False, "error": f"No permission to access DocType '{doctype}'"}
+            # A child doctype has no permissions of its own; Frappe grants it through a
+            # parent. Its schema is readable to anyone who can read a parent that embeds
+            # it (#291). Administrator also passes for a child no parent uses yet.
+            no_permission = {"success": False, "error": f"No permission to access DocType '{doctype}'"}
+            parent_doctypes = None
+            if frappe.is_table(doctype):
+                from frappe_assistant_core.core.security_config import get_child_table_parents
+
+                parent_doctypes = get_child_table_parents(doctype, frappe.session.user)
+                if not parent_doctypes and not frappe.has_permission(doctype, "read"):
+                    return no_permission
+            elif not frappe.has_permission(doctype, "read"):
+                return no_permission
 
             meta = frappe.get_meta(doctype)
 
@@ -138,9 +151,13 @@ class MetadataTools:
                 if child_doctype and frappe.db.exists("DocType", child_doctype):
                     child_meta = frappe.get_meta(child_doctype)
                     child_entry["fields"] = [MetadataTools._serialize_field(f) for f in child_meta.fields]
+                    if table_field.fieldtype == "Table MultiSelect":
+                        # create/update_document accept bare values for this field and
+                        # store them here, so the model knows what a value means.
+                        child_entry["link_field"] = multiselect_link_field(child_doctype)
                 child_tables.append(child_entry)
 
-            return {
+            result = {
                 "success": True,
                 "doctype": doctype,
                 "module": meta.module,
@@ -155,6 +172,11 @@ class MetadataTools:
                 "child_tables": child_tables,
                 "permissions": [p.as_dict() for p in meta.permissions],
             }
+            if parent_doctypes is not None:
+                # Where this child's rows live: write them through these with update_document.
+                result["parent_doctypes"] = parent_doctypes
+
+            return result
 
         except Exception as e:
             frappe.log_error(f"assistant Get DocType Metadata Error: {str(e)}")
