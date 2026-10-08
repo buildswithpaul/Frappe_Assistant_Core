@@ -108,6 +108,8 @@ import { useRouter } from "vue-router";
 import { storeToRefs } from "pinia";
 import { useUserStore } from "@/stores/userStore";
 import { useWorkflowStore } from "@/stores/workflowStore";
+import { useToast } from "@/composables/useToast";
+import { __ } from "@/utils/i18n";
 import { logger } from "@/utils/logger";
 import NavigationSidebar from "@/components/layout/NavigationSidebar.vue";
 import WorkflowListTopBar from "@/components/workflows/WorkflowListTopBar.vue";
@@ -120,6 +122,7 @@ import WorkflowDeleteModal from "@/components/workflows/WorkflowDeleteModal.vue"
 const router = useRouter();
 const userStore = useUserStore();
 const workflowStore = useWorkflowStore();
+const { showError, showSuccess } = useToast();
 
 const { workflowsEnabled } = storeToRefs(userStore);
 const isAdmin = computed(() => userStore.isAdmin);
@@ -153,8 +156,10 @@ async function handleDuplicate(wf) {
 	isDuplicating.value = true;
 	try {
 		await workflowStore.duplicateWorkflow(wf.name);
+		showSuccess(__("Agent duplicated"));
 	} catch (err) {
 		logger.error("Failed to duplicate workflow:", err);
+		showError(__("Could not duplicate the agent: {0}", [err?.message || err]));
 	} finally {
 		isDuplicating.value = false;
 	}
@@ -195,6 +200,7 @@ async function handleDelete() {
 		workflowToDelete.value = null;
 	} catch (err) {
 		logger.error("Failed to delete workflow:", err);
+		showError(__("Could not delete the agent: {0}", [err?.message || err]));
 	} finally {
 		isDeleting.value = false;
 	}

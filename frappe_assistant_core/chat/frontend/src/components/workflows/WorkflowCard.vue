@@ -1,5 +1,13 @@
 <template>
-	<div class="workflow-card" @click="$emit('click')">
+	<div
+		class="workflow-card"
+		role="button"
+		tabindex="0"
+		:aria-label="__('Open agent {0}', [workflow.workflow_name])"
+		@click="$emit('click')"
+		@keydown.enter.self.prevent="$emit('click')"
+		@keydown.space.self.prevent="$emit('click')"
+	>
 		<div class="card-header">
 			<div class="card-title-row">
 				<h3 class="card-title">{{ workflow.workflow_name }}</h3>
@@ -83,6 +91,7 @@
 <script setup>
 import { computed } from "vue";
 import { useUserStore } from "@/stores/userStore";
+import { __ } from "@/utils/i18n";
 import { formatRelativeTime } from "@/composables/useFormatters";
 
 const props = defineProps({
@@ -124,6 +133,10 @@ const formatDate = formatRelativeTime;
 	gap: 0.75rem;
 }
 
+.workflow-card:focus-visible {
+	outline: 2px solid var(--ql-accent);
+	outline-offset: 2px;
+}
 .workflow-card:hover {
 	border-color: var(--ql-accent);
 	box-shadow: 0 2px 8px var(--ql-accent-soft);

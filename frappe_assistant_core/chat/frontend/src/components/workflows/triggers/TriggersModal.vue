@@ -63,6 +63,18 @@
 				<div v-if="!showEditor && !showLog" class="modal-actions">
 					<button class="action-btn" @click="close">Close</button>
 				</div>
+
+				<ConfirmModal
+					:open="!!pendingDelete"
+					:title="__('Delete trigger')"
+					:message="__('Delete “{0}”? Its fire log goes with it.', [pendingDelete?.title || ''])"
+					:confirm-label="__('Delete')"
+					:processing="isDeleting"
+					:processing-label="__('Deleting…')"
+					destructive
+					@confirm="confirmDelete"
+					@cancel="pendingDelete = null"
+				/>
 			</div>
 		</div>
 	</Teleport>
@@ -71,6 +83,9 @@
 <script setup>
 import { ref, watch } from "vue";
 import api from "@/api/client";
+import ConfirmModal from "@/components/common/ConfirmModal.vue";
+import { useToast } from "@/composables/useToast";
+import { __ } from "@/utils/i18n";
 import TriggerCard from "./TriggerCard.vue";
 import TriggerEditor from "./TriggerEditor.vue";
 import TriggerFireLog from "./TriggerFireLog.vue";
@@ -78,6 +93,9 @@ import { logger } from "@/utils/logger";
 import { useTeleportTarget } from "@/composables/useTeleportTarget";
 
 const teleportTarget = useTeleportTarget();
+const { showError, showSuccess } = useToast();
+const pendingDelete = ref(null);
+const isDeleting = ref(false);
 
 const props = defineProps({
 	modelValue: { type: Boolean, required: true },
@@ -132,13 +150,23 @@ function editTrigger(t) {
 	showEditor.value = true;
 }
 
-async function deleteTrigger(t) {
-	if (!confirm(`Delete trigger "${t.title}"?`)) return;
+function deleteTrigger(t) {
+	pendingDelete.value = t;
+}
+
+async function confirmDelete() {
+	const t = pendingDelete.value;
+	if (!t) return;
+	isDeleting.value = true;
 	try {
 		await api.workflows.triggers.delete(t.name);
+		showSuccess(__("Trigger deleted"));
+		pendingDelete.value = null;
 		await refresh();
 	} catch (err) {
-		alert(`Failed to delete: ${err?.message || err}`);
+		showError(__("Could not delete the trigger: {0}", [err?.message || err]));
+	} finally {
+		isDeleting.value = false;
 	}
 }
 
@@ -147,7 +175,7 @@ async function toggleTrigger(t) {
 		await api.workflows.triggers.toggle(t.name, !t.enabled);
 		await refresh();
 	} catch (err) {
-		alert(`Failed to toggle: ${err?.message || err}`);
+		showError(__("Could not switch the trigger: {0}", [err?.message || err]));
 	}
 }
 
@@ -179,7 +207,7 @@ async function saveTrigger(payload) {
 		editorTarget.value = null;
 		await refresh();
 	} catch (err) {
-		alert(`Failed to save: ${err?.message || err}`);
+		showError(__("Could not save the trigger: {0}", [err?.message || err]));
 	}
 }
 

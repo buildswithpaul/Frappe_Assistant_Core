@@ -240,6 +240,7 @@
 <script setup>
 import { ref, computed, watch } from "vue";
 import { useWorkflowStore } from "@/stores/workflowStore";
+import { __ } from "@/utils/i18n";
 import { useToast } from "@/composables/useToast";
 import { logger } from "@/utils/logger";
 import TemplateImportStep from "./TemplateImportStep.vue";
@@ -333,6 +334,7 @@ async function submitRating({ rating, review }) {
 		ratingSectionRef.value?.onRatingComplete();
 	} catch (err) {
 		logger.error("Failed to submit rating:", err);
+		showError(__("Could not save your rating: {0}", [err?.message || err]));
 		ratingSectionRef.value?.onRatingComplete();
 	}
 }

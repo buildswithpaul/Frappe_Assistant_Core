@@ -45,15 +45,15 @@
 					>
 						<div class="active-indicator">
 							<div class="live-dot"></div>
-							<span>Live</span>
+							<span>{{ __("Live") }}</span>
 						</div>
 						<button
 							@click.stop="handleCancel"
 							class="cancel-btn"
-							aria-label="Cancel run"
+							:aria-label="__('Cancel run')"
 							:disabled="isCancelling"
 						>
-							{{ isCancelling ? "Cancelling..." : "Cancel" }}
+							{{ isCancelling ? __("Cancelling...") : __("Cancel") }}
 						</button>
 					</div>
 
@@ -89,6 +89,7 @@ import { ref, watch, onMounted } from "vue";
 import { storeToRefs } from "pinia";
 import { useWorkflowStore } from "@/stores/workflowStore";
 import { __ } from "@/utils/i18n";
+import { useToast } from "@/composables/useToast";
 import LoadErrorState from "@/components/common/list/LoadErrorState.vue";
 import RunCard from "./RunCard.vue";
 
@@ -101,6 +102,7 @@ const props = defineProps({
 defineEmits(["close"]);
 
 const workflowStore = useWorkflowStore();
+const { showError } = useToast();
 const { runs, runsTotal, runsError, isRunning, isCancelling, activeRunName, currentRun } =
 	storeToRefs(workflowStore);
 
@@ -176,7 +178,11 @@ async function handleCancel() {
 	if (!activeRunName.value) return;
 	// Cancellation is cooperative: the store keeps polling until the run
 	// reports a terminal status, and credits already spent stay spent.
-	await workflowStore.cancelRun(activeRunName.value).catch(() => {});
+	try {
+		await workflowStore.cancelRun(activeRunName.value);
+	} catch (err) {
+		showError(__("Could not cancel the run: {0}", [err?.message || err]));
+	}
 }
 </script>
 
