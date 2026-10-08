@@ -13,6 +13,8 @@ const COMPONENTS = import.meta.glob(
 		"./*.vue",
 		"./builder/*.vue",
 		"./config/*.vue",
+		"./list/*.vue",
+		"./marketplace/*.vue",
 		"./toolbar/*.vue",
 		"./nodes/*.vue",
 		"./triggers/*.vue",

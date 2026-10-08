@@ -39,7 +39,7 @@ class TestListOutageEnvelope(BaseAssistantTest):
     def test_list_listings_reports_an_outage(self):
         with (
             patch.object(marketplace, "_marketplace_enabled", return_value=True),
-            patch.object(marketplace, "_get_client", return_value=_DownClient()),
+            patch(CLIENT, return_value=_DownClient()),
             patch.object(marketplace, "_ar_user_id", return_value="admin@example.com"),
         ):
             result = marketplace.list_listings(listing_type="Workflow")
@@ -50,4 +50,14 @@ class TestListOutageEnvelope(BaseAssistantTest):
         """Regression guard: pins unchanged behaviour, green before the fix."""
         with patch(CLIENT, return_value=None):
             result = workflows.list_workflows()
+        self.assertNotIn("error", result)
+
+    def test_list_listings_not_connected_is_not_an_outage(self):
+        # A site that never connected to FAC Cloud has get_fac_cloud_client() return None.
+        with (
+            patch.object(marketplace, "_marketplace_enabled", return_value=True),
+            patch(CLIENT, return_value=None),
+        ):
+            result = marketplace.list_listings(listing_type="Workflow")
+        self.assertEqual(result["listings"], [])
         self.assertNotIn("error", result)

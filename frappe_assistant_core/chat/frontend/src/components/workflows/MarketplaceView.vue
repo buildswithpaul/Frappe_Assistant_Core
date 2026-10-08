@@ -34,35 +34,14 @@
 			</div>
 		</div>
 
-		<!-- Loading -->
-		<div
-			v-if="store.isLoadingTemplates && allTemplates.length === 0"
-			class="marketplace-loading"
-		>
-			<div class="loading-spinner"></div>
-			<p>Loading templates...</p>
-		</div>
-
-		<!-- Empty -->
-		<div v-else-if="allTemplates.length === 0" class="marketplace-empty">
-			<svg
-				width="40"
-				height="40"
-				fill="none"
-				stroke="currentColor"
-				viewBox="0 0 24 24"
-				class="empty-icon"
-			>
-				<path
-					stroke-linecap="round"
-					stroke-linejoin="round"
-					stroke-width="1.5"
-					d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"
-				/>
-			</svg>
-			<p v-if="searchQuery || categoryFilter">No templates match your search.</p>
-			<p v-else>No templates available yet.</p>
-		</div>
+		<MarketplaceStatus
+			v-if="allTemplates.length === 0"
+			:loading="isLoadingTemplates"
+			:error="templatesError || ''"
+			:empty="true"
+			:filtered="!!(searchQuery || categoryFilter)"
+			@retry="reloadTemplates"
+		/>
 
 		<!-- Template grid -->
 		<div v-else class="marketplace-grid-section">
@@ -112,6 +91,7 @@ import { storeToRefs } from "pinia";
 import { useWorkflowStore } from "@/stores/workflowStore";
 import { logger } from "@/utils/logger";
 import MarketplaceFilters from "./marketplace/MarketplaceFilters.vue";
+import MarketplaceStatus from "./marketplace/MarketplaceStatus.vue";
 import TemplateCard from "./marketplace/TemplateCard.vue";
 import CreatorStatsSection from "./marketplace/CreatorStatsSection.vue";
 import TemplateDetailPanel from "./TemplateDetailPanel.vue";
@@ -119,7 +99,12 @@ import TemplateDetailPanel from "./TemplateDetailPanel.vue";
 const emit = defineEmits(["workflow-created"]);
 
 const store = useWorkflowStore();
-const { templates: allTemplates, templatesTotal, isLoadingTemplates } = storeToRefs(store);
+const {
+	templates: allTemplates,
+	templatesTotal,
+	isLoadingTemplates,
+	templatesError,
+} = storeToRefs(store);
 
 const searchQuery = ref("");
 const categoryFilter = ref(null);
@@ -190,7 +175,7 @@ async function reloadTemplates() {
 		getActiveCategory(),
 		searchQuery.value || null,
 		getActiveSortBy(),
-		0
+		0,
 	);
 }
 
@@ -201,7 +186,7 @@ async function loadMore() {
 		searchQuery.value || null,
 		getActiveSortBy(),
 		currentPage.value,
-		{ append: true }
+		{ append: true },
 	);
 }
 
@@ -343,37 +328,13 @@ function onTemplateRated(result) {
 	cursor: default;
 }
 
-/* Loading / empty */
-.marketplace-loading,
-.marketplace-empty {
-	display: flex;
-	flex-direction: column;
-	align-items: center;
-	justify-content: center;
-	padding: 4rem 1rem;
-	color: var(--ql-text-muted);
-	font-size: 0.8125rem;
-}
-
-.empty-icon {
-	margin-bottom: 1rem;
-	opacity: 0.4;
-}
-
 .loading-spinner {
-	width: 1.5rem;
-	height: 1.5rem;
+	width: 1rem;
+	height: 1rem;
 	border: 2px solid var(--ql-border);
 	border-top-color: var(--ql-accent);
 	border-radius: 50%;
 	animation: spin 0.8s linear infinite;
-	margin-bottom: 0.75rem;
-}
-
-.loading-spinner.small {
-	width: 1rem;
-	height: 1rem;
-	margin-bottom: 0;
 }
 
 @keyframes spin {

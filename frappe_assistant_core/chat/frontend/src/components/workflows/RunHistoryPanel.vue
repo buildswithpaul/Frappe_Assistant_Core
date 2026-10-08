@@ -23,11 +23,17 @@
 		<div class="runs-list">
 			<div v-if="isLoadingRuns && runs.length === 0" class="runs-loading">
 				<div class="mini-spinner"></div>
-				<span>Loading runs...</span>
+				<span>{{ __("Loading runs...") }}</span>
 			</div>
 
+			<LoadErrorState
+				v-else-if="runsError && runs.length === 0"
+				:message="runsError"
+				@retry="loadRuns"
+			/>
+
 			<div v-else-if="runs.length === 0" class="runs-empty">
-				<p>No runs yet. Click "Run" to execute this agent.</p>
+				<p>{{ __('No runs yet. Click "Run" to execute this agent.') }}</p>
 			</div>
 
 			<template v-else>
@@ -69,7 +75,7 @@
 			class="load-more-btn"
 			:disabled="isLoadingRuns"
 		>
-			Load more
+			{{ __("Load more") }}
 		</button>
 	</aside>
 </template>
@@ -78,6 +84,8 @@
 import { ref, watch, onMounted } from "vue";
 import { storeToRefs } from "pinia";
 import { useWorkflowStore } from "@/stores/workflowStore";
+import { __ } from "@/utils/i18n";
+import LoadErrorState from "@/components/common/list/LoadErrorState.vue";
 import RunCard from "./RunCard.vue";
 
 const props = defineProps({
@@ -89,7 +97,7 @@ const props = defineProps({
 defineEmits(["close"]);
 
 const workflowStore = useWorkflowStore();
-const { runs, runsTotal, isRunning, isCancelling, activeRunName, currentRun } =
+const { runs, runsTotal, runsError, isRunning, isCancelling, activeRunName, currentRun } =
 	storeToRefs(workflowStore);
 
 const isLoadingRuns = ref(false);

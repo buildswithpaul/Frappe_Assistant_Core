@@ -88,8 +88,18 @@ def list_listings(
             "page_size": int(page_size),
             "marketplace_enabled": False,
         }
+    from frappe_assistant_core.chat.fac_cloud_client import get_fac_cloud_client
+
+    client = get_fac_cloud_client()
+    if not client:
+        return {
+            "listings": [],
+            "total": 0,
+            "page": 0,
+            "page_size": int(page_size),
+            "marketplace_enabled": False,
+        }
     try:
-        client = _get_client()
         return client.list_listings(
             listing_type=listing_type,
             category=category,

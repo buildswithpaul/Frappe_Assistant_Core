@@ -220,6 +220,10 @@ export const useWorkflowStore = defineStore("workflows", () => {
 		try {
 			const result = await api.workflows.listRuns(workflowName, status, page, 20);
 			const incoming = result.runs || [];
+			if (append && result.error) {
+				runsError.value = result.error;
+				return result;
+			}
 			if (append) {
 				const seen = new Set(runs.value.map((r) => r.name));
 				runs.value = [...runs.value, ...incoming.filter((r) => !seen.has(r.name))];
