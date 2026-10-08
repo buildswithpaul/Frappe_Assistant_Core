@@ -21,13 +21,12 @@ from .._rate_limits import (
     rate_limit,
     session_user_or_ip,
 )
-from .._untrusted import wrap_untrusted
 from ..chat import live_turn
 from ..chat.cancel import _is_open_turn
 from ..chat.cancel import clear as clear_cancel
+from ..chat.conversation_files import conversation_files_addendum
 from ..chat.helpers import (
     _attach_files_to_message,
-    _extract_file_attachments,
     _is_processing_restricted,
 )
 from ..chat.relay import (
@@ -75,6 +74,17 @@ def _flag(value) -> bool:
 
 
 EFFORT_LEVELS = ("off", "low", "medium", "high", "xhigh", "max")
+
+
+def _files_addendum(session_id: str, restricted: bool) -> str | None:
+    """Every file attached so far in the conversation, for this turn's system prompt.
+
+    The addendum lasts one turn, so it is rebuilt on every send, resume and continue. A user
+    under processing restriction (M15) has no persisted messages, so no files to list.
+    """
+    if restricted:
+        return None
+    return conversation_files_addendum(session_id, frappe.session.user) or None
 
 
 def _effort(value) -> str | None:
@@ -290,16 +300,9 @@ def send_message(
         # the stored user message in conversation history.
         full_prompt = message
 
-        # File attachments depend on a persisted user message row. When the
-        # user has restricted processing (M15), we don't persist, so there
-        # is nothing to enrich — AR processes the prompt as-is.
-        if user_msg is not None:
-            file_content = _extract_file_attachments(user_msg.name)
-            if file_content:
-                # Wrap file content in an untrusted envelope so the LLM treats
-                # it as data, not instructions (FACO-H15 prompt injection).
-                file_addendum = wrap_untrusted(file_content, kind="user_attached_files")
-                system_prompt_addendum = (system_prompt_addendum or "") + file_addendum
+        files_addendum = _files_addendum(session_id, restricted)
+        if files_addendum:
+            system_prompt_addendum = (system_prompt_addendum or "") + files_addendum
 
         signal_addendum = _render_client_signals(client_signals)
         if signal_addendum:
@@ -503,6 +506,7 @@ def resume_interrupt(
                 # The turn the user approved was sent with these; the resume is the
                 # same turn continuing, so it has to carry them too.
                 model_id=model_id,
+                system_prompt_addendum=_files_addendum(session_id, restricted),
                 web_search=_flag(web_search) if web_search is not None else None,
                 thinking_enabled=_flag(thinking_enabled) if thinking_enabled is not None else None,
                 reasoning_effort=effort,
@@ -614,6 +618,7 @@ def continue_response(
                 session_state=session_state,
                 restricted=restricted,
                 continue_from_message_id=message_id,
+                system_prompt_addendum=_files_addendum(session_id, restricted),
                 # A continuation is the same turn finishing; it must run under the
                 # same toggles, not fall back to AR's absence defaults.
                 web_search=_flag(web_search) if web_search is not None else None,

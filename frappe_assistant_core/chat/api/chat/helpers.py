@@ -91,7 +91,7 @@ def _attach_files_to_message(file_urls: list[str], message_name: str) -> int:
 
     Ownership scoping is the security boundary here: ``get_all`` bypasses
     permissions, so without ``owner`` any caller could name an arbitrary private
-    ``file_url`` and have ``_extract_file_attachments`` read it into the prompt.
+    ``file_url`` and have its text read into the prompt.
 
     Clearing ``fac_pending_chat_attachment`` is what takes the file out of the
     orphan sweep's reach — uploads are flagged on selection, not on send.
@@ -125,68 +125,6 @@ def _attach_files_to_message(file_urls: list[str], message_name: str) -> int:
 
     frappe.db.commit()  # nosemgrep: frappe-manual-commit — background thread / streaming context (not a request handler), explicit commit required to flush progress to DB.
     return linked
-
-
-def _extract_file_attachments(message_name: str) -> str:
-    """
-    Extract content from files attached to a FACO Message.
-
-    Uses the ExtractFileContent tool from frappe_assistant_core.
-    """
-    try:
-        attached_files = frappe.get_all(
-            "File",
-            filters={"attached_to_doctype": "FAC Chat Message", "attached_to_name": message_name},
-            fields=["name", "file_name", "file_url", "file_size"],
-        )
-
-        if not attached_files:
-            return ""
-
-        try:
-            from frappe_assistant_core.plugins.data_science.tools.extract_file_content import (
-                ExtractFileContent,
-            )
-
-            extractor = ExtractFileContent()
-        except ImportError:
-            frappe.log_error(title="FACO File Extraction", message="frappe_assistant_core not installed")
-            return ""
-
-        file_contents = ["[Attached Files]"]
-
-        for file_info in attached_files:
-            try:
-                result = extractor.execute({"file_url": file_info.file_url, "operation": "extract"})
-
-                if result.get("success") and result.get("content"):
-                    size_bytes = file_info.file_size or 0
-                    if size_bytes < 1024:
-                        size_str = f"{size_bytes} B"
-                    elif size_bytes < 1024 * 1024:
-                        size_str = f"{size_bytes / 1024:.1f} KB"
-                    else:
-                        size_str = f"{size_bytes / (1024 * 1024):.1f} MB"
-
-                    file_contents.append(f"\nFile: {file_info.file_name}")
-                    file_contents.append(f"Size: {size_str}")
-                    file_contents.append("Content:")
-                    file_contents.append(result["content"])
-                    file_contents.append("-" * 80)
-
-            except Exception as e:
-                frappe.log_error(
-                    title="FACO File Extraction",
-                    message=f"Error extracting file {file_info.file_name}: {e!s}",
-                )
-
-        return "\n".join(file_contents) if len(file_contents) > 1 else ""
-
-    except Exception as e:
-        frappe.log_error(
-            title="FACO File Extraction Error", message=f"Error in _extract_file_attachments: {e!s}"
-        )
-        return ""
 
 
 def _prepare_prompt(message: str, context: dict, include_context: bool) -> str:
