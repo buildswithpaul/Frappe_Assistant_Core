@@ -4,6 +4,8 @@
 
 """Workflow CRUD, execution, scheduling, templates, and tool resolution."""
 
+import json
+
 import frappe
 from frappe import _
 
@@ -86,8 +88,6 @@ def create_workflow(
 
     # Provide a default graph with input + output nodes if none given
     if not graph_json:
-        import json
-
         graph_json = json.dumps(
             {
                 "version": "1.0",
@@ -303,6 +303,33 @@ def cancel_workflow_run(run_name: str | None = None):
         frappe.throw(_("Error: {0}").format(str(e)))
 
 
+def _with_skipped_actions(run: dict | None) -> dict | None:
+    """Give a run its skipped-write fields as an int and a list, whatever AR sent.
+
+    AR stores ``skipped_actions_detail`` as JSON text, and releases before the
+    field existed send neither key. The SPA's "N actions skipped" badge reads
+    ``skipped_actions`` and lists ``skipped_actions_detail``.
+    """
+    if not isinstance(run, dict):
+        return run
+
+    detail = run.get("skipped_actions_detail")
+    if isinstance(detail, str):
+        try:
+            detail = json.loads(detail) if detail.strip() else []
+        except ValueError:
+            detail = []
+    detail = [d for d in detail if isinstance(d, dict)] if isinstance(detail, list) else []
+    run["skipped_actions_detail"] = detail
+
+    count = run.get("skipped_actions")
+    try:
+        run["skipped_actions"] = int(count) if count not in (None, "") else len(detail)
+    except (TypeError, ValueError):
+        run["skipped_actions"] = len(detail)
+    return run
+
+
 @frappe.whitelist(methods=["GET"])
 def get_workflow_run(run_name: str | None = None):
     """Get workflow run details."""
@@ -318,7 +345,7 @@ def get_workflow_run(run_name: str | None = None):
         if not client:
             frappe.throw(_("Not connected to FAC Cloud"))
 
-        return client.get_workflow_run(run_name)
+        return _with_skipped_actions(client.get_workflow_run(run_name))
 
     except frappe.ValidationError:
         raise
@@ -341,12 +368,15 @@ def list_workflow_runs(
         if not client:
             return {"runs": [], "total": 0, "page": 0, "page_size": 20}
 
-        return client.list_workflow_runs(
+        result = client.list_workflow_runs(
             workflow_name=workflow_name,
             status=status,
             page=int(page),
             page_size=int(page_size),
-        )
+        ) or {"runs": [], "total": 0, "page": 0, "page_size": 20}
+        for run in result.get("runs") or []:
+            _with_skipped_actions(run)
+        return result
 
     except Exception as e:
         frappe.log_error(title="FACO Workflows", message=f"Error listing workflow runs: {e!s}")
@@ -643,8 +673,6 @@ def resolve_workflow_tools(tool_directives: str | list | None = None, runtime_us
     ar_user = _runtime_ar_user_id(runtime_user)
 
     try:
-        import json as _json
-
         from frappe_assistant_core.chat.fac_cloud_client import get_fac_cloud_client
 
         client = get_fac_cloud_client()
@@ -652,7 +680,7 @@ def resolve_workflow_tools(tool_directives: str | list | None = None, runtime_us
             frappe.throw(_("Not connected to FAC Cloud"))
 
         if isinstance(tool_directives, str):
-            tool_directives = _json.loads(tool_directives)
+            tool_directives = json.loads(tool_directives)
 
         if not tool_directives:
             return {"resolved": [], "all_tools_available": True, "missing_tools": []}
