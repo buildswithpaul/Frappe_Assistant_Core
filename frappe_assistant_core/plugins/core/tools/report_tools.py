@@ -22,6 +22,28 @@ from frappe import _
 
 from .report_requirements import VALUE_CONSTRAINED_FIELDTYPES, discover_filter_definitions
 
+DEFAULT_MAX_ROWS = 500
+MAX_ROWS_CAP = 5000
+
+
+def _clamp_max_rows(value: Any) -> int:
+    """max_rows as an int in 1..MAX_ROWS_CAP; anything unreadable is the default."""
+    try:
+        return max(1, min(int(value), MAX_ROWS_CAP))
+    except (TypeError, ValueError):
+        return DEFAULT_MAX_ROWS
+
+
+def _limit_rows(data: list, max_rows: int, summary_only: bool, keep_total_row: bool) -> list:
+    """The rows to return. A report's totals row is its last row and survives the cut."""
+    if summary_only:
+        return []
+    if len(data) <= max_rows:
+        return data
+    if keep_total_row and max_rows > 1:
+        return data[: max_rows - 1] + [data[-1]]
+    return data[:max_rows]
+
 
 class ReportTools:
     """
@@ -41,7 +63,11 @@ class ReportTools:
 
     @staticmethod
     def execute_report(
-        report_name: str, filters: Dict[str, Any] = None, format: str = "json"
+        report_name: str,
+        filters: Dict[str, Any] = None,
+        format: str = "json",
+        max_rows: int = DEFAULT_MAX_ROWS,
+        summary_only: bool = False,
     ) -> Dict[str, Any]:
         """Execute a Frappe report"""
         try:
@@ -105,25 +131,41 @@ class ReportTools:
                 # Determine which filters were auto-injected
                 auto_added = {k: v for k, v in final_filters.items() if k not in user_filter_keys}
 
+                row_count = len(data)
+                rows = _limit_rows(
+                    data,
+                    _clamp_max_rows(max_rows),
+                    bool(summary_only),
+                    bool(getattr(report_doc, "add_total_row", 0)),
+                )
+
                 debug_info = {
                     "success": True,
                     "report_name": report_name,
                     "report_type": report_doc.report_type,
-                    "data": data,
+                    "data": rows,
                     "columns": columns,
                     "message": result.get("message"),
                     "filters_applied": final_filters,
                     "filters_auto_added": auto_added if auto_added else None,
                     "raw_result_keys": list(result.keys()) if result else [],
-                    "data_count": len(data) if data else 0,
+                    "row_count": row_count,
+                    "truncated": len(rows) < row_count,
+                    "summary_only": bool(summary_only),
+                    "data_count": len(rows),
                     "result_type": type(result).__name__ if result else "None",
                 }
+                if result.get("report_summary"):
+                    debug_info["report_summary"] = result["report_summary"]
+                if debug_info["truncated"] and not summary_only:
+                    debug_info["truncation_note"] = _(
+                        "Showing {0} of {1} rows. Pass max_rows (up to {2}) for more, or narrow the filters."
+                    ).format(len(rows), row_count, MAX_ROWS_CAP)
             else:
                 return {"success": False, "error": f"Unexpected result type: {type(result).__name__}"}
 
             # Add actionable guidance when report returns no data
-            data = debug_info.get("data", [])
-            if not data or len(data) == 0:
+            if debug_info["row_count"] == 0:
                 debug_info["suggestion"] = (
                     f"Report returned 0 rows. This usually means the auto-defaulted filters "
                     f"(e.g. fiscal year dates, company) don't match any data. "

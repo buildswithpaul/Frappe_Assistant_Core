@@ -74,6 +74,13 @@ When a value is rejected, `validation_errors` names the accepted values and `err
 | `report_name` | string | **Yes** | — | Exact report name |
 | `filters` | object | No | `{}` | Filter key-value pairs |
 | `format` | string | No | `"json"` | `"json"`, `"csv"`, or `"excel"` |
+| `max_rows` | integer | No | `500` | Most rows to return (1 to 5000). Values above 5000 are clamped |
+| `summary_only` | boolean | No | `false` | Return columns, `row_count` and `report_summary` without rows |
+
+**Row-limit response fields:** `row_count` (rows the report produced), `truncated` (`true` when rows were left out),
+`summary_only`, `report_summary` (when the report returns one), and `truncation_note` (when truncated). A report with
+a totals row always keeps it as the last returned row. Use `summary_only` to size a large report, then raise
+`max_rows` or narrow the filters. The `run_python_code` sandbox's `tools.generate_report` asks for the 5000 cap.
 
 ## Best Practices
 

@@ -26,6 +26,8 @@ from frappe import _
 
 from frappe_assistant_core.core.base_tool import BaseTool
 
+from .report_tools import DEFAULT_MAX_ROWS, MAX_ROWS_CAP, ReportTools
+
 
 class GenerateReport(BaseTool):
     """
@@ -42,7 +44,7 @@ class GenerateReport(BaseTool):
         super().__init__()
         self.name = "generate_report"
 
-        self.description = "Execute a Frappe report. IMPORTANT: Always call report_requirements(report_name) FIRST to get mandatory filters and valid options, then call this tool with explicit filters. Missing filters are auto-defaulted (dates, company) which often returns empty data. Supports Script Reports, Query Reports, and Custom Reports. Report Builder reports are not supported. Large/prepared reports are handled automatically with polling."
+        self.description = "Execute a Frappe report. IMPORTANT: Always call report_requirements(report_name) FIRST to get mandatory filters and valid options, then call this tool with explicit filters. Missing filters are auto-defaulted (dates, company) which often returns empty data. Supports Script Reports, Query Reports, and Custom Reports. Report Builder reports are not supported. Large/prepared reports are handled automatically with polling. Returns at most max_rows rows (default 500); check truncated and row_count."
         self.requires_permission = None  # Permission checked dynamically per report
 
         self.inputSchema = {
@@ -63,6 +65,18 @@ class GenerateReport(BaseTool):
                     "default": "json",
                     "description": "Output format. Use 'json' for data analysis, 'csv' for exports, 'excel' for spreadsheet files.",
                 },
+                "max_rows": {
+                    "type": "integer",
+                    "default": DEFAULT_MAX_ROWS,
+                    "minimum": 1,
+                    "maximum": MAX_ROWS_CAP,
+                    "description": "Most rows to return (default 500, at most 5000). row_count always gives the full count and truncated says whether rows were left out. A report's totals row is kept.",
+                },
+                "summary_only": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Return columns, row_count and the report's summary without any rows. Use it to size a large report before fetching rows.",
+                },
             },
             "required": ["report_name"],
         }
@@ -70,14 +84,13 @@ class GenerateReport(BaseTool):
     def execute(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
         """Execute report generation"""
         try:
-            # Import the report implementation
-            from .report_tools import ReportTools
-
             # Execute report using existing implementation
             return ReportTools.execute_report(
                 report_name=arguments.get("report_name"),
                 filters=arguments.get("filters", {}),
                 format=arguments.get("format", "json"),
+                max_rows=arguments.get("max_rows", DEFAULT_MAX_ROWS),
+                summary_only=bool(arguments.get("summary_only", False)),
             )
 
         except Exception as e:
