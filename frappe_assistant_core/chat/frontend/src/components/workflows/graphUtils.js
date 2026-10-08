@@ -6,6 +6,8 @@
  * mapping back to the backend names on serialization.
  */
 
+import { __ } from "@/utils/i18n";
+
 // Backend type ↔ Vue Flow type (avoids Vue Flow reserved names)
 const BACKEND_TO_VF = { input: "workflow-input", output: "workflow-output" };
 const VF_TO_BACKEND = { "workflow-input": "input", "workflow-output": "output" };
@@ -106,6 +108,8 @@ export function getDefaultLabel(type) {
 		agent: "Task",
 		condition: "Condition",
 		transform: "Transform",
+		tool: "Tool",
+		loop: "For each",
 	};
 	return labels[type] || type;
 }
@@ -130,79 +134,129 @@ export function getDefaultConfig(type) {
 				mcp_servers: [],
 				tool_directives: [],
 				use_memory: true,
+				max_tool_calls: 25,
 			};
 		case "condition":
 			return { condition_field: "", condition_operator: "equals", condition_value: "" };
 		case "transform":
 			return { transform_template: "{{ input }}" };
+		case "tool":
+			return { tool_name: "", server: "", arguments: {}, max_rows: 200, output: "table" };
+		case "loop":
+			// The inline agent's keys sit flat in the loop config, the same
+			// shape an agent node uses, so AgentConfig edits them unchanged.
+			return {
+				items_path: "rows",
+				max_items: 50,
+				concurrency: 3,
+				stop_after_failures: 3,
+				system_prompt: "",
+				model_id: "",
+				user_id: "",
+				mcp_servers: [],
+				tool_directives: [],
+				use_memory: false,
+				max_tool_calls: 25,
+			};
 		default:
 			return {};
 	}
 }
 
+/** Engine limits (agent_guards.py, tool_node.py, loop_node.py). The engine clamps too; this keeps the form honest. */
+export const NODE_LIMITS = {
+	tool: { max_rows: { min: 1, max: 2000, default: 200 } },
+	loop: {
+		max_items: { min: 1, max: 500, default: 50 },
+		concurrency: { min: 1, max: 5, default: 3 },
+		stop_after_failures: { min: 1, max: 500, default: 3 },
+	},
+	agent: {
+		max_tool_calls: { min: 1, max: 100, default: 25 },
+		timeout_seconds: { min: 30, max: 3600 },
+	},
+};
+
+export function clampInt(value, { min, max, default: fallback } = {}) {
+	if (value === "" || value === null || value === undefined) return fallback;
+	const n = Math.round(Number(value));
+	if (!Number.isFinite(n)) return fallback;
+	return Math.min(max, Math.max(min, n));
+}
+
 /**
  * Validate graph structure on the frontend (fast, no backend call).
- * Returns { valid: boolean, errors: string[] }.
+ *
+ * Every problem carries the node it belongs to, so the canvas can mark it, and
+ * names that node by its label: ids like agent_1712... mean nothing to a reader.
+ * Returns { valid, errors: string[], issues: [{ nodeId, message }] }.
  */
 export function validateGraph(nodes, edges) {
-	const errors = [];
+	const issues = [];
+	const add = (nodeId, message) => issues.push({ nodeId, message });
+	const labelOf = (n) => n.data?.label || n.id;
+	const result = () => ({
+		valid: issues.length === 0,
+		errors: issues.map((i) => i.message),
+		issues,
+	});
 
 	if (!nodes.length) {
-		return { valid: false, errors: ["Workflow must have at least one node"] };
+		add(null, __("Workflow must have at least one node"));
+		return result();
 	}
 
-	// Check for entry points
 	const targetIds = new Set(edges.map((e) => e.target));
 	const inputNodes = nodes.filter((n) => n.type === "workflow-input" || n.type === "input");
 	const entryNodes = nodes.filter((n) => !targetIds.has(n.id));
 	if (!inputNodes.length && !entryNodes.length) {
-		errors.push(
-			"Workflow must have at least one entry point (input node or node with no incoming edges)"
+		add(
+			null,
+			__(
+				"Workflow must have at least one entry point (input node or node with no incoming edges)"
+			)
 		);
 	}
 
-	// Check agent nodes have system prompts
-	for (const node of nodes) {
-		const bt = toBackendType(node.type);
-		if (bt === "agent" && !node.data?.config?.system_prompt) {
-			errors.push(`Task "${node.data?.label || node.id}" is missing a system prompt`);
+	for (const n of nodes) {
+		const bt = toBackendType(n.type);
+		const config = n.data?.config || {};
+		if (bt === "agent" && !config.system_prompt) {
+			add(n.id, __('Task "{0}" is missing a system prompt', [labelOf(n)]));
+		}
+		if (bt === "tool" && !config.tool_name) {
+			add(n.id, __('Tool step "{0}" has no tool selected', [labelOf(n)]));
+		}
+		if (bt === "loop" && !config.system_prompt) {
+			add(n.id, __('"{0}" has no instructions for each item', [labelOf(n)]));
 		}
 	}
 
-	// Check for self-loops
+	const byId = new Map(nodes.map((n) => [n.id, n]));
 	for (const edge of edges) {
 		if (edge.source === edge.target) {
-			errors.push(`Self-loop detected: node "${edge.source}" connects to itself`);
+			const n = byId.get(edge.source);
+			add(edge.source, __('"{0}" connects to itself', [n ? labelOf(n) : edge.source]));
 		}
 	}
 
-	// Check for orphaned nodes (unreachable from entry points)
 	const adjacency = {};
 	for (const edge of edges) {
-		if (!adjacency[edge.source]) adjacency[edge.source] = [];
-		adjacency[edge.source].push(edge.target);
+		(adjacency[edge.source] ||= []).push(edge.target);
 	}
-
 	const reachable = new Set();
-	const entryIds = inputNodes.length ? inputNodes.map((n) => n.id) : entryNodes.map((n) => n.id);
-
-	const stack = [...entryIds];
+	const stack = (inputNodes.length ? inputNodes : entryNodes).map((n) => n.id);
 	while (stack.length) {
 		const id = stack.pop();
 		if (reachable.has(id)) continue;
 		reachable.add(id);
-		for (const neighbor of adjacency[id] || []) {
-			stack.push(neighbor);
-		}
+		for (const next of adjacency[id] || []) stack.push(next);
+	}
+	for (const n of nodes) {
+		if (!reachable.has(n.id)) add(n.id, __('"{0}" is not connected to the start', [labelOf(n)]));
 	}
 
-	const nodeIds = new Set(nodes.map((n) => n.id));
-	const unreachable = [...nodeIds].filter((id) => !reachable.has(id));
-	if (unreachable.length) {
-		errors.push(`Unreachable nodes: ${unreachable.join(", ")}`);
-	}
-
-	return { valid: errors.length === 0, errors };
+	return result();
 }
 
 /**
@@ -256,6 +310,22 @@ export const NODE_TYPES = [
 		description: "Reshape data with templates",
 		color: "#8b5cf6",
 		iconPath: "M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4",
+	},
+	{
+		type: "tool",
+		label: "Tool",
+		description: "Call one tool directly, no AI, no credits",
+		color: "var(--ql-accent)",
+		iconPath:
+			"M11.42 15.17L17.25 21A2.652 2.652 0 0021 17.25l-5.877-5.877M11.42 15.17l2.496-3.03c.317-.384.74-.626 1.208-.766M11.42 15.17l-4.655 5.653a2.548 2.548 0 11-3.586-3.586l6.837-5.63m5.108-.233c.55-.164 1.163-.188 1.743-.14a4.5 4.5 0 004.486-6.336l-3.276 3.277a3.004 3.004 0 01-2.25-2.25l3.276-3.276a4.5 4.5 0 00-6.336 4.486c.091 1.076-.071 2.264-.904 2.95l-.102.085",
+	},
+	{
+		type: "loop",
+		label: "For each",
+		description: "Run a task once per item in a list",
+		color: "var(--ql-text-secondary)",
+		iconPath:
+			"M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99",
 	},
 	{
 		type: "workflow-output",
