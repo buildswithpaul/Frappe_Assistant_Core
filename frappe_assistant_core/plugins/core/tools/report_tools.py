@@ -270,7 +270,13 @@ class ReportTools:
                 # Found existing prepared report - retrieve cached data
                 result = get_prepared_report_result(report_doc, filters, dn=prepared_report_name)
 
-                if result and result.get("result"):
+                # A report that matched no rows is a finished report. Frappe always
+                # puts a "result" key in the payload and leaves it [] in that case,
+                # and omits the key entirely only when the stored result file was
+                # empty or unreadable — the one case worth regenerating. Testing the
+                # key's presence keeps an empty report from being queued all over
+                # again on every call. See issue #280.
+                if result is not None and result.get("result") is not None:
                     # Successfully retrieved cached data
                     prepared_doc = result.get("doc")
                     return {
@@ -297,7 +303,9 @@ class ReportTools:
                         ignore_prepared_report=True,  # Force direct execution
                     )
 
-                    if direct_result and direct_result.get("result"):
+                    # Zero rows is an answer, not a reason to fall through to a
+                    # background job for a report that just ran. See issue #280.
+                    if direct_result is not None and direct_result.get("result") is not None:
                         return {
                             "result": direct_result.get("result", []),
                             "columns": direct_result.get("columns", []),
@@ -336,7 +344,10 @@ class ReportTools:
                     # Report is ready! Retrieve and return data
                     result = get_prepared_report_result(report_doc, filters, dn=prepared_report_name)
 
-                    if result and result.get("result"):
+                    # Same presence test as the cached branch above: without it a
+                    # report Frappe marked Completed in seconds polls to the full
+                    # timeout purely because it found nothing. See issue #280.
+                    if result is not None and result.get("result") is not None:
                         return {
                             "result": result.get("result", []),
                             "columns": result.get("columns", []),
