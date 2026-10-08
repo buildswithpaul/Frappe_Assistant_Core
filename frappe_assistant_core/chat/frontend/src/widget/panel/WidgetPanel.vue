@@ -30,6 +30,9 @@
 				</button>
 			</div>
 		</header>
+		<!-- FAC Chat's notification host: it polls notifications (Spotlight reads them too) and
+		     shows outage and high-priority banners inside the panel, never on the Desk page. -->
+		<NotificationHost />
 		<ConnectionBanners
 			:connection-visible="chatStore.connectionVisible"
 			:socket-error="chatStore.socketError"
@@ -117,6 +120,7 @@ import { t } from "./i18n.js";
 import { deskRouteFor } from "./deskLinks.js";
 import { isStoppedTurn, turnWaitingOn } from "@/utils/turnState";
 import SpotlightHost from "@/components/spotlight/SpotlightHost.vue";
+import NotificationHost from "@/components/notifications/NotificationHost.vue";
 
 const chatStore = useChatStore();
 const userStore = useUserStore();
