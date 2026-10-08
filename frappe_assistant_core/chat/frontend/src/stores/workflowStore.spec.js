@@ -213,3 +213,49 @@ describe("workflowStore outage vs empty", () => {
 		expect(store.listError).toBe(null);
 	});
 });
+
+describe("workflowStore tool inventory", () => {
+	let store;
+	const result = (name) => ({ success: true, tools: [{ name, server: "Main Frappe Site" }] });
+
+	beforeEach(() => {
+		setActivePinia(createPinia());
+		store = useWorkflowStore();
+		userApi.listTools.mockReset();
+	});
+
+	it("asks for the named runtime user's tools", async () => {
+		userApi.listTools.mockResolvedValue(result("a"));
+		await store.loadTools("ops@example.com");
+		expect(userApi.listTools).toHaveBeenCalledWith("ops@example.com");
+	});
+
+	it("does not refetch for the same runtime user, but does for another", async () => {
+		userApi.listTools.mockResolvedValueOnce(result("a")).mockResolvedValueOnce(result("b"));
+		await store.loadTools("ops@example.com");
+		await store.loadTools("ops@example.com");
+		expect(userApi.listTools).toHaveBeenCalledTimes(1);
+		await store.loadTools("sales@example.com");
+		expect(userApi.listTools).toHaveBeenCalledTimes(2);
+		expect(store.availableTools[0].name).toBe("b");
+	});
+
+	it("refetches when forced, e.g. after reconnecting a server", async () => {
+		userApi.listTools.mockResolvedValue(result("a"));
+		await store.loadTools(null);
+		await store.loadTools(null, { force: true });
+		expect(userApi.listTools).toHaveBeenCalledTimes(2);
+	});
+
+	it("lets the latest runtime user win when responses arrive out of order", async () => {
+		let releaseFirst;
+		userApi.listTools
+			.mockReturnValueOnce(new Promise((resolve) => (releaseFirst = resolve)))
+			.mockResolvedValueOnce(result("second"));
+		const first = store.loadTools("ops@example.com");
+		await store.loadTools("sales@example.com");
+		releaseFirst(result("first"));
+		await first;
+		expect(store.availableTools[0].name).toBe("second");
+	});
+});

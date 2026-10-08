@@ -379,9 +379,10 @@ export const workflows = {
 		}),
 
 	// Tool resolution
-	resolveWorkflowTools: (toolDirectives) =>
+	resolveWorkflowTools: (toolDirectives, runtimeUser = null) =>
 		baseCall("frappe_assistant_core.chat.api.resolve_workflow_tools", {
 			tool_directives: toolDirectives,
+			runtime_user: runtimeUser,
 		}),
 
 	// Moderation — routes through marketplace endpoints

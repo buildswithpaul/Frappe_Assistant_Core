@@ -57,6 +57,10 @@ export const useWorkflowStore = defineStore("workflows", () => {
 	// empty toolbox apart from an expired token, so the config panel needs it.
 	const toolsResult = ref(null);
 	const isLoadingTools = ref(false);
+	// Whose inventory availableTools holds, and the bookkeeping that keeps a stale response out.
+	const toolsRuntimeUser = ref(null);
+	let toolsLoadingFor = null;
+	let toolsRequestId = 0;
 
 	// Template state
 	const templates = ref([]);
@@ -361,12 +365,28 @@ export const useWorkflowStore = defineStore("workflows", () => {
 		}
 	}
 
-	async function loadTools() {
-		if (isLoadingTools.value) return;
+	/**
+	 * Load the tool inventory of `runtimeUser` (null: the viewer's own). The
+	 * result is cached per runtime user; `force` re-fetches, e.g. after a
+	 * server was reconnected. A slower, older response never overwrites the
+	 * inventory of the user asked about last.
+	 */
+	async function loadTools(runtimeUser = null, { force = false } = {}) {
+		const key = runtimeUser || null;
+		if (!force) {
+			if (isLoadingTools.value && toolsLoadingFor === key) return;
+			if (!isLoadingTools.value && toolsRuntimeUser.value === key && toolsResult.value?.success) {
+				return;
+			}
+		}
+		const requestId = ++toolsRequestId;
+		toolsLoadingFor = key;
 		isLoadingTools.value = true;
 		try {
-			const result = await api.user.listTools();
+			const result = await api.user.listTools(key);
+			if (requestId !== toolsRequestId) return;
 			toolsResult.value = result || null;
+			toolsRuntimeUser.value = key;
 			if (result?.success) {
 				availableTools.value = result.tools || [];
 				// Derive MCP servers from tools for backward compat
@@ -379,11 +399,13 @@ export const useWorkflowStore = defineStore("workflows", () => {
 				availableTools.value = [];
 			}
 		} catch (err) {
+			if (requestId !== toolsRequestId) return;
 			logger.error("Failed to load tools:", err);
 			availableTools.value = [];
 			toolsResult.value = { success: false, tools: [], errors: err.message };
+			toolsRuntimeUser.value = key;
 		} finally {
-			isLoadingTools.value = false;
+			if (requestId === toolsRequestId) isLoadingTools.value = false;
 		}
 	}
 
@@ -696,6 +718,7 @@ export const useWorkflowStore = defineStore("workflows", () => {
 		availableTools,
 		toolsResult,
 		isLoadingTools,
+		toolsRuntimeUser,
 
 		// Template state
 		templates,
