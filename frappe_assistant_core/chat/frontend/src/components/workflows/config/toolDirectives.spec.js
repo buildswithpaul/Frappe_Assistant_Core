@@ -7,6 +7,8 @@ import {
 	serverForDirective,
 	deriveMCPServers,
 	resolutionIndex,
+	directiveKey,
+	toolKey,
 	toolDiscoveryState,
 	serversNeedingReconnect,
 } from "@/components/workflows/config/toolDirectives";
@@ -16,6 +18,14 @@ const LIST_DOCUMENTS = {
 	name: "Main Frappe Site:list_documents",
 	original_name: "list_documents",
 	server: "Main Frappe Site",
+	description: "List documents of a doctype",
+};
+
+// The same tool on a second connected Frappe site.
+const OTHER_LIST_DOCUMENTS = {
+	name: "MFG Demo:list_documents",
+	original_name: "list_documents",
+	server: "MFG Demo",
 	description: "List documents of a doctype",
 };
 
@@ -32,6 +42,10 @@ describe("makeDirective", () => {
 
 	it("does not write input_guidance", () => {
 		expect(makeDirective(LIST_DOCUMENTS)).not.toHaveProperty("input_guidance");
+	});
+
+	it("records the server the tool was picked from", () => {
+		expect(makeDirective(OTHER_LIST_DOCUMENTS).server).toBe("MFG Demo");
 	});
 
 	it("falls back to name when a tool carries no original_name", () => {
@@ -63,6 +77,13 @@ describe("normalizeDirectives", () => {
 		expect(changed).toBe(true);
 	});
 
+	it("keeps the stripped prefix as the server it names", () => {
+		const { directives } = normalizeDirectives([
+			{ tool_name: "MFG Demo:list_documents", capability: "list_documents" },
+		]);
+		expect(directives[0].server).toBe("MFG Demo");
+	});
+
 	it("drops input_guidance", () => {
 		const { directives, changed } = normalizeDirectives([
 			{ tool_name: "list_documents", input_guidance: {} },
@@ -87,6 +108,15 @@ describe("deriveMCPServers", () => {
 			[]
 		);
 		expect(servers).toEqual(["Main Frappe Site"]);
+	});
+
+	it("scopes to the site the tool was picked from, not the first one offering it", () => {
+		const servers = deriveMCPServers(
+			[makeDirective(OTHER_LIST_DOCUMENTS)],
+			[LIST_DOCUMENTS, OTHER_LIST_DOCUMENTS],
+			[]
+		);
+		expect(servers).toEqual(["MFG Demo"]);
 	});
 
 	it("skips (returns null) when the tool inventory failed to load", () => {
@@ -116,6 +146,15 @@ describe("serverForDirective", () => {
 		);
 	});
 
+	it("prefers the server the directive names", () => {
+		expect(
+			serverForDirective(
+				{ tool_name: "list_documents", server: "MFG Demo" },
+				[LIST_DOCUMENTS, OTHER_LIST_DOCUMENTS]
+			)
+		).toBe("MFG Demo");
+	});
+
 	it("falls back to the prefix when the tool is not in the inventory", () => {
 		expect(serverForDirective({ tool_name: "Brave:web_search" }, [])).toBe("Brave");
 	});
@@ -130,7 +169,27 @@ describe("resolutionIndex", () => {
 		const index = resolutionIndex([
 			{ tool_name: "Main Frappe Site:list_documents", status: "resolved" },
 		]);
-		expect(index.get("list_documents").status).toBe("resolved");
+		expect(index.get(directiveKey({ tool_name: "list_documents" })).status).toBe("resolved");
+	});
+
+	it("keeps the same tool on two sites apart", () => {
+		const index = resolutionIndex([
+			{ tool_name: "list_documents", server: "Main Frappe Site", status: "resolved" },
+			{ tool_name: "list_documents", server: "MFG Demo", status: "missing" },
+		]);
+		const pinned = (server) => directiveKey({ tool_name: "list_documents", server });
+		expect(index.get(pinned("Main Frappe Site")).status).toBe("resolved");
+		expect(index.get(pinned("MFG Demo")).status).toBe("missing");
+	});
+});
+
+describe("toolKey", () => {
+	it("matches a picked tool to the directive made from it", () => {
+		expect(toolKey(OTHER_LIST_DOCUMENTS)).toBe(directiveKey(makeDirective(OTHER_LIST_DOCUMENTS)));
+	});
+
+	it("tells the same tool on two sites apart", () => {
+		expect(toolKey(LIST_DOCUMENTS)).not.toBe(toolKey(OTHER_LIST_DOCUMENTS));
 	});
 });
 

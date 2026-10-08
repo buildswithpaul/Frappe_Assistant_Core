@@ -68,10 +68,12 @@
 
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from "vue";
+import { toolKey } from "./toolDirectives";
 
 const props = defineProps({
 	allTools: { type: Array, default: () => [] },
-	selectedToolNames: { type: Set, required: true },
+	/** directiveKey of every configured tool — the same name on another site is still pickable. */
+	selectedToolKeys: { type: Set, required: true },
 	isLoading: { type: Boolean, default: false },
 	modelValue: { type: Boolean, default: false },
 	/** What "no tools" actually means here — a failure is not an empty toolbox. */
@@ -119,7 +121,7 @@ const filteredPickerTools = computed(() => {
 // Directives store the bare tool name (what the engine resolves against),
 // so membership is tested on that, not on the server-prefixed name.
 function isSelected(tool) {
-	return props.selectedToolNames.has(tool.original_name || tool.name);
+	return props.selectedToolKeys.has(toolKey(tool));
 }
 
 function handleSelect(tool) {

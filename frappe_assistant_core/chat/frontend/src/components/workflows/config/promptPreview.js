@@ -10,6 +10,8 @@
  * :build_tool_directive_prompt.
  */
 
+import { directiveKey } from "./toolDirectives";
+
 const PLACEHOLDER = /\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g;
 
 /**
@@ -32,14 +34,14 @@ export function substituteVariables(text, variables = {}) {
  * The block the engine appends to the node's system prompt.
  *
  * @param {Array} directives - the node's tool_directives
- * @param {Map}   resolution - directive name -> resolve_workflow_tools entry
+ * @param {Map}   resolution - directiveKey -> resolve_workflow_tools entry
  */
 export function buildToolDirectiveBlock(directives = [], resolution = new Map()) {
 	if (!directives.length) return "";
 
-	const nameFor = (d) => resolution.get(d.tool_name)?.prefixed_name || d.tool_name;
+	const nameFor = (d) => resolution.get(directiveKey(d))?.prefixed_name || d.tool_name;
 	const isResolved = (d) => {
-		const entry = resolution.get(d.tool_name);
+		const entry = resolution.get(directiveKey(d));
 		// No resolution data yet — assume the tool exists rather than
 		// previewing a failure the author has no evidence for.
 		return !entry || entry.status === "resolved";
@@ -93,7 +95,7 @@ export function buildResolvedPrompt({
 	const text = block ? `${substituted}\n\n${block}` : substituted;
 
 	const missingTools = directives
-		.filter((d) => resolution.get(d.tool_name)?.status === "missing")
+		.filter((d) => resolution.get(directiveKey(d))?.status === "missing")
 		.map((d) => d.tool_name);
 
 	return {
