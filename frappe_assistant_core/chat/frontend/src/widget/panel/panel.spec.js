@@ -41,7 +41,7 @@ import { DAILY_KEY, localDate } from "@/components/spotlight/spotlightRules";
 // A panel left mounted keeps its document-level listeners alive into the next test.
 enableAutoUnmount(afterEach);
 
-const stubs = { ChatInterface: true, InputArea: true, CreditMeter: true, SpotlightHost: true };
+const stubs = { ChatInterface: true, InputArea: true, CreditMeter: true, SpotlightHost: true, NotificationHost: true };
 const SendStub = { template: "<i />" };
 
 describe("router shim", () => {
@@ -648,24 +648,6 @@ describe("panel bootstrap", () => {
 		expect(w.findComponent(WidgetPanel).exists()).toBe(false);
 	});
 
-	it("loads announcements itself, so the widget's Spotlight has something to show", async () => {
-		// The SPA loads notifications through NotificationHost, which the panel does not mount. The
-		// widget's notification store stayed empty and an active announcement never reached Spotlight.
-		const announcement = { id: "n1", display_style: "modal", title: "Agents", dismissible: true };
-		api.notifications.get.mockResolvedValue({ user: "u@x.test", notifications: [announcement] });
-		mount(PanelApp, { global: { stubs: gateless } });
-		await flushPromises();
-		expect(useNotificationStore().activeNotifications.map((n) => n.id)).toEqual(["n1"]);
-	});
-
-	it("stops polling announcements when the panel closes", async () => {
-		const w = mount(PanelApp, { global: { stubs: gateless } });
-		await flushPromises();
-		const stop = vi.spyOn(useNotificationStore(), "stopPolling");
-		w.unmount();
-		expect(stop).toHaveBeenCalled();
-	});
-
 	it("never mounts the full-screen Spotlight over Desk", async () => {
 		// The widget shares Desk's page; a modal overlay would cover the form the user is working on.
 		// Content is set directly here; production reaches it through evaluate() on a loaded
@@ -695,6 +677,41 @@ describe("widget Spotlight placement", () => {
 	beforeEach(() => {
 		setActivePinia(createPinia());
 		window.frappe = { session: { user: "u@x.test" }, get_route: () => [] };
+	});
+
+	const panelStubs = { ChatInterface: true, InputArea: true, CreditMeter: true, SpotlightHost: true };
+
+	it("loads announcements itself, so the widget's Spotlight has something to show", async () => {
+		// FAC Chat loads notifications through NotificationHost; the panel never mounted it, so the
+		// widget's store stayed empty and an active announcement never reached Spotlight.
+		const announcement = { id: "n1", display_style: "modal", title: "Agents", dismissible: true };
+		api.notifications.get.mockResolvedValue({ user: "u@x.test", notifications: [announcement] });
+		mount(WidgetPanel, { global: { stubs: panelStubs } });
+		await flushPromises();
+		expect(useNotificationStore().activeNotifications.map((n) => n.id)).toEqual(["n1"]);
+	});
+
+	it("stops polling announcements when the panel closes", async () => {
+		const w = mount(WidgetPanel, { global: { stubs: panelStubs } });
+		await flushPromises();
+		const stop = vi.spyOn(useNotificationStore(), "stopPolling");
+		w.unmount();
+		expect(stop).toHaveBeenCalled();
+	});
+
+	it("shows high-priority and outage banners inside the panel", async () => {
+		useUserStore().registrationStatus = "ready";
+		api.notifications.get.mockResolvedValue({
+			user: "u@x.test",
+			notifications: [
+				{ id: "hp", type: "info", priority: "high", display_style: "banner", title: "Planned upgrade tonight" },
+				{ id: "out", type: "outage", priority: "high", title: "Assistant is degraded" },
+			],
+		});
+		const w = mount(WidgetPanel, { global: { stubs: panelStubs } });
+		await flushPromises();
+		expect(w.text()).toContain("Planned upgrade tonight");
+		expect(w.text()).toContain("Assistant is degraded");
 	});
 
 	it("shows a due Spotlight as a card inside the panel, not over Desk", async () => {
