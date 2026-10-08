@@ -22,6 +22,7 @@ NON_ADMIN = "marketplace-viewer@example.com"
 
 
 def _make_non_admin(email):
+    # Production: any tenant user without the System Manager role (a plain member).
     if not frappe.db.exists("User", email):
         frappe.get_doc(
             {"doctype": "User", "email": email, "first_name": "Viewer", "send_welcome_email": 0}
@@ -76,6 +77,7 @@ class TestMarketplaceGuards(BaseAssistantTest):
         self.addCleanup(frappe.set_user, "Administrator")
 
     def _as(self, user, client):
+        # Production gets this client from get_fac_cloud_client() once the site is registered.
         frappe.set_user(user)
         p = patch(CLIENT, return_value=client)
         p.start()
@@ -93,6 +95,15 @@ class TestMarketplaceGuards(BaseAssistantTest):
         self._as(NON_ADMIN, client)
         marketplace.import_listing(name="LST-2")
         self.assertEqual(len(client.called("import_listing")), 1)
+
+    def test_import_denies_non_admin_when_listing_is_unclassifiable(self):
+        for bad in (None, {}, {"name": "LST-1"}, {"listing_type": "Mystery"}):
+            client = _MarketClient("Workflow")
+            client.get_listing = lambda _bad=bad, **kw: _bad
+            self._as(NON_ADMIN, client)
+            with self.assertRaises(frappe.PermissionError, msg=repr(bad)):
+                marketplace.import_listing(name="LST-1")
+            self.assertEqual(client.called("import_listing"), [], msg=repr(bad))
 
     def test_admin_imports_a_workflow(self):
         client = _MarketClient("Workflow")
@@ -117,7 +128,8 @@ class TestMarketplaceErrorsAreClean(BaseAssistantTest):
         frappe.set_user("Administrator")
 
     def _import_raising(self, error):
-        # The SDK raises ARAPIError for any non-2xx answer from FAC Cloud.
+        # The SDK raises ARAPIError for non-2xx answers other than 401 (ARAuthenticationError),
+        # 429 and timeouts; response_data holds the parsed JSON body when there is one.
         client = _MarketClient(raise_on={"import_listing": error})
         with patch(CLIENT, return_value=client), self.assertRaises(frappe.ValidationError) as caught:
             marketplace.import_listing(name="LST-1")
@@ -125,7 +137,13 @@ class TestMarketplaceErrorsAreClean(BaseAssistantTest):
 
     def test_a_4xx_shows_fac_clouds_own_message(self):
         message = self._import_raising(
-            ARAPIError("Your plan does not include this listing.", status_code=403)
+            ARAPIError(
+                "Your plan does not include this listing.",
+                status_code=403,
+                response_data={
+                    "exception": "frappe.exceptions.ValidationError: Your plan does not include this listing."
+                },
+            )
         )
         self.assertIn("Your plan does not include this listing.", message)
         self.assertNotIn("HTTP_403", message)
@@ -139,7 +157,26 @@ class TestMarketplaceErrorsAreClean(BaseAssistantTest):
         self.assertIn("marketplace could not complete", message)
 
     def test_a_missing_listing_reads_as_not_found(self):
-        client = _MarketClient(raise_on={"get_listing": ARAPIError("Listing not found", status_code=404)})
+        client = _MarketClient(
+            raise_on={
+                "get_listing": ARAPIError(
+                    "Listing not found",
+                    status_code=404,
+                    response_data={"exception": "frappe.exceptions.DoesNotExistError: Listing not found"},
+                )
+            }
+        )
         with patch(CLIENT, return_value=client), self.assertRaises(frappe.ValidationError) as caught:
             marketplace.import_listing(name="LST-404")
         self.assertIn("Listing not found", str(caught.exception))
+
+    def test_a_non_json_4xx_never_shows_the_request_url(self):
+        message = self._import_raising(
+            ARAPIError(
+                "404 Client Error: Not Found for url: https://ar.example/api/method/x?tenant_id=T",
+                status_code=404,
+            )
+        )
+        self.assertNotIn("ar.example", message)
+        self.assertNotIn("tenant_id", message)
+        self.assertIn("marketplace could not complete", message)

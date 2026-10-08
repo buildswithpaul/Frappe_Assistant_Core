@@ -28,6 +28,10 @@ def _get_client():
     return client
 
 
+# Types cloned into the caller's own library; every other type, known or not, needs an admin.
+_MEMBER_IMPORTABLE_TYPES = frozenset({"Prompt", "Skill"})
+
+
 def _require_admin() -> None:
     """Same gate as create_workflow: these calls create or change tenant workflows and listings."""
     if "System Manager" not in frappe.get_roles():
@@ -37,14 +41,15 @@ def _require_admin() -> None:
 def _marketplace_failure(context: str, e: Exception) -> NoReturn:
     """Log the full error to the Error Log; show the user only what FAC Cloud wrote for them.
 
-    A 4xx carries a message authored for the user ("Listing not found", a
-    plan-tier refusal). Anything else (a 5xx, a timeout, a bug here) names
-    internal tables, modules or SQL, so it is replaced with a generic sentence.
+    A 4xx whose body FAC Cloud returned as JSON carries a message authored for
+    the user ("Listing not found", a plan-tier refusal). Anything else (a 5xx,
+    a timeout, a non-JSON 4xx whose text embeds the request URL, a bug here)
+    is replaced with a generic sentence.
     Call from inside an ``except`` block so the traceback is logged too.
     """
     _log("FACO Marketplace", f"{context}: {e!s}")
     status = getattr(e, "status_code", None)
-    if isinstance(e, ARAPIError) and status and 400 <= status < 500:
+    if isinstance(e, ARAPIError) and status and 400 <= status < 500 and e.response_data:
         message = _redact_upstream_internals(_strip_noise(getattr(e, "message", "") or ""))
         if message:
             frappe.throw(message)
@@ -139,12 +144,15 @@ def import_listing(
     try:
         client = _get_client()
         user_id = _ar_user_id(frappe.session.user)
-        listing = client.get_listing(name=name, user_id=user_id, include_source=True) or {}
+        listing = client.get_listing(name=name, user_id=user_id, include_source=True)
+        listing_type = listing.get("listing_type") if isinstance(listing, dict) else None
+        if listing_type not in _MEMBER_IMPORTABLE_TYPES:
+            _require_admin()
         return client.import_listing(
             user_id=user_id,
             name=name,
             new_title=new_title,
-            variables=_import_variables(listing, variables),
+            variables=_import_variables(variables),
             default_model_id=default_model_id,
         )
     except (frappe.ValidationError, frappe.PermissionError):
@@ -153,10 +161,8 @@ def import_listing(
         _marketplace_failure("Error importing listing", e)
 
 
-def _import_variables(listing: dict, variables: str | dict | None) -> str | None:
-    """Gate a workflow import and serialise its variables for FAC Cloud."""
-    if listing.get("listing_type") == "Workflow":
-        _require_admin()
+def _import_variables(variables: str | dict | None) -> str | None:
+    """Serialise import variables for FAC Cloud."""
     if not variables:
         return None
     return json.dumps(variables) if isinstance(variables, dict) else variables
