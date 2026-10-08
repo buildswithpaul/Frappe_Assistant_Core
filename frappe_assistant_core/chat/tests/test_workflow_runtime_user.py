@@ -104,3 +104,93 @@ class TestRuntimeUserIsMapped(BaseAssistantTest):
             user_id="Administrator",
         )
         self.assertIsNone(self._sent("run_workflow_node").get("user_id"))
+
+
+VIEWER = "runtime-viewer@example.com"
+RUNTIME = "runtime-user@example.com"
+
+
+def _ensure_user(email, roles=()):
+    if not frappe.db.exists("User", email):
+        frappe.get_doc(
+            {"doctype": "User", "email": email, "first_name": "Probe", "send_welcome_email": 0}
+        ).insert(ignore_permissions=True)
+    user = frappe.get_doc("User", email)
+    user.set("roles", [{"role": r} for r in roles])
+    user.save(ignore_permissions=True)
+
+
+class _ToolClient:
+    def __init__(self):
+        self.calls = []
+
+    def list_tools(self, **kwargs):
+        self.calls.append(("list_tools", kwargs))
+        return {"tools": [{"name": "site:list_documents"}], "servers_queried": ["site"], "errors": None}
+
+    def resolve_workflow_tools(self, **kwargs):
+        self.calls.append(("resolve_workflow_tools", kwargs))
+        return {
+            "resolved": [{"tool_name": "list_documents", "runs_unattended": True}],
+            "all_tools_available": True,
+            "missing_tools": [],
+            "ambiguous_tools": [],
+        }
+
+
+class TestToolChecksUseTheRuntimeUser(BaseAssistantTest):
+    """Real users and the real _ar_user_id: only the FAC Cloud client is stubbed."""
+
+    def setUp(self):
+        super().setUp()
+        # nosemgrep: frappe-setuser — test bootstrap; isolated transaction
+        frappe.set_user("Administrator")
+        _ensure_user(VIEWER)
+        _ensure_user(RUNTIME)
+        self.addCleanup(frappe.set_user, "Administrator")
+        self.client = _ToolClient()
+        p = patch(CLIENT, return_value=self.client)
+        p.start()
+        self.addCleanup(p.stop)
+
+    def _user_sent(self, method):
+        return next(kw["user_id"] for name, kw in self.client.calls if name == method)
+
+    def test_admin_lists_the_runtime_users_tools(self):
+        result = workflows.list_user_tools(runtime_user=RUNTIME)
+        self.assertTrue(result["success"])
+        self.assertEqual(self._user_sent("list_tools"), RUNTIME)
+
+    def test_admin_resolves_against_the_runtime_user(self):
+        workflows.resolve_workflow_tools(
+            tool_directives='[{"tool_name": "list_documents"}]', runtime_user=RUNTIME
+        )
+        self.assertEqual(self._user_sent("resolve_workflow_tools"), RUNTIME)
+
+    def test_resolve_passes_the_unattended_data_through(self):
+        result = workflows.resolve_workflow_tools(
+            tool_directives='[{"tool_name": "list_documents"}]', runtime_user=RUNTIME
+        )
+        self.assertTrue(result["resolved"][0]["runs_unattended"])
+        self.assertEqual(result["ambiguous_tools"], [])
+
+    def test_without_runtime_user_the_caller_is_used(self):
+        # Regression guard: the caller's identity was already what was sent.
+        frappe.set_user(VIEWER)
+        workflows.list_user_tools()
+        self.assertEqual(self._user_sent("list_tools"), VIEWER)
+
+    def test_viewer_may_name_themselves(self):
+        frappe.set_user(VIEWER)
+        workflows.list_user_tools(runtime_user=VIEWER)
+        self.assertEqual(self._user_sent("list_tools"), VIEWER)
+
+    def test_viewer_cannot_read_another_users_inventory(self):
+        frappe.set_user(VIEWER)
+        # list_user_tools turns every exception into a failure envelope; the
+        # permission check must sit outside that, or a 403 reads as "no tools".
+        with self.assertRaises(frappe.PermissionError):
+            workflows.list_user_tools(runtime_user=RUNTIME)
+        with self.assertRaises(frappe.PermissionError):
+            workflows.resolve_workflow_tools(tool_directives='[{"tool_name": "x"}]', runtime_user=RUNTIME)
+        self.assertEqual(self.client.calls, [])

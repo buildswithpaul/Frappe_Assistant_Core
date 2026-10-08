@@ -207,6 +207,23 @@ def _ar_user_id(user=None):
     return email or user
 
 
+def _runtime_ar_user_id(runtime_user: str | None) -> str:
+    """AR identity whose tools a workflow view should check.
+
+    A workflow runs as its runtime user, not as whoever has the builder open.
+    Reading another user's MCP inventory is an admin action; reading your own
+    never is.
+    """
+    caller = _ar_user_id(frappe.session.user)
+    if not runtime_user:
+        return caller
+
+    target = _ar_user_id(runtime_user)
+    if target != caller and "System Manager" not in frappe.get_roles():
+        frappe.throw(_("Only System Managers can check another user's tools."), frappe.PermissionError)
+    return target
+
+
 def _is_tenant_owner(ar_user_id):
     """True if `ar_user_id` is this tenant's owner per AR.
 
