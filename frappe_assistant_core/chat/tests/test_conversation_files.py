@@ -25,6 +25,11 @@ from frappe_assistant_core.chat.doctype.fac_chat_message.fac_chat_message import
 from frappe_assistant_core.tests.base_test import BaseAssistantTest
 
 
+def _unique(body: str) -> str:
+    # Frappe content-addresses uploads: identical bytes share one file_url across tests.
+    return f"{body}\n{frappe.generate_hash(length=8)}"
+
+
 class ConversationFilesTestCase(BaseAssistantTest):
     def setUp(self):
         super().setUp()
@@ -32,25 +37,27 @@ class ConversationFilesTestCase(BaseAssistantTest):
         self.session = f"conversation-files-{frappe.generate_hash(length=8)}"
         self.addCleanup(live_turn.clear, self.session)
 
-    def _user_message(self, text: str, attach: tuple[str, str] | None = None) -> str:
+    def _upload(self, file_name: str, body: str) -> dict:
+        with patch(
+            "frappe_assistant_core.chat.api.settings.access.can_use_faco",
+            return_value={"can_use": True},
+        ):
+            uploaded = upload_message_file(
+                file_data=base64.b64encode(body.encode()).decode(),
+                file_name=file_name,
+                content_type="text/plain",
+            )
+        self.addCleanup(frappe.cache.delete_value, f"fac_chat_file_text:{uploaded['file']['name']}")
+        return uploaded["file"]
+
+    def _user_message(
+        self, text: str, attach: tuple[str, str] | None = None, session: str | None = None
+    ) -> str:
         """A user turn as send_message persists it, with a file uploaded and linked the same way."""
-        msg = FACChatMessage.create_message(session_id=self.session, role="user", content=text)
+        msg = FACChatMessage.create_message(session_id=session or self.session, role="user", content=text)
         if attach:
             file_name, body = attach
-            # Content is unique per test: Frappe content-addresses uploads, so identical bytes
-            # would share one File across tests.
-            body = f"{body}\n{frappe.generate_hash(length=8)}"
-            with patch(
-                "frappe_assistant_core.chat.api.settings.access.can_use_faco",
-                return_value={"can_use": True},
-            ):
-                uploaded = upload_message_file(
-                    file_data=base64.b64encode(body.encode()).decode(),
-                    file_name=file_name,
-                    content_type="text/plain",
-                )
-            self.file = uploaded["file"]
-            self.addCleanup(frappe.cache.delete_value, f"fac_chat_file_text:{self.file['name']}")
+            self.file = self._upload(file_name, body)
             _attach_files_to_message([self.file["file_url"]], msg.name)
         return msg.name
 
@@ -66,7 +73,9 @@ class ConversationFilesTestCase(BaseAssistantTest):
 class TestFilesStayInTheConversation(ConversationFilesTestCase):
     def setUp(self):
         super().setUp()
-        self._user_message("Can you summarize this receipt?", attach=("receipt.txt", "Invoice ZX-4417"))
+        self._user_message(
+            "Can you summarize this receipt?", attach=("receipt.txt", _unique("Invoice ZX-4417"))
+        )
 
     def test_a_later_turn_still_sees_the_receipt_and_its_file_id(self):
         addendum = self._relayed(
@@ -109,12 +118,12 @@ class TestConversationFilesScope(ConversationFilesTestCase):
         self.assertEqual(conversation_files_addendum(self.session, frappe.session.user), "")
 
     def test_another_user_never_sees_the_conversations_files(self):
-        self._user_message("Summarize", attach=("mine.txt", "private numbers"))
+        self._user_message("Summarize", attach=("mine.txt", _unique("private numbers")))
 
         self.assertEqual(conversation_files_addendum(self.session, "someone.else@example.com"), "")
 
     def test_a_large_file_is_truncated_and_still_listed(self):
-        self._user_message("Read this", attach=("big.txt", "x" * 500))
+        self._user_message("Read this", attach=("big.txt", _unique("x" * 500)))
 
         with patch.object(conversation_files, "MAX_FILE_CHARS", 100):
             addendum = conversation_files_addendum(self.session, frappe.session.user)
@@ -122,3 +131,28 @@ class TestConversationFilesScope(ConversationFilesTestCase):
         self.assertIn(f"File ID: {self.file['name']}", addendum)
         self.assertIn("[Truncated", addendum)
         self.assertNotIn("x" * 101, addendum)
+
+
+class TestTheSameFileInTwoConversations(ConversationFilesTestCase):
+    def test_sending_it_again_leaves_the_first_conversation_its_copy(self):
+        # Re-sending a receipt is common, and identical bytes get the same file_url.
+        body = _unique("Receipt ST-88231")
+        first_message = self._user_message("Summarize this", attach=("receipt.txt", body))
+        first_file = self.file["name"]
+        other_session = f"conversation-files-{frappe.generate_hash(length=8)}"
+        second_message = self._user_message(
+            "And this one", attach=("receipt.txt", body), session=other_session
+        )
+
+        self.assertEqual(frappe.db.get_value("File", first_file, "attached_to_name"), first_message)
+        self.assertEqual(
+            frappe.get_all(
+                "File",
+                filters={"attached_to_doctype": "FAC Chat Message", "attached_to_name": second_message},
+                pluck="name",
+            ),
+            [self.file["name"]],
+        )
+        self.assertIn(
+            f"File ID: {first_file}", conversation_files_addendum(self.session, frappe.session.user)
+        )

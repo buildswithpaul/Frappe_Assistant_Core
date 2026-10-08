@@ -95,16 +95,29 @@ def _attach_files_to_message(file_urls: list[str], message_name: str) -> int:
 
     Clearing ``fac_pending_chat_attachment`` is what takes the file out of the
     orphan sweep's reach — uploads are flagged on selection, not on send.
+
+    Only a pending upload is linked, one per URL. Frappe content-addresses uploads, so a
+    receipt sent again shares its file_url with the copy already linked to an earlier
+    message; matching on the URL alone moved that copy out of its own conversation.
     """
-    file_docs = frappe.get_all(
+    pending = frappe.get_all(
         "File",
-        filters={"file_url": ["in", file_urls], "owner": frappe.session.user},
+        filters={
+            "file_url": ["in", file_urls],
+            "owner": frappe.session.user,
+            "fac_pending_chat_attachment": 1,
+        },
         fields=["name", "file_url"],
+        order_by="creation desc",
         limit_page_length=0,
     )
+    # Newest first: the latest upload of each URL is the one the composer just made.
+    latest = {}
+    for f in pending:
+        latest.setdefault(f.file_url, f)
 
     linked = 0
-    for file_doc in file_docs:
+    for file_doc in latest.values():
         try:
             frappe.db.set_value(
                 "File",
