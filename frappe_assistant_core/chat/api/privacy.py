@@ -152,7 +152,9 @@ def erase_my_data(password: str | None = None) -> dict:
 
     # 4. Delete File docs through the ORM so the on_trash hook wipes
     #    the backing bytes from disk. Bulk db.delete would leave files
-    #    orphaned on the filesystem.
+    #    orphaned on the filesystem. A chat file the user attached to a
+    #    business document (attach_chat_file) keeps its bytes: that copy
+    #    is a File of the document, not of the chat, and shares the content.
     files_deleted = 0
     for fname in file_names:
         try:
