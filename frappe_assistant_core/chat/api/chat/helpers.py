@@ -14,6 +14,8 @@ import json
 
 import frappe
 
+from frappe_assistant_core.chat.api.chat import live_turn
+
 
 def _is_processing_restricted(user: str | None = None) -> bool:
     """FACO-M15: return True when the user has set GDPR Art. 18 restriction.
@@ -42,7 +44,13 @@ def _emit_socket_event(session_id, data):
     events for one tab/conversation never reach other tabs the same user has
     open. We pass ``room=`` directly (rather than ``task_id=``) because it is
     more explicit about scoping — these aren't real background tasks.
+
+    From a relay thread, the event is numbered with its turn and folded into the
+    live snapshot (``live_turn``), so a surface that joins mid-turn can catch up.
     """
+    live = live_turn.current(session_id)
+    if live is not None:
+        live.stamp(data)
     try:
         frappe.publish_realtime(
             event="faco_message_stream",
@@ -52,6 +60,8 @@ def _emit_socket_event(session_id, data):
         )
     except Exception as e:
         frappe.log_error(title="FACO Socket Error", message=f"Error emitting socket event: {e!s}")
+    if live is not None:
+        live.record(data)
 
 
 def _log_stream_error_detail(data: dict) -> None:

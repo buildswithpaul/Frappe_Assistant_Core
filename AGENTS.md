@@ -158,6 +158,19 @@ def my_endpoint(doctype: str, filters: dict | None = None):
   raises `PageDoesNotExistError` until an administrator switches chat on.
 - **Clear caches after changing a DocType**: `bench clear-cache && bench restart`.
 
+### Vue components (FAC Chat frontend)
+
+`frappe_assistant_core/chat/frontend/` is a Vue 3 app, and the Desk widget is built from the same components.
+
+- **Keep a component to about 400 lines** (template, script and style together), and split it once it passes 500.
+- **Group a complex feature in a sub-directory**, as `components/settings/billing/`, `settings/users/` and
+  `layout/` do.
+- **The parent is a thin orchestrator:** state, layout and wiring of its sub-components. Each sub-component owns
+  its template, scoped styles and pure helper functions.
+- **Props down, events up.** Data flows down through props; actions come back up through emits.
+- Example: `settings/BillingSettings.vue` is the tabbed container, with `billing/BillingHero.vue`,
+  `billing/BillingTabs.vue`, `billing/PlansTab.vue` and `billing/SettingsTab.vue` as its parts.
+
 ---
 
 ## Where things live

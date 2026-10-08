@@ -56,3 +56,15 @@ describe("toolDurationMs", () => {
 		expect(toolDurationMs({ startTime: "nope", endTime: "worse" })).toBe(null);
 	});
 });
+
+// A turn persisted before `delegate` joined the server's INTERNAL_TOOLS keeps
+// isInternal false on its delegate block, so after a reload the rail drew a
+// "Delegate" row next to the plan that already shows the delegated work.
+describe("buildTimelineRows on a persisted delegate block", () => {
+	it("skips a delegate block whose isInternal flag was persisted false", () => {
+		const rows = buildTimelineRows([
+			{ type: "tool_call", id: "d1", tool_name: "delegate", isInternal: false, status: "running" },
+		]);
+		expect(rows).toEqual([]);
+	});
+});

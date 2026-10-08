@@ -1,5 +1,5 @@
 <template>
-	<Teleport to="body">
+	<Teleport :to="teleportTarget">
 		<div v-if="confirmData" class="modal-overlay" @click.self="$emit('close')">
 			<div class="seat-confirm-modal">
 				<h3 class="confirm-title">Additional Seat Required</h3>
@@ -69,6 +69,9 @@
 <script setup>
 import { computed } from "vue";
 import HostedCheckoutNotice from "../billing/HostedCheckoutNotice.vue";
+import { useTeleportTarget } from "@/composables/useTeleportTarget";
+
+const teleportTarget = useTeleportTarget();
 
 const props = defineProps({
 	confirmData: { type: Object, default: null },

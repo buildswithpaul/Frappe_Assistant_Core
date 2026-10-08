@@ -4,6 +4,9 @@
  * component. Mirrors the live SSE block shape produced by blockHandlers.js.
  */
 
+import { isInternalTool } from "@/utils/internalTools";
+import { describeDelegation } from "./delegationOutcome";
+
 export function formatToolName(name) {
 	if (!name) return "Tool";
 	return name
@@ -14,7 +17,12 @@ export function formatToolName(name) {
 		.join(" ");
 }
 
-export function processingSummary(blocks, isStreaming) {
+function delegateBlocks(list) {
+	return list.filter((b) => b.type === "tool_call" && b.tool_name === "delegate");
+}
+
+// `live` is false once the turn has ended: not streaming and not paused on a card.
+export function processingSummary(blocks, isStreaming, live = isStreaming) {
 	const list = blocks || [];
 	const lastBlock = list[list.length - 1];
 
@@ -25,24 +33,22 @@ export function processingSummary(blocks, isStreaming) {
 		}
 		if (lastBlock.type === "tool_call" && lastBlock.status === "running") {
 			if (lastBlock.tool_name === "delegate") return "Delegating subtask…";
-			if (lastBlock.isInternal) return "Preparing...";
+			if (isInternalTool(lastBlock)) return "Preparing...";
 			return `Running ${formatToolName(lastBlock.tool_name)}...`;
 		}
 	}
 
 	const toolBlocks = list.filter((b) => b.type === "tool_call");
-	const ext = toolBlocks.filter((b) => !b.isInternal);
-	const internal = toolBlocks.filter((b) => b.isInternal);
+	const ext = toolBlocks.filter((b) => !isInternalTool(b));
+	const internal = toolBlocks.filter((b) => isInternalTool(b));
 
 	const errorCount = ext.filter((b) => b.status === "error").length;
 	const errorSuffix = errorCount > 0 ? ` (${errorCount} failed)` : "";
 
 	if (ext.length === 0) {
-		const delegated = internal.filter((b) => b.tool_name === "delegate");
+		const delegated = delegateBlocks(internal);
 		if (delegated.length > 0) {
-			const failed = delegated.filter((b) => b.status === "error").length;
-			const suffix = failed > 0 ? ` (${failed} failed)` : "";
-			return `Delegated ${delegated.length} subtask${delegated.length === 1 ? "" : "s"}${suffix}`;
+			return describeDelegation(delegated, live).text;
 		}
 		if (internal.length === 0) return "Thought about the request";
 		// Thinking outranks the internal-prep labels below it. A gpt-5.x turn
@@ -70,4 +76,18 @@ export function processingSummary(blocks, isStreaming) {
 	}
 
 	return `Used ${ext.length} tools${errorSuffix}`;
+}
+
+/**
+ * The header icon's state once the card is not active: "error" when a tool
+ * failed, "stopped" when the turn ended with a tool still running, else the
+ * delegation's own state (describeDelegation), or "complete".
+ */
+export function processingStatus(blocks, isStreaming, live = isStreaming) {
+	const list = blocks || [];
+	const toolBlocks = list.filter((b) => b.type === "tool_call");
+	if (toolBlocks.some((b) => b.status === "error")) return "error";
+	if (!live && toolBlocks.some((b) => b.status === "running")) return "stopped";
+	const delegated = delegateBlocks(toolBlocks);
+	return delegated.length ? describeDelegation(delegated, live).status : "complete";
 }

@@ -22,6 +22,8 @@ from .._rate_limits import (
     session_user_or_ip,
 )
 from .._untrusted import wrap_untrusted
+from ..chat import live_turn
+from ..chat.cancel import _is_open_turn
 from ..chat.cancel import clear as clear_cancel
 from ..chat.helpers import (
     _attach_files_to_message,
@@ -38,6 +40,27 @@ from ..chat.relay import (
 # so they don't block process shutdown. Overflow currently queues inside
 # the executor — bounded-queue rejection is a documented follow-up.
 _relay_pool = ThreadPoolExecutor(max_workers=20, thread_name_prefix="faco-relay")
+
+
+def _mark_turn_started(
+    session_id: str,
+    *,
+    message_id: str | None = None,
+    restricted: bool = False,
+    client_turn: str | None = None,
+) -> str | None:
+    """Write the starting live-turn entry; never let a Redis failure block the turn.
+
+    Nothing is kept for GDPR-restricted users. The live snapshot is a convenience
+    for surfaces joining mid-turn, so on failure the turn just runs without it.
+    """
+    if restricted:
+        return None
+    try:
+        return live_turn.start(session_id, message_id=message_id, client_turn=client_turn)
+    except Exception as e:
+        frappe.logger("fac_live_turn").warning(f"Could not mark turn started for {session_id}: {e!s}")
+        return None
 
 
 def _flag(value) -> bool:
@@ -299,27 +322,34 @@ def send_message(
         if effort is not None:
             thinking_enabled = effort != "off"
 
-        _relay_pool.submit(
-            _relay_ar_stream,
-            session_id,
-            full_prompt,
-            message,
-            context,
-            user_msg.name if user_msg is not None else None,
-            frappe.session.user,
-            frappe.local.site,
-            model_id,
-            attachments,
-            system_prompt_addendum,
-            effective_client_type,
-            session_state,
-            restricted,
-            # None must reach AR as absence (search available), not as an explicit
-            # off — only coerce when the caller actually supplied a value.
-            web_search=_flag(web_search) if web_search is not None else None,
-            thinking_enabled=_flag(thinking_enabled) if thinking_enabled is not None else None,
-            reasoning_effort=effort,
-        )
+        turn = _mark_turn_started(session_id, restricted=restricted, client_turn=client_turn_id)
+        try:
+            _relay_pool.submit(
+                _relay_ar_stream,
+                session_id,
+                full_prompt,
+                message,
+                context,
+                user_msg.name if user_msg is not None else None,
+                frappe.session.user,
+                frappe.local.site,
+                model_id,
+                attachments,
+                system_prompt_addendum,
+                effective_client_type,
+                session_state,
+                restricted,
+                # None must reach AR as absence (search available), not as an explicit
+                # off — only coerce when the caller actually supplied a value.
+                web_search=_flag(web_search) if web_search is not None else None,
+                thinking_enabled=_flag(thinking_enabled) if thinking_enabled is not None else None,
+                reasoning_effort=effort,
+                live_turn_token=turn,
+            )
+        except Exception:
+            if turn:
+                live_turn.clear(session_id, turn)
+            raise
 
         return {
             "status": "processing",
@@ -334,6 +364,42 @@ def send_message(
     except Exception as e:
         frappe.log_error(title="FACO Agent Error", message=f"Error in send_message: {e!s}")
         frappe.throw(_("Error processing message: {0}").format(str(e)))
+
+
+def _paused_message_id(session_id: str) -> str | None:
+    """The row a resume continues when the client could not name it.
+
+    While the paused turn still streams (AR sends the resume's stream_start
+    before it waits on the session lock) its card is not persisted yet, so the
+    live-turn entry is the one that knows the row. Read it before
+    ``_mark_turn_started`` replaces the entry with the resume's. Otherwise only
+    the caller's latest assistant row qualifies, and only while it is still the
+    open turn (``_is_open_turn``): an older pending card behind a newer question
+    belongs to a pause AR already let go.
+    """
+    try:
+        entry = live_turn.get(session_id) or {}
+    except Exception:
+        entry = {}
+    if entry.get("message_id"):
+        return entry["message_id"]
+
+    rows = frappe.get_all(
+        "FAC Chat Message",
+        filters={"session_id": session_id, "role": "assistant", "user": frappe.session.user},
+        fields=["message_id", "blocks", "aborted", "creation"],
+        order_by="creation desc",
+        limit_page_length=1,
+    )
+    if not rows or not rows[0].message_id:
+        return None
+    row = rows[0]
+    try:
+        blocks = json.loads(row.blocks) if isinstance(row.blocks, str) else row.blocks
+    except ValueError:
+        return None
+    blocks = [b for b in blocks or [] if isinstance(b, dict)]
+    return row.message_id if _is_open_turn(blocks, row.aborted, session_id, row.creation) else None
 
 
 @frappe.whitelist(methods=["POST"])
@@ -416,23 +482,36 @@ def resume_interrupt(
         if effort is not None:
             thinking_enabled = effort != "off"
 
-        _relay_pool.submit(
-            _relay_ar_interrupt_resume,
-            session_id,
-            interrupt_response,
-            frappe.session.user,
-            frappe.local.site,
-            effective_client_type,
-            message_id,
-            session_state,
-            restricted,
-            # The turn the user approved was sent with these; the resume is the
-            # same turn continuing, so it has to carry them too.
-            model_id=model_id,
-            web_search=_flag(web_search) if web_search is not None else None,
-            thinking_enabled=_flag(thinking_enabled) if thinking_enabled is not None else None,
-            reasoning_effort=effort,
+        # A client whose list was rebuilt can lose the paused row's id; without it
+        # AR mints a new one and the decision lands on the wrong row.
+        message_id = message_id or _paused_message_id(session_id)
+
+        turn = _mark_turn_started(
+            session_id, restricted=restricted, message_id=message_id, client_turn=client_turn_id
         )
+        try:
+            _relay_pool.submit(
+                _relay_ar_interrupt_resume,
+                session_id,
+                interrupt_response,
+                frappe.session.user,
+                frappe.local.site,
+                effective_client_type,
+                message_id,
+                session_state,
+                restricted,
+                # The turn the user approved was sent with these; the resume is the
+                # same turn continuing, so it has to carry them too.
+                model_id=model_id,
+                web_search=_flag(web_search) if web_search is not None else None,
+                thinking_enabled=_flag(thinking_enabled) if thinking_enabled is not None else None,
+                reasoning_effort=effort,
+                live_turn_token=turn,
+            )
+        except Exception:
+            if turn:
+                live_turn.clear(session_id, turn)
+            raise
 
         return {
             "status": "processing",
@@ -518,25 +597,34 @@ def continue_response(
         if effort is not None:
             thinking_enabled = effort != "off"
 
-        _relay_pool.submit(
-            _relay_ar_stream,
-            session_id,
-            full_prompt=None,
-            original_message=None,
-            context=None,
-            message_name=None,
-            user=frappe.session.user,
-            site=frappe.local.site,
-            client_type=effective_client_type,
-            session_state=session_state,
-            restricted=restricted,
-            continue_from_message_id=message_id,
-            # A continuation is the same turn finishing; it must run under the
-            # same toggles, not fall back to AR's absence defaults.
-            web_search=_flag(web_search) if web_search is not None else None,
-            thinking_enabled=_flag(thinking_enabled) if thinking_enabled is not None else None,
-            reasoning_effort=effort,
+        turn = _mark_turn_started(
+            session_id, restricted=restricted, message_id=message_id, client_turn=client_turn_id
         )
+        try:
+            _relay_pool.submit(
+                _relay_ar_stream,
+                session_id,
+                full_prompt=None,
+                original_message=None,
+                context=None,
+                message_name=None,
+                user=frappe.session.user,
+                site=frappe.local.site,
+                client_type=effective_client_type,
+                session_state=session_state,
+                restricted=restricted,
+                continue_from_message_id=message_id,
+                # A continuation is the same turn finishing; it must run under the
+                # same toggles, not fall back to AR's absence defaults.
+                web_search=_flag(web_search) if web_search is not None else None,
+                thinking_enabled=_flag(thinking_enabled) if thinking_enabled is not None else None,
+                reasoning_effort=effort,
+                live_turn_token=turn,
+            )
+        except Exception:
+            if turn:
+                live_turn.clear(session_id, turn)
+            raise
 
         return {
             "status": "processing",

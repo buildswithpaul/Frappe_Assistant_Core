@@ -1,11 +1,18 @@
 import { describe, it, expect } from "vitest";
 import { processingSummary } from "./processingSummary";
 
+// The shape AR's delegate tool produces: one task in, one "— done" section out.
 const runningDelegate = {
 	type: "tool_call",
 	tool_name: "delegate",
 	isInternal: true,
 	status: "running",
+	input: { tasks: [{ task_id: "t-1", instructions: "Look it up" }] },
+};
+const finishedDelegate = {
+	...runningDelegate,
+	status: "success",
+	result: "## t-1 · Look it up — done\nfindings",
 };
 
 describe("processingSummary — live", () => {
@@ -26,29 +33,30 @@ describe("processingSummary — live", () => {
 
 describe("processingSummary — completed", () => {
 	it("reads a finished delegate as deliberate activity", () => {
-		const block = { ...runningDelegate, status: "success" };
+		const block = finishedDelegate;
 		expect(processingSummary([block], false)).toBe("Delegated 1 subtask");
 	});
 
 	it("pluralizes multiple delegated subtasks", () => {
 		const blocks = [
-			{ ...runningDelegate, status: "success" },
-			{ ...runningDelegate, status: "success" },
+			finishedDelegate,
+			finishedDelegate,
 		];
 		expect(processingSummary(blocks, false)).toBe("Delegated 2 subtasks");
 	});
 
 	it("surfaces delegate failures", () => {
 		const blocks = [
-			{ ...runningDelegate, status: "success" },
+			finishedDelegate,
 			{ ...runningDelegate, status: "error" },
 		];
-		expect(processingSummary(blocks, false)).toBe("Delegated 2 subtasks (1 failed)");
+		// The failed call ran none of its subtasks.
+		expect(processingSummary(blocks, false)).toBe("Delegated 1 of 2 subtasks");
 	});
 
 	it("lets the external Used... line win when external tools also ran", () => {
 		const blocks = [
-			{ ...runningDelegate, status: "success" },
+			finishedDelegate,
 			{ type: "tool_call", tool_name: "search_link", isInternal: false, status: "success" },
 		];
 		expect(processingSummary(blocks, false)).toBe("Used Search Link");
@@ -96,7 +104,7 @@ describe("processingSummary — thinking", () => {
 	});
 
 	it("still lets delegation win — it names work worth seeing", () => {
-		const blocks = [thinking, { ...runningDelegate, status: "success" }];
+		const blocks = [thinking, finishedDelegate];
 		expect(processingSummary(blocks, false)).toBe("Delegated 1 subtask");
 	});
 

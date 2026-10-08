@@ -1,5 +1,5 @@
 <template>
-	<Teleport to="body">
+	<Teleport :to="teleportTarget">
 		<Transition name="drawer">
 			<div v-if="open && member" class="drawer-overlay" @click.self="$emit('close')">
 				<aside
@@ -137,6 +137,9 @@ import { ref, computed, watch, onMounted, onUnmounted } from "vue";
 import RoleBadge from "./RoleBadge.vue";
 import { isIdle } from "./memberHelpers";
 import { formatRelativeTime, formatDate, formatCredits } from "@/composables/useFormatters";
+import { useTeleportTarget } from "@/composables/useTeleportTarget";
+
+const teleportTarget = useTeleportTarget();
 
 const props = defineProps({
 	member: { type: Object, default: null },

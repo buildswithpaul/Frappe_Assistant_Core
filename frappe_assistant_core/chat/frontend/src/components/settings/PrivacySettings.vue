@@ -90,7 +90,7 @@
 		</div>
 
 		<!-- Erase Confirmation Dialog -->
-		<Teleport to="body">
+		<Teleport :to="teleportTarget">
 			<div
 				v-if="showEraseConfirm"
 				class="dialog-overlay"
@@ -135,6 +135,9 @@ import { api } from "@/api/client";
 import { useChatStore } from "@/stores/chatStore";
 import { useUserStore } from "@/stores/userStore";
 import { logger } from "@/utils/logger";
+import { useTeleportTarget } from "@/composables/useTeleportTarget";
+
+const teleportTarget = useTeleportTarget();
 
 const emit = defineEmits(["notification"]);
 

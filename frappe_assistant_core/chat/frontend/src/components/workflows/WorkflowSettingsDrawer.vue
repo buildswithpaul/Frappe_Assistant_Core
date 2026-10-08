@@ -1,5 +1,5 @@
 <template>
-	<Teleport to="body">
+	<Teleport :to="teleportTarget">
 		<div
 			v-if="modelValue"
 			class="drawer-overlay"
@@ -135,6 +135,9 @@
 
 <script setup>
 import { reactive, computed, watch } from "vue";
+import { useTeleportTarget } from "@/composables/useTeleportTarget";
+
+const teleportTarget = useTeleportTarget();
 
 const props = defineProps({
 	modelValue: { type: Boolean, default: false },

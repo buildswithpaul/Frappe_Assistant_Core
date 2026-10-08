@@ -26,7 +26,7 @@
 		</button>
 		<span class="link-picker-caret" aria-hidden="true">▾</span>
 
-		<Teleport to="body">
+		<Teleport :to="teleportTarget">
 			<div
 				v-if="isOpen"
 				ref="listEl"
@@ -68,6 +68,9 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { logger } from "@/utils/logger";
+import { useTeleportTarget } from "@/composables/useTeleportTarget";
+
+const teleportTarget = useTeleportTarget();
 
 const props = defineProps({
 	modelValue: { type: String, default: "" },

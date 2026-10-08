@@ -6,6 +6,7 @@ import { safeActionUrl } from "@/components/notifications/typeMeta";
 import { useNotificationStore } from "@/stores/notificationStore";
 import { useUserStore } from "@/stores/userStore";
 import { useTourStore } from "@/stores/tourStore";
+import { getSurface } from "@/stores/chat/surface";
 import {
 	DAILY_KEY,
 	QUOTA_KEY,
@@ -20,7 +21,7 @@ import {
 
 // The Desk widget keeps its own daily cap under its own surface, so one surface
 // showing a Spotlight never consumes the other's.
-const SURFACE = "spa";
+const surfaceKey = () => getSurface().spotlightSurface;
 
 export const useSpotlightStore = defineStore("spotlight", () => {
 	const current = ref(null);
@@ -60,9 +61,9 @@ export const useSpotlightStore = defineStore("spotlight", () => {
 		}
 
 		const announcement = pickAnnouncement(useNotificationStore().activeNotifications);
-		if (announcement && storage.get(DAILY_KEY(who, SURFACE)) !== localDate()) {
+		if (announcement && storage.get(DAILY_KEY(who, surfaceKey())) !== localDate()) {
 			current.value = announcementContent(announcement);
-			storage.set(DAILY_KEY(who, SURFACE), localDate());
+			storage.set(DAILY_KEY(who, surfaceKey()), localDate());
 			shownThisLoad = true;
 		}
 	}

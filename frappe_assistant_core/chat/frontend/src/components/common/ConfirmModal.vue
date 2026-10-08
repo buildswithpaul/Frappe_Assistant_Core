@@ -1,5 +1,5 @@
 <template>
-	<Teleport to="body">
+	<Teleport :to="teleportTarget">
 		<div v-if="open" class="modal-overlay" @click.self="$emit('cancel')">
 			<div class="confirm-modal" :class="{ 'is-destructive': destructive }">
 				<h3 class="confirm-title">{{ title }}</h3>
@@ -24,6 +24,10 @@
 </template>
 
 <script setup>
+import { useTeleportTarget } from "@/composables/useTeleportTarget";
+
+const teleportTarget = useTeleportTarget();
+
 defineProps({
 	open: { type: Boolean, default: false },
 	title: { type: String, required: true },

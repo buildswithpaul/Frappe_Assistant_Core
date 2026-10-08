@@ -1,5 +1,5 @@
 <template>
-	<Teleport to="body">
+	<Teleport :to="teleportTarget">
 		<div v-if="modelValue" class="modal-overlay" @click.self="close">
 			<div class="modal-content">
 				<!-- Header -->
@@ -179,6 +179,9 @@
 import { ref, computed } from "vue";
 import { useWorkflowStore } from "@/stores/workflowStore";
 import { logger } from "@/utils/logger";
+import { useTeleportTarget } from "@/composables/useTeleportTarget";
+
+const teleportTarget = useTeleportTarget();
 
 const props = defineProps({
 	modelValue: { type: Boolean, default: false },

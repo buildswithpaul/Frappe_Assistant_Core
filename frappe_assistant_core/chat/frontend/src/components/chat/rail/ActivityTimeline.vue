@@ -5,11 +5,11 @@
 			{{ rows.length }} action{{ rows.length === 1 ? "" : "s" }}<template v-if="totalLabel"> · {{ totalLabel }}</template>
 		</button>
 		<ul v-else class="tl-list">
-			<li v-for="row in rows" :key="row.id" class="tl-row" :class="`is-${row.status}`">
+			<li v-for="row in displayRows" :key="row.id" class="tl-row" :class="`is-${row.status}`">
 				<span class="tl-node" aria-hidden="true">
 					<template v-if="row.status === 'success'">✓</template>
 					<template v-else-if="row.status === 'error'">✗</template>
-					<template v-else-if="row.status === 'cancelled'">⊘</template>
+					<template v-else-if="row.status === 'cancelled' || row.status === 'stopped'">⊘</template>
 				</span>
 				<span class="tl-label">{{ row.label }}</span>
 				<span class="tl-duration">{{ durationLabel(row) }}</span>
@@ -22,14 +22,24 @@
 import { ref, computed, watch, onUnmounted } from "vue";
 import { toolDurationMs } from "@/composables/useActivityTimeline.js";
 
-const props = defineProps({ rows: { type: Array, default: () => [] } });
+const props = defineProps({
+	rows: { type: Array, default: () => [] },
+	// False once the turn is over. A tool whose result never arrived (a Stop, a
+	// dropped stream) is persisted as `running` with no end time, so the
+	// timeline stops presenting it as in flight rather than ticking forever.
+	live: { type: Boolean, default: true },
+});
 
 const compressed = ref(false);
 const now = ref(Date.now());
 let ticker = null;
 let compressTimer = null;
 
-const anyRunning = computed(() => props.rows.some((r) => r.status === "running"));
+const displayRows = computed(() =>
+	props.rows.map((r) => (!props.live && r.status === "running" ? { ...r, status: "stopped" } : r))
+);
+
+const anyRunning = computed(() => displayRows.value.some((r) => r.status === "running"));
 
 function fmt(ms) {
 	if (ms == null) return "";
@@ -45,6 +55,7 @@ function durationLabel(row) {
 		const live = now.value - new Date(row.block.startTime).getTime();
 		return Number.isFinite(live) && live > 0 ? `${fmt(live)}…` : "";
 	}
+	if (row.status === "stopped") return "stopped";
 	return "";
 }
 
@@ -133,7 +144,8 @@ onUnmounted(() => {
 	border-radius: 50%;
 	color: var(--ql-danger);
 }
-.tl-row.is-cancelled .tl-node {
+.tl-row.is-cancelled .tl-node,
+.tl-row.is-stopped .tl-node {
 	border: 1.5px solid var(--ql-text-muted);
 	border-radius: 50%;
 	color: var(--ql-text-muted);

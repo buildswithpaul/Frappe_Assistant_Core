@@ -1,7 +1,6 @@
 /**
  * Which Spotlight to show, and what it says. Pure: no Vue, no network.
- * The Desk widget mirrors these rules in public/chat/widget/widget_spotlight.js;
- * widgetSpotlight.spec.js asserts the two agree. Change both or neither.
+ * The Desk widget's panel shares this module (surface "widget"), so there is one copy of the rules.
  */
 
 export const DAILY_KEY = (user, surface) => `fac_spotlight_last_shown:${user}:${surface}`;

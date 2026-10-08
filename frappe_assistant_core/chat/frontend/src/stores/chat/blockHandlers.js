@@ -5,22 +5,11 @@
  * and model fallback tracking during streaming responses.
  */
 
+import { ref, watch } from "vue";
 import { generateBlockId, findActiveMessage } from "./utils";
+import { INTERNAL_TOOLS } from "@/utils/internalTools";
 
-/**
- * Internal tools — housekeeping operations that should render as slim
- * inline indicators rather than full expandable tool call blocks.
- * These are things the agent does "behind the scenes" to prepare.
- */
-export const INTERNAL_TOOLS = new Set([
-	"get_skill",
-	"workspace_read_file",
-	"workspace_write_file",
-	"workspace_list_files",
-	"workspace_delete_file",
-	"ask_user",
-	"delegate",
-]);
+export { INTERNAL_TOOLS };
 
 export function createBlockHandlers({
 	messages,
@@ -100,6 +89,31 @@ export function createBlockHandlers({
 		} else {
 			msg.blocks.unshift(block);
 		}
+	}
+
+	// Live label per running task, keyed by task_id. Labels only describe work
+	// in flight, so every path that ends a turn (complete, error, abort,
+	// timeout, reconcile) drops them by flipping isStreaming off.
+	const taskActivity = ref({});
+	// The task whose label arrived last. Several events can land in one tick, and the
+	// label object's key order is first-reported order, so recency is kept here.
+	const lastActivityTaskId = ref(null);
+	function clearTaskActivity() {
+		taskActivity.value = {};
+		lastActivityTaskId.value = null;
+	}
+	watch(
+		isStreaming,
+		(streaming) => {
+			if (!streaming) clearTaskActivity();
+		},
+		{ flush: "sync" }
+	);
+
+	function handleTaskActivity(data) {
+		if (!data?.task_id) return;
+		taskActivity.value = { ...taskActivity.value, [data.task_id]: data.label || "" };
+		lastActivityTaskId.value = data.task_id;
 	}
 
 	function handleWorkflowCreatedEvent(data) {
@@ -416,10 +430,14 @@ export function createBlockHandlers({
 		const lastMsg = findActiveMessage(messages.value);
 		if (!lastMsg || !lastMsg.blocks) return;
 
-		for (const block of blocks) {
-			if (!block.decision) continue;
-			block.status = block.decision.resolution;
-			block.userResponse = block.decision.userResponse;
+		for (const decided of blocks) {
+			if (!decided.decision) continue;
+			// A snapshot may have replaced the card since it was decided; resolve
+			// the one on screen.
+			const block = onScreenCard(lastMsg, decided);
+			block.decision = decided.decision;
+			block.status = decided.decision.resolution;
+			block.userResponse = decided.decision.userResponse;
 			block.endTime = new Date().toISOString();
 		}
 
@@ -436,9 +454,15 @@ export function createBlockHandlers({
 	 * fails — the user can retry by clicking the buttons again).
 	 */
 	function revertInteractionDecisions(blocks) {
+		const lastMsg = findActiveMessage(messages.value);
 		for (const block of blocks) {
 			block.decision = null;
+			onScreenCard(lastMsg, block).decision = null;
 		}
+	}
+
+	function onScreenCard(msg, card) {
+		return (msg?.blocks || []).find((b) => b.type === "interaction" && b.id === card.id) || card;
 	}
 
 	/**
@@ -484,7 +508,11 @@ export function createBlockHandlers({
 	}
 
 	return {
+		taskActivity,
+		lastActivityTaskId,
+		clearTaskActivity,
 		handlePlanEvent,
+		handleTaskActivity,
 		handleWorkflowCreatedEvent,
 		handleModelSelected,
 		handleThinkingEvent,

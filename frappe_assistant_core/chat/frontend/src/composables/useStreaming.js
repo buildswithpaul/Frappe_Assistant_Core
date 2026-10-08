@@ -15,6 +15,7 @@ import { useChatStore } from "@/stores/chatStore";
 import { useUserStore } from "@/stores/userStore";
 import { logger } from "@/utils/logger";
 import { writeHandoff } from "@/utils/sessionHandoff";
+import { getSurface } from "@/stores/chat/surface";
 import { findActiveMessage } from "@/stores/chat/utils";
 import { io } from "socket.io-client";
 
@@ -30,7 +31,7 @@ function getCookieValue(name) {
 
 /**
  * Same-origin navigation guard. Matches the server-side check in
- * browser_tools/navigate_to.py and the widget's widget_browser_tools.js.
+ * browser_tools/navigate_to.py and the widget's desk/browserTools.js.
  * Rejects javascript:/data:/protocol-relative/cross-origin URLs.
  */
 function isSafeUrl(url) {
@@ -164,7 +165,7 @@ export function recoverSession(chatStore, socket) {
 	if (!sid) return;
 	socket.emit("task_subscribe", sid);
 	chatStore.hydratePendingInterrupt(sid);
-	chatStore.reconcileFromServer(sid);
+	chatStore.recoverLiveTurn(sid);
 }
 
 /**
@@ -194,6 +195,27 @@ export function createVisibilityHandler(chatStore, getSocket) {
 }
 
 /**
+ * Tab-foreground handler for the frappe.realtime path (Desk). Frappe's client
+ * stops after 3 reconnection attempts and never revives on its own, so a dead
+ * socket is nudged here and recovery rides the "connect" handler; a throttled
+ * socket that still reports connected recovers directly.
+ *
+ * Exported for tests.
+ */
+export function createDeskVisibilityHandler(chatStore, getSocket, recover) {
+	return () => {
+		if (document.visibilityState !== "visible") return;
+		const socket = getSocket();
+		if (!socket) return;
+		if (!socket.connected) {
+			if (typeof socket.connect === "function") socket.connect();
+			return;
+		}
+		if (chatStore.isStreaming) recover();
+	};
+}
+
+/**
  * Build the SPA socket "connect" handler. "connect" fires on the first
  * connection AND on every re-connection (automatic or via the retry button),
  * so post-reconnect recovery lives here. The first connection skips recovery
@@ -214,6 +236,22 @@ export function createSpaConnectHandler(chatStore, socket) {
 		hasConnectedBefore = true;
 		if (!needsRecovery) return;
 		recoverSession(chatStore, socket);
+	};
+}
+
+/**
+ * Liveness probe the stream manager consults before failing a silent turn.
+ * `getSocket` is read lazily because the socket can be replaced or absent.
+ *
+ * Exported for tests.
+ */
+export function createSocketProbe(getSocket) {
+	return {
+		connected: () => !!getSocket()?.connected,
+		nudge: () => {
+			const socket = getSocket();
+			if (socket && typeof socket.connect === "function") socket.connect();
+		},
 	};
 }
 
@@ -244,9 +282,20 @@ export function useStreaming() {
 		}
 	}
 
-	function handleStreamEvent(data) {
+	function handleStreamEvent(data, { admitted = false } = {}) {
 		// Ignore events for other sessions
 		if (data.session_id !== chatStore.currentSessionId) {
+			return;
+		}
+		// Numbered events pass through the live-turn sync: held while this
+		// surface joins a running turn, dropped when already shown.
+		if (!admitted && !chatStore.admitStreamEvent(data)) return;
+
+		// The end of an own turn its resume already carries on (liveTurnSync marks it): finishing
+		// the streaming state here would stop the resume's watchdog and open the send queue while
+		// the resume runs. Only its usage counts; the resume's own end brings the blocks.
+		if (data.superseded) {
+			if (data.event === "stream_complete") userStore.applyQuotaFromStream(data);
 			return;
 		}
 
@@ -363,8 +412,10 @@ export function useStreaming() {
 				chatStore.handleToolCallStart(data);
 
 				// Handle browser navigation from SPA — server returns success
-				// immediately (fire-and-forget), SPA does the actual navigation
-				if (data.tool_name === "browser_navigate_to") {
+				// immediately (fire-and-forget), SPA does the actual navigation.
+				// The Desk widget skips this: its launcher's browser tools already
+				// routed in place, and a hard reload would kill the turn.
+				if (data.tool_name === "browser_navigate_to" && getSurface().clientType === "spa") {
 					// Store session for widget to pick up on the target page.
 					// Same-tab navigation only — sessionStorage scopes the hand-off
 					// to this tab so other tabs don't inherit the session id, and
@@ -424,6 +475,10 @@ export function useStreaming() {
 				chatStore.resetActivityTimeout();
 				chatStore.handlePlanEvent(data);
 				break;
+			case "task_activity":
+				chatStore.resetActivityTimeout();
+				chatStore.handleTaskActivity(data);
+				break;
 
 			case "workflow_created":
 				chatStore.resetActivityTimeout();
@@ -460,8 +515,10 @@ export function useStreaming() {
 
 	let stopWatch = null;
 	let frappeRealtimeConnectHandler = null;
+	let deskVisibilityHandler = null;
 
 	onMounted(() => {
+		chatStore.setStreamDispatcher(handleStreamEvent);
 		// Try Frappe's realtime first (works on normal Frappe pages)
 		if (window.frappe?.realtime) {
 			frappe.realtime.on("faco_message_stream", handleStreamEvent);
@@ -475,21 +532,30 @@ export function useStreaming() {
 			// socket's "reconnect" listener provides. Mirror the SPA path by
 			// re-subscribing + hydrating on the "connect" event.
 			frappeRealtimeConnectHandler = () => {
+				chatStore.setSocketConnected(true);
 				const sid = chatStore.currentSessionId;
 				if (sid) {
 					subscribeSession(sid);
 					chatStore.hydratePendingInterrupt(sid);
-					chatStore.reconcileFromServer(sid);
+					chatStore.recoverLiveTurn(sid);
 				}
 			};
 			if (typeof frappe.realtime.on === "function") {
 				frappe.realtime.on("connect", frappeRealtimeConnectHandler);
 			}
+			deskVisibilityHandler = createDeskVisibilityHandler(
+				chatStore,
+				() => window.frappe?.realtime?.socket,
+				frappeRealtimeConnectHandler
+			);
+			document.addEventListener("visibilitychange", deskVisibilityHandler);
+			chatStore.setSocketProbe(createSocketProbe(() => window.frappe?.realtime?.socket));
 		} else {
 			// Fallback: Initialize our own socket.io connection for the Vue SPA
 			const socket = initializeSpaSocket(chatStore);
 			socket.on("faco_message_stream", handleStreamEvent);
 			socket.on("ar_interrupt_event", handleArInterruptEvent);
+			chatStore.setSocketProbe(createSocketProbe(() => spaSocket));
 		}
 
 		// Subscribe to the current session room and track changes.
@@ -506,6 +572,7 @@ export function useStreaming() {
 	});
 
 	onUnmounted(() => {
+		chatStore.setStreamDispatcher(null);
 		if (stopWatch) stopWatch();
 		unsubscribeSession(chatStore.currentSessionId);
 
@@ -515,6 +582,7 @@ export function useStreaming() {
 			if (frappeRealtimeConnectHandler && typeof frappe.realtime.off === "function") {
 				frappe.realtime.off("connect", frappeRealtimeConnectHandler);
 			}
+			if (deskVisibilityHandler) document.removeEventListener("visibilitychange", deskVisibilityHandler);
 		} else if (spaSocket) {
 			spaSocket.off("faco_message_stream", handleStreamEvent);
 			spaSocket.off("ar_interrupt_event", handleArInterruptEvent);

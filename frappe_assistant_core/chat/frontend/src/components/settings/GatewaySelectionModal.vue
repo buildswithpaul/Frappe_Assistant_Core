@@ -1,5 +1,5 @@
 <template>
-	<Teleport to="body">
+	<Teleport :to="teleportTarget">
 		<div v-if="isOpen" class="modal-overlay" @click.self="$emit('close')">
 			<div class="gateway-modal-container">
 				<!-- Header -->
@@ -133,6 +133,9 @@
 import { ref, watch, computed } from "vue";
 import GatewayCard from "./billing/GatewayCard.vue";
 import PromoCodeSection from "./billing/PromoCodeSection.vue";
+import { useTeleportTarget } from "@/composables/useTeleportTarget";
+
+const teleportTarget = useTeleportTarget();
 
 const props = defineProps({
 	isOpen: { type: Boolean, required: true },

@@ -25,6 +25,8 @@ from typing import NamedTuple
 import frappe
 from frappe import _
 
+from frappe_assistant_core.chat.api.chat import live_turn
+
 from .._helpers import (
     _not_registered_error,
     _safe_error,
@@ -219,6 +221,7 @@ _SHARED_RELAY_EVENTS = frozenset(
         "context_summarized",
         "model_selected",
         "routing_notice",
+        "task_activity",
         "thinking",
         "thinking_complete",
     }
@@ -233,6 +236,7 @@ _SHARED_RELAY_EVENTS = frozenset(
 _RESUME_PROGRESS_EVENTS = frozenset(
     {
         "stream_chunk",
+        "task_activity",
         "thinking",
         "thinking_complete",
         "tool_call_start",
@@ -308,6 +312,18 @@ def _dispatch_relay_event(
                 "tier_wanted": data.get("tier_wanted"),
                 "band": data.get("band"),
                 "scope": data.get("scope"),
+            },
+        )
+
+    elif event_type == "task_activity":
+        _emit_socket_event(
+            session_id,
+            {
+                "event": "task_activity",
+                "session_id": session_id,
+                "message_id": ar_message_id,
+                "task_id": data.get("task_id"),
+                "label": data.get("label", ""),
             },
         )
 
@@ -731,6 +747,7 @@ def _relay_ar_interrupt_resume(
     web_search=None,
     thinking_enabled=None,
     reasoning_effort=None,
+    live_turn_token=None,
 ):
     """
     Resume an interrupted AR stream by sending interrupt responses.
@@ -749,6 +766,9 @@ def _relay_ar_interrupt_resume(
     ``model_id`` carries the turn's model the same way, and is genuinely
     optional: in auto mode nothing is sent, and absence lets AR select as it
     did on the original turn. The SDK omits the wire key on a falsy value.
+
+    ``live_turn_token`` is the turn token the endpoint wrote with live_turn.start,
+    adopted by the live snapshot and cleared if the relay ends before binding.
     """
     frappe.init(site=site)
     frappe.connect()
@@ -792,6 +812,13 @@ def _relay_ar_interrupt_resume(
         from ..block_builder import BlockBuilder
 
         block_builder = BlockBuilder(existing_blocks=_load_turn_blocks(session_id, message_id))
+        live_turn.bind(
+            session_id,
+            block_builder,
+            message_id=message_id,
+            enabled=not restricted,
+            turn=live_turn_token,
+        )
 
         # resume_interrupt cleared any older Stop when it accepted this resume,
         # so a flag up now is a Stop pressed while this relay waited to start.
@@ -1260,6 +1287,7 @@ def _relay_ar_interrupt_resume(
         )
 
     finally:
+        live_turn.unbind(session_id, turn=live_turn_token)
         # The cancel flag stays: the next accepting endpoint clears it
         # (cancel.clear). Clearing it here could erase the next turn's Stop.
         frappe.db.commit()  # nosemgrep: frappe-manual-commit — background thread / streaming context (not a request handler), explicit commit required to flush progress to DB.
@@ -1284,6 +1312,7 @@ def _relay_ar_stream(
     web_search=None,
     thinking_enabled=None,
     reasoning_effort=None,
+    live_turn_token=None,
 ):
     """
     Relay SSE stream from AR to frontend via Socket.IO.
@@ -1324,6 +1353,8 @@ def _relay_ar_stream(
                     None-vs-False semantics as web_search.
             reasoning_effort: Optional composer thinking level forwarded to AR when
                     the installed SDK supports it.
+            live_turn_token: The turn token the endpoint wrote with live_turn.start,
+                    adopted by the live snapshot and cleared if the relay ends early.
     """
     # Set up Frappe context for background thread
     frappe.init(site=site)
@@ -1382,6 +1413,15 @@ def _relay_ar_stream(
             )
             seed_blocks = _parse_turn_blocks(continued_turn.blocks if continued_turn else None)
         block_builder = BlockBuilder(existing_blocks=seed_blocks)
+        # From here every emitted event is numbered and the turn's snapshot kept,
+        # so a surface opening this conversation mid-turn can join it.
+        live_turn.bind(
+            session_id,
+            block_builder,
+            message_id=continue_from_message_id,
+            enabled=not restricted,
+            turn=live_turn_token,
+        )
 
         # send_message or continue_response cleared any older Stop when it
         # accepted this turn, so a flag up now is a Stop pressed while this
@@ -1880,6 +1920,7 @@ def _relay_ar_stream(
         )
 
     finally:
+        live_turn.unbind(session_id, turn=live_turn_token)
         # The cancel flag stays: the next accepting endpoint clears it
         # (cancel.clear). Clearing it here could erase the next turn's Stop.
         frappe.db.commit()  # nosemgrep: frappe-manual-commit — background thread / streaming context (not a request handler), explicit commit required to flush progress to DB.

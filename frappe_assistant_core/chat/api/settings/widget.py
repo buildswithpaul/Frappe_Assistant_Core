@@ -2,7 +2,7 @@
 # Copyright (C) 2025 Paul Clinton
 # AGPL-3.0 License
 
-"""Widget customization, copilot status, user preferences, screen-extract fallback."""
+"""Widget privacy settings, copilot status, user preferences, screen-extract fallback."""
 
 from __future__ import annotations
 
@@ -81,34 +81,24 @@ def get_copilot_status() -> dict:
 
 @frappe.whitelist(methods=["GET"])
 def get_widget_settings() -> dict:
-    """Get widget customization settings."""
+    """Return the operator's browser-privacy flags for the Desk widget.
+
+    On failure the result is ``{}`` with no ``privacy`` block: the launcher reads a missing
+    block as "DOM extraction off", so an error never widens what the widget may read.
+    """
     try:
         settings = frappe.get_single("FAC Chat Settings")
 
         return {
-            "button": {
-                "size": 56,
-                "icon": "robot",
-                "enable_pulse": True,
-                "shadow": "0 4px 20px rgba(0,0,0,0.15)",
-            },
-            "window": {"width": 400, "height": 650, "border_radius": 12, "font_size": "14px"},
-            "messages": {},
             "privacy": {
                 "enable_dom_extraction": bool(getattr(settings, "enable_dom_extraction", True)),
                 "enable_browser_diagnostics": bool(getattr(settings, "enable_browser_diagnostics", True)),
             },
-            "custom_css": "",
         }
 
     except Exception as e:
         frappe.log_error(title="FACO Widget Error", message=f"Error getting widget settings: {e!s}")
-        return {
-            "button": {"size": 56, "icon": "robot"},
-            "window": {"width": 400, "height": 650},
-            "messages": {},
-            "custom_css": "",
-        }
+        return {}
 
 
 # Explicit allowlist of user-editable fields on FAC Chat User Preferences.

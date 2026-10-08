@@ -14,6 +14,7 @@
  */
 
 import { marked } from "marked";
+import { markedHighlight } from "marked-highlight";
 import DOMPurify from "dompurify";
 
 let hljsPromise = null;
@@ -22,7 +23,7 @@ let hljs = null;
 export function ensureHljs() {
 	if (hljs) return Promise.resolve(hljs);
 	if (!hljsPromise) {
-		hljsPromise = import("highlight.js").then((mod) => {
+		hljsPromise = import("./highlight.js").then((mod) => {
 			hljs = mod.default || mod;
 			return hljs;
 		});
@@ -39,25 +40,55 @@ function escapeHtml(s) {
 		.replace(/'/g, "&#39;");
 }
 
+/**
+ * Highlighted HTML for a fenced block, or the escaped code when highlight.js
+ * has not loaded yet or does not know the language. No auto-detection: with a
+ * trimmed language set it guesses wrong more often than it helps.
+ */
+export function highlightCode(code, lang) {
+	if (hljs && lang && hljs.getLanguage(lang)) {
+		return hljs.highlight(code, { language: lang }).value;
+	}
+	return escapeHtml(code);
+}
+
+const NOWRAP_MAX = 40;
+
+// A cell holding one token (an invoice number, a date, an amount) is
+// unreadable once the browser breaks it at a hyphen. Prose cells may wrap.
+function isNowrapCell(html) {
+	// No DOM (SSR/worker): keep wrapping, the safe default.
+	if (typeof DOMParser === "undefined") return false;
+	const text = (new DOMParser().parseFromString(html, "text/html").body.textContent || "").trim();
+	return text.length > 0 && text.length <= NOWRAP_MAX && !/\s/.test(text);
+}
+
+const tableRenderer = {
+	table(header, body) {
+		const tbody = body ? `<tbody>${body}</tbody>` : "";
+		return `<div class="md-table-scroll"><table><thead>${header}</thead>${tbody}</table></div>\n`;
+	},
+	tablecell(content, flags) {
+		const tag = flags.header ? "th" : "td";
+		const align = flags.align ? ` align="${flags.align}"` : "";
+		const cls = isNowrapCell(content) ? ' class="md-nowrap"' : "";
+		return `<${tag}${align}${cls}>${content}</${tag}>\n`;
+	},
+};
+
 let configured = false;
 function configure() {
 	if (configured) return;
 	configured = true;
-	marked.setOptions({
-		highlight: (code, lang) => {
-			if (hljs) {
-				if (lang && hljs.getLanguage(lang)) {
-					return hljs.highlight(code, { language: lang }).value;
-				}
-				return hljs.highlightAuto(code).value;
-			}
-			// hljs hasn't loaded yet — return escaped code so it renders
-			// safely. Caller should ensureHljs() and re-render once ready.
-			return escapeHtml(code);
-		},
-		breaks: true,
-		gfm: true,
-	});
+	// marked 5+ dropped the `highlight` option; it is silently ignored by
+	// setOptions, which is how FAC Chat shipped with no highlighting at all.
+	marked.use(
+		markedHighlight({
+			langPrefix: "hljs language-",
+			highlight: (code, lang) => highlightCode(code, lang),
+		})
+	);
+	marked.use({ breaks: true, gfm: true, renderer: tableRenderer });
 }
 
 /**

@@ -1,25 +1,34 @@
 <template>
 	<section v-if="tasks.length" class="task-section">
-		<div class="task-head">Tasks · this turn</div>
+		<div v-if="!bare" class="task-head">Tasks · this turn</div>
 		<ul class="task-list">
 			<li
 				v-for="t in rows"
 				:key="t.id || t.title"
 				class="task-row"
 				:class="[`is-${t.displayStatus}`, { 'is-child': t.parentId }]"
-				:aria-label="`${t.title} — ${t.displayStatus}${t.note ? ': ' + t.note : ''}`"
+				:aria-label="`${t.title} — ${t.displayStatus}${t.displayNote ? ': ' + t.displayNote : ''}`"
 			>
 				<div class="task-line">
 					<span class="glyph" aria-hidden="true">{{ glyph(t.displayStatus) }}</span>
 					<span class="title">{{ t.title }}</span>
-					<span v-if="t.delegated" class="delegated">↳ specialist</span>
+					<span
+						v-if="t.helper && t.status !== 'running' && t.status !== 'pending'"
+						class="helper-meta"
+					>
+						{{ helperMeta(t) }}
+					</span>
+					<span v-else-if="t.delegated && !t.helper" class="delegated">↳ specialist</span>
 				</div>
-				<p v-if="t.note" class="note" :class="{ 'is-reason': t.status === 'failed' }">
-					{{ t.note }}
+				<p v-if="inFlight && t.status === 'running' && activity[t.id]" class="activity">
+					{{ activity[t.id] }}
+				</p>
+				<p v-if="t.displayNote" class="note" :class="{ 'is-reason': t.status === 'failed' }">
+					{{ t.displayNote }}
 				</p>
 			</li>
 		</ul>
-		<p v-if="summary" class="task-summary">{{ summary }}</p>
+		<p v-if="summary && !bare" class="task-summary">{{ summary }}</p>
 	</section>
 </template>
 
@@ -33,7 +42,17 @@ const props = defineProps({
 	// streams, and nothing closes it. AR deliberately never fakes it to `done`,
 	// so the client must stop presenting it as work still in flight.
 	live: { type: Boolean, default: true },
+	// Latest live label per running task id (the `task_activity` stream event).
+	activity: { type: Object, default: () => ({}) },
+	// The host draws its own heading and tally (the Desk widget's plan strip).
+	bare: { type: Boolean, default: false },
+	// The user pressed Stop (the message's `aborted` flag). AR closes the rows it
+	// was still working on only after the stream has ended, so FAC never receives
+	// them: every row still running or pending is presented as stopped.
+	stopped: { type: Boolean, default: false },
 });
+
+const OPEN_STATUSES = new Set(["running", "pending"]);
 
 const GLYPHS = {
 	pending: "☐",
@@ -42,27 +61,49 @@ const GLYPHS = {
 	done: "✓",
 	failed: "✗",
 	skipped: "⊘",
+	stopped: "⊘",
 };
 
 function glyph(status) {
 	return GLYPHS[status] || GLYPHS.pending;
 }
 
+function helperMeta(t) {
+	const parts = ["↳ helper"];
+	if (typeof t.duration_ms === "number") {
+		parts.push(`${Math.max(1, Math.round(t.duration_ms / 1000))}s`);
+	}
+	if (Number.isFinite(t.credits)) {
+		const credits = Number(t.credits.toFixed(2));
+		parts.push(`${credits} credit${credits === 1 ? "" : "s"}`);
+	}
+	return parts.join(" · ");
+}
+
+const inFlight = computed(() => props.live && !props.stopped);
+
+function displayStatus(t) {
+	if (props.stopped && OPEN_STATUSES.has(t.status)) return "stopped";
+	if (!inFlight.value && t.status === "running") return "unfinished";
+	return t.status;
+}
+
 const rows = computed(() =>
-	props.tasks.map((t) => ({
-		...t,
-		displayStatus: !props.live && t.status === "running" ? "unfinished" : t.status,
-	}))
+	props.tasks.map((t) => {
+		const status = displayStatus(t);
+		return { ...t, displayStatus: status, displayNote: status === "stopped" ? "Stopped" : t.note };
+	})
 );
 
 // Only worth saying when the plan didn't finish cleanly — otherwise the
 // checkmarks already say it.
 const summary = computed(() => {
-	if (props.live) return "";
+	if (inFlight.value) return "";
 	const total = props.tasks.length;
 	const done = props.tasks.filter((t) => t.status === "done").length;
 	if (!total || done === total) return "";
-	return `Completed ${done} of ${total} step${total === 1 ? "" : "s"}`;
+	const verb = props.stopped ? "Stopped after" : "Completed";
+	return `${verb} ${done} of ${total} step${total === 1 ? "" : "s"}`;
 });
 </script>
 
@@ -144,12 +185,15 @@ const summary = computed(() => {
 	color: var(--ql-danger, #b4453a);
 }
 .task-row.is-skipped .glyph,
-.task-row.is-skipped .title {
+.task-row.is-skipped .title,
+.task-row.is-stopped .glyph,
+.task-row.is-stopped .title {
 	color: var(--ql-text-muted, #8a857c);
 	opacity: 0.65;
 }
 
-.delegated {
+.delegated,
+.helper-meta {
 	flex-shrink: 0;
 	font-size: 10px;
 	color: var(--ql-gold, #c9a227);
@@ -161,6 +205,16 @@ const summary = computed(() => {
 	font-size: 10.5px;
 	line-height: 1.45;
 	color: var(--ql-text-muted, #8a857c);
+	overflow-wrap: anywhere;
+}
+.activity {
+	margin: 1px 0 0;
+	margin-left: 20px;
+	font-size: 10.5px;
+	font-style: italic;
+	line-height: 1.45;
+	color: var(--ql-text-muted, #8a857c);
+	opacity: 0.85;
 	overflow-wrap: anywhere;
 }
 .note.is-reason {

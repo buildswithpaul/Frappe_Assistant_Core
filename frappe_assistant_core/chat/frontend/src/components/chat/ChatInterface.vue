@@ -15,6 +15,7 @@
 				:message-index="index"
 				:is-streaming="isStreaming && index === lastAssistantIndex"
 				:is-latest="index === lastAssistantIndex"
+				:is-resuming="isResuming && index === lastAssistantIndex"
 				@toggle-block="(msgIdx, blockId) => $emit('toggleBlock', msgIdx, blockId)"
 				@approve="(blockId, responses) => $emit('approve', blockId, responses)"
 				@reject="(blockId, responses) => $emit('reject', blockId, responses)"
@@ -46,6 +47,11 @@ const props = defineProps({
 		default: () => [],
 	},
 	isStreaming: {
+		type: Boolean,
+		default: false,
+	},
+	// An answered card's resume is in flight (chatStore.isSubmittingInterrupts).
+	isResuming: {
 		type: Boolean,
 		default: false,
 	},

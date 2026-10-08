@@ -4,7 +4,7 @@ import { resolve, join, relative, basename } from "node:path";
 
 /**
  * Every log in the app has to flow through one of the two loggers — `logger`
- * in the SPA, `FACOLogger` in the widget — because only they know to stay
+ * in the SPA and the widget bundle — because only they know to stay
  * quiet outside developer mode. A raw `console.log` bypasses that gate and
  * ships debug noise into a customer's browser console.
  *
@@ -17,13 +17,15 @@ const APP_ROOT = resolve(process.cwd(), "../..");
 
 const SKIP_DIRS = new Set([
 	"node_modules",
-	"libs", // vendored html2canvas-pro / DOMPurify
 	"spa", // public/chat/spa — Vite build output, gitignored
+	"widget-app", // public/chat/widget-app — second Vite build output, gitignored
 	"__pycache__",
 ]);
 
-// The loggers themselves are the one place console.* belongs.
-const ALLOWED_FILES = new Set(["logger.js", "faco_logger.js"]);
+// The logger is the one place console.* belongs. widget_loader.js is the exception: it is a
+// plain script that runs before any bundle is loaded, and its warning is the only signal that
+// the widget failed to start.
+const ALLOWED_FILES = new Set(["logger.js", "widget_loader.js"]);
 
 const CONSOLE_CALL = /\bconsole\.\w+\s*\(/;
 

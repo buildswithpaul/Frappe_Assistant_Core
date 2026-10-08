@@ -1,5 +1,5 @@
 <template>
-	<Teleport to="body">
+	<Teleport :to="teleportTarget">
 		<div v-if="isOpen" class="modal-overlay" @click.self="$emit('close')">
 			<div class="terms-modal-container">
 				<!-- Header -->
@@ -169,6 +169,9 @@
 import { ref, reactive, computed } from "vue";
 import DOMPurify from "dompurify";
 import { formatDateLong } from "@/composables/useFormatters";
+import { useTeleportTarget } from "@/composables/useTeleportTarget";
+
+const teleportTarget = useTeleportTarget();
 
 const props = defineProps({
 	isOpen: {

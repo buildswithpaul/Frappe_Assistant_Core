@@ -103,3 +103,32 @@ describe("ProcessingCard tool rows", () => {
 		expect(wrapper.find(".timeline-drawer .tool-header").exists()).toBe(false);
 	});
 });
+
+// A stopped turn persists a tool block that never got its result as `running`,
+// so after a reload its row kept spinning on a turn that had ended.
+describe("ProcessingCard on a turn that has ended", () => {
+	const LEFT_RUNNING = {
+		type: "tool_call",
+		id: "r1",
+		tool_name: "list_documents",
+		input: { doctype: "Sales Invoice" },
+		status: "running",
+		startTime: "2026-07-20T09:00:00.000Z",
+		endTime: null,
+	};
+
+	it("stops presenting a tool left running as in flight", () => {
+		const row = mountCard([LEFT_RUNNING]).find(".timeline-row");
+
+		expect(row.classes()).toContain("timeline-stopped");
+		expect(row.find(".chip-spinner").exists()).toBe(false);
+	});
+
+	it("keeps the spinner while the turn is still streaming", () => {
+		const wrapper = mount(ProcessingCard, {
+			props: { blocks: [LEFT_RUNNING], isExpanded: true, isStreaming: true, messageIndex: 0 },
+		});
+
+		expect(wrapper.find(".timeline-row .chip-spinner").exists()).toBe(true);
+	});
+});

@@ -1,5 +1,5 @@
 <template>
-	<Teleport to="body">
+	<Teleport :to="teleportTarget">
 		<Transition name="modal-fade">
 			<div v-if="files && files.length" class="modal-overlay" @click.self="$emit('cancel')">
 				<Transition name="modal-scale" appear>
@@ -165,6 +165,9 @@
 
 <script setup>
 import { ref } from "vue";
+import { useTeleportTarget } from "@/composables/useTeleportTarget";
+
+const teleportTarget = useTeleportTarget();
 
 const props = defineProps({
 	files: { type: Array, default: () => [] },

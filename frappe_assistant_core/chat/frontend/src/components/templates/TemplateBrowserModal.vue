@@ -1,5 +1,5 @@
 <template>
-	<Teleport to="body">
+	<Teleport :to="teleportTarget">
 		<div v-if="isOpen" class="modal-overlay" @click.self="$emit('close')">
 			<div class="modal-container">
 				<!-- Header -->
@@ -174,6 +174,9 @@
 import { ref, computed, watch } from "vue";
 import { useTemplateStore } from "@/stores/templateStore";
 import { storeToRefs } from "pinia";
+import { useTeleportTarget } from "@/composables/useTeleportTarget";
+
+const teleportTarget = useTeleportTarget();
 
 const props = defineProps({
 	isOpen: {

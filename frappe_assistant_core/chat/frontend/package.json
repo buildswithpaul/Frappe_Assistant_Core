@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build --base=/assets/frappe_assistant_core/frontend/",
+    "build": "vite build --base=/assets/frappe_assistant_core/frontend/ && vite build -c vite.widget.config.js",
+    "build:widget": "vite build -c vite.widget.config.js",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest"
@@ -19,7 +20,9 @@
     "echarts": "^5.5.0",
     "frappe-ui": "^0.1.166",
     "highlight.js": "^11.9.0",
+    "html2canvas-pro": "2.3.8",
     "marked": "^12.0.0",
+    "marked-highlight": "2.2.1",
     "mermaid": "^11.14.0",
     "pinia": "^2.1.0",
     "socket.io-client": "^4.7.0",

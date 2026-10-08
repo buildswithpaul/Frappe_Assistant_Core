@@ -1,5 +1,5 @@
 <template>
-	<Teleport to="body">
+	<Teleport :to="teleportTarget">
 		<div class="artifact-modal" data-test="backdrop" @click.self="$emit('close')">
 			<div class="modal-panel">
 				<div class="modal-toolbar">
@@ -47,6 +47,9 @@
 import { ref, onMounted, onBeforeUnmount, nextTick } from "vue";
 import { useArtifactZoom } from "@/composables/useArtifactZoom";
 import { logger } from "@/utils/logger";
+import { useTeleportTarget } from "@/composables/useTeleportTarget";
+
+const teleportTarget = useTeleportTarget();
 
 const props = defineProps({
 	capture: { type: Function, required: true },

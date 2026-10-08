@@ -1,0 +1,34 @@
+/* Token colours for FAC Chat's code block. Scoped to `.text-block pre`, which
+   is always dark (#1e293b, see MessageBlockRenderer) in both themes. highlight.js
+   runs on the shared marked instance, so other surfaces with a LIGHT `pre`
+   (ThinkingBlock, document preview, ...) must not pick up these pastel tokens. */
+.text-block pre .hljs-comment,
+.text-block pre .hljs-quote { color: #94a3b8; font-style: italic; }
+.text-block pre .hljs-keyword,
+.text-block pre .hljs-selector-tag,
+.text-block pre .hljs-literal,
+.text-block pre .hljs-section,
+.text-block pre .hljs-link { color: #c4b5fd; }
+.text-block pre .hljs-string,
+.text-block pre .hljs-regexp,
+.text-block pre .hljs-addition,
+.text-block pre .hljs-attribute,
+.text-block pre .hljs-meta .hljs-string { color: #86efac; }
+.text-block pre .hljs-number,
+.text-block pre .hljs-symbol,
+.text-block pre .hljs-bullet { color: #fdba74; }
+.text-block pre .hljs-title,
+.text-block pre .hljs-title.function_,
+.text-block pre .hljs-title.class_ { color: #7dd3fc; }
+.text-block pre .hljs-built_in,
+.text-block pre .hljs-type,
+.text-block pre .hljs-params { color: #f9a8d4; }
+.text-block pre .hljs-attr,
+.text-block pre .hljs-variable,
+.text-block pre .hljs-template-variable,
+.text-block pre .hljs-name,
+.text-block pre .hljs-tag { color: #fca5a5; }
+.text-block pre .hljs-meta { color: #a5b4fc; }
+.text-block pre .hljs-deletion { color: #fca5a5; }
+.text-block pre .hljs-emphasis { font-style: italic; }
+.text-block pre .hljs-strong { font-weight: 600; }

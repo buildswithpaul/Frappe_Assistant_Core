@@ -79,6 +79,7 @@
 						:messages="messages"
 						:is-loading="isLoading"
 						:is-streaming="isStreaming"
+						:is-resuming="chatStore.isSubmittingInterrupts"
 						@registration-complete="handleRegistrationComplete"
 						@user-connected="handleUserConnected"
 						@feature-tour-complete="handleFeatureTourComplete"
@@ -134,6 +135,8 @@
 				<ContextRail
 					:artifacts="activeArtifacts"
 					:live="activeTurnIsLive"
+					:stopped="activeTurnStopped"
+					:paused="activeTurnPaused"
 					collapsible
 					@review-approval="handleRailReviewApproval"
 					@collapse="collapseRailDock"
@@ -165,6 +168,8 @@
 					<ContextRail
 						:artifacts="activeArtifacts"
 						:live="activeTurnIsLive"
+						:stopped="activeTurnStopped"
+						:paused="activeTurnPaused"
 						@review-approval="handleRailReviewApproval"
 					/>
 				</aside>
@@ -195,6 +200,8 @@
 						<ContextRail
 						:artifacts="activeArtifacts"
 						:live="activeTurnIsLive"
+						:stopped="activeTurnStopped"
+						:paused="activeTurnPaused"
 						@review-approval="handleRailReviewApproval"
 					/>
 					</div>
@@ -259,6 +266,7 @@ import { useRobotMoodWiring } from "@/composables/useRobotMoodWiring";
 import { useContextRail } from "@/composables/useContextRail";
 import { useSheetDismiss } from "@/composables/useSheetDismiss";
 import { deriveArtifacts } from "@/utils/contextArtifacts";
+import { isPausedTurn, isStoppedTurn } from "@/utils/turnState";
 import ContextRail from "@/components/chat/ContextRail.vue";
 import { logger } from "@/utils/logger";
 import { usePreferences } from "@/composables/usePreferences";
@@ -394,6 +402,12 @@ const activeArtifacts = computed(() => deriveArtifacts(activeAssistantMessage.va
 // Drives whether the rail still presents work as in flight. A hydrated message
 // carries no isStreaming flag, so a reloaded conversation reads as finished.
 const activeTurnIsLive = computed(() => Boolean(activeAssistantMessage.value?.isStreaming));
+const activeTurnStopped = computed(() => isStoppedTurn(activeAssistantMessage.value));
+// Waiting on a card, or on the resume an answered card started (the card is
+// already resolved, but the message streams again only once the resume lands).
+const activeTurnPaused = computed(
+	() => isPausedTurn(activeAssistantMessage.value?.blocks) || chatStore.isSubmittingInterrupts
+);
 
 const railHasArtifacts = computed(() => activeArtifacts.value.hasArtifacts);
 const {

@@ -7,8 +7,8 @@
  * next person to log in. Every stored id therefore carries the user who minted
  * it, and is only ever handed back to that same user.
  *
- * The widget half of this shape lives in public/chat/widget/widget_session.js
- * (FACOWidgetSession.encode / decode); the two must stay byte-compatible.
+ * The Desk half of this shape lives in src/widget/desk/session.js (encode / decode);
+ * the two must stay byte-compatible.
  */
 
 /** Read the id at `key` if `user` is the one who stored it, else null. */

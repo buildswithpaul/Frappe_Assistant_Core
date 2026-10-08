@@ -36,9 +36,17 @@ export function createStreamManager({
 	socketError,
 	currentSessionId,
 	isCancelling,
+	isSubmittingInterrupts,
 	reconcile,
+	getSocketProbe,
 }) {
 	let activityTimeoutId = null;
+	// One extra window per silence for a dead socket; any activity re-earns it.
+	let socketGraceUsed = false;
+	// True while the visible connection dot was raised by the grace, so only
+	// activity proof clears it; a dot from the disconnect debounce is left to
+	// the socket's own reconnect.
+	let graceRaisedDot = false;
 	let cancelsInFlight = 0;
 
 	// Debounced visibility — only show UI after sustained disconnect (3s)
@@ -62,15 +70,23 @@ export function createStreamManager({
 		}
 	}
 
+	// An approved card's resume is awaited like a stream: the resume POST only
+	// queues it, and nothing streams until its first event arrives.
+	function awaitingEvents() {
+		return isStreaming.value || Boolean(isSubmittingInterrupts?.value);
+	}
+
 	function handleStreamTimeout(message) {
 		logger.error("Stream timeout:", message);
 		clearStreamTimeouts();
 
+		const wasResuming = Boolean(isSubmittingInterrupts?.value);
 		isStreaming.value = false;
+		if (isSubmittingInterrupts) isSubmittingInterrupts.value = false;
 		error.value = message;
 
 		const lastMsg = findActiveMessage(messages.value);
-		if (lastMsg && lastMsg.role === "assistant" && lastMsg.isStreaming) {
+		if (lastMsg && lastMsg.role === "assistant" && (lastMsg.isStreaming || wasResuming)) {
 			lastMsg.isStreaming = false;
 			finalizeRunningBlocks(lastMsg);
 			if (lastMsg._continuing) {
@@ -96,38 +112,67 @@ export function createStreamManager({
 	}
 
 	function resetActivityTimeout() {
-		if (activityTimeoutId) {
-			clearTimeout(activityTimeoutId);
+		socketGraceUsed = false;
+		// Activity proves the link is alive, so a grace-time indicator must not
+		// outlive the recovery. Starting a turn over HTTP proves nothing about
+		// a socket that is still down, so its banner stays.
+		if (graceRaisedDot || socketConnected.value) {
+			connectionVisible.value = false;
+			graceRaisedDot = false;
 		}
-
 		lastActivityTime.value = Date.now();
 
 		if (error.value && error.value.includes("No response received")) {
 			error.value = null;
 		}
 
-		if (!isStreaming.value) {
+		armActivityTimer();
+	}
+
+	function armActivityTimer() {
+		if (activityTimeoutId) {
+			clearTimeout(activityTimeoutId);
+			activityTimeoutId = null;
+		}
+
+		if (!awaitingEvents()) {
 			return;
 		}
 
-		activityTimeoutId = setTimeout(async () => {
-			if (!isStreaming.value) return;
-			// Silence here means "no events reached us", which is not the same
-			// as "the turn failed" — the finalizer is fire-and-forget too. Ask
-			// the server before blaming the connection; reconcile adopts a
-			// finished turn and clears isStreaming.
-			if (reconcile && currentSessionId?.value) {
-				try {
-					await reconcile(currentSessionId.value);
-				} catch (err) {
-					logger.warn("Pre-timeout reconcile failed:", err);
-				}
-				if (!isStreaming.value) return;
+		activityTimeoutId = setTimeout(onActivityTimeout, STREAM_ACTIVITY_TIMEOUT_MS);
+	}
+
+	async function onActivityTimeout() {
+		if (!awaitingEvents()) return;
+		// Silence here means "no events reached us", which is not the same
+		// as "the turn failed" — the finalizer is fire-and-forget too. Ask
+		// the server before blaming the connection; reconcile adopts a
+		// finished turn and clears isStreaming.
+		if (reconcile && currentSessionId?.value) {
+			try {
+				await reconcile(currentSessionId.value);
+			} catch (err) {
+				logger.warn("Pre-timeout reconcile failed:", err);
 			}
-			handleStreamTimeout(
-				"No response received for 3 minutes. The connection may have been lost."
-			);
-		}, STREAM_ACTIVITY_TIMEOUT_MS);
+			if (!awaitingEvents()) return;
+		}
+		// A dead socket may be the only reason the relay went quiet (Desk's
+		// realtime client stops retrying after 3 attempts): nudge it and wait
+		// one more window before failing.
+		const probe = getSocketProbe?.();
+		if (probe && !socketGraceUsed && !probe.connected()) {
+			socketGraceUsed = true;
+			probe.nudge();
+			if (!connectionVisible.value) {
+				connectionVisible.value = true;
+				graceRaisedDot = true;
+			}
+			armActivityTimer();
+			return;
+		}
+		handleStreamTimeout(
+			"No response received for 3 minutes. The connection may have been lost."
+		);
 	}
 
 	function clearStreamTimeouts() {
@@ -145,6 +190,7 @@ export function createStreamManager({
 		if (connectionDebounceId) clearTimeout(connectionDebounceId);
 		connectionDebounceId = setTimeout(() => {
 			if (!socketConnected.value) {
+				graceRaisedDot = false;
 				connectionVisible.value = true;
 			}
 		}, 3000);
@@ -169,6 +215,7 @@ export function createStreamManager({
 		if (connected) {
 			socketError.value = null;
 			connectionVisible.value = false;
+			graceRaisedDot = false;
 			if (connectionDebounceId) {
 				clearTimeout(connectionDebounceId);
 				connectionDebounceId = null;
@@ -179,6 +226,7 @@ export function createStreamManager({
 	function clearSocketError() {
 		socketError.value = null;
 		connectionVisible.value = false;
+		graceRaisedDot = false;
 	}
 
 	// Hold the send queue while a Stop's cancel_stream is in flight: FAC clears

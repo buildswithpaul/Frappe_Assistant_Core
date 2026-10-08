@@ -56,6 +56,7 @@
 		v-else-if="registrationStatus === 'ready' && isUserSetupComplete"
 		:messages="messages"
 		:is-streaming="isStreaming"
+		:is-resuming="isResuming"
 		@toggle-block="(mi, bi) => $emit('toggle-block', mi, bi)"
 		@approve="(blockId, responses) => $emit('approve', blockId, responses)"
 		@reject="(blockId, responses) => $emit('reject', blockId, responses)"
@@ -101,6 +102,7 @@ defineProps({
 	messages: { type: Array, default: () => [] },
 	isLoading: { type: Boolean, default: false },
 	isStreaming: { type: Boolean, default: false },
+	isResuming: { type: Boolean, default: false },
 });
 
 defineEmits([

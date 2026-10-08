@@ -3,6 +3,9 @@ import { computed, nextTick, ref, watch } from "vue";
 import { renderNotificationMarkdown } from "@/utils/markdown";
 import SpotlightMedia from "./SpotlightMedia.vue";
 import SpotlightQuotaArt from "./SpotlightQuotaArt.vue";
+import { useTeleportTarget } from "@/composables/useTeleportTarget";
+
+const teleportTarget = useTeleportTarget();
 
 const FOCUSABLE = "button, [href], video[controls]";
 
@@ -54,7 +57,7 @@ function onKeydown(e) {
 </script>
 
 <template>
-	<Teleport to="body">
+	<Teleport :to="teleportTarget">
 		<Transition name="spot">
 			<div v-if="content" class="spot-overlay" data-test="spotlight-overlay" @click.self="emit('close')">
 				<div

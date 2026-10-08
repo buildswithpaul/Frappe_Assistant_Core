@@ -564,14 +564,14 @@ describe("persisted kill switch", () => {
 });
 
 describe("check_access integration contract", () => {
-	// widget.js calls exactly this shape right after check_access() resolves,
+	// launcher/access.js calls exactly this shape right after check_access() resolves,
 	// ahead of its early returns:
 	//   const present = access.enable_browser_diagnostics !== undefined;
 	//   window.FACODiagnostics.setEnabled(access.enable_browser_diagnostics !== false, present);
 	// This mirrors that call site so the field's wire contract (a real
 	// `false`, not merely falsy; persistence gated on the field having
 	// actually been present) is covered without mounting the whole
-	// FACOWidget class.
+	// launcher.
 	function callAsWidgetJsWould(access) {
 		const present = access.enable_browser_diagnostics !== undefined;
 		D.setEnabled(access.enable_browser_diagnostics !== false, present);

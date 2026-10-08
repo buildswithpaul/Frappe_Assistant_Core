@@ -301,7 +301,7 @@ assistant_tool_configs = {
 # `Assistant Core Settings.enable_fac_chat` toggle. Each consumer checks the
 # gate at request time via `frappe_assistant_core.chat.gate.is_chat_enabled()`:
 #
-#   - Widget JS: `initFACOWidget()` early-returns when the gate is off
+#   - Widget JS: the launcher mounts nothing when the gate is off
 #   - SPA `/copilot` controller: returns 404 when off
 #   - `add_to_apps_screen`: `has_permission` (can_use_faco) returns False
 #   - `doc_events` dispatcher: early-returns when off
@@ -357,21 +357,14 @@ def _widget_asset(path: str) -> str:
     return f"{path}?v={_WIDGET_ASSET_VERSION}"
 
 
-# CSS bundles for the chat widget. Loaded unconditionally; the widget JS
-# decides at runtime whether to mount any UI based on the chat gate.
-app_include_css = [
-    _widget_asset("/assets/frappe_assistant_core/chat/widget/widget_base.css"),
-    _widget_asset("/assets/frappe_assistant_core/chat/widget/widget_robot.css"),
-    _widget_asset("/assets/frappe_assistant_core/chat/widget/widget_messages.css"),
-    _widget_asset("/assets/frappe_assistant_core/chat/widget/widget_modals.css"),
-    _widget_asset("/assets/frappe_assistant_core/chat/widget/widget_spotlight.css"),
-    _widget_asset("/assets/frappe_assistant_core/chat/widget/widget_richblocks.css"),
-]
+# The widget ships its own stylesheet inside its Shadow DOM, so the Desk
+# loads no widget CSS.
+app_include_css = []
 
-# JS bundles. Order matters: banner first (always meaningful), then the libs +
-# core utilities + UI modules + widget entry. The widget entry calls
-# `can_use_faco` (which now also reads the master `enable_fac_chat` gate)
-# and bails before rendering any UI when chat is off.
+# The widget itself is a hashed Vite build; `widget_loader.js` imports it from
+# the entry that `extend_bootinfo` reads out of the build manifest.
+extend_bootinfo = ["frappe_assistant_core.chat.widget_boot.extend_bootinfo"]
+
 app_include_js = [
     _widget_asset("/assets/frappe_assistant_core/js/chat_banner.js"),
     # Diagnostics right after the banner: it records console and network from
@@ -380,37 +373,7 @@ app_include_js = [
     # above it, so it cannot fail to load.
     _widget_asset("/assets/frappe_assistant_core/chat/widget/widget_diagnostics_redact.js"),
     _widget_asset("/assets/frappe_assistant_core/chat/widget/widget_diagnostics_recorder.js"),
-    # html2canvas-pro, not html2canvas 1.4.1. Upstream 1.4.1 (unmaintained since
-    # 2022) throws "Error parsing CSS component value, unexpected EOF" on EVERY
-    # Frappe Desk page: it reads an empty computed style off its own synthetic
-    # <html2canvaspseudoelement> node for ::before/::after, which the Desk uses
-    # everywhere. That is inside the library's own machinery, so no onclone
-    # pruning can avoid it. The pro fork exposes the same `html2canvas` global
-    # and API, so this is a drop-in swap.
-    _widget_asset("/assets/frappe_assistant_core/chat/widget/libs/html2canvas-pro.min.js"),
-    # Vendored as-shipped except for its trailing sourceMappingURL comment, which
-    # pointed at a .map we don't ship — a 404 on every Desk page with devtools open.
-    _widget_asset("/assets/frappe_assistant_core/chat/widget/libs/purify.min.js"),
-    _widget_asset("/assets/frappe_assistant_core/chat/widget/faco_core.js"),
-    _widget_asset("/assets/frappe_assistant_core/chat/widget/faco_logger.js"),
-    _widget_asset("/assets/frappe_assistant_core/chat/widget/widget_richblocks.js"),
-    _widget_asset("/assets/frappe_assistant_core/chat/widget/widget_ui.js"),
-    _widget_asset("/assets/frappe_assistant_core/chat/widget/widget_context.js"),
-    _widget_asset("/assets/frappe_assistant_core/chat/widget/widget_routing.js"),
-    _widget_asset("/assets/frappe_assistant_core/chat/widget/widget_streaming.js"),
-    _widget_asset("/assets/frappe_assistant_core/chat/widget/widget_plan.js"),
-    _widget_asset("/assets/frappe_assistant_core/chat/widget/widget_templates.js"),
-    _widget_asset("/assets/frappe_assistant_core/chat/widget/widget_slash_menu.js"),
-    _widget_asset("/assets/frappe_assistant_core/chat/widget/widget_spotlight.js"),
-    _widget_asset("/assets/frappe_assistant_core/chat/widget/widget_quota.js"),
-    _widget_asset("/assets/frappe_assistant_core/chat/widget/widget_browser_tools.js"),
-    _widget_asset("/assets/frappe_assistant_core/chat/widget/widget_positioning.js"),
-    _widget_asset("/assets/frappe_assistant_core/chat/widget/widget_tooltips.js"),
-    _widget_asset("/assets/frappe_assistant_core/chat/widget/widget_onboarding.js"),
-    _widget_asset("/assets/frappe_assistant_core/chat/widget/widget_autofade.js"),
-    _widget_asset("/assets/frappe_assistant_core/chat/widget/widget_voice_capture.js"),
-    _widget_asset("/assets/frappe_assistant_core/chat/widget/widget_session.js"),
-    _widget_asset("/assets/frappe_assistant_core/chat/widget/widget.js"),
+    _widget_asset("/assets/frappe_assistant_core/chat/widget/widget_loader.js"),
 ]
 
 # SPA route — always registered. `www/copilot.py` returns 404 when the gate

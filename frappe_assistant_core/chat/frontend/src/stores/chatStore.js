@@ -1,13 +1,24 @@
 import { defineStore } from "pinia";
-import { ref, computed } from "vue";
+import { ref, computed, watch } from "vue";
 import { api } from "@/api/client";
 import { logger } from "@/utils/logger";
-import { generateBlockId, findActiveMessage, isFinalizedRow } from "./chat/utils";
+import {
+	answeredCardIds,
+	carryCardDecisions,
+	generateBlockId,
+	findActiveMessage,
+	isFinalizedRow,
+	resumeHasSettled,
+	resumeMessageId,
+} from "./chat/utils";
+import { isPausedTurn } from "@/utils/turnState";
 import { createErrorState } from "./chat/errorState";
 import { createStreamManager } from "./chat/streamManager";
 import { createBlockHandlers } from "./chat/blockHandlers";
 import { createSendQueue } from "./chat/sendQueue";
+import { applyLiveSnapshot, createLiveTurnSync } from "./chat/liveTurnSync";
 import { isApprovalInteraction } from "./chat/interactionRegime";
+import { getSurface, surfaceClientSignals } from "./chat/surface";
 import { useComposerModesStore } from "./composerModesStore";
 import { useModelStore } from "./modelStore";
 import { useSpotlightStore } from "./spotlightStore";
@@ -130,12 +141,62 @@ export const useChatStore = defineStore("chat", () => {
 		currentSessionId,
 	};
 
+	// Registered by useStreaming once the socket exists; read lazily so a probe
+	// set after store creation is seen by the stream manager.
+	let socketProbe = null;
+	function setSocketProbe(probe) {
+		socketProbe = probe;
+	}
+
+	// Registered by useStreaming: how held events are handled once a join lets them through.
+	let streamDispatch = null;
+	function setStreamDispatcher(fn) {
+		streamDispatch = fn;
+	}
+
 	const stream = createStreamManager({
 		...sharedRefs,
 		isCancelling,
+		isSubmittingInterrupts,
 		reconcile: (sessionId) => reconcileFromServer(sessionId),
+		getSocketProbe: () => socketProbe,
 	});
 	const blocks = createBlockHandlers(sharedRefs);
+
+	// Joining a turn that is running elsewhere (another surface, or this one
+	// before a reload or a lost socket). See stores/chat/liveTurnSync.js.
+	function adoptLiveTurn(snap) {
+		const msg = applyLiveSnapshot(messages.value, snap);
+		isStreaming.value = true;
+		stream.startStreamTimeout();
+		streamingMessage.value = msg.content || "";
+		activeThinkingBlockId.value = snap.active_thinking_id || null;
+	}
+
+	const liveSync = createLiveTurnSync({
+		fetchSnapshot: () => api.chat.getLiveTurn(currentSessionId.value),
+		onSnapshot: adoptLiveTurn,
+		onNoLiveTurn: ({ sawTerminal }) => {
+			// A turn ended before this surface could see its row: re-read it.
+			if (sawTerminal) reconcileFromServer(currentSessionId.value);
+		},
+		dispatch: (event) => streamDispatch?.(event, { admitted: true }),
+		ownClientTurn: () => streamRequestId.value,
+		reloadHistory: () => readHistory(currentSessionId.value),
+	});
+	// sync: a join started right after the switch must not be reset by it.
+	watch(currentSessionId, () => liveSync.reset(), { flush: "sync" });
+
+	function admitStreamEvent(event) {
+		return liveSync.admit(event);
+	}
+
+	async function recoverLiveTurn(sessionId) {
+		if (!sessionId || sessionId !== currentSessionId.value) return;
+		// Reconcile merges what the server has and keeps the live bubble; a running turn's
+		// snapshot then lands on that bubble, or on a new one after a different turn's question.
+		await liveSync.join(() => reconcileFromServer(sessionId));
+	}
 	const sendQueue = createSendQueue({
 		messages,
 		currentSessionId,
@@ -174,6 +235,23 @@ export const useChatStore = defineStore("chat", () => {
 		sessions.value = sessionsData || [];
 	}
 
+	async function readHistory(sessionId) {
+		const result = await api.chat.getMessages(sessionId);
+		if (currentSessionId.value !== sessionId) return;
+		messages.value = Array.isArray(result) ? result : result?.messages || [];
+
+		// Parse every JSON column and provide legacy fallback
+		for (const msg of messages.value) {
+			parseJsonFields(msg);
+			// Legacy: messages without blocks get a text block from content
+			if (msg.role === "assistant" && !msg.blocks && msg.content) {
+				msg.blocks = [
+					{ type: "text", id: generateBlockId("text"), content: msg.content },
+				];
+			}
+		}
+	}
+
 	async function loadMessages(sessionId) {
 		try {
 			isLoading.value = true;
@@ -183,20 +261,16 @@ export const useChatStore = defineStore("chat", () => {
 			// set; leaving the previous conversation's rows in place would let it
 			// append to them, since block targeting is positional.
 			messages.value = [];
-			const result = await api.chat.getMessages(sessionId);
-			if (currentSessionId.value !== sessionId) return;
-			messages.value = Array.isArray(result) ? result : result?.messages || [];
-
-			// Parse every JSON column and provide legacy fallback
-			for (const msg of messages.value) {
-				parseJsonFields(msg);
-				// Legacy: messages without blocks get a text block from content
-				if (msg.role === "assistant" && !msg.blocks && msg.content) {
-					msg.blocks = [
-						{ type: "text", id: generateBlockId("text"), content: msg.content },
-					];
-				}
-			}
+			// Live labels belong to the previous session's helpers.
+			blocks.clearTaskActivity();
+			// A resume in flight belongs to the previous session's turn, and so
+			// does its watchdog. A stream's watchdog stays: it is what releases
+			// a send lock the previous session's turn still holds.
+			isSubmittingInterrupts.value = false;
+			if (!isStreaming.value) stream.clearStreamTimeouts();
+			// History and the running turn's snapshot are read together; events
+			// that arrive meanwhile are held and applied after the snapshot.
+			await liveSync.join(() => readHistory(sessionId));
 		} catch (err) {
 			setError(err.message);
 			logger.error("Failed to load messages:", err);
@@ -277,7 +351,20 @@ export const useChatStore = defineStore("chat", () => {
 		if (orphans.length === 1) {
 			const knownIds = new Set(prevMessages.map((m) => m.message_id).filter(Boolean));
 			const lastRow = serverMessages[serverMessages.length - 1];
-			if (lastRow && isFinalizedRow(lastRow) && !knownIds.has(lastRow.message_id)) {
+			// A failed or stopped turn that AR never named is persisted without a
+			// message_id, so an id-less row has nothing to dedupe on. It is this turn's
+			// only when it directly follows the user message the live turn answers.
+			const priorRow = serverMessages[serverMessages.length - 2];
+			const userMsg = prevMessages[prevMessages.indexOf(orphans[0]) - 1];
+			const answersLiveTurn =
+				priorRow?.role === "user" &&
+				userMsg?.role === "user" &&
+				priorRow.content === userMsg.content;
+			if (
+				lastRow &&
+				isFinalizedRow(lastRow) &&
+				(lastRow.message_id ? !knownIds.has(lastRow.message_id) : answersLiveTurn)
+			) {
 				stillLive = stillLive.filter((m) => m !== orphans[0]);
 			}
 		}
@@ -295,15 +382,32 @@ export const useChatStore = defineStore("chat", () => {
 		const localByMsgId = new Map(
 			prevMessages.filter((m) => m.message_id).map((m) => [m.message_id, m])
 		);
+		// A resume in flight continues the paused turn's own row, which is not
+		// streaming yet. Until that row has moved past the pause it is the paused
+		// snapshot, and adopting it would reopen the card the user just answered.
+		const resumingMsg = isSubmittingInterrupts.value ? findActiveMessage(prevMessages) : null;
+		const resumingId = resumingMsg?.message_id;
+		const resumedRow = resumingId && serverMessages.find((m) => m.message_id === resumingId);
+		const resumeSettled = resumeHasSettled(resumedRow, answeredCardIds(resumingMsg));
 		const merged = tail.map((m) => {
-			if (m.role !== "assistant" || isFinalizedRow(m)) return m;
+			if (resumingId && m.message_id === resumingId && !resumeSettled) {
+				return localByMsgId.get(m.message_id) || m;
+			}
+			if (m.role === "assistant" && isFinalizedRow(m)) {
+				const blocks = carryCardDecisions(localByMsgId.get(m.message_id)?.blocks, m.blocks);
+				return blocks === m.blocks ? m : { ...m, blocks };
+			}
+			if (m.role !== "assistant") return m;
 			const local = localByMsgId.get(m.message_id);
 			const localHasContent =
 				local &&
 				(local.content || (Array.isArray(local.blocks) && local.blocks.length > 0));
 			return localHasContent ? local : m;
 		});
-		messages.value = stillLive.length ? [...merged, ...stillLive] : merged;
+		// Queued rows are local-only (sent when the turn ends) and are neither server
+		// rows nor streaming, so carry them over or they vanish while still queued.
+		const queued = prevMessages.filter((m) => m.queued && !m.isStreaming);
+		messages.value = [...merged, ...stillLive, ...queued];
 
 		if (truncatedIds.size) {
 			for (const m of messages.value) {
@@ -317,6 +421,14 @@ export const useChatStore = defineStore("chat", () => {
 			stream.clearStreamTimeouts();
 			isStreaming.value = false;
 			streamingMessage.value = "";
+		}
+		// Likewise for a resume whose events were missed: the server row holds
+		// its outcome, so there is nothing left to wait for.
+		if (resumeSettled && !isStreaming.value) {
+			stream.clearStreamTimeouts();
+			isSubmittingInterrupts.value = false;
+			// A resume that paused again on a further card locks the composer to it.
+			hasPendingInteraction.value = isPausedTurn(resumedRow.blocks);
 		}
 	}
 
@@ -410,12 +522,14 @@ export const useChatStore = defineStore("chat", () => {
 			messages.value.push(assistantMessage);
 
 			const modes = useComposerModesStore().modesFor(currentSessionId.value);
+			const surface = getSurface();
+			const signals = surfaceClientSignals();
 			await api.chat.send(
 				currentSessionId.value,
 				message,
 				fileUrls,
 				context,
-				modelId,
+				modelId ?? surface.modelId,
 				systemPromptAddendum,
 				attachments,
 				{
@@ -425,6 +539,8 @@ export const useChatStore = defineStore("chat", () => {
 					thinking_enabled: modes.effort !== "off",
 					// A Stop names this request by the same id (streamManager.abortStream).
 					client_turn_id: assistantMessage._requestId,
+					client_type: surface.clientType,
+					...(signals ? { client_signals: signals } : {}),
 				}
 			);
 		} catch (err) {
@@ -473,6 +589,7 @@ export const useChatStore = defineStore("chat", () => {
 				// Older AR servers only read the boolean.
 				thinking_enabled: modes.effort !== "off",
 				client_turn_id: lastMsg._requestId,
+				client_type: getSurface().clientType,
 			});
 		} catch (err) {
 			stream.clearStreamTimeouts();
@@ -545,9 +662,10 @@ export const useChatStore = defineStore("chat", () => {
 			// The receipt: routing.credits.actual supersedes the live estimate
 			// once the canonical stream_complete receipt has arrived.
 			if (meta.routing) lastMsg.routing = meta.routing;
-			// Replace live blocks with canonical server snapshot (if provided)
+			// Replace live blocks with canonical server snapshot (if provided),
+			// keeping any card decision the user made while the stream was open.
 			if (meta.blocks && Array.isArray(meta.blocks)) {
-				lastMsg.blocks = meta.blocks;
+				lastMsg.blocks = carryCardDecisions(lastMsg.blocks, meta.blocks);
 			}
 		}
 		streamingMessage.value = "";
@@ -591,8 +709,10 @@ export const useChatStore = defineStore("chat", () => {
 		if (!batch) return;
 
 		const lastMsg = findActiveMessage(messages.value);
-		const resumeMessageId =
-			lastMsg && lastMsg.role === "assistant" ? lastMsg.message_id : null;
+		const resumingRowId = resumeMessageId(
+			messages.value,
+			new Set(batch.blocks.map((b) => b.id))
+		);
 		const sessionId = currentSessionId.value;
 		// A resume is a request of its own, as a Continue is: from here on a
 		// Stop names it, never the request that paused the turn.
@@ -611,12 +731,13 @@ export const useChatStore = defineStore("chat", () => {
 			const payload = {
 				session_id: sessionId,
 				interrupt_response: JSON.stringify(batch.responses),
-				message_id: resumeMessageId,
+				message_id: resumingRowId,
 				web_search: modes.webSearch,
 				reasoning_effort: modes.effort,
 				// Older AR servers only read the boolean.
 				thinking_enabled: modes.effort !== "off",
 				client_turn_id: clientTurnId,
+				client_type: getSurface().clientType,
 			};
 			// Same reasoning for the model — except "auto" can never travel: a
 			// resume skips classification, so only a concrete id is a model.
@@ -633,6 +754,10 @@ export const useChatStore = defineStore("chat", () => {
 			// Socket.IO; flip the local card status now so the UI matches.
 			clearExpiryTimer();
 			blocks.applyInteractionDecisions(batch.blocks);
+			// Await the resume's first event like a stream's, so a resume that
+			// never produces one times out instead of spinning forever. The
+			// window includes the time the resume waits in the server's queue.
+			stream.startStreamTimeout();
 			// Deliberately NOT cleared here. This HTTP call only acknowledges
 			// that the resume was queued server-side (a bounded thread pool
 			// picks it up); the agent hasn't produced a single event yet.
@@ -643,7 +768,7 @@ export const useChatStore = defineStore("chat", () => {
 			// exactly the window the send queue would dispatch into.
 			// handleStreamResumed() clears it once that first event lands;
 			// handleStreamError/handleStreamAborted clear it if the resume
-			// never gets that far.
+			// never gets that far, and handleStreamTimeout if nothing arrives.
 		} catch (err) {
 			logger.error("Failed to resume interrupt:", err);
 			blocks.revertInteractionDecisions(batch.blocks);
@@ -773,7 +898,9 @@ export const useChatStore = defineStore("chat", () => {
 	function clearSessions() {
 		sessions.value = [];
 		messages.value = [];
+		blocks.clearTaskActivity();
 		clearExpiryTimer();
+		isSubmittingInterrupts.value = false;
 		currentSessionId.value = null;
 	}
 
@@ -951,9 +1078,16 @@ export const useChatStore = defineStore("chat", () => {
 		handleSocketDisconnect: stream.handleSocketDisconnect,
 		handleSocketError: stream.handleSocketError,
 		setSocketConnected: stream.setSocketConnected,
+		setSocketProbe,
+		setStreamDispatcher,
+		admitStreamEvent,
+		recoverLiveTurn,
 		clearSocketError: stream.clearSocketError,
 		// Block-based message actions (delegated)
 		handlePlanEvent: blocks.handlePlanEvent,
+		taskActivity: blocks.taskActivity,
+		lastActivityTaskId: blocks.lastActivityTaskId,
+		handleTaskActivity: blocks.handleTaskActivity,
 		handleWorkflowCreatedEvent: blocks.handleWorkflowCreatedEvent,
 		handleModelSelected: blocks.handleModelSelected,
 		handleThinkingEvent: blocks.handleThinkingEvent,

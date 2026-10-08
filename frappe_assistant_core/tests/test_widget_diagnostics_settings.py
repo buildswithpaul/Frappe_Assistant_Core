@@ -5,27 +5,17 @@
 
 """The widget must obey the operator's privacy toggles, not a literal.
 
-`get_page_context` hardcoded `enable_dom_extraction: true`, so turning the
-setting off changed nothing for browser tools while appearing to work in the
-admin UI. The diagnostics kill switch travels the same channel and would have
-inherited the same bug.
+Turning a privacy setting off once changed nothing for browser tools while appearing to
+work in the admin UI. The launcher reads both flags from `get_widget_settings`, and a
+server failure must never read as "everything allowed".
 """
 
-import re
-from pathlib import Path
+from unittest.mock import patch
 
 import frappe
 
 from frappe_assistant_core.chat.api.settings.widget import get_widget_settings
 from frappe_assistant_core.tests.base_test import BaseAssistantTest
-
-WIDGET_JS = (
-    Path(frappe.get_app_path("frappe_assistant_core"))
-    / "public"
-    / "chat"
-    / "widget"
-    / "widget_browser_tools.js"
-)
 
 
 class TestWidgetDiagnosticsSettings(BaseAssistantTest):
@@ -41,10 +31,17 @@ class TestWidgetDiagnosticsSettings(BaseAssistantTest):
             f"enable_browser_diagnostics must resolve truthy, got {settings.enable_browser_diagnostics!r}",
         )
 
-    def test_dom_extraction_setting_is_read_not_hardcoded(self):
-        source = WIDGET_JS.read_text()
-        self.assertNotRegex(
-            source,
-            re.compile(r"enable_dom_extraction:\s*true"),
-            "get_page_context must read the served setting, not a literal",
-        )
+    def test_success_returns_only_the_privacy_block(self):
+        self.assertEqual(set(get_widget_settings()), {"privacy"})
+
+    def test_privacy_flags_follow_the_settings(self):
+        settings = frappe.get_single("FAC Chat Settings")
+        privacy = get_widget_settings()["privacy"]
+        self.assertEqual(privacy["enable_dom_extraction"], bool(settings.enable_dom_extraction))
+        self.assertEqual(privacy["enable_browser_diagnostics"], bool(settings.enable_browser_diagnostics))
+
+    def test_error_branch_carries_no_privacy_block(self):
+        # The launcher reads a missing privacy block as "DOM extraction off"; defaulting the
+        # flags to True here would turn a server failure into fail-open.
+        with patch.object(frappe, "get_single", side_effect=Exception("settings unavailable")):
+            self.assertEqual(get_widget_settings(), {})

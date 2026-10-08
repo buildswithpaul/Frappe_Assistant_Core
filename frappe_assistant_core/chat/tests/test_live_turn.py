@@ -1,0 +1,302 @@
+"""Live-turn snapshots: lifecycle, write policy and turn ownership."""
+
+from unittest.mock import patch
+
+import frappe
+
+from frappe_assistant_core.chat.api.block_builder import BlockBuilder
+from frappe_assistant_core.chat.api.chat import live_turn
+from frappe_assistant_core.tests.base_test import BaseAssistantTest
+
+
+class TestLiveTurnModule(BaseAssistantTest):
+    def setUp(self):
+        super().setUp()
+        self.sid = f"live-{frappe.generate_hash(length=10)}"
+
+    def tearDown(self):
+        live_turn.unbind(self.sid)
+        live_turn.clear(self.sid)
+        super().tearDown()
+
+    def test_start_writes_a_starting_entry_that_keeps_the_rows_content(self):
+        turn = live_turn.start(self.sid, message_id="m1")
+        entry = live_turn.get(self.sid)
+        self.assertEqual(entry["turn"], turn)
+        self.assertEqual(entry["status"], "starting")
+        self.assertEqual(entry["message_id"], "m1")
+        self.assertEqual(entry["seq"], 0)
+        self.assertIsNone(entry["blocks"])
+        self.assertIsNone(entry["text"])
+
+    def test_start_keeps_the_clients_own_id_for_the_turn(self):
+        live_turn.start(self.sid, client_turn="c-1")
+        self.assertEqual(live_turn.get(self.sid)["client_turn"], "c-1")
+
+    def test_bind_carries_the_clients_id_from_the_starting_entry_onto_every_event(self):
+        turn = live_turn.start(self.sid, client_turn="c-1")
+        live = live_turn.bind(self.sid, BlockBuilder(), turn=turn)
+        data = {"event": "stream_chunk"}
+        live.stamp(data)
+        self.assertEqual(data["client_turn"], "c-1")
+        self.assertEqual(live_turn.get(self.sid)["client_turn"], "c-1")
+
+    def test_a_turn_without_a_client_id_stamps_none(self):
+        turn = live_turn.start(self.sid)
+        live = live_turn.bind(self.sid, BlockBuilder(), turn=turn)
+        data = {"event": "stream_chunk"}
+        live.stamp(data)
+        self.assertNotIn("client_turn", data)
+
+    def test_get_is_none_when_no_turn_runs(self):
+        self.assertIsNone(live_turn.get(self.sid))
+
+    def test_bind_writes_the_builders_state_at_once(self):
+        builder = BlockBuilder(existing_blocks=[{"type": "text", "id": "t0", "content": "Part one. "}])
+        live = live_turn.bind(self.sid, builder, message_id="m1")
+        entry = live_turn.get(self.sid)
+        self.assertEqual(entry["turn"], live.turn)
+        self.assertEqual(entry["status"], "streaming")
+        self.assertEqual(entry["text"], "Part one. ")
+        self.assertEqual(entry["blocks"][0]["content"], "Part one. ")
+
+    def test_stamp_numbers_events_from_one_under_the_turn(self):
+        live = live_turn.bind(self.sid, BlockBuilder())
+        first, second = {"event": "heartbeat"}, {"event": "heartbeat"}
+        live.stamp(first)
+        live.stamp(second)
+        self.assertEqual((first["turn"], first["seq"]), (live.turn, 1))
+        self.assertEqual(second["seq"], 2)
+
+    def test_a_block_event_is_written_at_once(self):
+        builder = BlockBuilder()
+        live = live_turn.bind(self.sid, builder)
+        builder.add_tool_call_start("toolu_1", "get_list", {})
+        event = {"event": "tool_call_start", "tool_id": "toolu_1"}
+        live.stamp(event)
+        live.record(event)
+        entry = live_turn.get(self.sid)
+        self.assertEqual(entry["seq"], 1)
+        self.assertEqual(entry["blocks"][-1]["id"], "toolu_1")
+
+    def test_text_chunks_are_written_at_most_every_interval(self):
+        builder = BlockBuilder()
+        clock = iter([100.0, 100.1, 100.7, 100.7])
+        with patch.object(live_turn, "_clock", side_effect=lambda: next(clock)):
+            live = live_turn.bind(self.sid, builder)  # write at 100.0
+            for chunk in ("Hel", "lo"):
+                builder.add_text(chunk)
+                event = {"event": "stream_chunk", "chunk": chunk}
+                live.stamp(event)
+                live.record(event)
+        entry = live_turn.get(self.sid)
+        # 100.1 skipped (0.1s after the bind write); 100.7 written (one read to decide, one to stamp the write)
+        self.assertEqual(entry["seq"], 2)
+        self.assertEqual(entry["text"], "Hello")
+
+    def test_a_skipped_chunk_leaves_the_last_written_seq(self):
+        builder = BlockBuilder()
+        clock = iter([100.0, 100.1])
+        with patch.object(live_turn, "_clock", side_effect=lambda: next(clock)):
+            live = live_turn.bind(self.sid, builder)
+            builder.add_text("Hi")
+            event = {"event": "stream_chunk", "chunk": "Hi"}
+            live.stamp(event)
+            live.record(event)
+        self.assertEqual(live_turn.get(self.sid)["seq"], 0)
+
+    def test_text_is_the_text_blocks_including_a_seeded_first_part(self):
+        builder = BlockBuilder(existing_blocks=[{"type": "text", "id": "t0", "content": "First. "}])
+        live = live_turn.bind(self.sid, builder, message_id="m1")
+        builder.add_tool_call_start("toolu_1", "get_list", {})
+        builder.add_text("Second.")
+        event = {"event": "tool_call_start", "tool_id": "toolu_1"}
+        live.stamp(event)
+        live.record(event)
+        self.assertEqual(live_turn.get(self.sid)["text"], "First. Second.")
+
+    def test_the_open_thinking_block_is_named(self):
+        builder = BlockBuilder()
+        clock = iter(
+            [100.0, 100.7, 100.7]
+        )  # bind at 100.0, thinking event throttle check at 100.7, _save at 100.7
+        with patch.object(live_turn, "_clock", side_effect=lambda: next(clock)):
+            live = live_turn.bind(self.sid, builder)
+            builder.add_thinking("Let me see")
+            event = {"event": "thinking", "content": "Let me see"}
+            live.stamp(event)
+            live.record(event)
+        entry = live_turn.get(self.sid)
+        self.assertEqual(entry["active_thinking_id"], builder.active_thinking_id)
+        self.assertIsNotNone(entry["active_thinking_id"])
+
+    def test_tool_results_are_trimmed_like_the_emitted_event(self):
+        builder = BlockBuilder()
+        live = live_turn.bind(self.sid, builder)
+        builder.add_tool_call_start("toolu_1", "get_list", {})
+        builder.add_tool_call_result("toolu_1", "x" * 200_000)
+        event = {"event": "tool_call_result", "tool_id": "toolu_1"}
+        live.stamp(event)
+        live.record(event)
+        stored = live_turn.get(self.sid)["blocks"][-1]["result"]
+        self.assertLess(len(str(stored)), 200_000)
+
+    def test_a_terminal_event_deletes_the_entry(self):
+        for terminal in sorted(live_turn.TERMINAL_EVENTS):
+            with self.subTest(terminal=terminal):
+                live = live_turn.bind(self.sid, BlockBuilder())
+                event = {"event": terminal}
+                live.stamp(event)
+                live.record(event)
+                self.assertIsNone(live_turn.get(self.sid))
+                live_turn.unbind(self.sid)
+
+    def test_an_event_after_the_terminal_one_does_not_recreate_the_entry(self):
+        live = live_turn.bind(self.sid, BlockBuilder())
+        for event in ({"event": "stream_complete"}, {"event": "tool_call_start", "tool_id": "t1"}):
+            live.stamp(event)
+            live.record(event)
+        self.assertIsNone(live_turn.get(self.sid))
+
+    def test_an_ended_turn_never_overwrites_the_next_turns_entry(self):
+        live = live_turn.bind(self.sid, BlockBuilder())
+        end = {"event": "stream_complete"}
+        live.stamp(end)
+        live.record(end)
+        newer = live_turn.start(self.sid)
+        late = {"event": "tool_call_start", "tool_id": "t1"}
+        live.stamp(late)
+        live.record(late)
+        self.assertEqual(live_turn.get(self.sid)["turn"], newer)
+        self.assertEqual(live_turn.get(self.sid)["status"], "starting")
+
+    def test_bind_adopts_the_turn_token_it_is_given(self):
+        turn = live_turn.start(self.sid)
+        live = live_turn.bind(self.sid, BlockBuilder(), turn=turn)
+        self.assertEqual(live.turn, turn)
+        self.assertEqual(live_turn.get(self.sid)["turn"], turn)
+
+    def test_unbind_with_nothing_bound_clears_that_turns_entry(self):
+        turn = live_turn.start(self.sid)
+        live_turn.unbind(self.sid, turn=turn)
+        self.assertIsNone(live_turn.get(self.sid))
+
+    def test_unbind_with_nothing_bound_spares_a_newer_turn(self):
+        live_turn.start(self.sid)
+        newer = live_turn.start(self.sid)
+        live_turn.unbind(self.sid, turn="old-token")
+        self.assertEqual(live_turn.get(self.sid)["turn"], newer)
+
+    def test_a_stale_turn_never_clears_a_newer_turn(self):
+        # The previous relay's finally runs after the next send's start().
+        live_turn.bind(self.sid, BlockBuilder())
+        newer = live_turn.start(self.sid)
+        live_turn.unbind(self.sid)
+        self.assertEqual(live_turn.get(self.sid)["turn"], newer)
+
+    def test_clear_with_a_matching_turn_deletes(self):
+        turn = live_turn.start(self.sid)
+        live_turn.clear(self.sid, turn)
+        self.assertIsNone(live_turn.get(self.sid))
+
+    def test_a_disabled_bind_writes_nothing_and_binds_nothing(self):
+        # GDPR-restricted users: nothing about their turn is stored.
+        self.assertIsNone(live_turn.bind(self.sid, BlockBuilder(), enabled=False))
+        self.assertIsNone(live_turn.current(self.sid))
+        self.assertIsNone(live_turn.get(self.sid))
+
+    def test_current_is_the_bound_turn_until_unbind(self):
+        live = live_turn.bind(self.sid, BlockBuilder())
+        self.assertIs(live_turn.current(self.sid), live)
+        live_turn.unbind(self.sid)
+        self.assertIsNone(live_turn.current(self.sid))
+        self.assertIsNone(live_turn.get(self.sid))
+
+    def test_thinking_deltas_are_written_at_most_every_interval(self):
+        builder = BlockBuilder()
+        clock = iter([100.0, 100.1, 100.7, 100.7, 100.8])
+        with patch.object(live_turn, "_clock", side_effect=lambda: next(clock)):
+            live = live_turn.bind(self.sid, builder)  # write at 100.0
+            # First thinking delta at 100.1 (throttled, skipped)
+            builder.add_thinking("Let me")
+            event = {"event": "thinking", "content": "Let me"}
+            live.stamp(event)
+            live.record(event)
+            # After first thinking, seq incremented to 1 in live object, but stored entry still seq 0
+            self.assertEqual(live.seq, 1)
+            self.assertEqual(live_turn.get(self.sid)["seq"], 0)
+            # Second thinking delta at 100.7 (not throttled, 0.7s after bind)
+            builder.add_thinking(" think")
+            event = {"event": "thinking", "content": " think"}
+            live.stamp(event)
+            live.record(event)
+            # After second thinking, stored seq should be 2
+            self.assertEqual(live.seq, 2)
+            entry = live_turn.get(self.sid)
+            self.assertEqual(entry["seq"], 2)
+            # thinking_complete at 100.8 (written immediately, not throttled)
+            builder.complete_thinking()
+            event = {"event": "thinking_complete"}
+            live.stamp(event)
+            live.record(event)
+        entry = live_turn.get(self.sid)
+        # Final seq should be 3 (thinking_complete increments it)
+        self.assertEqual(entry["seq"], 3)
+        # Both deltas should be in the stored thinking block
+        thinking_block = next(b for b in entry["blocks"] if b.get("type") == "thinking")
+        self.assertEqual(thinking_block["content"], "Let me think")
+
+
+class TestGetLiveTurn(BaseAssistantTest):
+    def setUp(self):
+        super().setUp()
+        self.owner = self.make_throwaway_user("live-owner")
+        self.other = self.make_throwaway_user("live-other")
+        self.sid = f"live-ep-{frappe.generate_hash(length=8)}"
+        # Production: send_message saves the user row before the relay is queued.
+        frappe.get_doc(
+            {
+                "doctype": "FAC Chat Message",
+                "session_id": self.sid,
+                "user": self.owner,
+                "role": "user",
+                "content": "hello",
+            }
+        ).insert(ignore_permissions=True)
+
+    def tearDown(self):
+        live_turn.clear(self.sid)
+        frappe.set_user("Administrator")
+        super().tearDown()
+
+    def test_the_owner_reads_the_running_turn(self):
+        frappe.set_user(self.owner)
+        turn = live_turn.start(self.sid)
+        entry = live_turn.get_live_turn(self.sid)
+        self.assertEqual(entry["turn"], turn)
+        self.assertEqual(entry["user"], self.owner)
+
+    def test_nothing_running_reads_as_none(self):
+        frappe.set_user(self.owner)
+        self.assertIsNone(live_turn.get_live_turn(self.sid))
+
+    def test_another_user_is_refused(self):
+        live_turn.start(self.sid)
+        frappe.set_user(self.other)
+        with self.assertRaises(frappe.PermissionError):
+            live_turn.get_live_turn(self.sid)
+
+    def test_another_user_is_refused_even_when_the_conversation_has_no_rows(self):
+        # Production: owner deletes the conversation while its turn is still running.
+        frappe.db.delete("FAC Chat Message", {"session_id": self.sid})
+        frappe.set_user(self.owner)
+        live_turn.start(self.sid)
+        frappe.set_user(self.other)
+        with self.assertRaises(frappe.PermissionError):
+            live_turn.get_live_turn(self.sid)
+
+    def test_it_is_a_get_endpoint_on_the_chat_api_path(self):
+        from frappe_assistant_core.chat.api import chat as chat_api
+
+        self.assertIs(chat_api.get_live_turn, live_turn.get_live_turn)
+        self.assertIn("GET", frappe.allowed_http_methods_for_whitelisted_func[live_turn.get_live_turn])

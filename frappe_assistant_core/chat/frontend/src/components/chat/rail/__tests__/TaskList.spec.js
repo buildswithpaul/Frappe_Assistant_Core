@@ -104,3 +104,143 @@ describe("TaskList after the turn ends", () => {
 		expect(wrapper.find(".task-summary").exists()).toBe(false);
 	});
 });
+
+describe("TaskList parallel helpers", () => {
+	it("shows a live label under each running helper row while live", () => {
+		const wrapper = mount(TaskList, {
+			props: {
+				tasks: [
+					{ id: "a", title: "Customer A", status: "running", helper: true },
+					{ id: "b", title: "Customer B", status: "running", helper: true },
+				],
+				activity: { a: "Reading Sales Invoice list…", b: "Opening Customer B…" },
+				live: true,
+			},
+		});
+		const labels = wrapper.findAll(".activity").map((n) => n.text());
+		expect(labels).toEqual(["Reading Sales Invoice list…", "Opening Customer B…"]);
+	});
+
+	it("shows helper meta on a finished helper row and no label after the turn", () => {
+		const wrapper = mount(TaskList, {
+			props: {
+				tasks: [
+					{
+						id: "a",
+						title: "Customer A",
+						status: "done",
+						helper: true,
+						duration_ms: 12400,
+						credits: 0.4,
+					},
+				],
+				activity: { a: "stale label" },
+				live: false,
+			},
+		});
+		expect(wrapper.find(".helper-meta").text()).toBe("↳ helper · 12s · 0.4 credits");
+		expect(wrapper.find(".activity").exists()).toBe(false);
+	});
+
+	it("rounds helper credits like the widget, singular for exactly one", () => {
+		const meta = (credits) =>
+			mount(TaskList, {
+				props: { tasks: [{ id: "a", title: "A", status: "done", helper: true, credits }] },
+			})
+				.find(".helper-meta")
+				.text();
+		expect(meta(0.123456)).toBe("↳ helper · 0.12 credits");
+		expect(meta(1)).toBe("↳ helper · 1 credit");
+		expect(meta(0.999)).toBe("↳ helper · 1 credit");
+		expect(meta(NaN)).toBe("↳ helper");
+		expect(meta(Infinity)).toBe("↳ helper");
+	});
+
+	it("drops the live label from a helper the turn left running", () => {
+		const wrapper = mount(TaskList, {
+			props: {
+				tasks: [{ id: "a", title: "Customer A", status: "running", helper: true }],
+				activity: { a: "Reading Sales Invoice list…" },
+				live: false,
+			},
+		});
+		expect(wrapper.find(".activity").exists()).toBe(false);
+	});
+
+	it("keeps the old specialist tag for legacy delegated rows without helper fields", () => {
+		const wrapper = mount(TaskList, {
+			props: { tasks: [{ id: "a", title: "A", status: "done", delegated: true }] },
+		});
+		expect(wrapper.find(".delegated").exists()).toBe(true);
+	});
+});
+
+describe("TaskList bare", () => {
+	it("leaves the heading and the tally to its host", () => {
+		const tasks = [{ id: "a", title: "A", status: "running" }];
+		const framed = mount(TaskList, { props: { tasks, live: false } });
+		expect(framed.find(".task-head").exists()).toBe(true);
+		expect(framed.find(".task-summary").exists()).toBe(true);
+		const bare = mount(TaskList, { props: { tasks, live: false, bare: true } });
+		expect(bare.find(".task-head").exists()).toBe(false);
+		expect(bare.find(".task-summary").exists()).toBe(false);
+		expect(bare.find(".task-row").exists()).toBe(true);
+	});
+});
+
+// Live-bug repro (FAC Chat Message MSG-2026-10828, aborted=1): Stop ends the
+// stream ~0.1 s after the click, but AR marks the delegated helpers skipped
+// ~0.8 s later — after FAC stopped listening. The persisted plan keeps three
+// rows `running` and two `pending`, so the rail read as unfinished/pending work
+// with no sign the user stopped it. AR never fakes a status; the client gives
+// the stopped turn its own terminal presentation.
+describe("TaskList on a stopped turn", () => {
+	const STOPPED = [
+		{ id: "1", title: "Plan the comparison", status: "done" },
+		{ id: "a", title: "Customer A", status: "running", helper: true },
+		{ id: "b", title: "Customer B", status: "running", helper: true },
+		{ id: "c", title: "Customer C", status: "running", helper: true },
+		{ id: "4", title: "Compare the totals", status: "pending" },
+		{ id: "5", title: "Write the summary", status: "pending" },
+	];
+	const mountStopped = (props = {}) =>
+		mount(TaskList, { props: { tasks: STOPPED, live: false, stopped: true, ...props } });
+
+	it("renders every running and pending row as stopped", () => {
+		const rows = mountStopped().findAll(".task-row");
+
+		expect(rows[0].classes()).toContain("is-done");
+		for (const row of rows.slice(1)) {
+			expect(row.classes()).toContain("is-stopped");
+			expect(row.classes()).not.toContain("is-running");
+			expect(row.classes()).not.toContain("is-unfinished");
+			expect(row.classes()).not.toContain("is-pending");
+			expect(row.find(".glyph").text()).toBe("⊘");
+			expect(row.find(".note").text()).toBe("Stopped");
+		}
+	});
+
+	it("says the turn was stopped and how far it got", () => {
+		expect(mountStopped().find(".task-summary").text()).toBe("Stopped after 1 of 6 steps");
+	});
+
+	it("drops the live label from a stopped helper", () => {
+		const wrapper = mountStopped({ activity: { a: "Reading Sales Invoice list…" } });
+
+		expect(wrapper.find(".activity").exists()).toBe(false);
+	});
+
+	it("leaves a terminal row's own status and note alone", () => {
+		const wrapper = mountStopped({
+			tasks: [
+				{ id: "1", title: "A", status: "failed", note: "closed period" },
+				{ id: "2", title: "B", status: "skipped", note: "Stopped" },
+			],
+		});
+		const rows = wrapper.findAll(".task-row");
+
+		expect(rows[0].classes()).toContain("is-failed");
+		expect(rows[0].find(".note").text()).toBe("closed period");
+		expect(rows[1].classes()).toContain("is-skipped");
+	});
+});

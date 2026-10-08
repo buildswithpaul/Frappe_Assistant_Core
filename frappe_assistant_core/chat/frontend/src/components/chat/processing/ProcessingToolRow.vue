@@ -1,9 +1,9 @@
 <template>
-	<div class="timeline-row" :class="`timeline-${row.status}`">
+	<div class="timeline-row" :class="`timeline-${status}`">
 		<button class="timeline-line" @click="expanded = !expanded" :aria-expanded="expanded">
-			<span class="timeline-chip" :class="`chip-${row.status}`">
+			<span class="timeline-chip" :class="`chip-${status}`">
 				<svg
-					v-if="row.status === 'running'"
+					v-if="status === 'running'"
 					class="chip-spinner"
 					viewBox="0 0 24 24"
 					fill="none"
@@ -24,7 +24,7 @@
 					/>
 				</svg>
 				<svg
-					v-else-if="row.status === 'error'"
+					v-else-if="status === 'error'"
 					viewBox="0 0 24 24"
 					fill="none"
 					stroke="currentColor"
@@ -35,6 +35,15 @@
 						stroke-width="3"
 						d="M6 18L18 6M6 6l12 12"
 					/>
+				</svg>
+				<svg
+					v-else-if="status === 'stopped'"
+					viewBox="0 0 24 24"
+					fill="none"
+					stroke="currentColor"
+				>
+					<circle cx="12" cy="12" r="8" stroke-width="3" />
+					<path stroke-linecap="round" stroke-width="3" d="M7 17L17 7" />
 				</svg>
 				<svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor">
 					<path
@@ -77,12 +86,19 @@
 </template>
 
 <script setup>
-import { ref } from "vue";
+import { computed, ref } from "vue";
 import ToolCallBlock from "../ToolCallBlock.vue";
 
-defineProps({
+const props = defineProps({
 	row: { type: Object, required: true },
+	// False once the turn is over: a tool whose result never arrived is
+	// persisted as `running`, and must not keep spinning on an ended turn.
+	live: { type: Boolean, default: true },
 });
+
+const status = computed(() =>
+	!props.live && props.row.status === "running" ? "stopped" : props.row.status
+);
 
 const expanded = ref(false);
 </script>
@@ -126,6 +142,11 @@ const expanded = ref(false);
 .chip-running {
 	background: color-mix(in srgb, var(--ql-warning) 16%, transparent);
 	color: var(--ql-warning);
+}
+
+.chip-stopped {
+	background: color-mix(in srgb, var(--ql-text-muted) 16%, transparent);
+	color: var(--ql-text-muted);
 }
 
 .chip-error {

@@ -18,6 +18,72 @@ export function isFinalizedRow(msg) {
 	return Boolean(msg.content) || (Array.isArray(msg.blocks) && msg.blocks.length > 0);
 }
 
+// Carry the user's card decisions from the blocks on screen onto a server
+// snapshot of the same turn. A paused stream can end after the user decided
+// (a helper kept it open), and its snapshot still holds those cards pending.
+export function carryCardDecisions(localBlocks, snapshotBlocks) {
+	const decided = new Map(
+		(Array.isArray(localBlocks) ? localBlocks : [])
+			.filter((b) => b?.type === "interaction" && b.decision)
+			.map((b) => [b.id, b])
+	);
+	if (!decided.size || !Array.isArray(snapshotBlocks)) return snapshotBlocks;
+	return snapshotBlocks.map((b) => {
+		const local = b?.type === "interaction" && b.status === "pending" && decided.get(b.id);
+		if (!local || !sameInterrupts(local, b)) return b;
+		const { decision, status, userResponse, endTime, isExpanded } = local;
+		return { ...b, decision, status, userResponse, endTime, isExpanded };
+	});
+}
+
+// A decision answers specific interrupts; a card id alone (the gated tool's id)
+// can come back on a later pause.
+function sameInterrupts(a, b) {
+	const ids = (card) => (card.interrupts || []).map((i) => i?.id).sort().join("\n");
+	return ids(a) === ids(b);
+}
+
+// The message_id a resume continues: the latest row holding one of the decided
+// cards that has an id. A rebuilt list can put the card on a bubble without
+// one (a snapshot that carried none) after the history row that has it. Null
+// when none has: the server then resolves the paused row itself.
+export function resumeMessageId(messages, cardIds) {
+	for (let i = (messages?.length || 0) - 1; i >= 0; i--) {
+		const msg = messages[i];
+		if (msg?.role !== "assistant" || !msg.message_id) continue;
+		const holds = (msg.blocks || []).some((b) => b?.type === "interaction" && cardIds.has(b.id));
+		if (holds) return msg.message_id;
+	}
+	return null;
+}
+
+// The ids of the cards the user answered on a turn. recordInteractionDecision
+// sets `decision` at once, and only a fully decided batch is resumed; the
+// status flips later, once the resume_interrupt call returns.
+export function answeredCardIds(msg) {
+	const blocks = Array.isArray(msg?.blocks) ? msg.blocks : [];
+	return new Set(blocks.filter((b) => b?.type === "interaction" && b.decision).map((b) => b.id));
+}
+
+// Whether a paused turn's server row shows the outcome of the resume that
+// answered `answeredIds`. The relay persists nothing mid-resume, so until the
+// resume ends those cards are still pending on the row. Once every one of them
+// has moved on, the row holds an outcome: an answer, a new pause on a further
+// card, or the cards written `expired` because the pause was already gone.
+// Without an answered card, or with one the row does not know (a client-minted
+// `interaction-N` id), there is nothing to judge the row by: unsettled.
+export function resumeHasSettled(row, answeredIds) {
+	if (!row) return false;
+	if (row.errored || row.aborted) return true;
+	if (!answeredIds?.size) return false;
+	const cards = new Map(
+		(Array.isArray(row.blocks) ? row.blocks : [])
+			.filter((b) => b?.type === "interaction")
+			.map((b) => [b.id, b])
+	);
+	return [...answeredIds].every((id) => cards.has(id) && cards.get(id).status !== "pending");
+}
+
 // `messages[length-1]` stops being "the active turn" the instant a non-turn
 // entry lands on the tail. Two do: compose-while-streaming bubbles (queued
 // while the assistant message keeps streaming) and `role: "divider"` markers

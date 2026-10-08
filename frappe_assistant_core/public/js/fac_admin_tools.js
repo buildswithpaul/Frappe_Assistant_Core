@@ -55,7 +55,10 @@
                 }
             },
             error: function(r) {
-                FACOLogger.error('Failed to load server status:', r);
+                frappe.show_alert({
+                    message: __('Failed to load server status'),
+                    indicator: 'red'
+                });
                 $('#fac-mcp-endpoint').text('Error loading endpoint');
             }
         });
@@ -100,8 +103,9 @@
 
     // ── FAC Chat enablement ────────────────────────────────────────────
     // Reads current state from chat.api.get_chat_status and renders the
-    // pill + button. The toggle endpoint returns the widget asset bundles
-    // so we can hot-mount on enable without a manual page reload.
+    // pill + button. Enabling hot-mounts the widget through the launcher's
+    // window.facoWidgetRemount (disabling calls window.facoWidgetTeardown), so no
+    // page reload is needed once the launcher has been loaded.
 
     ns.loadChatStatus = function() {
         frappe.call({
@@ -158,9 +162,13 @@
                     ns._renderChatStatus(data.enabled);
 
                     if (data.enabled) {
-                        // Hot-mount the widget on this page. Other open Desk
-                        // tabs will pick it up on their next navigation since
-                        // can_use_faco now returns show_widget: true.
+                        // Hot-mount the widget on this page. The boot hook always sets
+                        // the widget entry and the launcher registers
+                        // facoWidgetRemount before its access check, so this works even
+                        // if chat was off at page load: remount re-runs the access
+                        // check and mounts the widget. Other open Desk tabs pick it up
+                        // on their next navigation since can_use_faco now returns
+                        // show_widget: true.
                         if (typeof window.facoWidgetRemount === 'function') {
                             window.facoWidgetRemount();
                         }
@@ -169,7 +177,7 @@
                             indicator: 'green'
                         });
                     } else {
-                        // Hot-unmount the widget on this page.
+                        // Hot-unmount the widget on this page (the launcher's teardown on disable).
                         if (typeof window.facoWidgetTeardown === 'function') {
                             window.facoWidgetTeardown();
                         }

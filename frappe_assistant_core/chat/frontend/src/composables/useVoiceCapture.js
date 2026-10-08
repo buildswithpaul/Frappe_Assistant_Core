@@ -1,5 +1,5 @@
-// Vue 3 composable wrapping the same MediaRecorder state machine as
-// widget_voice_capture.js. Exposes reactive state + a toggle().
+// Vue 3 composable wrapping a MediaRecorder state machine, shared by FAC Chat and the Desk
+// widget panel. Exposes reactive state + a toggle().
 
 import { ref, onUnmounted } from "vue";
 

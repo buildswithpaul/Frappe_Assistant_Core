@@ -28,14 +28,28 @@
 						stroke-linecap="round"
 					/>
 				</svg>
+				<!-- Clock while a gated tool waits for its card -->
+				<svg v-else-if="isWaiting" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+					<circle cx="12" cy="12" r="9" stroke-width="2" />
+					<path stroke-linecap="round" stroke-width="2" d="M12 7v5l3 2" />
+				</svg>
 				<!-- Warning when errors -->
-				<svg v-else-if="hasErrors" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+				<svg v-else-if="status === 'error'" viewBox="0 0 24 24" fill="none" stroke="currentColor">
 					<path
 						stroke-linecap="round"
 						stroke-linejoin="round"
 						stroke-width="2"
 						d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
 					/>
+				</svg>
+				<!-- Stopped when the turn ended with work still running -->
+				<svg v-else-if="status === 'stopped'" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+					<circle cx="12" cy="12" r="9" stroke-width="2" />
+					<path stroke-linecap="round" stroke-width="2" d="M6 18L18 6" />
+				</svg>
+				<!-- A dash when the outcome is not known yet -->
+				<svg v-else-if="status === 'neutral'" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+					<path stroke-linecap="round" stroke-width="2" d="M7 12h10" />
 				</svg>
 				<!-- Checkmark when complete -->
 				<svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor">
@@ -84,7 +98,11 @@
 						v-else-if="entry.kind === 'interaction'"
 						:block="entry.block"
 					/>
-					<ProcessingToolRow v-else-if="entry.kind === 'tool'" :row="entry.row" />
+					<ProcessingToolRow
+						v-else-if="entry.kind === 'tool'"
+						:row="entry.row"
+						:live="live"
+					/>
 				</template>
 			</div>
 		</div>
@@ -97,7 +115,8 @@ import ThinkingBlock from "./ThinkingBlock.vue";
 import InteractionCard from "./InteractionCard.vue";
 import ProcessingToolRow from "./processing/ProcessingToolRow.vue";
 import { toolRowFrom } from "@/composables/useActivityTimeline";
-import { processingSummary } from "./processingSummary";
+import { processingStatus, processingSummary } from "./processingSummary";
+import { WAITING_LABELS } from "@/utils/turnState";
 
 const props = defineProps({
 	blocks: {
@@ -107,6 +126,12 @@ const props = defineProps({
 	isStreaming: {
 		type: Boolean,
 		default: false,
+	},
+	// What the turn waits on when it is not streaming but has not ended
+	// (turnWaitingOn): "approval", "question", "resume", or "".
+	waitingOn: {
+		type: String,
+		default: "",
 	},
 	isExpanded: {
 		type: Boolean,
@@ -121,8 +146,16 @@ const props = defineProps({
 defineEmits(["toggle", "toggleBlock"]);
 
 // Derived state
-const toolBlocks = computed(() => props.blocks.filter((b) => b.type === "tool_call"));
-const hasErrors = computed(() => toolBlocks.value.some((b) => b.status === "error"));
+// The turn is still in flight while it streams or waits on the user.
+const live = computed(() => props.isStreaming || Boolean(props.waitingOn));
+// A gated tool waits for its card: neither running nor done.
+const isWaiting = computed(
+	() =>
+		!props.isStreaming &&
+		Boolean(WAITING_LABELS[props.waitingOn]) &&
+		props.blocks.some((b) => b.type === "tool_call" && b.status === "running")
+);
+const status = computed(() => processingStatus(props.blocks, props.isStreaming, live.value));
 
 // One render list in the order the blocks arrived. The array is already
 // chronological, so rendering it straight through is what makes the card read
@@ -155,13 +188,17 @@ const isActive = computed(() => {
 
 const statusIconClass = computed(() => {
 	if (isActive.value) return "status-active";
-	if (hasErrors.value) return "status-error";
-	return "status-complete";
+	if (isWaiting.value) return "status-waiting";
+	return `status-${status.value}`;
 });
 
 // Smart summary generation — pure logic lives in processingSummary.js so the
 // live/completed phrasing (incl. delegate activity) is unit testable.
-const summaryText = computed(() => processingSummary(props.blocks, props.isStreaming));
+const summaryText = computed(() =>
+	isWaiting.value
+		? WAITING_LABELS[props.waitingOn]
+		: processingSummary(props.blocks, props.isStreaming, live.value)
+);
 </script>
 
 <style scoped>
@@ -222,6 +259,18 @@ const summaryText = computed(() => processingSummary(props.blocks, props.isStrea
 
 .processing-status-icon.status-error {
 	color: var(--ql-danger);
+}
+
+.processing-status-icon.status-stopped {
+	color: var(--ql-text-muted);
+}
+
+.processing-status-icon.status-neutral {
+	color: var(--ql-text-muted);
+}
+
+.processing-status-icon.status-waiting {
+	color: var(--ql-gold, #c9a227);
 }
 
 @keyframes processing-spin {

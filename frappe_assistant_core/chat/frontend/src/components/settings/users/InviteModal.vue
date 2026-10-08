@@ -1,5 +1,5 @@
 <template>
-	<Teleport to="body">
+	<Teleport :to="teleportTarget">
 		<div v-if="open" class="modal-overlay" @click.self="$emit('close')">
 			<div class="invite-modal">
 				<div class="modal-header">
@@ -122,6 +122,9 @@
 <script setup>
 import { computed, ref, watch, nextTick } from "vue";
 import { seatChargeRequired } from "./memberHelpers";
+import { useTeleportTarget } from "@/composables/useTeleportTarget";
+
+const teleportTarget = useTeleportTarget();
 
 const props = defineProps({
 	open: { type: Boolean, required: true },

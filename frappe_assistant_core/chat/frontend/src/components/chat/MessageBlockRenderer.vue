@@ -6,6 +6,7 @@
 				v-if="segment.type === 'processing_group'"
 				:blocks="segment.blocks"
 				:is-streaming="isStreaming"
+				:waiting-on="waitingOn"
 				:is-expanded="processingGroupExpanded[segment.id] ?? (isStreaming && !userCollapsed)"
 				:message-index="messageIndex"
 				@toggle="toggleProcessingGroup(segment.id)"
@@ -103,7 +104,9 @@ import WorkflowCreatedBlock from "./WorkflowCreatedBlock.vue";
 import CitationPill from "./CitationPill.vue";
 import { parseRichBlocks } from "./richBlocks/parser";
 import { renderMarkdown as renderMd, ensureHljs } from "@/utils/markdown.js";
+import "@/styles/hljs-theme.css";
 import { shouldShowProcessingIndicator } from "./indicatorVisibility";
+import { turnWaitingOn } from "@/utils/turnState";
 
 const props = defineProps({
 	blocks: {
@@ -118,9 +121,18 @@ const props = defineProps({
 		type: Boolean,
 		default: false,
 	},
+	// An answered card's resume is in flight for this turn: the card is already
+	// resolved, but the message streams again only once the resume's first event
+	// lands (chatStore.isSubmittingInterrupts spans that round trip).
+	isResuming: {
+		type: Boolean,
+		default: false,
+	},
 });
 
 defineEmits(["toggleBlock", "approve", "reject", "previewDocument"]);
+
+const waitingOn = computed(() => turnWaitingOn(props.blocks, props.isResuming));
 
 // Bump on hljs load so computed renders re-run with syntax highlighting
 // once the chunk arrives. First paint uses plain escaped code (instant);
@@ -489,6 +501,21 @@ function onCitationNavigate(n) {
 .text-block :deep(th) {
 	background-color: var(--ql-subtle);
 	font-weight: 600;
+}
+
+.text-block :deep(.md-table-scroll) {
+	max-width: 100%;
+	overflow-x: auto;
+	margin: 0.75rem 0;
+}
+
+.text-block :deep(.md-table-scroll table) {
+	margin: 0;
+	display: table;
+}
+
+.text-block :deep(.md-nowrap) {
+	white-space: nowrap;
 }
 
 /* Streaming indicator */

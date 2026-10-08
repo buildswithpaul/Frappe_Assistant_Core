@@ -42,7 +42,7 @@ class TestHooksGate(BaseAssistantTest):
         clear_chat_gate_cache()
 
     def test_chat_assets_always_registered(self):
-        """Widget JS + CSS must be in hooks regardless of the chat gate.
+        """The widget loader must be in hooks regardless of the chat gate.
 
         The widget JS itself checks `can_use_faco` at runtime and bails when
         chat is off — so the bundle being included on every Desk page is
@@ -56,9 +56,10 @@ class TestHooksGate(BaseAssistantTest):
             any("chat/widget" in entry for entry in js_entries),
             f"Chat widget JS must always be registered; got: {js_entries}",
         )
-        self.assertTrue(
+        # The panel ships its stylesheet inside its Shadow DOM; Desk loads no widget CSS.
+        self.assertFalse(
             any("chat/widget" in entry for entry in css_entries),
-            f"Chat widget CSS must always be registered; got: {css_entries}",
+            f"Chat widget CSS must not be loaded into Desk; got: {css_entries}",
         )
 
     def test_spa_route_always_registered(self):

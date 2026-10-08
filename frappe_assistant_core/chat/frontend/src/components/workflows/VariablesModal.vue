@@ -1,5 +1,5 @@
 <template>
-	<Teleport to="body">
+	<Teleport :to="teleportTarget">
 		<div
 			v-if="modelValue"
 			class="modal-overlay"
@@ -90,6 +90,9 @@
 
 <script setup>
 import { ref, watch } from "vue";
+import { useTeleportTarget } from "@/composables/useTeleportTarget";
+
+const teleportTarget = useTeleportTarget();
 
 const props = defineProps({
 	modelValue: { type: Boolean, required: true },

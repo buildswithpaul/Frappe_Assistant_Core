@@ -1,5 +1,5 @@
 <template>
-	<Teleport to="body">
+	<Teleport :to="teleportTarget">
 		<div v-if="isOpen" class="modal-overlay" @click.self="$emit('cancel')">
 			<div class="confirm-modal">
 				<div class="confirm-icon-wrap">
@@ -45,6 +45,10 @@
 </template>
 
 <script setup>
+import { useTeleportTarget } from "@/composables/useTeleportTarget";
+
+const teleportTarget = useTeleportTarget();
+
 defineProps({
 	isOpen: { type: Boolean, default: false },
 	processing: { type: Boolean, default: false },

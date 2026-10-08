@@ -23,7 +23,9 @@ from datetime import datetime, timezone
 from typing import Any
 
 # Tools whose execution is internal plumbing — rendered as slim indicators,
-# not full expandable cards. Must match frontend's INTERNAL_TOOLS set.
+# not full expandable cards. `delegate` is one: the plan rail shows the
+# delegated work. Must match the frontend's INTERNAL_TOOLS
+# (chat/frontend/src/utils/internalTools.js; the test pins it).
 INTERNAL_TOOLS = frozenset(
     {
         "get_skill",
@@ -32,6 +34,7 @@ INTERNAL_TOOLS = frozenset(
         "workspace_list_files",
         "workspace_delete_file",
         "ask_user",
+        "delegate",
     }
 )
 
@@ -457,6 +460,11 @@ class BlockBuilder:
     def snapshot(self) -> list[dict]:
         """Return a deep copy of the blocks array for persistence."""
         return copy.deepcopy(self.blocks)
+
+    @property
+    def active_thinking_id(self) -> str | None:
+        """Id of the thinking block still open, so a joining client can keep appending to it."""
+        return self._active_thinking_id
 
     def _close_thinking(self) -> None:
         """Close any active thinking block."""
