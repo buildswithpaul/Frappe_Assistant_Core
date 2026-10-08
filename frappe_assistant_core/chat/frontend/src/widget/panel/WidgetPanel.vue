@@ -125,7 +125,7 @@ import NotificationHost from "@/components/notifications/NotificationHost.vue";
 const chatStore = useChatStore();
 const userStore = useUserStore();
 const spotlight = useSpotlightStore();
-const { handleFileUpload, consumeUploadedFiles } = useMessageFileUpload();
+const { handleFileUpload, consumeUploadedFiles, discardUploads } = useMessageFileUpload();
 const scroller = ref(null);
 useAutoScroll(
 	scroller,
@@ -168,7 +168,7 @@ function dismissOverage() {
 }
 
 // Same routing as ChatView.handleSendMessage: answer a pending question, abandon a card, or send.
-async function onSend({ message }) {
+async function onSend({ message, files = [] }) {
 	// Only an admin gets the Spotlight that explains a block; a member who is refused would just lose
 	// their text, so theirs goes through and the server's own error shows inline.
 	if (isBlocked(userStore.quotaInfo) && userStore.quotaInfo.is_admin) {
@@ -180,12 +180,13 @@ async function onSend({ message }) {
 		pendingInteraction: chatStore.pendingInteractionBlock,
 	});
 	if (route === "answer") {
-		consumeUploadedFiles();
+		discardUploads(files);
 		await chatStore.answerPendingQuestion(message);
 		return;
 	}
 	if (route === "abort-then-send") await chatStore.abortPendingInteraction();
-	await chatStore.sendMessage(message, consumeUploadedFiles(), null, null, null, {
+	const uploaded = await consumeUploadedFiles(files);
+	await chatStore.sendMessage(message, uploaded, null, null, null, {
 		skipQueue: route === "abort-then-send",
 	});
 }
