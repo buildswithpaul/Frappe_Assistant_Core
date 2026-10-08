@@ -49,20 +49,33 @@ _FORBIDDEN_PHRASES = (
     ("LOCK", "IN", "SHARE", "MODE"),
     ("FOR", "UPDATE"),
     ("FOR", "SHARE"),
+    ("INTO",),
     ("SET",),
-    ("HANDLER",),
-    ("DO",),
     ("CALL",),
 )
 
 
 def _find_forbidden_phrase(query: str) -> str | None:
-    """Return the first forbidden phrase in the query's bare words, or None."""
-    words = [word.upper() for word in _sql_bare_words(query)]
+    """Return the first forbidden phrase in the query, or None.
+
+    A `quoted` name is never a keyword, except LOAD_FILE: MariaDB resolves a
+    backticked name followed by "(" to the built-in function. Other quoted
+    names and numbers only keep their place so they break phrase adjacency.
+    """
+    words = []
+    for _start, _end, kind, text in _sql_lex(query):
+        if kind == "word":
+            words.append(text.upper())
+        elif kind == "quoted":
+            words.append("LOAD_FILE" if text.upper() == "LOAD_FILE" else "`")
+        elif kind == "number":
+            words.append("0")
     for index in range(len(words)):
         for phrase in _FORBIDDEN_PHRASES:
             if tuple(words[index : index + len(phrase)]) == phrase:
                 return " ".join(phrase)
+    if ":=" in _mask_sql(query):
+        return ":="
     return None
 
 
@@ -431,18 +444,16 @@ query_and_analyse = QueryAndAnalyse
 
 _SQL_WHITESPACE = " \t\r\n\f\v"
 
+# MariaDB ends a number after its fraction and exponent, so "1e1INTO" is the
+# number 1e1 followed by the word INTO. Digits followed directly by letters
+# without a valid exponent ("1abc") are an identifier and stay one word.
+_NUMBER_RE = re.compile(r"\d+\.\d*(?:[eE][+-]?\d+)?|\.\d+(?:[eE][+-]?\d+)?|\d+[eE][+-]?\d+")
+
 
 def _sql_words(query: str):
     """Yield bare words and `quoted` identifiers outside string literals and comments."""
     for _start, _end, kind, text in _sql_lex(query):
         if kind in ("word", "quoted"):
-            yield text
-
-
-def _sql_bare_words(query: str):
-    """Yield only unquoted words: `quoted` identifiers are names, never keywords."""
-    for _start, _end, kind, text in _sql_lex(query):
-        if kind == "word":
             yield text
 
 
@@ -462,7 +473,7 @@ def _mask_sql(query: str) -> str:
 def _sql_lex(query: str):
     """Yield (start, end, kind, text) spans of SQL tokens, following MariaDB's lexer.
 
-    Kinds: "word" (bare word), "quoted" (`identifier`, text unescaped), "string"
+    Kinds: "word" (bare word), "number" (numeric literal prefix), "quoted" (`identifier`, text unescaped), "string"
     ('...' or "..." with backslash and doubled-quote escapes) and "comment" (#,
     "-- " and /* */). A "--" not followed by whitespace is not a comment in MariaDB,
     so it is not treated as one. Other characters are skipped.
@@ -509,6 +520,11 @@ def _sql_lex(query: str):
             end = n if close == -1 else close + 2
             yield i, end, "comment", query[i:end]
             i = end
+        elif (
+            char.isdigit() or (char == "." and not (i and (query[i - 1].isalnum() or query[i - 1] in "_$`")))
+        ) and (number := _NUMBER_RE.match(query, i)):
+            yield i, number.end(), "number", number.group()
+            i = number.end()
         elif char.isalnum() or char in "_$":
             j = i
             while j < n and (query[j].isalnum() or query[j] in "_$"):
