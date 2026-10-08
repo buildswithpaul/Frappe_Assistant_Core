@@ -43,6 +43,7 @@
 			@reconnect="reconnectServer"
 		/>
 		<div ref="scroller" class="wp-messages">
+			<SpotlightHost inline />
 			<WidgetWelcome
 				v-if="chatStore.messages.length === 0"
 				@suggestion="(text) => onSend({ message: text })"
@@ -115,6 +116,7 @@ import { confirms, settleConfirm } from "./confirmQueue.js";
 import { t } from "./i18n.js";
 import { deskRouteFor } from "./deskLinks.js";
 import { isStoppedTurn, turnWaitingOn } from "@/utils/turnState";
+import SpotlightHost from "@/components/spotlight/SpotlightHost.vue";
 
 const chatStore = useChatStore();
 const userStore = useUserStore();

@@ -8,7 +8,6 @@
 			:privacy-consent-complete="userStore.privacyConsentComplete"
 		/>
 		<WidgetPanel v-else />
-		<SpotlightHost v-if="ready" />
 		<ToastContainer />
 	</div>
 </template>
@@ -23,7 +22,6 @@ import { useRobotMoodStore } from "@/stores/robotMoodStore";
 import { useNotificationStore } from "@/stores/notificationStore";
 import { useRobotMoodWiring } from "@/composables/useRobotMoodWiring";
 import { useStreaming } from "@/composables/useStreaming";
-import SpotlightHost from "@/components/spotlight/SpotlightHost.vue";
 import ToastContainer from "@/components/ui/ToastContainer.vue";
 import WidgetPanel from "./WidgetPanel.vue";
 import WidgetSetupGate from "./WidgetSetupGate.vue";

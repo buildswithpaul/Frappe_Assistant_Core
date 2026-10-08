@@ -41,7 +41,7 @@ import { DAILY_KEY, localDate } from "@/components/spotlight/spotlightRules";
 // A panel left mounted keeps its document-level listeners alive into the next test.
 enableAutoUnmount(afterEach);
 
-const stubs = { ChatInterface: true, InputArea: true, CreditMeter: true };
+const stubs = { ChatInterface: true, InputArea: true, CreditMeter: true, SpotlightHost: true };
 const SendStub = { template: "<i />" };
 
 describe("router shim", () => {
@@ -666,6 +666,17 @@ describe("panel bootstrap", () => {
 		expect(stop).toHaveBeenCalled();
 	});
 
+	it("never mounts the full-screen Spotlight over Desk", async () => {
+		// The widget shares Desk's page; a modal overlay would cover the form the user is working on.
+		// Content is set directly here; production reaches it through evaluate() on a loaded
+		// announcement, which the test above covers.
+		mount(PanelApp, { global: { stubs: { ToastContainer: true, WidgetPanel: true } } });
+		await flushPromises();
+		useSpotlightStore().current = { id: "n1", kind: "announcement", title: "Agents", primary: { label: "Try" } };
+		await nextTick();
+		expect(document.querySelector("[data-test='spotlight-overlay']")).toBeNull();
+	});
+
 	it("keeps the widget's Spotlight daily cap under its own surface", async () => {
 		configureSurface({ name: "widget", clientType: "widget", spotlightSurface: "widget" });
 		const user = useUserStore();
@@ -677,6 +688,22 @@ describe("panel bootstrap", () => {
 		await useSpotlightStore().evaluate();
 		expect(localStorage.getItem(DAILY_KEY("u@x.test", "widget"))).toBe(localDate());
 		expect(localStorage.getItem(DAILY_KEY("u@x.test", "spa"))).toBeNull();
+	});
+});
+
+describe("widget Spotlight placement", () => {
+	beforeEach(() => {
+		setActivePinia(createPinia());
+		window.frappe = { session: { user: "u@x.test" }, get_route: () => [] };
+	});
+
+	it("shows a due Spotlight as a card inside the panel, not over Desk", async () => {
+		// Content is set directly; production reaches it through evaluate() on a loaded announcement.
+		const w = mount(WidgetPanel, { global: { stubs: { ChatInterface: true, InputArea: true, CreditMeter: true } } });
+		useSpotlightStore().current = { id: "n1", kind: "announcement", title: "Agents", primary: { label: "Try" } };
+		await nextTick();
+		expect(w.find(".wp-messages [data-test='spotlight-card']").exists()).toBe(true);
+		expect(document.querySelector("[data-test='spotlight-overlay']")).toBeNull();
 	});
 });
 
