@@ -22,6 +22,8 @@ DETAIL = [{"node_id": "agent_1", "tool": "create_document", "reason": "Not appro
 
 
 class _RunClient:
+    # Stands in for the SDK client: AR's get_run/list_runs return these rows, with skipped_actions_detail as a
+    # parsed list (current AR), JSON text (older stored rows) or absent (pre-overhaul AR).
     def __init__(self, run):
         self.run = run
 
@@ -80,3 +82,20 @@ class TestRunDisplayFields(BaseAssistantTest):
             runs = workflows.list_workflow_runs(workflow_name="WF-00001")["runs"]
 
         self.assertEqual([r["skipped_actions_detail"] for r in runs], [DETAIL, DETAIL])
+
+    def test_non_dict_detail_items_are_dropped(self):
+        run = self._get(
+            {"status": "Completed", "skipped_actions": 2, "skipped_actions_detail": [DETAIL[0], "junk", 3]}
+        )
+        self.assertEqual(run["skipped_actions_detail"], DETAIL)
+
+    def test_explicit_null_detail_is_an_empty_list(self):
+        run = self._get({"status": "Completed", "skipped_actions": None, "skipped_actions_detail": None})
+        self.assertEqual(run["skipped_actions"], 0)
+        self.assertEqual(run["skipped_actions_detail"], [])
+
+    def test_non_numeric_count_falls_back_to_the_detail(self):
+        run = self._get(
+            {"status": "Completed", "skipped_actions": "abc", "skipped_actions_detail": json.dumps(DETAIL)}
+        )
+        self.assertEqual(run["skipped_actions"], 1)
