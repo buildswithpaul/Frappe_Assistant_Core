@@ -7,7 +7,7 @@
 Real ToDo rows through the real tool: has_more used to compare total_count to
 limit, which is only right for the first page. Pages must also tile the result
 set when the caller sorts on a column that ties, so each page order ends in a
-unique tie-breaker.
+unique, table-qualified tie-breaker.
 """
 
 import uuid
@@ -15,7 +15,7 @@ from unittest.mock import patch
 
 import frappe
 
-from frappe_assistant_core.plugins.core.tools.list_documents import DocumentList
+from frappe_assistant_core.plugins.core.tools.list_documents import DocumentList, stable_order_by
 from frappe_assistant_core.tests.base_test import BaseAssistantTest
 
 
@@ -59,6 +59,15 @@ class TestListDocumentsOffset(BaseAssistantTest):
             offset = page["next_offset"]
         return rows
 
+    def _order_sent_to_get_list(self, **page_args):
+        """Return the order_by of the paged get_list call (the one carrying limit_start)."""
+        real_get_list = frappe.get_list
+        with patch("frappe.get_list", side_effect=real_get_list) as get_list:
+            self._page(**page_args)
+        paged_calls = [c for c in get_list.call_args_list if "limit_start" in c.kwargs]
+        self.assertEqual(len(paged_calls), 1)
+        return paged_calls[0].kwargs["order_by"]
+
     def test_first_page_points_at_the_second(self):
         first = self._page()
         self.assertTrue(first["success"])
@@ -84,28 +93,21 @@ class TestListDocumentsOffset(BaseAssistantTest):
         self.assertEqual(len(names), len(set(names)))
         self.assertEqual(set(names), set(self.probe_names))
 
-    def test_order_by_gets_a_unique_tie_breaker(self):
-        # Ties on status make page boundaries arbitrary unless name orders the rows.
-        real_get_list = frappe.get_list
-        with patch("frappe.get_list", side_effect=real_get_list) as get_list:
-            self._page(order_by="status asc")
-        paged_calls = [c for c in get_list.call_args_list if "limit_start" in c.kwargs]
-        self.assertEqual(len(paged_calls), 1)
-        self.assertEqual(paged_calls[0].kwargs["order_by"], "status asc, name asc")
+    def test_explicit_order_gets_a_qualified_tie_breaker(self):
+        self.assertEqual(
+            self._order_sent_to_get_list(order_by="status asc"),
+            "status asc, `tabToDo`.`name` asc",
+        )
 
-    def test_default_order_gets_a_unique_tie_breaker(self):
-        real_get_list = frappe.get_list
-        with patch("frappe.get_list", side_effect=real_get_list) as get_list:
-            self._page(order_by=None)
-        paged_calls = [c for c in get_list.call_args_list if "limit_start" in c.kwargs]
-        self.assertTrue(paged_calls[0].kwargs["order_by"].endswith(", name asc"))
+    def test_default_order_is_the_doctype_sort_with_name_tie_breaker(self):
+        # ToDo's DocType sorts on creation DESC (todo.json), so that is the resolved default.
+        self.assertEqual(
+            self._order_sent_to_get_list(order_by=None),
+            "`tabToDo`.`creation` DESC, `tabToDo`.`name` asc",
+        )
 
     def test_name_in_order_by_is_not_repeated(self):
-        real_get_list = frappe.get_list
-        with patch("frappe.get_list", side_effect=real_get_list) as get_list:
-            self._page(order_by="name desc")
-        paged_calls = [c for c in get_list.call_args_list if "limit_start" in c.kwargs]
-        self.assertEqual(paged_calls[0].kwargs["order_by"], "name desc")
+        self.assertEqual(self._order_sent_to_get_list(order_by="name desc"), "name desc")
 
     def test_negative_offset_is_refused(self):
         result = self._page(offset=-1)
@@ -113,7 +115,7 @@ class TestListDocumentsOffset(BaseAssistantTest):
         self.assertIn("offset", result["error"])
 
     def test_non_integer_offsets_are_refused(self):
-        for bad in ["abc", 2.7, True, [1]]:
+        for bad in ["abc", "²", 2.7, True, [1]]:
             with self.subTest(offset=bad):
                 result = self._page(offset=bad)
                 self.assertFalse(result["success"])
@@ -128,3 +130,48 @@ class TestListDocumentsOffset(BaseAssistantTest):
 
     def test_offset_is_in_the_schema(self):
         self.assertEqual(self.tool.inputSchema["properties"]["offset"]["minimum"], 0)
+
+
+class TestStableOrderBy(BaseAssistantTest):
+    def test_main_table_name_is_not_repeated(self):
+        self.assertEqual(stable_order_by("ToDo", "`tabToDo`.`name` desc"), "`tabToDo`.`name` desc")
+
+    def test_child_table_name_still_gets_the_main_tie_breaker(self):
+        # A joined child table's name does not make the main table's order total.
+        self.assertEqual(
+            stable_order_by("ToDo", "`tabToDo Child`.`name` desc"),
+            "`tabToDo Child`.`name` desc, `tabToDo`.`name` asc",
+        )
+
+
+class TestListDocumentsSortOverride(BaseAssistantTest):
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        # Customize Form on ToDo saves a Property Setter on the DocType. Only
+        # frappe.get_meta applies it, so the resolved default must follow it.
+        frappe.get_doc(
+            {
+                "doctype": "Property Setter",
+                "doctype_or_field": "DocType",
+                "doc_type": "ToDo",
+                "property": "sort_field",
+                "property_type": "Data",
+                "value": "description",
+            }
+        ).insert(ignore_permissions=True)
+        # Meta is cached outside the class transaction, so drop the override before
+        # the rollback or later tests would read a sort field that no longer exists.
+        cls.addClassCleanup(frappe.clear_cache, doctype="ToDo")
+
+    def test_customize_form_sort_change_is_honoured(self):
+        real_get_list = frappe.get_list
+        with patch("frappe.get_list", side_effect=real_get_list) as get_list:
+            result = DocumentList().execute({"doctype": "ToDo", "limit": 1, "order_by": None})
+        self.assertTrue(result["success"])
+        paged_calls = [c for c in get_list.call_args_list if "limit_start" in c.kwargs]
+        order = frappe.get_meta("ToDo").sort_order
+        self.assertEqual(
+            paged_calls[0].kwargs["order_by"],
+            f"`tabToDo`.`description` {order}, `tabToDo`.`name` asc",
+        )

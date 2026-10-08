@@ -262,25 +262,37 @@ def parse_offset(value: Any) -> Optional[int]:
         return None
     if isinstance(value, int):
         return value
-    if isinstance(value, str) and value.strip().isdigit():
+    if isinstance(value, str) and value.strip().isdecimal():
         return int(value)
     return None
 
 
+def default_order_by(doctype: str) -> str:
+    """The DocType's own sort, table-qualified. get_meta applies Customize Form changes."""
+    meta = frappe.get_meta(doctype)
+    if not meta.sort_field:
+        return f"`tab{doctype}`.`creation` desc"
+    direction = meta.sort_order or "desc"
+    clauses = []
+    for part in meta.sort_field.split(","):
+        words = part.split()
+        if words:
+            clauses.append(f"`tab{doctype}`.`{words[0]}` {words[1] if len(words) > 1 else direction}")
+    return ", ".join(clauses)
+
+
 def stable_order_by(doctype: str, order_by: str) -> str:
-    """Append a unique name tie-breaker so LIMIT/OFFSET pages tile the result set."""
+    """Append a unique name tie-breaker so LIMIT/OFFSET pages tile the result set.
+
+    A bare or main-table `name` already makes the order total. A joined child table's
+    `name` does not, so it still gets the main-table tie-breaker.
+    """
+    main_name = f"`tab{doctype}`.`name`"
     if order_by == "KEEP_DEFAULT_ORDERING":
-        sort = frappe.db.get_value("DocType", doctype, ["sort_field", "sort_order"], as_dict=True) or {}
-        sort_field = sort.get("sort_field")
-        if sort_field and "," in sort_field:
-            order_by = sort_field
-        elif sort_field:
-            order_by = f"{sort_field} {sort.get('sort_order') or 'desc'}"
-        else:
-            order_by = "creation desc"
-    if re.search(r"\bname\b", order_by):
+        order_by = default_order_by(doctype)
+    if main_name in order_by or re.search(r"(?<![.`\w])name\b", order_by):
         return order_by
-    return f"{order_by}, name asc"
+    return f"{order_by}, {main_name} asc"
 
 
 class DocumentList(BaseTool):
@@ -343,8 +355,7 @@ class DocumentList(BaseTool):
         filters = arguments.get("filters", {})
         fields = arguments.get("fields", ["name", "creation", "modified"])
         limit = arguments.get("limit", 20)
-        # Use Frappe's sentinel so it applies its own intelligent default ordering.
-        # Also guard against empty string from API clients.
+        # Guard against empty string from API clients.
         order_by = arguments.get("order_by") or "KEEP_DEFAULT_ORDERING"
         offset = parse_offset(arguments.get("offset"))
         if offset is None or offset < 0:
