@@ -9,17 +9,19 @@ production: an agent node calls ``update_document`` on the customer's own MCP
 server, that ends in a bare ``doc.save()``, and the save re-enters
 ``on_update``. So the first workflow anyone builds — "on Sales Order update,
 summarize and write it back" — bills a full run per lap until a rate limit
-stops it. This bounds one (trigger, document) pair to N fires per window and
-refuses the rest.
+stops it. Each (trigger, document) pair is bounded by two windows: a burst
+window that stops a tight save loop, and an hourly window that stops a slow
+one which stays under the burst limit.
 
 Counting is a raw Redis ``INCR`` on a site-namespaced key, so concurrent
 workers share one counter. It deliberately does not go through
 ``set_value``/``get_value``: those pickle their payload and read-modify-write
 would lose laps under concurrency.
 
-Both limits are per-site overridable in ``site_config.json`` via
-``fac_trigger_breaker_max_fires`` and ``fac_trigger_breaker_window_seconds``.
-Setting the former to 0 disables the breaker.
+Limits are per-site overridable in ``site_config.json``:
+``fac_trigger_breaker_max_fires`` and ``fac_trigger_breaker_window_seconds``
+for the burst window, and ``fac_trigger_breaker_max_fires_per_hour`` for the
+hourly one. Setting a limit to 0 disables only its own window.
 """
 
 from typing import NamedTuple
@@ -29,9 +31,13 @@ from frappe import _
 
 DEFAULT_MAX_FIRES = 5
 DEFAULT_WINDOW_SECONDS = 60
+DEFAULT_MAX_FIRES_PER_HOUR = 20
+HOUR_SECONDS = 3600
 
 _COUNT_KEY = "fac_trigger_breaker"
 _REPORTED_KEY = "fac_trigger_breaker_reported"
+_HOURLY_COUNT_KEY = "fac_trigger_breaker_hourly"
+_HOURLY_REPORTED_KEY = "fac_trigger_breaker_hourly_reported"
 
 
 class BreakerDecision(NamedTuple):
@@ -42,13 +48,41 @@ class BreakerDecision(NamedTuple):
 
 
 def check_dispatch(trigger_id: str, doctype: str, docname: str) -> BreakerDecision:
-    """Count this fire and decide whether it may be dispatched."""
-    max_fires = _config("fac_trigger_breaker_max_fires", DEFAULT_MAX_FIRES)
-    window = _config("fac_trigger_breaker_window_seconds", DEFAULT_WINDOW_SECONDS)
+    """Count this fire and decide whether it may be dispatched.
+
+    Two windows per (trigger, document): a burst limit (default 5 per 60s)
+    stops a tight save loop, and an hourly limit (default 20) stops a slow one
+    that stays under the burst limit.
+    """
+    burst = _window_decision(
+        _count_key(trigger_id, doctype, docname),
+        _reported_key(trigger_id, doctype, docname),
+        _config("fac_trigger_breaker_max_fires", DEFAULT_MAX_FIRES),
+        _config("fac_trigger_breaker_window_seconds", DEFAULT_WINDOW_SECONDS),
+        doctype,
+        docname,
+    )
+    if not burst.allowed:
+        return burst
+
+    return _window_decision(
+        f"{_HOURLY_COUNT_KEY}:{trigger_id}:{doctype}:{docname}",
+        f"{_HOURLY_REPORTED_KEY}:{trigger_id}:{doctype}:{docname}",
+        _config("fac_trigger_breaker_max_fires_per_hour", DEFAULT_MAX_FIRES_PER_HOUR),
+        HOUR_SECONDS,
+        doctype,
+        docname,
+    )
+
+
+def _window_decision(
+    count_key: str, reported_key: str, max_fires: int, window: int, doctype: str, docname: str
+) -> BreakerDecision:
+    """Count one fire in one window; refuse past ``max_fires``. 0 disables the window."""
     if max_fires <= 0 or window <= 0:
         return BreakerDecision(True, None)
 
-    count = _bump(_count_key(trigger_id, doctype, docname), window)
+    count = _bump(count_key, window)
     if count is None or count <= max_fires:
         # `None` means Redis is unreachable. Fail open: a cache outage must not
         # silently stop every customer trigger on the site.
@@ -57,7 +91,7 @@ def check_dispatch(trigger_id: str, doctype: str, docname: str) -> BreakerDecisi
     # Report once per window. A runaway loop must not flood the very log it is
     # meant to make visible.
     reason = None
-    if claim_once(_reported_key(trigger_id, doctype, docname), window):
+    if claim_once(reported_key, window):
         reason = _(
             "Loop guard: more than {0} fires for {1} {2} within {3}s. Further fires are "
             "refused until the window clears. Check whether this workflow writes back to "
@@ -84,11 +118,14 @@ def claim_once(key: str, ttl_seconds: int) -> bool:
 
 
 def reset(trigger_id: str, doctype: str, docname: str) -> None:
-    """Clear the counter for one (trigger, document) pair."""
+    """Clear both windows' counters for one (trigger, document) pair."""
+    suffix = f"{trigger_id}:{doctype}:{docname}"
     try:
         frappe.cache().delete(
             _namespaced(_count_key(trigger_id, doctype, docname)),
             _namespaced(_reported_key(trigger_id, doctype, docname)),
+            _namespaced(f"{_HOURLY_COUNT_KEY}:{suffix}"),
+            _namespaced(f"{_HOURLY_REPORTED_KEY}:{suffix}"),
         )
     except Exception:
         pass
