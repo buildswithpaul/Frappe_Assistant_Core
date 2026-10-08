@@ -11,7 +11,7 @@ Only **System Managers** see this tool. If it is not in your tool list, the user
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
 | `query` | string | **Yes** | — | SQL SELECT query |
-| `limit` | integer | No | 100 | Max rows to return (max: 1000) |
+| `limit` | integer | No | 100 | Rows to return when the query has no `LIMIT` of its own (max: 1000) |
 | `analysis_type` | string | No | `"basic"` | `"basic"`, `"statistical"`, or `"detailed"` |
 | `validate_query` | boolean | No | `true` | Validate and optimize query before execution |
 | `format_results` | boolean | No | `true` | Format results for readability |
@@ -35,6 +35,20 @@ Only **System Managers** see this tool. If it is not in your tool list, the user
 }
 ```
 
+### Row cap
+
+No query returns more than **1000 rows**, whatever its `LIMIT`:
+
+- A trailing `LIMIT` above 1000 is clamped to 1000. `LIMIT 5000` returns 1000 rows.
+- A query with no `LIMIT` gets `LIMIT <limit>` (default 100), so `credit_limit` or any other column name containing "limit" does not disable the cap.
+- A trailing `-- comment` does not stop the cap from applying.
+
+When rows were cut, the response says so:
+
+- `truncated`: `true` when the query matched more rows than were returned.
+- `row_cap`: the number of rows the cap allows for this query (1000, or the query's own `LIMIT` if it is smaller).
+- `message`: present only when `truncated` is `true`. It asks you to aggregate in SQL or narrow the `WHERE` clause.
+
 ## Restrictions
 
 These queries are rejected before they run:
@@ -48,7 +62,7 @@ These queries are rejected before they run:
 1. **Always use `tab` prefix** — Frappe tables are prefixed with `tab`: `` `tabSales Invoice` ``, `` `tabCustomer` ``
 2. **Use backtick quoting** — DocType names with spaces need backticks: `` `tabSales Invoice` ``
 3. **SELECT only** — INSERT/UPDATE/DELETE are rejected
-4. **Always include LIMIT** — prevents returning excessive data. The tool also enforces a max via the `limit` parameter.
+4. **Always include LIMIT** — prevents returning excessive data. Results are capped at 1000 rows even when the query names a larger `LIMIT`; check `truncated` before treating the rows as complete.
 5. **Use `analysis_type: "statistical"`** — for automatic mean/median/percentile calculations on numeric columns
 6. **Set `include_schema_info: true`** — when you need to discover column names and types for a table
 7. **Prefer `list_documents` for simple queries** — SQL is for complex JOINs, aggregations, and subqueries
