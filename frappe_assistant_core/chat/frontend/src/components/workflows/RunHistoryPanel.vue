@@ -181,7 +181,7 @@ async function handleCancel() {
 	try {
 		await workflowStore.cancelRun(activeRunName.value);
 	} catch (err) {
-		showError(__("Could not cancel the run: {0}", [err?.message || err]));
+		showError(__("Could not cancel the run: {0}", [err?.userMessage || __("Something went wrong")]));
 	}
 }
 </script>

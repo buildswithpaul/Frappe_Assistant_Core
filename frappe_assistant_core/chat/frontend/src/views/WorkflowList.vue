@@ -159,7 +159,7 @@ async function handleDuplicate(wf) {
 		showSuccess(__("Agent duplicated"));
 	} catch (err) {
 		logger.error("Failed to duplicate workflow:", err);
-		showError(__("Could not duplicate the agent: {0}", [err?.message || err]));
+		showError(__("Could not duplicate the agent: {0}", [err?.userMessage || __("Something went wrong")]));
 	} finally {
 		isDuplicating.value = false;
 	}
@@ -200,7 +200,7 @@ async function handleDelete() {
 		workflowToDelete.value = null;
 	} catch (err) {
 		logger.error("Failed to delete workflow:", err);
-		showError(__("Could not delete the agent: {0}", [err?.message || err]));
+		showError(__("Could not delete the agent: {0}", [err?.userMessage || __("Something went wrong")]));
 	} finally {
 		isDeleting.value = false;
 	}

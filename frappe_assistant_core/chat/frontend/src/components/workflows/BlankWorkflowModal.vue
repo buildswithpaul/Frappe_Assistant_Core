@@ -69,7 +69,7 @@ async function handleCreate({ name, description }) {
 		if (result?.name) emit("created", result.name);
 	} catch (err) {
 		logger.error("Failed to create workflow:", err);
-		showError(__("Could not create the agent: {0}", [err?.message || err]));
+		showError(__("Could not create the agent: {0}", [err?.userMessage || __("Something went wrong")]));
 	} finally {
 		isBusy.value = false;
 	}

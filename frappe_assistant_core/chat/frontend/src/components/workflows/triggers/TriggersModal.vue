@@ -5,29 +5,32 @@
 			class="modal-overlay"
 			role="dialog"
 			aria-modal="true"
-			aria-label="Agent triggers"
+			:aria-label="__('Agent triggers')"
 			@click.self="close"
 		>
 			<div class="modal-content wide">
 				<div class="modal-header">
-					<h2 class="modal-title">Event Triggers</h2>
+					<h2 class="modal-title">{{ __("Event Triggers") }}</h2>
 					<p class="modal-subtitle">
-						Fire this agent when a document event happens on your Frappe site.
+						{{ __("Fire this agent when a document event happens on your Frappe site.") }}
 					</p>
 				</div>
 
-				<div v-if="loading" class="state-block">Loading triggers…</div>
+				<div v-if="loading" class="state-block">{{ __("Loading triggers…") }}</div>
 
 				<div v-else-if="!showEditor && !showLog">
 					<div class="triggers-toolbar">
 						<button class="action-btn primary" @click="openNewEditor">
-							+ Add Trigger
+							{{ __("+ Add Trigger") }}
 						</button>
 					</div>
 
 					<div v-if="triggers.length === 0" class="empty-state">
-						No triggers yet. Create one to run this agent automatically when a
-						document is inserted, updated, submitted, cancelled, or deleted.
+						{{
+							__(
+								"No triggers yet. Create one to run this agent automatically when a document is inserted, updated, submitted, cancelled, or deleted."
+							)
+						}}
 					</div>
 
 					<div v-else class="triggers-list">
@@ -61,7 +64,7 @@
 				/>
 
 				<div v-if="!showEditor && !showLog" class="modal-actions">
-					<button class="action-btn" @click="close">Close</button>
+					<button class="action-btn" @click="close">{{ __("Close") }}</button>
 				</div>
 
 				<ConfirmModal
@@ -69,6 +72,7 @@
 					:title="__('Delete trigger')"
 					:message="__('Delete “{0}”? Its fire log goes with it.', [pendingDelete?.title || ''])"
 					:confirm-label="__('Delete')"
+					:cancel-label="__('Cancel')"
 					:processing="isDeleting"
 					:processing-label="__('Deleting…')"
 					destructive
@@ -156,7 +160,7 @@ function deleteTrigger(t) {
 
 async function confirmDelete() {
 	const t = pendingDelete.value;
-	if (!t) return;
+	if (!t || isDeleting.value) return;
 	isDeleting.value = true;
 	try {
 		await api.workflows.triggers.delete(t.name);
@@ -164,7 +168,7 @@ async function confirmDelete() {
 		pendingDelete.value = null;
 		await refresh();
 	} catch (err) {
-		showError(__("Could not delete the trigger: {0}", [err?.message || err]));
+		showError(__("Could not delete the trigger: {0}", [err?.userMessage || __("Something went wrong")]));
 	} finally {
 		isDeleting.value = false;
 	}
@@ -175,7 +179,7 @@ async function toggleTrigger(t) {
 		await api.workflows.triggers.toggle(t.name, !t.enabled);
 		await refresh();
 	} catch (err) {
-		showError(__("Could not switch the trigger: {0}", [err?.message || err]));
+		showError(__("Could not switch the trigger: {0}", [err?.userMessage || __("Something went wrong")]));
 	}
 }
 
@@ -207,7 +211,7 @@ async function saveTrigger(payload) {
 		editorTarget.value = null;
 		await refresh();
 	} catch (err) {
-		showError(__("Could not save the trigger: {0}", [err?.message || err]));
+		showError(__("Could not save the trigger: {0}", [err?.userMessage || __("Something went wrong")]));
 	}
 }
 

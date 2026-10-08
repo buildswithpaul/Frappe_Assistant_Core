@@ -103,15 +103,32 @@ describe("TriggersModal dialogs", () => {
 
 	it("reports a failed toggle with a toast, not window.alert", async () => {
 		const w = await openWith([{ name: "T1", title: "On submit", enabled: 1 }]);
-		baseCall.mockRejectedValue(new Error("nope"));
+		baseCall.mockRejectedValue(Object.assign(new Error("raw"), { userMessage: "offline" }));
 		await w.findComponent({ name: "TriggerCard" }).vm.$emit("toggle", { name: "T1", enabled: 1 });
 		await flushPromises();
 		expect(window.alert).not.toHaveBeenCalled();
 		const { toasts } = useToast();
 		expect(toasts.value.map((t) => t.message)).toEqual([
-			expect.stringContaining("Could not switch the trigger: nope"),
+			expect.stringContaining("Could not switch the trigger: offline"),
 		]);
 		expect(toasts.value[0].type).toBe("error");
+		w.unmount();
+	});
+
+	it("deletes after confirmation, refreshes and closes the dialog", async () => {
+		const w = await openWith([{ name: "T1", title: "On submit", enabled: 1 }]);
+		baseCall.mockResolvedValue({});
+		await w.findComponent({ name: "TriggerCard" }).vm.$emit("delete", { name: "T1", title: "On submit" });
+		await flushPromises();
+		getCall.mockClear();
+		const confirmBtn = [...document.body.querySelectorAll(".confirm-modal button")].find(
+			(b) => b.textContent.trim() === "Delete"
+		);
+		confirmBtn.click();
+		await flushPromises();
+		expect(baseCall).toHaveBeenCalledTimes(1);
+		expect(getCall).toHaveBeenCalledTimes(1);
+		expect(document.body.textContent).not.toContain("Delete trigger");
 		w.unmount();
 	});
 });
