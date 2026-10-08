@@ -140,59 +140,143 @@ def _apply_limits(limits: dict) -> None:
 # ---------------------------------------------------------------------------
 
 
+# Package roots the sandbox may import. This __import__ only governs imports made
+# from user-code frames, including C functions called directly from user code
+# (datetime.strptime pulling in _strptime on first use). Python library code
+# imports with its own module's builtins and is not affected, and the AST
+# validator already rejects import statements in user code, so this is a second
+# layer, not the gate. The set is a superset, recorded from every root a broad
+# pandas/numpy/dateutil workload requests anywhere in the process.
+_ALLOWED_ROOTS = frozenset(
+    {
+        "numpy",
+        "pandas",
+        "pyarrow",
+        "dateutil",
+        "pytz",
+        "six",
+        "numexpr",
+        "bottleneck",
+        "decimal",
+        "fractions",
+        "numbers",
+        "math",
+        "statistics",
+        "random",
+        "encodings",
+        "codecs",
+        "unicodedata",
+        "locale",
+        "calendar",
+        "datetime",
+        "zoneinfo",
+        "time",
+        "string",
+        "textwrap",
+        "re",
+        "ast",
+        "json",
+        "csv",
+        "struct",
+        "array",
+        "bisect",
+        "heapq",
+        "copy",
+        "collections",
+        "functools",
+        "itertools",
+        "operator",
+        "enum",
+        "typing",
+        "abc",
+        "contextlib",
+        "warnings",
+        "errno",
+        "linecache",
+        "threading",
+        "concurrent",
+        "queue",
+        "io",
+        "gzip",
+        "bz2",
+        "lzma",
+        "zlib",
+        "hashlib",
+        "uuid",
+    }
+)
+
+# Benign C-accelerator / internal modules the stdlib and pandas/numpy load lazily.
+# This list is an explicit allowlist, NOT a blanket "root starts with _" rule:
+# that rule let through the process/network/FFI primitives a sandbox escape needs
+# — _posixsubprocess, _socket, _ctypes, _ssl, _multiprocessing, _asyncio — which
+# are deliberately absent here and therefore denied.
+_ALLOWED_UNDERSCORE = frozenset(
+    {
+        "_decimal",
+        "_strptime",
+        "_thread",
+        "_datetime",
+        "_json",
+        "_heapq",
+        "_bisect",
+        "_random",
+        "_struct",
+        "_csv",
+        "_io",
+        "_collections",
+        "_collections_abc",
+        "_functools",
+        "_operator",
+        "_weakref",
+        "_weakrefset",
+        "_pickle",
+        "_compat_pickle",
+        "_compression",
+        "_bz2",
+        "_lzma",
+        "_blake2",
+        "_hashlib",
+        "_sha512",
+        "_uuid",
+        "_zoneinfo",
+        "_contextvars",
+        "_queue",
+        "_string",
+        "_locale",
+        "_signal",
+        "_opcode",
+        "_ast",
+        "_typing",
+        "_abc",
+        "_stat",
+        "_warnings",
+        "_imp",
+        "_frozen_importlib",
+        "_frozen_importlib_external",
+        "_sitebuiltins",
+        "_distutils_hack",
+        "__future__",
+    }
+)
+
+
+def _is_allowed_root(root: str) -> bool:
+    if root in _ALLOWED_ROOTS or root in _ALLOWED_UNDERSCORE:
+        return True
+    # Per-build config module, named _sysconfigdata_<abiflags>_<platform>.
+    return root.startswith("_sysconfigdata")
+
+
 def _make_restricted_import():
     """Create a restricted __import__ allowing only known-safe package roots."""
     real_import = __builtins__.__import__ if hasattr(__builtins__, "__import__") else __import__
-
-    allowed_roots = frozenset(
-        {
-            "numpy",
-            "pandas",
-            "dateutil",
-            "pytz",
-            "six",
-            "decimal",
-            "fractions",
-            "numbers",
-            "encodings",
-            "codecs",
-            "unicodedata",
-            "_decimal",
-            "_strptime",
-            "calendar",
-            "locale",
-            "warnings",
-            "contextlib",
-            "abc",
-            "collections",
-            "functools",
-            "itertools",
-            "operator",
-            "copy",
-            "math",
-            "statistics",
-            "json",
-            "re",
-            "random",
-            "datetime",
-            "string",
-            "textwrap",
-            "struct",
-            "array",
-            "bisect",
-            "heapq",
-            "_thread",
-            "threading",
-            "concurrent",
-            "queue",
-        }
-    )
 
     def restricted_import(name, globals=None, locals=None, fromlist=(), level=0):
         if level > 0:
             return real_import(name, globals, locals, fromlist, level)
         root = name.split(".")[0]
-        if root.startswith("_") or root in allowed_roots:
+        if _is_allowed_root(root):
             return real_import(name, globals, locals, fromlist, level)
         raise ImportError(
             f"Import of '{name}' is not allowed in the sandbox. "
@@ -206,10 +290,11 @@ class _AttrSafeModule:
     """Expose only a stdlib helper module's public, non-module members.
 
     Used for the small helper modules (math, statistics, json, …) where it costs
-    no capability. pandas and numpy are exposed as-is: wrapping them breaks
-    everyday analysis (pd.offsets, pd.api.types, np.ma), and in-process
-    wrapping cannot be the security boundary. That is planned as process
-    isolation with a SELECT-only database user (follow-up).
+    no capability. pandas and numpy use the lighter _FilteredModule instead:
+    deep-wrapping them breaks everyday analysis (pd.offsets, pd.api.types,
+    np.ma), and in-process wrapping cannot be the security boundary. The real
+    boundary is planned as process isolation with a SELECT-only database user
+    (follow-up).
     """
 
     __slots__ = ("_mod", "_label")
@@ -232,6 +317,71 @@ class _AttrSafeModule:
 
     def __dir__(self):
         return [n for n in dir(self._mod) if not n.startswith("_")]
+
+    def __repr__(self):
+        return f"<module {self._label!r} (run_python_code)>"
+
+
+# pandas/numpy module-level entry points that ingest data from the filesystem,
+# a URL or a pickle. The tool's data comes from the permission-checked frappe
+# query (the `data` variable / get_list), never from files, so none of these has
+# a legitimate use here, while each is a path to arbitrary file reads, SSRF,
+# out-of-band SQL, or — for the pickle loaders — code execution. Writers
+# (df.to_csv) and expression evaluators (pd.eval) are instance/other surfaces a
+# module wrapper cannot reach; those remain for the process-isolation follow-up.
+# show_versions / show_config / show_runtime print host details (OS release,
+# machine, locale, library paths) that the tool has no reason to reveal.
+_PANDAS_BLOCKED = frozenset({"io", "ExcelFile", "ExcelWriter", "HDFStore", "show_versions"})
+_NUMPY_BLOCKED = frozenset(
+    {
+        "load",
+        "save",
+        "savez",
+        "savez_compressed",
+        "savetxt",
+        "loadtxt",
+        "genfromtxt",
+        "fromfile",
+        "fromregex",
+        "memmap",
+        "DataSource",
+        "show_config",
+        "show_runtime",
+    }
+)
+
+
+class _FilteredModule:
+    """Expose a library module unchanged except for a denylist of I/O sinks.
+
+    Unlike _AttrSafeModule this passes submodules through (pd.offsets, pd.api,
+    np.random, np.linalg, np.ma are needed for ordinary analysis). It removes
+    only the explicitly blocked names, the ``read_*`` ingest family, and private
+    attributes. It is defense in depth that shrinks the reachable file/pickle
+    surface, not a complete sandbox of the library — see the module docstring.
+    """
+
+    __slots__ = ("_mod", "_label", "_blocked")
+
+    def __init__(self, mod, label, blocked):
+        object.__setattr__(self, "_mod", mod)
+        object.__setattr__(self, "_label", label)
+        object.__setattr__(self, "_blocked", blocked)
+
+    def __getattr__(self, name):
+        if name.startswith("_") or name in self._blocked or name.startswith("read_"):
+            raise AttributeError(f"{self._label}.{name} is not available in run_python_code")
+        return getattr(self._mod, name)
+
+    def __setattr__(self, name, value):
+        raise AttributeError(f"{self._label} is read-only in run_python_code")
+
+    def __dir__(self):
+        return [
+            n
+            for n in dir(self._mod)
+            if not n.startswith("_") and n not in self._blocked and not n.startswith("read_")
+        ]
 
     def __repr__(self):
         return f"<module {self._label!r} (run_python_code)>"
@@ -319,9 +469,10 @@ def _setup_execution_environment(user: str) -> dict:
 
     available, missing = [], []
 
+    _blocked_io = {"pandas": _PANDAS_BLOCKED, "numpy": _NUMPY_BLOCKED}
     for alias, pkg in [("pd", "pandas"), ("np", "numpy")]:
         try:
-            mod = __import__(pkg)
+            mod = _FilteredModule(__import__(pkg), pkg, _blocked_io[pkg])
             env[alias] = mod
             env[pkg] = mod
             available.append(f"{pkg} ({alias})")

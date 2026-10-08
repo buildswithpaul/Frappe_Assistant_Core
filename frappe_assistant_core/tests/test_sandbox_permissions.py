@@ -293,6 +293,72 @@ class TestSandboxHardening(BaseAssistantTest):
         self.assertRaises(AttributeError, lambda: safe.sys)  # hop to another module
         self.assertRaises(AttributeError, lambda: safe._private)  # private attribute
 
+    def test_import_allowlist_denies_process_and_network_primitives(self):
+        """The import rule is an explicit allowlist, not 'any root starting with _'."""
+        from frappe_assistant_core.utils.code_execution_subprocess import _make_restricted_import
+
+        restricted_import = _make_restricted_import()
+
+        # Roots the pre-loaded libraries legitimately need still import, including
+        # the benign underscore accelerators (datetime.strptime -> _strptime).
+        for name in ("math", "json", "datetime", "pandas", "_strptime", "_decimal"):
+            with self.subTest(allow=name):
+                self.assertIsNotNone(restricted_import(name))
+
+        # The process / network / FFI primitives a sandbox escape needs are denied,
+        # even though their root starts with an underscore (the old rule let them in).
+        for name in (
+            "_posixsubprocess",
+            "_socket",
+            "_ctypes",
+            "_ssl",
+            "_multiprocessing",
+            "os",
+            "sys",
+            "subprocess",
+            "socket",
+        ):
+            with self.subTest(deny=name), self.assertRaises(ImportError):
+                restricted_import(name)
+
+    def test_pandas_numpy_wrapper_blocks_io_but_keeps_analysis(self):
+        """pd/np expose the analysis surface but not the file/URL/pickle ingest sinks."""
+        import numpy as numpy_real
+        import pandas as pandas_real
+
+        from frappe_assistant_core.utils.code_execution_subprocess import (
+            _NUMPY_BLOCKED,
+            _PANDAS_BLOCKED,
+            _FilteredModule,
+        )
+
+        pd = _FilteredModule(pandas_real, "pandas", _PANDAS_BLOCKED)
+        np = _FilteredModule(numpy_real, "numpy", _NUMPY_BLOCKED)
+
+        # Everyday analysis attributes, including submodules, still resolve.
+        for attr in ("DataFrame", "Series", "concat", "offsets", "api", "Timestamp"):
+            with self.subTest(pandas=attr):
+                self.assertIsNotNone(getattr(pd, attr))
+        for attr in ("array", "ma", "linalg", "fft", "random", "nan"):
+            with self.subTest(numpy=attr):
+                self.assertIsNotNone(getattr(np, attr))
+
+        # Ingest sinks (arbitrary file read, SSRF, SQL bypass, pickle code exec) are gone.
+        for name in (
+            "read_csv",
+            "read_pickle",
+            "read_parquet",
+            "read_sql",
+            "io",
+            "ExcelFile",
+            "show_versions",
+        ):
+            with self.subTest(pandas_sink=name), self.assertRaises(AttributeError):
+                getattr(pd, name)
+        for name in ("load", "loadtxt", "fromfile", "memmap", "save", "show_config", "show_runtime"):
+            with self.subTest(numpy_sink=name), self.assertRaises(AttributeError):
+                getattr(np, name)
+
 
 class TestRunDatabaseQueryAccess(BaseAssistantTest):
     """run_database_query is System-Manager-only and cannot read internal tables."""
@@ -397,3 +463,17 @@ class TestRunPythonCodeCapability(BaseAssistantTest):
         result = ExecutePythonCode().execute({"code": code})
         self.assertTrue(result.get("success"), result.get("error"))
         self.assertEqual(result["output"].strip(), "True True 2.0")
+
+    def test_file_and_pickle_ingest_sinks_are_blocked_end_to_end(self):
+        """Through the real subprocess, pandas/numpy data-ingest sinks are unavailable."""
+        from frappe_assistant_core.plugins.data_science.tools.run_python_code import ExecutePythonCode
+
+        for code in (
+            "x = pd.read_csv('/etc/hostname')",
+            "x = pd.read_pickle('/tmp/does-not-matter')",
+            "x = np.load('/tmp/does-not-matter.npy')",
+        ):
+            with self.subTest(code=code):
+                result = ExecutePythonCode().execute({"code": code})
+                self.assertFalse(result.get("success"), f"sink was reachable: {code}")
+                self.assertIn("not available", (result.get("error") or "").lower())

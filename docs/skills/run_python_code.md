@@ -336,8 +336,8 @@ df['month'] = (df['date_col'].dt.year.astype(str) + '-' +
 
 ## Security Blocks
 
-The code is parsed and rejected **before it runs** if it uses any of the
-following. Work with the documented APIs instead.
+The code is rejected **before it runs** if it uses any of the following (the
+pandas/numpy loaders instead fail when called). Work with the documented APIs instead.
 
 | Not allowed | Use instead |
 |-------------|-------------|
@@ -346,6 +346,8 @@ following. Work with the documented APIs instead.
 | `eval`, `exec`, `compile` | Write the logic directly |
 | `getattr`, `setattr`, `delattr` | Access attributes by name in source (`obj.field`) or dict keys (`row["field"]`) |
 | `open`, `input` | No file or interactive I/O; fetch data with `frappe.get_list` / `tools.*` |
+| `pd.read_*`, `pd.io`, `pd.ExcelFile`, `np.load`, `np.loadtxt`, `np.fromfile` and other file/URL/pickle loaders | Data comes from `data_query`, `frappe.get_list` or `tools.*`, never from files |
+| `pd.show_versions`, `np.show_config`, `np.show_runtime` | Not available |
 | `globals`, `locals`, `vars`, `dir` | Not available |
 | `.strftime(` and other `time`-module paths | `frappe.utils` date helpers, or f-strings with `.year/.month/.day` |
 
