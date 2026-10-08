@@ -288,7 +288,11 @@ class TestTheThreeGates(BaseAssistantTest):
             / "chatStore.js"
         )
         src = store.read_text()
-        self.assertGreaterEqual(src.count("parseJsonFields"), 3)
+        # Both history paths (readHistory, reconcileFromServer) shape server rows through
+        # one helper, and that helper parses the JSON columns.
+        self.assertGreaterEqual(src.count("hydrateServerMessage"), 3)
+        helper = src[src.index("function hydrateServerMessage") :]
+        self.assertIn("parseJsonFields(msg)", helper[: helper.index("\n}\n")])
         self.assertNotIn("JSON.parse(msg.blocks)", src)
 
     def test_complete_streaming_forwards_the_receipt(self):
