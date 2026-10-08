@@ -123,6 +123,22 @@ class TestAttachChatFile(BaseAssistantTest):
         self.assertIn("permission", result["error"])
         self.assertEqual(self._files_on(self.note), [])
 
+    def test_refuses_a_document_the_user_can_write_by_role_but_not_this_one(self):
+        # The PINV case: Accounts User may write Purchase Invoices, but a User Permission hides
+        # this one. Note shows the same split: System Manager writes Notes, but a private Note
+        # belongs to its owner alone.
+        manager = self.make_throwaway_user("doc-level", roles=("System Manager",))
+        frappe.set_user(manager)  # nosemgrep: frappe-setuser — act as the chat user
+        upload = self._chat_upload()
+        self.assertTrue(frappe.has_permission("Note", "write"))
+
+        result = self._attach(upload["name"])
+        frappe.set_user("Administrator")  # nosemgrep: frappe-setuser
+
+        self.assertFalse(result["success"])
+        self.assertIn("permission", result["error"])
+        self.assertEqual(self._files_on(self.note), [])
+
     def test_refuses_a_document_that_does_not_exist(self):
         upload = self._chat_upload()
 
