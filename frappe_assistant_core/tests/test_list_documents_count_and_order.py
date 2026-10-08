@@ -249,17 +249,17 @@ class TestOrderByBehaviour(BaseAssistantTest):
                 "not passed through as empty string to frappe.get_list.",
             )
 
-    def test_omitted_order_by_uses_frappe_sentinel(self):
-        """When order_by is not supplied, KEEP_DEFAULT_ORDERING must be used."""
+    def test_omitted_order_by_resolves_doctype_default_with_name_tie_breaker(self):
+        """Omitted order_by resolves to the DocType's sort plus a name tie-breaker.
+
+        Pages are cut with LIMIT/OFFSET, so the order must be total for them to tile.
+        """
         tool = DocumentList()
         with list_harness() as gl:
             tool.execute({"doctype": "Customer"})
             actual = gl.call_args_list[0][1].get("order_by", "")
-            self.assertEqual(
-                actual,
-                "KEEP_DEFAULT_ORDERING",
-                f"Expected 'KEEP_DEFAULT_ORDERING', got: {actual!r}",
-            )
+            self.assertNotEqual(actual, "KEEP_DEFAULT_ORDERING")
+            self.assertTrue(actual.endswith(", name asc"), f"got: {actual!r}")
 
     def test_explicit_order_by_is_honoured(self):
         """A non-empty order_by must still be passed through unchanged."""
@@ -267,16 +267,13 @@ class TestOrderByBehaviour(BaseAssistantTest):
         with list_harness() as gl:
             tool.execute({"doctype": "Customer", "order_by": "modified desc"})
             actual = gl.call_args_list[0][1].get("order_by")
-            self.assertEqual(actual, "modified desc")
+            self.assertEqual(actual, "modified desc, name asc")
 
-    def test_none_order_by_uses_frappe_sentinel(self):
-        """Explicitly passing order_by=None must fall back to KEEP_DEFAULT_ORDERING."""
+    def test_none_order_by_resolves_doctype_default_with_name_tie_breaker(self):
+        """Explicitly passing order_by=None takes the same resolved default."""
         tool = DocumentList()
         with list_harness() as gl:
             tool.execute({"doctype": "Customer", "order_by": None})
             actual = gl.call_args_list[0][1].get("order_by", "")
-            self.assertEqual(
-                actual,
-                "KEEP_DEFAULT_ORDERING",
-                f"Expected 'KEEP_DEFAULT_ORDERING', got: {actual!r}",
-            )
+            self.assertNotEqual(actual, "KEEP_DEFAULT_ORDERING")
+            self.assertTrue(actual.endswith(", name asc"), f"got: {actual!r}")

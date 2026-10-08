@@ -19,7 +19,8 @@ Document Listing Tool for Core Plugin.
 Lists and searches Frappe documents with filtering capabilities.
 """
 
-from typing import Any, Dict, List
+import re
+from typing import Any, Dict, List, Optional
 
 import frappe
 from frappe import _
@@ -253,6 +254,35 @@ def resolve_unmatched_link_filters(doctype: str, filters: Any) -> Dict[str, Dict
     return unresolved
 
 
+def parse_offset(value: Any) -> Optional[int]:
+    """Return the offset as an int, or None when it is not a whole number."""
+    if value is None or value == "":
+        return 0
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and value.strip().isdigit():
+        return int(value)
+    return None
+
+
+def stable_order_by(doctype: str, order_by: str) -> str:
+    """Append a unique name tie-breaker so LIMIT/OFFSET pages tile the result set."""
+    if order_by == "KEEP_DEFAULT_ORDERING":
+        sort = frappe.db.get_value("DocType", doctype, ["sort_field", "sort_order"], as_dict=True) or {}
+        sort_field = sort.get("sort_field")
+        if sort_field and "," in sort_field:
+            order_by = sort_field
+        elif sort_field:
+            order_by = f"{sort_field} {sort.get('sort_order') or 'desc'}"
+        else:
+            order_by = "creation desc"
+    if re.search(r"\bname\b", order_by):
+        return order_by
+    return f"{order_by}, name asc"
+
+
 class DocumentList(BaseTool):
     """
     Tool for listing and searching Frappe documents.
@@ -316,11 +346,8 @@ class DocumentList(BaseTool):
         # Use Frappe's sentinel so it applies its own intelligent default ordering.
         # Also guard against empty string from API clients.
         order_by = arguments.get("order_by") or "KEEP_DEFAULT_ORDERING"
-        try:
-            offset = int(arguments.get("offset") or 0)
-        except (TypeError, ValueError):
-            offset = -1
-        if offset < 0:
+        offset = parse_offset(arguments.get("offset"))
+        if offset is None or offset < 0:
             return {
                 "success": False,
                 "error": _("offset must be a whole number of 0 or more."),
@@ -388,8 +415,10 @@ class DocumentList(BaseTool):
                 filters=filters,
                 fields=fields,
                 limit=limit,
+                # limit_start, not offset: the one spelling Frappe v15 and v16 both accept
+                # (v16 deprecates it for offset; v15 has no offset), so do not rename it.
                 limit_start=offset,
-                order_by=order_by,
+                order_by=stable_order_by(doctype, order_by),
                 ignore_permissions=False,  # Ensure permission checking
             )
 
