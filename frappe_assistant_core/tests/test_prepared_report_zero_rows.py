@@ -111,10 +111,17 @@ def stub_frappe(
     def fake_get_value(doctype, *args, **kwargs):
         if doctype == "Report" and args and args[-1] == "timeout":
             return report_timeout
-        if doctype == "Prepared Report" and args and args[-1] == "creation":
-            row = next((r for r in in_flight or [] if r["name"] == args[0]), {})
-            return row.get("creation", frappe.utils.now_datetime())
         return real_get_value(doctype, *args, **kwargs)
+
+    real_get_all = frappe.get_all
+
+    def fake_get_all(doctype, *args, **kwargs):
+        if doctype == "Prepared Report":
+            return [
+                frappe._dict({"owner": frappe.session.user, "creation": frappe.utils.now_datetime(), **row})
+                for row in in_flight or []
+            ]
+        return real_get_all(doctype, *args, **kwargs)
 
     def fake_get_doc(*args, **kwargs):
         if args and args[0] == "Prepared Report":
@@ -158,6 +165,7 @@ def stub_frappe(
             run=stack.enter_context(patch(f"{QUERY_REPORT}.run", autospec=True, return_value=direct_result)),
         )
         stack.enter_context(patch.object(frappe, "get_value", side_effect=fake_get_value))
+        stack.enter_context(patch.object(frappe, "get_all", side_effect=fake_get_all))
         stack.enter_context(patch.object(frappe, "get_doc", side_effect=fake_get_doc))
 
         # The polling loop sleeps between attempts and rolls back to re-read the

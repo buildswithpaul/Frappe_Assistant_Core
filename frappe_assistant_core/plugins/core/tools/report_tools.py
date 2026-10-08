@@ -56,6 +56,9 @@ def _prepared_payload_extras(stored: dict, report_doc) -> dict:
     return extras
 
 
+QUEUE_WAIT_SLACK_SECONDS = 300
+
+
 class ReportTools:
     """
     Shared utility class for Frappe report operations.
@@ -168,6 +171,13 @@ class ReportTools:
                 }
                 if rows:
                     debug_info["total_count"] = row_count
+                if result.get("status") == "error":
+                    return {
+                        "success": False,
+                        "error": result.get("error") or _("Report generation failed"),
+                        "status": "error",
+                        "prepared_report_name": result.get("prepared_report_name"),
+                    }
                 if result.get("status"):
                     debug_info["status"] = result["status"]
                 if result.get("prepared_report_name"):
@@ -304,12 +314,22 @@ class ReportTools:
 
     @staticmethod
     def _find_in_flight_report(report_name, filters, max_age_seconds, get_in_flight):
-        """Name of the newest Queued/Started Prepared Report younger than max_age_seconds."""
-        fresh = []
-        for row in get_in_flight(report_name, filters):
-            created = frappe.get_value("Prepared Report", row["name"], "creation")
-            if created and time_diff_in_seconds(now_datetime(), created) < max_age_seconds:
-                fresh.append((created, row["name"]))
+        """Name of the session user's newest Queued/Started Prepared Report younger than max_age_seconds."""
+        names = [row["name"] for row in get_in_flight(report_name, filters)]
+        if not names:
+            return None
+        rows = frappe.get_all(
+            "Prepared Report",
+            filters={"name": ("in", names)},
+            fields=["name", "creation", "owner"],
+        )
+        fresh = [
+            (row.creation, row.name)
+            for row in rows
+            if row.owner == frappe.session.user
+            and row.creation
+            and time_diff_in_seconds(now_datetime(), row.creation) < max_age_seconds
+        ]
         return max(fresh)[1] if fresh else None
 
     @staticmethod
@@ -324,6 +344,7 @@ class ReportTools:
         import time
 
         from frappe.core.doctype.prepared_report.prepared_report import (
+            REPORT_TIMEOUT,
             get_completed_prepared_report,
             get_reports_in_queued_state,
             make_prepared_report,
@@ -362,7 +383,8 @@ class ReportTools:
                     }
 
             # Get report timeout configuration
-            report_timeout = frappe.get_value("Report", report_doc.name, "timeout") or 120
+            configured_timeout = frappe.get_value("Report", report_doc.name, "timeout")
+            report_timeout = configured_timeout or 120
 
             # Try quick direct execution for fast reports
             if report_timeout < 60:
@@ -399,9 +421,11 @@ class ReportTools:
 
             # Queue the background job
             # A retry while the first job is still running must poll that job, not
-            # queue a duplicate. Rows older than the report timeout are lost jobs.
+            # queue a duplicate. Frappe enqueues the job with Report.timeout or REPORT_TIMEOUT,
+            # so only a row older than that (plus queue wait) is a lost job.
+            job_lifetime = (configured_timeout or REPORT_TIMEOUT) + QUEUE_WAIT_SLACK_SECONDS
             prepared_report_name = ReportTools._find_in_flight_report(
-                report_doc.name, filters, report_timeout, get_reports_in_queued_state
+                report_doc.name, filters, job_lifetime, get_reports_in_queued_state
             )
             if not prepared_report_name:
                 prepared_report_name = make_prepared_report(report_name=report_doc.name, filters=filters).get(
