@@ -94,7 +94,7 @@ describe("AgentConfig", () => {
 	it("resolves the configured tools against the runtime user on mount", async () => {
 		mountConfig({ tool_directives: [{ tool_name: "list_documents" }] });
 		await nextTick();
-		expect(resolveWorkflowTools).toHaveBeenCalledWith([{ tool_name: "list_documents" }]);
+		expect(resolveWorkflowTools).toHaveBeenCalledWith([{ tool_name: "list_documents" }], null);
 	});
 
 	it("does not call the admin-only resolver for a read-only viewer", async () => {

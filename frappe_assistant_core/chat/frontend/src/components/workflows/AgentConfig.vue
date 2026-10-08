@@ -61,6 +61,13 @@
 			</p>
 		</div>
 
+		<NodeLimitsSection
+			:config="config"
+			:show-timeout="nodeKind === 'agent'"
+			:readonly="readonly"
+			@update="(data) => emit('update', data)"
+		/>
+
 		<div class="config-section">
 			<label class="config-label"
 				>User ID Override <span class="optional">(optional)</span></label
@@ -85,6 +92,7 @@ import { api } from "@/api/client";
 import { logger } from "@/utils/logger";
 import PromptEditor from "./config/PromptEditor.vue";
 import ToolSection from "./config/ToolSection.vue";
+import NodeLimitsSection from "./config/NodeLimitsSection.vue";
 import {
 	makeDirective,
 	normalizeDirectives,
@@ -107,6 +115,10 @@ const props = defineProps({
 	variables: { type: Object, default: () => ({}) },
 	/** The workflow's default_user_id — whose tools this node actually gets. */
 	runtimeUserLabel: { type: String, default: "this agent's user" },
+	/** Whose tools to resolve against; null unless the viewer is an admin who may name one. */
+	runtimeUser: { type: String, default: null },
+	/** A loop node reuses this form for its per-item task, which has no timeout of its own. */
+	nodeKind: { type: String, default: "agent" },
 	readonly: { type: Boolean, default: false },
 });
 
@@ -226,7 +238,7 @@ async function resolveTools() {
 	}
 	isResolving.value = true;
 	try {
-		const result = await api.workflows.resolveWorkflowTools(directives);
+		const result = await api.workflows.resolveWorkflowTools(directives, props.runtimeUser);
 		resolution.value = resolutionIndex(result?.resolved || []);
 	} catch (err) {
 		logger.error("Failed to resolve workflow tools:", err);
