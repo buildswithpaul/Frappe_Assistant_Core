@@ -130,4 +130,4 @@ plain slicing, so a child can lose its parent. Use `summary_only` to size a larg
 - **Date filters** — use `YYYY-MM-DD` format.
 - **Company filter** — most reports require a company. Get exact company name from `list_documents` with `doctype: "Company"`.
 - **Report Builder reports are NOT supported** — only Script Reports and Query Reports work.
-- **Large reports** — may take longer; the tool handles polling automatically for prepared reports.
+- **Large reports** — the tool polls prepared reports automatically. A slow one returns `status: "timeout"` with a `prepared_report_name`: the report is still being prepared, not empty. Ask again with the same filters and the retry picks up that same report instead of starting a new one.

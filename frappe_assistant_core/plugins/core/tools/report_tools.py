@@ -19,6 +19,7 @@ from typing import Any, Dict, List
 
 import frappe
 from frappe import _
+from frappe.utils import now_datetime, time_diff_in_seconds
 
 from .report_requirements import VALUE_CONSTRAINED_FIELDTYPES, discover_filter_definitions
 
@@ -167,6 +168,10 @@ class ReportTools:
                 }
                 if rows:
                     debug_info["total_count"] = row_count
+                if result.get("status"):
+                    debug_info["status"] = result["status"]
+                if result.get("prepared_report_name"):
+                    debug_info["prepared_report_name"] = result["prepared_report_name"]
                 if result.get("report_summary"):
                     debug_info["report_summary"] = result["report_summary"]
                 if debug_info["truncated"] and not summary_only:
@@ -177,7 +182,7 @@ class ReportTools:
                 return {"success": False, "error": f"Unexpected result type: {type(result).__name__}"}
 
             # Add actionable guidance when report returns no data
-            if debug_info["row_count"] == 0:
+            if debug_info["row_count"] == 0 and debug_info.get("status") != "timeout":
                 debug_info["suggestion"] = (
                     f"Report returned 0 rows. This usually means the auto-defaulted filters "
                     f"(e.g. fiscal year dates, company) don't match any data. "
@@ -298,6 +303,16 @@ class ReportTools:
             return {"success": False, "error": str(e)}
 
     @staticmethod
+    def _find_in_flight_report(report_name, filters, max_age_seconds, get_in_flight):
+        """Name of the newest Queued/Started Prepared Report younger than max_age_seconds."""
+        fresh = []
+        for row in get_in_flight(report_name, filters):
+            created = frappe.get_value("Prepared Report", row["name"], "creation")
+            if created and time_diff_in_seconds(now_datetime(), created) < max_age_seconds:
+                fresh.append((created, row["name"]))
+        return max(fresh)[1] if fresh else None
+
+    @staticmethod
     def _handle_prepared_report_execution(report_doc, filters):
         """
         Smart handler for prepared reports with polling support for AI/MCP tools:
@@ -310,6 +325,7 @@ class ReportTools:
 
         from frappe.core.doctype.prepared_report.prepared_report import (
             get_completed_prepared_report,
+            get_reports_in_queued_state,
             make_prepared_report,
         )
         from frappe.desk.query_report import get_prepared_report_result, run
@@ -382,8 +398,15 @@ class ReportTools:
             # ===== Queue and WAIT for completion with polling =====
 
             # Queue the background job
-            prepared_report = make_prepared_report(report_name=report_doc.name, filters=filters)
-            prepared_report_name = prepared_report.get("name")
+            # A retry while the first job is still running must poll that job, not
+            # queue a duplicate. Rows older than the report timeout are lost jobs.
+            prepared_report_name = ReportTools._find_in_flight_report(
+                report_doc.name, filters, report_timeout, get_reports_in_queued_state
+            )
+            if not prepared_report_name:
+                prepared_report_name = make_prepared_report(report_name=report_doc.name, filters=filters).get(
+                    "name"
+                )
 
             # Poll for completion with exponential backoff
             max_wait_time = min(report_timeout, 300)  # Cap at 5 minutes for MCP tools
@@ -444,7 +467,11 @@ class ReportTools:
                 "status": "timeout",
                 "prepared_report": True,
                 "prepared_report_name": prepared_report_name,
-                "message": f"Report generation is taking longer than expected ({int(max_wait_time)}s timeout reached). The report is still being generated in the background. You can retry with the same filters in a few minutes to retrieve the cached result.",
+                "message": _(
+                    "The report {0} is still being prepared in the background (waited {1}s). "
+                    "Ask again with the same filters in a minute or two: the retry picks up this same "
+                    "report instead of starting a new one."
+                ).format(report_doc.name, int(elapsed_time)),
                 "retry_guidance": f"Use report_name='{report_doc.name}' with the same filters to retrieve results.",
                 "wait_time_seconds": int(elapsed_time),
             }

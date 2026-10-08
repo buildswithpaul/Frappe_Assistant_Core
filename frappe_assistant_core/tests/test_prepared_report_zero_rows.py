@@ -102,6 +102,7 @@ def stub_frappe(
     direct_result=None,
     report_timeout=120,
     prepared_status="Completed",
+    in_flight=None,
 ):
     """Patch the Frappe boundary `_handle_prepared_report_execution` calls into."""
     real_get_value = frappe.get_value
@@ -110,6 +111,9 @@ def stub_frappe(
     def fake_get_value(doctype, *args, **kwargs):
         if doctype == "Report" and args and args[-1] == "timeout":
             return report_timeout
+        if doctype == "Prepared Report" and args and args[-1] == "creation":
+            row = next((r for r in in_flight or [] if r["name"] == args[0]), {})
+            return row.get("creation", frappe.utils.now_datetime())
         return real_get_value(doctype, *args, **kwargs)
 
     def fake_get_doc(*args, **kwargs):
@@ -142,6 +146,13 @@ def stub_frappe(
                     f"{QUERY_REPORT}.get_prepared_report_result",
                     autospec=True,
                     return_value=prepared_result,
+                )
+            ),
+            in_flight=stack.enter_context(
+                patch(
+                    f"{PREPARED_REPORT}.get_reports_in_queued_state",
+                    autospec=True,
+                    return_value=in_flight or [],
                 )
             ),
             run=stack.enter_context(patch(f"{QUERY_REPORT}.run", autospec=True, return_value=direct_result)),
