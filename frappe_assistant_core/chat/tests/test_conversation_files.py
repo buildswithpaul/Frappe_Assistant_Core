@@ -17,7 +17,10 @@ from unittest.mock import patch
 import frappe
 
 from frappe_assistant_core.chat.api.chat import conversation_files, live_turn, messages
-from frappe_assistant_core.chat.api.chat.conversation_files import conversation_files_addendum
+from frappe_assistant_core.chat.api.chat.conversation_files import (
+    conversation_files_addendum,
+    text_cache_key,
+)
 from frappe_assistant_core.chat.api.chat.helpers import _attach_files_to_message
 from frappe_assistant_core.chat.api.chat.relay import _relay_ar_interrupt_resume, _relay_ar_stream
 from frappe_assistant_core.chat.api.settings.uploads import upload_message_file
@@ -48,7 +51,10 @@ class ConversationFilesTestCase(BaseAssistantTest):
                 file_name=file_name,
                 content_type=content_type,
             )
-        self.addCleanup(frappe.cache.delete_value, f"fac_chat_file_text:{uploaded['file']['name']}")
+        self.addCleanup(
+            frappe.cache.delete_value,
+            text_cache_key(uploaded["file"]["name"], uploaded["file"]["file_url"]),
+        )
         return uploaded["file"]
 
     def _user_message(
@@ -123,15 +129,79 @@ class TestConversationFilesScope(ConversationFilesTestCase):
 
         self.assertEqual(conversation_files_addendum(self.session, "someone.else@example.com"), "")
 
+    def test_a_file_someone_else_linked_to_the_users_message_is_not_listed(self):
+        # Only reachable by inserting a File directly: Frappe lets a user with File create
+        # permission attach a File to a document. The owner filter keeps it out of the prompt.
+        message = self._user_message("Summarize")
+        foreign = frappe.get_doc(
+            {
+                "doctype": "File",
+                "file_name": "theirs.txt",
+                "content": _unique("their numbers").encode(),
+                "is_private": 1,
+                "attached_to_doctype": "FAC Chat Message",
+                "attached_to_name": message,
+            }
+        ).insert(ignore_permissions=True)
+        frappe.db.set_value("File", foreign.name, "owner", "someone.else@example.com", update_modified=False)
+
+        self.assertEqual(conversation_files_addendum(self.session, frappe.session.user), "")
+
+    def test_a_file_sent_twice_in_one_conversation_is_listed_once(self):
+        body = _unique("Receipt ST-88231")
+        self._user_message("Summarize this", attach=("receipt.txt", body))
+        first = self.file["name"]
+        self._user_message("Here it is again", attach=("receipt.txt", body))
+
+        addendum = conversation_files_addendum(self.session, frappe.session.user)
+
+        self.assertEqual(addendum.count("File ID: "), 1)
+        self.assertIn(f"File ID: {first}", addendum)
+
+
+class TestTheSizeBudget(ConversationFilesTestCase):
+    def _limits(self):
+        for name, value in (("MAX_FILE_CHARS", 300), ("MAX_TOTAL_CHARS", 700), ("MIN_TEXT_CHARS", 100)):
+            limit = patch.object(conversation_files, name, value)
+            limit.start()
+            self.addCleanup(limit.stop)
+
     def test_a_large_file_is_truncated_and_still_listed(self):
+        self._limits()
         self._user_message("Read this", attach=("big.txt", _unique("x" * 500)))
 
-        with patch.object(conversation_files, "MAX_FILE_CHARS", 100):
-            addendum = conversation_files_addendum(self.session, frappe.session.user)
+        addendum = conversation_files_addendum(self.session, frappe.session.user)
 
         self.assertIn(f"File ID: {self.file['name']}", addendum)
         self.assertIn("[Truncated", addendum)
-        self.assertNotIn("x" * 101, addendum)
+        self.assertNotIn("x" * 301, addendum)
+
+    def test_files_past_the_budget_are_listed_without_text(self):
+        self._limits()
+        ids = []
+        for name in ("a.txt", "b.txt", "c.txt"):
+            self._user_message("Read this", attach=(name, _unique(name[0] * 400)))
+            ids.append(self.file["name"])
+
+        addendum = conversation_files_addendum(self.session, frappe.session.user)
+
+        for file_id in ids:
+            self.assertIn(f"File ID: {file_id}", addendum)
+        self.assertIn("a" * 300, addendum)
+        self.assertIn("not included, over the size limit", addendum)
+        self.assertNotIn("c" * 50, addendum)
+
+    def test_attaching_a_file_leaves_the_earlier_files_text_unchanged(self):
+        # A changed prefix is a prompt-cache miss for the whole conversation. Under budget
+        # pressure the newer file must give way, not the older one.
+        self._limits()
+        self._user_message("Read this", attach=("old.txt", _unique("o" * 280)))
+        before = conversation_files_addendum(self.session, frappe.session.user)
+        self._user_message("And this", attach=("new.txt", _unique("n" * 600)))
+
+        after = conversation_files_addendum(self.session, frappe.session.user)
+
+        self.assertTrue(after.startswith(before.rsplit("\n</user_attached_files>", 1)[0]))
 
 
 class TestTheSameFileInTwoConversations(ConversationFilesTestCase):
@@ -158,17 +228,45 @@ class TestTheSameFileInTwoConversations(ConversationFilesTestCase):
             f"File ID: {first_file}", conversation_files_addendum(self.session, frappe.session.user)
         )
 
+    def test_another_users_copy_of_the_same_bytes_does_not_hide_the_text(self):
+        # Two users of one site attach the same supplier PDF; Frappe gives both Files one URL.
+        owner = self.make_throwaway_user("conv-owner")
+        other = self.make_throwaway_user("conv-other")
+        body = _unique("Invoice ZX-4417")
+        frappe.set_user(owner)  # nosemgrep: frappe-setuser — act as the conversation's user
+        self._user_message("Summarize this", attach=("supplier.txt", body))
+        frappe.set_user(other)  # nosemgrep: frappe-setuser — the second user sends the same bytes
+        self._user_message("Mine too", attach=("supplier.txt", body), session=f"other-{self.session}")
+        frappe.set_user(owner)  # nosemgrep: frappe-setuser
+
+        addendum = conversation_files_addendum(self.session, owner)
+        frappe.set_user("Administrator")  # nosemgrep: frappe-setuser
+
+        self.assertIn("ZX-4417", addendum)
+
 
 class TestFilesWithoutText(ConversationFilesTestCase):
-    def test_an_image_with_no_text_says_the_model_has_already_seen_it(self):
-        # A site without the OCR dependencies extracts nothing from an image.
+    def _photo(self):
         msg = FACChatMessage.create_message(session_id=self.session, role="user", content="What is this?")
         png = b"\x89PNG\r\n\x1a\n" + frappe.generate_hash(length=32).encode()
         self.file = self._upload("photo.png", png, content_type="image/png")
         _attach_files_to_message([self.file["file_url"]], msg.name)
 
+    def test_an_image_with_no_text_says_it_was_sent_with_its_message(self):
+        self._photo()
+
         with patch.object(conversation_files, "_extract", return_value=""):
             addendum = conversation_files_addendum(self.session, frappe.session.user)
 
         self.assertIn(f"File ID: {self.file['name']}", addendum)
-        self.assertIn("Content: an image, shown to you", addendum)
+        self.assertIn("Content: an image, sent to you with the message", addendum)
+
+    def test_an_image_that_yields_no_text_is_not_extracted_again_every_turn(self):
+        # OCR runs inside the send; a photo with no text used to be re-OCR'd on every turn.
+        self._photo()
+
+        with patch.object(conversation_files, "_extract", return_value="") as extract:
+            conversation_files_addendum(self.session, frappe.session.user)
+            conversation_files_addendum(self.session, frappe.session.user)
+
+        self.assertEqual(extract.call_count, 1)

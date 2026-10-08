@@ -77,13 +77,17 @@ class ExtractFileContent(BaseTool):
         self.inputSchema = {
             "type": "object",
             "properties": {
+                "file_id": {
+                    "type": "string",
+                    "description": "File ID (the File document's name), e.g. one listed for a chat attachment. Preferred: it names exactly one file.",
+                },
                 "file_url": {
                     "type": "string",
-                    "description": "File URL from Frappe (e.g., '/files/invoice.pdf' or '/private/files/document.docx'). Provide either file_url OR file_name.",
+                    "description": "File URL from Frappe (e.g., '/files/invoice.pdf' or '/private/files/document.docx'). Provide file_id, file_url OR file_name.",
                 },
                 "file_name": {
                     "type": "string",
-                    "description": "Alternative: File name from File DocType (e.g., 'invoice-2024.pdf'). Provide either file_url OR file_name.",
+                    "description": "Alternative: File name from File DocType (e.g., 'invoice-2024.pdf'). Provide file_id, file_url OR file_name.",
                 },
                 "operation": {
                     "type": "string",
@@ -207,13 +211,20 @@ class ExtractFileContent(BaseTool):
 
     def _get_file_document(self, arguments: Dict[str, Any]) -> Optional[Any]:
         """Get file document from Frappe, with parent document authorization."""
+        file_id = arguments.get("file_id")
         file_url = arguments.get("file_url")
         file_name = arguments.get("file_name")
 
         try:
             file_doc = None
 
-            if file_url:
+            # Identical bytes share a file_url (and often a file_name), so only the ID names
+            # exactly one File, and so exactly one access check.
+            if file_id:
+                if frappe.db.exists("File", file_id):
+                    file_doc = frappe.get_doc("File", file_id)
+
+            elif file_url:
                 results = frappe.get_all("File", filters={"file_url": file_url}, fields=["*"], limit=1)
                 if results:
                     file_doc = frappe.get_doc("File", results[0].name)
