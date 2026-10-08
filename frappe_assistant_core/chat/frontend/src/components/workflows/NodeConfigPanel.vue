@@ -158,6 +158,8 @@ const nodeColor = computed(() => {
 		agent: "#0F6E5C",
 		condition: "#C9A227",
 		transform: "#0F6E5C",
+		tool: "#0F6E5C",
+		loop: "#8A857C",
 		"workflow-output": "#8A857C",
 	};
 	return byType[props.node.type] || "#64748b";

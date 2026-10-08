@@ -1,5 +1,6 @@
 <template>
-	<div class="workflow-node input-node">
+	<div class="workflow-node input-node" :class="{ invalid: data.issues?.length }">
+		<NodeIssueMarker :issues="data.issues || []" />
 		<div class="node-header">
 			<div class="node-icon" style="color: var(--ql-text-muted)">
 				<svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -20,6 +21,7 @@
 
 <script setup>
 import { Handle, Position } from "@vue-flow/core";
+import NodeIssueMarker from "./NodeIssueMarker.vue";
 
 defineProps({
 	data: { type: Object, required: true },
@@ -28,6 +30,7 @@ defineProps({
 
 <style scoped>
 .workflow-node {
+	position: relative;
 	background: var(--ql-surface);
 	border: 2px solid var(--ql-border);
 	border-radius: 0.5rem;
@@ -74,5 +77,9 @@ defineProps({
 .input-badge {
 	background: var(--ql-subtle);
 	color: var(--ql-text-muted);
+}
+
+.workflow-node.invalid {
+	border-color: var(--ql-danger);
 }
 </style>

@@ -1,5 +1,6 @@
 <template>
-	<div class="workflow-node condition-node">
+	<div class="workflow-node condition-node" :class="{ invalid: data.issues?.length }">
+		<NodeIssueMarker :issues="data.issues || []" />
 		<Handle type="target" :position="Position.Left" />
 		<div class="node-header">
 			<div class="node-icon" style="color: var(--ql-warning)">
@@ -30,6 +31,7 @@
 <script setup>
 import { computed } from "vue";
 import { Handle, Position } from "@vue-flow/core";
+import NodeIssueMarker from "./NodeIssueMarker.vue";
 
 const props = defineProps({
 	data: { type: Object, required: true },
@@ -54,6 +56,7 @@ const conditionSummary = computed(() => {
 
 <style scoped>
 .workflow-node {
+	position: relative;
 	background: var(--ql-surface);
 	border: 2px solid var(--ql-border);
 	border-radius: 0.5rem;
@@ -135,5 +138,9 @@ const conditionSummary = computed(() => {
 }
 .fail-label {
 	color: var(--ql-danger);
+}
+
+.workflow-node.invalid {
+	border-color: var(--ql-danger);
 }
 </style>

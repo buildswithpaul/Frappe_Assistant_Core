@@ -101,15 +101,15 @@ export function generateNodeId(type) {
  */
 export function getDefaultLabel(type) {
 	const labels = {
-		"workflow-input": "Input",
-		"workflow-output": "Output",
-		input: "Input",
-		output: "Output",
-		agent: "Task",
-		condition: "Condition",
-		transform: "Transform",
-		tool: "Tool",
-		loop: "For each",
+		"workflow-input": __("Input"),
+		"workflow-output": __("Output"),
+		input: __("Input"),
+		output: __("Output"),
+		agent: __("Task"),
+		condition: __("Condition"),
+		transform: __("Transform"),
+		tool: __("Tool"),
+		loop: __("For each"),
 	};
 	return labels[type] || type;
 }
@@ -226,6 +226,11 @@ export function validateGraph(nodes, edges) {
 		}
 		if (bt === "tool" && !config.tool_name) {
 			add(n.id, __('Tool step "{0}" has no tool selected', [labelOf(n)]));
+		} else if (bt === "tool" && config.tool_name.includes(":")) {
+			add(
+				n.id,
+				__('Tool step "{0}": use the bare tool name and set the server separately', [labelOf(n)])
+			);
 		}
 		if (bt === "loop" && !config.system_prompt) {
 			add(n.id, __('"{0}" has no instructions for each item', [labelOf(n)]));

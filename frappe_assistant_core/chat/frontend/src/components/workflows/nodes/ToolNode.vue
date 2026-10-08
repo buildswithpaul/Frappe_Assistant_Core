@@ -1,39 +1,35 @@
 <template>
-	<div class="workflow-node output-node" :class="{ invalid: data.issues?.length }">
+	<div class="workflow-node tool-node" :class="{ invalid: data.issues?.length }">
 		<NodeIssueMarker :issues="data.issues || []" />
 		<Handle type="target" :position="Position.Left" />
 		<div class="node-header">
-			<div class="node-icon" style="color: var(--ql-text-muted)">
+			<div class="node-icon">
 				<svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-					<path
-						stroke-linecap="round"
-						stroke-linejoin="round"
-						stroke-width="2"
-						d="M3 21v-4m0 0V5a2 2 0 012-2h6.5l1 1H21l-3 6 3 6h-8.5l-1-1H5a2 2 0 00-2 2zm9-13.5V9"
-					/>
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75" :d="ICON" />
 				</svg>
 			</div>
 			<span class="node-label">{{ data.label }}</span>
-			<span class="node-type-badge output-badge">OUT</span>
+			<span class="node-type-badge">{{ __("TOOL") }}</span>
 		</div>
-		<div v-if="data.config?.output_template" class="node-preview">
-			{{ truncate(data.config.output_template, 40) }}
+		<div class="node-preview mono">
+			<template v-if="data.config?.tool_name">
+				{{ data.config.tool_name }}
+				<span v-if="data.config.server" class="node-server">· {{ data.config.server }}</span>
+			</template>
+			<template v-else>{{ __("No tool chosen") }}</template>
 		</div>
+		<Handle type="source" :position="Position.Right" />
 	</div>
 </template>
 
 <script setup>
 import { Handle, Position } from "@vue-flow/core";
+import { __ } from "@/utils/i18n";
+import { NODE_TYPES } from "../graphUtils";
 import NodeIssueMarker from "./NodeIssueMarker.vue";
 
-defineProps({
-	data: { type: Object, required: true },
-});
-
-function truncate(text, len) {
-	if (!text) return "";
-	return text.length > len ? text.slice(0, len) + "..." : text;
-}
+defineProps({ data: { type: Object, required: true } });
+const ICON = NODE_TYPES.find((t) => t.type === "tool").iconPath;
 </script>
 
 <style scoped>
@@ -45,24 +41,21 @@ function truncate(text, len) {
 	padding: 0.625rem 0.75rem;
 	min-width: 160px;
 	max-width: 220px;
-	transition: border-color 0.15s ease, box-shadow 0.15s ease;
+	transition: border-color 0.15s ease;
 }
-
 .workflow-node:hover {
-	border-color: var(--ql-text-muted);
+	border-color: var(--ql-accent);
 }
-
 .node-header {
 	display: flex;
 	align-items: center;
 	gap: 0.5rem;
 }
-
 .node-icon {
-	flex-shrink: 0;
 	display: flex;
+	flex-shrink: 0;
+	color: var(--ql-accent);
 }
-
 .node-label {
 	flex: 1;
 	font-size: 0.8125rem;
@@ -72,30 +65,29 @@ function truncate(text, len) {
 	overflow: hidden;
 	text-overflow: ellipsis;
 }
-
 .node-type-badge {
 	flex-shrink: 0;
 	font-size: 0.625rem;
 	font-weight: 700;
 	padding: 0.0625rem 0.375rem;
 	border-radius: 0.25rem;
+	background: var(--ql-accent-soft);
+	color: var(--ql-accent);
 }
-
-.output-badge {
-	background: var(--ql-subtle);
-	color: var(--ql-text-muted);
-}
-
 .node-preview {
 	margin-top: 0.375rem;
 	font-size: 0.6875rem;
 	color: var(--ql-text-muted);
-	font-family: "SF Mono", Monaco, "Cascadia Code", monospace;
 	white-space: nowrap;
 	overflow: hidden;
 	text-overflow: ellipsis;
 }
-
+.mono {
+	font-family: var(--ql-font-mono);
+}
+.node-server {
+	color: var(--ql-text-secondary);
+}
 .workflow-node.invalid {
 	border-color: var(--ql-danger);
 }

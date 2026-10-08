@@ -99,3 +99,21 @@ describe("validateGraph issues", () => {
 		expect(result.issues[0].nodeId).toBe("a");
 	});
 });
+
+describe("tool name must be bare", () => {
+	it("flags a server-prefixed tool name and tells the user what to do", () => {
+		const nodes = [node("t", "tool", { tool_name: "Main Frappe Site:generate_report" }, "Fetch AR")];
+		const result = validateGraph(nodes, []);
+		expect(result.issues).toEqual([
+			{
+				nodeId: "t",
+				message: 'Tool step "Fetch AR": use the bare tool name and set the server separately',
+			},
+		]);
+	});
+
+	it("accepts a bare tool name", () => {
+		const result = validateGraph([node("t", "tool", { tool_name: "generate_report" })], []);
+		expect(result.valid).toBe(true);
+	});
+});

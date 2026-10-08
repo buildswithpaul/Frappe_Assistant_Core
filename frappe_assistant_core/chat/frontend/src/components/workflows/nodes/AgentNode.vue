@@ -1,5 +1,6 @@
 <template>
-	<div class="workflow-node agent-node">
+	<div class="workflow-node agent-node" :class="{ invalid: data.issues?.length }">
+		<NodeIssueMarker :issues="data.issues || []" />
 		<Handle type="target" :position="Position.Left" />
 		<div class="node-header">
 			<div class="node-icon" style="color: var(--ql-accent)">
@@ -36,6 +37,7 @@
 <script setup>
 import { computed } from "vue";
 import { Handle, Position } from "@vue-flow/core";
+import NodeIssueMarker from "./NodeIssueMarker.vue";
 
 const props = defineProps({
 	data: { type: Object, required: true },
@@ -60,6 +62,7 @@ function shortModel(modelId) {
 
 <style scoped>
 .workflow-node {
+	position: relative;
 	background: var(--ql-surface);
 	border: 2px solid var(--ql-border);
 	border-radius: 0.5rem;
@@ -132,5 +135,9 @@ function shortModel(modelId) {
 	border-radius: 0.25rem;
 	background: var(--ql-subtle);
 	color: var(--ql-text-muted);
+}
+
+.workflow-node.invalid {
+	border-color: var(--ql-danger);
 }
 </style>
