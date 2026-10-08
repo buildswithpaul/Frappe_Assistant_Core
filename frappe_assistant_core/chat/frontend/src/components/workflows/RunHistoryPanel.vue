@@ -136,13 +136,11 @@ async function loadRuns() {
 async function loadMore() {
 	isLoadingRuns.value = true;
 	try {
-		currentPage.value++;
-		const result = await workflowStore.loadRuns(props.workflowId, null, currentPage.value);
-		if (result.runs?.length) {
-			const existing = new Set(runs.value.map((r) => r.name));
-			const newRuns = result.runs.filter((r) => !existing.has(r.name));
-			runs.value = [...runs.value, ...newRuns];
-		}
+		const next = currentPage.value + 1;
+		const result = await workflowStore.loadRuns(props.workflowId, null, next, {
+			append: true,
+		});
+		if (result?.runs?.length) currentPage.value = next;
 	} finally {
 		isLoadingRuns.value = false;
 	}

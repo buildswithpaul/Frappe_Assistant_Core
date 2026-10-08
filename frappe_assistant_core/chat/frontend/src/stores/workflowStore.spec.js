@@ -141,3 +141,36 @@ describe("workflowStore.loadModels", () => {
 		expect(store.modelsError).toBeNull();
 	});
 });
+
+describe("workflowStore.loadRuns paging", () => {
+	let store;
+
+	beforeEach(() => {
+		setActivePinia(createPinia());
+		store = useWorkflowStore();
+		for (const fn of Object.values(workflowsApi)) fn.mockReset();
+	});
+
+	it("appends the next page instead of replacing the first", async () => {
+		workflowsApi.listRuns
+			.mockResolvedValueOnce({ runs: [{ name: "R1" }, { name: "R2" }], total: 3 })
+			.mockResolvedValueOnce({ runs: [{ name: "R3" }], total: 3 });
+
+		await store.loadRuns("WF-1", null, 0);
+		await store.loadRuns("WF-1", null, 1, { append: true });
+
+		expect(store.runs.map((r) => r.name)).toEqual(["R1", "R2", "R3"]);
+		expect(workflowsApi.listRuns).toHaveBeenLastCalledWith("WF-1", null, 1, 20);
+	});
+
+	it("does not duplicate a run that moved onto the next page", async () => {
+		workflowsApi.listRuns
+			.mockResolvedValueOnce({ runs: [{ name: "R1" }, { name: "R2" }], total: 4 })
+			.mockResolvedValueOnce({ runs: [{ name: "R2" }, { name: "R3" }], total: 4 });
+
+		await store.loadRuns("WF-1", null, 0);
+		await store.loadRuns("WF-1", null, 1, { append: true });
+
+		expect(store.runs.map((r) => r.name)).toEqual(["R1", "R2", "R3"]);
+	});
+});

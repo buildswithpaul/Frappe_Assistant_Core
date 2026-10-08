@@ -201,10 +201,21 @@ export const useWorkflowStore = defineStore("workflows", () => {
 		}
 	}
 
-	async function loadRuns(workflowName = null, status = null, page = 0) {
+	async function loadRuns(
+		workflowName = null,
+		status = null,
+		page = 0,
+		{ append = false } = {},
+	) {
 		try {
 			const result = await api.workflows.listRuns(workflowName, status, page, 20);
-			runs.value = result.runs || [];
+			const incoming = result.runs || [];
+			if (append) {
+				const seen = new Set(runs.value.map((r) => r.name));
+				runs.value = [...runs.value, ...incoming.filter((r) => !seen.has(r.name))];
+			} else {
+				runs.value = incoming;
+			}
 			runsTotal.value = result.total || 0;
 			return result;
 		} catch (err) {
