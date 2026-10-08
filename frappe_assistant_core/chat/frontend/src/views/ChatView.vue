@@ -352,7 +352,7 @@ usePromptFromRoute({
 });
 
 // File pre-upload flow (matches widget — upload on select, attach on send)
-const { handleFileUpload, consumeUploadedFiles } = useMessageFileUpload();
+const { handleFileUpload, consumeUploadedFiles, discardUploads } = useMessageFileUpload();
 
 // True during onboarding screens (registration, user setup, feature tour) — hides sidebar & topbar
 const isOnboarding = computed(() => {
@@ -590,7 +590,7 @@ const composerBindings = computed(() => ({
 	onBrowseTemplates: openTemplateBrowser,
 }));
 
-async function handleSendMessage({ message }) {
+async function handleSendMessage({ message, files = [] }) {
 	pendingPrompt.value = "";
 	const route = resolveComposerRoute({
 		isStreaming: isStreaming.value,
@@ -600,8 +600,8 @@ async function handleSendMessage({ message }) {
 		// The resume wire format has no attachment slot — staged files can't
 		// ride along with a card answer, so drop them and say so rather than
 		// silently losing what the user just uploaded.
-		const staged = consumeUploadedFiles();
-		if (staged.length) {
+		discardUploads(files);
+		if (files.length) {
 			showError("Attachments can't be sent with a card answer — they were removed.");
 		}
 		await chatStore.answerPendingQuestion(message);
@@ -611,11 +611,11 @@ async function handleSendMessage({ message }) {
 		await chatStore.abortPendingInteraction();
 	}
 	const modelId = modelStore.currentModelId;
-	const files = consumeUploadedFiles();
+	const uploaded = await consumeUploadedFiles(files);
 	// Abandoning a card means "send this now" — isStreaming can still read true
 	// at this point (see chatStore.sendMessage), so route the same signal that
 	// picked this branch straight through rather than letting it get queued.
-	await chatStore.sendMessage(message, files, currentContext.value, modelId, null, {
+	await chatStore.sendMessage(message, uploaded, currentContext.value, modelId, null, {
 		skipQueue: route === "abort-then-send",
 	});
 }
