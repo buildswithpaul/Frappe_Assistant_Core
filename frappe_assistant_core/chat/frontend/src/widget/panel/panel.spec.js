@@ -16,6 +16,7 @@ vi.mock("@/api/client", () => ({
 		models: { getAvailable: vi.fn().mockResolvedValue({ models: [] }) },
 		billing: { getQuotaStatus: (...a) => getQuotaStatus(...a) },
 		users: { getMyCreditStatus: vi.fn().mockResolvedValue(null) },
+		notifications: { get: vi.fn().mockResolvedValue({ notifications: [] }), dismiss: vi.fn() },
 		get: vi.fn(),
 	},
 }));
@@ -645,6 +646,24 @@ describe("panel bootstrap", () => {
 		await flushPromises();
 		expect(w.find(".gate").exists()).toBe(true);
 		expect(w.findComponent(WidgetPanel).exists()).toBe(false);
+	});
+
+	it("loads announcements itself, so the widget's Spotlight has something to show", async () => {
+		// The SPA loads notifications through NotificationHost, which the panel does not mount. The
+		// widget's notification store stayed empty and an active announcement never reached Spotlight.
+		const announcement = { id: "n1", display_style: "modal", title: "Agents", dismissible: true };
+		api.notifications.get.mockResolvedValue({ user: "u@x.test", notifications: [announcement] });
+		mount(PanelApp, { global: { stubs: gateless } });
+		await flushPromises();
+		expect(useNotificationStore().activeNotifications.map((n) => n.id)).toEqual(["n1"]);
+	});
+
+	it("stops polling announcements when the panel closes", async () => {
+		const w = mount(PanelApp, { global: { stubs: gateless } });
+		await flushPromises();
+		const stop = vi.spyOn(useNotificationStore(), "stopPolling");
+		w.unmount();
+		expect(stop).toHaveBeenCalled();
 	});
 
 	it("keeps the widget's Spotlight daily cap under its own surface", async () => {

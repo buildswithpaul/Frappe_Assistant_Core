@@ -20,6 +20,7 @@ import { useUserStore } from "@/stores/userStore";
 import { useModelStore } from "@/stores/modelStore";
 import { useChatStore } from "@/stores/chatStore";
 import { useRobotMoodStore } from "@/stores/robotMoodStore";
+import { useNotificationStore } from "@/stores/notificationStore";
 import { useRobotMoodWiring } from "@/composables/useRobotMoodWiring";
 import { useStreaming } from "@/composables/useStreaming";
 import SpotlightHost from "@/components/spotlight/SpotlightHost.vue";
@@ -41,6 +42,12 @@ useStreaming();
 // while the panel is still bootstrapping, and a dropped one would never resolve.
 const stopConfirms = listenForConfirms();
 onUnmounted(stopConfirms);
+
+// FAC Chat loads notifications through NotificationHost, which the panel does not mount.
+// Without this the store stays empty and SpotlightHost never sees an announcement.
+const notifications = useNotificationStore();
+onMounted(() => notifications.startPolling());
+onUnmounted(() => notifications.stopPolling());
 
 const ready = computed(
 	() =>
