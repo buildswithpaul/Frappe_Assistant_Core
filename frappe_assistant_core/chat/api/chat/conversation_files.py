@@ -26,10 +26,11 @@ MAX_TOTAL_CHARS = 60_000
 MIN_TEXT_CHARS = 500
 
 # Extraction runs OCR on images and parses PDFs, synchronously inside the send. A file's bytes
-# never change, so its text is extracted once. A file that yields no text (a photo, or a site
-# without the OCR dependencies) is remembered too, for less time, so a retry stays possible.
-TEXT_CACHE_TTL = 7 * 24 * 3600
-NO_TEXT_CACHE_TTL = 24 * 3600
+# never change, so its text is extracted once and kept in the Redis cache, which evicts the least
+# recently used keys at its memory limit. A file that yields no text (a photo, or a site without
+# the OCR dependencies) is remembered too; `bench clear-cache` after installing OCR retries it.
+# No per-key TTL: on v15 a read of a key set with one caches a miss in frappe.local that the
+# later set_value never updates, and v16's client cache takes no `expires` flag to avoid it.
 
 # The image types the composer accepts (ALLOWED_UPLOAD_EXTENSIONS); they reach the model as images.
 IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".gif", ".webp")
@@ -110,9 +111,7 @@ def _file_text(file_info) -> str:
         return cached["text"]
 
     text = _extract(file_info)
-    frappe.cache.set_value(
-        cache_key, {"text": text}, expires_in_sec=TEXT_CACHE_TTL if text else NO_TEXT_CACHE_TTL
-    )
+    frappe.cache.set_value(cache_key, {"text": text})
     return text
 
 
