@@ -68,6 +68,18 @@ The `create_document` tool creates new Frappe documents (records). It handles fi
 }
 ```
 
+### Document with a Table MultiSelect field
+A Table MultiSelect takes an array of its link values, as Desk sends it. Each value fills the field `get_doctype_info` reports as that table's `link_field`. Objects work too: `[{"user": "jane@example.com"}]`.
+```json
+{
+  "doctype": "User Group",
+  "data": {
+    "name": "Reviewers",
+    "user_group_members": ["jane@example.com", "raj@example.com"]
+  }
+}
+```
+
 ### Validate before creating
 ```json
 {
@@ -97,4 +109,6 @@ The `create_document` tool creates new Frappe documents (records). It handles fi
 - **Permission errors** — the current user must have "create" permission on the DocType. A refusal returns `error_type: "permission_error"` with Frappe's own reason in `error`; it is not a field problem, so do not retry with different values.
 - **ToDo** — Frappe decides who may create a ToDo. Before Frappe v16.32.0 / v15.119.0, a user without a role that grants ToDo create (such as System Manager) may create only a ToDo that names them (`allocated_to` or `assigned_by`), so one that names nobody is allocated to them, and one naming someone else is refused; from those releases a user may create any ToDo. Omitting `allocated_to`, as the example above does, therefore works on every release. If Frappe refuses, `error` gives its reason.
 - **Default values** — fields with defaults are auto-populated if not specified.
-- **Child table rows** — pass as arrays of objects under the child table fieldname.
+- **Child table rows** — pass as arrays of objects under the child table fieldname. A Table MultiSelect also accepts an array of its link values (see the example above). A plain Table does not, because no single field says what a bare value means; that returns `error_type: "child_table_handling_error"` with the `field`.
+- **Restricted fields in a child row** — each row is checked against its child doctype's restricted fields, as on the parent. When you copy rows from another document, leave out system fields such as `owner`, `creation`, `docstatus` and `idx`.
+- **Child-table doctypes** — `create_document` with a child doctype such as `Sales Invoice Item` is refused with `error_type: "child_table_doctype"` and the `parent_doctypes` it belongs to. A row exists only inside its parent, so add it with `update_document` on the parent document.

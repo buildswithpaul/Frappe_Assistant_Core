@@ -25,23 +25,9 @@ import frappe
 from frappe import _
 
 from frappe_assistant_core.core.base_tool import BaseTool, exception_message, permission_error_result
+from frappe_assistant_core.core.security_config import get_restricted_fields
 
-
-def _restricted_fields_for_doctype(doctype: str, user_role: str) -> Set[str]:
-    """Resolve the union of SENSITIVE_FIELDS + (role-conditional) ADMIN_ONLY_FIELDS for a doctype."""
-    from frappe_assistant_core.core.security_config import ADMIN_ONLY_FIELDS, SENSITIVE_FIELDS
-
-    restricted: Set[str] = set()
-    restricted.update(SENSITIVE_FIELDS.get("all_doctypes", []))
-    restricted.update(SENSITIVE_FIELDS.get(doctype, []))
-
-    if user_role == "Assistant User":
-        restricted.update(ADMIN_ONLY_FIELDS.get("all_doctypes", []))
-        doctype_admin_fields = ADMIN_ONLY_FIELDS.get(doctype, [])
-        if doctype_admin_fields != "*":
-            restricted.update(doctype_admin_fields)
-
-    return restricted
+from .child_tables import ChildRowError, child_table_fields, normalize_child_rows
 
 
 def _apply_child_table_update(
@@ -250,11 +236,14 @@ class DocumentUpdate(BaseTool):
             }
 
             # Try to resolve the parent doc + table fieldname so the model can fix its call.
-            if name:
+            # Only for a caller who may read that parent: this runs before any other
+            # permission check, and would otherwise name the document any row belongs to.
+            # Frappe resolves a child row's read permission through its parent (#291).
+            if name and frappe.has_permission(doctype, "read", doc=name):
                 try:
-                    parent_name = frappe.db.get_value(doctype, name, "parent")
-                    parent_type = frappe.db.get_value(doctype, name, "parenttype")
-                    parent_field = frappe.db.get_value(doctype, name, "parentfield")
+                    parent_name, parent_type, parent_field = frappe.db.get_value(
+                        doctype, name, ["parent", "parenttype", "parentfield"]
+                    ) or (None, None, None)
                     if parent_name and parent_type and parent_field:
                         parent_info["parent_doctype"] = parent_type
                         parent_info["parent_name"] = parent_name
@@ -310,11 +299,12 @@ class DocumentUpdate(BaseTool):
                 return result
 
             # Resolve restricted fields for the parent doctype.
-            parent_restricted = _restricted_fields_for_doctype(doctype, user_role)
+            parent_restricted = get_restricted_fields(doctype, user_role)
 
-            # Get DocType metadata for proper child-table handling.
+            # Get DocType metadata for proper child-table handling. Table and Table
+            # MultiSelect are both child tables (#291).
             meta = frappe.get_meta(doctype)
-            table_fields = {f.fieldname: f.options for f in meta.fields if f.fieldtype == "Table"}
+            table_fields = child_table_fields(meta)
 
             # Top-level restricted-field check (excludes child-table fields, which are checked
             # separately against the child doctype's restricted set).
@@ -333,9 +323,13 @@ class DocumentUpdate(BaseTool):
             # Apply updates: child tables go through helper, scalars use setattr.
             for field, value in data.items():
                 if field in table_fields:
-                    child_doctype = table_fields[field]
-                    child_restricted = _restricted_fields_for_doctype(child_doctype, user_role)
-                    err = _apply_child_table_update(doc, field, child_doctype, value, child_restricted)
+                    child_doctype = table_fields[field].options
+                    child_restricted = get_restricted_fields(child_doctype, user_role)
+                    try:
+                        rows = normalize_child_rows(table_fields[field], value)
+                    except ChildRowError as e:
+                        return e.as_result()
+                    err = _apply_child_table_update(doc, field, child_doctype, rows, child_restricted)
                     if err is not None:
                         return err
                 else:

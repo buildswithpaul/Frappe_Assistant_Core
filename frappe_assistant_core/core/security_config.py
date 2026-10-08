@@ -420,6 +420,92 @@ def filter_sensitive_fields(doc_dict: Dict[str, Any], doctype: str, user_role: s
     return filtered_doc
 
 
+def get_restricted_fields(doctype: str, user_role: str) -> Set[str]:
+    """Fields the assistant may not write on ``doctype`` for ``user_role``.
+
+    SENSITIVE_FIELDS apply to every role; ADMIN_ONLY_FIELDS (owner, creation,
+    docstatus, ...) only to an Assistant User. create_document and
+    update_document both resolve their parent *and* child-row restrictions
+    here, so the two tools cannot drift apart again (issue #291).
+    """
+    restricted: Set[str] = set()
+    restricted.update(SENSITIVE_FIELDS.get("all_doctypes", []))
+    restricted.update(SENSITIVE_FIELDS.get(doctype, []))
+
+    if user_role == "Assistant User":
+        restricted.update(ADMIN_ONLY_FIELDS.get("all_doctypes", []))
+        doctype_admin_fields = ADMIN_ONLY_FIELDS.get(doctype, [])
+        if doctype_admin_fields != "*":
+            restricted.update(doctype_admin_fields)
+
+    return restricted
+
+
+def get_child_table_parents(child_doctype: str, user: str, ptype: str = "read") -> List[Dict[str, str]]:
+    """The doctypes that embed ``child_doctype`` as a table, as far as ``user`` may see.
+
+    A child doctype has no permissions of its own: Frappe decides it through a
+    parent (``has_permission(child, parent_doctype=...)``). Each candidate is put
+    to that same check, so nothing is listed that the user could not reach, and
+    the names of doctypes they cannot read are not disclosed.
+    """
+    from frappe.model import table_fields
+
+    # DocField and Custom Field are schema, read here only to find candidates;
+    # every candidate is filtered through frappe.has_permission below.
+    candidates = {
+        (row.parent, row.fieldname)
+        for row in frappe.get_all(
+            "DocField",
+            filters={
+                "parenttype": "DocType",
+                "fieldtype": ["in", list(table_fields)],
+                "options": child_doctype,
+            },
+            fields=["parent", "fieldname"],
+        )
+    }
+    candidates.update(
+        (row.dt, row.fieldname)
+        for row in frappe.get_all(
+            "Custom Field",
+            filters={"fieldtype": ["in", list(table_fields)], "options": child_doctype},
+            fields=["dt", "fieldname"],
+        )
+    )
+
+    return [
+        {"doctype": parent, "fieldname": fieldname}
+        for parent, fieldname in sorted(candidates)
+        if not frappe.is_table(parent)
+        and frappe.has_permission(child_doctype, ptype, user=user, parent_doctype=parent)
+    ]
+
+
+def child_table_doctype_error(doctype: str, perm_type: str, user: str) -> Dict[str, Any]:
+    """Refuse a direct operation on a child doctype, and say which parent to use instead."""
+    parents = get_child_table_parents(doctype, user)
+    via = ", ".join(f"{p['doctype']}.{p['fieldname']}" for p in parents)
+
+    return {
+        "success": False,
+        "error": (
+            f"{doctype} is a child table: its rows exist only inside a parent document, "
+            f"so it cannot be used for '{perm_type}' on its own."
+            + (f" It is a table on: {via}." if via else "")
+        ),
+        "error_type": "child_table_doctype",
+        "doctype": doctype,
+        "parent_doctypes": parents,
+        "suggestion": (
+            "Work through the parent document instead. To add or change rows, call "
+            "update_document on the parent with the table field. Rows without a 'name' "
+            "replace the whole table, so include the 'name' of existing rows you want to "
+            "keep. Use get_document on the parent to read them."
+        ),
+    }
+
+
 def is_doctype_accessible(doctype: str, user_role: str, perm_type: str = "read") -> bool:
     """
     Check whether a role may perform ``perm_type`` on ``doctype`` at the FAC layer.
@@ -477,8 +563,19 @@ def validate_document_access(
                 f"because it defines executable code, schema or permissions",
             }
 
+        # A child row is only ever written through its parent, which is where the
+        # parent's validation and docstatus rules run. Writing one directly skips
+        # both, and Frappe lets Administrator do it before it reaches its own
+        # child-table rule, so refuse every write here, for every user (#291).
+        if perm_type in WRITE_PERM_TYPES and frappe.is_table(doctype):
+            return child_table_doctype_error(doctype, perm_type, user)
+
         # Check Frappe DocType-level permissions - this is the primary security control
         if not frappe.has_permission(doctype, perm_type, user=user):
+            # Frappe denies a child doctype checked without a parent. Reads keep that
+            # decision, but say why instead of reporting a missing permission.
+            if frappe.is_table(doctype):
+                return child_table_doctype_error(doctype, perm_type, user)
             return {"success": False, "error": f"Insufficient {perm_type} permissions for {doctype}"}
 
         # Check document-level permissions (if document exists)

@@ -58,6 +58,8 @@ The `get_doctype_info` tool retrieves metadata about a Frappe DocType — its fi
   - `read_only` / `hidden` — field visibility
   - `default` — default value
 - **`link_fields`** — convenience list of all Link fields with their target DocTypes
+- **`child_tables`** — every child-table field (`Table` and `Table MultiSelect`) with the child DocType's own `fields`. A Table MultiSelect entry also has `link_field`: the child field a bare value fills when you pass its values to `create_document` / `update_document`.
+- **`is_child_table`** / **`parent_doctypes`** — for a child DocType, `is_child_table` is true and `parent_doctypes` lists the `{doctype, fieldname}` tables it lives in that you can read. Write its rows through one of those parents.
 - **`is_submittable`** — 1 if the DocType supports submit/cancel workflow (docstatus)
 - **`naming_rule`** — how documents are named (autoname, naming series, prompt, etc.)
 - **`title_field`** — the field used as display title
@@ -68,7 +70,7 @@ The `get_doctype_info` tool retrieves metadata about a Frappe DocType — its fi
 2. **Check `fieldtype` for filters** — use appropriate filter operators for each field type.
 3. **Check `options` for Select fields** — Select fields only accept values from their options list.
 4. **Check Link field targets** — Link fields reference other DocTypes via their `options` value. Use `search_documents` with `purpose: "link_value"` to find valid values.
-5. **Look for Table fields** — these indicate child tables. The `options` value is the child DocType name.
+5. **Look for Table and Table MultiSelect fields** — these are child tables. The `options` value is the child DocType name.
 6. **Check `is_submittable`** — if 1, documents go through Draft → Submitted → Cancelled workflow.
 
 ## Common Patterns
@@ -80,7 +82,7 @@ The `get_doctype_info` tool retrieves metadata about a Frappe DocType — its fi
 Then filter response fields where `reqd: 1` to know what's mandatory.
 
 ### Find child table structure
-If `get_doctype_info("Sales Invoice")` shows a Table field with `options: "Sales Invoice Item"`, call `get_doctype_info("Sales Invoice Item")` to see the child table's fields.
+`get_doctype_info("Sales Invoice")` already includes each child table's fields under `child_tables`, so a second call is rarely needed. Calling `get_doctype_info("Sales Invoice Item")` also works if you can read a parent that uses it. It returns `parent_doctypes`, which tells you where those rows are written.
 
 ### Check if DocType is submittable
 Look at `is_submittable` in the response — if 1, use `document_action` after creation.
