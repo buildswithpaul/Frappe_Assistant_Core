@@ -10,6 +10,7 @@ const workflowsApi = {
 	create: vi.fn(),
 	update: vi.fn(),
 	list: vi.fn(),
+	listTemplates: vi.fn(),
 };
 const modelsApi = { getAvailable: vi.fn() };
 const userApi = { listTools: vi.fn() };
@@ -172,5 +173,43 @@ describe("workflowStore.loadRuns paging", () => {
 		await store.loadRuns("WF-1", null, 1, { append: true });
 
 		expect(store.runs.map((r) => r.name)).toEqual(["R1", "R2", "R3"]);
+	});
+});
+
+describe("workflowStore outage vs empty", () => {
+	let store;
+
+	beforeEach(() => {
+		setActivePinia(createPinia());
+		store = useWorkflowStore();
+		for (const fn of Object.values(workflowsApi)) fn.mockReset();
+	});
+
+	it("keeps an empty list error-free", async () => {
+		workflowsApi.list.mockResolvedValue({ workflows: [], total: 0, page: 0 });
+		await store.loadWorkflows();
+		expect(store.listError).toBe(null);
+	});
+
+	it("surfaces the endpoint's outage message", async () => {
+		workflowsApi.list.mockResolvedValue({ workflows: [], total: 0, error: "FAC Cloud down" });
+		await store.loadWorkflows();
+		expect(store.listError).toBe("FAC Cloud down");
+	});
+
+	it("surfaces a thrown call as an outage", async () => {
+		workflowsApi.list.mockRejectedValue(new Error("Can't reach the server."));
+		await store.loadWorkflows();
+		expect(store.listError).toBe("Can't reach the server.");
+	});
+
+	it("tracks run and template outages separately", async () => {
+		workflowsApi.listRuns.mockResolvedValue({ runs: [], total: 0, error: "runs down" });
+		workflowsApi.listTemplates.mockResolvedValue({ templates: [], total: 0, error: "tpl down" });
+		await store.loadRuns("WF-1");
+		await store.loadTemplates();
+		expect(store.runsError).toBe("runs down");
+		expect(store.templatesError).toBe("tpl down");
+		expect(store.listError).toBe(null);
 	});
 });

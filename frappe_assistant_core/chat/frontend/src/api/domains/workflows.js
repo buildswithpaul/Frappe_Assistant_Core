@@ -55,6 +55,7 @@ function listingsToTemplatesPayload(payload) {
 		page: payload.page ?? 0,
 		page_size: payload.page_size ?? 20,
 		marketplace_enabled: payload.marketplace_enabled,
+		error: payload.error || null,
 	};
 }
 

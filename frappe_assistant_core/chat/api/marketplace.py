@@ -103,8 +103,15 @@ def list_listings(
             user_id=_ar_user_id(frappe.session.user),
         )
     except Exception as e:
-        frappe.log_error(title="FACO Marketplace", message=f"Error listing listings: {e!s}")
-        return {"listings": [], "total": 0, "page": 0, "page_size": 20, "marketplace_enabled": False}
+        _log("FACO Marketplace", f"Error listing listings: {e!s}")
+        return {
+            "listings": [],
+            "total": 0,
+            "page": 0,
+            "page_size": 20,
+            "marketplace_enabled": False,
+            "error": _("Could not reach FAC Cloud to list templates. Try again in a moment."),
+        }
 
 
 @frappe.whitelist(methods=["GET"])

@@ -64,7 +64,13 @@ def list_workflows(status: str | None = None, page: int = 0, page_size: int = 20
 
     except Exception as e:
         frappe.log_error(title="FACO Workflows", message=f"Error listing workflows: {e!s}")
-        return {"workflows": [], "total": 0, "page": 0, "page_size": 20}
+        return {
+            "workflows": [],
+            "total": 0,
+            "page": 0,
+            "page_size": 20,
+            "error": _("Could not reach FAC Cloud to list your agents. Try again in a moment."),
+        }
 
 
 @frappe.whitelist(methods=["POST"])
@@ -380,7 +386,13 @@ def list_workflow_runs(
 
     except Exception as e:
         frappe.log_error(title="FACO Workflows", message=f"Error listing workflow runs: {e!s}")
-        return {"runs": [], "total": 0, "page": 0, "page_size": 20}
+        return {
+            "runs": [],
+            "total": 0,
+            "page": 0,
+            "page_size": 20,
+            "error": _("Could not reach FAC Cloud to list runs. Try again in a moment."),
+        }
 
 
 @frappe.whitelist(methods=["GET"])

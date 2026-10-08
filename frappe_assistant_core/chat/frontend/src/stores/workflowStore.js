@@ -2,6 +2,7 @@ import { defineStore } from "pinia";
 import { ref, computed } from "vue";
 import { api } from "@/api/client";
 import { logger } from "@/utils/logger";
+import { __ } from "@/utils/i18n";
 
 // Every status a run can end in. Cancelled and Timed Out are terminal too —
 // treating only Completed/Failed as "done" leaves the toolbar spinning.
@@ -21,6 +22,11 @@ export const useWorkflowStore = defineStore("workflows", () => {
 	const currentPage = ref(0);
 	const pageSize = ref(20);
 	const statusFilter = ref(null);
+	// Outage, not "none": each list keeps its own error so one failing list does
+	// not paint the others as broken, and so an empty list never reads as an outage.
+	const listError = ref(null);
+	const runsError = ref(null);
+	const templatesError = ref(null);
 
 	// Current workflow (builder)
 	const currentWorkflow = ref(null);
@@ -72,14 +78,17 @@ export const useWorkflowStore = defineStore("workflows", () => {
 	async function loadWorkflows(status = null, page = 0) {
 		isLoading.value = true;
 		error.value = null;
+		listError.value = null;
 		try {
 			const result = await api.workflows.list(status, page, pageSize.value);
 			workflows.value = result.workflows || [];
 			total.value = result.total || 0;
 			currentPage.value = result.page || 0;
 			statusFilter.value = status;
+			listError.value = result.error || null;
 		} catch (err) {
 			error.value = err.message;
+			listError.value = err.message || __("Could not load your agents.");
 			logger.error("Failed to load workflows:", err);
 		} finally {
 			isLoading.value = false;
@@ -207,6 +216,7 @@ export const useWorkflowStore = defineStore("workflows", () => {
 		page = 0,
 		{ append = false } = {},
 	) {
+		runsError.value = null;
 		try {
 			const result = await api.workflows.listRuns(workflowName, status, page, 20);
 			const incoming = result.runs || [];
@@ -217,10 +227,12 @@ export const useWorkflowStore = defineStore("workflows", () => {
 				runs.value = incoming;
 			}
 			runsTotal.value = result.total || 0;
+			runsError.value = result.error || null;
 			return result;
 		} catch (err) {
 			logger.error("Failed to load runs:", err);
-			return { runs: [], total: 0 };
+			runsError.value = err.message || __("Could not load runs.");
+			return { runs: [], total: 0, error: runsError.value };
 		}
 	}
 
@@ -373,6 +385,7 @@ export const useWorkflowStore = defineStore("workflows", () => {
 		{ featuredOnly = false, minRating = null, pageSize: ps = 20, append = false } = {}
 	) {
 		isLoadingTemplates.value = true;
+		templatesError.value = null;
 		try {
 			const result = await api.workflows.listTemplates(
 				category,
@@ -389,8 +402,10 @@ export const useWorkflowStore = defineStore("workflows", () => {
 				templates.value = result.templates || [];
 			}
 			templatesTotal.value = result.total || 0;
+			templatesError.value = result.error || null;
 		} catch (err) {
 			logger.error("Failed to load templates:", err);
+			templatesError.value = err.message || __("Could not load templates.");
 			if (!append) templates.value = [];
 		} finally {
 			isLoadingTemplates.value = false;
@@ -633,6 +648,9 @@ export const useWorkflowStore = defineStore("workflows", () => {
 	return {
 		// List state
 		workflows,
+		listError,
+		runsError,
+		templatesError,
 		isLoading,
 		error,
 		total,
