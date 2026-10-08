@@ -50,6 +50,16 @@
     "content_file": "delete_document.md"
   },
   {
+    "skill_id": "attach-chat-file-usage",
+    "title": "How to Use attach_chat_file",
+    "description": "Attaching a file the user uploaded in chat to a document by its File ID, without moving another record's file",
+    "skill_type": "Tool Usage",
+    "linked_tool": "attach_chat_file",
+    "status": "Published",
+    "visibility": "Public",
+    "content_file": "attach_chat_file.md"
+  },
+  {
     "skill_id": "document-action-usage",
     "title": "How to Use document_action",
     "description": "Submitting drafts, cancelling submitted documents (reason required, workflow and linked-document rules) and amending cancelled ones",

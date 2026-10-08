@@ -20,6 +20,7 @@ FACO Plugin for Frappe Assistant Core.
 Provides tools migrated from frappe_assistant_copilot:
   - send_email: queues email via the site's Email Account
   - generate_document: renders rich-block content to HTML/PDF documents
+  - attach_chat_file: attaches a file the user uploaded in chat to a document
   - browser_get_form_data: read form field values from the current page
   - browser_get_page_context: get structured info about the current page
   - browser_capture_diagnostics: collect console + network errors + screenshot
@@ -77,6 +78,7 @@ class FacoPlugin(BasePlugin):
         # imported by tools above; they are NOT themselves tools.
         return [
             "generate_document",
+            "attach_chat_file",
             "browser_get_form_data",
             "browser_get_page_context",
             "browser_capture_diagnostics",

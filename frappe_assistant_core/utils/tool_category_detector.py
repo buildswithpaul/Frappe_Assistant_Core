@@ -93,6 +93,8 @@ WRITE_TOOLS = {
     "update_document",
     # Document generation (saves a private Frappe File — a create side effect)
     "generate_document",  # Markdown -> PDF saved as a File record; NOT read-only
+    # Attaches a chat upload to a document (creates a File record on the target)
+    "attach_chat_file",
     # Workflow tools
     "run_workflow",
     # Visualization tools (create/modify)
