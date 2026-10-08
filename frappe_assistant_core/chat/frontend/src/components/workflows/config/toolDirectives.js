@@ -5,11 +5,24 @@
  * tool's BARE name (`original_name`). The tools API also returns a
  * server-prefixed `name` ("Main Frappe Site:list_documents") — writing that
  * form into `tool_name` is what made every picked tool resolve as "missing".
+ *
+ * Two connected Frappe sites expose the same bare names, so a directive also
+ * records the `server` it was picked from; the engine resolves it only there.
  */
 
 /** The name the engine matches on. */
 export function bareToolName(tool) {
 	return tool?.original_name || tool?.name || "";
+}
+
+/** Identity of a directive: the same tool on two sites is two different tools. */
+export function directiveKey(directive) {
+	return `${directive?.server || ""}::${directive?.tool_name || ""}`;
+}
+
+/** The directiveKey a directive made from this picker tool would have. */
+export function toolKey(tool) {
+	return directiveKey({ server: tool?.server, tool_name: bareToolName(tool) });
 }
 
 /** Strip a "server:" prefix from a directive name saved by an older builder. */
@@ -22,18 +35,21 @@ export function healToolName(toolName) {
 /** Build the directive the engine expects from a tool the picker offered. */
 export function makeDirective(tool) {
 	const bare = bareToolName(tool);
-	return {
+	const directive = {
 		capability: bare,
 		tool_name: bare,
 		description: tool?.description || "",
 		required: false,
 		priority: "primary",
 	};
+	if (tool?.server) directive.server = tool.server;
+	return directive;
 }
 
 /**
- * Heal directives saved with a prefixed tool_name, and drop `input_guidance`
- * (written by every past builder version, read by nothing).
+ * Heal directives saved with a prefixed tool_name — the prefix becomes the
+ * directive's server — and drop `input_guidance` (written by every past
+ * builder version, read by nothing).
  *
  * Returns { directives, changed } so the caller can persist only a real change.
  */
@@ -42,7 +58,10 @@ export function normalizeDirectives(directives = []) {
 	const normalized = directives.map((d) => {
 		const healed = healToolName(d.tool_name);
 		const next = { ...d, tool_name: healed };
-		if (healed !== d.tool_name) changed = true;
+		if (healed !== d.tool_name) {
+			changed = true;
+			if (!next.server) next.server = d.tool_name.slice(0, d.tool_name.indexOf(":"));
+		}
 		if (!next.capability) next.capability = healed;
 		if ("input_guidance" in next) {
 			delete next.input_guidance;
@@ -55,6 +74,7 @@ export function normalizeDirectives(directives = []) {
 
 /** Which MCP server serves this directive, as far as the client can tell. */
 export function serverForDirective(directive, allTools = []) {
+	if (directive?.server) return directive.server;
 	const name = directive?.tool_name || "";
 	const match = allTools.find((t) => bareToolName(t) === name || t.name === name);
 	if (match?.server) return match.server;
@@ -86,11 +106,16 @@ export function deriveMCPServers(directives = [], allTools = [], currentServers 
 	return [...servers];
 }
 
-/** Index a resolve_workflow_tools response by the directive name it answers. */
+/** Index a resolve_workflow_tools response by the directiveKey it answers. */
 export function resolutionIndex(resolved = []) {
 	const index = new Map();
 	for (const entry of resolved) {
-		if (entry?.tool_name) index.set(healToolName(entry.tool_name), entry);
+		if (!entry?.tool_name) continue;
+		const key = directiveKey({
+			server: entry.server,
+			tool_name: healToolName(entry.tool_name),
+		});
+		index.set(key, entry);
 	}
 	return index;
 }

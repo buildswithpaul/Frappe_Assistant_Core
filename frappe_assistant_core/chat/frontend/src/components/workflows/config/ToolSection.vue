@@ -45,7 +45,7 @@
 		<ToolPicker
 			v-if="showToolPicker"
 			:all-tools="allTools"
-			:selected-tool-names="selectedToolNames"
+			:selected-tool-keys="selectedToolKeys"
 			:is-loading="isLoadingTools"
 			:empty-message="emptyState.title"
 			:model-value="showToolPicker"
@@ -56,9 +56,9 @@
 		<div v-if="directives.length" class="tool-cards">
 			<ToolDirectiveCard
 				v-for="(directive, idx) in directives"
-				:key="directive.tool_name + idx"
+				:key="directiveKey(directive) + idx"
 				:directive="directive"
-				:resolution="resolution.get(directive.tool_name) || null"
+				:resolution="resolution.get(directiveKey(directive)) || null"
 				:server="serverFor(directive)"
 				:readonly="readonly"
 				@remove="$emit('remove', idx)"
@@ -96,7 +96,7 @@ import { useUserStore } from "@/stores/userStore";
 import { logger } from "@/utils/logger";
 import ToolPicker from "./ToolPicker.vue";
 import ToolDirectiveCard from "./ToolDirectiveCard.vue";
-import { serverForDirective, serversNeedingReconnect } from "./toolDirectives";
+import { directiveKey, serverForDirective, serversNeedingReconnect } from "./toolDirectives";
 
 const props = defineProps({
 	directives: { type: Array, default: () => [] },
@@ -127,13 +127,15 @@ const showToolPicker = ref(false);
 const isReconnecting = ref(false);
 const reconnectError = ref(null);
 
-const selectedToolNames = computed(
-	() => new Set(props.directives.map((d) => d.tool_name).filter(Boolean))
+const selectedToolKeys = computed(
+	() => new Set(props.directives.filter((d) => d.tool_name).map(directiveKey))
 );
 
 const missingCount = computed(
 	() =>
-		props.directives.filter((d) => props.resolution.get(d.tool_name)?.status === "missing")
+		props.directives.filter(
+			(d) => props.resolution.get(directiveKey(d))?.status === "missing"
+		)
 			.length
 );
 
