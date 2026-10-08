@@ -15,6 +15,12 @@ from typing import NoReturn
 import frappe
 from frappe import _
 
+from frappe_assistant_core.chat.workflows.template_variables import (
+    parse_schema,
+    parse_variables,
+    validate_template_variables,
+)
+
 from ._helpers import ARAPIError, _log, _marketplace_enabled, _redact_upstream_internals, _strip_noise
 from .auth import _ar_user_id
 
@@ -136,7 +142,9 @@ def import_listing(
 
     A Workflow listing becomes a Draft AR Workflow, so it needs the same
     System Manager role as create_workflow. Prompts and skills are cloned into
-    the caller's own library and stay open to every user.
+    the caller's own library and stay open to every user. A workflow's variables
+    are checked here against the template's typed schema, because only this
+    site can tell whether a Link value exists.
     """
     if not name:
         frappe.throw(_("name is required"), frappe.ValidationError)
@@ -152,13 +160,29 @@ def import_listing(
             user_id=user_id,
             name=name,
             new_title=new_title,
-            variables=_import_variables(variables),
+            variables=_import_variables(_checked_variables(listing, variables)),
             default_model_id=default_model_id,
         )
     except (frappe.ValidationError, frappe.PermissionError):
         raise
     except Exception as e:
         _marketplace_failure("Error importing listing", e)
+
+
+def _checked_variables(listing: dict, variables: str | dict | None) -> str | dict | None:
+    """Validate a workflow's variables against its schema; other listings pass through."""
+    if listing.get("listing_type") != "Workflow":
+        return variables
+    source = listing.get("source")
+    if not isinstance(source, dict):
+        frappe.throw(
+            _("Could not read this template's settings from FAC Cloud. Please try again."),
+            frappe.ValidationError,
+        )
+    values = validate_template_variables(
+        parse_schema(source.get("variables_schema")), parse_variables(variables)
+    )
+    return values or None
 
 
 def _import_variables(variables: str | dict | None) -> str | None:
