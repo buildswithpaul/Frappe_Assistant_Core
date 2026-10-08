@@ -42,6 +42,22 @@ function parseJsonFields(msg) {
 	return msg;
 }
 
+/**
+ * Shape a persisted message row the way a freshly sent one looks. A row carries its linked
+ * files as `attachments` (File docs); the bubble reads `files`, as sendMessage builds them.
+ */
+function hydrateServerMessage(msg) {
+	parseJsonFields(msg);
+	// Legacy: messages without blocks get a text block from content
+	if (msg.role === "assistant" && !msg.blocks && msg.content) {
+		msg.blocks = [{ type: "text", id: generateBlockId("text"), content: msg.content }];
+	}
+	if (Array.isArray(msg.attachments)) {
+		msg.files = msg.attachments.map((f) => ({ name: f.file_name, url: f.file_url }));
+	}
+	return msg;
+}
+
 export const useChatStore = defineStore("chat", () => {
 	// State
 	const sessions = ref([]);
@@ -240,16 +256,7 @@ export const useChatStore = defineStore("chat", () => {
 		if (currentSessionId.value !== sessionId) return;
 		messages.value = Array.isArray(result) ? result : result?.messages || [];
 
-		// Parse every JSON column and provide legacy fallback
-		for (const msg of messages.value) {
-			parseJsonFields(msg);
-			// Legacy: messages without blocks get a text block from content
-			if (msg.role === "assistant" && !msg.blocks && msg.content) {
-				msg.blocks = [
-					{ type: "text", id: generateBlockId("text"), content: msg.content },
-				];
-			}
-		}
+		messages.value.forEach(hydrateServerMessage);
 	}
 
 	async function loadMessages(sessionId) {
@@ -301,12 +308,7 @@ export const useChatStore = defineStore("chat", () => {
 		// Session may have changed during the await.
 		if (sessionId !== currentSessionId.value) return;
 
-		for (const msg of serverMessages) {
-			parseJsonFields(msg);
-			if (msg.role === "assistant" && !msg.blocks && msg.content) {
-				msg.blocks = [{ type: "text", id: generateBlockId("text"), content: msg.content }];
-			}
-		}
+		serverMessages.forEach(hydrateServerMessage);
 
 		// Capture client-only state from the pre-merge messages. Server rows
 		// don't carry `truncated` (drives the Continue button on a max_tokens
