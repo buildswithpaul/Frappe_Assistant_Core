@@ -24,6 +24,7 @@
 
 <script setup>
 import { ref, onMounted, onUnmounted } from "vue";
+import { eventMatches, eventWithin } from "@/utils/eventPath";
 import { LEVEL_LABELS } from "@/stores/composerModesStore";
 
 const props = defineProps({
@@ -53,9 +54,8 @@ function choose(level) {
 
 function handleClickOutside(event) {
 	if (!props.open) return;
-	const target = event.target;
-	if (target?.closest?.(TRIGGER_SELECTOR)) return;
-	if (menuRef.value?.contains(target)) return;
+	if (eventMatches(event, TRIGGER_SELECTOR)) return;
+	if (eventWithin(event, menuRef.value)) return;
 	emit("close");
 }
 

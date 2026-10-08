@@ -49,6 +49,7 @@
 
 <script setup>
 import { ref, onMounted, onUnmounted } from "vue";
+import { eventMatches, eventWithin } from "@/utils/eventPath";
 
 const props = defineProps({
 	open: { type: Boolean, default: false },
@@ -77,9 +78,8 @@ const TRIGGER_SELECTOR = "[data-composer-plus-trigger]";
 
 function handleClickOutside(event) {
 	if (!props.open) return;
-	const target = event.target;
-	if (target?.closest?.(TRIGGER_SELECTOR)) return;
-	if (menuRef.value?.contains(target)) return;
+	if (eventMatches(event, TRIGGER_SELECTOR)) return;
+	if (eventWithin(event, menuRef.value)) return;
 	emit("close");
 }
 
