@@ -29,6 +29,7 @@ from typing import Any, Dict, List, Optional
 
 import frappe
 
+from frappe_assistant_core.plugins.core.tools.report_tools import MAX_ROWS_CAP
 from frappe_assistant_core.utils import sandbox_frappe
 
 
@@ -172,8 +173,6 @@ class FrappeAssistantAPI:
                 print(f"Top 10 customers: {top_customers}")
         """
         self._ensure_report_tools()
-        from frappe_assistant_core.plugins.core.tools.report_tools import MAX_ROWS_CAP
-
         return self._report_tools.execute_report(report_name, filters or {}, format, max_rows=MAX_ROWS_CAP)
 
     # ========== DOCUMENT OPERATIONS ==========

@@ -8,7 +8,7 @@ A report of a few thousand rows filled the model's context; the agent could
 not even tell it had been given everything. Runs a real Query Report.
 """
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import frappe
 
@@ -82,3 +82,30 @@ class TestGenerateReportRowCap(BaseAssistantTest):
 
         kwargs = tools._report_tools.execute_report.call_args.kwargs
         self.assertEqual(kwargs["max_rows"], MAX_ROWS_CAP)
+
+    def test_total_count_sits_beside_the_rows(self):
+        capped = ReportTools.execute_report(self.report, max_rows=3)
+
+        self.assertEqual(capped["total_count"], ROWS + 1)
+        self.assertGreater(capped["total_count"], len(capped["data"]))
+
+    def test_max_rows_one_returns_just_the_totals_row(self):
+        capped = ReportTools.execute_report(self.report, max_rows=1)
+
+        self.assertEqual(capped["data"], [self.full["data"][-1]])
+
+    def test_summary_only_passes_through_the_tool(self):
+        result = GenerateReport().execute({"report_name": self.report, "summary_only": True})
+
+        self.assertEqual(result["data"], [])
+        self.assertEqual(result["row_count"], ROWS + 1)
+
+    def test_no_totals_row_when_frappe_skipped_it(self):
+        # Frappe's run() reports add_total_row=False when a report sets skip_total_row even though
+        # the Report doc has add_total_row=1; the stub stands in for that run() result.
+        rows = [{"name": f"r{i}"} for i in range(6)]
+        stub = {"result": rows, "columns": [], "add_total_row": False}
+        with patch.object(ReportTools, "_execute_query_report", return_value=stub):
+            capped = ReportTools.execute_report(self.report, max_rows=3)
+
+        self.assertEqual(capped["data"], rows[:3])

@@ -40,9 +40,19 @@ def _limit_rows(data: list, max_rows: int, summary_only: bool, keep_total_row: b
         return []
     if len(data) <= max_rows:
         return data
-    if keep_total_row and max_rows > 1:
+    if keep_total_row:
         return data[: max_rows - 1] + [data[-1]]
     return data[:max_rows]
+
+
+def _prepared_payload_extras(stored: dict, report_doc) -> dict:
+    """Totals-row decision and summary carried from a stored prepared-report payload."""
+    extras = {
+        "add_total_row": bool(getattr(report_doc, "add_total_row", 0) and not stored.get("skip_total_row"))
+    }
+    if stored.get("report_summary"):
+        extras["report_summary"] = stored["report_summary"]
+    return extras
 
 
 class ReportTools:
@@ -136,7 +146,7 @@ class ReportTools:
                     data,
                     _clamp_max_rows(max_rows),
                     bool(summary_only),
-                    bool(getattr(report_doc, "add_total_row", 0)),
+                    bool(result.get("add_total_row", getattr(report_doc, "add_total_row", 0))),
                 )
 
                 debug_info = {
@@ -155,6 +165,8 @@ class ReportTools:
                     "data_count": len(rows),
                     "result_type": type(result).__name__ if result else "None",
                 }
+                if rows:
+                    debug_info["total_count"] = row_count
                 if result.get("report_summary"):
                     debug_info["report_summary"] = result["report_summary"]
                 if debug_info["truncated"] and not summary_only:
@@ -330,6 +342,7 @@ class ReportTools:
                         "prepared_report_name": prepared_report_name,
                         "generated_at": str(prepared_doc.modified) if prepared_doc else None,
                         "status": "completed",
+                        **_prepared_payload_extras(result, report_doc),
                     }
 
             # Get report timeout configuration
@@ -355,6 +368,12 @@ class ReportTools:
                             "prepared_report": False,
                             "source": "direct_execution",
                             "status": "completed",
+                            "add_total_row": bool(direct_result.get("add_total_row")),
+                            **(
+                                {"report_summary": direct_result["report_summary"]}
+                                if direct_result.get("report_summary")
+                                else {}
+                            ),
                         }
                 except Exception as e:
                     # Quick execution failed, fall through to background job
@@ -399,6 +418,7 @@ class ReportTools:
                             "prepared_report_name": prepared_report_name,
                             "wait_time_seconds": int(elapsed_time),
                             "status": "completed",
+                            **_prepared_payload_extras(result, report_doc),
                         }
 
                 elif prepared_doc.status == "Error":

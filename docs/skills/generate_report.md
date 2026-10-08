@@ -78,8 +78,9 @@ When a value is rejected, `validation_errors` names the accepted values and `err
 | `summary_only` | boolean | No | `false` | Return columns, `row_count` and `report_summary` without rows |
 
 **Row-limit response fields:** `row_count` (rows the report produced), `truncated` (`true` when rows were left out),
-`summary_only`, `report_summary` (when the report returns one), and `truncation_note` (when truncated). A report with
-a totals row always keeps it as the last returned row. Use `summary_only` to size a large report, then raise
+`total_count` (same as `row_count`, present when rows are returned), `summary_only`, `report_summary` (when the report returns one), and `truncation_note` (when truncated). `row_count` includes the totals row. A report with
+a totals row always keeps it as the last returned row (with `max_rows: 1` that row is all you get). Tree reports are cut by
+plain slicing, so a child can lose its parent. Use `summary_only` to size a large report, then raise
 `max_rows` or narrow the filters. The `run_python_code` sandbox's `tools.generate_report` asks for the 5000 cap.
 
 ## Best Practices
