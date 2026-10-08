@@ -18,6 +18,10 @@ from frappe_assistant_core.chat.doctype.fac_workflow_trigger.fac_workflow_trigge
     DOCTYPE_BLOCKLIST,
     VALID_EVENTS,
 )
+from frappe_assistant_core.chat.workflows.triggers.filters import (
+    build_payload,
+    first_failing_filter,
+)
 
 
 def _require_admin() -> None:
@@ -74,7 +78,36 @@ def list_triggers(
     )
     if or_filters:
         rows = [r for r in rows if _binds_to_workflow(r, workflow_name, workflow_docname)]
+    _attach_filter_rows(rows)
     return {"triggers": rows, "total": len(rows)}
+
+
+def _attach_filter_rows(rows: list[dict[str, Any]]) -> None:
+    """Give each listed trigger its filter rows.
+
+    The editor saves back whatever filters it was shown. Listing triggers
+    without their rows made every edit — even a rename — erase the filters.
+    """
+    by_name = {row["name"]: row for row in rows}
+    for row in rows:
+        row["filters"] = []
+    if not by_name:
+        return
+
+    filter_rows = frappe.get_all(
+        "FAC Workflow Trigger Filter",
+        filters={
+            "parenttype": "FAC Workflow Trigger",
+            "parentfield": "filters",
+            "parent": ["in", list(by_name)],
+        },
+        fields=["parent", "fieldname", "operator", "value"],
+        order_by="idx asc",
+    )
+    for f in filter_rows:
+        by_name[f.parent]["filters"].append(
+            {"fieldname": f.fieldname, "operator": f.operator, "value": f.value}
+        )
 
 
 def _binds_to_workflow(row: dict, workflow_name: str, workflow_docname: str) -> bool:
@@ -350,45 +383,51 @@ def get_trigger_log(trigger_name: str, limit: int = 20) -> dict[str, Any]:
 
 
 @frappe.whitelist(methods=["POST"])
-def test_trigger(trigger_name: str) -> dict[str, Any]:
-    """Build a preview payload using the most recent matching doc. No send."""
+def test_trigger(trigger_name: str, reference_docname: str | None = None) -> dict[str, Any]:
+    """Build the payload this trigger would send for one document. Nothing is sent.
+
+    ``reference_docname`` picks the document; without it the most recently
+    modified document of the trigger's DocType is used. ``failed_filter`` names
+    the first filter row the document does not pass.
+    """
     _require_admin()
 
     trigger = frappe.get_doc("FAC Workflow Trigger", trigger_name)
+    doctype = trigger.reference_doctype
 
-    if not frappe.db.exists("DocType", trigger.reference_doctype):
+    if not frappe.db.exists("DocType", doctype):
         frappe.throw(
-            _("DocType '{0}' no longer exists on this site.").format(trigger.reference_doctype),
+            _("DocType '{0}' no longer exists on this site.").format(doctype),
             frappe.DoesNotExistError,
         )
 
-    latest = frappe.get_all(
-        trigger.reference_doctype,
-        fields=["name"],
-        order_by="modified desc",
-        limit=1,
-    )
-    if not latest:
-        return {
-            "payload": None,
-            "message": _("No documents of type {0} found.").format(trigger.reference_doctype),
-        }
+    if reference_docname:
+        if not frappe.db.exists(doctype, reference_docname):
+            frappe.throw(
+                _("{0} {1} does not exist.").format(_(doctype), reference_docname),
+                frappe.DoesNotExistError,
+            )
+        sample_name = reference_docname
+    else:
+        latest = frappe.get_all(doctype, fields=["name"], order_by="modified desc", limit=1)
+        if not latest:
+            return {
+                "payload": None,
+                "message": _("No documents of type {0} found.").format(doctype),
+            }
+        sample_name = latest[0].name
 
-    doc = frappe.get_doc(trigger.reference_doctype, latest[0].name)
+    doc = frappe.get_doc(doctype, sample_name)
+    doc.check_permission("read")
 
-    from frappe_assistant_core.chat.workflows.triggers.filters import (
-        build_payload,
-        evaluate_filters,
-    )
-
-    doc_dict = doc.as_dict()
-    passes = evaluate_filters(doc_dict, trigger.filters or [])
-    payload = build_payload(trigger, doc, trigger.doctype_event, {})
-
+    failing = first_failing_filter(doc.as_dict(), trigger.filters or [])
     return {
-        "payload": payload,
-        "would_fire": bool(passes),
-        "sample_doc": latest[0].name,
+        "payload": build_payload(trigger, doc, trigger.doctype_event, {}),
+        "would_fire": failing is None,
+        "sample_doc": sample_name,
+        "failed_filter": None
+        if failing is None
+        else {"fieldname": failing.fieldname, "operator": failing.operator, "value": failing.value},
     }
 
 
