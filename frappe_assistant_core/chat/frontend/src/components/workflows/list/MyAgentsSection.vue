@@ -125,8 +125,8 @@ const workflowsStat = computed(() => {
 	if (searchQuery.value.trim()) {
 		return __("{0} of {1} on this page match", [shown, props.workflows.length]);
 	}
-	const label = shown === 1 ? "{0} agent · {1} total" : "{0} agents · {1} total";
-	return __(label, [shown, props.total ?? shown]);
+	const args = [shown, props.total ?? shown];
+	return shown === 1 ? __("{0} agent · {1} total", args) : __("{0} agents · {1} total", args);
 });
 
 function handleFilterChange(status) {

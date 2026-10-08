@@ -80,18 +80,9 @@ def list_listings(
     page_size: int = 20,
 ):
     """List marketplace listings (workflows / prompts / skills) for this tenant."""
-    if not _marketplace_enabled():
-        return {
-            "listings": [],
-            "total": 0,
-            "page": 0,
-            "page_size": int(page_size),
-            "marketplace_enabled": False,
-        }
     from frappe_assistant_core.chat.fac_cloud_client import get_fac_cloud_client
 
-    client = get_fac_cloud_client()
-    if not client:
+    if not _marketplace_enabled() or not (client := get_fac_cloud_client()):
         return {
             "listings": [],
             "total": 0,

@@ -89,6 +89,8 @@ export const useWorkflowStore = defineStore("workflows", () => {
 		} catch (err) {
 			error.value = err.message;
 			listError.value = err.message || __("Could not load your agents.");
+			workflows.value = [];
+			total.value = 0;
 			logger.error("Failed to load workflows:", err);
 		} finally {
 			isLoading.value = false;
@@ -236,6 +238,10 @@ export const useWorkflowStore = defineStore("workflows", () => {
 		} catch (err) {
 			logger.error("Failed to load runs:", err);
 			runsError.value = err.message || __("Could not load runs.");
+			if (!append) {
+				runs.value = [];
+				runsTotal.value = 0;
+			}
 			return { runs: [], total: 0, error: runsError.value };
 		}
 	}
@@ -400,6 +406,10 @@ export const useWorkflowStore = defineStore("workflows", () => {
 				page,
 				ps
 			);
+			if (append && result.error) {
+				templatesError.value = result.error;
+				return;
+			}
 			if (append) {
 				templates.value = [...templates.value, ...(result.templates || [])];
 			} else {
@@ -410,7 +420,10 @@ export const useWorkflowStore = defineStore("workflows", () => {
 		} catch (err) {
 			logger.error("Failed to load templates:", err);
 			templatesError.value = err.message || __("Could not load templates.");
-			if (!append) templates.value = [];
+			if (!append) {
+				templates.value = [];
+				templatesTotal.value = 0;
+			}
 		} finally {
 			isLoadingTemplates.value = false;
 		}

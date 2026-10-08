@@ -68,6 +68,10 @@
 			</template>
 		</div>
 
+		<p v-if="runsError && runs.length > 0" class="inline-error" role="alert">
+			{{ runsError }}
+		</p>
+
 		<!-- Load more -->
 		<button
 			v-if="runs.length < runsTotal"
@@ -75,7 +79,7 @@
 			class="load-more-btn"
 			:disabled="isLoadingRuns"
 		>
-			{{ __("Load more") }}
+			{{ runsError ? __("Retry") : __("Load more") }}
 		</button>
 	</aside>
 </template>
@@ -314,6 +318,13 @@ async function handleCancel() {
 	to {
 		transform: rotate(360deg);
 	}
+}
+
+.inline-error {
+	margin: 0;
+	padding: 0.5rem 1rem;
+	font-size: 0.75rem;
+	color: var(--ql-danger);
 }
 
 /* Load more */

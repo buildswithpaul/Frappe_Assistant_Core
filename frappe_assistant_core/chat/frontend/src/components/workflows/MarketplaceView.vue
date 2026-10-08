@@ -22,7 +22,7 @@
 			v-if="featuredTemplates.length > 0 && !searchQuery && !categoryFilter"
 			class="featured-section"
 		>
-			<h3 class="section-title">Featured</h3>
+			<h3 class="section-title">{{ __("Featured") }}</h3>
 			<div class="featured-scroll">
 				<TemplateCard
 					v-for="tpl in featuredTemplates"
@@ -49,7 +49,7 @@
 				v-if="featuredTemplates.length > 0 && !searchQuery && !categoryFilter"
 				class="section-title"
 			>
-				All Templates
+				{{ __("All Templates") }}
 			</h3>
 			<div class="marketplace-grid">
 				<TemplateCard
@@ -62,6 +62,7 @@
 			</div>
 
 			<!-- Load More -->
+			<p v-if="templatesError" class="inline-error" role="alert">{{ templatesError }}</p>
 			<div v-if="hasMore" class="load-more-wrap">
 				<button
 					class="load-more-btn"
@@ -69,7 +70,7 @@
 					@click="loadMore"
 				>
 					<span v-if="store.isLoadingTemplates" class="loading-spinner small"></span>
-					<span v-else>Load More</span>
+					<span v-else>{{ templatesError ? __("Retry") : __("Load More") }}</span>
 				</button>
 			</div>
 		</div>
@@ -89,6 +90,7 @@
 import { ref, computed, onMounted } from "vue";
 import { storeToRefs } from "pinia";
 import { useWorkflowStore } from "@/stores/workflowStore";
+import { __ } from "@/utils/i18n";
 import { logger } from "@/utils/logger";
 import MarketplaceFilters from "./marketplace/MarketplaceFilters.vue";
 import MarketplaceStatus from "./marketplace/MarketplaceStatus.vue";
@@ -180,14 +182,15 @@ async function reloadTemplates() {
 }
 
 async function loadMore() {
-	currentPage.value++;
+	const next = currentPage.value + 1;
 	await store.loadTemplates(
 		getActiveCategory(),
 		searchQuery.value || null,
 		getActiveSortBy(),
-		currentPage.value,
+		next,
 		{ append: true },
 	);
+	if (!store.templatesError) currentPage.value = next;
 }
 
 async function loadFeatured() {
@@ -294,6 +297,13 @@ function onTemplateRated(result) {
 	display: grid;
 	grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
 	gap: 0.875rem;
+}
+
+.inline-error {
+	margin: 0.75rem 0 0;
+	text-align: center;
+	font-size: 0.75rem;
+	color: var(--ql-danger);
 }
 
 /* Load more */

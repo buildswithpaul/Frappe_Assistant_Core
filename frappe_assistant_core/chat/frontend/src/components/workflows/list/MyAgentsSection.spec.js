@@ -5,6 +5,13 @@ import MyAgentsSection from "@/components/workflows/list/MyAgentsSection.vue";
 
 setActivePinia(createPinia());
 
+// jsdom has no ResizeObserver; ListPageShell observes its width.
+globalThis.ResizeObserver ??= class {
+	observe() {}
+	disconnect() {}
+	unobserve() {}
+};
+
 const base = {
 	workflows: [],
 	isLoading: false,
@@ -29,5 +36,23 @@ describe("MyAgentsSection", () => {
 	it("shows the empty state when the list really is empty", () => {
 		const w = mount(MyAgentsSection, { props: base });
 		expect(w.text()).toContain("No agents yet");
+	});
+
+	it("renders the singular and plural stat", () => {
+		const one = mount(MyAgentsSection, {
+			props: { ...base, workflows: [{ name: "A", workflow_name: "A" }], total: 1 },
+		});
+		expect(one.text()).toContain("1 agent · 1 total");
+		const two = mount(MyAgentsSection, {
+			props: {
+				...base,
+				workflows: [
+					{ name: "A", workflow_name: "A" },
+					{ name: "B", workflow_name: "B" },
+				],
+				total: 2,
+			},
+		});
+		expect(two.text()).toContain("2 agents · 2 total");
 	});
 });

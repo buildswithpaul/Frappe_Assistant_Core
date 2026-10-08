@@ -25,6 +25,8 @@ describe("RunHistoryPanel", () => {
 		await w.get('[role="alert"] button').trigger("click");
 		await flushPromises();
 		expect(listRuns).toHaveBeenCalledTimes(2);
+		expect(w.find('[role="alert"]').exists()).toBe(false);
+		expect(w.findAll(".run-card")).toHaveLength(1);
 	});
 
 	// regression guard: the Load more append fix landed in an earlier task
@@ -52,5 +54,17 @@ describe("RunHistoryPanel", () => {
 		await flushPromises();
 		expect(listRuns.mock.calls[1][2]).toBe(1);
 		expect(listRuns.mock.calls[2][2]).toBe(1);
+	});
+
+	it("shows the error inline next to Load more when a later page fails", async () => {
+		listRuns
+			.mockResolvedValueOnce({ runs: [{ name: "R1", status: "Completed" }], total: 3 })
+			.mockResolvedValueOnce({ runs: [], total: 0, error: "page down" });
+		const w = mount(RunHistoryPanel, { props: { workflowId: "WF-1" } });
+		await flushPromises();
+		await w.get(".load-more-btn").trigger("click");
+		await flushPromises();
+		expect(w.get(".inline-error").text()).toContain("page down");
+		expect(w.findAll(".run-card")).toHaveLength(1);
 	});
 });
