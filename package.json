@@ -1,12 +1,12 @@
 {
   "name": "frappe_assistant_core",
   "private": true,
-  "description": "Node dev dependencies for commit-message linting. Pinned to commitlint v19 for older benches. The build script compiles FAC Chat and the Desk widget (chat/frontend), which requires Node >=22 on every bench, including Frappe v15.",
+  "description": "Node dev dependencies for commit-message linting. Pinned to commitlint v19 for older benches. The build script compiles FAC Chat and the Desk widget (chat/frontend), which requires Node >=22 on every bench, including Frappe v15. It reinstalls whenever package-lock.json is newer than the last install (node_modules/.package-lock.json), so an update that adds a dependency cannot build against a stale node_modules.",
   "engines": {
     "node": ">=18"
   },
   "scripts": {
-    "build": "cd frappe_assistant_core/chat/frontend && { [ -d node_modules ] || npm ci; } && npm run build"
+    "build": "cd frappe_assistant_core/chat/frontend && { [ node_modules/.package-lock.json -nt package-lock.json ] || npm ci; } && npm run build"
   },
   "devDependencies": {
     "@commitlint/cli": "^19.6.0",
