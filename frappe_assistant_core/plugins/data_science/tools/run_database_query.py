@@ -31,6 +31,41 @@ from frappe_assistant_core.core.base_tool import BaseTool
 #: Most rows run_database_query returns, whatever LIMIT the query names.
 HARD_ROW_CAP = 1000
 
+# Word sequences refused anywhere in a query: they write files, take locks or
+# change privileges and session state. Matched against whole words from
+# _sql_words(), so identifiers like granted_on or set_name never match.
+_FORBIDDEN_PHRASES = (
+    ("INTO", "OUTFILE"),
+    ("INTO", "DUMPFILE"),
+    ("LOAD", "DATA"),
+    ("LOAD", "XML"),
+    ("LOAD_FILE",),
+    ("GRANT",),
+    ("REVOKE",),
+    ("LOCK", "TABLES"),
+    ("LOCK", "TABLE"),
+    ("UNLOCK", "TABLES"),
+    ("UNLOCK", "TABLE"),
+    ("LOCK", "IN", "SHARE", "MODE"),
+    ("FOR", "UPDATE"),
+    ("FOR", "SHARE"),
+    ("SET",),
+    ("HANDLER",),
+    ("DO",),
+    ("CALL",),
+)
+
+
+def _find_forbidden_phrase(query: str) -> str | None:
+    """Return the first forbidden phrase in the query's bare words, or None."""
+    words = [word.upper() for word in _sql_bare_words(query)]
+    for index in range(len(words)):
+        for phrase in _FORBIDDEN_PHRASES:
+            if tuple(words[index : index + len(phrase)]) == phrase:
+                return " ".join(phrase)
+    return None
+
+
 # A LIMIT clause at the very end of the statement: "LIMIT n", "LIMIT m, n" or
 # "LIMIT n OFFSET m". A LIMIT anywhere else belongs to a subquery or a UNION
 # branch and does not bound the result. Matched against _mask_sql() output, so
@@ -206,6 +241,15 @@ class QueryAndAnalyse(BaseTool):
         # Check if it starts with SELECT
         if not query_clean.startswith("SELECT"):
             return {"is_valid": False, "error": "Only SELECT queries are allowed for security reasons."}
+
+        forbidden = _find_forbidden_phrase(query)
+        if forbidden:
+            return {
+                "is_valid": False,
+                "error": _("Query contains forbidden statement: {0}. Only plain SELECT is allowed.").format(
+                    forbidden
+                ),
+            }
 
         # Check for dangerous keywords
         dangerous_keywords = [
@@ -392,6 +436,13 @@ def _sql_words(query: str):
     """Yield bare words and `quoted` identifiers outside string literals and comments."""
     for _start, _end, kind, text in _sql_lex(query):
         if kind in ("word", "quoted"):
+            yield text
+
+
+def _sql_bare_words(query: str):
+    """Yield only unquoted words: `quoted` identifiers are names, never keywords."""
+    for _start, _end, kind, text in _sql_lex(query):
+        if kind == "word":
             yield text
 
 
