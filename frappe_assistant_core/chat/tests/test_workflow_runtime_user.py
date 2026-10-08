@@ -131,7 +131,9 @@ class _ToolClient:
     def resolve_workflow_tools(self, **kwargs):
         self.calls.append(("resolve_workflow_tools", kwargs))
         return {
-            "resolved": [{"tool_name": "list_documents", "runs_unattended": True}],
+            "resolved": [
+                {"tool_name": "list_documents", "runs_unattended": True, "candidate_servers": ["site"]}
+            ],
             "all_tools_available": True,
             "missing_tools": [],
             "ambiguous_tools": [],
@@ -168,10 +170,12 @@ class TestToolChecksUseTheRuntimeUser(BaseAssistantTest):
         self.assertEqual(self._user_sent("resolve_workflow_tools"), RUNTIME)
 
     def test_resolve_passes_the_unattended_data_through(self):
+        # Regression guard: the AR response was already returned unchanged.
         result = workflows.resolve_workflow_tools(
             tool_directives='[{"tool_name": "list_documents"}]', runtime_user=RUNTIME
         )
         self.assertTrue(result["resolved"][0]["runs_unattended"])
+        self.assertEqual(result["resolved"][0]["candidate_servers"], ["site"])
         self.assertEqual(result["ambiguous_tools"], [])
 
     def test_without_runtime_user_the_caller_is_used(self):
