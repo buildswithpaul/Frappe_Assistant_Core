@@ -7,6 +7,11 @@ import { useNotificationStore } from "@/stores/notificationStore";
 import { useUserStore } from "@/stores/userStore";
 import { useTourStore } from "@/stores/tourStore";
 import SpotlightModal from "./SpotlightModal.vue";
+import SpotlightCard from "./SpotlightCard.vue";
+
+// The Desk widget renders inline: it shares the page with the user's Desk form, so a
+// full-screen modal would cover their work.
+defineProps({ inline: { type: Boolean, default: false } });
 
 const router = useRouter();
 const spotlight = useSpotlightStore();
@@ -20,7 +25,15 @@ watch([notifications, registrationStatus, tourOpen], () => spotlight.evaluate())
 </script>
 
 <template>
+	<SpotlightCard
+		v-if="inline"
+		:content="current"
+		@primary="spotlight.primary(router)"
+		@secondary="spotlight.secondary(router)"
+		@dismiss="spotlight.dismiss()"
+	/>
 	<SpotlightModal
+		v-else
 		:content="current"
 		@primary="spotlight.primary(router)"
 		@secondary="spotlight.secondary(router)"
