@@ -88,7 +88,7 @@ class TestAttachFilesToMessage(BaseAssistantTest):
     def test_refuses_to_link_a_file_owned_by_someone_else(self):
         # get_all bypasses permissions, so the owner filter is the only gate.
         # Without it, naming any private file_url would pull that file's text
-        # into the prompt via _extract_file_attachments.
+        # into the prompt as one of the conversation's files.
         foreign = self._pending_file("theirs.png", "Guest")
         file_url = frappe.db.get_value("File", foreign, "file_url")
 

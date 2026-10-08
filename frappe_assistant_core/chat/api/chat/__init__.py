@@ -36,7 +36,6 @@ from frappe_assistant_core.chat.api.chat.cancel import (
 from frappe_assistant_core.chat.api.chat.helpers import (
     _emit_socket_event,
     _ensure_assistant_msg,
-    _extract_file_attachments,
     _find_assistant_msg_by_message_id,
     _is_processing_restricted,
     _log_conversation,

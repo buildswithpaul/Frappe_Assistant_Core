@@ -748,6 +748,7 @@ def _relay_ar_interrupt_resume(
     thinking_enabled=None,
     reasoning_effort=None,
     live_turn_token=None,
+    system_prompt_addendum=None,
 ):
     """
     Resume an interrupted AR stream by sending interrupt responses.
@@ -769,6 +770,9 @@ def _relay_ar_interrupt_resume(
 
     ``live_turn_token`` is the turn token the endpoint wrote with live_turn.start,
     adopted by the live snapshot and cleared if the relay ends before binding.
+
+    ``system_prompt_addendum`` is the conversation's attached files. AR rebuilds the
+    agent's system prompt on a resume, so without it the rest of the turn cannot see them.
     """
     frappe.init(site=site)
     frappe.connect()
@@ -838,6 +842,7 @@ def _relay_ar_interrupt_resume(
             message_id=message_id,
             session_state=session_state,
             model_id=model_id,
+            system_prompt_addendum=system_prompt_addendum,
             **_sdk_composer_kwargs(client.stream_chat, web_search, thinking_enabled, reasoning_effort),
         )
         for event in stream_iter:
