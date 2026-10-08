@@ -64,7 +64,6 @@ const conditionSummary = computed(() => {
 	min-width: 170px;
 	max-width: 230px;
 	transition: border-color 0.15s ease, box-shadow 0.15s ease;
-	position: relative;
 }
 
 .workflow-node:hover {

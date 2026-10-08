@@ -226,7 +226,7 @@ export function validateGraph(nodes, edges) {
 		}
 		if (bt === "tool" && !config.tool_name) {
 			add(n.id, __('Tool step "{0}" has no tool selected', [labelOf(n)]));
-		} else if (bt === "tool" && config.tool_name.includes(":")) {
+		} else if (bt === "tool" && String(config.tool_name).includes(":")) {
 			add(
 				n.id,
 				__('Tool step "{0}": use the bare tool name and set the server separately', [labelOf(n)])

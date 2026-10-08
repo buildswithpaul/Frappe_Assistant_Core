@@ -79,12 +79,6 @@ const ICON = NODE_TYPES.find((t) => t.type === "loop").iconPath;
 	overflow: hidden;
 	text-overflow: ellipsis;
 }
-.mono {
-	font-family: var(--ql-font-mono);
-}
-.node-server {
-	color: var(--ql-text-secondary);
-}
 .workflow-node.invalid {
 	border-color: var(--ql-danger);
 }
