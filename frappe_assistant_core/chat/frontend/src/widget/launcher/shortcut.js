@@ -9,6 +9,7 @@ export function parseShortcut(s) {
 /**
  * Ctrl+Shift+Space: open the panel and start voice input. Typing in some other input on the Desk
  * page is left alone; the panel's own composer lives in a shadow root, so its events retarget to the host.
+ * Both shortcuts listen in the capture phase: the panel stops keys typed into its fields at its host.
  */
 export function bindMicShortcut(onFire) {
 	const handler = (e) => {
@@ -19,8 +20,8 @@ export function bindMicShortcut(onFire) {
 		e.preventDefault();
 		onFire();
 	};
-	document.addEventListener("keydown", handler);
-	return () => document.removeEventListener("keydown", handler);
+	document.addEventListener("keydown", handler, true);
+	return () => document.removeEventListener("keydown", handler, true);
 }
 
 /** A modifier the shortcut does not name must NOT be held, so Ctrl+K never fires on Ctrl+Shift+K. */
@@ -34,6 +35,6 @@ export function bindShortcut(s, onFire) {
 		e.preventDefault();
 		onFire();
 	};
-	document.addEventListener("keydown", handler);
-	return () => document.removeEventListener("keydown", handler);
+	document.addEventListener("keydown", handler, true);
+	return () => document.removeEventListener("keydown", handler, true);
 }

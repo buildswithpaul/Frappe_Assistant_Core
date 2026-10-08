@@ -8,6 +8,7 @@ import "./panel.css";
 import PanelApp from "./PanelApp.vue";
 import { createRouterShim } from "./routerShim.js";
 import { placePanel } from "./placement.js";
+import { isolateTyping } from "./keyIsolation.js";
 import { TELEPORT_TARGET_KEY } from "@/composables/useTeleportTarget";
 import { configureSurface } from "@/stores/chat/surface";
 import { mirrorDeskTheme } from "../launcher/theme.js";
@@ -34,6 +35,7 @@ export async function mountPanel(config) {
 	document.body.appendChild(host);
 	mirrorDeskTheme(host);
 	const root = host.attachShadow({ mode: "open" });
+	const releaseTyping = isolateTyping(host);
 
 	// Styles land before first paint: wait for every stylesheet.
 	await Promise.all(
@@ -80,6 +82,7 @@ export async function mountPanel(config) {
 		},
 		destroy() {
 			window.removeEventListener("resize", place);
+			releaseTyping();
 			app.unmount();
 			host.remove();
 		},
