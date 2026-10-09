@@ -23,4 +23,18 @@ describe("WorkflowCreatedBlock", () => {
 		});
 		expect(wrapper.text()).not.toContain("()");
 	});
+
+	// production: Frappe's window.__ is present when the SPA is served inside Desk
+	it("passes its visible strings through the translator", () => {
+		window.__ = (text) => `[${text}]`;
+		try {
+			const wrapper = mount(WorkflowCreatedBlock, {
+				props: { block: { workflow_name: "Invoice Chaser", docname: "WF-00046", action: "updated" } },
+			});
+			expect(wrapper.text()).toContain("[Updated]");
+			expect(wrapper.get("button").text()).toBe("[Open in builder] →");
+		} finally {
+			delete window.__;
+		}
+	});
 });
