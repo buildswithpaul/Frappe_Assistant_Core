@@ -1,6 +1,7 @@
 import { ref } from "vue";
 import { api } from "@/api/client";
 import { logger } from "@/utils/logger";
+import { __ } from "@/utils/i18n";
 
 const NEXT_STATUS = { Draft: "Active", Active: "Paused", Paused: "Active" };
 
@@ -11,7 +12,7 @@ const NEXT_STATUS = { Draft: "Active", Active: "Paused", Paused: "Active" };
  * `saveError`; the drawer keeps its own so a failure stays next to the form.
  *
  * @param {object} deps - { workflowStore, workflowId, currentWorkflow, canEdit,
- *                          isDirty, toGraphJson, hasSaved, saveError }
+ *                          isDirty, toGraphJson, hasSaved, saveError, preflight }
  */
 export function useWorkflowActions({
 	workflowStore,
@@ -22,8 +23,10 @@ export function useWorkflowActions({
 	toGraphJson,
 	hasSaved,
 	saveError,
+	preflight,
 }) {
 	const settingsError = ref(null);
+	const pendingActivation = ref(false);
 
 	async function toggleStatus() {
 		if (!workflowId.value || !canEdit.value) return;
@@ -39,8 +42,29 @@ export function useWorkflowActions({
 			saveError.value = null;
 		} catch (err) {
 			logger.error("Status toggle failed:", err);
-			saveError.value = err.message || `Failed to switch to ${nextStatus}`;
+			saveError.value = err.message || __("Failed to switch to {0}", [nextStatus]);
 		}
+	}
+
+	/** Activate and Resume check the write tools first; Pause never waits. */
+	async function requestToggleStatus() {
+		if (!workflowId.value || !canEdit.value) return;
+		if (NEXT_STATUS[currentWorkflow.value?.status] !== "Active") return toggleStatus();
+		const warnings = await preflight.check();
+		if (warnings.length) {
+			pendingActivation.value = true;
+			return;
+		}
+		return toggleStatus();
+	}
+
+	async function confirmActivation() {
+		pendingActivation.value = false;
+		await toggleStatus();
+	}
+
+	function cancelActivation() {
+		pendingActivation.value = false;
 	}
 
 	async function rename(newName) {
@@ -55,8 +79,9 @@ export function useWorkflowActions({
 			if (
 				count &&
 				!window.confirm(
-					`${count} event trigger${count === 1 ? "" : "s"} point at this agent. ` +
-						"Renaming it does not move them — continue?"
+					__("{0} event trigger(s) point at this agent. Renaming it does not move them — continue?", [
+						count,
+					])
 				)
 			) {
 				return;
@@ -65,7 +90,7 @@ export function useWorkflowActions({
 			saveError.value = null;
 		} catch (err) {
 			logger.error("Rename failed:", err);
-			saveError.value = err.message || "Rename failed";
+			saveError.value = err.message || __("Rename failed");
 		}
 	}
 
@@ -78,10 +103,19 @@ export function useWorkflowActions({
 			return true;
 		} catch (err) {
 			logger.error("Settings save failed:", err);
-			settingsError.value = err.message || "Failed to save settings";
+			settingsError.value = err.message || __("Failed to save settings");
 			return false;
 		}
 	}
 
-	return { settingsError, toggleStatus, rename, saveSettings };
+	return {
+		settingsError,
+		toggleStatus,
+		requestToggleStatus,
+		pendingActivation,
+		confirmActivation,
+		cancelActivation,
+		rename,
+		saveSettings,
+	};
 }

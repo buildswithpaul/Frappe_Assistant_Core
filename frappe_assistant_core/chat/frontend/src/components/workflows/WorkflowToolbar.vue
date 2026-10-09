@@ -34,11 +34,10 @@
 			:show-runs="showRuns"
 			:show-audit="showAudit"
 			:has-variables="hasVariables"
+			:setup-todo="setupTodo"
 			@save="$emit('save')"
 			@run="$emit('run')"
-			@schedule="$emit('schedule')"
-			@triggers="$emit('triggers')"
-			@settings="$emit('settings')"
+			@setup="$emit('setup')"
 			@variables="$emit('variables')"
 			@share-template="$emit('share-template')"
 			@toggle-runs="$emit('toggle-runs')"
@@ -67,15 +66,14 @@ defineProps({
 	hasVariables: { type: Boolean, default: false },
 	canRun: { type: Boolean, default: true },
 	runBlockReason: { type: String, default: "" },
+	setupTodo: { type: Number, default: 0 },
 });
 
 defineEmits([
 	"back",
 	"save",
 	"run",
-	"schedule",
-	"triggers",
-	"settings",
+	"setup",
 	"toggle-runs",
 	"toggle-audit",
 	"toggle-status",

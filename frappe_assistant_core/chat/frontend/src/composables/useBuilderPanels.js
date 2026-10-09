@@ -1,0 +1,46 @@
+import { ref } from "vue";
+
+/** Which rail panel, modal or popover the builder has open. */
+export function useBuilderPanels() {
+	const showRunsPanel = ref(false);
+	const showAuditPanel = ref(false);
+	const showScheduleModal = ref(false);
+	const showVariablesModal = ref(false);
+	const showShareModal = ref(false);
+	const showTriggersModal = ref(false);
+	const showSettingsDrawer = ref(false);
+	const showSetup = ref(false);
+
+	// Runs and Audit share the right rail.
+	function onToggleRuns() {
+		showAuditPanel.value = false;
+		showRunsPanel.value = !showRunsPanel.value;
+	}
+
+	function onToggleAudit() {
+		showRunsPanel.value = false;
+		showAuditPanel.value = !showAuditPanel.value;
+	}
+
+	function onSetupAction(key, setup) {
+		if (key === "recheck") return setup.refresh();
+		showSetup.value = false;
+		if (key === "schedule") showScheduleModal.value = true;
+		if (key === "triggers") showTriggersModal.value = true;
+		if (key === "settings") showSettingsDrawer.value = true;
+	}
+
+	return {
+		showRunsPanel,
+		showAuditPanel,
+		showScheduleModal,
+		showVariablesModal,
+		showShareModal,
+		showTriggersModal,
+		showSettingsDrawer,
+		showSetup,
+		onToggleRuns,
+		onToggleAudit,
+		onSetupAction,
+	};
+}

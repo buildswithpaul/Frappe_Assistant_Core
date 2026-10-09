@@ -162,6 +162,18 @@ export function useBuilderGraph({
 		});
 	}
 
+	/** Opens the config of the selected node, or of the one the keyboard has focused. */
+	function openFocusedNodeConfig() {
+		// Vue Flow makes nodes focusable, so the keyboard reaches a node before
+		// it is "selected" — accept either.
+		const focusedId = document.activeElement?.dataset?.id;
+		const node =
+			nodes.value.find((n) => n.selected) || nodes.value.find((n) => n.id === focusedId);
+		if (!node) return false;
+		selectedNode.value = node;
+		return true;
+	}
+
 	return {
 		onNodesChange,
 		onEdgesChange,
@@ -171,5 +183,6 @@ export function useBuilderGraph({
 		onPaneClick,
 		addNodeOfType,
 		duplicateSelectedNode,
+		openFocusedNodeConfig,
 	};
 }

@@ -40,22 +40,13 @@
 
 		<ToolbarButton
 			v-if="isAdmin"
-			:title="__('Schedule agent')"
-			:aria-label="__('Schedule agent')"
-			:label="__('Schedule')"
-			@click="$emit('schedule')"
+			:class="{ accent: setupTodo > 0 }"
+			:title="__('Setup checklist')"
+			:aria-label="setupTodo ? __('Setup checklist, {0} to do', [setupTodo]) : __('Setup checklist')"
+			:label="setupTodo ? __('Setup ({0})', [setupTodo]) : __('Setup')"
+			@click="$emit('setup')"
 		>
-			<ToolbarIcon name="clock" />
-		</ToolbarButton>
-
-		<ToolbarButton
-			v-if="isAdmin"
-			:title="__('Event triggers')"
-			:aria-label="__('Event triggers')"
-			:label="__('Triggers')"
-			@click="$emit('triggers')"
-		>
-			<ToolbarIcon name="bolt" />
+			<ToolbarIcon name="gear" />
 		</ToolbarButton>
 
 		<ToolbarButton
@@ -77,16 +68,6 @@
 			@click="$emit('share-template')"
 		>
 			<ToolbarIcon name="share" />
-		</ToolbarButton>
-
-		<ToolbarButton
-			v-if="isAdmin"
-			:title="__('Agent settings')"
-			:aria-label="__('Agent settings')"
-			:label="__('Settings')"
-			@click="$emit('settings')"
-		>
-			<ToolbarIcon name="gear" />
 		</ToolbarButton>
 
 		<ToolbarButton
@@ -129,14 +110,13 @@ const props = defineProps({
 	hasVariables: { type: Boolean, default: false },
 	canRun: { type: Boolean, default: true },
 	runBlockReason: { type: String, default: "" },
+	setupTodo: { type: Number, default: 0 },
 });
 
 defineEmits([
 	"save",
 	"run",
-	"schedule",
-	"triggers",
-	"settings",
+	"setup",
 	"variables",
 	"share-template",
 	"toggle-runs",

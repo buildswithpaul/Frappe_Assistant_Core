@@ -17,15 +17,14 @@
 				:show-audit="showAuditPanel"
 				:last-saved="hasSaved"
 				:has-variables="hasVariables"
+				:setup-todo="setup.todoCount.value"
 				@back="handleBack"
 				@save="save"
 				@run="requestRun"
-				@schedule="showScheduleModal = true"
-				@triggers="showTriggersModal = true"
-				@settings="showSettingsDrawer = true"
+				@setup="showSetup = !showSetup"
 				@toggle-runs="onToggleRuns"
 				@toggle-audit="onToggleAudit"
-				@toggle-status="toggleStatus"
+				@toggle-status="requestToggleStatus"
 				@rename="rename"
 				@variables="showVariablesModal = true"
 				@share-template="showShareModal = true"
@@ -91,19 +90,27 @@
 				:has-saved="hasSaved"
 			/>
 
-			<!-- Modals (run input, schedule, variables, share template, triggers) -->
+			<!-- Modals (run input, schedule, variables, share template, triggers, setup, activation) -->
 			<WorkflowBuilderModals
 				v-model:show-run="showRunModal"
 				v-model:show-schedule="showScheduleModal"
 				v-model:show-variables="showVariablesModal"
 				v-model:show-share="showShareModal"
 				v-model:show-triggers="showTriggersModal"
+				v-model:show-setup="showSetup"
 				:is-running="isRunning"
 				:schedule-config="scheduleConfig"
 				:is-setting-schedule="isSettingSchedule"
 				:variables="globalSettings?.variables || {}"
 				:workflow-id="workflowId"
 				:workflow-display-name="workflowDisplayName"
+				:setup-items="setup.items.value"
+				:setup-busy="setup.isRefreshing.value"
+				:pending-activation="pendingActivation"
+				:activation-warnings="preflight.warnings.value"
+				@setup-action="(key) => panels.onSetupAction(key, setup)"
+				@activation-confirm="confirmActivation"
+				@activation-cancel="cancelActivation"
 				@run-confirm="confirmRun"
 				@schedule-save="saveSchedule"
 				@variables-save="onVariablesSave"
@@ -150,7 +157,8 @@ import { useGraphValidation } from "@/composables/useGraphValidation";
 import { useWorkflowActions } from "@/composables/useWorkflowActions";
 import { useWorkflowExecution } from "@/composables/useWorkflowExecution";
 import { useBuilderShortcuts } from "@/composables/useBuilderShortcuts";
-
+import { useBuilderPanels } from "@/composables/useBuilderPanels";
+import { useBuilderSetup } from "@/composables/useBuilderSetup";
 import { vueFlowToGraphJson } from "@/components/workflows/graphUtils";
 import { __ } from "@/utils/i18n";
 
@@ -174,13 +182,19 @@ const canvasAreaRef = computed(() => canvasRef.value?.rootEl || null);
 // UI state
 const selectedNode = ref(null);
 const paletteCollapsed = ref(false);
-const showRunsPanel = ref(false);
-const showAuditPanel = ref(false);
-const showScheduleModal = ref(false);
-const showVariablesModal = ref(false);
-const showShareModal = ref(false);
-const showTriggersModal = ref(false);
-const showSettingsDrawer = ref(false);
+const panels = useBuilderPanels();
+const {
+	showRunsPanel,
+	showAuditPanel,
+	showScheduleModal,
+	showVariablesModal,
+	showShareModal,
+	showTriggersModal,
+	showSettingsDrawer,
+	showSetup,
+	onToggleRuns,
+	onToggleAudit,
+} = panels;
 
 const scheduleConfig = ref({ cron: "", timezone: "UTC", defaultInput: "", enabled: false });
 
@@ -255,6 +269,7 @@ const {
 	onPaneClick,
 	addNodeOfType,
 	duplicateSelectedNode,
+	openFocusedNodeConfig,
 } = useBuilderGraph({
 	nodes,
 	edges,
@@ -273,7 +288,25 @@ const { onDrop, handleNodeUpdate, handleDeleteNode } = useWorkflowGraphActions({
 	project,
 });
 
-const { settingsError, toggleStatus, rename, saveSettings } = useWorkflowActions({
+const { preflight, setup } = useBuilderSetup({
+	workflowId,
+	workflowDisplayName,
+	currentWorkflow,
+	scheduleConfig,
+	nodes,
+	isAdmin,
+	showSetup,
+});
+
+const {
+	settingsError,
+	requestToggleStatus,
+	pendingActivation,
+	confirmActivation,
+	cancelActivation,
+	rename,
+	saveSettings,
+} = useWorkflowActions({
 	workflowStore,
 	workflowId,
 	currentWorkflow,
@@ -282,6 +315,7 @@ const { settingsError, toggleStatus, rename, saveSettings } = useWorkflowActions
 	toGraphJson: currentGraphJson,
 	hasSaved,
 	saveError,
+	preflight,
 });
 
 const { actionError, isSettingSchedule, showRunModal, requestRun, confirmRun, saveSchedule } =
@@ -309,16 +343,7 @@ useBuilderShortcuts({
 		if (showSettingsDrawer.value) showSettingsDrawer.value = false;
 		else selectedNode.value = null;
 	},
-	onOpenConfig: () => {
-		// Vue Flow makes nodes focusable, so the keyboard reaches a node before
-		// it is "selected" — accept either.
-		const focusedId = document.activeElement?.dataset?.id;
-		const node =
-			nodes.value.find((n) => n.selected) || nodes.value.find((n) => n.id === focusedId);
-		if (!node) return false;
-		selectedNode.value = node;
-		return true;
-	},
+	onOpenConfig: openFocusedNodeConfig,
 });
 
 onMounted(async () => {
@@ -329,6 +354,7 @@ onMounted(async () => {
 		fitView({ padding: 0.2 });
 		if (canEdit.value) scheduleAutoSave();
 	}
+	if (canEdit.value) setup.refresh();
 });
 
 onBeforeUnmount(() => workflowStore.clearCurrentWorkflow());
@@ -340,17 +366,6 @@ function onCanvasDrop(event) {
 
 async function onSettingsSave(fields) {
 	if (await saveSettings(fields)) showSettingsDrawer.value = false;
-}
-
-// Runs and Audit share the right rail; the config panel no longer competes.
-function onToggleRuns() {
-	if (showAuditPanel.value) showAuditPanel.value = false;
-	showRunsPanel.value = !showRunsPanel.value;
-}
-
-function onToggleAudit() {
-	if (showRunsPanel.value) showRunsPanel.value = false;
-	showAuditPanel.value = !showAuditPanel.value;
 }
 
 function onVariablesSave(vars) {

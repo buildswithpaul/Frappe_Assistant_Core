@@ -23,3 +23,25 @@ describe("Run button", () => {
 		expect(runButton({ canRun: true }).attributes("disabled")).toBeUndefined();
 	});
 });
+
+describe("Setup button", () => {
+	const labels = (props) =>
+		mount(WorkflowToolbarActions, { props: { isAdmin: true, ...props } })
+			.findAll("button")
+			.map((b) => b.text());
+
+	it("replaces the Schedule, Triggers and Settings buttons", () => {
+		const text = labels({ setupTodo: 0 });
+		expect(text).toContain("Setup");
+		expect(text).not.toContain("Schedule");
+		expect(text).not.toContain("Triggers");
+		expect(text).not.toContain("Settings");
+	});
+
+	it("shows how many items are still to do and emits setup", async () => {
+		const wrapper = mount(WorkflowToolbarActions, { props: { isAdmin: true, setupTodo: 2 } });
+		const btn = wrapper.findAll("button").find((b) => b.text() === "Setup (2)");
+		await btn.trigger("click");
+		expect(wrapper.emitted("setup")).toHaveLength(1);
+	});
+});
