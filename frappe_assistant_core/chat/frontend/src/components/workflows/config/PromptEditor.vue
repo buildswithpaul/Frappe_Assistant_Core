@@ -7,6 +7,15 @@
 				:global-variables="variables"
 				@insert="insertVariable"
 			/>
+			<button
+				type="button"
+				data-test="expand-prompt"
+				class="expand-btn"
+				:title="__('Open a larger editor')"
+				@click="expanded = true"
+			>
+				{{ __("Expand") }}
+			</button>
 		</div>
 
 		<textarea
@@ -44,13 +53,23 @@
 				Unavailable tools: {{ preview.missingTools.join(", ") }}
 			</p>
 		</div>
+
+		<PromptExpandModal
+			v-model:open="expanded"
+			:model-value="modelValue"
+			:variables="variables"
+			:readonly="readonly"
+			@update:model-value="$emit('update:modelValue', $event)"
+		/>
 	</div>
 </template>
 
 <script setup>
 import { ref, computed } from "vue";
 import VariableInserter from "./VariableInserter.vue";
+import PromptExpandModal from "./PromptExpandModal.vue";
 import { buildResolvedPrompt } from "./promptPreview";
+import { __ } from "@/utils/i18n";
 
 const props = defineProps({
 	modelValue: { type: String, default: "" },
@@ -67,6 +86,7 @@ const emit = defineEmits(["update:modelValue"]);
 const fieldId = `system-prompt-${Math.random().toString(36).slice(2, 8)}`;
 const textareaRef = ref(null);
 const showPreview = ref(false);
+const expanded = ref(false);
 
 const preview = computed(() =>
 	buildResolvedPrompt({
@@ -101,6 +121,14 @@ function insertVariable(placeholder) {
 	justify-content: space-between;
 	gap: 0.5rem;
 	margin-bottom: 0.375rem;
+}
+
+.expand-btn {
+	font-size: 0.6875rem;
+	color: var(--ql-accent);
+	background: none;
+	border: none;
+	cursor: pointer;
 }
 
 .config-label {
