@@ -180,3 +180,17 @@ class TestMarketplaceErrorsAreClean(BaseAssistantTest):
         self.assertNotIn("ar.example", message)
         self.assertNotIn("tenant_id", message)
         self.assertIn("marketplace could not complete", message)
+
+    def test_a_json_4xx_without_a_message_never_shows_the_request_url(self):
+        # The SDK builds its message from str(HTTPError) when the JSON body has no
+        # message key, so response_data is non-empty and the text embeds the URL.
+        message = self._import_raising(
+            ARAPIError(
+                "404 Client Error: Not Found for url: https://ar.example/api/method/x?tenant_id=T",
+                status_code=404,
+                response_data={"exc_type": "DoesNotExistError"},
+            )
+        )
+        self.assertNotIn("ar.example", message)
+        self.assertNotIn("tenant_id", message)
+        self.assertIn("marketplace could not complete", message)

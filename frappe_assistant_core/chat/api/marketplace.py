@@ -57,7 +57,9 @@ def _marketplace_failure(context: str, e: Exception) -> NoReturn:
     status = getattr(e, "status_code", None)
     if isinstance(e, ARAPIError) and status and 400 <= status < 500 and e.response_data:
         message = _redact_upstream_internals(_strip_noise(getattr(e, "message", "") or ""))
-        if message:
+        # With no message key in the body, the SDK falls back to str(HTTPError), which
+        # embeds the request URL and tenant id.
+        if message and "://" not in message and "for url:" not in message:
             frappe.throw(message)
     frappe.throw(_("The marketplace could not complete this request. Please try again in a moment."))
 
