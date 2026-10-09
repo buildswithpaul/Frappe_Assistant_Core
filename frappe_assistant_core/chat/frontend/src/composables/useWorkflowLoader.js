@@ -1,5 +1,6 @@
 import { ref } from "vue";
 import { graphJsonToVueFlow } from "@/components/workflows/graphUtils";
+import { autoLayout, hasOverlaps } from "@/components/workflows/graphLayout";
 
 /** Frappe Check fields arrive as 0/1 integers — `!== false` is always true. */
 function isChecked(value) {
@@ -41,15 +42,25 @@ export function useWorkflowLoader(deps) {
 
 	const isLoading = ref(false);
 	const loadError = ref(null);
+	// True when the stored positions were stacked and the loader laid the graph out;
+	// the builder then fits the view and saves the new positions.
+	const wasRelaidOut = ref(false);
 
 	async function loadCurrentWorkflow() {
 		if (!workflowId.value) return;
 		isLoading.value = true;
 		loadError.value = null;
 		try {
-			const result = await workflowStore.loadWorkflow(workflowId.value);
+			// Models load with the workflow: the settings drawer and every agent
+			// panel read them, and loading on first panel open left the drawer's
+			// model select empty.
+			const [result] = await Promise.all([
+				workflowStore.loadWorkflow(workflowId.value),
+				workflowStore.loadModels(),
+			]);
 			const parsed = graphJsonToVueFlow(result.graph_json);
-			nodes.value = parsed.nodes;
+			wasRelaidOut.value = hasOverlaps(parsed.nodes);
+			nodes.value = wasRelaidOut.value ? autoLayout(parsed.nodes, parsed.edges) : parsed.nodes;
 			edges.value = parsed.edges;
 			globalSettings.value = parsed.globalSettings;
 			hasSaved.value = !!result.graph_json;
@@ -63,5 +74,5 @@ export function useWorkflowLoader(deps) {
 		}
 	}
 
-	return { isLoading, loadError, loadCurrentWorkflow };
+	return { isLoading, loadError, loadCurrentWorkflow, wasRelaidOut };
 }

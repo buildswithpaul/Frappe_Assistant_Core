@@ -121,7 +121,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onBeforeUnmount, onMounted } from "vue";
+import { ref, computed, nextTick, onBeforeUnmount, onMounted } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import { storeToRefs } from "pinia";
 import { useVueFlow } from "@vue-flow/core";
@@ -231,7 +231,7 @@ const { hasSaved, saveError, scheduleAutoSave, save, resetHistory, undo, redo } 
 		checkOnServer,
 	});
 
-const { isLoading, loadError, loadCurrentWorkflow } = useWorkflowLoader({
+const { isLoading, loadError, loadCurrentWorkflow, wasRelaidOut } = useWorkflowLoader({
 	workflowStore,
 	workflowId,
 	nodes,
@@ -319,6 +319,11 @@ useBuilderShortcuts({
 onMounted(async () => {
 	await loadCurrentWorkflow();
 	resetHistory();
+	if (wasRelaidOut.value) {
+		await nextTick();
+		fitView({ padding: 0.2 });
+		if (canEdit.value) scheduleAutoSave();
+	}
 });
 
 onBeforeUnmount(() => workflowStore.clearCurrentWorkflow());
