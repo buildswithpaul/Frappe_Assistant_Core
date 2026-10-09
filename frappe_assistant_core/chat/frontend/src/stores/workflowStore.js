@@ -79,9 +79,6 @@ export const useWorkflowStore = defineStore("workflows", () => {
 	const creatorStats = ref(null);
 	const isLoadingCreatorStats = ref(false);
 
-	// Template update state
-	const templateUpdates = ref([]);
-
 	// Getters
 	const hasWorkflows = computed(() => workflows.value.length > 0);
 
@@ -620,20 +617,6 @@ export const useWorkflowStore = defineStore("workflows", () => {
 		}
 	}
 
-	// Template update actions
-	async function checkAllTemplateUpdates() {
-		try {
-			const result = await api.workflows.checkAllTemplateUpdates();
-			templateUpdates.value = result?.updates || [];
-		} catch (err) {
-			logger.error("Failed to check template updates:", err);
-		}
-	}
-
-	function getUpdateForWorkflow(workflowName) {
-		return templateUpdates.value.find((u) => u.workflow_name === workflowName);
-	}
-
 	function markDirty() {
 		isDirty.value = true;
 	}
@@ -735,9 +718,6 @@ export const useWorkflowStore = defineStore("workflows", () => {
 		creatorStats,
 		isLoadingCreatorStats,
 
-		// Template update state
-		templateUpdates,
-
 		// Getters
 		hasWorkflows,
 
@@ -772,8 +752,6 @@ export const useWorkflowStore = defineStore("workflows", () => {
 		downloadTemplate,
 		reportTemplate,
 		loadCreatorStats,
-		checkAllTemplateUpdates,
-		getUpdateForWorkflow,
 		markDirty,
 		markClean,
 		clearCurrentWorkflow,

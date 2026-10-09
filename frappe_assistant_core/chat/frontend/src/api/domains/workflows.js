@@ -427,16 +427,4 @@ export const workflows = {
 		// `total_credits_earned` — new endpoint already uses the same field names.
 		return stats || {};
 	},
-
-	// Template updates — read from AR Marketplace Version
-	checkTemplateUpdates: (name) =>
-		getCall("frappe_assistant_core.chat.api.check_workflow_update", {
-			name,
-		}),
-
-	checkAllTemplateUpdates: () =>
-		getCall(
-			"frappe_assistant_core.chat.api.check_all_workflow_updates",
-			{}
-		),
 };
