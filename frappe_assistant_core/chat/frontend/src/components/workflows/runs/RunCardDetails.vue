@@ -103,6 +103,7 @@ const renderedPartial = computed(() => (partial.value ? renderMarkdown(partial.v
 	padding: 0.5rem 0.625rem;
 	max-height: 280px;
 	overflow-y: auto;
+	scrollbar-color: var(--ql-border) transparent;
 	word-break: break-word;
 }
 

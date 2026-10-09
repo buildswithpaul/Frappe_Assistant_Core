@@ -132,6 +132,7 @@ onBeforeUnmount(() => {
 	flex: 1;
 	overflow: auto;
 	padding: 1.25rem 1.5rem;
+	scrollbar-color: var(--ql-border) transparent;
 	font-size: 0.875rem;
 	line-height: 1.65;
 	color: var(--ql-text);
