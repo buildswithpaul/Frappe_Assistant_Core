@@ -159,16 +159,6 @@ onMounted(() => {
 	resolveTools();
 });
 
-// The panel reuses one config object across nodes, so the node id is the
-// only signal that the directives under us have been swapped.
-watch(
-	() => props.nodeId,
-	() => {
-		healDirectives();
-		resolveTools();
-	}
-);
-
 watch(() => props.runtimeUser, resolveTools);
 
 function emitUpdate() {

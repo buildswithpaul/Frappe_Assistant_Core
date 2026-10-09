@@ -111,6 +111,30 @@ describe("NodeConfigPanel", () => {
 		}
 	});
 
+	it("a burst of user_id typing resolves directives once, with the final value, after the debounce", async () => {
+		vi.useFakeTimers();
+		try {
+			const base = node("agent", { tool_directives: [{ tool_name: "x" }] });
+			const w = mountPanel(base, { admin: true });
+			await flushPromises();
+			resolveWorkflowTools.mockClear();
+
+			for (const typed of ["s", "sa", "sales@example.com"]) {
+				await w.setProps({
+					node: { ...base, data: { ...base.data, config: { ...base.data.config, user_id: typed } } },
+				});
+				await vi.advanceTimersByTimeAsync(100);
+			}
+			expect(resolveWorkflowTools).not.toHaveBeenCalled();
+
+			await vi.advanceTimersByTimeAsync(500);
+			expect(resolveWorkflowTools).toHaveBeenCalledTimes(1);
+			expect(resolveWorkflowTools).toHaveBeenCalledWith([{ tool_name: "x" }], "sales@example.com");
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
 	it("a second tool node shows its own arguments, not the previous node's broken text", async () => {
 		const a = { ...node("tool"), id: "tool_a" };
 		const b = {

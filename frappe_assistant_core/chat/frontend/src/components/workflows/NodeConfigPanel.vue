@@ -24,7 +24,7 @@
 				:is-loading-tools="isLoadingTools"
 				:variables="variables"
 				:runtime-user-label="userLabel"
-				:runtime-user="runtimeUser"
+				:runtime-user="settledRuntimeUser"
 				:readonly="readonly"
 				@update="handleAgentUpdate"
 				@reload-tools="reloadTools"
@@ -53,7 +53,7 @@
 				:is-loading-tools="isLoadingTools"
 				:variables="variables"
 				:runtime-user-label="userLabel"
-				:runtime-user="runtimeUser"
+				:runtime-user="settledRuntimeUser"
 				:readonly="readonly"
 				@update="handleAgentUpdate"
 				@reload-tools="reloadTools"
@@ -89,7 +89,7 @@
 </template>
 
 <script setup>
-import { reactive, watch, onMounted, onBeforeUnmount, computed } from "vue";
+import { reactive, ref, watch, onMounted, onBeforeUnmount, computed } from "vue";
 import { storeToRefs } from "pinia";
 import { useUserStore } from "@/stores/userStore";
 import { useWorkflowStore } from "@/stores/workflowStore";
@@ -170,31 +170,38 @@ const runtimeUser = computed(() => {
 	return config.user_id || currentWorkflow.value?.default_user_id || null;
 });
 
+// The user the forms resolve against. It trails `runtimeUser` by the typing
+// debounce so the override box does not fire a request per keystroke.
+const settledRuntimeUser = ref(runtimeUser.value);
+
 let toolsTimer = null;
-watch(
-	() => props.node.id,
-	() => {
-		// A different node is a deliberate switch, not typing: load without waiting.
-		clearTimeout(toolsTimer);
-		workflowStore.loadTools(runtimeUser.value);
-	},
-	{ flush: "post" }
-);
-watch(runtimeUser, (value) => {
-	// The override box fires per keystroke; wait for the typing to settle.
+function settleNow() {
 	clearTimeout(toolsTimer);
-	toolsTimer = setTimeout(() => workflowStore.loadTools(value), TOOLS_RELOAD_DELAY_MS);
+	settledRuntimeUser.value = runtimeUser.value;
+	workflowStore.loadTools(settledRuntimeUser.value);
+}
+
+watch(runtimeUser, (value) => {
+	clearTimeout(toolsTimer);
+	toolsTimer = setTimeout(() => {
+		settledRuntimeUser.value = value;
+		workflowStore.loadTools(value);
+	}, TOOLS_RELOAD_DELAY_MS);
 });
+// Declared after the runtimeUser watcher so, in the same flush, it cancels the
+// timer that watcher just set: a node switch or an admin flip is not typing.
+watch(() => props.node.id, settleNow);
+watch(isAdmin, settleNow);
 
 onMounted(() => {
 	if (models.value.length === 0) workflowStore.loadModels();
-	workflowStore.loadTools(runtimeUser.value);
+	workflowStore.loadTools(settledRuntimeUser.value);
 });
 
 onBeforeUnmount(() => clearTimeout(toolsTimer));
 
 function reloadTools() {
-	workflowStore.loadTools(runtimeUser.value, { force: true });
+	workflowStore.loadTools(settledRuntimeUser.value, { force: true });
 }
 
 function emitUpdate() {
