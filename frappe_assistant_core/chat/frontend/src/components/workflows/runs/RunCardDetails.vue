@@ -4,7 +4,21 @@
 
 		<div v-if="renderedResult" class="run-result">
 			<div class="result-label">{{ __("Result") }}</div>
+			<RunOutputActions
+				:text="run.output_data"
+				:filename="`${run.name}.md`"
+				:title="__('Run result')"
+			/>
 			<div class="result-body markdown-body" v-html="renderedResult"></div>
+		</div>
+
+		<div v-else-if="partial" class="run-result partial">
+			<div class="result-label">{{ __("Partial output — from {0}", [partial.label]) }}</div>
+			<RunOutputActions :text="partial.text" :title="partial.label" :downloadable="false" />
+			<div class="result-body markdown-body" v-html="renderedPartial"></div>
+			<div v-if="partial.truncated" class="truncated-note">
+				{{ __("Output truncated for display: showing the first 10,000 characters") }}
+			</div>
 		</div>
 
 		<SkippedActionsList :items="skipped" :node-runs="run.node_runs || []" />
@@ -28,7 +42,8 @@ import DOMPurify from "dompurify";
 import { __ } from "@/utils/i18n";
 import RunNodeDetail from "../RunNodeDetail.vue";
 import SkippedActionsList from "./SkippedActionsList.vue";
-import { parseSkippedActions } from "./runFormat";
+import RunOutputActions from "./RunOutputActions.vue";
+import { parseSkippedActions, partialOutput } from "./runFormat";
 
 const props = defineProps({
 	run: { type: Object, required: true },
@@ -36,11 +51,16 @@ const props = defineProps({
 
 const skipped = computed(() => parseSkippedActions(props.run));
 
+const renderMarkdown = (text) => DOMPurify.sanitize(marked.parse(text || ""));
+
 const renderedResult = computed(() => {
 	const data = props.run;
 	if (data.status !== "Completed" || !data.output_data) return "";
-	return DOMPurify.sanitize(marked.parse(data.output_data));
+	return renderMarkdown(data.output_data);
 });
+
+const partial = computed(() => partialOutput(props.run));
+const renderedPartial = computed(() => (partial.value ? renderMarkdown(partial.value.text) : ""));
 </script>
 
 <style scoped>
@@ -132,6 +152,13 @@ const renderedResult = computed(() => {
 .result-body :deep(th) {
 	border: 1px solid var(--ql-border);
 	padding: 0.125rem 0.375rem;
+}
+
+.truncated-note {
+	font-size: 0.625rem;
+	font-style: italic;
+	color: var(--ql-text-muted);
+	margin-top: 0.25rem;
 }
 
 .no-nodes-msg {

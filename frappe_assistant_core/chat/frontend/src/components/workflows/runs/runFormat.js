@@ -90,3 +90,29 @@ export function runBadge(run) {
 	}
 	return { text: status, cls: statusClass(status) };
 }
+
+export const OUTPUT_DISPLAY_LIMIT = 10000;
+
+/** What a run that did not finish still produced: its last finished step. */
+export function partialOutput(run) {
+	if (!run || run.status === "Completed" || run.output_data) return null;
+	const done = (run.node_runs || []).filter((n) => n.status === "Completed" && n.output_text);
+	const last = done[done.length - 1];
+	if (!last) return null;
+	const text = last.output_text.slice(0, OUTPUT_DISPLAY_LIMIT);
+	return {
+		label: last.node_label || last.node_id,
+		text,
+		truncated: Boolean(last.output_text_truncated) || text.length < last.output_text.length,
+	};
+}
+
+export function loopSummary(outputText) {
+	const out = parseJsonMaybe(outputText, null);
+	if (!out || typeof out !== "object" || !("processed" in out)) return null;
+	return {
+		processed: Number(out.processed) || 0,
+		failed: Number(out.failed) || 0,
+		skipped: Number(out.skipped_over_limit) || 0,
+	};
+}

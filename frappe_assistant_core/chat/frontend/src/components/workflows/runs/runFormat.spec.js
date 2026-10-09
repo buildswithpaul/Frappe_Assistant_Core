@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
+	loopSummary,
 	parseSkippedActions,
+	partialOutput,
 	runBadge,
 	skippedCount,
 	statusClass,
@@ -48,5 +50,49 @@ describe("runFormat", () => {
 			cls: "badge-success",
 		});
 		expect(runBadge({ status: "Failed", skipped_actions: 1 }).cls).toBe("badge-danger");
+	});
+});
+
+describe("partialOutput", () => {
+	it("offers the last finished step's output on a failed run", () => {
+		const run = {
+			status: "Failed",
+			output_data: "",
+			node_runs: [
+				{ node_id: "a", node_label: "Fetch AR", status: "Completed", output_text: "rows" },
+				{ node_id: "b", node_label: "Rank", status: "Completed", output_text: "ranked list" },
+				{ node_id: "c", node_label: "Email", status: "Failed", output_text: "" },
+			],
+		};
+		expect(partialOutput(run)).toEqual({ label: "Rank", text: "ranked list", truncated: false });
+	});
+
+	it("flags text the server or the helper cut at 10,000 characters", () => {
+		const long = "x".repeat(10050);
+		const run = { status: "Failed", node_runs: [{ node_id: "a", status: "Completed", output_text: long }] };
+		const out = partialOutput(run);
+		expect(out.text).toHaveLength(10000);
+		expect(out.truncated).toBe(true);
+		const flagged = {
+			status: "Failed",
+			node_runs: [{ node_id: "a", status: "Completed", output_text: "short", output_text_truncated: 1 }],
+		};
+		expect(partialOutput(flagged).truncated).toBe(true);
+	});
+
+	it("is null for a completed run or one with nothing finished", () => {
+		expect(partialOutput({ status: "Completed", output_data: "x", node_runs: [] })).toBe(null);
+		expect(partialOutput({ status: "Failed", node_runs: [{ status: "Failed" }] })).toBe(null);
+	});
+});
+
+describe("loopSummary", () => {
+	it("reads a loop node's counts", () => {
+		expect(loopSummary('{"results":[],"processed":0,"failed":0,"skipped_over_limit":0}')).toEqual({
+			processed: 0,
+			failed: 0,
+			skipped: 0,
+		});
+		expect(loopSummary("plain text")).toBe(null);
 	});
 });

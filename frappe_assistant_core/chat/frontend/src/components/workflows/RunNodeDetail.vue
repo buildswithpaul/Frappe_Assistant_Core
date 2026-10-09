@@ -34,7 +34,14 @@
 				{{ nodeRun.error_message }}
 			</div>
 
-			<div v-if="renderedOutput" class="io-section">
+			<div v-if="isJsonNode && nodeRun.output_text" class="io-section">
+				<div class="io-label">{{ __("Output") }}</div>
+				<pre class="io-json">{{ prettyJson }}</pre>
+				<div v-if="nodeRun.output_text_truncated" class="truncated-note">
+					{{ __("Output truncated for display: showing the first 10,000 characters") }}
+				</div>
+			</div>
+			<div v-else-if="renderedOutput" class="io-section">
 				<div class="io-label">{{ __("Output") }}</div>
 				<div class="io-output markdown-body" v-html="renderedOutput"></div>
 				<div v-if="nodeRun.output_text_truncated" class="truncated-note">
@@ -59,6 +66,13 @@
 			<span v-if="nodeRun.credits_used" class="meta-dim"
 				>{{ __("{0} credits", [formatCredits(nodeRun.credits_used)]) }}</span
 			>
+			<span v-if="loop">{{
+				__("{0} processed · {1} failed · {2} over the limit", [
+					loop.processed,
+					loop.failed,
+					loop.skipped,
+				])
+			}}</span>
 			<span v-if="nodeRun.tool_calls_count" class="meta-dim"
 				>{{
 					nodeRun.tool_calls_count > 1
@@ -75,7 +89,14 @@ import { ref, computed } from "vue";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
 import { __ } from "@/utils/i18n";
-import { formatCredits, formatDuration, statusClass, truncate } from "./runs/runFormat";
+import {
+	formatCredits,
+	formatDuration,
+	loopSummary,
+	parseJsonMaybe,
+	statusClass,
+	truncate,
+} from "./runs/runFormat";
 
 const props = defineProps({
 	nodeRun: { type: Object, required: true },
@@ -88,6 +109,17 @@ const renderedOutput = computed(() => {
 	if (!props.nodeRun.output_text) return "";
 	return DOMPurify.sanitize(marked.parse(props.nodeRun.output_text));
 });
+
+const isJsonNode = computed(() => ["tool", "loop"].includes(props.nodeRun.node_type));
+
+const prettyJson = computed(() => {
+	const v = parseJsonMaybe(props.nodeRun.output_text, null);
+	return v === null ? props.nodeRun.output_text : JSON.stringify(v, null, 2);
+});
+
+const loop = computed(() =>
+	props.nodeRun.node_type === "loop" ? loopSummary(props.nodeRun.output_text) : null
+);
 
 function badgeClass(status) {
 	return statusClass(status) || "badge-queued";
@@ -248,6 +280,19 @@ function badgeClass(status) {
 	background: rgba(0, 0, 0, 0.06);
 	padding: 0.0625rem 0.25rem;
 	border-radius: 0.1875rem;
+}
+
+.io-json {
+	margin: 0;
+	max-height: 20rem;
+	overflow: auto;
+	font-family: var(--ql-font-mono);
+	font-size: 0.6875rem;
+	white-space: pre-wrap;
+	word-break: break-word;
+	background: var(--ql-subtle);
+	padding: 0.5rem;
+	border-radius: var(--ql-radius-sm);
 }
 
 .input-toggle {

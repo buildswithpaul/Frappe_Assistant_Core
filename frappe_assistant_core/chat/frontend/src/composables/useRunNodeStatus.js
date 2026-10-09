@@ -1,4 +1,5 @@
 import { computed, watch } from "vue";
+import { parseSkippedActions } from "@/components/workflows/runs/runFormat";
 
 /** Node-run status → the canvas class that paints it. */
 const STATUS_CLASS = {
@@ -39,8 +40,13 @@ export function useRunNodeStatus(currentRun, isRunning, canvas = null) {
 
 	const hasRunState = computed(() => statusByNode.value.size > 0);
 
+	const skippedNodes = computed(
+		() => new Set(parseSkippedActions(currentRun.value).map((s) => s.node_id).filter(Boolean))
+	);
+
 	function nodeClass(nodeId) {
-		return STATUS_CLASS[statusByNode.value.get(nodeId)] || "";
+		const base = STATUS_CLASS[statusByNode.value.get(nodeId)] || "";
+		return skippedNodes.value.has(nodeId) ? `${base} run-skipped-action`.trim() : base;
 	}
 
 	/** An edge animates while its source has finished and its target is working. */

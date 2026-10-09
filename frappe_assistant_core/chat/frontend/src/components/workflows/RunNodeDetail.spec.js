@@ -79,4 +79,25 @@ describe("RunNodeDetail", () => {
 		const wrapper = mount(RunNodeDetail, { props: { nodeRun: NODE_RUN } });
 		expect(wrapper.find(".node-meta").text()).not.toMatch(/tok/i);
 	});
+
+	it("renders a tool node's JSON output as code, not markdown", async () => {
+		const wrapper = mount(RunNodeDetail, {
+			props: { nodeRun: { ...NODE_RUN, node_type: "tool", output_text: '{"rows":[{"a":1}],"row_count":1}' } },
+		});
+		await wrapper.find(".node-row").trigger("click");
+		expect(wrapper.find("pre.io-json").text()).toContain('"row_count": 1');
+	});
+
+	it("summarises a loop that had nothing to do", () => {
+		const wrapper = mount(RunNodeDetail, {
+			props: {
+				nodeRun: {
+					...NODE_RUN,
+					node_type: "loop",
+					output_text: '{"results":[],"processed":0,"failed":0,"skipped_over_limit":0}',
+				},
+			},
+		});
+		expect(wrapper.text()).toContain("0 processed");
+	});
 });
