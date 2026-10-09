@@ -626,3 +626,223 @@ class TestSubmitDocumentAlias(DocumentActionTestCase):
         self.assertEqual(target, "document_action")
         self.assertIn(target, _DEFAULT_APPROVAL_TOOLS)
         self.assertEqual(_build_tool_registry()[target]["annotations"].get("destructiveHint"), True)
+
+
+class TestRefusalLeavesNothingQueued(DocumentActionTestCase):
+    """A refused cancel or amend must not leave work queued for the request's commit.
+
+    Cancel and amend roll back to a savepoint, and a savepoint rollback leaves
+    frappe.db's commit callbacks queued; Desk's full rollback resets them. So
+    work a failed on_cancel queued "after commit" still ran, after the cancel
+    itself had been undone. ERPNext's Period Closing Voucher is the real case:
+    above 5000 GL entries its on_cancel enqueues process_cancellation with
+    enqueue_after_commit=True, which would cancel the GL entries of a voucher
+    that is still submitted.
+    """
+
+    def queued(self, name):
+        return list(getattr(frappe.db, name)._functions)
+
+    def test_a_refused_cancel_discards_what_it_queued(self):
+        doc = self.make_doc(docstatus=1)
+        already_queued = lambda: None  # noqa: E731 — someone else's work, queued before the call
+        frappe.db.after_commit.add(already_queued)
+        self.addCleanup(frappe.db.after_commit.reset)
+        self.addCleanup(frappe.db.before_commit.reset)
+
+        after_commit, before_commit, undone = (lambda: None), (lambda: None), []
+
+        def on_cancel(_doc):
+            # Stands in for Period Closing Voucher.cancel_gl_entries.
+            frappe.db.after_commit.add(after_commit)
+            frappe.db.before_commit.add(before_commit)
+            # Work that must be undone if the transaction is: Frappe runs it on a full rollback.
+            frappe.db.after_rollback.add(lambda: undone.append(True))
+
+        with patch.object(get_controller(TEST_DOCTYPE), "on_cancel", on_cancel, create=True), patch.object(
+            Document, "check_no_back_links_exist", side_effect=frappe.LinkExistsError("linked")
+        ), patch("frappe.desk.form.linked_with.get_submitted_linked_docs", return_value={"docs": []}):
+            result = self.tool.execute(
+                {"doctype": TEST_DOCTYPE, "name": doc.name, "action": "cancel", "reason": "Duplicate"}
+            )
+
+        self.assertEqual(result.get("error_type"), "LinkExistsError")
+        self.assertEqual(self.db_docstatus(doc.name), 1)
+        self.assertNotIn(after_commit, self.queued("after_commit"))
+        self.assertNotIn(before_commit, self.queued("before_commit"))
+        self.assertEqual(undone, [True])
+        self.assertIn(already_queued, self.queued("after_commit"))
+
+    def test_a_refused_amend_discards_what_it_queued(self):
+        doc = self.make_doc(docstatus=2)
+        self.addCleanup(frappe.db.after_commit.reset)
+        queued_by_insert = lambda: None  # noqa: E731
+
+        def after_insert(_doc):
+            frappe.db.after_commit.add(queued_by_insert)
+            raise frappe.ValidationError("refused after insert")
+
+        with patch.object(get_controller(TEST_DOCTYPE), "after_insert", after_insert, create=True):
+            result = self.tool.execute({"doctype": TEST_DOCTYPE, "name": doc.name, "action": "amend"})
+
+        self.assertFalse(result.get("success"))
+        self.assertFalse(frappe.db.exists(TEST_DOCTYPE, {"amended_from": doc.name}))
+        self.assertNotIn(queued_by_insert, self.queued("after_commit"))
+
+    def refuse_cancel(self, doc, on_cancel):
+        with patch.object(get_controller(TEST_DOCTYPE), "on_cancel", on_cancel, create=True), patch.object(
+            Document, "check_no_back_links_exist", side_effect=frappe.LinkExistsError("linked")
+        ), patch("frappe.desk.form.linked_with.get_submitted_linked_docs", return_value={"docs": []}):
+            return self.tool.execute(
+                {"doctype": TEST_DOCTYPE, "name": doc.name, "action": "cancel", "reason": "Duplicate"}
+            )
+
+    def start_with_nothing_queued(self):
+        """Commits never run under the test runner, so earlier tests leave these queues
+        populated, which would hide the first-use path the next two tests are about."""
+        for name in ("_realtime_log", "_webhook_queue"):
+            if hasattr(frappe.local, name):
+                delattr(frappe.local, name)
+        for name in ("after_commit", "after_rollback"):
+            getattr(frappe.db, name).reset()
+            self.addCleanup(getattr(frappe.db, name).reset)
+
+    def test_realtime_events_after_a_refused_cancel_still_flush(self):
+        """publish_realtime registers its flush only when it creates frappe.local._realtime_log.
+
+        Dropping the refused cancel's flush while that log survived would leave every later
+        event in the request queued with nothing to send it.
+        """
+        from frappe.realtime import flush_realtime_log
+
+        doc = self.make_doc(docstatus=1)
+        self.start_with_nothing_queued()
+
+        result = self.refuse_cancel(
+            doc, lambda _doc: frappe.publish_realtime("fac_refused", user="Administrator", after_commit=True)
+        )
+        frappe.publish_realtime("fac_later", user="Administrator", after_commit=True)
+
+        self.assertEqual(result.get("error_type"), "LinkExistsError")
+        self.assertEqual([event[0] for event in frappe.local._realtime_log], ["fac_later"])
+        self.assertIn(flush_realtime_log, self.queued("after_commit"))
+
+    def test_webhooks_after_a_refused_cancel_still_flush(self):
+        """Webhooks queue the same way, on frappe.local._webhook_queue, and have no
+        after_rollback reset at all."""
+        from frappe.integrations.doctype.webhook import (
+            _add_webhook_to_queue,
+            flush_webhook_execution_queue,
+        )
+
+        doc = self.make_doc(docstatus=1)
+        refused, later = frappe._dict(name="refused"), frappe._dict(name="later")
+        self.start_with_nothing_queued()
+
+        result = self.refuse_cancel(doc, lambda _doc: _add_webhook_to_queue(refused, _doc))
+        _add_webhook_to_queue(later, doc)
+
+        self.assertEqual(result.get("error_type"), "LinkExistsError")
+        self.assertEqual([item.webhook.name for item in frappe.local._webhook_queue], ["later"])
+        self.assertIn(flush_webhook_execution_queue, self.queued("after_commit"))
+
+    def test_a_successful_cancel_keeps_what_it_queued(self):
+        doc = self.make_doc(docstatus=1)
+        self.addCleanup(frappe.db.after_commit.reset)
+        queued_by_cancel = lambda: None  # noqa: E731
+
+        with patch.object(
+            get_controller(TEST_DOCTYPE),
+            "on_cancel",
+            lambda _doc: frappe.db.after_commit.add(queued_by_cancel),
+            create=True,
+        ):
+            result = self.tool.execute(
+                {"doctype": TEST_DOCTYPE, "name": doc.name, "action": "cancel", "reason": "Duplicate"}
+            )
+
+        self.assertTrue(result.get("success"), result)
+        self.assertIn(queued_by_cancel, self.queued("after_commit"))
+
+
+class TestNonSubmittableDocTypes(DocumentActionTestCase):
+    """Cancel and amend have nothing to act on outside a submittable DocType.
+
+    Every ToDo has docstatus 0, so cancel called it "a draft" and told the model
+    to offer delete_document. For a master such as Customer, "cancel customer X"
+    then became an offer to delete it.
+    """
+
+    def make_todo(self):
+        return frappe.get_doc({"doctype": "ToDo", "description": "FAC test"}).insert()
+
+    def test_cancel_says_the_doctype_is_not_submittable_and_never_offers_deletion(self):
+        todo = self.make_todo()
+
+        result = self.tool.execute(
+            {"doctype": "ToDo", "name": todo.name, "action": "cancel", "reason": "Not needed"}
+        )
+
+        self.assertFalse(result.get("success"))
+        self.assertIn("not a submittable DocType", result["error"])
+        self.assertNotIn("draft", result["error"])
+        self.assertNotIn("delete_document", result.get("suggestion", ""))
+        self.assertTrue(frappe.db.exists("ToDo", todo.name))
+
+    def test_amend_says_the_doctype_is_not_submittable(self):
+        todo = self.make_todo()
+
+        result = self.tool.execute({"doctype": "ToDo", "name": todo.name, "action": "amend"})
+
+        self.assertFalse(result.get("success"))
+        self.assertIn("not a submittable DocType", result["error"])
+
+
+class TestSubmitIsAllOrNothing(DocumentActionTestCase):
+    """Frappe writes docstatus=1 before on_submit runs.
+
+    So a submit ERPNext refuses partway, after its stock ledger entries but before
+    its GL entries, used to be committed as a submitted document missing half its
+    postings, while the tool reported a failure (document_action) or a draft
+    (create_document with submit=True).
+    """
+
+    def refusing_on_submit(self):
+        def on_submit(doc):
+            # Stands in for ERPNext posting some entries, then refusing.
+            frappe.get_doc({"doctype": "ToDo", "description": f"posting for {doc.name}"}).insert()
+            raise frappe.ValidationError("Debit and Credit not equal")
+
+        return patch.object(get_controller(TEST_DOCTYPE), "on_submit", on_submit, create=True)
+
+    def postings(self, name):
+        return frappe.db.exists("ToDo", {"description": f"posting for {name}"})
+
+    def test_a_submit_refused_in_on_submit_leaves_the_draft(self):
+        doc = self.make_doc()
+
+        with self.refusing_on_submit():
+            result = self.tool.execute({"doctype": TEST_DOCTYPE, "name": doc.name})
+
+        self.assertFalse(result.get("success"))
+        self.assertEqual(result["error"], "Debit and Credit not equal")
+        self.assertEqual(self.db_docstatus(doc.name), 0)
+        self.assertFalse(self.postings(doc.name))
+
+    def test_create_document_submit_refused_in_on_submit_leaves_the_draft(self):
+        from frappe_assistant_core.plugins.core.tools.create_document import DocumentCreate
+
+        call_type = f"_Test FAC {frappe.generate_hash(length=8)}"
+
+        with self.refusing_on_submit():
+            result = DocumentCreate().execute(
+                {"doctype": TEST_DOCTYPE, "data": {"call_type": call_type}, "submit": True}
+            )
+
+        self.assertTrue(result.get("success"), result)
+        self.assertFalse(result["submitted"])
+        self.assertEqual(result["submit_error"], "Debit and Credit not equal")
+        self.assertIn("created as draft", result["message"])
+        self.assertTrue(any("draft" in step for step in result["next_steps"]), result["next_steps"])
+        self.assertEqual(self.db_docstatus(result["name"]), 0)
+        self.assertFalse(self.postings(result["name"]))
