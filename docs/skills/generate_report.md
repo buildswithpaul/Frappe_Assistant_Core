@@ -131,3 +131,4 @@ plain slicing, so a child can lose its parent. Use `summary_only` to size a larg
 - **Company filter** — most reports require a company. Get exact company name from `list_documents` with `doctype: "Company"`.
 - **Report Builder reports are NOT supported** — only Script Reports and Query Reports work.
 - **Large reports** — the tool polls prepared reports automatically. A slow one returns `status: "timeout"` with a `prepared_report_name`: the report is still being prepared, not empty. Ask again with the same filters and the retry picks up that same report instead of starting a new one.
+- **A prepared report that fails** returns `success: false`, `status: "error"`, the `error` text and the `prepared_report_name`. It is a failure, not an empty result: read `error`, fix the filters it points at, and ask again.

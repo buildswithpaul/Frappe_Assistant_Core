@@ -56,6 +56,15 @@ These queries are rejected before they run:
 - Anything other than a single `SELECT` statement
 - Frappe's internal tables — names starting with `__` (`__Auth`, `__global_search`, …). Query DocType tables (`tab…`) instead. A column alias such as `AS __total` is fine.
 - Executable comments (`/*! … */`, `/*M! … */`)
+- `INTO` anywhere in the query (`SELECT … INTO @var`, `INTO OUTFILE`, `INTO DUMPFILE`)
+- `SET`, `CALL`, and `:=` assignment — a query cannot change session state or run a procedure
+- Row locks: `FOR UPDATE`, `FOR SHARE`, `LOCK IN SHARE MODE`, and `LOCK` / `UNLOCK TABLE(S)`
+- `GRANT` and `REVOKE`
+- `LOAD DATA`, `LOAD XML` and `LOAD_FILE(…)`
+
+Column names that merely contain these words (`granted_on`, `set_name`) are fine; only the whole word is refused. A `CHARACTER SET` clause is refused because it contains the word `SET`; use `CAST(x AS CHAR)` instead.
+
+`query_executed` in the response echoes the SQL as you sent it, not the statement that ran after the row cap was applied.
 
 ## Best Practices
 
