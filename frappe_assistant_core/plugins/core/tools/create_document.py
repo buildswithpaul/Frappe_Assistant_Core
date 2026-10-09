@@ -31,10 +31,10 @@ from frappe_assistant_core.utils.savepoint import (
     rollback_to_savepoint,
 )
 
+from .child_tables import ChildRowError, child_table_fields, normalize_child_rows, restricted_row_keys
+
 # The submit after a create runs inside this savepoint, so a refused submit leaves the draft.
 _SUBMIT_SAVEPOINT = "fac_create_document_submit"
-
-from .child_tables import ChildRowError, child_table_fields, normalize_child_rows, restricted_row_keys
 
 
 def _default_todo_allocation(doc: Any) -> None:
