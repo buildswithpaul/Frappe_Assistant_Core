@@ -10,7 +10,7 @@ The `create_document` tool creates new Frappe documents (records). It handles fi
 |-----------|------|----------|---------|-------------|
 | `doctype` | string | **Yes** | — | Exact DocType name |
 | `data` | object | **Yes** | — | Field values as key-value pairs |
-| `submit` | boolean | No | `false` | Submit after creation (for submittable DocTypes) |
+| `submit` | boolean | No | `false` | Submit after creation (for submittable DocTypes). Under an active Workflow the document is created as a draft instead |
 | `validate_only` | boolean | No | `false` | Validate without saving — use to test data format |
 
 ## Response Format
@@ -35,7 +35,7 @@ The `create_document` tool creates new Frappe documents (records). It handles fi
 3. **Link fields expect the `name` (ID)** — not the display title. Use `search_documents` with `purpose: "link_value"` to find valid values.
 4. **Don't set auto-generated fields** — `name`, `creation`, `modified`, `owner` are set automatically.
 5. **Handle naming series** — DocTypes with naming series auto-generate names; don't pass `name` unless it uses manual naming.
-6. **Use `submit: true` carefully** — only when explicitly requested. Creates and submits in one step.
+6. **Use `submit: true` carefully** — only when explicitly requested. Creates and submits in one step. If the submit is refused (a validation, a closed period), the document is kept as a clean draft and `submit_error` says why. If the DocType has an active Workflow, it is created as a draft and not submitted: continue with `run_workflow`, which applies the workflow's approval rules.
 
 ## Common Patterns
 

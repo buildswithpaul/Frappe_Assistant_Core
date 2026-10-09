@@ -29,34 +29,19 @@ from frappe_assistant_core.core.base_tool import (
     exception_message,
     permission_error_result,
 )
+from frappe_assistant_core.utils.savepoint import (
+    open_savepoint,
+    release_savepoint,
+    rollback_to_savepoint,
+)
 
 VALID_ACTIONS = ("submit", "cancel", "amend")
 
 # Frappe writes docstatus=2 and runs on_cancel (ERPNext's GL/stock reversal) before its
 # back-link check can raise, and MCP requests are POSTs that Frappe commits at the end.
-# Cancel and amend therefore run inside this savepoint so a refused call leaves nothing behind.
+# Submit, cancel and amend therefore run inside this savepoint so a refused call leaves
+# nothing behind (Frappe writes docstatus=1 before on_submit, the same way).
 _SAVEPOINT = "fac_document_action"
-
-
-def _rollback_to_savepoint(doctype: str, name: str) -> None:
-    try:
-        frappe.db.rollback(save_point=_SAVEPOINT)
-    except Exception:
-        # The savepoint only disappears if something inside the call committed, in which
-        # case its partial changes are already persisted and need a human to look at them.
-        frappe.log_error(
-            title=_("Document Rollback Error"),
-            message=f"Could not roll back {doctype} '{name}':\n{frappe.get_traceback()}",
-        )
-    # A doc cached while the rolled-back changes were visible would otherwise outlive them.
-    frappe.clear_document_cache(doctype, name)
-
-
-def _release_savepoint() -> None:
-    try:
-        frappe.db.release_savepoint(_SAVEPOINT)
-    except Exception:
-        pass  # Already gone because something inside the call committed; the work succeeded.
 
 
 class DocumentAction(BaseTool):
@@ -77,7 +62,8 @@ class DocumentAction(BaseTool):
         self.description = (
             "Submit, cancel or amend one document. Choose the action from what the user asked for.\n"
             "- 'submit' (default): draft -> submitted. Only when the user explicitly asks to submit. "
-            "Never submit as a step toward cancelling.\n"
+            "Never submit as a step toward cancelling. Refused if the DocType has an active Workflow "
+            "(use run_workflow; the refusal names the action).\n"
             "- 'cancel': submitted -> cancelled; reverses accounting and stock entries. Only works on "
             "submitted documents. If the document is a draft, do not submit it: tell the user it is a "
             "draft and offer to delete it or leave it. REQUIRES 'reason': the user's reason copied word "
@@ -85,7 +71,9 @@ class DocumentAction(BaseTool):
             "Refused if the DocType has an active Workflow (use run_workflow) or submitted documents "
             "are linked to it (they are listed; let the user decide).\n"
             "- 'amend': cancelled -> new draft copy with amended_from set. Fix it with update_document, "
-            "then submit it with this tool."
+            "then submit it with this tool (or run_workflow under a Workflow).\n"
+            "Submittable DocTypes only. Customer, Item and other masters have nothing to cancel: never "
+            "offer to delete one instead."
         )
         self.requires_permission = None  # Permission checked dynamically per DocType
 
@@ -106,7 +94,8 @@ class DocumentAction(BaseTool):
                     "default": "submit",
                     "description": (
                         "Choose from what the user asked for. 'submit' (default): only when the user "
-                        "explicitly asks to submit; never as a step toward cancelling. 'cancel': only "
+                        "explicitly asks to submit; never as a step toward cancelling; under an active "
+                        "Workflow use run_workflow instead. 'cancel': only "
                         "works on submitted documents; if it is a draft, do not submit it, tell the user "
                         "it is a draft and offer to delete it or leave it. 'amend': cancelled documents "
                         "only; creates a new draft copy."
@@ -158,6 +147,7 @@ class DocumentAction(BaseTool):
 
         user_role = validation_result["role"]
 
+        marks = None
         try:
             # Check if document exists
             if not frappe.db.exists(doctype, name):
@@ -194,8 +184,23 @@ class DocumentAction(BaseTool):
                 }
                 return result
 
-            # Perform submission
+            # On submit Frappe validates the workflow while the state is still unchanged, so no
+            # transition is checked, and only then sets the first submitted state. Submitting
+            # directly would skip the approval steps and their role rules, so it goes through
+            # run_workflow, as cancel does.
+            from frappe.model.workflow import get_workflow_name
+
+            workflow_name = get_workflow_name(doctype)
+            if workflow_name:
+                return self._workflow_refusal(doc, workflow_name, "submit")
+
+            # Perform submission. Frappe writes docstatus=1 before on_submit, so a submit refused
+            # partway (after ERPNext's stock entries, before its GL entries) would otherwise be
+            # committed as a submitted document missing half its postings.
+            marks = open_savepoint(_SAVEPOINT)
             doc.submit()
+            release_savepoint(_SAVEPOINT)
+            marks = None
 
             # Get updated document state
             doc.reload()
@@ -239,6 +244,8 @@ class DocumentAction(BaseTool):
             return result
 
         except frappe.PermissionError as e:
+            if marks is not None:
+                rollback_to_savepoint(_SAVEPOINT, marks, doctype, name)
             # A submit the user may not perform raises with no message. Returning the
             # "required fields" suggestion below for it sends the model editing fields
             # that were never the problem.
@@ -252,6 +259,8 @@ class DocumentAction(BaseTool):
 
             return permission_error_result(doctype, error_msg, name)
         except Exception as e:
+            if marks is not None:
+                rollback_to_savepoint(_SAVEPOINT, marks, doctype, name)
             error_msg = exception_message(e)
             frappe.log_error(
                 title=_("Document Submit Error"),
@@ -284,6 +293,12 @@ class DocumentAction(BaseTool):
         if not frappe.db.exists(doctype, name):
             return {"success": False, "error": f"{doctype} '{name}' not found"}
 
+        # Every record of a non-submittable DocType has docstatus 0, so the draft branch below
+        # would call it a draft and offer to delete it: for a Customer or an Item, that turns
+        # "cancel it" into deleting master data.
+        if not frappe.get_meta(doctype).is_submittable:
+            return self._not_submittable(doctype, "cancel")
+
         doc = frappe.get_doc(doctype, name)
         current_docstatus = getattr(doc, "docstatus", 0)
 
@@ -313,7 +328,7 @@ class DocumentAction(BaseTool):
         # Frappe skips workflow validation on cancel, so cancelling directly would bypass it.
         workflow_name = get_workflow_name(doctype)
         if workflow_name:
-            return self._workflow_refusal(doc, workflow_name)
+            return self._workflow_refusal(doc, workflow_name, "cancel")
 
         reason = reason.strip() if isinstance(reason, str) else ""
         if not reason:
@@ -326,7 +341,7 @@ class DocumentAction(BaseTool):
                 ),
             }
 
-        frappe.db.savepoint(_SAVEPOINT)
+        marks = open_savepoint(_SAVEPOINT)
         try:
             # No flags: Frappe's and ERPNext's own cancel validations must all run.
             doc.cancel()
@@ -334,7 +349,7 @@ class DocumentAction(BaseTool):
                 "Comment", f"Cancelled via FAC by {frappe.session.user}. Reason given by user: {reason}"
             )
         except frappe.LinkExistsError as e:
-            _rollback_to_savepoint(doctype, name)
+            rollback_to_savepoint(_SAVEPOINT, marks, doctype, name)
             return {
                 "success": False,
                 "error": f"Cannot cancel {doctype} '{name}' because submitted documents are linked to it. "
@@ -350,7 +365,7 @@ class DocumentAction(BaseTool):
                 ),
             }
         except frappe.PermissionError as e:
-            _rollback_to_savepoint(doctype, name)
+            rollback_to_savepoint(_SAVEPOINT, marks, doctype, name)
             error_msg = exception_message(
                 e, _("Insufficient permission to cancel {0} '{1}'").format(doctype, name)
             )
@@ -362,7 +377,7 @@ class DocumentAction(BaseTool):
             result["docstatus"] = current_docstatus
             return result
         except Exception as e:
-            _rollback_to_savepoint(doctype, name)
+            rollback_to_savepoint(_SAVEPOINT, marks, doctype, name)
             error_msg = exception_message(e)
             frappe.log_error(
                 title=_("Document Cancel Error"),
@@ -377,7 +392,7 @@ class DocumentAction(BaseTool):
                 "docstatus": current_docstatus,
                 "suggestion": "The document was not cancelled. Tell the user the reason above.",
             }
-        _release_savepoint()
+        release_savepoint(_SAVEPOINT)
 
         return {
             "success": True,
@@ -393,16 +408,19 @@ class DocumentAction(BaseTool):
             ],
         }
 
-    def _workflow_refusal(self, doc, workflow_name: str) -> Dict[str, Any]:
-        """Refuse a direct cancel, naming the workflow action that cancels from the current state, if any"""
+    def _workflow_refusal(self, doc, workflow_name: str, action: str) -> Dict[str, Any]:
+        """Refuse a direct submit or cancel, naming the workflow action that does it from here, if any"""
+        target_docstatus, done = {"submit": (1, "submitted"), "cancel": (2, "cancelled")}[action]
         workflow = frappe.get_doc("Workflow", workflow_name)
         current_state = doc.get(workflow.workflow_state_field or "workflow_state")
-        cancelled_states = {s.state for s in workflow.states if frappe.utils.cint(s.doc_status) == 2}
+        target_states = {
+            s.state for s in workflow.states if frappe.utils.cint(s.doc_status) == target_docstatus
+        }
         # From the workflow definition; run_workflow still enforces the roles and conditions.
-        cancel_actions = [
+        workflow_actions = [
             {"action": t.action, "next_state": t.next_state, "allowed_role": t.allowed}
             for t in workflow.transitions
-            if t.state == current_state and t.next_state in cancelled_states
+            if t.state == current_state and t.next_state in target_states
         ]
         state_label = current_state or "no state set"
 
@@ -410,28 +428,46 @@ class DocumentAction(BaseTool):
             "success": False,
             "workflow": workflow_name,
             "workflow_state": current_state,
-            "workflow_cancel_actions": cancel_actions,
+            f"workflow_{action}_actions": workflow_actions,
         }
-        if cancel_actions:
-            actions = " or ".join(f"'{a['action']}'" for a in cancel_actions)
+        if workflow_actions:
+            actions = " or ".join(f"'{a['action']}'" for a in workflow_actions)
             result["error"] = (
-                f"{doc.doctype} has an active Workflow ('{workflow_name}'), so it cannot be cancelled directly."
+                f"{doc.doctype} has an active Workflow ('{workflow_name}'), so it cannot be {done} directly."
             )
             result["suggestion"] = (
                 f"Use run_workflow on {doc.doctype} '{doc.name}' with action {actions}. From its current "
-                f"state '{state_label}', that moves it to a cancelled state."
+                f"state '{state_label}', that moves it to a {done} state."
             )
         else:
             result["error"] = (
-                f"{doc.doctype} has an active Workflow ('{workflow_name}') with no cancel step from the "
-                f"document's current state '{state_label}', so it cannot be cancelled."
+                f"{doc.doctype} has an active Workflow ('{workflow_name}') with no {action} step from the "
+                f"document's current state '{state_label}', so it cannot be {done}."
             )
             result["suggestion"] = (
-                "Tell the user the workflow has no cancel step from this state. They should ask an "
-                "administrator to add a transition that cancels it from this state, or to deactivate "
-                "the workflow."
+                f"Tell the user the workflow has no {action} step from this state. They should ask an "
+                f"administrator to add a transition that leads to a {done} state from this one, or to "
+                "deactivate the workflow."
             )
         return result
+
+    @staticmethod
+    def _not_submittable(doctype: str, action: str) -> Dict[str, Any]:
+        """Refuse cancel or amend on a DocType that has no submitted state"""
+        done = {"cancel": "cancelled", "amend": "amended"}[action]
+        suggestion = {
+            "cancel": (
+                "There is nothing to cancel. Ask the user what they meant. If they want this record "
+                "out of use, check get_doctype_info for a field such as 'disabled' or 'status'. Do not "
+                "delete it unless they ask for that."
+            ),
+            "amend": "Amend only applies to cancelled documents. Edit this record with update_document instead.",
+        }[action]
+        return {
+            "success": False,
+            "error": f"{doctype} is not a submittable DocType, so its records cannot be {done}.",
+            "suggestion": suggestion,
+        }
 
     def _get_submitted_linked_docs(self, doc) -> List[Dict[str, str]]:
         """Submitted documents linked to `doc`, as Desk's "Cancel All" dialog lists them"""
@@ -472,6 +508,9 @@ class DocumentAction(BaseTool):
 
         if not frappe.db.exists(doctype, name):
             return {"success": False, "error": f"{doctype} '{name}' not found"}
+
+        if not frappe.get_meta(doctype).is_submittable:
+            return self._not_submittable(doctype, "amend")
 
         doc = frappe.get_doc(doctype, name)
         current_docstatus = getattr(doc, "docstatus", 0)
@@ -517,12 +556,21 @@ class DocumentAction(BaseTool):
         if amended_doc.meta.has_field("amendment_date"):
             amended_doc.amendment_date = frappe.utils.nowdate()
 
-        frappe.db.savepoint(_SAVEPOINT)
+        # copy_doc carries the cancelled workflow state over, and Frappe refuses a new document
+        # that starts anywhere but the workflow's first state. Desk resets it for a new document
+        # (workflow.js set_default_state); clearing it lets Frappe set that first state.
+        from frappe.model.workflow import get_workflow_name
+
+        if workflow_name := get_workflow_name(doctype):
+            state_field = frappe.db.get_value("Workflow", workflow_name, "workflow_state_field")
+            amended_doc.set(state_field or "workflow_state", None)
+
+        marks = open_savepoint(_SAVEPOINT)
         try:
             # Frappe names it from amended_from (e.g. '-1'), per Document Naming Settings.
             amended_doc.insert()
         except frappe.PermissionError as e:
-            _rollback_to_savepoint(doctype, name)
+            rollback_to_savepoint(_SAVEPOINT, marks, doctype, name)
             error_msg = exception_message(
                 e, _("Insufficient permission to amend {0} '{1}'").format(doctype, name)
             )
@@ -532,7 +580,7 @@ class DocumentAction(BaseTool):
             )
             return permission_error_result(doctype, error_msg, name)
         except Exception as e:
-            _rollback_to_savepoint(doctype, name)
+            rollback_to_savepoint(_SAVEPOINT, marks, doctype, name)
             error_msg = exception_message(e)
             frappe.log_error(
                 title=_("Document Amend Error"),
@@ -546,7 +594,7 @@ class DocumentAction(BaseTool):
                 "name": name,
                 "suggestion": "No amended draft was created. Tell the user the reason above.",
             }
-        _release_savepoint()
+        release_savepoint(_SAVEPOINT)
 
         return {
             "success": True,

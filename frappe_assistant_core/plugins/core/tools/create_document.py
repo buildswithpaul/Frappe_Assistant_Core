@@ -25,6 +25,14 @@ import frappe
 from frappe import _
 
 from frappe_assistant_core.core.base_tool import BaseTool, exception_message, permission_error_result
+from frappe_assistant_core.utils.savepoint import (
+    open_savepoint,
+    release_savepoint,
+    rollback_to_savepoint,
+)
+
+# The submit after a create runs inside this savepoint, so a refused submit leaves the draft.
+_SUBMIT_SAVEPOINT = "fac_create_document_submit"
 
 from .child_tables import ChildRowError, child_table_fields, normalize_child_rows, restricted_row_keys
 
@@ -78,7 +86,7 @@ class DocumentCreate(BaseTool):
                 "submit": {
                     "type": "boolean",
                     "default": False,
-                    "description": "Whether to submit the document after creation (for submittable doctypes like Sales Invoice). Use true only when explicitly requested.",
+                    "description": "Whether to submit the document after creation (for submittable doctypes like Sales Invoice). Use true only when explicitly requested. If the DocType has an active Workflow, the document is created as a draft instead; move it on with run_workflow.",
                 },
                 "validate_only": {
                     "type": "boolean",
@@ -274,18 +282,42 @@ class DocumentCreate(BaseTool):
             }
 
             # Submit if requested and allowed
-            if submit and doc.docstatus == 0:
+            from frappe.model.workflow import get_workflow_name
+
+            workflow_name = get_workflow_name(doctype) if submit and doc.docstatus == 0 else None
+            if workflow_name:
+                # Submitting directly skips the workflow's approval steps: Frappe validates the
+                # workflow before it sets the submitted state. The draft goes through run_workflow.
+                submit_error = (
+                    f"{doctype} has an active Workflow ('{workflow_name}'), so it is submitted "
+                    "through the workflow, not directly"
+                )
+                result["message"] = f"{doctype} '{doc.name}' created as draft. Not submitted: {submit_error}"
+                result["submit_error"] = submit_error
+                result["workflow"] = workflow_name
+                result["suggestion"] = (
+                    f"Use run_workflow on {doctype} '{doc.name}' to move it through its workflow."
+                )
+            elif submit and doc.docstatus == 0:
+                # Frappe writes docstatus=1 before on_submit, so without this a submit refused
+                # partway would be committed as a submitted document with half its postings,
+                # under a message that says it is a draft.
+                marks = open_savepoint(_SUBMIT_SAVEPOINT)
                 try:
                     doc.submit()
-                    result["submitted"] = True
-                    result["docstatus"] = 1
-                    result["message"] = f"{doctype} '{doc.name}' created and submitted successfully"
                 except Exception as e:
+                    rollback_to_savepoint(_SUBMIT_SAVEPOINT, marks, doctype, doc.name)
+                    doc.reload()
                     submit_error = exception_message(e)
                     result["message"] = (
                         f"{doctype} '{doc.name}' created as draft. Submit failed: {submit_error}"
                     )
                     result["submit_error"] = submit_error
+                else:
+                    release_savepoint(_SUBMIT_SAVEPOINT)
+                    result["submitted"] = True
+                    result["docstatus"] = 1
+                    result["message"] = f"{doctype} '{doc.name}' created and submitted successfully"
             else:
                 result["message"] = f"{doctype} '{doc.name}' created successfully as draft"
 
