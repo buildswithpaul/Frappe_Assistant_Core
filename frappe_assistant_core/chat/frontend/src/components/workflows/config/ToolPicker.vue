@@ -20,16 +20,16 @@
 				ref="searchInputRef"
 				v-model="toolSearch"
 				class="picker-search-input"
-				placeholder="Search tools..."
+				:placeholder="__('Search tools...')"
 			/>
 		</div>
 		<div class="picker-list">
 			<div v-if="isLoading" class="picker-status">
 				<div class="picker-spinner"></div>
-				Loading tools...
+				{{ __("Loading tools...") }}
 			</div>
 			<div v-else-if="filteredPickerTools.length === 0" class="picker-status">
-				{{ toolSearch.trim() ? "No tools match that search" : emptyMessage }}
+				{{ toolSearch.trim() ? __("No tools match that search") : emptyMessage || __("No tools found") }}
 			</div>
 			<template v-else>
 				<div v-for="group in filteredPickerTools" :key="group.server" class="picker-group">
@@ -43,6 +43,9 @@
 						@click="handleSelect(tool)"
 					>
 						<span class="picker-tool-name">{{ tool.original_name || tool.name }}</span>
+						<span v-if="tool.description" class="picker-tool-desc">{{
+							tool.description
+						}}</span>
 						<svg
 							v-if="isSelected(tool)"
 							class="picker-check"
@@ -68,6 +71,7 @@
 
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from "vue";
+import { __ } from "@/utils/i18n";
 import { toolKey } from "./toolDirectives";
 
 const props = defineProps({
@@ -77,7 +81,7 @@ const props = defineProps({
 	isLoading: { type: Boolean, default: false },
 	modelValue: { type: Boolean, default: false },
 	/** What "no tools" actually means here — a failure is not an empty toolbox. */
-	emptyMessage: { type: String, default: "No tools found" },
+	emptyMessage: { type: String, default: "" },
 });
 
 const emit = defineEmits(["update:modelValue", "select"]);
@@ -233,9 +237,11 @@ onUnmounted(() => document.removeEventListener("mousedown", handleClickOutside))
 }
 
 .picker-tool-btn {
+	position: relative;
 	display: flex;
-	align-items: center;
-	justify-content: space-between;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 0.125rem;
 	width: 100%;
 	padding: 0.375rem 0.625rem;
 	font-size: 0.8125rem;
@@ -258,12 +264,26 @@ onUnmounted(() => document.removeEventListener("mousedown", handleClickOutside))
 }
 
 .picker-tool-name {
+	max-width: 100%;
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
 }
 
+.picker-tool-desc {
+	display: -webkit-box;
+	-webkit-line-clamp: 2;
+	-webkit-box-orient: vertical;
+	overflow: hidden;
+	font-size: 0.6875rem;
+	color: var(--ql-text-muted);
+	text-align: left;
+}
+
 .picker-check {
+	position: absolute;
+	top: 0.5rem;
+	right: 0.625rem;
 	flex-shrink: 0;
 	color: var(--ql-success);
 }

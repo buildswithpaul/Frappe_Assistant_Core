@@ -328,9 +328,9 @@ export const useWorkflowStore = defineStore("workflows", () => {
 		}
 	}
 
-	async function runNode(workflowName, nodeId, inputText = "Test input", userId = null) {
+	async function runNode(workflowName, nodeId, inputText = "Test input") {
 		try {
-			return await api.workflows.runNode(workflowName, nodeId, inputText, userId);
+			return await api.workflows.runNode(workflowName, nodeId, inputText);
 		} catch (err) {
 			return { status: "Failed", error_message: err.message };
 		}

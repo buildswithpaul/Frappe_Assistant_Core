@@ -116,7 +116,7 @@ const props = defineProps({
 const emit = defineEmits(["update", "delete", "close", "request-save"]);
 
 const userStore = useUserStore();
-const { user, isAdmin } = storeToRefs(userStore);
+const { isAdmin } = storeToRefs(userStore);
 const workflowStore = useWorkflowStore();
 const {
 	availableModels: models,
@@ -218,7 +218,7 @@ function handleAgentUpdate(data) {
 async function executeRunNode(nodeId, inputText) {
 	const wfName = currentWorkflow.value?.name;
 	if (!wfName) return;
-	return workflowStore.runNode(wfName, nodeId, inputText, user.value);
+	return workflowStore.runNode(wfName, nodeId, inputText);
 }
 
 function waitForSave() {

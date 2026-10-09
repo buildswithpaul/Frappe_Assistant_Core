@@ -4,18 +4,23 @@ import { setActivePinia, createPinia } from "pinia";
 
 const listTools = vi.fn();
 const resolveWorkflowTools = vi.fn();
+const runNode = vi.fn();
 
 vi.mock("@/api/client", () => ({
 	api: {
 		user: { listTools: (...a) => listTools(...a) },
 		models: { getAvailable: vi.fn().mockResolvedValue({ models: [] }) },
-		workflows: { resolveWorkflowTools: (...a) => resolveWorkflowTools(...a) },
+		workflows: {
+			resolveWorkflowTools: (...a) => resolveWorkflowTools(...a),
+			runNode: (...a) => runNode(...a),
+		},
 	},
 }));
 
 import NodeConfigPanel from "./NodeConfigPanel.vue";
 import { useUserStore } from "@/stores/userStore";
 import { useWorkflowStore } from "@/stores/workflowStore";
+import NodeRunSection from "./NodeRunSection.vue";
 import { getDefaultConfig } from "./graphUtils";
 
 const node = (type, config = {}) => ({
@@ -157,5 +162,16 @@ describe("NodeConfigPanel", () => {
 		await flushPromises();
 		expect(listTools).toHaveBeenCalledWith(null);
 		expect(resolveWorkflowTools).toHaveBeenCalledWith([{ tool_name: "x" }], null);
+	});
+
+	it("a single-node run never names the person at the keyboard", async () => {
+		runNode.mockReset().mockResolvedValue({ status: "Completed" });
+		// userStore.user is what loadUser sets from the session; the run must ignore it.
+		const w = mountPanel(node("transform", { user_id: "sales@example.com" }), { admin: true });
+		useUserStore().user = "admin@example.com";
+		await flushPromises();
+		await w.findComponent(NodeRunSection).props("runNode")("transform_1", "hi");
+		expect(runNode).toHaveBeenCalledWith("WF-1", "transform_1", "hi");
+		expect(runNode.mock.calls[0]).toHaveLength(3);
 	});
 });

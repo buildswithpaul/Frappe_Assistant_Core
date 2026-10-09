@@ -155,6 +155,18 @@ const AUTH_ERROR_CODES = new Set([
 	"AUTH_FAILED",
 ]);
 
+/** Per-server failures from list_user_tools, readable even when other servers answered. */
+export function serverFailures(result) {
+	const errors = Array.isArray(result?.errors) ? result.errors : [];
+	return errors
+		.filter((e) => e && typeof e === "object")
+		.map((e) => ({
+			server: e.server || "",
+			message: e.error || e.message || "",
+			needsReconnect: AUTH_ERROR_CODES.has(e.error_code),
+		}));
+}
+
 /** Server names whose failure was an authentication problem. */
 export function serversNeedingReconnect(result) {
 	const errors = Array.isArray(result?.errors) ? result.errors : [];

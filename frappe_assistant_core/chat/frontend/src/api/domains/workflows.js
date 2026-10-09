@@ -153,12 +153,11 @@ export const workflows = {
 			default_user_id: defaultUserId,
 		}),
 
-	runNode: (name, nodeId, inputText = "Test input", userId = null) =>
+	runNode: (name, nodeId, inputText = "Test input") =>
 		baseCall("frappe_assistant_core.chat.api.run_workflow_node", {
 			name,
 			node_id: nodeId,
 			input_text: inputText,
-			user_id: userId,
 		}),
 
 	// Event-trigger APIs
