@@ -108,3 +108,65 @@ class TestTriggerTestWithARealDocument(BaseAssistantTest):
     def test_unknown_document_is_an_error(self):
         with self.assertRaises(frappe.DoesNotExistError):
             test_trigger_endpoint(trigger_name=self.trigger_name, reference_docname="TODO-DOES-NOT-EXIST")
+
+
+class TestTriggerTestUnderUserPermissions(BaseAssistantTest):
+    """A System Manager restricted by a User Permission must still get a usable Test."""
+
+    RESTRICTED = "fac-trigger-restricted@example.com"
+
+    def setUp(self):
+        super().setUp()
+        # nosemgrep: frappe-setuser — test bootstrap; isolated transaction
+        frappe.set_user("Administrator")
+        if not frappe.db.exists("User", self.RESTRICTED):
+            frappe.get_doc(
+                {
+                    "doctype": "User",
+                    "email": self.RESTRICTED,
+                    "first_name": "Restricted",
+                    "send_welcome_email": 0,
+                    "roles": [{"role": "System Manager"}],
+                }
+            ).insert()
+        self.readable = frappe.get_doc({"doctype": "ToDo", "description": "readable-by-restricted"}).insert()
+        # Production reaches this on any multi-company site: an admin is given a
+        # User Permission (usually on Company) and every document outside it
+        # becomes unreadable. Allowing the doctype itself is the same mechanism
+        # with a field-free fixture: only the allowed document is readable.
+        frappe.get_doc(
+            {
+                "doctype": "User Permission",
+                "user": self.RESTRICTED,
+                "allow": "ToDo",
+                "for_value": self.readable.name,
+            }
+        ).insert()
+        # Created after, so it is the most recent document of the type.
+        self.hidden = frappe.get_doc({"doctype": "ToDo", "description": "hidden-from-restricted"}).insert()
+        self.trigger_name = create_trigger(
+            title="Restricted probe",
+            workflow_name="Filter Probe",
+            reference_doctype="ToDo",
+            doctype_event="on_update",
+            workflow_docname=DOCNAME,
+        )["name"]
+        # nosemgrep: frappe-setuser — the point of the test is the restricted session
+        frappe.set_user(self.RESTRICTED)
+
+    def tearDown(self):
+        # nosemgrep: frappe-setuser — restore the bootstrap user
+        frappe.set_user("Administrator")
+        super().tearDown()
+
+    def test_no_docname_picks_a_document_the_user_can_read(self):
+        result = test_trigger_endpoint(trigger_name=self.trigger_name)
+
+        self.assertEqual(result["sample_doc"], self.readable.name)
+        self.assertIsNotNone(result["payload"])
+
+    def test_unreadable_named_document_gets_a_friendly_message(self):
+        result = test_trigger_endpoint(trigger_name=self.trigger_name, reference_docname=self.hidden.name)
+
+        self.assertIsNone(result["payload"])
+        self.assertIn(self.hidden.name, result["message"])

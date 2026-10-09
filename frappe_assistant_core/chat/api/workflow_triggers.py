@@ -409,7 +409,9 @@ def test_trigger(trigger_name: str, reference_docname: str | None = None) -> dic
             )
         sample_name = reference_docname
     else:
-        latest = frappe.get_all(doctype, fields=["name"], order_by="modified desc", limit=1)
+        # get_list, not get_all: the sample must be one this admin can read, or a
+        # User Permission (common on multi-company sites) makes Test fail below.
+        latest = frappe.get_list(doctype, fields=["name"], order_by="modified desc", limit=1)
         if not latest:
             return {
                 "payload": None,
@@ -418,7 +420,11 @@ def test_trigger(trigger_name: str, reference_docname: str | None = None) -> dic
         sample_name = latest[0].name
 
     doc = frappe.get_doc(doctype, sample_name)
-    doc.check_permission("read")
+    if not doc.has_permission("read"):
+        return {
+            "payload": None,
+            "message": _("You cannot read {0} {1}.").format(_(doctype), sample_name),
+        }
 
     failing = first_failing_filter(doc.as_dict(), trigger.filters or [])
     return {
