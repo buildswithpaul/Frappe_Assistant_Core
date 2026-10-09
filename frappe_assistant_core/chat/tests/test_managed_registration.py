@@ -22,8 +22,9 @@ class TestManagedRegistration(BaseAssistantTest):
     def test_registration_marks_the_server_managed(self):
         from frappe_assistant_core.chat.api import auth
 
+        user = self.make_throwaway_user("managed-reg")
         client = MagicMock()
-        client.register_user.return_value = {"user_id": "user@example.com"}
+        client.register_user.return_value = {"user_id": user}
         client.add_user_mcp_server.return_value = {"success": True}
 
         with (
@@ -41,7 +42,7 @@ class TestManagedRegistration(BaseAssistantTest):
                 },
             ),
         ):
-            auth._register_user_with_ar("user@example.com")
+            auth._register_user_with_ar(user)
 
         self.assertIs(client.add_user_mcp_server.call_args.kwargs.get("managed"), True)
 

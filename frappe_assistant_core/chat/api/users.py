@@ -255,6 +255,13 @@ def add_user(user_id: str | None = None):
     if not frappe.db.exists("User", user_id):
         return {"success": False, "error": _("User {0} does not exist").format(user_id)}
 
+    from .auth import _require_assistant_enabled
+
+    try:
+        _require_assistant_enabled(user_id)
+    except frappe.ValidationError as e:
+        return {"success": False, "error": str(e)}
+
     try:
         from frappe_assistant_core.chat.fac_cloud_client import get_fac_cloud_client
 
@@ -449,6 +456,17 @@ def invite_user(user_id: str | None = None, user_role: str | None = None):
 
     if not user_id:
         return {"success": False, "error": _("User ID is required")}
+
+    # An invite reserves a billed seat now, so it is refused for the same
+    # reason a direct add is. An invitee with no User here yet is checked when
+    # they first connect.
+    from .auth import _require_assistant_enabled
+
+    if frappe.db.exists("User", user_id):
+        try:
+            _require_assistant_enabled(user_id)
+        except frappe.ValidationError as e:
+            return {"success": False, "error": str(e)}
 
     try:
         from frappe_assistant_core.chat.fac_cloud_client import get_fac_cloud_client

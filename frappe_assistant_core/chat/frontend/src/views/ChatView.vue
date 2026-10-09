@@ -70,6 +70,7 @@
 				>
 					<ChatStagePicker
 						:registration-status="registrationStatus"
+						:access-reason-code="accessReasonCode"
 						:is-admin="isAdmin"
 						:needs-user-setup="needsUserSetup"
 						:is-user-setup-complete="isUserSetupComplete"
@@ -300,6 +301,7 @@ const {
 
 const {
 	registrationStatus,
+	accessReasonCode,
 	isAdmin,
 	needsUserSetup,
 	needsReconnect,

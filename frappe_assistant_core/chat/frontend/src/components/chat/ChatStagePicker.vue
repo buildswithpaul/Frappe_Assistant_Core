@@ -12,6 +12,7 @@
 			registrationStatus === 'no_role' ||
 			(registrationStatus === 'ready' && needsUserSetup && userNotRegistered)
 		"
+		:reason-code="accessReasonCode"
 	/>
 
 	<!-- AR is refusing gated features (chat AND models) until the tenant
@@ -93,6 +94,7 @@ const WelcomeScreen = defineAsyncComponent(() => import("@/components/chat/Welco
 
 defineProps({
 	registrationStatus: { type: String, required: true },
+	accessReasonCode: { type: String, default: null },
 	isAdmin: { type: Boolean, default: false },
 	needsUserSetup: { type: Boolean, default: false },
 	isUserSetupComplete: { type: Boolean, default: false },

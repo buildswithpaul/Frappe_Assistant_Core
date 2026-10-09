@@ -561,3 +561,44 @@ class TestAccessGate(BaseAssistantTest):
 
         self.assertTrue(result, "unexpected exception must fail OPEN (grant), not lock out")
         self.assertTrue(mock_log.called, "the failure must be logged")
+
+    def _switch_off_assistant_access(self, email):
+        # How production gets here: an admin unticks Enable Assistant Access on
+        # the User form after the user was seated.
+        u = frappe.get_doc("User", email)
+        u.assistant_enabled = 0
+        u.save(ignore_permissions=True)
+
+    def test_seated_member_with_assistant_access_off_is_turned_away(self):
+        """A seat does not open the MCP endpoint. Letting this member into chat
+        made every load call FAC Cloud, which called back into a 403."""
+        email = self._make_user("gate_access_off@example.com", roles=["Purchase Manager"])
+        self._switch_off_assistant_access(email)
+        frappe.set_user(email)
+        from frappe_assistant_core.chat.api.settings.access import can_use_faco
+
+        try:
+            with self._reach_membership_check(is_member=True):
+                result = can_use_faco()
+        finally:
+            frappe.set_user("Administrator")
+
+        self.assertFalse(result["can_use"])
+        self.assertEqual(result["status"], "no_role")
+        self.assertEqual(result["reason_code"], "assistant_disabled")
+        self.assertFalse(result["show_widget"])
+
+    def test_seated_member_with_assistant_access_on_gets_no_reason_code(self):
+        """New users read the field's default, which is on."""
+        email = self._make_user("gate_access_on@example.com", roles=["Purchase Manager"])
+        frappe.set_user(email)
+        from frappe_assistant_core.chat.api.settings.access import can_use_faco
+
+        try:
+            with self._reach_membership_check(is_member=True):
+                result = can_use_faco()
+        finally:
+            frappe.set_user("Administrator")
+
+        self.assertTrue(result["can_use"])
+        self.assertNotIn("reason_code", result)

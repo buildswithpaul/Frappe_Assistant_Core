@@ -2,6 +2,7 @@ import { defineStore } from "pinia";
 import { ref, computed } from "vue";
 import { api } from "@/api/client";
 import { logger } from "@/utils/logger";
+import { siteRefusal } from "@/utils/siteRefusal";
 
 export const useUserStore = defineStore("user", () => {
 	// State
@@ -14,6 +15,9 @@ export const useUserStore = defineStore("user", () => {
 	// to track it separately. Null until loaded, or when AR is unreachable.
 	const myCreditStatus = ref(null);
 	const registrationStatus = ref("checking"); // checking | ready | not_registered | no_role | disabled | error
+	// Why no_role was answered: null for want of a seat, "assistant_disabled"
+	// when the user is seated but their Enable Assistant Access is off.
+	const accessReasonCode = ref(null);
 	// The FAC Connect endpoint URL, for pointing Claude Desktop/Cursor/other MCP
 	// clients at this ERP. Sourced from initialize_spa's access payload.
 	const mcpEndpointUrl = ref("");
@@ -109,6 +113,7 @@ export const useUserStore = defineStore("user", () => {
 				user.value = result.user;
 				isAdmin.value = result.is_admin || false;
 				registrationStatus.value = result.status || "ready";
+				accessReasonCode.value = result.reason_code || null;
 			}
 		} catch (err) {
 			logger.error("Failed to load user:", err);
@@ -146,6 +151,7 @@ export const useUserStore = defineStore("user", () => {
 			const result = await api.user.getCurrent();
 			if (result) {
 				registrationStatus.value = result.status || "ready";
+				accessReasonCode.value = result.reason_code || null;
 				isAdmin.value = result.is_admin || false;
 			}
 		} catch (err) {
@@ -260,6 +266,12 @@ export const useUserStore = defineStore("user", () => {
 			const result = await api.user.connectFACServer();
 
 			if (result.success) {
+				// Held at setup with the site's own reason, rather than let
+				// into a chat whose every message the site will refuse.
+				const refusal = await siteRefusal();
+				if (refusal) {
+					return { success: false, error: refusal, tenantOwnerUserId: null };
+				}
 				// Refresh auth status
 				await checkUserAuth();
 				return { success: true, message: result.message };
@@ -381,6 +393,7 @@ export const useUserStore = defineStore("user", () => {
 			user.value = access.user;
 			isAdmin.value = access.is_admin || false;
 			registrationStatus.value = access.status || "ready";
+			accessReasonCode.value = access.reason_code || null;
 			mcpEndpointUrl.value = access.mcp_endpoint_url || "";
 
 			// Hydrate quota
@@ -458,6 +471,7 @@ export const useUserStore = defineStore("user", () => {
 		quotaInfo,
 		myCreditStatus,
 		registrationStatus,
+		accessReasonCode,
 		mcpEndpointUrl,
 		userAuthStatus,
 		mcpServers,

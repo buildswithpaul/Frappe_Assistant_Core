@@ -91,6 +91,8 @@ class TestNoSeatIsCreatedForAPlaceholder(BaseAssistantTest):
         """The guard must not stand between ordinary staff and a seat."""
         from frappe_assistant_core.chat.api import auth
 
+        # Self-connect runs as the logged-in user, so a User row always exists.
+        user = self.make_throwaway_user("real-address")
         client = MagicMock()
         client.register_user.return_value = {"user_id": "hari@promantia.com"}
         client.add_user_mcp_server.return_value = {"success": True}
@@ -107,7 +109,7 @@ class TestNoSeatIsCreatedForAPlaceholder(BaseAssistantTest):
         ), patch.object(auth, "_get_user_context", return_value={}), patch.object(
             auth, "_get_or_create_ar_oauth_client", return_value=MagicMock()
         ), patch.object(auth, "_generate_oauth_tokens_for_user", return_value=tokens):
-            result = auth._register_user_with_ar("hari@promantia.com")
+            result = auth._register_user_with_ar(user)
 
         self.assertTrue(result["success"])
         client.register_user.assert_called_once()
