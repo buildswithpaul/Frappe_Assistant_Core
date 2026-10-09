@@ -13,6 +13,12 @@ const RUN_POLL_INTERVAL_MS = 2000;
 // forever. The engine's own ceiling is timeout_seconds; this is the backstop.
 const RUN_POLL_MAX_MS = 30 * 60 * 1000;
 
+// Scheduled and triggered runs start on the server; an open builder notices them
+// by asking for the newest run. AR's workflow_progress socket event is emitted on
+// the AR site, which the tenant SPA never connects to.
+const LATEST_RUN_POLL_MS = 10000;
+const LIVE_RUN_STATUSES = new Set(["Queued", "Running"]);
+
 export const useWorkflowStore = defineStore("workflows", () => {
 	// List state
 	const workflows = ref([]);
@@ -47,6 +53,7 @@ export const useWorkflowStore = defineStore("workflows", () => {
 	// and left the toolbar disabled for the rest of the session.
 	let pollTimer = null;
 	let pollStartedAt = 0;
+	let latestRunTimer = null;
 
 	// Cached data for config panel
 	const availableModels = ref([]);
@@ -213,6 +220,34 @@ export const useWorkflowStore = defineStore("workflows", () => {
 		if (pollTimer) {
 			clearInterval(pollTimer);
 			pollTimer = null;
+		}
+	}
+
+	function watchLatestRun(workflowName) {
+		stopWatchingLatestRun();
+		if (!workflowName) return;
+		const timer = setInterval(async () => {
+			if (activeRunName.value) return;
+			if (typeof document !== "undefined" && document.hidden) return;
+			try {
+				const result = await api.workflows.listRuns(workflowName, null, 0, 1);
+				const newest = result?.runs?.[0];
+				if (latestRunTimer !== timer || activeRunName.value) return;
+				if (!newest || !LIVE_RUN_STATUSES.has(newest.status)) return;
+				activeRunName.value = newest.name;
+				isRunning.value = true;
+				startRunPolling(newest.name);
+			} catch {
+				// A missed tick is retried on the next one.
+			}
+		}, LATEST_RUN_POLL_MS);
+		latestRunTimer = timer;
+	}
+
+	function stopWatchingLatestRun() {
+		if (latestRunTimer) {
+			clearInterval(latestRunTimer);
+			latestRunTimer = null;
 		}
 	}
 
@@ -608,6 +643,7 @@ export const useWorkflowStore = defineStore("workflows", () => {
 	}
 
 	function clearCurrentWorkflow() {
+		stopWatchingLatestRun();
 		stopRunPolling();
 		currentWorkflow.value = null;
 		isDirty.value = false;
@@ -651,43 +687,6 @@ export const useWorkflowStore = defineStore("workflows", () => {
 		}
 		await loadWorkflows(statusFilter.value, currentPage.value);
 		return created;
-	}
-
-	// Handle realtime progress events
-	function handleRunProgress(data) {
-		if (!currentRun.value) return;
-
-		if (
-			data.type === "node_started" ||
-			data.type === "node_completed" ||
-			data.type === "node_failed"
-		) {
-			// Update current run's node_runs
-			if (currentRun.value.node_runs) {
-				const existing = currentRun.value.node_runs.find(
-					(n) => n.node_id === data.node_id
-				);
-				if (existing) {
-					Object.assign(existing, data);
-				} else {
-					currentRun.value.node_runs.push(data);
-				}
-			}
-			if (data.type === "node_started") {
-				currentRun.value.current_node = data.node_id;
-			}
-			if (data.type === "node_completed") {
-				currentRun.value.completed_nodes = (currentRun.value.completed_nodes || 0) + 1;
-			}
-		}
-
-		if (data.type === "run_completed" || data.type === "run_failed") {
-			currentRun.value.status = data.type === "run_completed" ? "Completed" : "Failed";
-			isRunning.value = false;
-			isCancelling.value = false;
-			activeRunName.value = null;
-			stopRunPolling();
-		}
 	}
 
 	return {
@@ -754,6 +753,8 @@ export const useWorkflowStore = defineStore("workflows", () => {
 		loadRun,
 		startRunPolling,
 		stopRunPolling,
+		watchLatestRun,
+		stopWatchingLatestRun,
 		cancelRun,
 		setSchedule,
 		validateGraph,
@@ -776,6 +777,5 @@ export const useWorkflowStore = defineStore("workflows", () => {
 		markDirty,
 		markClean,
 		clearCurrentWorkflow,
-		handleRunProgress,
 	};
 });

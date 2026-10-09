@@ -146,7 +146,6 @@ import MobileGate from "@/components/workflows/MobileGate.vue";
 import NodePalette from "@/components/workflows/NodePalette.vue";
 import WorkflowCanvas from "@/components/workflows/builder/WorkflowCanvas.vue";
 import BuilderRightRail from "@/components/workflows/builder/BuilderRightRail.vue";
-import { useWorkflowRealtime } from "@/composables/useWorkflowRealtime";
 import { useIsMobile } from "@/composables/useIsMobile";
 import { useUnsavedGuard } from "@/composables/useUnsavedGuard";
 import { useWorkflowLoader } from "@/composables/useWorkflowLoader";
@@ -220,7 +219,6 @@ function currentGraphJson() {
 	return vueFlowToGraphJson(nodes.value, edges.value, globalSettings.value);
 }
 
-useWorkflowRealtime(workflowId);
 const { isMobile } = useIsMobile();
 useUnsavedGuard(isDirty);
 
@@ -346,6 +344,7 @@ useBuilderShortcuts({
 });
 
 onMounted(async () => {
+	workflowStore.watchLatestRun(workflowId.value);
 	await loadCurrentWorkflow();
 	resetHistory();
 	if (wasRelaidOut.value) {

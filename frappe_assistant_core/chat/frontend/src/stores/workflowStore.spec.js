@@ -269,3 +269,65 @@ describe("workflowStore tool inventory", () => {
 		expect(store.availableTools[0].name).toBe("second");
 	});
 });
+
+describe("workflowStore.watchLatestRun", () => {
+	let store;
+
+	beforeEach(() => {
+		vi.useFakeTimers();
+		setActivePinia(createPinia());
+		store = useWorkflowStore();
+		for (const fn of Object.values(workflowsApi)) fn.mockReset();
+	});
+
+	afterEach(() => {
+		store.clearCurrentWorkflow();
+		vi.useRealTimers();
+	});
+
+	it("picks up a scheduled run that started while the builder was open", async () => {
+		workflowsApi.listRuns.mockResolvedValue({
+			runs: [{ name: "R9", status: "Running", trigger_type: "scheduled" }],
+			total: 1,
+		});
+		workflowsApi.getRun.mockResolvedValue({ name: "R9", status: "Running" });
+
+		store.watchLatestRun("WF-1");
+		await vi.advanceTimersByTimeAsync(10000);
+
+		expect(workflowsApi.listRuns).toHaveBeenCalledWith("WF-1", null, 0, 1);
+		expect(store.activeRunName).toBe("R9");
+		expect(store.isRunning).toBe(true);
+		await vi.advanceTimersByTimeAsync(2000);
+		expect(workflowsApi.getRun).toHaveBeenCalledWith("R9");
+	});
+
+	it("ignores a finished newest run", async () => {
+		workflowsApi.listRuns.mockResolvedValue({ runs: [{ name: "R8", status: "Completed" }], total: 1 });
+		store.watchLatestRun("WF-1");
+		await vi.advanceTimersByTimeAsync(10000);
+		expect(store.isRunning).toBe(false);
+	});
+
+	it("stops when the builder closes", async () => {
+		workflowsApi.listRuns.mockResolvedValue({ runs: [], total: 0 });
+		store.watchLatestRun("WF-1");
+		store.clearCurrentWorkflow();
+		await vi.advanceTimersByTimeAsync(30000);
+		expect(workflowsApi.listRuns).not.toHaveBeenCalled();
+	});
+
+	it("drops a poll answered after the builder closed", async () => {
+		let answerList;
+		workflowsApi.listRuns.mockReturnValue(new Promise((resolve) => (answerList = resolve)));
+		store.watchLatestRun("WF-1");
+		await vi.advanceTimersByTimeAsync(10000);
+
+		store.clearCurrentWorkflow();
+		answerList({ runs: [{ name: "R9", status: "Running" }], total: 1 });
+		await vi.advanceTimersByTimeAsync(0);
+
+		expect(store.activeRunName).toBeNull();
+		expect(store.isRunning).toBe(false);
+	});
+});
