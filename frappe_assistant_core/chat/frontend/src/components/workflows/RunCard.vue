@@ -6,9 +6,7 @@
 	>
 		<!-- Header row: status + time -->
 		<div class="run-header">
-			<span class="status-badge" :class="statusClass(run.status)">
-				{{ run.status }}
-			</span>
+			<span class="status-badge" :class="badge.cls">{{ badge.text }}</span>
 			<span class="run-time">{{ relativeTime(run.started_at || run.creation) }}</span>
 		</div>
 
@@ -68,42 +66,14 @@
 						d="M13 10V3L4 14h7v7l9-11h-7z"
 					/>
 				</svg>
-				{{ formatCredits(run.total_credits_used) }} credits
+				{{ __("{0} credits", [formatCredits(run.total_credits_used)]) }}
 			</span>
 			<span v-if="run.trigger_type" class="meta-item trigger-badge">
 				{{ triggerLabel(run.trigger_type) }}
 			</span>
 		</div>
 
-		<!-- Expanded details -->
-		<div v-if="isExpanded && expandedData" class="run-details" @click.stop>
-			<div class="details-divider"></div>
-
-			<!-- Result: the final output node's text is the run's summary -->
-			<div v-if="renderedResult" class="run-result">
-				<div class="result-label">Result</div>
-				<div class="result-body markdown-body" v-html="renderedResult"></div>
-			</div>
-
-			<!-- Error details if no nodes ran -->
-			<div
-				v-if="expandedData.error_message && !expandedData.node_runs?.length"
-				class="detail-error-full"
-			>
-				{{ expandedData.error_message }}
-			</div>
-
-			<!-- Node runs -->
-			<RunNodeDetail
-				v-for="nr in expandedData.node_runs || []"
-				:key="nr.node_id"
-				:node-run="nr"
-			/>
-
-			<div v-if="!expandedData.node_runs?.length" class="no-nodes-msg">
-				No nodes were executed in this run.
-			</div>
-		</div>
+		<RunCardDetails v-if="isExpanded && expandedData" :run="expandedData" @click.stop />
 
 		<!-- Expand indicator -->
 		<div v-if="!isExpanded" class="expand-hint">
@@ -121,9 +91,16 @@
 
 <script setup>
 import { computed } from "vue";
-import { marked } from "marked";
-import DOMPurify from "dompurify";
-import RunNodeDetail from "./RunNodeDetail.vue";
+import { __ } from "@/utils/i18n";
+import RunCardDetails from "./runs/RunCardDetails.vue";
+import {
+	formatCredits,
+	formatDuration,
+	relativeTime,
+	runBadge,
+	triggerLabel,
+	truncate,
+} from "./runs/runFormat";
 
 const props = defineProps({
 	run: { type: Object, required: true },
@@ -131,13 +108,15 @@ const props = defineProps({
 	expandedData: { type: Object, default: null },
 });
 
-const renderedResult = computed(() => {
-	const data = props.expandedData;
-	if (!data || data.status !== "Completed" || !data.output_data) return "";
-	return DOMPurify.sanitize(marked.parse(data.output_data));
-});
-
 defineEmits(["toggle"]);
+
+const badge = computed(() =>
+	runBadge(
+		props.run.status === props.expandedData?.status
+			? { ...props.run, ...props.expandedData }
+			: props.run
+	)
+);
 
 const progressPercent = computed(() => {
 	if (!props.run.total_nodes) return 0;
@@ -147,60 +126,10 @@ const progressPercent = computed(() => {
 const progressClass = computed(() => {
 	const s = props.run.status?.toLowerCase();
 	if (s === "completed") return "fill-success";
-	if (s === "failed") return "fill-danger";
+	if (s === "failed" || s === "timed out") return "fill-danger";
 	if (s === "running") return "fill-active";
 	return "fill-muted";
 });
-
-function statusClass(status) {
-	const s = status?.toLowerCase();
-	if (s === "completed") return "badge-success";
-	if (s === "running") return "badge-running";
-	if (s === "queued") return "badge-queued";
-	if (s === "failed") return "badge-danger";
-	if (s === "cancelled") return "badge-warning";
-	if (s === "pending") return "badge-queued";
-	if (s === "skipped") return "badge-queued";
-	return "";
-}
-
-function triggerLabel(type) {
-	const labels = { manual: "Manual", scheduled: "Scheduled", api: "API" };
-	return labels[type] || type;
-}
-
-function relativeTime(dateStr) {
-	if (!dateStr) return "";
-	const diff = Date.now() - new Date(dateStr).getTime();
-	const mins = Math.floor(diff / 60000);
-	if (mins < 1) return "Just now";
-	if (mins < 60) return `${mins}m ago`;
-	const hrs = Math.floor(mins / 60);
-	if (hrs < 24) return `${hrs}h ago`;
-	const days = Math.floor(hrs / 24);
-	return `${days}d ago`;
-}
-
-function formatDuration(ms) {
-	if (!ms) return "";
-	if (ms < 1000) return `${ms}ms`;
-	if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
-	const m = Math.floor(ms / 60000);
-	const s = Math.round((ms % 60000) / 1000);
-	return `${m}m ${s}s`;
-}
-
-function formatCredits(credits) {
-	if (!credits) return "";
-	if (credits < 0.01) return credits.toFixed(4);
-	if (credits < 1) return credits.toFixed(2);
-	return credits.toFixed(1);
-}
-
-function truncate(text, len) {
-	if (!text) return "";
-	return text.length > len ? text.slice(0, len) + "..." : text;
-}
 </script>
 
 <style scoped>
@@ -246,8 +175,8 @@ function truncate(text, len) {
 }
 
 .badge-success {
-	background: rgba(34, 197, 94, 0.15);
-	color: #22c55e;
+	background: color-mix(in srgb, var(--ql-success) 15%, transparent);
+	color: var(--ql-success);
 }
 .badge-running {
 	background: var(--ql-accent-soft);
@@ -258,12 +187,17 @@ function truncate(text, len) {
 	color: var(--ql-text-muted);
 }
 .badge-danger {
-	background: rgba(239, 68, 68, 0.15);
-	color: #ef4444;
+	background: color-mix(in srgb, var(--ql-danger) 15%, transparent);
+	color: var(--ql-danger);
 }
 .badge-warning {
-	background: rgba(245, 158, 11, 0.15);
-	color: #f59e0b;
+	background: color-mix(in srgb, var(--ql-warning) 16%, transparent);
+	color: var(--ql-warning);
+}
+.badge-timeout {
+	background: color-mix(in srgb, var(--ql-danger) 10%, transparent);
+	color: var(--ql-warning);
+	border: 1px solid color-mix(in srgb, var(--ql-warning) 40%, transparent);
 }
 
 /* Error message */
@@ -386,77 +320,7 @@ function truncate(text, len) {
 	opacity: 0.6;
 }
 
-/* Expanded details */
-.details-divider {
-	height: 1px;
-	background: var(--ql-border);
-	margin: 0.5rem 0;
-}
-
-.detail-error-full {
-	font-size: 0.75rem;
-	color: #fca5a5;
-	line-height: 1.4;
-	padding: 0.5rem;
-	background: rgba(239, 68, 68, 0.06);
-	border-radius: 0.25rem;
-	word-break: break-word;
-	margin-bottom: 0.5rem;
-}
-
-.run-result {
-	margin-bottom: 0.5rem;
-}
-
-.result-label {
-	font-size: 0.625rem;
-	font-weight: 600;
-	text-transform: uppercase;
-	letter-spacing: 0.04em;
-	color: var(--ql-text-muted);
-	margin-bottom: 0.25rem;
-}
-
-.result-body {
-	font-size: 0.75rem;
-	line-height: 1.5;
-	color: var(--ql-text);
-	background: var(--ql-bg-subtle, rgba(0, 0, 0, 0.03));
-	border-radius: 0.25rem;
-	padding: 0.5rem 0.625rem;
-	max-height: 280px;
-	overflow-y: auto;
-	word-break: break-word;
-}
-
-.result-body :deep(p) {
-	margin: 0 0 0.5em;
-}
-
-.result-body :deep(p:last-child) {
-	margin-bottom: 0;
-}
-
-.result-body :deep(table) {
-	border-collapse: collapse;
-	font-size: 0.6875rem;
-}
-
-.result-body :deep(td),
-.result-body :deep(th) {
-	border: 1px solid var(--ql-border);
-	padding: 0.125rem 0.375rem;
-}
-
 .credit-item {
 	color: #a78bfa;
-}
-
-.no-nodes-msg {
-	font-size: 0.75rem;
-	color: var(--ql-text-muted);
-	text-align: center;
-	padding: 0.75rem 0;
-	opacity: 0.7;
 }
 </style>

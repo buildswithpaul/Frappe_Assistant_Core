@@ -18,6 +18,7 @@ const COMPONENTS = import.meta.glob(
 		"./toolbar/*.vue",
 		"./nodes/*.vue",
 		"./triggers/*.vue",
+		"./runs/*.vue",
 		"../../views/WorkflowBuilder.vue",
 		"../../views/WorkflowList.vue",
 	],
