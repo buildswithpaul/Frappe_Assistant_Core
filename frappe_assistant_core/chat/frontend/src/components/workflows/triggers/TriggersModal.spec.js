@@ -19,6 +19,7 @@ const { triggers } = vi.hoisted(() => ({
 		delete: vi.fn(),
 		getDoctypeFields: vi.fn(),
 		listDoctypes: vi.fn(),
+		log: vi.fn(),
 	},
 }));
 
@@ -85,6 +86,18 @@ describe("TriggersModal test results", () => {
 		resolve(RESULT);
 		await flushPromises();
 		expect(w.text()).not.toContain("SO-0007");
+	});
+
+	it("opens the run a firing started and closes the modal", async () => {
+		triggers.log.mockResolvedValue({
+			logs: [{ name: "L1", status: "dispatched", fac_cloud_run_id: "WFR-00012" }],
+		});
+		const w = await mountModal();
+		await w.get('button[title="View log"]').trigger("click");
+		await flushPromises();
+		await w.get('[data-test="open-run"]').trigger("click");
+		expect(w.emitted("open-run")[0]).toEqual(["WFR-00012"]);
+		expect(w.emitted("update:modelValue").at(-1)).toEqual([false]);
 	});
 
 	it("keeps a spinner per card when two tests run at once", async () => {

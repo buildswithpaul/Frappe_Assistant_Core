@@ -64,6 +64,7 @@
 					:trigger-name="logTarget?.name"
 					:trigger-title="logTarget?.title"
 					@back="closeLog"
+					@open-run="openRun"
 				/>
 
 				<div v-if="!showEditor && !showLog" class="modal-actions">
@@ -111,7 +112,7 @@ const props = defineProps({
 	workflowDisplayName: { type: String, default: "" },
 });
 
-const emit = defineEmits(["update:modelValue"]);
+const emit = defineEmits(["update:modelValue", "open-run"]);
 
 const loading = ref(false);
 const triggers = ref([]);
@@ -256,6 +257,11 @@ function closeEditor() {
 
 function close() {
 	emit("update:modelValue", false);
+}
+
+function openRun(runName) {
+	emit("open-run", runName);
+	close();
 }
 </script>
 

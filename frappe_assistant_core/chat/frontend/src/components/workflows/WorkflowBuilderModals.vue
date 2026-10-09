@@ -43,6 +43,7 @@
 			:workflow-id="workflowId"
 			:workflow-display-name="workflowDisplayName"
 			@update:model-value="$emit('update:show-triggers', $event)"
+			@open-run="(name) => $emit('open-run', name)"
 		/>
 
 		<SetupPanel
@@ -121,6 +122,7 @@ defineEmits([
 	"schedule-save",
 	"variables-save",
 	"template-shared",
+	"open-run",
 ]);
 
 const activationMessage = computed(() =>

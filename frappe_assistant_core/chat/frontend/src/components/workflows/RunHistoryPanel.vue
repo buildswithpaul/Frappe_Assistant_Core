@@ -97,6 +97,8 @@ const props = defineProps({
 	/** AR Workflow docname — list_runs filters its `workflow` link on this,
 	    despite the endpoint calling the argument workflow_name. */
 	workflowId: { type: String, required: true },
+	/** Run to expand on open, e.g. the one a trigger firing started. */
+	focusRunName: { type: String, default: "" },
 });
 
 defineEmits(["close"]);
@@ -113,7 +115,12 @@ const currentPage = ref(0);
 
 // The poller lives in the store — its lifetime is the run's, not this panel's.
 // This component only reflects what the store has polled.
-onMounted(loadRuns);
+onMounted(async () => {
+	await loadRuns();
+	await focusRun(props.focusRunName);
+});
+
+watch(() => props.focusRunName, focusRun);
 
 watch(activeRunName, async (newName, oldName) => {
 	if (newName) {
@@ -169,6 +176,18 @@ async function toggleRun(run) {
 	expandedRun.value = run.name;
 	try {
 		expandedRunData.value = await workflowStore.loadRun(run.name);
+	} catch {
+		expandedRunData.value = null;
+	}
+}
+
+async function focusRun(runName) {
+	if (!runName) return;
+	expandedRun.value = runName;
+	try {
+		const run = await workflowStore.loadRun(runName);
+		expandedRunData.value = run;
+		if (!runs.value.some((r) => r.name === runName)) runs.value.unshift(run);
 	} catch {
 		expandedRunData.value = null;
 	}

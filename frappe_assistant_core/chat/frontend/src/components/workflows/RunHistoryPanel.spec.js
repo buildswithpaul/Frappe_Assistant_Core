@@ -3,8 +3,11 @@ import { mount, flushPromises } from "@vue/test-utils";
 import { setActivePinia, createPinia } from "pinia";
 
 const listRuns = vi.fn();
+const getRun = vi.fn();
 vi.mock("@/api/client", () => ({
-	api: { workflows: { listRuns: (...a) => listRuns(...a), getRun: vi.fn() } },
+	api: {
+		workflows: { listRuns: (...a) => listRuns(...a), getRun: (...a) => getRun(...a) },
+	},
 }));
 
 import RunHistoryPanel from "@/components/workflows/RunHistoryPanel.vue";
@@ -12,6 +15,7 @@ import RunHistoryPanel from "@/components/workflows/RunHistoryPanel.vue";
 describe("RunHistoryPanel", () => {
 	beforeEach(() => {
 		listRuns.mockReset();
+		getRun.mockReset();
 		setActivePinia(createPinia());
 	});
 
@@ -66,5 +70,21 @@ describe("RunHistoryPanel", () => {
 		await flushPromises();
 		expect(w.get(".inline-error").text()).toContain("page down");
 		expect(w.findAll(".run-card")).toHaveLength(1);
+	});
+
+	it("expands a run it was asked to focus, even off the loaded page", async () => {
+		listRuns.mockResolvedValue({ runs: [{ name: "R1", status: "Completed" }], total: 30 });
+		getRun.mockResolvedValue({
+			name: "WFR-00012",
+			status: "Failed",
+			node_runs: [],
+			error_message: "boom",
+		});
+		const w = mount(RunHistoryPanel, {
+			props: { workflowId: "WF-1", focusRunName: "WFR-00012" },
+		});
+		await flushPromises();
+		expect(getRun).toHaveBeenCalledWith("WFR-00012");
+		expect(w.findAll(".run-card")[0].text()).toContain("boom");
 	});
 });

@@ -10,6 +10,7 @@ export function useBuilderPanels() {
 	const showTriggersModal = ref(false);
 	const showSettingsDrawer = ref(false);
 	const showSetup = ref(false);
+	const focusRunName = ref("");
 
 	// Runs and Audit share the right rail.
 	function onToggleRuns() {
@@ -20,6 +21,13 @@ export function useBuilderPanels() {
 	function onToggleAudit() {
 		showRunsPanel.value = false;
 		showAuditPanel.value = !showAuditPanel.value;
+	}
+
+	/** A trigger firing's run: open Run history with that run expanded. */
+	function onOpenRun(runName) {
+		focusRunName.value = runName;
+		showAuditPanel.value = false;
+		showRunsPanel.value = true;
 	}
 
 	function onSetupAction(key, setup) {
@@ -47,8 +55,10 @@ export function useBuilderPanels() {
 		showTriggersModal,
 		showSettingsDrawer,
 		showSetup,
+		focusRunName,
 		onToggleRuns,
 		onToggleAudit,
+		onOpenRun,
 		onSetupAction,
 		closeOnEscape,
 	};

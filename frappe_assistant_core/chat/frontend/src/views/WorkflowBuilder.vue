@@ -75,6 +75,7 @@
 					@node-delete="handleDeleteNode"
 					@close-config="selectedNode = null"
 					@request-save="save"
+					:focus-run-name="panels.focusRunName.value"
 					@close-runs="showRunsPanel = false"
 					@close-audit="showAuditPanel = false"
 				/>
@@ -115,6 +116,7 @@
 				@run-confirm="confirmRun"
 				@schedule-save="saveSchedule"
 				@variables-save="onVariablesSave"
+				@open-run="panels.onOpenRun"
 			/>
 
 			<WorkflowSettingsDrawer
