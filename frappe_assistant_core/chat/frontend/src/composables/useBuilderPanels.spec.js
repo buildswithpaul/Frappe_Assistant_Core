@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
+import { nextTick, watch } from "vue";
 import { useBuilderPanels } from "./useBuilderPanels";
 
 describe("useBuilderPanels", () => {
@@ -36,5 +37,53 @@ describe("useBuilderPanels", () => {
 		expect([p.showSetup.value, p.showSettingsDrawer.value]).toEqual([false, true]);
 		expect(p.closeOnEscape()).toBe(true);
 		expect(p.closeOnEscape()).toBe(false);
+	});
+
+	it("opening a trigger's run focuses it, shows Runs and hides Audit", async () => {
+		const p = useBuilderPanels();
+		p.onToggleAudit();
+		await p.onOpenRun("WFR-00012");
+		expect([p.focusRunName.value, p.showRunsPanel.value, p.showAuditPanel.value]).toEqual([
+			"WFR-00012",
+			true,
+			false,
+		]);
+	});
+
+	it("closing Run history forgets the focused run, however it closes", async () => {
+		const p = useBuilderPanels();
+		await p.onOpenRun("WFR-00012");
+		p.onToggleRuns();
+		await nextTick();
+		expect(p.focusRunName.value).toBe("");
+		await p.onOpenRun("WFR-00013");
+		p.showRunsPanel.value = false;
+		await nextTick();
+		expect(p.focusRunName.value).toBe("");
+	});
+
+	it("opening the same run again after it was collapsed focuses it again", async () => {
+		const p = useBuilderPanels();
+		const seen = [];
+		watch(p.focusRunName, (v) => seen.push(v));
+		await p.onOpenRun("WFR-00012");
+		await nextTick();
+		p.onToggleRuns();
+		await nextTick();
+		await p.onOpenRun("WFR-00012");
+		await nextTick();
+		expect(p.focusRunName.value).toBe("WFR-00012");
+		expect(seen).toEqual(["WFR-00012", "", "WFR-00012"]);
+	});
+
+	it("opening the same run while Run history is open still re-focuses it", async () => {
+		const p = useBuilderPanels();
+		const seen = [];
+		watch(p.focusRunName, (v) => seen.push(v));
+		await p.onOpenRun("WFR-00012");
+		await nextTick();
+		await p.onOpenRun("WFR-00012");
+		await nextTick();
+		expect(seen).toEqual(["WFR-00012", "", "WFR-00012"]);
 	});
 });

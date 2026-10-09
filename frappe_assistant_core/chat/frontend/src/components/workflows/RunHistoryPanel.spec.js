@@ -4,6 +4,10 @@ import { setActivePinia, createPinia } from "pinia";
 
 const listRuns = vi.fn();
 const getRun = vi.fn();
+const showError = vi.fn();
+vi.mock("@/composables/useToast", () => ({
+	useToast: () => ({ showError: (...a) => showError(...a) }),
+}));
 vi.mock("@/api/client", () => ({
 	api: {
 		workflows: { listRuns: (...a) => listRuns(...a), getRun: (...a) => getRun(...a) },
@@ -11,11 +15,13 @@ vi.mock("@/api/client", () => ({
 }));
 
 import RunHistoryPanel from "@/components/workflows/RunHistoryPanel.vue";
+import RunCard from "@/components/workflows/RunCard.vue";
 
 describe("RunHistoryPanel", () => {
 	beforeEach(() => {
 		listRuns.mockReset();
 		getRun.mockReset();
+		showError.mockReset();
 		setActivePinia(createPinia());
 	});
 
@@ -86,5 +92,22 @@ describe("RunHistoryPanel", () => {
 		await flushPromises();
 		expect(getRun).toHaveBeenCalledWith("WFR-00012");
 		expect(w.findAll(".run-card")[0].text()).toContain("boom");
+	});
+
+	it("says so and expands nothing when a focused run cannot be loaded", async () => {
+		listRuns.mockResolvedValue({ runs: [{ name: "R1", status: "Completed" }], total: 1 });
+		getRun.mockRejectedValue(
+			Object.assign(new Error("gone"), { userMessage: "Run not found" }),
+		);
+		const w = mount(RunHistoryPanel, {
+			props: { workflowId: "WF-1", focusRunName: "WFR-00012" },
+		});
+		await flushPromises();
+		expect(showError).toHaveBeenCalledTimes(1);
+		expect(showError.mock.calls[0][0]).toContain("WFR-00012");
+		expect(showError.mock.calls[0][0]).toContain("Run not found");
+		expect(w.findAllComponents(RunCard).every((c) => c.props("isExpanded") === false)).toBe(
+			true,
+		);
 	});
 });

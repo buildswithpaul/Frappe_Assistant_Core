@@ -1,4 +1,4 @@
-import { ref } from "vue";
+import { nextTick, ref, watch } from "vue";
 
 /** Which rail panel, modal or popover the builder has open. */
 export function useBuilderPanels() {
@@ -12,6 +12,11 @@ export function useBuilderPanels() {
 	const showSetup = ref(false);
 	const focusRunName = ref("");
 
+	// However Run history closes, the run it was focused on is forgotten.
+	watch(showRunsPanel, (open) => {
+		if (!open) focusRunName.value = "";
+	});
+
 	// Runs and Audit share the right rail.
 	function onToggleRuns() {
 		showAuditPanel.value = false;
@@ -24,7 +29,10 @@ export function useBuilderPanels() {
 	}
 
 	/** A trigger firing's run: open Run history with that run expanded. */
-	function onOpenRun(runName) {
+	async function onOpenRun(runName) {
+		// Clear first so opening the same run again is a change the panel sees.
+		focusRunName.value = "";
+		await nextTick();
 		focusRunName.value = runName;
 		showAuditPanel.value = false;
 		showRunsPanel.value = true;

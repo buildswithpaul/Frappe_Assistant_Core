@@ -1,12 +1,12 @@
 <template>
 	<aside class="runs-panel">
 		<div class="panel-header">
-			<span class="panel-title">Run History</span>
+			<span class="panel-title">{{ __("Run History") }}</span>
 			<button
 				@click="$emit('close')"
 				class="panel-close"
-				title="Close"
-				aria-label="Close run history"
+				:title="__('Close')"
+				:aria-label="__('Close run history')"
 			>
 				<svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 					<path
@@ -188,8 +188,15 @@ async function focusRun(runName) {
 		const run = await workflowStore.loadRun(runName);
 		expandedRunData.value = run;
 		if (!runs.value.some((r) => r.name === runName)) runs.value.unshift(run);
-	} catch {
+	} catch (err) {
+		expandedRun.value = null;
 		expandedRunData.value = null;
+		showError(
+			__("Could not open run {0}: {1}", [
+				runName,
+				err?.userMessage || __("Something went wrong"),
+			]),
+		);
 	}
 }
 
