@@ -6,14 +6,13 @@
 			role="dialog"
 			aria-modal="true"
 			:aria-label="__('Edit system prompt')"
-			@click.self="$emit('update:open', false)"
-			@keydown.esc="$emit('update:open', false)"
+			@click.self="close"
 		>
-			<div class="prompt-modal">
+			<div ref="dialogRef" class="prompt-modal">
 				<header class="prompt-modal-header">
 					<h2 class="prompt-modal-title">{{ __("System prompt") }}</h2>
 					<VariableInserter v-if="!readonly" :global-variables="variables" @insert="insert" />
-					<button type="button" class="prompt-modal-close" @click="$emit('update:open', false)">
+					<button type="button" class="prompt-modal-close" @click="close">
 						{{ __("Done") }}
 					</button>
 				</header>
@@ -21,6 +20,7 @@
 					ref="areaRef"
 					data-test="expanded-prompt"
 					class="prompt-modal-area"
+					:aria-label="__('System prompt')"
 					:value="modelValue"
 					:readonly="readonly"
 					@input="$emit('update:modelValue', $event.target.value)"
@@ -31,10 +31,13 @@
 </template>
 
 <script setup>
-import { ref, watch, nextTick } from "vue";
+import { ref, watch, nextTick, onBeforeUnmount } from "vue";
 import { __ } from "@/utils/i18n";
 import { useTeleportTarget } from "@/composables/useTeleportTarget";
 import VariableInserter from "./VariableInserter.vue";
+import { spliceAtCaret } from "./spliceAtCaret";
+
+const FOCUSABLE = "button:not([disabled]), textarea, input, select, [href]";
 
 const props = defineProps({
 	open: { type: Boolean, default: false },
@@ -44,23 +47,54 @@ const props = defineProps({
 });
 const emit = defineEmits(["update:open", "update:modelValue"]);
 const teleportTarget = useTeleportTarget();
+const dialogRef = ref(null);
 const areaRef = ref(null);
+let openerEl = null;
+
+function close() {
+	emit("update:open", false);
+}
+
+function onKeydown(e) {
+	if (e.key === "Escape") {
+		close();
+		return;
+	}
+	if (e.key !== "Tab" || !dialogRef.value) return;
+	const focusables = dialogRef.value.querySelectorAll(FOCUSABLE);
+	if (!focusables.length) return;
+	const first = focusables[0];
+	const last = focusables[focusables.length - 1];
+	const inside = dialogRef.value.contains(document.activeElement);
+	if (!inside || (e.shiftKey && document.activeElement === first)) {
+		e.preventDefault();
+		last.focus();
+	} else if (!e.shiftKey && document.activeElement === last) {
+		e.preventDefault();
+		first.focus();
+	}
+}
 
 watch(
 	() => props.open,
 	async (isOpen) => {
-		if (!isOpen) return;
-		await nextTick();
-		areaRef.value?.focus();
+		if (isOpen) {
+			openerEl = document.activeElement;
+			document.addEventListener("keydown", onKeydown);
+			await nextTick();
+			areaRef.value?.focus();
+			return;
+		}
+		document.removeEventListener("keydown", onKeydown);
+		if (openerEl?.isConnected) openerEl.focus();
+		openerEl = null;
 	}
 );
 
+onBeforeUnmount(() => document.removeEventListener("keydown", onKeydown));
+
 function insert(placeholder) {
-	const el = areaRef.value;
-	const current = props.modelValue || "";
-	const start = el?.selectionStart ?? current.length;
-	const end = el?.selectionEnd ?? current.length;
-	emit("update:modelValue", current.slice(0, start) + placeholder + current.slice(end));
+	emit("update:modelValue", spliceAtCaret(props.modelValue || "", placeholder, areaRef.value));
 }
 </script>
 
