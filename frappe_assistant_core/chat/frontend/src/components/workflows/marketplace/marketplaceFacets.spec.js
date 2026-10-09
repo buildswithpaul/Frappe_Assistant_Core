@@ -1,14 +1,20 @@
 import { describe, it, expect } from "vitest";
-import { categoriesFrom, sameTemplateSet } from "./marketplaceFacets";
+import { categoriesFrom, hasFeaturedSubset } from "./marketplaceFacets";
 
-describe("sameTemplateSet", () => {
-	it("is true for the same templates in any order", () => {
-		expect(sameTemplateSet([{ name: "a" }, { name: "b" }], [{ name: "b" }, { name: "a" }])).toBe(true);
+describe("hasFeaturedSubset", () => {
+	it("is false when every template is featured", () => {
+		const all = Array.from({ length: 8 }, (_, i) => ({ name: `t${i}`, featured: true }));
+		expect(hasFeaturedSubset(all)).toBe(false);
 	});
 
-	it("is false when one list has more", () => {
-		expect(sameTemplateSet([{ name: "a" }], [{ name: "a" }, { name: "b" }])).toBe(false);
-		expect(sameTemplateSet([], [])).toBe(false);
+	it("is false when no template is featured", () => {
+		expect(hasFeaturedSubset([{ name: "a", featured: false }])).toBe(false);
+		expect(hasFeaturedSubset([])).toBe(false);
+	});
+
+	it("is true when some but not all templates are featured", () => {
+		const all = Array.from({ length: 24 }, (_, i) => ({ name: `t${i}`, featured: i < 9 }));
+		expect(hasFeaturedSubset(all)).toBe(true);
 	});
 });
 

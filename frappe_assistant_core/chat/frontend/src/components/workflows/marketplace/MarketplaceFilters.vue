@@ -1,6 +1,6 @@
 <template>
 	<div class="marketplace-header">
-		<h2 class="marketplace-title">Template Marketplace</h2>
+		<h2 class="marketplace-title">{{ __("Template Marketplace") }}</h2>
 
 		<div class="filters-row">
 			<div class="search-input-wrap">
@@ -22,7 +22,7 @@
 				<input
 					:value="searchQuery"
 					class="search-input"
-					placeholder="Search templates..."
+					:placeholder="__('Search templates...')"
 					@input="$emit('update:searchQuery', $event.target.value)"
 				/>
 			</div>
@@ -31,28 +31,30 @@
 				class="sort-select"
 				@change="$emit('update:sortBy', $event.target.value)"
 			>
-				<option value="">Popular</option>
-				<option value="rating">Top Rated</option>
-				<option value="recent">Recent</option>
-				<option value="featured">Featured</option>
+				<option value="">{{ __("Popular") }}</option>
+				<option value="rating">{{ __("Top Rated") }}</option>
+				<option value="recent">{{ __("Recent") }}</option>
+				<option value="featured">{{ __("Featured") }}</option>
 			</select>
 		</div>
 
 		<div class="category-pills">
 			<button
 				v-for="cat in categories"
-				:key="cat"
+				:key="cat.value"
 				class="pill"
-				:class="{ active: categoryFilter === cat }"
-				@click="$emit('update:categoryFilter', cat)"
+				:class="{ active: categoryFilter === cat.value }"
+				@click="$emit('update:categoryFilter', cat.value)"
 			>
-				{{ cat }}
+				{{ cat.label }}
 			</button>
 		</div>
 	</div>
 </template>
 
 <script setup>
+import { __ } from "@/utils/i18n";
+
 defineProps({
 	searchQuery: { type: String, default: "" },
 	categoryFilter: { type: String, default: null },

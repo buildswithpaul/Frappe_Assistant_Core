@@ -1,7 +1,6 @@
-export function sameTemplateSet(a = [], b = []) {
-	if (!a.length || a.length !== b.length) return false;
-	const names = new Set(a.map((t) => t.name));
-	return b.every((t) => names.has(t.name));
+export function hasFeaturedSubset(all = []) {
+	const featured = all.filter((t) => t.featured).length;
+	return featured > 0 && featured < all.length;
 }
 
 export function categoriesFrom(templates = [], selected = null) {

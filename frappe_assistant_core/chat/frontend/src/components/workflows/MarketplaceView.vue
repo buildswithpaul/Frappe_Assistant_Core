@@ -92,7 +92,7 @@ import MarketplaceStatus from "./marketplace/MarketplaceStatus.vue";
 import TemplateCard from "./marketplace/TemplateCard.vue";
 import CreatorStatsSection from "./marketplace/CreatorStatsSection.vue";
 import TemplateDetailPanel from "./TemplateDetailPanel.vue";
-import { categoriesFrom, sameTemplateSet } from "./marketplace/marketplaceFacets";
+import { categoriesFrom, hasFeaturedSubset } from "./marketplace/marketplaceFacets";
 
 const emit = defineEmits(["workflow-created"]);
 
@@ -115,8 +115,8 @@ const startInImportMode = ref(false);
 const facetTemplates = ref([]);
 
 const categories = computed(() => [
-	"All",
-	...categoriesFrom(facetTemplates.value, categoryFilter.value),
+	{ value: "All", label: __("All") },
+	...categoriesFrom(facetTemplates.value, categoryFilter.value).map((c) => ({ value: c, label: c })),
 ]);
 
 const isUnfiltered = computed(
@@ -125,9 +125,9 @@ const isUnfiltered = computed(
 
 const showFeatured = computed(
 	() =>
-		featuredTemplates.value.length > 0 &&
 		isUnfiltered.value &&
-		!sameTemplateSet(featuredTemplates.value, facetTemplates.value)
+		featuredTemplates.value.length > 0 &&
+		(facetTemplates.value.length === 0 || hasFeaturedSubset(facetTemplates.value))
 );
 
 const hasMore = computed(() => allTemplates.value.length < templatesTotal.value);
@@ -196,7 +196,6 @@ async function loadMore() {
 async function loadFeatured() {
 	try {
 		// Use API directly — NOT the store — to avoid overwriting the main templates list
-		const { api } = await import("@/api/client");
 		const res = await api.workflows.listTemplates(null, null, null, true, null, 0, 6);
 		featuredTemplates.value = res.templates || [];
 	} catch {
