@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { mount } from "@vue/test-utils";
 import RunOutputActions from "./RunOutputActions.vue";
+import OutputFullscreen from "./OutputFullscreen.vue";
 import RunCardDetails from "./RunCardDetails.vue";
 import { useToast } from "@/composables/useToast";
 
@@ -78,6 +79,54 @@ describe("RunOutputActions", () => {
 	});
 });
 
+describe("OutputFullscreen focus handling", () => {
+	afterEach(() => {
+		document.body.innerHTML = "";
+	});
+
+	async function openIt() {
+		const w = mount(RunOutputActions, { props: { text: "x" }, attachTo: document.body });
+		const opener = button(w, "Full screen");
+		opener.element.focus();
+		await opener.trigger("click");
+		await new Promise((r) => setTimeout(r, 0));
+		return { w, opener };
+	}
+
+	const tab = (shiftKey) => {
+		const ev = new KeyboardEvent("keydown", { key: "Tab", shiftKey, bubbles: true, cancelable: true });
+		document.dispatchEvent(ev);
+		return ev;
+	};
+
+	it("wraps Shift+Tab from the first control to the last", async () => {
+		const { w } = await openIt();
+		const close = document.body.querySelector(".fs-close");
+		close.focus();
+		expect(tab(true).defaultPrevented).toBe(true);
+		w.unmount();
+	});
+
+	it("pulls focus back in when it sits outside the dialog", async () => {
+		const { w, opener } = await openIt();
+		opener.element.focus();
+		expect(tab(false).defaultPrevented).toBe(true);
+		expect(document.body.querySelector(".fs-panel").contains(document.activeElement)).toBe(true);
+		w.unmount();
+	});
+
+	it("returns focus to the opener when unmounted while open", async () => {
+		const opener = document.createElement("button");
+		document.body.appendChild(opener);
+		opener.focus();
+		const w = mount(OutputFullscreen, { props: { open: true, text: "x" }, attachTo: document.body });
+		await new Promise((r) => setTimeout(r, 0));
+		expect(opener).not.toBe(document.activeElement);
+		w.unmount();
+		expect(document.activeElement).toBe(opener);
+	});
+});
+
 describe("RunCardDetails partial output", () => {
 	const failed = {
 		name: "R1",
@@ -91,6 +140,11 @@ describe("RunCardDetails partial output", () => {
 		expect(w.find(".run-result.partial").text()).toContain("ranked list");
 		expect(button(w, "Copy")).toBeDefined();
 		expect(button(w, "Download")).toBeUndefined();
+	});
+
+	it("labels the last finished step of a still-running run as partial output", () => {
+		const w = mount(RunCardDetails, { props: { run: { ...failed, status: "Running" } } });
+		expect(w.text()).toContain("Partial output");
 	});
 
 	it("says when the partial text is cut at 10,000 characters", () => {

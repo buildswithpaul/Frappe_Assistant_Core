@@ -76,10 +76,14 @@ watch(
 		document.removeEventListener("keydown", onKeydown);
 		if (openerEl?.isConnected) openerEl.focus();
 		openerEl = null;
-	}
+	},
+	{ immediate: true }
 );
 
-onBeforeUnmount(() => document.removeEventListener("keydown", onKeydown));
+onBeforeUnmount(() => {
+	document.removeEventListener("keydown", onKeydown);
+	if (props.open && openerEl?.isConnected) openerEl.focus();
+});
 </script>
 
 <style scoped>
