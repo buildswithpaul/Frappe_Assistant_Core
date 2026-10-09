@@ -42,7 +42,7 @@
 							@delete="deleteTrigger"
 							@toggle="toggleTrigger"
 							:test-result="testResults[t.name] || null"
-							:testing="testingName === t.name"
+							:testing="!!testingNames[t.name]"
 							@view-log="viewLog"
 							@test="testTrigger"
 						/>
@@ -167,6 +167,7 @@ async function confirmDelete() {
 	isDeleting.value = true;
 	try {
 		await api.workflows.triggers.delete(t.name);
+		invalidateTest(t.name);
 		showSuccess(__("Trigger deleted"));
 		pendingDelete.value = null;
 		await refresh();
@@ -180,6 +181,7 @@ async function confirmDelete() {
 async function toggleTrigger(t) {
 	try {
 		await api.workflows.triggers.toggle(t.name, !t.enabled);
+		invalidateTest(t.name);
 		await refresh();
 	} catch (err) {
 		showError(__("Could not switch the trigger: {0}", [err?.userMessage || __("Something went wrong")]));
@@ -187,17 +189,30 @@ async function toggleTrigger(t) {
 }
 
 const testResults = ref({});
-const testingName = ref(null);
+const testingNames = ref({});
+// Bumped whenever a trigger changes so a test still in flight for the old
+// definition cannot land its result on the new one.
+const testGeneration = {};
+
+function invalidateTest(name) {
+	testGeneration[name] = (testGeneration[name] || 0) + 1;
+	const { [name]: _dropped, ...rest } = testResults.value;
+	testResults.value = rest;
+}
 
 async function testTrigger(t) {
-	testingName.value = t.name;
+	const generation = testGeneration[t.name] || 0;
+	testingNames.value = { ...testingNames.value, [t.name]: true };
 	try {
 		const result = await api.workflows.triggers.test(t.name);
-		testResults.value = { ...testResults.value, [t.name]: result };
+		if ((testGeneration[t.name] || 0) === generation) {
+			testResults.value = { ...testResults.value, [t.name]: result };
+		}
 	} catch (err) {
 		showError(__("Could not test the trigger: {0}", [err?.userMessage || err?.message || __("Something went wrong")]));
 	} finally {
-		testingName.value = null;
+		const { [t.name]: _done, ...rest } = testingNames.value;
+		testingNames.value = rest;
 	}
 }
 
@@ -215,6 +230,7 @@ async function saveTrigger(payload) {
 	try {
 		if (editorTarget.value) {
 			await api.workflows.triggers.update(editorTarget.value.name, payload);
+			invalidateTest(editorTarget.value.name);
 		} else {
 			// workflow_docname is the binding the dispatcher should resolve;
 			// workflow_name stays the display column it has always been.

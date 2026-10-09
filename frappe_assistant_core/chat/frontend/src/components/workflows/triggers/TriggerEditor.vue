@@ -157,7 +157,7 @@ const cleanFilters = (rows) =>
 		.map((r) => ({
 			fieldname: r.fieldname.trim(),
 			operator: r.operator || "=",
-			value: ["is set", "is not set"].includes(r.operator) ? "" : r.value ?? "",
+			value: ["is set", "is not set"].includes(r.operator) ? "" : String(r.value ?? ""),
 		}));
 
 // What the server holds. An edit sends filters only when they differ from this;
@@ -174,7 +174,7 @@ onMounted(async () => {
 	form.filters = (props.existing.filters || []).map((r) => ({
 		fieldname: r.fieldname,
 		operator: r.operator,
-		value: r.value ?? "",
+		value: String(r.value ?? ""),
 	}));
 	savedFilters = JSON.stringify(cleanFilters(form.filters));
 	if (form.reference_doctype) await loadFields(form.reference_doctype);

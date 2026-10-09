@@ -37,8 +37,7 @@
 			<div class="field">
 				<span class="label">{{ __("When") }}</span>
 				<span class="value">
-					<code>{{ trigger.doctype_event }}</code> {{ __("on") }}
-					<code>{{ trigger.reference_doctype }}</code>
+					<code>{{ __("{0} on {1}", [trigger.doctype_event, trigger.reference_doctype]) }}</code>
 				</span>
 			</div>
 			<div v-if="trigger.changed_fields" class="field">
@@ -56,10 +55,14 @@
 			<div class="field">
 				<span class="label">{{ __("Stats") }}</span>
 				<span class="value">
-					{{ __("Fired {0} times", [trigger.fire_count || 0]) }}
-					<template v-if="trigger.last_fired_at">
-						— {{ __("last at {0}", [formatDate(trigger.last_fired_at)]) }}
-					</template>
+					{{
+						trigger.last_fired_at
+							? __("Fired {0} times — last at {1}", [
+									trigger.fire_count || 0,
+									formatDate(trigger.last_fired_at),
+								])
+							: __("Fired {0} times", [trigger.fire_count || 0])
+					}}
 				</span>
 			</div>
 			<div v-if="trigger.last_error" class="field error-field">

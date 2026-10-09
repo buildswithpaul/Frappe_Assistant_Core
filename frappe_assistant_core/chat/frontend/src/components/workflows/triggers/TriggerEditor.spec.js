@@ -63,3 +63,16 @@ describe("TriggerEditor filters", () => {
 		expect(w.emitted("save")[0][0].filters).toBe("[]");
 	});
 });
+
+describe("TriggerEditor numeric filter values", () => {
+	it("does not count a numeric saved value as a change", async () => {
+		const w = await mountEditor({
+			...EXISTING,
+			filters: [{ fieldname: "grand_total", operator: ">", value: 100000 }],
+		});
+		// Typing the same digits back turns the loaded number into a string.
+		await w.get(".filter-row input.field-input").setValue("100000");
+		await w.get('[data-test="trigger-save"]').trigger("click");
+		expect("filters" in w.emitted("save")[0][0]).toBe(false);
+	});
+});
