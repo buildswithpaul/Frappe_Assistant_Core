@@ -50,6 +50,20 @@ describe("useGraphValidation live state", () => {
 		expect(v.visibleErrors.value).toHaveLength(1);
 	});
 
+	it("does not block Run when the server could not be reached", async () => {
+		const { v } = setup([agent("draft", "Summarise")], {
+			valid: false,
+			transport: true,
+			error: "Network request failed",
+		});
+		await nextTick();
+
+		await v.checkOnServer();
+
+		expect(v.canRun.value).toBe(true);
+		expect(v.visibleErrors.value).toEqual([]);
+	});
+
 	it("keeps Run blocked on a server rejection until a server check passes", async () => {
 		const { v, workflowStore } = setup([agent("draft", "Summarise")], {
 			valid: false,

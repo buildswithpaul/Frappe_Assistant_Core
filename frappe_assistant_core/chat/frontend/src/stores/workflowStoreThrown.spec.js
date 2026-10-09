@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { setActivePinia, createPinia } from "pinia";
 
 const api = vi.hoisted(() => ({
-	workflows: { list: vi.fn(), listRuns: vi.fn(), listTemplates: vi.fn() },
+	workflows: { list: vi.fn(), listRuns: vi.fn(), listTemplates: vi.fn(), validateGraph: vi.fn() },
 }));
 vi.mock("@/api/client", () => ({ api }));
 
@@ -58,5 +58,16 @@ describe("workflowStore thrown load errors", () => {
 		expect(store.templates).toHaveLength(1);
 		expect(store.templatesTotal).toBe(2);
 		expect(store.templatesError).toBe("down");
+	});
+
+	// production: a timeout or 502 rejects the call; a real rejection arrives as {valid:false}
+	it("validateGraph marks a rejected call as a transport failure, not a verdict", async () => {
+		const store = useWorkflowStore();
+		api.workflows.validateGraph.mockRejectedValueOnce(new Error("Failed to fetch"));
+		expect(await store.validateGraph("{}")).toEqual({
+			valid: false,
+			transport: true,
+			error: "Failed to fetch",
+		});
 	});
 });

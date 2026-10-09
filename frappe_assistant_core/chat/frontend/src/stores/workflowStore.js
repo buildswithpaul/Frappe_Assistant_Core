@@ -348,7 +348,9 @@ export const useWorkflowStore = defineStore("workflows", () => {
 		try {
 			return await api.workflows.validateGraph(graphJson);
 		} catch (err) {
-			return { valid: false, error: err.message };
+			// A transport failure says nothing about the graph; callers must not
+			// treat it as a rejection.
+			return { valid: false, transport: true, error: err.message };
 		}
 	}
 

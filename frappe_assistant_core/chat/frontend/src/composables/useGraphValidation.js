@@ -74,6 +74,11 @@ export function useGraphValidation({ workflowStore, nodes, edges, toGraphJson, s
 	/** Server check — authoritative, run after a successful save. */
 	async function checkOnServer() {
 		const result = await workflowStore.validateGraph(toGraphJson());
+		if (result.transport) {
+			validationMessage.value = result.error || __("Could not reach the server");
+			validationClass.value = "status-error";
+			return false;
+		}
 		if (result.valid) {
 			serverError.value = "";
 			validationMessage.value = __("Graph valid");
