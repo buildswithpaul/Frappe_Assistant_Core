@@ -60,6 +60,10 @@ function listingsToTemplatesPayload(payload) {
 }
 
 export const workflows = {
+	// Link values come from the site the agent will run on; search_link applies the user's permissions.
+	searchLink: (doctype, txt) =>
+		getCall("frappe.desk.search.search_link", { doctype, txt: txt || "", page_length: 10 }),
+
 	list: (status = null, page = 0, pageSize = 20) =>
 		getCall("frappe_assistant_core.chat.api.list_workflows", {
 			status,

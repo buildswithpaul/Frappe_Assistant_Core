@@ -48,3 +48,21 @@ describe("runtime-user tool calls", () => {
 		});
 	});
 });
+
+describe("workflows.searchLink", () => {
+	beforeEach(() => getCall.mockClear());
+
+	it("searches the doctype on this site through Frappe's permission-aware link search", async () => {
+		await workflows.searchLink("Company", "North");
+		expect(getCall).toHaveBeenCalledWith("frappe.desk.search.search_link", {
+			doctype: "Company",
+			txt: "North",
+			page_length: 10,
+		});
+	});
+
+	it("sends an empty search text rather than undefined", async () => {
+		await workflows.searchLink("Company");
+		expect(getCall.mock.calls[0][1].txt).toBe("");
+	});
+});

@@ -10,9 +10,9 @@
 						d="M15 19l-7-7 7-7"
 					/>
 				</svg>
-				Back to details
+				{{ __("Back to details") }}
 			</button>
-			<button @click="$emit('close')" class="close-btn" title="Close" aria-label="Close">
+			<button @click="$emit('close')" class="close-btn" :title="__('Close')" :aria-label="__('Close')">
 				<svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 					<path
 						stroke-linecap="round"
@@ -40,73 +40,59 @@
 					</svg>
 					{{ template.template_name }}
 				</h3>
-				<span class="tpl-info-category">{{ template.category || "General" }}</span>
+				<span class="tpl-info-category">{{ template.category || __("General") }}</span>
 				<p v-if="template.description" class="tpl-info-desc">{{ template.description }}</p>
 				<div v-if="template.agent_count" class="tpl-info-stats">
-					{{ template.agent_count }} task{{ template.agent_count !== 1 ? "s" : "" }}
+					{{ __("{0} task(s)", [template.agent_count]) }}
 				</div>
 			</div>
 
 			<!-- Workflow name -->
 			<div class="form-field">
-				<label class="field-label">Agent Name</label>
+				<label class="field-label">{{ __("Agent Name") }}</label>
 				<input
 					v-model="importName"
 					class="field-input"
-					placeholder="Name for the new agent"
+					:placeholder="__('Name for the new agent')"
 					ref="importNameRef"
 				/>
 			</div>
 
-			<!-- Variable form (dynamic from variables_schema) -->
-			<template v-if="variableFields.length > 0">
+			<template v-if="fields.length > 0">
 				<div class="variables-section">
-					<h4 class="variables-title">Template Variables</h4>
-					<div v-for="field in variableFields" :key="field.key" class="form-field">
-						<label class="field-label">
-							{{ field.label }}
-							<span v-if="!field.required" class="optional">(optional)</span>
-						</label>
-						<select
-							v-if="field.options"
-							v-model="importVariables[field.key]"
-							class="field-input field-select"
-						>
-							<option v-for="opt in field.options" :key="opt" :value="opt">
-								{{ opt }}
-							</option>
-						</select>
-						<textarea
-							v-else-if="field.long"
-							v-model="importVariables[field.key]"
-							class="field-input field-textarea"
-							:placeholder="field.description || ''"
-							rows="3"
-						></textarea>
-						<input
-							v-else
-							v-model="importVariables[field.key]"
-							class="field-input"
-							:placeholder="field.description || ''"
-						/>
-						<p v-if="field.description" class="field-hint">{{ field.description }}</p>
-					</div>
+					<h4 class="variables-title">{{ __("Template Variables") }}</h4>
+					<TemplateVariableField
+						v-for="field in fields"
+						:key="field.key"
+						:field="field"
+						:model-value="values[field.key]"
+						:error="errors[field.key] || ''"
+						@update:model-value="values[field.key] = $event"
+					/>
 				</div>
 			</template>
 
 			<!-- Warnings -->
-			<div v-if="warnings.length > 0" class="warnings-box">
-				<p v-for="(w, i) in warnings" :key="i" class="warning-item">{{ w }}</p>
+			<div v-if="requiredTools.length > 0" class="warnings-box">
+				<p class="warning-item">
+					{{
+						__("This template uses {0} tool(s): {1}", [
+							requiredTools.length,
+							requiredTools.join(", "),
+						])
+					}}
+				</p>
 			</div>
 
 			<div class="form-actions">
-				<button @click="$emit('back')" class="action-btn">Cancel</button>
+				<button @click="$emit('back')" class="action-btn">{{ __("Cancel") }}</button>
 				<button
 					@click="handleImport"
 					class="action-btn primary"
 					:disabled="!importName.trim() || isBusy"
+					data-test="import-submit"
 				>
-					{{ isBusy ? "Creating..." : "Create from Template" }}
+					{{ isBusy ? __("Creating...") : __("Create from Template") }}
 				</button>
 			</div>
 		</div>
@@ -114,7 +100,16 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, watch, nextTick } from "vue";
+import { computed, nextTick, reactive, ref, watch } from "vue";
+import { __ } from "@/utils/i18n";
+import TemplateVariableField from "./marketplace/TemplateVariableField.vue";
+import {
+	coerceVariables,
+	initialValues,
+	legacyRequiredTools,
+	normalizeVariableSchema,
+	validateVariables,
+} from "./marketplace/templateSchema";
 
 const props = defineProps({
 	template: { type: Object, required: true },
@@ -124,79 +119,24 @@ const props = defineProps({
 const emit = defineEmits(["back", "close", "import"]);
 
 const importName = ref("");
-const importVariables = reactive({});
-const warnings = ref([]);
+const values = reactive({});
+const attempted = ref(false);
 const importNameRef = ref(null);
 
-const variableFields = computed(() => {
-	const tpl = props.template;
-	if (!tpl?.variables_schema) return [];
+const fields = computed(() =>
+	normalizeVariableSchema(props.template?.variables_schema, props.template?.default_variables)
+);
+const errors = computed(() => (attempted.value ? validateVariables(fields.value, values) : {}));
+const requiredTools = computed(() => legacyRequiredTools(props.template));
 
-	const schema =
-		typeof tpl.variables_schema === "string"
-			? JSON.parse(tpl.variables_schema)
-			: tpl.variables_schema;
-
-	return Object.entries(schema).map(([key, def]) => ({
-		key,
-		label: key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
-		description: def.description || "",
-		required: !!def.required,
-		options: def.enum || null,
-		long: def.type === "text" || (def.description && def.description.length > 80),
-	}));
-});
-
-// Initialize when template changes
 watch(
 	() => props.template,
 	async (tpl) => {
 		if (!tpl) return;
-
 		importName.value = tpl.template_name || "";
-
-		// Reset and pre-fill variables from defaults
-		Object.keys(importVariables).forEach((k) => delete importVariables[k]);
-		const defaults = tpl.default_variables
-			? typeof tpl.default_variables === "string"
-				? JSON.parse(tpl.default_variables)
-				: tpl.default_variables
-			: {};
-		Object.assign(importVariables, defaults);
-
-		// Check tool compatibility warnings.
-		// `required_tools` may arrive as an array (already parsed) or as a JSON
-		// string from a Long Text / JSON DocType field — normalize both.
-		const requiredTools = (() => {
-			const raw = tpl.required_tools;
-			if (!raw) return [];
-			if (Array.isArray(raw)) return raw;
-			if (typeof raw === "string") {
-				const trimmed = raw.trim();
-				if (!trimmed) return [];
-				try {
-					const parsed = JSON.parse(trimmed);
-					return Array.isArray(parsed) ? parsed : [];
-				} catch {
-					return trimmed
-						.split(/[,\n]/)
-						.map((t) => t.trim())
-						.filter(Boolean);
-				}
-			}
-			return [];
-		})();
-
-		if (requiredTools.length) {
-			warnings.value = [
-				`This template requires ${requiredTools.length} tool(s): ${requiredTools.join(
-					", "
-				)}`,
-			];
-		} else {
-			warnings.value = [];
-		}
-
+		attempted.value = false;
+		for (const k of Object.keys(values)) delete values[k];
+		Object.assign(values, initialValues(fields.value));
 		await nextTick();
 		importNameRef.value?.focus();
 	},
@@ -205,8 +145,9 @@ watch(
 
 function handleImport() {
 	if (!importName.value.trim() || props.isBusy) return;
-	const vars = Object.keys(importVariables).length > 0 ? { ...importVariables } : null;
-	emit("import", { name: importName.value.trim(), variables: vars });
+	attempted.value = true;
+	if (Object.keys(validateVariables(fields.value, values)).length) return;
+	emit("import", { name: importName.value.trim(), variables: coerceVariables(fields.value, values) });
 }
 </script>
 
@@ -345,11 +286,6 @@ function handleImport() {
 	margin-bottom: 0.375rem;
 }
 
-.field-label .optional {
-	font-weight: 400;
-	color: var(--ql-text-muted);
-	font-size: 0.75rem;
-}
 
 .field-input {
 	width: 100%;
@@ -368,29 +304,8 @@ function handleImport() {
 	border-color: var(--ql-accent);
 }
 
-.field-textarea {
-	resize: vertical;
-	min-height: 3.5rem;
-	font-family: inherit;
-	line-height: 1.5;
-}
 
-.field-select {
-	cursor: pointer;
-	appearance: none;
-	background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
-	background-position: right 0.5rem center;
-	background-repeat: no-repeat;
-	background-size: 1em;
-	padding-right: 2rem;
-}
 
-.field-hint {
-	font-size: 0.6875rem;
-	color: var(--ql-text-muted);
-	margin: 0.25rem 0 0;
-	line-height: 1.4;
-}
 
 .warnings-box {
 	background: rgba(245, 158, 11, 0.08);
