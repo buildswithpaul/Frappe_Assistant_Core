@@ -57,6 +57,8 @@ function close() {
 
 function onKeydown(e) {
 	if (e.key === "Escape") {
+		// The builder's window-level Escape would also close the node panel under us.
+		e.stopPropagation();
 		close();
 		return;
 	}
