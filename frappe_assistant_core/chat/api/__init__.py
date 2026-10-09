@@ -55,6 +55,7 @@ from .auth import (
     get_user_mcp_servers,
     oauth_callback,
     reconnect_mcp_server,
+    verify_site_connection,
 )
 
 # ── Billing & Subscription ──────────────────────────────────────────

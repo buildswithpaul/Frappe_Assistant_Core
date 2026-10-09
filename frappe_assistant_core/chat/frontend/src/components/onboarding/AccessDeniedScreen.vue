@@ -11,17 +11,37 @@
 					/>
 				</svg>
 			</div>
-			<h2 class="access-title">FACO Access Required</h2>
-			<p class="access-description">
-				Your administrator hasn't added you to FACO yet. Please contact your system
-				administrator to get access.
-			</p>
-			<div class="access-hint">
-				Your admin can add you from <strong>Settings &rarr; Users</strong>
-			</div>
+			<template v-if="reasonCode === 'assistant_disabled'">
+				<h2 class="access-title">Assistant Access Is Off</h2>
+				<p class="access-description">
+					You're on the FACO team, but assistant access is turned off for your user, so
+					FACO can't work with this site for you. Please contact your system administrator.
+				</p>
+				<div class="access-hint">
+					Your admin can tick <strong>Enable Assistant Access</strong> on your User record
+				</div>
+			</template>
+			<template v-else>
+				<h2 class="access-title">FACO Access Required</h2>
+				<p class="access-description">
+					Your administrator hasn't added you to FACO yet. Please contact your system
+					administrator to get access.
+				</p>
+				<div class="access-hint">
+					Your admin can add you from <strong>Settings &rarr; Users</strong>
+				</div>
+			</template>
 		</div>
 	</div>
 </template>
+
+<script setup>
+defineProps({
+	// "assistant_disabled" when seated but Enable Assistant Access is off;
+	// null when the user has no seat.
+	reasonCode: { type: String, default: null },
+});
+</script>
 
 <style scoped>
 .access-denied-screen {

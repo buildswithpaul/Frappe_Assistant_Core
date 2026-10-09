@@ -121,6 +121,8 @@ def can_use_faco() -> dict:
                     "is_admin": bool,
                     "fac_cloud_url": str,
                     "reason": str (if can_use is False),
+                    "reason_code": "assistant_disabled" (no_role because
+                            Enable Assistant Access is off, not for want of a seat),
                     "preferences": dict (UI settings and subscription info),
                     "enable_browser_diagnostics": bool (recorder kill switch;
                             see widget_diagnostics_recorder.js's setEnabled)
@@ -210,6 +212,24 @@ def can_use_faco() -> dict:
                 "status": "no_role",
                 "reason": _(
                     "Your administrator needs to add you to FACO. Please ask them to add you from Settings > Users."
+                ),
+            }
+
+        # A seat does not open the MCP endpoint: handle_mcp also refuses a user
+        # whose Enable Assistant Access was switched off after they were added.
+        # Letting them into chat makes every load call FAC Cloud, which calls
+        # back into that refusal.
+        from frappe_assistant_core.api.fac_endpoint import _check_assistant_enabled
+
+        if not _check_assistant_enabled(user):
+            return {
+                **base_response,
+                "show_widget": is_admin,
+                "can_use": False,
+                "status": "no_role",
+                "reason_code": "assistant_disabled",
+                "reason": _(
+                    "Assistant access is turned off for your account. Ask your administrator to tick Enable Assistant Access on your User record."
                 ),
             }
 

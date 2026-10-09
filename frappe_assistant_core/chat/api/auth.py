@@ -179,6 +179,25 @@ def _is_placeholder_email(email) -> bool:
     return str(email or "").strip().lower() in _FRAPPE_PLACEHOLDER_EMAILS
 
 
+def _require_assistant_enabled(frappe_user):
+    """Refuse to connect a user the MCP endpoint will refuse.
+
+    `fac_endpoint.handle_mcp` answers 403 to a user whose Enable Assistant
+    Access is off, so a seat issued to them is billed and can never answer a
+    message: every chat load makes FAC Cloud call back into a refusal. Checked
+    before AR is asked for anything, so no seat is created.
+    """
+    from frappe_assistant_core.api.fac_endpoint import _check_assistant_enabled
+
+    if not _check_assistant_enabled(frappe_user):
+        frappe.throw(
+            _(
+                "Assistant access is turned off for {0}. Tick Enable Assistant Access on their User record, then try again."
+            ).format(frappe_user),
+            frappe.ValidationError,
+        )
+
+
 def _ar_user_id(user=None):
     """Resolve a Frappe user to the email AR keys its AR Tenant User by.
 
@@ -402,6 +421,8 @@ def _do_user_recovery(client, user_id):
             frappe.AuthenticationError,
         )
 
+    _require_assistant_enabled(user_id)
+
     site_url = frappe.utils.get_url()
     fac_endpoint = f"{site_url}/api/method/frappe_assistant_core.api.fac_endpoint.handle_mcp"
 
@@ -617,6 +638,8 @@ def _register_user_with_ar(frappe_user):
             frappe.ValidationError,
         )
 
+    _require_assistant_enabled(frappe_user)
+
     site_url = frappe.utils.get_url()
     fac_endpoint = f"{site_url}/api/method/frappe_assistant_core.api.fac_endpoint.handle_mcp"
 
@@ -712,6 +735,30 @@ def connect_fac_mcp_server() -> dict:
         if owner:
             response["tenant_owner_user_id"] = owner
         return response
+
+
+@frappe.whitelist(methods=["POST"])
+def verify_site_connection() -> dict:
+    """Have FAC Cloud call this site back as the user who just connected.
+
+    Connecting only proves the site answers `frappe.ping`. Chat needs FAC
+    Cloud's authenticated MCP request to succeed, and a firewall that blocks
+    FAC Cloud refuses that request while the ping still passes. AR's
+    `test_mcp_server` makes the real request, so the refusal surfaces now,
+    with the site's own reason, instead of on the user's first message.
+
+    Called by the browser after connect returns, never from inside it: FAC
+    Cloud's call back needs a free worker on this site, and the connect
+    request is holding one.
+
+    Returns:
+            dict: {"success": bool, "error": str | None, ...} from AR's test_mcp_server
+    """
+    client = get_fac_cloud_client()
+    if not client:
+        return {"success": False, "error": _("Site not registered with FAC Cloud")}
+
+    return client.test_mcp_server(user_id=_ar_user_id(frappe.session.user), server_name="Main Frappe Site")
 
 
 @frappe.whitelist(methods=["GET"])
