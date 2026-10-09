@@ -51,6 +51,9 @@ class TestRuntimeUserIsMapped(BaseAssistantTest):
         # nosemgrep: frappe-setuser — test bootstrap; isolated transaction
         frappe.set_user("Administrator")
         self.client = _RecordingClient()
+        # Production reaches get_fac_cloud_client() only on a site connected to FAC Cloud, and
+        # _ar_user_id resolves the FAC user's AR identity from a registered tenant member; neither
+        # exists on a test site, so both are stood in for to observe what would be sent.
         for p in (
             patch(CLIENT, return_value=self.client),
             patch.object(workflows, "_ar_user_id", side_effect=_ar_identity),
@@ -120,6 +123,8 @@ def _ensure_user(email, roles=()):
     user.save(ignore_permissions=True)
 
 
+# Production's client is the SDK talking to FAC Cloud; this stand-in returns the response
+# shape list_tools / resolve_workflow_tools have in SDK 1.11.0 so the wiring above it runs.
 class _ToolClient:
     def __init__(self):
         self.calls = []
