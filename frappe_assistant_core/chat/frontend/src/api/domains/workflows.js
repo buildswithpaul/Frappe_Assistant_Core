@@ -295,6 +295,7 @@ export const workflows = {
 			tmpl.suggested_input = listing.source.suggested_input;
 			tmpl.required_tools = listing.source.required_tools;
 			tmpl.required_tool_descriptions = listing.source.required_tool_descriptions;
+			tmpl.requires = listing.source.requires;
 			tmpl.author = listing.source.author;
 			tmpl.version = listing.source.version;
 		}
