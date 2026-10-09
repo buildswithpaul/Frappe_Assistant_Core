@@ -1,5 +1,6 @@
 import { ref } from "vue";
 import { logger } from "@/utils/logger";
+import { __ } from "@/utils/i18n";
 
 /**
  * The two ways an agent is set going: a run started by hand, and the schedule
@@ -37,14 +38,18 @@ export function useWorkflowExecution({
 		showRunModal.value = false;
 		if (!canEdit.value) return;
 		if (!checkBeforeRun()) return;
-		if (isDirty.value) await save();
+		// A failed save would run the last SAVED graph, not the one on screen.
+		if (isDirty.value && !(await save())) {
+			actionError.value = __("The run did not start: your latest changes are not saved.");
+			return;
+		}
 
 		try {
 			await workflowStore.executeWorkflow(workflowId.value, inputText.trim() || null);
 			showRunsPanel.value = true;
 		} catch (err) {
 			logger.error("Execution failed:", err);
-			actionError.value = err.message || "Could not start the run";
+			actionError.value = err.message || __("Could not start the run");
 		}
 	}
 
@@ -58,12 +63,12 @@ export function useWorkflowExecution({
 				config.cron.trim(),
 				config.timezone,
 				config.enabled,
-				config.defaultInput.trim() || null
+				config.defaultInput.trim() || null,
 			);
 			showScheduleModal.value = false;
 		} catch (err) {
 			logger.error("Schedule failed:", err);
-			actionError.value = err.message || "Failed to save the schedule";
+			actionError.value = err.message || __("Failed to save the schedule");
 		} finally {
 			isSettingSchedule.value = false;
 		}

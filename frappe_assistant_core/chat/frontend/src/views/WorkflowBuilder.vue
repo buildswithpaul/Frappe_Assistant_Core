@@ -11,6 +11,8 @@
 				:is-dirty="isDirty"
 				:is-saving="isSaving"
 				:is-running="isRunning"
+				:can-run="canRun"
+				:run-block-reason="runBlockReason"
 				:show-runs="showRunsPanel"
 				:show-audit="showAuditPanel"
 				:last-saved="hasSaved"
@@ -150,6 +152,7 @@ import { useWorkflowExecution } from "@/composables/useWorkflowExecution";
 import { useBuilderShortcuts } from "@/composables/useBuilderShortcuts";
 
 import { vueFlowToGraphJson } from "@/components/workflows/graphUtils";
+import { __ } from "@/utils/i18n";
 
 const router = useRouter();
 const route = useRoute();
@@ -192,10 +195,10 @@ const hasVariables = computed(() => {
 
 const workflowId = computed(() => route.params.id);
 const workflowDisplayName = computed(
-	() => currentWorkflow.value?.workflow_name || workflowId.value || "Untitled"
+	() => currentWorkflow.value?.workflow_name || workflowId.value || __("Untitled"),
 );
 const runtimeUserLabel = computed(
-	() => currentWorkflow.value?.default_user_id || "no user (tools unavailable)"
+	() => currentWorkflow.value?.default_user_id || __("no user (tools unavailable)"),
 );
 
 function currentGraphJson() {
@@ -212,12 +215,14 @@ const {
 	validationMessage,
 	validationClass,
 	visibleErrors,
+	canRun,
+	runBlockReason,
 	checkLocally,
 	checkBeforeRun,
 	checkOnServer,
 } = useGraphValidation({ workflowStore, nodes, edges, toGraphJson: currentGraphJson });
 
-const { hasSaved, saveError, scheduleAutoSave, save, resetHistory, undo, redo } =
+const { hasSaved, saveError, scheduleAutoSave, save, saveBeforeLeave, resetHistory, undo, redo } =
 	useBuilderAutosave({
 		workflowStore,
 		workflowId,
@@ -355,12 +360,9 @@ function onVariablesSave(vars) {
 	scheduleAutoSave();
 }
 
-function handleBack() {
-	if (isDirty.value && canEdit.value) {
-		save().then(() => router.push({ name: "agents" }));
-	} else {
-		router.push({ name: "agents" });
-	}
+async function handleBack() {
+	// A failed save keeps the author here with the save banner up.
+	if (await saveBeforeLeave()) router.push({ name: "agents" });
 }
 </script>
 

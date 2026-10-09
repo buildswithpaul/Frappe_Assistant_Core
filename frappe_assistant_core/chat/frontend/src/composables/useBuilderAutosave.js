@@ -2,6 +2,7 @@ import { ref, onBeforeUnmount } from "vue";
 import { createHistory } from "@/composables/useBuilderShortcuts";
 import { graphJsonToVueFlow } from "@/components/workflows/graphUtils";
 import { logger } from "@/utils/logger";
+import { __ } from "@/utils/i18n";
 
 const AUTOSAVE_DELAY_MS = 2000;
 
@@ -45,9 +46,10 @@ export function useBuilderAutosave({
 		autoSaveTimer = setTimeout(save, AUTOSAVE_DELAY_MS);
 	}
 
+	/** Resolves true when the graph is persisted, false when the save failed. */
 	async function save() {
 		if (autoSaveTimer) clearTimeout(autoSaveTimer);
-		if (!workflowId.value || !canEdit.value) return;
+		if (!workflowId.value || !canEdit.value) return false;
 
 		checkLocally();
 
@@ -56,11 +58,19 @@ export function useBuilderAutosave({
 			hasSaved.value = true;
 			saveError.value = null;
 			await checkOnServer();
+			return true;
 		} catch (err) {
 			logger.error("Save failed:", err);
-			saveError.value = err.message || "Save failed";
+			saveError.value = err.message || __("Save failed");
 			workflowStore.markDirty();
+			return false;
 		}
+	}
+
+	/** Leaving with unsaved edits is only allowed once they are saved. */
+	async function saveBeforeLeave() {
+		if (!canEdit.value || !workflowStore.isDirty) return true;
+		return save();
 	}
 
 	function applySnapshot(graphJson) {
@@ -89,6 +99,7 @@ export function useBuilderAutosave({
 		saveError,
 		scheduleAutoSave,
 		save,
+		saveBeforeLeave,
 		resetHistory,
 		undo: () => applySnapshot(history.undo()),
 		redo: () => applySnapshot(history.redo()),
