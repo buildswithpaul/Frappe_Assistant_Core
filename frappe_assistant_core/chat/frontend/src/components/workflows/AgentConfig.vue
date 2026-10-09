@@ -10,14 +10,14 @@
 		/>
 
 		<div class="config-section">
-			<label class="config-label">Model</label>
+			<label class="config-label">{{ __("Model") }}</label>
 			<select
 				v-model="config.model_id"
 				class="config-input config-select"
 				:disabled="readonly"
 				@change="emitUpdate"
 			>
-				<option value="">Workflow default</option>
+				<option value="">{{ __("Workflow default") }}</option>
 				<optgroup v-for="group in modelGroups" :key="group.tier" :label="group.tier">
 					<option v-for="m in group.models" :key="m.model_id" :value="m.model_id">
 						{{ m.display_name || m.model_id }}
@@ -35,7 +35,7 @@
 			:is-resolving="isResolving"
 			:discovery-state="discoveryState"
 			:tools-result="toolsResult"
-			:runtime-user-label="runtimeUserLabel"
+			:runtime-user-label="runtimeUserLabel || __('this agent\'s user')"
 			:readonly="readonly"
 			@add="addTool"
 			@remove="removeTool"
@@ -53,27 +53,41 @@
 					:disabled="readonly"
 					@change="setUseMemory($event.target.checked)"
 				/>
-				<span>Use team instructions and memories</span>
+				<span>{{ __("Use team instructions and memories") }}</span>
 			</label>
 			<p class="config-hint">
-				Injects the team's instructions and this agent user's memories ahead of the prompt,
-				the same context a chat message gets.
+				{{
+					__(
+						"Injects the team's instructions and this agent user's memories ahead of the prompt, the same context a chat message gets."
+					)
+				}}
 			</p>
 		</div>
 
+		<NodeLimitsSection
+			:config="config"
+			:show-timeout="nodeKind === 'agent'"
+			:readonly="readonly"
+			@update="(data) => emit('update', data)"
+		/>
+
 		<div class="config-section">
 			<label class="config-label"
-				>User ID Override <span class="optional">(optional)</span></label
+				>{{ __("User ID Override") }} <span class="optional">{{ __("(optional)") }}</span></label
 			>
 			<input
 				v-model="config.user_id"
 				class="config-input"
-				placeholder="Leave blank to use the agent's default user"
+				:placeholder="__('Leave blank to use the agent\'s default user')"
 				:readonly="readonly"
 				@input="emitUpdate"
 			/>
 			<p class="config-hint">
-				Whose MCP tools this task uses. Blank falls back to the agent's "Runs as" user.
+				{{
+					__(
+						"Whose MCP tools this task uses. Blank falls back to the agent's \"Runs as\" user."
+					)
+				}}
 			</p>
 		</div>
 	</div>
@@ -83,8 +97,10 @@
 import { ref, computed, watch, onMounted } from "vue";
 import { api } from "@/api/client";
 import { logger } from "@/utils/logger";
+import { __ } from "@/utils/i18n";
 import PromptEditor from "./config/PromptEditor.vue";
 import ToolSection from "./config/ToolSection.vue";
+import NodeLimitsSection from "./config/NodeLimitsSection.vue";
 import {
 	makeDirective,
 	normalizeDirectives,
@@ -106,7 +122,11 @@ const props = defineProps({
 	/** Workflow-level global_settings.variables, for the prompt preview. */
 	variables: { type: Object, default: () => ({}) },
 	/** The workflow's default_user_id — whose tools this node actually gets. */
-	runtimeUserLabel: { type: String, default: "this agent's user" },
+	runtimeUserLabel: { type: String, default: "" },
+	/** Whose tools to resolve against; null unless the viewer is an admin who may name one. */
+	runtimeUser: { type: String, default: null },
+	/** A loop node reuses this form for its per-item task, which has no timeout of its own. */
+	nodeKind: { type: String, default: "agent" },
 	readonly: { type: Boolean, default: false },
 });
 
@@ -139,15 +159,7 @@ onMounted(() => {
 	resolveTools();
 });
 
-// The panel reuses one config object across nodes, so the node id is the
-// only signal that the directives under us have been swapped.
-watch(
-	() => props.nodeId,
-	() => {
-		healDirectives();
-		resolveTools();
-	}
-);
+watch(() => props.runtimeUser, resolveTools);
 
 function emitUpdate() {
 	emit("update", { config: { ...props.config } });
@@ -217,22 +229,28 @@ function applyServerScoping(directives) {
 	if (servers !== null) props.config.mcp_servers = servers;
 }
 
+let resolveRequestId = 0;
+
 async function resolveTools() {
+	const requestId = ++resolveRequestId;
 	const directives = configuredTools.value;
 	// Resolution is an admin-only endpoint; a viewer would only collect 403s.
 	if (props.readonly || !directives.length) {
 		resolution.value = new Map();
+		isResolving.value = false;
 		return;
 	}
 	isResolving.value = true;
 	try {
-		const result = await api.workflows.resolveWorkflowTools(directives);
+		const result = await api.workflows.resolveWorkflowTools(directives, props.runtimeUser);
+		if (requestId !== resolveRequestId) return;
 		resolution.value = resolutionIndex(result?.resolved || []);
 	} catch (err) {
+		if (requestId !== resolveRequestId) return;
 		logger.error("Failed to resolve workflow tools:", err);
 		resolution.value = new Map();
 	} finally {
-		isResolving.value = false;
+		if (requestId === resolveRequestId) isResolving.value = false;
 	}
 }
 

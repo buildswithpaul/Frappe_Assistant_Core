@@ -19,8 +19,44 @@ from typing import Any, Dict, List
 
 import frappe
 from frappe import _
+from frappe.utils import now_datetime, time_diff_in_seconds
 
 from .report_requirements import VALUE_CONSTRAINED_FIELDTYPES, discover_filter_definitions
+
+DEFAULT_MAX_ROWS = 500
+MAX_ROWS_CAP = 5000
+
+
+def _clamp_max_rows(value: Any) -> int:
+    """max_rows as an int in 1..MAX_ROWS_CAP; anything unreadable is the default."""
+    try:
+        return max(1, min(int(value), MAX_ROWS_CAP))
+    except (TypeError, ValueError):
+        return DEFAULT_MAX_ROWS
+
+
+def _limit_rows(data: list, max_rows: int, summary_only: bool, keep_total_row: bool) -> list:
+    """The rows to return. A report's totals row is its last row and survives the cut."""
+    if summary_only:
+        return []
+    if len(data) <= max_rows:
+        return data
+    if keep_total_row:
+        return data[: max_rows - 1] + [data[-1]]
+    return data[:max_rows]
+
+
+def _prepared_payload_extras(stored: dict, report_doc) -> dict:
+    """Totals-row decision and summary carried from a stored prepared-report payload."""
+    extras = {
+        "add_total_row": bool(getattr(report_doc, "add_total_row", 0) and not stored.get("skip_total_row"))
+    }
+    if stored.get("report_summary"):
+        extras["report_summary"] = stored["report_summary"]
+    return extras
+
+
+QUEUE_WAIT_SLACK_SECONDS = 300
 
 
 class ReportTools:
@@ -41,7 +77,11 @@ class ReportTools:
 
     @staticmethod
     def execute_report(
-        report_name: str, filters: Dict[str, Any] = None, format: str = "json"
+        report_name: str,
+        filters: Dict[str, Any] = None,
+        format: str = "json",
+        max_rows: int = DEFAULT_MAX_ROWS,
+        summary_only: bool = False,
     ) -> Dict[str, Any]:
         """Execute a Frappe report"""
         try:
@@ -105,25 +145,54 @@ class ReportTools:
                 # Determine which filters were auto-injected
                 auto_added = {k: v for k, v in final_filters.items() if k not in user_filter_keys}
 
+                row_count = len(data)
+                rows = _limit_rows(
+                    data,
+                    _clamp_max_rows(max_rows),
+                    bool(summary_only),
+                    bool(result.get("add_total_row", getattr(report_doc, "add_total_row", 0))),
+                )
+
                 debug_info = {
                     "success": True,
                     "report_name": report_name,
                     "report_type": report_doc.report_type,
-                    "data": data,
+                    "data": rows,
                     "columns": columns,
                     "message": result.get("message"),
                     "filters_applied": final_filters,
                     "filters_auto_added": auto_added if auto_added else None,
                     "raw_result_keys": list(result.keys()) if result else [],
-                    "data_count": len(data) if data else 0,
+                    "row_count": row_count,
+                    "truncated": len(rows) < row_count,
+                    "summary_only": bool(summary_only),
+                    "data_count": len(rows),
                     "result_type": type(result).__name__ if result else "None",
                 }
+                if rows:
+                    debug_info["total_count"] = row_count
+                if result.get("status") == "error":
+                    return {
+                        "success": False,
+                        "error": result.get("error") or _("Report generation failed"),
+                        "status": "error",
+                        "prepared_report_name": result.get("prepared_report_name"),
+                    }
+                if result.get("status"):
+                    debug_info["status"] = result["status"]
+                if result.get("prepared_report_name"):
+                    debug_info["prepared_report_name"] = result["prepared_report_name"]
+                if result.get("report_summary"):
+                    debug_info["report_summary"] = result["report_summary"]
+                if debug_info["truncated"] and not summary_only:
+                    debug_info["truncation_note"] = _(
+                        "Showing {0} of {1} rows. Pass max_rows (up to {2}) for more, or narrow the filters."
+                    ).format(len(rows), row_count, MAX_ROWS_CAP)
             else:
                 return {"success": False, "error": f"Unexpected result type: {type(result).__name__}"}
 
             # Add actionable guidance when report returns no data
-            data = debug_info.get("data", [])
-            if not data or len(data) == 0:
+            if debug_info["row_count"] == 0 and debug_info.get("status") != "timeout":
                 debug_info["suggestion"] = (
                     f"Report returned 0 rows. This usually means the auto-defaulted filters "
                     f"(e.g. fiscal year dates, company) don't match any data. "
@@ -244,6 +313,26 @@ class ReportTools:
             return {"success": False, "error": str(e)}
 
     @staticmethod
+    def _find_in_flight_report(report_name, filters, max_age_seconds, get_in_flight):
+        """Name of the session user's newest Queued/Started Prepared Report younger than max_age_seconds."""
+        names = [row["name"] for row in get_in_flight(report_name, filters)]
+        if not names:
+            return None
+        rows = frappe.get_all(
+            "Prepared Report",
+            filters={"name": ("in", names)},
+            fields=["name", "creation", "owner"],
+        )
+        fresh = [
+            (row.creation, row.name)
+            for row in rows
+            if row.owner == frappe.session.user
+            and row.creation
+            and time_diff_in_seconds(now_datetime(), row.creation) < max_age_seconds
+        ]
+        return max(fresh)[1] if fresh else None
+
+    @staticmethod
     def _handle_prepared_report_execution(report_doc, filters):
         """
         Smart handler for prepared reports with polling support for AI/MCP tools:
@@ -255,7 +344,9 @@ class ReportTools:
         import time
 
         from frappe.core.doctype.prepared_report.prepared_report import (
+            REPORT_TIMEOUT,
             get_completed_prepared_report,
+            get_reports_in_queued_state,
             make_prepared_report,
         )
         from frappe.desk.query_report import get_prepared_report_result, run
@@ -288,10 +379,12 @@ class ReportTools:
                         "prepared_report_name": prepared_report_name,
                         "generated_at": str(prepared_doc.modified) if prepared_doc else None,
                         "status": "completed",
+                        **_prepared_payload_extras(result, report_doc),
                     }
 
             # Get report timeout configuration
-            report_timeout = frappe.get_value("Report", report_doc.name, "timeout") or 120
+            configured_timeout = frappe.get_value("Report", report_doc.name, "timeout")
+            report_timeout = configured_timeout or 120
 
             # Try quick direct execution for fast reports
             if report_timeout < 60:
@@ -313,6 +406,12 @@ class ReportTools:
                             "prepared_report": False,
                             "source": "direct_execution",
                             "status": "completed",
+                            "add_total_row": bool(direct_result.get("add_total_row")),
+                            **(
+                                {"report_summary": direct_result["report_summary"]}
+                                if direct_result.get("report_summary")
+                                else {}
+                            ),
                         }
                 except Exception as e:
                     # Quick execution failed, fall through to background job
@@ -321,8 +420,17 @@ class ReportTools:
             # ===== Queue and WAIT for completion with polling =====
 
             # Queue the background job
-            prepared_report = make_prepared_report(report_name=report_doc.name, filters=filters)
-            prepared_report_name = prepared_report.get("name")
+            # A retry while the first job is still running must poll that job, not
+            # queue a duplicate. Frappe enqueues the job with Report.timeout or REPORT_TIMEOUT,
+            # so only a row older than that (plus queue wait) is a lost job.
+            job_lifetime = (configured_timeout or REPORT_TIMEOUT) + QUEUE_WAIT_SLACK_SECONDS
+            prepared_report_name = ReportTools._find_in_flight_report(
+                report_doc.name, filters, job_lifetime, get_reports_in_queued_state
+            )
+            if not prepared_report_name:
+                prepared_report_name = make_prepared_report(report_name=report_doc.name, filters=filters).get(
+                    "name"
+                )
 
             # Poll for completion with exponential backoff
             max_wait_time = min(report_timeout, 300)  # Cap at 5 minutes for MCP tools
@@ -357,6 +465,7 @@ class ReportTools:
                             "prepared_report_name": prepared_report_name,
                             "wait_time_seconds": int(elapsed_time),
                             "status": "completed",
+                            **_prepared_payload_extras(result, report_doc),
                         }
 
                 elif prepared_doc.status == "Error":
@@ -382,7 +491,11 @@ class ReportTools:
                 "status": "timeout",
                 "prepared_report": True,
                 "prepared_report_name": prepared_report_name,
-                "message": f"Report generation is taking longer than expected ({int(max_wait_time)}s timeout reached). The report is still being generated in the background. You can retry with the same filters in a few minutes to retrieve the cached result.",
+                "message": _(
+                    "The report {0} is still being prepared in the background (waited {1}s). "
+                    "Ask again with the same filters in a minute or two: the retry picks up this same "
+                    "report instead of starting a new one."
+                ).format(report_doc.name, int(elapsed_time)),
                 "retry_guidance": f"Use report_name='{report_doc.name}' with the same filters to retrieve results.",
                 "wait_time_seconds": int(elapsed_time),
             }

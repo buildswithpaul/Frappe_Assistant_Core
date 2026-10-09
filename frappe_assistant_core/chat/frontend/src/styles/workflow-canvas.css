@@ -101,6 +101,11 @@
   opacity: 0.55;
 }
 
+.workflow-canvas .run-skipped-action .workflow-node {
+  border-color: var(--ql-warning);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ql-warning) 25%, transparent);
+}
+
 @keyframes ql-pulse-border {
   0%,
   100% {

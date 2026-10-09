@@ -9,10 +9,19 @@ template marketplace endpoints in api/workflows.py. They route through
 ``client.marketplace_api_base`` to the new generic listings table.
 """
 
+import json
+from typing import NoReturn
+
 import frappe
 from frappe import _
 
-from ._helpers import _marketplace_enabled
+from frappe_assistant_core.chat.workflows.template_variables import (
+    parse_schema,
+    parse_variables,
+    validate_template_variables,
+)
+
+from ._helpers import ARAPIError, _log, _marketplace_enabled, _redact_upstream_internals, _strip_noise
 from .auth import _ar_user_id
 
 
@@ -23,6 +32,36 @@ def _get_client():
     if not client:
         frappe.throw(_("Not connected to FAC Cloud"))
     return client
+
+
+# Types cloned into the caller's own library; every other type, known or not, needs an admin.
+_MEMBER_IMPORTABLE_TYPES = frozenset({"Prompt", "Skill"})
+
+
+def _require_admin() -> None:
+    """Same gate as create_workflow: these calls create or change tenant workflows and listings."""
+    if "System Manager" not in frappe.get_roles():
+        frappe.throw(_("Only System Managers can manage marketplace workflows."), frappe.PermissionError)
+
+
+def _marketplace_failure(context: str, e: Exception) -> NoReturn:
+    """Log the full error to the Error Log; show the user only what FAC Cloud wrote for them.
+
+    A 4xx whose body FAC Cloud returned as JSON carries a message authored for
+    the user ("Listing not found", a plan-tier refusal). Anything else (a 5xx,
+    a timeout, a non-JSON 4xx whose text embeds the request URL, a bug here)
+    is replaced with a generic sentence.
+    Call from inside an ``except`` block so the traceback is logged too.
+    """
+    _log("FACO Marketplace", f"{context}: {e!s}")
+    status = getattr(e, "status_code", None)
+    if isinstance(e, ARAPIError) and status and 400 <= status < 500 and e.response_data:
+        message = _redact_upstream_internals(_strip_noise(getattr(e, "message", "") or ""))
+        # With no message key in the body, the SDK falls back to str(HTTPError), which
+        # embeds the request URL and tenant id.
+        if message and "://" not in message and "for url:" not in message:
+            frappe.throw(message)
+    frappe.throw(_("The marketplace could not complete this request. Please try again in a moment."))
 
 
 # ---------------------------------------------------------------------------
@@ -43,7 +82,9 @@ def list_listings(
     page_size: int = 20,
 ):
     """List marketplace listings (workflows / prompts / skills) for this tenant."""
-    if not _marketplace_enabled():
+    from frappe_assistant_core.chat.fac_cloud_client import get_fac_cloud_client
+
+    if not _marketplace_enabled() or not (client := get_fac_cloud_client()):
         return {
             "listings": [],
             "total": 0,
@@ -52,7 +93,6 @@ def list_listings(
             "marketplace_enabled": False,
         }
     try:
-        client = _get_client()
         return client.list_listings(
             listing_type=listing_type,
             category=category,
@@ -66,8 +106,15 @@ def list_listings(
             user_id=_ar_user_id(frappe.session.user),
         )
     except Exception as e:
-        frappe.log_error(title="FACO Marketplace", message=f"Error listing listings: {e!s}")
-        return {"listings": [], "total": 0, "page": 0, "page_size": 20, "marketplace_enabled": False}
+        _log("FACO Marketplace", f"Error listing listings: {e!s}")
+        return {
+            "listings": [],
+            "total": 0,
+            "page": 0,
+            "page_size": 20,
+            "marketplace_enabled": False,
+            "error": _("Could not reach FAC Cloud to list templates. Try again in a moment."),
+        }
 
 
 @frappe.whitelist(methods=["GET"])
@@ -83,11 +130,10 @@ def get_listing(name: str, include_source: str | None = "1"):
             user_id=_ar_user_id(frappe.session.user),
             include_source=bool(int(include_source or 0)),
         )
-    except frappe.ValidationError:
+    except (frappe.ValidationError, frappe.PermissionError):
         raise
     except Exception as e:
-        frappe.log_error(title="FACO Marketplace", message=f"Error getting listing: {e!s}")
-        frappe.throw(_("Error: {0}").format(str(e)))
+        _marketplace_failure("Error getting listing", e)
 
 
 # ---------------------------------------------------------------------------
@@ -104,34 +150,56 @@ def import_listing(
 ):
     """Import a marketplace listing into this tenant.
 
-    Workflows imported as Draft AR Workflow records; prompts/skills cloned
-    to tenant-private records owned by the requesting user.
+    A Workflow listing becomes a Draft AR Workflow, so it needs the same
+    System Manager role as create_workflow. Prompts and skills are cloned into
+    the caller's own library and stay open to every user. A workflow's variables
+    are checked here against the template's typed schema, because only this
+    site can tell whether a Link value exists.
     """
     if not name:
         frappe.throw(_("name is required"), frappe.ValidationError)
 
     try:
-        import json as _json
-
         client = _get_client()
-
-        # Variables passthrough — accept dict (from web client) or string
-        variables_str = None
-        if variables:
-            variables_str = _json.dumps(variables) if isinstance(variables, dict) else variables
-
+        user_id = _ar_user_id(frappe.session.user)
+        listing = client.get_listing(name=name, user_id=user_id, include_source=True)
+        listing_type = listing.get("listing_type") if isinstance(listing, dict) else None
+        if listing_type not in _MEMBER_IMPORTABLE_TYPES:
+            _require_admin()
         return client.import_listing(
-            user_id=_ar_user_id(frappe.session.user),
+            user_id=user_id,
             name=name,
             new_title=new_title,
-            variables=variables_str,
+            variables=_import_variables(_checked_variables(listing, variables)),
             default_model_id=default_model_id,
         )
-    except frappe.ValidationError:
+    except (frappe.ValidationError, frappe.PermissionError):
         raise
     except Exception as e:
-        frappe.log_error(title="FACO Marketplace", message=f"Error importing listing: {e!s}")
-        frappe.throw(_("Error: {0}").format(str(e)))
+        _marketplace_failure("Error importing listing", e)
+
+
+def _checked_variables(listing: dict, variables: str | dict | None) -> str | dict | None:
+    """Validate a workflow's variables against its schema; other listings pass through."""
+    if listing.get("listing_type") != "Workflow":
+        return variables
+    source = listing.get("source")
+    if not isinstance(source, dict):
+        frappe.throw(
+            _("Could not read this template's settings from FAC Cloud. Please try again."),
+            frappe.ValidationError,
+        )
+    values = validate_template_variables(
+        parse_schema(source.get("variables_schema")), parse_variables(variables)
+    )
+    return values or None
+
+
+def _import_variables(variables: str | dict | None) -> str | None:
+    """Serialise import variables for FAC Cloud."""
+    if not variables:
+        return None
+    return json.dumps(variables) if isinstance(variables, dict) else variables
 
 
 # ---------------------------------------------------------------------------
@@ -153,6 +221,7 @@ def update_listing(
     plan_tier: str | None = None,
 ):
     """Update a marketplace listing's metadata."""
+    _require_admin()
     if not name:
         frappe.throw(_("name is required"), frappe.ValidationError)
 
@@ -175,23 +244,26 @@ def update_listing(
             is_published=_to_bool(is_published),
             plan_tier=plan_tier,
         )
+    except (frappe.ValidationError, frappe.PermissionError):
+        raise
     except Exception as e:
-        frappe.log_error(title="FACO Marketplace", message=f"Error updating listing: {e!s}")
-        frappe.throw(_("Error: {0}").format(str(e)))
+        _marketplace_failure("Error updating listing", e)
 
 
 @frappe.whitelist(methods=["POST"])
 def delete_listing(name: str):
     """Delete a marketplace listing."""
+    _require_admin()
     if not name:
         frappe.throw(_("name is required"), frappe.ValidationError)
 
     try:
         client = _get_client()
         return client.delete_listing(name=name)
+    except (frappe.ValidationError, frappe.PermissionError):
+        raise
     except Exception as e:
-        frappe.log_error(title="FACO Marketplace", message=f"Error deleting listing: {e!s}")
-        frappe.throw(_("Error: {0}").format(str(e)))
+        _marketplace_failure("Error deleting listing", e)
 
 
 # ---------------------------------------------------------------------------
@@ -216,9 +288,10 @@ def rate_listing(listing: str, rating: int, review: str | None = None):
             rating=rating,
             review=review,
         )
+    except (frappe.ValidationError, frappe.PermissionError):
+        raise
     except Exception as e:
-        frappe.log_error(title="FACO Marketplace", message=f"Error rating listing: {e!s}")
-        frappe.throw(_("Error: {0}").format(str(e)))
+        _marketplace_failure("Error rating listing", e)
 
 
 @frappe.whitelist(methods=["POST"])
@@ -235,9 +308,10 @@ def report_listing(listing: str, reason: str, details: str | None = None):
             reason=reason,
             details=details,
         )
+    except (frappe.ValidationError, frappe.PermissionError):
+        raise
     except Exception as e:
-        frappe.log_error(title="FACO Marketplace", message=f"Error reporting listing: {e!s}")
-        frappe.throw(_("Error: {0}").format(str(e)))
+        _marketplace_failure("Error reporting listing", e)
 
 
 # ---------------------------------------------------------------------------
@@ -268,9 +342,10 @@ def approve_listing(listing: str, notes: str | None = None):
     try:
         client = _get_client()
         return client.approve_listing(listing=listing, notes=notes)
+    except (frappe.ValidationError, frappe.PermissionError):
+        raise
     except Exception as e:
-        frappe.log_error(title="FACO Marketplace", message=f"Error approving listing: {e!s}")
-        frappe.throw(_("Error: {0}").format(str(e)))
+        _marketplace_failure("Error approving listing", e)
 
 
 @frappe.whitelist(methods=["POST"])
@@ -281,9 +356,10 @@ def reject_listing(listing: str, notes: str | None = None):
     try:
         client = _get_client()
         return client.reject_listing(listing=listing, notes=notes)
+    except (frappe.ValidationError, frappe.PermissionError):
+        raise
     except Exception as e:
-        frappe.log_error(title="FACO Marketplace", message=f"Error rejecting listing: {e!s}")
-        frappe.throw(_("Error: {0}").format(str(e)))
+        _marketplace_failure("Error rejecting listing", e)
 
 
 # ---------------------------------------------------------------------------
@@ -371,8 +447,7 @@ def publish_workflow(
     except (frappe.ValidationError, frappe.PermissionError):
         raise
     except Exception as e:
-        frappe.log_error(title="FACO Marketplace", message=f"Error publishing workflow: {e!s}")
-        frappe.throw(_("Error: {0}").format(str(e)))
+        _marketplace_failure("Error publishing workflow", e)
 
 
 @frappe.whitelist(methods=["GET"])
@@ -383,11 +458,10 @@ def download_listing_as_json(name: str):
     try:
         client = _get_client()
         return client.download_listing_as_json(name=name)
-    except frappe.ValidationError:
+    except (frappe.ValidationError, frappe.PermissionError):
         raise
     except Exception as e:
-        frappe.log_error(title="FACO Marketplace", message=f"Error downloading listing: {e!s}")
-        frappe.throw(_("Error: {0}").format(str(e)))
+        _marketplace_failure("Error downloading listing", e)
 
 
 @frappe.whitelist(methods=["GET"])

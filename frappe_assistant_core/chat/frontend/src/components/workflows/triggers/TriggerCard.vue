@@ -4,61 +4,87 @@
 			<div class="title-row">
 				<span class="title">{{ trigger.title }}</span>
 				<span class="status-chip" :class="trigger.enabled ? 'chip-on' : 'chip-off'">
-					{{ trigger.enabled ? "Enabled" : "Disabled" }}
+					{{ trigger.enabled ? __("Enabled") : __("Disabled") }}
 				</span>
 			</div>
 			<div class="actions">
-				<button class="icon-btn" title="View log" @click="$emit('view-log', trigger)">
-					Log
+				<button class="icon-btn" data-test="trigger-test" :disabled="testing" @click="$emit('test', trigger)">
+					{{ __("Test") }}
+				</button>
+				<button class="icon-btn" :title="__('View log')" @click="$emit('view-log', trigger)">
+					{{ __("Log") }}
 				</button>
 				<button
 					class="icon-btn"
-					:title="trigger.enabled ? 'Disable' : 'Enable'"
+					:title="trigger.enabled ? __('Disable') : __('Enable')"
 					@click="$emit('toggle', trigger)"
 				>
-					{{ trigger.enabled ? "Disable" : "Enable" }}
+					{{ trigger.enabled ? __("Disable") : __("Enable") }}
 				</button>
-				<button class="icon-btn" title="Edit" @click="$emit('edit', trigger)">Edit</button>
-				<button class="icon-btn danger" title="Delete" @click="$emit('delete', trigger)">
-					Delete
+				<button class="icon-btn" :title="__('Edit')" @click="$emit('edit', trigger)">
+					{{ __("Edit") }}
+				</button>
+				<button
+					class="icon-btn danger"
+					:title="__('Delete')"
+					@click="$emit('delete', trigger)"
+				>
+					{{ __("Delete") }}
 				</button>
 			</div>
 		</div>
 		<div class="body">
 			<div class="field">
-				<span class="label">When</span>
+				<span class="label">{{ __("When") }}</span>
 				<span class="value">
-					<code>{{ trigger.doctype_event }}</code> on
-					<code>{{ trigger.reference_doctype }}</code>
+					<code>{{ __("{0} on {1}", [trigger.doctype_event, trigger.reference_doctype]) }}</code>
 				</span>
 			</div>
 			<div v-if="trigger.changed_fields" class="field">
-				<span class="label">Only if changed</span>
+				<span class="label">{{ __("Only if changed") }}</span>
 				<span class="value mono">{{ trigger.changed_fields }}</span>
 			</div>
+			<div v-if="trigger.filters?.length" class="field">
+				<span class="label">{{ __("Only if") }}</span>
+				<span class="value mono">
+					<span v-for="(f, i) in trigger.filters" :key="i" class="filter-chip">
+						{{ f.fieldname }} {{ f.operator }} {{ f.value }}
+					</span>
+				</span>
+			</div>
 			<div class="field">
-				<span class="label">Stats</span>
+				<span class="label">{{ __("Stats") }}</span>
 				<span class="value">
-					Fired <strong>{{ trigger.fire_count || 0 }}</strong> times
-					<template v-if="trigger.last_fired_at">
-						— last at {{ formatDate(trigger.last_fired_at) }}
-					</template>
+					{{
+						trigger.last_fired_at
+							? __("Fired {0} times — last at {1}", [
+									trigger.fire_count || 0,
+									formatDate(trigger.last_fired_at),
+								])
+							: __("Fired {0} times", [trigger.fire_count || 0])
+					}}
 				</span>
 			</div>
 			<div v-if="trigger.last_error" class="field error-field">
-				<span class="label">Last error</span>
+				<span class="label">{{ __("Last error") }}</span>
 				<span class="value error">{{ trigger.last_error }}</span>
 			</div>
 		</div>
+		<TriggerTestResult v-if="testing || testResult" :result="testResult" :testing="testing" />
 	</div>
 </template>
 
 <script setup>
+import { __ } from "@/utils/i18n";
+import TriggerTestResult from "./TriggerTestResult.vue";
+
 defineProps({
 	trigger: { type: Object, required: true },
+	testResult: { type: Object, default: null },
+	testing: { type: Boolean, default: false },
 });
 
-defineEmits(["edit", "delete", "toggle", "view-log"]);
+defineEmits(["edit", "delete", "toggle", "view-log", "test"]);
 
 function formatDate(s) {
 	if (!s) return "";
@@ -166,6 +192,13 @@ function formatDate(s) {
 }
 .error-field .value {
 	word-break: break-word;
+}
+.filter-chip {
+	display: inline-block;
+	margin: 0 0.25rem 0.25rem 0;
+	padding: 0.0625rem 0.375rem;
+	background: var(--ql-subtle);
+	border-radius: 0.25rem;
 }
 code {
 	background: var(--ql-subtle);

@@ -5,29 +5,32 @@
 			class="modal-overlay"
 			role="dialog"
 			aria-modal="true"
-			aria-label="Agent triggers"
+			:aria-label="__('Agent triggers')"
 			@click.self="close"
 		>
 			<div class="modal-content wide">
 				<div class="modal-header">
-					<h2 class="modal-title">Event Triggers</h2>
+					<h2 class="modal-title">{{ __("Event Triggers") }}</h2>
 					<p class="modal-subtitle">
-						Fire this agent when a document event happens on your Frappe site.
+						{{ __("Fire this agent when a document event happens on your Frappe site.") }}
 					</p>
 				</div>
 
-				<div v-if="loading" class="state-block">Loading triggers…</div>
+				<div v-if="loading" class="state-block">{{ __("Loading triggers…") }}</div>
 
 				<div v-else-if="!showEditor && !showLog">
 					<div class="triggers-toolbar">
 						<button class="action-btn primary" @click="openNewEditor">
-							+ Add Trigger
+							{{ __("+ Add Trigger") }}
 						</button>
 					</div>
 
 					<div v-if="triggers.length === 0" class="empty-state">
-						No triggers yet. Create one to run this agent automatically when a
-						document is inserted, updated, submitted, cancelled, or deleted.
+						{{
+							__(
+								"No triggers yet. Create one to run this agent automatically when a document is inserted, updated, submitted, cancelled, or deleted."
+							)
+						}}
 					</div>
 
 					<div v-else class="triggers-list">
@@ -38,7 +41,10 @@
 							@edit="editTrigger"
 							@delete="deleteTrigger"
 							@toggle="toggleTrigger"
+							:test-result="testResults[t.name] || null"
+							:testing="!!testingNames[t.name]"
 							@view-log="viewLog"
+							@test="testTrigger"
 						/>
 					</div>
 				</div>
@@ -58,11 +64,25 @@
 					:trigger-name="logTarget?.name"
 					:trigger-title="logTarget?.title"
 					@back="closeLog"
+					@open-run="openRun"
 				/>
 
 				<div v-if="!showEditor && !showLog" class="modal-actions">
-					<button class="action-btn" @click="close">Close</button>
+					<button class="action-btn" @click="close">{{ __("Close") }}</button>
 				</div>
+
+				<ConfirmModal
+					:open="!!pendingDelete"
+					:title="__('Delete trigger')"
+					:message="__('Delete “{0}”? Its fire log goes with it.', [pendingDelete?.title || ''])"
+					:confirm-label="__('Delete')"
+					:cancel-label="__('Cancel')"
+					:processing="isDeleting"
+					:processing-label="__('Deleting…')"
+					destructive
+					@confirm="confirmDelete"
+					@cancel="pendingDelete = null"
+				/>
 			</div>
 		</div>
 	</Teleport>
@@ -71,6 +91,9 @@
 <script setup>
 import { ref, watch } from "vue";
 import api from "@/api/client";
+import ConfirmModal from "@/components/common/ConfirmModal.vue";
+import { useToast } from "@/composables/useToast";
+import { __ } from "@/utils/i18n";
 import TriggerCard from "./TriggerCard.vue";
 import TriggerEditor from "./TriggerEditor.vue";
 import TriggerFireLog from "./TriggerFireLog.vue";
@@ -78,6 +101,9 @@ import { logger } from "@/utils/logger";
 import { useTeleportTarget } from "@/composables/useTeleportTarget";
 
 const teleportTarget = useTeleportTarget();
+const { showError, showSuccess } = useToast();
+const pendingDelete = ref(null);
+const isDeleting = ref(false);
 
 const props = defineProps({
 	modelValue: { type: Boolean, required: true },
@@ -86,7 +112,7 @@ const props = defineProps({
 	workflowDisplayName: { type: String, default: "" },
 });
 
-const emit = defineEmits(["update:modelValue"]);
+const emit = defineEmits(["update:modelValue", "open-run"]);
 
 const loading = ref(false);
 const triggers = ref([]);
@@ -132,22 +158,62 @@ function editTrigger(t) {
 	showEditor.value = true;
 }
 
-async function deleteTrigger(t) {
-	if (!confirm(`Delete trigger "${t.title}"?`)) return;
+function deleteTrigger(t) {
+	pendingDelete.value = t;
+}
+
+async function confirmDelete() {
+	const t = pendingDelete.value;
+	if (!t || isDeleting.value) return;
+	isDeleting.value = true;
 	try {
 		await api.workflows.triggers.delete(t.name);
+		invalidateTest(t.name);
+		showSuccess(__("Trigger deleted"));
+		pendingDelete.value = null;
 		await refresh();
 	} catch (err) {
-		alert(`Failed to delete: ${err?.message || err}`);
+		showError(__("Could not delete the trigger: {0}", [err?.userMessage || __("Something went wrong")]));
+	} finally {
+		isDeleting.value = false;
 	}
 }
 
 async function toggleTrigger(t) {
 	try {
 		await api.workflows.triggers.toggle(t.name, !t.enabled);
+		invalidateTest(t.name);
 		await refresh();
 	} catch (err) {
-		alert(`Failed to toggle: ${err?.message || err}`);
+		showError(__("Could not switch the trigger: {0}", [err?.userMessage || __("Something went wrong")]));
+	}
+}
+
+const testResults = ref({});
+const testingNames = ref({});
+// Bumped whenever a trigger changes so a test still in flight for the old
+// definition cannot land its result on the new one.
+const testGeneration = {};
+
+function invalidateTest(name) {
+	testGeneration[name] = (testGeneration[name] || 0) + 1;
+	const { [name]: _dropped, ...rest } = testResults.value;
+	testResults.value = rest;
+}
+
+async function testTrigger(t) {
+	const generation = testGeneration[t.name] || 0;
+	testingNames.value = { ...testingNames.value, [t.name]: true };
+	try {
+		const result = await api.workflows.triggers.test(t.name);
+		if ((testGeneration[t.name] || 0) === generation) {
+			testResults.value = { ...testResults.value, [t.name]: result };
+		}
+	} catch (err) {
+		showError(__("Could not test the trigger: {0}", [err?.userMessage || err?.message || __("Something went wrong")]));
+	} finally {
+		const { [t.name]: _done, ...rest } = testingNames.value;
+		testingNames.value = rest;
 	}
 }
 
@@ -165,6 +231,7 @@ async function saveTrigger(payload) {
 	try {
 		if (editorTarget.value) {
 			await api.workflows.triggers.update(editorTarget.value.name, payload);
+			invalidateTest(editorTarget.value.name);
 		} else {
 			// workflow_docname is the binding the dispatcher should resolve;
 			// workflow_name stays the display column it has always been.
@@ -179,7 +246,7 @@ async function saveTrigger(payload) {
 		editorTarget.value = null;
 		await refresh();
 	} catch (err) {
-		alert(`Failed to save: ${err?.message || err}`);
+		showError(__("Could not save the trigger: {0}", [err?.userMessage || __("Something went wrong")]));
 	}
 }
 
@@ -190,6 +257,11 @@ function closeEditor() {
 
 function close() {
 	emit("update:modelValue", false);
+}
+
+function openRun(runName) {
+	emit("open-run", runName);
+	close();
 }
 </script>
 

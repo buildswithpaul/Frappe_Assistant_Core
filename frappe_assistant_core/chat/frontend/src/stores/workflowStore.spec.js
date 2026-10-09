@@ -10,6 +10,7 @@ const workflowsApi = {
 	create: vi.fn(),
 	update: vi.fn(),
 	list: vi.fn(),
+	listTemplates: vi.fn(),
 };
 const modelsApi = { getAvailable: vi.fn() };
 const userApi = { listTools: vi.fn() };
@@ -139,5 +140,194 @@ describe("workflowStore.loadModels", () => {
 		await store.loadModels();
 		expect(store.availableModels).toHaveLength(1);
 		expect(store.modelsError).toBeNull();
+	});
+});
+
+describe("workflowStore.loadRuns paging", () => {
+	let store;
+
+	beforeEach(() => {
+		setActivePinia(createPinia());
+		store = useWorkflowStore();
+		for (const fn of Object.values(workflowsApi)) fn.mockReset();
+	});
+
+	it("appends the next page instead of replacing the first", async () => {
+		workflowsApi.listRuns
+			.mockResolvedValueOnce({ runs: [{ name: "R1" }, { name: "R2" }], total: 3 })
+			.mockResolvedValueOnce({ runs: [{ name: "R3" }], total: 3 });
+
+		await store.loadRuns("WF-1", null, 0);
+		await store.loadRuns("WF-1", null, 1, { append: true });
+
+		expect(store.runs.map((r) => r.name)).toEqual(["R1", "R2", "R3"]);
+		expect(workflowsApi.listRuns).toHaveBeenLastCalledWith("WF-1", null, 1, 20);
+	});
+
+	it("does not duplicate a run that moved onto the next page", async () => {
+		workflowsApi.listRuns
+			.mockResolvedValueOnce({ runs: [{ name: "R1" }, { name: "R2" }], total: 4 })
+			.mockResolvedValueOnce({ runs: [{ name: "R2" }, { name: "R3" }], total: 4 });
+
+		await store.loadRuns("WF-1", null, 0);
+		await store.loadRuns("WF-1", null, 1, { append: true });
+
+		expect(store.runs.map((r) => r.name)).toEqual(["R1", "R2", "R3"]);
+	});
+});
+
+describe("workflowStore outage vs empty", () => {
+	let store;
+
+	beforeEach(() => {
+		setActivePinia(createPinia());
+		store = useWorkflowStore();
+		for (const fn of Object.values(workflowsApi)) fn.mockReset();
+	});
+
+	it("keeps an empty list error-free", async () => {
+		workflowsApi.list.mockResolvedValue({ workflows: [], total: 0, page: 0 });
+		await store.loadWorkflows();
+		expect(store.listError).toBe(null);
+	});
+
+	it("surfaces the endpoint's outage message", async () => {
+		workflowsApi.list.mockResolvedValue({ workflows: [], total: 0, error: "FAC Cloud down" });
+		await store.loadWorkflows();
+		expect(store.listError).toBe("FAC Cloud down");
+	});
+
+	it("surfaces a thrown call as an outage", async () => {
+		workflowsApi.list.mockRejectedValue(new Error("Can't reach the server."));
+		await store.loadWorkflows();
+		expect(store.listError).toBe("Can't reach the server.");
+	});
+
+	it("tracks run and template outages separately", async () => {
+		workflowsApi.listRuns.mockResolvedValue({ runs: [], total: 0, error: "runs down" });
+		workflowsApi.listTemplates.mockResolvedValue({ templates: [], total: 0, error: "tpl down" });
+		await store.loadRuns("WF-1");
+		await store.loadTemplates();
+		expect(store.runsError).toBe("runs down");
+		expect(store.templatesError).toBe("tpl down");
+		expect(store.listError).toBe(null);
+	});
+});
+
+describe("workflowStore tool inventory", () => {
+	let store;
+	const result = (name) => ({ success: true, tools: [{ name, server: "Main Frappe Site" }] });
+
+	beforeEach(() => {
+		setActivePinia(createPinia());
+		store = useWorkflowStore();
+		userApi.listTools.mockReset();
+	});
+
+	it("asks for the named runtime user's tools", async () => {
+		userApi.listTools.mockResolvedValue(result("a"));
+		await store.loadTools("ops@example.com");
+		expect(userApi.listTools).toHaveBeenCalledWith("ops@example.com");
+	});
+
+	it("does not refetch for the same runtime user, but does for another", async () => {
+		userApi.listTools.mockResolvedValueOnce(result("a")).mockResolvedValueOnce(result("b"));
+		await store.loadTools("ops@example.com");
+		await store.loadTools("ops@example.com");
+		expect(userApi.listTools).toHaveBeenCalledTimes(1);
+		await store.loadTools("sales@example.com");
+		expect(userApi.listTools).toHaveBeenCalledTimes(2);
+		expect(store.availableTools[0].name).toBe("b");
+	});
+
+	it("forgets the inventory when the builder closes", async () => {
+		userApi.listTools.mockResolvedValue(result("a"));
+		await store.loadTools("ops@example.com");
+		store.clearCurrentWorkflow();
+		expect(store.toolsResult).toBeNull();
+		expect(store.availableTools).toEqual([]);
+		await store.loadTools("ops@example.com");
+		expect(userApi.listTools).toHaveBeenCalledTimes(2);
+	});
+
+	it("refetches when forced, e.g. after reconnecting a server", async () => {
+		userApi.listTools.mockResolvedValue(result("a"));
+		await store.loadTools(null);
+		await store.loadTools(null, { force: true });
+		expect(userApi.listTools).toHaveBeenCalledTimes(2);
+	});
+
+	it("lets the latest runtime user win when responses arrive out of order", async () => {
+		let releaseFirst;
+		userApi.listTools
+			.mockReturnValueOnce(new Promise((resolve) => (releaseFirst = resolve)))
+			.mockResolvedValueOnce(result("second"));
+		const first = store.loadTools("ops@example.com");
+		await store.loadTools("sales@example.com");
+		releaseFirst(result("first"));
+		await first;
+		expect(store.availableTools[0].name).toBe("second");
+	});
+});
+
+describe("workflowStore.watchLatestRun", () => {
+	let store;
+
+	beforeEach(() => {
+		vi.useFakeTimers();
+		setActivePinia(createPinia());
+		store = useWorkflowStore();
+		for (const fn of Object.values(workflowsApi)) fn.mockReset();
+	});
+
+	afterEach(() => {
+		store.clearCurrentWorkflow();
+		vi.useRealTimers();
+	});
+
+	it("picks up a scheduled run that started while the builder was open", async () => {
+		workflowsApi.listRuns.mockResolvedValue({
+			runs: [{ name: "R9", status: "Running", trigger_type: "scheduled" }],
+			total: 1,
+		});
+		workflowsApi.getRun.mockResolvedValue({ name: "R9", status: "Running" });
+
+		store.watchLatestRun("WF-1");
+		await vi.advanceTimersByTimeAsync(10000);
+
+		expect(workflowsApi.listRuns).toHaveBeenCalledWith("WF-1", null, 0, 1);
+		expect(store.activeRunName).toBe("R9");
+		expect(store.isRunning).toBe(true);
+		await vi.advanceTimersByTimeAsync(2000);
+		expect(workflowsApi.getRun).toHaveBeenCalledWith("R9");
+	});
+
+	it("ignores a finished newest run", async () => {
+		workflowsApi.listRuns.mockResolvedValue({ runs: [{ name: "R8", status: "Completed" }], total: 1 });
+		store.watchLatestRun("WF-1");
+		await vi.advanceTimersByTimeAsync(10000);
+		expect(store.isRunning).toBe(false);
+	});
+
+	it("stops when the builder closes", async () => {
+		workflowsApi.listRuns.mockResolvedValue({ runs: [], total: 0 });
+		store.watchLatestRun("WF-1");
+		store.clearCurrentWorkflow();
+		await vi.advanceTimersByTimeAsync(30000);
+		expect(workflowsApi.listRuns).not.toHaveBeenCalled();
+	});
+
+	it("drops a poll answered after the builder closed", async () => {
+		let answerList;
+		workflowsApi.listRuns.mockReturnValue(new Promise((resolve) => (answerList = resolve)));
+		store.watchLatestRun("WF-1");
+		await vi.advanceTimersByTimeAsync(10000);
+
+		store.clearCurrentWorkflow();
+		answerList({ runs: [{ name: "R9", status: "Running" }], total: 1 });
+		await vi.advanceTimersByTimeAsync(0);
+
+		expect(store.activeRunName).toBeNull();
+		expect(store.isRunning).toBe(false);
 	});
 });

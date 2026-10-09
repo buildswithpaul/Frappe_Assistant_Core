@@ -102,6 +102,7 @@ def stub_frappe(
     direct_result=None,
     report_timeout=120,
     prepared_status="Completed",
+    in_flight=None,
 ):
     """Patch the Frappe boundary `_handle_prepared_report_execution` calls into."""
     real_get_value = frappe.get_value
@@ -111,6 +112,16 @@ def stub_frappe(
         if doctype == "Report" and args and args[-1] == "timeout":
             return report_timeout
         return real_get_value(doctype, *args, **kwargs)
+
+    real_get_all = frappe.get_all
+
+    def fake_get_all(doctype, *args, **kwargs):
+        if doctype == "Prepared Report":
+            return [
+                frappe._dict({"owner": frappe.session.user, "creation": frappe.utils.now_datetime(), **row})
+                for row in in_flight or []
+            ]
+        return real_get_all(doctype, *args, **kwargs)
 
     def fake_get_doc(*args, **kwargs):
         if args and args[0] == "Prepared Report":
@@ -144,9 +155,17 @@ def stub_frappe(
                     return_value=prepared_result,
                 )
             ),
+            in_flight=stack.enter_context(
+                patch(
+                    f"{PREPARED_REPORT}.get_reports_in_queued_state",
+                    autospec=True,
+                    return_value=in_flight or [],
+                )
+            ),
             run=stack.enter_context(patch(f"{QUERY_REPORT}.run", autospec=True, return_value=direct_result)),
         )
         stack.enter_context(patch.object(frappe, "get_value", side_effect=fake_get_value))
+        stack.enter_context(patch.object(frappe, "get_all", side_effect=fake_get_all))
         stack.enter_context(patch.object(frappe, "get_doc", side_effect=fake_get_doc))
 
         # The polling loop sleeps between attempts and rolls back to re-read the

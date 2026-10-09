@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { mount } from "@vue/test-utils";
+import { mount, flushPromises } from "@vue/test-utils";
 import { setActivePinia, createPinia } from "pinia";
 import { reactive, nextTick } from "vue";
 
@@ -54,6 +54,34 @@ describe("AgentConfig", () => {
 		resolveWorkflowTools.mockResolvedValue({ resolved: [], all_tools_available: true });
 	});
 
+	it("re-resolves when the runtime user changes", async () => {
+		const directives = [{ tool_name: "list_documents" }];
+		const { wrapper } = mountConfig({ tool_directives: directives });
+		await flushPromises();
+		resolveWorkflowTools.mockClear();
+		await wrapper.setProps({ runtimeUser: "ops@example.com" });
+		await flushPromises();
+		expect(resolveWorkflowTools).toHaveBeenCalledWith(directives, "ops@example.com");
+	});
+
+	it("a late response for an older request never overwrites newer badges", async () => {
+		const directives = [{ tool_name: "list_documents" }];
+		const resolved = (n) => ({ resolved: [{ tool_name: "list_documents", server: "Main Frappe Site", marker: n }] });
+		let releaseFirst;
+		resolveWorkflowTools.mockReset();
+		resolveWorkflowTools.mockImplementationOnce(
+			() => new Promise((r) => (releaseFirst = () => r(resolved("OLD"))))
+		);
+		resolveWorkflowTools.mockResolvedValueOnce(resolved("NEW"));
+		const { wrapper } = mountConfig({ tool_directives: directives });
+		await wrapper.setProps({ runtimeUser: "ops@example.com" });
+		await flushPromises();
+		releaseFirst();
+		await flushPromises();
+		const shown = wrapper.findComponent({ name: "ToolSection" }).props("resolution");
+		expect([...shown.values()].map((r) => r.marker)).toEqual(["NEW"]);
+	});
+
 	it("writes the bare tool name the engine resolves against", async () => {
 		const { wrapper, config } = mountConfig();
 		wrapper.findComponent({ name: "ToolSection" }).vm.$emit("add", LIST_DOCUMENTS);
@@ -94,7 +122,7 @@ describe("AgentConfig", () => {
 	it("resolves the configured tools against the runtime user on mount", async () => {
 		mountConfig({ tool_directives: [{ tool_name: "list_documents" }] });
 		await nextTick();
-		expect(resolveWorkflowTools).toHaveBeenCalledWith([{ tool_name: "list_documents" }]);
+		expect(resolveWorkflowTools).toHaveBeenCalledWith([{ tool_name: "list_documents" }], null);
 	});
 
 	it("does not call the admin-only resolver for a read-only viewer", async () => {

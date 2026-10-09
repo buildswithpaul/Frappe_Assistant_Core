@@ -4,10 +4,12 @@
 
 """Workflow CRUD, execution, scheduling, templates, and tool resolution."""
 
+import json
+
 import frappe
 from frappe import _
 
-from .auth import _ar_user_id
+from .auth import _ar_user_id, _runtime_ar_user_id
 
 #: AR reports an unusable MCP connection as a per-server error code. Map it to
 #: the action the SPA can actually offer instead of showing "No tools found".
@@ -62,7 +64,13 @@ def list_workflows(status: str | None = None, page: int = 0, page_size: int = 20
 
     except Exception as e:
         frappe.log_error(title="FACO Workflows", message=f"Error listing workflows: {e!s}")
-        return {"workflows": [], "total": 0, "page": 0, "page_size": 20}
+        return {
+            "workflows": [],
+            "total": 0,
+            "page": 0,
+            "page_size": 20,
+            "error": _("Could not reach FAC Cloud to list your agents. Try again in a moment."),
+        }
 
 
 @frappe.whitelist(methods=["POST"])
@@ -75,7 +83,10 @@ def create_workflow(
     error_strategy: str = "fail_fast",
     timeout_seconds: int = 600,
 ):
-    """Create a new workflow. Admin only."""
+    """Create a new workflow. Admin only.
+
+    A workflow runs as its runtime user; it defaults to the creator.
+    """
     _require_admin()
 
     if not workflow_name:
@@ -83,8 +94,6 @@ def create_workflow(
 
     # Provide a default graph with input + output nodes if none given
     if not graph_json:
-        import json
-
         graph_json = json.dumps(
             {
                 "version": "1.0",
@@ -121,7 +130,7 @@ def create_workflow(
             graph_json=graph_json,
             description=description,
             default_model_id=default_model_id,
-            default_user_id=default_user_id,
+            default_user_id=_ar_user_id(default_user_id or frappe.session.user),
             error_strategy=error_strategy,
             timeout_seconds=int(timeout_seconds),
         )
@@ -198,7 +207,8 @@ def update_workflow(
         if default_model_id is not None:
             kwargs["default_model_id"] = default_model_id
         if default_user_id is not None:
-            kwargs["default_user_id"] = default_user_id
+            # "" clears the runtime user; anything else becomes its AR identity.
+            kwargs["default_user_id"] = _ar_user_id(default_user_id) if default_user_id else ""
         if error_strategy is not None:
             kwargs["error_strategy"] = error_strategy
         if timeout_seconds is not None:
@@ -299,6 +309,33 @@ def cancel_workflow_run(run_name: str | None = None):
         frappe.throw(_("Error: {0}").format(str(e)))
 
 
+def _with_skipped_actions(run: dict | None) -> dict | None:
+    """Give a run its skipped-write fields as an int and a list, whatever AR sent.
+
+    AR stores ``skipped_actions_detail`` as JSON text, and releases before the
+    field existed send neither key. The SPA's "N actions skipped" badge reads
+    ``skipped_actions`` and lists ``skipped_actions_detail``.
+    """
+    if not isinstance(run, dict):
+        return run
+
+    detail = run.get("skipped_actions_detail")
+    if isinstance(detail, str):
+        try:
+            detail = json.loads(detail) if detail.strip() else []
+        except ValueError:
+            detail = []
+    detail = [d for d in detail if isinstance(d, dict)] if isinstance(detail, list) else []
+    run["skipped_actions_detail"] = detail
+
+    count = run.get("skipped_actions")
+    try:
+        run["skipped_actions"] = int(count) if count not in (None, "") else len(detail)
+    except (TypeError, ValueError):
+        run["skipped_actions"] = len(detail)
+    return run
+
+
 @frappe.whitelist(methods=["GET"])
 def get_workflow_run(run_name: str | None = None):
     """Get workflow run details."""
@@ -314,7 +351,7 @@ def get_workflow_run(run_name: str | None = None):
         if not client:
             frappe.throw(_("Not connected to FAC Cloud"))
 
-        return client.get_workflow_run(run_name)
+        return _with_skipped_actions(client.get_workflow_run(run_name))
 
     except frappe.ValidationError:
         raise
@@ -337,16 +374,25 @@ def list_workflow_runs(
         if not client:
             return {"runs": [], "total": 0, "page": 0, "page_size": 20}
 
-        return client.list_workflow_runs(
+        result = client.list_workflow_runs(
             workflow_name=workflow_name,
             status=status,
             page=int(page),
             page_size=int(page_size),
-        )
+        ) or {"runs": [], "total": 0, "page": 0, "page_size": 20}
+        for run in result.get("runs") or []:
+            _with_skipped_actions(run)
+        return result
 
     except Exception as e:
         frappe.log_error(title="FACO Workflows", message=f"Error listing workflow runs: {e!s}")
-        return {"runs": [], "total": 0, "page": 0, "page_size": 20}
+        return {
+            "runs": [],
+            "total": 0,
+            "page": 0,
+            "page_size": 20,
+            "error": _("Could not reach FAC Cloud to list runs. Try again in a moment."),
+        }
 
 
 @frappe.whitelist(methods=["GET"])
@@ -474,7 +520,7 @@ def test_workflow_node(
             node_json=node_json,
             input_text=input_text,
             default_model_id=default_model_id,
-            default_user_id=default_user_id,
+            default_user_id=_ar_user_id(default_user_id) if default_user_id else None,
         )
 
     except frappe.PermissionError:
@@ -491,9 +537,13 @@ def run_workflow_node(
     name: str | None = None,
     node_id: str | None = None,
     input_text: str = "Test input",
-    user_id: str | None = None,
 ):
-    """Run a single node from a saved workflow. Admin only."""
+    """Run a single node from a saved workflow. Admin only.
+
+    The node runs as the workflow's runtime user (or the node's own user
+    override), never as the caller: a test that used the admin's tools would
+    pass while the real run, with the runtime user's tools, failed.
+    """
     _require_admin()
 
     if not name:
@@ -508,15 +558,7 @@ def run_workflow_node(
         if not client:
             frappe.throw(_("Not connected to FAC Cloud"))
 
-        # AR keys tenant users by email, and on this endpoint user_id OVERRIDES
-        # the workflow's configured runtime user — so it is normalised when the
-        # caller sends one, and left absent when they do not.
-        return client.run_workflow_node(
-            name=name,
-            node_id=node_id,
-            input_text=input_text,
-            user_id=_ar_user_id(user_id) if user_id else None,
-        )
+        return client.run_workflow_node(name=name, node_id=node_id, input_text=input_text)
 
     except frappe.PermissionError:
         raise
@@ -543,15 +585,17 @@ def run_workflow_node(
 
 
 @frappe.whitelist(methods=["GET"])
-def list_user_tools():
-    """List all available tools from the current user's MCP servers.
+def list_user_tools(runtime_user: str | None = None):
+    """List the MCP tools available to ``runtime_user`` (default: the caller).
 
-    A discovery failure is reported as a failure. Returning
+    The workflow builder passes the workflow's runtime user, because that is
+    whose tools a run gets. A discovery failure is reported as a failure. Returning
     ``{"success": True, "tools": []}`` for an expired OAuth token turned a
     one-click reconnect into "No tools found", which reads as "you have no
     tools" and leaves the user with nothing to do.
     """
     _require_login()
+    ar_user = _runtime_ar_user_id(runtime_user)
 
     try:
         from frappe_assistant_core.chat.fac_cloud_client import get_fac_cloud_client
@@ -563,7 +607,7 @@ def list_user_tools():
                 error_code="NOT_REGISTERED",
             )
 
-        result = client.list_tools(user_id=_ar_user_id(frappe.session.user)) or {}
+        result = client.list_tools(user_id=ar_user) or {}
 
         # AR answers a tenant/user-level failure with {error, error_code,
         # action_required} and no `tools` key at all.
@@ -630,17 +674,17 @@ def _tool_failure(
 
 
 @frappe.whitelist(methods=["POST"])
-def resolve_workflow_tools(tool_directives: str | list | None = None):
-    """Preview how tool directives resolve against the current user's MCP tools.
+def resolve_workflow_tools(tool_directives: str | list | None = None, runtime_user: str | None = None):
+    """Preview how tool directives resolve against ``runtime_user``'s MCP tools.
 
-    A read: it reports only on the caller's own MCP inventory, so a read-only
-    viewer sees honest resolution badges instead of an empty panel.
+    The builder passes the workflow's runtime user (or the node's own user), so
+    the badges describe the tools a run will actually get. Without it the
+    caller's own inventory is used, which a read-only viewer may always see.
     """
     _require_login()
+    ar_user = _runtime_ar_user_id(runtime_user)
 
     try:
-        import json as _json
-
         from frappe_assistant_core.chat.fac_cloud_client import get_fac_cloud_client
 
         client = get_fac_cloud_client()
@@ -648,13 +692,13 @@ def resolve_workflow_tools(tool_directives: str | list | None = None):
             frappe.throw(_("Not connected to FAC Cloud"))
 
         if isinstance(tool_directives, str):
-            tool_directives = _json.loads(tool_directives)
+            tool_directives = json.loads(tool_directives)
 
         if not tool_directives:
             return {"resolved": [], "all_tools_available": True, "missing_tools": []}
 
         return client.resolve_workflow_tools(
-            user_id=_ar_user_id(frappe.session.user),
+            user_id=ar_user,
             tool_directives=tool_directives,
         )
 

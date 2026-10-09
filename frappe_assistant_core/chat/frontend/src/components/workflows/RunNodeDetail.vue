@@ -2,7 +2,7 @@
 	<div class="node-detail" :class="{ open }">
 		<button class="node-row" @click.stop="open = !open">
 			<span class="node-name">{{ nodeRun.node_label || nodeRun.node_id }}</span>
-			<span class="status-badge" :class="statusClass(nodeRun.status)">{{
+			<span class="status-badge" :class="badgeClass(nodeRun.status)">{{
 				nodeRun.status
 			}}</span>
 			<svg
@@ -34,21 +34,28 @@
 				{{ nodeRun.error_message }}
 			</div>
 
-			<div v-if="renderedOutput" class="io-section">
-				<div class="io-label">Output</div>
+			<div v-if="isJsonNode && nodeRun.output_text" class="io-section">
+				<div class="io-label">{{ __("Output") }}</div>
+				<pre class="io-json">{{ prettyJson }}</pre>
+				<div v-if="nodeRun.output_text_truncated" class="truncated-note">
+					{{ __("Output truncated for display: showing the first 10,000 characters") }}
+				</div>
+			</div>
+			<div v-else-if="renderedOutput" class="io-section">
+				<div class="io-label">{{ __("Output") }}</div>
 				<div class="io-output markdown-body" v-html="renderedOutput"></div>
 				<div v-if="nodeRun.output_text_truncated" class="truncated-note">
-					Output truncated for display
+					{{ __("Output truncated for display: showing the first 10,000 characters") }}
 				</div>
 			</div>
 
 			<div v-if="nodeRun.input_text" class="io-section">
 				<button class="input-toggle" @click.stop="showInput = !showInput">
-					{{ showInput ? "Hide input" : "Show input" }}
+					{{ showInput ? __("Hide input") : __("Show input") }}
 				</button>
 				<pre v-if="showInput" class="io-input">{{ nodeRun.input_text }}</pre>
 				<div v-if="showInput && nodeRun.input_text_truncated" class="truncated-note">
-					Input truncated for display
+					{{ __("Input truncated for display: showing the first 10,000 characters") }}
 				</div>
 			</div>
 		</div>
@@ -57,11 +64,20 @@
 			<span v-if="nodeRun.duration_ms">{{ formatDuration(nodeRun.duration_ms) }}</span>
 			<span v-if="nodeRun.model_id" class="meta-model">{{ nodeRun.model_id }}</span>
 			<span v-if="nodeRun.credits_used" class="meta-dim"
-				>{{ formatCredits(nodeRun.credits_used) }} credits</span
+				>{{ __("{0} credits", [formatCredits(nodeRun.credits_used)]) }}</span
 			>
+			<span v-if="loop">{{
+				__("{0} processed · {1} failed · {2} over the limit", [
+					loop.processed,
+					loop.failed,
+					loop.skipped,
+				])
+			}}</span>
 			<span v-if="nodeRun.tool_calls_count" class="meta-dim"
-				>{{ nodeRun.tool_calls_count }} tool call{{
-					nodeRun.tool_calls_count > 1 ? "s" : ""
+				>{{
+					nodeRun.tool_calls_count > 1
+						? __("{0} tool calls", [nodeRun.tool_calls_count])
+						: __("1 tool call")
 				}}</span
 			>
 		</div>
@@ -72,6 +88,15 @@
 import { ref, computed } from "vue";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
+import { __ } from "@/utils/i18n";
+import {
+	formatCredits,
+	formatDuration,
+	loopSummary,
+	parseJsonMaybe,
+	statusClass,
+	truncate,
+} from "./runs/runFormat";
 
 const props = defineProps({
 	nodeRun: { type: Object, required: true },
@@ -85,34 +110,19 @@ const renderedOutput = computed(() => {
 	return DOMPurify.sanitize(marked.parse(props.nodeRun.output_text));
 });
 
-function statusClass(status) {
-	const s = status?.toLowerCase();
-	if (s === "completed") return "badge-success";
-	if (s === "running") return "badge-running";
-	if (s === "failed") return "badge-danger";
-	if (s === "cancelled") return "badge-warning";
-	return "badge-queued";
-}
+const isJsonNode = computed(() => ["tool", "loop"].includes(props.nodeRun.node_type));
 
-function formatDuration(ms) {
-	if (!ms) return "";
-	if (ms < 1000) return `${ms}ms`;
-	if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
-	const m = Math.floor(ms / 60000);
-	const s = Math.round((ms % 60000) / 1000);
-	return `${m}m ${s}s`;
-}
+const prettyJson = computed(() => {
+	const v = parseJsonMaybe(props.nodeRun.output_text, null);
+	return v === null ? props.nodeRun.output_text : JSON.stringify(v, null, 2);
+});
 
-function formatCredits(credits) {
-	if (!credits) return "";
-	if (credits < 0.01) return credits.toFixed(4);
-	if (credits < 1) return credits.toFixed(2);
-	return credits.toFixed(1);
-}
+const loop = computed(() =>
+	props.nodeRun.node_type === "loop" ? loopSummary(props.nodeRun.output_text) : null
+);
 
-function truncate(text, len) {
-	if (!text) return "";
-	return text.length > len ? text.slice(0, len) + "..." : text;
+function badgeClass(status) {
+	return statusClass(status) || "badge-queued";
 }
 </script>
 
@@ -185,6 +195,12 @@ function truncate(text, len) {
 .badge-warning {
 	background: rgba(245, 158, 11, 0.12);
 	color: #d97706;
+}
+
+.badge-timeout {
+	background: color-mix(in srgb, var(--ql-danger) 10%, transparent);
+	color: var(--ql-warning);
+	border: 1px solid color-mix(in srgb, var(--ql-warning) 40%, transparent);
 }
 
 .badge-queued {
@@ -264,6 +280,19 @@ function truncate(text, len) {
 	background: rgba(0, 0, 0, 0.06);
 	padding: 0.0625rem 0.25rem;
 	border-radius: 0.1875rem;
+}
+
+.io-json {
+	margin: 0;
+	max-height: 20rem;
+	overflow: auto;
+	font-family: var(--ql-font-mono);
+	font-size: 0.6875rem;
+	white-space: pre-wrap;
+	word-break: break-word;
+	background: var(--ql-subtle);
+	padding: 0.5rem;
+	border-radius: var(--ql-radius-sm);
 }
 
 .input-toggle {

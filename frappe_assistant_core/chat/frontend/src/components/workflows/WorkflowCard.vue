@@ -1,8 +1,12 @@
 <template>
-	<div class="workflow-card" @click="$emit('click')">
+	<div class="workflow-card">
 		<div class="card-header">
 			<div class="card-title-row">
-				<h3 class="card-title">{{ workflow.workflow_name }}</h3>
+				<h3 class="card-title">
+					<button type="button" class="card-open-btn" @click="$emit('click')">
+						{{ workflow.workflow_name }}
+					</button>
+				</h3>
 				<span class="status-badge" :class="statusClass">{{ workflow.status }}</span>
 			</div>
 			<p v-if="workflow.description" class="card-description">{{ workflow.description }}</p>
@@ -11,15 +15,17 @@
 		<div class="card-stats">
 			<div class="stat" v-if="workflow.total_runs > 0">
 				<span class="stat-value">{{ workflow.total_runs }}</span>
-				<span class="stat-label">runs</span>
+				<span class="stat-label">{{
+					workflow.total_runs === 1 ? __("run") : __("runs")
+				}}</span>
 			</div>
 			<div class="stat" v-if="workflow.successful_runs > 0">
 				<span class="stat-value stat-success">{{ workflow.successful_runs }}</span>
-				<span class="stat-label">passed</span>
+				<span class="stat-label">{{ __("passed") }}</span>
 			</div>
 			<div class="stat" v-if="workflow.failed_runs > 0">
 				<span class="stat-value stat-failed">{{ workflow.failed_runs }}</span>
-				<span class="stat-label">failed</span>
+				<span class="stat-label">{{ __("failed") }}</span>
 			</div>
 		</div>
 
@@ -28,7 +34,7 @@
 				<span
 					v-if="workflow.schedule_enabled"
 					class="schedule-indicator"
-					title="Scheduled"
+					:title="__('Scheduled')"
 				>
 					<svg class="meta-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 						<path
@@ -42,14 +48,14 @@
 				<span v-if="workflow.last_run_at" class="last-run">{{
 					formatDate(workflow.last_run_at)
 				}}</span>
-				<span v-else class="last-run">No runs yet</span>
+				<span v-else class="last-run">{{ __("No runs yet") }}</span>
 			</div>
 			<button
 				v-if="isAdmin"
 				@click.stop="$emit('duplicate')"
 				class="delete-btn"
-				title="Duplicate agent"
-				aria-label="Duplicate agent"
+				:title="__('Duplicate agent')"
+				:aria-label="__('Duplicate agent')"
 			>
 				<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 					<path
@@ -64,8 +70,8 @@
 				v-if="isAdmin"
 				@click.stop="$emit('delete')"
 				class="delete-btn"
-				title="Delete agent"
-				aria-label="Delete agent"
+				:title="__('Delete agent')"
+				:aria-label="__('Delete agent')"
 			>
 				<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 					<path
@@ -83,6 +89,7 @@
 <script setup>
 import { computed } from "vue";
 import { useUserStore } from "@/stores/userStore";
+import { __ } from "@/utils/i18n";
 import { formatRelativeTime } from "@/composables/useFormatters";
 
 const props = defineProps({
@@ -124,6 +131,30 @@ const formatDate = formatRelativeTime;
 	gap: 0.75rem;
 }
 
+.workflow-card {
+	position: relative;
+}
+.workflow-card:has(.card-open-btn:focus-visible) {
+	outline: 2px solid var(--ql-accent);
+	outline-offset: 2px;
+}
+.card-open-btn {
+	all: unset;
+	cursor: pointer;
+	display: block;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.card-open-btn::after {
+	content: "";
+	position: absolute;
+	inset: 0;
+	border-radius: inherit;
+}
+.card-footer .delete-btn {
+	position: relative;
+	z-index: 1;
+}
 .workflow-card:hover {
 	border-color: var(--ql-accent);
 	box-shadow: 0 2px 8px var(--ql-accent-soft);

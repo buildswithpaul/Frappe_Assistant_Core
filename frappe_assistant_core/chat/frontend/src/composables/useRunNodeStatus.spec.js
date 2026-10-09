@@ -61,4 +61,32 @@ describe("useRunNodeStatus", () => {
 		);
 		expect(isEdgeAnimated({ source: "a", target: "b" })).toBe(false);
 	});
+
+	it("marks the node whose write was skipped", () => {
+		const { nodeClass } = setup(
+			{
+				status: "Completed",
+				node_runs: [{ node_id: "a", status: "Completed" }],
+				skipped_actions_detail: JSON.stringify([{ node_id: "a", tool: "send_email", reason: "x" }]),
+			},
+			false
+		);
+		expect(nodeClass("a")).toBe("run-completed run-skipped-action");
+	});
+
+	it("paints a failed node", () => {
+		const { nodeClass } = setup({ node_runs: [{ node_id: "b", status: "Failed" }] }, false);
+		expect(nodeClass("b")).toBe("run-failed");
+	});
+
+	it("drops the skipped marker when the run changes to one without skipped actions", () => {
+		const run = ref({
+			node_runs: [{ node_id: "a", status: "Completed" }],
+			skipped_actions_detail: JSON.stringify([{ node_id: "a", tool: "t", reason: "x" }]),
+		});
+		const { nodeClass } = useRunNodeStatus(run, ref(false));
+		expect(nodeClass("a")).toContain("run-skipped-action");
+		run.value = { node_runs: [{ node_id: "a", status: "Completed" }] };
+		expect(nodeClass("a")).toBe("run-completed");
+	});
 });

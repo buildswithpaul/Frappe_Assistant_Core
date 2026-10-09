@@ -1,21 +1,21 @@
 <template>
 	<div class="config-section tools-section">
 		<div class="tools-header">
-			<label class="config-label">Tools</label>
+			<label class="config-label">{{ __("Tools") }}</label>
 			<div class="tools-header-actions">
 				<button
 					v-if="directives.length"
 					class="link-btn"
 					:disabled="isResolving"
-					title="Re-check tool availability"
+					:title="__('Re-check tool availability')"
 					@click="$emit('recheck')"
 				>
-					{{ isResolving ? "Checking…" : "Re-check" }}
+					{{ isResolving ? __("Checking…") : __("Re-check") }}
 				</button>
 				<button
 					v-if="!readonly"
 					class="add-tool-btn"
-					title="Add tool"
+					:title="__('Add tool')"
 					@click="showToolPicker = true"
 				>
 					<svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -26,21 +26,38 @@
 							d="M12 4v16m8-8H4"
 						/>
 					</svg>
-					Add
+					{{ __("Add") }}
 				</button>
 			</div>
 		</div>
 
 		<p v-if="directives.length" class="tools-caption">
-			Preferred / Optional only changes how the prompt asks for a tool. Required is the one
-			the engine enforces.
+			{{
+				__(
+					"Preferred / Optional only changes how the prompt asks for a tool. Required is the one the engine enforces."
+				)
+			}}
 		</p>
 
 		<p v-if="missingCount" class="tools-banner bad">
-			{{ missingCount }} of {{ directives.length }} tools unavailable to
-			<strong>{{ runtimeUserLabel }}</strong
-			>. The agent will run without them.
+			{{
+				__("{0} of {1} tools unavailable to {2}. The agent will run without them.", [
+					missingCount,
+					directives.length,
+					userLabel,
+				])
+			}}
 		</p>
+
+		<ul v-if="shownFailures.length" class="tools-banner bad server-failures">
+			<li v-for="(f, i) in shownFailures" :key="`${f.server}-${i}`">
+				<template v-if="f.needsReconnect">
+					{{ __("Reconnect {0} — its sign-in expired.", [f.server]) }}
+					<RouterLink to="/settings/connections">{{ __("Open Settings → Connections") }}</RouterLink>
+				</template>
+				<template v-else>{{ failureText(f) }}</template>
+			</li>
+		</ul>
 
 		<ToolPicker
 			v-if="showToolPicker"
@@ -76,15 +93,22 @@
 				:disabled="isReconnecting"
 				@click="reconnect"
 			>
-				{{ isReconnecting ? "Reconnecting…" : `Reconnect ${reconnectTarget}` }}
+				{{ isReconnecting ? __("Reconnecting…") : __("Reconnect {0}", [reconnectTarget]) }}
 			</button>
 			<button
 				v-else-if="emptyState.action === 'retry'"
 				class="empty-action"
 				@click="$emit('reload-tools')"
 			>
-				Try again
+				{{ __("Try again") }}
 			</button>
+			<RouterLink
+				v-else-if="emptyState.action === 'connect'"
+				to="/settings/connections"
+				class="empty-action"
+			>
+				{{ __("Open Settings → Connections") }}
+			</RouterLink>
 			<p v-if="reconnectError" class="empty-error">{{ reconnectError }}</p>
 		</div>
 	</div>
@@ -96,7 +120,13 @@ import { useUserStore } from "@/stores/userStore";
 import { logger } from "@/utils/logger";
 import ToolPicker from "./ToolPicker.vue";
 import ToolDirectiveCard from "./ToolDirectiveCard.vue";
-import { directiveKey, serverForDirective, serversNeedingReconnect } from "./toolDirectives";
+import { __ } from "@/utils/i18n";
+import {
+	directiveKey,
+	serverFailures,
+	serverForDirective,
+	serversNeedingReconnect,
+} from "./toolDirectives";
 
 const props = defineProps({
 	directives: { type: Array, default: () => [] },
@@ -108,7 +138,7 @@ const props = defineProps({
 	/** "ok" | "loading" | "failed" | "auth" | "no-servers" | "empty" */
 	discoveryState: { type: String, default: "ok" },
 	toolsResult: { type: Object, default: null },
-	runtimeUserLabel: { type: String, default: "this agent's user" },
+	runtimeUserLabel: { type: String, default: "" },
 	readonly: { type: Boolean, default: false },
 });
 
@@ -139,6 +169,25 @@ const missingCount = computed(
 			.length
 );
 
+const failures = computed(() => serverFailures(props.toolsResult));
+
+// The auth empty state already offers the reconnect, so repeating an expired
+// server there would say it twice; once tools are configured it is the only cue.
+const shownFailures = computed(() =>
+	props.directives.length ? failures.value : failures.value.filter((f) => !f.needsReconnect)
+);
+
+function failureText(failure) {
+	return failure.message
+		? __("Couldn't reach {0}: {1}. Its tools are missing from the list.", [
+				failure.server,
+				failure.message,
+			])
+		: __("Couldn't reach {0}. Its tools are missing from the list.", [failure.server]);
+}
+
+const userLabel = computed(() => props.runtimeUserLabel || __("this agent's user"));
+
 const reconnectTarget = computed(
 	() => serversNeedingReconnect(props.toolsResult)[0] || "Main Frappe Site"
 );
@@ -147,33 +196,37 @@ const reconnectTarget = computed(
 const emptyState = computed(() => {
 	switch (props.discoveryState) {
 		case "loading":
-			return { tone: "", title: "Loading tools…", subtitle: "", action: null };
+			return { tone: "", title: __("Loading tools…"), subtitle: "", action: null };
 		case "auth":
 			return {
 				tone: "bad",
-				title: "Tool discovery needs a reconnect",
-				subtitle: `${reconnectTarget.value} rejected the stored credentials, so its tools could not be listed.`,
+				title: __("Tool discovery needs a reconnect"),
+				subtitle: __("{0} rejected the stored credentials, so its tools could not be listed.", [
+					reconnectTarget.value,
+				]),
 				action: "reconnect",
 			};
 		case "failed":
 			return {
 				tone: "bad",
-				title: "Could not list tools",
-				subtitle: "The MCP servers could not be reached. The list below may be incomplete.",
+				title: __("Could not list tools"),
+				subtitle: failures.value.length
+					? __("See the failed servers above.")
+					: __("The MCP servers could not be reached. The list below may be incomplete."),
 				action: "retry",
 			};
 		case "no-servers":
 			return {
 				tone: "",
-				title: "No MCP servers connected",
-				subtitle: "Connect a server in Settings → Workspace before giving this task tools.",
-				action: null,
+				title: __("No MCP servers connected"),
+				subtitle: __("Connect a server before giving this task tools."),
+				action: "connect",
 			};
 		default:
 			return {
 				tone: "",
-				title: "No tools configured",
-				subtitle: "Add tools to give this task capabilities.",
+				title: __("No tools configured"),
+				subtitle: __("Add tools to give this task capabilities."),
 				action: null,
 			};
 	}
@@ -195,10 +248,10 @@ async function reconnect() {
 	try {
 		const result = await userStore.reconnectServer(reconnectTarget.value);
 		if (result?.success) emit("reload-tools");
-		else reconnectError.value = result?.error || "Reconnect failed";
+		else reconnectError.value = result?.error || __("Reconnect failed");
 	} catch (err) {
 		logger.error("Tool reconnect failed:", err);
-		reconnectError.value = err.message || "Reconnect failed";
+		reconnectError.value = err.message || __("Reconnect failed");
 	} finally {
 		isReconnecting.value = false;
 	}

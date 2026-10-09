@@ -4,22 +4,23 @@
 		<ToolbarButton
 			v-if="isAdmin && statusToggle"
 			:class="statusToggle.btnClass"
-			:disabled="isSaving || isRunning"
+			:disabled="isSaving || isRunning || statusBusy"
 			:title="statusToggle.tooltip"
-			:aria-label="statusToggle.label"
-			:label="statusToggle.label"
+			:aria-label="statusBusy ? __('Checking write tools…') : statusToggle.label"
+			:label="statusBusy ? __('Checking…') : statusToggle.label"
 			@click="$emit('toggle-status')"
 		>
-			<ToolbarIcon :name="statusToggle.icon" />
+			<ToolbarIcon v-if="!statusBusy" :name="statusToggle.icon" />
+			<ToolbarIcon v-else name="spinner" spin />
 		</ToolbarButton>
 
 		<ToolbarButton
 			v-if="isAdmin"
 			:class="{ accent: isDirty }"
 			:disabled="isSaving || !isDirty"
-			title="Save agent"
-			aria-label="Save agent"
-			label="Save"
+			:title="__('Save agent')"
+			:aria-label="__('Save agent')"
+			:label="__('Save')"
 			@click="$emit('save')"
 		>
 			<ToolbarIcon name="save" />
@@ -28,10 +29,10 @@
 		<ToolbarButton
 			v-if="isAdmin"
 			class="primary"
-			:disabled="isRunning"
-			title="Execute agent"
-			aria-label="Execute agent"
-			:label="isRunning ? 'Running...' : 'Run'"
+			:disabled="isRunning || !canRun"
+			:title="!canRun && runBlockReason ? runBlockReason : __('Run agent')"
+			:aria-label="__('Run agent')"
+			:label="isRunning ? __('Running...') : __('Run')"
 			@click="$emit('run')"
 		>
 			<ToolbarIcon v-if="!isRunning" name="play" />
@@ -40,30 +41,21 @@
 
 		<ToolbarButton
 			v-if="isAdmin"
-			title="Schedule agent"
-			aria-label="Schedule agent"
-			label="Schedule"
-			@click="$emit('schedule')"
+			:class="{ accent: setupTodo > 0 }"
+			:title="__('Setup checklist')"
+			:aria-label="setupTodo ? __('Setup checklist, {0} to do', [setupTodo]) : __('Setup checklist')"
+			:label="setupTodo ? __('Setup ({0})', [setupTodo]) : __('Setup')"
+			@click="$emit('setup')"
 		>
-			<ToolbarIcon name="clock" />
-		</ToolbarButton>
-
-		<ToolbarButton
-			v-if="isAdmin"
-			title="Event triggers"
-			aria-label="Event triggers"
-			label="Triggers"
-			@click="$emit('triggers')"
-		>
-			<ToolbarIcon name="bolt" />
+			<ToolbarIcon name="gear" />
 		</ToolbarButton>
 
 		<ToolbarButton
 			v-if="isAdmin"
 			:class="{ active: hasVariables }"
-			title="Agent variables"
-			aria-label="Agent variables"
-			label="Variables"
+			:title="__('Agent variables')"
+			:aria-label="__('Agent variables')"
+			:label="__('Variables')"
 			@click="$emit('variables')"
 		>
 			<ToolbarIcon name="tag" />
@@ -71,29 +63,19 @@
 
 		<ToolbarButton
 			v-if="isAdmin && canShareTemplate"
-			title="Share as template"
-			aria-label="Share as template"
-			label="Share"
+			:title="__('Share as template')"
+			:aria-label="__('Share as template')"
+			:label="__('Share')"
 			@click="$emit('share-template')"
 		>
 			<ToolbarIcon name="share" />
 		</ToolbarButton>
 
 		<ToolbarButton
-			v-if="isAdmin"
-			title="Agent settings"
-			aria-label="Agent settings"
-			label="Settings"
-			@click="$emit('settings')"
-		>
-			<ToolbarIcon name="gear" />
-		</ToolbarButton>
-
-		<ToolbarButton
 			:class="{ active: showRuns }"
-			title="Run history"
-			aria-label="Run history"
-			label="Runs"
+			:title="__('Run history')"
+			:aria-label="__('Run history')"
+			:label="__('Runs')"
 			@click="$emit('toggle-runs')"
 		>
 			<ToolbarIcon name="clipboard" />
@@ -101,9 +83,9 @@
 
 		<ToolbarButton
 			:class="{ active: showAudit }"
-			title="Audit summary"
-			aria-label="Audit summary"
-			label="Audit"
+			:title="__('Audit summary')"
+			:aria-label="__('Audit summary')"
+			:label="__('Audit')"
 			@click="$emit('toggle-audit')"
 		>
 			<ToolbarIcon name="chart" />
@@ -115,6 +97,7 @@
 import { computed } from "vue";
 import ToolbarButton from "./ToolbarButton.vue";
 import ToolbarIcon from "./ToolbarIcon.vue";
+import { __ } from "@/utils/i18n";
 
 const props = defineProps({
 	status: { type: String, default: "" },
@@ -126,14 +109,16 @@ const props = defineProps({
 	showRuns: { type: Boolean, default: false },
 	showAudit: { type: Boolean, default: false },
 	hasVariables: { type: Boolean, default: false },
+	canRun: { type: Boolean, default: true },
+	runBlockReason: { type: String, default: "" },
+	setupTodo: { type: Number, default: 0 },
+	statusBusy: { type: Boolean, default: false },
 });
 
 defineEmits([
 	"save",
 	"run",
-	"schedule",
-	"triggers",
-	"settings",
+	"setup",
 	"variables",
 	"share-template",
 	"toggle-runs",
@@ -147,26 +132,26 @@ const statusToggle = computed(() => {
 	const s = props.status?.toLowerCase();
 	if (s === "draft") {
 		return {
-			label: "Activate",
+			label: __("Activate"),
 			icon: "play",
 			btnClass: "primary",
-			tooltip: "Activate: triggers and schedules will start running",
+			tooltip: __("Activate: triggers and schedules will start running"),
 		};
 	}
 	if (s === "active") {
 		return {
-			label: "Pause",
+			label: __("Pause"),
 			icon: "pause",
 			btnClass: "warning",
-			tooltip: "Pause: incoming triggers will be skipped, schedule paused",
+			tooltip: __("Pause: incoming triggers will be skipped, schedule paused"),
 		};
 	}
 	if (s === "paused") {
 		return {
-			label: "Resume",
+			label: __("Resume"),
 			icon: "play",
 			btnClass: "primary",
-			tooltip: "Resume: triggers and schedules will start running again",
+			tooltip: __("Resume: triggers and schedules will start running again"),
 		};
 	}
 	return null;

@@ -29,6 +29,7 @@ from typing import Any, Dict, List, Optional
 
 import frappe
 
+from frappe_assistant_core.plugins.core.tools.report_tools import MAX_ROWS_CAP
 from frappe_assistant_core.utils import sandbox_frappe
 
 
@@ -148,6 +149,9 @@ class FrappeAssistantAPI:
                 - columns (list): Column definitions
                 - message (str): Status message
                 - status (str): "completed", "timeout", or "error"
+                - row_count (int): rows the report produced
+                - truncated (bool): True when row_count exceeds the 5000-row cap
+                  and data holds only the first rows plus the totals row
 
         Workflow Example:
             # For unknown reports, check requirements first
@@ -169,7 +173,7 @@ class FrappeAssistantAPI:
                 print(f"Top 10 customers: {top_customers}")
         """
         self._ensure_report_tools()
-        return self._report_tools.execute_report(report_name, filters or {}, format)
+        return self._report_tools.execute_report(report_name, filters or {}, format, max_rows=MAX_ROWS_CAP)
 
     # ========== DOCUMENT OPERATIONS ==========
 

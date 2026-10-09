@@ -77,6 +77,8 @@ import OutputNode from "@/components/workflows/nodes/OutputNode.vue";
 import AgentNode from "@/components/workflows/nodes/AgentNode.vue";
 import ConditionNode from "@/components/workflows/nodes/ConditionNode.vue";
 import TransformNode from "@/components/workflows/nodes/TransformNode.vue";
+import ToolNode from "@/components/workflows/nodes/ToolNode.vue";
+import LoopNode from "@/components/workflows/nodes/LoopNode.vue";
 
 // Custom node type registration (markRaw required by Vue Flow)
 const nodeComponents = {
@@ -85,6 +87,8 @@ const nodeComponents = {
 	agent: markRaw(AgentNode),
 	condition: markRaw(ConditionNode),
 	transform: markRaw(TransformNode),
+	tool: markRaw(ToolNode),
+	loop: markRaw(LoopNode),
 };
 
 defineProps({

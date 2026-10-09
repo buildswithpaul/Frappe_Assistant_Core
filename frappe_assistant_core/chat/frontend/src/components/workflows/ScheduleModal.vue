@@ -5,64 +5,62 @@
 			class="modal-overlay"
 			role="dialog"
 			aria-modal="true"
-			aria-label="Schedule agent"
+			:aria-label="__('Schedule agent')"
 			@click.self="close"
 		>
 			<div class="modal-content">
-				<h2 class="modal-title">Schedule Agent</h2>
+				<h2 class="modal-title">{{ __("Schedule Agent") }}</h2>
 				<div class="modal-field">
-					<label class="field-label">Cron Expression</label>
+					<label class="field-label">{{ __("Cron Expression") }}</label>
+					<CronBuilder v-model="localConfig.cron" />
 					<input
 						v-model="localConfig.cron"
+						data-test="schedule-cron"
 						class="field-input mono"
 						placeholder="*/30 * * * *"
 					/>
 					<p class="schedule-hint">
-						Examples: <code>*/30 * * * *</code> (every 30min),
-						<code>0 9 * * 1-5</code> (weekdays 9am), <code>0 0 * * *</code> (daily
-						midnight)
+						{{ __("Examples:") }} <code>*/30 * * * *</code> ({{ __("every 30min") }}),
+						<code>0 9 * * 1-5</code> ({{ __("weekdays 9am") }}),
+						<code>0 0 * * *</code> ({{ __("daily midnight") }})
 					</p>
 				</div>
 				<div class="modal-field">
-					<label class="field-label">Timezone</label>
-					<select v-model="localConfig.timezone" class="field-input">
-						<option value="UTC">UTC</option>
-						<option value="US/Eastern">US/Eastern</option>
-						<option value="US/Central">US/Central</option>
-						<option value="US/Pacific">US/Pacific</option>
-						<option value="Europe/London">Europe/London</option>
-						<option value="Europe/Berlin">Europe/Berlin</option>
-						<option value="Asia/Kolkata">Asia/Kolkata</option>
-						<option value="Asia/Tokyo">Asia/Tokyo</option>
-						<option value="Asia/Shanghai">Asia/Shanghai</option>
-						<option value="Australia/Sydney">Australia/Sydney</option>
+					<label class="field-label">{{ __("Timezone") }}</label>
+					<select
+						v-model="localConfig.timezone"
+						data-test="schedule-tz"
+						class="field-input"
+					>
+						<option v-for="tz in zoneOptions" :key="tz" :value="tz">{{ tz }}</option>
 					</select>
 				</div>
 				<div class="modal-field">
 					<label class="field-label"
-						>Default Input <span class="optional-label">(optional)</span></label
+						>{{ __("Default Input") }}
+						<span class="optional-label">({{ __("optional") }})</span></label
 					>
 					<textarea
 						v-model="localConfig.defaultInput"
 						class="field-input field-textarea mono"
-						placeholder="Default input data for scheduled runs"
+						:placeholder="__('Default input data for scheduled runs')"
 						rows="3"
 					></textarea>
 				</div>
 				<div class="modal-field checkbox-field">
 					<label class="checkbox-inline">
 						<input type="checkbox" v-model="localConfig.enabled" />
-						<span>Enable schedule</span>
+						<span>{{ __("Enable schedule") }}</span>
 					</label>
 				</div>
 				<div class="modal-actions">
-					<button @click="close" class="action-btn">Cancel</button>
+					<button @click="close" class="action-btn">{{ __("Cancel") }}</button>
 					<button
 						@click="save"
 						class="action-btn primary"
 						:disabled="!localConfig.cron.trim() || isSaving"
 					>
-						{{ isSaving ? "Saving..." : "Save Schedule" }}
+						{{ isSaving ? __("Saving...") : __("Save Schedule") }}
 					</button>
 				</div>
 			</div>
@@ -71,8 +69,10 @@
 </template>
 
 <script setup>
-import { reactive, watch } from "vue";
+import { computed, reactive, watch } from "vue";
+import CronBuilder from "@/components/workflows/CronBuilder.vue";
 import { useTeleportTarget } from "@/composables/useTeleportTarget";
+import { __ } from "@/utils/i18n";
 
 const teleportTarget = useTeleportTarget();
 
@@ -84,11 +84,36 @@ const props = defineProps({
 
 const emit = defineEmits(["update:modelValue", "save"]);
 
+const COMMON_ZONES = [
+	"UTC",
+	"US/Eastern",
+	"US/Central",
+	"US/Pacific",
+	"Europe/London",
+	"Europe/Berlin",
+	"Asia/Dubai",
+	"Asia/Kolkata",
+	"Asia/Singapore",
+	"Asia/Tokyo",
+	"Asia/Shanghai",
+	"Australia/Sydney",
+];
+const browserZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
 const localConfig = reactive({
 	cron: "",
 	timezone: "UTC",
 	defaultInput: "",
 	enabled: true,
+});
+
+// A saved zone outside the short list must still show, or the select opens blank
+// and saving it back silently moves the schedule.
+const zoneOptions = computed(() => {
+	const zones = new Set(COMMON_ZONES);
+	if (browserZone) zones.add(browserZone);
+	if (localConfig.timezone) zones.add(localConfig.timezone);
+	return [...zones];
 });
 
 // Sync from parent config when modal opens

@@ -24,6 +24,6 @@ export const user = {
 			server_name: serverName,
 		}),
 
-	listTools: () =>
-		getCall("frappe_assistant_core.chat.api.list_user_tools"),
+	listTools: (runtimeUser = null) =>
+		getCall("frappe_assistant_core.chat.api.list_user_tools", { runtime_user: runtimeUser }),
 };

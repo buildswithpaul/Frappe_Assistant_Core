@@ -37,6 +37,8 @@ import { ref } from "vue";
 import { storeToRefs } from "pinia";
 import { useWorkflowStore } from "@/stores/workflowStore";
 import { useUserStore } from "@/stores/userStore";
+import { useToast } from "@/composables/useToast";
+import { __ } from "@/utils/i18n";
 import { logger } from "@/utils/logger";
 import BlankWorkflowForm from "./BlankWorkflowForm.vue";
 import { useTeleportTarget } from "@/composables/useTeleportTarget";
@@ -50,6 +52,7 @@ defineProps({
 const emit = defineEmits(["update:modelValue", "created"]);
 
 const workflowStore = useWorkflowStore();
+const { showError } = useToast();
 const { user } = storeToRefs(useUserStore());
 const isBusy = ref(false);
 
@@ -66,6 +69,7 @@ async function handleCreate({ name, description }) {
 		if (result?.name) emit("created", result.name);
 	} catch (err) {
 		logger.error("Failed to create workflow:", err);
+		showError(__("Could not create the agent: {0}", [err?.userMessage || __("Something went wrong")]));
 	} finally {
 		isBusy.value = false;
 	}

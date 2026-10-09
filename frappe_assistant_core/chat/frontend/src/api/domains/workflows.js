@@ -55,10 +55,15 @@ function listingsToTemplatesPayload(payload) {
 		page: payload.page ?? 0,
 		page_size: payload.page_size ?? 20,
 		marketplace_enabled: payload.marketplace_enabled,
+		error: payload.error || null,
 	};
 }
 
 export const workflows = {
+	// Link values come from the site the agent will run on; search_link applies the user's permissions.
+	searchLink: (doctype, txt) =>
+		getCall("frappe.desk.search.search_link", { doctype, txt: txt || "", page_length: 10 }),
+
 	list: (status = null, page = 0, pageSize = 20) =>
 		getCall("frappe_assistant_core.chat.api.list_workflows", {
 			status,
@@ -152,12 +157,11 @@ export const workflows = {
 			default_user_id: defaultUserId,
 		}),
 
-	runNode: (name, nodeId, inputText = "Test input", userId = null) =>
+	runNode: (name, nodeId, inputText = "Test input") =>
 		baseCall("frappe_assistant_core.chat.api.run_workflow_node", {
 			name,
 			node_id: nodeId,
 			input_text: inputText,
-			user_id: userId,
 		}),
 
 	// Event-trigger APIs
@@ -291,6 +295,7 @@ export const workflows = {
 			tmpl.suggested_input = listing.source.suggested_input;
 			tmpl.required_tools = listing.source.required_tools;
 			tmpl.required_tool_descriptions = listing.source.required_tool_descriptions;
+			tmpl.requires = listing.source.requires;
 			tmpl.author = listing.source.author;
 			tmpl.version = listing.source.version;
 		}
@@ -378,9 +383,10 @@ export const workflows = {
 		}),
 
 	// Tool resolution
-	resolveWorkflowTools: (toolDirectives) =>
+	resolveWorkflowTools: (toolDirectives, runtimeUser = null) =>
 		baseCall("frappe_assistant_core.chat.api.resolve_workflow_tools", {
 			tool_directives: toolDirectives,
+			runtime_user: runtimeUser,
 		}),
 
 	// Moderation — routes through marketplace endpoints
@@ -421,16 +427,4 @@ export const workflows = {
 		// `total_credits_earned` — new endpoint already uses the same field names.
 		return stats || {};
 	},
-
-	// Template updates — read from AR Marketplace Version
-	checkTemplateUpdates: (name) =>
-		getCall("frappe_assistant_core.chat.api.check_workflow_update", {
-			name,
-		}),
-
-	checkAllTemplateUpdates: () =>
-		getCall(
-			"frappe_assistant_core.chat.api.check_all_workflow_updates",
-			{}
-		),
 };

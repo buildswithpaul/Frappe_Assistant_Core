@@ -25,14 +25,19 @@ Regression tests for:
 from contextlib import ExitStack, contextmanager
 from unittest.mock import patch
 
+import frappe
+
 from frappe_assistant_core.plugins.core.tools.list_documents import DocumentList
 from frappe_assistant_core.tests.base_test import BaseAssistantTest
 
 
 @contextmanager
-def list_harness(submittable=False, rows=None):
+def list_harness(submittable=False, rows=None, doctype="Customer"):
     """Minimal harness: mock permissions + frappe.get_list, yield the mock."""
     rows = rows if rows is not None else [{"name": "REC-0001"}]
+    # Meta is built through frappe.get_all, which the get_list mock would hijack.
+    # Warm the cache first, as production does, so the tool reads the real DocType.
+    frappe.get_meta(doctype)
     with ExitStack() as stack:
         stack.enter_context(
             patch(
@@ -87,7 +92,7 @@ class TestCountQueryNoDict(BaseAssistantTest):
     def test_count_does_not_raise_on_submittable_doctype(self):
         """Item Price + docstatus filter previously triggered the scalar error."""
         tool = DocumentList()
-        with list_harness(submittable=True) as gl:
+        with list_harness(submittable=True, doctype="Item Price") as gl:
             result = tool.execute(
                 {
                     "doctype": "Item Price",
@@ -99,7 +104,7 @@ class TestCountQueryNoDict(BaseAssistantTest):
     def test_count_does_not_raise_on_sales_invoice(self):
         """Sales Invoice is submittable, so docstatus is appended to filters."""
         tool = DocumentList()
-        with list_harness(submittable=True) as gl:
+        with list_harness(submittable=True, doctype="Sales Invoice") as gl:
             result = tool.execute({"doctype": "Sales Invoice"})
             self.assertTrue(result.get("success"), f"Got: {result}")
 
@@ -108,6 +113,7 @@ class TestCountQueryNoDict(BaseAssistantTest):
         the string form, still permission-aware, and total_count is correct."""
         tool = DocumentList()
         rows = [{"name": "REC-0001"}]
+        frappe.get_meta("Customer")  # warm Meta before the get_list mock, see list_harness
         with ExitStack() as stack:
             stack.enter_context(
                 patch(
@@ -153,6 +159,7 @@ class TestCountQueryNoDict(BaseAssistantTest):
         tool = DocumentList()
         # Full page of 20 rows
         full_page = [{"name": f"REC-{i:04d}"} for i in range(20)]
+        frappe.get_meta("Customer")  # warm Meta before the get_list mock, see list_harness
         with ExitStack() as stack:
             stack.enter_context(
                 patch(
@@ -193,6 +200,7 @@ class TestCountQueryNoDict(BaseAssistantTest):
         """When count query fails on a partial page (< limit), has_more is False."""
         tool = DocumentList()
         partial_page = [{"name": f"REC-{i:04d}"} for i in range(5)]
+        frappe.get_meta("Customer")  # warm Meta before the get_list mock, see list_harness
         with ExitStack() as stack:
             stack.enter_context(
                 patch(
@@ -249,17 +257,17 @@ class TestOrderByBehaviour(BaseAssistantTest):
                 "not passed through as empty string to frappe.get_list.",
             )
 
-    def test_omitted_order_by_uses_frappe_sentinel(self):
-        """When order_by is not supplied, KEEP_DEFAULT_ORDERING must be used."""
+    def test_omitted_order_by_resolves_doctype_default_with_name_tie_breaker(self):
+        """Omitted order_by resolves to the DocType's sort plus a name tie-breaker.
+
+        Pages are cut with LIMIT/OFFSET, so the order must be total for them to tile.
+        """
         tool = DocumentList()
         with list_harness() as gl:
             tool.execute({"doctype": "Customer"})
             actual = gl.call_args_list[0][1].get("order_by", "")
-            self.assertEqual(
-                actual,
-                "KEEP_DEFAULT_ORDERING",
-                f"Expected 'KEEP_DEFAULT_ORDERING', got: {actual!r}",
-            )
+            self.assertNotEqual(actual, "KEEP_DEFAULT_ORDERING")
+            self.assertTrue(actual.endswith("`tabCustomer`.`name` asc"), f"got: {actual!r}")
 
     def test_explicit_order_by_is_honoured(self):
         """A non-empty order_by must still be passed through unchanged."""
@@ -267,16 +275,13 @@ class TestOrderByBehaviour(BaseAssistantTest):
         with list_harness() as gl:
             tool.execute({"doctype": "Customer", "order_by": "modified desc"})
             actual = gl.call_args_list[0][1].get("order_by")
-            self.assertEqual(actual, "modified desc")
+            self.assertEqual(actual, "modified desc, `tabCustomer`.`name` asc")
 
-    def test_none_order_by_uses_frappe_sentinel(self):
-        """Explicitly passing order_by=None must fall back to KEEP_DEFAULT_ORDERING."""
+    def test_none_order_by_resolves_doctype_default_with_name_tie_breaker(self):
+        """Explicitly passing order_by=None takes the same resolved default."""
         tool = DocumentList()
         with list_harness() as gl:
             tool.execute({"doctype": "Customer", "order_by": None})
             actual = gl.call_args_list[0][1].get("order_by", "")
-            self.assertEqual(
-                actual,
-                "KEEP_DEFAULT_ORDERING",
-                f"Expected 'KEEP_DEFAULT_ORDERING', got: {actual!r}",
-            )
+            self.assertNotEqual(actual, "KEEP_DEFAULT_ORDERING")
+            self.assertTrue(actual.endswith("`tabCustomer`.`name` asc"), f"got: {actual!r}")

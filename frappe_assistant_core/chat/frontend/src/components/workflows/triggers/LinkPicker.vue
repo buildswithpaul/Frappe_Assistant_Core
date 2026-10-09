@@ -3,7 +3,7 @@
 		<input
 			ref="inputEl"
 			v-model="query"
-			:placeholder="placeholder"
+			:placeholder="placeholder || __('Start typing…')"
 			class="link-picker-input"
 			autocomplete="off"
 			spellcheck="false"
@@ -19,7 +19,7 @@
 			v-if="query && !disabled"
 			type="button"
 			class="link-picker-clear"
-			title="Clear"
+			:title="__('Clear')"
 			@click="clear"
 		>
 			×
@@ -35,10 +35,10 @@
 				role="listbox"
 			>
 				<div v-if="remoteLoading && filtered.length === 0" class="link-picker-empty">
-					Searching…
+					{{ __("Searching…") }}
 				</div>
 				<div v-else-if="filtered.length === 0" class="link-picker-empty">
-					{{ emptyText }}
+					{{ emptyText || __("No matches") }}
 				</div>
 				<div
 					v-for="(opt, idx) in filtered"
@@ -58,7 +58,7 @@
 					</div>
 				</div>
 				<div v-if="hasMore" class="link-picker-overflow">
-					More matches available. Keep typing to narrow.
+					{{ __("More matches available. Keep typing to narrow.") }}
 				</div>
 			</div>
 		</Teleport>
@@ -68,6 +68,7 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { logger } from "@/utils/logger";
+import { __ } from "@/utils/i18n";
 import { useTeleportTarget } from "@/composables/useTeleportTarget";
 
 const teleportTarget = useTeleportTarget();
@@ -81,8 +82,8 @@ const props = defineProps({
 	// The picker debounces calls and treats the result as authoritative for
 	// the current query. Use for large lists (e.g. all DocTypes).
 	fetcher: { type: Function, default: null },
-	placeholder: { type: String, default: "Start typing…" },
-	emptyText: { type: String, default: "No matches" },
+	placeholder: { type: String, default: "" },
+	emptyText: { type: String, default: "" },
 	disabled: { type: Boolean, default: false },
 	// Visible rows cap for static mode.
 	maxResults: { type: Number, default: 200 },
@@ -123,9 +124,10 @@ function localMatches(q) {
 	const scored = [];
 	for (const opt of opts) {
 		const label = (opt.label || "").toLowerCase();
-		if (!label.includes(q)) continue;
+		const value = String(opt.value ?? "").toLowerCase();
+		if (!label.includes(q) && !value.includes(q)) continue;
 		let score = 0;
-		if (label.startsWith(q)) score = 3;
+		if (label.startsWith(q) || value.startsWith(q)) score = 3;
 		else if (new RegExp(`\\b${escapeRegex(q)}`).test(label)) score = 2;
 		else score = 1;
 		scored.push({ opt, score });

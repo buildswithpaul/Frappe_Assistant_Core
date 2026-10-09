@@ -2,6 +2,7 @@ import { defineStore } from "pinia";
 import { ref, computed } from "vue";
 import { api } from "@/api/client";
 import { logger } from "@/utils/logger";
+import { __ } from "@/utils/i18n";
 
 // Every status a run can end in. Cancelled and Timed Out are terminal too —
 // treating only Completed/Failed as "done" leaves the toolbar spinning.
@@ -12,6 +13,12 @@ const RUN_POLL_INTERVAL_MS = 2000;
 // forever. The engine's own ceiling is timeout_seconds; this is the backstop.
 const RUN_POLL_MAX_MS = 30 * 60 * 1000;
 
+// Scheduled and triggered runs start on the server; an open builder notices them
+// by asking for the newest run. AR's workflow_progress socket event is emitted on
+// the AR site, which the tenant SPA never connects to.
+const LATEST_RUN_POLL_MS = 10000;
+const LIVE_RUN_STATUSES = new Set(["Queued", "Running"]);
+
 export const useWorkflowStore = defineStore("workflows", () => {
 	// List state
 	const workflows = ref([]);
@@ -21,6 +28,11 @@ export const useWorkflowStore = defineStore("workflows", () => {
 	const currentPage = ref(0);
 	const pageSize = ref(20);
 	const statusFilter = ref(null);
+	// Outage, not "none": each list keeps its own error so one failing list does
+	// not paint the others as broken, and so an empty list never reads as an outage.
+	const listError = ref(null);
+	const runsError = ref(null);
+	const templatesError = ref(null);
 
 	// Current workflow (builder)
 	const currentWorkflow = ref(null);
@@ -41,6 +53,7 @@ export const useWorkflowStore = defineStore("workflows", () => {
 	// and left the toolbar disabled for the rest of the session.
 	let pollTimer = null;
 	let pollStartedAt = 0;
+	let latestRunTimer = null;
 
 	// Cached data for config panel
 	const availableModels = ref([]);
@@ -51,6 +64,10 @@ export const useWorkflowStore = defineStore("workflows", () => {
 	// empty toolbox apart from an expired token, so the config panel needs it.
 	const toolsResult = ref(null);
 	const isLoadingTools = ref(false);
+	// Whose inventory availableTools holds, and the bookkeeping that keeps a stale response out.
+	const toolsRuntimeUser = ref(null);
+	let toolsLoadingFor = null;
+	let toolsRequestId = 0;
 
 	// Template state
 	const templates = ref([]);
@@ -62,9 +79,6 @@ export const useWorkflowStore = defineStore("workflows", () => {
 	const creatorStats = ref(null);
 	const isLoadingCreatorStats = ref(false);
 
-	// Template update state
-	const templateUpdates = ref([]);
-
 	// Getters
 	const hasWorkflows = computed(() => workflows.value.length > 0);
 
@@ -72,14 +86,19 @@ export const useWorkflowStore = defineStore("workflows", () => {
 	async function loadWorkflows(status = null, page = 0) {
 		isLoading.value = true;
 		error.value = null;
+		listError.value = null;
 		try {
 			const result = await api.workflows.list(status, page, pageSize.value);
 			workflows.value = result.workflows || [];
 			total.value = result.total || 0;
 			currentPage.value = result.page || 0;
 			statusFilter.value = status;
+			listError.value = result.error || null;
 		} catch (err) {
 			error.value = err.message;
+			listError.value = err.message || __("Could not load your agents.");
+			workflows.value = [];
+			total.value = 0;
 			logger.error("Failed to load workflows:", err);
 		} finally {
 			isLoading.value = false;
@@ -201,15 +220,65 @@ export const useWorkflowStore = defineStore("workflows", () => {
 		}
 	}
 
-	async function loadRuns(workflowName = null, status = null, page = 0) {
+	function watchLatestRun(workflowName) {
+		stopWatchingLatestRun();
+		if (!workflowName) return;
+		const timer = setInterval(async () => {
+			if (activeRunName.value) return;
+			if (typeof document !== "undefined" && document.hidden) return;
+			try {
+				const result = await api.workflows.listRuns(workflowName, null, 0, 1);
+				const newest = result?.runs?.[0];
+				if (latestRunTimer !== timer || activeRunName.value) return;
+				if (!newest || !LIVE_RUN_STATUSES.has(newest.status)) return;
+				activeRunName.value = newest.name;
+				isRunning.value = true;
+				startRunPolling(newest.name);
+			} catch {
+				// A missed tick is retried on the next one.
+			}
+		}, LATEST_RUN_POLL_MS);
+		latestRunTimer = timer;
+	}
+
+	function stopWatchingLatestRun() {
+		if (latestRunTimer) {
+			clearInterval(latestRunTimer);
+			latestRunTimer = null;
+		}
+	}
+
+	async function loadRuns(
+		workflowName = null,
+		status = null,
+		page = 0,
+		{ append = false } = {},
+	) {
+		runsError.value = null;
 		try {
 			const result = await api.workflows.listRuns(workflowName, status, page, 20);
-			runs.value = result.runs || [];
+			const incoming = result.runs || [];
+			if (append && result.error) {
+				runsError.value = result.error;
+				return result;
+			}
+			if (append) {
+				const seen = new Set(runs.value.map((r) => r.name));
+				runs.value = [...runs.value, ...incoming.filter((r) => !seen.has(r.name))];
+			} else {
+				runs.value = incoming;
+			}
 			runsTotal.value = result.total || 0;
+			runsError.value = result.error || null;
 			return result;
 		} catch (err) {
 			logger.error("Failed to load runs:", err);
-			return { runs: [], total: 0 };
+			runsError.value = err.message || __("Could not load runs.");
+			if (!append) {
+				runs.value = [];
+				runsTotal.value = 0;
+			}
+			return { runs: [], total: 0, error: runsError.value };
 		}
 	}
 
@@ -279,7 +348,9 @@ export const useWorkflowStore = defineStore("workflows", () => {
 		try {
 			return await api.workflows.validateGraph(graphJson);
 		} catch (err) {
-			return { valid: false, error: err.message };
+			// A transport failure says nothing about the graph; callers must not
+			// treat it as a rejection.
+			return { valid: false, transport: true, error: err.message };
 		}
 	}
 
@@ -291,9 +362,9 @@ export const useWorkflowStore = defineStore("workflows", () => {
 		}
 	}
 
-	async function runNode(workflowName, nodeId, inputText = "Test input", userId = null) {
+	async function runNode(workflowName, nodeId, inputText = "Test input") {
 		try {
-			return await api.workflows.runNode(workflowName, nodeId, inputText, userId);
+			return await api.workflows.runNode(workflowName, nodeId, inputText);
 		} catch (err) {
 			return { status: "Failed", error_message: err.message };
 		}
@@ -328,12 +399,29 @@ export const useWorkflowStore = defineStore("workflows", () => {
 		}
 	}
 
-	async function loadTools() {
-		if (isLoadingTools.value) return;
+	/**
+	 * Load the tool inventory of `runtimeUser` (null: the viewer's own). A
+	 * single slot holds the last successful result and the user it was for, so
+	 * asking again for that same user is a no-op; `force` re-fetches, e.g. after a
+	 * server was reconnected. A slower, older response never overwrites the
+	 * inventory of the user asked about last.
+	 */
+	async function loadTools(runtimeUser = null, { force = false } = {}) {
+		const key = runtimeUser || null;
+		if (!force) {
+			if (isLoadingTools.value && toolsLoadingFor === key) return;
+			if (!isLoadingTools.value && toolsRuntimeUser.value === key && toolsResult.value?.success) {
+				return;
+			}
+		}
+		const requestId = ++toolsRequestId;
+		toolsLoadingFor = key;
 		isLoadingTools.value = true;
 		try {
-			const result = await api.user.listTools();
+			const result = await api.user.listTools(key);
+			if (requestId !== toolsRequestId) return;
 			toolsResult.value = result || null;
+			toolsRuntimeUser.value = key;
 			if (result?.success) {
 				availableTools.value = result.tools || [];
 				// Derive MCP servers from tools for backward compat
@@ -346,11 +434,13 @@ export const useWorkflowStore = defineStore("workflows", () => {
 				availableTools.value = [];
 			}
 		} catch (err) {
+			if (requestId !== toolsRequestId) return;
 			logger.error("Failed to load tools:", err);
 			availableTools.value = [];
 			toolsResult.value = { success: false, tools: [], errors: err.message };
+			toolsRuntimeUser.value = key;
 		} finally {
-			isLoadingTools.value = false;
+			if (requestId === toolsRequestId) isLoadingTools.value = false;
 		}
 	}
 
@@ -362,6 +452,7 @@ export const useWorkflowStore = defineStore("workflows", () => {
 		{ featuredOnly = false, minRating = null, pageSize: ps = 20, append = false } = {}
 	) {
 		isLoadingTemplates.value = true;
+		templatesError.value = null;
 		try {
 			const result = await api.workflows.listTemplates(
 				category,
@@ -372,15 +463,24 @@ export const useWorkflowStore = defineStore("workflows", () => {
 				page,
 				ps
 			);
+			if (append && result.error) {
+				templatesError.value = result.error;
+				return;
+			}
 			if (append) {
 				templates.value = [...templates.value, ...(result.templates || [])];
 			} else {
 				templates.value = result.templates || [];
 			}
 			templatesTotal.value = result.total || 0;
+			templatesError.value = result.error || null;
 		} catch (err) {
 			logger.error("Failed to load templates:", err);
-			if (!append) templates.value = [];
+			templatesError.value = err.message || __("Could not load templates.");
+			if (!append) {
+				templates.value = [];
+				templatesTotal.value = 0;
+			}
 		} finally {
 			isLoadingTemplates.value = false;
 		}
@@ -519,20 +619,6 @@ export const useWorkflowStore = defineStore("workflows", () => {
 		}
 	}
 
-	// Template update actions
-	async function checkAllTemplateUpdates() {
-		try {
-			const result = await api.workflows.checkAllTemplateUpdates();
-			templateUpdates.value = result?.updates || [];
-		} catch (err) {
-			logger.error("Failed to check template updates:", err);
-		}
-	}
-
-	function getUpdateForWorkflow(workflowName) {
-		return templateUpdates.value.find((u) => u.workflow_name === workflowName);
-	}
-
 	function markDirty() {
 		isDirty.value = true;
 	}
@@ -542,6 +628,7 @@ export const useWorkflowStore = defineStore("workflows", () => {
 	}
 
 	function clearCurrentWorkflow() {
+		stopWatchingLatestRun();
 		stopRunPolling();
 		currentWorkflow.value = null;
 		isDirty.value = false;
@@ -550,6 +637,11 @@ export const useWorkflowStore = defineStore("workflows", () => {
 		isRunning.value = false;
 		isCancelling.value = false;
 		activeRunName.value = null;
+		toolsRequestId++;
+		isLoadingTools.value = false;
+		toolsResult.value = null;
+		availableTools.value = [];
+		toolsRuntimeUser.value = null;
 	}
 
 	/**
@@ -582,46 +674,12 @@ export const useWorkflowStore = defineStore("workflows", () => {
 		return created;
 	}
 
-	// Handle realtime progress events
-	function handleRunProgress(data) {
-		if (!currentRun.value) return;
-
-		if (
-			data.type === "node_started" ||
-			data.type === "node_completed" ||
-			data.type === "node_failed"
-		) {
-			// Update current run's node_runs
-			if (currentRun.value.node_runs) {
-				const existing = currentRun.value.node_runs.find(
-					(n) => n.node_id === data.node_id
-				);
-				if (existing) {
-					Object.assign(existing, data);
-				} else {
-					currentRun.value.node_runs.push(data);
-				}
-			}
-			if (data.type === "node_started") {
-				currentRun.value.current_node = data.node_id;
-			}
-			if (data.type === "node_completed") {
-				currentRun.value.completed_nodes = (currentRun.value.completed_nodes || 0) + 1;
-			}
-		}
-
-		if (data.type === "run_completed" || data.type === "run_failed") {
-			currentRun.value.status = data.type === "run_completed" ? "Completed" : "Failed";
-			isRunning.value = false;
-			isCancelling.value = false;
-			activeRunName.value = null;
-			stopRunPolling();
-		}
-	}
-
 	return {
 		// List state
 		workflows,
+		listError,
+		runsError,
+		templatesError,
 		isLoading,
 		error,
 		total,
@@ -650,6 +708,7 @@ export const useWorkflowStore = defineStore("workflows", () => {
 		availableTools,
 		toolsResult,
 		isLoadingTools,
+		toolsRuntimeUser,
 
 		// Template state
 		templates,
@@ -660,9 +719,6 @@ export const useWorkflowStore = defineStore("workflows", () => {
 		// Creator economy state
 		creatorStats,
 		isLoadingCreatorStats,
-
-		// Template update state
-		templateUpdates,
 
 		// Getters
 		hasWorkflows,
@@ -679,6 +735,8 @@ export const useWorkflowStore = defineStore("workflows", () => {
 		loadRun,
 		startRunPolling,
 		stopRunPolling,
+		watchLatestRun,
+		stopWatchingLatestRun,
 		cancelRun,
 		setSchedule,
 		validateGraph,
@@ -696,11 +754,8 @@ export const useWorkflowStore = defineStore("workflows", () => {
 		downloadTemplate,
 		reportTemplate,
 		loadCreatorStats,
-		checkAllTemplateUpdates,
-		getUpdateForWorkflow,
 		markDirty,
 		markClean,
 		clearCurrentWorkflow,
-		handleRunProgress,
 	};
 });

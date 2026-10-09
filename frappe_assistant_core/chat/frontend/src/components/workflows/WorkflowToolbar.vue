@@ -1,5 +1,5 @@
 <template>
-	<div class="workflow-toolbar" role="toolbar" aria-label="Agent actions">
+	<div class="workflow-toolbar" role="toolbar" :aria-label="__('Agent actions')">
 		<WorkflowTitle
 			:name="name"
 			:status="status"
@@ -9,9 +9,17 @@
 		/>
 
 		<div class="toolbar-center">
-			<span v-if="isDirty" class="dirty-dot" title="Unsaved changes"></span>
-			<span v-if="isSaving" class="save-indicator">Saving...</span>
-			<span v-else-if="!isDirty && lastSaved" class="save-indicator saved">Saved</span>
+			<span
+				v-if="isDirty"
+				class="dirty-dot"
+				role="img"
+				:title="__('Unsaved changes')"
+				:aria-label="__('Unsaved changes')"
+			></span>
+			<span v-if="isSaving" class="save-indicator">{{ __("Saving...") }}</span>
+			<span v-else-if="!isDirty && lastSaved" class="save-indicator saved">{{
+				__("Saved")
+			}}</span>
 		</div>
 
 		<WorkflowToolbarActions
@@ -21,14 +29,16 @@
 			:is-dirty="isDirty"
 			:is-saving="isSaving"
 			:is-running="isRunning"
+			:can-run="canRun"
+			:run-block-reason="runBlockReason"
 			:show-runs="showRuns"
 			:show-audit="showAudit"
 			:has-variables="hasVariables"
+			:setup-todo="setupTodo"
+			:status-busy="statusBusy"
 			@save="$emit('save')"
 			@run="$emit('run')"
-			@schedule="$emit('schedule')"
-			@triggers="$emit('triggers')"
-			@settings="$emit('settings')"
+			@setup="$emit('setup')"
 			@variables="$emit('variables')"
 			@share-template="$emit('share-template')"
 			@toggle-runs="$emit('toggle-runs')"
@@ -41,6 +51,7 @@
 <script setup>
 import { computed } from "vue";
 import { useUserStore } from "@/stores/userStore";
+import { __ } from "@/utils/i18n";
 import WorkflowTitle from "@/components/workflows/toolbar/WorkflowTitle.vue";
 import WorkflowToolbarActions from "@/components/workflows/toolbar/WorkflowToolbarActions.vue";
 
@@ -54,15 +65,17 @@ defineProps({
 	showAudit: { type: Boolean, default: false },
 	lastSaved: { type: Boolean, default: false },
 	hasVariables: { type: Boolean, default: false },
+	canRun: { type: Boolean, default: true },
+	runBlockReason: { type: String, default: "" },
+	setupTodo: { type: Number, default: 0 },
+	statusBusy: { type: Boolean, default: false },
 });
 
 defineEmits([
 	"back",
 	"save",
 	"run",
-	"schedule",
-	"triggers",
-	"settings",
+	"setup",
 	"toggle-runs",
 	"toggle-audit",
 	"toggle-status",

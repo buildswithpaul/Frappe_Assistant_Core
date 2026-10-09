@@ -11,6 +11,7 @@ import {
 	toolKey,
 	toolDiscoveryState,
 	serversNeedingReconnect,
+	serverFailures,
 } from "@/components/workflows/config/toolDirectives";
 
 // The shape AR's api/tools.py:list_tools actually returns.
@@ -227,5 +228,27 @@ describe("toolDiscoveryState", () => {
 
 	it("reports loading while the call is in flight", () => {
 		expect(toolDiscoveryState({ result: null, isLoading: true })).toBe("loading");
+	});
+});
+
+describe("serverFailures", () => {
+	it("lists each failed server with its message", () => {
+		const result = {
+			success: true,
+			tools: [{ name: "a" }],
+			errors: [
+				{ server: "Main Frappe Site", error: "token expired", error_code: "REFRESH_TOKEN_EXPIRED" },
+				{ server: "Brave", error: "timeout" },
+			],
+		};
+		expect(serverFailures(result)).toEqual([
+			{ server: "Main Frappe Site", message: "token expired", needsReconnect: true },
+			{ server: "Brave", message: "timeout", needsReconnect: false },
+		]);
+	});
+
+	it("is empty for a clean or missing result", () => {
+		expect(serverFailures(null)).toEqual([]);
+		expect(serverFailures({ success: true, tools: [], errors: null })).toEqual([]);
 	});
 });

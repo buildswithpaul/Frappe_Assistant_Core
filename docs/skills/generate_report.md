@@ -74,6 +74,14 @@ When a value is rejected, `validation_errors` names the accepted values and `err
 | `report_name` | string | **Yes** | — | Exact report name |
 | `filters` | object | No | `{}` | Filter key-value pairs |
 | `format` | string | No | `"json"` | `"json"`, `"csv"`, or `"excel"` |
+| `max_rows` | integer | No | `500` | Most rows to return (1 to 5000). Values above 5000 are clamped |
+| `summary_only` | boolean | No | `false` | Return columns, `row_count` and `report_summary` without rows |
+
+**Row-limit response fields:** `row_count` (rows the report produced), `truncated` (`true` when rows were left out),
+`total_count` (same as `row_count`, present when rows are returned), `summary_only`, `report_summary` (when the report returns one), and `truncation_note` (when truncated). `row_count` includes the totals row. A report with
+a totals row always keeps it as the last returned row (with `max_rows: 1` that row is all you get). Tree reports are cut by
+plain slicing, so a child can lose its parent. Use `summary_only` to size a large report, then raise
+`max_rows` or narrow the filters. The `run_python_code` sandbox's `tools.generate_report` asks for the 5000 cap.
 
 ## Best Practices
 
@@ -122,4 +130,5 @@ When a value is rejected, `validation_errors` names the accepted values and `err
 - **Date filters** — use `YYYY-MM-DD` format.
 - **Company filter** — most reports require a company. Get exact company name from `list_documents` with `doctype: "Company"`.
 - **Report Builder reports are NOT supported** — only Script Reports and Query Reports work.
-- **Large reports** — may take longer; the tool handles polling automatically for prepared reports.
+- **Large reports** — the tool polls prepared reports automatically. A slow one returns `status: "timeout"` with a `prepared_report_name`: the report is still being prepared, not empty. Ask again with the same filters and the retry picks up that same report instead of starting a new one.
+- **A prepared report that fails** returns `success: false`, `status: "error"`, the `error` text and the `prepared_report_name`. It is a failure, not an empty result: read `error`, fix the filters it points at, and ask again.

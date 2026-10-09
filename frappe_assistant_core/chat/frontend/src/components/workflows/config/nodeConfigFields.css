@@ -1,0 +1,44 @@
+.config-section {
+	margin-bottom: 1rem;
+}
+.config-label {
+	display: block;
+	font-size: 0.75rem;
+	font-weight: 600;
+	color: var(--ql-text-muted);
+	text-transform: uppercase;
+	letter-spacing: 0.025em;
+	margin-bottom: 0.375rem;
+}
+.config-input {
+	width: 100%;
+	padding: 0.5rem 0.625rem;
+	font-size: 0.8125rem;
+	color: var(--ql-text);
+	background: var(--ql-bg);
+	border: 1px solid var(--ql-border);
+	border-radius: 0.375rem;
+	outline: none;
+	box-sizing: border-box;
+	transition: border-color 0.15s ease;
+}
+.config-input:focus {
+	border-color: var(--ql-accent);
+}
+.config-textarea {
+	resize: vertical;
+	min-height: 3rem;
+	line-height: 1.5;
+}
+.config-hint {
+	font-size: 0.6875rem;
+	color: var(--ql-text-muted);
+	margin: 0.25rem 0 0;
+	line-height: 1.4;
+}
+.config-hint.error {
+	color: var(--ql-danger);
+}
+.mono {
+	font-family: var(--ql-font-mono);
+}

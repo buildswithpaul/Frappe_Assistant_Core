@@ -1,12 +1,12 @@
 <template>
 	<aside class="runs-panel">
 		<div class="panel-header">
-			<span class="panel-title">Run History</span>
+			<span class="panel-title">{{ __("Run History") }}</span>
 			<button
 				@click="$emit('close')"
 				class="panel-close"
-				title="Close"
-				aria-label="Close run history"
+				:title="__('Close')"
+				:aria-label="__('Close run history')"
 			>
 				<svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 					<path
@@ -23,11 +23,17 @@
 		<div class="runs-list">
 			<div v-if="isLoadingRuns && runs.length === 0" class="runs-loading">
 				<div class="mini-spinner"></div>
-				<span>Loading runs...</span>
+				<span>{{ __("Loading runs...") }}</span>
 			</div>
 
+			<LoadErrorState
+				v-else-if="runsError && runs.length === 0"
+				:message="runsError"
+				@retry="loadRuns"
+			/>
+
 			<div v-else-if="runs.length === 0" class="runs-empty">
-				<p>No runs yet. Click "Run" to execute this agent.</p>
+				<p>{{ __('No runs yet. Click "Run" to execute this agent.') }}</p>
 			</div>
 
 			<template v-else>
@@ -39,15 +45,15 @@
 					>
 						<div class="active-indicator">
 							<div class="live-dot"></div>
-							<span>Live</span>
+							<span>{{ __("Live") }}</span>
 						</div>
 						<button
 							@click.stop="handleCancel"
 							class="cancel-btn"
-							aria-label="Cancel run"
+							:aria-label="__('Cancel run')"
 							:disabled="isCancelling"
 						>
-							{{ isCancelling ? "Cancelling..." : "Cancel" }}
+							{{ isCancelling ? __("Cancelling...") : __("Cancel") }}
 						</button>
 					</div>
 
@@ -62,6 +68,10 @@
 			</template>
 		</div>
 
+		<p v-if="runsError && runs.length > 0" class="inline-error" role="alert">
+			{{ runsError }}
+		</p>
+
 		<!-- Load more -->
 		<button
 			v-if="runs.length < runsTotal"
@@ -69,7 +79,7 @@
 			class="load-more-btn"
 			:disabled="isLoadingRuns"
 		>
-			Load more
+			{{ runsError ? __("Retry") : __("Load more") }}
 		</button>
 	</aside>
 </template>
@@ -78,18 +88,24 @@
 import { ref, watch, onMounted } from "vue";
 import { storeToRefs } from "pinia";
 import { useWorkflowStore } from "@/stores/workflowStore";
+import { __ } from "@/utils/i18n";
+import { useToast } from "@/composables/useToast";
+import LoadErrorState from "@/components/common/list/LoadErrorState.vue";
 import RunCard from "./RunCard.vue";
 
 const props = defineProps({
 	/** AR Workflow docname — list_runs filters its `workflow` link on this,
 	    despite the endpoint calling the argument workflow_name. */
 	workflowId: { type: String, required: true },
+	/** Run to expand on open, e.g. the one a trigger firing started. */
+	focusRunName: { type: String, default: "" },
 });
 
 defineEmits(["close"]);
 
 const workflowStore = useWorkflowStore();
-const { runs, runsTotal, isRunning, isCancelling, activeRunName, currentRun } =
+const { showError } = useToast();
+const { runs, runsTotal, runsError, isRunning, isCancelling, activeRunName, currentRun } =
 	storeToRefs(workflowStore);
 
 const isLoadingRuns = ref(false);
@@ -99,7 +115,12 @@ const currentPage = ref(0);
 
 // The poller lives in the store — its lifetime is the run's, not this panel's.
 // This component only reflects what the store has polled.
-onMounted(loadRuns);
+onMounted(async () => {
+	await loadRuns();
+	await focusRun(props.focusRunName);
+});
+
+watch(() => props.focusRunName, focusRun);
 
 watch(activeRunName, async (newName, oldName) => {
 	if (newName) {
@@ -136,13 +157,11 @@ async function loadRuns() {
 async function loadMore() {
 	isLoadingRuns.value = true;
 	try {
-		currentPage.value++;
-		const result = await workflowStore.loadRuns(props.workflowId, null, currentPage.value);
-		if (result.runs?.length) {
-			const existing = new Set(runs.value.map((r) => r.name));
-			const newRuns = result.runs.filter((r) => !existing.has(r.name));
-			runs.value = [...runs.value, ...newRuns];
-		}
+		const next = currentPage.value + 1;
+		const result = await workflowStore.loadRuns(props.workflowId, null, next, {
+			append: true,
+		});
+		if (result?.runs?.length) currentPage.value = next;
 	} finally {
 		isLoadingRuns.value = false;
 	}
@@ -162,11 +181,34 @@ async function toggleRun(run) {
 	}
 }
 
+async function focusRun(runName) {
+	if (!runName) return;
+	expandedRun.value = runName;
+	try {
+		const run = await workflowStore.loadRun(runName);
+		expandedRunData.value = run;
+		if (!runs.value.some((r) => r.name === runName)) runs.value.unshift(run);
+	} catch (err) {
+		expandedRun.value = null;
+		expandedRunData.value = null;
+		showError(
+			__("Could not open run {0}: {1}", [
+				runName,
+				err?.userMessage || __("Something went wrong"),
+			]),
+		);
+	}
+}
+
 async function handleCancel() {
 	if (!activeRunName.value) return;
 	// Cancellation is cooperative: the store keeps polling until the run
 	// reports a terminal status, and credits already spent stay spent.
-	await workflowStore.cancelRun(activeRunName.value).catch(() => {});
+	try {
+		await workflowStore.cancelRun(activeRunName.value);
+	} catch (err) {
+		showError(__("Could not cancel the run: {0}", [err?.userMessage || __("Something went wrong")]));
+	}
 }
 </script>
 
@@ -308,6 +350,13 @@ async function handleCancel() {
 	to {
 		transform: rotate(360deg);
 	}
+}
+
+.inline-error {
+	margin: 0;
+	padding: 0.5rem 1rem;
+	font-size: 0.75rem;
+	color: var(--ql-danger);
 }
 
 /* Load more */

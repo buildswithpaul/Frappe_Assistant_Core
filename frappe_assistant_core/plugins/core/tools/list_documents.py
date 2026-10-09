@@ -19,7 +19,8 @@ Document Listing Tool for Core Plugin.
 Lists and searches Frappe documents with filtering capabilities.
 """
 
-from typing import Any, Dict, List
+import re
+from typing import Any, Dict, List, Optional
 
 import frappe
 from frappe import _
@@ -253,6 +254,47 @@ def resolve_unmatched_link_filters(doctype: str, filters: Any) -> Dict[str, Dict
     return unresolved
 
 
+def parse_offset(value: Any) -> Optional[int]:
+    """Return the offset as an int, or None when it is not a whole number."""
+    if value is None or value == "":
+        return 0
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and value.strip().isdecimal():
+        return int(value)
+    return None
+
+
+def default_order_by(doctype: str) -> str:
+    """The DocType's own sort, table-qualified. get_meta applies Customize Form changes."""
+    meta = frappe.get_meta(doctype)
+    if not meta.sort_field:
+        return f"`tab{doctype}`.`creation` desc"
+    direction = meta.sort_order or "desc"
+    clauses = []
+    for part in meta.sort_field.split(","):
+        words = part.split()
+        if words:
+            clauses.append(f"`tab{doctype}`.`{words[0]}` {words[1] if len(words) > 1 else direction}")
+    return ", ".join(clauses)
+
+
+def stable_order_by(doctype: str, order_by: str) -> str:
+    """Append a unique name tie-breaker so LIMIT/OFFSET pages tile the result set.
+
+    A bare or main-table `name` already makes the order total. A joined child table's
+    `name` does not, so it still gets the main-table tie-breaker.
+    """
+    main_name = f"`tab{doctype}`.`name`"
+    if order_by == "KEEP_DEFAULT_ORDERING":
+        order_by = default_order_by(doctype)
+    if main_name in order_by or re.search(r"(?<![.`\w])name\b", order_by):
+        return order_by
+    return f"{order_by}, {main_name} asc"
+
+
 class DocumentList(BaseTool):
     """
     Tool for listing and searching Frappe documents.
@@ -267,7 +309,7 @@ class DocumentList(BaseTool):
     def __init__(self):
         super().__init__()
         self.name = "list_documents"
-        self.description = "Search and list Frappe documents with optional filtering. Use this when users want to find records, get lists of documents, or search for data. This is the primary tool for data exploration and discovery. For submittable DocTypes (invoices, orders, entries) only submitted documents are returned unless you pass docstatus explicitly. If a query returns nothing because a Link filter value matches no record, the response carries unresolved_filters with ranked suggestions — check it before reporting that no data exists."
+        self.description = "Search and list Frappe documents with optional filtering. Use this when users want to find records, get lists of documents, or search for data. This is the primary tool for data exploration and discovery. For submittable DocTypes (invoices, orders, entries) only submitted documents are returned unless you pass docstatus explicitly. If a query returns nothing because a Link filter value matches no record, the response carries unresolved_filters with ranked suggestions — check it before reporting that no data exists. When has_more is true the response carries next_offset; pass it as offset to read the next page."
         self.requires_permission = None  # Permission checked dynamically per DocType
 
         self.inputSchema = {
@@ -293,6 +335,12 @@ class DocumentList(BaseTool):
                     "maximum": 1000,
                     "description": "Maximum number of records to return. Default is 20, maximum is 1000.",
                 },
+                "offset": {
+                    "type": "integer",
+                    "default": 0,
+                    "minimum": 0,
+                    "description": "Number of matching records to skip. When a response has has_more=true, pass its next_offset here to read the next page.",
+                },
                 "order_by": {
                     "type": "string",
                     "description": "Order results by field, e.g. 'creation desc', 'name asc'. Omit to use the DocType's own default ordering (usually modified desc).",
@@ -307,9 +355,15 @@ class DocumentList(BaseTool):
         filters = arguments.get("filters", {})
         fields = arguments.get("fields", ["name", "creation", "modified"])
         limit = arguments.get("limit", 20)
-        # Use Frappe's sentinel so it applies its own intelligent default ordering.
-        # Also guard against empty string from API clients.
+        # Guard against empty string from API clients.
         order_by = arguments.get("order_by") or "KEEP_DEFAULT_ORDERING"
+        offset = parse_offset(arguments.get("offset"))
+        if offset is None or offset < 0:
+            return {
+                "success": False,
+                "error": _("offset must be a whole number of 0 or more."),
+                "doctype": doctype,
+            }
 
         # Get current user context
 
@@ -372,7 +426,10 @@ class DocumentList(BaseTool):
                 filters=filters,
                 fields=fields,
                 limit=limit,
-                order_by=order_by,
+                # limit_start, not offset: the one spelling Frappe v15 and v16 both accept
+                # (v16 deprecates it for offset; v15 has no offset), so do not rename it.
+                limit_start=offset,
+                order_by=stable_order_by(doctype, order_by),
                 ignore_permissions=False,  # Ensure permission checking
             )
 
@@ -418,18 +475,21 @@ class DocumentList(BaseTool):
                     "pass docstatus explicitly to include drafts or cancelled documents)"
                 )
 
+            returned = len(filtered_documents)
+            has_more = (total_count > offset + returned) if total_count is not None else returned >= limit
+
             result = {
                 "success": True,
                 "doctype": doctype,
                 "data": filtered_documents,
-                "count": len(filtered_documents),
+                "count": returned,
                 "total_count": total_count,
-                "has_more": (total_count > limit)
-                if total_count is not None
-                else len(filtered_documents) >= limit,
+                "has_more": has_more,
                 "filters_applied": filters,
                 "message": message,
             }
+            if has_more:
+                result["next_offset"] = offset + returned
 
             # A zero-row result may mean the filter value itself never existed.
             # Additive metadata only — the query still succeeded.

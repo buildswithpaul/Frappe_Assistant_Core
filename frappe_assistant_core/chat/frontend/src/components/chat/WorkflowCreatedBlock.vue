@@ -3,17 +3,20 @@
 		<div class="wcb-body">
 			<span class="wcb-check">✓</span>
 			<span class="wcb-text">
-				{{ block.action === "updated" ? "Updated" : "Created" }}
+				{{ block.action === "updated" ? __("Updated") : __("Created") }}
 				<strong>{{ block.workflow_name }}</strong>
-				<span class="wcb-status">({{ block.status }})</span>
+				<span v-if="block.status" class="wcb-status">({{ block.status }})</span>
 			</span>
 		</div>
-		<button class="wcb-open" type="button" @click="openBuilder">Open in builder →</button>
+		<button class="wcb-open" type="button" @click="openBuilder">
+			{{ __("Open in builder") }} →
+		</button>
 	</div>
 </template>
 
 <script setup>
 import { useRouter } from "vue-router";
+import { __ } from "@/utils/i18n";
 
 const props = defineProps({ block: { type: Object, required: true } });
 const router = useRouter();

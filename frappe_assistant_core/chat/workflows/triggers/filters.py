@@ -202,12 +202,11 @@ def build_payload(
 ) -> dict[str, Any]:
     """Build the JSON-serializable payload sent to AR.
 
-    Structure: {trigger, doc, changed_fields}.
-    Strips Password fieldtype and secret_blocklist fieldnames.
-    Truncates doc to minimal summary if over byte_cap.
+    Structure: {trigger, doc, changed_fields}. Strips Password fields (parent
+    and child rows) and secret_blocklist fieldnames. Over ``byte_cap`` child
+    tables are dropped largest-first, named in ``dropped_child_tables``; only
+    a parent that is still too big on its own falls back to a minimal doc.
     """
-    doc_dict = _sanitize_doc(doc, secret_blocklist)
-
     payload = {
         "trigger": {
             "source": "doc_event",
@@ -219,24 +218,56 @@ def build_payload(
             "fired_at": now(),
             "site": frappe.local.site if hasattr(frappe.local, "site") else "",
         },
-        "doc": doc_dict,
-        "changed_fields": changed_fields,
+        "doc": _sanitize_doc(doc, secret_blocklist),
+        "changed_fields": _coerce_changed_fields(changed_fields),
     }
 
-    # Size check — truncate doc if payload exceeds cap
     try:
-        serialized = json.dumps(payload, default=str)
+        if _json_size(payload) <= byte_cap:
+            return payload
     except (TypeError, ValueError):
-        # Serialization failure — fall back to minimal safe payload
         payload["doc"] = _minimal_doc(doc)
         payload["doc_truncated"] = True
         return payload
 
-    if len(serialized.encode("utf-8")) > byte_cap:
+    payload["doc_truncated"] = True
+    dropped = _drop_child_tables(payload, byte_cap)
+    if dropped:
+        payload["dropped_child_tables"] = dropped
+    if _json_size(payload) > byte_cap:
         payload["doc"] = _minimal_doc(doc)
-        payload["doc_truncated"] = True
-
+        payload.pop("dropped_child_tables", None)
     return payload
+
+
+def _json_size(value: Any) -> int:
+    """Serialized size in bytes. default=str only measures; it never ships."""
+    return len(json.dumps(value, default=str).encode("utf-8"))
+
+
+def _drop_child_tables(payload: dict[str, Any], byte_cap: int) -> list[str]:
+    """Remove child tables, largest first, until the payload fits. Returns their fieldnames."""
+    doc = payload["doc"]
+    tables = sorted(
+        (key for key, value in doc.items() if isinstance(value, list)),
+        key=lambda key: _json_size(doc[key]),
+        reverse=True,
+    )
+    dropped = []
+    for key in tables:
+        if _json_size(payload) <= byte_cap:
+            break
+        doc.pop(key)
+        dropped.append(key)
+    return dropped
+
+
+def _coerce_changed_fields(changed_fields: dict[str, dict[str, Any]] | None) -> dict[str, dict[str, Any]]:
+    """{field: {old, new}} with JSON-native values (dates, Decimals and timedeltas included)."""
+    return {
+        field: {side: _coerce_json_native(value) for side, value in (change or {}).items()}
+        for field, change in (changed_fields or {}).items()
+    }
 
 
 def _coerce_json_native(value: Any) -> Any:
@@ -269,30 +300,23 @@ def _coerce_json_native(value: Any) -> Any:
 
 
 def _sanitize_doc(doc, secret_blocklist: tuple) -> dict[str, Any]:
-    """Return doc.as_dict() with Password fields and blocklisted keys removed."""
+    """Return doc.as_dict() without Password fields (parent and child rows) or blocklisted keys."""
     try:
         raw = doc.as_dict()
     except Exception:
         return {"name": getattr(doc, "name", None)}
 
-    try:
-        meta = frappe.get_meta(doc.doctype)
-        password_fields = {f.fieldname for f in meta.fields if f.fieldtype == "Password"}
-    except Exception:
-        password_fields = set()
-
+    password_cache: dict[str, set[str]] = {}
+    password_fields = _password_fields(doc.doctype, password_cache)
     blocklist_lower = {b.lower() for b in secret_blocklist}
 
     sanitized: dict[str, Any] = {}
     for key, value in raw.items():
-        if key in password_fields:
+        if key in password_fields or key.lower() in blocklist_lower:
             continue
-        if key.lower() in blocklist_lower:
-            continue
-        # Nested child tables — recursively strip passwords by fieldname only
         if isinstance(value, list):
             sanitized[key] = [
-                _sanitize_child(item, blocklist_lower)
+                _sanitize_child(item, blocklist_lower, _password_fields(item.get("doctype"), password_cache))
                 if isinstance(item, dict)
                 else _coerce_json_native(item)
                 for item in value
@@ -302,8 +326,25 @@ def _sanitize_doc(doc, secret_blocklist: tuple) -> dict[str, Any]:
     return sanitized
 
 
-def _sanitize_child(item: dict[str, Any], blocklist_lower: set) -> dict[str, Any]:
-    return {k: _coerce_json_native(v) for k, v in item.items() if k.lower() not in blocklist_lower}
+def _password_fields(doctype: str | None, cache: dict[str, set[str]]) -> set[str]:
+    """Fieldnames of Password fields on ``doctype``; empty when the meta cannot be read."""
+    if not doctype:
+        return set()
+    if doctype not in cache:
+        try:
+            meta = frappe.get_meta(doctype)
+            cache[doctype] = {f.fieldname for f in meta.fields if f.fieldtype == "Password"}
+        except Exception:
+            cache[doctype] = set()
+    return cache[doctype]
+
+
+def _sanitize_child(item: dict[str, Any], blocklist_lower: set, password_fields: set[str]) -> dict[str, Any]:
+    return {
+        k: _coerce_json_native(v)
+        for k, v in item.items()
+        if k not in password_fields and k.lower() not in blocklist_lower
+    }
 
 
 def _minimal_doc(doc) -> dict[str, Any]:

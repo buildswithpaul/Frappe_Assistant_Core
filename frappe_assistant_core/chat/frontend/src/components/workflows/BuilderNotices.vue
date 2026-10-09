@@ -4,38 +4,57 @@
 		class="builder-notices"
 	>
 		<div v-if="readOnly" class="notice info">
-			<strong>Read-only.</strong> You can open and inspect this agent, but only a System
-			Manager can change it.
+			<strong>{{ __("Read-only.") }}</strong>
+			{{
+				__("You can open and inspect this agent, but only a System Manager can change it.")
+			}}
 		</div>
 
 		<div v-if="saveError" class="notice error" role="alert">
 			<div class="notice-text">
-				<strong>Changes were not saved.</strong> {{ saveError }}
+				<strong>{{ __("Changes were not saved.") }}</strong> {{ saveError }}
 			</div>
-			<button class="notice-btn" @click="$emit('retry-save')">Retry</button>
-			<button class="notice-btn subtle" @click="$emit('dismiss-error')">Dismiss</button>
+			<button class="notice-btn" @click="$emit('retry-save')">
+				{{ __("Retry") }}
+			</button>
+			<button class="notice-btn subtle" @click="$emit('dismiss-error')">
+				{{ __("Dismiss") }}
+			</button>
 		</div>
 
 		<div v-if="actionError" class="notice error" role="alert">
 			<div class="notice-text">{{ actionError }}</div>
 			<button class="notice-btn subtle" @click="$emit('dismiss-action-error')">
-				Dismiss
+				{{ __("Dismiss") }}
 			</button>
 		</div>
 
 		<div v-if="validationErrors.length" class="notice warn">
-			<strong
-				>{{ validationErrors.length }}
-				{{ validationErrors.length === 1 ? "problem" : "problems" }}:</strong
+			<div class="notice-text">
+				<strong>{{
+					validationErrors.length === 1
+						? __("Can't run yet: 1 problem")
+						: __("Can't run yet: {0} problems", [validationErrors.length])
+				}}</strong>
+				<ul v-if="showProblems" class="notice-list">
+					<li v-for="(err, i) in validationErrors" :key="i">{{ err }}</li>
+				</ul>
+			</div>
+			<button
+				class="notice-btn subtle"
+				:aria-expanded="showProblems"
+				@click="showProblems = !showProblems"
 			>
-			<ul class="notice-list">
-				<li v-for="(err, i) in validationErrors.slice(0, 4)" :key="i">{{ err }}</li>
-			</ul>
+				{{ showProblems ? __("Hide") : __("Show") }}
+			</button>
 		</div>
 	</div>
 </template>
 
 <script setup>
+import { ref } from "vue";
+import { __ } from "@/utils/i18n";
+
 defineProps({
 	readOnly: { type: Boolean, default: false },
 	saveError: { type: String, default: "" },
@@ -45,6 +64,8 @@ defineProps({
 });
 
 defineEmits(["retry-save", "dismiss-error", "dismiss-action-error"]);
+
+const showProblems = ref(false);
 </script>
 
 <style scoped>
@@ -92,7 +113,6 @@ defineEmits(["retry-save", "dismiss-error", "dismiss-action-error"]);
 }
 
 .notice.warn {
-	display: block;
 	border-color: var(--ql-warning);
 }
 

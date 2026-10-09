@@ -150,3 +150,42 @@ class TestFilteredOutIsVisible(_TriggerFixture):
     def test_filtered_out_rows_are_sampled(self):
         self._fire(5)
         self.assertEqual(len(self._log_rows("filtered_out")), 1)
+
+
+class TestTriggerHourlyBreaker(_TriggerFixture):
+    """A slow loop stays under the burst limit; the hourly cap still stops it.
+
+    Production reaches this with a workflow that writes back to its trigger
+    document once every few minutes (a scheduled job re-saving it, or a slow
+    agent run). The burst limit is lifted through site_config — the same knob
+    a site uses — so the test can fire quickly and still exercise the hour.
+    """
+
+    def test_twenty_first_fire_in_an_hour_is_refused(self):
+        with _conf(
+            fac_trigger_breaker_max_fires=1000,
+            fac_trigger_breaker_window_seconds=WINDOW_SECONDS,
+            fac_trigger_breaker_max_fires_per_hour=20,
+        ):
+            calls = self._fire(21)
+
+        self.assertEqual(len(calls), 20)
+        refusals = self._log_rows("loop_blocked")
+        self.assertEqual(len(refusals), 1)
+        self.assertIn("3600s", refusals[0].error_message)
+
+    def test_hourly_default_is_twenty(self):
+        with _conf(fac_trigger_breaker_max_fires=1000, fac_trigger_breaker_window_seconds=WINDOW_SECONDS):
+            calls = self._fire(25)
+
+        self.assertEqual(len(calls), 20)
+
+    def test_zero_disables_the_hourly_window(self):
+        with _conf(
+            fac_trigger_breaker_max_fires=1000,
+            fac_trigger_breaker_window_seconds=WINDOW_SECONDS,
+            fac_trigger_breaker_max_fires_per_hour=0,
+        ):
+            calls = self._fire(25)
+
+        self.assertEqual(len(calls), 25)

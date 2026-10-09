@@ -1,5 +1,6 @@
 <template>
-	<div class="workflow-node output-node">
+	<div class="workflow-node output-node" :class="{ invalid: data.issues?.length }">
+		<NodeIssueMarker :issues="data.issues || []" />
 		<Handle type="target" :position="Position.Left" />
 		<div class="node-header">
 			<div class="node-icon" style="color: var(--ql-text-muted)">
@@ -23,6 +24,7 @@
 
 <script setup>
 import { Handle, Position } from "@vue-flow/core";
+import NodeIssueMarker from "./NodeIssueMarker.vue";
 
 defineProps({
 	data: { type: Object, required: true },
@@ -36,6 +38,7 @@ function truncate(text, len) {
 
 <style scoped>
 .workflow-node {
+	position: relative;
 	background: var(--ql-surface);
 	border: 2px solid var(--ql-border);
 	border-radius: 0.5rem;
@@ -91,5 +94,9 @@ function truncate(text, len) {
 	white-space: nowrap;
 	overflow: hidden;
 	text-overflow: ellipsis;
+}
+
+.workflow-node.invalid {
+	border-color: var(--ql-danger);
 }
 </style>

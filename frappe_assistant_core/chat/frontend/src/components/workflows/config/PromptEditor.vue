@@ -1,12 +1,21 @@
 <template>
 	<div class="config-section">
 		<div class="prompt-header">
-			<label class="config-label" :for="fieldId">System Prompt</label>
+			<label class="config-label" :for="fieldId">{{ __("System prompt") }}</label>
 			<VariableInserter
 				v-if="!readonly"
 				:global-variables="variables"
 				@insert="insertVariable"
 			/>
+			<button
+				type="button"
+				data-test="expand-prompt"
+				class="expand-btn"
+				:title="__('Open a larger editor')"
+				@click="expanded = true"
+			>
+				{{ __("Expand") }}
+			</button>
 		</div>
 
 		<textarea
@@ -14,7 +23,7 @@
 			ref="textareaRef"
 			:value="modelValue"
 			class="config-input config-textarea"
-			placeholder="You are a helpful assistant that..."
+			:placeholder="__('You are a helpful assistant that...')"
 			rows="6"
 			:readonly="readonly"
 			@input="$emit('update:modelValue', $event.target.value)"
@@ -23,34 +32,48 @@
 		<div class="prompt-meta">
 			<button class="disclosure" @click="showPreview = !showPreview">
 				<span class="disclosure-caret" :class="{ open: showPreview }">›</span>
-				{{ showPreview ? "Hide" : "Preview" }} resolved prompt
+				{{ showPreview ? __("Hide resolved prompt") : __("Preview resolved prompt") }}
 			</button>
-			<span class="length-estimate" title="Length of the resolved prompt"
-				>{{ preview.text.length.toLocaleString("en-US") }} characters</span
-			>
+			<span class="length-estimate" :title="__('Length of the resolved prompt')">{{
+				__("{0} characters", [preview.text.length.toLocaleString("en-US")])
+			}}</span>
 		</div>
 
 		<div v-if="showPreview" class="prompt-preview">
 			<p class="preview-caption">
-				What the model receives: your prompt with variables substituted, plus the tool block
-				the engine appends.
+				{{
+					__(
+						"What the model receives: your prompt with variables substituted, plus the tool block the engine appends."
+					)
+				}}
 			</p>
-			<pre class="preview-body">{{ preview.text || "(empty prompt)" }}</pre>
+			<pre class="preview-body">{{ preview.text || __("(empty prompt)") }}</pre>
 			<p v-if="preview.unresolvedVariables.length" class="preview-warn">
-				Undefined variables — these render empty at run time:
+				{{ __("Undefined variables — these render empty at run time:") }}
 				{{ preview.unresolvedVariables.join(", ") }}
 			</p>
 			<p v-if="preview.missingTools.length" class="preview-warn">
-				Unavailable tools: {{ preview.missingTools.join(", ") }}
+				{{ __("Unavailable tools: {0}", [preview.missingTools.join(", ")]) }}
 			</p>
 		</div>
+
+		<PromptExpandModal
+			v-model:open="expanded"
+			:model-value="modelValue"
+			:variables="variables"
+			:readonly="readonly"
+			@update:model-value="$emit('update:modelValue', $event)"
+		/>
 	</div>
 </template>
 
 <script setup>
 import { ref, computed } from "vue";
 import VariableInserter from "./VariableInserter.vue";
+import PromptExpandModal from "./PromptExpandModal.vue";
 import { buildResolvedPrompt } from "./promptPreview";
+import { spliceAtCaret } from "./spliceAtCaret";
+import { __ } from "@/utils/i18n";
 
 const props = defineProps({
 	modelValue: { type: String, default: "" },
@@ -67,6 +90,7 @@ const emit = defineEmits(["update:modelValue"]);
 const fieldId = `system-prompt-${Math.random().toString(36).slice(2, 8)}`;
 const textareaRef = ref(null);
 const showPreview = ref(false);
+const expanded = ref(false);
 
 const preview = computed(() =>
 	buildResolvedPrompt({
@@ -78,15 +102,7 @@ const preview = computed(() =>
 );
 
 function insertVariable(placeholder) {
-	const el = textareaRef.value;
-	const current = props.modelValue || "";
-	if (!el) {
-		emit("update:modelValue", current + placeholder);
-		return;
-	}
-	const start = el.selectionStart ?? current.length;
-	const end = el.selectionEnd ?? current.length;
-	emit("update:modelValue", current.slice(0, start) + placeholder + current.slice(end));
+	emit("update:modelValue", spliceAtCaret(props.modelValue || "", placeholder, textareaRef.value));
 }
 </script>
 
@@ -101,6 +117,14 @@ function insertVariable(placeholder) {
 	justify-content: space-between;
 	gap: 0.5rem;
 	margin-bottom: 0.375rem;
+}
+
+.expand-btn {
+	font-size: 0.6875rem;
+	color: var(--ql-accent);
+	background: none;
+	border: none;
+	cursor: pointer;
 }
 
 .config-label {

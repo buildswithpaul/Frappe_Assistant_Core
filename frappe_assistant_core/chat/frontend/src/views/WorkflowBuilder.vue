@@ -11,19 +11,21 @@
 				:is-dirty="isDirty"
 				:is-saving="isSaving"
 				:is-running="isRunning"
+				:can-run="canRun"
+				:run-block-reason="runBlockReason"
 				:show-runs="showRunsPanel"
 				:show-audit="showAuditPanel"
 				:last-saved="hasSaved"
 				:has-variables="hasVariables"
+				:setup-todo="setup.todoCount.value"
+				:status-busy="isCheckingActivation"
 				@back="handleBack"
 				@save="save"
 				@run="requestRun"
-				@schedule="showScheduleModal = true"
-				@triggers="showTriggersModal = true"
-				@settings="showSettingsDrawer = true"
+				@setup="showSetup = !showSetup"
 				@toggle-runs="onToggleRuns"
 				@toggle-audit="onToggleAudit"
-				@toggle-status="toggleStatus"
+				@toggle-status="requestToggleStatus"
 				@rename="rename"
 				@variables="showVariablesModal = true"
 				@share-template="showShareModal = true"
@@ -73,6 +75,7 @@
 					@node-delete="handleDeleteNode"
 					@close-config="selectedNode = null"
 					@request-save="save"
+					:focus-run-name="panels.focusRunName.value"
 					@close-runs="showRunsPanel = false"
 					@close-audit="showAuditPanel = false"
 				/>
@@ -89,22 +92,31 @@
 				:has-saved="hasSaved"
 			/>
 
-			<!-- Modals (run input, schedule, variables, share template, triggers) -->
+			<!-- Modals (run input, schedule, variables, share template, triggers, setup, activation) -->
 			<WorkflowBuilderModals
 				v-model:show-run="showRunModal"
 				v-model:show-schedule="showScheduleModal"
 				v-model:show-variables="showVariablesModal"
 				v-model:show-share="showShareModal"
 				v-model:show-triggers="showTriggersModal"
+				v-model:show-setup="showSetup"
 				:is-running="isRunning"
 				:schedule-config="scheduleConfig"
 				:is-setting-schedule="isSettingSchedule"
 				:variables="globalSettings?.variables || {}"
 				:workflow-id="workflowId"
 				:workflow-display-name="workflowDisplayName"
+				:setup-items="setup.items.value"
+				:setup-busy="setup.isRefreshing.value"
+				:pending-activation="pendingActivation"
+				:activation-warnings="preflight.warnings.value"
+				@setup-action="(key) => panels.onSetupAction(key, setup)"
+				@activation-confirm="confirmActivation"
+				@activation-cancel="cancelActivation"
 				@run-confirm="confirmRun"
 				@schedule-save="saveSchedule"
 				@variables-save="onVariablesSave"
+				@open-run="panels.onOpenRun"
 			/>
 
 			<WorkflowSettingsDrawer
@@ -121,7 +133,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onBeforeUnmount, onMounted } from "vue";
+import { ref, computed, nextTick, onBeforeUnmount, onMounted } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import { storeToRefs } from "pinia";
 import { useVueFlow } from "@vue-flow/core";
@@ -136,7 +148,6 @@ import MobileGate from "@/components/workflows/MobileGate.vue";
 import NodePalette from "@/components/workflows/NodePalette.vue";
 import WorkflowCanvas from "@/components/workflows/builder/WorkflowCanvas.vue";
 import BuilderRightRail from "@/components/workflows/builder/BuilderRightRail.vue";
-import { useWorkflowRealtime } from "@/composables/useWorkflowRealtime";
 import { useIsMobile } from "@/composables/useIsMobile";
 import { useUnsavedGuard } from "@/composables/useUnsavedGuard";
 import { useWorkflowLoader } from "@/composables/useWorkflowLoader";
@@ -148,8 +159,10 @@ import { useGraphValidation } from "@/composables/useGraphValidation";
 import { useWorkflowActions } from "@/composables/useWorkflowActions";
 import { useWorkflowExecution } from "@/composables/useWorkflowExecution";
 import { useBuilderShortcuts } from "@/composables/useBuilderShortcuts";
-
+import { useBuilderPanels } from "@/composables/useBuilderPanels";
+import { useBuilderSetup } from "@/composables/useBuilderSetup";
 import { vueFlowToGraphJson } from "@/components/workflows/graphUtils";
+import { __ } from "@/utils/i18n";
 
 const router = useRouter();
 const route = useRoute();
@@ -159,7 +172,19 @@ const { currentWorkflow, isDirty, isSaving, isRunning, currentRun, availableMode
 	storeToRefs(workflowStore);
 const { user, isAdmin } = storeToRefs(userStore);
 
-const { project, fitView } = useVueFlow();
+const { project, fitView, updateNode, updateNodeData, findEdge } = useVueFlow();
+
+// <VueFlow :nodes> is one-way and renders its own copies of these objects, so
+// run state, issue markers and config edits reach the canvas through this, not
+// through the arrays. None of it emits a change event, so it never autosaves.
+const canvasSync = {
+	updateNode,
+	updateNodeData,
+	updateEdge: (id, patch) => {
+		const edge = findEdge(id);
+		if (edge) Object.assign(edge, patch);
+	},
+};
 
 // Canvas state
 const nodes = ref([]);
@@ -171,13 +196,19 @@ const canvasAreaRef = computed(() => canvasRef.value?.rootEl || null);
 // UI state
 const selectedNode = ref(null);
 const paletteCollapsed = ref(false);
-const showRunsPanel = ref(false);
-const showAuditPanel = ref(false);
-const showScheduleModal = ref(false);
-const showVariablesModal = ref(false);
-const showShareModal = ref(false);
-const showTriggersModal = ref(false);
-const showSettingsDrawer = ref(false);
+const panels = useBuilderPanels();
+const {
+	showRunsPanel,
+	showAuditPanel,
+	showScheduleModal,
+	showVariablesModal,
+	showShareModal,
+	showTriggersModal,
+	showSettingsDrawer,
+	showSetup,
+	onToggleRuns,
+	onToggleAudit,
+} = panels;
 
 const scheduleConfig = ref({ cron: "", timezone: "UTC", defaultInput: "", enabled: false });
 
@@ -192,32 +223,39 @@ const hasVariables = computed(() => {
 
 const workflowId = computed(() => route.params.id);
 const workflowDisplayName = computed(
-	() => currentWorkflow.value?.workflow_name || workflowId.value || "Untitled"
+	() => currentWorkflow.value?.workflow_name || workflowId.value || __("Untitled"),
 );
 const runtimeUserLabel = computed(
-	() => currentWorkflow.value?.default_user_id || "no user (tools unavailable)"
+	() => currentWorkflow.value?.default_user_id || __("no user (tools unavailable)"),
 );
 
 function currentGraphJson() {
 	return vueFlowToGraphJson(nodes.value, edges.value, globalSettings.value);
 }
 
-useWorkflowRealtime(workflowId);
 const { isMobile } = useIsMobile();
 useUnsavedGuard(isDirty);
 
-useRunNodeStatus(currentRun, isRunning, { nodes, edges });
+useRunNodeStatus(currentRun, isRunning, { nodes, edges, sync: canvasSync });
 
 const {
 	validationMessage,
 	validationClass,
 	visibleErrors,
+	canRun,
+	runBlockReason,
 	checkLocally,
 	checkBeforeRun,
 	checkOnServer,
-} = useGraphValidation({ workflowStore, nodes, edges, toGraphJson: currentGraphJson });
+} = useGraphValidation({
+	workflowStore,
+	nodes,
+	edges,
+	toGraphJson: currentGraphJson,
+	sync: canvasSync,
+});
 
-const { hasSaved, saveError, scheduleAutoSave, save, resetHistory, undo, redo } =
+const { hasSaved, saveError, scheduleAutoSave, save, saveBeforeLeave, resetHistory, undo, redo } =
 	useBuilderAutosave({
 		workflowStore,
 		workflowId,
@@ -231,7 +269,7 @@ const { hasSaved, saveError, scheduleAutoSave, save, resetHistory, undo, redo } 
 		checkOnServer,
 	});
 
-const { isLoading, loadError, loadCurrentWorkflow } = useWorkflowLoader({
+const { isLoading, loadError, loadCurrentWorkflow, wasRelaidOut } = useWorkflowLoader({
 	workflowStore,
 	workflowId,
 	nodes,
@@ -250,6 +288,7 @@ const {
 	onPaneClick,
 	addNodeOfType,
 	duplicateSelectedNode,
+	openFocusedNodeConfig,
 } = useBuilderGraph({
 	nodes,
 	edges,
@@ -266,9 +305,29 @@ const { onDrop, handleNodeUpdate, handleDeleteNode } = useWorkflowGraphActions({
 	selectedNode,
 	scheduleAutoSave,
 	project,
+	sync: canvasSync,
 });
 
-const { settingsError, toggleStatus, rename, saveSettings } = useWorkflowActions({
+const { preflight, setup } = useBuilderSetup({
+	workflowId,
+	workflowDisplayName,
+	currentWorkflow,
+	scheduleConfig,
+	nodes,
+	isAdmin,
+	panels,
+});
+
+const {
+	settingsError,
+	requestToggleStatus,
+	pendingActivation,
+	isCheckingActivation,
+	confirmActivation,
+	cancelActivation,
+	rename,
+	saveSettings,
+} = useWorkflowActions({
 	workflowStore,
 	workflowId,
 	currentWorkflow,
@@ -277,6 +336,7 @@ const { settingsError, toggleStatus, rename, saveSettings } = useWorkflowActions
 	toGraphJson: currentGraphJson,
 	hasSaved,
 	saveError,
+	preflight,
 });
 
 const { actionError, isSettingSchedule, showRunModal, requestRun, confirmRun, saveSchedule } =
@@ -300,25 +360,20 @@ useBuilderShortcuts({
 	onRedo: redo,
 	onDuplicate: duplicateSelectedNode,
 	onFitView: () => fitView({ padding: 0.2 }),
-	onEscape: () => {
-		if (showSettingsDrawer.value) showSettingsDrawer.value = false;
-		else selectedNode.value = null;
-	},
-	onOpenConfig: () => {
-		// Vue Flow makes nodes focusable, so the keyboard reaches a node before
-		// it is "selected" — accept either.
-		const focusedId = document.activeElement?.dataset?.id;
-		const node =
-			nodes.value.find((n) => n.selected) || nodes.value.find((n) => n.id === focusedId);
-		if (!node) return false;
-		selectedNode.value = node;
-		return true;
-	},
+	onEscape: () => panels.closeOnEscape() || (selectedNode.value = null),
+	onOpenConfig: openFocusedNodeConfig,
 });
 
 onMounted(async () => {
+	workflowStore.watchLatestRun(workflowId.value);
 	await loadCurrentWorkflow();
 	resetHistory();
+	if (wasRelaidOut.value) {
+		await nextTick();
+		fitView({ padding: 0.2 });
+		if (canEdit.value) scheduleAutoSave();
+	}
+	if (canEdit.value) setup.refresh();
 });
 
 onBeforeUnmount(() => workflowStore.clearCurrentWorkflow());
@@ -332,17 +387,6 @@ async function onSettingsSave(fields) {
 	if (await saveSettings(fields)) showSettingsDrawer.value = false;
 }
 
-// Runs and Audit share the right rail; the config panel no longer competes.
-function onToggleRuns() {
-	if (showAuditPanel.value) showAuditPanel.value = false;
-	showRunsPanel.value = !showRunsPanel.value;
-}
-
-function onToggleAudit() {
-	if (showRunsPanel.value) showRunsPanel.value = false;
-	showAuditPanel.value = !showAuditPanel.value;
-}
-
 function onVariablesSave(vars) {
 	if (!globalSettings.value) globalSettings.value = {};
 	globalSettings.value.variables = vars;
@@ -350,12 +394,9 @@ function onVariablesSave(vars) {
 	scheduleAutoSave();
 }
 
-function handleBack() {
-	if (isDirty.value && canEdit.value) {
-		save().then(() => router.push({ name: "agents" }));
-	} else {
-		router.push({ name: "agents" });
-	}
+async function handleBack() {
+	// A failed save keeps the author here with the save banner up.
+	if (await saveBeforeLeave()) router.push({ name: "agents" });
 }
 </script>
 

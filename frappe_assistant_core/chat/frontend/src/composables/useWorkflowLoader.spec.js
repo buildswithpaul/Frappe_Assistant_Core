@@ -48,7 +48,10 @@ describe("useWorkflowLoader", () => {
 	function setup(result) {
 		const scheduleConfig = ref({ cron: "x", timezone: "UTC", defaultInput: "", enabled: true });
 		const deps = {
-			workflowStore: { loadWorkflow: vi.fn().mockResolvedValue(result) },
+			workflowStore: {
+				loadWorkflow: vi.fn().mockResolvedValue(result),
+				loadModels: vi.fn().mockResolvedValue(),
+			},
 			workflowId: ref("WF-00007"),
 			nodes: ref([]),
 			edges: ref([]),
@@ -79,7 +82,10 @@ describe("useWorkflowLoader", () => {
 	it("surfaces a load failure", async () => {
 		const scheduleConfig = ref({});
 		const { loadCurrentWorkflow, loadError } = useWorkflowLoader({
-			workflowStore: { loadWorkflow: vi.fn().mockRejectedValue(new Error("nope")) },
+			workflowStore: {
+				loadWorkflow: vi.fn().mockRejectedValue(new Error("nope")),
+				loadModels: vi.fn().mockResolvedValue(),
+			},
 			workflowId: ref("WF-1"),
 			nodes: ref([]),
 			edges: ref([]),
@@ -89,5 +95,46 @@ describe("useWorkflowLoader", () => {
 		});
 		await loadCurrentWorkflow();
 		expect(loadError.value).toBe("nope");
+	});
+
+	it("loads models alongside the workflow", async () => {
+		const { loadCurrentWorkflow, deps } = setup(PAUSED_KOLKATA);
+		await loadCurrentWorkflow();
+		expect(deps.workflowStore.loadModels).toHaveBeenCalledTimes(1);
+	});
+
+	it("lays out a graph whose nodes are stacked on one spot", async () => {
+		const stacked = {
+			...PAUSED_KOLKATA,
+			graph_json: JSON.stringify({
+				nodes: [
+					{ id: "a", type: "agent", config: {} },
+					{ id: "b", type: "agent", config: {} },
+				],
+				edges: [{ source: "a", target: "b" }],
+			}),
+		};
+		const { loadCurrentWorkflow, deps, wasRelaidOut } = setup(stacked);
+		await loadCurrentWorkflow();
+		expect(wasRelaidOut.value).toBe(true);
+		const [a, b] = deps.nodes.value;
+		expect(a.position).not.toEqual(b.position);
+	});
+
+	it("keeps an author's spaced layout as it is", async () => {
+		const spaced = {
+			...PAUSED_KOLKATA,
+			graph_json: JSON.stringify({
+				nodes: [
+					{ id: "a", type: "agent", position: { x: 10, y: 10 }, config: {} },
+					{ id: "b", type: "agent", position: { x: 200, y: 10 }, config: {} },
+				],
+				edges: [],
+			}),
+		};
+		const { loadCurrentWorkflow, deps, wasRelaidOut } = setup(spaced);
+		await loadCurrentWorkflow();
+		expect(wasRelaidOut.value).toBe(false);
+		expect(deps.nodes.value[1].position).toEqual({ x: 200, y: 10 });
 	});
 });

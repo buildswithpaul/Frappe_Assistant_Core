@@ -12,9 +12,10 @@ The `list_documents` tool searches and lists Frappe documents with filtering, fi
 | `filters` | object | No | `{}` | Key-value filter pairs |
 | `fields` | array | No | standard fields | Specific field names to return |
 | `limit` | integer | No | 20 | Max results (max: 1000) |
+| `offset` | integer | No | 0 | Records to skip; pass the previous response's `next_offset` |
 | `order_by` | string | No | `"creation desc"` | Sort expression |
 
-**Note:** There is no `page` parameter. Use `limit` to control result size.
+**Paging:** when `has_more` is true the response carries `next_offset`; pass it as `offset` for the next page. Use `limit` to control page size.
 
 ## Submitted-Only Default
 
@@ -45,6 +46,7 @@ Non-submittable DocTypes (Customer, Item, Supplier, User, ToDo, …) have no `do
     "count": 5,
     "total_count": 42,
     "has_more": true,
+    "next_offset": 5,
     "filters_applied": { "status": "Active" },
     "message": "Found 5 Customer records"
   }
@@ -55,7 +57,8 @@ Key response fields:
 - `data` — array of document records
 - `count` — number of records returned in this response
 - `total_count` — total matching records in the database
-- `has_more` — boolean indicating more records exist beyond the limit
+- `has_more` — boolean indicating more records exist beyond this page
+- `next_offset` — present only when `has_more` is true: the `offset` of the next page
 - `unresolved_filters` — **present only on zero-row results** when a Link filter value matched no record (see below)
 
 ## Zero Results: Check `unresolved_filters` First

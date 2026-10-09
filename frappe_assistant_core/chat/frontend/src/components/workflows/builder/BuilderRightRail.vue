@@ -12,7 +12,12 @@
 		@request-save="$emit('request-save')"
 	/>
 
-	<RunHistoryPanel v-if="showRuns" :workflow-id="workflowId" @close="$emit('close-runs')" />
+	<RunHistoryPanel
+		v-if="showRuns"
+		:workflow-id="workflowId"
+		:focus-run-name="focusRunName"
+		@close="$emit('close-runs')"
+	/>
 
 	<AgentAuditPanel
 		v-if="showAudit && !showRuns"
@@ -35,6 +40,7 @@ defineProps({
 	showRuns: { type: Boolean, default: false },
 	showAudit: { type: Boolean, default: false },
 	workflowId: { type: String, default: "" },
+	focusRunName: { type: String, default: "" },
 });
 
 defineEmits([

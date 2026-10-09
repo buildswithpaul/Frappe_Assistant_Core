@@ -1,22 +1,24 @@
 <template>
 	<div class="log-view">
 		<div class="header">
-			<button class="back-btn" @click="$emit('back')">← Back</button>
-			<h3 class="log-title">Fire log — {{ triggerTitle || triggerName }}</h3>
+			<button class="back-btn" @click="$emit('back')">{{ __("← Back") }}</button>
+			<h3 class="log-title">
+				{{ __("Fire log — {0}", [triggerTitle || triggerName]) }}
+			</h3>
 		</div>
 
-		<div v-if="loading" class="state-block">Loading…</div>
+		<div v-if="loading" class="state-block">{{ __("Loading…") }}</div>
 		<div v-else-if="logs.length === 0" class="empty-state">
-			This trigger has not fired yet.
+			{{ __("This trigger has not fired yet.") }}
 		</div>
 		<table v-else class="log-table">
 			<thead>
 				<tr>
-					<th>When</th>
-					<th>Status</th>
-					<th>Target</th>
-					<th>FAC Cloud Run</th>
-					<th>Message</th>
+					<th>{{ __("When") }}</th>
+					<th>{{ __("Status") }}</th>
+					<th>{{ __("Target") }}</th>
+					<th>{{ __("Run") }}</th>
+					<th>{{ __("Message") }}</th>
 				</tr>
 			</thead>
 			<tbody>
@@ -28,7 +30,18 @@
 						</span>
 					</td>
 					<td class="mono">{{ row.reference_doctype }} / {{ row.reference_docname }}</td>
-					<td class="mono">{{ row.fac_cloud_run_id || "—" }}</td>
+					<td class="mono">
+						<button
+							v-if="row.fac_cloud_run_id"
+							type="button"
+							data-test="open-run"
+							class="run-link"
+							@click="$emit('open-run', row.fac_cloud_run_id)"
+						>
+							{{ row.fac_cloud_run_id }}
+						</button>
+						<span v-else>—</span>
+					</td>
 					<td class="error">{{ row.error_message || "" }}</td>
 				</tr>
 			</tbody>
@@ -40,13 +53,14 @@
 import { onMounted, ref, watch } from "vue";
 import api from "@/api/client";
 import { logger } from "@/utils/logger";
+import { __ } from "@/utils/i18n";
 
 const props = defineProps({
 	triggerName: { type: String, required: true },
 	triggerTitle: { type: String, default: "" },
 });
 
-defineEmits(["back"]);
+defineEmits(["back", "open-run"]);
 
 const logs = ref([]);
 const loading = ref(false);
@@ -149,6 +163,18 @@ function statusClass(status) {
 	font-weight: 600;
 	color: var(--ql-text-secondary);
 	background: var(--ql-subtle);
+}
+.run-link {
+	background: none;
+	border: none;
+	padding: 0;
+	cursor: pointer;
+	font: inherit;
+	color: var(--ql-accent);
+	text-decoration: underline;
+}
+.run-link:hover {
+	color: var(--ql-accent-hover);
 }
 .nowrap {
 	white-space: nowrap;

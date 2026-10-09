@@ -25,7 +25,7 @@
 				:key="nt.type"
 				type="button"
 				class="palette-item"
-				:title="`Add ${nt.label}`"
+				:title="__('Add {0}', [__(nt.label)])"
 				draggable="true"
 				@dragstart="onDragStart($event, nt.type)"
 				@click="$emit('add', nt.type)"
@@ -47,8 +47,8 @@
 					</svg>
 				</div>
 				<div class="palette-info">
-					<span class="palette-label">{{ nt.label }}</span>
-					<span class="palette-desc">{{ nt.description }}</span>
+					<span class="palette-label">{{ __(nt.label) }}</span>
+					<span class="palette-desc">{{ __(nt.description) }}</span>
 				</div>
 			</button>
 		</div>
@@ -62,7 +62,7 @@
 				draggable="true"
 				@dragstart="onDragStart($event, nt.type)"
 				@click="$emit('add', nt.type)"
-				:title="`Add ${nt.label}`"
+				:title="__('Add {0}', [__(nt.label)])"
 			>
 				<svg
 					width="18"
@@ -85,6 +85,7 @@
 </template>
 
 <script setup>
+import { __ } from "@/utils/i18n";
 import { NODE_TYPES } from "./graphUtils";
 
 defineProps({

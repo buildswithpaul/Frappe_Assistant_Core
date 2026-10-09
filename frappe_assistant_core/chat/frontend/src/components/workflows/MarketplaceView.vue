@@ -18,11 +18,8 @@
 		/>
 
 		<!-- Featured row -->
-		<div
-			v-if="featuredTemplates.length > 0 && !searchQuery && !categoryFilter"
-			class="featured-section"
-		>
-			<h3 class="section-title">Featured</h3>
+		<div v-if="showFeatured" class="featured-section">
+			<h3 class="section-title">{{ __("Featured") }}</h3>
 			<div class="featured-scroll">
 				<TemplateCard
 					v-for="tpl in featuredTemplates"
@@ -34,43 +31,19 @@
 			</div>
 		</div>
 
-		<!-- Loading -->
-		<div
-			v-if="store.isLoadingTemplates && allTemplates.length === 0"
-			class="marketplace-loading"
-		>
-			<div class="loading-spinner"></div>
-			<p>Loading templates...</p>
-		</div>
-
-		<!-- Empty -->
-		<div v-else-if="allTemplates.length === 0" class="marketplace-empty">
-			<svg
-				width="40"
-				height="40"
-				fill="none"
-				stroke="currentColor"
-				viewBox="0 0 24 24"
-				class="empty-icon"
-			>
-				<path
-					stroke-linecap="round"
-					stroke-linejoin="round"
-					stroke-width="1.5"
-					d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"
-				/>
-			</svg>
-			<p v-if="searchQuery || categoryFilter">No templates match your search.</p>
-			<p v-else>No templates available yet.</p>
-		</div>
+		<MarketplaceStatus
+			v-if="allTemplates.length === 0"
+			:loading="isLoadingTemplates"
+			:error="templatesError || ''"
+			:empty="true"
+			:filtered="!!(searchQuery || categoryFilter)"
+			@retry="reloadTemplates"
+		/>
 
 		<!-- Template grid -->
 		<div v-else class="marketplace-grid-section">
-			<h3
-				v-if="featuredTemplates.length > 0 && !searchQuery && !categoryFilter"
-				class="section-title"
-			>
-				All Templates
+			<h3 v-if="showFeatured" class="section-title">
+				{{ __("All Templates") }}
 			</h3>
 			<div class="marketplace-grid">
 				<TemplateCard
@@ -83,6 +56,7 @@
 			</div>
 
 			<!-- Load More -->
+			<p v-if="templatesError" class="inline-error" role="alert">{{ templatesError }}</p>
 			<div v-if="hasMore" class="load-more-wrap">
 				<button
 					class="load-more-btn"
@@ -90,7 +64,7 @@
 					@click="loadMore"
 				>
 					<span v-if="store.isLoadingTemplates" class="loading-spinner small"></span>
-					<span v-else>Load More</span>
+					<span v-else>{{ templatesError ? __("Retry") : __("Load More") }}</span>
 				</button>
 			</div>
 		</div>
@@ -110,16 +84,25 @@
 import { ref, computed, onMounted } from "vue";
 import { storeToRefs } from "pinia";
 import { useWorkflowStore } from "@/stores/workflowStore";
+import { api } from "@/api/client";
+import { __ } from "@/utils/i18n";
 import { logger } from "@/utils/logger";
 import MarketplaceFilters from "./marketplace/MarketplaceFilters.vue";
+import MarketplaceStatus from "./marketplace/MarketplaceStatus.vue";
 import TemplateCard from "./marketplace/TemplateCard.vue";
 import CreatorStatsSection from "./marketplace/CreatorStatsSection.vue";
 import TemplateDetailPanel from "./TemplateDetailPanel.vue";
+import { categoriesFrom, hasFeaturedSubset } from "./marketplace/marketplaceFacets";
 
 const emit = defineEmits(["workflow-created"]);
 
 const store = useWorkflowStore();
-const { templates: allTemplates, templatesTotal, isLoadingTemplates } = storeToRefs(store);
+const {
+	templates: allTemplates,
+	templatesTotal,
+	isLoadingTemplates,
+	templatesError,
+} = storeToRefs(store);
 
 const searchQuery = ref("");
 const categoryFilter = ref(null);
@@ -129,26 +112,30 @@ const featuredTemplates = ref([]);
 const detailTemplate = ref(null);
 const startInImportMode = ref(false);
 
-const categories = [
-	"All",
-	"General",
-	"Sales",
-	"Marketing",
-	"Support",
-	"Operations",
-	"Finance",
-	"Procurement",
-	"Development",
-	"Custom",
-];
+const facetTemplates = ref([]);
+
+const categories = computed(() => [
+	{ value: "All", label: __("All") },
+	...categoriesFrom(facetTemplates.value, categoryFilter.value).map((c) => ({ value: c, label: c })),
+]);
+
+const isUnfiltered = computed(
+	() => !searchQuery.value && (!categoryFilter.value || categoryFilter.value === "All")
+);
+
+const showFeatured = computed(
+	() =>
+		isUnfiltered.value &&
+		featuredTemplates.value.length > 0 &&
+		(facetTemplates.value.length === 0 || hasFeaturedSubset(facetTemplates.value))
+);
 
 const hasMore = computed(() => allTemplates.value.length < templatesTotal.value);
 
 let searchTimer = null;
 
 onMounted(async () => {
-	await reloadTemplates();
-	await loadFeatured();
+	await Promise.all([reloadTemplates(), loadFeatured(), loadFacets()]);
 	store.loadCreatorStats();
 });
 
@@ -190,29 +177,40 @@ async function reloadTemplates() {
 		getActiveCategory(),
 		searchQuery.value || null,
 		getActiveSortBy(),
-		0
+		0,
 	);
 }
 
 async function loadMore() {
-	currentPage.value++;
+	const next = currentPage.value + 1;
 	await store.loadTemplates(
 		getActiveCategory(),
 		searchQuery.value || null,
 		getActiveSortBy(),
-		currentPage.value,
-		{ append: true }
+		next,
+		{ append: true },
 	);
+	if (!store.templatesError) currentPage.value = next;
 }
 
 async function loadFeatured() {
 	try {
 		// Use API directly — NOT the store — to avoid overwriting the main templates list
-		const { api } = await import("@/api/client");
 		const res = await api.workflows.listTemplates(null, null, null, true, null, 0, 6);
 		featuredTemplates.value = res.templates || [];
 	} catch {
 		featuredTemplates.value = [];
+	}
+}
+
+// The store list is already narrowed by category and search, so the chips
+// come from one unfiltered page instead (the endpoint caps a page at 100).
+async function loadFacets() {
+	try {
+		const res = await api.workflows.listTemplates(null, null, null, false, null, 0, 100);
+		facetTemplates.value = res.templates || [];
+	} catch {
+		facetTemplates.value = [];
 	}
 }
 
@@ -311,6 +309,13 @@ function onTemplateRated(result) {
 	gap: 0.875rem;
 }
 
+.inline-error {
+	margin: 0.75rem 0 0;
+	text-align: center;
+	font-size: 0.75rem;
+	color: var(--ql-danger);
+}
+
 /* Load more */
 .load-more-wrap {
 	display: flex;
@@ -343,37 +348,13 @@ function onTemplateRated(result) {
 	cursor: default;
 }
 
-/* Loading / empty */
-.marketplace-loading,
-.marketplace-empty {
-	display: flex;
-	flex-direction: column;
-	align-items: center;
-	justify-content: center;
-	padding: 4rem 1rem;
-	color: var(--ql-text-muted);
-	font-size: 0.8125rem;
-}
-
-.empty-icon {
-	margin-bottom: 1rem;
-	opacity: 0.4;
-}
-
 .loading-spinner {
-	width: 1.5rem;
-	height: 1.5rem;
+	width: 1rem;
+	height: 1rem;
 	border: 2px solid var(--ql-border);
 	border-top-color: var(--ql-accent);
 	border-radius: 50%;
 	animation: spin 0.8s linear infinite;
-	margin-bottom: 0.75rem;
-}
-
-.loading-spinner.small {
-	width: 1rem;
-	height: 1rem;
-	margin-bottom: 0;
 }
 
 @keyframes spin {
