@@ -100,10 +100,12 @@ class TestListDocumentsOffset(BaseAssistantTest):
         )
 
     def test_default_order_is_the_doctype_sort_with_name_tie_breaker(self):
-        # ToDo's DocType sorts on creation DESC (todo.json), so that is the resolved default.
+        # The default is ToDo's own sort field, which differs by Frappe version
+        # (modified on v15, creation on v16), so read it from the meta.
+        meta = frappe.get_meta("ToDo")
         self.assertEqual(
             self._order_sent_to_get_list(order_by=None),
-            "`tabToDo`.`creation` DESC, `tabToDo`.`name` asc",
+            f"`tabToDo`.`{meta.sort_field}` {meta.sort_order}, `tabToDo`.`name` asc",
         )
 
     def test_name_in_order_by_is_not_repeated(self):
