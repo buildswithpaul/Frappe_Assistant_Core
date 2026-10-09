@@ -45,6 +45,16 @@ describe("ToolNodeConfig", () => {
 		expect(w.emitted("update")).toBeUndefined();
 	});
 
+	it("does not reformat the textarea while the user types valid compact JSON", async () => {
+		const config = reactive({ ...getDefaultConfig("tool"), tool_name: "generate_report" });
+		const w = mount(ToolNodeConfig, { props: { config, allTools: [REPORT_TOOL] } });
+		const box = w.get('[data-test="tool-arguments"]');
+		await box.setValue('{"report_name":"AR"}');
+		await nextTick();
+		expect(config.arguments).toEqual({ report_name: "AR" });
+		expect(box.element.value).toBe('{"report_name":"AR"}');
+	});
+
 	it("clamps max rows to 2000", async () => {
 		const config = reactive({ ...getDefaultConfig("tool"), tool_name: "x" });
 		const w = mount(ToolNodeConfig, { props: { config, allTools: [] } });

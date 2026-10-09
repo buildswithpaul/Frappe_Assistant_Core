@@ -14,6 +14,7 @@
 			<!-- Agent Config (extracted) -->
 			<AgentConfig
 				v-if="node.type === 'agent'"
+				:key="node.id"
 				:config="config"
 				:node-id="node.id"
 				:models="models"
@@ -22,7 +23,7 @@
 				:tools-result="toolsResult"
 				:is-loading-tools="isLoadingTools"
 				:variables="variables"
-				:runtime-user-label="runtimeUserLabel"
+				:runtime-user-label="userLabel"
 				:runtime-user="runtimeUser"
 				:readonly="readonly"
 				@update="handleAgentUpdate"
@@ -31,16 +32,18 @@
 
 			<ToolNodeConfig
 				v-else-if="node.type === 'tool'"
+				:key="node.id"
 				:config="config"
 				:all-tools="allTools"
 				:is-loading-tools="isLoadingTools"
-				:runtime-user-label="runtimeUserLabel"
+				:runtime-user-label="userLabel"
 				:readonly="readonly"
 				@update="handleAgentUpdate"
 			/>
 
 			<LoopNodeConfig
 				v-else-if="node.type === 'loop'"
+				:key="node.id"
 				:config="config"
 				:node-id="node.id"
 				:models="models"
@@ -49,7 +52,7 @@
 				:tools-result="toolsResult"
 				:is-loading-tools="isLoadingTools"
 				:variables="variables"
-				:runtime-user-label="runtimeUserLabel"
+				:runtime-user-label="userLabel"
 				:runtime-user="runtimeUser"
 				:readonly="readonly"
 				@update="handleAgentUpdate"
@@ -106,7 +109,7 @@ const props = defineProps({
 	/** Workflow-level global_settings.variables — feeds the prompt preview. */
 	variables: { type: Object, default: () => ({}) },
 	/** The workflow's default_user_id, i.e. whose MCP tools the run uses. */
-	runtimeUserLabel: { type: String, default: "this agent's user" },
+	runtimeUserLabel: { type: String, default: "" },
 	readonly: { type: Boolean, default: false },
 });
 
@@ -127,6 +130,7 @@ const {
 
 const config = reactive({});
 
+const userLabel = computed(() => props.runtimeUserLabel || __("this agent's user"));
 const canRunNode = computed(() => ["agent", "transform"].includes(props.node.type));
 
 // Resolve the side-panel dot color from the node type. We map type → resolved
@@ -167,6 +171,15 @@ const runtimeUser = computed(() => {
 });
 
 let toolsTimer = null;
+watch(
+	() => props.node.id,
+	() => {
+		// A different node is a deliberate switch, not typing: load without waiting.
+		clearTimeout(toolsTimer);
+		workflowStore.loadTools(runtimeUser.value);
+	},
+	{ flush: "post" }
+);
 watch(runtimeUser, (value) => {
 	// The override box fires per keystroke; wait for the typing to settle.
 	clearTimeout(toolsTimer);

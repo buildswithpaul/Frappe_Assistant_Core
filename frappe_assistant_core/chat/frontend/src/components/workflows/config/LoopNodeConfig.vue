@@ -48,7 +48,7 @@
 			:tools-result="toolsResult"
 			:is-loading-tools="isLoadingTools"
 			:variables="variables"
-			:runtime-user-label="runtimeUserLabel"
+			:runtime-user-label="runtimeUserLabel || __('this agent\'s user')"
 			:runtime-user="runtimeUser"
 			:readonly="readonly"
 			@update="(data) => emit('update', data)"
@@ -72,7 +72,7 @@ const props = defineProps({
 	toolsResult: { type: Object, default: null },
 	isLoadingTools: { type: Boolean, default: false },
 	variables: { type: Object, default: () => ({}) },
-	runtimeUserLabel: { type: String, default: "this agent's user" },
+	runtimeUserLabel: { type: String, default: "" },
 	/** Whose tools to preview; null when the viewer may not name one. */
 	runtimeUser: { type: String, default: null },
 	readonly: { type: Boolean, default: false },

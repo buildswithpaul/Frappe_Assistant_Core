@@ -366,8 +366,9 @@ export const useWorkflowStore = defineStore("workflows", () => {
 	}
 
 	/**
-	 * Load the tool inventory of `runtimeUser` (null: the viewer's own). The
-	 * result is cached per runtime user; `force` re-fetches, e.g. after a
+	 * Load the tool inventory of `runtimeUser` (null: the viewer's own). A
+	 * single slot holds the last successful result and the user it was for, so
+	 * asking again for that same user is a no-op; `force` re-fetches, e.g. after a
 	 * server was reconnected. A slower, older response never overwrites the
 	 * inventory of the user asked about last.
 	 */

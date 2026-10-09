@@ -1,7 +1,7 @@
 <template>
 	<div class="panel-header">
 		<div class="header-info">
-			<div class="node-type-indicator" :style="{ background: color }"></div>
+			<div class="node-type-indicator" :style="color ? { background: color } : undefined"></div>
 			<input
 				v-model="editLabel"
 				class="label-input"
@@ -55,7 +55,7 @@ import { __ } from "@/utils/i18n";
 
 const props = defineProps({
 	label: { type: String, default: "" },
-	color: { type: String, default: "#64748b" },
+	color: { type: String, default: "" },
 	readonly: { type: Boolean, default: false },
 });
 const emit = defineEmits(["rename", "delete", "close"]);
@@ -94,6 +94,7 @@ function commitLabel() {
 }
 
 .node-type-indicator {
+	background: var(--ql-text-muted);
 	width: 10px;
 	height: 10px;
 	border-radius: 50%;
@@ -144,7 +145,7 @@ function commitLabel() {
 }
 
 .header-btn.danger:hover {
-	background: rgba(180, 69, 58, 0.1);
+	background: color-mix(in srgb, var(--ql-danger) 10%, transparent);
 	color: var(--ql-danger);
 }
 </style>

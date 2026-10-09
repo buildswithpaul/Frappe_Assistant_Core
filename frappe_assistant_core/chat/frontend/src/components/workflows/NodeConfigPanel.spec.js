@@ -74,6 +74,60 @@ describe("NodeConfigPanel", () => {
 		expect(listTools).toHaveBeenCalledWith("sales@example.com");
 	});
 
+	it("re-resolves directives against the runs-as user once the viewer turns out to be an admin", async () => {
+		const userStore = useUserStore();
+		const w = mountPanel(node("agent", { tool_directives: [{ tool_name: "x" }] }));
+		await flushPromises();
+		expect(resolveWorkflowTools).toHaveBeenLastCalledWith([{ tool_name: "x" }], null);
+
+		userStore.isAdmin = true;
+		await flushPromises();
+		expect(resolveWorkflowTools).toHaveBeenLastCalledWith([{ tool_name: "x" }], "ops@example.com");
+		w.unmount();
+	});
+
+	it("loads the new node's tools at once on a node switch, debouncing only user_id typing", async () => {
+		vi.useFakeTimers();
+		try {
+			const a = node("agent", { user_id: "a@example.com" });
+			const b = { ...node("agent", { user_id: "b@example.com" }), id: "agent_2" };
+			const w = mountPanel(a, { admin: true });
+			await flushPromises();
+			listTools.mockClear();
+
+			await w.setProps({ node: b });
+			await flushPromises();
+			expect(listTools).toHaveBeenCalledWith("b@example.com");
+
+			listTools.mockClear();
+			await w.setProps({
+				node: { ...b, data: { ...b.data, config: { ...b.data.config, user_id: "c@example.com" } } },
+			});
+			expect(listTools).not.toHaveBeenCalled();
+			await vi.advanceTimersByTimeAsync(500);
+			expect(listTools).toHaveBeenCalledWith("c@example.com");
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("a second tool node shows its own arguments, not the previous node's broken text", async () => {
+		const a = { ...node("tool"), id: "tool_a" };
+		const b = {
+			...node("tool", { arguments: { report_name: "AR" } }),
+			id: "tool_b",
+		};
+		const w = mountPanel(a);
+		await flushPromises();
+		await w.get('[data-test="tool-arguments"]').setValue("{ broken");
+		expect(w.text()).toContain("Not valid JSON");
+
+		await w.setProps({ node: b });
+		await flushPromises();
+		expect(w.text()).not.toContain("Not valid JSON");
+		expect(w.get('[data-test="tool-arguments"]').element.value).toContain("report_name");
+	});
+
 	it("a non-admin never names a user", async () => {
 		mountPanel(node("agent", { user_id: "sales@example.com", tool_directives: [{ tool_name: "x" }] }));
 		await flushPromises();

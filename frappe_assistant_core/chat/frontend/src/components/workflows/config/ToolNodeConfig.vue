@@ -80,7 +80,7 @@
 			{{
 				__(
 					"Runs without AI and costs no credits. A write tool needs “Always allow” for {0}, or unattended runs skip it.",
-					[runtimeUserLabel]
+					[runtimeUserLabel || __("this agent's user")]
 				)
 			}}
 		</p>
@@ -99,7 +99,7 @@ const props = defineProps({
 	config: { type: Object, required: true },
 	allTools: { type: Array, default: () => [] },
 	isLoadingTools: { type: Boolean, default: false },
-	runtimeUserLabel: { type: String, default: "this agent's user" },
+	runtimeUserLabel: { type: String, default: "" },
 	readonly: { type: Boolean, default: false },
 });
 const emit = defineEmits(["update"]);
@@ -119,12 +119,15 @@ const showPicker = ref(false);
 const argsText = ref(JSON.stringify(props.config.arguments || {}, null, 2));
 const argsError = ref("");
 
-// The panel reuses one config object across nodes; resync when it is swapped
-// for another node's arguments, but never while the user's text is unparseable.
+// Resync when the arguments change from outside the textarea, but never while
+// the user's text is unparseable or already means the same value (no reformatting
+// mid-typing).
 watch(
 	() => props.config.arguments,
 	(value) => {
 		if (argsError.value) return;
+		const typed = parseArguments(argsText.value);
+		if (typed.ok && JSON.stringify(typed.value) === JSON.stringify(value || {})) return;
 		argsText.value = JSON.stringify(value || {}, null, 2);
 	}
 );
