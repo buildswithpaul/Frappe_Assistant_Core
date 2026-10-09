@@ -27,4 +27,14 @@ describe("useBuilderPanels", () => {
 		expect(setup.refresh).toHaveBeenCalled();
 		expect(p.showSetup.value).toBe(true);
 	});
+
+	it("Escape closes the checklist, then the settings drawer, then reports nothing to close", () => {
+		const p = useBuilderPanels();
+		p.showSetup.value = true;
+		p.showSettingsDrawer.value = true;
+		expect(p.closeOnEscape()).toBe(true);
+		expect([p.showSetup.value, p.showSettingsDrawer.value]).toEqual([false, true]);
+		expect(p.closeOnEscape()).toBe(true);
+		expect(p.closeOnEscape()).toBe(false);
+	});
 });

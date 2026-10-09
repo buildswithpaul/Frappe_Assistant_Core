@@ -12,6 +12,7 @@ export function buildSetupChecklist({
 	enabledTriggerCount = 0,
 	nodes = [],
 	unapproved,
+	checkError = null,
 }) {
 	const scheduled = !!(schedule?.enabled && schedule?.cron);
 	let startDetail = __("Manual only — add a schedule or an event trigger to run it on its own");
@@ -21,7 +22,7 @@ export function buildSetupChecklist({
 
 	const writeState = unapproved == null ? "unknown" : unapproved.length ? "todo" : "ok";
 	const writeDetail = {
-		unknown: () => __("Not checked yet"),
+		unknown: () => (checkError ? __("Couldn't check: {0}", [checkError]) : __("Not checked yet")),
 		ok: () => __("Every write tool is set to Always allow for the runtime user"),
 		todo: () => __("These won't run unattended: {0}", [describeWrites(unapproved)]),
 	}[writeState]();
@@ -31,6 +32,11 @@ export function buildSetupChecklist({
 		!modelNodes.length ||
 		!!workflow?.default_model_id ||
 		modelNodes.every((n) => n.data?.config?.model_id);
+
+	const agentNodes = nodes.filter((n) => MODEL_NODES.has(n.type));
+	const hasRuntimeUser =
+		!!workflow?.default_user_id ||
+		(agentNodes.length > 0 && agentNodes.every((n) => n.data?.config?.user_id));
 
 	return [
 		{
@@ -45,9 +51,9 @@ export function buildSetupChecklist({
 		},
 		{
 			key: "runs_as",
-			state: workflow?.default_user_id ? "ok" : "todo",
+			state: hasRuntimeUser ? "ok" : "todo",
 			label: __("Runs as a user"),
-			detail: workflow?.default_user_id || __("Not set — agent nodes get no tools"),
+			detail: workflow?.default_user_id || (hasRuntimeUser ? __("Set on each task") : __("Not set — agent nodes get no tools")),
 			actions: [{ key: "settings", label: __("Settings") }],
 		},
 		{

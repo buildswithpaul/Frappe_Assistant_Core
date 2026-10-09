@@ -20,6 +20,7 @@ export function useSetupChecklist({
 			enabledTriggerCount: enabledTriggerCount.value,
 			nodes: nodes.value,
 			unapproved: preflight.checked.value ? preflight.warnings.value : null,
+			checkError: preflight.error.value,
 		})
 	);
 	const todoCount = computed(() => items.value.filter((i) => i.state === "todo").length);

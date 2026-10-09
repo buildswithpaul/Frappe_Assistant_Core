@@ -35,6 +35,7 @@
 			:show-audit="showAudit"
 			:has-variables="hasVariables"
 			:setup-todo="setupTodo"
+			:status-busy="statusBusy"
 			@save="$emit('save')"
 			@run="$emit('run')"
 			@setup="$emit('setup')"
@@ -67,6 +68,7 @@ defineProps({
 	canRun: { type: Boolean, default: true },
 	runBlockReason: { type: String, default: "" },
 	setupTodo: { type: Number, default: 0 },
+	statusBusy: { type: Boolean, default: false },
 });
 
 defineEmits([

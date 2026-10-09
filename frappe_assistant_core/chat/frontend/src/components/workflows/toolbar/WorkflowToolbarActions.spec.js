@@ -45,3 +45,13 @@ describe("Setup button", () => {
 		expect(wrapper.emitted("setup")).toHaveLength(1);
 	});
 });
+
+describe("status toggle while the approval check runs", () => {
+	it("is disabled and says it is checking", () => {
+		const wrapper = mount(WorkflowToolbarActions, {
+			props: { isAdmin: true, status: "Draft", statusBusy: true },
+		});
+		const btn = wrapper.findAll("button").find((b) => b.text().includes("Checking"));
+		expect(btn.attributes("disabled")).toBeDefined();
+	});
+});

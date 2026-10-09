@@ -14,8 +14,9 @@ export function useBuilderSetup({
 	scheduleConfig,
 	nodes,
 	isAdmin,
-	showSetup,
+	panels,
 }) {
+	const { showSetup, showTriggersModal, showScheduleModal } = panels;
 	const preflight = useActivationPreflight({ nodes, currentWorkflow, isAdmin });
 	const setup = useSetupChecklist({
 		workflowId,
@@ -28,6 +29,10 @@ export function useBuilderSetup({
 
 	watch(showSetup, (open) => {
 		if (open) setup.refresh();
+	});
+	// Closing either modal may have changed what the checklist counts.
+	watch([showTriggersModal, showScheduleModal], ([triggers, schedule], [wasTriggers, wasSchedule]) => {
+		if ((wasTriggers && !triggers) || (wasSchedule && !schedule)) setup.refresh();
 	});
 
 	return { preflight, setup };

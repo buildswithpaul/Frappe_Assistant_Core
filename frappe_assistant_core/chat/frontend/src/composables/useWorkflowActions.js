@@ -2,6 +2,7 @@ import { ref } from "vue";
 import { api } from "@/api/client";
 import { logger } from "@/utils/logger";
 import { __ } from "@/utils/i18n";
+import { useToast } from "@/composables/useToast";
 
 const NEXT_STATUS = { Draft: "Active", Active: "Paused", Paused: "Active" };
 
@@ -24,9 +25,11 @@ export function useWorkflowActions({
 	hasSaved,
 	saveError,
 	preflight,
+	notify = (message) => useToast().showToast(message, "info", 6000),
 }) {
 	const settingsError = ref(null);
 	const pendingActivation = ref(false);
+	const isCheckingActivation = ref(false);
 
 	async function toggleStatus() {
 		if (!workflowId.value || !canEdit.value) return;
@@ -49,11 +52,20 @@ export function useWorkflowActions({
 	/** Activate and Resume check the write tools first; Pause never waits. */
 	async function requestToggleStatus() {
 		if (!workflowId.value || !canEdit.value) return;
+		if (isCheckingActivation.value) return;
 		if (NEXT_STATUS[currentWorkflow.value?.status] !== "Active") return toggleStatus();
-		const warnings = await preflight.check();
-		if (warnings.length) {
-			pendingActivation.value = true;
-			return;
+		isCheckingActivation.value = true;
+		try {
+			const warnings = await preflight.check();
+			if (warnings.length) {
+				pendingActivation.value = true;
+				return;
+			}
+			if (preflight.error?.value) {
+				notify(__("Couldn't check which write tools are approved; activating anyway."));
+			}
+		} finally {
+			isCheckingActivation.value = false;
 		}
 		return toggleStatus();
 	}
@@ -113,6 +125,7 @@ export function useWorkflowActions({
 		toggleStatus,
 		requestToggleStatus,
 		pendingActivation,
+		isCheckingActivation,
 		confirmActivation,
 		cancelActivation,
 		rename,

@@ -4,13 +4,14 @@
 		<ToolbarButton
 			v-if="isAdmin && statusToggle"
 			:class="statusToggle.btnClass"
-			:disabled="isSaving || isRunning"
+			:disabled="isSaving || isRunning || statusBusy"
 			:title="statusToggle.tooltip"
-			:aria-label="statusToggle.label"
-			:label="statusToggle.label"
+			:aria-label="statusBusy ? __('Checking write tools…') : statusToggle.label"
+			:label="statusBusy ? __('Checking…') : statusToggle.label"
 			@click="$emit('toggle-status')"
 		>
-			<ToolbarIcon :name="statusToggle.icon" />
+			<ToolbarIcon v-if="!statusBusy" :name="statusToggle.icon" />
+			<ToolbarIcon v-else name="spinner" spin />
 		</ToolbarButton>
 
 		<ToolbarButton
@@ -111,6 +112,7 @@ const props = defineProps({
 	canRun: { type: Boolean, default: true },
 	runBlockReason: { type: String, default: "" },
 	setupTodo: { type: Number, default: 0 },
+	statusBusy: { type: Boolean, default: false },
 });
 
 defineEmits([

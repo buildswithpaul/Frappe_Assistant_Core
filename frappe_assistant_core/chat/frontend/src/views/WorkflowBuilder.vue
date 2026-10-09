@@ -18,6 +18,7 @@
 				:last-saved="hasSaved"
 				:has-variables="hasVariables"
 				:setup-todo="setup.todoCount.value"
+				:status-busy="isCheckingActivation"
 				@back="handleBack"
 				@save="save"
 				@run="requestRun"
@@ -295,13 +296,14 @@ const { preflight, setup } = useBuilderSetup({
 	scheduleConfig,
 	nodes,
 	isAdmin,
-	showSetup,
+	panels,
 });
 
 const {
 	settingsError,
 	requestToggleStatus,
 	pendingActivation,
+	isCheckingActivation,
 	confirmActivation,
 	cancelActivation,
 	rename,
@@ -339,10 +341,7 @@ useBuilderShortcuts({
 	onRedo: redo,
 	onDuplicate: duplicateSelectedNode,
 	onFitView: () => fitView({ padding: 0.2 }),
-	onEscape: () => {
-		if (showSettingsDrawer.value) showSettingsDrawer.value = false;
-		else selectedNode.value = null;
-	},
+	onEscape: () => panels.closeOnEscape() || (selectedNode.value = null),
 	onOpenConfig: openFocusedNodeConfig,
 });
 

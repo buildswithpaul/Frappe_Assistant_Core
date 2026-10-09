@@ -142,4 +142,58 @@ describe("useActivationPreflight", () => {
 		expect(await p.check()).toEqual([]);
 		expect(p.error.value).toBe("down");
 	});
+
+	it("clears a previous success when a later check fails", async () => {
+		resolveWorkflowTools.mockResolvedValueOnce({ resolved: [] });
+		const p = build();
+		await p.check();
+		expect(p.checked.value).toBe(true);
+		resolveWorkflowTools.mockRejectedValueOnce(new Error("down"));
+		await p.check();
+		expect(p.checked.value).toBe(false);
+		expect(p.error.value).toBe("down");
+	});
+
+	it("keeps one user's warnings when another user's resolve fails", async () => {
+		const nodes = ref([
+			{ id: "a", type: "agent", data: { label: "A", config: { tool_directives: [{ tool_name: "t1" }] } } },
+			{
+				id: "c",
+				type: "agent",
+				data: { label: "C", config: { user_id: "other@example.com", tool_directives: [{ tool_name: "t3" }] } },
+			},
+		]);
+		resolveWorkflowTools.mockImplementation(async (directives, user) => {
+			if (user === "other@example.com") throw new Error("down");
+			return { resolved: [{ tool_name: "t1", status: "resolved", runs_unattended: false }] };
+		});
+		const p = build({ nodes });
+		const warnings = await p.check();
+		expect(warnings.map((w) => w.tool)).toEqual(["t1"]);
+		expect(p.error.value).toBe("down");
+		expect(p.checked.value).toBe(false);
+	});
+
+	it("reads the server from server_name and keeps a pinned warning off another server", async () => {
+		const nodes = ref([
+			{
+				id: "a",
+				type: "agent",
+				data: { label: "On site A", config: { tool_directives: [{ tool_name: "send_email", server: "A" }] } },
+			},
+			{
+				id: "b",
+				type: "agent",
+				data: { label: "On site B", config: { tool_directives: [{ tool_name: "send_email", server: "B" }] } },
+			},
+		]);
+		resolveWorkflowTools.mockResolvedValue({
+			resolved: [
+				{ tool_name: "send_email", server_name: "A", status: "resolved", runs_unattended: false },
+				{ tool_name: "send_email", server_name: "B", status: "resolved", runs_unattended: true },
+			],
+		});
+		const warnings = await build({ nodes }).check();
+		expect(warnings.map((w) => [w.server, w.nodes])).toEqual([["A", ["On site A"]]]);
+	});
 });

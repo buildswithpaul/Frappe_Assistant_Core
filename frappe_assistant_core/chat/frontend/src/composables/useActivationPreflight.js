@@ -29,7 +29,7 @@ export function collectDirectives(nodes = [], defaultUser = null) {
 
 const sameTool = (directive, entry) =>
 	healToolName(directive.tool_name) === healToolName(entry.tool_name) &&
-	(!directive.server || !entry.server || directive.server === entry.server);
+	(!directive.server || directive.server === entry.server);
 
 function groupByUser(directives, isAdmin) {
 	const groups = new Map();
@@ -62,12 +62,12 @@ export function useActivationPreflight({ nodes, currentWorkflow, isAdmin }) {
 		const found = [];
 		for (const entry of result?.resolved || []) {
 			if (entry?.status !== "resolved" || entry.runs_unattended !== false) continue;
-			const server = entry.server || "";
+			const server = entry.server || entry.server_name || "";
 			found.push({
 				tool: healToolName(entry.tool_name),
 				server,
 				user: user || "",
-				nodes: group.labelled.filter((d) => sameTool(d, entry)).map((d) => d.node_label),
+				nodes: group.labelled.filter((d) => sameTool(d, { ...entry, server })).map((d) => d.node_label),
 			});
 		}
 		return found;
@@ -84,20 +84,29 @@ export function useActivationPreflight({ nodes, currentWorkflow, isAdmin }) {
 		checking.value = true;
 		try {
 			const groups = groupByUser(directives, !!isAdmin.value);
-			const perUser = await Promise.all(
+			const settled = await Promise.allSettled(
 				[...groups].map(([user, group]) => resolveGroup(user, group))
 			);
+			const failed = settled.find((r) => r.status === "rejected");
 			const seen = new Set();
-			warnings.value = perUser.flat().filter((w) => {
-				const key = `${w.user}|${directiveKey({ server: w.server, tool_name: w.tool })}`;
-				if (seen.has(key)) return false;
-				seen.add(key);
-				return true;
-			});
-			checked.value = true;
+			warnings.value = settled
+				.filter((r) => r.status === "fulfilled")
+				.flatMap((r) => r.value)
+				.filter((w) => {
+					const key = `${w.user}|${directiveKey({ server: w.server, tool_name: w.tool })}`;
+					if (seen.has(key)) return false;
+					seen.add(key);
+					return true;
+				});
+			if (failed) {
+				logger.error("Activation preflight failed:", failed.reason);
+				error.value = failed.reason?.message || String(failed.reason);
+			}
+			checked.value = !failed;
 		} catch (err) {
 			logger.error("Activation preflight failed:", err);
 			error.value = err.message || String(err);
+			checked.value = false;
 			warnings.value = [];
 		} finally {
 			checking.value = false;

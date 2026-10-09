@@ -30,6 +30,14 @@ export function useBuilderPanels() {
 		if (key === "settings") showSettingsDrawer.value = true;
 	}
 
+	/** Escape closes the checklist, then the settings drawer; false when neither was open. */
+	function closeOnEscape() {
+		if (showSetup.value) showSetup.value = false;
+		else if (showSettingsDrawer.value) showSettingsDrawer.value = false;
+		else return false;
+		return true;
+	}
+
 	return {
 		showRunsPanel,
 		showAuditPanel,
@@ -42,5 +50,6 @@ export function useBuilderPanels() {
 		onToggleRuns,
 		onToggleAudit,
 		onSetupAction,
+		closeOnEscape,
 	};
 }

@@ -7,9 +7,9 @@ vi.mock("@/api/client", () => ({
 
 import { useWorkflowActions } from "./useWorkflowActions";
 
-function setup(status, warnings) {
+function setup(status, warnings, preflightOverrides = {}, notify = undefined) {
 	const workflowStore = { saveWorkflow: vi.fn().mockResolvedValue({}) };
-	const preflight = { check: vi.fn().mockResolvedValue(warnings) };
+	const preflight = { check: vi.fn().mockResolvedValue(warnings), error: ref(null), ...preflightOverrides };
 	const actions = useWorkflowActions({
 		workflowStore,
 		workflowId: ref("WF-1"),
@@ -20,6 +20,7 @@ function setup(status, warnings) {
 		hasSaved: ref(false),
 		saveError: ref(null),
 		preflight,
+		notify,
 	});
 	return { actions, workflowStore, preflight };
 }
@@ -55,5 +56,34 @@ describe("activation gate", () => {
 		actions.cancelActivation();
 		expect(actions.pendingActivation.value).toBe(false);
 		expect(workflowStore.saveWorkflow).not.toHaveBeenCalled();
+	});
+
+	it("saves once when Activate is clicked twice during the check", async () => {
+		let release;
+		const { actions, workflowStore, preflight } = setup("Draft", []);
+		preflight.check.mockImplementation(() => new Promise((r) => (release = () => r([]))));
+		const first = actions.requestToggleStatus();
+		const second = actions.requestToggleStatus();
+		expect(actions.isCheckingActivation.value).toBe(true);
+		release();
+		await Promise.all([first, second]);
+		expect(preflight.check).toHaveBeenCalledTimes(1);
+		expect(workflowStore.saveWorkflow).toHaveBeenCalledTimes(1);
+		expect(actions.isCheckingActivation.value).toBe(false);
+	});
+
+	it("says so when it activates without having been able to check", async () => {
+		const notify = vi.fn();
+		const { actions, workflowStore } = setup("Draft", [], { error: ref("down") }, notify);
+		await actions.requestToggleStatus();
+		expect(workflowStore.saveWorkflow).toHaveBeenCalledWith("WF-1", { status: "Active" });
+		expect(notify).toHaveBeenCalledTimes(1);
+	});
+
+	it("stays quiet when the check ran", async () => {
+		const notify = vi.fn();
+		const { actions } = setup("Draft", [], {}, notify);
+		await actions.requestToggleStatus();
+		expect(notify).not.toHaveBeenCalled();
 	});
 });

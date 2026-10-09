@@ -48,4 +48,30 @@ describe("buildSetupChecklist", () => {
 		expect(items.writes.state).toBe("unknown");
 		expect(items.model.state).toBe("ok");
 	});
+
+	it("does not call writes ok when the check failed", () => {
+		const items = byKey(
+			buildSetupChecklist({
+				workflow: { default_user_id: "x" },
+				schedule: {},
+				nodes: [],
+				unapproved: null,
+				checkError: "down",
+			})
+		);
+		expect(items.writes.state).toBe("unknown");
+		expect(items.writes.detail).toBe("Couldn't check: down");
+	});
+
+	it("accepts per-node users in place of a default user", () => {
+		const own = (id) => ({ id, type: "agent", data: { config: { user_id: "a@example.com" } } });
+		const items = byKey(
+			buildSetupChecklist({ workflow: {}, schedule: {}, nodes: [own("1"), own("2")], unapproved: [] })
+		);
+		expect(items.runs_as.state).toBe("ok");
+		const mixed = byKey(
+			buildSetupChecklist({ workflow: {}, schedule: {}, nodes: [own("1"), agent()], unapproved: [] })
+		);
+		expect(mixed.runs_as.state).toBe("todo");
+	});
 });
