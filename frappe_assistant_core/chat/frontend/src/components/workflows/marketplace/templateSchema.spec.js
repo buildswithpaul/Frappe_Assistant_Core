@@ -19,6 +19,14 @@ const TYPED = {
 };
 
 describe("normalizeVariableSchema", () => {
+	it("accepts an array of plain variable names", () => {
+		const fields = normalizeVariableSchema(["company", "month"], null);
+		expect(fields.map((f) => [f.key, f.label, f.type])).toEqual([
+			["company", "company", "text"],
+			["month", "month", "text"],
+		]);
+	});
+
 	it("keeps typed entries, labels and options", () => {
 		const fields = normalizeVariableSchema(TYPED, null);
 		const byKey = Object.fromEntries(fields.map((f) => [f.key, f]));

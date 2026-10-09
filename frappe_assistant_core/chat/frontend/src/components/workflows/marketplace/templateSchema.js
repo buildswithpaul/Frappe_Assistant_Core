@@ -47,8 +47,12 @@ export function normalizeVariableSchema(rawSchema, rawDefaults) {
 	const defaults = parseJsonMaybe(rawDefaults, {}) || {};
 	if (Array.isArray(schema)) {
 		return schema
-			.filter((d) => d && (d.name || d.key))
-			.map((d) => normalizeField(d.name || d.key, d, defaults));
+			.filter((d) => (typeof d === "string" && d.trim()) || (d && (d.name || d.key)))
+			.map((d) =>
+				typeof d === "string"
+					? normalizeField(d, { label: d, type: "text" }, defaults)
+					: normalizeField(d.name || d.key, d, defaults)
+			);
 	}
 	if (!schema || typeof schema !== "object") return [];
 	return Object.entries(schema).map(([key, def]) => normalizeField(key, def, defaults));

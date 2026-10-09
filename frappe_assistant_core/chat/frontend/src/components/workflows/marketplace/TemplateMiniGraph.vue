@@ -1,19 +1,17 @@
 <template>
 	<div v-if="graph" class="detail-section">
 		<h3 class="section-label">{{ __("How it runs") }}</h3>
-		<p v-if="graph.unreadable" class="mini-graph-note">
-			{{ __("This template's steps can't be previewed.") }}
-		</p>
+		<p v-if="graph.note" class="mini-graph-note">{{ graph.note }}</p>
 		<svg
 			v-else
 			class="mini-graph"
 			role="img"
-			:aria-label="__('Agent graph: {0}', [graph.nodes.map((n) => n.label).join(' → ')])"
+			:aria-label="graph.ariaLabel"
 			:viewBox="graph.viewBox"
 			preserveAspectRatio="xMidYMid meet"
 		>
-			<path v-for="e in graph.edges" :key="e.id" class="mini-edge" :d="e.d" />
-			<g v-for="n in graph.nodes" :key="n.id">
+			<path v-for="(e, i) in graph.edges" :key="`${e.id}-${i}`" class="mini-edge" :d="e.d" />
+			<g v-for="(n, i) in graph.nodes" :key="`${n.id}-${i}`">
 				<rect
 					class="mini-node"
 					:x="n.x"
@@ -41,6 +39,8 @@ const W = 180;
 const H = 40;
 const PAD = 20;
 const MAX_LABEL = 22;
+const MAX_NODES = 60;
+const MAX_ARIA_LABELS = 12;
 const colorOf = (type) => NODE_TYPES.find((t) => t.type === type)?.color || "var(--ql-border)";
 
 function shorten(text) {
@@ -66,6 +66,12 @@ function build(parsed) {
 	const width = Math.max(...xs) + W + PAD - minX;
 	const height = Math.max(...ys) + H + PAD - minY;
 	return {
+		ariaLabel: __("Agent graph: {0}", [
+			placed
+				.slice(0, MAX_ARIA_LABELS)
+				.map((n) => String(n.data?.label || n.id))
+				.join(" → "),
+		]),
 		viewBox: `${minX} ${minY} ${width} ${height}`,
 		nodes: placed.map((n) => {
 			const label = String(n.data?.label || n.id);
@@ -88,9 +94,15 @@ const graph = computed(() => {
 	if (!props.graphJson) return null;
 	try {
 		const parsed = graphJsonToVueFlow(props.graphJson);
-		return parsed.nodes.length ? build(parsed) : null;
+		if (!parsed.nodes.length) return null;
+		if (parsed.nodes.length > MAX_NODES) {
+			return {
+				note: __("{0} steps — open the template to see the full graph", [parsed.nodes.length]),
+			};
+		}
+		return build(parsed);
 	} catch {
-		return { unreadable: true };
+		return { note: __("This template's steps can't be previewed.") };
 	}
 });
 </script>

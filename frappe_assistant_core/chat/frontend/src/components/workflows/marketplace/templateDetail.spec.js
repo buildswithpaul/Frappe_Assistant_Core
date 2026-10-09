@@ -77,6 +77,19 @@ describe("TemplateMiniGraph", () => {
 		expect(xs.size).toBe(3);
 	});
 
+	it("gives a huge graph a note instead of hundreds of SVG nodes", () => {
+		const nodes = Array.from({ length: 200 }, (_, i) => ({ id: `n${i}`, type: "tool", label: `Step ${i}` }));
+		const w = mount(TemplateMiniGraph, { props: { graphJson: JSON.stringify({ nodes, edges: [] }) } });
+		expect(w.findAll("rect.mini-node")).toHaveLength(0);
+		expect(w.find(".mini-graph-note").text()).toContain("200");
+	});
+
+	it("renders nodes that share an id without key warnings", () => {
+		const dup = { nodes: [{ id: "a", type: "tool" }, { id: "a", type: "tool" }], edges: [] };
+		const w = mount(TemplateMiniGraph, { props: { graphJson: JSON.stringify(dup) } });
+		expect(w.findAll("rect.mini-node")).toHaveLength(2);
+	});
+
 	it("shows a short note instead of crashing on a graph it cannot read", () => {
 		const w = mount(TemplateMiniGraph, { props: { graphJson: "{broken" } });
 		expect(w.find("svg").exists()).toBe(false);
