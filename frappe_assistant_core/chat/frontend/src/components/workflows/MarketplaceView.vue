@@ -18,10 +18,7 @@
 		/>
 
 		<!-- Featured row -->
-		<div
-			v-if="featuredTemplates.length > 0 && !searchQuery && !categoryFilter"
-			class="featured-section"
-		>
+		<div v-if="showFeatured" class="featured-section">
 			<h3 class="section-title">{{ __("Featured") }}</h3>
 			<div class="featured-scroll">
 				<TemplateCard
@@ -45,10 +42,7 @@
 
 		<!-- Template grid -->
 		<div v-else class="marketplace-grid-section">
-			<h3
-				v-if="featuredTemplates.length > 0 && !searchQuery && !categoryFilter"
-				class="section-title"
-			>
+			<h3 v-if="showFeatured" class="section-title">
 				{{ __("All Templates") }}
 			</h3>
 			<div class="marketplace-grid">
@@ -90,6 +84,7 @@
 import { ref, computed, onMounted } from "vue";
 import { storeToRefs } from "pinia";
 import { useWorkflowStore } from "@/stores/workflowStore";
+import { api } from "@/api/client";
 import { __ } from "@/utils/i18n";
 import { logger } from "@/utils/logger";
 import MarketplaceFilters from "./marketplace/MarketplaceFilters.vue";
@@ -97,6 +92,7 @@ import MarketplaceStatus from "./marketplace/MarketplaceStatus.vue";
 import TemplateCard from "./marketplace/TemplateCard.vue";
 import CreatorStatsSection from "./marketplace/CreatorStatsSection.vue";
 import TemplateDetailPanel from "./TemplateDetailPanel.vue";
+import { categoriesFrom, sameTemplateSet } from "./marketplace/marketplaceFacets";
 
 const emit = defineEmits(["workflow-created"]);
 
@@ -116,26 +112,30 @@ const featuredTemplates = ref([]);
 const detailTemplate = ref(null);
 const startInImportMode = ref(false);
 
-const categories = [
+const facetTemplates = ref([]);
+
+const categories = computed(() => [
 	"All",
-	"General",
-	"Sales",
-	"Marketing",
-	"Support",
-	"Operations",
-	"Finance",
-	"Procurement",
-	"Development",
-	"Custom",
-];
+	...categoriesFrom(facetTemplates.value, categoryFilter.value),
+]);
+
+const isUnfiltered = computed(
+	() => !searchQuery.value && (!categoryFilter.value || categoryFilter.value === "All")
+);
+
+const showFeatured = computed(
+	() =>
+		featuredTemplates.value.length > 0 &&
+		isUnfiltered.value &&
+		!sameTemplateSet(featuredTemplates.value, facetTemplates.value)
+);
 
 const hasMore = computed(() => allTemplates.value.length < templatesTotal.value);
 
 let searchTimer = null;
 
 onMounted(async () => {
-	await reloadTemplates();
-	await loadFeatured();
+	await Promise.all([reloadTemplates(), loadFeatured(), loadFacets()]);
 	store.loadCreatorStats();
 });
 
@@ -201,6 +201,17 @@ async function loadFeatured() {
 		featuredTemplates.value = res.templates || [];
 	} catch {
 		featuredTemplates.value = [];
+	}
+}
+
+// The store list is already narrowed by category and search, so the chips
+// come from one unfiltered page instead (the endpoint caps a page at 100).
+async function loadFacets() {
+	try {
+		const res = await api.workflows.listTemplates(null, null, null, false, null, 0, 100);
+		facetTemplates.value = res.templates || [];
+	} catch {
+		facetTemplates.value = [];
 	}
 }
 
