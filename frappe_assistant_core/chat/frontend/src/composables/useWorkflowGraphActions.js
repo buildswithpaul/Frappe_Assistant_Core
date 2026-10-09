@@ -19,7 +19,8 @@ import {
  * useVueFlow() here) so the parent's single `useVueFlow()` call remains the
  * sole point of coupling to Vue Flow's imperative API.
  *
- * @param {object} deps - { nodes, edges, selectedNode, scheduleAutoSave, project }
+ * @param {object} deps - { nodes, edges, selectedNode, scheduleAutoSave, project, sync }
+ * `sync.updateNodeData` carries a config-panel edit to the canvas's own node copy.
  */
 export function useWorkflowGraphActions({
 	nodes,
@@ -27,6 +28,7 @@ export function useWorkflowGraphActions({
 	selectedNode,
 	scheduleAutoSave,
 	project,
+	sync = null,
 }) {
 	function onDrop(event) {
 		const type = event.dataTransfer.getData("application/workflow-node-type");
@@ -61,11 +63,12 @@ export function useWorkflowGraphActions({
 		if (!node) return;
 
 		// Accumulate all updates in a single spread to avoid sequential overwrites
-		node.data = {
-			...node.data,
+		const patch = {
 			...(updates.label !== undefined ? { label: updates.label } : {}),
 			...(updates.config !== undefined ? { config: updates.config } : {}),
 		};
+		node.data = { ...node.data, ...patch };
+		sync?.updateNodeData(nodeId, patch);
 
 		// Refresh selected node reference so config panel stays in sync
 		if (selectedNode.value?.id === nodeId) {

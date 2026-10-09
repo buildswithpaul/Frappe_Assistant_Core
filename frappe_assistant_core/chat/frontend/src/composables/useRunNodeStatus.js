@@ -19,7 +19,8 @@ const STATUS_CLASS = {
  *
  * @param {import("vue").Ref} currentRun - workflowStore.currentRun
  * @param {import("vue").Ref} isRunning  - workflowStore.isRunning
- * @param {object} [canvas] - { nodes, edges } refs to paint; omit to only read.
+ * @param {object} [canvas] - { nodes, edges, sync } to paint; omit to only read. `sync`
+ *   ({ updateNode, updateEdge }) carries each write to Vue Flow's own node copies.
  */
 export function useRunNodeStatus(currentRun, isRunning, canvas = null) {
 	const statusByNode = computed(() => {
@@ -57,14 +58,22 @@ export function useRunNodeStatus(currentRun, isRunning, canvas = null) {
 		return source === "Completed" && target === "Running";
 	}
 
-	// Written onto the node/edge objects themselves: the serializer ignores both
-	// keys, and copying into a derived array would strand drag positions.
+	// Written onto the builder's node/edge objects (the serializer ignores both
+	// keys, and copying into a derived array would strand drag positions) AND
+	// through `sync`: the canvas is bound one-way and renders Vue Flow's own
+	// copies, so a write to the builder's objects alone never reaches it.
 	if (canvas) {
 		watch(
 			[currentRun, isRunning, canvas.nodes, canvas.edges],
 			() => {
-				for (const node of canvas.nodes.value) node.class = nodeClass(node.id);
-				for (const edge of canvas.edges.value) edge.animated = isEdgeAnimated(edge);
+				for (const node of canvas.nodes.value) {
+					node.class = nodeClass(node.id);
+					canvas.sync?.updateNode(node.id, { class: node.class });
+				}
+				for (const edge of canvas.edges.value) {
+					edge.animated = isEdgeAnimated(edge);
+					canvas.sync?.updateEdge(edge.id, { animated: edge.animated });
+				}
 			},
 			{ deep: false }
 		);

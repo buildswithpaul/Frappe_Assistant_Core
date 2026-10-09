@@ -172,7 +172,19 @@ const { currentWorkflow, isDirty, isSaving, isRunning, currentRun, availableMode
 	storeToRefs(workflowStore);
 const { user, isAdmin } = storeToRefs(userStore);
 
-const { project, fitView } = useVueFlow();
+const { project, fitView, updateNode, updateNodeData, findEdge } = useVueFlow();
+
+// <VueFlow :nodes> is one-way and renders its own copies of these objects, so
+// run state, issue markers and config edits reach the canvas through this, not
+// through the arrays. None of it emits a change event, so it never autosaves.
+const canvasSync = {
+	updateNode,
+	updateNodeData,
+	updateEdge: (id, patch) => {
+		const edge = findEdge(id);
+		if (edge) Object.assign(edge, patch);
+	},
+};
 
 // Canvas state
 const nodes = ref([]);
@@ -224,7 +236,7 @@ function currentGraphJson() {
 const { isMobile } = useIsMobile();
 useUnsavedGuard(isDirty);
 
-useRunNodeStatus(currentRun, isRunning, { nodes, edges });
+useRunNodeStatus(currentRun, isRunning, { nodes, edges, sync: canvasSync });
 
 const {
 	validationMessage,
@@ -235,7 +247,13 @@ const {
 	checkLocally,
 	checkBeforeRun,
 	checkOnServer,
-} = useGraphValidation({ workflowStore, nodes, edges, toGraphJson: currentGraphJson });
+} = useGraphValidation({
+	workflowStore,
+	nodes,
+	edges,
+	toGraphJson: currentGraphJson,
+	sync: canvasSync,
+});
 
 const { hasSaved, saveError, scheduleAutoSave, save, saveBeforeLeave, resetHistory, undo, redo } =
 	useBuilderAutosave({
@@ -287,6 +305,7 @@ const { onDrop, handleNodeUpdate, handleDeleteNode } = useWorkflowGraphActions({
 	selectedNode,
 	scheduleAutoSave,
 	project,
+	sync: canvasSync,
 });
 
 const { preflight, setup } = useBuilderSetup({
