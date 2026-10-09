@@ -16,4 +16,11 @@ describe("WorkflowCreatedBlock", () => {
 		await wrapper.get("button").trigger("click");
 		expect(push).toHaveBeenCalledWith({ name: "agent-builder", params: { id: "WF-00046" } });
 	});
+
+	it("prints no empty brackets when the block has no status", () => {
+		const wrapper = mount(WorkflowCreatedBlock, {
+			props: { block: { workflow_name: "Invoice Chaser", docname: "WF-00046", status: null } },
+		});
+		expect(wrapper.text()).not.toContain("()");
+	});
 });

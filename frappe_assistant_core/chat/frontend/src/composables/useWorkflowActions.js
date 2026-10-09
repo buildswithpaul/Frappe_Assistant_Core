@@ -82,24 +82,21 @@ export function useWorkflowActions({
 	async function rename(newName) {
 		if (!workflowId.value || !canEdit.value) return;
 		try {
-			// Triggers bind to this workflow; warn before the display name moves
-			// under them.
+			// Triggers saved before the docname binding still match on the display
+			// name, which this rename moves. List them under the old name first.
 			const existing = await api.workflows.triggers
 				.list(currentWorkflow.value?.workflow_name, workflowId.value)
 				.catch(() => null);
-			const count = existing?.triggers?.length || 0;
-			if (
-				count &&
-				!window.confirm(
-					__("{0} event trigger(s) point at this agent. Renaming it does not move them — continue?", [
-						count,
-					])
-				)
-			) {
-				return;
-			}
 			await workflowStore.saveWorkflow(workflowId.value, { workflow_name: newName });
 			saveError.value = null;
+			const legacy = (existing?.triggers || []).filter((t) => !t.workflow_docname);
+			await Promise.all(
+				legacy.map((t) =>
+					api.workflows.triggers
+						.update(t.name, { workflow_docname: workflowId.value })
+						.catch((err) => logger.error("Trigger re-pin failed:", err))
+				)
+			);
 		} catch (err) {
 			logger.error("Rename failed:", err);
 			saveError.value = err.message || __("Rename failed");

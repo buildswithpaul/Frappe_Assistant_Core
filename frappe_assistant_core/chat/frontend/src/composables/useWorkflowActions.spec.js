@@ -1,9 +1,11 @@
 import { describe, it, expect, vi } from "vitest";
 import { ref } from "vue";
 
-vi.mock("@/api/client", () => ({
-	api: { workflows: { triggers: { list: vi.fn().mockResolvedValue({ triggers: [] }) } } },
+const { list, update } = vi.hoisted(() => ({
+	list: vi.fn().mockResolvedValue({ triggers: [] }),
+	update: vi.fn().mockResolvedValue({}),
 }));
+vi.mock("@/api/client", () => ({ api: { workflows: { triggers: { list, update } } } }));
 
 import { useWorkflowActions } from "./useWorkflowActions";
 
@@ -85,5 +87,23 @@ describe("activation gate", () => {
 		const { actions } = setup("Draft", [], {}, notify);
 		await actions.requestToggleStatus();
 		expect(notify).not.toHaveBeenCalled();
+	});
+});
+
+describe("rename", () => {
+	it("re-pins legacy triggers to the docname and never asks", async () => {
+		window.confirm = vi.fn();
+		list.mockResolvedValue({
+			triggers: [
+				{ name: "T-old", workflow_docname: "" },
+				{ name: "T-new", workflow_docname: "WF-1" },
+			],
+		});
+		const { actions, workflowStore } = setup("Draft", []);
+		await actions.rename("Weekly Digest v2");
+		expect(window.confirm).not.toHaveBeenCalled();
+		expect(workflowStore.saveWorkflow).toHaveBeenCalledWith("WF-1", { workflow_name: "Weekly Digest v2" });
+		expect(update).toHaveBeenCalledTimes(1);
+		expect(update).toHaveBeenCalledWith("T-old", { workflow_docname: "WF-1" });
 	});
 });

@@ -5,7 +5,7 @@
 			<span class="wcb-text">
 				{{ block.action === "updated" ? "Updated" : "Created" }}
 				<strong>{{ block.workflow_name }}</strong>
-				<span class="wcb-status">({{ block.status }})</span>
+				<span v-if="block.status" class="wcb-status">({{ block.status }})</span>
 			</span>
 		</div>
 		<button class="wcb-open" type="button" @click="openBuilder">Open in builder →</button>
