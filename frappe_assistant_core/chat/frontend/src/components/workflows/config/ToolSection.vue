@@ -49,9 +49,13 @@
 			}}
 		</p>
 
-		<ul v-if="failures.length && discoveryState !== 'auth'" class="tools-banner bad server-failures">
-			<li v-for="f in failures" :key="f.server">
-				{{ __("Couldn't reach {0}: {1}. Its tools are missing from the list.", [f.server, f.message]) }}
+		<ul v-if="shownFailures.length" class="tools-banner bad server-failures">
+			<li v-for="(f, i) in shownFailures" :key="`${f.server}-${i}`">
+				<template v-if="f.needsReconnect">
+					{{ __("Reconnect {0} — its sign-in expired.", [f.server]) }}
+					<RouterLink to="/settings/connections">{{ __("Open Settings → Connections") }}</RouterLink>
+				</template>
+				<template v-else>{{ failureText(f) }}</template>
 			</li>
 		</ul>
 
@@ -167,6 +171,21 @@ const missingCount = computed(
 
 const failures = computed(() => serverFailures(props.toolsResult));
 
+// The auth empty state already offers the reconnect, so repeating an expired
+// server there would say it twice; once tools are configured it is the only cue.
+const shownFailures = computed(() =>
+	props.directives.length ? failures.value : failures.value.filter((f) => !f.needsReconnect)
+);
+
+function failureText(failure) {
+	return failure.message
+		? __("Couldn't reach {0}: {1}. Its tools are missing from the list.", [
+				failure.server,
+				failure.message,
+			])
+		: __("Couldn't reach {0}. Its tools are missing from the list.", [failure.server]);
+}
+
 const userLabel = computed(() => props.runtimeUserLabel || __("this agent's user"));
 
 const reconnectTarget = computed(
@@ -191,7 +210,9 @@ const emptyState = computed(() => {
 			return {
 				tone: "bad",
 				title: __("Could not list tools"),
-				subtitle: __("The MCP servers could not be reached. The list below may be incomplete."),
+				subtitle: failures.value.length
+					? __("See the failed servers above.")
+					: __("The MCP servers could not be reached. The list below may be incomplete."),
 				action: "retry",
 			};
 		case "no-servers":

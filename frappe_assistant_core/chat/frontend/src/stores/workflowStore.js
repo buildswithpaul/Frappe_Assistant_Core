@@ -616,6 +616,11 @@ export const useWorkflowStore = defineStore("workflows", () => {
 		isRunning.value = false;
 		isCancelling.value = false;
 		activeRunName.value = null;
+		toolsRequestId++;
+		isLoadingTools.value = false;
+		toolsResult.value = null;
+		availableTools.value = [];
+		toolsRuntimeUser.value = null;
 	}
 
 	/**

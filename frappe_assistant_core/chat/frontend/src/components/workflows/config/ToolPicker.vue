@@ -243,7 +243,7 @@ onUnmounted(() => document.removeEventListener("mousedown", handleClickOutside))
 	align-items: flex-start;
 	gap: 0.125rem;
 	width: 100%;
-	padding: 0.375rem 0.625rem;
+	padding: 0.375rem 1.75rem 0.375rem 0.625rem;
 	font-size: 0.8125rem;
 	color: var(--ql-text);
 	background: transparent;

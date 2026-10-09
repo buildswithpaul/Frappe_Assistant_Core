@@ -240,6 +240,16 @@ describe("workflowStore tool inventory", () => {
 		expect(store.availableTools[0].name).toBe("b");
 	});
 
+	it("forgets the inventory when the builder closes", async () => {
+		userApi.listTools.mockResolvedValue(result("a"));
+		await store.loadTools("ops@example.com");
+		store.clearCurrentWorkflow();
+		expect(store.toolsResult).toBeNull();
+		expect(store.availableTools).toEqual([]);
+		await store.loadTools("ops@example.com");
+		expect(userApi.listTools).toHaveBeenCalledTimes(2);
+	});
+
 	it("refetches when forced, e.g. after reconnecting a server", async () => {
 		userApi.listTools.mockResolvedValue(result("a"));
 		await store.loadTools(null);

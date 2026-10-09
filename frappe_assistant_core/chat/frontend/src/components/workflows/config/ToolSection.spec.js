@@ -27,6 +27,66 @@ describe("ToolSection", () => {
 	});
 });
 
+describe("ToolSection server failures", () => {
+	const directives = [{ tool_name: "list_documents", server: "Main Frappe Site" }];
+	const expired = { server: "Main Frappe Site", error: "x", error_code: "REFRESH_TOKEN_EXPIRED" };
+
+	it("names an expired server and links to reconnect when tools are configured", () => {
+		const w = mount(ToolSection, {
+			props: {
+				directives,
+				discoveryState: "auth",
+				toolsResult: { success: true, tools: [], errors: [expired] },
+			},
+			...stubs,
+		});
+		expect(w.text()).toContain("Main Frappe Site");
+		expect(w.text()).toContain("sign-in expired");
+		expect(w.findComponent(RouterLinkStub).props("to")).toBe("/settings/connections");
+	});
+
+	it("does not repeat an expired server under the reconnect empty state", () => {
+		const w = mount(ToolSection, {
+			props: {
+				discoveryState: "auth",
+				toolsResult: { success: true, tools: [], errors: [expired] },
+			},
+			...stubs,
+		});
+		expect(w.find(".server-failures").exists()).toBe(false);
+	});
+
+	it("omits the colon when a failure has no message", () => {
+		const w = mount(ToolSection, {
+			props: { directives, toolsResult: { success: true, tools: [{ name: "x" }], errors: [{ server: "Brave" }] } },
+			...stubs,
+		});
+		expect(w.get(".server-failures").text()).toBe("Couldn't reach Brave. Its tools are missing from the list.");
+	});
+
+	it("does not claim every server failed when only some did", () => {
+		const w = mount(ToolSection, {
+			props: {
+				discoveryState: "failed",
+				toolsResult: { success: true, tools: [], errors: [{ server: "Brave", error: "timeout" }] },
+			},
+			...stubs,
+		});
+		expect(w.get(".tools-empty-state").text()).not.toContain("The MCP servers could not be reached");
+	});
+
+	it("renders two failures from the same server without key clashes", () => {
+		const w = mount(ToolSection, {
+			props: {
+				directives,
+				toolsResult: { success: true, tools: [{ name: "x" }], errors: [{ server: "B", error: "a" }, { server: "B", error: "b" }] },
+			},
+			...stubs,
+		});
+		expect(w.findAll(".server-failures li")).toHaveLength(2);
+	});
+});
+
 describe("ToolPicker", () => {
 	it("shows what each tool does", () => {
 		const w = mount(ToolPicker, {
