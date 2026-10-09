@@ -1,35 +1,36 @@
 <template>
 	<div class="editor">
 		<div class="editor-header">
-			<button class="back-btn" @click="$emit('cancel')">← Back</button>
+			<button class="back-btn" @click="$emit('cancel')">{{ __("← Back") }}</button>
 			<h3 class="editor-title">
-				{{ existing ? "Edit trigger" : "New trigger" }}
+				{{ existing ? __("Edit trigger") : __("New trigger") }}
 			</h3>
 		</div>
 
 		<div class="field-block">
-			<label class="field-label">Title <span class="req">*</span></label>
+			<label class="field-label">{{ __("Title") }} <span class="req">*</span></label>
 			<input
 				v-model="form.title"
+				data-test="trigger-title"
 				class="field-input"
-				placeholder="e.g. Notify team when invoice submitted"
+				:placeholder="__('e.g. Notify team when invoice submitted')"
 			/>
 		</div>
 
 		<div class="field-row">
 			<div class="field-block grow">
-				<label class="field-label">DocType <span class="req">*</span></label>
+				<label class="field-label">{{ __("DocType") }} <span class="req">*</span></label>
 				<LinkPicker
 					v-model="form.reference_doctype"
 					:fetcher="fetchDoctypes"
-					placeholder="Start typing — e.g. Sales Invoice"
-					empty-text="No matching DocType"
+					:placeholder="__('Start typing — e.g. Sales Invoice')"
+					:empty-text="__('No matching DocType')"
 					@change="onDocTypeChanged"
 				/>
 			</div>
 
 			<div class="field-block">
-				<label class="field-label">Event <span class="req">*</span></label>
+				<label class="field-label">{{ __("Event") }} <span class="req">*</span></label>
 				<select v-model="form.doctype_event" class="field-input">
 					<option value="after_insert">after_insert</option>
 					<option value="on_update">on_update</option>
@@ -41,68 +42,45 @@
 		</div>
 
 		<div v-if="form.doctype_event === 'on_update'" class="field-block">
-			<label class="field-label">Only fire if these fields changed</label>
+			<label class="field-label">{{ __("Only fire if these fields changed") }}</label>
 			<input
 				v-model="form.changed_fields"
 				class="field-input mono"
-				placeholder="e.g. status, grand_total (comma-separated)"
+				:placeholder="__('e.g. status, grand_total (comma-separated)')"
 			/>
 			<p class="hint">
-				Leave empty to fire on any update. Listed fields must be comma-separated.
+				{{ __("Leave empty to fire on any update. Listed fields must be comma-separated.") }}
 			</p>
 		</div>
 
 		<div class="field-block">
-			<label class="field-label">Filters</label>
+			<label class="field-label">{{ __("Filters") }}</label>
 			<p class="hint">
-				All filters must match for the trigger to fire (AND). Evaluated locally before
-				enqueueing.
+				{{
+					__(
+						"All filters must match for the trigger to fire (AND). Evaluated locally before enqueueing."
+					)
+				}}
 			</p>
-			<div class="filter-rows">
-				<div v-for="(row, idx) in form.filters" :key="idx" class="filter-row">
-					<div class="filter-row-picker">
-						<LinkPicker
-							v-model="row.fieldname"
-							:options="fieldOptions"
-							placeholder="fieldname"
-							empty-text="No matching field"
-						/>
-					</div>
-					<select v-model="row.operator" class="field-input narrow">
-						<option value="=">=</option>
-						<option value="!=">!=</option>
-						<option value=">">&gt;</option>
-						<option value="<">&lt;</option>
-						<option value=">=">&gt;=</option>
-						<option value="<=">&lt;=</option>
-						<option value="in">in</option>
-						<option value="not in">not in</option>
-						<option value="is set">is set</option>
-						<option value="is not set">is not set</option>
-					</select>
-					<input
-						v-model="row.value"
-						class="field-input"
-						placeholder="value"
-						:disabled="['is set', 'is not set'].includes(row.operator)"
-					/>
-					<button class="icon-btn danger" @click="removeFilter(idx)">×</button>
-				</div>
-			</div>
-			<button class="action-btn small" @click="addFilter">+ Add filter</button>
+			<TriggerFilterRows :rows="form.filters" :field-options="fieldOptions" />
 		</div>
 
 		<div class="field-block checkbox-field">
 			<label class="checkbox-inline">
 				<input v-model="form.enabled" type="checkbox" />
-				<span>Enabled</span>
+				<span>{{ __("Enabled") }}</span>
 			</label>
 		</div>
 
 		<div class="editor-actions">
-			<button class="action-btn" @click="$emit('cancel')">Cancel</button>
-			<button class="action-btn primary" :disabled="!canSave" @click="save">
-				{{ existing ? "Save changes" : "Create trigger" }}
+			<button class="action-btn" @click="$emit('cancel')">{{ __("Cancel") }}</button>
+			<button
+				class="action-btn primary"
+				data-test="trigger-save"
+				:disabled="!canSave"
+				@click="save"
+			>
+				{{ existing ? __("Save changes") : __("Create trigger") }}
 			</button>
 		</div>
 	</div>
@@ -111,7 +89,9 @@
 <script setup>
 import { computed, onMounted, reactive, ref, watch } from "vue";
 import api from "@/api/client";
+import { __ } from "@/utils/i18n";
 import LinkPicker from "./LinkPicker.vue";
+import TriggerFilterRows from "./TriggerFilterRows.vue";
 import { logger } from "@/utils/logger";
 
 const props = defineProps({
@@ -139,7 +119,7 @@ async function fetchDoctypes(query) {
 				const bits = [];
 				if (dt.module) bits.push(dt.module);
 				if (dt.app && dt.app !== "frappe") bits.push(dt.app);
-				if (dt.custom) bits.push("Custom");
+				if (dt.custom) bits.push(__("Custom"));
 				return {
 					value: dt.name,
 					label: dt.name,
@@ -171,36 +151,33 @@ const form = reactive({
 	enabled: true,
 });
 
-onMounted(async () => {
-	if (props.existing) {
-		form.title = props.existing.title;
-		form.reference_doctype = props.existing.reference_doctype;
-		form.doctype_event = props.existing.doctype_event;
-		form.changed_fields = props.existing.changed_fields || "";
-		form.enabled = !!props.existing.enabled;
-		form.filters = []; // will load on DocType selection below
+const cleanFilters = (rows) =>
+	(rows || [])
+		.filter((r) => (r.fieldname || "").trim())
+		.map((r) => ({
+			fieldname: r.fieldname.trim(),
+			operator: r.operator || "=",
+			value: ["is set", "is not set"].includes(r.operator) ? "" : r.value ?? "",
+		}));
 
-		if (form.reference_doctype) {
-			await loadFields(form.reference_doctype);
-		}
-		// Fetch full trigger including filters
-		try {
-			const detail = await api.workflows.triggers.list(
-				props.workflowName,
-				props.workflowId
-			);
-			const found = (detail?.triggers || []).find((t) => t.name === props.existing.name);
-			if (found && found.filters) {
-				form.filters = found.filters.map((r) => ({
-					fieldname: r.fieldname,
-					operator: r.operator,
-					value: r.value || "",
-				}));
-			}
-		} catch {
-			/* ignore */
-		}
-	}
+// What the server holds. An edit sends filters only when they differ from this;
+// sending them every time replaced the rows on every title edit.
+let savedFilters = "[]";
+
+onMounted(async () => {
+	if (!props.existing) return;
+	form.title = props.existing.title;
+	form.reference_doctype = props.existing.reference_doctype;
+	form.doctype_event = props.existing.doctype_event;
+	form.changed_fields = props.existing.changed_fields || "";
+	form.enabled = !!props.existing.enabled;
+	form.filters = (props.existing.filters || []).map((r) => ({
+		fieldname: r.fieldname,
+		operator: r.operator,
+		value: r.value ?? "",
+	}));
+	savedFilters = JSON.stringify(cleanFilters(form.filters));
+	if (form.reference_doctype) await loadFields(form.reference_doctype);
 });
 
 watch(
@@ -233,38 +210,25 @@ async function loadFields(doctype) {
 	}
 }
 
-function addFilter() {
-	form.filters.push({ fieldname: "", operator: "=", value: "" });
-}
-
-function removeFilter(idx) {
-	form.filters.splice(idx, 1);
-}
-
 const canSave = computed(
 	() => form.title.trim() && form.reference_doctype.trim() && form.doctype_event
 );
 
 function save() {
 	if (!canSave.value) return;
-
-	const cleanedFilters = form.filters
-		.filter((r) => r.fieldname.trim())
-		.map((r) => ({
-			fieldname: r.fieldname.trim(),
-			operator: r.operator,
-			value: ["is set", "is not set"].includes(r.operator) ? "" : r.value,
-		}));
-
-	emit("save", {
+	const filters = JSON.stringify(cleanFilters(form.filters));
+	const payload = {
 		title: form.title.trim(),
 		reference_doctype: form.reference_doctype.trim(),
 		doctype_event: form.doctype_event,
 		changed_fields: form.changed_fields.trim(),
-		filters: JSON.stringify(cleanedFilters),
 		enabled: form.enabled ? 1 : 0,
-	});
+	};
+	if (!props.existing || filters !== savedFilters) payload.filters = filters;
+	emit("save", payload);
 }
+
+defineExpose({ form });
 </script>
 
 <style scoped>
@@ -333,9 +297,6 @@ function save() {
 	opacity: 0.6;
 	cursor: not-allowed;
 }
-.field-input.narrow {
-	flex: 0 0 6.875rem;
-}
 .field-input.mono {
 	font-family: "SF Mono", Monaco, monospace;
 }
@@ -344,44 +305,6 @@ function save() {
 	font-size: 0.6875rem;
 	color: var(--ql-text-muted);
 	line-height: 1.4;
-}
-.filter-rows {
-	display: flex;
-	flex-direction: column;
-	gap: 0.375rem;
-	margin-bottom: 0.5rem;
-}
-.filter-row {
-	display: flex;
-	gap: 0.375rem;
-	align-items: center;
-}
-.filter-row .field-input {
-	flex: 1;
-}
-.filter-row-picker {
-	flex: 1;
-	min-width: 0;
-}
-.icon-btn {
-	padding: 0.25rem 0.625rem;
-	border: 1px solid var(--ql-border);
-	background: var(--ql-surface);
-	color: var(--ql-text);
-	border-radius: 0.25rem;
-	cursor: pointer;
-	font-size: 0.8125rem;
-	transition: background 0.15s ease;
-}
-.icon-btn:hover {
-	background: var(--ql-subtle);
-}
-.icon-btn.danger {
-	color: var(--ql-danger);
-	border-color: color-mix(in srgb, var(--ql-danger) 40%, transparent);
-}
-.icon-btn.danger:hover {
-	background: color-mix(in srgb, var(--ql-danger) 12%, transparent);
 }
 .action-btn {
 	display: flex;
@@ -399,11 +322,6 @@ function save() {
 }
 .action-btn:hover {
 	background-color: var(--ql-border);
-}
-.action-btn.small {
-	padding: 0.25rem 0.625rem;
-	font-size: 0.75rem;
-	align-self: flex-start;
 }
 .action-btn.primary {
 	background: var(--ql-accent);

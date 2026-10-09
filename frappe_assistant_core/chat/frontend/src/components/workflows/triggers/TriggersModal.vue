@@ -41,7 +41,10 @@
 							@edit="editTrigger"
 							@delete="deleteTrigger"
 							@toggle="toggleTrigger"
+							:test-result="testResults[t.name] || null"
+							:testing="testingName === t.name"
 							@view-log="viewLog"
+							@test="testTrigger"
 						/>
 					</div>
 				</div>
@@ -180,6 +183,21 @@ async function toggleTrigger(t) {
 		await refresh();
 	} catch (err) {
 		showError(__("Could not switch the trigger: {0}", [err?.userMessage || __("Something went wrong")]));
+	}
+}
+
+const testResults = ref({});
+const testingName = ref(null);
+
+async function testTrigger(t) {
+	testingName.value = t.name;
+	try {
+		const result = await api.workflows.triggers.test(t.name);
+		testResults.value = { ...testResults.value, [t.name]: result };
+	} catch (err) {
+		showError(__("Could not test the trigger: {0}", [err?.userMessage || err?.message || __("Something went wrong")]));
+	} finally {
+		testingName.value = null;
 	}
 }
 
