@@ -3,7 +3,7 @@ import { mount } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
 import { useUserStore } from "@/stores/userStore";
 import TemplateNeeds from "./TemplateNeeds.vue";
-import TemplateMiniGraph from "./TemplateMiniGraph.vue";
+import TemplateSteps from "./TemplateSteps.vue";
 import TemplateDetailFooter from "./TemplateDetailFooter.vue";
 import TemplateDetailBody from "./TemplateDetailBody.vue";
 
@@ -46,54 +46,84 @@ describe("TemplateNeeds", () => {
 	});
 });
 
-describe("TemplateMiniGraph", () => {
+describe("TemplateSteps", () => {
+	// The shape of Weekly Collections Brief: the brief waits for the report and the analyst.
 	const graph = {
 		nodes: [
-			{ id: "in", type: "input", label: "Start" },
-			{ id: "t", type: "tool", label: "Run AR report" },
-			{ id: "out", type: "output", label: "Brief" },
+			{ id: "start", type: "input", label: "Start" },
+			{ id: "fetch", type: "tool", label: "Accounts Receivable Summary", config: { tool_name: "generate_report" } },
+			{ id: "analyse", type: "agent", label: "Collections analyst" },
+			{ id: "report", type: "output", label: "Collections brief" },
+			{ id: "gate", type: "transform", label: "Email?" },
+			{ id: "check", type: "condition", label: "Has a recipient" },
+			{ id: "email", type: "tool", label: "Send email", config: { tool_name: "send_email" } },
 		],
 		edges: [
-			{ source: "in", target: "t" },
-			{ source: "t", target: "out" },
+			{ source: "start", target: "fetch" },
+			{ source: "fetch", target: "analyse" },
+			{ source: "fetch", target: "report" },
+			{ source: "analyse", target: "report" },
+			{ source: "analyse", target: "gate" },
+			{ source: "gate", target: "check" },
+			{ source: "check", target: "email", condition: "pass" },
 		],
 	};
+	const stages = (g) =>
+		mount(TemplateSteps, { props: { graphJson: JSON.stringify(g) } })
+			.findAll("li.stage")
+			.map((li) => li.findAll(".step-label").map((s) => s.text()));
 
-	it("draws every node and edge, read-only", () => {
-		const w = mount(TemplateMiniGraph, { props: { graphJson: JSON.stringify(graph) } });
-		expect(w.findAll("rect.mini-node")).toHaveLength(3);
-		expect(w.findAll("path.mini-edge")).toHaveLength(2);
-		expect(w.get("svg").attributes("role")).toBe("img");
-		expect(w.text()).toContain("Run AR report");
+	it("lists a step after every step it waits for", () => {
+		expect(stages(graph)).toEqual([
+			["Start"],
+			["Accounts Receivable Summary"],
+			["Collections analyst"],
+			["Collections brief", "Email?"],
+			["Has a recipient"],
+			["Send email"],
+		]);
 	});
 
-	it("lays out nodes that arrive piled at the origin", () => {
-		const piled = {
-			nodes: graph.nodes.map((n) => ({ ...n, position: { x: 0, y: 0 } })),
-			edges: graph.edges,
+	it("says what each step does and where a check leads", () => {
+		const text = mount(TemplateSteps, { props: { graphJson: graph } }).text();
+		for (const s of ["Runs a report", "AI step", "Sends an email", "If yes: Send email", "If no: stops here"]) {
+			expect(text).toContain(s);
+		}
+	});
+
+	it("lists a cycle after everything else instead of hanging", () => {
+		const cyclic = {
+			nodes: [
+				{ id: "a", type: "input", label: "A" },
+				{ id: "b", type: "tool", label: "B" },
+				{ id: "c", type: "tool", label: "C" },
+			],
+			edges: [
+				{ source: "a", target: "b" },
+				{ source: "b", target: "c" },
+				{ source: "c", target: "b" },
+			],
 		};
-		const w = mount(TemplateMiniGraph, { props: { graphJson: JSON.stringify(piled) } });
-		const xs = new Set(w.findAll("rect.mini-node").map((r) => r.attributes("x")));
-		expect(xs.size).toBe(3);
+		expect(stages(cyclic)).toEqual([["A"], ["B", "C"]]);
 	});
 
-	it("gives a huge graph a note instead of hundreds of SVG nodes", () => {
+	it("gives a huge graph a note instead of hundreds of steps", () => {
 		const nodes = Array.from({ length: 200 }, (_, i) => ({ id: `n${i}`, type: "tool", label: `Step ${i}` }));
-		const w = mount(TemplateMiniGraph, { props: { graphJson: JSON.stringify({ nodes, edges: [] }) } });
-		expect(w.findAll("rect.mini-node")).toHaveLength(0);
-		expect(w.find(".mini-graph-note").text()).toContain("200");
+		const w = mount(TemplateSteps, { props: { graphJson: JSON.stringify({ nodes, edges: [] }) } });
+		expect(w.findAll(".step")).toHaveLength(0);
+		expect(w.find(".steps-note").text()).toContain("200");
 	});
 
 	it("renders nodes that share an id without key warnings", () => {
 		const dup = { nodes: [{ id: "a", type: "tool" }, { id: "a", type: "tool" }], edges: [] };
-		const w = mount(TemplateMiniGraph, { props: { graphJson: JSON.stringify(dup) } });
-		expect(w.findAll("rect.mini-node")).toHaveLength(2);
+		const w = mount(TemplateSteps, { props: { graphJson: JSON.stringify(dup) } });
+		expect(w.findAll(".step")).toHaveLength(2);
 	});
 
 	it("shows a short note instead of crashing on a graph it cannot read", () => {
-		const w = mount(TemplateMiniGraph, { props: { graphJson: "{broken" } });
-		expect(w.find("svg").exists()).toBe(false);
-		expect(w.find(".mini-graph-note").exists()).toBe(true);
+		const w = mount(TemplateSteps, { props: { graphJson: "{broken" } });
+		expect(w.find("ol").exists()).toBe(false);
+		expect(w.find(".steps-note").exists()).toBe(true);
 	});
 });
 

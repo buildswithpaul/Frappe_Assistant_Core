@@ -65,7 +65,7 @@
 			/>
 
 			<TemplateNeeds :requires="template.requires" :fallback-tools="legacyTools" />
-			<TemplateMiniGraph :graph-json="template.graph_json" />
+			<TemplateSteps :graph-json="template.graph_json" />
 
 			<div v-if="variables.length > 0" class="detail-section">
 				<h3 class="section-label">{{ __("Configurable Variables") }}</h3>
@@ -98,7 +98,7 @@ import { computed, ref } from "vue";
 import { __ } from "@/utils/i18n";
 import TemplateRatingSection from "./TemplateRatingSection.vue";
 import TemplateNeeds from "./TemplateNeeds.vue";
-import TemplateMiniGraph from "./TemplateMiniGraph.vue";
+import TemplateSteps from "./TemplateSteps.vue";
 import { legacyRequiredTools, normalizeVariableSchema } from "./templateSchema";
 
 const props = defineProps({
