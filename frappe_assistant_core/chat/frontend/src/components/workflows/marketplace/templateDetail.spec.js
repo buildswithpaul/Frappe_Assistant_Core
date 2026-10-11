@@ -96,6 +96,24 @@ describe("TemplateSteps", () => {
 		expect(w.findAll(".step")[0].text()).toBe("Start");
 	});
 
+	it("names a dead end of the no branch on its check, not as a stage", () => {
+		const guarded = {
+			nodes: [
+				{ id: "start", type: "input", label: "Start" },
+				{ id: "guard", type: "condition", label: "Started by its trigger?" },
+				{ id: "stop", type: "output", label: "Not run by its trigger" },
+				{ id: "read", type: "tool", label: "Read the order", config: { tool_name: "get_document" } },
+			],
+			edges: [
+				{ source: "start", target: "guard" },
+				{ source: "guard", target: "read", condition: "pass" },
+				{ source: "guard", target: "stop", condition: "fail" },
+			],
+		};
+		expect(stages(guarded)).toEqual([["Start"], ["Started by its trigger?"], ["Read the order"]]);
+		expect(mount(TemplateSteps, { props: { graphJson: guarded } }).text()).toContain("If no: Not run by its trigger");
+	});
+
 	it("lists a cycle after everything else instead of hanging", () => {
 		const cyclic = {
 			nodes: [

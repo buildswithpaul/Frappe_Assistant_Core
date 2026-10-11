@@ -71,6 +71,14 @@ function branchesOf(node, edges, labelOf) {
 	];
 }
 
+// An output only a check's "no" branch reaches is named on the check; as its own
+// stage it reads as if it ran beside the steps that really do.
+function isNoBranchEnd(node, edges) {
+	if (node.type !== "output" || edges.some((e) => e.source === node.id)) return false;
+	const incoming = edges.filter((e) => e.target === node.id);
+	return incoming.length > 0 && incoming.every((e) => e.condition === "fail");
+}
+
 /**
  * @param {{nodes: Array, edges: Array}} graph backend graph JSON, parsed
  * @returns {Array<{number: number, steps: Array<{key, label, kind, type, branches}>}>}
@@ -85,6 +93,7 @@ export function templateStages(graph) {
 
 	const groups = new Map();
 	nodes.forEach((node, i) => {
+		if (isNoBranchEnd(node, edges)) return;
 		const s = stage.get(node.id);
 		if (!groups.has(s)) groups.set(s, []);
 		groups.get(s).push({
