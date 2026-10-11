@@ -24,7 +24,7 @@ async function importWith(result) {
 			},
 		},
 	});
-	await wrapper.setProps({ template: { name: "LST-1", template_name: "Ticket First Reply" } });
+	await wrapper.setProps({ template: { name: "LST-1", template_name: "Big Order Credit Check" } });
 	await wrapper.find(".go").trigger("click");
 	await flushPromises();
 	return wrapper;
@@ -48,7 +48,7 @@ describe("TemplateDetailPanel import", () => {
 
 	it("says why the trigger could not be added", async () => {
 		// production: import_listing returns trigger_note when create_trigger refused the
-		// template's trigger (e.g. HD Ticket on a site without Helpdesk)
+		// template's trigger (e.g. a doctype from an app this site does not have)
 		await importWith({ target_name: "WF-1", trigger_note: "DocType HD Ticket not found" });
 		expect(toast.showToast).toHaveBeenCalledWith(
 			"Its trigger could not be added (DocType HD Ticket not found). Add one in Setup → Triggers.",

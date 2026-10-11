@@ -26,10 +26,10 @@ class _Client:
         return {
             "name": kwargs["name"],
             "listing_type": "Workflow",
-            "title": "Ticket First Reply",
+            "title": "Big Order Credit Check",
             "source": {
                 "variables_schema": "{}",
-                "template_name": "Ticket First Reply",
+                "template_name": "Big Order Credit Check",
                 "suggested_trigger": self.suggested_trigger,
             },
         }
@@ -68,7 +68,7 @@ class TestImportListingTrigger(BaseAssistantTest):
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0].enabled, 0)
         self.assertEqual((rows[0].reference_doctype, rows[0].doctype_event), ("ToDo", "after_insert"))
-        self.assertEqual(rows[0].title, "Ticket First Reply trigger")
+        self.assertEqual(rows[0].title, "Big Order Credit Check trigger")
         self.assertEqual(result["trigger_created"], rows[0].name)
         self.assertEqual(result["target_name"], self.workflow)
 
