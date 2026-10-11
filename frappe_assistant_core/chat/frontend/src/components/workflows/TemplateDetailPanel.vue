@@ -52,7 +52,7 @@ import TemplateDetailBody from "./marketplace/TemplateDetailBody.vue";
 import TemplateDetailFooter from "./marketplace/TemplateDetailFooter.vue";
 import TemplateReportModal from "./TemplateReportModal.vue";
 
-const { showError, showSuccess } = useToast();
+const { showError, showSuccess, showToast } = useToast();
 
 const props = defineProps({
 	template: { type: Object, default: null },
@@ -129,6 +129,13 @@ async function handleImport({ name, variables }) {
 					? __("Agent imported. A trigger was added, switched off \u2014 turn it on in Setup.")
 					: __("Agent imported. Opening builder…")
 			);
+			if (result?.trigger_note) {
+				showToast(
+					__("Its trigger could not be added ({0}). Add one in Setup \u2192 Triggers.", [result.trigger_note]),
+					"info",
+					8000
+				);
+			}
 			emit("created", workflowName);
 			// Don't call close() here — parent will navigate away, unmounting this panel
 		} else {
