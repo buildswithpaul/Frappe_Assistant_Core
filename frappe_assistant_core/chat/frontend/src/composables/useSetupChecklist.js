@@ -10,14 +10,14 @@ export function useSetupChecklist({
 	nodes,
 	preflight,
 }) {
-	const enabledTriggerCount = ref(0);
+	const triggers = ref([]);
 	const isRefreshing = ref(false);
 
 	const items = computed(() =>
 		buildSetupChecklist({
 			workflow: currentWorkflow.value,
 			schedule: scheduleConfig.value,
-			enabledTriggerCount: enabledTriggerCount.value,
+			triggers: triggers.value,
 			nodes: nodes.value,
 			unapproved: preflight.checked.value ? preflight.warnings.value : null,
 			checkError: preflight.error.value,
@@ -29,13 +29,11 @@ export function useSetupChecklist({
 		if (!workflowId.value) return;
 		isRefreshing.value = true;
 		try {
-			const [triggers] = await Promise.all([
+			const [listed] = await Promise.all([
 				api.workflows.triggers.list(workflowDisplayName.value, workflowId.value).catch(() => null),
 				preflight.check(),
 			]);
-			enabledTriggerCount.value = (triggers?.triggers || []).filter(
-				(t) => Number(t.enabled) === 1
-			).length;
+			triggers.value = listed?.triggers || [];
 		} finally {
 			isRefreshing.value = false;
 		}

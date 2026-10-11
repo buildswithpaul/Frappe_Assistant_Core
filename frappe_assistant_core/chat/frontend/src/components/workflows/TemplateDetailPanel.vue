@@ -124,7 +124,11 @@ async function handleImport({ name, variables }) {
 		// or `{ name }` — keep them as fallbacks so this works against both backends.
 		const workflowName = result?.target_name || result?.workflow?.name || result?.name;
 		if (workflowName) {
-			showSuccess(__("Agent imported. Opening builder…"));
+			showSuccess(
+				result?.trigger_created
+					? __("Agent imported. A trigger was added, switched off \u2014 turn it on in Setup.")
+					: __("Agent imported. Opening builder…")
+			);
 			emit("created", workflowName);
 			// Don't call close() here — parent will navigate away, unmounting this panel
 		} else {

@@ -166,17 +166,70 @@ def import_listing(
         listing_type = listing.get("listing_type") if isinstance(listing, dict) else None
         if listing_type not in _MEMBER_IMPORTABLE_TYPES:
             _require_admin()
-        return client.import_listing(
+        result = client.import_listing(
             user_id=user_id,
             name=name,
             new_title=new_title,
             variables=_import_variables(_checked_variables(listing, variables)),
             default_model_id=default_model_id,
         )
+        if listing_type == "Workflow" and isinstance(result, dict):
+            _add_suggested_trigger(result, listing, new_title)
+        return result
     except (frappe.ValidationError, frappe.PermissionError):
         raise
     except Exception as e:
         _marketplace_failure("Error importing listing", e)
+
+
+def _suggested_trigger(source: dict) -> dict | None:
+    """The template's suggested trigger; AR stores it as a JSON string, or null."""
+    raw = source.get("suggested_trigger")
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw) if raw.strip() else None
+        except ValueError:
+            return None
+    return raw if isinstance(raw, dict) and raw else None
+
+
+def _add_suggested_trigger(result: dict, listing: dict, new_title: str | None) -> None:
+    """Create the imported template's trigger, switched off, and report it on ``result``.
+
+    The trigger controller owns validation (DocType exists, event, filter fields), so a
+    suggestion this site cannot honour only costs the trigger, never the import.
+    """
+    from .workflow_triggers import create_trigger
+
+    source = listing.get("source")
+    suggestion = _suggested_trigger(source) if isinstance(source, dict) else None
+    workflow_docname = result.get("target_name")
+    if not suggestion or not workflow_docname:
+        return
+
+    title = new_title or source.get("template_name") or listing.get("title") or workflow_docname
+    savepoint = "import_listing_trigger"
+    frappe.db.savepoint(savepoint)
+    try:
+        created = create_trigger(
+            title=_("{0} trigger").format(title),
+            workflow_name=title,
+            workflow_display_name=title,
+            workflow_docname=workflow_docname,
+            reference_doctype=suggestion.get("reference_doctype") or "",
+            doctype_event=suggestion.get("doctype_event") or "",
+            filters=json.dumps(suggestion.get("filters") or []),
+            enabled=0,
+        )
+    except Exception as e:
+        frappe.db.rollback(save_point=savepoint)
+        _log("FACO Marketplace", f"Suggested trigger for {workflow_docname} not created: {e!s}")
+        result["trigger_note"] = _(
+            "This template suggests an event trigger that this site could not create. "
+            "Add one from the Triggers panel."
+        )
+        return
+    result["trigger_created"] = created["name"]
 
 
 def _checked_variables(listing: dict, variables: str | dict | None) -> str | dict | None:

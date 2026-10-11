@@ -5,20 +5,61 @@ const MODEL_NODES = new Set(["agent", "loop"]);
 const describeWrites = (unapproved) =>
 	unapproved.map((u) => (u.nodes?.length ? `${u.tool} (${u.nodes.join(", ")})` : u.tool)).join("; ");
 
+const eventLabel = (event) =>
+	({
+		after_insert: __("when created"),
+		on_update: __("when updated"),
+		on_submit: __("when submitted"),
+		on_cancel: __("when cancelled"),
+		on_trash: __("when deleted"),
+	})[event] || event;
+
+const describeTrigger = (t) => `${t.reference_doctype} \u2192 ${eventLabel(t.doctype_event)}`;
+
+/** How the agent starts, in the words a person would use, and which controls fix it. */
+function describeStart(schedule, triggers) {
+	const cron = schedule?.cron;
+	const zone = schedule?.timezone || "UTC";
+	const onTriggers = triggers.filter((t) => Number(t.enabled) === 1);
+	const offTrigger = triggers.find((t) => Number(t.enabled) !== 1);
+	const actions = {
+		schedule: { key: "schedule", label: __("Schedule") },
+		triggers: { key: "triggers", label: __("Triggers") },
+	};
+
+	if (cron && schedule.enabled)
+		return { state: "ok", detail: __("Schedule: {0} ({1})", [cron, zone]), actions: [actions.schedule] };
+	if (onTriggers.length) {
+		const more = onTriggers.length > 1 ? __(" (+{0} more)", [onTriggers.length - 1]) : "";
+		return {
+			state: "ok",
+			detail: __("Trigger: {0}", [describeTrigger(onTriggers[0])]) + more,
+			actions: [actions.triggers],
+		};
+	}
+	const todo = [];
+	if (cron) todo.push({ line: __("Turn on the schedule: {0} ({1})", [cron, zone]), action: actions.schedule });
+	if (offTrigger)
+		todo.push({ line: __("Turn on the trigger: {0}", [describeTrigger(offTrigger)]), action: actions.triggers });
+	if (!todo.length)
+		return {
+			state: "todo",
+			detail: __("Add a schedule or a trigger"),
+			actions: [actions.schedule, actions.triggers],
+		};
+	return { state: "todo", detail: todo.map((t) => t.line).join(". "), actions: todo.map((t) => t.action) };
+}
+
 /** The four things an agent needs before it runs on its own. */
 export function buildSetupChecklist({
 	workflow,
 	schedule,
-	enabledTriggerCount = 0,
+	triggers = [],
 	nodes = [],
 	unapproved,
 	checkError = null,
 }) {
-	const scheduled = !!(schedule?.enabled && schedule?.cron);
-	let startDetail = __("Manual only — add a schedule or an event trigger to run it on its own");
-	if (scheduled) startDetail = __("Schedule {0} ({1})", [schedule.cron, schedule.timezone || "UTC"]);
-	else if (enabledTriggerCount === 1) startDetail = __("1 event trigger");
-	else if (enabledTriggerCount > 1) startDetail = __("{0} event triggers", [enabledTriggerCount]);
+	const start = describeStart(schedule, triggers);
 
 	const writeState = unapproved == null ? "unknown" : unapproved.length ? "todo" : "ok";
 	const writeDetail = {
@@ -41,13 +82,10 @@ export function buildSetupChecklist({
 	return [
 		{
 			key: "start",
-			state: scheduled || enabledTriggerCount > 0 ? "ok" : "todo",
-			label: __("Starts on its own"),
-			detail: startDetail,
-			actions: [
-				{ key: "schedule", label: __("Schedule") },
-				{ key: "triggers", label: __("Triggers") },
-			],
+			state: start.state,
+			label: __("How it starts"),
+			detail: start.detail,
+			actions: start.actions,
 		},
 		{
 			key: "runs_as",
