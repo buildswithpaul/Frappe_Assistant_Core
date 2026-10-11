@@ -90,3 +90,6 @@ build/
 !frappe_assistant_core/chat/frontend/build/
 client_packages/*/build/
 
+# A worktree may symlink the frontend node_modules to a main checkout; node_modules/
+# does not match a symlink, so name it.
+frappe_assistant_core/chat/frontend/node_modules
