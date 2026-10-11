@@ -19,6 +19,7 @@ Python Code Execution Tool for Data Science Plugin.
 Executes Python code safely in a restricted environment.
 """
 
+import ast
 import sys
 from typing import Any, Dict
 
@@ -26,6 +27,7 @@ import frappe
 from frappe import _
 
 from frappe_assistant_core.core.base_tool import BaseTool
+from frappe_assistant_core.utils.code_execution_subprocess import PRELOADED_MODULES
 
 # Appended to every failure the model sees, so a crashed calculation is retried
 # inside the tool instead of being retyped by hand into a new script.
@@ -35,6 +37,57 @@ RETRY_BY_HAND = (
     "tool output by hand. If the calculation cannot be completed, tell the "
     "user it failed instead of estimating the numbers."
 )
+
+
+def _preloaded_ref(dotted: str) -> str | None:
+    """Source text reading a pre-loaded module (or a path inside it) from scope."""
+    root, _sep, rest = dotted.partition(".")
+    if root not in PRELOADED_MODULES:
+        return None
+    ref = f'_preloaded_modules["{root}"]'
+    return f"{ref}.{rest}" if rest else ref
+
+
+def _rewrite_preloaded_import(statement: str) -> str | None:
+    """Rewrite one import statement of pre-loaded modules into assignments.
+
+    Returns None when the line is not a single import of pre-loaded modules
+    (another module, ``*``, a relative or multi-line import), so the caller can
+    report it. The output only reads attributes that the code could have
+    written out itself, and is still checked by the AST validator afterwards.
+    """
+    try:
+        tree = ast.parse(statement)
+    except SyntaxError:
+        return None
+    if len(tree.body) != 1:
+        return None
+    node = tree.body[0]
+
+    targets, sources = [], []
+    if isinstance(node, ast.Import):
+        for alias in node.names:
+            source = _preloaded_ref(alias.name)
+            if source is None:
+                return None
+            if alias.asname and alias.asname != alias.name:
+                targets.append(alias.asname)
+                sources.append(source)
+            # ``import x`` / ``import x.y`` binds ``x``, which is already in scope.
+    elif isinstance(node, ast.ImportFrom):
+        module = _preloaded_ref(node.module or "") if not node.level else None
+        if module is None or any(alias.name == "*" for alias in node.names):
+            return None
+        for alias in node.names:
+            targets.append(alias.asname or alias.name)
+            sources.append(f"{module}.{alias.name}")
+    else:
+        return None
+
+    if not targets:
+        # Keeps a statement in place, so an import that is a block's only line stays valid.
+        return f"pass  # {statement.split('#')[0].strip()} (pre-loaded)"
+    return f"{', '.join(targets)} = {', '.join(sources)}"
 
 
 class ExecutePythonCode(BaseTool):
@@ -312,7 +365,7 @@ PRE-LOADED: pd, np, frappe, math, datetime, json, re, statistics, random"""
             proc.kill()
             proc.wait()
             self.logger.warning(
-                f"Code execution subprocess killed after {parent_timeout}s " f"(user: {current_user})"
+                f"Code execution subprocess killed after {parent_timeout}s (user: {current_user})"
             )
             return {
                 "success": False,
@@ -377,7 +430,7 @@ PRE-LOADED: pd, np, frappe, math, datetime, json, re, statistics, random"""
                 )
 
             self.logger.error(
-                f"Code execution subprocess crashed: exit={exit_code}, " f"stderr={stderr_text[:200]}"
+                f"Code execution subprocess crashed: exit={exit_code}, stderr={stderr_text[:200]}"
             )
 
             return {
@@ -527,131 +580,63 @@ PRE-LOADED: pd, np, frappe, math, datetime, json, re, statistics, random"""
         return {"success": True, "code": code, "fixes_applied": fixes_applied}
 
     def _check_and_handle_imports(self, code: str) -> Dict[str, Any]:
-        """Check for import statements and provide helpful guidance"""
-        import re
+        """Rewrite imports of pre-loaded modules; report any other import.
 
-        lines = code.split("\n")
-        import_lines = []
+        The sandbox has no import statement, but the modules in PRELOADED_MODULES
+        are already in scope. Their imports become plain assignments, so the
+        names an import introduces (``Counter``, ``timedelta``, ``flt``) exist
+        when the code runs. Any other import is returned with guidance.
+        """
         processed_lines = []
+        problematic_imports = []
 
-        # Common import patterns that can be safely removed (exact matches)
-        safe_replacements = {
-            "import pandas as pd": '# pandas is pre-loaded as "pd"',
-            "import numpy as np": '# numpy is pre-loaded as "np"',
-            "import frappe": "# frappe is pre-loaded",
-            "import math": "# math is pre-loaded",
-            "import datetime": "# datetime is pre-loaded",
-            "import json": "# json is pre-loaded",
-            "import re": "# re is pre-loaded",
-            "import random": "# random is pre-loaded",
-            "import statistics": "# statistics is pre-loaded",
-            "import decimal": "# decimal is pre-loaded",
-            "import fractions": "# fractions is pre-loaded",
-            # Allow these common stdlib imports
-            "import collections": "# collections allowed - Counter, defaultdict, etc.",
-            "import itertools": "# itertools allowed - combinatoric iterators",
-            "import functools": "# functools allowed - higher-order functions",
-            "import operator": "# operator allowed - standard operators",
-            "import copy": "# copy allowed - shallow and deep copy",
-            "import string": "# string allowed - string operations",
-        }
-
-        # Safe import prefixes (for partial matches)
-        safe_prefixes = {
-            "from datetime import": "# datetime is pre-loaded",
-            "from math import": "# math is pre-loaded",
-            "from collections import": "# collections allowed",
-            "from itertools import": "# itertools allowed",
-            "from functools import": "# functools allowed",
-            "from operator import": "# operator allowed",
-        }
-
-        for i, line in enumerate(lines):
-            stripped_line = line.strip()
-
-            # Check if this is an import statement
-            if stripped_line.startswith("import ") or stripped_line.startswith("from "):
-                import_lines.append((i + 1, stripped_line))
-
-                # Try to replace with helpful comment
-                replaced = False
-
-                # Check exact matches first
-                if stripped_line in safe_replacements:
-                    processed_lines.append(line.replace(stripped_line, safe_replacements[stripped_line]))
-                    replaced = True
-                else:
-                    # Check prefix matches
-                    for prefix, replacement in safe_prefixes.items():
-                        if stripped_line.startswith(prefix):
-                            processed_lines.append(line.replace(stripped_line, replacement))
-                            replaced = True
-                            break
-
-                if not replaced:
-                    # Unknown import - provide helpful error
-                    processed_lines.append(
-                        f"# REMOVED: {stripped_line} - library not available or not needed"
-                    )
-            else:
+        for i, line in enumerate(code.split("\n")):
+            stripped = line.strip()
+            if not (stripped.startswith("import ") or stripped.startswith("from ")):
                 processed_lines.append(line)
+                continue
 
-        # If we found problematic imports, provide helpful guidance
-        if import_lines:
-            # Check if they're all safe imports that we can handle
-            problematic_imports = []
-            for line_num, import_stmt in import_lines:
-                is_safe = False
+            indent = line[: len(line) - len(line.lstrip())]
+            replacement = _rewrite_preloaded_import(stripped)
+            if replacement is None:
+                problematic_imports.append((i + 1, stripped))
+                replacement = f"# REMOVED: {stripped}"
+            processed_lines.append(indent + replacement)
 
-                # Check exact matches
-                if import_stmt in safe_replacements:
-                    is_safe = True
-                else:
-                    # Check prefix matches
-                    for prefix in safe_prefixes.keys():
-                        if import_stmt.startswith(prefix):
-                            is_safe = True
-                            break
+        if problematic_imports:
+            # Detect attempts to use visualization / scipy libraries that
+            # are no longer available inside the sandbox.
+            removed_libs = {"matplotlib", "seaborn", "plotly", "scipy", "plt", "sns", "go", "px", "stats"}
+            hit_removed = [
+                stmt
+                for _line_num, stmt in problematic_imports
+                if any(tok in stmt.split() for tok in removed_libs)
+                or any(f"import {lib}" in stmt or f"from {lib}" in stmt for lib in removed_libs)
+            ]
 
-                if not is_safe:
-                    problematic_imports.append((line_num, import_stmt))
+            removed_note = ""
+            if hit_removed:
+                removed_note = (
+                    "\n\n🚫 matplotlib, seaborn, plotly, and scipy are NOT available in this sandbox.\n"
+                    "   Plots cannot be rendered back to the caller. For charts, use the dashboard\n"
+                    "   tools (create_dashboard_chart, create_dashboard) instead of plotting libraries."
+                )
 
-            if problematic_imports:
-                # Detect attempts to use visualization / scipy libraries that
-                # are no longer available inside the sandbox.
-                removed_libs = {"matplotlib", "seaborn", "plotly", "scipy", "plt", "sns", "go", "px", "stats"}
-                hit_removed = [
-                    stmt
-                    for _, stmt in problematic_imports
-                    if any(tok in stmt.split() for tok in removed_libs)
-                    or any(f"import {lib}" in stmt or f"from {lib}" in stmt for lib in removed_libs)
-                ]
-
-                removed_note = ""
-                if hit_removed:
-                    removed_note = (
-                        "\n\n🚫 matplotlib, seaborn, plotly, and scipy are NOT available in this sandbox.\n"
-                        "   Plots cannot be rendered back to the caller. For charts, use the dashboard\n"
-                        "   tools (create_dashboard_chart, create_dashboard) instead of plotting libraries."
-                    )
-
-                error_msg = f"""Import statements detected that are not available or needed:
+            error_msg = f"""Import statements detected that are not available or needed:
 
 ❌ Problematic imports found:
 {chr(10).join(f"   Line {line_num}: {stmt}" for line_num, stmt in problematic_imports)}
 
-✅ Available pre-loaded libraries (use directly, no imports needed):
-   • pd (pandas) - Data manipulation
-   • np (numpy) - Numerical operations
-   • frappe - Frappe API access
-   • math, datetime, json, re, random - Standard libraries{removed_note}
+✅ Available pre-loaded modules (already in scope; importing them also works,
+   one statement per line, e.g. `from collections import Counter`):
+   {", ".join(PRELOADED_MODULES)} (pandas as pd, numpy as np){removed_note}
 
 💡 Example correct usage:
    df = pd.DataFrame({{'A': [1,2,3]}})
    arr = np.array([1,2,3])
    print(df.describe())"""
 
-                return {"success": False, "error": error_msg, "output": "", "variables": {}}
+            return {"success": False, "error": error_msg, "output": "", "variables": {}}
 
         return {"success": True, "code": "\n".join(processed_lines)}
 

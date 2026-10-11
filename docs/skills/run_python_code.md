@@ -45,6 +45,13 @@ calculation failed. Do not retype or estimate the totals.
 | `random` | random | ✅ random, randint, choice |
 | `datetime` | datetime module | ⚠️ Use carefully — see datetime section |
 | `tools` | FAC tools API | ✅ All methods now work — see tools section |
+| `collections`, `itertools`, `functools` | stdlib | ✅ Counter, defaultdict, groupby, reduce, … |
+| `heapq`, `bisect`, `copy`, `string` | stdlib | ✅ |
+
+Importing these is optional. `import collections`, `import numpy as np` and
+`from collections import Counter, defaultdict` (one statement per line, also
+inside functions) bind the names from the pre-loaded modules, as does
+`from frappe.utils import flt`. Imports of anything else are rejected.
 
 ### NOT available — these are NOT pre-loaded despite what the tool description says
 
@@ -54,11 +61,7 @@ calculation failed. Do not retype or estimate the totals.
 | `sns` / `seaborn` | Same as above |
 | `plotly` (`go`, `px`) | Same as above |
 | `scipy` (`stats`) | Use `statistics` or `np` for basic stats |
-| `collections` | Use `pd.Series.value_counts()` or plain dicts |
-| `itertools` | Use list comprehensions |
-| `functools` | Use pandas `.apply()` |
 | `operator` | Use inline operators directly (`+`, `>`, etc.) |
-| `copy` | Use `list(x)` or `dict(x)` for shallow copy |
 | `dir()` | Not available |
 | `repr()` | Use `str()` |
 | `format()` builtin | Use f-strings: `f"{val:.2f}"` |
@@ -341,7 +344,7 @@ following. Work with the documented APIs instead.
 
 | Not allowed | Use instead |
 |-------------|-------------|
-| `import X` / `from X import Y` for other libraries | Imports of the pre-loaded libraries (`import pandas as pd`, …) are removed automatically; anything else is rejected |
+| `import X` / `from X import Y` for other libraries | Imports of the pre-loaded modules (`import pandas as pd`, `from collections import Counter`, …) bind those names; anything else is rejected |
 | Any attribute starting with `_` — `x.__class__`, `df._data`, `random._os` | The documented public methods only |
 | `eval`, `exec`, `compile` | Write the logic directly |
 | `getattr`, `setattr`, `delattr` | Access attributes by name in source (`obj.field`) or dict keys (`row["field"]`) |
@@ -401,8 +404,6 @@ print(f"\nReport: {dt.year}-{dt.month:02d}-{dt.day:02d}")
 |-------|-------|-----|
 | `module 'datetime' has no attribute 'today'` | `datetime.today()` — module not class | `frappe.utils.today()` |
 | `Import of 'time' is not allowed` | `.strftime()`, `date.today()`, `datetime.today()` | f-strings with `.year/.month/.day` |
-| `name 'collections' is not defined` | Not pre-loaded despite docs saying so | `pd.Series.value_counts()` or plain dicts |
-| `name 'itertools' is not defined` | Not pre-loaded | List comprehensions |
 | `frappe._dict not serializable` | `frappe.get_all` rows to pandas | Wrap with `dict(r)` |
 | `frappe.db.sql is not available` | Raw SQL can't be permission-checked | Aggregate fields + `group_by`, or pandas |
 | `PermissionError` / `No permission to read` | The user's roles or User Permissions exclude it | Expected — tell the user; don't work around it |
