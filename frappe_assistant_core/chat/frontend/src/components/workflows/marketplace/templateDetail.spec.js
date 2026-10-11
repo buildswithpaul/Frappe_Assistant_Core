@@ -91,6 +91,11 @@ describe("TemplateSteps", () => {
 		}
 	});
 
+	it("does not repeat a kind that is already the step's name", () => {
+		const w = mount(TemplateSteps, { props: { graphJson: graph } });
+		expect(w.findAll(".step")[0].text()).toBe("Start");
+	});
+
 	it("lists a cycle after everything else instead of hanging", () => {
 		const cyclic = {
 			nodes: [

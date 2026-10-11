@@ -10,7 +10,7 @@
 						<span class="step-dot" :style="{ background: colorOf(step.type) }" aria-hidden="true" />
 						<div class="step-text">
 							<span class="step-label">{{ step.label }}</span>
-							<span class="step-kind">{{ step.kind }}</span>
+							<span v-if="step.kind !== step.label" class="step-kind">{{ step.kind }}</span>
 							<span v-for="branch in step.branches" :key="branch" class="step-branch">
 								{{ branch }}
 							</span>
