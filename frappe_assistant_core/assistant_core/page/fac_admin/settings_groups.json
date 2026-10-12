@@ -1,0 +1,52 @@
+{
+    "groups": [
+        {
+            "key": "chat_widget",
+            "label": "Chat & Widget",
+            "icon": "fa-comments",
+            "doctype": "FAC Chat Settings",
+            "units": ["ui_settings_tab", "retention_tab"]
+        },
+        {
+            "key": "mcp_server",
+            "label": "MCP Server",
+            "icon": "fa-server",
+            "doctype": "Assistant Core Settings",
+            "units": ["general_tab", "mcp_section", "skills_section"]
+        },
+        {
+            "key": "oauth",
+            "label": "OAuth",
+            "icon": "fa-key",
+            "doctype": "Assistant Core Settings",
+            "units": ["oauth_authorization_section", "oauth_advanced_section", "oauth_metadata_section"]
+        },
+        {
+            "key": "security",
+            "label": "Security",
+            "icon": "fa-shield",
+            "doctype": "Assistant Core Settings",
+            "units": ["execution_limits_section", "audit_log_section"]
+        },
+        {
+            "key": "ocr",
+            "label": "OCR",
+            "icon": "fa-file-image-o",
+            "doctype": "Assistant Core Settings",
+            "units": ["ocr_section", "ollama_section"]
+        },
+        {
+            "key": "fac_cloud",
+            "label": "FAC Cloud connection",
+            "icon": "fa-cloud",
+            "doctype": "FAC Chat Settings",
+            "units": ["section_break_ar"],
+            "read_only": true
+        }
+    ],
+    "skip_units": {
+        "Assistant Core Settings": ["fac_chat_tab", "plugins_section"],
+        "FAC Chat Settings": ["section_break_cache"]
+    },
+    "skip_fields": ["server_enabled", "enable_fac_chat", "fac_chat_description", "plugin_status_html"]
+}

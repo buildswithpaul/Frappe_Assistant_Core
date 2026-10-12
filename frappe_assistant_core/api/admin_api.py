@@ -45,6 +45,11 @@ from frappe_assistant_core.api.admin.server import (  # noqa: F401
     update_server_settings,
 )
 
+# Settings tab
+from frappe_assistant_core.api.admin.settings import (  # noqa: F401
+    get_settings_groups,
+)
+
 # Skill management
 from frappe_assistant_core.api.admin.skills import (  # noqa: F401
     get_skills_list,
