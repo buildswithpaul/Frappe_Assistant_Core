@@ -1416,3 +1416,77 @@ mark.fac-hl {
         min-height: 44px;
     }
 }
+/* ── Settings tab ─────────────────────────────────────────────── */
+.fac-settings-layout {
+    display: grid;
+    grid-template-columns: 200px minmax(0, 1fr);
+    gap: 16px;
+    padding: 12px 0;
+}
+.fac-settings-nav {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+.fac-settings-nav-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text-muted);
+    font-size: var(--text-sm);
+    text-align: left;
+    cursor: pointer;
+}
+.fac-settings-nav-item:hover {
+    background: var(--subtle-fg);
+    color: var(--text-color);
+}
+.fac-settings-nav-item.active {
+    background: var(--fac-accent-soft);
+    color: var(--fac-accent);
+    font-weight: 500;
+}
+.fac-settings-nav-item:focus-visible {
+    outline: 2px solid var(--fac-accent);
+    outline-offset: 1px;
+}
+.fac-settings-pane {
+    min-width: 0;
+}
+.fac-settings-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border-color);
+}
+.fac-settings-note {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: var(--text-sm);
+}
+.fac-settings-error {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 16px;
+    color: var(--text-muted);
+}
+@media (max-width: 768px) {
+    .fac-settings-layout {
+        grid-template-columns: 1fr;
+    }
+    .fac-settings-nav {
+        flex-direction: row;
+        overflow-x: auto;
+    }
+    .fac-settings-nav-item {
+        white-space: nowrap;
+    }
+}

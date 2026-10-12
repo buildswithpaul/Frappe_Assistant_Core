@@ -70,6 +70,10 @@ frappe.pages['fac-admin'].on_page_load = function(wrapper) {
                             Skills
                             <span class="fac-tab-count" id="tab-count-skills" aria-hidden="true">–</span>
                         </button>
+                        <button class="fac-top-tab" data-tab="settings" role="tab" id="tab-settings" aria-selected="false" aria-controls="tab-panel-settings" tabindex="-1">
+                            <i class="fa fa-sliders" aria-hidden="true"></i>
+                            Settings
+                        </button>
                     </div>
 
                     <!-- TOOLS TAB PANEL -->
@@ -153,6 +157,14 @@ frappe.pages['fac-admin'].on_page_load = function(wrapper) {
                         </div>
                     </div>
 
+                    <!-- SETTINGS TAB PANEL -->
+                    <div class="fac-tab-panel" id="tab-panel-settings" role="tabpanel" aria-labelledby="tab-settings" tabindex="0">
+                        <div class="fac-settings-layout">
+                            <nav class="fac-settings-nav" id="settings-nav" role="tablist" aria-orientation="vertical" aria-label="Settings groups"></nav>
+                            <div class="fac-settings-pane" id="settings-pane" role="tabpanel"></div>
+                        </div>
+                    </div>
+
                 </div>
 
                 <!-- RIGHT: sticky sidebar with status, chat, analytics, actions -->
@@ -169,7 +181,7 @@ frappe.pages['fac-admin'].on_page_load = function(wrapper) {
                         <div class="fac-endpoint-url fac-endpoint-compact" id="fac-mcp-endpoint">Loading...</div>
                         <div class="fac-sidebar-actions">
                             <button class="btn btn-xs btn-default" id="open-settings">
-                                <i class="fa fa-cog" aria-hidden="true"></i> Settings
+                                <i class="fa fa-cog" aria-hidden="true"></i> Advanced form
                             </button>
                         </div>
                     </div>
@@ -259,7 +271,8 @@ frappe.pages['fac-admin'].on_page_load = function(wrapper) {
         "/assets/frappe_assistant_core/js/fac_admin_utils.js",
         "/assets/frappe_assistant_core/js/fac_admin_tools.js",
         "/assets/frappe_assistant_core/js/fac_admin_prompts.js",
-        "/assets/frappe_assistant_core/js/fac_admin_skills.js"
+        "/assets/frappe_assistant_core/js/fac_admin_skills.js",
+        "/assets/frappe_assistant_core/js/fac_admin_settings.js"
     ]).then(function() {
 
         // =====================================================================
@@ -350,9 +363,17 @@ frappe.pages['fac-admin'].on_page_load = function(wrapper) {
             ns.bulkToggleByCategory(category, plugin, false);
         });
 
-        // Top-level tab switching
+        // Top-level tab switching. Leaving Settings with unsaved edits asks first.
         ns.switchTab = function(tabName) {
             if (ns.state.activeTab === tabName) return;
+            if (ns.state.activeTab === 'settings') {
+                ns.confirmLeaveSettings(function() { activateTab(tabName); });
+                return;
+            }
+            activateTab(tabName);
+        };
+
+        function activateTab(tabName) {
             ns.state.activeTab = tabName;
 
             $('.fac-top-tab')
@@ -369,8 +390,11 @@ frappe.pages['fac-admin'].on_page_load = function(wrapper) {
                 ns.loadPromptTemplatesView();
             } else if (tabName === 'skills' && ns.state.skillsData.length === 0) {
                 ns.loadSkillsView();
+            } else if (tabName === 'settings') {
+                ns.loadSettingsView();
             }
-        };
+            ns.writeSettingsUrl(tabName, tabName === 'settings' ? ns.settings.activeKey : null);
+        }
 
         $('.fac-top-tab').on('click', function() {
             ns.switchTab($(this).data('tab'));
@@ -430,6 +454,9 @@ frappe.pages['fac-admin'].on_page_load = function(wrapper) {
         // =====================================================================
         // Initial data load
         // =====================================================================
+        ns.bindSettingsEvents();
+        const startTab = ns.initialTab();
+        if (startTab !== 'tools') ns.switchTab(startTab);
         ns.state.lastRefreshedAt = new Date();
         ns.loadServerStatus();
         ns.loadChatStatus();
