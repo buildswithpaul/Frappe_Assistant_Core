@@ -5,7 +5,7 @@
 				<tr>
 					<th class="col-user">User</th>
 					<th class="col-num">Credits</th>
-					<th class="col-num">Requests</th>
+					<th class="col-num">{{ __("Agent runs") }}</th>
 				</tr>
 			</thead>
 			<tbody>
@@ -32,6 +32,7 @@
 </template>
 
 <script setup>
+import { __ } from "@/utils/i18n";
 const props = defineProps({
 	users: { type: Array, default: () => [] },
 	totalCredits: { type: Number, default: 0 },

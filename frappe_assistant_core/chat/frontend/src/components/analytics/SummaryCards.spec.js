@@ -49,11 +49,11 @@ describe("SummaryCards average per conversation", () => {
 		expect(card.text()).toContain("—");
 	});
 
-	it("still reports total requests from the AR counter", () => {
+	it("still reports agent runs from the AR counter", () => {
 		const { wrapper } = avgCard();
 		const requests = wrapper
 			.findAll(".summary-card")
-			.find((c) => /total requests/i.test(c.text()));
+			.find((c) => /agent runs/i.test(c.text()));
 		expect(requests.text()).toContain("11");
 	});
 });

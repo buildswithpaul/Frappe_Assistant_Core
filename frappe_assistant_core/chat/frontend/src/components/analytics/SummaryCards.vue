@@ -27,10 +27,10 @@
 		</div>
 
 		<div class="summary-card">
-			<div class="card-label">Total Requests</div>
+			<div class="card-label">{{ __("Agent runs") }}</div>
 			<div class="card-value">{{ formatNumber(requestCount) }}</div>
 			<div class="card-foot">
-				<span class="card-sub">API calls</span>
+				<span class="card-sub">{{ __("one per message or approval") }}</span>
 				<TrendBadge v-if="requestsTrend" :trend="requestsTrend" />
 			</div>
 		</div>
@@ -59,6 +59,7 @@
 <script setup>
 import { computed } from "vue";
 import TrendBadge from "./TrendBadge.vue";
+import { __ } from "@/utils/i18n";
 
 const props = defineProps({
 	summary: { type: Object, required: true },
@@ -91,7 +92,7 @@ const requestCount = computed(() => {
 	return props.summary.request_count || 0;
 });
 
-// Conversations in both modes — `request_count` counts every API call the
+// Conversations in both modes — `request_count` counts every agent run the
 // period made (chat, suggestions, classification, web search), so dividing by
 // it answered "credits per request" under a label promising per conversation.
 // Zero conversations yields a dash rather than a number: after a GDPR erase the
