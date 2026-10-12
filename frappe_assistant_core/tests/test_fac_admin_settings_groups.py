@@ -18,6 +18,7 @@
 
 import copy
 import json
+from unittest.mock import patch
 
 import frappe
 from frappe.desk.form.save import savedocs
@@ -33,6 +34,7 @@ from frappe_assistant_core.chat.tenant_credentials import read_tenant_secret, st
 from frappe_assistant_core.tests.base_test import BaseAssistantTest
 
 LAYOUT = ("Section Break", "Tab Break", "Column Break")
+SETTINGS_MODULE = "frappe_assistant_core.api.admin.settings"
 NON_ADMIN_USER = "test_settings_nonadmin@example.com"
 ASSISTANT_ADMIN_USER = "test_settings_assistant_admin@example.com"
 TENANT_SECRET = "s" * 40
@@ -87,9 +89,17 @@ class TestFacAdminSettingsGroups(BaseAssistantTest):
         ocr = next(g for g in resolve_groups(self.settings_map) if g["key"] == "ocr")
         self.assertLess(ocr["fields"].index("ocr_backend"), ocr["fields"].index("ollama_api_url"))
 
-    def test_the_endpoint_returns_the_resolved_groups(self):
-        keys = [g["key"] for g in get_settings_groups()["groups"]]
+    def test_the_endpoint_returns_the_resolved_groups_on_frappe_v15(self):
+        with patch(f"{SETTINGS_MODULE}.is_frappe_v16_or_later", autospec=True, return_value=False):
+            keys = [g["key"] for g in get_settings_groups()["groups"]]
         self.assertEqual(keys, ["chat_widget", "mcp_server", "oauth", "security", "ocr", "fac_cloud"])
+
+    def test_the_endpoint_leaves_out_oauth_on_frappe_v16(self):
+        # v16 reads OAuth from its native OAuth Settings (utils/oauth_compat.py), so these fields
+        # would save and do nothing; the DocType form hides the tab there for the same reason.
+        with patch(f"{SETTINGS_MODULE}.is_frappe_v16_or_later", autospec=True, return_value=True):
+            keys = [g["key"] for g in get_settings_groups()["groups"]]
+        self.assertEqual(keys, ["chat_widget", "mcp_server", "security", "ocr", "fac_cloud"])
 
     def test_the_endpoint_refuses_a_user_without_an_admin_role(self):
         if not frappe.db.exists("User", NON_ADMIN_USER):

@@ -25,6 +25,8 @@ import os
 
 import frappe
 
+from frappe_assistant_core.utils.oauth_compat import is_frappe_v16_or_later
+
 SETTINGS_MAP_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
     "assistant_core",
@@ -124,5 +126,9 @@ def get_settings_groups() -> dict:
     getdoc, whose 403 makes Frappe re-route the user away from FAC Admin.
     """
     frappe.only_for(["System Manager", "Assistant Admin"])
-    groups = resolve_groups(load_settings_map())
+    settings_map = load_settings_map()
+    # Frappe v16 reads OAuth from its native OAuth Settings, so v15-only fields would save inertly.
+    if is_frappe_v16_or_later():
+        settings_map["groups"] = [g for g in settings_map["groups"] if not g.get("frappe_v15_only")]
+    groups = resolve_groups(settings_map)
     return {"groups": [g for g in groups if frappe.has_permission(g["doctype"], "read")]}

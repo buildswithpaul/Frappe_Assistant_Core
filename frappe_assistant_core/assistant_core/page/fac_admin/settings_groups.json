@@ -19,7 +19,8 @@
             "label": "OAuth",
             "icon": "fa-key",
             "doctype": "Assistant Core Settings",
-            "units": ["oauth_authorization_section", "oauth_advanced_section", "oauth_metadata_section"]
+            "units": ["oauth_authorization_section", "oauth_advanced_section", "oauth_metadata_section"],
+			"frappe_v15_only": true
         },
         {
             "key": "security",
