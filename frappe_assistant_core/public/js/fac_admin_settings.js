@@ -16,11 +16,14 @@
         return TABS.includes(tab) ? tab : 'tools';
     };
 
+    // A settings load can finish after the user has left the page; never stamp another route.
+    // Settings without a group yet keeps the URL's group, which the pending load still reads.
     ns.writeSettingsUrl = function(tab, group) {
+        if (frappe.get_route()[0] !== 'fac-admin') return;
         const url = new URL(window.location.href);
         url.searchParams.set('tab', tab);
-        if (tab === 'settings' && group) url.searchParams.set('group', group);
-        else url.searchParams.delete('group');
+        if (tab !== 'settings') url.searchParams.delete('group');
+        else if (group) url.searchParams.set('group', group);
         window.history.replaceState(window.history.state, '', url.pathname + url.search + url.hash);
     };
 
