@@ -29,10 +29,12 @@ from frappe_assistant_core.api.admin.settings import (
     resolve_groups,
     unmapped_units,
 )
+from frappe_assistant_core.chat.tenant_credentials import read_tenant_secret, store_tenant_secret
 from frappe_assistant_core.tests.base_test import BaseAssistantTest
 
 LAYOUT = ("Section Break", "Tab Break", "Column Break")
 NON_ADMIN_USER = "test_settings_nonadmin@example.com"
+TENANT_SECRET = "s" * 40
 
 
 class TestFacAdminSettingsGroups(BaseAssistantTest):
@@ -105,17 +107,27 @@ class TestFacAdminSettingsGroups(BaseAssistantTest):
         finally:
             frappe.set_user("Administrator")
 
-    def test_saving_chat_settings_from_the_page_keeps_the_tenant_secret(self):
-        # Production reaches this state at FAC Cloud registration, which stores tenant_secret.
-        settings = frappe.get_single("FAC Chat Settings")
-        settings.tenant_secret = "secret-from-registration"
-        settings.save(ignore_permissions=True)
-
-        # The page sends back the doc it loaded, whose Password field holds the mask, plus its edit.
+    def _save_chat_settings_as_the_page_does(self):
+        # The page sends back the doc it loaded, Password mask included, plus its edit.
         page_doc = frappe.get_single("FAC Chat Settings").as_dict()
         page_doc["max_context_tokens"] = (page_doc.get("max_context_tokens") or 0) + 1
         savedocs(json.dumps(page_doc, default=str), "Save")
 
-        self.assertEqual(
-            frappe.get_single("FAC Chat Settings").get_password("tenant_secret"), "secret-from-registration"
-        )
+    def test_saving_chat_settings_from_the_page_keeps_the_tenant_secret(self):
+        # Production stores the secret at FAC Cloud registration through store_tenant_secret.
+        store_tenant_secret(TENANT_SECRET)
+
+        self._save_chat_settings_as_the_page_does()
+
+        self.assertEqual(read_tenant_secret(), TENANT_SECRET)
+
+    def test_saving_chat_settings_keeps_a_secret_whose_mask_is_blank(self):
+        # Sites registered before store_tenant_secret kept the Singles mask in sync hold the
+        # secret in __Auth with a blank mask (tenant_credentials.py, footgun 2).
+        store_tenant_secret(TENANT_SECRET)
+        frappe.db.set_single_value("FAC Chat Settings", "tenant_secret", "", update_modified=False)
+        frappe.clear_document_cache("FAC Chat Settings", "FAC Chat Settings")
+
+        self._save_chat_settings_as_the_page_does()
+
+        self.assertEqual(read_tenant_secret(), TENANT_SECRET)
