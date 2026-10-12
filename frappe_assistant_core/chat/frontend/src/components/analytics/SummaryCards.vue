@@ -27,7 +27,7 @@
 		</div>
 
 		<div class="summary-card">
-			<div class="card-label">{{ __("Agent runs") }}</div>
+			<div class="card-label" :title="__('One run per message, plus one per approval round. Each run can include several model calls.')">{{ __("Agent runs") }}</div>
 			<div class="card-value">{{ formatNumber(requestCount) }}</div>
 			<div class="card-foot">
 				<span class="card-sub">{{ __("one per message or approval") }}</span>
