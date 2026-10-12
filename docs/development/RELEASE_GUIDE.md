@@ -60,6 +60,7 @@ Releases are fully automated via `semantic-release` (same toolchain as Frappe an
    - Commits, tags, and pushes
    - Creates GitHub Release with auto-generated notes
 5. Reset `develop` to `main` — **not** `git merge main`, which duplicates history. See "Merging develop into main" below.
+6. Advertise the release on the Frappe Marketplace — **manual**, see "Publishing to the Frappe Marketplace" below.
 
 No manual version bumping, tagging, or release creation needed. Do **not** hand-edit
 `__version__` or `pyproject.toml`; `.releaserc` rewrites both with `sed` and commits
@@ -133,6 +134,77 @@ though the title were the commit message, because it becomes one:
 fix: apply return_variables as a filter in run_python_code
 ```
 
+## Publishing to the Frappe Marketplace
+
+[frappe/marketplace](https://github.com/frappe/marketplace) is the app registry behind
+`bench get-app` and the Marketplace page on Frappe Cloud v2. FAC is listed there as
+`frappe_assistant_core`: metadata in `apps.json`, releases in
+`apps/frappe_assistant_core.json`.
+
+**A release does not reach the marketplace on its own.** Each registry release names one
+immutable commit, and nothing there follows new commits — v3.0.0 and v3.1.0 shipped while
+the registry still advertised 2.5.0. Every release needs a PR to the registry.
+
+### After each stable release
+
+From a fork of `frappe/marketplace` (we have read access only, so PRs come from a fork):
+
+```bash
+# the chore(release) commit semantic-release just pushed — NOT the merge commit,
+# which still declares the previous version
+COMMIT=$(git rev-parse origin/main)
+
+git clone https://github.com/frappe/marketplace registry
+git clone https://github.com/buildswithpaul/Frappe_Assistant_Core app
+git -C app checkout "$COMMIT"
+pip install packaging
+
+cd registry
+APP=frappe_assistant_core BRANCH=main COMMIT=$COMMIT CHANNEL=stable \
+    python3 tools/add_release.py --app-dir ../app --registry .
+git checkout -b "publish/frappe_assistant_core-${COMMIT:0:8}"
+git commit -am "feat(frappe_assistant_core): advertise vX.Y.Z"
+git push <your-fork> HEAD
+gh pr create --repo frappe/marketplace --head <fork-owner>:publish/frappe_assistant_core-${COMMIT:0:8}
+```
+
+`add_release.py` is the registry's own tool. It reads `version` and
+`[tool.bench.frappe-dependencies].frappe` from `pyproject.toml` at that commit, so the
+entry always matches what the registry's CI checks it against.
+
+- **Stable releases from `main` only.** Skip `beta` prereleases — pilot would install a
+  `-beta.N` as the newest stable.
+- **Do not advertise `develop` as `nightly`.** It shares `main`'s Frappe range, so pilot
+  never falls back to it; the entry only goes stale. Remove the old 2.5.0 `develop` entry
+  in the first PR.
+- **The registry's frappe/marketplace `publish-release.yml` does not work for us.** It
+  pushes its branch to `frappe/marketplace` itself, which needs write access there.
+
+### What the registry's CI checks
+
+The registry clones FAC at the advertised commit and fails the PR on:
+
+1. **Mismatch** — commit not reachable from `branch`, or `version`/`frappe_core`
+   disagreeing with that commit's `pyproject.toml`.
+2. **Semgrep** — its own rules in `validation/semgrep-rules/`, **not** the
+   `frappe/semgrep-rules` set pre-commit runs. A finding blocks when the rule sets
+   `is_blocking: true` or its severity is `ERROR`/`CRITICAL`/`HIGH`. `linter.yml` runs the
+   same rules with the same blocking rule, so a PR into `develop` catches this first.
+3. **Install** — `bench get-app` into a clean venv against the Frappe version
+   `frappe_core` names. The `assistant_runtime_sdk==X.Y.Z` pin must already be on PyPI.
+
+Suppress a reviewed finding with `# nosemgrep: <rule-id>` on the flagged line. Bandit's
+`# nosec` is ignored by semgrep — the v3.1.0 `subprocess.run` in
+`chat/api/support.py` was blocked for exactly that.
+
+After fixing a finding in FAC, comment `/rereview` on the registry PR to re-run its checks.
+
+### Listing metadata
+
+`apps.json` holds the title, description, logo, website and documentation links. Edit it
+in the same registry PR when they change — the `documentation` link should point at
+<https://docs.assistantcore.cloud>.
+
 ## Change Log Files
 
 Frappe reads `frappe_assistant_core/change_log/v2/vX_Y_Z.md` files to show the "What's New" dialog in the UI after users upgrade. These are written manually before merging to main (same as Frappe and ERPNext).
@@ -195,7 +267,7 @@ For urgent fixes that can't wait for the next release:
 | Workflow | Trigger | What it does |
 |----------|---------|-------------|
 | CI (`ci.yml`) | Push to `main`, PRs | Full test suite on Frappe v15 (Python 3.12) AND v16 (Python 3.14) |
-| Linters (`linter.yml`) | PRs | Pre-commit hooks + Frappe semgrep rules + pip-audit |
+| Linters (`linter.yml`) | PRs | Pre-commit hooks + Frappe semgrep rules + Frappe Marketplace semgrep rules + pip-audit |
 | Commit Lint (`commitlint.yml`) | PRs | Validates conventional commit format |
 | Release (`release.yml`) | Push to `main` or `beta` | Semantic-release: auto-version, tag, GitHub Release (pre-release on `beta`) |
 | Stale (`stale.yml`) | Daily | Auto-closes issues after 30+7 days of inactivity |

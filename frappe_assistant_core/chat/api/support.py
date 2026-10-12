@@ -186,7 +186,8 @@ def _bench_version() -> str:
         return "unknown"
 
     try:
-        result = subprocess.run(  # nosec — fixed argv, resolved binary, no user input
+        # Fixed argv, resolved binary, no user input.
+        result = subprocess.run(  # nosemgrep: frappe-subprocess-exec
             [bench_bin, "--version"],
             capture_output=True,
             text=True,

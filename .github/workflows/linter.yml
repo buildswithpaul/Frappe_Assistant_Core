@@ -33,6 +33,28 @@ jobs:
           pip install semgrep
           semgrep ci --config ./frappe-semgrep-rules/rules --config r/python.lang.correctness
 
+      # The Frappe Marketplace gates every release PR on its own rule set, which is
+      # not the one above. Same blocking rule as validation/semgrep_check.py there:
+      # is_blocking metadata, or a severity that maps to Critical/Major.
+      - name: Download Marketplace Semgrep rules
+        run: git clone --depth 1 https://github.com/frappe/marketplace.git frappe-marketplace
+
+      - name: Run Marketplace Semgrep rules
+        run: |
+          semgrep scan --config ./frappe-marketplace/validation/semgrep-rules \
+            --exclude frappe-marketplace --exclude frappe-semgrep-rules \
+            --json --quiet . > marketplace-semgrep.json
+          jq -r '.results[]
+            | select(.extra.metadata.is_blocking == true
+                or (.extra.severity | ascii_upcase | IN("CRITICAL", "ERROR", "HIGH")))
+            | "\(.path):\(.start.line) \(.check_id | split(".") | last)"' \
+            marketplace-semgrep.json > marketplace-blocking.txt
+          if [ -s marketplace-blocking.txt ]; then
+            echo "::error::Findings that would block the Frappe Marketplace release PR:"
+            cat marketplace-blocking.txt
+            exit 1
+          fi
+
   deps-vulnerable-check:
     name: 'Vulnerable Dependency Check'
     runs-on: ubuntu-latest
