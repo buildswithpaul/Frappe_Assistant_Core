@@ -80,6 +80,8 @@
                 body: this.$body.find('.fac-settings-form')[0],
             });
             this.fieldGroup.make();
+            // Int and Float controls fire onchange only on blur; keep Save in step while typing.
+            this.$body.find('.fac-settings-form').on('input', frappe.utils.debounce(() => this.refreshActions(), 150));
             this.renderActions();
             this.fieldGroup.set_values(this.baseline).then(() => this.refreshActions());
         }
