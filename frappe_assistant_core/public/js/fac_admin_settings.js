@@ -51,6 +51,12 @@
                 settings.loading = false;
                 settings.loaded = true;
                 settings.groups = (r.message && r.message.groups) || [];
+                if (!settings.groups.length) {
+                    $('#settings-pane').html(
+                        `<p class="fac-settings-note">${__('Only a System Manager can view these settings.')}</p>`
+                    );
+                    return;
+                }
                 renderNav();
                 const wanted = urlParams().get('group');
                 const first = settings.groups.find(g => g.key === wanted) || settings.groups[0];

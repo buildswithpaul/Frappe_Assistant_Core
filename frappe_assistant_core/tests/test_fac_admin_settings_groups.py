@@ -34,6 +34,7 @@ from frappe_assistant_core.tests.base_test import BaseAssistantTest
 
 LAYOUT = ("Section Break", "Tab Break", "Column Break")
 NON_ADMIN_USER = "test_settings_nonadmin@example.com"
+ASSISTANT_ADMIN_USER = "test_settings_assistant_admin@example.com"
 TENANT_SECRET = "s" * 40
 
 
@@ -104,6 +105,26 @@ class TestFacAdminSettingsGroups(BaseAssistantTest):
         try:
             with self.assertRaises(frappe.PermissionError):
                 get_settings_groups()
+        finally:
+            frappe.set_user("Administrator")
+
+    def test_the_endpoint_serves_no_group_whose_doctype_the_user_cannot_read(self):
+        # Assistant Admin may open FAC Admin, but neither settings DocType grants it read; a
+        # group it cannot read would make the page's getdoc 403 and Frappe re-route the user.
+        if not frappe.db.exists("User", ASSISTANT_ADMIN_USER):
+            frappe.get_doc(
+                {
+                    "doctype": "User",
+                    "email": ASSISTANT_ADMIN_USER,
+                    "first_name": "Assistant Admin",
+                    "user_type": "System User",
+                    "send_welcome_email": 0,
+                    "roles": [{"role": "Assistant Admin"}],
+                }
+            ).insert(ignore_permissions=True)
+        frappe.set_user(ASSISTANT_ADMIN_USER)
+        try:
+            self.assertEqual(get_settings_groups()["groups"], [])
         finally:
             frappe.set_user("Administrator")
 

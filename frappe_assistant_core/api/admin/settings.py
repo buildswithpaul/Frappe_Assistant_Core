@@ -118,6 +118,11 @@ def missing_names(settings_map: dict) -> list[str]:
 
 @frappe.whitelist(methods=["GET"])
 def get_settings_groups() -> dict:
-    """The FAC Admin Settings tab's groups, each with the fieldnames it renders."""
+    """The FAC Admin Settings tab's groups the user can read, each with the fieldnames it renders.
+
+    A group whose DocType the user cannot read is left out: the page would load it with
+    getdoc, whose 403 makes Frappe re-route the user away from FAC Admin.
+    """
     frappe.only_for(["System Manager", "Assistant Admin"])
-    return {"groups": resolve_groups(load_settings_map())}
+    groups = resolve_groups(load_settings_map())
+    return {"groups": [g for g in groups if frappe.has_permission(g["doctype"], "read")]}
