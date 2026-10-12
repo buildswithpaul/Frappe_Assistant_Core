@@ -56,7 +56,9 @@ describe("SummaryCards average per conversation", () => {
 			.find((c) => /agent runs/i.test(c.text()));
 		expect(requests.text()).toContain("11");
 		expect(requests.find(".card-label").attributes("title")).toBe(
-			"One run per message, plus one per approval round. Each run can include several model calls.",
+			"Every agent run: one per chat message, one per approval round, and one per background " +
+				"call (classifier, memory, suggestions, workflows). A run can include several model calls.",
 		);
+		expect(requests.find(".card-sub").text()).toBe("chat, approvals and background calls");
 	});
 });

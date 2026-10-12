@@ -76,7 +76,7 @@ const chartOption = computed(() => {
 				const dateLabel = params[0]?.name || "";
 				if (!creditVal) return `<strong>${dateLabel}</strong><br/>No usage`;
 				let html = `<strong>${dateLabel}</strong><br/>${creditVal.toLocaleString()} credits`;
-				html += ` <span style="color:#8A857C">(${reqVal.toLocaleString()} ${__("agent runs")})</span>`;
+				html += ` <span style="color:#8A857C">(${__("Agent runs")}: ${reqVal.toLocaleString()})</span>`;
 				if (sourceShare.length) {
 					html += '<br/><span style="color:#8A857C;font-size:11px">Mostly ';
 					html += sourceShare

@@ -27,10 +27,10 @@
 		</div>
 
 		<div class="summary-card">
-			<div class="card-label" :title="__('One run per message, plus one per approval round. Each run can include several model calls.')">{{ __("Agent runs") }}</div>
+			<div class="card-label" :title="__('Every agent run: one per chat message, one per approval round, and one per background call (classifier, memory, suggestions, workflows). A run can include several model calls.')">{{ __("Agent runs") }}</div>
 			<div class="card-value">{{ formatNumber(requestCount) }}</div>
 			<div class="card-foot">
-				<span class="card-sub">{{ __("one per message or approval") }}</span>
+				<span class="card-sub">{{ __("chat, approvals and background calls") }}</span>
 				<TrendBadge v-if="requestsTrend" :trend="requestsTrend" />
 			</div>
 		</div>

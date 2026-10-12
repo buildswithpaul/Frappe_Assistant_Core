@@ -5,7 +5,7 @@
 				<tr>
 					<th class="col-user">User</th>
 					<th class="col-num">Credits</th>
-					<th class="col-num" :title="__('One run per message, plus one per approval round. Each run can include several model calls.')">{{ __("Agent runs") }}</th>
+					<th class="col-num" :title="__('Every agent run: one per chat message, one per approval round, and one per background call (classifier, memory, suggestions, workflows). A run can include several model calls.')">{{ __("Agent runs") }}</th>
 				</tr>
 			</thead>
 			<tbody>
