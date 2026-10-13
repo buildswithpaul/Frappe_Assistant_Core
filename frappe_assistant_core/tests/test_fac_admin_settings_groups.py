@@ -113,7 +113,8 @@ class TestFacAdminSettingsGroups(BaseAssistantTest):
             ).insert(ignore_permissions=True)
         frappe.set_user(NON_ADMIN_USER)
         try:
-            with self.assertRaises(frappe.PermissionError):
+            # Frappe v15's only_for returns early under tests; production always runs the check.
+            with self.enforce_only_for_checks(), self.assertRaises(frappe.PermissionError):
                 get_settings_groups()
         finally:
             frappe.set_user("Administrator")
