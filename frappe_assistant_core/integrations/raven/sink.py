@@ -87,7 +87,8 @@ class ReplySink:
             self._finish(kind, event)
 
     def _save(self, markdown: str, extra_html: str = "") -> None:
-        self.writer.update(formatting.to_raven_html(markdown, self.session_url) + extra_html)
+        text_html = formatting.to_raven_html(markdown, self.session_url) if markdown.strip() else ""
+        self.writer.update(text_html + extra_html)
         self.last_save = self.clock()
 
     def _finish(self, kind: str, event: dict) -> None:

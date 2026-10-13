@@ -47,8 +47,14 @@ class TestRavenFormatting(BaseAssistantTest):
         self.assertIn("create a Sales Order", html)
         self.assertIn(URL, html)
 
-    def test_a_question_hands_off_as_a_question(self):
-        self.assertIn("question", formatting.handoff_html("ask_user", {}, URL))
+    def test_a_question_hands_off_with_its_own_words(self):
+        # Live: "FACO has a question for you" alone left the person guessing what was asked.
+        html = formatting.handoff_html(
+            "ask_user", {"question": "Delete ToDo tt8ko48kuj?", "description": "This is permanent."}, URL
+        )
+        self.assertIn("Delete ToDo tt8ko48kuj?", html)
+        self.assertIn("This is permanent.", html)
+        self.assertIn("Answer in FAC Chat", html)
 
     def test_out_of_credits_reads_like_the_widget(self):
         self.assertIn(

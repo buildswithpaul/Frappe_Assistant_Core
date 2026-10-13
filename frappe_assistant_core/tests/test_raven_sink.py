@@ -114,3 +114,7 @@ class TestReplySink(BaseAssistantTest):
         # Live: the reply flashed empty when the first chunk arrived with no text yet.
         self.chunk("", 0.0)
         self.assertEqual(self.writer.saves, [])
+
+    def test_a_hand_off_with_nothing_written_yet_has_no_empty_paragraph(self):
+        self.sink({"event": "approval_required", "tool_name": "ask_user", "input": {"question": "Proceed?"}})
+        self.assertNotIn("<p></p>", self.writer.saves[-1])

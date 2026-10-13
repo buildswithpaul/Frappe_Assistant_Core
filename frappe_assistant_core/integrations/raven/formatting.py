@@ -71,10 +71,17 @@ def _describe(tool_name: str, tool_input: dict) -> str:
 
 
 def handoff_html(tool_name: str, tool_input: dict, session_url: str) -> str:
-    sentence = html.escape(_describe(tool_name, tool_input or {}))
+    """Where a paused turn continues: FACO's question in its own words, or the change it wants."""
+    tool_input = tool_input or {}
     link = html.escape(session_url, quote=True)
-    label = html.escape(_("Review and approve in FAC Chat →"))
-    return f'<p>{sentence}.</p><p><a href="{link}">{label}</a></p>'
+    if tool_name == "ask_user" and tool_input.get("question"):
+        lines = [tool_input["question"], tool_input.get("description")]
+        body = "".join(f"<p>{html.escape(line)}</p>" for line in lines if line)
+        label = html.escape(_("Answer in FAC Chat →"))
+    else:
+        body = f"<p>{html.escape(_describe(tool_name, tool_input))}.</p>"
+        label = html.escape(_("Review and approve in FAC Chat →"))
+    return f'{body}<p><a href="{link}">{label}</a></p>'
 
 
 def error_text(event: dict) -> str:
