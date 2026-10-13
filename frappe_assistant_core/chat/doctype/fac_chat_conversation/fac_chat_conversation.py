@@ -103,12 +103,16 @@ class FACChatConversation(Document):
                 return
 
         CV = DocType("FAC Chat Conversation")
-        (
+        update = (
             frappe.qb.update(CV)
             .set(CV.last_activity, now)
             .set(CV.message_count, CV.message_count + 1)
             .where(CV.name == session_id)
-        ).run()
+        )
+        if not is_archived:
+            # A live message in an archived chat brings it back to Recents.
+            update = update.set(CV.is_archived, 0)
+        update.run()
         if role == "user" and not existing.title:
             frappe.db.set_value(
                 "FAC Chat Conversation", session_id, "title", auto_title(content), update_modified=False

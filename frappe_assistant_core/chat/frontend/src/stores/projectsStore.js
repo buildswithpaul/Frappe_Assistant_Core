@@ -41,6 +41,7 @@ export const useProjectsStore = defineStore("projects", () => {
 		await api.projects.remove(id);
 		projects.value = projects.value.filter((p) => p.name !== id);
 		const chat = useChatStore();
+		if (chat.pendingProject?.projectId === id) chat.setPendingProject(null, null);
 		chat.sessions
 			.filter((s) => s.project === id)
 			.forEach((s) => chat.patchSession(s.session_id, { project: null, project_title: null }));

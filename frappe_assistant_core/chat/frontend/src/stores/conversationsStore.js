@@ -41,6 +41,10 @@ export const useConversationsStore = defineStore("conversations", () => {
 		}
 	}
 
+	function dropResult(sessionId) {
+		searchResults.value = searchResults.value.filter((s) => s.session_id !== sessionId);
+	}
+
 	function clearSearch() {
 		setSearch("");
 	}
@@ -77,5 +81,5 @@ export const useConversationsStore = defineStore("conversations", () => {
 		patchEverywhere(sessionId, { project: result.project, project_title: result.project_title });
 	}
 
-	return { searchQuery, searchResults, isSearching, setSearch, clearSearch, renameSession, moveSession };
+	return { searchQuery, searchResults, isSearching, setSearch, clearSearch, dropResult, renameSession, moveSession };
 });

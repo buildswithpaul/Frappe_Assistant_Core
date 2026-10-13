@@ -23,12 +23,12 @@ import { useComposerModesStore } from "./composerModesStore";
 import { useModelStore } from "./modelStore";
 import { useSpotlightStore } from "./spotlightStore";
 
+export const SESSIONS_PAGE_SIZE = 30;
+
 // Every JSON column a message row can carry. Both parse loops below drive
 // from this, so the next JSON column is added in one place — model_breakdown
 // was written by the server but parsed by neither loop, arriving as an
 // object live and a string on reload.
-export const SESSIONS_PAGE_SIZE = 30;
-
 const JSON_MESSAGE_FIELDS = ["blocks", "model_breakdown", "routing"];
 
 function parseJsonFields(msg) {
@@ -99,8 +99,9 @@ export const useChatStore = defineStore("chat", () => {
 	const sessionsHasMore = ref(false);
 	const isLoadingMoreSessions = ref(false);
 	// Project for a chat that has no conversation row yet (new chat from a project page,
-	// or a continued archived chat). Once the row exists its own project wins.
-	const pendingProjectId = ref(null);
+	// or a continued archived chat). Once the row exists its own project wins. Keyed by
+	// session so it can never leak onto another chat.
+	const pendingProject = ref(null);
 
 	// Request-scoped identity to prevent duplicate message bubbles on disconnect/reconnect
 	const streamRequestId = ref(null);
@@ -123,8 +124,17 @@ export const useChatStore = defineStore("chat", () => {
 		sessions.value.find((s) => s.session_id === currentSessionId.value)
 	);
 
+	function pendingProjectFor(sessionId) {
+		const pending = pendingProject.value;
+		return pending && sessionId && pending.sessionId === sessionId ? pending.projectId : null;
+	}
+
+	function setPendingProject(sessionId, projectId) {
+		pendingProject.value = sessionId && projectId ? { sessionId, projectId } : null;
+	}
+
 	const currentProjectId = computed(() =>
-		currentSession.value ? currentSession.value.project || null : pendingProjectId.value
+		currentSession.value ? currentSession.value.project || null : pendingProjectFor(currentSessionId.value)
 	);
 
 	const sortedSessions = computed(() => {
@@ -287,7 +297,7 @@ export const useChatStore = defineStore("chat", () => {
 
 	async function startChatInProject(projectId) {
 		const sessionId = await createSession();
-		if (sessionId) pendingProjectId.value = projectId;
+		setPendingProject(sessionId, projectId);
 		return sessionId;
 	}
 
@@ -480,7 +490,7 @@ export const useChatStore = defineStore("chat", () => {
 			if (result && result.session_id) {
 				clearExpiryTimer();
 				currentSessionId.value = result.session_id;
-				pendingProjectId.value = null;
+				pendingProject.value = null;
 				messages.value = [];
 				await loadSessions();
 				return result.session_id;
@@ -587,6 +597,9 @@ export const useChatStore = defineStore("chat", () => {
 					...(currentProjectId.value ? { project: currentProjectId.value } : {}),
 				}
 			);
+			// The first send creates the conversation row; pull it into Recents once.
+			const sentSessionId = currentSessionId.value;
+			if (!sessions.value.some((s) => s.session_id === sentSessionId)) await loadSessions();
 		} catch (err) {
 			stream.clearStreamTimeouts();
 			isStreaming.value = false;
@@ -1106,7 +1119,8 @@ export const useChatStore = defineStore("chat", () => {
 		pendingContextAddendum,
 		sessionsHasMore,
 		isLoadingMoreSessions,
-		pendingProjectId,
+		pendingProject,
+		setPendingProject,
 		currentProjectId,
 		loadMoreSessions,
 		patchSession,

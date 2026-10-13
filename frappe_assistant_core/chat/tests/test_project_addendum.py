@@ -86,6 +86,28 @@ class TestEndpointsCarryProjectBlock(_ProjectTestBase):
         self.assertIn(BLOCK, addendum)
         self.assertIn("Amounts in INR.", addendum)
 
+    def test_send_to_an_existing_chat_ignores_a_stale_project(self):
+        # The chat's row exists because its first message went through send_message; the
+        # client keeps sending the project it was started in even after that project is gone.
+        FACChatMessage.create_message(SID, "user", "hi")
+        theirs = make_project(OTHER_USER, instructions="leak")
+        addendum = self._submitted_addendum(
+            _relay_ar_stream,
+            lambda: messages.send_message(session_id=SID, message="again", project=theirs),
+        )
+        self.assertIsNone(addendum)
+
+    def test_send_refuses_an_unowned_project_for_a_new_chat_without_an_error_log(self):
+        theirs = make_project(OTHER_USER, instructions="leak")
+        logged = frappe.db.count("Error Log", {"method": ["like", "%FACO Agent Error%"]})
+        with patch.object(messages._relay_pool, "submit", autospec=True), patch(
+            "frappe_assistant_core.chat.api.settings.can_use_faco", return_value={"can_use": True}
+        ), patch.object(messages, "_is_processing_restricted", autospec=True, return_value=False):
+            with self.assertRaises(frappe.DoesNotExistError):
+                messages.send_message(session_id=SID, message="hi", project=theirs)
+        self.assertEqual(frappe.db.count("Error Log", {"method": ["like", "%FACO Agent Error%"]}), logged)
+        self.assertFalse(frappe.db.exists("FAC Chat Conversation", SID))
+
     def test_resume_interrupt_carries_project_block(self):
         # The row exists because the turn being resumed was sent through send_message,
         # which created it with this project.

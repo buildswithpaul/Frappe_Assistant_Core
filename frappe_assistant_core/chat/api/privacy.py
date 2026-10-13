@@ -90,10 +90,11 @@ def export_my_data() -> dict:
     # Message count (content already exported from AR side)
     faco_data["faco_messages_count"] = frappe.db.count("FAC Chat Message", {"user": user})
 
-    if ar_data and ar_data.get("data"):
+    if ar_data and isinstance(ar_data.get("data"), dict):
         ar_data["data"]["faco"] = faco_data
+        return ar_data
 
-    return ar_data or {"status": "success", "data": {"faco": faco_data}}
+    return {"status": "success", "data": {"faco": faco_data}}
 
 
 @frappe.whitelist(methods=["POST"])

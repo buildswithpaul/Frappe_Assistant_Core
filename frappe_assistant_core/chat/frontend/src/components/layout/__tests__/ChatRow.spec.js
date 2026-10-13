@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect, beforeAll, vi } from "vitest";
 import { mount } from "@vue/test-utils";
 import ChatRow from "@/components/layout/ChatRow.vue";
 
@@ -111,6 +111,22 @@ describe("ChatRow", () => {
 		input.element.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
 		input.element.dispatchEvent(new FocusEvent("blur"));
 		expect(w.emitted("rename")).toBeFalsy();
+	});
+
+	it("Escape inside the rename input does not reach window listeners", async () => {
+		const w = mount(ChatRow, {
+			props: { session, active: false, projects },
+			attachTo: document.body,
+			global: { mocks: { __: (s) => s } },
+		});
+		await w.find("[data-test=row-menu]").trigger("click");
+		await w.find("[data-test=menu-rename]").trigger("click");
+		const seen = vi.fn();
+		window.addEventListener("keydown", seen);
+		await w.find("[data-test=rename-input]").trigger("keydown", { key: "Escape" });
+		window.removeEventListener("keydown", seen);
+		w.unmount();
+		expect(seen).not.toHaveBeenCalled();
 	});
 
 	it("Enter then the unmount blur saves exactly once", async () => {

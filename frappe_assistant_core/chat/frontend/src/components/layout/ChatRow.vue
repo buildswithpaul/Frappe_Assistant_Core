@@ -46,7 +46,7 @@
 					:aria-label="__('Rename chat')"
 					@click.stop
 					@keydown.enter.prevent="commit"
-					@keydown.esc.prevent="cancel"
+					@keydown.esc.stop.prevent="cancel"
 					@blur="commit"
 				/>
 				<div v-else class="conversation-title">

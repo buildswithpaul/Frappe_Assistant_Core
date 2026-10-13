@@ -88,12 +88,13 @@ class TestProjectsApi(BaseAssistantTest):
 
     def test_get_projects_counts_only_live_conversations(self):
         from frappe_assistant_core.chat.api.chat.projects import get_projects
+        from frappe_assistant_core.chat.api.chat.sessions import archive_session
         from frappe_assistant_core.chat.doctype.fac_chat_message.fac_chat_message import FACChatMessage
 
         name = make_project("Administrator")
         FACChatMessage.create_message("test-proj-count-1", "user", "a", project=name)
         FACChatMessage.create_message("test-proj-count-2", "user", "b", project=name)
-        frappe.db.set_value("FAC Chat Conversation", "test-proj-count-2", "is_archived", 1)
+        archive_session("test-proj-count-2")
         row = next(p for p in get_projects() if p["name"] == name)
         self.assertEqual(row["conversation_count"], 1)
 
@@ -153,6 +154,7 @@ class TestProjectsApi(BaseAssistantTest):
 
         older = make_project("Administrator", title="Older")
         newer = make_project("Administrator", title="Newer")
+        # Production stamps last_activity from touch() as messages arrive; fixed dates keep the order deterministic.
         frappe.db.set_value("FAC Chat Project", older, "last_activity", "2026-01-01 00:00:00")
         frappe.db.set_value("FAC Chat Project", newer, "last_activity", "2026-02-01 00:00:00")
         names = [p["name"] for p in get_projects()]

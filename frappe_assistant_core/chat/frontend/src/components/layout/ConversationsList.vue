@@ -20,11 +20,6 @@
 			</button>
 		</div>
 
-		<ConversationSearch
-			:model-value="conversations.searchQuery"
-			@update:model-value="conversations.setSearch($event)"
-		/>
-
 		<div class="conversations-list">
 			<!-- Loading State -->
 			<div v-if="loading" class="flex items-center justify-center py-8">
@@ -101,7 +96,6 @@
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import ChatRow from "./ChatRow.vue";
 import ArchivedConversations from "./ArchivedConversations.vue";
-import ConversationSearch from "./ConversationSearch.vue";
 import { __ } from "@/utils/i18n";
 import { useToast } from "@/composables/useToast";
 import { useChatStore } from "@/stores/chatStore";
@@ -227,7 +221,10 @@ const groupedSessions = computed(() => {
 		} else if (date >= lastWeek) {
 			label = "This Week";
 		} else {
-			label = date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+			// All history is reachable, so "Oct 1" from two years must not merge into one group.
+			const options = { month: "short", day: "numeric" };
+			if (date.getFullYear() !== today.getFullYear()) options.year = "numeric";
+			label = date.toLocaleDateString("en-US", options);
 		}
 
 		if (!groups[label]) {

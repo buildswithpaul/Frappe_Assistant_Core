@@ -87,6 +87,38 @@ class TestConversationSync(BaseAssistantTest):
         archive_session(SID)
         self.assertEqual(self._row().is_archived, 1)
 
+    def test_live_message_unarchives_the_row(self):
+        from frappe_assistant_core.chat.api.chat.sessions import archive_session
+
+        FACChatMessage.create_message(SID, "user", "Hi")
+        archive_session(SID)
+        FACChatMessage.create_message(SID, "user", "Back again")
+        self.assertEqual(self._row().is_archived, 0)
+
+    def test_export_keeps_the_faco_block_when_ar_returns_empty_data(self):
+        from frappe_assistant_core.chat.api.privacy import export_my_data
+
+        make_project("Administrator", title="Kept")
+        client = create_autospec(AssistantRuntimeClient, instance=True)
+        client.export_user_data.return_value = {"status": "success", "data": {}}
+        with patch("frappe_assistant_core.chat.api.privacy._get_client", return_value=client):
+            faco = export_my_data()["data"]["faco"]
+        self.assertIn("Kept", [p["title"] for p in faco["faco_projects"]])
+        self.assertIn("faco_conversations", faco)
+
+    def test_erase_my_data_deletes_conversations_and_projects(self):
+        from frappe_assistant_core.chat.api.privacy import erase_my_data
+
+        project = make_project("Administrator", title="Erase Me")
+        FACChatMessage.create_message(SID, "user", "Hello", project=project)
+        client = create_autospec(AssistantRuntimeClient, instance=True)
+        with patch("frappe_assistant_core.chat.api.privacy._get_client", return_value=client), patch(
+            "frappe.utils.password.check_password"
+        ):
+            erase_my_data(password="irrelevant")
+        self.assertFalse(frappe.db.exists("FAC Chat Conversation", SID))
+        self.assertFalse(frappe.db.exists("FAC Chat Project", project))
+
     def test_archive_all_mirrors_onto_rows(self):
         from frappe_assistant_core.chat.api.chat.sessions import archive_all_conversations
 

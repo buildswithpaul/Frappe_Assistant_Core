@@ -27,7 +27,7 @@
 				:project="topBarProject"
 				:rename-value="chatRenameSeed(currentSession)"
 				:renamable="!!currentSession && !route.params.projectId"
-				@rename="(t) => conversationsStore.renameSession(currentSessionId, t)"
+				@rename="renameCurrentChat"
 				:show-actions="registrationStatus === 'ready' && isUserSetupComplete"
 				@toggle-sidebar="sidebarCollapsed = !sidebarCollapsed"
 				@new-chat="handleNewChat"
@@ -248,6 +248,7 @@ import { useModelStore } from "@/stores/modelStore";
 import { useSuggestionStore } from "@/stores/suggestionStore";
 import { resolveComposerRoute } from "@/stores/chat/composerRouting";
 import { useToast } from "@/composables/useToast";
+import { __ } from "@/utils/i18n";
 import { storeToRefs } from "pinia";
 import NavigationSidebar from "@/components/layout/NavigationSidebar.vue";
 import TopBar from "@/components/layout/TopBar.vue";
@@ -299,6 +300,12 @@ const projectsStore = useProjectsStore();
 const modelStore = useModelStore();
 const suggestionStore = useSuggestionStore();
 const { showError } = useToast();
+
+function renameCurrentChat(title) {
+	conversationsStore
+		.renameSession(currentSessionId.value, title)
+		.catch((err) => showError(err?.message || __("Something went wrong")));
+}
 
 const {
 	currentSessionId,
@@ -407,7 +414,7 @@ const topBarProject = computed(() =>
 );
 
 const currentChatTitle = computed(() => {
-	if (route.params.projectId) return projectsStore.byId(route.params.projectId)?.title || "Project";
+	if (route.params.projectId) return projectsStore.byId(route.params.projectId)?.title || __("Project");
 	return chatDisplayTitle(currentSession.value, messages.value.length > 0);
 });
 

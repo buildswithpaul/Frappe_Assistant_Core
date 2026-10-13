@@ -1,5 +1,6 @@
 import { api } from "@/api/client";
 import { logger } from "@/utils/logger";
+import { useConversationsStore } from "@/stores/conversationsStore";
 
 /**
  * Session lifecycle handlers for ChatView — select, delete, continue-archived.
@@ -23,6 +24,7 @@ export function useChatSessionActions({ chatStore, router, handleNewChat }) {
 		try {
 			await api.chat.deleteSession(sessionId);
 			chatStore.removeSession(sessionId);
+			useConversationsStore().dropResult(sessionId);
 			if (chatStore.currentSessionId && chatStore.currentSessionId !== sessionId) {
 				router.push(`/chat/${chatStore.currentSessionId}`);
 			} else if (chatStore.sessions.length > 0) {
@@ -43,7 +45,7 @@ export function useChatSessionActions({ chatStore, router, handleNewChat }) {
 				chatStore.currentSessionId = result.new_session_id;
 				chatStore.messages = [];
 				chatStore.pendingContextAddendum = result.context_addendum;
-				chatStore.pendingProjectId = result.project || null;
+				chatStore.setPendingProject(result.new_session_id, result.project);
 				await chatStore.loadSessions();
 				router.push(`/chat/${result.new_session_id}`);
 			}

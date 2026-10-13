@@ -8,6 +8,7 @@ vi.mock("@/api/client", () => ({
 }));
 vi.mock("frappe-ui", () => ({ call: vi.fn().mockResolvedValue({}) }));
 
+const PENDING_SESSION = "brand-new";
 const page = (n, start = 0) =>
 	Array.from({ length: n }, (_, i) => ({ session_id: `s${start + i}`, last_activity: "2026-10-01" }));
 
@@ -40,16 +41,32 @@ describe("chatStore session paging", () => {
 
 	it("currentProjectId prefers the session row over a pending project", () => {
 		store.sessions = [{ session_id: "a", project: null }];
-		store.pendingProjectId = "p1";
+		store.setPendingProject(PENDING_SESSION, "p1");
 		store.currentSessionId = "a";
 		expect(store.currentProjectId).toBe(null);
 		store.currentSessionId = "brand-new";
 		expect(store.currentProjectId).toBe("p1");
 	});
 
+	it("ignores a pending project that belongs to another session", () => {
+		store.setPendingProject("brand-new", "p1");
+		store.currentSessionId = "other";
+		expect(store.currentProjectId).toBe(null);
+	});
+
+	it("loads the session list once after the first send creates the row", async () => {
+		store.currentSessionId = "brand-new";
+		api.chat.getSessions.mockResolvedValueOnce([{ session_id: "brand-new", last_activity: "2026-10-01" }]);
+		await store.sendMessage("hi", [], null, "m1");
+		expect(api.chat.getSessions).toHaveBeenCalledTimes(1);
+		expect(store.currentSession?.session_id).toBe("brand-new");
+		await store.sendMessage("again", [], null, "m1", null, { skipQueue: true });
+		expect(api.chat.getSessions).toHaveBeenCalledTimes(1);
+	});
+
 	it("sends the current project with the message", async () => {
 		store.currentSessionId = "brand-new";
-		store.pendingProjectId = "p1";
+		store.setPendingProject(PENDING_SESSION, "p1");
 		await store.sendMessage("hi", [], null, "m1");
 		expect(api.chat.send.mock.calls[0][7]).toMatchObject({ project: "p1" });
 	});

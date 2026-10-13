@@ -87,7 +87,7 @@ describe("ProjectPage", () => {
 		expect(useProjectsStore().byId("p1").title).toBe("Q4");
 	});
 
-	it("a failed New chat neither navigates nor sets pendingProjectId", async () => {
+	it("a failed New chat neither navigates nor sets a pending project", async () => {
 		projectsList.mockResolvedValue([{ name: "p1", title: "Q3 Close", instructions: "" }]);
 		createSession.mockRejectedValue(new Error("down"));
 		const w = await mountPage();
@@ -95,6 +95,6 @@ describe("ProjectPage", () => {
 		await w.find("[data-test=new-project-chat]").trigger("click");
 		await flushPromises();
 		expect(push).not.toHaveBeenCalled();
-		expect(useChatStore().pendingProjectId).toBeNull();
+		expect(useChatStore().pendingProject).toBeNull();
 	});
 });

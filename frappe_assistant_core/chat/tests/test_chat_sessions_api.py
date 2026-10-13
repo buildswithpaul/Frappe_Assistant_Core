@@ -62,6 +62,14 @@ class TestSessionsApi(BaseAssistantTest):
             offset += len(page)
         self.assertEqual(len(set(seen)), 5)
 
+    def test_out_of_range_limit_and_offset_are_clamped(self):
+        chat("c1", "One")
+        chat("c2", "Two")
+        # limit=0 would mean "unlimited" to get_list; a negative offset is an SQL error.
+        self.assertEqual(len(get_user_sessions(limit=0, offset=-5)), 1)
+        self.assertGreaterEqual(len(get_user_sessions(limit=-3)), 1)
+        self.assertLessEqual(len(get_user_sessions(limit=10**6)), 100)
+
     def test_search_matches_title_and_message_content(self):
         chat("t", "Reorder levels for steel")
         sid = chat("c", "Unrelated opener")

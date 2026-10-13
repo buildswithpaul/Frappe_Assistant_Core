@@ -26,6 +26,13 @@
 		<!-- Navigation Menu -->
 		<NavMenu :collapsed="collapsed" @return-to-desk="returnToDesk" />
 
+		<ConversationSearch
+			v-if="!collapsed && isChatRoute"
+			class="sidebar-search"
+			:model-value="conversationsStore.searchQuery"
+			@update:model-value="conversationsStore.setSearch($event)"
+		/>
+
 		<ProjectsSection v-if="!collapsed && isChatRoute" />
 
 		<!-- Recent Chats Section — only on Chat view -->
@@ -57,6 +64,7 @@ import { useUserStore } from "@/stores/userStore";
 import { useLayoutStore } from "@/stores/layoutStore";
 import NavMenu from "./NavMenu.vue";
 import ProjectsSection from "./ProjectsSection.vue";
+import ConversationSearch from "./ConversationSearch.vue";
 import ConversationsList from "./ConversationsList.vue";
 import UserDropdown from "./UserDropdown.vue";
 import FacoRobot from "@/components/common/FacoRobot.vue";
@@ -164,6 +172,10 @@ function returnToDesk() {
 </script>
 
 <style scoped>
+.sidebar-search {
+	padding-bottom: 0.25rem;
+}
+
 .navigation-sidebar {
 	display: flex;
 	flex-direction: column;

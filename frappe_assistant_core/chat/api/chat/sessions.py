@@ -61,6 +61,8 @@ def _list_conversations(
 ) -> list[dict]:
     """The caller's conversations, newest activity first, in the sidebar's row shape."""
     user = frappe.session.user
+    limit = max(1, min(int(limit), 100))
+    offset = max(0, int(offset))
     filters = {"user": user, "is_archived": archived}
     if project:
         filters["project"] = project
@@ -84,8 +86,8 @@ def _list_conversations(
             "message_count",
         ],
         order_by="last_activity desc, name desc",
-        limit_start=int(offset),
-        limit_page_length=min(int(limit), 100),
+        limit_start=offset,
+        limit_page_length=limit,
     )
     project_titles = (
         dict(

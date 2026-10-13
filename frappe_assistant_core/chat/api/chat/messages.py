@@ -307,7 +307,15 @@ def send_message(
         # the turn in-memory), but no content survives in FACO Message.
         restricted = _is_processing_restricted(frappe.session.user)
 
-        if project and not FACChatProject.is_owned(project):
+        # An existing row keeps its own project, so the client's value only matters (and is
+        # only checked) for a chat that has no row yet.
+        if (
+            project
+            and not FACChatProject.is_owned(project)
+            and not frappe.db.exists(
+                "FAC Chat Conversation", {"name": session_id, "user": frappe.session.user}
+            )
+        ):
             frappe.throw(_("Project not found"), frappe.DoesNotExistError)
 
         # Save user message to database
@@ -399,8 +407,9 @@ def send_message(
         }
 
     # frappe.PermissionError does not subclass ValidationError, so the blanket
-    # handler below would mask the ownership refusal as a generic error.
-    except frappe.PermissionError:
+    # handler below would mask the ownership refusal as a generic error; the same goes
+    # for the unowned-project refusal (DoesNotExistError).
+    except (frappe.PermissionError, frappe.DoesNotExistError):
         raise
     except Exception as e:
         frappe.log_error(title="FACO Agent Error", message=f"Error in send_message: {e!s}")

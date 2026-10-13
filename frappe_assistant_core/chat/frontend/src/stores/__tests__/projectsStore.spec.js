@@ -40,4 +40,12 @@ describe("projectsStore", () => {
 		expect(store.projects).toEqual([]);
 		expect(chat.sessions[0]).toMatchObject({ project: null, project_title: null });
 	});
+
+	it("removing a project clears a pending project pointing at it", async () => {
+		const chat = useChatStore();
+		chat.setPendingProject("new-chat", "p1");
+		api.projects.remove.mockResolvedValue({ success: true });
+		await store.remove("p1");
+		expect(chat.pendingProject).toBeNull();
+	});
 });
