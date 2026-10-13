@@ -87,4 +87,12 @@ describe("TopBar rename and breadcrumb", () => {
 		await w.find("[data-test=title-input]").trigger("blur");
 		expect(w.emitted("rename")).toBeUndefined();
 	});
+
+	it("a whitespace-only difference does not rename", async () => {
+		const w = mountBar({ title: "Q3  close", renamable: true });
+		await w.find("[data-test=chat-title]").trigger("click");
+		await w.find("[data-test=title-input]").setValue(" Q3 close ");
+		await w.find("[data-test=title-input]").trigger("blur");
+		expect(w.emitted("rename")).toBeUndefined();
+	});
 });

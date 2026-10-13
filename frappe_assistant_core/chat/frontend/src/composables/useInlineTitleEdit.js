@@ -12,10 +12,11 @@ export function useInlineTitleEdit(getValue, onCommit) {
 	const draft = ref("");
 	const inputRef = ref(null);
 	let original = "";
+	const normalize = (text) => text.trim().split(/\s+/).join(" ");
 
 	async function start() {
-		original = getValue() || "";
-		draft.value = original;
+		original = normalize(getValue() || "");
+		draft.value = getValue() || "";
 		editing.value = true;
 		await nextTick();
 		inputRef.value?.focus();
@@ -25,7 +26,7 @@ export function useInlineTitleEdit(getValue, onCommit) {
 	function commit() {
 		if (!editing.value) return;
 		editing.value = false;
-		const value = draft.value.trim().split(/\s+/).join(" ");
+		const value = normalize(draft.value);
 		if (value !== original) onCommit(value);
 	}
 

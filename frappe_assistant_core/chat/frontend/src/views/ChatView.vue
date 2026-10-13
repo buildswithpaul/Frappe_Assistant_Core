@@ -25,7 +25,7 @@
 				v-if="!isOnboarding"
 				:title="currentChatTitle"
 				:project="topBarProject"
-				:rename-value="currentChatRawTitle"
+				:rename-value="chatRenameSeed(currentSession)"
 				:renamable="!!currentSession && !route.params.projectId"
 				@rename="(t) => conversationsStore.renameSession(currentSessionId, t)"
 				:show-actions="registrationStatus === 'ready' && isUserSetupComplete"
@@ -251,6 +251,7 @@ import { useToast } from "@/composables/useToast";
 import { storeToRefs } from "pinia";
 import NavigationSidebar from "@/components/layout/NavigationSidebar.vue";
 import TopBar from "@/components/layout/TopBar.vue";
+import { chatDisplayTitle, chatRenameSeed } from "@/utils/chatTitle";
 import ProjectPage from "@/components/projects/ProjectPage.vue";
 import { useConversationsStore } from "@/stores/conversationsStore";
 import { useProjectsStore } from "@/stores/projectsStore";
@@ -405,14 +406,9 @@ const topBarProject = computed(() =>
 		: null
 );
 
-const currentChatRawTitle = computed(
-	() => currentSession.value?.title || currentSession.value?.preview || ""
-);
-
 const currentChatTitle = computed(() => {
 	if (route.params.projectId) return projectsStore.byId(route.params.projectId)?.title || "Project";
-	if (currentChatRawTitle.value) return currentChatRawTitle.value;
-	return messages.value.length > 0 ? "Chat" : "New Chat";
+	return chatDisplayTitle(currentSession.value, messages.value.length > 0);
 });
 
 // Artifacts come from the most recent assistant turn's blocks. The rail mirrors

@@ -60,7 +60,7 @@ describe("ProjectInstructions", () => {
 		expect(w.find("textarea").exists()).toBe(false);
 	});
 
-	it("cancel emits nothing", async () => {
+	it("cancel discards the draft without saving", async () => {
 		const w = mountIt();
 		await w.find("[data-test=edit-instructions]").trigger("click");
 		await w.find("textarea").setValue("changed");
