@@ -5,15 +5,20 @@
 """Give every existing chat session a FAC Chat Conversation row.
 
 Before 3.2 a conversation existed only as FAC Chat Message rows sharing a
-session_id. New messages maintain the row themselves (FACChatMessage.after_insert);
-this fills it in for history, batched so a large message table cannot time out
-a migrate. Sessions that already have a row are skipped, so re-running is safe.
+session_id. New messages maintain the row themselves (FACChatMessage.after_insert).
+This fills it in for history. Batches are keyed on session_id, which is indexed
+(search_index on FAC Chat Message), so each batch seeks past the last session it
+read instead of rescanning the table. Each batch holds at most batch_size
+sessions in memory, and only the first 200 characters of each user message are
+read for titles. Sessions that already have a row are skipped, so re-running is safe.
 """
 
 import frappe
-from frappe.query_builder.functions import Count, Max, Min
+from frappe.query_builder.functions import Count, Max, Min, Substring
 
 from frappe_assistant_core.chat.doctype.fac_chat_conversation.fac_chat_conversation import auto_title
+
+TITLE_READ_LENGTH = 200
 
 
 def execute():
@@ -47,13 +52,13 @@ def backfill(batch_size: int = 500) -> int:
         last_sid = sessions[-1].session_id
 
         titles: dict[str, str] = {}
-        for msg in frappe.get_all(
-            "FAC Chat Message",
-            filters={"session_id": ["in", [s.session_id for s in sessions]], "role": "user"},
-            fields=["session_id", "content"],
-            order_by="creation asc",
-            limit_page_length=0,
-        ):
+        for msg in (
+            frappe.qb.from_(FM)
+            .select(FM.session_id, Substring(FM.content, 1, TITLE_READ_LENGTH).as_("content"))
+            .where(FM.session_id.isin([s.session_id for s in sessions]))
+            .where(FM.role == "user")
+            .orderby(FM.creation)
+        ).run(as_dict=True):
             titles.setdefault(msg.session_id, auto_title(msg.content))
 
         now = frappe.utils.now()
