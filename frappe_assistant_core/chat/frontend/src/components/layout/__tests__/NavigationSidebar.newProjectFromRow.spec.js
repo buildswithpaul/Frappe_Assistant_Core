@@ -5,6 +5,7 @@ import { nextTick } from "vue";
 import NavigationSidebar from "@/components/layout/NavigationSidebar.vue";
 import ProjectsSection from "@/components/layout/ProjectsSection.vue";
 import { api } from "@/api/client";
+import { useToast } from "@/composables/useToast";
 
 const push = vi.fn();
 vi.mock("vue-router", () => ({
@@ -76,6 +77,7 @@ describe("New project… from a chat row", () => {
 		await vi.waitFor(() => expect(api.chat.moveSessionToProject).toHaveBeenCalled());
 		await vi.waitFor(() => expect(wrapper.find("[data-test=new-project-input]").exists()).toBe(false));
 		expect(api.projects.create).toHaveBeenCalledTimes(1);
+		expect(useToast().toasts.value.some((t) => t.type === "error" && t.message === "nope")).toBe(true);
 	});
 
 	it("blur cancels without creating", async () => {

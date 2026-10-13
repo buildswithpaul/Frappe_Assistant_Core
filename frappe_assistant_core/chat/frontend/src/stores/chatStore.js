@@ -492,7 +492,6 @@ export const useChatStore = defineStore("chat", () => {
 				currentSessionId.value = result.session_id;
 				pendingProject.value = null;
 				messages.value = [];
-				await loadSessions();
 				return result.session_id;
 			}
 		} catch (err) {

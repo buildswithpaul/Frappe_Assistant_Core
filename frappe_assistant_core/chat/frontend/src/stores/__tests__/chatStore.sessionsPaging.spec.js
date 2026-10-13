@@ -83,6 +83,19 @@ describe("chatStore session paging", () => {
 		expect(api.chat.getSessions).not.toHaveBeenCalled();
 	});
 
+	it("createSession keeps the loaded pages and does not reload", async () => {
+		api.chat.getSessions.mockResolvedValueOnce(page(SESSIONS_PAGE_SIZE));
+		await store.loadSessions();
+		api.chat.getSessions.mockResolvedValueOnce(page(3, SESSIONS_PAGE_SIZE));
+		await store.loadMoreSessions();
+		api.chat.getSessions.mockClear();
+		api.chat.createSession = vi.fn().mockResolvedValue({ session_id: "fresh" });
+		await store.createSession();
+		expect(store.currentSessionId).toBe("fresh");
+		expect(store.sessions).toHaveLength(SESSIONS_PAGE_SIZE + 3);
+		expect(api.chat.getSessions).not.toHaveBeenCalled();
+	});
+
 	it("sends the current project with the message", async () => {
 		store.currentSessionId = "brand-new";
 		store.setPendingProject(PENDING_SESSION, "p1");
