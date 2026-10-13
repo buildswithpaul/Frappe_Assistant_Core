@@ -48,6 +48,23 @@ PAGE_DOCUMENTS = {
 SAFE_PATH = re.compile(r"/[A-Za-z0-9._~%/-]{0,199}")
 SAFE_NAME = re.compile(r"[A-Za-z0-9._-]{1,140}")
 
+# While the Insights plugin is on, its tools read a dashboard's numbers; get_document only its layout.
+INSIGHTS_TOOLS = {
+    "Insights Dashboard v3": "get_insights_dashboard",
+    "Insights Chart v3": "get_insights_chart",
+}
+
+
+def insights_plugin_enabled() -> bool:
+    return bool(frappe.db.get_value("FAC Plugin Configuration", "insights", "enabled"))
+
+
+def how_to_read(doctype: str, name: str) -> str:
+    tool = INSIGHTS_TOOLS.get(doctype)
+    if tool and insights_plugin_enabled():
+        return f'read it with {tool} (name "{name}")'
+    return f'read it with get_document (doctype "{doctype}", name "{name}")'
+
 
 def render_page_context(raw) -> str:
     """The prompt section for a widget message's page, or "". Never raises."""
@@ -60,8 +77,7 @@ def render_page_context(raw) -> str:
     if page["doctype"]:
         line = (
             f"The user is viewing {page['doctype']} {page['name']} in {page['title']}. When the "
-            f'question is about it, read it with get_document (doctype "{page["doctype"]}", '
-            f'name "{page["name"]}").'
+            f"question is about it, {how_to_read(page['doctype'], page['name'])}."
         )
     else:
         line = f"The user is on a {page['title']} page."

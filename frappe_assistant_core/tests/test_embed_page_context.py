@@ -151,3 +151,30 @@ class TestEmbedPageContext(BaseAssistantTest):
         self.assertEqual(storable_context(form), form)
         self.assertIsNone(storable_context({"type": "app_page", "path": "not a path"}))
         self.assertIsNone(storable_context(None))
+
+    def test_insights_pages_point_at_the_insights_tools_while_the_plugin_is_on(self):
+        from frappe_assistant_core.chat.embed import page_context
+
+        with patch(f"{PAGE}.insights_plugin_enabled", autospec=True, return_value=True):
+            self.assertEqual(
+                page_context.how_to_read("Insights Dashboard v3", "abc"),
+                'read it with get_insights_dashboard (name "abc")',
+            )
+            self.assertEqual(
+                page_context.how_to_read("Insights Chart v3", "c1"),
+                'read it with get_insights_chart (name "c1")',
+            )
+        with patch(f"{PAGE}.insights_plugin_enabled", autospec=True, return_value=False):
+            self.assertEqual(
+                page_context.how_to_read("Insights Dashboard v3", "abc"),
+                'read it with get_document (doctype "Insights Dashboard v3", name "abc")',
+            )
+
+    def test_other_documents_keep_get_document(self):
+        from frappe_assistant_core.chat.embed import page_context
+
+        with patch(f"{PAGE}.insights_plugin_enabled", autospec=True, return_value=True):
+            self.assertEqual(
+                page_context.how_to_read("HD Ticket", "1"),
+                'read it with get_document (doctype "HD Ticket", name "1")',
+            )
