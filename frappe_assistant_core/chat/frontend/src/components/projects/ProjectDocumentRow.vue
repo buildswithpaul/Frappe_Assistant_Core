@@ -1,7 +1,7 @@
 <template>
 	<li class="doc-row" data-test="doc-row">
 		<span class="doc-name" :title="doc.file_name">{{ doc.file_name }}</span>
-		<span class="doc-size">{{ formatFileSize(doc.file_size || 0) }}</span>
+		<span class="doc-size">{{ formatFileSizeMb(doc.file_size_mb) }}</span>
 		<span class="pill" :class="status.cls" data-test="doc-status">{{ status.label }}</span>
 		<div class="doc-menu-root">
 			<button
@@ -35,7 +35,7 @@
 <script setup>
 import { computed } from "vue";
 import { api } from "@/api/client";
-import { formatFileSize } from "@/composables/useFormatters";
+import { formatFileSizeMb } from "@/composables/useFormatters";
 import { __ } from "@/utils/i18n";
 
 const props = defineProps({

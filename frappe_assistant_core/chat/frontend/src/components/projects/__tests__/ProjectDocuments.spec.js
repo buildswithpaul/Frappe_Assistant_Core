@@ -29,7 +29,7 @@ beforeAll(() => {
 const doc = (id, status, name = `${id}.pdf`) => ({
 	document_id: id,
 	file_name: name,
-	file_size: 2048,
+	file_size_mb: 0.01,
 	embedding_status: status,
 	project_id: "p1",
 });
@@ -99,6 +99,15 @@ describe("ProjectDocuments", () => {
 		await flushPromises();
 		expect(upload).toHaveBeenCalledWith(file, { project: "p1" });
 		expect(w.findAll("[data-test=doc-row]")).toHaveLength(1);
+		w.unmount();
+	});
+
+	it("shows the document size from file_size_mb, not 0 B", async () => {
+		list.mockResolvedValue({ documents: [doc("a", "Completed")] });
+		const w = mountBlock();
+		await flushPromises();
+		expect(w.get("[data-test=doc-row] .doc-size").text()).toBe("0.01 MB");
+		expect(w.get("[data-test=doc-row] .doc-size").text()).not.toBe("0 B");
 		w.unmount();
 	});
 
