@@ -123,6 +123,11 @@ const props = defineProps({
 		type: Object,
 		default: null,
 	},
+	// Text the rename editor opens with; defaults to `title`. Differs when `title` is a placeholder.
+	renameValue: {
+		type: String,
+		default: null,
+	},
 	renamable: {
 		type: Boolean,
 		default: false,
@@ -144,7 +149,7 @@ const props = defineProps({
 const emit = defineEmits(["toggle-sidebar", "new-chat", "rename"]);
 
 const { editing, draft, inputRef, start, commit, cancel } = useInlineTitleEdit(
-	() => props.title,
+	() => (props.renameValue === null ? props.title : props.renameValue),
 	(title) => emit("rename", title)
 );
 </script>

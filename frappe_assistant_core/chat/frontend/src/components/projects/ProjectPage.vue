@@ -51,7 +51,7 @@
 				</div>
 			</header>
 
-			<ProjectInstructions :model-value="project.instructions || ''" @save="saveInstructions" />
+			<ProjectInstructions :model-value="project.instructions || ''" :save-fn="saveInstructions" />
 
 			<div class="chats-header">
 				<h2 class="chats-title">{{ __("Chats") }}</h2>
@@ -71,6 +71,7 @@
 					:projects="projects"
 					:active="chat.session_id === currentSessionId"
 					:show-project-chip="false"
+					:allow-new-project="false"
 					:deleting="deletingId === chat.session_id"
 					@select="router.push('/chat/' + chat.session_id)"
 					@rename="(t) => renameChat(chat.session_id, t)"
@@ -164,13 +165,20 @@ async function loadPage(projectId) {
 
 watch(() => props.projectId, loadPage, { immediate: true });
 
-function saveInstructions(text) {
-	projectsStore.update(props.projectId, { instructions: text }).catch(notifyFailure);
+// Rethrows so ProjectInstructions keeps its editor (and the draft) open.
+async function saveInstructions(text) {
+	try {
+		await projectsStore.update(props.projectId, { instructions: text });
+	} catch (err) {
+		notifyFailure(err);
+		throw err;
+	}
 }
 
 async function newChat() {
 	try {
 		const sessionId = await chatStore.startChatInProject(props.projectId);
+		if (!sessionId) return;
 		router.push("/chat/" + sessionId);
 	} catch (err) {
 		notifyFailure(err);

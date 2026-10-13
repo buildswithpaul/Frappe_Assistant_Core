@@ -32,7 +32,11 @@
 			>
 				{{ __("Remove from project") }}
 			</button>
-			<button class="menu-item" role="menuitem" data-test="move-new" @click="$emit('new-project')">
+			<button
+				v-if="allowNewProject"
+				class="menu-item"
+				role="menuitem"
+				data-test="move-new" @click="$emit('new-project')">
 				{{ __("New project…") }}
 			</button>
 		</div>
@@ -46,6 +50,7 @@ import { __ } from "@/utils/i18n";
 defineProps({
 	session: { type: Object, required: true },
 	projects: { type: Array, default: () => [] },
+	allowNewProject: { type: Boolean, default: true },
 });
 
 defineEmits(["rename", "move", "new-project", "archive"]);

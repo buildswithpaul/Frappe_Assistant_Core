@@ -123,4 +123,14 @@ describe("ChatRow", () => {
 		input.element.dispatchEvent(new FocusEvent("blur"));
 		expect(w.emitted("rename")).toEqual([["Kept"]]);
 	});
+
+	it("allowNewProject=false hides New project", async () => {
+		const w = mount(ChatRow, {
+			props: { session, active: false, projects, allowNewProject: false },
+			global: { mocks: { __: (s) => s } },
+		});
+		await w.find("[data-test=row-menu]").trigger("click");
+		await w.find("[data-test=menu-move]").trigger("click");
+		expect(w.find("[data-test=move-new]").exists()).toBe(false);
+	});
 });

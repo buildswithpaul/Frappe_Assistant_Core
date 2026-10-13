@@ -3,11 +3,12 @@ import { mount, flushPromises } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
 
 const getSessions = vi.fn();
+const createSession = vi.fn();
 const projectsList = vi.fn();
 const projectsUpdate = vi.fn();
 vi.mock("@/api/client", () => ({
 	api: {
-		chat: { getSessions: (...a) => getSessions(...a) },
+		chat: { getSessions: (...a) => getSessions(...a), createSession: (...a) => createSession(...a) },
 		projects: { list: (...a) => projectsList(...a), update: (...a) => projectsUpdate(...a) },
 	},
 }));
@@ -15,6 +16,7 @@ const push = vi.fn();
 vi.mock("vue-router", () => ({ useRouter: () => ({ push }) }));
 
 import ProjectPage from "@/components/projects/ProjectPage.vue";
+import { useChatStore } from "@/stores/chatStore";
 import { useProjectsStore } from "@/stores/projectsStore";
 
 beforeAll(() => {
@@ -83,5 +85,16 @@ describe("ProjectPage", () => {
 		expect(projectsUpdate).toHaveBeenCalledTimes(1);
 		expect(projectsUpdate).toHaveBeenCalledWith("p1", { title: "Q4" });
 		expect(useProjectsStore().byId("p1").title).toBe("Q4");
+	});
+
+	it("a failed New chat neither navigates nor sets pendingProjectId", async () => {
+		projectsList.mockResolvedValue([{ name: "p1", title: "Q3 Close", instructions: "" }]);
+		createSession.mockRejectedValue(new Error("down"));
+		const w = await mountPage();
+		await flushPromises();
+		await w.find("[data-test=new-project-chat]").trigger("click");
+		await flushPromises();
+		expect(push).not.toHaveBeenCalled();
+		expect(useChatStore().pendingProjectId).toBeNull();
 	});
 });

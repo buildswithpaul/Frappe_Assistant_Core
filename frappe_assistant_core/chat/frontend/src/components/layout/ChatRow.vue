@@ -83,6 +83,7 @@
 				v-if="menuOpen"
 				:session="session"
 				:projects="projects"
+				:allow-new-project="allowNewProject"
 				@rename="startRename"
 				@move="moveTo"
 				@new-project="newProject"
@@ -104,6 +105,7 @@ const props = defineProps({
 	deleting: { type: Boolean, default: false },
 	projects: { type: Array, default: () => [] },
 	showProjectChip: { type: Boolean, default: true },
+	allowNewProject: { type: Boolean, default: true },
 });
 
 const emit = defineEmits(["select", "rename", "move", "new-project", "archive"]);

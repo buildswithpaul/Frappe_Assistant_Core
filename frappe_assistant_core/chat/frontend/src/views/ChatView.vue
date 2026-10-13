@@ -25,6 +25,7 @@
 				v-if="!isOnboarding"
 				:title="currentChatTitle"
 				:project="topBarProject"
+				:rename-value="currentChatRawTitle"
 				:renamable="!!currentSession && !route.params.projectId"
 				@rename="(t) => conversationsStore.renameSession(currentSessionId, t)"
 				:show-actions="registrationStatus === 'ready' && isUserSetupComplete"
@@ -404,12 +405,13 @@ const topBarProject = computed(() =>
 		: null
 );
 
+const currentChatRawTitle = computed(
+	() => currentSession.value?.title || currentSession.value?.preview || ""
+);
+
 const currentChatTitle = computed(() => {
 	if (route.params.projectId) return projectsStore.byId(route.params.projectId)?.title || "Project";
-	const title = currentSession.value?.title || currentSession.value?.preview;
-	if (title) {
-		return title.slice(0, 50) + (title.length > 50 ? "..." : "");
-	}
+	if (currentChatRawTitle.value) return currentChatRawTitle.value;
 	return messages.value.length > 0 ? "Chat" : "New Chat";
 });
 

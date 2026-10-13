@@ -287,7 +287,7 @@ export const useChatStore = defineStore("chat", () => {
 
 	async function startChatInProject(projectId) {
 		const sessionId = await createSession();
-		pendingProjectId.value = projectId;
+		if (sessionId) pendingProjectId.value = projectId;
 		return sessionId;
 	}
 

@@ -65,4 +65,26 @@ describe("TopBar rename and breadcrumb", () => {
 		window.removeEventListener("keydown", seen);
 		expect(seen).not.toHaveBeenCalled();
 	});
+
+	it("click then blur with no edit does not rename", async () => {
+		const w = mountBar({ renamable: true });
+		await w.find("[data-test=chat-title]").trigger("click");
+		await w.find("[data-test=title-input]").trigger("blur");
+		expect(w.emitted("rename")).toBeUndefined();
+	});
+
+	it("opens with the full untruncated title", async () => {
+		const long = "a".repeat(80);
+		const w = mountBar({ title: long, renamable: true });
+		await w.find("[data-test=chat-title]").trigger("click");
+		expect(w.find("[data-test=title-input]").element.value).toBe(long);
+	});
+
+	it("seeds the editor with renameValue, not a placeholder title", async () => {
+		const w = mountBar({ title: "New Chat", renameValue: "", renamable: true });
+		await w.find("[data-test=chat-title]").trigger("click");
+		expect(w.find("[data-test=title-input]").element.value).toBe("");
+		await w.find("[data-test=title-input]").trigger("blur");
+		expect(w.emitted("rename")).toBeUndefined();
+	});
 });

@@ -33,7 +33,7 @@
 					<button
 						class="btn-primary"
 						data-test="save-instructions"
-						:disabled="overLimit"
+						:disabled="overLimit || saving"
 						@click="save"
 					>
 						{{ __("Save") }}
@@ -56,11 +56,13 @@ const INSTRUCTIONS_MAX_LENGTH = 8000;
 
 const props = defineProps({
 	modelValue: { type: String, default: "" },
+	// Async persist; rejecting keeps the editor open so the draft is not lost. The caller reports the error.
+	saveFn: { type: Function, required: true },
 });
-const emit = defineEmits(["save"]);
 
 const editing = ref(false);
 const draft = ref("");
+const saving = ref(false);
 const textareaRef = ref(null);
 const overLimit = computed(() => draft.value.length > INSTRUCTIONS_MAX_LENGTH);
 
@@ -71,10 +73,21 @@ async function startEdit() {
 	textareaRef.value?.focus();
 }
 
-function save() {
-	if (overLimit.value) return;
-	editing.value = false;
-	emit("save", draft.value);
+async function save() {
+	if (overLimit.value || saving.value) return;
+	if (draft.value === (props.modelValue || "")) {
+		editing.value = false;
+		return;
+	}
+	saving.value = true;
+	try {
+		await props.saveFn(draft.value);
+		editing.value = false;
+	} catch {
+		// Stay open: the caller already reported the failure.
+	} finally {
+		saving.value = false;
+	}
 }
 
 function cancel() {
