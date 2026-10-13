@@ -143,6 +143,12 @@ function toggle() {
 	transition: all 0.15s ease;
 }
 
+@media (hover: none) {
+	.continue-btn {
+		opacity: 1;
+	}
+}
+
 .archived-item:hover .continue-btn {
 	opacity: 1;
 }

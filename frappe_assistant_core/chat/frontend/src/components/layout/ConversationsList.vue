@@ -98,7 +98,7 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, ref, watch } from "vue";
 import ChatRow from "./ChatRow.vue";
 import ArchivedConversations from "./ArchivedConversations.vue";
 import ConversationSearch from "./ConversationSearch.vue";
@@ -179,10 +179,14 @@ defineExpose({
 	},
 });
 
-function loadMoreIfVisible(entries) {
-	if (entries.some((e) => e.isIntersecting) && chatStore.sessionsHasMore) {
-		chatStore.loadMoreSessions();
-	}
+// IntersectionObserver only reports visibility changes, so a page that leaves the sentinel
+// in view would stall paging. Re-observing after each load re-reports the current state.
+async function loadMoreIfVisible(entries) {
+	if (!entries.some((e) => e.isIntersecting) || !chatStore.sessionsHasMore) return;
+	const before = chatStore.sessions.length;
+	await chatStore.loadMoreSessions();
+	// Only while pages keep arriving, so a failing request cannot loop.
+	if (chatStore.sessionsHasMore && chatStore.sessions.length > before) observeSentinel();
 }
 
 function observeSentinel() {
@@ -193,9 +197,8 @@ function observeSentinel() {
 	}
 }
 
-onMounted(observeSentinel);
-// The sentinel is re-created when the list swaps between states (loading, search, empty).
-watch(() => [props.loading, isSearchActive.value], () => nextTick(observeSentinel));
+// The sentinel is created and destroyed as the list swaps between loading, search and empty.
+watch(sentinel, observeSentinel, { flush: "post" });
 onBeforeUnmount(() => observer?.disconnect());
 
 // Group sessions by date

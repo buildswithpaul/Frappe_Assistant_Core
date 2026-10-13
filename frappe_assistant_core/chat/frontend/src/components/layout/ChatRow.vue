@@ -79,50 +79,22 @@
 				</svg>
 			</button>
 
-			<div v-if="menuOpen" class="menu" role="menu" @click.stop>
-				<template v-if="!moveOpen">
-					<button class="menu-item" role="menuitem" data-test="menu-rename" @click="startRename">
-						{{ __("Rename") }}
-					</button>
-					<button class="menu-item" role="menuitem" data-test="menu-move" @click="moveOpen = true">
-						{{ __("Move to project") }}
-					</button>
-					<button class="menu-item danger" role="menuitem" data-test="menu-archive" @click="askArchive">
-						{{ __("Archive") }}
-					</button>
-				</template>
-				<div v-else class="submenu">
-					<button
-						v-for="p in projects"
-						:key="p.name"
-						class="menu-item"
-						role="menuitem"
-						:data-test="`move-${p.name}`"
-						@click="moveTo(p.name)"
-					>
-						<span class="check">{{ p.name === session.project ? "✓" : "" }}</span>
-						{{ p.title }}
-					</button>
-					<button
-						v-if="session.project"
-						class="menu-item"
-						role="menuitem"
-						data-test="move-none"
-						@click="moveTo(null)"
-					>
-						{{ __("Remove from project") }}
-					</button>
-					<button class="menu-item" role="menuitem" data-test="move-new" @click="newProject">
-						{{ __("New project…") }}
-					</button>
-				</div>
-			</div>
+			<ChatRowMenu
+				v-if="menuOpen"
+				:session="session"
+				:projects="projects"
+				@rename="startRename"
+				@move="moveTo"
+				@new-project="newProject"
+				@archive="askArchive"
+			/>
 		</template>
 	</div>
 </template>
 
 <script setup>
 import { nextTick, onBeforeUnmount, ref, watch } from "vue";
+import ChatRowMenu from "./ChatRowMenu.vue";
 import { __ } from "@/utils/i18n";
 import { formatConversationTime } from "@/utils/formatConversationTime";
 
@@ -139,14 +111,12 @@ const emit = defineEmits(["select", "rename", "move", "new-project", "archive"])
 const rootRef = ref(null);
 const inputRef = ref(null);
 const menuOpen = ref(false);
-const moveOpen = ref(false);
 const confirming = ref(false);
 const renaming = ref(false);
 const draft = ref("");
 
 function closeMenu() {
 	menuOpen.value = false;
-	moveOpen.value = false;
 }
 
 function toggleMenu() {
@@ -155,22 +125,30 @@ function toggleMenu() {
 }
 
 function onDocumentClick(event) {
-	if (rootRef.value && !rootRef.value.contains(event.target)) closeMenu();
+	if (rootRef.value && !rootRef.value.contains(event.target)) {
+		closeMenu();
+		confirming.value = false;
+	}
 }
 
 function onDocumentKey(event) {
-	if (event.key === "Escape") closeMenu();
+	if (event.key === "Escape") {
+		closeMenu();
+		confirming.value = false;
+	}
 }
 
 function detachListeners() {
-	document.removeEventListener("click", onDocumentClick);
+	document.removeEventListener("click", onDocumentClick, true);
 	document.removeEventListener("keydown", onDocumentKey);
 }
 
-watch(menuOpen, (open) => {
+// Capture phase: the menu, button and rename input call .stop, so a bubble listener on
+// another row would never see a click on this row and both would stay open.
+watch([menuOpen, confirming], ([menu, confirm]) => {
 	detachListeners();
-	if (open) {
-		document.addEventListener("click", onDocumentClick);
+	if (menu || confirm) {
+		document.addEventListener("click", onDocumentClick, true);
 		document.addEventListener("keydown", onDocumentKey);
 	}
 });
@@ -311,57 +289,15 @@ function onArchive() {
 	opacity: 1;
 }
 
+@media (hover: none) {
+	.row-menu {
+		opacity: 1;
+	}
+}
+
 .row-menu:hover {
 	color: var(--ql-text);
 	background-color: var(--ql-subtle);
-}
-
-.menu {
-	position: absolute;
-	top: 100%;
-	right: 0.25rem;
-	z-index: 20;
-	min-width: 11rem;
-	padding: 0.25rem;
-	background: var(--ql-surface);
-	border: 1px solid var(--ql-border);
-	border-radius: 0.5rem;
-	box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
-}
-
-.submenu {
-	max-height: 14rem;
-	overflow-y: auto;
-}
-
-.menu-item {
-	display: flex;
-	align-items: center;
-	gap: 0.375rem;
-	width: 100%;
-	padding: 0.375rem 0.5rem;
-	font-size: 0.8rem;
-	text-align: left;
-	color: var(--ql-text);
-	background: none;
-	border: none;
-	border-radius: 0.375rem;
-	cursor: pointer;
-}
-
-.menu-item:hover,
-.menu-item:focus-visible {
-	background-color: var(--ql-subtle);
-}
-
-.menu-item.danger {
-	color: #ef4444;
-}
-
-.check {
-	display: inline-block;
-	width: 1rem;
-	color: var(--ql-accent);
 }
 
 .delete-spinner {

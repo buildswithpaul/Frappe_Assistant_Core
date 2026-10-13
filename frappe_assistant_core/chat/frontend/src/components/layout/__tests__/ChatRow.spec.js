@@ -67,4 +67,60 @@ describe("ChatRow", () => {
 		await w.find("[data-test=confirm-archive]").trigger("click");
 		expect(w.emitted("archive")).toBeTruthy();
 	});
+
+	it("opening another row's menu closes this one", async () => {
+		const mk = (id) =>
+			mount(ChatRow, {
+				props: { session: { ...session, session_id: id }, active: false, projects },
+				attachTo: document.body,
+			});
+		const a = mk("a");
+		const b = mk("b");
+		await a.find("[data-test=row-menu]").trigger("click");
+		expect(a.find("[data-test=menu-rename]").exists()).toBe(true);
+		await b.find("[data-test=row-menu]").trigger("click");
+		expect(a.find("[data-test=menu-rename]").exists()).toBe(false);
+		expect(b.find("[data-test=menu-rename]").exists()).toBe(true);
+		a.unmount();
+		b.unmount();
+	});
+
+	it("an archive confirm closes when another row is clicked", async () => {
+		const mk = (id) =>
+			mount(ChatRow, {
+				props: { session: { ...session, session_id: id }, active: false, projects },
+				attachTo: document.body,
+			});
+		const a = mk("a");
+		const b = mk("b");
+		await a.find("[data-test=row-menu]").trigger("click");
+		await a.find("[data-test=menu-archive]").trigger("click");
+		expect(a.find("[data-test=confirm-archive]").exists()).toBe(true);
+		await b.find("[data-test=row-menu]").trigger("click");
+		expect(a.find("[data-test=confirm-archive]").exists()).toBe(false);
+		a.unmount();
+		b.unmount();
+	});
+
+	it("Escape then the unmount blur does not save the discarded draft", async () => {
+		const w = mountRow();
+		await w.find("[data-test=row-menu]").trigger("click");
+		await w.find("[data-test=menu-rename]").trigger("click");
+		const input = w.find("[data-test=rename-input]");
+		await input.setValue("discard");
+		input.element.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+		input.element.dispatchEvent(new FocusEvent("blur"));
+		expect(w.emitted("rename")).toBeFalsy();
+	});
+
+	it("Enter then the unmount blur saves exactly once", async () => {
+		const w = mountRow();
+		await w.find("[data-test=row-menu]").trigger("click");
+		await w.find("[data-test=menu-rename]").trigger("click");
+		const input = w.find("[data-test=rename-input]");
+		await input.setValue("Kept");
+		input.element.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+		input.element.dispatchEvent(new FocusEvent("blur"));
+		expect(w.emitted("rename")).toEqual([["Kept"]]);
+	});
 });
