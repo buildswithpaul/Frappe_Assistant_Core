@@ -220,6 +220,17 @@ class TestTurnContext(_Base):
         )
         self.assertNotIn("project_id", bound["context"] or {})
 
+    def test_client_supplied_project_id_is_stripped_without_an_owned_project(self):
+        bound = self._submitted(
+            _relay_ar_stream,
+            lambda: messages.send_message(
+                session_id=SID,
+                message="hi",
+                context=json.dumps({"project_id": "someone-else", "route": "x"}),
+            ),
+        )
+        self.assertEqual(bound["context"], {"route": "x"})
+
 
 class TestResumeRelayHop(BaseAssistantTest):
     def test_the_resume_relay_hands_the_context_to_the_real_sdk_signature(self):

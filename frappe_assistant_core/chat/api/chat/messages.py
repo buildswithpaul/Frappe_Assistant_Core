@@ -116,7 +116,10 @@ def _with_project_context(context: dict | None, session_id: str, project: str | 
     """The relay context for this turn, carrying the conversation's project when it has one."""
     resolved = _conversation_project(session_id, project)
     if not resolved:
-        return context
+        # A client-supplied project_id is never trusted: only an owned project reaches AR.
+        if not context or "project_id" not in context:
+            return context
+        return {k: v for k, v in context.items() if k != "project_id"} or None
     return {**(context or {}), "project_id": resolved}
 
 

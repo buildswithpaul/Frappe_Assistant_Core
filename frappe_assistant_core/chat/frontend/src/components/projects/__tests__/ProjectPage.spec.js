@@ -28,12 +28,12 @@ beforeAll(() => {
 
 const stubs = { RouterLink: { template: "<a><slot/></a>" }, ConfirmModal: true };
 
-async function mountPage(projectId = "p1", { projectDocuments } = {}) {
+async function mountPage(projectId = "p1", { projectDocuments, rag = true } = {}) {
 	const pinia = createPinia();
 	setActivePinia(pinia);
 	// The flag reaches the store from api.capabilities.get() at boot (userStore.loadCapabilities).
 	if (projectDocuments !== undefined) {
-		useUserStore().capabilities = { features: { project_documents: projectDocuments } };
+		useUserStore().capabilities = { features: { project_documents: projectDocuments, rag } };
 	}
 	const w = mount(ProjectPage, { props: { projectId }, global: { plugins: [pinia], stubs } });
 	return w;
@@ -118,6 +118,16 @@ describe("ProjectPage", () => {
 			expect(documentsList).not.toHaveBeenCalled();
 			expect(w.findComponent("[data-test=delete-project-modal]").props("message")).toBe(
 				"Delete this project? Its chats are kept and moved out of the project."
+			);
+		});
+
+		it("does not render the block when RAG is off, but still names the Knowledge Base move", async () => {
+			const w = await mountPage("p1", { projectDocuments: true, rag: false });
+			await flushPromises();
+			expect(w.find("[data-test=project-documents]").exists()).toBe(false);
+			expect(documentsList).not.toHaveBeenCalled();
+			expect(w.findComponent("[data-test=delete-project-modal]").props("message")).toContain(
+				"its documents move to your Knowledge Base"
 			);
 		});
 

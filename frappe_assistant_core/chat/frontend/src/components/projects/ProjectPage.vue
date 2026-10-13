@@ -138,9 +138,14 @@ const menuRootRef = ref(null);
 const confirmingDelete = ref(false);
 const deleting = ref(false);
 
-const projectDocsEnabled = computed(() => userStore.capabilities?.features?.project_documents === true);
+// Delete unlinks documents whenever the capability is on, even with RAG off, so the message follows
+// the capability alone; the block also needs RAG, because an upload would never be searchable.
+const projectDocsCapable = computed(() => userStore.capabilities?.features?.project_documents === true);
+const projectDocsEnabled = computed(
+	() => projectDocsCapable.value && userStore.capabilities?.features?.rag === true
+);
 const deleteMessage = computed(() =>
-	projectDocsEnabled.value
+	projectDocsCapable.value
 		? __("Delete this project? Its chats are kept and its documents move to your Knowledge Base as private documents.")
 		: __("Delete this project? Its chats are kept and moved out of the project.")
 );

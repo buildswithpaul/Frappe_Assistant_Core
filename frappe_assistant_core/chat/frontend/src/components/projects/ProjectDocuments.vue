@@ -9,10 +9,17 @@
 	>
 		<header class="docs-header">
 			<h2 class="docs-title">{{ __("Documents") }}</h2>
-			<button class="upload-btn" data-test="docs-upload" :disabled="uploading" @click="fileInput.click()">
+			<button
+				v-if="knowledgeIncluded"
+				class="upload-btn"
+				data-test="docs-upload"
+				:disabled="uploading"
+				@click="fileInput.click()"
+			>
 				{{ uploading ? __("Uploading…") : __("Upload") }}
 			</button>
 			<input
+				v-if="knowledgeIncluded"
 				ref="fileInput"
 				type="file"
 				class="hidden-input"
@@ -22,6 +29,11 @@
 				@change="onFileSelect"
 			/>
 		</header>
+
+		<div v-if="refreshFailed" class="load-error" data-test="docs-refresh-error">
+			<span>{{ __("Couldn't refresh.") }}</span>
+			<button class="upload-btn" data-test="docs-refresh-retry" @click="retryRefresh">{{ __("Retry") }}</button>
+		</div>
 
 		<div v-if="loadFailed" class="load-error" data-test="docs-error">
 			<span>{{ __("Couldn't load this project's documents.") }}</span>
@@ -58,10 +70,12 @@
 
 <script setup>
 import { computed, onBeforeUnmount, ref, watch } from "vue";
+import { storeToRefs } from "pinia";
 import ConfirmModal from "@/components/common/ConfirmModal.vue";
 import ProjectDocumentRow from "@/components/projects/ProjectDocumentRow.vue";
 import { api } from "@/api/client";
 import { useToast } from "@/composables/useToast";
+import { useUserStore } from "@/stores/userStore";
 import { ACCEPT_ATTRIBUTE, validateKnowledgeFile } from "@/utils/knowledgeUpload";
 import { __ } from "@/utils/i18n";
 
@@ -74,9 +88,14 @@ const props = defineProps({
 
 const { showError, showToast } = useToast();
 
+// Same rule as KnowledgeBase.vue: absent means an older server, only an explicit false hides Upload.
+const { quotaInfo } = storeToRefs(useUserStore());
+const knowledgeIncluded = computed(() => quotaInfo.value?.features?.knowledge_base !== false);
+
 const documents = ref([]);
 const loading = ref(true);
 const loadFailed = ref(false);
+const refreshFailed = ref(false);
 const uploading = ref(false);
 const dragging = ref(false);
 const fileInput = ref(null);
@@ -119,18 +138,25 @@ async function loadDocuments() {
 		if (projectId !== props.projectId) return;
 		failures = 0;
 		loadFailed.value = false;
+		refreshFailed.value = false;
 		if (epoch === mutations) documents.value = result?.documents || [];
 	} catch (err) {
 		if (projectId !== props.projectId) return;
 		failures += 1;
 		if (failures === 1) notifyFailure(err);
 		loadFailed.value = documents.value.length === 0;
+		refreshFailed.value = !loadFailed.value;
 	} finally {
 		if (projectId === props.projectId) {
 			loading.value = false;
 			schedulePoll();
 		}
 	}
+}
+
+function retryRefresh() {
+	loading.value = true;
+	loadDocuments();
 }
 
 watch(
@@ -140,6 +166,7 @@ watch(
 		documents.value = [];
 		loading.value = true;
 		loadFailed.value = false;
+		refreshFailed.value = false;
 		failures = 0;
 		menuDocId.value = null;
 		loadDocuments();
@@ -183,7 +210,7 @@ function onFileSelect(event) {
 function onDrop(event) {
 	dragging.value = false;
 	const files = Array.from(event.dataTransfer?.files || []);
-	if (!files.length) return;
+	if (!files.length || !knowledgeIncluded.value) return;
 	if (uploading.value) {
 		showToast(__("Wait for the current upload to finish"));
 		return;

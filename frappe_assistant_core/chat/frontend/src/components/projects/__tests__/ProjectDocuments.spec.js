@@ -18,6 +18,8 @@ const showError = vi.fn();
 const showToast = vi.fn();
 vi.mock("@/composables/useToast", () => ({ useToast: () => ({ showError, showToast }) }));
 
+import { createPinia, setActivePinia } from "pinia";
+import { useUserStore } from "@/stores/userStore";
 import ProjectDocuments from "@/components/projects/ProjectDocuments.vue";
 
 beforeAll(() => {
@@ -42,11 +44,14 @@ function mountBlock() {
 	return mount(ProjectDocuments, {
 		props: { projectId: "p1" },
 		attachTo: document.body,
-		global: { stubs: { ConfirmModal: ConfirmStub } },
+		global: { plugins: [pinia], stubs: { ConfirmModal: ConfirmStub } },
 	});
 }
 
+let pinia;
 beforeEach(() => {
+	pinia = createPinia();
+	setActivePinia(pinia);
 	vi.useFakeTimers();
 	vi.clearAllMocks();
 	list.mockResolvedValue({ documents: [] });
@@ -301,6 +306,37 @@ describe("ProjectDocuments", () => {
 		expect(showToast).toHaveBeenCalledWith("Wait for the current upload to finish");
 		finish({});
 		await flushPromises();
+		w.unmount();
+	});
+
+	it("hides Upload when the plan excludes the knowledge base", async () => {
+		useUserStore().quotaInfo = { features: { knowledge_base: false } };
+		const w = mountBlock();
+		await flushPromises();
+		expect(w.find("[data-test=docs-upload]").exists()).toBe(false);
+		w.unmount();
+	});
+
+	it("keeps Upload when the plan does not say", async () => {
+		const w = mountBlock();
+		await flushPromises();
+		expect(w.find("[data-test=docs-upload]").exists()).toBe(true);
+		w.unmount();
+	});
+
+	it("offers Retry above the rows after a failed poll and resumes polling", async () => {
+		list.mockResolvedValueOnce({ documents: [doc("a", "Processing")] });
+		list.mockRejectedValueOnce(new Error("down"));
+		const w = mountBlock();
+		await flushPromises();
+		await vi.advanceTimersByTimeAsync(5000);
+		expect(w.get("[data-test=docs-refresh-error]").text()).toContain("Couldn't refresh.");
+		expect(w.findAll("[data-test=doc-row]")).toHaveLength(1);
+		list.mockResolvedValue({ documents: [doc("a", "Completed")] });
+		await w.get("[data-test=docs-refresh-retry]").trigger("click");
+		await flushPromises();
+		expect(w.find("[data-test=docs-refresh-error]").exists()).toBe(false);
+		expect(w.get("[data-test=doc-row]").text()).not.toContain("Processing");
 		w.unmount();
 	});
 });
