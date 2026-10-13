@@ -187,7 +187,8 @@ async function onSend({ message, files = [] }) {
 	}
 	if (route === "abort-then-send") await chatStore.abortPendingInteraction();
 	const uploaded = await consumeUploadedFiles(files);
-	await chatStore.sendMessage(message, uploaded, null, null, null, {
+	const page = getHost().sendContext();
+	await chatStore.sendMessage(message, uploaded, page ? JSON.stringify(page) : null, null, null, {
 		skipQueue: route === "abort-then-send",
 	});
 }

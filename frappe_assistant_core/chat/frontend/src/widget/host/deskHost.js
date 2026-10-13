@@ -30,6 +30,10 @@ export const deskHost = {
 	detectContext() {
 		return detectContext();
 	},
+	/** Desk answers page questions with its browser tools, so nothing rides on the message. */
+	sendContext() {
+		return null;
+	},
 	openDeskRoute(route) {
 		window.frappe.set_route(...route);
 	},

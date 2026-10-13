@@ -32,6 +32,8 @@ describe("deskHost", () => {
 		await expect(deskHost.call("m.x", { a: 1 })).resolves.toEqual({ message: 1 });
 		expect(window.frappe.call).toHaveBeenCalledWith({ method: "m.x", type: "GET", args: { a: 1 } });
 		expect(deskHost.isHiddenRoute()).toBe(true);
+		// Desk answers page questions with its browser tools, so nothing rides on the message.
+		expect(deskHost.sendContext()).toBeNull();
 	});
 });
 
@@ -85,6 +87,12 @@ describe("spaHost", () => {
 		expect(seen).toHaveBeenCalledTimes(2);
 		stop();
 		expect(window.history.pushState).toBe(original);
+	});
+
+	it("sends the current page's path with each message", async () => {
+		const spaHost = await loadSpaHost();
+		window.history.replaceState({}, "", "/helpdesk/tickets/3059?tab=activity");
+		expect(spaHost.sendContext()).toEqual({ type: "app_page", path: "/helpdesk/tickets/3059" });
 	});
 
 	it("opens a Desk link in a new tab instead of leaving the app", async () => {

@@ -347,6 +347,26 @@ describe("widget panel", () => {
 		});
 	});
 
+	it("sends the page the user is on when the widget runs outside Desk", async () => {
+		const { setHost } = await import("../host/index.js");
+		const { deskHost } = await import("../host/deskHost.js");
+		setHost({ ...deskHost, sendContext: () => ({ type: "app_page", path: "/helpdesk/tickets/7" }) });
+		onTestFinished(() => setHost(null));
+		const chatStore = useChatStore();
+		chatStore.sendMessage = vi.fn().mockResolvedValue();
+		const w = mount(WidgetPanel, { global: { stubs } });
+		w.findComponent(WidgetWelcome).vm.$emit("suggestion", "What is this ticket about?");
+		await flushPromises();
+		expect(chatStore.sendMessage).toHaveBeenCalledWith(
+			"What is this ticket about?",
+			[],
+			JSON.stringify({ type: "app_page", path: "/helpdesk/tickets/7" }),
+			null,
+			null,
+			{ skipQueue: false }
+		);
+	});
+
 	it("opens a continued conversation in the widget, with any pending approval", async () => {
 		const chatStore = useChatStore();
 		chatStore.loadMessages = vi.fn().mockResolvedValue();

@@ -17,6 +17,8 @@ from concurrent.futures import ThreadPoolExecutor
 import frappe
 from frappe import _
 
+from frappe_assistant_core.chat.embed.page_context import render_page_context
+
 from .._rate_limits import (
     rate_limit,
     session_user_or_ip,
@@ -307,6 +309,11 @@ def send_message(
         signal_addendum = _render_client_signals(client_signals)
         if signal_addendum:
             system_prompt_addendum = (system_prompt_addendum or "") + signal_addendum
+
+        # The widget in another Frappe app sends the page's path; the server writes the line.
+        page_addendum = render_page_context(context)
+        if page_addendum:
+            system_prompt_addendum = (system_prompt_addendum or "") + page_addendum
 
         # Default to "spa" if client_type not specified (fail-safe: blocks browser tools)
         effective_client_type = client_type or "spa"

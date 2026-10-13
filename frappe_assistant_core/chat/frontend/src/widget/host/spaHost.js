@@ -78,6 +78,10 @@ export const spaHost = {
 	detectContext() {
 		return { type: "General" };
 	},
+	/** The page's path; the server turns it into one line naming the document, if any. */
+	sendContext() {
+		return { type: "app_page", path: window.location.pathname };
+	},
 	openDeskRoute(route, href) {
 		window.open(href, "_blank", "noopener");
 	},
