@@ -7,7 +7,7 @@
 				data-test="add-project"
 				:title="__('New project')"
 				:aria-label="__('New project')"
-				@click="startCreate"
+				@click="startCreate()"
 			>
 				＋
 			</button>
@@ -49,7 +49,7 @@
 			</button>
 		</div>
 	</div>
-	<button v-else class="empty-add" data-test="add-project" @click="startCreate">
+	<button v-else class="empty-add" data-test="add-project" @click="startCreate()">
 		＋ {{ __("New project") }}
 	</button>
 </template>
@@ -59,6 +59,7 @@ import { computed, nextTick, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { storeToRefs } from "pinia";
 import { useProjectsStore } from "@/stores/projectsStore";
+import { useConversationsStore } from "@/stores/conversationsStore";
 import { useToast } from "@/composables/useToast";
 import { __ } from "@/utils/i18n";
 
@@ -67,6 +68,7 @@ const LIMIT = 5;
 const route = useRoute();
 const router = useRouter();
 const projectsStore = useProjectsStore();
+const conversationsStore = useConversationsStore();
 const { projects } = storeToRefs(projectsStore);
 const { showError } = useToast();
 
@@ -75,11 +77,14 @@ const saving = ref(false);
 const draft = ref("");
 const showAll = ref(false);
 const inputRef = ref(null);
+// Set when the input was opened from a chat row: the new project receives that chat.
+const moveSessionId = ref(null);
 
 const visible = computed(() => projects.value.length > 0 || creating.value);
 const shown = computed(() => (showAll.value ? projects.value : projects.value.slice(0, LIMIT)));
 
-async function startCreate() {
+async function startCreate({ moveSessionId: sessionId = null } = {}) {
+	moveSessionId.value = sessionId;
 	draft.value = "";
 	creating.value = true;
 	await nextTick();
@@ -97,14 +102,21 @@ async function submit() {
 	saving.value = true;
 	try {
 		const project = await projectsStore.create(title);
-		creating.value = false;
-		router.push("/chat/project/" + project.name);
+		if (moveSessionId.value) {
+			await conversationsStore.moveSession(moveSessionId.value, project.name);
+			creating.value = false;
+		} else {
+			creating.value = false;
+			router.push("/chat/project/" + project.name);
+		}
 	} catch (err) {
 		showError(err?.message || __("Something went wrong"));
 	} finally {
 		saving.value = false;
 	}
 }
+
+defineExpose({ startCreate });
 </script>
 
 <style scoped>

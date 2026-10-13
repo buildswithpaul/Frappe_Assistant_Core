@@ -33,7 +33,7 @@
 			@update:model-value="conversationsStore.setSearch($event)"
 		/>
 
-		<ProjectsSection v-if="!collapsed && isChatRoute" />
+		<ProjectsSection v-if="!collapsed && isChatRoute" ref="projectsSectionRef" />
 
 		<!-- Recent Chats Section — only on Chat view -->
 		<ConversationsList
@@ -69,10 +69,7 @@ import ConversationsList from "./ConversationsList.vue";
 import UserDropdown from "./UserDropdown.vue";
 import FacoRobot from "@/components/common/FacoRobot.vue";
 import { writeHandoff } from "@/utils/sessionHandoff";
-import { __ } from "@/utils/i18n";
-import { useToast } from "@/composables/useToast";
 import { useConversationsStore } from "@/stores/conversationsStore";
-import { useProjectsStore } from "@/stores/projectsStore";
 
 const userStore = useUserStore();
 const userReady = computed(
@@ -144,20 +141,11 @@ onBeforeUnmount(() => {
 
 const isChatRoute = computed(() => route.path.startsWith("/chat") || route.path === "/");
 
-const projectsStore = useProjectsStore();
 const conversationsStore = useConversationsStore();
-const { showError } = useToast();
+const projectsSectionRef = ref(null);
 
-// ConfirmModal has no text input, so a native prompt collects the project name.
-async function createProjectFor(sessionId) {
-	const title = (window.prompt(__("Project name")) || "").trim();
-	if (!title) return;
-	try {
-		const project = await projectsStore.create(title);
-		await conversationsStore.moveSession(sessionId, project.name);
-	} catch (err) {
-		showError(err?.message || __("Something went wrong"));
-	}
+function createProjectFor(sessionId) {
+	projectsSectionRef.value?.startCreate({ moveSessionId: sessionId });
 }
 
 function returnToDesk() {
