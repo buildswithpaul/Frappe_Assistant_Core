@@ -7,10 +7,18 @@
 import frappe
 from frappe import _
 
+from frappe_assistant_core.chat.api.chat.projects import project_documents_enabled
 from frappe_assistant_core.chat.doctype.fac_chat_project.fac_chat_project import FACChatProject
 
 from ._helpers import ARAPIError, _strip_noise
 from .auth import _ar_user_id
+
+
+def _require_project_documents(project: str) -> None:
+    """Own the project, and refuse when AR would silently ignore project_id (older AR)."""
+    FACChatProject.owned(project)
+    if not project_documents_enabled():
+        frappe.throw(_("Project documents aren't available on this FAC Cloud"), frappe.ValidationError)
 
 
 @frappe.whitelist(methods=["GET"])
@@ -23,7 +31,7 @@ def list_documents(limit: int = 50, offset: int = 0, project: str | None = None)
     With ``project``, lists that project's documents instead (caller must own it).
     """
     if project:
-        FACChatProject.owned(project)
+        _require_project_documents(project)
     try:
         from frappe_assistant_core.chat.fac_cloud_client import get_fac_cloud_client
 
@@ -118,7 +126,7 @@ def upload_document():
     """
     project = frappe.form_dict.get("project") or None
     if project:
-        FACChatProject.owned(project)
+        _require_project_documents(project)
     try:
         from frappe_assistant_core.chat.fac_cloud_client import get_fac_cloud_client
 

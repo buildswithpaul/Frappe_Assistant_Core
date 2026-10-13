@@ -53,21 +53,28 @@ def _not_registered_error() -> str:
     )
 
 
-def _marketplace_enabled() -> bool:
-    """Return True if the AR backend has the marketplace companion app installed.
+def _cached_capability(section: str, key: str) -> bool:
+    """Read one flag from ``FAC Chat Settings.cached_capabilities`` (refreshed by ``initialize_spa``).
 
-    Reads ``FACO Settings.cached_capabilities`` (populated by ``initialize_spa``
-    every 5 minutes). Defaults to False on missing/corrupted cache so callers
-    skip marketplace endpoints rather than emitting ``ModuleNotFoundError`` rows.
+    False on a missing or corrupted cache, so callers skip the feature rather than fail.
     """
     try:
         cached = frappe.db.get_single_value("FAC Chat Settings", "cached_capabilities")
         if not cached:
             return False
         caps = json.loads(cached) if isinstance(cached, str) else cached
-        return bool(caps.get("marketplace", {}).get("marketplace_enabled", False))
+        return bool(caps.get(section, {}).get(key, False))
     except Exception:
         return False
+
+
+def _marketplace_enabled() -> bool:
+    """Return True if the AR backend has the marketplace companion app installed.
+
+    Defaults to False on missing/corrupted cache so callers skip marketplace
+    endpoints rather than emitting ``ModuleNotFoundError`` rows.
+    """
+    return _cached_capability("marketplace", "marketplace_enabled")
 
 
 # The Error Log `title` column is capped at 140 chars by Frappe. Keep a safe

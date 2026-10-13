@@ -6,12 +6,11 @@
 
 from __future__ import annotations
 
-import json
-
 import frappe
 from frappe import _
 from frappe.query_builder.functions import Count
 
+from frappe_assistant_core.chat.api._helpers import _cached_capability
 from frappe_assistant_core.chat.doctype.fac_chat_project.fac_chat_project import FACChatProject
 
 _FIELDS = ("name", "title", "instructions", "last_activity")
@@ -20,14 +19,7 @@ PROJECT_LIST_LIMIT = 500
 
 def project_documents_enabled() -> bool:
     """Whether the connected AR supports project documents (cached capabilities)."""
-    try:
-        cached = frappe.db.get_single_value("FAC Chat Settings", "cached_capabilities")
-        if not cached:
-            return False
-        caps = json.loads(cached) if isinstance(cached, str) else cached
-        return bool(caps.get("features", {}).get("project_documents", False))
-    except Exception:
-        return False
+    return _cached_capability("features", "project_documents")
 
 
 def _as_row(doc) -> dict:

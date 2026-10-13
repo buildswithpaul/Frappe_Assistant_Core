@@ -49,6 +49,10 @@ class _Base(BaseAssistantTest):
 
 
 class TestUploadAndList(_Base):
+    def setUp(self):
+        super().setUp()
+        _set_capability(True)
+
     def _upload(self, **form):
         upload = SimpleNamespace(filename="notes.txt", content_type="text/plain", read=io.BytesIO(b"hi").read)
         request = SimpleNamespace(files={"file": upload})
@@ -86,6 +90,15 @@ class TestUploadAndList(_Base):
         documents.list_documents()
         self.assertNotIn("project_id", self.client.list_documents.call_args.kwargs)
 
+    def test_upload_and_list_refuse_a_project_when_ar_lacks_the_capability(self):
+        _set_capability(False)
+        with self.assertRaises(frappe.ValidationError):
+            self._upload(project=self.project)
+        with self.assertRaises(frappe.ValidationError):
+            documents.list_documents(project=self.project)
+        self.client.upload_document.assert_not_called()
+        self.client.list_documents.assert_not_called()
+
     def test_list_refuses_foreign_project(self):
         theirs = make_project(OTHER_USER)
         with self.assertRaises(frappe.DoesNotExistError):
@@ -96,6 +109,12 @@ class TestUploadAndList(_Base):
 class TestDeleteProject(_Base):
     def test_delete_unlinks_before_deleting(self):
         _set_capability(True)
+
+        def unlink(**_kwargs):
+            self.assertTrue(frappe.db.exists("FAC Chat Project", self.project))
+            return {"status": "unlinked", "count": 0}
+
+        self.client.unlink_project_documents.side_effect = unlink
         projects.delete_project(self.project)
         self.client.unlink_project_documents.assert_called_once_with(
             user_id=_ar_user_id("Administrator"), project_id=self.project
