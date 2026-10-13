@@ -415,6 +415,9 @@ doc_events["Raven Message"] = {
     "on_update": "frappe_assistant_core.integrations.raven.triggers.on_update",
     "on_trash": "frappe_assistant_core.integrations.raven.triggers.on_trash",
 }
+scheduler_events["cron"].setdefault("*/5 * * * *", []).append(
+    "frappe_assistant_core.integrations.raven.sweep.finish_interrupted_replies"
+)
 
 # Permission filters for chat DocTypes — registered unconditionally; only
 # fires when someone queries these tables, which is itself a chat-on activity.

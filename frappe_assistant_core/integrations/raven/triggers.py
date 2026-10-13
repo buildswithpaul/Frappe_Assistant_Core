@@ -83,4 +83,12 @@ def on_update(doc, method=None) -> None:
 
 
 def on_trash(doc, method=None) -> None:
-    return None
+    """Raven has no Stop button: deleting FAC Bot's reply while it streams stops the turn."""
+    if not doc.is_bot_message or doc.bot != bot.BOT_NAME:
+        return
+    from frappe_assistant_core.chat.api.chat.cancel import mark_cancelled
+    from frappe_assistant_core.integrations.raven.turn import REPLIES_KEY
+
+    entry = frappe.cache.hget(REPLIES_KEY, doc.name)
+    if entry:
+        mark_cancelled(entry["session_id"])
