@@ -123,3 +123,79 @@ jobs:
           bench --site test_site run-tests --app frappe_assistant_core
         env:
           TYPE: server
+
+  # FAC Bot in Raven: its tests skip where Raven is absent, so they get a site with Raven installed.
+  raven:
+    runs-on: ubuntu-latest
+    name: Raven bot (version-16)
+    timeout-minutes: 30
+
+    services:
+      redis-cache:
+        image: redis:alpine
+        ports:
+          - 13000:6379
+      redis-queue:
+        image: redis:alpine
+        ports:
+          - 11000:6379
+      mariadb:
+        image: mariadb:10.6
+        env:
+          MYSQL_ROOT_PASSWORD: root
+        ports:
+          - 3306:3306
+        options: --health-cmd="mariadb-admin ping" --health-interval=5s --health-timeout=2s --health-retries=3
+
+    steps:
+      - name: Clone
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          check-latest: true
+
+      - name: Install MariaDB Client
+        timeout-minutes: 5
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends mariadb-client
+
+      - name: Setup
+        run: |
+          pip install frappe-bench
+          bench init --skip-redis-config-generation --skip-assets --python "$(which python)" --frappe-branch version-16 ~/frappe-bench
+          mariadb --host 127.0.0.1 --port 3306 -u root -proot -e "SET GLOBAL character_set_server = 'utf8mb4'"
+          mariadb --host 127.0.0.1 --port 3306 -u root -proot -e "SET GLOBAL collation_server = 'utf8mb4_unicode_ci'"
+
+      - name: Install
+        working-directory: /home/runner/frappe-bench
+        run: |
+          bench get-app --skip-assets raven --branch main
+          bench get-app --skip-assets frappe_assistant_core $GITHUB_WORKSPACE
+          bench setup requirements --dev
+          bench new-site --db-root-password root --admin-password admin test_site
+          bench --site test_site install-app raven
+          bench --site test_site install-app frappe_assistant_core
+        env:
+          CI: 'Yes'
+
+      - name: Run Tests
+        working-directory: /home/runner/frappe-bench
+        run: |
+          bench --site test_site set-config allow_tests true
+          bench --site test_site run-tests --module frappe_assistant_core.tests.test_raven_bot_switch
+          bench --site test_site run-tests --module frappe_assistant_core.tests.test_raven_triggers
+          bench --site test_site run-tests --module frappe_assistant_core.tests.test_raven_turn
+          bench --site test_site run-tests --module frappe_assistant_core.tests.test_raven_stop_and_sweep
+        env:
+          TYPE: server
