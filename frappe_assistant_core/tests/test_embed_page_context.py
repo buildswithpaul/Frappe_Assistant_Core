@@ -152,10 +152,10 @@ class TestEmbedPageContext(BaseAssistantTest):
         self.assertIsNone(storable_context({"type": "app_page", "path": "not a path"}))
         self.assertIsNone(storable_context(None))
 
-    def test_insights_pages_point_at_the_insights_tools_while_the_plugin_is_on(self):
+    def test_insights_pages_point_at_the_insights_tools_while_faco_is_on(self):
         from frappe_assistant_core.chat.embed import page_context
 
-        with patch(f"{PAGE}.insights_plugin_enabled", autospec=True, return_value=True):
+        with patch(f"{PAGE}.insights_tools_enabled", autospec=True, return_value=True):
             self.assertEqual(
                 page_context.how_to_read("Insights Dashboard v3", "abc"),
                 'read it with get_insights_dashboard (name "abc")',
@@ -164,16 +164,27 @@ class TestEmbedPageContext(BaseAssistantTest):
                 page_context.how_to_read("Insights Chart v3", "c1"),
                 'read it with get_insights_chart (name "c1")',
             )
-        with patch(f"{PAGE}.insights_plugin_enabled", autospec=True, return_value=False):
+        with patch(f"{PAGE}.insights_tools_enabled", autospec=True, return_value=False):
             self.assertEqual(
                 page_context.how_to_read("Insights Dashboard v3", "abc"),
                 'read it with get_document (doctype "Insights Dashboard v3", name "abc")',
             )
 
+    def test_the_insights_hint_follows_the_faco_plugin(self):
+        from frappe_assistant_core.chat.embed import page_context
+
+        if not frappe.db.exists("FAC Plugin Configuration", "faco"):
+            self.skipTest("the plugin sync has not run on this site")
+        # Production: an administrator switches the faco plugin in FAC Admin; this write is rolled back.
+        frappe.db.set_value("FAC Plugin Configuration", "faco", "enabled", 0, update_modified=False)
+        self.assertFalse(page_context.insights_tools_enabled())
+        frappe.db.set_value("FAC Plugin Configuration", "faco", "enabled", 1, update_modified=False)
+        self.assertTrue(page_context.insights_tools_enabled())
+
     def test_other_documents_keep_get_document(self):
         from frappe_assistant_core.chat.embed import page_context
 
-        with patch(f"{PAGE}.insights_plugin_enabled", autospec=True, return_value=True):
+        with patch(f"{PAGE}.insights_tools_enabled", autospec=True, return_value=True):
             self.assertEqual(
                 page_context.how_to_read("HD Ticket", "1"),
                 'read it with get_document (doctype "HD Ticket", name "1")',

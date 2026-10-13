@@ -27,6 +27,9 @@ Provides tools migrated from frappe_assistant_copilot:
   - browser_navigate_to: navigate the user's browser to a Frappe route
   - browser_take_screenshot: capture a screenshot of the current page
   - browser_wait_for_page: wait for the page to finish loading
+  - list_insights_dashboards, get_insights_dashboard, get_insights_chart: read Frappe
+    Insights v3 dashboards and charts with their numbers, as the user (only on a site
+    with Insights installed; see insights/tool.py)
 
 Utility modules (not registered as tools):
   - rich_blocks: helper imported by generate_document
@@ -61,7 +64,7 @@ class FacoPlugin(BasePlugin):
             "name": "faco",
             "display_name": "FACO Tools",
             "description": (
-                "Document generation and browser automation for FAC Chat. "
+                "Document generation, browser automation and Frappe Insights reading for FAC Chat. "
                 "These tools run inside the FAC Chat page, so they are "
                 "available to FAC Cloud only and stay hidden from other MCP "
                 "clients such as Claude Desktop."
@@ -85,6 +88,10 @@ class FacoPlugin(BasePlugin):
             "browser_navigate_to",
             "browser_take_screenshot",
             "browser_wait_for_page",
+            # What the widget reads on an Insights page. Skipped where Insights is not installed.
+            "list_insights_dashboards",
+            "get_insights_dashboard",
+            "get_insights_chart",
         ]
 
     def is_fac_cloud_only(self) -> bool:

@@ -25,7 +25,7 @@ import frappe
 from frappe import _
 from frappe.utils import get_datetime
 
-from frappe_assistant_core.plugins.insights.chart_data import (
+from frappe_assistant_core.plugins.faco.insights.chart_data import (
     adhoc_filters_for,
     applied_filters,
     chart_row_limit,

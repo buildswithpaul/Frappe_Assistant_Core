@@ -23,7 +23,7 @@ getAdhocFilters, query/components/filter_utils.ts isFilterValid) and run without
 import json
 from datetime import datetime, timedelta
 
-from frappe_assistant_core.plugins.insights.chart_data import (
+from frappe_assistant_core.plugins.faco.insights.chart_data import (
     MAX_COLUMNS,
     MAX_DASHBOARD_ROWS,
     adhoc_filters_for,
@@ -230,6 +230,49 @@ class TestInsightsToolCategory(BaseAssistantTest):
             ("get_insights_chart", "GetInsightsChart"),
         ):
             tool = getattr(
-                __import__(f"frappe_assistant_core.plugins.insights.tools.{module}", fromlist=[cls]), cls
+                __import__(f"frappe_assistant_core.plugins.faco.tools.{module}", fromlist=[cls]), cls
             )()
             self.assertEqual(detect_tool_category(tool), "read_only", module)
+
+
+INSIGHTS_TOOLS = ("list_insights_dashboards", "get_insights_dashboard", "get_insights_chart")
+
+
+class TestInsightsToolsShipWithFaco(BaseAssistantTest):
+    """The Insights tools serve FAC Chat's widget, so they come with the faco plugin, not their own."""
+
+    def test_the_faco_plugin_carries_the_insights_tools(self):
+        import importlib.util
+
+        from frappe_assistant_core.plugins.faco.plugin import FacoPlugin
+
+        self.assertTrue(set(INSIGHTS_TOOLS) <= set(FacoPlugin().get_tools()))
+        # No plugin of their own for an administrator to find switched off.
+        self.assertIsNone(importlib.util.find_spec("frappe_assistant_core.plugins.insights"))
+
+    def test_a_site_without_insights_does_not_load_them(self):
+        from unittest.mock import patch
+
+        from frappe_assistant_core.plugins.faco.tools.get_insights_dashboard import GetInsightsDashboard
+
+        tool = GetInsightsDashboard()
+        # Production: a bench can carry the insights app without it being installed on this site.
+        with patch(
+            "frappe_assistant_core.plugins.faco.insights.tool.insights_installed",
+            autospec=True,
+            return_value=False,
+        ):
+            self.assertFalse(tool.validate_dependencies()[0])
+        with patch(
+            "frappe_assistant_core.plugins.faco.insights.tool.insights_installed",
+            autospec=True,
+            return_value=True,
+        ):
+            self.assertEqual(tool.validate_dependencies(), (True, None))
+
+    def test_insights_installed_reads_this_sites_apps(self):
+        import frappe
+
+        from frappe_assistant_core.plugins.faco.insights.tool import insights_installed
+
+        self.assertEqual(insights_installed(), "insights" in frappe.get_installed_apps())

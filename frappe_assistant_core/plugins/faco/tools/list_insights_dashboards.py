@@ -18,12 +18,12 @@ from typing import Any, Dict
 
 import frappe
 
-from frappe_assistant_core.core.base_tool import BaseTool
-from frappe_assistant_core.plugins.insights.chart_data import chart_names
-from frappe_assistant_core.plugins.insights.reader import insights_access_error
+from frappe_assistant_core.plugins.faco.insights.chart_data import chart_names
+from frappe_assistant_core.plugins.faco.insights.reader import insights_access_error
+from frappe_assistant_core.plugins.faco.insights.tool import InsightsTool
 
 
-class ListInsightsDashboards(BaseTool):
+class ListInsightsDashboards(InsightsTool):
     def __init__(self):
         super().__init__()
         self.name = "list_insights_dashboards"

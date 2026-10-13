@@ -48,20 +48,20 @@ PAGE_DOCUMENTS = {
 SAFE_PATH = re.compile(r"/[A-Za-z0-9._~%/-]{0,199}")
 SAFE_NAME = re.compile(r"[A-Za-z0-9._-]{1,140}")
 
-# While the Insights plugin is on, its tools read a dashboard's numbers; get_document only its layout.
+# While the faco plugin is on, its Insights tools read a dashboard's numbers; get_document only its layout.
 INSIGHTS_TOOLS = {
     "Insights Dashboard v3": "get_insights_dashboard",
     "Insights Chart v3": "get_insights_chart",
 }
 
 
-def insights_plugin_enabled() -> bool:
-    return bool(frappe.db.get_value("FAC Plugin Configuration", "insights", "enabled"))
+def insights_tools_enabled() -> bool:
+    return bool(frappe.db.get_value("FAC Plugin Configuration", "faco", "enabled"))
 
 
 def how_to_read(doctype: str, name: str) -> str:
     tool = INSIGHTS_TOOLS.get(doctype)
-    if tool and insights_plugin_enabled():
+    if tool and insights_tools_enabled():
         return f'read it with {tool} (name "{name}")'
     return f'read it with get_document (doctype "{doctype}", name "{name}")'
 

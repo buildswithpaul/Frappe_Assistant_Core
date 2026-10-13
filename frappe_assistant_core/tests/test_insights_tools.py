@@ -164,7 +164,7 @@ class TestInsightsTools(BaseAssistantTest):
         super().tearDown()
 
     def _tool(self, name):
-        module = __import__(f"frappe_assistant_core.plugins.insights.tools.{name}", fromlist=["*"])
+        module = __import__(f"frappe_assistant_core.plugins.faco.tools.{name}", fromlist=["*"])
         cls = next(
             v
             for v in vars(module).values()
@@ -280,8 +280,8 @@ class TestInsightsTools(BaseAssistantTest):
         self.assertIn(self.dashboard.name, out["chart"]["note"])
 
     def test_a_failed_chart_does_not_leave_its_filters_for_the_next(self):
-        from frappe_assistant_core.plugins.insights.chart_data import dashboard_filters, resolve_filters
-        from frappe_assistant_core.plugins.insights.reader import read_chart
+        from frappe_assistant_core.plugins.faco.insights.chart_data import dashboard_filters, resolve_filters
+        from frappe_assistant_core.plugins.faco.insights.reader import read_chart
 
         items = [
             {

@@ -19,28 +19,28 @@ from typing import Any, Dict
 import frappe
 from frappe import _
 
-from frappe_assistant_core.core.base_tool import BaseTool
-from frappe_assistant_core.plugins.insights.chart_data import (
+from frappe_assistant_core.plugins.faco.insights.chart_data import (
     chart_names,
     dashboard_filters,
     parse_items,
     resolve_filters,
     unknown_overrides,
 )
-from frappe_assistant_core.plugins.insights.reader import (
+from frappe_assistant_core.plugins.faco.insights.reader import (
     can_read,
     insights_access_error,
     not_found,
     read_chart,
 )
-from frappe_assistant_core.plugins.insights.tools.get_insights_dashboard import (
+from frappe_assistant_core.plugins.faco.insights.tool import InsightsTool
+from frappe_assistant_core.plugins.faco.tools.get_insights_dashboard import (
     DASHBOARD,
     filters_out,
     overrides_from,
 )
 
 
-class GetInsightsChart(BaseTool):
+class GetInsightsChart(InsightsTool):
     def __init__(self):
         super().__init__()
         self.name = "get_insights_chart"
