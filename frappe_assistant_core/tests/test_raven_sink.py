@@ -28,7 +28,7 @@ class FakeWriter(ReplyWriter):
     def __init__(self):
         self.saves, self.statuses = [], []
 
-    def update(self, html: str) -> None:
+    def update(self, html: str, final: bool = False) -> None:
         self.saves.append(html)
 
     def status(self, text: str | None) -> None:

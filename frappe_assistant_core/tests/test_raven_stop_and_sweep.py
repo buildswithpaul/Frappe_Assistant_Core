@@ -81,3 +81,13 @@ class TestStopAndSweep(BaseAssistantTest):
         frappe.delete_doc("Raven Message", reply, ignore_permissions=True)
         RavenReplyWriter(reply, self.dm, bot.BOT_NAME).update("<p>late</p>")
         self.assertFalse(frappe.db.exists("Raven Message", reply))
+
+    def test_the_status_strip_is_published_at_once_not_after_a_commit(self):
+        # From the relay thread, an after-commit event waits for the next text save — or never shows.
+        from unittest.mock import patch
+
+        from frappe_assistant_core.integrations.raven.sink import RavenReplyWriter
+
+        with patch("frappe.publish_realtime", autospec=True) as publish:
+            RavenReplyWriter("r1", self.dm, bot.BOT_NAME).status("FAC Bot is reading HD Ticket 1…")
+        self.assertFalse(publish.call_args.kwargs["after_commit"])

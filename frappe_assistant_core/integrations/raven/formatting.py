@@ -25,12 +25,15 @@ from frappe.utils.html_utils import sanitize_html
 
 FENCE = re.compile(r"```(chart|mermaid|callout|metric|steps|accordion|tabs)([^\n]*)\n([\s\S]*?)```")
 TITLE = re.compile(r'title="([^"]*)"')
+# Raven turns <span data-type="userMention" data-id=…> into a real mention that notifies anyone named.
+MENTION_ATTRS = re.compile(r'\sdata-(?:type|id)="[^"]*"')
 DRAWN = {"chart": "📊", "mermaid": "🔀"}
 
 SWITCHED_OFF = _lt("FAC Bot is switched off on this site.")
 NOT_A_MEMBER = _lt("Add FAC Bot to this channel to ask it here.")
 INTERRUPTED = _lt("I was interrupted before I finished. Please ask again.")
 STOPPED = _lt("Stopped.")
+STILL_WORKING = _lt("I'm still answering your previous message. Send this again once that answer is done.")
 QUOTA = _lt(
     "Your workspace has used all of this month's credits. Ask your workspace admin to upgrade or "
     "buy credits. Your administrator can add credits in FAC Chat → Billing."
@@ -52,7 +55,7 @@ def _fence(match: re.Match, session_url: str) -> str:
 
 def to_raven_html(markdown: str, session_url: str) -> str:
     text = FENCE.sub(lambda m: _fence(m, session_url), markdown or "")
-    return sanitize_html(md_to_html(text) or "")
+    return MENTION_ATTRS.sub("", sanitize_html(md_to_html(text) or ""))
 
 
 def _describe(tool_name: str, tool_input: dict) -> str:

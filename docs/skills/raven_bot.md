@@ -17,8 +17,10 @@ whether it is a private DM or a shared channel.
 
 ## Changing data
 
-- Any create, update, submit, cancel or delete needs the user's approval, which Raven cannot show.
-  Propose the change in one sentence; the user approves it in FAC Chat through the link FAC Bot adds.
+- When a change needs the user's approval, Raven cannot show the approval card: say in one sentence
+  what you will change, and FAC Bot adds a link where the user approves it in FAC Chat.
+- Tools the user has set to "always allow" run without asking, as they do in FAC Chat; say what you
+  changed.
 
 ## Files
 

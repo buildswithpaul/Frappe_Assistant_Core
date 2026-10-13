@@ -74,3 +74,10 @@ class TestRavenFormatting(BaseAssistantTest):
         # can_use_faco answers chat_module_disabled with a status and no reason.
         text = formatting.refusal_text({"can_use": False, "status": "chat_module_disabled"})
         self.assertIn("FAC Chat is switched off", text)
+
+    def test_model_text_cannot_mention_people(self):
+        # Raven turns this markup into a real mention that notifies anyone named, member or not.
+        md = 'Ping <span data-type="userMention" data-id="ceo@x.com">@CEO</span> now'
+        html = formatting.to_raven_html(md, URL)
+        self.assertNotIn("userMention", html)
+        self.assertNotIn("ceo@x.com", html.replace("@CEO", ""))

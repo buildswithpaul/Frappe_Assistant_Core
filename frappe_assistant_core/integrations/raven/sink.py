@@ -32,7 +32,7 @@ TERMINAL = ("stream_complete", "stream_error", "stream_aborted", "approval_requi
 class ReplyWriter:
     """Where the sink writes: the Raven message and Raven's bot status strip."""
 
-    def update(self, html: str) -> None:
+    def update(self, html: str, final: bool = False) -> None:
         raise NotImplementedError
 
     def status(self, text: str | None) -> None:
@@ -45,7 +45,7 @@ class RavenReplyWriter(ReplyWriter):
     def __init__(self, reply_name: str, channel_id: str, bot_user: str):
         self.reply_name, self.channel_id, self.bot_user = reply_name, channel_id, bot_user
 
-    def update(self, html: str) -> None:
+    def update(self, html: str, final: bool = False) -> None:
         if not frappe.db.exists("Raven Message", self.reply_name):
             return  # deleted by the asker: that was their Stop
         doc = frappe.get_doc("Raven Message", self.reply_name)
@@ -53,6 +53,9 @@ class RavenReplyWriter(ReplyWriter):
         doc.flags.is_ai_streaming = True  # not marked "edited"
         doc.flags.editing_metadata = True  # Raven publishes message_edited only with this set
         doc.save(ignore_permissions=True)
+        if final:
+            # Streaming saves skip Raven's teaser update; without this the DM list keeps "…".
+            doc.update_channel_last_message_on_edit()
         frappe.db.commit()  # nosemgrep: frappe-manual-commit — relay thread, not a request; each edit must reach Raven.
 
     def status(self, text: str | None) -> None:
@@ -61,7 +64,12 @@ class RavenReplyWriter(ReplyWriter):
         else:
             event, payload = "ai_event_clear", {"channel_id": self.channel_id}
         frappe.publish_realtime(
-            event, payload, doctype="Raven Channel", docname=self.channel_id, after_commit=True
+            # At once: from the relay thread an after-commit event waits for the next text save.
+            event,
+            payload,
+            doctype="Raven Channel",
+            docname=self.channel_id,
+            after_commit=False,
         )
 
 
@@ -88,23 +96,31 @@ class ReplySink:
         elif kind in TERMINAL:
             self._finish(kind, event)
 
-    def _save(self, markdown: str, extra_html: str = "") -> None:
+    def _save(self, markdown: str, extra_html: str = "", final: bool = False) -> None:
         text_html = formatting.to_raven_html(markdown, self.session_url) if markdown.strip() else ""
-        self.writer.update(text_html + extra_html)
+        self.writer.update(text_html + extra_html, final=final)
         self.last_save = self.clock()
 
     def _finish(self, kind: str, event: dict) -> None:
         if kind == "stream_complete":
-            self._save(event.get("full_response") or self.text)
+            self._save(event.get("full_response") or self.text, final=True)
         elif kind == "approval_required":
             handoff = formatting.handoff_html(
                 event.get("tool_name") or "", event.get("input") or {}, self.session_url
             )
-            self._save(self.text, handoff)
+            self._save(self.text, handoff, final=True)
         elif kind == "stream_aborted":
-            self._save(f"{event.get('partial_response') or self.text}\n\n_{formatting.STOPPED}_")
+            self._save(f"{event.get('partial_response') or self.text}\n\n_{formatting.STOPPED}_", final=True)
         else:
-            self.writer.update(f"<p>{escape_html(formatting.error_text(event))}</p>")
+            self.writer.update(f"<p>{escape_html(formatting.error_text(event))}</p>", final=True)
+        self.writer.status(None)
+        self.done = True
+
+    def interrupted(self) -> None:
+        """The stream ended without a final event (FAC Cloud's worker died): keep what was written."""
+        if self.done:
+            return
+        self._save(f"{self.text}\n\n_{formatting.INTERRUPTED}_", final=True)
         self.writer.status(None)
         self.done = True
 

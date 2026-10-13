@@ -43,8 +43,8 @@ RAVEN_PERSON = ("Raven User", "Desk User")
 class FakeCloud:
     """FAC Cloud as the relay sees it: stream_chat yields AR events and records each call."""
 
-    def __init__(self, reply: str = "Hi there", seated: tuple = ()):
-        self.reply, self.calls, self.seated = reply, [], set(seated)
+    def __init__(self, reply: str = "Hi there", seated: tuple = (), complete: bool = True):
+        self.reply, self.calls, self.seated, self.complete = reply, [], set(seated), complete
 
     def get_user_auth_status(self, user_id):
         """FAC Cloud's seat answer, as can_use_faco reads it: definite, never a network blip."""
@@ -86,7 +86,8 @@ class FakeCloud:
         )
         yield {"event": "stream_start", "data": {"message_id": f"ar-{len(self.calls)}"}}
         yield {"event": "stream_chunk", "data": {"content": self.reply}}
-        yield {"event": "stream_complete", "data": {"full_response": self.reply, "message_id": "ar-1"}}
+        if self.complete:  # an AR worker killed mid-turn just ends the stream
+            yield {"event": "stream_complete", "data": {"full_response": self.reply, "message_id": "ar-1"}}
 
 
 def inline_submit(fn, *args, **kwargs):
@@ -208,6 +209,8 @@ class TestRavenTurn(BaseAssistantTest):
         self.assertIn("Hi there", replies[0].text)
         self.assertEqual(replies[0].bot, bot.BOT_NAME)
         self.assertEqual(self.cloud.calls[0]["client_type"], "raven")
+        # The DM list shows the answer, not the placeholder it started as.
+        self.assertIn("Hi there", str(frappe.db.get_value("Raven Channel", dm, "last_message_details")))
         saved = frappe.get_all(
             "FAC Chat Message", filters={"session_id": self.cloud.calls[0]["session_id"]}, pluck="user"
         )
@@ -336,6 +339,31 @@ class TestRavenTurn(BaseAssistantTest):
         self.assertEqual(len(self.cloud.calls), 1, self._bot_replies(dm))
         self.assertIn("Quote total is 2,80,300", self.cloud.calls[0]["system_prompt_addendum"])
 
+    def test_a_stream_that_just_ends_is_finished_as_interrupted(self):
+        from frappe_assistant_core.integrations.raven.turn import REPLIES_KEY
+
+        self.cloud.complete = False
+        dm = self.raven_bot.create_direct_message_channel(self.avery)
+        msg = self._post(self.avery, dm, "<p>hello</p>")
+        with patch(GATE, return_value=SEATED):
+            self._run(msg, "dm")
+        reply = self._bot_replies(dm)[0]
+        self.assertIn(str(formatting.INTERRUPTED), reply.text)
+        self.assertIsNone(frappe.cache.hget(REPLIES_KEY, reply.name))
+
+    def test_a_message_while_a_turn_is_running_gets_a_still_working_reply(self):
+        from frappe_assistant_core.integrations.raven import sessions
+
+        dm = self.raven_bot.create_direct_message_channel(self.avery)
+        key = frappe.cache.make_key(f"fac_raven_lock:{sessions.session_id_for(dm, self.avery)}")
+        frappe.cache.set(key, "other-turn", ex=30)  # nosemgrep: frappe-cache-breaks-multitenancy — make_key
+        self.addCleanup(frappe.cache.delete, key)
+        msg = self._post(self.avery, dm, "<p>second question</p>")
+        with patch(GATE, return_value=SEATED):
+            self._run(msg, "dm")
+        self.assertEqual(self.cloud.calls, [])
+        self.assertIn(str(formatting.STILL_WORKING), self._bot_replies(dm)[0].text)
+
     def test_the_switched_off_bot_says_so(self):
         frappe.db.set_single_value("FAC Chat Settings", "enable_raven_bot", 0)
         bot.clear_state_cache()
@@ -379,14 +407,15 @@ class TestRavenTurnFilesAndLock(BaseAssistantTest):
         self.assertEqual([d.file_url for d in documents], [mine.file_url])
         self.assertEqual(dropped, ["payroll.txt"])
 
-    def test_a_second_turn_in_a_session_waits_for_the_first(self):
+    def test_releasing_a_lock_never_drops_another_turns_lock(self):
         from frappe_assistant_core.integrations.raven import turn
 
-        key = frappe.cache.make_key("fac_raven_lock:s-lock")
-        frappe.cache.set(key, 1, ex=30)  # nosemgrep: frappe-cache-breaks-multitenancy — key from make_key
-        threading.Timer(0.4, lambda: frappe.cache.delete(key)).start()
-        started = time.monotonic()
-        with turn._session_lock("s-lock"):
-            waited = time.monotonic() - started
-        self.assertGreaterEqual(waited, 0.35)
-        self.assertFalse(frappe.cache.exists(key))
+        lock = turn._session_lock("s-lock")
+        self.assertTrue(lock.acquire())
+        # Another turn took the key after ours expired; our release must leave it alone.
+        # nosemgrep: frappe-cache-breaks-multitenancy — lock.key comes from make_key
+        frappe.cache.set(lock.key, "someone-else", ex=30)
+        self.addCleanup(frappe.cache.delete, lock.key)
+        lock.release()
+        # nosemgrep: frappe-cache-breaks-multitenancy — lock.key comes from make_key
+        self.assertEqual(frappe.cache.get(lock.key), b"someone-else")

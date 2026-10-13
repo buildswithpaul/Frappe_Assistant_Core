@@ -33,7 +33,6 @@ from frappe_assistant_core.integrations.raven.sink import RavenReplyWriter, Repl
 
 REPLIES_KEY = "fac_raven_replies"
 TURN_TIMEOUT = 1100
-LOCK_WAIT = 300
 IMAGE_LIMIT = 5 * 1024 * 1024
 DM_LINE = _lt("You are answering as FAC Bot in a private Raven conversation. Raven cannot draw charts.")
 CHANNEL_LINE = _lt(
@@ -63,8 +62,14 @@ def run(message_id: str, kind: str) -> None:
         raven_bot.send_message(reply_channel, formatting.refusal_text(access))
         return
     session_id = sessions.session_id_for(reply_channel, msg.owner)
-    with _session_lock(session_id):
+    lock = _session_lock(session_id)
+    if not lock.acquire():
+        raven_bot.send_message(reply_channel, str(formatting.STILL_WORKING))
+        return
+    try:
         _run_turn(msg, kind, raven_bot, reply_channel, session_id)
+    finally:
+        lock.release()
 
 
 def _is_person(user: str) -> bool:
@@ -175,7 +180,6 @@ def _run_turn(msg, kind: str, raven_bot, reply_channel: str, session_id: str) ->
     def observe(event: dict) -> None:
         sink(event)
         if sink.done:
-            frappe.cache.hdel(REPLIES_KEY, reply)
             turn_observers.unregister(session_id)
         else:
             _track(reply, session_id)
@@ -190,29 +194,33 @@ def _run_turn(msg, kind: str, raven_bot, reply_channel: str, session_id: str) ->
             client_type="raven",
         )
         future.result(timeout=TURN_TIMEOUT)
+        # A stream can end with no final event (FAC Cloud's worker died); never leave "…".
+        sink.interrupted()
     except Exception:
         frappe.log_error(title="FAC Bot turn failed", message=frappe.get_traceback())
         if not sink.done:
             sink({"event": "stream_error"})
     finally:
         turn_observers.unregister(session_id)
-        frappe.cache.hdel(REPLIES_KEY, reply)
+        # Still tracked if unfinished (the job was killed), so the sweep can finish it.
+        if sink.done:
+            frappe.cache.hdel(REPLIES_KEY, reply)
 
 
 class _session_lock:
-    """One turn at a time per session: a second message waits (up to LOCK_WAIT) instead of racing."""
+    """One turn at a time per session. A second message is told to wait rather than queued: each
+    turn holds a worker, and two turns on one session would race on its saved state."""
 
     def __init__(self, session_id: str):
         self.key = frappe.cache.make_key(f"fac_raven_lock:{session_id}")
+        self.token = frappe.generate_hash(length=16)
 
-    def __enter__(self):
-        deadline = time.monotonic() + LOCK_WAIT
+    def acquire(self) -> bool:
         # nosemgrep: frappe-cache-breaks-multitenancy — the key is site-prefixed (make_key); set_value has no NX
-        while not frappe.cache.set(self.key, 1, nx=True, ex=TURN_TIMEOUT + 60):
-            if time.monotonic() > deadline:
-                break
-            time.sleep(0.2)
-        return self
+        return bool(frappe.cache.set(self.key, self.token, nx=True, ex=TURN_TIMEOUT + 60))
 
-    def __exit__(self, *exc):
-        frappe.cache.delete(self.key)
+    def release(self) -> None:
+        # Only our own lock: if ours expired and another turn took the key, leave theirs alone.
+        # nosemgrep: frappe-cache-breaks-multitenancy — the key is site-prefixed (make_key)
+        if frappe.cache.get(self.key) == self.token.encode():
+            frappe.cache.delete(self.key)

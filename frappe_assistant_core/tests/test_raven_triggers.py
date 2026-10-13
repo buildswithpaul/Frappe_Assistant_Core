@@ -104,6 +104,14 @@ class TestTriggerEnqueue(BaseAssistantTest):
         self.assertTrue(kwargs["deduplicate"])
         self.assertEqual(kwargs["job_id"], "fac-raven:b1")
 
+    def test_a_flood_of_messages_is_capped_per_person(self):
+        # A scripted sender must not keep the worker busy: the HTTP send endpoint caps at 30/min.
+        owner = f"flood-{frappe.generate_hash(length=6)}@x.com"
+        self.addCleanup(frappe.cache.delete, frappe.cache.make_key(f"fac_raven_rate:{owner}"))
+        for i in range(triggers.TURNS_PER_MINUTE + 3):
+            triggers.on_insert(message(name=f"m{i}", owner=owner, mentions=mention_of_bot()))
+        self.assertEqual(self.enqueue.call_count, triggers.TURNS_PER_MINUTE)
+
     def test_editing_a_message_never_starts_a_second_turn(self):
         msg = message(mentions=mention_of_bot())
         msg.is_new = lambda: False

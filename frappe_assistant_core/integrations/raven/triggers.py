@@ -28,6 +28,8 @@ from redis.exceptions import ConnectionError as RedisConnectionError
 from frappe_assistant_core.integrations.raven import bot
 
 ANSWERED_TYPES = ("Text", "File", "Image")
+# Each turn holds a worker while it runs; the HTTP send endpoint allows 30 a minute.
+TURNS_PER_MINUTE = 10
 TURN_JOB = "frappe_assistant_core.integrations.raven.turn.run"
 
 
@@ -68,10 +70,30 @@ def _enqueue(doc, kind: str) -> None:
         frappe.logger("fac_raven").warning(f"Redis is down; FAC Bot skipped message {doc.name}")
 
 
+def _within_rate(owner: str) -> bool:
+    key = frappe.cache.make_key(f"fac_raven_rate:{owner}")
+    try:
+        count = frappe.cache.incr(key)
+        if count == 1:
+            frappe.cache.expire(key, 60)
+    except RedisConnectionError:
+        return True  # the enqueue fails next and logs; do not count against the person
+    return count <= TURNS_PER_MINUTE
+
+
 def on_insert(doc, method=None) -> None:
     kind = addressed(doc)
-    if kind:
-        _enqueue(doc, kind)
+    if not kind:
+        return
+    # One batch is one turn: only its first message counts against the person.
+    if doc.message_batch_id and frappe.flags.get(f"fac_raven_batch:{doc.message_batch_id}"):
+        return
+    if doc.message_batch_id:
+        frappe.flags[f"fac_raven_batch:{doc.message_batch_id}"] = True
+    if not _within_rate(doc.owner):
+        frappe.logger("fac_raven").info(f"FAC Bot rate limit: skipped message {doc.name} from {doc.owner}")
+        return
+    _enqueue(doc, kind)
 
 
 def on_update(doc, method=None) -> None:
