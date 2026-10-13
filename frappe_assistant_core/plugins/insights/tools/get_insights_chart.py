@@ -17,9 +17,11 @@
 from typing import Any, Dict
 
 import frappe
+from frappe import _
 
 from frappe_assistant_core.core.base_tool import BaseTool
 from frappe_assistant_core.plugins.insights.chart_data import (
+    chart_names,
     dashboard_filters,
     parse_items,
     resolve_filters,
@@ -70,12 +72,16 @@ class GetInsightsChart(BaseTool):
         if dashboard:
             if not can_read(DASHBOARD, dashboard):
                 return not_found("dashboard", dashboard)
-            filters = dashboard_filters(parse_items(frappe.db.get_value(DASHBOARD, dashboard, "items")))
+            items = parse_items(frappe.db.get_value(DASHBOARD, dashboard, "items"))
+            filters = dashboard_filters(items)
             resolved, unknown = resolve_filters(filters, overrides), unknown_overrides(filters, overrides)
         elif overrides:
             unknown = [o.get("filter") for o in overrides if isinstance(o, dict)]
         max_rows = min(max(int(arguments.get("max_rows") or 200), 1), 500)
         entry = read_chart(name, resolved, max_rows)
+        if dashboard and name not in chart_names(items):
+            off = _("This chart is not on dashboard {0}, so none of its filters apply.").format(dashboard)
+            entry["note"] = f"{off} {entry['note']}" if entry.get("note") else off
         return {
             "success": "error" not in entry,
             "chart": entry,

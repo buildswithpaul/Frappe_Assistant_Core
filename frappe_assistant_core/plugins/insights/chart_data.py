@@ -28,6 +28,8 @@ from html import unescape
 MAX_CHARTS = 12
 MAX_DASHBOARD_ROWS = 600
 MAX_CELL = 200
+MAX_COLUMNS = 40
+DEFAULT_CHART_LIMIT = 100
 MAX_NOTE = 500
 
 VALUELESS_OPERATORS = ("is_set", "is_not_set")
@@ -128,6 +130,15 @@ def adhoc_filters_for(chart_name: str, resolved: list[dict]) -> dict:
     return groups
 
 
+def applied_filters(chart_name: str, resolved: list[dict]) -> list[dict]:
+    """The filters that reach one chart: applied and linked to it, as the model should report them."""
+    return [
+        {"name": f["name"], "operator": f["operator"], "value": f["value"]}
+        for f in resolved
+        if f["source"] != "none" and FILTER_LINK.fullmatch(f["links"].get(chart_name) or "")
+    ]
+
+
 def chart_names(items) -> list[str]:
     charts = [i for i in parse_items(items) if i.get("type") == "chart" and i.get("chart")]
     charts.sort(key=lambda i: ((i.get("layout") or {}).get("y", 0), (i.get("layout") or {}).get("x", 0)))
@@ -198,6 +209,15 @@ def config_summary(chart_type: str, config) -> dict:
     }
 
 
+def chart_row_limit(config) -> int:
+    """The rows Insights draws for a chart: config.limit, else its default of 100."""
+    cfg = json.loads(config or "{}") if isinstance(config, str) else (config or {})
+    limit = cfg.get("limit")
+    if isinstance(limit, int) and not isinstance(limit, bool) and limit > 0:
+        return limit
+    return DEFAULT_CHART_LIMIT
+
+
 def _cell(value):
     if isinstance(value, str) and len(value) > MAX_CELL:
         return value[:MAX_CELL] + "…"
@@ -205,13 +225,15 @@ def _cell(value):
 
 
 def shape_result(result: dict, max_rows: int) -> dict:
-    columns = [c for c in (result.get("columns") or []) if not c.get("hidden")]
+    visible = [c for c in (result.get("columns") or []) if not c.get("hidden")]
+    columns = visible[:MAX_COLUMNS]
     names = [c["name"] for c in columns]
     rows = result.get("rows") or []
     return {
         "columns": [{"name": c["name"], "type": c.get("type")} for c in columns],
         "rows": [{n: _cell(row.get(n)) for n in names} for row in rows[:max_rows]],
         "truncated": len(rows) > max_rows,
+        "columns_truncated": len(visible) > MAX_COLUMNS,
     }
 
 

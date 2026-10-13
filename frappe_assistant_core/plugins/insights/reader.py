@@ -27,6 +27,8 @@ from frappe.utils import get_datetime
 
 from frappe_assistant_core.plugins.insights.chart_data import (
     adhoc_filters_for,
+    applied_filters,
+    chart_row_limit,
     config_summary,
     is_fresh,
     shape_result,
@@ -79,6 +81,16 @@ def _error_text(exc: Exception) -> str:
     return _("This chart could not be read.")
 
 
+def _execute(query, adhoc_filters: dict | None, page_size: int) -> dict:
+    # Insights' set_adhoc_filters keeps what a failed build left, and a later execute without
+    # filters inherits it; so each read starts and ends with none.
+    frappe.local.insights_adhoc_filters = None
+    try:
+        return query.execute(adhoc_filters=adhoc_filters, page_size=page_size)
+    finally:
+        frappe.local.insights_adhoc_filters = None
+
+
 def read_chart(chart_name: str, resolved_filters: list[dict], max_rows: int) -> dict:
     entry: dict = {"name": chart_name}
     try:
@@ -99,10 +111,13 @@ def read_chart(chart_name: str, resolved_filters: list[dict], max_rows: int) -> 
                 "truncated": True,
                 "note": _("This call's row budget is used up; read this chart with get_insights_chart."),
             }
+        if fresh:
+            max_rows = min(max_rows, chart_row_limit(chart.config))
         adhoc = adhoc_filters_for(chart_name, resolved_filters) or None
-        result = query.execute(adhoc_filters=adhoc, page_size=max_rows + 1)
+        result = _execute(query, adhoc, max_rows + 1)
         entry.update(shape_result(result, max_rows))
         entry["source"] = "chart" if fresh else "raw"
+        entry["applied_filters"] = applied_filters(chart_name, resolved_filters)
         # What the numbers measure: a pivot's columns are dimension values, so its rows alone do not say.
         entry["config_summary"] = config_summary(chart.chart_type, chart.config)
         if not fresh:

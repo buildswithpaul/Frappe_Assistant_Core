@@ -261,3 +261,57 @@ class TestInsightsTools(BaseAssistantTest):
     def test_unknown_filter_names_are_reported(self):
         out = self._dashboard(filters=[{"filter": "Region", "operator": "=", "value": "EU"}])
         self.assertEqual(out["unknown_filters"], ["Region"])
+
+    def test_each_chart_reports_only_the_filters_that_reached_it(self):
+        out = self._dashboard()
+        by_name = {c["name"]: c for c in out["charts"]}
+        self.assertEqual(
+            by_name[self.fresh_chart.name]["applied_filters"],
+            [{"name": "Status", "operator": "=", "value": "Open"}],
+        )
+        # The Status filter is not linked to the raw chart, so its rows are unfiltered.
+        self.assertEqual(by_name[self.raw_chart.name]["applied_filters"], [])
+
+    def test_a_chart_read_with_a_dashboard_it_is_not_on_says_so(self):
+        other = self._chart("Not on the dashboard", self.base.name, fresh=False)
+        out = self._tool("get_insights_chart").execute({"name": other.name, "dashboard": self.dashboard.name})
+        self.assertTrue(out["success"], out)
+        self.assertEqual(out["chart"]["applied_filters"], [])
+        self.assertIn(self.dashboard.name, out["chart"]["note"])
+
+    def test_a_failed_chart_does_not_leave_its_filters_for_the_next(self):
+        from frappe_assistant_core.plugins.insights.chart_data import dashboard_filters, resolve_filters
+        from frappe_assistant_core.plugins.insights.reader import read_chart
+
+        items = [
+            {
+                "type": "filter",
+                "filter_name": "Status",
+                "links": {self.broken.name: f"`{self.broken.query}`.`nope`"},
+                "default_operator": "=",
+                "default_value": "Open",
+            }
+        ]
+        entry = read_chart(self.broken.name, resolve_filters(dashboard_filters(items), []), 5)
+        self.assertIn("error", entry)
+        # Insights' set_adhoc_filters has no finally, and a later execute(adhoc_filters=None)
+        # falls back to whatever is left here — the next chart on the dashboard would be filtered.
+        self.assertFalse(getattr(frappe.local, "insights_adhoc_filters", None))
+
+    def test_a_fresh_chart_reads_no_more_rows_than_it_draws(self):
+        # Constant rows: Insights runs on its own connection and cannot see this test's inserts.
+        two_statuses = self._query(
+            "Two statuses", "select 'Open' as status, 'a' as name union all select 'Closed', 'b'"
+        )
+        chart = self._chart("Two statuses", two_statuses.name, fresh=True)
+        config = json.loads(chart.config)
+        config["limit"] = 1
+        # Production: the author sets the row limit in the chart editor, which saves the chart and
+        # its data_query together; update_modified=False keeps the data_query as fresh as that.
+        frappe.db.set_value(
+            "Insights Chart v3", chart.name, "config", json.dumps(config), update_modified=False
+        )
+        out = self._tool("get_insights_chart").execute({"name": chart.name})
+        self.assertEqual(out["chart"]["source"], "chart", out)
+        self.assertEqual(len(out["chart"]["rows"]), 1)
+        self.assertTrue(out["chart"]["truncated"])

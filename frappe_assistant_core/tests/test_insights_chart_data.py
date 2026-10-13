@@ -24,9 +24,12 @@ import json
 from datetime import datetime, timedelta
 
 from frappe_assistant_core.plugins.insights.chart_data import (
+    MAX_COLUMNS,
     MAX_DASHBOARD_ROWS,
     adhoc_filters_for,
+    applied_filters,
     chart_names,
+    chart_row_limit,
     config_summary,
     dashboard_filters,
     is_fresh,
@@ -184,6 +187,31 @@ class TestInsightsChartData(BaseAssistantTest):
         self.assertEqual(shaped["columns"], [{"name": "a", "type": "String"}])
         self.assertEqual(shaped["rows"], [{"a": "x" * 200 + "…"}])
         self.assertTrue(shaped["truncated"])
+
+    def test_applied_filters_name_only_the_filters_that_reach_the_chart(self):
+        resolved = resolve_filters(dashboard_filters(ITEMS), [])
+        self.assertEqual(
+            applied_filters("c-first", resolved), [{"name": "Status", "operator": "=", "value": "Open"}]
+        )
+        # The default Status filter links c-first only: c-below's numbers are unfiltered.
+        self.assertEqual(applied_filters("c-below", resolved), [])
+
+    def test_shape_caps_the_number_of_columns(self):
+        result = {
+            "columns": [{"name": f"c{i}", "type": "String"} for i in range(MAX_COLUMNS + 10)],
+            "rows": [{f"c{i}": i for i in range(MAX_COLUMNS + 10)}],
+        }
+        shaped = shape_result(result, max_rows=5)
+        self.assertEqual(len(shaped["columns"]), MAX_COLUMNS)
+        self.assertEqual(len(shaped["rows"][0]), MAX_COLUMNS)
+        self.assertTrue(shaped["columns_truncated"])
+        self.assertFalse(shape_result({"columns": [{"name": "a"}], "rows": []}, 5)["columns_truncated"])
+
+    def test_the_chart_row_limit_defaults_like_insights(self):
+        # Insights draws config.limit rows, 100 when unset (frontend/src2/charts/chart.ts).
+        self.assertEqual(chart_row_limit(json.dumps({"limit": 10})), 10)
+        self.assertEqual(chart_row_limit("{}"), 100)
+        self.assertEqual(chart_row_limit(json.dumps({"limit": "x"})), 100)
 
     def test_row_budget_never_exceeds_the_dashboard_cap(self):
         self.assertEqual(row_budget(50, 0), 50)
