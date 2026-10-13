@@ -17,7 +17,7 @@ from concurrent.futures import ThreadPoolExecutor
 import frappe
 from frappe import _
 
-from frappe_assistant_core.chat.embed.page_context import render_page_context
+from frappe_assistant_core.chat.embed.page_context import render_page_context, storable_context
 
 from .._rate_limits import (
     rate_limit,
@@ -245,6 +245,10 @@ def send_message(
         # Parse context if provided as string (for backwards compatibility)
         if isinstance(context, str):
             context = json.loads(context) if context else {}
+        # The widget in another Frappe app sends its page; the server writes the prompt line, and
+        # the message stores it in a shape FAC Chat Message accepts.
+        page_addendum = render_page_context(context)
+        context = storable_context(context)
 
         # Parse file_urls if provided as string
         if isinstance(file_urls, str):
@@ -310,8 +314,6 @@ def send_message(
         if signal_addendum:
             system_prompt_addendum = (system_prompt_addendum or "") + signal_addendum
 
-        # The widget in another Frappe app sends the page's path; the server writes the line.
-        page_addendum = render_page_context(context)
         if page_addendum:
             system_prompt_addendum = (system_prompt_addendum or "") + page_addendum
 
