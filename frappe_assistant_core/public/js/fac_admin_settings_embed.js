@@ -50,6 +50,49 @@
                         </label>`).join('')}
                 </div>`);
             this.$body.find('input[data-app]').on('change', (e) => this.toggle($(e.currentTarget)));
+            this.loadRavenBot();
+        }
+
+        // FAC Bot in Raven: the bot in Raven's conversations, distinct from the widget on its pages.
+        loadRavenBot() {
+            frappe.call({
+                method: 'frappe_assistant_core.chat.api.settings.raven_bot.get_raven_bot',
+                type: 'GET',
+                callback: (r) => this.renderRavenBot(r.message || {}),
+            });
+        }
+
+        renderRavenBot({ available, enabled }) {
+            if (this.disposed || !available) return;
+            this.$body.append(`
+                <div class="fac-embed-apps fac-raven-bot">
+                    <label class="fac-embed-app">
+                        <input type="checkbox" data-raven-bot ${enabled ? 'checked' : ''}>
+                        <span>${__('FAC Bot in Raven')}</span>
+                        <code>${__('DMs and @mentions')}</code>
+                    </label>
+                    <p class="fac-settings-note">${__('Each answer runs as the person asking and uses their FACO credits. Add FAC Bot to a channel to use @mentions there.')}</p>
+                </div>`);
+            this.$body.find('input[data-raven-bot]').on('change', (e) => this.toggleRavenBot($(e.currentTarget)));
+        }
+
+        toggleRavenBot($input) {
+            const enabled = $input.prop('checked');
+            $input.prop('disabled', true);
+            frappe.call({
+                method: 'frappe_assistant_core.chat.api.settings.raven_bot.set_raven_bot_enabled',
+                type: 'POST',
+                args: { enabled: enabled ? 1 : 0 },
+                callback: () => {
+                    $input.prop('disabled', false);
+                    frappe.show_alert({
+                        message: enabled ? __('FAC Bot switched on') : __('FAC Bot switched off'),
+                        indicator: enabled ? 'green' : 'orange',
+                    });
+                },
+                // Frappe has shown the server's message; put the switch back where the server has it.
+                error: () => $input.prop({ disabled: false, checked: !enabled }),
+            });
         }
 
         toggle($input) {

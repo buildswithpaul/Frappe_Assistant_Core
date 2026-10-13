@@ -403,6 +403,12 @@ after_install.append("frappe_assistant_core.chat.hooks.install.after_install")
 # Refresh the read-only fac_cloud_url mirror from site_config, and log loudly
 # if a registered site is being repointed (see chat/cloud_url.py).
 after_migrate.append("frappe_assistant_core.chat.cloud_url.sync_cloud_url_mirror")
+# FAC Bot in Raven: create the bot on migrate once switched on; the cached on/off state follows
+# FAC Chat Settings.
+after_migrate.append("frappe_assistant_core.integrations.raven.bot.ensure_bot_after_migrate")
+doc_events.setdefault("FAC Chat Settings", {})["on_update"] = (
+    "frappe_assistant_core.integrations.raven.bot.clear_state_cache"
+)
 
 # Permission filters for chat DocTypes — registered unconditionally; only
 # fires when someone queries these tables, which is itself a chat-on activity.

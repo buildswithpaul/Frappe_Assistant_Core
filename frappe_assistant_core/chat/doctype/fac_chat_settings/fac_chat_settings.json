@@ -18,6 +18,7 @@
   "enable_browser_diagnostics",
   "widget_embed_section",
   "widget_embed_apps",
+  "enable_raven_bot",
   "retention_tab",
   "enable_retention_cleanup",
   "message_retention_days",
@@ -118,6 +119,13 @@
    "fieldtype": "Table",
    "label": "Apps",
    "options": "FAC Widget Embed App"
+  },
+  {
+   "default": "0",
+   "description": "Let people DM or @mention FAC Bot in Raven. Each answer uses the asker's FACO credits.",
+   "fieldname": "enable_raven_bot",
+   "fieldtype": "Check",
+   "label": "FAC Bot in Raven"
   },
   {
    "fieldname": "retention_tab",
