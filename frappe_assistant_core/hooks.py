@@ -409,6 +409,12 @@ after_migrate.append("frappe_assistant_core.integrations.raven.bot.ensure_bot_af
 doc_events.setdefault("FAC Chat Settings", {})["on_update"] = (
     "frappe_assistant_core.integrations.raven.bot.clear_state_cache"
 )
+# FAC Bot answers Raven DMs and @mentions; dormant unless Raven is installed and the bot exists.
+doc_events["Raven Message"] = {
+    "after_insert": "frappe_assistant_core.integrations.raven.triggers.on_insert",
+    "on_update": "frappe_assistant_core.integrations.raven.triggers.on_update",
+    "on_trash": "frappe_assistant_core.integrations.raven.triggers.on_trash",
+}
 
 # Permission filters for chat DocTypes — registered unconditionally; only
 # fires when someone queries these tables, which is itself a chat-on activity.
