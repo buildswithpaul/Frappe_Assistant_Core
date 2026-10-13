@@ -14,18 +14,28 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Session ids for Raven conversations: stable per (place, asker), never shared between askers."""
+"""Session ids for Raven conversations: stable per (place, asker), never shared between askers.
 
+The id is keyed by the site's encryption key. A session with no saved messages passes FAC Chat's
+owner check, so an id anyone could compute would let them claim another person's conversation.
+"""
+
+import hashlib
+import hmac
 import uuid
 
 from frappe.utils import get_url
+from frappe.utils.password import get_encryption_key
 
-NAMESPACE = uuid.UUID("6f0c2a1e-3b7d-4c55-9a0e-5b1f8d2c4a70")
+
+def _secret() -> str:
+    return get_encryption_key()
 
 
 def session_id_for(place: str, user: str) -> str:
     """One FAC Chat session per Raven place (DM or thread channel) and asker."""
-    return str(uuid.uuid5(NAMESPACE, f"raven:{place}:{user}"))
+    digest = hmac.new(_secret().encode(), f"raven:{place}:{user}".encode(), hashlib.sha256).digest()
+    return str(uuid.UUID(bytes=digest[:16], version=4))
 
 
 def session_url(session_id: str) -> str:

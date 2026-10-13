@@ -16,6 +16,9 @@
 
 """Each Raven conversation is a FAC Chat session of its own, owned by the asker."""
 
+from unittest.mock import patch
+
+from frappe_assistant_core.integrations.raven import sessions
 from frappe_assistant_core.integrations.raven.sessions import session_id_for, session_url
 from frappe_assistant_core.tests.base_test import BaseAssistantTest
 
@@ -29,3 +32,12 @@ class TestRavenSessions(BaseAssistantTest):
 
     def test_the_link_opens_the_session_in_fac_chat(self):
         self.assertTrue(session_url("abc").endswith("/copilot/chat/abc"))
+
+    def test_a_session_id_cannot_be_computed_from_public_values(self):
+        # A session with no saved messages passes the owner check, so a guessable id would let
+        # someone claim another person's Raven conversation first. The id is keyed by a site secret.
+        with patch.object(sessions, "_secret", autospec=True, return_value="site-a"):
+            first = session_id_for("dm-1", "a@x.com")
+        with patch.object(sessions, "_secret", autospec=True, return_value="site-b"):
+            second = session_id_for("dm-1", "a@x.com")
+        self.assertNotEqual(first, second)
