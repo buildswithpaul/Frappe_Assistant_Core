@@ -577,7 +577,7 @@ export const useChatStore = defineStore("chat", () => {
 			const modes = useComposerModesStore().modesFor(currentSessionId.value);
 			const surface = getSurface();
 			const signals = surfaceClientSignals();
-			await api.chat.send(
+			const ack = await api.chat.send(
 				currentSessionId.value,
 				message,
 				fileUrls,
@@ -597,9 +597,12 @@ export const useChatStore = defineStore("chat", () => {
 					...(currentProjectId.value ? { project: currentProjectId.value } : {}),
 				}
 			);
-			// The first send creates the conversation row; pull it into Recents once.
-			const sentSessionId = currentSessionId.value;
-			if (!sessions.value.some((s) => s.session_id === sentSessionId)) await loadSessions();
+			// The first send creates the conversation row; the ack carries it, so Recents
+			// gains it without a reload (no row for a GDPR-restricted user).
+			const row = ack?.conversation;
+			if (row && !sessions.value.some((s) => s.session_id === row.session_id)) {
+				sessions.value = [row, ...sessions.value];
+			}
 		} catch (err) {
 			stream.clearStreamTimeouts();
 			isStreaming.value = false;

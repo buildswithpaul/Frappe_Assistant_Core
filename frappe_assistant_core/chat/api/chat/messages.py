@@ -39,6 +39,7 @@ from ..chat.relay import (
     _relay_ar_interrupt_resume,
     _relay_ar_stream,
 )
+from ..chat.sessions import conversation_row
 
 # Bounded thread pool for relaying AR SSE streams to Socket.IO. Replaces
 # unbounded ``threading.Thread`` spawning (FACO-H14). Workers are daemon
@@ -264,8 +265,18 @@ def send_message(
                     ignored once the row exists.
 
     Returns:
-            dict: Acknowledgment that processing has started
+            dict: Acknowledgment that processing has started; ``conversation`` is the caller's
+            sidebar row (None when nothing is persisted, e.g. a restricted user)
     """
+    # An existing row keeps its own project, so the client's value only matters (and is
+    # only checked) for a chat that has no row yet.
+    if (
+        project
+        and not FACChatProject.is_owned(project)
+        and not frappe.db.exists("FAC Chat Conversation", {"name": session_id, "user": frappe.session.user})
+    ):
+        frappe.throw(_("Project not found"), frappe.DoesNotExistError)
+
     try:
         # Parse context if provided as string (for backwards compatibility)
         if isinstance(context, str):
@@ -306,17 +317,6 @@ def send_message(
         # skip message persistence entirely — the chat still runs (AR handles
         # the turn in-memory), but no content survives in FACO Message.
         restricted = _is_processing_restricted(frappe.session.user)
-
-        # An existing row keeps its own project, so the client's value only matters (and is
-        # only checked) for a chat that has no row yet.
-        if (
-            project
-            and not FACChatProject.is_owned(project)
-            and not frappe.db.exists(
-                "FAC Chat Conversation", {"name": session_id, "user": frappe.session.user}
-            )
-        ):
-            frappe.throw(_("Project not found"), frappe.DoesNotExistError)
 
         # Save user message to database
         from frappe_assistant_core.chat.doctype.fac_chat_message.fac_chat_message import (
@@ -403,13 +403,13 @@ def send_message(
         return {
             "status": "processing",
             "session_id": session_id,
+            "conversation": conversation_row(session_id),
             "message": _("Message is being processed. Response will be streamed via Socket.IO."),
         }
 
     # frappe.PermissionError does not subclass ValidationError, so the blanket
-    # handler below would mask the ownership refusal as a generic error; the same goes
-    # for the unowned-project refusal (DoesNotExistError).
-    except (frappe.PermissionError, frappe.DoesNotExistError):
+    # handler below would mask the ownership refusal as a generic error.
+    except frappe.PermissionError:
         raise
     except Exception as e:
         frappe.log_error(title="FACO Agent Error", message=f"Error in send_message: {e!s}")

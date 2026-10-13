@@ -73,6 +73,16 @@ def _list_conversations(
             return []
         filters["name"] = ["in", matched]
 
+    return _conversation_rows(filters, archived, user, limit, offset)
+
+
+def conversation_row(session_id: str) -> dict | None:
+    """The caller's one conversation in the sidebar's row shape; None when there is no row."""
+    rows = _conversation_rows({"name": session_id, "user": frappe.session.user}, 0, frappe.session.user, 1, 0)
+    return rows[0] if rows else None
+
+
+def _conversation_rows(filters: dict, archived: int, user: str, limit: int, offset: int) -> list[dict]:
     rows = frappe.get_list(
         "FAC Chat Conversation",
         filters=filters,

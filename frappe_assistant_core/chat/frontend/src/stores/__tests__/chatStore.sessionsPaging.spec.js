@@ -54,14 +54,30 @@ describe("chatStore session paging", () => {
 		expect(store.currentProjectId).toBe(null);
 	});
 
-	it("loads the session list once after the first send creates the row", async () => {
+	it("inserts the conversation row the first send returns, without reloading", async () => {
+		api.chat.getSessions.mockResolvedValueOnce(page(SESSIONS_PAGE_SIZE));
+		await store.loadSessions();
+		api.chat.getSessions.mockClear();
 		store.currentSessionId = "brand-new";
-		api.chat.getSessions.mockResolvedValueOnce([{ session_id: "brand-new", last_activity: "2026-10-01" }]);
+		const row = { session_id: "brand-new", last_activity: "2026-10-02", title: "hi" };
+		api.chat.send.mockResolvedValueOnce({ status: "processing", conversation: row });
 		await store.sendMessage("hi", [], null, "m1");
-		expect(api.chat.getSessions).toHaveBeenCalledTimes(1);
-		expect(store.currentSession?.session_id).toBe("brand-new");
+		expect(store.sessions[0]).toEqual(row);
+		expect(store.sessions).toHaveLength(SESSIONS_PAGE_SIZE + 1);
+		expect(store.sessionsHasMore).toBe(true);
+		expect(api.chat.getSessions).not.toHaveBeenCalled();
+		expect(store.isLoading).toBe(false);
+		api.chat.send.mockResolvedValueOnce({ status: "processing", conversation: row });
 		await store.sendMessage("again", [], null, "m1", null, { skipQueue: true });
-		expect(api.chat.getSessions).toHaveBeenCalledTimes(1);
+		expect(store.sessions.filter((s) => s.session_id === "brand-new")).toHaveLength(1);
+	});
+
+	it("adds nothing when the ack carries no conversation (restricted user)", async () => {
+		store.currentSessionId = "brand-new";
+		api.chat.send.mockResolvedValueOnce({ status: "processing", conversation: null });
+		await store.sendMessage("hi", [], null, "m1");
+		expect(store.sessions).toEqual([]);
+		expect(api.chat.getSessions).not.toHaveBeenCalled();
 	});
 
 	it("sends the current project with the message", async () => {

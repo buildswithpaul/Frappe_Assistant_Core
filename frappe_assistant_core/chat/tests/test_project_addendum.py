@@ -108,6 +108,34 @@ class TestEndpointsCarryProjectBlock(_ProjectTestBase):
         self.assertEqual(frappe.db.count("Error Log", {"method": ["like", "%FACO Agent Error%"]}), logged)
         self.assertFalse(frappe.db.exists("FAC Chat Conversation", SID))
 
+    def _send(self, restricted: bool = False, **kwargs):
+        with patch.object(messages._relay_pool, "submit", autospec=True), patch(
+            "frappe_assistant_core.chat.api.settings.can_use_faco", return_value={"can_use": True}
+        ), patch.object(messages, "_is_processing_restricted", autospec=True, return_value=restricted):
+            return messages.send_message(session_id=SID, message="hello there", **kwargs)
+
+    def test_first_send_returns_the_sidebar_row(self):
+        ack = self._send(project=self.project)
+        row = ack["conversation"]
+        self.assertEqual(row["session_id"], SID)
+        self.assertEqual(row["title"], "hello there")
+        self.assertEqual(row["preview"], "hello there")
+        self.assertEqual(row["project"], self.project)
+        self.assertEqual(row["project_title"], "Q3 Close")
+        self.assertEqual(row["message_count"], 1)
+
+    def test_restricted_send_returns_no_row(self):
+        # GDPR Art. 18 restriction is set per user; the send then persists nothing.
+        self.assertIsNone(self._send(restricted=True)["conversation"])
+
+    def test_a_missing_document_inside_send_is_logged_not_a_404(self):
+        logged = frappe.db.count("Error Log", {"method": ["like", "%FACO Agent Error%"]})
+        with patch.object(
+            FACChatMessage, "create_message", side_effect=frappe.DoesNotExistError("x")
+        ), self.assertRaises(frappe.ValidationError):
+            self._send()
+        self.assertEqual(frappe.db.count("Error Log", {"method": ["like", "%FACO Agent Error%"]}), logged + 1)
+
     def test_resume_interrupt_carries_project_block(self):
         # The row exists because the turn being resumed was sent through send_message,
         # which created it with this project.
