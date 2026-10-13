@@ -1,0 +1,35 @@
+{
+ "actions": [],
+ "autoname": "field:session_id",
+ "creation": "2026-10-13 00:00:00",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": ["session_id", "user", "title", "title_is_custom", "project", "started", "last_activity", "message_count", "is_archived"],
+ "fields": [
+  {"fieldname": "session_id", "fieldtype": "Data", "label": "Session ID", "reqd": 1, "unique": 1},
+  {"fieldname": "user", "fieldtype": "Link", "in_list_view": 1, "label": "User", "options": "User", "reqd": 1, "search_index": 1},
+  {"fieldname": "title", "fieldtype": "Data", "in_list_view": 1, "label": "Title", "length": 140},
+  {"default": "0", "fieldname": "title_is_custom", "fieldtype": "Check", "label": "Title Is Custom"},
+  {"fieldname": "project", "fieldtype": "Link", "label": "Project", "options": "FAC Chat Project", "search_index": 1},
+  {"fieldname": "started", "fieldtype": "Datetime", "label": "Started"},
+  {"fieldname": "last_activity", "fieldtype": "Datetime", "label": "Last Activity", "search_index": 1},
+  {"default": "0", "fieldname": "message_count", "fieldtype": "Int", "label": "Message Count"},
+  {"default": "0", "fieldname": "is_archived", "fieldtype": "Check", "label": "Is Archived", "search_index": 1}
+ ],
+ "links": [],
+ "modified": "2026-10-13 00:00:00",
+ "modified_by": "Administrator",
+ "module": "Chat",
+ "name": "FAC Chat Conversation",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
+ "permissions": [
+  {"create": 1, "delete": 1, "export": 1, "read": 1, "report": 1, "role": "System Manager", "write": 1},
+  {"create": 1, "delete": 1, "if_owner": 1, "read": 1, "role": "All", "write": 1}
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "title"
+}

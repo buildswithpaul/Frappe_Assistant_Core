@@ -418,6 +418,13 @@ permission_query_conditions.update(
             "frappe_assistant_core.chat.utils.permissions"
             ".get_faco_user_preferences_permission_query_conditions"
         ),
+        "FAC Chat Conversation": (
+            "frappe_assistant_core.chat.utils.permissions"
+            ".get_faco_conversation_permission_query_conditions"
+        ),
+        "FAC Chat Project": (
+            "frappe_assistant_core.chat.utils.permissions" ".get_faco_project_permission_query_conditions"
+        ),
         # Zero-retention session blob: scoped to owner only (no System Manager
         # role exemption — only literal Administrator) to close the All-role IDOR.
         "FAC Chat Session State": (
@@ -433,6 +440,10 @@ has_permission = {
     "FAC Chat User Preferences": (
         "frappe_assistant_core.chat.utils.permissions.has_faco_user_preferences_permission"
     ),
+    "FAC Chat Conversation": (
+        "frappe_assistant_core.chat.utils.permissions.has_faco_conversation_permission"
+    ),
+    "FAC Chat Project": ("frappe_assistant_core.chat.utils.permissions.has_faco_project_permission"),
     "FAC Chat Session State": (
         "frappe_assistant_core.chat.doctype.fac_chat_session_state" ".fac_chat_session_state.has_permission"
     ),
@@ -503,6 +514,8 @@ user_data_fields = [
     {"doctype": "FAC Chat Message", "filter_by": "user", "strict": False},
     {"doctype": "FAC Chat User Preferences", "filter_by": "user", "strict": False},
     {"doctype": "FAC Chat Usage Log", "filter_by": "user", "strict": False},
+    {"doctype": "FAC Chat Conversation", "filter_by": "user", "strict": False},
+    {"doctype": "FAC Chat Project", "filter_by": "user", "strict": False},
 ]
 
 # NOTE: FACO browser and document tools are discovered via the `plugins/faco/`

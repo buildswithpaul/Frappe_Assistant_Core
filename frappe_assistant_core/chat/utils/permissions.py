@@ -45,3 +45,19 @@ def has_faco_usage_log_permission(doc, user=None, permission_type=None):
 
 def has_faco_user_preferences_permission(doc, user=None, permission_type=None):
     return _doc_owner_or_admin(doc, user)
+
+
+def get_faco_conversation_permission_query_conditions(user=None):
+    return _user_or_admin(user, "FAC Chat Conversation")
+
+
+def get_faco_project_permission_query_conditions(user=None):
+    return _user_or_admin(user, "FAC Chat Project")
+
+
+def has_faco_conversation_permission(doc, user=None, permission_type=None):
+    return _doc_owner_or_admin(doc, user)
+
+
+def has_faco_project_permission(doc, user=None, permission_type=None):
+    return _doc_owner_or_admin(doc, user)
