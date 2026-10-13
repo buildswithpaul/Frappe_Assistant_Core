@@ -92,7 +92,7 @@ class TestEmbedApps(BaseAssistantTest):
     def test_a_row_for_an_app_no_longer_installed_serves_nothing(self):
         # A row can outlive its app: Helpdesk uninstalled after an admin enabled it.
         settings = frappe.get_single("FAC Chat Settings")
-        settings.append("widget_embed_apps", {"app_name": "uninstalled_app"})
+        settings.set("widget_embed_apps", [{"app_name": "uninstalled_app"}])
         settings.save(ignore_permissions=True)
         with patch(f"{APPS}.discover_spa_apps", autospec=True, return_value=HELPDESK):
             self.assertEqual(enabled_routes(), [])
