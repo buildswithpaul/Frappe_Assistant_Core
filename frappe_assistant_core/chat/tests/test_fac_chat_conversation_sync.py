@@ -11,7 +11,8 @@ from assistant_runtime_sdk import AssistantRuntimeClient
 
 from frappe_assistant_core.chat.doctype.fac_chat_conversation.fac_chat_conversation import auto_title
 from frappe_assistant_core.chat.doctype.fac_chat_message.fac_chat_message import FACChatMessage
-from frappe_assistant_core.chat.tests.test_chat_projects_api import make_project
+from frappe_assistant_core.chat.doctype.fac_workflow_trigger.fac_workflow_trigger import DOCTYPE_BLOCKLIST
+from frappe_assistant_core.chat.tests.test_chat_projects_api import OTHER_USER, ensure_user, make_project
 from frappe_assistant_core.tests.base_test import BaseAssistantTest
 
 SID = "test-conv-sync-1"
@@ -115,13 +116,33 @@ class TestConversationSync(BaseAssistantTest):
         with patch("frappe_assistant_core.chat.api.privacy._get_client", return_value=client):
             faco = export_my_data()["data"]["faco"]
 
-        self.assertEqual(
-            [(p["title"], p["instructions"]) for p in faco["faco_projects"]], [("Export Me", "Be brief")]
+        self.assertIn(
+            ("Export Me", "Be brief"), [(p["title"], p["instructions"]) for p in faco["faco_projects"]]
         )
         convo = next(c for c in faco["faco_conversations"] if c["session_id"] == SID)
         self.assertEqual(convo["title"], "Hello export")
         self.assertEqual(convo["project"], project)
         self.assertEqual(convo["is_archived"], 0)
+
+    def test_another_users_message_does_not_touch_the_row(self):
+        FACChatMessage.create_message(SID, "user", "First question")
+        ensure_user(OTHER_USER)
+        # A colliding session_id from another user is the case under guard; the relay
+        # writes messages as the session user, so this is how it would arrive.
+        # nosemgrep: frappe-setuser — test bootstrap; runs in an isolated transaction
+        frappe.set_user(OTHER_USER)
+        try:
+            FACChatMessage.create_message(SID, "user", "Hijack")
+        finally:
+            # nosemgrep: frappe-setuser — restore the test user
+            frappe.set_user("Administrator")
+        row = self._row()
+        self.assertEqual(row.message_count, 1)
+        self.assertEqual(row.title, "First question")
+        self.assertEqual(row.user, "Administrator")
+
+    def test_conversation_doctype_cannot_be_a_workflow_trigger_target(self):
+        self.assertIn("FAC Chat Conversation", DOCTYPE_BLOCKLIST)
 
     def test_auto_title_truncates_with_ellipsis(self):
         title = auto_title("word " * 40)

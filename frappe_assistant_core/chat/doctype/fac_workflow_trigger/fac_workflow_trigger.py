@@ -55,6 +55,7 @@ FAC_INTERNAL_DOCTYPES = frozenset(
     {
         "FAC Chat Usage Log",
         "FAC Chat Message",
+        "FAC Chat Conversation",
     }
 )
 

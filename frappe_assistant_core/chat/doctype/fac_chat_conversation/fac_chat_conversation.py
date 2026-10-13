@@ -61,8 +61,10 @@ class FACChatConversation(Document):
         """
         now = frappe.utils.now()
         existing = frappe.db.get_value(
-            "FAC Chat Conversation", session_id, ["title", "project"], as_dict=True
+            "FAC Chat Conversation", session_id, ["user", "title", "project"], as_dict=True
         )
+        if existing and existing.user != user:
+            return
         if not existing:
             if project and not _project_is_owned(project, user):
                 project = None
@@ -82,7 +84,7 @@ class FACChatConversation(Document):
                 ).insert(ignore_permissions=True)
             except frappe.DuplicateEntryError:
                 # A concurrent writer created it between our read and insert.
-                existing = frappe._dict(title=None, project=None)
+                existing = frappe._dict(user=user, title=None, project=None)
             else:
                 _bump_project(project, now)
                 return
