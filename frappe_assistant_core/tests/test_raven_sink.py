@@ -109,3 +109,8 @@ class TestReplySink(BaseAssistantTest):
         self.sink({"event": "stream_aborted", "partial_response": "Partial answer"})
         self.assertIn("Partial answer", self.writer.saves[-1])
         self.assertIn("Stopped", self.writer.saves[-1])
+
+    def test_an_empty_chunk_never_blanks_the_placeholder(self):
+        # Live: the reply flashed empty when the first chunk arrived with no text yet.
+        self.chunk("", 0.0)
+        self.assertEqual(self.writer.saves, [])

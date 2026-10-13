@@ -76,7 +76,8 @@ class ReplySink:
         kind = event.get("event")
         if kind == "stream_chunk":
             self.text = event.get("accumulated") or self.text + (event.get("chunk") or "")
-            if self.last_save is None or self.clock() - self.last_save >= SAVE_EVERY:
+            due = self.last_save is None or self.clock() - self.last_save >= SAVE_EVERY
+            if self.text.strip() and due:
                 self._save(self.text)
         elif kind == "tool_call_start":
             self.writer.status(_describe_tool(event.get("input") or {}))
