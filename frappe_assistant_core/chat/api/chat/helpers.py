@@ -14,7 +14,7 @@ import json
 
 import frappe
 
-from frappe_assistant_core.chat.api.chat import live_turn
+from frappe_assistant_core.chat.api.chat import live_turn, turn_observers
 
 
 def _is_processing_restricted(user: str | None = None) -> bool:
@@ -62,6 +62,7 @@ def _emit_socket_event(session_id, data):
         frappe.log_error(title="FACO Socket Error", message=f"Error emitting socket event: {e!s}")
     if live is not None:
         live.record(data)
+    turn_observers.notify(session_id, data)
 
 
 def _log_stream_error_detail(data: dict) -> None:
