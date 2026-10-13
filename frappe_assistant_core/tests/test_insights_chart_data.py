@@ -189,3 +189,19 @@ class TestInsightsChartData(BaseAssistantTest):
         self.assertEqual(row_budget(50, 0), 50)
         self.assertEqual(row_budget(50, MAX_DASHBOARD_ROWS - 10), 10)
         self.assertEqual(row_budget(50, MAX_DASHBOARD_ROWS), 0)
+
+
+class TestInsightsToolCategory(BaseAssistantTest):
+    def test_the_insights_tools_are_read_only(self):
+        # Read-only tools run without an approval card; read_write would stop every dashboard question.
+        from frappe_assistant_core.utils.tool_category_detector import detect_tool_category
+
+        for module, cls in (
+            ("list_insights_dashboards", "ListInsightsDashboards"),
+            ("get_insights_dashboard", "GetInsightsDashboard"),
+            ("get_insights_chart", "GetInsightsChart"),
+        ):
+            tool = getattr(
+                __import__(f"frappe_assistant_core.plugins.insights.tools.{module}", fromlist=[cls]), cls
+            )()
+            self.assertEqual(detect_tool_category(tool), "read_only", module)

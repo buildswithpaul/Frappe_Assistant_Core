@@ -75,6 +75,10 @@ READ_ONLY_TOOLS = {
     "extract_file_content",  # Only reads file content
     # Visualization tools (read-only)
     "list_user_dashboards",  # Only lists dashboards
+    # Insights tools (read dashboards and chart numbers as the user)
+    "list_insights_dashboards",
+    "get_insights_dashboard",
+    "get_insights_chart",
     # Approval tools
     "get_pending_approvals",  # Reads the workflow approval queue, no mutation
     # Browser tools (read the page or move the user's view; no data mutation)
