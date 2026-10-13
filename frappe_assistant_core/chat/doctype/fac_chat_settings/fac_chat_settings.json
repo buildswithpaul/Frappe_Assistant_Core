@@ -16,6 +16,8 @@
   "max_context_tokens",
   "enable_dom_extraction",
   "enable_browser_diagnostics",
+  "widget_embed_section",
+  "widget_embed_apps",
   "retention_tab",
   "enable_retention_cleanup",
   "message_retention_days",
@@ -106,6 +108,18 @@
    "label": "Enable Browser Diagnostics"
   },
   {
+   "description": "Show the FACO widget inside these Frappe apps as well as Desk.",
+   "fieldname": "widget_embed_section",
+   "fieldtype": "Section Break",
+   "label": "Other Frappe Apps"
+  },
+  {
+   "fieldname": "widget_embed_apps",
+   "fieldtype": "Table",
+   "label": "Apps",
+   "options": "FAC Widget Embed App"
+  },
+  {
    "fieldname": "retention_tab",
    "fieldtype": "Tab Break",
    "label": "Data Retention"
@@ -162,7 +176,7 @@
  ],
  "issingle": 1,
  "links": [],
- "modified": "2026-09-27 10:00:00.000000",
+ "modified": "2026-10-12 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Chat",
  "name": "FAC Chat Settings",

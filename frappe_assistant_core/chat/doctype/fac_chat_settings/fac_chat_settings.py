@@ -30,3 +30,8 @@ class FACChatSettings(Document):
         from frappe_assistant_core.chat.tenant_credentials import preserve_tenant_secret_on_save
 
         preserve_tenant_secret_on_save(self)
+
+    def on_update(self):
+        from frappe_assistant_core.chat.embed.apps import clear_routes_cache
+
+        clear_routes_cache()
