@@ -43,6 +43,8 @@ CHANNEL_LINE = _lt(
 
 def run(message_id: str, kind: str) -> None:
     msg = frappe.get_doc("Raven Message", message_id)
+    if not _is_person(msg.owner):
+        return
     frappe.set_user(msg.owner)  # nosemgrep: frappe-setuser — the turn runs as, and bills, the asker
     raven_bot = frappe.get_doc("Raven Bot", bot.BOT_NAME)
     if bot.state() != "on":
@@ -62,6 +64,15 @@ def run(message_id: str, kind: str) -> None:
     session_id = sessions.session_id_for(reply_channel, msg.owner)
     with _session_lock(session_id):
         _run_turn(msg, kind, raven_bot, reply_channel, session_id)
+
+
+def _is_person(user: str) -> bool:
+    """Only a person's own words start a turn. Server code (document notifications, imports) inserts
+    messages as Administrator; running those as their owner would let text nobody typed act with
+    Administrator's rights."""
+    if user in ("Administrator", "Guest"):
+        return False
+    return bool(frappe.db.exists("Raven User", {"user": user, "type": "User", "enabled": 1}))
 
 
 def _is_thread(channel_id: str) -> bool:
@@ -85,7 +96,9 @@ def _batch(msg) -> list:
         return [msg]
     return frappe.get_all(
         "Raven Message",
-        filters={"channel_id": msg.channel_id, "message_batch_id": msg.message_batch_id},
+        # Only the asker's own messages: the batch id is client-chosen, so another member could
+        # reuse it to slip their text or files into this person's turn.
+        filters={"channel_id": msg.channel_id, "message_batch_id": msg.message_batch_id, "owner": msg.owner},
         fields=["name", "message_type", "content", "file"],
         order_by="creation asc",
     )

@@ -39,6 +39,8 @@ def addressed(doc) -> Literal["dm", "mention"] | None:
         return None
     if doc.is_bot_message or doc.message_type not in ANSWERED_TYPES:
         return None
+    if doc.owner in ("Administrator", "Guest"):
+        return None
     if bot.state() == "absent":
         return None
     if any(row.user == bot.BOT_NAME for row in doc.mentions or []):
