@@ -6,9 +6,11 @@ const getSessions = vi.fn();
 const createSession = vi.fn();
 const projectsList = vi.fn();
 const projectsUpdate = vi.fn();
+const documentsList = vi.fn();
 vi.mock("@/api/client", () => ({
 	api: {
 		chat: { getSessions: (...a) => getSessions(...a), createSession: (...a) => createSession(...a) },
+		documents: { list: (...a) => documentsList(...a), getDownloadUrl: () => "#" },
 		projects: { list: (...a) => projectsList(...a), update: (...a) => projectsUpdate(...a) },
 	},
 }));
@@ -18,6 +20,7 @@ vi.mock("vue-router", () => ({ useRouter: () => ({ push }) }));
 import ProjectPage from "@/components/projects/ProjectPage.vue";
 import { useChatStore } from "@/stores/chatStore";
 import { useProjectsStore } from "@/stores/projectsStore";
+import { useUserStore } from "@/stores/userStore";
 
 beforeAll(() => {
 	window.__ = (s) => s;
@@ -25,9 +28,13 @@ beforeAll(() => {
 
 const stubs = { RouterLink: { template: "<a><slot/></a>" }, ConfirmModal: true };
 
-async function mountPage(projectId = "p1") {
+async function mountPage(projectId = "p1", { projectDocuments } = {}) {
 	const pinia = createPinia();
 	setActivePinia(pinia);
+	// The flag reaches the store from api.capabilities.get() at boot (userStore.loadCapabilities).
+	if (projectDocuments !== undefined) {
+		useUserStore().capabilities = { features: { project_documents: projectDocuments } };
+	}
 	const w = mount(ProjectPage, { props: { projectId }, global: { plugins: [pinia], stubs } });
 	return w;
 }
@@ -35,6 +42,7 @@ async function mountPage(projectId = "p1") {
 beforeEach(() => {
 	vi.clearAllMocks();
 	getSessions.mockResolvedValue([]);
+	documentsList.mockResolvedValue({ documents: [] });
 });
 
 describe("ProjectPage", () => {
@@ -96,5 +104,31 @@ describe("ProjectPage", () => {
 		await flushPromises();
 		expect(push).not.toHaveBeenCalled();
 		expect(useChatStore().pendingProject).toBeNull();
+	});
+
+	describe("project documents", () => {
+		beforeEach(() => {
+			projectsList.mockResolvedValue([{ name: "p1", title: "Q3 Close", instructions: "" }]);
+		});
+
+		it.each([[undefined], [false]])("does not render the block when the flag is %s", async (flag) => {
+			const w = await mountPage("p1", { projectDocuments: flag });
+			await flushPromises();
+			expect(w.find("[data-test=project-documents]").exists()).toBe(false);
+			expect(documentsList).not.toHaveBeenCalled();
+			expect(w.findComponent("[data-test=delete-project-modal]").props("message")).toBe(
+				"Delete this project? Its chats are kept and moved out of the project."
+			);
+		});
+
+		it("renders the block and names the Knowledge Base move in the delete confirmation", async () => {
+			const w = await mountPage("p1", { projectDocuments: true });
+			await flushPromises();
+			expect(w.find("[data-test=project-documents]").exists()).toBe(true);
+			expect(documentsList).toHaveBeenCalledWith({ project: "p1" });
+			expect(w.findComponent("[data-test=delete-project-modal]").props("message")).toContain(
+				"its documents move to your Knowledge Base"
+			);
+		});
 	});
 });

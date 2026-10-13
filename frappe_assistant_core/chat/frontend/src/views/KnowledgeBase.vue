@@ -190,7 +190,7 @@
 					type="file"
 					class="hidden-input"
 					multiple
-					accept=".pdf,.md,.txt,.markdown,.text"
+					:accept="ACCEPT_ATTRIBUTE"
 					@change="handleFileSelect"
 				/>
 			</div>
@@ -250,6 +250,7 @@ import AddSlotCard from "@/components/common/list/AddSlotCard.vue";
 import EmptyState from "@/components/common/list/EmptyState.vue";
 import UpgradeBanner from "@/components/common/UpgradeBanner.vue";
 import { api } from "@/api/client";
+import { ACCEPT_ATTRIBUTE } from "@/utils/knowledgeUpload";
 
 const router = useRouter();
 const userStore = useUserStore();

@@ -53,6 +53,8 @@
 
 			<ProjectInstructions :model-value="project.instructions || ''" :save-fn="saveInstructions" />
 
+			<ProjectDocuments v-if="projectDocsEnabled" :project-id="projectId" />
+
 			<div class="chats-header">
 				<h2 class="chats-title">{{ __("Chats") }}</h2>
 				<button class="primary-btn" data-test="new-project-chat" @click="newChat">
@@ -82,9 +84,10 @@
 		</div>
 
 		<ConfirmModal
+			data-test="delete-project-modal"
 			:open="confirmingDelete"
 			:title="__('Delete project')"
-			:message="__('Delete this project? Its chats are kept and moved out of the project.')"
+			:message="deleteMessage"
 			:confirm-label="__('Delete')"
 			:cancel-label="__('Cancel')"
 			:processing="deleting"
@@ -101,11 +104,13 @@ import { useRouter } from "vue-router";
 import { storeToRefs } from "pinia";
 import ChatRow from "@/components/layout/ChatRow.vue";
 import ConfirmModal from "@/components/common/ConfirmModal.vue";
+import ProjectDocuments from "@/components/projects/ProjectDocuments.vue";
 import ProjectInstructions from "@/components/projects/ProjectInstructions.vue";
 import { api } from "@/api/client";
 import { useChatStore } from "@/stores/chatStore";
 import { useConversationsStore } from "@/stores/conversationsStore";
 import { useProjectsStore } from "@/stores/projectsStore";
+import { useUserStore } from "@/stores/userStore";
 import { useToast } from "@/composables/useToast";
 import { useInlineTitleEdit, TITLE_MAX_LENGTH } from "@/composables/useInlineTitleEdit";
 import { __ } from "@/utils/i18n";
@@ -122,6 +127,7 @@ const conversationsStore = useConversationsStore();
 const projectsStore = useProjectsStore();
 const { currentSessionId } = storeToRefs(chatStore);
 const { projects } = storeToRefs(projectsStore);
+const userStore = useUserStore();
 const { showError } = useToast();
 
 const loading = ref(true);
@@ -131,6 +137,13 @@ const menuOpen = ref(false);
 const menuRootRef = ref(null);
 const confirmingDelete = ref(false);
 const deleting = ref(false);
+
+const projectDocsEnabled = computed(() => userStore.capabilities?.features?.project_documents === true);
+const deleteMessage = computed(() =>
+	projectDocsEnabled.value
+		? __("Delete this project? Its chats are kept and its documents move to your Knowledge Base as private documents.")
+		: __("Delete this project? Its chats are kept and moved out of the project.")
+);
 
 const project = computed(() => projects.value.find((p) => p.name === props.projectId) || null);
 

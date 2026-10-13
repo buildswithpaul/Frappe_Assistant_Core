@@ -1,10 +1,11 @@
 import { baseCall, friendlyError, getCall, getCsrfToken, networkError } from "../_core";
 
 export const documents = {
-	list: (limit = 50, offset = 0) =>
+	list: ({ limit = 50, offset = 0, project = null } = {}) =>
 		getCall("frappe_assistant_core.chat.api.list_documents", {
 			limit,
 			offset,
+			project,
 		}),
 
 	get: (documentId) =>
@@ -30,11 +31,12 @@ export const documents = {
 			documentId
 		)}&download=1`,
 
-	upload: async (file, { visibility = null, sharedWith = null } = {}) => {
+	upload: async (file, { visibility = null, sharedWith = null, project = null } = {}) => {
 		const formData = new FormData();
 		formData.append("file", file);
 		if (visibility) formData.append("visibility", visibility);
 		if (sharedWith) formData.append("shared_with", JSON.stringify(sharedWith));
+		if (project) formData.append("project", project);
 
 		let response;
 		try {

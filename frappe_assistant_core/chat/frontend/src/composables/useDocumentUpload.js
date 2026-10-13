@@ -1,8 +1,6 @@
 import { ref } from "vue";
 import { api } from "@/api/client";
-
-const ALLOWED_TYPES = ["application/pdf", "text/markdown", "text/plain", "text/x-markdown"];
-const ALLOWED_EXTENSIONS = [".pdf", ".md", ".txt", ".markdown", ".text"];
+import { validateKnowledgeFile } from "@/utils/knowledgeUpload";
 
 export function useDocumentUpload({ onUploaded, onFilesSelected }) {
 	const uploads = ref([]);
@@ -25,17 +23,6 @@ export function useDocumentUpload({ onUploaded, onFilesSelected }) {
 		event.target.value = "";
 	}
 
-	function validateFile(file) {
-		const ext = "." + file.name.split(".").pop().toLowerCase();
-		if (!ALLOWED_EXTENSIONS.includes(ext) && !ALLOWED_TYPES.includes(file.type)) {
-			return `Unsupported file type: ${file.name}. Only PDF, Markdown, and Text files are allowed.`;
-		}
-		if (file.size > 10 * 1024 * 1024) {
-			return `File too large: ${file.name}. Maximum size is 10 MB.`;
-		}
-		return null;
-	}
-
 	function getFileType(file) {
 		const ext = file.name.split(".").pop().toLowerCase();
 		if (ext === "pdf") return "PDF";
@@ -49,7 +36,7 @@ export function useDocumentUpload({ onUploaded, onFilesSelected }) {
 		// Validate all files first
 		const validFiles = [];
 		for (const file of files) {
-			const error = validateFile(file);
+			const error = validateKnowledgeFile(file);
 			if (error) {
 				uploadError.value = error;
 			} else {
