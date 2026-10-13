@@ -360,5 +360,15 @@
     "status": "Published",
     "visibility": "Public",
     "content_file": "raven_messaging.md"
+  },
+  {
+    "skill_id": "raven-bot",
+    "title": "Answering as FAC Bot in Raven",
+    "description": "How to answer when the user is talking to you through FAC Bot in Raven — formatting, charts, approvals, shared channels",
+    "skill_type": "Workflow",
+    "linked_tool": null,
+    "status": "Published",
+    "visibility": "Public",
+    "content_file": "raven_bot.md"
   }
 ]
