@@ -81,3 +81,14 @@ class TestRavenFormatting(BaseAssistantTest):
         html = formatting.to_raven_html(md, URL)
         self.assertNotIn("userMention", html)
         self.assertNotIn("ceo@x.com", html.replace("@CEO", ""))
+
+    def test_no_spelling_of_the_mention_markup_survives(self):
+        # Raven reads the reply with BeautifulSoup, which accepts any quoting or case.
+        for span in (
+            "<span data-type='userMention' data-id='ceo@x.com'>@CEO</span>",
+            "<span data-type=userMention data-id=ceo@x.com>@CEO</span>",
+            '<span DATA-TYPE="userMention" Data-Id="ceo@x.com">@CEO</span>',
+        ):
+            html = formatting.to_raven_html(f"Ping {span} now", URL)
+            self.assertNotIn("usermention", html.lower(), span)
+            self.assertNotIn("ceo@x.com", html, span)

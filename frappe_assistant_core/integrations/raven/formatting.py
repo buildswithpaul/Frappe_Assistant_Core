@@ -19,6 +19,7 @@
 import html
 import re
 
+from bs4 import BeautifulSoup
 from frappe import _, _lt
 from frappe.utils import md_to_html
 from frappe.utils.html_utils import sanitize_html
@@ -26,7 +27,7 @@ from frappe.utils.html_utils import sanitize_html
 FENCE = re.compile(r"```(chart|mermaid|callout|metric|steps|accordion|tabs)([^\n]*)\n([\s\S]*?)```")
 TITLE = re.compile(r'title="([^"]*)"')
 # Raven turns <span data-type="userMention" data-id=…> into a real mention that notifies anyone named.
-MENTION_ATTRS = re.compile(r'\sdata-(?:type|id)="[^"]*"')
+MENTION_ATTRS = ("data-type", "data-id")
 DRAWN = {"chart": "📊", "mermaid": "🔀"}
 
 SWITCHED_OFF = _lt("FAC Bot is switched off on this site.")
@@ -55,7 +56,17 @@ def _fence(match: re.Match, session_url: str) -> str:
 
 def to_raven_html(markdown: str, session_url: str) -> str:
     text = FENCE.sub(lambda m: _fence(m, session_url), markdown or "")
-    return MENTION_ATTRS.sub("", sanitize_html(md_to_html(text) or ""))
+    return _without_mentions(sanitize_html(md_to_html(text) or ""))
+
+
+def _without_mentions(html_text: str) -> str:
+    """Drop mention attributes with the parser Raven reads mentions with (BeautifulSoup), so no
+    spelling of the markup can mean one thing here and another to Raven."""
+    soup = BeautifulSoup(html_text, "html.parser")
+    for tag in soup.find_all(True):
+        for attr in [a for a in tag.attrs if a.lower() in MENTION_ATTRS]:
+            del tag.attrs[attr]
+    return str(soup)
 
 
 def _describe(tool_name: str, tool_input: dict) -> str:
