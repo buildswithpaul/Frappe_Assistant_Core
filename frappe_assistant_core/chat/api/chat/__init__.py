@@ -69,4 +69,6 @@ from frappe_assistant_core.chat.api.chat.sessions import (
     get_archived_sessions,
     get_session_history,
     get_user_sessions,
+    move_session_to_project,
+    rename_session,
 )

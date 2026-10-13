@@ -112,6 +112,8 @@ from .chat import (
     get_archived_sessions,
     get_session_history,
     get_user_sessions,
+    move_session_to_project,
+    rename_session,
     resume_interrupt,
     send_message,
 )

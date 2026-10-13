@@ -9,12 +9,87 @@ from __future__ import annotations
 import frappe
 from frappe import _
 
+from frappe_assistant_core.chat.doctype.fac_chat_conversation.fac_chat_conversation import (
+    FACChatConversation,
+)
+from frappe_assistant_core.chat.doctype.fac_chat_project.fac_chat_project import (
+    TITLE_MAX_LENGTH,
+    FACChatProject,
+)
 from frappe_assistant_core.chat.doctype.fac_chat_session_state.fac_chat_session_state import (
     FACChatSessionState,
 )
 
 from .._helpers import _safe_error
 from .._untrusted import wrap_untrusted
+
+SEARCH_MIN_LENGTH = 2
+CONTENT_MATCH_LIMIT = 500
+
+
+def _like_pattern(term: str) -> str:
+    escaped = term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return f"%{escaped}%"
+
+
+def _list_conversations(
+    archived: int, limit: int, offset: int = 0, project: str | None = None, search: str | None = None
+) -> list[dict]:
+    """The caller's conversations, newest activity first, in the sidebar's row shape."""
+    user = frappe.session.user
+    filters = {"user": user, "is_archived": archived}
+    if project:
+        filters["project"] = project
+    or_filters = None
+    term = (search or "").strip()
+    if len(term) >= SEARCH_MIN_LENGTH:
+        pattern = _like_pattern(term)
+        content_matches = frappe.get_list(
+            "FAC Chat Message",
+            filters={"user": user, "is_archived": archived, "content": ["like", pattern]},
+            pluck="session_id",
+            distinct=True,
+            limit_page_length=CONTENT_MATCH_LIMIT,
+        )
+        or_filters = [["title", "like", pattern]]
+        if content_matches:
+            or_filters.append(["name", "in", content_matches])
+
+    rows = frappe.get_list(
+        "FAC Chat Conversation",
+        filters=filters,
+        or_filters=or_filters,
+        fields=[
+            "name as session_id",
+            "title",
+            "title_is_custom",
+            "project",
+            "started",
+            "last_activity",
+            "message_count",
+        ],
+        order_by="last_activity desc",
+        limit_start=int(offset),
+        limit_page_length=min(int(limit), 100),
+    )
+    project_titles = (
+        dict(
+            frappe.get_list(
+                "FAC Chat Project",
+                filters={"name": ["in", list({r.project for r in rows if r.project})], "user": user},
+                fields=["name", "title"],
+                as_list=True,
+            )
+        )
+        if any(r.project for r in rows)
+        else {}
+    )
+    fallback = _("Archived conversation") if archived else _("New conversation")
+    for row in rows:
+        row["preview"] = row.title or fallback
+        row["title_is_custom"] = bool(row.title_is_custom)
+        row["project_title"] = project_titles.get(row.project)
+    return rows
 
 
 @frappe.whitelist(methods=["GET"])
@@ -59,70 +134,30 @@ def get_session_history(session_id: str, limit: int = 30, offset: int = 0) -> di
 
 
 @frappe.whitelist(methods=["GET"])
-def get_user_sessions(limit: int = 20) -> list:
+def get_user_sessions(
+    limit: int = 20, offset: int = 0, project: str | None = None, search: str | None = None
+) -> list:
     """
-    Get user's recent chat sessions for history sidebar.
+    The caller's non-archived conversations for the sidebar, newest activity first.
 
-    Returns sessions grouped with preview (first message) and timestamps.
-    A failed read raises, so Frappe logs it and answers with an error; an
-    empty list only ever means the user has no conversations.
+    Pages with limit/offset (limit capped at 100) and narrows by project and by a
+    search over titles and message text. A failed read raises, so Frappe logs it and
+    answers with an error; an empty list only ever means nothing matched.
+
+    Rows keep the pre-3.2 keys (session_id, preview, started, last_activity,
+    message_count) that mobile and the Desk widget read; preview is now the title.
 
     Args:
-            limit: Maximum number of sessions to return (default 20)
+            limit: Maximum number of sessions to return (default 20, max 100)
+            offset: Number of sessions to skip
+            project: Only conversations in this project
+            search: Case-insensitive text matched against titles and messages
 
     Returns:
-            list: Sessions with session_id, preview, started, last_activity
+            list: Sessions with session_id, preview, title, title_is_custom, project,
+            project_title, started, last_activity, message_count
     """
-    user = frappe.session.user
-    limit = min(int(limit), 100)  # Cap at 100
-
-    # Query 1: Get session aggregates (distinct sessions with timestamps)
-    from pypika.functions import Count, Max, Min
-
-    FM = frappe.qb.DocType("FAC Chat Message")
-    session_query = (
-        frappe.qb.from_(FM)
-        .select(
-            FM.session_id,
-            Min(FM.creation).as_("started"),
-            Max(FM.creation).as_("last_activity"),
-            Count(FM.name).as_("message_count"),
-        )
-        .where(FM.user == user)
-        .where(FM.is_archived == 0)
-        .groupby(FM.session_id)
-        .orderby("last_activity", order=frappe.qb.desc)
-        .limit(limit)
-    )
-    sessions = session_query.run(as_dict=True)
-
-    if not sessions:
-        return []
-
-    # Query 2: Get first user message per session for preview
-    session_ids = [s["session_id"] for s in sessions]
-    first_messages = frappe.get_all(
-        "FAC Chat Message",
-        filters={
-            "session_id": ["in", session_ids],
-            "user": user,
-            "role": "user",
-        },
-        fields=["session_id", "content", "creation"],
-        order_by="creation asc",
-    )
-
-    # Keep only the first message per session
-    preview_map: dict[str, str] = {}
-    for msg in first_messages:
-        if msg.session_id not in preview_map:
-            content = (msg.content or "")[:100]
-            preview_map[msg.session_id] = content + ("..." if len(msg.content or "") > 100 else "")
-
-    for session in sessions:
-        session["preview"] = preview_map.get(session["session_id"], _("New conversation"))
-
-    return sessions
+    return _list_conversations(0, limit, offset, project, search)
 
 
 @frappe.whitelist(methods=["POST"])
@@ -282,55 +317,36 @@ def get_archived_sessions(limit: int = 50) -> list:
     Returns:
             list: Archived sessions with session_id, preview, started, last_activity
     """
-    user = frappe.session.user
-    limit = min(int(limit), 100)
+    rows = _list_conversations(1, limit)
+    for row in rows:
+        row["is_archived"] = True
+    return rows
 
-    from pypika.functions import Count, Max, Min
 
-    FM = frappe.qb.DocType("FAC Chat Message")
-    session_query = (
-        frappe.qb.from_(FM)
-        .select(
-            FM.session_id,
-            Min(FM.creation).as_("started"),
-            Max(FM.creation).as_("last_activity"),
-            Count(FM.name).as_("message_count"),
-        )
-        .where(FM.user == user)
-        .where(FM.is_archived == 1)
-        .groupby(FM.session_id)
-        .orderby("last_activity", order=frappe.qb.desc)
-        .limit(limit)
+@frappe.whitelist(methods=["POST"])
+def rename_session(session_id: str, title: str) -> dict:
+    """Rename a conversation. A blank title goes back to the automatic one."""
+    FACChatConversation.owned(session_id)
+    clean = " ".join((title or "").split())
+    if len(clean) > TITLE_MAX_LENGTH:
+        frappe.throw(_("Title must be {0} characters or fewer").format(TITLE_MAX_LENGTH))
+    values = (
+        {"title": clean, "title_is_custom": 1}
+        if clean
+        else {"title": FACChatConversation.default_title(session_id), "title_is_custom": 0}
     )
-    sessions = session_query.run(as_dict=True)
+    frappe.db.set_value("FAC Chat Conversation", session_id, values, update_modified=False)
+    return {"success": True, "title": values["title"], "title_is_custom": bool(values["title_is_custom"])}
 
-    if not sessions:
-        return []
 
-    # Get first user message per session for preview
-    session_ids = [s["session_id"] for s in sessions]
-    first_messages = frappe.get_all(
-        "FAC Chat Message",
-        filters={
-            "session_id": ["in", session_ids],
-            "user": user,
-            "role": "user",
-        },
-        fields=["session_id", "content", "creation"],
-        order_by="creation asc",
-    )
-
-    preview_map: dict[str, str] = {}
-    for msg in first_messages:
-        if msg.session_id not in preview_map:
-            content = (msg.content or "")[:100]
-            preview_map[msg.session_id] = content + ("..." if len(msg.content or "") > 100 else "")
-
-    for session in sessions:
-        session["preview"] = preview_map.get(session["session_id"], _("Archived conversation"))
-        session["is_archived"] = True
-
-    return sessions
+@frappe.whitelist(methods=["POST"])
+def move_session_to_project(session_id: str, project: str | None = None) -> dict:
+    """Put a conversation in one of the caller's projects, or take it out with None."""
+    FACChatConversation.owned(session_id)
+    project = project or None
+    project_title = FACChatProject.owned(project).title if project else None
+    frappe.db.set_value("FAC Chat Conversation", session_id, "project", project, update_modified=False)
+    return {"success": True, "project": project, "project_title": project_title}
 
 
 @frappe.whitelist(methods=["POST"])
@@ -346,7 +362,7 @@ def continue_archived_session(old_session_id: str) -> dict:
             old_session_id: The archived session to continue from
 
     Returns:
-            dict: { new_session_id, context_addendum }
+            dict: { new_session_id, context_addendum, project }
     """
     import uuid
 
@@ -400,6 +416,9 @@ def continue_archived_session(old_session_id: str) -> dict:
             "new_session_id": new_session_id,
             "context_addendum": context_addendum,
             "messages_included": len(messages),
+            "project": frappe.db.get_value(
+                "FAC Chat Conversation", {"name": old_session_id, "user": user}, "project"
+            ),
         }
 
     except Exception as e:
