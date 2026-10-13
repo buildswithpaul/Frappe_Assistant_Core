@@ -310,5 +310,55 @@
     "status": "Published",
     "visibility": "Public",
     "content_file": "configure_naming_series.md"
+  },
+  {
+    "skill_id": "list-insights-dashboards-usage",
+    "title": "How to Use list_insights_dashboards",
+    "description": "Finding the Frappe Insights dashboards a user can open, by title",
+    "skill_type": "Tool Usage",
+    "linked_tool": "list_insights_dashboards",
+    "status": "Published",
+    "visibility": "Public",
+    "content_file": "list_insights_dashboards.md"
+  },
+  {
+    "skill_id": "get-insights-dashboard-usage",
+    "title": "How to Use get_insights_dashboard",
+    "description": "Reading an Insights dashboard's charts and numbers — default filters, overrides, raw source rows, truncation",
+    "skill_type": "Tool Usage",
+    "linked_tool": "get_insights_dashboard",
+    "status": "Published",
+    "visibility": "Public",
+    "content_file": "get_insights_dashboard.md"
+  },
+  {
+    "skill_id": "get-insights-chart-usage",
+    "title": "How to Use get_insights_chart",
+    "description": "Reading one Insights chart in depth, with its dashboard's filters",
+    "skill_type": "Tool Usage",
+    "linked_tool": "get_insights_chart",
+    "status": "Published",
+    "visibility": "Public",
+    "content_file": "get_insights_chart.md"
+  },
+  {
+    "skill_id": "frappe-app-pages",
+    "title": "Working in Frappe Apps (Helpdesk, CRM, Insights)",
+    "description": "What to do when the user is on a Helpdesk, CRM, Insights or other Frappe app page — reading the page line, where each app keeps its data, what does not work outside Desk",
+    "skill_type": "Workflow",
+    "linked_tool": null,
+    "status": "Published",
+    "visibility": "Public",
+    "content_file": "frappe_app_pages.md"
+  },
+  {
+    "skill_id": "raven-messaging",
+    "title": "Posting in Raven",
+    "description": "Sending a message to a Raven channel or existing DM as the user — finding the channel, formatting, mentions, linking a document, replying",
+    "skill_type": "Workflow",
+    "linked_tool": null,
+    "status": "Published",
+    "visibility": "Public",
+    "content_file": "raven_messaging.md"
   }
 ]
