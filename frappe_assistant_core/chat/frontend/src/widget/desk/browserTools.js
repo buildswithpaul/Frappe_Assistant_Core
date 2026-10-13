@@ -29,6 +29,7 @@
  */
 import { logger } from "@/utils/logger";
 import pageContext from "./pageContext.js";
+import { getCsrfToken } from "@/api/_core.js";
 
 const loadHtml2canvas = () => import("html2canvas-pro").then((m) => m.default || m);
 
@@ -400,7 +401,7 @@ const FACOBrowserTools = {
 							method: "POST",
 							body: formData,
 							headers: {
-								"X-Frappe-CSRF-Token": window.frappe.csrf_token,
+								"X-Frappe-CSRF-Token": getCsrfToken(),
 							},
 						}
 					);

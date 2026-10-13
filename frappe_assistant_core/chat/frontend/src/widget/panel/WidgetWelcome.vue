@@ -26,7 +26,8 @@ import { selectWelcomeTiles } from "@/components/chat/welcome/welcomeRelevance";
 import WelcomeHeader from "@/components/chat/welcome/WelcomeHeader.vue";
 import ContinueList from "@/components/chat/welcome/ContinueList.vue";
 import SuggestionTiles from "@/components/chat/welcome/SuggestionTiles.vue";
-import { detectContext, contextDisplayText } from "../desk/pageContext.js";
+import { contextDisplayText } from "../desk/pageContext.js";
+import { getHost } from "../host/index.js";
 
 defineEmits(["suggestion", "open-session"]);
 
@@ -49,16 +50,17 @@ const tiles = computed(() =>
 );
 
 const contextLine = ref("");
-const update = () => (contextLine.value = contextDisplayText(detectContext()) || "");
+const update = () => (contextLine.value = contextDisplayText(getHost().detectContext()) || "");
+let stopRouteWatch = () => {};
 onMounted(() => {
 	update();
-	window.frappe?.router?.on("change", update);
+	stopRouteWatch = getHost().onRouteChange(update);
 	if (!chatStore.sessions.length) chatStore.loadSessions();
 	// The endpoint ranks templates by the page's type and doctype; nothing else from the page is sent.
-	const { type, doctype } = detectContext() || {};
+	const { type, doctype } = getHost().detectContext() || {};
 	suggestionStore.loadSuggestions(doctype ? { type, doctype } : { type });
 });
-onUnmounted(() => window.frappe?.router?.off?.("change", update));
+onUnmounted(() => stopRouteWatch());
 </script>
 
 <style scoped>

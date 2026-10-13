@@ -1,3 +1,5 @@
+import { getHost } from "../host/index.js";
+
 const SOCKET_POLL_MS = 500;
 const SOCKET_POLL_MAX = 20;
 
@@ -29,7 +31,7 @@ export function startStreamWatch({ getSessionId, isMounted, ensurePanel, onAppro
 
 	const subscribe = () => {
 		const sid = getSessionId();
-		const realtime = window.frappe && window.frappe.realtime;
+		const realtime = getHost().realtime();
 		if (!sid || !realtime || !realtime.task_subscribe) return;
 		try {
 			realtime.task_subscribe(sid);
@@ -39,7 +41,7 @@ export function startStreamWatch({ getSessionId, isMounted, ensurePanel, onAppro
 	};
 
 	const attach = () => {
-		const realtime = window.frappe && window.frappe.realtime;
+		const realtime = getHost().realtime();
 		realtime.on("faco_message_stream", onStream);
 		realtime.on("ar_interrupt_event", onInterrupt);
 		realtime.on("connect", subscribe);
@@ -52,7 +54,7 @@ export function startStreamWatch({ getSessionId, isMounted, ensurePanel, onAppro
 	const tick = () => {
 		pollTimer = null;
 		if (stopped) return;
-		const realtime = window.frappe && window.frappe.realtime;
+		const realtime = getHost().realtime();
 		if (realtime && realtime.socket) return attach();
 		if (++polls < SOCKET_POLL_MAX) pollTimer = setTimeout(tick, SOCKET_POLL_MS);
 	};
@@ -61,7 +63,7 @@ export function startStreamWatch({ getSessionId, isMounted, ensurePanel, onAppro
 	function stop() {
 		stopped = true;
 		clearTimeout(pollTimer);
-		const realtime = window.frappe && window.frappe.realtime;
+		const realtime = getHost().realtime();
 		if (attached && realtime && realtime.off) {
 			realtime.off("faco_message_stream", onStream);
 			realtime.off("ar_interrupt_event", onInterrupt);

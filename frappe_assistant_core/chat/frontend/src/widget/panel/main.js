@@ -12,6 +12,7 @@ import { isolateTyping } from "./keyIsolation.js";
 import { TELEPORT_TARGET_KEY } from "@/composables/useTeleportTarget";
 import { configureSurface } from "@/stores/chat/surface";
 import { mirrorDeskTheme } from "../launcher/theme.js";
+import { getHost } from "../host/index.js";
 
 function clientSignals() {
 	const d = window.FACODiagnostics;
@@ -23,7 +24,7 @@ function clientSignals() {
 export async function mountPanel(config) {
 	configureSurface({
 		name: "widget",
-		clientType: "widget",
+		clientType: getHost().clientType,
 		modelId: "auto",
 		spotlightSurface: "widget",
 		clientSignals,

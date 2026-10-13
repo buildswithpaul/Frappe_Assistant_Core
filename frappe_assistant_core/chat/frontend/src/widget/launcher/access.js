@@ -1,10 +1,8 @@
+import { getHost } from "../host/index.js";
+
 export async function checkAccess() {
 	try {
-		const r = await window.frappe.call({
-			method: "frappe_assistant_core.chat.api.settings.access.can_use_faco",
-			type: "GET",
-			args: {},
-		});
+		const r = await getHost().call("frappe_assistant_core.chat.api.settings.access.can_use_faco", {}, "GET");
 		return r.message || { can_use: false, show_widget: false };
 	} catch {
 		return { can_use: false, show_widget: false, reason: "Error checking access" };

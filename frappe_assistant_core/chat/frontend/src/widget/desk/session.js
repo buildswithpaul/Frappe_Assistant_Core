@@ -27,6 +27,8 @@
  * user — otherwise the next person to log in continues the last person's
  * conversation. Entries are {id, user}; anything else is not adoptable.
  */
+import { getHost } from "../host/index.js";
+
 export const CHANNEL_NAME = "faco_widget_session_claims";
 const CLAIM_WAIT_MS = 150;
 const HANDOFF_KEY = "faco_widget_session";
@@ -154,7 +156,7 @@ export function generateSessionId() {
 /** The user this tab is currently logged in as, or null. */
 export function currentUser() {
 	try {
-		return (window.frappe && window.frappe.session && window.frappe.session.user) || null;
+		return getHost().user() || null;
 	} catch {
 		return null;
 	}

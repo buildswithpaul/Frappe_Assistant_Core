@@ -7,12 +7,13 @@ import {
 	quotaThreshold,
 	storage,
 } from "@/components/spotlight/spotlightRules";
+import { getHost } from "../host/index.js";
 
 const SURFACE = "widget";
 
 async function call(method) {
 	try {
-		const r = await window.frappe.call({ method, type: "GET", args: {} });
+		const r = await getHost().call(method, {}, "GET");
 		return r && r.message;
 	} catch {
 		return null;
@@ -32,7 +33,7 @@ async function isFullySetUp(access) {
 export async function refreshSpotlightDot(view, access) {
 	if (!(await isFullySetUp(access))) return view.setDot(false);
 
-	const user = (window.frappe && window.frappe.session && window.frappe.session.user) || "";
+	const user = getHost().user() || "";
 
 	const quota = await call("frappe_assistant_core.chat.api.billing.quota.get_quota_status");
 	if (quota && quota.success && quota.is_admin) {

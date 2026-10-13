@@ -15,8 +15,8 @@ import { ensurePanel, destroyPanel } from "./launcher/panelLoader.js";
 import { startStreamWatch } from "./launcher/streamWatch.js";
 import { resolveWidgetSession, startClaimResponder } from "./desk/session.js";
 import { startBrowserTools, stopBrowserTools } from "./desk/browserTools.js";
-
-const HIDDEN_ROUTES = new Set(["faco-assistant"]);
+import { getHost, setHost } from "./host/index.js";
+import { spaHost } from "./host/spaHost.js";
 
 // The operator's privacy settings. While unloaded (or if the fetch failed) DOM extraction
 // stays off: browserTools only treats an explicit `false` as off, so an empty object would
@@ -26,11 +26,7 @@ let widgetSettings = null;
 
 async function loadWidgetSettings() {
 	try {
-		const r = await window.frappe.call({
-			method: "frappe_assistant_core.chat.api.settings.widget.get_widget_settings",
-			type: "GET",
-			args: {},
-		});
+		const r = await getHost().call("frappe_assistant_core.chat.api.settings.widget.get_widget_settings", {}, "GET");
 		// The server's except-branch answers 200 without `privacy`; treating that as loaded
 		// would read as "extraction on", so only a response carrying `privacy` counts.
 		const message = r.message;
@@ -158,38 +154,36 @@ export async function boot(config) {
 	cleanups.push(() => destroyPanel());
 
 	const syncVisibility = () => {
-		const route = window.frappe && window.frappe.get_route ? window.frappe.get_route() : [];
-		view.host.style.display = HIDDEN_ROUTES.has(route && route[0]) ? "none" : "";
+		view.host.style.display = getHost().isHiddenRoute() ? "none" : "";
 	};
 	syncVisibility();
-	if (window.frappe && window.frappe.router) {
-		window.frappe.router.on("change", syncVisibility);
-		cleanups.push(() => window.frappe.router.off && window.frappe.router.off("change", syncVisibility));
-	}
+	cleanups.push(getHost().onRouteChange(syncVisibility));
 
 	await loadWidgetSettings();
 
 	// Calls arrive with the panel closed: a navigate_to lands on a fresh page.
 	if (hidden) return;
-	startBrowserTools({
-		getSessionId: () => bridge.state.sessionId,
-		getWidgetSettings: () => widgetSettings || FAIL_CLOSED_SETTINGS,
-		confirm: (request) =>
-			new Promise((resolve) => {
-				if (hidden) return resolve("deny");
-				open()
-					.then(() => bridge.emit("confirm", { request, resolve }))
-					.catch((err) => {
-						logger.error("[FAC widget] confirm", err);
-						resolve("deny");
-					});
-			}),
-	});
+	if (getHost().browserTools) {
+		startBrowserTools({
+			getSessionId: () => bridge.state.sessionId,
+			getWidgetSettings: () => widgetSettings || FAIL_CLOSED_SETTINGS,
+			confirm: (request) =>
+				new Promise((resolve) => {
+					if (hidden) return resolve("deny");
+					open()
+						.then(() => bridge.emit("confirm", { request, resolve }))
+						.catch((err) => {
+							logger.error("[FAC widget] confirm", err);
+							resolve("deny");
+						});
+				}),
+		});
 
-	cleanups.push(stopBrowserTools);
+		cleanups.push(stopBrowserTools);
+	}
 	refreshSpotlightDot(view, access);
 
-	if (access.can_use) {
+	if (access.can_use && getHost().realtime()) {
 		const stopWatch = startStreamWatch({
 			getSessionId: () => bridge.state.sessionId,
 			isMounted: () => panelMounted,
@@ -212,4 +206,12 @@ export async function boot(config) {
 	} catch (err) {
 		logger.error("[FAC widget] pending", err);
 	}
+}
+
+/** Entry for standalone Frappe apps (widget_embed.js): the same launcher, on spaHost. */
+export async function bootEmbedded(config) {
+	if (window.__facWidgetBooted) return;
+	setHost(spaHost);
+	if (!(await spaHost.init())) return;
+	await boot(config);
 }

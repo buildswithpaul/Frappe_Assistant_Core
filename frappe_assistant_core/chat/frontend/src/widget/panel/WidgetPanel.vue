@@ -113,6 +113,7 @@ import BrowserToolConfirm from "./BrowserToolConfirm.vue";
 import OverageNotice from "./OverageNotice.vue";
 import WidgetPlanStrip from "./WidgetPlanStrip.vue";
 import { bridge } from "../bridge.js";
+import { getHost } from "../host/index.js";
 import { handOffToFullPage } from "../desk/session.js";
 import { isBlocked, overageNoticeDue, markOverageNoticeShown } from "../desk/quotaGate.js";
 import { confirms, settleConfirm } from "./confirmQueue.js";
@@ -154,7 +155,7 @@ const latestTurn = computed(() => {
 });
 
 
-const deskUser = () => window.frappe?.session?.user || "";
+const deskUser = () => getHost().user() || "";
 
 // The boot payload carries the plan quota but not the admission flags the gate and the overage
 // notice need (credits_exhausted, in_overage, credit_balance), so read the full status once.
@@ -235,7 +236,7 @@ function interceptDeskLinks(event) {
 	const route = deskRouteFor(href);
 	if (!route) return;
 	event.preventDefault();
-	window.frappe.set_route(...route);
+	getHost().openDeskRoute(route, href);
 }
 
 // The launcher owns Ctrl+Shift+Space (it must work before this panel exists) and asks for the mic
