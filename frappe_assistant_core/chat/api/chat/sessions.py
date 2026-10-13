@@ -32,6 +32,30 @@ def _like_pattern(term: str) -> str:
     return f"%{escaped}%"
 
 
+def _search_session_ids(user: str, archived: int, project: str | None, pattern: str) -> list[str]:
+    """Session ids whose title or message text matches. Query Builder parameterises the
+    LIKE value on every Frappe version; get_list's own LIKE handling re-escapes backslashes on v15."""
+    conv = frappe.qb.DocType("FAC Chat Conversation")
+    by_title = (
+        frappe.qb.from_(conv)
+        .select(conv.name)
+        .distinct()
+        .where((conv.user == user) & (conv.is_archived == archived) & conv.title.like(pattern))
+    )
+    msg = frappe.qb.DocType("FAC Chat Message")
+    by_content = (
+        frappe.qb.from_(msg)
+        .select(msg.session_id)
+        .distinct()
+        .where((msg.user == user) & (msg.is_archived == archived) & msg.content.like(pattern))
+    )
+    if project:
+        by_title = by_title.where(conv.project == project)
+    ids = set(by_title.limit(CONTENT_MATCH_LIMIT).run(pluck=True))
+    ids.update(by_content.limit(CONTENT_MATCH_LIMIT).run(pluck=True))
+    return list(ids)
+
+
 def _list_conversations(
     archived: int, limit: int, offset: int = 0, project: str | None = None, search: str | None = None
 ) -> list[dict]:
@@ -40,25 +64,16 @@ def _list_conversations(
     filters = {"user": user, "is_archived": archived}
     if project:
         filters["project"] = project
-    or_filters = None
     term = (search or "").strip()
     if len(term) >= SEARCH_MIN_LENGTH:
-        pattern = _like_pattern(term)
-        content_matches = frappe.get_list(
-            "FAC Chat Message",
-            filters={"user": user, "is_archived": archived, "content": ["like", pattern]},
-            pluck="session_id",
-            distinct=True,
-            limit_page_length=CONTENT_MATCH_LIMIT,
-        )
-        or_filters = [["title", "like", pattern]]
-        if content_matches:
-            or_filters.append(["name", "in", content_matches])
+        matched = _search_session_ids(user, archived, project, _like_pattern(term))
+        if not matched:
+            return []
+        filters["name"] = ["in", matched]
 
     rows = frappe.get_list(
         "FAC Chat Conversation",
         filters=filters,
-        or_filters=or_filters,
         fields=[
             "name as session_id",
             "title",
@@ -68,7 +83,7 @@ def _list_conversations(
             "last_activity",
             "message_count",
         ],
-        order_by="last_activity desc",
+        order_by="last_activity desc, name desc",
         limit_start=int(offset),
         limit_page_length=min(int(limit), 100),
     )

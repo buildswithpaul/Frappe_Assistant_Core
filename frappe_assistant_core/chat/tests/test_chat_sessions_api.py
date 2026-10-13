@@ -7,6 +7,7 @@
 import frappe
 
 from frappe_assistant_core.chat.api.chat.sessions import (
+    archive_session,
     continue_archived_session,
     get_archived_sessions,
     get_user_sessions,
@@ -117,18 +118,32 @@ class TestSessionsApi(BaseAssistantTest):
         self.assertIsNone(move_session_to_project(sid, None)["project"])
 
     def test_archived_sessions_come_from_the_table(self):
-        from frappe_assistant_core.chat.api.chat.sessions import archive_session
-
         sid = chat("arch", "old")
         archive_session(sid)
         self.assertIn(sid, self._ids(get_archived_sessions(limit=100)))
         self.assertNotIn(sid, self._ids(get_user_sessions(limit=100)))
 
     def test_continue_archived_returns_the_project(self):
-        from frappe_assistant_core.chat.api.chat.sessions import archive_session
-
         project = make_project("Administrator")
         sid = chat("cont", "old")
         move_session_to_project(sid, project)
         archive_session(sid)
         self.assertEqual(continue_archived_session(sid)["project"], project)
+
+    def test_non_system_manager_sees_only_their_own_conversations(self):
+        # Real chat users are plain System Users, not System Managers, so the "All"/if_owner
+        # permission row applies; every other test here runs as Administrator and skips it.
+        # OTHER_USER is created by ensure_user as a System User with no extra roles, as FAC seats are.
+        chat("admin-own", "steel from admin")
+        mine = chat("mine", "steel from other", user=OTHER_USER)
+        gone = chat("mine-old", "old steel from other", user=OTHER_USER)
+        # nosemgrep: frappe-setuser — test bootstrap; runs in an isolated transaction
+        frappe.set_user(OTHER_USER)
+        try:
+            archive_session(gone)
+            self.assertEqual(self._ids(get_user_sessions(limit=100)), [mine])
+            self.assertEqual(self._ids(get_user_sessions(limit=100, search="steel")), [mine])
+            self.assertEqual(self._ids(get_archived_sessions(limit=100)), [gone])
+        finally:
+            # nosemgrep: frappe-setuser — test bootstrap; runs in an isolated transaction
+            frappe.set_user("Administrator")
