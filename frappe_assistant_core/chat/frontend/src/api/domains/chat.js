@@ -76,9 +76,24 @@ export const chat = {
 		return data.message.file;
 	},
 
-	getSessions: (limit = 20) =>
-		getCall("frappe_assistant_core.chat.api.get_user_sessions", {
+	getSessions: ({ limit = 30, offset = 0, project = null, search = null } = {}) =>
+		getCall("frappe_assistant_core.chat.api.chat.sessions.get_user_sessions", {
 			limit,
+			offset,
+			...(project ? { project } : {}),
+			...(search ? { search } : {}),
+		}),
+
+	renameSession: (sessionId, title) =>
+		baseCall("frappe_assistant_core.chat.api.chat.sessions.rename_session", {
+			session_id: sessionId,
+			title,
+		}),
+
+	moveSessionToProject: (sessionId, project) =>
+		baseCall("frappe_assistant_core.chat.api.chat.sessions.move_session_to_project", {
+			session_id: sessionId,
+			project: project || null,
 		}),
 
 	getMessages: (sessionId) =>

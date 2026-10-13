@@ -27,6 +27,8 @@ import { useSpotlightStore } from "./spotlightStore";
 // from this, so the next JSON column is added in one place — model_breakdown
 // was written by the server but parsed by neither loop, arriving as an
 // object live and a string on reload.
+export const SESSIONS_PAGE_SIZE = 30;
+
 const JSON_MESSAGE_FIELDS = ["blocks", "model_breakdown", "routing"];
 
 function parseJsonFields(msg) {
@@ -94,6 +96,12 @@ export const useChatStore = defineStore("chat", () => {
 	// Context addendum from continuing an archived conversation (consumed once)
 	const pendingContextAddendum = ref(null);
 
+	const sessionsHasMore = ref(false);
+	const isLoadingMoreSessions = ref(false);
+	// Project for a chat that has no conversation row yet (new chat from a project page,
+	// or a continued archived chat). Once the row exists its own project wins.
+	const pendingProjectId = ref(null);
+
 	// Request-scoped identity to prevent duplicate message bubbles on disconnect/reconnect
 	const streamRequestId = ref(null);
 
@@ -113,6 +121,10 @@ export const useChatStore = defineStore("chat", () => {
 	// Getters
 	const currentSession = computed(() =>
 		sessions.value.find((s) => s.session_id === currentSessionId.value)
+	);
+
+	const currentProjectId = computed(() =>
+		currentSession.value ? currentSession.value.project || null : pendingProjectId.value
 	);
 
 	const sortedSessions = computed(() => {
@@ -233,8 +245,9 @@ export const useChatStore = defineStore("chat", () => {
 	async function loadSessions() {
 		try {
 			isLoading.value = true;
-			const result = await api.chat.getSessions();
-			sessions.value = result || [];
+			const result = (await api.chat.getSessions({ limit: SESSIONS_PAGE_SIZE })) || [];
+			sessions.value = result;
+			sessionsHasMore.value = result.length === SESSIONS_PAGE_SIZE;
 		} catch (err) {
 			setError(err.message);
 			logger.error("Failed to load sessions:", err);
@@ -249,6 +262,33 @@ export const useChatStore = defineStore("chat", () => {
 	 */
 	function hydrateSessions(sessionsData) {
 		sessions.value = sessionsData || [];
+		sessionsHasMore.value = (sessionsData || []).length === SESSIONS_PAGE_SIZE;
+	}
+
+	async function loadMoreSessions() {
+		if (isLoadingMoreSessions.value || !sessionsHasMore.value) return;
+		isLoadingMoreSessions.value = true;
+		try {
+			const result =
+				(await api.chat.getSessions({ limit: SESSIONS_PAGE_SIZE, offset: sessions.value.length })) || [];
+			const known = new Set(sessions.value.map((s) => s.session_id));
+			sessions.value = [...sessions.value, ...result.filter((s) => !known.has(s.session_id))];
+			sessionsHasMore.value = result.length === SESSIONS_PAGE_SIZE;
+		} catch (err) {
+			logger.error("Failed to load more sessions:", err);
+		} finally {
+			isLoadingMoreSessions.value = false;
+		}
+	}
+
+	function patchSession(sessionId, patch) {
+		sessions.value = sessions.value.map((s) => (s.session_id === sessionId ? { ...s, ...patch } : s));
+	}
+
+	async function startChatInProject(projectId) {
+		const sessionId = await createSession();
+		pendingProjectId.value = projectId;
+		return sessionId;
 	}
 
 	async function readHistory(sessionId) {
@@ -440,6 +480,7 @@ export const useChatStore = defineStore("chat", () => {
 			if (result && result.session_id) {
 				clearExpiryTimer();
 				currentSessionId.value = result.session_id;
+				pendingProjectId.value = null;
 				messages.value = [];
 				await loadSessions();
 				return result.session_id;
@@ -543,6 +584,7 @@ export const useChatStore = defineStore("chat", () => {
 					client_turn_id: assistantMessage._requestId,
 					client_type: surface.clientType,
 					...(signals ? { client_signals: signals } : {}),
+					...(currentProjectId.value ? { project: currentProjectId.value } : {}),
 				}
 			);
 		} catch (err) {
@@ -592,6 +634,7 @@ export const useChatStore = defineStore("chat", () => {
 				thinking_enabled: modes.effort !== "off",
 				client_turn_id: lastMsg._requestId,
 				client_type: getSurface().clientType,
+				...(currentProjectId.value ? { project: currentProjectId.value } : {}),
 			});
 		} catch (err) {
 			stream.clearStreamTimeouts();
@@ -740,6 +783,7 @@ export const useChatStore = defineStore("chat", () => {
 				thinking_enabled: modes.effort !== "off",
 				client_turn_id: clientTurnId,
 				client_type: getSurface().clientType,
+				...(currentProjectId.value ? { project: currentProjectId.value } : {}),
 			};
 			// Same reasoning for the model — except "auto" can never travel: a
 			// resume skips classification, so only a concrete id is a model.
@@ -1060,6 +1104,13 @@ export const useChatStore = defineStore("chat", () => {
 		archivedSessions,
 		loadArchivedSessions,
 		pendingContextAddendum,
+		sessionsHasMore,
+		isLoadingMoreSessions,
+		pendingProjectId,
+		currentProjectId,
+		loadMoreSessions,
+		patchSession,
+		startChatInProject,
 		// Message actions
 		sendMessage,
 		queuedMessages: sendQueue.queuedMessages,

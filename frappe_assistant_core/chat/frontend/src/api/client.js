@@ -27,6 +27,7 @@ import { notifications } from "./domains/notifications";
 import { packs } from "./domains/packs";
 import { privacy } from "./domains/privacy";
 import { profile } from "./domains/profile";
+import { projects } from "./domains/projects";
 import { registration } from "./domains/registration";
 import { routingPreferences } from "./domains/routingPreferences";
 import { sharedKnowledge } from "./domains/sharedKnowledge";
@@ -53,6 +54,7 @@ export const api = {
 	documents,
 	memories,
 	profile,
+	projects,
 	sharedKnowledge,
 	workflows,
 	registration,

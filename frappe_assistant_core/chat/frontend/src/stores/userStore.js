@@ -1,6 +1,7 @@
 import { defineStore } from "pinia";
 import { ref, computed } from "vue";
 import { api } from "@/api/client";
+import { useProjectsStore } from "@/stores/projectsStore";
 import { logger } from "@/utils/logger";
 import { siteRefusal } from "@/utils/siteRefusal";
 
@@ -433,6 +434,7 @@ export const useUserStore = defineStore("user", () => {
 
 			// Store pre-fetched sessions for ChatView to consume
 			_initialSessions.value = data.sessions;
+			if (Array.isArray(data.projects)) useProjectsStore().hydrate(data.projects);
 
 			// Off the critical path: the meter renders from the hydrated team
 			// quota straight away and narrows to the personal cap once this

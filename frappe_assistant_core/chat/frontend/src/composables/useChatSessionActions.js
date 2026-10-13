@@ -43,6 +43,7 @@ export function useChatSessionActions({ chatStore, router, handleNewChat }) {
 				chatStore.currentSessionId = result.new_session_id;
 				chatStore.messages = [];
 				chatStore.pendingContextAddendum = result.context_addendum;
+				chatStore.pendingProjectId = result.project || null;
 				await chatStore.loadSessions();
 				router.push(`/chat/${result.new_session_id}`);
 			}
