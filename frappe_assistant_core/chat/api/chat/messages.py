@@ -17,6 +17,10 @@ from concurrent.futures import ThreadPoolExecutor
 import frappe
 from frappe import _
 
+from frappe_assistant_core.chat.doctype.fac_chat_project.fac_chat_project import (
+    FACChatProject,
+    project_addendum,
+)
 from frappe_assistant_core.chat.embed.page_context import render_page_context, storable_context
 
 from .._rate_limits import (
@@ -78,15 +82,33 @@ def _flag(value) -> bool:
 EFFORT_LEVELS = ("off", "low", "medium", "high", "xhigh", "max")
 
 
-def _files_addendum(session_id: str, restricted: bool) -> str | None:
-    """Every file attached so far in the conversation, for this turn's system prompt.
+def _conversation_project(session_id: str, fallback: str | None) -> str | None:
+    """The project whose instructions apply to this turn.
 
-    The addendum lasts one turn, so it is rebuilt on every send, resume and continue. A user
-    under processing restriction (M15) has no persisted messages, so no files to list.
+    The conversation row decides once it exists. Before that — and always for a
+    user under processing restriction (M15), whose messages are never persisted —
+    the client's project is used if the caller owns it.
     """
-    if restricted:
-        return None
-    return conversation_files_addendum(session_id, frappe.session.user) or None
+    row = frappe.db.get_value(
+        "FAC Chat Conversation", {"name": session_id, "user": frappe.session.user}, ["project"], as_dict=True
+    )
+    if row:
+        return row.project
+    return fallback if FACChatProject.is_owned(fallback) else None
+
+
+def _conversation_addendum(session_id: str, restricted: bool, project: str | None = None) -> str | None:
+    """The project's instructions, then every file attached so far, for this turn's system prompt.
+
+    Rebuilt on every send, resume and continue: AR rebuilds the system prompt each
+    turn, so a block left off any one path is missing from that turn. A user under
+    processing restriction (M15) has no persisted messages, so no files to list.
+    """
+    parts = [
+        project_addendum(_conversation_project(session_id, project)),
+        None if restricted else conversation_files_addendum(session_id, frappe.session.user),
+    ]
+    return "".join(p for p in parts if p) or None
 
 
 def _effort(value) -> str | None:
@@ -207,6 +229,7 @@ def send_message(
     reasoning_effort: str | None = None,
     client_signals: str | None = None,
     client_turn_id: str | None = None,
+    project: str | None = None,
 ) -> dict:
     """
     Send a message to FACO and stream AI response via Socket.IO.
@@ -237,6 +260,8 @@ def send_message(
                     The rendered wording is owned by the server, never the client.
             client_turn_id (str): The client's id for this request. A Stop
                     (cancel_stream) that already names it is kept by this accept.
+            project (str): The caller's project for a chat that has no conversation row yet;
+                    ignored once the row exists.
 
     Returns:
             dict: Acknowledgment that processing has started
@@ -282,6 +307,9 @@ def send_message(
         # the turn in-memory), but no content survives in FACO Message.
         restricted = _is_processing_restricted(frappe.session.user)
 
+        if project and not FACChatProject.is_owned(project):
+            frappe.throw(_("Project not found"), frappe.DoesNotExistError)
+
         # Save user message to database
         from frappe_assistant_core.chat.doctype.fac_chat_message.fac_chat_message import (
             FACChatMessage,
@@ -294,6 +322,7 @@ def send_message(
                 role="user",
                 content=message,
                 context=context if include_context and context else None,
+                project=project,
             )
             frappe.db.commit()  # nosemgrep: frappe-manual-commit — background thread / streaming context (not a request handler), explicit commit required to flush progress to DB.
 
@@ -306,9 +335,9 @@ def send_message(
         # the stored user message in conversation history.
         full_prompt = message
 
-        files_addendum = _files_addendum(session_id, restricted)
-        if files_addendum:
-            system_prompt_addendum = (system_prompt_addendum or "") + files_addendum
+        conversation_addendum = _conversation_addendum(session_id, restricted, project)
+        if conversation_addendum:
+            system_prompt_addendum = (system_prompt_addendum or "") + conversation_addendum
 
         signal_addendum = _render_client_signals(client_signals)
         if signal_addendum:
@@ -426,6 +455,7 @@ def resume_interrupt(
     thinking_enabled: bool | None = None,
     reasoning_effort: str | None = None,
     client_turn_id: str | None = None,
+    project: str | None = None,
 ) -> dict:
     """
     Resume a HITL-interrupted agent stream with the user's approval/rejection.
@@ -451,6 +481,8 @@ def resume_interrupt(
             reasoning_effort (str): Composer thinking level — off/low/medium/high/xhigh/max. When valid it also sets thinking_enabled, so an AR that predates levels still honours on/off.
             client_turn_id: The client's id for this request. A Stop
                     (cancel_stream) that already names it is kept by this accept.
+            project: The caller's project, for a chat with no conversation row (a user under
+                    processing restriction); ignored once the row exists.
 
     Returns:
             dict: Acknowledgment that resume processing has started
@@ -515,7 +547,7 @@ def resume_interrupt(
                 # The turn the user approved was sent with these; the resume is the
                 # same turn continuing, so it has to carry them too.
                 model_id=model_id,
-                system_prompt_addendum=_files_addendum(session_id, restricted),
+                system_prompt_addendum=_conversation_addendum(session_id, restricted, project),
                 web_search=_flag(web_search) if web_search is not None else None,
                 thinking_enabled=_flag(thinking_enabled) if thinking_enabled is not None else None,
                 reasoning_effort=effort,
@@ -551,6 +583,7 @@ def continue_response(
     thinking_enabled: bool | None = None,
     reasoning_effort: str | None = None,
     client_turn_id: str | None = None,
+    project: str | None = None,
 ) -> dict:
     """
     Continue a previously truncated assistant response (max_tokens stop).
@@ -570,6 +603,8 @@ def continue_response(
             reasoning_effort (str): Composer thinking level — off/low/medium/high/xhigh/max. When valid it also sets thinking_enabled, so an AR that predates levels still honours on/off.
             client_turn_id: The client's id for this request. A Stop
                     (cancel_stream) that already names it is kept by this accept.
+            project: The caller's project, for a chat with no conversation row (a user under
+                    processing restriction); ignored once the row exists.
 
     Returns:
             dict: Acknowledgment that continuation processing has started
@@ -627,7 +662,7 @@ def continue_response(
                 session_state=session_state,
                 restricted=restricted,
                 continue_from_message_id=message_id,
-                system_prompt_addendum=_files_addendum(session_id, restricted),
+                system_prompt_addendum=_conversation_addendum(session_id, restricted, project),
                 # A continuation is the same turn finishing; it must run under the
                 # same toggles, not fall back to AR's absence defaults.
                 web_search=_flag(web_search) if web_search is not None else None,
