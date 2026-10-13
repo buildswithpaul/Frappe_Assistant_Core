@@ -72,3 +72,12 @@ class TestStopAndSweep(BaseAssistantTest):
         self.assertIn(str(formatting.INTERRUPTED), frappe.db.get_value("Raven Message", stale, "text"))
         self.assertNotIn(str(formatting.INTERRUPTED), frappe.db.get_value("Raven Message", fresh, "text"))
         self.assertIsNone(frappe.cache.hget(self.key, stale))
+
+    def test_writing_to_a_reply_someone_deleted_is_a_quiet_no_op(self):
+        # Live: after a Stop, the relay's last event tried to edit the deleted reply and logged an error.
+        from frappe_assistant_core.integrations.raven.sink import RavenReplyWriter
+
+        reply = self._reply(time.time())
+        frappe.delete_doc("Raven Message", reply, ignore_permissions=True)
+        RavenReplyWriter(reply, self.dm, bot.BOT_NAME).update("<p>late</p>")
+        self.assertFalse(frappe.db.exists("Raven Message", reply))

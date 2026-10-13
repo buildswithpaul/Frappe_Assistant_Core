@@ -46,6 +46,8 @@ class RavenReplyWriter(ReplyWriter):
         self.reply_name, self.channel_id, self.bot_user = reply_name, channel_id, bot_user
 
     def update(self, html: str) -> None:
+        if not frappe.db.exists("Raven Message", self.reply_name):
+            return  # deleted by the asker: that was their Stop
         doc = frappe.get_doc("Raven Message", self.reply_name)
         doc.text = html
         doc.flags.is_ai_streaming = True  # not marked "edited"
