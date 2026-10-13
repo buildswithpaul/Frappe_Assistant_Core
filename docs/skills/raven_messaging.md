@@ -7,7 +7,7 @@ The user asks you to send, post or share something in Raven ("post this summary 
 
 ## 1. Find where to post
 
-- **A channel**: `list_documents` on `Raven Channel` with `channel_name` like the name the user gave, `is_direct_message = 0`, `is_archived = 0`. Confirm the user is a member: `Raven Channel Member` with `channel_id = <channel>` and `user_id = <the user>`. If several match, ask which.
+- **A channel**: `list_documents` on `Raven Channel` with `channel_name` like the name the user gave, `is_direct_message = 0`, `is_archived = 0`. Confirm the user is a member: `Raven Channel Member` with `channel_id = <channel>` and `user_id = <the user>`. If several match, ask which. Raven requires membership to post even in **Open** channels: if the user is not a member, ask them to join the channel in Raven first.
 - **A direct message with a person**: a `Raven Channel` with `is_direct_message = 1` whose `dm_user_1` and `dm_user_2` are the two users' IDs — the greater ID (string order) is `dm_user_1`. If none exists, tell the user to open a DM with that person in Raven first. **Never create channels or DMs.**
 
 ## 2. Post
