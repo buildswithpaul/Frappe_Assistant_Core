@@ -365,6 +365,10 @@ app_include_css = []
 # the entry that `extend_bootinfo` reads out of the build manifest.
 extend_bootinfo = ["frappe_assistant_core.chat.widget_boot.extend_bootinfo"]
 
+# Standalone Frappe apps (Helpdesk, Insights…) render their own HTML, which app_include_js never
+# reaches. The hook adds the widget loader to apps an admin enabled; see chat/embed/inject.py.
+after_request = ["frappe_assistant_core.chat.embed.inject.inject_widget"]
+
 app_include_js = [
     _widget_asset("/assets/frappe_assistant_core/js/chat_banner.js"),
     # Diagnostics right after the banner: it records console and network from
