@@ -22,10 +22,10 @@ const SKIP_DIRS = new Set([
 	"__pycache__",
 ]);
 
-// The logger is the one place console.* belongs. widget_loader.js is the exception: it is a
-// plain script that runs before any bundle is loaded, and its warning is the only signal that
-// the widget failed to start.
-const ALLOWED_FILES = new Set(["logger.js", "widget_loader.js"]);
+// The logger is the one place console.* belongs. widget_loader.js and widget_embed.js (its
+// counterpart for standalone Frappe apps) are the exceptions: plain scripts that run before any
+// bundle is loaded, whose warning is the only signal that the widget failed to start.
+const ALLOWED_FILES = new Set(["logger.js", "widget_loader.js", "widget_embed.js"]);
 
 const CONSOLE_CALL = /\bconsole\.\w+\s*\(/;
 
