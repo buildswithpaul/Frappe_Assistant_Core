@@ -15,7 +15,8 @@ vi.mock("@/api/client", () => ({
 	},
 }));
 const showError = vi.fn();
-vi.mock("@/composables/useToast", () => ({ useToast: () => ({ showError }) }));
+const showToast = vi.fn();
+vi.mock("@/composables/useToast", () => ({ useToast: () => ({ showError, showToast }) }));
 
 import ProjectDocuments from "@/components/projects/ProjectDocuments.vue";
 
@@ -193,6 +194,113 @@ describe("ProjectDocuments", () => {
 		document.removeEventListener("keydown", outer);
 		expect(w.find("[data-test=doc-download]").exists()).toBe(false);
 		expect(outer).not.toHaveBeenCalled();
+		w.unmount();
+	});
+
+	it("toasts once and stops polling when the poll keeps failing", async () => {
+		list.mockResolvedValueOnce({ documents: [doc("a", "Processing")] });
+		list.mockRejectedValue(new Error("down"));
+		const w = mountBlock();
+		await flushPromises();
+		await vi.advanceTimersByTimeAsync(5000);
+		await vi.advanceTimersByTimeAsync(5000);
+		await vi.advanceTimersByTimeAsync(5000);
+		expect(list).toHaveBeenCalledTimes(2);
+		expect(showError).toHaveBeenCalledTimes(1);
+		expect(w.findAll("[data-test=doc-row]")).toHaveLength(1);
+		w.unmount();
+	});
+
+	it("resumes polling after a later successful load", async () => {
+		list.mockResolvedValueOnce({ documents: [doc("a", "Processing")] });
+		list.mockRejectedValueOnce(new Error("down"));
+		const w = mountBlock();
+		await flushPromises();
+		await vi.advanceTimersByTimeAsync(5000);
+		list.mockResolvedValue({ documents: [doc("a", "Processing")] });
+		upload.mockResolvedValue({});
+		const file = new File(["x"], "a.md", { type: "text/markdown" });
+		await w.get("[data-test=project-documents]").trigger("drop", { dataTransfer: { files: [file] } });
+		await flushPromises();
+		const calls = list.mock.calls.length;
+		await vi.advanceTimersByTimeAsync(5000);
+		expect(list).toHaveBeenCalledTimes(calls + 1);
+		w.unmount();
+	});
+
+	it("never overlaps a slow poll with the next tick", async () => {
+		list.mockResolvedValueOnce({ documents: [doc("a", "Processing")] });
+		let resolveSlow;
+		list.mockReturnValueOnce(new Promise((r) => (resolveSlow = r)));
+		const w = mountBlock();
+		await flushPromises();
+		await vi.advanceTimersByTimeAsync(5000);
+		await vi.advanceTimersByTimeAsync(20000);
+		expect(list).toHaveBeenCalledTimes(2);
+		resolveSlow({ documents: [doc("a", "Processing")] });
+		w.unmount();
+	});
+
+	it("a poll in flight during a delete does not resurrect the row", async () => {
+		list.mockResolvedValueOnce({ documents: [doc("a", "Processing"), doc("b", "Completed")] });
+		let resolveSlow;
+		list.mockReturnValueOnce(new Promise((r) => (resolveSlow = r)));
+		remove.mockResolvedValue({});
+		const w = mountBlock();
+		await flushPromises();
+		await vi.advanceTimersByTimeAsync(5000);
+		await w.findAll("[data-test=doc-menu]")[1].trigger("click");
+		await w.get("[data-test=doc-delete]").trigger("click");
+		await w.get("[data-test=confirm-ok]").trigger("click");
+		await flushPromises();
+		resolveSlow({ documents: [doc("a", "Processing"), doc("b", "Completed")] });
+		await flushPromises();
+		expect(w.findAll("[data-test=doc-row]")).toHaveLength(1);
+		expect(w.get("[data-test=doc-row]").text()).toContain("a.pdf");
+		w.unmount();
+	});
+
+	it("shows an error with Retry, not the empty state, when the first load fails", async () => {
+		list.mockRejectedValueOnce(new Error("down"));
+		const w = mountBlock();
+		await flushPromises();
+		expect(w.find("[data-test=docs-empty]").exists()).toBe(false);
+		expect(w.get("[data-test=docs-error]").text()).toContain("Couldn't load this project's documents.");
+		list.mockResolvedValue({ documents: [doc("a", "Completed")] });
+		await w.get("[data-test=docs-retry]").trigger("click");
+		await flushPromises();
+		expect(w.find("[data-test=docs-error]").exists()).toBe(false);
+		expect(w.findAll("[data-test=doc-row]")).toHaveLength(1);
+		w.unmount();
+	});
+
+	it("ignores a stale response after the project changes mid-load", async () => {
+		let resolveOld;
+		list.mockReturnValueOnce(new Promise((r) => (resolveOld = r)));
+		list.mockResolvedValueOnce({ documents: [doc("new", "Completed", "new.pdf")] });
+		const w = mountBlock();
+		await w.setProps({ projectId: "p2" });
+		await flushPromises();
+		resolveOld({ documents: [doc("old", "Completed", "old.pdf")] });
+		await flushPromises();
+		expect(w.findAll("[data-test=doc-row]").map((r) => r.text())[0]).toContain("new.pdf");
+		expect(w.findAll("[data-test=doc-row]")).toHaveLength(1);
+		w.unmount();
+	});
+
+	it("tells the user when files are dropped during an upload", async () => {
+		let finish;
+		upload.mockReturnValue(new Promise((r) => (finish = r)));
+		const w = mountBlock();
+		await flushPromises();
+		const file = new File(["x"], "a.md", { type: "text/markdown" });
+		const block = w.get("[data-test=project-documents]");
+		await block.trigger("drop", { dataTransfer: { files: [file] } });
+		await block.trigger("drop", { dataTransfer: { files: [file] } });
+		expect(upload).toHaveBeenCalledTimes(1);
+		expect(showToast).toHaveBeenCalledWith("Wait for the current upload to finish");
+		finish({});
+		await flushPromises();
 		w.unmount();
 	});
 });

@@ -23,48 +23,23 @@
 			/>
 		</header>
 
-		<p v-if="!loading && !documents.length" class="empty" data-test="docs-empty">
+		<div v-if="loadFailed" class="load-error" data-test="docs-error">
+			<span>{{ __("Couldn't load this project's documents.") }}</span>
+			<button class="upload-btn" data-test="docs-retry" @click="loadDocuments">{{ __("Retry") }}</button>
+		</div>
+		<p v-else-if="!loading && !documents.length" class="empty" data-test="docs-empty">
 			{{ __("No documents yet. Upload files the assistant should know for this project.") }}
 		</p>
 		<ul v-else class="doc-list">
-			<li v-for="doc in documents" :key="doc.document_id" class="doc-row" data-test="doc-row">
-				<span class="doc-name" :title="doc.file_name">{{ doc.file_name }}</span>
-				<span class="doc-size">{{ formatFileSize(doc.file_size || 0) }}</span>
-				<span class="pill" :class="statusOf(doc).cls" data-test="doc-status">
-					{{ statusOf(doc).label }}
-				</span>
-				<div class="doc-menu-root">
-					<button
-						class="row-menu"
-						data-test="doc-menu"
-						aria-haspopup="menu"
-						:aria-expanded="menuDocId === doc.document_id"
-						:aria-label="__('Document options')"
-						@click="toggleMenu(doc.document_id)"
-					>
-						⋯
-					</button>
-					<div
-						v-if="menuDocId === doc.document_id"
-						class="menu"
-						role="menu"
-						@keydown.esc.stop.prevent="menuDocId = null"
-					>
-						<a
-							class="menu-item"
-							role="menuitem"
-							data-test="doc-download"
-							:href="api.documents.getDownloadUrl(doc.document_id)"
-							@click="menuDocId = null"
-						>
-							{{ __("Download") }}
-						</a>
-						<button class="menu-item danger" role="menuitem" data-test="doc-delete" @click="askDelete(doc)">
-							{{ __("Delete") }}
-						</button>
-					</div>
-				</div>
-			</li>
+			<ProjectDocumentRow
+				v-for="doc in documents"
+				:key="doc.document_id"
+				:doc="doc"
+				:menu-open="menuDocId === doc.document_id"
+				@toggle-menu="toggleMenu(doc.document_id)"
+				@close-menu="menuDocId = null"
+				@delete="askDelete(doc)"
+			/>
 		</ul>
 
 		<ConfirmModal
@@ -84,9 +59,9 @@
 <script setup>
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import ConfirmModal from "@/components/common/ConfirmModal.vue";
+import ProjectDocumentRow from "@/components/projects/ProjectDocumentRow.vue";
 import { api } from "@/api/client";
 import { useToast } from "@/composables/useToast";
-import { formatFileSize } from "@/composables/useFormatters";
 import { ACCEPT_ATTRIBUTE, validateKnowledgeFile } from "@/utils/knowledgeUpload";
 import { __ } from "@/utils/i18n";
 
@@ -97,10 +72,11 @@ const props = defineProps({
 	projectId: { type: String, required: true },
 });
 
-const { showError } = useToast();
+const { showError, showToast } = useToast();
 
 const documents = ref([]);
 const loading = ref(true);
+const loadFailed = ref(false);
 const uploading = ref(false);
 const dragging = ref(false);
 const fileInput = ref(null);
@@ -112,51 +88,69 @@ const hasProcessing = computed(() =>
 	documents.value.some((d) => PROCESSING_STATES.includes(d.embedding_status))
 );
 
-function statusOf(doc) {
-	if (doc.embedding_status === "Completed") return { label: __("Ready"), cls: "ready" };
-	if (doc.embedding_status === "Failed") return { label: __("Failed"), cls: "failed" };
-	return { label: __("Processing"), cls: "processing" };
-}
+let pollTimer = null;
+let failures = 0;
+// Bumped whenever this block changes the list itself, so a load that started earlier is dropped.
+let mutations = 0;
+let unmounted = false;
 
 function notifyFailure(err) {
 	showError(err?.message || __("Something went wrong"));
 }
 
+function stopPolling() {
+	if (pollTimer) clearTimeout(pollTimer);
+	pollTimer = null;
+}
+
+// A chain of timeouts, not an interval, so a slow load can never overlap the next tick. A failed
+// load ends the chain; the next successful load (retry, upload, delete) restarts it.
+function schedulePoll() {
+	stopPolling();
+	if (unmounted || failures > 0 || !hasProcessing.value) return;
+	pollTimer = setTimeout(loadDocuments, POLL_INTERVAL_MS);
+}
+
 async function loadDocuments() {
 	const projectId = props.projectId;
+	const epoch = mutations;
 	try {
 		const result = await api.documents.list({ project: projectId });
-		if (projectId === props.projectId) documents.value = result?.documents || [];
+		if (projectId !== props.projectId) return;
+		failures = 0;
+		loadFailed.value = false;
+		if (epoch === mutations) documents.value = result?.documents || [];
 	} catch (err) {
-		if (projectId === props.projectId) notifyFailure(err);
+		if (projectId !== props.projectId) return;
+		failures += 1;
+		if (failures === 1) notifyFailure(err);
+		loadFailed.value = documents.value.length === 0;
 	} finally {
-		if (projectId === props.projectId) loading.value = false;
+		if (projectId === props.projectId) {
+			loading.value = false;
+			schedulePoll();
+		}
 	}
 }
 
 watch(
 	() => props.projectId,
 	() => {
+		stopPolling();
 		documents.value = [];
 		loading.value = true;
+		loadFailed.value = false;
+		failures = 0;
 		menuDocId.value = null;
 		loadDocuments();
 	},
 	{ immediate: true }
 );
 
-let pollTimer = null;
-
-function stopPolling() {
-	if (pollTimer) clearInterval(pollTimer);
-	pollTimer = null;
-}
-
-watch(hasProcessing, (processing) => {
-	if (processing && !pollTimer) pollTimer = setInterval(loadDocuments, POLL_INTERVAL_MS);
-	else if (!processing) stopPolling();
+onBeforeUnmount(() => {
+	unmounted = true;
+	stopPolling();
 });
-onBeforeUnmount(stopPolling);
 
 async function uploadFiles(files) {
 	uploading.value = true;
@@ -169,6 +163,7 @@ async function uploadFiles(files) {
 			}
 			try {
 				await api.documents.upload(file, { project: props.projectId });
+				mutations += 1;
 			} catch (err) {
 				notifyFailure(err);
 			}
@@ -188,7 +183,12 @@ function onFileSelect(event) {
 function onDrop(event) {
 	dragging.value = false;
 	const files = Array.from(event.dataTransfer?.files || []);
-	if (files.length && !uploading.value) uploadFiles(files);
+	if (!files.length) return;
+	if (uploading.value) {
+		showToast(__("Wait for the current upload to finish"));
+		return;
+	}
+	uploadFiles(files);
 }
 
 function toggleMenu(documentId) {
@@ -205,8 +205,11 @@ async function removeDocument() {
 	deleting.value = true;
 	try {
 		await api.documents.delete(target.document_id);
+		mutations += 1;
 		documents.value = documents.value.filter((d) => d.document_id !== target.document_id);
 		deleteTarget.value = null;
+		failures = 0;
+		schedulePoll();
 	} catch (err) {
 		notifyFailure(err);
 	} finally {
@@ -214,7 +217,7 @@ async function removeDocument() {
 	}
 }
 
-// Capture phase, like ChatRow: the row menu buttons call .stop, so a bubble listener would miss them.
+// Capture phase, so the check runs before any handler elsewhere on the page stops the click.
 function onDocumentClick(event) {
 	if (!event.target.closest?.(".doc-menu-root")) menuDocId.value = null;
 }
@@ -301,113 +304,12 @@ onBeforeUnmount(detachListeners);
 	flex-direction: column;
 }
 
-.doc-row {
+.load-error {
 	display: flex;
 	align-items: center;
-	gap: 0.625rem;
-	padding: 0.375rem 0;
+	justify-content: space-between;
+	gap: 0.75rem;
 	font-size: 0.875rem;
-	color: var(--ql-text);
-}
-
-.doc-name {
-	flex: 1;
-	min-width: 0;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
-}
-
-.doc-size {
-	flex-shrink: 0;
-	font-size: 0.75rem;
-	color: var(--ql-text-muted);
-}
-
-.pill {
-	flex-shrink: 0;
-	font-size: 0.6875rem;
-	font-weight: 600;
-	padding: 0.125rem 0.5rem;
-	border-radius: 999px;
-	background: var(--ql-subtle);
-	color: var(--ql-text-muted);
-}
-
-.pill.ready {
-	color: var(--ql-success, #15803d);
-}
-
-.pill.failed {
-	color: var(--ql-danger);
-}
-
-.doc-menu-root {
-	position: relative;
-	flex-shrink: 0;
-}
-
-.row-menu {
-	padding: 0.25rem 0.5rem;
-	color: var(--ql-text-muted);
-	background: none;
-	border: none;
-	border-radius: 0.25rem;
-	cursor: pointer;
-	opacity: 0;
-	transition: all 0.15s ease;
-}
-
-.doc-row:hover .row-menu,
-.row-menu:focus-visible,
-.row-menu[aria-expanded="true"] {
-	opacity: 1;
-}
-
-@media (hover: none) {
-	.row-menu {
-		opacity: 1;
-	}
-}
-
-.row-menu:hover {
-	color: var(--ql-text);
-	background-color: var(--ql-subtle);
-}
-
-.menu {
-	position: absolute;
-	right: 0;
-	top: 100%;
-	z-index: 20;
-	min-width: 9rem;
-	padding: 0.25rem;
-	background: var(--ql-surface);
-	border: 1px solid var(--ql-border);
-	border-radius: 0.5rem;
-	box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
-}
-
-.menu-item {
-	display: block;
-	width: 100%;
-	box-sizing: border-box;
-	text-align: left;
-	padding: 0.375rem 0.625rem;
-	font-size: 0.875rem;
-	color: var(--ql-text);
-	background: none;
-	border: none;
-	border-radius: 0.375rem;
-	cursor: pointer;
-	text-decoration: none;
-}
-
-.menu-item:hover {
-	background-color: var(--ql-subtle);
-}
-
-.menu-item.danger {
 	color: var(--ql-danger);
 }
 </style>
