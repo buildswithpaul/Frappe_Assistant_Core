@@ -273,6 +273,7 @@ frappe.pages['fac-admin'].on_page_load = function(wrapper) {
         "/assets/frappe_assistant_core/js/fac_admin_prompts.js",
         "/assets/frappe_assistant_core/js/fac_admin_skills.js",
         "/assets/frappe_assistant_core/js/fac_admin_settings_form.js",
+        "/assets/frappe_assistant_core/js/fac_admin_settings_embed.js",
         "/assets/frappe_assistant_core/js/fac_admin_settings.js"
     ]).then(function() {
 

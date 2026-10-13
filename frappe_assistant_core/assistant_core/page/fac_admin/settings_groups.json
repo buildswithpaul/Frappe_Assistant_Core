@@ -8,6 +8,14 @@
             "units": ["ui_settings_tab", "retention_tab"]
         },
         {
+            "key": "other_apps",
+            "label": "Other Frappe apps",
+            "icon": "fa-th-large",
+            "doctype": "FAC Chat Settings",
+            "units": ["widget_embed_section"],
+            "renderer": "embed_apps"
+        },
+        {
             "key": "mcp_server",
             "label": "MCP Server",
             "icon": "fa-server",

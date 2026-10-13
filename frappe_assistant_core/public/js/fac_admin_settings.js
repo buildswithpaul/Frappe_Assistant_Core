@@ -99,8 +99,9 @@
             .addClass('active')
             .attr({ 'aria-selected': 'true', tabindex: '0' });
         ns.writeSettingsUrl('settings', key);
-        if (typeof ns.SettingsForm !== 'function') return;
-        settings.form = new ns.SettingsForm({ group: group, $body: $('#settings-pane') });
+        const Panel = group.renderer === 'embed_apps' ? ns.EmbedAppsPanel : ns.SettingsForm;
+        if (typeof Panel !== 'function') return;
+        settings.form = new Panel({ group: group, $body: $('#settings-pane') });
         settings.form.load();
     }
 

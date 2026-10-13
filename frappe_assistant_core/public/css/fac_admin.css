@@ -1490,3 +1490,25 @@ mark.fac-hl {
         white-space: nowrap;
     }
 }
+
+.fac-embed-apps {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 12px;
+}
+.fac-embed-app {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0;
+    padding: 10px 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    cursor: pointer;
+}
+.fac-embed-app code {
+    margin-left: auto;
+    color: var(--text-muted);
+    font-size: var(--text-xs);
+}

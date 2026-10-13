@@ -78,6 +78,11 @@ class TestFacAdminSettingsGroups(BaseAssistantTest):
             self.assertNotEqual(df.fieldtype, "Password", f"{doctype}.{fieldname}")
             self.assertFalse(df.hidden, f"{doctype}.{fieldname}")
 
+    def test_the_other_apps_group_is_drawn_by_its_own_renderer(self):
+        groups = {g["key"]: g for g in resolve_groups(self.settings_map)}
+        self.assertEqual(groups["other_apps"]["renderer"], "embed_apps")
+        self.assertIsNone(groups["chat_widget"]["renderer"])
+
     def test_tenant_secret_is_never_served(self):
         self.assertNotIn(("FAC Chat Settings", "tenant_secret"), self._served_fields())
 
@@ -92,14 +97,16 @@ class TestFacAdminSettingsGroups(BaseAssistantTest):
     def test_the_endpoint_returns_the_resolved_groups_on_frappe_v15(self):
         with patch(f"{SETTINGS_MODULE}.is_frappe_v16_or_later", autospec=True, return_value=False):
             keys = [g["key"] for g in get_settings_groups()["groups"]]
-        self.assertEqual(keys, ["chat_widget", "mcp_server", "oauth", "security", "ocr", "fac_cloud"])
+        self.assertEqual(
+            keys, ["chat_widget", "other_apps", "mcp_server", "oauth", "security", "ocr", "fac_cloud"]
+        )
 
     def test_the_endpoint_leaves_out_oauth_on_frappe_v16(self):
         # v16 reads OAuth from its native OAuth Settings (utils/oauth_compat.py), so these fields
         # would save and do nothing; the DocType form hides the tab there for the same reason.
         with patch(f"{SETTINGS_MODULE}.is_frappe_v16_or_later", autospec=True, return_value=True):
             keys = [g["key"] for g in get_settings_groups()["groups"]]
-        self.assertEqual(keys, ["chat_widget", "mcp_server", "security", "ocr", "fac_cloud"])
+        self.assertEqual(keys, ["chat_widget", "other_apps", "mcp_server", "security", "ocr", "fac_cloud"])
 
     def test_the_endpoint_refuses_a_user_without_an_admin_role(self):
         if not frappe.db.exists("User", NON_ADMIN_USER):

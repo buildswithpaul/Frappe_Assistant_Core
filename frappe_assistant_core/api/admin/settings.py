@@ -77,6 +77,7 @@ def resolve_groups(settings_map: dict) -> list[dict]:
                 "doctype": group["doctype"],
                 "read_only": bool(group.get("read_only")),
                 "fields": fields,
+                "renderer": group.get("renderer"),
             }
         )
     return groups
