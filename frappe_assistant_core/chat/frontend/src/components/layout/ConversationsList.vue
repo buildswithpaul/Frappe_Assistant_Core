@@ -1,7 +1,7 @@
 <template>
 	<div class="conversations-section">
 		<div class="section-header">
-			<h3 class="section-title">Recent Chats</h3>
+			<h3 class="section-title">{{ __("Recents") }}</h3>
 			<button
 				v-if="showNewChat"
 				@click="$emit('new-session')"
@@ -20,6 +20,11 @@
 			</button>
 		</div>
 
+		<ConversationSearch
+			:model-value="conversations.searchQuery"
+			@update:model-value="conversations.setSearch($event)"
+		/>
+
 		<div class="conversations-list">
 			<!-- Loading State -->
 			<div v-if="loading" class="flex items-center justify-center py-8">
@@ -28,179 +33,82 @@
 				></div>
 			</div>
 
+			<!-- Search results -->
+			<template v-else-if="isSearchActive">
+				<div v-if="conversations.isSearching" class="empty-hint search-status">
+					{{ __("Searching…") }}
+				</div>
+				<div v-else-if="conversations.searchResults.length === 0" class="empty-conversations">
+					<p>{{ __("No chats match") }}</p>
+				</div>
+				<ChatRow
+					v-for="session in conversations.searchResults"
+					:key="session.session_id"
+					:session="session"
+					:active="activeSessionId === session.session_id"
+					:deleting="deletingSessionId === session.session_id"
+					:projects="projectsStore.projects"
+					@select="$emit('select-session', session.session_id)"
+					@rename="onRename(session.session_id, $event)"
+					@move="onMove(session.session_id, $event)"
+					@archive="emitDelete(session.session_id)"
+					@new-project="$emit('new-project', session.session_id)"
+				/>
+			</template>
+
 			<!-- Empty State -->
 			<div v-else-if="groupedSessions.length === 0" class="empty-conversations">
-				<p>No conversations yet</p>
-				<p class="empty-hint">Start a new chat to begin</p>
+				<p>{{ __("No conversations yet") }}</p>
+				<p class="empty-hint">{{ __("Start a new chat to begin") }}</p>
 			</div>
 
 			<!-- Sessions by Date -->
-			<template v-else v-for="group in groupedSessions" :key="group.label">
-				<div class="date-label">{{ group.label }}</div>
-				<div
-					v-for="session in group.sessions"
-					:key="session.session_id"
-					class="conversation-item"
-					:class="{
-						active: activeSessionId === session.session_id,
-						confirming: confirmingDeleteId === session.session_id,
-						deleting: deletingSessionId === session.session_id,
-					}"
-					@click="
-						confirmingDeleteId !== session.session_id &&
-							$emit('select-session', session.session_id)
-					"
-				>
-					<!-- Delete confirmation state -->
-					<template v-if="confirmingDeleteId === session.session_id">
-						<div class="confirm-delete">
-							<span class="confirm-text">Archive?</span>
-							<div class="confirm-actions">
-								<button
-									class="confirm-btn confirm-yes"
-									@click.stop="emitDelete(session.session_id)"
-									title="Confirm delete"
-									aria-label="Confirm delete"
-								>
-									<svg
-										class="w-3.5 h-3.5"
-										fill="none"
-										stroke="currentColor"
-										viewBox="0 0 24 24"
-									>
-										<path
-											stroke-linecap="round"
-											stroke-linejoin="round"
-											stroke-width="2"
-											d="M5 13l4 4L19 7"
-										/>
-									</svg>
-								</button>
-								<button
-									class="confirm-btn confirm-no"
-									@click.stop="confirmingDeleteId = null"
-									title="Cancel"
-									aria-label="Cancel delete"
-								>
-									<svg
-										class="w-3.5 h-3.5"
-										fill="none"
-										stroke="currentColor"
-										viewBox="0 0 24 24"
-									>
-										<path
-											stroke-linecap="round"
-											stroke-linejoin="round"
-											stroke-width="2"
-											d="M6 18L18 6M6 6l12 12"
-										/>
-									</svg>
-								</button>
-							</div>
-						</div>
-					</template>
-
-					<!-- Normal state -->
-					<template v-else>
-						<div class="conversation-content">
-							<div class="conversation-title">
-								{{ session.preview || "New conversation" }}
-							</div>
-							<div class="conversation-time">
-								{{ formatTime(session.last_activity || session.modified) }}
-							</div>
-						</div>
-						<button
-							v-if="deletingSessionId !== session.session_id"
-							class="delete-btn"
-							@click.stop="confirmingDeleteId = session.session_id"
-							title="Delete conversation"
-							aria-label="Delete conversation"
-						>
-							<svg
-								class="w-3.5 h-3.5"
-								fill="none"
-								stroke="currentColor"
-								viewBox="0 0 24 24"
-							>
-								<path
-									stroke-linecap="round"
-									stroke-linejoin="round"
-									stroke-width="2"
-									d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-								/>
-							</svg>
-						</button>
-						<div v-else class="delete-spinner">
-							<div
-								class="animate-spin w-3.5 h-3.5 border-2 border-red-400 border-t-transparent rounded-full"
-							></div>
-						</div>
-					</template>
+			<template v-else>
+				<template v-for="group in groupedSessions" :key="group.label">
+					<div class="date-label">{{ group.label }}</div>
+					<ChatRow
+						v-for="session in group.sessions"
+						:key="session.session_id"
+						:session="session"
+						:active="activeSessionId === session.session_id"
+						:deleting="deletingSessionId === session.session_id"
+						:projects="projectsStore.projects"
+						@select="$emit('select-session', session.session_id)"
+						@rename="onRename(session.session_id, $event)"
+						@move="onMove(session.session_id, $event)"
+						@archive="emitDelete(session.session_id)"
+						@new-project="$emit('new-project', session.session_id)"
+					/>
+				</template>
+				<div ref="sentinel" class="list-sentinel" aria-hidden="true"></div>
+				<div v-if="chatStore.isLoadingMoreSessions" class="flex items-center justify-center py-2">
+					<div
+						class="animate-spin w-4 h-4 border-2 border-ql-accent border-t-transparent rounded-full"
+					></div>
 				</div>
 			</template>
 
-			<button
-				v-if="sessions.length > 5"
-				@click="showAllSessions = !showAllSessions"
-				class="show-more-btn"
-			>
-				{{ showAllSessions ? "Show Less" : `Show All (${sessions.length})` }}
-			</button>
-
-			<!-- Archived toggle -->
-			<button
-				v-if="archivedSessions.length > 0 || showArchived"
-				@click="toggleArchived"
-				class="show-more-btn archived-toggle"
-			>
-				{{ showArchived ? "Hide Archived" : `Archived (${archivedSessions.length})` }}
-			</button>
-
-			<!-- Archived sessions -->
-			<template v-if="showArchived">
-				<div class="date-label archived-label">Archived</div>
-				<div
-					v-for="session in archivedSessions"
-					:key="'archived-' + session.session_id"
-					class="conversation-item archived-item"
-				>
-					<div class="conversation-content">
-						<div class="conversation-title">
-							{{ session.preview || "Archived conversation" }}
-						</div>
-						<div class="conversation-time">
-							{{ formatTime(session.last_activity) }}
-						</div>
-					</div>
-					<button
-						class="continue-btn"
-						@click.stop="$emit('continue-archived', session.session_id)"
-						title="Continue in new chat"
-						aria-label="Continue archived conversation in new chat"
-					>
-						<svg
-							class="w-3.5 h-3.5"
-							fill="none"
-							stroke="currentColor"
-							viewBox="0 0 24 24"
-						>
-							<path
-								stroke-linecap="round"
-								stroke-linejoin="round"
-								stroke-width="2"
-								d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-							/>
-						</svg>
-					</button>
-				</div>
-			</template>
+			<ArchivedConversations
+				:sessions="archivedSessions"
+				@load-archived="$emit('load-archived')"
+				@continue-archived="$emit('continue-archived', $event)"
+			/>
 		</div>
 	</div>
 </template>
 
 <script setup>
-import { computed, ref } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import ChatRow from "./ChatRow.vue";
+import ArchivedConversations from "./ArchivedConversations.vue";
+import ConversationSearch from "./ConversationSearch.vue";
+import { __ } from "@/utils/i18n";
+import { useToast } from "@/composables/useToast";
+import { useChatStore } from "@/stores/chatStore";
+import { useConversationsStore } from "@/stores/conversationsStore";
+import { useProjectsStore } from "@/stores/projectsStore";
+
+const SEARCH_MIN_LENGTH = 2;
 
 const props = defineProps({
 	sessions: {
@@ -231,24 +139,37 @@ const emit = defineEmits([
 	"delete-session",
 	"continue-archived",
 	"load-archived",
+	"new-project",
 ]);
 
-const showAllSessions = ref(false);
-const showArchived = ref(false);
-const confirmingDeleteId = ref(null);
-const deletingSessionId = ref(null);
+const chatStore = useChatStore();
+const conversations = useConversationsStore();
+const projectsStore = useProjectsStore();
+const { showError } = useToast();
 
-function toggleArchived() {
-	showArchived.value = !showArchived.value;
-	if (showArchived.value) {
-		emit("load-archived");
-	}
-}
+const deletingSessionId = ref(null);
+const sentinel = ref(null);
+let observer = null;
+
+const isSearchActive = computed(
+	() => conversations.searchQuery.trim().length >= SEARCH_MIN_LENGTH
+);
 
 function emitDelete(sessionId) {
-	confirmingDeleteId.value = null;
 	deletingSessionId.value = sessionId;
 	emit("delete-session", sessionId);
+}
+
+function notifyFailure(err) {
+	showError(err?.message || __("Something went wrong"));
+}
+
+function onRename(sessionId, title) {
+	conversations.renameSession(sessionId, title).catch(notifyFailure);
+}
+
+function onMove(sessionId, projectId) {
+	conversations.moveSession(sessionId, projectId).catch(notifyFailure);
 }
 
 // Allow parent to clear deleting state after async operation completes
@@ -258,9 +179,27 @@ defineExpose({
 	},
 });
 
+function loadMoreIfVisible(entries) {
+	if (entries.some((e) => e.isIntersecting) && chatStore.sessionsHasMore) {
+		chatStore.loadMoreSessions();
+	}
+}
+
+function observeSentinel() {
+	observer?.disconnect();
+	if (sentinel.value && typeof IntersectionObserver !== "undefined") {
+		observer = new IntersectionObserver(loadMoreIfVisible);
+		observer.observe(sentinel.value);
+	}
+}
+
+onMounted(observeSentinel);
+// The sentinel is re-created when the list swaps between states (loading, search, empty).
+watch(() => [props.loading, isSearchActive.value], () => nextTick(observeSentinel));
+onBeforeUnmount(() => observer?.disconnect());
+
 // Group sessions by date
 const groupedSessions = computed(() => {
-	const displaySessions = showAllSessions.value ? props.sessions : props.sessions.slice(0, 5);
 	const groups = {};
 	const today = new Date();
 	today.setHours(0, 0, 0, 0);
@@ -269,7 +208,7 @@ const groupedSessions = computed(() => {
 	const lastWeek = new Date(today);
 	lastWeek.setDate(lastWeek.getDate() - 7);
 
-	displaySessions.forEach((session) => {
+	props.sessions.forEach((session) => {
 		// Use last_activity from backend (fallback to modified for backwards compat)
 		const dateStr = session.last_activity || session.modified;
 		const date = new Date(dateStr);
@@ -299,17 +238,6 @@ const groupedSessions = computed(() => {
 		sessions,
 	}));
 });
-
-function formatTime(dateStr) {
-	if (!dateStr) return "";
-	const date = new Date(dateStr);
-	if (isNaN(date.getTime())) return "";
-	return date.toLocaleTimeString("en-US", {
-		hour: "numeric",
-		minute: "2-digit",
-		hour12: true,
-	});
-}
 </script>
 
 <style scoped>
@@ -366,164 +294,14 @@ function formatTime(dateStr) {
 	letter-spacing: 0.05em;
 }
 
-.conversation-item {
-	padding: 0.5rem 0.75rem;
-	border-radius: 0.5rem;
-	cursor: pointer;
-	margin-bottom: 0.25rem;
-	transition: all 0.15s ease;
-	display: flex;
-	align-items: center;
-	gap: 0.25rem;
-}
-
-.conversation-item:hover {
-	background-color: var(--ql-subtle);
-}
-
-.conversation-item.active {
-	background-color: var(--ql-accent-soft);
-	border-left: 3px solid var(--ql-accent);
-}
-
-.conversation-item.confirming {
-	background-color: rgba(239, 68, 68, 0.08);
-}
-
-.conversation-item.deleting {
-	opacity: 0.5;
-	pointer-events: none;
-}
-
-.conversation-content {
-	flex: 1;
-	min-width: 0;
-}
-
-.conversation-title {
-	font-size: 0.875rem;
-	font-weight: 500;
-	color: var(--ql-text);
-	white-space: nowrap;
-	overflow: hidden;
-	text-overflow: ellipsis;
-}
-
-.conversation-time {
-	font-size: 0.75rem;
+.search-status {
+	text-align: center;
+	padding: 1rem;
 	color: var(--ql-text-muted);
-	margin-top: 0.125rem;
 }
 
-.delete-btn {
-	flex-shrink: 0;
-	padding: 0.25rem;
-	color: var(--ql-text-muted);
-	background: none;
-	border: none;
-	border-radius: 0.25rem;
-	cursor: pointer;
-	opacity: 0;
-	transition: all 0.15s ease;
-}
-
-.conversation-item:hover .delete-btn {
-	opacity: 1;
-}
-
-.delete-btn:hover {
-	color: #ef4444;
-	background-color: rgba(239, 68, 68, 0.1);
-}
-
-.delete-spinner {
-	flex-shrink: 0;
-	padding: 0.25rem;
-}
-
-.confirm-delete {
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
-	width: 100%;
-}
-
-.confirm-text {
-	font-size: 0.8rem;
-	font-weight: 500;
-	color: #ef4444;
-}
-
-.confirm-actions {
-	display: flex;
-	gap: 0.25rem;
-}
-
-.confirm-btn {
-	padding: 0.25rem;
-	border: none;
-	border-radius: 0.25rem;
-	cursor: pointer;
-	transition: all 0.15s ease;
-}
-
-.confirm-yes {
-	color: #ef4444;
-	background-color: rgba(239, 68, 68, 0.1);
-}
-
-.confirm-yes:hover {
-	background-color: rgba(239, 68, 68, 0.2);
-}
-
-.confirm-no {
-	color: var(--ql-text-muted);
-	background: none;
-}
-
-.confirm-no:hover {
-	color: var(--ql-text);
-	background-color: var(--ql-subtle);
-}
-
-.archived-toggle {
-	margin-top: 0.5rem;
-	border-top: 1px solid var(--ql-border);
-	padding-top: 0.5rem;
-}
-
-.archived-label {
-	color: var(--ql-text-muted);
-	opacity: 0.7;
-}
-
-.archived-item {
-	opacity: 0.6;
-}
-
-.archived-item:hover {
-	opacity: 0.9;
-}
-
-.continue-btn {
-	flex-shrink: 0;
-	padding: 0.25rem;
-	color: var(--ql-text-muted);
-	background: none;
-	border: none;
-	border-radius: 0.25rem;
-	cursor: pointer;
-	opacity: 0;
-	transition: all 0.15s ease;
-}
-
-.archived-item:hover .continue-btn {
-	opacity: 1;
-}
-
-.continue-btn:hover {
-	color: var(--ql-accent);
-	background-color: var(--ql-accent-soft);
+.list-sentinel {
+	height: 1px;
 }
 
 .empty-conversations {
@@ -540,23 +318,6 @@ function formatTime(dateStr) {
 	font-size: 0.75rem;
 	margin-top: 0.25rem;
 	opacity: 0.7;
-}
-
-.show-more-btn {
-	width: 100%;
-	padding: 0.5rem;
-	font-size: 0.75rem;
-	color: var(--ql-text-muted);
-	background: none;
-	border: none;
-	border-radius: 0.375rem;
-	cursor: pointer;
-	transition: all 0.15s ease;
-}
-
-.show-more-btn:hover {
-	background-color: var(--ql-subtle);
-	color: var(--ql-text);
 }
 
 /* Scrollbar styling */
