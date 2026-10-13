@@ -65,6 +65,20 @@ class FACChatMessage(Document):
         # No-op: context details are optional for all context_types.
         return
 
+    def after_insert(self):
+        from frappe_assistant_core.chat.doctype.fac_chat_conversation.fac_chat_conversation import (
+            FACChatConversation,
+        )
+
+        FACChatConversation.touch(
+            self.session_id,
+            self.user,
+            self.role,
+            self.content,
+            project=self.flags.get("conversation_project"),
+            is_archived=self.is_archived or 0,
+        )
+
     @staticmethod
     def get_session_messages(session_id, limit=30, offset=0, user=None):
         """Get messages for a session with pagination, ordered by timestamp, with attachments.
@@ -138,7 +152,7 @@ class FACChatMessage(Document):
         }
 
     @staticmethod
-    def create_message(session_id, role, content, context=None, llm_metadata=None):
+    def create_message(session_id, role, content, context=None, llm_metadata=None, project=None):
         """Helper method to create a new message.
 
         ``content`` is allowed to be empty: streaming creates an assistant
@@ -190,5 +204,8 @@ class FACChatMessage(Document):
         # backfilled on stream_complete. Without this the reqd content field
         # raises MandatoryError and the shell — which the resume relies on — is
         # never created, cascading into a failed resume.
+        # Only read when this message creates the conversation row; afterwards the
+        # row's own project is the source of truth.
+        doc.flags.conversation_project = project
         doc.insert(ignore_permissions=True, ignore_mandatory=not content)
         return doc

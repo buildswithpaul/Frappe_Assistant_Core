@@ -131,6 +131,21 @@ def _purge_archived_messages(cutoff, delete_attachments: bool) -> tuple[int, int
         # purged session so it never outlives its messages (no separate TTL).
         FACChatSessionState.delete_for_sessions(purged_session_ids)
 
+        # A conversation row outliving all of its messages would list a chat that
+        # opens empty. Some purged sessions may still have newer messages; keep those.
+        still_present = set(
+            frappe.get_all(
+                "FAC Chat Message",
+                filters={"session_id": ["in", purged_session_ids]},
+                pluck="session_id",
+                distinct=True,
+                limit_page_length=0,
+            )
+        )
+        orphans = [sid for sid in purged_session_ids if sid not in still_present]
+        if orphans:
+            frappe.db.delete("FAC Chat Conversation", {"name": ["in", orphans]})
+
         if len(message_names) < CHUNK_SIZE:
             break
 

@@ -62,6 +62,31 @@ def export_my_data() -> dict:
             "show_suggested_prompts": bool(prefs.show_suggested_prompts),
         }
 
+    faco_data["faco_projects"] = frappe.get_all(
+        "FAC Chat Project",
+        filters={"user": user},
+        fields=["title", "instructions", "creation"],
+        order_by="creation asc",
+        limit_page_length=0,
+    )
+    faco_data["faco_conversations"] = [
+        {
+            "session_id": row.name,
+            "title": row.title,
+            "project": row.project,
+            "started": row.started,
+            "last_activity": row.last_activity,
+            "is_archived": row.is_archived,
+        }
+        for row in frappe.get_all(
+            "FAC Chat Conversation",
+            filters={"user": user},
+            fields=["name", "title", "project", "started", "last_activity", "is_archived"],
+            order_by="creation asc",
+            limit_page_length=0,
+        )
+    ]
+
     # Message count (content already exported from AR side)
     faco_data["faco_messages_count"] = frappe.db.count("FAC Chat Message", {"user": user})
 
@@ -124,6 +149,8 @@ def erase_my_data(password: str | None = None) -> dict:
     #    need to fire, and this avoids N document loads.
     local_deleted = len(message_names)
     frappe.db.delete("FAC Chat Message", {"user": user})
+    frappe.db.delete("FAC Chat Conversation", {"user": user})
+    frappe.db.delete("FAC Chat Project", {"user": user})
 
     prefs_name = frappe.db.get_value("FAC Chat User Preferences", {"user": user}, "name")
     frappe.db.delete("FAC Chat User Preferences", {"user": user})

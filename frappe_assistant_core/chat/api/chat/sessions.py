@@ -180,6 +180,13 @@ def archive_session(session_id: str) -> dict:
             1,
             update_modified=False,
         )
+        frappe.db.set_value(
+            "FAC Chat Conversation",
+            {"name": session_id, "user": user},
+            "is_archived",
+            1,
+            update_modified=False,
+        )
 
         # Delete-with-messages: drop the zero-retention session blob so it never
         # outlives the conversation it belongs to (no separate TTL).
@@ -234,6 +241,13 @@ def archive_all_conversations() -> dict:
         # Archive all local messages
         frappe.db.set_value(
             "FAC Chat Message",
+            {"user": user, "is_archived": 0},
+            "is_archived",
+            1,
+            update_modified=False,
+        )
+        frappe.db.set_value(
+            "FAC Chat Conversation",
             {"user": user, "is_archived": 0},
             "is_archived",
             1,
