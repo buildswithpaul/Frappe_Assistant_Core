@@ -59,7 +59,3 @@ frappe_assistant_core.patches.v3_1.rename_submit_document_to_document_action
 # Configuration row (bulk_toggle_tools_by_category filters on it), and where the faco plugin
 # was disabled keep the tool off, since the core plugin cannot be disabled
 frappe_assistant_core.patches.v3_1.move_send_email_to_core_plugin
-
-# Version 3.2 - the Insights tools moved from their own plugin into faco: correct the stored plugin
-# on their FAC Tool Configuration rows (bulk_toggle_tools_by_category filters on it)
-frappe_assistant_core.patches.v3_2.move_insights_tools_to_faco_plugin
