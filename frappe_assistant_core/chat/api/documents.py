@@ -7,18 +7,23 @@
 import frappe
 from frappe import _
 
+from frappe_assistant_core.chat.doctype.fac_chat_project.fac_chat_project import FACChatProject
+
 from ._helpers import ARAPIError, _strip_noise
 from .auth import _ar_user_id
 
 
 @frappe.whitelist(methods=["GET"])
-def list_documents(limit: int = 50, offset: int = 0):
+def list_documents(limit: int = 50, offset: int = 0, project: str | None = None):
     """
     List RAG documents visible to the current user.
 
     Returns documents with pagination and storage info.
     Visibility filtering is handled by the backend based on user_id.
+    With ``project``, lists that project's documents instead (caller must own it).
     """
+    if project:
+        FACChatProject.owned(project)
     try:
         from frappe_assistant_core.chat.fac_cloud_client import get_fac_cloud_client
 
@@ -36,10 +41,12 @@ def list_documents(limit: int = 50, offset: int = 0):
                 },
             }
 
+        project_scope = {"project_id": project} if project else {}
         return client.list_documents(
             limit=int(limit),
             offset=int(offset),
             user_id=_ar_user_id(frappe.session.user),
+            **project_scope,
         )
 
     except Exception as e:
@@ -105,8 +112,13 @@ def upload_document():
 
     Any authenticated user can upload. Accepts multipart form data with
     a 'file' field plus optional 'visibility' and 'shared_with' fields.
+    A 'project' field attaches the document to one of the caller's projects
+    instead; visibility and sharing then do not apply.
     Supported formats: PDF, Markdown (.md), plain text (.txt).
     """
+    project = frappe.form_dict.get("project") or None
+    if project:
+        FACChatProject.owned(project)
     try:
         from frappe_assistant_core.chat.fac_cloud_client import get_fac_cloud_client
 
@@ -118,16 +130,19 @@ def upload_document():
         if not file:
             frappe.throw(_("No file provided"), frappe.ValidationError)
 
-        visibility = frappe.form_dict.get("visibility") or None
-        shared_with = frappe.form_dict.get("shared_with") or None
+        upload = {
+            "file_data": file.read(),
+            "file_name": file.filename,
+            "content_type": file.content_type,
+            "user_id": _ar_user_id(frappe.session.user),
+        }
+        if project:
+            return client.upload_document(**upload, project_id=project)
 
         return client.upload_document(
-            file_data=file.read(),
-            file_name=file.filename,
-            content_type=file.content_type,
-            user_id=_ar_user_id(frappe.session.user),
-            visibility=visibility,
-            shared_with=shared_with,
+            **upload,
+            visibility=frappe.form_dict.get("visibility") or None,
+            shared_with=frappe.form_dict.get("shared_with") or None,
         )
 
     except frappe.ValidationError:

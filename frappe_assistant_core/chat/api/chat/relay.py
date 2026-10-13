@@ -749,6 +749,7 @@ def _relay_ar_interrupt_resume(
     reasoning_effort=None,
     live_turn_token=None,
     system_prompt_addendum=None,
+    context=None,
 ):
     """
     Resume an interrupted AR stream by sending interrupt responses.
@@ -843,6 +844,7 @@ def _relay_ar_interrupt_resume(
             session_state=session_state,
             model_id=model_id,
             system_prompt_addendum=system_prompt_addendum,
+            context=context,
             **_sdk_composer_kwargs(client.stream_chat, web_search, thinking_enabled, reasoning_effort),
         )
         for event in stream_iter:

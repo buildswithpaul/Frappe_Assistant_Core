@@ -15,6 +15,7 @@ import frappe
 from frappe import _
 
 from .auth import _ar_user_id
+from .chat.projects import project_documents_enabled
 
 
 def _get_client():
@@ -25,6 +26,16 @@ def _get_client():
     if not client:
         frappe.throw(_("FAC Cloud is not configured"))
     return client
+
+
+def _project_document_names(client, user: str, project: str) -> list[str] | None:
+    """File names attached to a project; None when AR cannot list them (AR's own export has them)."""
+    try:
+        result = client.list_documents(user_id=_ar_user_id(user), project_id=project, limit=500)
+        return [d["file_name"] for d in result.get("documents", [])]
+    except Exception:
+        frappe.log_error(title="FAC project documents export failed", message=frappe.get_traceback())
+        return None
 
 
 @frappe.whitelist(methods=["GET"])
@@ -65,10 +76,13 @@ def export_my_data() -> dict:
     faco_data["faco_projects"] = frappe.get_all(
         "FAC Chat Project",
         filters={"user": user},
-        fields=["title", "instructions", "creation"],
+        fields=["name", "title", "instructions", "creation"],
         order_by="creation asc",
         limit_page_length=0,
     )
+    if project_documents_enabled():
+        for project in faco_data["faco_projects"]:
+            project["documents"] = _project_document_names(client, user, project["name"])
     faco_data["faco_conversations"] = [
         {
             "session_id": row.name,

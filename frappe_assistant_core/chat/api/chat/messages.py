@@ -112,6 +112,14 @@ def _conversation_addendum(session_id: str, restricted: bool, project: str | Non
     return "".join(p for p in parts if p) or None
 
 
+def _with_project_context(context: dict | None, session_id: str, project: str | None) -> dict | None:
+    """The relay context for this turn, carrying the conversation's project when it has one."""
+    resolved = _conversation_project(session_id, project)
+    if not resolved:
+        return context
+    return {**(context or {}), "project_id": resolved}
+
+
 def _effort(value) -> str | None:
     """A composer thinking level, or None when absent or not one we know."""
     if not isinstance(value, str):
@@ -378,7 +386,7 @@ def send_message(
                 session_id,
                 full_prompt,
                 message,
-                context,
+                _with_project_context(context, session_id, project),
                 user_msg.name if user_msg is not None else None,
                 frappe.session.user,
                 frappe.local.site,
@@ -557,6 +565,7 @@ def resume_interrupt(
                 # same turn continuing, so it has to carry them too.
                 model_id=model_id,
                 system_prompt_addendum=_conversation_addendum(session_id, restricted, project),
+                context=_with_project_context(None, session_id, project),
                 web_search=_flag(web_search) if web_search is not None else None,
                 thinking_enabled=_flag(thinking_enabled) if thinking_enabled is not None else None,
                 reasoning_effort=effort,
@@ -663,7 +672,7 @@ def continue_response(
                 session_id,
                 full_prompt=None,
                 original_message=None,
-                context=None,
+                context=_with_project_context(None, session_id, project),
                 message_name=None,
                 user=frappe.session.user,
                 site=frappe.local.site,

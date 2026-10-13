@@ -6,13 +6,28 @@
 
 from __future__ import annotations
 
+import json
+
 import frappe
+from frappe import _
 from frappe.query_builder.functions import Count
 
 from frappe_assistant_core.chat.doctype.fac_chat_project.fac_chat_project import FACChatProject
 
 _FIELDS = ("name", "title", "instructions", "last_activity")
 PROJECT_LIST_LIMIT = 500
+
+
+def project_documents_enabled() -> bool:
+    """Whether the connected AR supports project documents (cached capabilities)."""
+    try:
+        cached = frappe.db.get_single_value("FAC Chat Settings", "cached_capabilities")
+        if not cached:
+            return False
+        caps = json.loads(cached) if isinstance(cached, str) else cached
+        return bool(caps.get("features", {}).get("project_documents", False))
+    except Exception:
+        return False
 
 
 def _as_row(doc) -> dict:
@@ -78,6 +93,8 @@ def update_project(project: str, title: str | None = None, instructions: str | N
 def delete_project(project: str) -> dict:
     """Delete a project. Its conversations stay, moved out to "no project"."""
     FACChatProject.owned(project)
+    if project_documents_enabled():
+        _unlink_project_documents(project)
     frappe.db.set_value(
         "FAC Chat Conversation",
         {"project": project, "user": frappe.session.user},
@@ -87,3 +104,18 @@ def delete_project(project: str) -> dict:
     )
     frappe.delete_doc("FAC Chat Project", project, ignore_permissions=True)
     return {"success": True}
+
+
+def _unlink_project_documents(project: str) -> None:
+    """Release the project's documents in AR; a failure refuses the delete so none are orphaned."""
+    from frappe_assistant_core.chat.api.auth import _ar_user_id
+    from frappe_assistant_core.chat.fac_cloud_client import get_fac_cloud_client
+
+    client = get_fac_cloud_client()
+    try:
+        if not client:
+            raise RuntimeError("not connected")
+        client.unlink_project_documents(user_id=_ar_user_id(frappe.session.user), project_id=project)
+    except Exception:
+        frappe.log_error(title="FAC project documents unlink failed", message=frappe.get_traceback())
+        frappe.throw(_("Couldn't release this project's documents; try again"))
