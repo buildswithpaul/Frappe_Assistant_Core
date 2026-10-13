@@ -60,9 +60,7 @@ class FACChatConversation(Document):
         widget, mobile and the relay all keep the row current without knowing about it.
         """
         now = frappe.utils.now()
-        existing = frappe.db.get_value(
-            "FAC Chat Conversation", session_id, ["user", "title", "project"], as_dict=True
-        )
+        existing = _read_row(session_id)
         if existing and existing.user != user:
             return
         if not existing:
@@ -83,8 +81,11 @@ class FACChatConversation(Document):
                     }
                 ).insert(ignore_permissions=True)
             except frappe.DuplicateEntryError:
-                # A concurrent writer created it between our read and insert.
-                existing = frappe._dict(user=user, title=None, project=None)
+                # A concurrent writer created it between our read and insert; it may
+                # belong to someone else, so re-read it and apply the owner guard.
+                existing = _read_row(session_id)
+                if not existing or existing.user != user:
+                    return
             else:
                 _bump_project(project, now)
                 return
@@ -101,6 +102,12 @@ class FACChatConversation(Document):
                 "FAC Chat Conversation", session_id, "title", auto_title(content), update_modified=False
             )
         _bump_project(existing.project, now)
+
+
+def _read_row(session_id: str) -> frappe._dict | None:
+    return frappe.db.get_value(
+        "FAC Chat Conversation", session_id, ["user", "title", "project"], as_dict=True
+    )
 
 
 def _project_is_owned(project: str, user: str) -> bool:

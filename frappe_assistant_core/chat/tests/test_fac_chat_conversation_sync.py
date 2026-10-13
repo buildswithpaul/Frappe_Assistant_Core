@@ -141,6 +141,40 @@ class TestConversationSync(BaseAssistantTest):
         self.assertEqual(row.title, "First question")
         self.assertEqual(row.user, "Administrator")
 
+    def test_lost_insert_race_does_not_touch_the_winners_row(self):
+        from frappe_assistant_core.chat.doctype.fac_chat_conversation.fac_chat_conversation import (
+            FACChatConversation,
+        )
+
+        ensure_user(OTHER_USER)
+        frappe.get_doc(
+            {
+                "doctype": "FAC Chat Conversation",
+                "session_id": SID,
+                "user": OTHER_USER,
+                "title": "",
+                "message_count": 1,
+            }
+        ).insert(ignore_permissions=True)
+
+        # Production reaches this when two inserts race on the same session_id: both
+        # read "no row", the second insert hits the unique key. Hide the row from the
+        # first read only, so the insert collides and the re-read sees the winner.
+        real_get_value = frappe.db.get_value
+        calls = []
+
+        def first_read_misses(*args, **kwargs):
+            calls.append(args)
+            return None if len(calls) == 1 else real_get_value(*args, **kwargs)
+
+        with patch.object(frappe.db, "get_value", side_effect=first_read_misses):
+            FACChatConversation.touch(SID, "Administrator", "user", "Intruder")
+
+        row = self._row()
+        self.assertEqual(row.user, OTHER_USER)
+        self.assertEqual(row.message_count, 1)
+        self.assertFalse(row.title)
+
     def test_conversation_doctype_cannot_be_a_workflow_trigger_target(self):
         self.assertIn("FAC Chat Conversation", DOCTYPE_BLOCKLIST)
 
