@@ -23,6 +23,7 @@ from frappe_assistant_core.tests.base_test import BaseAssistantTest
 
 SID = "test-project-addendum"
 BLOCK = "## Project: Q3 Close"
+SYSTEM_MANAGER = "fac-projects-sm@example.com"
 
 
 class _ProjectTestBase(BaseAssistantTest):
@@ -126,12 +127,27 @@ class TestConversationProjectOwnership(_ProjectTestBase):
         self.assertFalse(frappe.db.get_value("FAC Chat Conversation", sid, "project"))
 
     def test_document_api_cannot_change_the_owner(self):
-        sid = self._other_users_conversation()
-        doc = frappe.get_doc("FAC Chat Conversation", sid)
-        doc.user = "Administrator"
+        # Production reaches this with any site admin who is not Administrator:
+        # the permission hook lets every System Manager write any conversation, so
+        # only validate stops them reassigning one.
+        if not frappe.db.exists("User", SYSTEM_MANAGER):
+            frappe.get_doc(
+                {
+                    "doctype": "User",
+                    "email": SYSTEM_MANAGER,
+                    "first_name": "Site Admin",
+                    "send_welcome_email": 0,
+                    "roles": [{"role": "System Manager"}],
+                }
+            ).insert(ignore_permissions=True)
+        # nosemgrep: frappe-setuser — act as the System Manager the document API runs as
+        frappe.set_user(SYSTEM_MANAGER)
+        FACChatMessage.create_message(SID, "user", "hi")
+        doc = frappe.get_doc("FAC Chat Conversation", SID)
+        doc.user = OTHER_USER
         with self.assertRaises(frappe.PermissionError):
             doc.save()
-        self.assertEqual(frappe.db.get_value("FAC Chat Conversation", sid, "user"), OTHER_USER)
+        self.assertEqual(frappe.db.get_value("FAC Chat Conversation", SID, "user"), SYSTEM_MANAGER)
 
     def test_stored_foreign_project_is_not_applied(self):
         FACChatMessage.create_message(SID, "user", "hi")
