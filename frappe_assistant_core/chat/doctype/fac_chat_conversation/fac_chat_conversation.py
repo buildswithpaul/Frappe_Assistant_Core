@@ -109,15 +109,28 @@ class FACChatConversation(Document):
             .set(CV.message_count, CV.message_count + 1)
             .where(CV.name == session_id)
         )
-        if not is_archived:
-            # A live message in an archived chat brings it back to Recents.
+        restores = role == "user" and not is_archived
+        if restores:
             update = update.set(CV.is_archived, 0)
         update.run()
+        if restores:
+            _restore_messages(session_id, user)
         if role == "user" and not existing.title:
             frappe.db.set_value(
                 "FAC Chat Conversation", session_id, "title", auto_title(content), update_modified=False
             )
         _bump_project(existing.project, now)
+
+
+def _restore_messages(session_id: str, user: str) -> None:
+    """Un-archive the chat's messages so a restored chat keeps its history through retention."""
+    MSG = DocType("FAC Chat Message")
+    (
+        frappe.qb.update(MSG)
+        .set(MSG.is_archived, 0)
+        .where((MSG.session_id == session_id) & (MSG.user == user) & (MSG.is_archived == 1))
+        .run()
+    )
 
 
 def _read_row(session_id: str) -> frappe._dict | None:

@@ -95,6 +95,36 @@ class TestConversationSync(BaseAssistantTest):
         FACChatMessage.create_message(SID, "user", "Back again")
         self.assertEqual(self._row().is_archived, 0)
 
+    def test_user_message_restores_the_chats_older_messages(self):
+        from frappe_assistant_core.chat.api.chat.sessions import archive_session
+
+        FACChatMessage.create_message(SID, "user", "Hi")
+        FACChatMessage.create_message(SID, "assistant", "Hello")
+        archive_session(SID)
+        self.assertEqual(frappe.db.count("FAC Chat Message", {"session_id": SID, "is_archived": 1}), 2)
+        FACChatMessage.create_message(SID, "user", "Back again")
+        self.assertEqual(frappe.db.count("FAC Chat Message", {"session_id": SID, "is_archived": 1}), 0)
+
+    def test_assistant_message_leaves_an_archived_row_archived(self):
+        from frappe_assistant_core.chat.api.chat.sessions import archive_session
+
+        FACChatMessage.create_message(SID, "user", "Hi")
+        archive_session(SID)
+        # Production reaches this when a reply finishes after the user archived mid-stream.
+        FACChatMessage.create_message(SID, "assistant", "Late reply")
+        self.assertEqual(self._row().is_archived, 1)
+
+    def test_export_keeps_an_ar_error_status(self):
+        from frappe_assistant_core.chat.api.privacy import export_my_data
+
+        client = create_autospec(AssistantRuntimeClient, instance=True)
+        client.export_user_data.return_value = {"status": "error", "message": "x"}
+        with patch("frappe_assistant_core.chat.api.privacy._get_client", return_value=client):
+            result = export_my_data()
+        self.assertEqual(result["status"], "error")
+        self.assertEqual(result["message"], "x")
+        self.assertIn("faco_conversations", result["data"]["faco"])
+
     def test_export_keeps_the_faco_block_when_ar_returns_empty_data(self):
         from frappe_assistant_core.chat.api.privacy import export_my_data
 
@@ -149,10 +179,11 @@ class TestConversationSync(BaseAssistantTest):
         self.assertEqual(row.is_archived, 1)
 
     def test_retention_purge_removes_orphan_rows(self):
+        from frappe_assistant_core.chat.api.chat.sessions import archive_session
         from frappe_assistant_core.chat.scheduler.retention import _purge_archived_messages
 
         FACChatMessage.create_message(SID, "user", "Hi")
-        frappe.db.set_value("FAC Chat Message", {"session_id": SID}, "is_archived", 1)
+        archive_session(SID)
         _purge_archived_messages(frappe.utils.add_days(frappe.utils.now(), 1), delete_attachments=False)
         self.assertFalse(frappe.db.exists("FAC Chat Conversation", SID))
 

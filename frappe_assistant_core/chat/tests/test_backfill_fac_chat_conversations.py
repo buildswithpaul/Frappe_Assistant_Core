@@ -6,6 +6,7 @@
 
 import frappe
 
+from frappe_assistant_core.chat.api.chat.sessions import archive_session
 from frappe_assistant_core.chat.doctype.fac_chat_message.fac_chat_message import FACChatMessage
 from frappe_assistant_core.patches.v3_2.backfill_fac_chat_conversations import backfill
 from frappe_assistant_core.tests.base_test import BaseAssistantTest
@@ -23,7 +24,7 @@ class TestBackfillConversations(BaseAssistantTest):
         FACChatMessage.create_message(ACTIVE, "user", "First active question")
         FACChatMessage.create_message(ACTIVE, "assistant", "answer")
         FACChatMessage.create_message(ARCHIVED, "user", "Old question")
-        frappe.db.set_value("FAC Chat Message", {"session_id": ARCHIVED}, "is_archived", 1)
+        archive_session(ARCHIVED)
         # Sites upgrading from 3.1 have messages but no conversation rows; production
         # reaches this state by every message written before this release.
         frappe.db.delete("FAC Chat Conversation", {"name": ["in", [ACTIVE, ARCHIVED]]})
