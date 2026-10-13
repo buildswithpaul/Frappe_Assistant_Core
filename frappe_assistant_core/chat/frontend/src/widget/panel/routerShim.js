@@ -5,6 +5,7 @@ import { createRouter, createMemoryHistory } from "vue-router";
 const NAMED_ROUTES = [
 	["chat", "/chat"],
 	["chat-session", "/chat/:sessionId"],
+	["chat-project", "/chat/project/:projectId"],
 	["knowledge", "/knowledge"],
 	["agents", "/agents"],
 	["agent-builder", "/agents/:id"],

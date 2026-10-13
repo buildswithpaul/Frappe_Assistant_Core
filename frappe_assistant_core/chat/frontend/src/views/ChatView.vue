@@ -24,12 +24,18 @@
 			<TopBar
 				v-if="!isOnboarding"
 				:title="currentChatTitle"
+				:project="topBarProject"
+				:renamable="!!currentSession && !route.params.projectId"
+				@rename="(t) => conversationsStore.renameSession(currentSessionId, t)"
 				:show-actions="registrationStatus === 'ready' && isUserSetupComplete"
 				@toggle-sidebar="sidebarCollapsed = !sidebarCollapsed"
 				@new-chat="handleNewChat"
 			/>
 
+			<ProjectPage v-if="route.params.projectId" :project-id="route.params.projectId" />
+
 			<!-- Chat Area + adaptive context rail -->
+			<template v-else>
 			<div class="chat-shell" ref="chatShellRef" :style="readWidthStyle">
 			<aside
 				v-if="indexMode !== 'hidden'"
@@ -209,6 +215,7 @@
 				</div>
 			</transition>
 			</div>
+			</template>
 		</main>
 
 		<!-- Template Browser Modal -->
@@ -243,6 +250,9 @@ import { useToast } from "@/composables/useToast";
 import { storeToRefs } from "pinia";
 import NavigationSidebar from "@/components/layout/NavigationSidebar.vue";
 import TopBar from "@/components/layout/TopBar.vue";
+import ProjectPage from "@/components/projects/ProjectPage.vue";
+import { useConversationsStore } from "@/stores/conversationsStore";
+import { useProjectsStore } from "@/stores/projectsStore";
 import InputArea from "@/components/chat/InputArea.vue";
 import ConnectionBanners from "@/components/chat/ConnectionBanners.vue";
 import ChatStagePicker from "@/components/chat/ChatStagePicker.vue";
@@ -282,12 +292,15 @@ const route = useRoute();
 const router = useRouter();
 const chatStore = useChatStore();
 const userStore = useUserStore();
+const conversationsStore = useConversationsStore();
+const projectsStore = useProjectsStore();
 const modelStore = useModelStore();
 const suggestionStore = useSuggestionStore();
 const { showError } = useToast();
 
 const {
 	currentSessionId,
+	currentProjectId,
 	messages,
 	isLoading,
 	isStreaming,
@@ -379,12 +392,23 @@ const userNotRegistered = computed(() => {
 	return !userAuthStatus.value.user_registered && !userAuthStatus.value.ready;
 });
 
+const topBarProject = computed(() =>
+	currentProjectId.value && !route.params.projectId
+		? {
+				name: currentProjectId.value,
+				title:
+					projectsStore.byId(currentProjectId.value)?.title ||
+					currentSession.value?.project_title ||
+					"",
+			}
+		: null
+);
+
 const currentChatTitle = computed(() => {
-	if (currentSession.value?.preview) {
-		return (
-			currentSession.value.preview.slice(0, 50) +
-			(currentSession.value.preview.length > 50 ? "..." : "")
-		);
+	if (route.params.projectId) return projectsStore.byId(route.params.projectId)?.title || "Project";
+	const title = currentSession.value?.title || currentSession.value?.preview;
+	if (title) {
+		return title.slice(0, 50) + (title.length > 50 ? "..." : "");
 	}
 	return messages.value.length > 0 ? "Chat" : "New Chat";
 });

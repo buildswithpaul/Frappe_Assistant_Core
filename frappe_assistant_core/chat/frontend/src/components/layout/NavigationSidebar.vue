@@ -26,6 +26,8 @@
 		<!-- Navigation Menu -->
 		<NavMenu :collapsed="collapsed" @return-to-desk="returnToDesk" />
 
+		<ProjectsSection v-if="!collapsed && isChatRoute" />
+
 		<!-- Recent Chats Section — only on Chat view -->
 		<ConversationsList
 			v-if="!collapsed && isChatRoute"
@@ -54,6 +56,7 @@ import { useRoute } from "vue-router";
 import { useUserStore } from "@/stores/userStore";
 import { useLayoutStore } from "@/stores/layoutStore";
 import NavMenu from "./NavMenu.vue";
+import ProjectsSection from "./ProjectsSection.vue";
 import ConversationsList from "./ConversationsList.vue";
 import UserDropdown from "./UserDropdown.vue";
 import FacoRobot from "@/components/common/FacoRobot.vue";

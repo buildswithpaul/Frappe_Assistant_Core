@@ -1,0 +1,190 @@
+<template>
+	<section class="instructions">
+		<header class="instructions-header">
+			<h3 class="instructions-title">{{ __("Instructions") }}</h3>
+			<button
+				v-if="!editing"
+				class="link-btn"
+				data-test="edit-instructions"
+				@click="startEdit"
+			>
+				{{ __("Edit") }}
+			</button>
+		</header>
+
+		<template v-if="editing">
+			<textarea
+				ref="textareaRef"
+				v-model="draft"
+				class="instructions-input"
+				rows="6"
+				:aria-label="__('Project instructions')"
+				:placeholder="__('How should the assistant work in this project?')"
+				@keydown.esc.stop.prevent="cancel"
+			></textarea>
+			<div class="instructions-footer">
+				<span class="counter" :class="{ over: overLimit }">
+					{{ draft.length }} / {{ INSTRUCTIONS_MAX_LENGTH }}
+				</span>
+				<div class="actions">
+					<button class="btn-secondary" data-test="cancel-instructions" @click="cancel">
+						{{ __("Cancel") }}
+					</button>
+					<button
+						class="btn-primary"
+						data-test="save-instructions"
+						:disabled="overLimit"
+						@click="save"
+					>
+						{{ __("Save") }}
+					</button>
+				</div>
+			</div>
+		</template>
+		<p v-else-if="modelValue" class="instructions-text">{{ modelValue }}</p>
+		<p v-else class="instructions-empty">
+			{{ __("No instructions yet. Add how the assistant should work in this project.") }}
+		</p>
+	</section>
+</template>
+
+<script setup>
+import { computed, nextTick, ref } from "vue";
+import { __ } from "@/utils/i18n";
+
+const INSTRUCTIONS_MAX_LENGTH = 8000;
+
+const props = defineProps({
+	modelValue: { type: String, default: "" },
+});
+const emit = defineEmits(["save"]);
+
+const editing = ref(false);
+const draft = ref("");
+const textareaRef = ref(null);
+const overLimit = computed(() => draft.value.length > INSTRUCTIONS_MAX_LENGTH);
+
+async function startEdit() {
+	draft.value = props.modelValue || "";
+	editing.value = true;
+	await nextTick();
+	textareaRef.value?.focus();
+}
+
+function save() {
+	if (overLimit.value) return;
+	editing.value = false;
+	emit("save", draft.value);
+}
+
+function cancel() {
+	editing.value = false;
+}
+</script>
+
+<style scoped>
+.instructions {
+	border: 1px solid var(--ql-border);
+	border-radius: 0.75rem;
+	background: var(--ql-surface);
+	padding: 0.875rem 1rem;
+}
+
+.instructions-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	margin-bottom: 0.5rem;
+}
+
+.instructions-title {
+	font-size: 0.75rem;
+	font-weight: 600;
+	color: var(--ql-text-muted);
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+}
+
+.link-btn {
+	font-size: 0.8125rem;
+	color: var(--ql-accent);
+	background: none;
+	border: none;
+	cursor: pointer;
+}
+
+.instructions-text {
+	font-size: 0.875rem;
+	color: var(--ql-text);
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
+
+.instructions-empty {
+	font-size: 0.875rem;
+	color: var(--ql-text-muted);
+}
+
+.instructions-input {
+	width: 100%;
+	font: inherit;
+	font-size: 0.875rem;
+	color: var(--ql-text);
+	background: var(--ql-bg);
+	border: 1px solid var(--ql-border);
+	border-radius: 0.5rem;
+	padding: 0.5rem 0.625rem;
+	resize: vertical;
+	outline: none;
+}
+
+.instructions-input:focus {
+	border-color: var(--ql-accent);
+}
+
+.instructions-footer {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	margin-top: 0.5rem;
+}
+
+.counter {
+	font-size: 0.75rem;
+	color: var(--ql-text-muted);
+}
+
+.counter.over {
+	color: var(--ql-danger);
+}
+
+.actions {
+	display: flex;
+	gap: 0.5rem;
+}
+
+.btn-primary,
+.btn-secondary {
+	font-size: 0.8125rem;
+	font-weight: 500;
+	padding: 0.375rem 0.75rem;
+	border-radius: 0.5rem;
+	border: none;
+	cursor: pointer;
+}
+
+.btn-primary {
+	color: white;
+	background: var(--ql-accent);
+}
+
+.btn-primary:disabled {
+	opacity: 0.5;
+	cursor: not-allowed;
+}
+
+.btn-secondary {
+	color: var(--ql-text);
+	background: var(--ql-subtle);
+}
+</style>
