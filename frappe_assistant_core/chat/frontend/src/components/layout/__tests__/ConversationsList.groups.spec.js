@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, beforeEach } from "vitest";
+import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from "vitest";
 import { mount } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
 import ConversationsList from "@/components/layout/ConversationsList.vue";
@@ -6,7 +6,12 @@ import ConversationsList from "@/components/layout/ConversationsList.vue";
 beforeAll(() => {
 	window.__ = (s) => s;
 });
-beforeEach(() => setActivePinia(createPinia()));
+beforeEach(() => {
+	setActivePinia(createPinia());
+	vi.useFakeTimers({ toFake: ["Date"] });
+	vi.setSystemTime(new Date("2026-06-15T12:00:00"));
+});
+afterEach(() => vi.useRealTimers());
 
 const labelsFor = (sessions) =>
 	mount(ConversationsList, {
@@ -18,7 +23,7 @@ const labelsFor = (sessions) =>
 
 describe("ConversationsList date groups", () => {
 	it("adds the year to an older group and keeps two years apart", () => {
-		const year = new Date().getFullYear();
+		const year = 2026;
 		const labels = labelsFor([
 			{ session_id: "a", last_activity: `${year - 1}-03-05T10:00:00` },
 			{ session_id: "b", last_activity: `${year - 2}-03-05T10:00:00` },
@@ -27,9 +32,7 @@ describe("ConversationsList date groups", () => {
 	});
 
 	it("omits the year for the current year", () => {
-		const d = new Date();
-		d.setDate(d.getDate() - 30);
-		const [label] = labelsFor([{ session_id: "a", last_activity: d.toISOString() }]);
-		expect(label).not.toMatch(/\d{4}/);
+		const [label] = labelsFor([{ session_id: "a", last_activity: "2026-05-16T10:00:00" }]);
+		expect(label).toBe("May 16");
 	});
 });

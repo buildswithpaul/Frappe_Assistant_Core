@@ -24,7 +24,7 @@ class TestConversationSync(BaseAssistantTest):
         # nosemgrep: frappe-setuser — test bootstrap; runs in an isolated transaction
         frappe.set_user("Administrator")
         frappe.db.delete("FAC Chat Message", {"session_id": SID})
-        frappe.db.delete("FAC Chat Conversation", {"name": SID})
+        frappe.db.delete("FAC Chat Conversation", {"name": ["in", [SID, SID + "-erase"]]})
 
     def _row(self):
         return frappe.db.get_value(
@@ -106,25 +106,47 @@ class TestConversationSync(BaseAssistantTest):
         self.assertIn("Kept", [p["title"] for p in faco["faco_projects"]])
         self.assertIn("faco_conversations", faco)
 
-    def test_erase_my_data_deletes_conversations_and_projects(self):
+    def _as_user(self, user: str):
+        # nosemgrep: frappe-setuser — test bootstrap; runs in an isolated transaction
+        frappe.set_user(user)
+
+    def test_erase_my_data_deletes_only_the_callers_conversations_and_projects(self):
         from frappe_assistant_core.chat.api.privacy import erase_my_data
 
-        project = make_project("Administrator", title="Erase Me")
-        FACChatMessage.create_message(SID, "user", "Hello", project=project)
-        client = create_autospec(AssistantRuntimeClient, instance=True)
-        with patch("frappe_assistant_core.chat.api.privacy._get_client", return_value=client), patch(
-            "frappe.utils.password.check_password"
-        ):
-            erase_my_data(password="irrelevant")
-        self.assertFalse(frappe.db.exists("FAC Chat Conversation", SID))
+        # A dedicated user: erasing Administrator would delete that user's real attached files
+        # from disk, which a transaction rollback cannot restore.
+        eraser = ensure_user("fac-erase-test@example.com")
+        FACChatMessage.create_message(SID, "user", "Admin chat")
+        admin_project = make_project("Administrator", title="Keep Me")
+        self._as_user(eraser)
+        try:
+            project = make_project(eraser, title="Erase Me")
+            FACChatMessage.create_message(SID + "-erase", "user", "Hello", project=project)
+            client = create_autospec(AssistantRuntimeClient, instance=True)
+            with patch("frappe_assistant_core.chat.api.privacy._get_client", return_value=client), patch(
+                "frappe.utils.password.check_password"
+            ):
+                erase_my_data(password="irrelevant")
+        finally:
+            self._as_user("Administrator")
+        self.assertFalse(frappe.db.exists("FAC Chat Conversation", SID + "-erase"))
         self.assertFalse(frappe.db.exists("FAC Chat Project", project))
+        self.assertTrue(frappe.db.exists("FAC Chat Conversation", SID))
+        self.assertTrue(frappe.db.exists("FAC Chat Project", admin_project))
 
     def test_archive_all_mirrors_onto_rows(self):
         from frappe_assistant_core.chat.api.chat.sessions import archive_all_conversations
 
-        FACChatMessage.create_message(SID, "user", "Hi")
-        archive_all_conversations()
-        self.assertEqual(self._row().is_archived, 1)
+        # A dedicated user, so the bulk archive never touches Administrator's real dev rows.
+        user = ensure_user("fac-archive-all-test@example.com")
+        self._as_user(user)
+        try:
+            FACChatMessage.create_message(SID, "user", "Hi")
+            archive_all_conversations()
+            row = self._row()
+        finally:
+            self._as_user("Administrator")
+        self.assertEqual(row.is_archived, 1)
 
     def test_retention_purge_removes_orphan_rows(self):
         from frappe_assistant_core.chat.scheduler.retention import _purge_archived_messages
