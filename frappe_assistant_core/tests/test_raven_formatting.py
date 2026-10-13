@@ -60,3 +60,11 @@ class TestRavenFormatting(BaseAssistantTest):
 
     def test_other_errors_never_leak_detail(self):
         self.assertNotIn("secret", formatting.error_text({"error": "Traceback: secret"}))
+
+    def test_a_refusal_carries_the_gates_reason(self):
+        self.assertEqual(formatting.refusal_text({"can_use": False, "reason": "No seat"}), "No seat")
+
+    def test_chat_switched_off_is_said_plainly(self):
+        # can_use_faco answers chat_module_disabled with a status and no reason.
+        text = formatting.refusal_text({"can_use": False, "status": "chat_module_disabled"})
+        self.assertIn("FAC Chat is switched off", text)

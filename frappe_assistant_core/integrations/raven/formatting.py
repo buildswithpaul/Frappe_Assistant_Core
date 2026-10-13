@@ -37,6 +37,8 @@ QUOTA = _lt(
 )
 UNREGISTERED = _lt("This site isn't connected to FAC Cloud. An administrator can connect it in FAC Admin.")
 UNREACHABLE = _lt("I couldn't reach FAC Cloud just now. Please try again.")
+CHAT_OFF = _lt("FAC Chat is switched off on this site. An administrator can turn it on in FAC Admin.")
+NOT_YET = _lt("You can't use FACO yet. Ask your administrator.")
 
 
 def _fence(match: re.Match, session_url: str) -> str:
@@ -82,3 +84,12 @@ def error_text(event: dict) -> str:
     if event.get("action_required") == "register":
         return str(UNREGISTERED)
     return str(UNREACHABLE)
+
+
+def refusal_text(access: dict) -> str:
+    """What to tell someone can_use_faco() turned away. Chat being off comes with no reason."""
+    if access.get("reason"):
+        return access["reason"]
+    if access.get("status") == "chat_module_disabled":
+        return str(CHAT_OFF)
+    return str(NOT_YET)

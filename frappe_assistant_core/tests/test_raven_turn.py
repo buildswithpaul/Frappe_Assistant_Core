@@ -228,7 +228,7 @@ class TestRavenTurn(BaseAssistantTest):
         self._run(msg, "mention")  # the real gate: FAC Cloud says this user holds no seat
         self.assertEqual(self.cloud.calls, [])
         frappe.set_user(self.rohan)
-        reason = can_use_faco()["reason"]
+        reason = formatting.refusal_text(can_use_faco())
         frappe.set_user("Administrator")
         replies = self._bot_replies(msg)
         self.assertEqual(len(replies), 1)

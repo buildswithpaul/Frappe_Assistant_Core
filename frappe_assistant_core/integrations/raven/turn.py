@@ -59,7 +59,7 @@ def run(message_id: str, kind: str) -> None:
 
     access = can_use_faco()
     if not access.get("can_use"):
-        raven_bot.send_message(reply_channel, access.get("reason") or _("You can't use FACO yet."))
+        raven_bot.send_message(reply_channel, formatting.refusal_text(access))
         return
     session_id = sessions.session_id_for(reply_channel, msg.owner)
     with _session_lock(session_id):
