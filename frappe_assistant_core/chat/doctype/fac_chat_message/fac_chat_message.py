@@ -77,6 +77,7 @@ class FACChatMessage(Document):
             self.content,
             project=self.flags.get("conversation_project"),
             is_archived=self.is_archived or 0,
+            message_name=self.name,
         )
 
     @staticmethod

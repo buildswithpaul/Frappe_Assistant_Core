@@ -100,15 +100,21 @@ async function submit() {
 	const title = draft.value.trim().split(/\s+/).join(" ");
 	if (!title || saving.value) return;
 	saving.value = true;
+	let project;
 	try {
-		const project = await projectsStore.create(title);
-		if (moveSessionId.value) {
-			await conversationsStore.moveSession(moveSessionId.value, project.name);
-			creating.value = false;
-		} else {
-			creating.value = false;
-			router.push("/chat/project/" + project.name);
-		}
+		project = await projectsStore.create(title);
+	} catch (err) {
+		showError(err?.message || __("Something went wrong"));
+		saving.value = false;
+		return;
+	}
+	// The project exists from here on: the input closes so a retry cannot duplicate it.
+	creating.value = false;
+	const sessionId = moveSessionId.value;
+	moveSessionId.value = null;
+	try {
+		if (sessionId) await conversationsStore.moveSession(sessionId, project.name);
+		else router.push("/chat/project/" + project.name);
 	} catch (err) {
 		showError(err?.message || __("Something went wrong"));
 	} finally {

@@ -65,6 +65,26 @@ describe("New project… from a chat row", () => {
 		await vi.waitFor(() => expect(api.chat.moveSessionToProject).toHaveBeenCalledWith("s1", "P1"));
 		expect(api.projects.create).toHaveBeenCalled();
 		expect(push).not.toHaveBeenCalled();
+		await vi.waitFor(() => expect(wrapper.find("[data-test=new-project-input]").exists()).toBe(false));
+	});
+
+	it("closes the input and does not duplicate the project when the move fails", async () => {
+		api.chat.moveSessionToProject.mockRejectedValue(new Error("nope"));
+		const input = await openFromRow();
+		await input.setValue("Alpha");
+		await input.trigger("keydown.enter");
+		await vi.waitFor(() => expect(api.chat.moveSessionToProject).toHaveBeenCalled());
+		await vi.waitFor(() => expect(wrapper.find("[data-test=new-project-input]").exists()).toBe(false));
+		expect(api.projects.create).toHaveBeenCalledTimes(1);
+	});
+
+	it("blur cancels without creating", async () => {
+		const input = await openFromRow();
+		await input.setValue("Alpha");
+		await input.trigger("blur");
+		await nextTick();
+		expect(wrapper.find("[data-test=new-project-input]").exists()).toBe(false);
+		expect(api.projects.create).not.toHaveBeenCalled();
 	});
 
 	it("Esc cancels without creating", async () => {

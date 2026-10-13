@@ -111,8 +111,9 @@ class TestConversationSync(BaseAssistantTest):
         FACChatMessage.create_message(SID, "user", "Hi")
         archive_session(SID)
         # Production reaches this when a reply finishes after the user archived mid-stream.
-        FACChatMessage.create_message(SID, "assistant", "Late reply")
+        late = FACChatMessage.create_message(SID, "assistant", "Late reply")
         self.assertEqual(self._row().is_archived, 1)
+        self.assertEqual(frappe.db.get_value("FAC Chat Message", late.name, "is_archived"), 1)
 
     def test_export_keeps_an_ar_error_status(self):
         from frappe_assistant_core.chat.api.privacy import export_my_data

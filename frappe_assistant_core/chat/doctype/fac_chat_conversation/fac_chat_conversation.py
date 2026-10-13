@@ -65,6 +65,7 @@ class FACChatConversation(Document):
         content: str | None,
         project: str | None = None,
         is_archived: int = 0,
+        message_name: str | None = None,
     ) -> None:
         """Record one more message on the conversation, creating the row on the first.
 
@@ -113,8 +114,11 @@ class FACChatConversation(Document):
         if restores:
             update = update.set(CV.is_archived, 0)
         update.run()
-        if restores:
+        if restores and existing.is_archived:
             _restore_messages(session_id, user)
+        elif not restores and existing.is_archived and message_name and not is_archived:
+            # Keeps the late reply purgeable together with the chat it belongs to.
+            frappe.db.set_value("FAC Chat Message", message_name, "is_archived", 1, update_modified=False)
         if role == "user" and not existing.title:
             frappe.db.set_value(
                 "FAC Chat Conversation", session_id, "title", auto_title(content), update_modified=False
@@ -135,7 +139,7 @@ def _restore_messages(session_id: str, user: str) -> None:
 
 def _read_row(session_id: str) -> frappe._dict | None:
     return frappe.db.get_value(
-        "FAC Chat Conversation", session_id, ["user", "title", "project"], as_dict=True
+        "FAC Chat Conversation", session_id, ["user", "title", "project", "is_archived"], as_dict=True
     )
 
 

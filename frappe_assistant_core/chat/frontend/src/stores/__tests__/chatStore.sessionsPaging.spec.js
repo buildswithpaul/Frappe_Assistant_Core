@@ -57,14 +57,17 @@ describe("chatStore session paging", () => {
 	it("inserts the conversation row the first send returns, without reloading", async () => {
 		api.chat.getSessions.mockResolvedValueOnce(page(SESSIONS_PAGE_SIZE));
 		await store.loadSessions();
+		api.chat.getSessions.mockResolvedValueOnce(page(3, SESSIONS_PAGE_SIZE));
+		await store.loadMoreSessions();
 		api.chat.getSessions.mockClear();
 		store.currentSessionId = "brand-new";
 		const row = { session_id: "brand-new", last_activity: "2026-10-02", title: "hi" };
 		api.chat.send.mockResolvedValueOnce({ status: "processing", conversation: row });
 		await store.sendMessage("hi", [], null, "m1");
 		expect(store.sessions[0]).toEqual(row);
-		expect(store.sessions).toHaveLength(SESSIONS_PAGE_SIZE + 1);
-		expect(store.sessionsHasMore).toBe(true);
+		expect(store.sessions).toHaveLength(SESSIONS_PAGE_SIZE + 3 + 1);
+		expect(store.sessions[SESSIONS_PAGE_SIZE + 3].session_id).toBe(`s${SESSIONS_PAGE_SIZE + 2}`);
+		expect(store.sessionsHasMore).toBe(false);
 		expect(api.chat.getSessions).not.toHaveBeenCalled();
 		expect(store.isLoading).toBe(false);
 		api.chat.send.mockResolvedValueOnce({ status: "processing", conversation: row });
