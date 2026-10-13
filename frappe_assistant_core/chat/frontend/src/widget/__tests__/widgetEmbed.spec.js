@@ -22,15 +22,18 @@ describe("widget_embed.js", () => {
 	});
 
 	it("starts on an app page whose shell sets its own frappe.boot (Raven)", () => {
-		// raven/www/raven.html: `if (!window.frappe) window.frappe = {}; frappe.boot = JSON.parse(…)`
-		window.frappe = { boot: { sitename: "site" } };
+		// raven/www/raven.html sets frappe.boot to Frappe's full boot payload, which carries FAC's
+		// own fac_widget key (extend_bootinfo) — but there is no Desk router or widget_loader.js.
+		window.frappe = { boot: { sitename: "site", fac_widget: { entry: "/assets/x.js", css: [] } } };
 		runLoader();
 		expect(fetch).toHaveBeenCalledWith(expect.stringContaining(ENTRY_METHOD), expect.anything());
 	});
 
-	it("leaves Desk to widget_loader.js, which boots from Desk's own boot info", () => {
-		window.frappe = { boot: { fac_widget: { entry: "/assets/x.js", css: [] } } };
+	it("does nothing when the widget already booted on this page", () => {
+		// The server never injects this loader into Desk; booting twice is the only thing to avoid.
+		window.__facWidgetBooted = true;
 		runLoader();
 		expect(fetch).not.toHaveBeenCalled();
+		window.__facWidgetBooted = false;
 	});
 });

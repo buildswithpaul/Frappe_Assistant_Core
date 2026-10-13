@@ -16,9 +16,9 @@
 // comes from get_widget_entry. Any failure leaves the page as it was.
 (function () {
 	"use strict";
-	// Desk boots the widget itself from boot info only it carries. Other apps may set their own
-	// frappe.boot (Raven does), so frappe.boot alone does not mean Desk.
-	if (window.frappe && window.frappe.boot && window.frappe.boot.fac_widget) return;
+	// The server never adds this script to Desk, so the only thing to avoid is a second boot.
+	// frappe.boot is no sign of Desk: Raven's shell carries Frappe's whole boot payload.
+	if (window.__facWidgetBooted) return;
 	fetch("/api/method/frappe_assistant_core.chat.api.settings.embed.get_widget_entry", {
 		credentials: "same-origin",
 		headers: { Accept: "application/json" },
