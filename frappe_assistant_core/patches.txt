@@ -59,3 +59,7 @@ frappe_assistant_core.patches.v3_1.rename_submit_document_to_document_action
 # Configuration row (bulk_toggle_tools_by_category filters on it), and where the faco plugin
 # was disabled keep the tool off, since the core plugin cannot be disabled
 frappe_assistant_core.patches.v3_1.move_send_email_to_core_plugin
+
+# Version 3.2.0 - chat history & projects: give every existing session a FAC Chat
+# Conversation row (new messages maintain their own row from here on)
+frappe_assistant_core.patches.v3_2.backfill_fac_chat_conversations
