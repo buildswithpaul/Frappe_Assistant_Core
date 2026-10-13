@@ -2,8 +2,8 @@ import { mount } from "@vue/test-utils";
 import { describe, it, expect } from "vitest";
 import SummaryCards from "@/components/analytics/SummaryCards.vue";
 
-// A real 7-day window: 53 credits over 11 API calls, spread across a single
-// conversation. Requests count every source — chat, suggestions, classifier —
+// A real 7-day window: 53 credits over 11 agent runs, spread across a single
+// conversation. Agent runs count every source — chat, suggestions, classifier —
 // so they are never the number of conversations.
 const SUMMARY = { credits_consumed: 53, request_count: 11, active_users: 1 };
 
@@ -25,7 +25,7 @@ function avgCard(props = {}) {
  * being passed in and ignored.
  */
 describe("SummaryCards average per conversation", () => {
-	it("divides by conversations, not API calls", () => {
+	it("divides by conversations, not agent runs", () => {
 		const { card } = avgCard();
 		expect(card.text()).toContain("53");
 		expect(card.text()).not.toContain("5 ");
@@ -49,11 +49,16 @@ describe("SummaryCards average per conversation", () => {
 		expect(card.text()).toContain("—");
 	});
 
-	it("still reports total requests from the AR counter", () => {
+	it("still reports agent runs from the AR counter", () => {
 		const { wrapper } = avgCard();
 		const requests = wrapper
 			.findAll(".summary-card")
-			.find((c) => /total requests/i.test(c.text()));
+			.find((c) => /agent runs/i.test(c.text()));
 		expect(requests.text()).toContain("11");
+		expect(requests.find(".card-label").attributes("title")).toBe(
+			"Every agent run: one per chat message, one per approval round, and one per background " +
+				"call (classifier, memory, suggestions, workflows). A run can include several model calls.",
+		);
+		expect(requests.find(".card-sub").text()).toBe("chat, approvals and background calls");
 	});
 });

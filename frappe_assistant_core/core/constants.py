@@ -147,7 +147,6 @@ LOG_LEVELS = {
 PERFORMANCE_METRICS = {
     "TOOL_EXECUTION_TIME": "tool_execution_time",
     "REQUEST_PROCESSING_TIME": "request_processing_time",
-    "CACHE_HIT_RATE": "cache_hit_rate",
     "ERROR_RATE": "error_rate",
     "CONCURRENT_REQUESTS": "concurrent_requests",
     "MEMORY_USAGE": "memory_usage",
