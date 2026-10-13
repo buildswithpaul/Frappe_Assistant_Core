@@ -15,7 +15,7 @@ from unittest.mock import patch
 import frappe
 
 from frappe_assistant_core.chat.api.chat import live_turn, messages
-from frappe_assistant_core.chat.api.chat.messages import _conversation_addendum
+from frappe_assistant_core.chat.api.chat.messages import _conversation_addendum, _conversation_project
 from frappe_assistant_core.chat.api.chat.relay import _relay_ar_interrupt_resume, _relay_ar_stream
 from frappe_assistant_core.chat.doctype.fac_chat_message.fac_chat_message import FACChatMessage
 from frappe_assistant_core.chat.tests.test_chat_projects_api import OTHER_USER, ensure_user, make_project
@@ -107,3 +107,36 @@ class TestEndpointsCarryProjectBlock(_ProjectTestBase):
             lambda: messages.continue_response(session_id=SID, message_id="m-truncated"),
         )
         self.assertIn(BLOCK, addendum)
+
+
+class TestConversationProjectOwnership(_ProjectTestBase):
+    def _other_users_conversation(self) -> str:
+        # Production path: the user's first message creates their row (touch).
+        # nosemgrep: frappe-setuser — act as the plain user the document API runs as
+        frappe.set_user(OTHER_USER)
+        FACChatMessage.create_message(SID, "user", "hi")
+        return SID
+
+    def test_document_api_cannot_point_at_another_users_project(self):
+        sid = self._other_users_conversation()
+        doc = frappe.get_doc("FAC Chat Conversation", sid)
+        doc.project = self.project
+        with self.assertRaises(frappe.DoesNotExistError):
+            doc.save()
+        self.assertFalse(frappe.db.get_value("FAC Chat Conversation", sid, "project"))
+
+    def test_document_api_cannot_change_the_owner(self):
+        sid = self._other_users_conversation()
+        doc = frappe.get_doc("FAC Chat Conversation", sid)
+        doc.user = "Administrator"
+        with self.assertRaises(frappe.PermissionError):
+            doc.save()
+        self.assertEqual(frappe.db.get_value("FAC Chat Conversation", sid, "user"), OTHER_USER)
+
+    def test_stored_foreign_project_is_not_applied(self):
+        FACChatMessage.create_message(SID, "user", "hi")
+        theirs = make_project(OTHER_USER, instructions="leak")
+        # rows written before validate existed, or by a path that bypasses it, can hold this
+        frappe.db.set_value("FAC Chat Conversation", SID, "project", theirs)
+        self.assertIsNone(_conversation_project(SID, None))
+        self.assertIsNone(_conversation_addendum(SID, restricted=False))

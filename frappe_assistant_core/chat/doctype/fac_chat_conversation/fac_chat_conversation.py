@@ -21,6 +21,18 @@ def auto_title(content: str | None) -> str:
 
 
 class FACChatConversation(Document):
+    def validate(self):
+        """Refuse a project the owner does not own, and any change of owner.
+
+        Role All may write its own rows through /api/resource, so without this a
+        user could point a conversation at someone else's project.
+        """
+        if self.project and not _project_is_owned(self.project, self.user):
+            frappe.throw(_("Project not found"), frappe.DoesNotExistError)
+        before = None if self.is_new() else self.get_doc_before_save()
+        if before and before.user != self.user:
+            frappe.throw(_("A conversation's owner cannot be changed"), frappe.PermissionError)
+
     @staticmethod
     def default_title(session_id: str) -> str:
         first = frappe.get_all(

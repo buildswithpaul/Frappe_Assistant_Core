@@ -93,7 +93,7 @@ def _conversation_project(session_id: str, fallback: str | None) -> str | None:
         "FAC Chat Conversation", {"name": session_id, "user": frappe.session.user}, ["project"], as_dict=True
     )
     if row:
-        return row.project
+        return row.project if FACChatProject.is_owned(row.project) else None
     return fallback if FACChatProject.is_owned(fallback) else None
 
 
