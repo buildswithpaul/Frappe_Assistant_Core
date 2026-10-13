@@ -36,6 +36,8 @@ from frappe_assistant_core.tests.base_test import BaseAssistantTest
 
 GATE = "frappe_assistant_core.chat.api.settings.can_use_faco"
 SEATED = {"can_use": True}
+# Production: Raven's people are System Users (a desk role) who also hold Raven User.
+RAVEN_PERSON = ("Raven User", "Desk User")
 
 
 class FakeCloud:
@@ -111,8 +113,8 @@ class TestRavenTurn(BaseAssistantTest):
         frappe.db.set_single_value("FAC Chat Settings", "enable_raven_bot", 1)
         bot.ensure_bot()
         self.raven_bot = frappe.get_doc("Raven Bot", bot.BOT_NAME)
-        self.avery = self.make_throwaway_user("raven-avery", roles=("Raven User",))
-        self.rohan = self.make_throwaway_user("raven-rohan", roles=("Raven User",))
+        self.avery = self.make_throwaway_user("raven-avery", roles=RAVEN_PERSON)
+        self.rohan = self.make_throwaway_user("raven-rohan", roles=RAVEN_PERSON)
         self.channel = self._channel("fac-bot-test", members=(self.avery, self.rohan), with_bot=True)
         self.cloud = FakeCloud()
         stack = ExitStack()
@@ -285,6 +287,55 @@ class TestRavenTurn(BaseAssistantTest):
         self.assertEqual(self.cloud.calls, [])
         self.assertEqual(self._bot_replies(msg.name), [])
 
+    def _send_batch(self, user, channel_id, caption, file_names):
+        """What Raven's composer does: upload the files, then one send that makes one message per
+        file plus the caption, all sharing the client's batch id (send_message_with_attachments)."""
+        from raven.api.raven_message import send_message_with_attachments
+
+        frappe.set_user(user)
+        files = []
+        for name in file_names:
+            f = frappe.get_doc(
+                {
+                    "doctype": "File",
+                    "file_name": name,
+                    "content": f"Quote total is 2,80,300 ({name})",
+                    "is_private": 1,
+                }
+            ).insert()
+            files.append({"file_url": f.file_url, "file_size": f.file_size})
+        # A fresh client id per send, as the composer makes: Raven keeps sends idempotent on it.
+        client_id = f"batch-{frappe.generate_hash(length=8)}"
+        send_message_with_attachments(
+            channel_id, content=f"<p>{caption}</p>", files=files, client_id=client_id
+        )
+        names = frappe.get_all(
+            "Raven Message", filters={"message_batch_id": client_id}, pluck="name", order_by="creation asc"
+        )
+        # The batch claim lives in Redis and outlasts the test's rollback.
+        self.addCleanup(
+            frappe.cache.delete, frappe.cache.make_key(f"fac_raven_batch:{channel_id}:{client_id}")
+        )
+        frappe.set_user("Administrator")
+        return names
+
+    def test_a_batch_of_files_and_a_caption_gets_one_answer(self):
+        dm = self.raven_bot.create_direct_message_channel(self.avery)
+        names = self._send_batch(self.avery, dm, "what is the total?", ["quote.txt"])
+        with patch(GATE, return_value=SEATED):
+            for name in names:  # every message of the batch reached the trigger
+                self._run(name, "dm")
+        self.assertEqual(len(self.cloud.calls), 1)
+        self.assertEqual(len(self._bot_replies(dm)), 1)
+
+    def test_a_document_sent_to_fac_bot_reaches_faco_as_text(self):
+        dm = self.raven_bot.create_direct_message_channel(self.avery)
+        names = self._send_batch(self.avery, dm, "what is the total?", ["quote.txt"])
+        with patch(GATE, return_value=SEATED):
+            self._run(names[-1], "dm")
+        self.assertEqual(len(self.cloud.calls), 1, self._bot_replies(dm))
+        self.assertIn("Quote total is 2,80,300", self.cloud.calls[0]["system_prompt_addendum"])
+
     def test_the_switched_off_bot_says_so(self):
         frappe.db.set_single_value("FAC Chat Settings", "enable_raven_bot", 0)
         bot.clear_state_cache()
@@ -310,8 +361,8 @@ class TestRavenTurnFilesAndLock(BaseAssistantTest):
     def test_a_file_the_asker_cannot_read_is_dropped_and_named(self):
         from frappe_assistant_core.integrations.raven import turn
 
-        owner = self.make_throwaway_user("raven-owner", roles=("Raven User",))
-        asker = self.make_throwaway_user("raven-asker", roles=("Raven User",))
+        owner = self.make_throwaway_user("raven-owner", roles=RAVEN_PERSON)
+        asker = self.make_throwaway_user("raven-asker", roles=RAVEN_PERSON)
         frappe.set_user(owner)
         private = frappe.get_doc(
             {"doctype": "File", "file_name": "payroll.txt", "content": "secret", "is_private": 1}
@@ -324,8 +375,8 @@ class TestRavenTurnFilesAndLock(BaseAssistantTest):
             frappe._dict(message_type="File", file=private.file_url),
             frappe._dict(message_type="File", file=mine.file_url),
         ]
-        file_urls, images, dropped = turn._files(batch)
-        self.assertEqual(file_urls, [mine.file_url])
+        documents, images, dropped = turn._files(batch)
+        self.assertEqual([d.file_url for d in documents], [mine.file_url])
         self.assertEqual(dropped, ["payroll.txt"])
 
     def test_a_second_turn_in_a_session_waits_for_the_first(self):

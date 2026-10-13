@@ -27,6 +27,7 @@ import frappe
 from frappe import _, _lt
 
 from frappe_assistant_core.chat.api.chat import turn_observers
+from frappe_assistant_core.chat.api.chat.conversation_files import files_addendum
 from frappe_assistant_core.integrations.raven import bot, formatting, sessions
 from frappe_assistant_core.integrations.raven.sink import RavenReplyWriter, ReplySink
 
@@ -43,7 +44,7 @@ CHANNEL_LINE = _lt(
 
 def run(message_id: str, kind: str) -> None:
     msg = frappe.get_doc("Raven Message", message_id)
-    if not _is_person(msg.owner):
+    if not _is_person(msg.owner) or not _claim_batch(msg):
         return
     frappe.set_user(msg.owner)  # nosemgrep: frappe-setuser — the turn runs as, and bills, the asker
     raven_bot = frappe.get_doc("Raven Bot", bot.BOT_NAME)
@@ -75,6 +76,16 @@ def _is_person(user: str) -> bool:
     return bool(frappe.db.exists("Raven User", {"user": user, "type": "User", "enabled": 1}))
 
 
+def _claim_batch(msg) -> bool:
+    """One answer per send. Files and their caption arrive as separate messages of one batch, and
+    each reaches the trigger; job de-duplication does not hold for enqueues deferred to commit."""
+    if not msg.message_batch_id:
+        return True
+    key = frappe.cache.make_key(f"fac_raven_batch:{msg.channel_id}:{msg.message_batch_id}")
+    # nosemgrep: frappe-cache-breaks-multitenancy — the key is site-prefixed (make_key); set_value has no NX
+    return bool(frappe.cache.set(key, 1, nx=True, ex=3600))
+
+
 def _is_thread(channel_id: str) -> bool:
     return bool(frappe.get_cached_doc("Raven Channel", channel_id).is_thread)
 
@@ -104,9 +115,9 @@ def _batch(msg) -> list:
     )
 
 
-def _files(batch) -> tuple[list[str], list[dict], list[str]]:
-    """Readable files split into documents and images; names of the ones the asker cannot read."""
-    file_urls, images, dropped = [], [], []
+def _files(batch) -> tuple[list, list[dict], list[str]]:
+    """Readable files split into documents (File rows) and images; names the asker cannot read."""
+    documents, images, dropped = [], [], []
     for row in batch:
         if row.message_type not in ("File", "Image") or not row.file:
             continue
@@ -126,8 +137,15 @@ def _files(batch) -> tuple[list[str], list[dict], list[str]]:
                 }
             )
         else:
-            file_urls.append(row.file)
-    return file_urls, images, dropped
+            documents.append(
+                frappe._dict(
+                    name=file_doc.name,
+                    file_name=file_doc.file_name,
+                    file_url=file_doc.file_url,
+                    file_size=file_doc.file_size,
+                )
+            )
+    return documents, images, dropped
 
 
 def _track(reply: str, session_id: str) -> None:
@@ -139,8 +157,10 @@ def _run_turn(msg, kind: str, raven_bot, reply_channel: str, session_id: str) ->
 
     batch = _batch(msg)
     text = next((row.content for row in batch if row.message_type == "Text" and row.content), "")
-    file_urls, images, dropped = _files(batch)
+    documents, images, dropped = _files(batch)
     addendum = str(CHANNEL_LINE if kind == "mention" else DM_LINE)
+    # Raven's files stay attached to their Raven message; their text goes into this turn's prompt.
+    addendum += files_addendum(documents)
     if dropped:
         addendum += " " + _(
             "These files were not shared with the user, so they are not attached: {0}."
@@ -165,7 +185,6 @@ def _run_turn(msg, kind: str, raven_bot, reply_channel: str, session_id: str) ->
         future = start_turn(
             session_id,
             text or _("(sent files)"),
-            file_urls=file_urls,
             attachments=images,
             system_prompt_addendum=addendum,
             client_type="raven",

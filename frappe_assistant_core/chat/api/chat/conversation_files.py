@@ -44,7 +44,15 @@ READ_MORE = "Read it with extract_file_content and this File ID."
 
 def conversation_files_addendum(session_id: str, user: str) -> str:
     """The prompt section listing every file attached in the conversation, or "" if none."""
-    files = _conversation_files(session_id, user)
+    return files_addendum(_conversation_files(session_id, user))
+
+
+def files_addendum(files: list) -> str:
+    """The prompt section for these File rows (name, file_name, file_url, file_size), or "".
+
+    The Raven bot passes the files of one message here: they belong to a Raven message, not to a
+    FAC Chat message, so they are read into the prompt rather than linked to the conversation.
+    """
     if not files:
         return ""
 
