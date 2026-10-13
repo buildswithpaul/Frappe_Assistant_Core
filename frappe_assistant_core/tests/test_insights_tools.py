@@ -181,6 +181,9 @@ class TestInsightsTools(BaseAssistantTest):
         self.assertEqual(out["filters"][0]["source"], "default")
         fresh = next(c for c in out["charts"] if c["name"] == self.fresh_chart.name)
         self.assertEqual(fresh["source"], "chart")
+        # A pivot's columns are its dimension values, so the measure's name is gone from the rows;
+        # every chart says what its numbers measure (live: a table's sums read as "order value").
+        self.assertEqual(fresh["config_summary"]["measures"][0]["aggregation"], "count")
         self.assertEqual({r["status"] for r in fresh["rows"]}, {"Open"} if fresh["rows"] else set())
 
     def test_an_override_changes_the_numbers(self):

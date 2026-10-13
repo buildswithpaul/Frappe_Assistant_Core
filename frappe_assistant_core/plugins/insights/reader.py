@@ -103,8 +103,9 @@ def read_chart(chart_name: str, resolved_filters: list[dict], max_rows: int) -> 
         result = query.execute(adhoc_filters=adhoc, page_size=max_rows + 1)
         entry.update(shape_result(result, max_rows))
         entry["source"] = "chart" if fresh else "raw"
+        # What the numbers measure: a pivot's columns are dimension values, so its rows alone do not say.
+        entry["config_summary"] = config_summary(chart.chart_type, chart.config)
         if not fresh:
-            entry["config_summary"] = config_summary(chart.chart_type, chart.config)
             entry["note"] = _(
                 "These are the chart's source rows, not its aggregated values: aggregate them as "
                 "config_summary describes, and say you did."

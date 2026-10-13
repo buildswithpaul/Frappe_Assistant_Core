@@ -28,7 +28,7 @@ Operators follow Insights: `=`, `!=`, `>`, `>=`, `<`, `<=`, `in`, `not_in`, `bet
 ## Reading the numbers correctly
 
 - **Always say which filters the numbers use.** The user may have changed filters on screen; you cannot see that. Say "with the dashboard's default filters (Status = Open)" and offer to apply theirs.
-- **`source: "chart"`** — the chart's own numbers. Quote them.
+- **`source: "chart"`** — the chart's own numbers. Quote them, and use `config_summary` to say what they measure (a pivot table's columns are dimension values, so its cells do not name their measure). Charts often measure different things — never add or compare values across charts unless their measures match.
 - **`source: "raw"`** — the chart's source rows, not its aggregation (its author changed it since it last ran). Aggregate them as `config_summary` describes (dimension, measure, aggregation) and say you did.
 - **`truncated: true`** — you have the first rows only. Never present sums or counts over truncated rows as totals; say they are partial or read the chart with `get_insights_chart` and a higher `max_rows`.
 - A chart with `error` — mention it briefly ("one chart could not be read") and continue with the rest.
