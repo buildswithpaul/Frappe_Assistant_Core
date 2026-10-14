@@ -65,3 +65,20 @@ class TestRavenBotSwitch(BaseAssistantTest):
         frappe.set_user(self.make_throwaway_user("raven-switch", roles=("Desk User",)))
         with self.assertRaises(frappe.PermissionError):
             set_raven_bot_enabled(True)
+
+    def test_raven_is_not_offered_the_widget(self):
+        # Raven is a chat app with FAC Bot inside it; a floating chat widget on top is redundant.
+        from frappe_assistant_core.chat.embed.apps import discover_spa_apps
+
+        self.assertNotIn("raven", [app["app"] for app in discover_spa_apps()])
+
+    def test_a_site_that_had_ticked_raven_no_longer_serves_the_widget_there(self):
+        from frappe_assistant_core.chat.embed.apps import clear_routes_cache, enabled_routes
+
+        # Production: an administrator ticked Raven under Other Frappe apps before this change.
+        settings = frappe.get_single("FAC Chat Settings")
+        settings.append("widget_embed_apps", {"app_name": "raven"})
+        settings.save(ignore_permissions=True)
+        clear_routes_cache()
+        self.addCleanup(clear_routes_cache)
+        self.assertNotIn("/raven", enabled_routes())
