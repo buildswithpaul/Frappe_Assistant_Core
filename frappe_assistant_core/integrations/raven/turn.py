@@ -36,7 +36,8 @@ TURN_TIMEOUT = 1100
 IMAGE_LIMIT = 5 * 1024 * 1024
 DM_LINE = _lt("You are answering as FAC Bot in a private Raven conversation. Raven cannot draw charts.")
 CHANNEL_LINE = _lt(
-    "You are answering as FAC Bot in a shared Raven channel; everyone in it can read your answer. "
+    "You are answering as FAC Bot in a shared Raven conversation (a channel, or a chat between "
+    "people); everyone in it can read your answer. "
     "Avoid sensitive figures unless the user asks for them explicitly. Raven cannot draw charts."
 )
 
@@ -50,8 +51,10 @@ def run(message_id: str, kind: str, typed_by_person: bool = False) -> None:
     if bot.state() != "on":
         raven_bot.send_message(_reply_channel(msg, kind), str(formatting.SWITCHED_OFF))
         return
-    in_thread = _is_thread(msg.channel_id)
-    if kind == "mention" and not in_thread and not raven_bot.is_member(msg.channel_id):
+    channel = frappe.get_cached_doc("Raven Channel", msg.channel_id)
+    # A DM between two people cannot take a third member, so membership is asked only of channels.
+    needs_member = kind == "mention" and not channel.is_thread and not channel.is_direct_message
+    if needs_member and not raven_bot.is_member(msg.channel_id):
         raven_bot.send_message(_reply_channel(msg, kind), str(formatting.NOT_A_MEMBER))
         return
     reply_channel = _reply_channel(msg, kind)

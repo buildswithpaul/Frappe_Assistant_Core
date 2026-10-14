@@ -380,6 +380,21 @@ class TestRavenTurn(BaseAssistantTest):
         # The newest reply: a real site's Administrator DM may already hold older ones.
         self.assertIn("Hi there", self._bot_replies(dm)[-1].text)
 
+    def test_a_mention_in_a_dm_between_two_people_is_answered_in_a_thread(self):
+        # Live: a DM holds exactly two people and Raven cannot add a third, so "add FAC Bot to this
+        # channel" was impossible advice there.
+        from raven.api.raven_channel import create_direct_message_channel
+
+        frappe.set_user(self.avery)
+        dm = create_direct_message_channel(self.rohan)
+        frappe.set_user("Administrator")
+        msg = self._post(self.avery, dm, self._mention("summarise our open tickets"))
+        with patch(GATE, return_value=SEATED):
+            self._run(msg, "mention")
+        self.assertEqual(len(self.cloud.calls), 1)
+        self.assertIn("Hi there", self._bot_replies(msg)[-1].text)  # in the thread on that message
+        self.assertIn("everyone in it can read", self.cloud.calls[0]["system_prompt_addendum"])
+
     def test_the_switched_off_bot_says_so(self):
         frappe.db.set_single_value("FAC Chat Settings", "enable_raven_bot", 0)
         bot.clear_state_cache()
