@@ -104,10 +104,13 @@
 				<h3 class="section-title danger-title">Danger Zone</h3>
 				<div class="danger-item">
 					<div class="danger-info">
-						<label class="setting-label">Clear all memories</label>
+						<label class="setting-label">{{ __("Clear all memories") }}</label>
 						<p class="setting-description">
-							Permanently remove all stored memories. The AI will no longer have
-							personalized context about you.
+							{{
+								__(
+									"Permanently remove all memories outside projects. Project memories are kept with their projects."
+								)
+							}}
 						</p>
 					</div>
 					<button v-if="!showClearAllConfirm" class="danger-btn" @click="openClearAll">
@@ -146,6 +149,7 @@ import { useSharedKnowledge } from "@/composables/useSharedKnowledge";
 import { useMemoryNarrative } from "@/composables/useMemoryNarrative";
 import { useMemorySummary } from "@/composables/useMemorySummary";
 import { useUserStore } from "@/stores/userStore";
+import { __ } from "@/utils/i18n";
 import MemoryNarrative from "./MemoryNarrative.vue";
 import MemorySummary from "./MemorySummary.vue";
 

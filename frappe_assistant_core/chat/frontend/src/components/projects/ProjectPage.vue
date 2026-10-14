@@ -55,6 +55,8 @@
 
 			<ProjectDocuments v-if="projectDocsEnabled" :project-id="projectId" />
 
+			<ProjectMemory v-if="projectMemoryEnabled" :project-id="projectId" />
+
 			<div class="chats-header">
 				<h2 class="chats-title">{{ __("Chats") }}</h2>
 				<button class="primary-btn" data-test="new-project-chat" @click="newChat">
@@ -105,6 +107,7 @@ import { storeToRefs } from "pinia";
 import ChatRow from "@/components/layout/ChatRow.vue";
 import ConfirmModal from "@/components/common/ConfirmModal.vue";
 import ProjectDocuments from "@/components/projects/ProjectDocuments.vue";
+import ProjectMemory from "@/components/projects/ProjectMemory.vue";
 import ProjectInstructions from "@/components/projects/ProjectInstructions.vue";
 import { api } from "@/api/client";
 import { useChatStore } from "@/stores/chatStore";
@@ -113,6 +116,7 @@ import { useProjectsStore } from "@/stores/projectsStore";
 import { useUserStore } from "@/stores/userStore";
 import { useToast } from "@/composables/useToast";
 import { useInlineTitleEdit, TITLE_MAX_LENGTH } from "@/composables/useInlineTitleEdit";
+import { projectDeleteMessage } from "@/utils/projectDeleteMessage";
 import { __ } from "@/utils/i18n";
 
 const PROJECT_CHATS_LIMIT = 100;
@@ -144,10 +148,13 @@ const projectDocsCapable = computed(() => userStore.capabilities?.features?.proj
 const projectDocsEnabled = computed(
 	() => projectDocsCapable.value && userStore.capabilities?.features?.rag === true
 );
+// Same reason as documents: delete clears project memories whenever the capability is on.
+const projectMemoryCapable = computed(() => userStore.capabilities?.features?.project_memory === true);
+const projectMemoryEnabled = computed(
+	() => projectMemoryCapable.value && userStore.capabilities?.features?.memory === true
+);
 const deleteMessage = computed(() =>
-	projectDocsCapable.value
-		? __("Delete this project? Its chats are kept and its documents move to your Knowledge Base as private documents.")
-		: __("Delete this project? Its chats are kept and moved out of the project.")
+	projectDeleteMessage({ documents: projectDocsCapable.value, memory: projectMemoryCapable.value })
 );
 
 const project = computed(() => projects.value.find((p) => p.name === props.projectId) || null);

@@ -1,11 +1,12 @@
 import { baseCall, getCall } from "../_core";
 
 export const memories = {
-	list: (memoryType = null, limit = 50, offset = 0) =>
+	list: (memoryType = null, limit = 50, offset = 0, project = null) =>
 		getCall("frappe_assistant_core.chat.api.list_memories", {
 			memory_type: memoryType,
 			limit,
 			offset,
+			...(project ? { project } : {}),
 		}),
 
 	delete: (memoryId) =>
@@ -17,6 +18,11 @@ export const memories = {
 		baseCall("frappe_assistant_core.chat.api.update_memory", {
 			memory_id: memoryId,
 			content,
+		}),
+
+	clearProject: (project) =>
+		baseCall("frappe_assistant_core.chat.api.memories.clear_project_memories", {
+			project,
 		}),
 
 	deleteAll: () =>

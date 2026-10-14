@@ -7,9 +7,11 @@ const createSession = vi.fn();
 const projectsList = vi.fn();
 const projectsUpdate = vi.fn();
 const documentsList = vi.fn();
+const memoriesList = vi.fn();
 vi.mock("@/api/client", () => ({
 	api: {
 		chat: { getSessions: (...a) => getSessions(...a), createSession: (...a) => createSession(...a) },
+		memories: { list: (...a) => memoriesList(...a) },
 		documents: { list: (...a) => documentsList(...a), getDownloadUrl: () => "#" },
 		projects: { list: (...a) => projectsList(...a), update: (...a) => projectsUpdate(...a) },
 	},
@@ -28,13 +30,14 @@ beforeAll(() => {
 
 const stubs = { RouterLink: { template: "<a><slot/></a>" }, ConfirmModal: true };
 
-async function mountPage(projectId = "p1", { projectDocuments, rag = true } = {}) {
+async function mountPage(projectId = "p1", { projectDocuments, rag = true, features = null } = {}) {
 	const pinia = createPinia();
 	setActivePinia(pinia);
 	// The flag reaches the store from api.capabilities.get() at boot (userStore.loadCapabilities).
 	if (projectDocuments !== undefined) {
 		useUserStore().capabilities = { features: { project_documents: projectDocuments, rag } };
 	}
+	if (features) useUserStore().capabilities = { features };
 	const w = mount(ProjectPage, { props: { projectId }, global: { plugins: [pinia], stubs } });
 	return w;
 }
@@ -43,6 +46,7 @@ beforeEach(() => {
 	vi.clearAllMocks();
 	getSessions.mockResolvedValue([]);
 	documentsList.mockResolvedValue({ documents: [] });
+	memoriesList.mockResolvedValue({ memories: [] });
 });
 
 describe("ProjectPage", () => {
@@ -138,6 +142,41 @@ describe("ProjectPage", () => {
 			expect(documentsList).toHaveBeenCalledWith({ project: "p1" });
 			expect(w.findComponent("[data-test=delete-project-modal]").props("message")).toContain(
 				"its documents move to your Knowledge Base"
+			);
+		});
+	});
+
+	describe("project memory", () => {
+		beforeEach(() => {
+			projectsList.mockResolvedValue([{ name: "p1", title: "Q3 Close", instructions: "" }]);
+		});
+
+		it.each([
+			["memory only", { memory: true }],
+			["project_memory only", { project_memory: true }],
+			["memory true, project_memory false", { memory: true, project_memory: false }],
+			["memory false, project_memory true", { memory: false, project_memory: true }],
+			["project_memory truthy but not true", { memory: true, project_memory: "yes" }],
+			["memory truthy but not true", { memory: 1, project_memory: true }],
+		])("does not render the block: %s", async (_label, features) => {
+			const w = await mountPage("p1", { features });
+			await flushPromises();
+			expect(w.find("[data-test=project-memory]").exists()).toBe(false);
+			expect(memoriesList).not.toHaveBeenCalled();
+		});
+
+		it("renders the block when both flags are true", async () => {
+			const w = await mountPage("p1", { features: { memory: true, project_memory: true } });
+			await flushPromises();
+			expect(w.find("[data-test=project-memory]").exists()).toBe(true);
+			expect(memoriesList).toHaveBeenCalledWith(null, 200, 0, "p1");
+		});
+
+		it("names the memory deletion on the delete confirmation", async () => {
+			const w = await mountPage("p1", { features: { project_memory: true } });
+			await flushPromises();
+			expect(w.findComponent("[data-test=delete-project-modal]").props("message")).toBe(
+				"Delete this project? Its chats are kept and its memories are deleted."
 			);
 		});
 	});
