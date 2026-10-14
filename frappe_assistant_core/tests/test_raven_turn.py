@@ -364,6 +364,22 @@ class TestRavenTurn(BaseAssistantTest):
         self.assertEqual(self.cloud.calls, [])
         self.assertIn(str(formatting.STILL_WORKING), self._bot_replies(dm)[0].text)
 
+    def test_administrators_own_message_gets_an_answer(self):
+        # Live: Administrator's DMs to FAC Bot got no answer at all.
+        dm = self.raven_bot.create_direct_message_channel("Administrator")
+        msg = frappe.get_doc(
+            {"doctype": "Raven Message", "channel_id": dm, "message_type": "Text", "text": "<p>Hi</p>"}
+        ).insert()
+        from frappe_assistant_core.integrations.raven import turn
+
+        with patch(GATE, return_value=SEATED):
+            # The trigger saw this typed in Administrator's own request (typed_by_person).
+            turn.run(msg.name, "dm", typed_by_person=True)
+        frappe.set_user("Administrator")
+        self.assertEqual(len(self.cloud.calls), 1)
+        # The newest reply: a real site's Administrator DM may already hold older ones.
+        self.assertIn("Hi there", self._bot_replies(dm)[-1].text)
+
     def test_the_switched_off_bot_says_so(self):
         frappe.db.set_single_value("FAC Chat Settings", "enable_raven_bot", 0)
         bot.clear_state_cache()

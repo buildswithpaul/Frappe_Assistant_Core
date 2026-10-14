@@ -41,7 +41,7 @@ def addressed(doc) -> Literal["dm", "mention"] | None:
         return None
     if doc.is_bot_message or doc.message_type not in ANSWERED_TYPES:
         return None
-    if doc.owner in ("Administrator", "Guest"):
+    if doc.owner == "Guest" or (doc.owner == "Administrator" and not _typed_by_administrator()):
         return None
     if bot.state() == "absent":
         return None
@@ -51,6 +51,16 @@ def addressed(doc) -> Literal["dm", "mention"] | None:
     if channel.is_direct_message and bot.BOT_NAME in (channel.dm_user_1, channel.dm_user_2):
         return "dm"
     return None
+
+
+def _typed_by_administrator() -> bool:
+    """Administrator typing in Raven, as opposed to server code that inserts as Administrator.
+
+    A person's message arrives in their own logged-in HTTP request; background jobs and the scheduler
+    insert with no request behind them. Running those as Administrator would let text nobody typed act
+    with Administrator's rights.
+    """
+    return getattr(frappe.local, "request", None) is not None and frappe.session.user == "Administrator"
 
 
 def _enqueue(doc, kind: str) -> None:
@@ -65,6 +75,8 @@ def _enqueue(doc, kind: str) -> None:
             enqueue_after_commit=True,
             message_id=doc.name,
             kind=kind,
+            # Decided here, in the request that inserted the message; the job cannot tell.
+            typed_by_person=True,
         )
     except RedisConnectionError:
         frappe.logger("fac_raven").warning(f"Redis is down; FAC Bot skipped message {doc.name}")

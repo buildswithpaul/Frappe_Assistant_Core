@@ -112,6 +112,19 @@ class TestTriggerEnqueue(BaseAssistantTest):
             triggers.on_insert(message(name=f"m{i}", owner=owner, mentions=mention_of_bot()))
         self.assertEqual(self.enqueue.call_count, triggers.TURNS_PER_MINUTE)
 
+    def test_administrator_typing_in_raven_reaches_fac_bot(self):
+        # Production: Raven's send_message is an HTTP request made by the logged-in Administrator.
+        frappe.local.request = object()
+        self.addCleanup(setattr, frappe.local, "request", None)
+        triggers.on_insert(message(name="m-admin", owner="Administrator", mentions=mention_of_bot()))
+        self.assertTrue(self.enqueue.call_args.kwargs["typed_by_person"])
+
+    def test_a_message_inserted_as_administrator_outside_a_request_is_ignored(self):
+        # Background jobs and the scheduler insert as Administrator with no request behind them.
+        frappe.local.request = None
+        triggers.on_insert(message(name="m-job", owner="Administrator", mentions=mention_of_bot()))
+        self.enqueue.assert_not_called()
+
     def test_editing_a_message_never_starts_a_second_turn(self):
         msg = message(mentions=mention_of_bot())
         msg.is_new = lambda: False

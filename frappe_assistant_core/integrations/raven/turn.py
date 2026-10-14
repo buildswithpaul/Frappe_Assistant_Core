@@ -41,9 +41,9 @@ CHANNEL_LINE = _lt(
 )
 
 
-def run(message_id: str, kind: str) -> None:
+def run(message_id: str, kind: str, typed_by_person: bool = False) -> None:
     msg = frappe.get_doc("Raven Message", message_id)
-    if not _is_person(msg.owner) or not _claim_batch(msg):
+    if not _is_person(msg.owner, typed_by_person) or not _claim_batch(msg):
         return
     frappe.set_user(msg.owner)  # nosemgrep: frappe-setuser — the turn runs as, and bills, the asker
     raven_bot = frappe.get_doc("Raven Bot", bot.BOT_NAME)
@@ -72,11 +72,11 @@ def run(message_id: str, kind: str) -> None:
         lock.release()
 
 
-def _is_person(user: str) -> bool:
-    """Only a person's own words start a turn. Server code (document notifications, imports) inserts
-    messages as Administrator; running those as their owner would let text nobody typed act with
-    Administrator's rights."""
-    if user in ("Administrator", "Guest"):
+def _is_person(user: str, typed_by_person: bool = False) -> bool:
+    """Only a person's own words start a turn. Server code (jobs, the scheduler) inserts messages as
+    Administrator; running those as their owner would let text nobody typed act with Administrator's
+    rights. Administrator's own messages count when the trigger saw them typed in a request."""
+    if user == "Guest" or (user == "Administrator" and not typed_by_person):
         return False
     return bool(frappe.db.exists("Raven User", {"user": user, "type": "User", "enabled": 1}))
 
