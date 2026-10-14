@@ -129,7 +129,9 @@ def _delete_project_memories(project: str) -> None:
     try:
         if not client:
             raise RuntimeError("not connected")
-        client.delete_project_memories(user_id=_ar_user_id(frappe.session.user), project_id=project)
+        client.delete_project_memories(
+            user_id=_ar_user_id(frappe.session.user), project_id=project, project_deleted=True
+        )
     except Exception:
         frappe.log_error(title="FAC project memories delete failed", message=frappe.get_traceback())
         frappe.throw(_("Couldn't delete this project's memories; try again"))

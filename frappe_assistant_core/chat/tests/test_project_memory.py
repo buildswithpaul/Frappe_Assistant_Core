@@ -95,6 +95,7 @@ class TestClearProjectMemories(_Base):
         self.client.delete_project_memories.return_value = {"status": "deleted", "count": 2}
         result = memories.clear_project_memories(self.project)
         self.assertEqual(result, {"status": "deleted", "count": 2})
+        # A live project keeps learning after a clear, so AR must not tombstone it.
         self.client.delete_project_memories.assert_called_once_with(
             user_id=self.ar_user, project_id=self.project
         )
@@ -129,6 +130,12 @@ class TestDeleteProject(_Base):
             [("unlink", self.project), ("memories", self.ar_user, self.project)],
         )
         self.assertFalse(frappe.db.exists("FAC Chat Project", self.project))
+
+    def test_project_delete_tells_ar_the_project_is_gone(self):
+        projects.delete_project(self.project)
+        self.client.delete_project_memories.assert_called_once_with(
+            user_id=self.ar_user, project_id=self.project, project_deleted=True
+        )
 
     def test_delete_refused_when_memory_delete_fails(self):
         self.client.delete_project_memories.side_effect = Exception("down")
