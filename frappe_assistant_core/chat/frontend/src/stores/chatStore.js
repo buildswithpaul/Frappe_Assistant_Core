@@ -102,6 +102,9 @@ export const useChatStore = defineStore("chat", () => {
 	// or a continued archived chat). Once the row exists its own project wins. Keyed by
 	// session so it can never leak onto another chat.
 	const pendingProject = ref(null);
+	// Text typed into a project page's chat box, held until ChatView has loaded the new
+	// chat and can send it as the first turn. Keyed by session for the same reason.
+	const firstMessage = ref(null);
 
 	// Request-scoped identity to prevent duplicate message bubbles on disconnect/reconnect
 	const streamRequestId = ref(null);
@@ -131,6 +134,17 @@ export const useChatStore = defineStore("chat", () => {
 
 	function setPendingProject(sessionId, projectId) {
 		pendingProject.value = sessionId && projectId ? { sessionId, projectId } : null;
+	}
+
+	function queueFirstMessage(sessionId, text) {
+		firstMessage.value = { sessionId, text };
+	}
+
+	function takeFirstMessage(sessionId) {
+		if (firstMessage.value?.sessionId !== sessionId) return null;
+		const { text } = firstMessage.value;
+		firstMessage.value = null;
+		return text;
 	}
 
 	const currentProjectId = computed(() =>
@@ -1123,6 +1137,8 @@ export const useChatStore = defineStore("chat", () => {
 		isLoadingMoreSessions,
 		pendingProject,
 		setPendingProject,
+		queueFirstMessage,
+		takeFirstMessage,
 		currentProjectId,
 		loadMoreSessions,
 		patchSession,

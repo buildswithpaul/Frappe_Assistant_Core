@@ -14,11 +14,18 @@ import { readHandoff } from "@/utils/sessionHandoff";
  * @param {object} stores - { chatStore, userStore, modelStore, suggestionStore }
  * @param {object} routing - { route, router }
  * @param {object} state - { registrationStatus, isUserSetupComplete }
+ * @param {object} [hooks] - { onFirstMessage(text) } sends a project page's queued first message
  */
-export function useChatViewInit(stores, routing, state) {
+export function useChatViewInit(stores, routing, state, hooks = {}) {
 	const { chatStore, userStore, modelStore, suggestionStore } = stores;
 	const { route, router } = routing;
 	const { registrationStatus, isUserSetupComplete } = state;
+
+	// Only after loadMessages: it resets the transcript, which would drop a turn sent earlier.
+	async function sendFirstMessage(sessionId) {
+		const text = chatStore.takeFirstMessage(sessionId);
+		if (text) await hooks.onFirstMessage?.(text);
+	}
 
 	onMounted(async () => {
 		// User store already initialized in App.vue (single initialize_spa call)
@@ -57,6 +64,7 @@ export function useChatViewInit(stores, routing, state) {
 				// user can finish where they left off. Best-effort: the store
 				// action swallows errors so a failed hydrate doesn't break mount.
 				chatStore.hydratePendingInterrupt(route.params.sessionId);
+				await sendFirstMessage(route.params.sessionId);
 			}
 		}
 
@@ -77,6 +85,7 @@ export function useChatViewInit(stores, routing, state) {
 			if (newSessionId) {
 				await chatStore.loadMessages(newSessionId);
 				chatStore.hydratePendingInterrupt(newSessionId);
+				await sendFirstMessage(newSessionId);
 			}
 		}
 	);

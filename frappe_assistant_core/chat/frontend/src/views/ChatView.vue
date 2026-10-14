@@ -525,7 +525,8 @@ function handleRailReviewApproval(blockId) {
 useChatViewInit(
 	{ chatStore, userStore, modelStore, suggestionStore },
 	{ route, router },
-	{ registrationStatus, isUserSetupComplete }
+	{ registrationStatus, isUserSetupComplete },
+	{ onFirstMessage: (text) => handleSendMessage({ message: text, files: [] }) }
 );
 
 // Auto-scroll to bottom on new messages / streaming chunks
