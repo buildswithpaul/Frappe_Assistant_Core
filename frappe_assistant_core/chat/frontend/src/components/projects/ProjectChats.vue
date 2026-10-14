@@ -1,5 +1,5 @@
 <template>
-	<section class="project-chats" :aria-label="__('Chats')">
+	<section class="project-chats" :aria-label="__('Project chats')">
 		<div class="composer">
 			<textarea
 				ref="inputRef"

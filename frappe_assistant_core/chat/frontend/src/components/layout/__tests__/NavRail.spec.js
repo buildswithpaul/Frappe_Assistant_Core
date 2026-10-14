@@ -17,7 +17,7 @@ async function mountRail({ path = "/chat", props = {}, user = {} } = {}) {
 	Object.assign(useUserStore(), { memoryEnabled: true, workflowsEnabled: true, isAdmin: true, ...user });
 	const router = createRouter({
 		history: createMemoryHistory(),
-		routes: ["/", "/chat", "/chat/:id", "/knowledge", "/agents", "/analytics", "/settings"].map((p) => ({
+		routes: ["/", "/chat", "/chat/:id", "/chat/project/:projectId", "/knowledge", "/agents", "/analytics", "/settings"].map((p) => ({
 			path: p,
 			component: Blank,
 		})),
@@ -25,10 +25,11 @@ async function mountRail({ path = "/chat", props = {}, user = {} } = {}) {
 	router.push(path);
 	await router.isReady();
 	const wrapper = mount(NavRail, {
-		props: { activeSessionId: null, panelCollapsed: false, ...props },
+		props: { panelCollapsed: false, ...props },
 		global: { plugins: [pinia, router], stubs: { FacoRobot: true, UserDropdown: { template: "<div data-test='user-menu' />" } } },
 	});
 	await flushPromises();
+	wrapper.router = router;
 	return wrapper;
 }
 
@@ -75,6 +76,21 @@ describe("NavRail", () => {
 		const w = await mountRail({ props: { panelCollapsed: true } });
 		await item(w, "chat").trigger("click");
 		expect(w.emitted("toggle-sidebar")).toHaveLength(1);
+	});
+
+	it("reopening the collapsed panel keeps the current chat or project page", async () => {
+		const w = await mountRail({ path: "/chat/project/p1", props: { panelCollapsed: true } });
+		await item(w, "chat").trigger("click");
+		await flushPromises();
+		expect(w.emitted("toggle-sidebar")).toHaveLength(1);
+		expect(w.router.currentRoute.value.fullPath).toBe("/chat/project/p1");
+	});
+
+	it("Chat navigates to /chat from another area even when the panel is collapsed", async () => {
+		const w = await mountRail({ path: "/knowledge", props: { panelCollapsed: true } });
+		await item(w, "chat").trigger("click");
+		await flushPromises();
+		expect(w.router.currentRoute.value.fullPath).toBe("/chat");
 	});
 
 	it("clicking Chat with the panel open does not toggle it", async () => {

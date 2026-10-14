@@ -1,4 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
+import { readFileSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { mount } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
 import UserDropdown from "../UserDropdown.vue";
@@ -65,5 +68,26 @@ describe("UserDropdown — Docs link", () => {
 		await docs.trigger("click");
 
 		expect(wrapper.find(".user-dropdown-menu").exists()).toBe(false);
+	});
+});
+
+// jsdom injects no scoped CSS, so the guard is on the source text.
+describe("UserDropdown semantics", () => {
+	beforeEach(() => setActivePinia(createPinia()));
+
+	it("does not claim menu roles it has no keyboard support for", async () => {
+		const wrapper = openMenu();
+		await wrapper.vm.$nextTick();
+		expect(wrapper.find('[role="menu"]').exists()).toBe(false);
+		expect(wrapper.find("[data-test=user-avatar]").attributes("aria-haspopup")).toBeUndefined();
+		expect(wrapper.find("[data-test=user-avatar]").attributes("aria-expanded")).toBe("true");
+	});
+});
+
+describe("UserDropdown styles", () => {
+	it("keeps the outstanding dot's offsets off the avatar button", () => {
+		const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../UserDropdown.vue"), "utf8");
+		const rule = src.match(/([^{}]*)\.due-dot\s*\{/);
+		expect(rule[1]).not.toMatch(/\.user-avatar\s*,\s*$/);
 	});
 });

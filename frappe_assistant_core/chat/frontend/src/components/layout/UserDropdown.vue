@@ -6,7 +6,6 @@
 			data-test="user-avatar"
 			:aria-label="__('Account menu')"
 			:title="userEmail"
-			aria-haspopup="menu"
 			:aria-expanded="isUserMenuOpen"
 			@click="toggleUserMenu"
 		>
@@ -15,7 +14,7 @@
 		</button>
 
 		<!-- User Dropdown Menu -->
-		<div v-if="isUserMenuOpen" class="user-dropdown-menu" role="menu">
+		<div v-if="isUserMenuOpen" class="user-dropdown-menu">
 			<div class="dropdown-header">
 				<div class="dropdown-user-name">{{ userName }}</div>
 				<div class="dropdown-user-email">{{ userEmail }}</div>
@@ -175,8 +174,6 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.user-avatar,
-
 .due-dot {
 	position: absolute;
 	top: -2px;

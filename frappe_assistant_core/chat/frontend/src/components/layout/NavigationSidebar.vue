@@ -8,7 +8,7 @@
 		@click="layout.closeDrawer()"
 	></div>
 
-	<aside class="navigation-sidebar" :class="{ 'drawer-open': layout.drawerOpen }">
+	<aside class="navigation-sidebar" :class="{ 'drawer-open': layout.drawerOpen, 'has-panel': showPanel }">
 		<NavRail
 			:panel-collapsed="collapsed"
 			@return-to-desk="returnToDesk"
@@ -17,7 +17,7 @@
 		/>
 
 		<ChatPanel
-			v-if="isChatRoute && (!collapsed || layout.drawerOpen)"
+			v-if="showPanel"
 			:sessions="sessions"
 			:archived-sessions="archivedSessions"
 			:active-session-id="activeSessionId"
@@ -108,6 +108,8 @@ onBeforeUnmount(() => {
 });
 
 const isChatRoute = computed(() => route.path.startsWith("/chat") || route.path === "/");
+// The open drawer always shows the panel; collapse is a desktop-only choice.
+const showPanel = computed(() => isChatRoute.value && (!props.collapsed || layout.drawerOpen));
 
 function returnToDesk() {
 	// Store current session for the widget on the desk to pick up.
@@ -147,11 +149,15 @@ function returnToDesk() {
 		top: 0;
 		left: 0;
 		z-index: 50;
-		width: min(320px, 88vw);
+		/* Rail only on non-chat routes; rail + panel where there are chats to list. */
+		width: auto;
 		/* Same unit when closed and open — % → px does not interpolate, so
 		   the drawer could stay translated off-screen after hamburger. */
 		transform: translateX(-100%);
 		transition: transform 0.25s ease;
+	}
+	.navigation-sidebar.has-panel {
+		width: min(320px, 88vw);
 	}
 	.navigation-sidebar :deep(.chat-panel) {
 		flex: 1;

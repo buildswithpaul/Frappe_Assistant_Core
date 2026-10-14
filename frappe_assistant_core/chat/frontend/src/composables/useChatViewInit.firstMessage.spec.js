@@ -6,7 +6,12 @@ import { useChatViewInit } from "./useChatViewInit";
 function setup() {
 	const calls = [];
 	const chatStore = {
-		loadMessages: vi.fn(async (id) => calls.push(`load:${id}`)),
+		currentSessionId: null,
+		// The real loadMessages makes the session current before fetching it.
+		loadMessages: vi.fn(async (id) => {
+			chatStore.currentSessionId = id;
+			calls.push(`load:${id}`);
+		}),
 		hydratePendingInterrupt: vi.fn(),
 		takeFirstMessage: vi.fn((id) => (id === "s1" ? "hello" : null)),
 		loadSessions: vi.fn(),
@@ -43,6 +48,49 @@ describe("useChatViewInit first message", () => {
 		const { route, onFirstMessage } = setup();
 		route.params.sessionId = "s2";
 		await nextTick();
+		await flushPromises();
+		expect(onFirstMessage).not.toHaveBeenCalled();
+	});
+
+	it("does not send into another chat when the user moves on before the new chat loads", async () => {
+		const pending = {};
+		const calls = [];
+		const chatStore = {
+			currentSessionId: null,
+			loadMessages: vi.fn(
+				(id) =>
+					new Promise((resolve) => {
+						pending[id] = () => {
+							chatStore.currentSessionId = id;
+							resolve();
+						};
+					})
+			),
+			hydratePendingInterrupt: vi.fn(),
+			takeFirstMessage: vi.fn((id) => (id === "s9" ? "hello" : null)),
+		};
+		const route = reactive({ params: {}, query: {} });
+		const onFirstMessage = vi.fn(async (text) => calls.push(`send:${text}@${chatStore.currentSessionId}`));
+		mount(
+			defineComponent({
+				setup() {
+					useChatViewInit(
+						{ chatStore, userStore: {}, modelStore: {}, suggestionStore: {} },
+						{ route, router: { push: vi.fn() } },
+						{ registrationStatus: ref("pending"), isUserSetupComplete: ref(false) },
+						{ onFirstMessage }
+					);
+					return () => null;
+				},
+			})
+		);
+		route.params.sessionId = "s9";
+		await nextTick();
+		route.params.sessionId = "s2";
+		await nextTick();
+		pending.s2();
+		await flushPromises();
+		pending.s9();
 		await flushPromises();
 		expect(onFirstMessage).not.toHaveBeenCalled();
 	});

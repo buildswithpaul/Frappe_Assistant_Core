@@ -243,8 +243,6 @@ const groupedSessions = computed(() => {
 	letter-spacing: 0.05em;
 }
 
-
-
 .conversations-list {
 	flex: 1;
 	overflow-y: auto;

@@ -55,6 +55,7 @@
 						v-if="showProject && session.project_title"
 						class="project-dot"
 						data-test="project-dot"
+						role="img"
 						:title="session.project_title"
 						:aria-label="session.project_title"
 					/>
@@ -269,7 +270,6 @@ function onArchive() {
 	color: var(--ql-text-muted);
 	margin-top: 0.125rem;
 }
-
 
 .rename-input {
 	width: 100%;

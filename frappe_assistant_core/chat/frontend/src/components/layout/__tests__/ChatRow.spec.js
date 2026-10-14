@@ -159,6 +159,8 @@ describe("ChatRow", () => {
 		expect(dot.exists()).toBe(true);
 		expect(dot.attributes("title")).toBe("Q3 Close");
 		expect(dot.attributes("aria-label")).toBe("Q3 Close");
+		// aria-label on a bare span is not exposed; role="img" makes the name announced.
+		expect(dot.attributes("role")).toBe("img");
 	});
 
 	it("shows no dot for a chat outside a project", () => {

@@ -64,4 +64,11 @@ describe("NavigationSidebar shell", () => {
 		await go("/chat/s1");
 		expect(w.findComponent(ChatPanelStub).vm).toBe(before);
 	});
+
+	it("sizes the drawer to the rail when there is no panel to show", async () => {
+		const w = mount(NavigationSidebar, { global: { stubs } });
+		expect(w.find("aside").classes()).toContain("has-panel");
+		await go("/knowledge");
+		expect(w.find("aside").classes()).not.toContain("has-panel");
+	});
 });

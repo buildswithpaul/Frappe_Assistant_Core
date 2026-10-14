@@ -148,7 +148,7 @@ function cancel() {
 
 .instructions-text.clamped {
 	display: -webkit-box;
-	-webkit-line-clamp: 6;
+	-webkit-line-clamp: v-bind(CLAMP_LINES);
 	-webkit-box-orient: vertical;
 	overflow: hidden;
 }

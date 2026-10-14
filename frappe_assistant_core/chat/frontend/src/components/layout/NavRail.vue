@@ -5,23 +5,25 @@
 		</router-link>
 
 		<div class="rail-group">
-			<router-link
-				to="/chat"
-				class="rail-item"
-				:class="{ active: isChatRoute }"
-				data-test="rail-chat"
-				:aria-label="__('Chat')"
-				:title="__('Chat')"
-				@click="onChatClick"
-			>
-				<svg class="rail-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-					<path
-						stroke-linecap="round"
-						stroke-linejoin="round"
-						stroke-width="2"
-						d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
-					/>
-				</svg>
+			<router-link v-slot="{ href, navigate }" to="/chat" custom>
+				<a
+					:href="href"
+					class="rail-item"
+					:class="{ active: isChatRoute }"
+					data-test="rail-chat"
+					:aria-label="__('Chat')"
+					:title="__('Chat')"
+					@click="onChatClick($event, navigate)"
+				>
+					<svg class="rail-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+						<path
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							stroke-width="2"
+							d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
+						/>
+					</svg>
+				</a>
 			</router-link>
 
 			<router-link
@@ -120,9 +122,15 @@ const { memoryEnabled, workflowsEnabled, isAdmin } = storeToRefs(useUserStore())
 
 const isChatRoute = computed(() => route.path.startsWith("/chat") || route.path === "/");
 
-// The rail's Chat item is the way back to a collapsed chat panel.
-function onChatClick() {
-	if (props.panelCollapsed) emit("toggle-sidebar");
+// On a chat route with the panel collapsed, Chat only reopens the panel: navigating to
+// /chat would drop the open chat or project page.
+function onChatClick(event, navigate) {
+	if (props.panelCollapsed && isChatRoute.value) {
+		event.preventDefault();
+		emit("toggle-sidebar");
+		return;
+	}
+	navigate(event);
 }
 </script>
 

@@ -22,7 +22,9 @@ export function useChatViewInit(stores, routing, state, hooks = {}) {
 	const { registrationStatus, isUserSetupComplete } = state;
 
 	// Only after loadMessages: it resets the transcript, which would drop a turn sent earlier.
+	// A load that finished after the user moved on must not send into the chat now open.
 	async function sendFirstMessage(sessionId) {
+		if (route.params.sessionId !== sessionId || chatStore.currentSessionId !== sessionId) return;
 		const text = chatStore.takeFirstMessage(sessionId);
 		if (text) await hooks.onFirstMessage?.(text);
 	}

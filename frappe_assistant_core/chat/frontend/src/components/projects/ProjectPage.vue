@@ -339,5 +339,4 @@ onBeforeUnmount(detachListeners);
 .menu-item.danger {
 	color: var(--ql-danger);
 }
-
 </style>
