@@ -35,4 +35,12 @@ describe("ConversationsList date groups", () => {
 		const [label] = labelsFor([{ session_id: "a", last_activity: "2026-05-16T10:00:00" }]);
 		expect(label).toBe("May 16");
 	});
+
+	it("renders no new-chat control in the Recents header", () => {
+		const w = mount(ConversationsList, {
+			props: { sessions: [], showNewChat: true },
+			global: { stubs: { ChatRow: true, ArchivedConversations: true } },
+		});
+		expect(w.find(".section-header button").exists()).toBe(false);
+	});
 });

@@ -80,19 +80,6 @@
 					</svg>
 				</button>
 
-				<!-- New Chat Button -->
-				<button @click="$emit('new-chat')" class="action-btn primary">
-					<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-						<path
-							stroke-linecap="round"
-							stroke-linejoin="round"
-							stroke-width="2"
-							d="M12 4v16m8-8H4"
-						/>
-					</svg>
-					<span class="btn-text">New Chat</span>
-				</button>
-
 				<!-- Custom actions slot -->
 				<slot name="actions"></slot>
 			</div>
@@ -146,7 +133,7 @@ const props = defineProps({
 	},
 });
 
-const emit = defineEmits(["toggle-sidebar", "new-chat", "rename"]);
+const emit = defineEmits(["toggle-sidebar", "rename"]);
 
 const { editing, draft, inputRef, start, commit, cancel } = useInlineTitleEdit(
 	() => (props.renameValue === null ? props.title : props.renameValue),
@@ -272,24 +259,5 @@ const { editing, draft, inputRef, start, commit, cancel } = useInlineTitleEdit(
 
 .action-btn:hover {
 	background-color: var(--ql-border-hover);
-}
-
-.action-btn.primary {
-	color: white;
-	background-color: var(--ql-accent);
-}
-
-.action-btn.primary:hover {
-	background-color: var(--ql-accent-hover);
-}
-
-.btn-text {
-	display: none;
-}
-
-@media (min-width: 640px) {
-	.btn-text {
-		display: inline;
-	}
 }
 </style>

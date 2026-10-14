@@ -2,22 +2,6 @@
 	<div class="conversations-section">
 		<div class="section-header">
 			<h3 class="section-title">{{ __("Recents") }}</h3>
-			<button
-				v-if="showNewChat"
-				@click="$emit('new-session')"
-				class="new-chat-btn"
-				title="New Chat"
-				aria-label="New chat"
-			>
-				<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-					<path
-						stroke-linecap="round"
-						stroke-linejoin="round"
-						stroke-width="2"
-						d="M12 4v16m8-8H4"
-					/>
-				</svg>
-			</button>
 		</div>
 
 		<div class="conversations-list">
@@ -117,10 +101,6 @@ const props = defineProps({
 		type: Boolean,
 		default: false,
 	},
-	showNewChat: {
-		type: Boolean,
-		default: true,
-	},
 	archivedSessions: {
 		type: Array,
 		default: () => [],
@@ -129,7 +109,6 @@ const props = defineProps({
 
 const emit = defineEmits([
 	"select-session",
-	"new-session",
 	"delete-session",
 	"continue-archived",
 	"load-archived",
@@ -264,20 +243,7 @@ const groupedSessions = computed(() => {
 	letter-spacing: 0.05em;
 }
 
-.new-chat-btn {
-	padding: 0.25rem;
-	color: var(--ql-text-muted);
-	border: none;
-	background: none;
-	border-radius: 0.375rem;
-	cursor: pointer;
-	transition: all 0.15s ease;
-}
 
-.new-chat-btn:hover {
-	color: var(--ql-text);
-	background-color: var(--ql-subtle);
-}
 
 .conversations-list {
 	flex: 1;

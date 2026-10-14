@@ -149,4 +149,48 @@ describe("ChatRow", () => {
 		await w.find("[data-test=menu-move]").trigger("click");
 		expect(w.find("[data-test=move-new]").exists()).toBe(false);
 	});
+
+	it("shows a dot titled with the project name for a project chat", () => {
+		const w = mount(ChatRow, {
+			props: { session: { ...session, project_title: "Q3 Close" }, projects },
+			global: { mocks: { __: (s) => s } },
+		});
+		const dot = w.find('[data-test="project-dot"]');
+		expect(dot.exists()).toBe(true);
+		expect(dot.attributes("title")).toBe("Q3 Close");
+		expect(dot.attributes("aria-label")).toBe("Q3 Close");
+	});
+
+	it("shows no dot for a chat outside a project", () => {
+		const w = mount(ChatRow, {
+			props: { session: { ...session, project: null, project_title: null }, projects },
+			global: { mocks: { __: (s) => s } },
+		});
+		expect(w.find('[data-test="project-dot"]').exists()).toBe(false);
+	});
+
+	it("showProject=false hides the dot", () => {
+		const w = mount(ChatRow, {
+			props: { session: { ...session, project_title: "Q3 Close" }, projects, showProject: false },
+			global: { mocks: { __: (s) => s } },
+		});
+		expect(w.find('[data-test="project-dot"]').exists()).toBe(false);
+	});
+
+	it("keeps the time out of the visible row and puts it in the title tooltip", () => {
+		const w = mount(ChatRow, {
+			props: { session: { ...session, last_activity: "2026-06-15 09:00:00" }, projects },
+			global: { mocks: { __: (s) => s } },
+		});
+		expect(w.find(".conversation-time").exists()).toBe(false);
+		expect(w.find('[data-test="chat-row"]').attributes("title")).toMatch(/^Overdue invoices · .+/);
+	});
+
+	it("showTime renders the time under the title", () => {
+		const w = mount(ChatRow, {
+			props: { session: { ...session, last_activity: "2026-06-15 09:00:00" }, projects, showTime: true },
+			global: { mocks: { __: (s) => s } },
+		});
+		expect(w.find(".conversation-time").exists()).toBe(true);
+	});
 });

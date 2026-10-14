@@ -95,4 +95,10 @@ describe("TopBar rename and breadcrumb", () => {
 		await w.find("[data-test=title-input]").trigger("blur");
 		expect(w.emitted("rename")).toBeUndefined();
 	});
+
+	it("has no New Chat button — the chat panel owns that control", () => {
+		const w = mountBar({ showActions: true });
+		const labels = w.findAll("button").map((b) => b.text().trim());
+		expect(labels).not.toContain("New Chat");
+	});
 });

@@ -30,7 +30,6 @@
 				@rename="renameCurrentChat"
 				:show-actions="registrationStatus === 'ready' && isUserSetupComplete"
 				@toggle-sidebar="sidebarCollapsed = !sidebarCollapsed"
-				@new-chat="handleNewChat"
 			/>
 
 			<ProjectPage v-if="route.params.projectId" :project-id="route.params.projectId" />

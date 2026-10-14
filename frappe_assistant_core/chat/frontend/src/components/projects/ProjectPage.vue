@@ -74,7 +74,8 @@
 					:session="chat"
 					:projects="projects"
 					:active="chat.session_id === currentSessionId"
-					:show-project-chip="false"
+					:show-project="false"
+					show-time
 					:allow-new-project="false"
 					:deleting="deletingId === chat.session_id"
 					@select="router.push('/chat/' + chat.session_id)"

@@ -3,6 +3,7 @@
 		ref="rootRef"
 		class="conversation-item"
 		data-test="chat-row"
+		:title="rowTitle"
 		:class="{ active, confirming, deleting }"
 		@click="!renaming && !confirming && $emit('select')"
 	>
@@ -50,14 +51,16 @@
 					@blur="commit"
 				/>
 				<div v-else class="conversation-title">
-					{{ session.title || session.preview || __("New conversation") }}
+					<span
+						v-if="showProject && session.project_title"
+						class="project-dot"
+						data-test="project-dot"
+						:title="session.project_title"
+						:aria-label="session.project_title"
+					/>
+					<span class="title-text">{{ displayTitle }}</span>
 				</div>
-				<div class="conversation-time">
-					<span v-if="showProjectChip && session.project_title" class="project-chip">
-						{{ session.project_title }}
-					</span>
-					{{ formatConversationTime(session.last_activity || session.modified) }}
-				</div>
+				<div v-if="showTime" class="conversation-time">{{ timeLabel }}</div>
 			</div>
 
 			<div v-if="deleting" class="delete-spinner">
@@ -94,7 +97,7 @@
 </template>
 
 <script setup>
-import { nextTick, onBeforeUnmount, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import ChatRowMenu from "./ChatRowMenu.vue";
 import { __ } from "@/utils/i18n";
 import { formatConversationTime } from "@/utils/formatConversationTime";
@@ -104,11 +107,16 @@ const props = defineProps({
 	active: { type: Boolean, default: false },
 	deleting: { type: Boolean, default: false },
 	projects: { type: Array, default: () => [] },
-	showProjectChip: { type: Boolean, default: true },
+	showProject: { type: Boolean, default: true },
+	showTime: { type: Boolean, default: false },
 	allowNewProject: { type: Boolean, default: true },
 });
 
 const emit = defineEmits(["select", "rename", "move", "new-project", "archive"]);
+
+const displayTitle = computed(() => props.session.title || props.session.preview || __("New conversation"));
+const timeLabel = computed(() => formatConversationTime(props.session.last_activity || props.session.modified));
+const rowTitle = computed(() => (timeLabel.value ? `${displayTitle.value} · ${timeLabel.value}` : displayTitle.value));
 
 const rootRef = ref(null);
 const inputRef = ref(null);
@@ -233,33 +241,35 @@ function onArchive() {
 }
 
 .conversation-title {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
 	font-size: 0.875rem;
 	font-weight: 500;
 	color: var(--ql-text);
+}
+
+.title-text {
+	min-width: 0;
 	white-space: nowrap;
 	overflow: hidden;
 	text-overflow: ellipsis;
 }
 
+.project-dot {
+	width: 6px;
+	height: 6px;
+	border-radius: 50%;
+	background-color: var(--ql-accent);
+	flex: none;
+}
+
 .conversation-time {
-	display: flex;
-	align-items: center;
-	gap: 0.375rem;
 	font-size: 0.75rem;
 	color: var(--ql-text-muted);
 	margin-top: 0.125rem;
 }
 
-.project-chip {
-	max-width: 8rem;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
-	padding: 0 0.375rem;
-	border-radius: 0.25rem;
-	background-color: var(--ql-accent-soft);
-	color: var(--ql-accent);
-}
 
 .rename-input {
 	width: 100%;
