@@ -3,7 +3,7 @@
 		<header class="memory-header">
 			<h2 class="memory-title">{{ __("Memory") }}</h2>
 			<button
-				v-if="memories.length"
+				v-if="memories.length && !loadFailed"
 				class="clear-btn"
 				data-test="memory-clear"
 				@click="confirmingClear = true"
@@ -115,11 +115,12 @@ watch(
 	{ immediate: true }
 );
 
-async function updateMemory({ memoryId, content }) {
+async function updateMemory({ memoryId, content, onSaved }) {
 	try {
 		await api.memories.update(memoryId, content);
 		const memory = memories.value.find((m) => m.memory_id === memoryId);
 		if (memory) memory.content = content;
+		onSaved();
 	} catch (err) {
 		notifyFailure(err);
 	}

@@ -52,6 +52,9 @@ def list_memories(
 
     except Exception as e:
         frappe.log_error(title="FACO Memories", message=f"Error listing memories: {e!s}")
+        if project:
+            # An empty list would read as "nothing remembered"; the project page offers Retry.
+            frappe.throw(_("Couldn't load this project's memories; try again"))
         return {"memories": [], "pagination": {"total": 0}}
 
 

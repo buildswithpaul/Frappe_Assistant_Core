@@ -7,8 +7,9 @@
 				class="edit-textarea"
 				rows="2"
 				maxlength="500"
+				:aria-label="__('Memory text')"
 				data-test="memory-edit-input"
-				@keydown.enter.prevent="save"
+				@keydown.enter="onEnter"
 				@keydown.esc="cancel"
 			/>
 			<div class="actions">
@@ -25,8 +26,15 @@
 		</div>
 		<template v-else>
 			<span class="content" data-test="memory-content">{{ memory.content }}</span>
-			<button class="text-btn" data-test="memory-edit" @click="start">{{ __("Edit") }}</button>
-			<button class="text-btn danger" data-test="memory-delete" @click="$emit('delete')">
+			<button class="text-btn" :aria-label="__('Edit memory')" data-test="memory-edit" @click="start">
+				{{ __("Edit") }}
+			</button>
+			<button
+				class="text-btn danger"
+				:aria-label="__('Delete memory')"
+				data-test="memory-delete"
+				@click="$emit('delete')"
+			>
 				{{ __("Delete") }}
 			</button>
 		</template>
@@ -67,10 +75,22 @@ function cancel() {
 	editing.value = false;
 }
 
+function onEnter(event) {
+	// Enter that confirms an IME composition belongs to the composition, not to Save.
+	if (event.isComposing) return;
+	event.preventDefault();
+	save();
+}
+
+// The editor closes only once the parent reports the save landed, so a failed
+// save keeps the draft.
 function save() {
 	if (!canSave.value) return;
-	emit("edit", { memoryId: props.memory.memory_id, content: draft.value.trim() });
-	editing.value = false;
+	emit("edit", {
+		memoryId: props.memory.memory_id,
+		content: draft.value.trim(),
+		onSaved: () => (editing.value = false),
+	});
 }
 </script>
 

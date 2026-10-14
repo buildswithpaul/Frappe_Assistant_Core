@@ -88,6 +88,44 @@ describe("ProjectMemory", () => {
 		expect(w.get("[data-test=memory-content]").text()).toBe("new text");
 	});
 
+	it("keeps the editor and the draft open when a save fails", async () => {
+		list.mockResolvedValue({ memories: [memory("a")] });
+		update.mockRejectedValue(new Error("nope"));
+		const w = mountBlock();
+		await flushPromises();
+		await w.get("[data-test=memory-edit]").trigger("click");
+		await w.get("[data-test=memory-edit-input]").setValue("new text");
+		await w.get("[data-test=memory-edit-save]").trigger("click");
+		await flushPromises();
+		expect(showError).toHaveBeenCalledWith("nope");
+		expect(w.get("[data-test=memory-edit-input]").element.value).toBe("new text");
+	});
+
+	it("does not save on the Enter that ends an IME composition", async () => {
+		list.mockResolvedValue({ memories: [memory("a")] });
+		update.mockResolvedValue({});
+		const w = mountBlock();
+		await flushPromises();
+		await w.get("[data-test=memory-edit]").trigger("click");
+		const input = w.get("[data-test=memory-edit-input]");
+		await input.setValue("新しい");
+		await input.trigger("keydown", { key: "Enter", isComposing: true });
+		expect(update).not.toHaveBeenCalled();
+		await input.trigger("keydown", { key: "Enter" });
+		await flushPromises();
+		expect(update).toHaveBeenCalledWith("a", "新しい");
+	});
+
+	it("labels the row controls for assistive tech", async () => {
+		list.mockResolvedValue({ memories: [memory("a")] });
+		const w = mountBlock();
+		await flushPromises();
+		expect(w.get("[data-test=memory-edit]").attributes("aria-label")).toBe("Edit memory");
+		expect(w.get("[data-test=memory-delete]").attributes("aria-label")).toBe("Delete memory");
+		await w.get("[data-test=memory-edit]").trigger("click");
+		expect(w.get("[data-test=memory-edit-input]").attributes("aria-label")).toBe("Memory text");
+	});
+
 	it("deletes one memory only after confirmation", async () => {
 		list.mockResolvedValue({ memories: [memory("a"), memory("b")] });
 		remove.mockResolvedValue({});
@@ -131,6 +169,7 @@ describe("ProjectMemory", () => {
 		const w = mountBlock();
 		await flushPromises();
 		expect(w.find("[data-test=memory-error]").exists()).toBe(true);
+		expect(w.find("[data-test=memory-clear]").exists()).toBe(false);
 		list.mockResolvedValue({ memories: [memory("a")] });
 		await w.get("[data-test=memory-retry]").trigger("click");
 		await flushPromises();

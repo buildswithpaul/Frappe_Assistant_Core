@@ -75,6 +75,16 @@ class TestListMemories(_Base):
             memories.list_memories(project=self.project)
         self.client.list_memories.assert_not_called()
 
+    def test_project_list_failure_raises_instead_of_reading_as_empty(self):
+        self.client.list_memories.side_effect = Exception("AR down")
+        with patch.object(frappe, "log_error"), self.assertRaises(frappe.ValidationError):
+            memories.list_memories(project=self.project)
+
+    def test_global_list_failure_still_reads_as_empty(self):
+        self.client.list_memories.side_effect = Exception("AR down")
+        with patch.object(frappe, "log_error"):
+            self.assertEqual(memories.list_memories()["memories"], [])
+
 
 class TestClearProjectMemories(_Base):
     def setUp(self):
@@ -144,10 +154,13 @@ class TestExport(_Base):
     def test_export_counts_project_memories(self):
         _set_capability(True)
         self.client.list_documents.return_value = {"documents": []}
-        self.client.list_memories.return_value = {"memories": [{"id": "a"}, {"id": "b"}]}
-        self.assertEqual(self._row()["memory_count"], 2)
+        self.client.list_memories.return_value = {
+            "memories": [{"id": "a"}],
+            "pagination": {"total": 742, "limit": 1, "offset": 0, "has_more": True},
+        }
+        self.assertEqual(self._row()["memory_count"], 742)
         self.client.list_memories.assert_called_once_with(
-            user_id=self.ar_user, project_id=self.project, limit=500
+            user_id=self.ar_user, project_id=self.project, limit=1
         )
 
     def test_export_memory_count_is_none_when_listing_fails(self):

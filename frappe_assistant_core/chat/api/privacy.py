@@ -41,8 +41,8 @@ def _project_document_names(client, user: str, project: str) -> list[str] | None
 def _project_memory_count(client, user: str, project: str) -> int | None:
     """Memories stored for a project; None when AR cannot list them (AR's own export has them)."""
     try:
-        result = client.list_memories(user_id=_ar_user_id(user), project_id=project, limit=500)
-        return len(result["memories"])
+        result = client.list_memories(user_id=_ar_user_id(user), project_id=project, limit=1)
+        return int(result["pagination"]["total"])
     except Exception:
         frappe.log_error(title="FAC project memories export failed", message=frappe.get_traceback())
         return None
