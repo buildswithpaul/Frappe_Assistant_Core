@@ -67,12 +67,15 @@ def _typed_by_administrator() -> bool:
     Jobs and the scheduler insert with no request behind them, and any other endpoint running as
     Administrator may insert words nobody typed; running those as Administrator would let that text
     act with Administrator's rights. So only Raven's own send methods count, called from a logged-in
-    session rather than with an API token.
+    session (browser cookie or the mobile app's OAuth token) rather than with an API key.
     """
     request = getattr(frappe.local, "request", None)
     if request is None or frappe.session.user != "Administrator":
         return False
-    if (getattr(request, "headers", None) or {}).get("Authorization"):
+    # An OAuth Bearer token is a person's own login (Raven's mobile app sends with one); an API
+    # key ("token key:secret") or Basic auth is a script.
+    authorization = (getattr(request, "headers", None) or {}).get("Authorization") or ""
+    if authorization and not authorization.lower().startswith("bearer "):
         return False
     return (frappe.local.form_dict or {}).get("cmd") in RAVEN_SEND_METHODS
 

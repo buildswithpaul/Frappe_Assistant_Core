@@ -130,6 +130,13 @@ class TestTriggerEnqueue(BaseAssistantTest):
         triggers.on_insert(message(name="m-other", owner="Administrator", mentions=mention_of_bot()))
         self.enqueue.assert_not_called()
 
+    def test_administrator_on_the_raven_mobile_app_reaches_fac_bot(self):
+        # Live (demo): the mobile app logs in with OAuth and sends with a Bearer token — a person.
+        self._as_administrator_request("raven.api.raven_message.send_message")
+        frappe.local.request.headers = {"Authorization": "Bearer abc123"}
+        triggers.on_insert(message(name="m-mobile", owner="Administrator", mentions=mention_of_bot()))
+        self.assertTrue(self.enqueue.call_args.kwargs["typed_by_person"])
+
     def test_administrator_via_an_api_token_is_ignored(self):
         self._as_administrator_request("raven.api.raven_message.send_message")
         frappe.local.request.headers = {"Authorization": "token abc:def"}
