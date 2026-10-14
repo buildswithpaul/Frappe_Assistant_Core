@@ -112,12 +112,29 @@ class TestTriggerEnqueue(BaseAssistantTest):
             triggers.on_insert(message(name=f"m{i}", owner=owner, mentions=mention_of_bot()))
         self.assertEqual(self.enqueue.call_count, triggers.TURNS_PER_MINUTE)
 
-    def test_administrator_typing_in_raven_reaches_fac_bot(self):
-        # Production: Raven's send_message is an HTTP request made by the logged-in Administrator.
-        frappe.local.request = object()
+    def _as_administrator_request(self, cmd):
+        # Production: Raven's composer calls this method from Administrator's logged-in browser.
+        frappe.local.request = frappe._dict(headers={})
         self.addCleanup(setattr, frappe.local, "request", None)
+        frappe.local.form_dict = frappe._dict(cmd=cmd)
+        self.addCleanup(setattr, frappe.local, "form_dict", frappe._dict())
+
+    def test_administrator_typing_in_raven_reaches_fac_bot(self):
+        self._as_administrator_request("raven.api.raven_message.send_message")
         triggers.on_insert(message(name="m-admin", owner="Administrator", mentions=mention_of_bot()))
         self.assertTrue(self.enqueue.call_args.kwargs["typed_by_person"])
+
+    def test_administrator_text_from_any_other_endpoint_is_ignored(self):
+        # Server code in some other endpoint running as Administrator may insert words nobody typed.
+        self._as_administrator_request("some_app.api.import_messages")
+        triggers.on_insert(message(name="m-other", owner="Administrator", mentions=mention_of_bot()))
+        self.enqueue.assert_not_called()
+
+    def test_administrator_via_an_api_token_is_ignored(self):
+        self._as_administrator_request("raven.api.raven_message.send_message")
+        frappe.local.request.headers = {"Authorization": "token abc:def"}
+        triggers.on_insert(message(name="m-token", owner="Administrator", mentions=mention_of_bot()))
+        self.enqueue.assert_not_called()
 
     def test_a_message_inserted_as_administrator_outside_a_request_is_ignored(self):
         # Background jobs and the scheduler insert as Administrator with no request behind them.

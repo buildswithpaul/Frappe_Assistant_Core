@@ -53,14 +53,28 @@ def addressed(doc) -> Literal["dm", "mention"] | None:
     return None
 
 
+# Raven's composer sends through these; nothing else counts as Administrator typing.
+RAVEN_SEND_METHODS = (
+    "raven.api.raven_message.send_message",
+    "raven.api.raven_message.send_message_with_attachments",
+    "raven.api.upload_file.upload_file_with_message",
+)
+
+
 def _typed_by_administrator() -> bool:
     """Administrator typing in Raven, as opposed to server code that inserts as Administrator.
 
-    A person's message arrives in their own logged-in HTTP request; background jobs and the scheduler
-    insert with no request behind them. Running those as Administrator would let text nobody typed act
-    with Administrator's rights.
+    Jobs and the scheduler insert with no request behind them, and any other endpoint running as
+    Administrator may insert words nobody typed; running those as Administrator would let that text
+    act with Administrator's rights. So only Raven's own send methods count, called from a logged-in
+    session rather than with an API token.
     """
-    return getattr(frappe.local, "request", None) is not None and frappe.session.user == "Administrator"
+    request = getattr(frappe.local, "request", None)
+    if request is None or frappe.session.user != "Administrator":
+        return False
+    if (getattr(request, "headers", None) or {}).get("Authorization"):
+        return False
+    return (frappe.local.form_dict or {}).get("cmd") in RAVEN_SEND_METHODS
 
 
 def _enqueue(doc, kind: str) -> None:
