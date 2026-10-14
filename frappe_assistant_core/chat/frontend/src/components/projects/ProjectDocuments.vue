@@ -8,7 +8,9 @@
 		@drop.prevent="onDrop"
 	>
 		<header class="docs-header">
-			<h2 class="docs-title">{{ __("Documents") }}</h2>
+			<h2 class="docs-title">
+				{{ __("Documents") }}<span v-if="documents.length" class="count" data-test="docs-count">· {{ documents.length }}</span>
+			</h2>
 			<button
 				v-if="knowledgeIncluded"
 				class="upload-btn"
@@ -329,6 +331,13 @@ onBeforeUnmount(detachListeners);
 	padding: 0;
 	display: flex;
 	flex-direction: column;
+	max-height: 20rem;
+	overflow-y: auto;
+}
+
+.count {
+	margin-left: 0.375rem;
+	text-transform: none;
 }
 
 .load-error {

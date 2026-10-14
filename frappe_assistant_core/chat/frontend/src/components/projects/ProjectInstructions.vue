@@ -41,7 +41,12 @@
 				</div>
 			</div>
 		</template>
-		<p v-else-if="modelValue" class="instructions-text">{{ modelValue }}</p>
+		<template v-else-if="modelValue">
+			<p class="instructions-text" :class="{ clamped: isLong && !expanded }">{{ modelValue }}</p>
+			<button v-if="isLong" class="link-btn more-btn" data-test="instructions-more" @click="expanded = !expanded">
+				{{ expanded ? __("Show less") : __("Show more") }}
+			</button>
+		</template>
 		<p v-else class="instructions-empty">
 			{{ __("No instructions yet. Add how the assistant should work in this project.") }}
 		</p>
@@ -53,6 +58,9 @@ import { computed, nextTick, ref } from "vue";
 import { __ } from "@/utils/i18n";
 
 const INSTRUCTIONS_MAX_LENGTH = 8000;
+// Past this the card clamps to CLAMP_LINES, so a long brief can't push Documents and Memory off-screen.
+const CLAMP_LINES = 6;
+const CLAMP_CHARS = 400;
 
 const props = defineProps({
 	modelValue: { type: String, default: "" },
@@ -65,6 +73,11 @@ const draft = ref("");
 const saving = ref(false);
 const textareaRef = ref(null);
 const overLimit = computed(() => draft.value.length > INSTRUCTIONS_MAX_LENGTH);
+const expanded = ref(false);
+const isLong = computed(() => {
+	const text = props.modelValue || "";
+	return text.length > CLAMP_CHARS || text.split("\n").length > CLAMP_LINES;
+});
 
 async function startEdit() {
 	draft.value = props.modelValue || "";
@@ -131,6 +144,17 @@ function cancel() {
 	color: var(--ql-text);
 	white-space: pre-wrap;
 	overflow-wrap: anywhere;
+}
+
+.instructions-text.clamped {
+	display: -webkit-box;
+	-webkit-line-clamp: 6;
+	-webkit-box-orient: vertical;
+	overflow: hidden;
+}
+
+.more-btn {
+	margin-top: 0.375rem;
 }
 
 .instructions-empty {

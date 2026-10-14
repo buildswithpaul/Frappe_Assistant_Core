@@ -175,4 +175,18 @@ describe("ProjectMemory", () => {
 		await flushPromises();
 		expect(w.findAll("[data-test=memory-row]")).toHaveLength(1);
 	});
+
+	it("shows the memory count in the card header", async () => {
+		list.mockResolvedValue({ memories: [memory("m1"), memory("m2")] });
+		const w = mountBlock();
+		await flushPromises();
+		expect(w.find("[data-test=memory-count]").text()).toBe("· 2");
+	});
+
+	it("shows no count before any memory exists", async () => {
+		list.mockResolvedValue({ memories: [] });
+		const w = mountBlock();
+		await flushPromises();
+		expect(w.find("[data-test=memory-count]").exists()).toBe(false);
+	});
 });

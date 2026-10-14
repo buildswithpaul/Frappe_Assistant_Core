@@ -51,37 +51,14 @@
 				</div>
 			</header>
 
-			<ProjectInstructions :model-value="project.instructions || ''" :save-fn="saveInstructions" />
-
-			<ProjectDocuments v-if="projectDocsEnabled" :project-id="projectId" />
-
-			<ProjectMemory v-if="projectMemoryEnabled" :project-id="projectId" />
-
-			<div class="chats-header">
-				<h2 class="chats-title">{{ __("Chats") }}</h2>
-				<button class="primary-btn" data-test="new-project-chat" @click="newChat">
-					{{ __("New chat in this project") }}
-				</button>
-			</div>
-
-			<p v-if="!chats.length" class="empty" data-test="project-empty">
-				{{ __("No chats in this project yet") }}
-			</p>
-			<div v-else class="chat-list">
-				<ChatRow
-					v-for="chat in chats"
-					:key="chat.session_id"
-					:session="chat"
-					:projects="projects"
-					:active="chat.session_id === currentSessionId"
-					:show-project="false"
-					show-time
-					:allow-new-project="false"
-					:deleting="deletingId === chat.session_id"
-					@select="router.push('/chat/' + chat.session_id)"
-					@rename="(t) => renameChat(chat.session_id, t)"
-					@move="(pid) => moveChat(chat.session_id, pid)"
-					@archive="archiveChat(chat.session_id)"
+			<div class="project-grid">
+				<ProjectChats :project-id="projectId" :project-title="project.title" />
+				<ProjectContext
+					:project-id="projectId"
+					:instructions="project.instructions || ''"
+					:save-instructions="saveInstructions"
+					:documents-enabled="projectDocsEnabled"
+					:memory-enabled="projectMemoryEnabled"
 				/>
 			</div>
 		</div>
@@ -105,14 +82,9 @@
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { storeToRefs } from "pinia";
-import ChatRow from "@/components/layout/ChatRow.vue";
 import ConfirmModal from "@/components/common/ConfirmModal.vue";
-import ProjectDocuments from "@/components/projects/ProjectDocuments.vue";
-import ProjectMemory from "@/components/projects/ProjectMemory.vue";
-import ProjectInstructions from "@/components/projects/ProjectInstructions.vue";
-import { api } from "@/api/client";
-import { useChatStore } from "@/stores/chatStore";
-import { useConversationsStore } from "@/stores/conversationsStore";
+import ProjectChats from "@/components/projects/ProjectChats.vue";
+import ProjectContext from "@/components/projects/ProjectContext.vue";
 import { useProjectsStore } from "@/stores/projectsStore";
 import { useUserStore } from "@/stores/userStore";
 import { useToast } from "@/composables/useToast";
@@ -120,24 +92,17 @@ import { useInlineTitleEdit, TITLE_MAX_LENGTH } from "@/composables/useInlineTit
 import { projectDeleteMessage } from "@/utils/projectDeleteMessage";
 import { __ } from "@/utils/i18n";
 
-const PROJECT_CHATS_LIMIT = 100;
-
 const props = defineProps({
 	projectId: { type: String, required: true },
 });
 
 const router = useRouter();
-const chatStore = useChatStore();
-const conversationsStore = useConversationsStore();
 const projectsStore = useProjectsStore();
-const { currentSessionId } = storeToRefs(chatStore);
 const { projects } = storeToRefs(projectsStore);
 const userStore = useUserStore();
 const { showError } = useToast();
 
 const loading = ref(true);
-const chats = ref([]);
-const deletingId = ref(null);
 const menuOpen = ref(false);
 const menuRootRef = ref(null);
 const confirmingDelete = ref(false);
@@ -175,13 +140,8 @@ function notifyFailure(err) {
 
 async function loadPage(projectId) {
 	loading.value = true;
-	chats.value = [];
 	try {
 		if (!projectsStore.byId(projectId)) await projectsStore.load();
-		if (projectsStore.byId(projectId)) {
-			const rows = await api.chat.getSessions({ limit: PROJECT_CHATS_LIMIT, project: projectId });
-			if (projectId === props.projectId) chats.value = rows || [];
-		}
 	} catch (err) {
 		if (projectId === props.projectId) notifyFailure(err);
 	} finally {
@@ -198,53 +158,6 @@ async function saveInstructions(text) {
 	} catch (err) {
 		notifyFailure(err);
 		throw err;
-	}
-}
-
-async function newChat() {
-	try {
-		const sessionId = await chatStore.startChatInProject(props.projectId);
-		if (!sessionId) return;
-		router.push("/chat/" + sessionId);
-	} catch (err) {
-		notifyFailure(err);
-	}
-}
-
-function patchChat(sessionId, patch) {
-	chats.value = chats.value.map((c) => (c.session_id === sessionId ? { ...c, ...patch } : c));
-}
-
-async function renameChat(sessionId, title) {
-	try {
-		await conversationsStore.renameSession(sessionId, title);
-		patchChat(sessionId, { title, preview: title });
-	} catch (err) {
-		notifyFailure(err);
-	}
-}
-
-async function moveChat(sessionId, projectId) {
-	try {
-		await conversationsStore.moveSession(sessionId, projectId);
-		if (projectId !== props.projectId) {
-			chats.value = chats.value.filter((c) => c.session_id !== sessionId);
-		}
-	} catch (err) {
-		notifyFailure(err);
-	}
-}
-
-async function archiveChat(sessionId) {
-	deletingId.value = sessionId;
-	try {
-		await api.chat.deleteSession(sessionId);
-		chatStore.removeSession(sessionId);
-		chats.value = chats.value.filter((c) => c.session_id !== sessionId);
-	} catch (err) {
-		notifyFailure(err);
-	} finally {
-		deletingId.value = null;
 	}
 }
 
@@ -295,15 +208,29 @@ onBeforeUnmount(detachListeners);
 	flex: 1;
 	min-height: 0;
 	overflow-y: auto;
-	padding: 1.5rem 1rem;
+	padding: 1.5rem;
 }
 
 .project-body {
-	max-width: 48rem;
+	max-width: 75rem;
 	margin: 0 auto;
 	display: flex;
 	flex-direction: column;
 	gap: 1.25rem;
+	container-type: inline-size;
+}
+
+.project-grid {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr);
+	gap: 1.5rem;
+	align-items: start;
+}
+
+@container (min-width: 900px) {
+	.project-grid {
+		grid-template-columns: minmax(0, 1fr) 320px;
+	}
 }
 
 .state {
@@ -413,39 +340,4 @@ onBeforeUnmount(detachListeners);
 	color: var(--ql-danger);
 }
 
-.chats-header {
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
-	gap: 0.75rem;
-	flex-wrap: wrap;
-}
-
-.chats-title {
-	font-size: 0.75rem;
-	font-weight: 600;
-	color: var(--ql-text-muted);
-	text-transform: uppercase;
-	letter-spacing: 0.05em;
-}
-
-.primary-btn {
-	font-size: 0.875rem;
-	font-weight: 500;
-	color: white;
-	background: var(--ql-accent);
-	border: none;
-	border-radius: 0.5rem;
-	padding: 0.5rem 0.875rem;
-	cursor: pointer;
-}
-
-.primary-btn:hover {
-	background: var(--ql-accent-hover);
-}
-
-.empty {
-	color: var(--ql-text-muted);
-	font-size: 0.875rem;
-}
 </style>

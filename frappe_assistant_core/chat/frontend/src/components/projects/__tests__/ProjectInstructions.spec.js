@@ -68,4 +68,21 @@ describe("ProjectInstructions", () => {
 		expect(w.props("saveFn")).not.toHaveBeenCalled();
 		expect(w.text()).toContain("Amounts in INR.");
 	});
+
+	it("offers Show more only for long instructions, and toggles it", async () => {
+		const long = Array.from({ length: 9 }, (_, i) => "Rule " + (i + 1)).join("\n");
+		const w = mount(ProjectInstructions, { props: { modelValue: long, saveFn: vi.fn() } });
+		const toggle = w.find("[data-test=instructions-more]");
+		expect(toggle.text()).toBe("Show more");
+		expect(w.find(".instructions-text").classes()).toContain("clamped");
+		await toggle.trigger("click");
+		expect(toggle.text()).toBe("Show less");
+		expect(w.find(".instructions-text").classes()).not.toContain("clamped");
+	});
+
+	it("does not offer Show more for short instructions", () => {
+		const w = mountIt();
+		expect(w.find("[data-test=instructions-more]").exists()).toBe(false);
+		expect(w.find(".instructions-text").classes()).not.toContain("clamped");
+	});
 });

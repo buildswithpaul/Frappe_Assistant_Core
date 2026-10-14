@@ -20,7 +20,6 @@ const push = vi.fn();
 vi.mock("vue-router", () => ({ useRouter: () => ({ push }) }));
 
 import ProjectPage from "@/components/projects/ProjectPage.vue";
-import { useChatStore } from "@/stores/chatStore";
 import { useProjectsStore } from "@/stores/projectsStore";
 import { useUserStore } from "@/stores/userStore";
 
@@ -99,15 +98,16 @@ describe("ProjectPage", () => {
 		expect(useProjectsStore().byId("p1").title).toBe("Q4");
 	});
 
-	it("a failed New chat neither navigates nor sets a pending project", async () => {
-		projectsList.mockResolvedValue([{ name: "p1", title: "Q3 Close", instructions: "" }]);
-		createSession.mockRejectedValue(new Error("down"));
+	it("lays out the chats and the project context side by side in one grid", async () => {
+		projectsList.mockResolvedValue([{ name: "p1", title: "Q3 Close", instructions: "Be brief" }]);
 		const w = await mountPage();
 		await flushPromises();
-		await w.find("[data-test=new-project-chat]").trigger("click");
-		await flushPromises();
-		expect(push).not.toHaveBeenCalled();
-		expect(useChatStore().pendingProject).toBeNull();
+		const grid = w.find(".project-grid");
+		expect(grid.exists()).toBe(true);
+		const children = grid.element.children;
+		expect(grid.find("[data-test=project-chat-input]").exists()).toBe(true);
+		expect(children[1].tagName).toBe("ASIDE");
+		expect(children[1].textContent).toContain("Be brief");
 	});
 
 	describe("project documents", () => {

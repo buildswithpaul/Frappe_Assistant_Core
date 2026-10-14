@@ -1,7 +1,9 @@
 <template>
 	<section class="project-memory" data-test="project-memory">
 		<header class="memory-header">
-			<h2 class="memory-title">{{ __("Memory") }}</h2>
+			<h2 class="memory-title">
+				{{ __("Memory") }}<span v-if="memories.length" class="count" data-test="memory-count">· {{ memories.length }}</span>
+			</h2>
 			<button
 				v-if="memories.length && !loadFailed"
 				class="clear-btn"
@@ -202,6 +204,13 @@ async function clearAll() {
 	padding: 0;
 	display: flex;
 	flex-direction: column;
+	max-height: 20rem;
+	overflow-y: auto;
+}
+
+.count {
+	margin-left: 0.375rem;
+	text-transform: none;
 }
 
 .load-error {

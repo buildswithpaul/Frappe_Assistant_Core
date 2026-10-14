@@ -348,4 +348,11 @@ describe("ProjectDocuments", () => {
 		expect(w.get("[data-test=doc-row]").text()).not.toContain("Processing");
 		w.unmount();
 	});
+
+	it("shows the document count in the card header", async () => {
+		list.mockResolvedValue({ documents: [doc("d1", "Completed"), doc("d2", "Completed")] });
+		const w = mountBlock();
+		await flushPromises();
+		expect(w.find("[data-test=docs-count]").text()).toBe("· 2");
+	});
 });
