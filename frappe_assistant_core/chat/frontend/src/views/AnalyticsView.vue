@@ -1,11 +1,7 @@
 <template>
 	<div class="app-layout">
 		<!-- Navigation Sidebar -->
-		<NavigationSidebar
-			:collapsed="sidebarCollapsed"
-			@open-settings="router.push('/settings')"
-			@toggle-sidebar="sidebarCollapsed = !sidebarCollapsed"
-		/>
+		<NavigationSidebar @open-settings="router.push('/settings')" />
 
 		<!-- Main Content Area -->
 		<main class="main-content">
@@ -14,7 +10,8 @@
 				<div class="top-bar-content">
 					<div class="top-bar-left">
 						<button
-							@click="onHamburger(() => (sidebarCollapsed = !sidebarCollapsed))"
+							v-if="isDrawerWidth"
+							@click="onHamburger()"
 							class="sidebar-toggle-btn"
 							aria-label="Toggle navigation"
 						>
@@ -144,7 +141,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from "vue";
+import { onMounted } from "vue";
 import { useRouter } from "vue-router";
 import { storeToRefs } from "pinia";
 import { useUserStore } from "@/stores/userStore";
@@ -163,8 +160,7 @@ const router = useRouter();
 const userStore = useUserStore();
 const { quotaInfo } = storeToRefs(userStore);
 
-const sidebarCollapsed = ref(false);
-const { onHamburger } = useNavToggle();
+const { isDrawerWidth, onHamburger } = useNavToggle();
 
 const ranges = [7, 30, 90];
 

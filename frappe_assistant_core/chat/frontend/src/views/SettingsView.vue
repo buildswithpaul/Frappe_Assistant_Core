@@ -1,10 +1,6 @@
 <template>
 	<div class="app-layout">
-		<NavigationSidebar
-			:collapsed="navCollapsed"
-			@open-settings="$router.push('/settings')"
-			@toggle-sidebar="navCollapsed = !navCollapsed"
-		/>
+		<NavigationSidebar @open-settings="$router.push('/settings')" />
 
 		<main class="main-content">
 			<!-- Drawer-width top bar so the app nav drawer is reachable from settings
@@ -50,14 +46,13 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch } from "vue";
+import { computed, onMounted, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import NavigationSidebar from "@/components/layout/NavigationSidebar.vue";
 import SettingsSidebar from "@/components/settings/layout/SettingsSidebar.vue";
 import { useIsMobile } from "@/composables/useIsMobile";
 import { useNavToggle } from "@/composables/useNavToggle";
 
-const navCollapsed = ref(false);
 const route = useRoute();
 const router = useRouter();
 const { isMobile, isTablet } = useIsMobile();

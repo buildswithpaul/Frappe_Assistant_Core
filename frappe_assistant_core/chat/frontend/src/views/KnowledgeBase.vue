@@ -1,10 +1,6 @@
 <template>
 	<div class="app-layout">
-		<NavigationSidebar
-			:collapsed="sidebarCollapsed"
-			@open-settings="router.push('/settings')"
-			@toggle-sidebar="sidebarCollapsed = !sidebarCollapsed"
-		/>
+		<NavigationSidebar @open-settings="router.push('/settings')" />
 
 		<main class="main-content">
 			<!-- Top Bar -->
@@ -12,7 +8,6 @@
 				:memory-enabled="memoryEnabled"
 				:can-upload="knowledgeIncluded"
 				:storage="storage"
-				@toggle-sidebar="sidebarCollapsed = !sidebarCollapsed"
 				@upload="triggerUpload"
 			/>
 
@@ -263,7 +258,6 @@ const knowledgeIncluded = computed(
 	() => quotaInfo.value?.features?.knowledge_base !== false
 );
 
-const sidebarCollapsed = ref(false);
 const loading = ref(true);
 const loadError = ref(null);
 const documents = ref([]);

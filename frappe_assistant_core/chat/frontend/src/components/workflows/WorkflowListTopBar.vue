@@ -3,7 +3,8 @@
 		<div class="top-bar-content">
 			<div class="top-bar-left">
 				<button
-					@click="onHamburger(() => $emit('toggle-sidebar'))"
+					v-if="isDrawerWidth"
+					@click="onHamburger()"
 					class="sidebar-toggle-btn"
 					aria-label="Toggle sidebar"
 				>
@@ -65,9 +66,9 @@ defineProps({
 	userPublishingEnabled: { type: Boolean, default: false },
 });
 
-defineEmits(["toggle-sidebar", "upload-template", "create-workflow"]);
+defineEmits(["upload-template", "create-workflow"]);
 
-const { onHamburger } = useNavToggle();
+const { isDrawerWidth, onHamburger } = useNavToggle();
 </script>
 
 <style scoped>

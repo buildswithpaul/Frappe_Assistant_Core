@@ -34,9 +34,7 @@ describe("New project… from a chat row", () => {
 		wrapper = mount(NavigationSidebar, {
 			global: {
 				stubs: {
-					NavMenu: true,
-					UserDropdown: true,
-					FacoRobot: true,
+					NavRail: true,
 					ConversationSearch: true,
 					ConversationsList: {
 						emits: ["new-project"],

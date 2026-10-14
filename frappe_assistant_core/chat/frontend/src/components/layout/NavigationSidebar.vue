@@ -8,68 +8,38 @@
 		@click="layout.closeDrawer()"
 	></div>
 
-	<aside
-		class="navigation-sidebar"
-		:class="{ collapsed: collapsed, 'drawer-open': layout.drawerOpen }"
-	>
-		<!-- Logo Section -->
-		<div class="sidebar-header">
-			<div class="logo-section" v-if="!collapsed">
-				<FacoRobot size="sm" show-arms show-shadow />
-				<h2 class="logo-text">FACO</h2>
-			</div>
-			<div class="logo-collapsed" v-else>
-				<FacoRobot size="sm" show-arms />
-			</div>
-		</div>
-
-		<!-- Navigation Menu -->
-		<NavMenu :collapsed="collapsed" @return-to-desk="returnToDesk" />
-
-		<ConversationSearch
-			v-if="!collapsed && isChatRoute"
-			class="sidebar-search"
-			:model-value="conversationsStore.searchQuery"
-			@update:model-value="conversationsStore.setSearch($event)"
+	<aside class="navigation-sidebar" :class="{ 'drawer-open': layout.drawerOpen }">
+		<NavRail
+			:panel-collapsed="collapsed"
+			@return-to-desk="returnToDesk"
+			@open-settings="$emit('open-settings')"
+			@toggle-sidebar="$emit('toggle-sidebar')"
 		/>
 
-		<ProjectsSection v-if="!collapsed && isChatRoute" ref="projectsSectionRef" />
-
-		<!-- Recent Chats Section — only on Chat view -->
-		<ConversationsList
-			v-if="!collapsed && isChatRoute"
-			ref="conversationsListRef"
+		<ChatPanel
+			v-if="isChatRoute && (!collapsed || layout.drawerOpen)"
 			:sessions="sessions"
 			:archived-sessions="archivedSessions"
 			:active-session-id="activeSessionId"
 			:loading="loading"
 			:show-new-chat="userReady"
-			@select-session="$emit('session-selected', $event)"
-			@new-session="$emit('new-chat')"
+			@session-selected="$emit('session-selected', $event)"
+			@new-chat="$emit('new-chat')"
 			@delete-session="$emit('delete-session', $event)"
 			@continue-archived="$emit('continue-archived', $event)"
 			@load-archived="$emit('load-archived')"
-			@new-project="createProjectFor"
 		/>
-
-		<!-- User Section with Dropdown -->
-		<UserDropdown :collapsed="collapsed" @open-settings="$emit('open-settings')" />
 	</aside>
 </template>
 
 <script setup>
-import { computed, ref, watch, onBeforeUnmount } from "vue";
+import { computed, watch, onBeforeUnmount } from "vue";
 import { useRoute } from "vue-router";
 import { useUserStore } from "@/stores/userStore";
 import { useLayoutStore } from "@/stores/layoutStore";
-import NavMenu from "./NavMenu.vue";
-import ProjectsSection from "./ProjectsSection.vue";
-import ConversationSearch from "./ConversationSearch.vue";
-import ConversationsList from "./ConversationsList.vue";
-import UserDropdown from "./UserDropdown.vue";
-import FacoRobot from "@/components/common/FacoRobot.vue";
+import NavRail from "./NavRail.vue";
+import ChatPanel from "./ChatPanel.vue";
 import { writeHandoff } from "@/utils/sessionHandoff";
-import { useConversationsStore } from "@/stores/conversationsStore";
 
 const userStore = useUserStore();
 const userReady = computed(
@@ -109,8 +79,6 @@ defineEmits([
 	"load-archived",
 ]);
 
-const conversationsListRef = ref(null);
-
 const route = useRoute();
 
 // Off-canvas drawer on mobile: close it whenever the route changes so tapping a
@@ -141,13 +109,6 @@ onBeforeUnmount(() => {
 
 const isChatRoute = computed(() => route.path.startsWith("/chat") || route.path === "/");
 
-const conversationsStore = useConversationsStore();
-const projectsSectionRef = ref(null);
-
-function createProjectFor(sessionId) {
-	projectsSectionRef.value?.startCreate({ moveSessionId: sessionId });
-}
-
 function returnToDesk() {
 	// Store current session for the widget on the desk to pick up.
 	// Same-tab navigation only — sessionStorage scopes the hand-off to this
@@ -160,54 +121,14 @@ function returnToDesk() {
 </script>
 
 <style scoped>
-.sidebar-search {
-	padding-bottom: 0.25rem;
-}
-
 .navigation-sidebar {
 	display: flex;
-	flex-direction: column;
+	flex-shrink: 0;
 	background-color: var(--ql-surface);
-	border-right: 1px solid var(--ql-border);
-	width: var(--ql-nav-width,260px);
-	transition: width 0.2s ease;
 	/* Fills .app-layout, which is already shorter than the viewport whenever a
 	   notification banner is showing. A viewport height here would overflow it
-	   and the route root's overflow:hidden would clip the user section. */
+	   and the route root's overflow:hidden would clip the user menu. */
 	height: 100%;
-}
-
-.navigation-sidebar.collapsed {
-	width: var(--ql-nav-collapsed-width,60px);
-}
-
-.sidebar-header {
-	display: flex;
-	align-items: center;
-	padding: 0.75rem;
-	border-bottom: 1px solid var(--ql-border);
-	height: var(--ql-topbar-height,56px);
-	background-color: var(--ql-surface);
-}
-
-.logo-section {
-	display: flex;
-	align-items: center;
-	gap: 0.75rem;
-}
-
-.logo-text {
-	font-size: 1.125rem;
-	font-weight: 700;
-	color: var(--ql-accent);
-	line-height: 1.2;
-}
-
-.logo-collapsed {
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	width: 100%;
 }
 
 /* Scrim behind the drawer. Sibling of the aside (not a child) so the drawer's
@@ -219,24 +140,23 @@ function returnToDesk() {
 	background: rgba(0, 0, 0, 0.45);
 }
 
-/* --- Mobile / tablet: off-canvas drawer (< 1024px) --- */
+/* --- Mobile / tablet: off-canvas drawer (< 1024px) holding rail + panel --- */
 @media (max-width: 1023px) {
 	.navigation-sidebar {
 		position: fixed;
 		top: 0;
 		left: 0;
 		z-index: 50;
-		width: var(--ql-nav-width, 260px);
-		max-width: 85vw;
+		width: min(320px, 88vw);
 		/* Same unit when closed and open — % → px does not interpolate, so
 		   the drawer could stay translated off-screen after hamburger. */
 		transform: translateX(-100%);
 		transition: transform 0.25s ease;
 	}
-	/* On mobile the desktop "collapsed" (60px) form does not apply — the drawer
-	   is always full width when open. */
-	.navigation-sidebar.collapsed {
-		width: var(--ql-nav-width, 260px);
+	.navigation-sidebar :deep(.chat-panel) {
+		flex: 1;
+		width: auto;
+		min-width: 0;
 	}
 	.navigation-sidebar.drawer-open {
 		transform: translateX(0%);

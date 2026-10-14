@@ -1,18 +1,12 @@
 <template>
 	<div class="app-layout">
-		<NavigationSidebar
-			:collapsed="sidebarCollapsed"
-			:sessions="[]"
-			@toggle-sidebar="sidebarCollapsed = !sidebarCollapsed"
-			@open-settings="router.push('/settings')"
-		/>
+		<NavigationSidebar @open-settings="router.push('/settings')" />
 
 		<main class="main-content">
 			<!-- Top Bar -->
 			<WorkflowListTopBar
 				:is-admin="isAdmin"
 				:user-publishing-enabled="userPublishingEnabled"
-				@toggle-sidebar="sidebarCollapsed = !sidebarCollapsed"
 				@upload-template="showUploadModal = true"
 				@create-workflow="showCreateModal = true"
 			/>
@@ -130,7 +124,6 @@ const userPublishingEnabled = computed(() => userStore.userPublishingEnabled);
 const { workflows, isLoading, listError, total, statusFilter, currentPage, pageSize } =
 	storeToRefs(workflowStore);
 
-const sidebarCollapsed = ref(false);
 const viewMode = ref("workflows");
 
 // Create modal

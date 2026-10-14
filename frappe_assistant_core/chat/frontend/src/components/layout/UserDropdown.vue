@@ -1,44 +1,21 @@
 <template>
 	<div class="user-section" ref="userMenuRef">
-		<!-- Expanded User Info -->
-		<div v-if="!collapsed" class="user-dropdown-wrapper" @click="toggleUserMenu">
-			<div class="user-info">
-				<div class="user-avatar">
-					{{ userInitial }}
-					<span v-if="userStore.hasOutstanding" class="due-dot" :title="dueTitle" />
-				</div>
-				<div class="user-details">
-					<div class="user-name">{{ userName }}</div>
-				</div>
-				<svg
-					class="user-chevron"
-					:class="{ 'rotate-180': isUserMenuOpen }"
-					fill="none"
-					stroke="currentColor"
-					viewBox="0 0 24 24"
-				>
-					<path
-						stroke-linecap="round"
-						stroke-linejoin="round"
-						stroke-width="2"
-						d="M5 15l7-7 7 7"
-					/>
-				</svg>
-			</div>
-		</div>
-
-		<!-- Collapsed User Avatar -->
-		<div v-else class="user-avatar-collapsed" @click="toggleUserMenu">
+		<button
+			type="button"
+			class="user-avatar"
+			data-test="user-avatar"
+			:aria-label="__('Account menu')"
+			:title="userEmail"
+			aria-haspopup="menu"
+			:aria-expanded="isUserMenuOpen"
+			@click="toggleUserMenu"
+		>
 			{{ userInitial }}
 			<span v-if="userStore.hasOutstanding" class="due-dot" :title="dueTitle" />
-		</div>
+		</button>
 
 		<!-- User Dropdown Menu -->
-		<div
-			v-if="isUserMenuOpen"
-			class="user-dropdown-menu"
-			:class="{ 'collapsed-menu': collapsed }"
-		>
+		<div v-if="isUserMenuOpen" class="user-dropdown-menu" role="menu">
 			<div class="dropdown-header">
 				<div class="dropdown-user-name">{{ userName }}</div>
 				<div class="dropdown-user-email">{{ userEmail }}</div>
@@ -111,13 +88,7 @@ import { computed, ref, onMounted, onUnmounted } from "vue";
 import { useUserStore } from "@/stores/userStore";
 import { useSupportStore } from "@/stores/supportStore";
 import { formatCurrency } from "@/composables/useFormatters";
-
-defineProps({
-	collapsed: {
-		type: Boolean,
-		default: false,
-	},
-});
+import { __ } from "@/utils/i18n";
 
 const emit = defineEmits(["open-settings"]);
 
@@ -205,9 +176,6 @@ onUnmounted(() => {
 
 <style scoped>
 .user-avatar,
-.user-avatar-collapsed {
-	position: relative;
-}
 
 .due-dot {
 	position: absolute;
@@ -231,103 +199,36 @@ onUnmounted(() => {
 }
 
 .user-section {
-	margin-top: auto;
-	padding: 0.75rem;
-	border-top: 1px solid var(--ql-border);
-	background-color: var(--ql-surface);
 	position: relative;
 }
 
-.user-dropdown-wrapper {
-	cursor: pointer;
-}
-
-.user-info {
-	display: flex;
-	align-items: center;
-	gap: 0.75rem;
-	padding: 0.5rem;
-	border-radius: 0.5rem;
-	transition: background-color 0.15s ease;
-}
-
-.user-info:hover {
-	background-color: var(--ql-subtle);
-}
-
 .user-avatar {
-	width: 2rem;
-	height: 2rem;
+	position: relative;
+	width: 2.25rem;
+	height: 2.25rem;
 	background-color: var(--ql-accent);
 	color: white;
+	border: none;
 	border-radius: 50%;
 	display: flex;
 	align-items: center;
 	justify-content: center;
 	font-size: 0.875rem;
 	font-weight: 600;
-	flex-shrink: 0;
-}
-
-.user-avatar-collapsed {
-	width: 2rem;
-	height: 2rem;
-	background-color: var(--ql-accent);
-	color: white;
-	border-radius: 50%;
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	font-size: 0.875rem;
-	font-weight: 600;
-	margin: 0 auto;
 	cursor: pointer;
-}
-
-.user-details {
-	flex: 1;
-	min-width: 0;
-}
-
-.user-name {
-	font-size: 0.875rem;
-	font-weight: 500;
-	color: var(--ql-text);
-	white-space: nowrap;
-	overflow: hidden;
-	text-overflow: ellipsis;
-}
-
-.user-chevron {
-	width: 1rem;
-	height: 1rem;
-	color: var(--ql-text-muted);
-	transition: transform 0.2s ease;
-	flex-shrink: 0;
-}
-
-.user-chevron.rotate-180 {
-	transform: rotate(180deg);
 }
 
 .user-dropdown-menu {
 	position: absolute;
-	bottom: 100%;
-	left: 0.75rem;
-	right: 0.75rem;
-	margin-bottom: 0.5rem;
+	bottom: 0;
+	left: calc(100% + 0.75rem);
+	width: 220px;
 	background-color: var(--ql-surface);
 	border: 1px solid var(--ql-border);
 	border-radius: 0.5rem;
 	box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-	z-index: 50;
+	z-index: 60;
 	overflow: hidden;
-}
-
-.user-dropdown-menu.collapsed-menu {
-	left: 3.5rem;
-	right: auto;
-	width: 200px;
 }
 
 .dropdown-header {

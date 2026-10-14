@@ -8,7 +8,7 @@ function openMenu() {
 		global: { plugins: [createPinia()] },
 	});
 	// The menu renders only once opened.
-	wrapper.find(".user-dropdown-wrapper").trigger("click");
+	wrapper.find("[data-test=user-avatar]").trigger("click");
 	return wrapper;
 }
 

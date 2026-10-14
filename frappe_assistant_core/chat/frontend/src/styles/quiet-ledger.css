@@ -84,9 +84,9 @@
   --ql-font-ui: "Inter", system-ui, -apple-system, sans-serif;
   --ql-font-display: "Source Serif 4", "Fraunces", Georgia, serif;
 
-  /* ---- Layout metrics (consumed via var(--ql-nav-width, …) in components) ---- */
-  --ql-nav-width: 260px;
-  --ql-nav-collapsed-width: 60px;
+  /* ---- Layout metrics (consumed via var(--ql-rail-width, …) in components) ---- */
+  --ql-rail-width: 52px;
+  --ql-panel-width: 240px;
   --ql-topbar-height: 56px;
 }
 
