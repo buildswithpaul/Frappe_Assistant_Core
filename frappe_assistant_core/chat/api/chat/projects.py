@@ -22,6 +22,11 @@ def project_documents_enabled() -> bool:
     return _cached_capability("features", "project_documents")
 
 
+def project_memory_enabled() -> bool:
+    """AR keeps per-project memories only from the release that reports this capability."""
+    return _cached_capability("features", "project_memory")
+
+
 def _as_row(doc) -> dict:
     return {key: doc.get(key) for key in _FIELDS}
 
@@ -87,6 +92,8 @@ def delete_project(project: str) -> dict:
     FACChatProject.owned(project)
     if project_documents_enabled():
         _unlink_project_documents(project)
+    if project_memory_enabled():
+        _delete_project_memories(project)
     frappe.db.set_value(
         "FAC Chat Conversation",
         {"project": project, "user": frappe.session.user},
@@ -111,3 +118,18 @@ def _unlink_project_documents(project: str) -> None:
     except Exception:
         frappe.log_error(title="FAC project documents unlink failed", message=frappe.get_traceback())
         frappe.throw(_("Couldn't release this project's documents; try again"))
+
+
+def _delete_project_memories(project: str) -> None:
+    """Delete the project's memories in AR; a failure refuses the delete so none are orphaned."""
+    from frappe_assistant_core.chat.api.auth import _ar_user_id
+    from frappe_assistant_core.chat.fac_cloud_client import get_fac_cloud_client
+
+    client = get_fac_cloud_client()
+    try:
+        if not client:
+            raise RuntimeError("not connected")
+        client.delete_project_memories(user_id=_ar_user_id(frappe.session.user), project_id=project)
+    except Exception:
+        frappe.log_error(title="FAC project memories delete failed", message=frappe.get_traceback())
+        frappe.throw(_("Couldn't delete this project's memories; try again"))

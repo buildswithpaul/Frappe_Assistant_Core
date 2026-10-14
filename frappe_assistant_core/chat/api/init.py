@@ -446,6 +446,7 @@ def _default_capabilities() -> dict:
             "workflows": False,
             "web_search": False,
             "project_documents": False,
+            "project_memory": False,
         },
         "marketplace": {
             "marketplace_enabled": False,

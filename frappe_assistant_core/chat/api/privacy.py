@@ -15,7 +15,7 @@ import frappe
 from frappe import _
 
 from .auth import _ar_user_id
-from .chat.projects import project_documents_enabled
+from .chat.projects import project_documents_enabled, project_memory_enabled
 
 
 def _get_client():
@@ -35,6 +35,16 @@ def _project_document_names(client, user: str, project: str) -> list[str] | None
         return [d["file_name"] for d in result.get("documents", [])]
     except Exception:
         frappe.log_error(title="FAC project documents export failed", message=frappe.get_traceback())
+        return None
+
+
+def _project_memory_count(client, user: str, project: str) -> int | None:
+    """Memories stored for a project; None when AR cannot list them (AR's own export has them)."""
+    try:
+        result = client.list_memories(user_id=_ar_user_id(user), project_id=project, limit=500)
+        return len(result["memories"])
+    except Exception:
+        frappe.log_error(title="FAC project memories export failed", message=frappe.get_traceback())
         return None
 
 
@@ -83,6 +93,11 @@ def export_my_data() -> dict:
     if project_documents_enabled():
         for project in faco_data["faco_projects"]:
             project["documents"] = _project_document_names(client, user, project["name"])
+    memory_enabled = project_memory_enabled()
+    for project in faco_data["faco_projects"]:
+        project["memory_count"] = (
+            _project_memory_count(client, user, project["name"]) if memory_enabled else None
+        )
     faco_data["faco_conversations"] = [
         {
             "session_id": row.name,
