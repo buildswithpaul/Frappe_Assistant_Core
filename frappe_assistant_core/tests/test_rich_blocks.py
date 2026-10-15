@@ -11,6 +11,7 @@ without a site or database.
 import unittest
 
 from frappe_assistant_core.plugins.faco.tools.rich_blocks import (
+    has_cover_block,
     preprocess_rich_blocks,
     restore_rich_blocks,
 )
@@ -101,7 +102,7 @@ class TestCalloutJsonBody(unittest.TestCase):
             '"content":"All 216 Leads were bulk-imported."}\n```'
         )
         # The warning palette, not the info default the attrs-only read gave.
-        self.assertIn("#f59e0b", out)
+        self.assertIn("#fac858", out)
         self.assertIn('<div class="callout-title">Data quality caveat</div>', out)
         self.assertIn("All 216 Leads were bulk-imported.", out)
         # No JSON punctuation survives — escaped or otherwise. Matching on a
@@ -119,7 +120,7 @@ class TestCalloutJsonBody(unittest.TestCase):
 
     def test_message_alias_is_accepted(self):
         out = render('```callout\n{"type":"tip","message":"Try the filter."}\n```')
-        self.assertIn("#10b981", out)
+        self.assertIn("#9a60b4", out)
         self.assertIn("Try the filter.", out)
         self.assertNotIn("quot;", out)
 
@@ -160,3 +161,70 @@ class TestMetricJsonArray(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+PIE = (
+    '```chart\n{"type":"pie","title":"Mix","data":{"categories":["Hardware","Services","Licences"],'
+    '"series":[{"name":"Revenue","values":[50,30,20]}]}}\n```'
+)
+
+
+class TestChartLegibility(unittest.TestCase):
+    def test_pie_legend_lists_the_categories(self):
+        # A pie colours its slices by category; a legend built from the one series
+        # showed a single "Revenue" swatch and left the slices without a key.
+        out = render(PIE)
+        legend = out[out.index('class="chart-legend"') :]
+        for name in ("Hardware", "Services", "Licences"):
+            self.assertIn(name, legend)
+        self.assertNotIn(">Revenue<", legend)
+
+    def test_multi_series_legend_still_lists_the_series(self):
+        out = render(
+            '```chart\n{"type":"bar","data":{"categories":["N","S"],'
+            '"series":[{"name":"Q4","values":[1,2]},{"name":"Q1","values":[2,3]}]}}\n```'
+        )
+        legend = out[out.index('class="chart-legend"') :]
+        self.assertIn("Q4", legend)
+        self.assertIn("Q1", legend)
+
+    def test_pie_labels_are_dark_on_the_light_slices(self):
+        # Slice 2 is the palette's light green: white text on it was unreadable.
+        out = render(PIE)
+        self.assertIn('fill="#91cc75"', out)
+        self.assertIn('fill="#111827" font-weight="600">30%', out)
+        self.assertIn('fill="#ffffff" font-weight="600">50%', out)
+
+    def test_chart_svg_has_an_explicit_size(self):
+        # wkhtmltopdf's WebKit draws a viewBox-only inline SVG 150px tall.
+        out = render(PIE)
+        self.assertRegex(out, r'<svg[^>]* width="640" height="320"')
+
+
+class TestBlockStyling(unittest.TestCase):
+    def test_tip_and_success_callouts_differ(self):
+        tip = render('```callout type="tip"\nA\n```')
+        success = render('```callout type="success"\nA\n```')
+        self.assertNotEqual(tip, success)
+        self.assertIn("#9a60b4", tip)
+        self.assertIn("#3ba272", success)
+
+    def test_icons_and_trend_arrows_are_svg_not_font_glyphs(self):
+        # The ★ ✓ ✕ ▲ ▼ characters depended on the server's fallback fonts.
+        out = render('```callout type="success"\nA\n```') + render(
+            '```metric title="Revenue" value="1" change="+1" trend="up"\n```'
+        )
+        for glyph in "★✓✕▲▼▬":
+            self.assertNotIn(glyph, out)
+        self.assertIn('<div class="callout-icon"><svg', out)
+        self.assertIn('class="metric-arrow"', out)
+
+    def test_unknown_callout_type_falls_back_to_info(self):
+        out = render('```callout type="note"\nA\n```')
+        self.assertIn("#5470c6", out)
+
+    def test_has_cover_block(self):
+        _, with_cover = preprocess_rich_blocks('```cover title="T"\n```\n\nBody')
+        _, without = preprocess_rich_blocks("Body only")
+        self.assertTrue(has_cover_block(with_cover))
+        self.assertFalse(has_cover_block(without))

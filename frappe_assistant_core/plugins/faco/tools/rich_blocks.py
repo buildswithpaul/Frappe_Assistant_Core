@@ -11,7 +11,7 @@ sees the same visuals on screen and in the downloaded file.
 
 This module substitutes those fences with self-contained HTML (inline SVG
 for charts, styled divs for callouts/metrics) **before** the markdown
-goes through ``md_to_html`` and bleach. The substituted HTML uses an
+goes through markdown2 and bleach. The substituted HTML uses an
 ``<x-rich>`` wrapper carrying a token; we restore the real HTML after
 bleach has sanitised the rest, so chart SVGs and styled blocks survive
 intact while LLM-authored HTML is still scrubbed.
@@ -37,6 +37,8 @@ _ATTR_RE = re.compile(r'(\w+)="([^"]*)"')
 
 # Palette mirrors the frontend ChartRenderer default series colors so the
 # PDF and chat look visually consistent. Order matters — series 0 → 0, etc.
+# Callouts, metric trends and the template accent are drawn from the same
+# family, so a document uses one set of colours rather than three.
 _CHART_PALETTE = (
     "#5470c6",
     "#91cc75",
@@ -48,13 +50,42 @@ _CHART_PALETTE = (
     "#9a60b4",
 )
 
-_CALLOUT_STYLES = {
-    "info": {"bg": "#eff6ff", "border": "#3b82f6", "icon": "i"},
-    "tip": {"bg": "#ecfdf5", "border": "#10b981", "icon": "★"},
-    "success": {"bg": "#ecfdf5", "border": "#10b981", "icon": "✓"},
-    "warning": {"bg": "#fffbeb", "border": "#f59e0b", "icon": "!"},
-    "error": {"bg": "#fef2f2", "border": "#ef4444", "icon": "✕"},
+# Icons are SVG paths on a 16-unit grid, not text glyphs: the ★ ✓ ✕ characters
+# came from whatever fallback font the server had, at its own size and
+# baseline, or rendered as empty boxes.
+_ICON_PATHS = {
+    "info": "M8 7v5M8 4.5v.5",
+    "tip": "M8 2.5l1.7 3.5 3.8.5-2.8 2.6.7 3.8L8 11.1l-3.4 1.8.7-3.8-2.8-2.6 3.8-.5z",
+    "success": "M3.5 8.5l3 3 6-7",
+    "warning": "M8 4v5M8 11.5v.5",
+    "error": "M4.5 4.5l7 7M11.5 4.5l-7 7",
 }
+
+# ``border`` is the palette colour; ``fg`` is a darker shade of it for the
+# icon, readable on the pale ``bg``.
+_CALLOUT_STYLES = {
+    "info": {"bg": "#eef1fa", "border": "#5470c6", "fg": "#3d56a8"},
+    "tip": {"bg": "#f5eff8", "border": "#9a60b4", "fg": "#7d4796"},
+    "success": {"bg": "#ecf6f0", "border": "#3ba272", "fg": "#2b7d57"},
+    "warning": {"bg": "#fef8e8", "border": "#fac858", "fg": "#a8740f"},
+    "error": {"bg": "#fdf0f0", "border": "#ee6666", "fg": "#c94141"},
+}
+
+# Metric trend colour and arrow. Arrows are SVG for the same reason as the icons.
+_TREND_STYLES = {
+    "up": {"color": "#2b7d57", "path": "M1 7l4-5 4 5z"},
+    "down": {"color": "#c94141", "path": "M1 2l4 5 4-5z"},
+    "flat": {"color": "#6b7280", "path": "M1 4h8v1.5H1z"},
+}
+
+_FONT_STACK = (
+    '"Inter", "Noto Sans", "Helvetica Neue", Helvetica, Arial, "Liberation Sans", "DejaVu Sans", sans-serif'
+)
+
+
+def has_cover_block(tokens: dict[str, str]) -> bool:
+    """Whether the document carries a cover page, which already shows the title."""
+    return any('class="cover-page"' in rendered for rendered in tokens.values())
 
 
 def preprocess_rich_blocks(markdown: str) -> tuple[str, dict[str, str]]:
@@ -157,7 +188,10 @@ def _render_callout(attrs: dict[str, str], body: str) -> str:
     collapsing to an empty box.
     """
     pick = _body_picker(attrs, _json_object_body(body))
-    style = _CALLOUT_STYLES.get(pick("type") or "info", _CALLOUT_STYLES["info"])
+    kind = pick("type") or "info"
+    if kind not in _CALLOUT_STYLES:
+        kind = "info"
+    style = _CALLOUT_STYLES[kind]
     title = pick("title", "heading")
     # Body may contain inline markdown; we keep it simple — bold and code
     # only, since callout bodies are short by convention.
@@ -165,9 +199,17 @@ def _render_callout(attrs: dict[str, str], body: str) -> str:
     title_html = f'<div class="callout-title">{html.escape(title)}</div>' if title else ""
     return (
         f'<div class="callout" style="background:{style["bg"]};border-left-color:{style["border"]}">'
-        f'<div class="callout-icon" style="color:{style["border"]}">{style["icon"]}</div>'
+        f'<div class="callout-icon">{_icon_svg(kind, style["fg"])}</div>'
         f'<div class="callout-body">{title_html}{body_html}</div>'
         f"</div>"
+    )
+
+
+def _icon_svg(kind: str, color: str) -> str:
+    return (
+        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16" fill="none" '
+        f'stroke="{color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
+        f'<path d="{_ICON_PATHS[kind]}"/></svg>'
     )
 
 
@@ -253,10 +295,13 @@ def _metric_card(attrs: dict[str, str], json_body: dict[str, Any], body: str) ->
     if not title and not value:
         return ""
 
-    trend_color = {"up": "#10b981", "down": "#ef4444", "flat": "#6b7280"}.get(trend, "#6b7280")
-    trend_arrow = {"up": "▲", "down": "▼", "flat": "▬"}.get(trend, "")
+    trend_style = _TREND_STYLES.get(trend, _TREND_STYLES["flat"])
+    trend_arrow = (
+        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 9" width="8" height="7" class="metric-arrow">'
+        f'<path d="{trend_style["path"]}" fill="{trend_style["color"]}"/></svg>'
+    )
     change_html = (
-        f'<span class="metric-change" style="color:{trend_color}">{trend_arrow} {html.escape(change)}</span>'
+        f'<span class="metric-change" style="color:{trend_style["color"]}">{trend_arrow} {html.escape(change)}</span>'
         if change
         else ""
     )
@@ -346,7 +391,13 @@ def _render_chart(spec: dict[str, Any]) -> str:
     renderer = renderers.get(chart_type, _svg_bar)
     svg = renderer(categories, series)
     title_html = f'<div class="chart-title">{html.escape(title)}</div>' if title else ""
-    legend_html = _svg_legend(series) if len(series) > 1 or chart_type == "pie" else ""
+    if chart_type == "pie":
+        # A pie colours its slices by category, so the key lists categories, not the one series.
+        legend_html = _svg_legend([str(c) for c in categories])
+    elif len(series) > 1:
+        legend_html = _svg_legend([str(s.get("name", f"Series {i + 1}")) for i, s in enumerate(series)])
+    else:
+        legend_html = ""
     return f'<div class="chart-wrap">{title_html}{svg}{legend_html}</div>'
 
 
@@ -369,9 +420,12 @@ def _plot_area() -> tuple[int, int, int, int]:
 
 
 def _svg_open() -> str:
+    # width/height as well as viewBox: wkhtmltopdf's WebKit sizes an inline SVG
+    # with only a viewBox at 150px tall. CSS scales it to the column width.
     return (
         f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {_CHART_W} {_CHART_H}" '
-        f'class="chart-svg" font-family="Helvetica, Arial, sans-serif" font-size="11">'
+        f'width="{_CHART_W}" height="{_CHART_H}" class="chart-svg" '
+        f"font-family='{_FONT_STACK}' font-size=\"11\">"
     )
 
 
@@ -535,12 +589,29 @@ def _svg_pie(categories: list[Any], series: list[dict[str, Any]]) -> str:
             lx = cx + r * 0.65 * math.cos(mid)
             ly = cy + r * 0.65 * math.sin(mid)
             slices.append(
-                f'<text x="{lx:.1f}" y="{ly:.1f}" text-anchor="middle" fill="white" '
+                f'<text x="{lx:.1f}" y="{ly:.1f}" text-anchor="middle" fill="{_label_color(color)}" '
                 f'font-weight="600">{frac * 100:.0f}%</text>'
             )
         angle = end_angle
 
     return _svg_open() + "".join(slices) + "</svg>"
+
+
+def _label_color(fill: str) -> str:
+    """White or near-black, whichever contrasts more with the slice (WCAG contrast ratio)."""
+    luminance = _relative_luminance(fill)
+    on_white = 1.05 / (luminance + 0.05)
+    on_dark = (luminance + 0.05) / (_relative_luminance(_DARK_LABEL) + 0.05)
+    return "#ffffff" if on_white >= on_dark else _DARK_LABEL
+
+
+_DARK_LABEL = "#111827"
+
+
+def _relative_luminance(hex_color: str) -> float:
+    r, g, b = (int(hex_color[i : i + 2], 16) / 255 for i in (1, 3, 5))
+    channel = [c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4 for c in (r, g, b)]
+    return 0.2126 * channel[0] + 0.7152 * channel[1] + 0.0722 * channel[2]
 
 
 def _svg_scatter(categories: list[Any], series: list[dict[str, Any]]) -> str:
@@ -570,11 +641,11 @@ def _svg_scatter(categories: list[Any], series: list[dict[str, Any]]) -> str:
     return _svg_open() + _draw_axes(y_nice_max, y_nice_min) + "".join(points) + "</svg>"
 
 
-def _svg_legend(series: list[dict[str, Any]]) -> str:
+def _svg_legend(names: list[str]) -> str:
     items = []
-    for i, s in enumerate(series):
+    for i, raw_name in enumerate(names):
         color = _CHART_PALETTE[i % len(_CHART_PALETTE)]
-        name = html.escape(str(s.get("name", f"Series {i + 1}")))
+        name = html.escape(raw_name)
         items.append(
             f'<span class="legend-item"><span class="legend-swatch" '
             f'style="background:{color}"></span>{name}</span>'

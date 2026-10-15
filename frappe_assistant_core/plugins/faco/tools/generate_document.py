@@ -17,9 +17,9 @@
 """
 Generate Document Tool — converts markdown content to a downloadable PDF.
 
-Uses Frappe's built-in markdown2 (md_to_html) for markdown conversion,
-and WeasyPrint (preferred) or wkhtmltopdf (fallback) for PDF rendering.
-No additional dependencies required.
+Uses markdown2 (a Frappe dependency) for markdown conversion, and WeasyPrint
+(preferred) or wkhtmltopdf (fallback) for PDF rendering. Which renderer runs
+depends on the server, so the template sticks to CSS both of them understand.
 """
 
 import os
@@ -32,9 +32,20 @@ from frappe.utils import now_datetime
 
 from frappe_assistant_core.core.base_tool import BaseTool
 from frappe_assistant_core.plugins.faco.tools.rich_blocks import (
+    has_cover_block,
     preprocess_rich_blocks,
     restore_rich_blocks,
 )
+
+# Page margins in mm, shared by WeasyPrint's @page rule and wkhtmltopdf's options.
+_MARGINS_MM = {"top": 15, "right": 15, "bottom": 20, "left": 15}
+# Portrait width × height in mm.
+_PAGE_SIZES_MM = {"A4": (210, 297), "Letter": (215.9, 279.4)}
+# markdown2 extras. cuddled-lists turns "Key points:\n- a" into a list instead of a
+# paragraph full of hyphens, which is how models usually write it.
+_MARKDOWN_EXTRAS = ["fenced-code-blocks", "tables", "cuddled-lists", "strike"]
+# markdown2 aligns table columns with an inline style, which the sanitiser strips.
+_CELL_ALIGN_RE = re.compile(r'<(th|td) style="text-align:(left|right|center);">')
 
 
 class GenerateDocument(BaseTool):
@@ -108,35 +119,10 @@ class GenerateDocument(BaseTool):
             # Sanitize filename
             safe_filename = self._sanitize_filename(filename)
 
-            # Convert markdown to HTML, then sanitize. FACO-M9: md_to_html
-            # returns markupsafe.Markup which Jinja inserts verbatim. Any
-            # raw HTML in the LLM's markdown output (including script,
-            # onerror, javascript: URIs) would otherwise survive straight
-            # into the rendering pipeline — benign for WeasyPrint today but
-            # unsafe the moment the renderer changes (wkhtmltopdf executes
-            # script; browser preview of the PDF URL can too).
-            #
-            # Rich-block fences (```chart```, ```callout```, ```metric```,
-            # ```cover```, ```pagebreak```) are pulled out *before* the
-            # bleach pass, replaced with opaque tokens, and substituted
-            # back in *after* sanitisation. The rendered HTML we emit for
-            # these blocks contains inline SVG and inline styles that
-            # bleach would otherwise strip — but it's trusted because we
-            # generated it ourselves, not the LLM.
-            content_with_tokens, rich_tokens = preprocess_rich_blocks(content)
-            sanitised = self._sanitize_html(frappe.utils.md_to_html(content_with_tokens) or "")
-            html_body = restore_rich_blocks(sanitised, rich_tokens)
-
-            # Build full HTML document from template
-            full_html = self._render_template(
-                body=html_body,
-                title=title,
-                orientation=orientation,
-                page_size=page_size,
-            )
+            full_html = self._build_html(content, title=title, orientation=orientation, page_size=page_size)
 
             # Generate PDF (WeasyPrint preferred, wkhtmltopdf fallback)
-            pdf_bytes = self._generate_pdf(full_html, page_size, orientation)
+            pdf_bytes = self._generate_pdf(full_html, page_size, orientation, title=title)
 
             # Save as private file
             pdf_filename = f"{safe_filename}.pdf"
@@ -172,6 +158,41 @@ class GenerateDocument(BaseTool):
                 message=f"Error generating PDF: {e!s}",
             )
             return {"success": False, "error": str(e)}
+
+    def _build_html(self, content: str, title: str | None, orientation: str, page_size: str) -> str:
+        """Turn the agent's markdown into the full HTML document the renderer receives."""
+        # Convert markdown to HTML, then sanitize. FACO-M9: markdown2 passes
+        # raw HTML through and the template inserts the body verbatim. Any
+        # raw HTML in the LLM's markdown output (including script,
+        # onerror, javascript: URIs) would otherwise survive straight
+        # into the rendering pipeline — benign for WeasyPrint today but
+        # unsafe the moment the renderer changes (wkhtmltopdf executes
+        # script; browser preview of the PDF URL can too).
+        #
+        # Rich-block fences (```chart```, ```callout```, ```metric```,
+        # ```cover```, ```pagebreak```) are pulled out *before* the
+        # bleach pass, replaced with opaque tokens, and substituted
+        # back in *after* sanitisation. The rendered HTML we emit for
+        # these blocks contains inline SVG and inline styles that
+        # bleach would otherwise strip — but it's trusted because we
+        # generated it ourselves, not the LLM.
+        content_with_tokens, rich_tokens = preprocess_rich_blocks(content)
+        sanitised = self._sanitize_html(self._markdown_to_html(content_with_tokens))
+        html_body = restore_rich_blocks(sanitised, rich_tokens)
+        return self._render_template(
+            body=html_body,
+            title=title,
+            orientation=orientation,
+            page_size=page_size,
+            has_cover=has_cover_block(rich_tokens),
+        )
+
+    def _markdown_to_html(self, content: str) -> str:
+        """Markdown to HTML, with column alignment moved into the ``align`` attribute bleach keeps."""
+        import markdown2
+
+        html_body = markdown2.markdown(content, extras=_MARKDOWN_EXTRAS)
+        return _CELL_ALIGN_RE.sub(r'<\1 align="\2">', html_body)
 
     # FACO-M9: tags allowed in the PDF body. Covers CommonMark output from
     # md_to_html; everything else is stripped. No ``script``, no ``iframe``,
@@ -262,7 +283,12 @@ class GenerateDocument(BaseTool):
         return name[:200]
 
     def _render_template(
-        self, body: str, title: str | None = None, orientation: str = "portrait", page_size: str = "A4"
+        self,
+        body: str,
+        title: str | None = None,
+        orientation: str = "portrait",
+        page_size: str = "A4",
+        has_cover: bool = False,
     ) -> str:
         """Render the PDF HTML template with the given content."""
         template_path = os.path.join(
@@ -280,6 +306,8 @@ class GenerateDocument(BaseTool):
             template_string = f.read()
 
         generated_date = now_datetime().strftime("%B %d, %Y at %I:%M %p")
+        # 2mm short of the content area, so rounding never pushes the cover onto a second page.
+        cover_height = self._content_height_mm(page_size, orientation) - 2
 
         context = {
             "body": body,
@@ -288,17 +316,24 @@ class GenerateDocument(BaseTool):
             "generated_date": generated_date,
             "page_size": page_size,
             "orientation": orientation.capitalize() if orientation == "landscape" else None,
-            "margin_top": "15mm",
-            "margin_bottom": "20mm",
-            "margin_left": "15mm",
-            "margin_right": "15mm",
+            "margins": {side: f"{mm}mm" for side, mm in _MARGINS_MM.items()},
+            "has_cover": has_cover,
+            "cover_height": f"{cover_height:g}mm",
+            "cover_padding_top": f"{cover_height / 3:.0f}mm",
         }
 
         # template_string is the shipped document_pdf.html, never user input.
         # `body` is bleach-sanitized via _sanitize_html before reaching context.
         return frappe.render_template(template_string, context)  # nosemgrep: frappe-ssti
 
-    def _generate_pdf(self, html: str, page_size: str, orientation: str) -> bytes:
+    @staticmethod
+    def _content_height_mm(page_size: str, orientation: str) -> float:
+        """Height of the area inside the page margins."""
+        width, height = _PAGE_SIZES_MM.get(page_size, _PAGE_SIZES_MM["A4"])
+        page_height = width if orientation == "landscape" else height
+        return page_height - _MARGINS_MM["top"] - _MARGINS_MM["bottom"]
+
+    def _generate_pdf(self, html: str, page_size: str, orientation: str, title: str | None = None) -> bytes:
         """
         Generate PDF bytes from HTML.
 
@@ -324,7 +359,8 @@ class GenerateDocument(BaseTool):
         except Exception as e:
             self.logger.warning(f"WeasyPrint failed, falling back to wkhtmltopdf: {e}")
 
-        # Fallback to wkhtmltopdf
+        # Fallback to wkhtmltopdf. It ignores @page, so margins and the page-number footer
+        # that WeasyPrint takes from the template are passed as options here.
         pdf_options = {
             "page-size": page_size,
             "orientation": "Landscape" if orientation == "landscape" else "Portrait",
@@ -332,6 +368,11 @@ class GenerateDocument(BaseTool):
             "background": None,
             "images": None,
             "encoding": "UTF-8",
+            **{f"margin-{side}": f"{mm}mm" for side, mm in _MARGINS_MM.items()},
+            "footer-right": "[page] / [topage]",
+            "footer-left": (title or "").replace("[", "(").replace("]", ")"),
+            "footer-font-size": "8",
+            "footer-spacing": "6",
         }
         return frappe.utils.pdf.get_pdf(html, options=pdf_options)
 

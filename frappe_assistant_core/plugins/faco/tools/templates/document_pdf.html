@@ -6,50 +6,48 @@
 /* ---------------------------------------------------------------------
    Page layout
    ---------------------------------------------------------------------
-   WeasyPrint reads the @page rules directly; wkhtmltopdf ignores them
-   and uses the .print-format block. Keep both in sync.
+   The renderer is WeasyPrint where the server has its system libraries and
+   wkhtmltopdf (a 2011-era WebKit) otherwise, so everything below sticks to
+   CSS both understand: no flexbox, gap, vh units or unprefixed gradients.
+
+   WeasyPrint takes margins and the footer from @page; wkhtmltopdf ignores
+   @page and gets the same margins and a page-number footer as options in
+   generate_document._generate_pdf. Margins live only on the page: setting
+   them on the content as well doubled them.
 */
 @page {
 	size: {{ page_size or 'A4' }} {{ 'landscape' if orientation == 'Landscape' else 'portrait' }};
-	margin: {{ margin_top or '18mm' }} {{ margin_right or '15mm' }} {{ margin_bottom or '22mm' }} {{ margin_left or '15mm' }};
+	margin: {{ margins.top }} {{ margins.right }} {{ margins.bottom }} {{ margins.left }};
 
 	@bottom-right {
 		content: counter(page) " / " counter(pages);
-		font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+		font-family: "Inter", "Noto Sans", "Helvetica Neue", Helvetica, Arial, "Liberation Sans", "DejaVu Sans", sans-serif;
 		font-size: 8pt;
-		color: #999;
+		color: #9ca3af;
 	}
 
 	@bottom-left {
 		content: "{{ (title or '') | replace('"', '') }}";
-		font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+		font-family: "Inter", "Noto Sans", "Helvetica Neue", Helvetica, Arial, "Liberation Sans", "DejaVu Sans", sans-serif;
 		font-size: 8pt;
-		color: #999;
+		color: #9ca3af;
 	}
 }
 
-/* Cover page gets its own @page rule — no header/footer, full-bleed feel. */
+/* The cover page keeps the normal margins (so it is the same in both
+   renderers) but drops the footer. */
 @page cover {
-	margin: 0;
 	@bottom-right { content: none; }
 	@bottom-left { content: none; }
-}
-
-.print-format {
-	margin-top: {{ margin_top or '15mm' }};
-	margin-bottom: {{ margin_bottom or '20mm' }};
-	margin-left: {{ margin_left or '15mm' }};
-	margin-right: {{ margin_right or '15mm' }};
-	page-size: {{ page_size or 'A4' }};
-	{% if orientation == 'Landscape' %}orientation: Landscape;{% endif %}
 }
 
 /* ---------------------------------------------------------------------
    Base typography
    --------------------------------------------------------------------- */
 body {
-	font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+	font-family: "Inter", "Noto Sans", "Helvetica Neue", Helvetica, Arial, "Liberation Sans", "DejaVu Sans", sans-serif;
 	font-size: 10.5pt;
+	margin: 0;
 	line-height: 1.6;
 	color: #1a1a1a;
 }
@@ -61,7 +59,7 @@ body {
 	color: #111;
 	margin: 0 0 4px 0;
 	padding-bottom: 10px;
-	border-bottom: 3px solid #2563eb;
+	border-bottom: 3px solid #5470c6;
 	letter-spacing: -0.02em;
 }
 
@@ -83,9 +81,13 @@ h1, h2, h3, h4 { page-break-after: avoid; break-after: avoid; }
 /* Paragraphs */
 p { margin: 0 0 10px; orphans: 3; widows: 3; }
 
-/* Lists */
+/* Lists. A blank line between two items makes markdown wrap every item of
+   that list in <p>, so paragraph spacing inside items is removed: a list is
+   spaced the same however it was typed. */
 ul, ol { margin: 0 0 10px; padding-left: 24px; }
-li { margin-bottom: 3px; }
+li { margin-bottom: 4px; }
+li > p { margin: 0; }
+li > ul, li > ol { margin: 4px 0 0; }
 
 /* ---------------------------------------------------------------------
    Tables
@@ -95,8 +97,10 @@ table {
 	border-collapse: collapse;
 	margin: 14px 0;
 	font-size: 9.5pt;
-	page-break-inside: avoid;
 }
+
+/* A table taller than a page has to split; keep each row whole instead. */
+tr { page-break-inside: avoid; }
 
 thead {
 	display: table-header-group; /* repeat header on page break */
@@ -119,11 +123,15 @@ tbody td {
 
 tbody tr:nth-child(even) { background: #fafafa; }
 
+/* Column alignment from the markdown (|--:|), carried as the align attribute. */
+th[align="right"], td[align="right"] { text-align: right; }
+th[align="center"], td[align="center"] { text-align: center; }
+
 /* ---------------------------------------------------------------------
    Code
    --------------------------------------------------------------------- */
 code {
-	font-family: 'SF Mono', 'Consolas', 'Liberation Mono', 'Courier New', monospace;
+	font-family: "DejaVu Sans Mono", "Liberation Mono", Menlo, Consolas, "Courier New", monospace;
 	font-size: 9pt;
 	background: #f3f4f6;
 	padding: 1px 4px;
@@ -158,31 +166,38 @@ blockquote p:last-child { margin-bottom: 0; }
 
 hr { border: none; border-top: 1px solid #e5e7eb; margin: 18px 0; }
 
-a { color: #2563eb; text-decoration: none; }
+a { color: #3d56a8; text-decoration: none; }
 
 strong { font-weight: 600; }
 em { font-style: italic; }
+s, del { text-decoration: line-through; color: #6b7280; }
 
 /* ---------------------------------------------------------------------
    Cover page
    --------------------------------------------------------------------- */
+/* Fills the area inside the page margins; the height and the top padding that
+   sets the text a third of the way down are computed for the page size and
+   orientation in generate_document, because neither flexbox nor a stretched
+   table cell centres it in both renderers. The solid colour comes first so
+   wkhtmltopdf, which only knows the -webkit- gradient, never falls back to
+   white text on white. */
 .cover-page {
 	page: cover;
 	page-break-after: always;
 	break-after: page;
-	height: 100vh;
-	background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 60%, #3b82f6 100%);
-	color: white;
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	text-align: center;
 	box-sizing: border-box;
-	padding: 60px;
-	margin: 0;
+	width: 100%;
+	height: {{ cover_height }};
+	padding-top: {{ cover_padding_top }};
+	background-color: #3d56a8;
+	background-image: -webkit-linear-gradient(315deg, #2e4387 0%, #3d56a8 55%, #5470c6 100%);
+	background-image: linear-gradient(135deg, #2e4387 0%, #3d56a8 55%, #5470c6 100%);
+	border-radius: 8px;
+	color: white;
+	text-align: center;
 }
 
-.cover-inner { max-width: 80%; }
+.cover-inner { padding: 0 12%; }
 
 .cover-title {
 	font-size: 36pt;
@@ -221,30 +236,26 @@ em { font-style: italic; }
    Callout — info / tip / warning / success / error
    --------------------------------------------------------------------- */
 .callout {
-	display: flex;
-	gap: 12px;
+	display: table;
+	width: 100%;
+	box-sizing: border-box;
 	margin: 14px 0;
 	padding: 12px 14px;
-	border-left: 4px solid #3b82f6;
+	border-left: 4px solid #5470c6;
 	border-radius: 4px;
 	page-break-inside: avoid;
 }
 
 .callout-icon {
-	font-weight: 700;
-	font-size: 14pt;
-	line-height: 1;
-	flex-shrink: 0;
-	width: 22px;
-	height: 22px;
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	border-radius: 50%;
-	background: white;
+	display: table-cell;
+	width: 16px;
+	padding: 2px 10px 0 0;
+	vertical-align: top;
 }
 
-.callout-body { flex: 1; }
+.callout-icon svg { display: block; }
+
+.callout-body { display: table-cell; vertical-align: top; }
 .callout-title { font-weight: 600; color: #111; margin-bottom: 4px; font-size: 10.5pt; }
 .callout-body p { margin: 0 0 6px; }
 .callout-body p:last-child { margin-bottom: 0; }
@@ -252,10 +263,12 @@ em { font-style: italic; }
 /* ---------------------------------------------------------------------
    Metric card
    --------------------------------------------------------------------- */
+/* Fixed width, three to a row: cards sized to their content wrapped 2 + 1. */
 .metric-card {
 	display: inline-block;
-	min-width: 160px;
-	margin: 8px 8px 8px 0;
+	width: 30.5%;
+	box-sizing: border-box;
+	margin: 8px 2% 8px 0;
 	padding: 14px 16px;
 	border: 1px solid #e5e7eb;
 	border-radius: 6px;
@@ -287,6 +300,8 @@ em { font-style: italic; }
 	font-weight: 600;
 }
 
+.metric-arrow { vertical-align: middle; }
+
 .metric-description {
 	margin-top: 4px;
 	font-size: 8.5pt;
@@ -312,11 +327,14 @@ em { font-style: italic; }
 	margin-bottom: 8px;
 }
 
+/* Capped near the portrait column width, so a landscape page shows a chart
+   the same size instead of one tall enough to need a page of its own. */
 .chart-svg {
 	display: block;
 	width: 100%;
+	max-width: 170mm;
 	height: auto;
-	max-height: 320px;
+	margin: 0 auto;
 }
 
 .chart-legend {
@@ -374,7 +392,8 @@ img {
 </head>
 <body>
 <div class="print-format">
-	{% if title %}
+	{# A cover page already shows the title; a header as well gave it a page of its own. #}
+	{% if title and not has_cover %}
 	<h1 class="doc-title">{{ title }}</h1>
 	{% endif %}
 	{% if subtitle %}

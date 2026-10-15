@@ -100,11 +100,11 @@ For headline KPIs. Group 3–5 cards in a row above a chart — that's a "dashbo
 ```metric title="Avg Order" value="₹5,769" change="-4%" trend="down"
 ```
 
-Place several metric blocks on consecutive lines — they render side-by-side. `trend` controls the arrow colour (`up` green, `down` red, `flat` grey).
+Place several metric blocks on consecutive lines — they render side-by-side, three cards to a row. `trend` controls the arrow colour (`up` green, `down` red, `flat` grey).
 
 ### Cover page
 
-A full-bleed branded page with title, subtitle, author, and date. Use for formal deliverables.
+A branded page with title, subtitle, author, and date that fills the first page. Use for formal deliverables. It already shows the title, so the `title` argument is used only for the page footer when a cover is present.
 
 ```cover title="Q1 FY26 Sales Report" subtitle="Performance summary and outlook" author="Finance Team" date="May 2026"
 Optional supporting paragraph rendered below the title — keep it to one sentence.
@@ -123,12 +123,12 @@ Force a new page where you need one — typically between major sections of a lo
 
 ## Markdown features that PDF renders well
 
-- **Headings** (`#`, `##`, `###`) — used for table-of-contents-like structure. H1 in body content gets a coloured underline; H2 gets a thin grey rule; H3 is bold-only.
-- **Tables** — full borders, alternating row stripes, **header row repeats on page breaks** automatically.
-- **Lists** — both ordered and unordered.
+- **Headings** (`#`, `##`, `###`) — used for table-of-contents-like structure. The `title` argument gets a coloured underline; H2 gets a thin grey rule; H1 and H3 are bold-only.
+- **Tables** — full borders, alternating row stripes, **header row repeats on page breaks** automatically. Column alignment is kept: use `|--:|` to right-align number columns.
+- **Lists** — both ordered and unordered, including a list that starts on the line straight after a sentence. Nest with two or four spaces.
 - **Code blocks** — light grey background, monospace, page-break-protected.
 - **Blockquotes** — italic, left-border, light grey background. Great for pull quotes.
-- **Bold / italic / inline code / horizontal rule** — all styled.
+- **Bold / italic / ~~strikethrough~~ / inline code / horizontal rule** — all styled.
 
 ## Worked example — a clean monthly report
 
