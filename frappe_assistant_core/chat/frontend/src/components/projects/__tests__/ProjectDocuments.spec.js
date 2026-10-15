@@ -40,11 +40,27 @@ const ConfirmStub = {
 	template: `<div v-if="open" data-test="confirm"><button data-test="confirm-ok" @click="$emit('confirm')"/></div>`,
 };
 
+const PreviewStub = {
+	props: ["doc", "showAccess"],
+	emits: ["close", "view-chunks"],
+	template: `<div v-if="doc" data-test="preview" :data-access="String(showAccess)">{{ doc.file_name }}
+		<button data-test="preview-chunks" @click="$emit('view-chunks', doc)"/>
+		<button data-test="preview-close" @click="$emit('close')"/></div>`,
+};
+
+const ChunksStub = {
+	props: ["doc"],
+	template: `<div v-if="doc" data-test="chunks">{{ doc.file_name }}</div>`,
+};
+
 function mountBlock() {
 	return mount(ProjectDocuments, {
 		props: { projectId: "p1" },
 		attachTo: document.body,
-		global: { plugins: [pinia], stubs: { ConfirmModal: ConfirmStub } },
+		global: {
+			plugins: [pinia],
+			stubs: { ConfirmModal: ConfirmStub, DocumentPreviewPanel: PreviewStub, ChunkBrowserPanel: ChunksStub },
+		},
 	});
 }
 
@@ -164,8 +180,7 @@ describe("ProjectDocuments", () => {
 		remove.mockResolvedValue({});
 		const w = mountBlock();
 		await flushPromises();
-		await w.findAll("[data-test=doc-menu]")[0].trigger("click");
-		await w.get("[data-test=doc-delete]").trigger("click");
+		await w.findAll("[data-test=doc-delete]")[0].trigger("click");
 		expect(remove).not.toHaveBeenCalled();
 		await w.get("[data-test=confirm-ok]").trigger("click");
 		await flushPromises();
@@ -179,7 +194,6 @@ describe("ProjectDocuments", () => {
 		remove.mockRejectedValue(new Error("nope"));
 		const w = mountBlock();
 		await flushPromises();
-		await w.get("[data-test=doc-menu]").trigger("click");
 		await w.get("[data-test=doc-delete]").trigger("click");
 		await w.get("[data-test=confirm-ok]").trigger("click");
 		await flushPromises();
@@ -188,26 +202,44 @@ describe("ProjectDocuments", () => {
 		w.unmount();
 	});
 
-	it("offers Download and closes the menu on an outside click or Escape without bubbling", async () => {
+	it("offers Download straight from the row", async () => {
 		list.mockResolvedValue({ documents: [doc("a", "Completed")] });
 		const w = mountBlock();
 		await flushPromises();
-		await w.get("[data-test=doc-menu]").trigger("click");
 		expect(w.get("[data-test=doc-download]").attributes("href")).toBe("/dl/a");
+		w.unmount();
+	});
 
-		document.body.click();
+	it("opens the knowledge-base preview for a clicked row, without the sharing action", async () => {
+		list.mockResolvedValue({ documents: [doc("a", "Completed"), doc("b", "Completed")] });
+		const w = mountBlock();
 		await flushPromises();
-		expect(w.find("[data-test=doc-download]").exists()).toBe(false);
+		expect(w.find("[data-test=preview]").exists()).toBe(false);
+		await w.findAll("[data-test=doc-preview]")[1].trigger("click");
+		expect(w.get("[data-test=preview]").text()).toBe("b.pdf");
+		expect(w.get("[data-test=preview]").attributes("data-access")).toBe("false");
+		await w.get("[data-test=preview-close]").trigger("click");
+		expect(w.find("[data-test=preview]").exists()).toBe(false);
+		w.unmount();
+	});
 
-		await w.get("[data-test=doc-menu]").trigger("click");
-		const outer = vi.fn();
-		document.addEventListener("keydown", outer);
-		const ev = new KeyboardEvent("keydown", { key: "Escape", bubbles: true });
-		w.get("[role=menu]").element.dispatchEvent(ev);
+	it("opens the chunk browser from the preview", async () => {
+		list.mockResolvedValue({ documents: [doc("a", "Completed")] });
+		const w = mountBlock();
 		await flushPromises();
-		document.removeEventListener("keydown", outer);
-		expect(w.find("[data-test=doc-download]").exists()).toBe(false);
-		expect(outer).not.toHaveBeenCalled();
+		await w.get("[data-test=doc-preview]").trigger("click");
+		await w.get("[data-test=preview-chunks]").trigger("click");
+		expect(w.get("[data-test=chunks]").text()).toBe("a.pdf");
+		w.unmount();
+	});
+
+	it("closes an open preview when the project changes", async () => {
+		list.mockResolvedValue({ documents: [doc("a", "Completed")] });
+		const w = mountBlock();
+		await flushPromises();
+		await w.get("[data-test=doc-preview]").trigger("click");
+		await w.setProps({ projectId: "p2" });
+		expect(w.find("[data-test=preview]").exists()).toBe(false);
 		w.unmount();
 	});
 
@@ -263,8 +295,7 @@ describe("ProjectDocuments", () => {
 		const w = mountBlock();
 		await flushPromises();
 		await vi.advanceTimersByTimeAsync(5000);
-		await w.findAll("[data-test=doc-menu]")[1].trigger("click");
-		await w.get("[data-test=doc-delete]").trigger("click");
+		await w.findAll("[data-test=doc-delete]")[1].trigger("click");
 		await w.get("[data-test=confirm-ok]").trigger("click");
 		await flushPromises();
 		resolveSlow({ documents: [doc("a", "Processing"), doc("b", "Completed")] });

@@ -49,12 +49,18 @@
 				v-for="doc in documents"
 				:key="doc.document_id"
 				:doc="doc"
-				:menu-open="menuDocId === doc.document_id"
-				@toggle-menu="toggleMenu(doc.document_id)"
-				@close-menu="menuDocId = null"
-				@delete="askDelete(doc)"
+				@preview="previewDoc = doc"
+				@delete="deleteTarget = doc"
 			/>
 		</ul>
+
+		<DocumentPreviewPanel
+			:doc="previewDoc"
+			:show-access="false"
+			@close="previewDoc = null"
+			@view-chunks="chunkBrowserDoc = $event"
+		/>
+		<ChunkBrowserPanel :doc="chunkBrowserDoc" @close="chunkBrowserDoc = null" />
 
 		<ConfirmModal
 			:open="!!deleteTarget"
@@ -74,6 +80,8 @@
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { storeToRefs } from "pinia";
 import ConfirmModal from "@/components/common/ConfirmModal.vue";
+import ChunkBrowserPanel from "@/components/knowledge/ChunkBrowserPanel.vue";
+import DocumentPreviewPanel from "@/components/knowledge/DocumentPreviewPanel.vue";
 import ProjectDocumentRow from "@/components/projects/ProjectDocumentRow.vue";
 import { api } from "@/api/client";
 import { useToast } from "@/composables/useToast";
@@ -101,7 +109,8 @@ const refreshFailed = ref(false);
 const uploading = ref(false);
 const dragging = ref(false);
 const fileInput = ref(null);
-const menuDocId = ref(null);
+const previewDoc = ref(null);
+const chunkBrowserDoc = ref(null);
 const deleteTarget = ref(null);
 const deleting = ref(false);
 
@@ -170,7 +179,8 @@ watch(
 		loadFailed.value = false;
 		refreshFailed.value = false;
 		failures = 0;
-		menuDocId.value = null;
+		previewDoc.value = null;
+		chunkBrowserDoc.value = null;
 		loadDocuments();
 	},
 	{ immediate: true }
@@ -220,15 +230,6 @@ function onDrop(event) {
 	uploadFiles(files);
 }
 
-function toggleMenu(documentId) {
-	menuDocId.value = menuDocId.value === documentId ? null : documentId;
-}
-
-function askDelete(doc) {
-	menuDocId.value = null;
-	deleteTarget.value = doc;
-}
-
 async function removeDocument() {
 	const target = deleteTarget.value;
 	deleting.value = true;
@@ -245,29 +246,6 @@ async function removeDocument() {
 		deleting.value = false;
 	}
 }
-
-// Capture phase, so the check runs before any handler elsewhere on the page stops the click.
-function onDocumentClick(event) {
-	if (!event.target.closest?.(".doc-menu-root")) menuDocId.value = null;
-}
-
-function onDocumentKey(event) {
-	if (event.key === "Escape") menuDocId.value = null;
-}
-
-function detachListeners() {
-	document.removeEventListener("click", onDocumentClick, true);
-	document.removeEventListener("keydown", onDocumentKey);
-}
-
-watch(menuDocId, (id) => {
-	detachListeners();
-	if (id) {
-		document.addEventListener("click", onDocumentClick, true);
-		document.addEventListener("keydown", onDocumentKey);
-	}
-});
-onBeforeUnmount(detachListeners);
 </script>
 
 <style scoped>

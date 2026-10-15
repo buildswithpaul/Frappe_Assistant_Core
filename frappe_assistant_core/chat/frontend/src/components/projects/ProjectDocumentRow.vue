@@ -1,33 +1,48 @@
 <template>
 	<li class="doc-row" data-test="doc-row">
-		<span class="doc-name" :title="doc.file_name">{{ doc.file_name }}</span>
-		<span class="doc-size">{{ formatFileSizeMb(doc.file_size_mb) }}</span>
+		<button
+			class="doc-open"
+			data-test="doc-preview"
+			:title="__('Preview {0}', [doc.file_name])"
+			@click="$emit('preview')"
+		>
+			<span class="doc-name">{{ doc.file_name }}</span>
+			<span class="doc-size">{{ formatFileSizeMb(doc.file_size_mb) }}</span>
+		</button>
 		<span class="pill" :class="status.cls" data-test="doc-status">{{ status.label }}</span>
-		<div class="doc-menu-root">
-			<button
-				class="row-menu"
-				data-test="doc-menu"
-				aria-haspopup="menu"
-				:aria-expanded="menuOpen"
-				:aria-label="__('Document options')"
-				@click="$emit('toggle-menu')"
+		<div class="row-actions">
+			<a
+				class="row-action"
+				data-test="doc-download"
+				:href="api.documents.getDownloadUrl(doc.document_id)"
+				:title="__('Download')"
+				:aria-label="__('Download {0}', [doc.file_name])"
 			>
-				⋯
+				<svg fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+					<path
+						stroke-linecap="round"
+						stroke-linejoin="round"
+						stroke-width="2"
+						d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
+					/>
+				</svg>
+			</a>
+			<button
+				class="row-action danger"
+				data-test="doc-delete"
+				:title="__('Delete')"
+				:aria-label="__('Delete {0}', [doc.file_name])"
+				@click="$emit('delete')"
+			>
+				<svg fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+					<path
+						stroke-linecap="round"
+						stroke-linejoin="round"
+						stroke-width="2"
+						d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+					/>
+				</svg>
 			</button>
-			<div v-if="menuOpen" class="menu" role="menu" @keydown.esc.stop.prevent="$emit('close-menu')">
-				<a
-					class="menu-item"
-					role="menuitem"
-					data-test="doc-download"
-					:href="api.documents.getDownloadUrl(doc.document_id)"
-					@click="$emit('close-menu')"
-				>
-					{{ __("Download") }}
-				</a>
-				<button class="menu-item danger" role="menuitem" data-test="doc-delete" @click="$emit('delete')">
-					{{ __("Delete") }}
-				</button>
-			</div>
 		</div>
 	</li>
 </template>
@@ -40,10 +55,9 @@ import { __ } from "@/utils/i18n";
 
 const props = defineProps({
 	doc: { type: Object, required: true },
-	menuOpen: { type: Boolean, default: false },
 });
 
-defineEmits(["toggle-menu", "close-menu", "delete"]);
+defineEmits(["preview", "delete"]);
 
 const STATUS_BY_STATE = {
 	Completed: { label: "Ready", cls: "ready" },
@@ -60,10 +74,32 @@ const status = computed(() => {
 .doc-row {
 	display: flex;
 	align-items: center;
-	gap: 0.625rem;
-	padding: 0.375rem 0;
+	gap: 0.5rem;
+	padding: 0.125rem 0;
 	font-size: 0.875rem;
 	color: var(--ql-text);
+}
+
+.doc-open {
+	flex: 1;
+	min-width: 0;
+	display: flex;
+	align-items: center;
+	gap: 0.625rem;
+	padding: 0.375rem 0.5rem;
+	margin-left: -0.5rem;
+	font: inherit;
+	color: inherit;
+	text-align: left;
+	background: none;
+	border: none;
+	border-radius: 0.375rem;
+	cursor: pointer;
+}
+
+.doc-open:hover,
+.doc-open:focus-visible {
+	background-color: var(--ql-subtle);
 }
 
 .doc-name {
@@ -98,72 +134,50 @@ const status = computed(() => {
 	color: var(--ql-danger);
 }
 
-.doc-menu-root {
-	position: relative;
+.row-actions {
+	display: flex;
 	flex-shrink: 0;
-}
-
-.row-menu {
-	padding: 0.25rem 0.5rem;
-	color: var(--ql-text-muted);
-	background: none;
-	border: none;
-	border-radius: 0.25rem;
-	cursor: pointer;
+	gap: 0.125rem;
 	opacity: 0;
-	transition: all 0.15s ease;
+	transition: opacity 0.15s ease;
 }
 
-.doc-row:hover .row-menu,
-.row-menu:focus-visible,
-.row-menu[aria-expanded="true"] {
+.doc-row:hover .row-actions,
+.row-actions:focus-within {
 	opacity: 1;
 }
 
 @media (hover: none) {
-	.row-menu {
+	.row-actions {
 		opacity: 1;
 	}
 }
 
-.row-menu:hover {
-	color: var(--ql-text);
-	background-color: var(--ql-subtle);
-}
-
-.menu {
-	position: absolute;
-	right: 0;
-	top: 100%;
-	z-index: 20;
-	min-width: 9rem;
-	padding: 0.25rem;
-	background: var(--ql-surface);
-	border: 1px solid var(--ql-border);
-	border-radius: 0.5rem;
-	box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
-}
-
-.menu-item {
-	display: block;
-	width: 100%;
-	box-sizing: border-box;
-	text-align: left;
-	padding: 0.375rem 0.625rem;
-	font-size: 0.875rem;
-	color: var(--ql-text);
+.row-action {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 1.75rem;
+	height: 1.75rem;
+	padding: 0.3125rem;
+	color: var(--ql-text-muted);
 	background: none;
 	border: none;
 	border-radius: 0.375rem;
 	cursor: pointer;
-	text-decoration: none;
 }
 
-.menu-item:hover {
+.row-action svg {
+	width: 100%;
+	height: 100%;
+}
+
+.row-action:hover {
+	color: var(--ql-text);
 	background-color: var(--ql-subtle);
 }
 
-.menu-item.danger {
+.row-action.danger:hover {
 	color: var(--ql-danger);
 }
 </style>

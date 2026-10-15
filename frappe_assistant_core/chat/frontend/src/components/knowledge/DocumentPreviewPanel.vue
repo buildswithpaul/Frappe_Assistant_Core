@@ -41,7 +41,7 @@
 							</div>
 							<div class="preview-actions">
 								<button
-									v-if="doc.is_owner"
+									v-if="showAccess && doc.is_owner"
 									class="preview-action-btn"
 									title="Manage access"
 									aria-label="Manage access"
@@ -137,6 +137,8 @@ const teleportTarget = useTeleportTarget();
 
 const props = defineProps({
 	doc: { type: Object, default: null },
+	// Project documents are scoped to their project, so they have no knowledge-base sharing.
+	showAccess: { type: Boolean, default: true },
 });
 
 const emit = defineEmits(["close", "manage-access", "view-chunks"]);
