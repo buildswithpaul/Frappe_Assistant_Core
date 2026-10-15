@@ -194,8 +194,8 @@ class GenerateDocument(BaseTool):
         html_body = markdown2.markdown(content, extras=_MARKDOWN_EXTRAS)
         return _CELL_ALIGN_RE.sub(r'<\1 align="\2">', html_body)
 
-    # FACO-M9: tags allowed in the PDF body. Covers CommonMark output from
-    # md_to_html; everything else is stripped. No ``script``, no ``iframe``,
+    # FACO-M9: tags allowed in the PDF body. Covers the markdown2 output;
+    # everything else is stripped. No ``script``, no ``iframe``,
     # no event attributes. ``href`` is schemed to http(s)/mailto/relative.
     _ALLOWED_TAGS: ClassVar[set[str]] = {
         "p",
@@ -234,34 +234,33 @@ class GenerateDocument(BaseTool):
         "div",
         "img",
     }
-    _ALLOWED_ATTRS: ClassVar[dict[str, list[str]]] = {
-        "a": ["href", "title"],
-        "img": ["src", "alt", "title", "width", "height"],
-        "span": ["class"],
-        "div": ["class"],
-        "th": ["align"],
-        "td": ["align"],
+    _ALLOWED_ATTRS: ClassVar[dict[str, set[str]]] = {
+        "a": {"href", "title"},
+        "img": {"src", "alt", "title", "width", "height"},
+        "span": {"class"},
+        "div": {"class"},
+        "th": {"align"},
+        "td": {"align"},
     }
     _ALLOWED_PROTOCOLS: ClassVar[set[str]] = {"http", "https", "mailto", "data"}
 
     def _sanitize_html(self, html: str) -> str:
-        """Strip dangerous HTML from LLM-generated markdown output."""
-        try:
-            import bleach
-        except ImportError:
-            # bleach is a stdlib-adjacent dependency of Frappe; if it isn't
-            # available we fall back to a conservative strip-all so we
-            # never ship unsanitized HTML into the PDF pipeline.
-            import re as _re
+        """Strip dangerous HTML from LLM-generated markdown output.
 
-            return _re.sub(r"<[^>]*>", "", html)
-        return bleach.clean(
+        nh3, a declared dependency, rather than bleach: Frappe v16 dropped bleach,
+        and the old fallback for its absence stripped every tag, so PDFs on v16
+        sites lost all their formatting. Disallowed tags are dropped and their
+        text kept; ``script`` and ``style`` lose their content too.
+        """
+        import nh3
+
+        return nh3.clean(
             html,
             tags=self._ALLOWED_TAGS,
             attributes=self._ALLOWED_ATTRS,
-            protocols=self._ALLOWED_PROTOCOLS,
-            strip=True,
+            url_schemes=self._ALLOWED_PROTOCOLS,
             strip_comments=True,
+            link_rel=None,
         )
 
     def _sanitize_filename(self, filename: str) -> str:

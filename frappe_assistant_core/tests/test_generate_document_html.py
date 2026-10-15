@@ -34,6 +34,16 @@ class TestMarkdownConversion(BaseAssistantTest):
     def test_strikethrough(self):
         self.assertIn("<s>old</s>", build("Price ~~old~~ new"))
 
+    def test_formatting_survives_without_bleach(self):
+        # Frappe v16 dropped bleach (frappe/frappe#41960). Its absence made the old
+        # sanitiser strip every tag, so on current v16 sites each PDF lost its
+        # headings, lists, tables and rich blocks.
+        with patch.dict(sys.modules, {"bleach": None}):
+            html = build('## Heading\n\n- one\n- two\n\n```callout type="tip"\nA\n```')
+        self.assertIn("<h2>Heading</h2>", html)
+        self.assertIn("<li>one</li>", html)
+        self.assertIn('class="callout"', html)
+
     def test_script_is_still_stripped(self):
         html = build("Hello <script>alert(1)</script> <img src=x onerror=alert(1)>")
         self.assertNotIn("<script", html)

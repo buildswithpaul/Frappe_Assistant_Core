@@ -57,6 +57,7 @@ dependencies = [
     "python-magic>=0.4.27",
     "beautifulsoup4>=4.12,<5",  # Span Frappe v15 (~=4.12.2) and v16 (~=4.13.5) without forcing a downgrade
     "markdown2>=2.4.8,<3",  # generate_document; spans Frappe v15 (~=2.4.8) and v16 (~=2.5.4)
+    "nh3>=0.3.2,<0.4",  # generate_document's sanitiser; Frappe v16 ships it (~=0.3.2) and dropped bleach; v15 has bleach only
 
     # Exact pin, not a floor. FAC and the SDK ship as a coupled pair: FAC calls
     # methods that only exist from a given release onward, and a floor lets pip
