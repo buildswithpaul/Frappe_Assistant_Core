@@ -16,9 +16,11 @@
          Hover delay is handled via CSS transition-delay so we don't flicker. -->
 		<span
 			v-if="hovered"
+			ref="popoverRef"
 			class="citation-popover"
+			:style="{ '--pop-shift': `${shift}px` }"
 			role="tooltip"
-			@mouseenter="hovered = true"
+			@mouseenter="openPopover"
 			@mouseleave="closePopover"
 		>
 			<span class="pop-doc-name">
@@ -39,7 +41,10 @@
 </template>
 
 <script setup>
-import { ref, computed } from "vue";
+import { ref, computed, nextTick } from "vue";
+
+// Gap kept between the popover and the edge of the area the reader can see.
+const EDGE_GAP = 8;
 
 const props = defineProps({
 	source: {
@@ -52,14 +57,41 @@ const emit = defineEmits(["navigate", "preview-document"]);
 
 const hovered = ref(false);
 const pillRef = ref(null);
+const popoverRef = ref(null);
+const shift = ref(0);
 let closeTimer = null;
+
+// The nearest scrolling ancestor is the area the reader can see: the messages column in the SPA,
+// the panel in the Desk widget. Anything past its edges sits under the sidebar or is cut off.
+function visibleBounds(el) {
+	for (let node = el.parentElement; node; node = node.parentElement) {
+		const { overflowX, overflowY } = getComputedStyle(node);
+		if (/auto|scroll|hidden|clip/.test(`${overflowX} ${overflowY}`)) return node.getBoundingClientRect();
+	}
+	return { left: 0, right: window.innerWidth };
+}
+
+async function keepInView() {
+	shift.value = 0;
+	await nextTick();
+	const pop = popoverRef.value;
+	if (!pop) return;
+	const rect = pop.getBoundingClientRect();
+	const bounds = visibleBounds(pop);
+	const minLeft = bounds.left + EDGE_GAP;
+	const maxRight = bounds.right - EDGE_GAP;
+	if (rect.left < minLeft) shift.value = minLeft - rect.left;
+	else if (rect.right > maxRight) shift.value = Math.max(maxRight - rect.right, minLeft - rect.left);
+}
 
 function openPopover() {
 	if (closeTimer) {
 		clearTimeout(closeTimer);
 		closeTimer = null;
 	}
+	if (hovered.value) return;
 	hovered.value = true;
+	keepInView();
 }
 
 function closePopover() {
@@ -131,7 +163,7 @@ const previewText = computed(() => {
 	position: absolute;
 	bottom: calc(100% + 0.5rem);
 	left: 50%;
-	transform: translateX(-50%);
+	transform: translateX(calc(-50% + var(--pop-shift, 0px)));
 	z-index: 40;
 	width: 22rem;
 	max-width: calc(100vw - 2rem);
@@ -157,7 +189,8 @@ const previewText = computed(() => {
 	content: "";
 	position: absolute;
 	top: 100%;
-	left: 50%;
+	/* Undo the popover's shift so the arrow still points at the pill */
+	left: calc(50% - var(--pop-shift, 0px));
 	transform: translateX(-50%);
 	border: 6px solid transparent;
 	border-top-color: var(--ql-surface);
@@ -168,11 +201,11 @@ const previewText = computed(() => {
 @keyframes citation-pop-in {
 	from {
 		opacity: 0;
-		transform: translateX(-50%) translateY(4px);
+		transform: translateX(calc(-50% + var(--pop-shift, 0px))) translateY(4px);
 	}
 	to {
 		opacity: 1;
-		transform: translateX(-50%) translateY(0);
+		transform: translateX(calc(-50% + var(--pop-shift, 0px))) translateY(0);
 	}
 }
 
