@@ -2,6 +2,8 @@ import { createApp } from "vue";
 import { createPinia } from "pinia";
 import router from "./router";
 import App from "./App.vue";
+import { initPwaInstall } from "./composables/usePwaInstall";
+import { registerServiceWorker } from "./utils/serviceWorker";
 
 // Quiet Ledger styles — single token system.
 // Order matters: fonts (@font-face) → tailwind (base/components/utilities) →
@@ -16,6 +18,10 @@ import "./styles/robot.css";
 // before this module loads — vue-router's initial history snapshot must
 // not see the token, otherwise its `/` → `/chat` redirect copies the query
 // through. App.vue reads the captured token from `window.__facoVerifyToken`.
+
+// Before mount: the browser's install event can fire before any component exists.
+initPwaInstall();
+registerServiceWorker();
 
 const app = createApp(App);
 

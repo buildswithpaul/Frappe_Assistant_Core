@@ -172,8 +172,12 @@ override_whitelisted_methods = {
 # Custom Page Renderers
 # ----------------------
 
-# Handle .well-known OAuth endpoints with custom renderer
-page_renderer = ["frappe_assistant_core.api.oauth_wellknown_renderer.WellKnownRenderer"]
+# Handle .well-known OAuth endpoints with custom renderer, and serve FAC Chat's
+# service worker at /copilot/sw.js (in scope for the SPA; see chat/service_worker.py)
+page_renderer = [
+    "frappe_assistant_core.api.oauth_wellknown_renderer.WellKnownRenderer",
+    "frappe_assistant_core.chat.service_worker.FACChatServiceWorker",
+]
 
 #
 # each overriding function accepts a `data` argument;

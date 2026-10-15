@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>FAC Chat — offline</title>
+<!-- Shown by the service worker when a /copilot page cannot be reached.
+     Self-contained: no scripts or styles from the build, which may be unreachable too. -->
+<style>
+	:root { color-scheme: light dark; --bg: #FBFAF8; --text: #1F1D18; --muted: #6B675D; --accent: #0F6E5C; }
+	@media (prefers-color-scheme: dark) { :root { --bg: #16150F; --text: #EDEAE2; --muted: #A39E91; --accent: #2DAA8F; } }
+	html, body { height: 100%; margin: 0; }
+	body {
+		display: flex; align-items: center; justify-content: center; padding: 24px; box-sizing: border-box;
+		background: var(--bg); color: var(--text);
+		font: 15px/1.5 "Work Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+	}
+	main { max-width: 360px; text-align: center; }
+	svg { width: 72px; height: 72px; margin-bottom: 16px; }
+	h1 { font-size: 20px; font-weight: 600; margin: 0 0 8px; }
+	p { color: var(--muted); margin: 0 0 24px; }
+	button {
+		font: inherit; font-weight: 500; color: #fff; background: var(--accent);
+		border: 0; border-radius: 8px; padding: 10px 20px; cursor: pointer;
+	}
+</style>
+</head>
+<body>
+<main>
+	<svg viewBox="0 0 32 32" aria-hidden="true">
+		<rect x="15" y="2" width="2" height="5" rx="1" fill="#42a5f5"/>
+		<circle cx="16" cy="2.5" r="1.8" fill="#00e5ff"/>
+		<path d="M4 19A12 12 0 0 1 28 19A8 8 0 0 1 20 27L12 27A8 8 0 0 1 4 19Z" fill="#f0f4f8"/>
+		<rect x="6" y="10" width="20" height="14" rx="4" fill="#00acc1"/>
+		<circle cx="11.5" cy="15" r="2" fill="#fff"/>
+		<circle cx="20.5" cy="15" r="2" fill="#fff"/>
+		<path d="M12 19Q16 22 20 19" stroke="#fff" stroke-width="1.4" stroke-linecap="round" fill="none"/>
+	</svg>
+	<h1>You're offline</h1>
+	<p>FAC Chat needs a connection to reach your assistant. Check your network and try again.</p>
+	<button type="button" onclick="location.reload()">Try again</button>
+</main>
+</body>
+</html>

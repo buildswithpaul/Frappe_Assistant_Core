@@ -1,7 +1,13 @@
 import { defineConfig } from "vite";
 import vue from "@vitejs/plugin-vue";
+import { readFileSync } from "fs";
 import { resolve } from "path";
 import frappeui from "frappe-ui/vite";
+import { VitePWA } from "vite-plugin-pwa";
+import { keepFirstScreen } from "./build/pwaPrecache.js";
+
+const OUT_DIR = resolve(__dirname, "../../public/chat/spa");
+const SPA_BASE = "/assets/frappe_assistant_core/chat/spa/";
 
 export default defineConfig({
 	plugins: [
@@ -18,10 +24,36 @@ export default defineConfig({
 				// fetchable. Build locally with sourcemap:true to symbolize a stack trace.
 				sourcemap: false,
 				outDir: "../../public/chat/spa",
-				baseUrl: "/assets/frappe_assistant_core/chat/spa/",
+				baseUrl: SPA_BASE,
 			},
 		}),
 		vue(),
+		// Installable app (PWA), following Raven's setup. The manifest and offline page
+		// are static files in public/; the worker is src/sw.js, served at /copilot/sw.js
+		// by chat/service_worker.py so its scope covers the SPA's pages.
+		VitePWA({
+			strategies: "injectManifest",
+			srcDir: "src",
+			filename: "sw.js",
+			injectRegister: false, // registered in src/utils/serviceWorker.js
+			manifest: false, // public/manifest.webmanifest, linked from index.html
+			injectManifest: {
+				globPatterns: ["**/*.{js,css,html,woff2,png,svg,webmanifest}"],
+				// The built index.html is an unrendered Jinja shell; the page comes from /copilot.
+				globIgnores: ["index.html"],
+				// Precache entries are relative to the build directory; the page requests
+				// them under the asset base.
+				modifyURLPrefix: { "": SPA_BASE },
+				manifestTransforms: [
+					async (entries) => {
+						const viteManifest = JSON.parse(readFileSync(`${OUT_DIR}/.vite/manifest.json`, "utf8"));
+						return { manifest: keepFirstScreen(entries, viteManifest, SPA_BASE) };
+					},
+				],
+				maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
+			},
+			devOptions: { enabled: false },
+		}),
 	],
 	resolve: {
 		alias: {

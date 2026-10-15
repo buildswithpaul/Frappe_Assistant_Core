@@ -1,0 +1,16 @@
+{
+	"name": "FAC Chat",
+	"short_name": "FAC Chat",
+	"description": "Chat with your ERP assistant.",
+	"id": "/copilot/",
+	"start_url": "/copilot/",
+	"scope": "/copilot/",
+	"display": "standalone",
+	"background_color": "#FBFAF8",
+	"theme_color": "#FBFAF8",
+	"icons": [
+		{ "src": "/assets/frappe_assistant_core/chat/spa/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+		{ "src": "/assets/frappe_assistant_core/chat/spa/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+		{ "src": "/assets/frappe_assistant_core/chat/spa/icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+	]
+}

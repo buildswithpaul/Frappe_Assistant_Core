@@ -6,6 +6,15 @@
   <meta name="csrf-token" content="">
   <title>FAC Chat</title>
   <link rel="icon" type="image/svg+xml" href="/assets/frappe_assistant_core/chat/widget/favicon.svg">
+  <!-- Installable app (PWA): see public/manifest.webmanifest and src/sw.js. -->
+  <link rel="manifest" href="/assets/frappe_assistant_core/chat/spa/manifest.webmanifest">
+  <link rel="apple-touch-icon" sizes="180x180" href="/assets/frappe_assistant_core/chat/spa/icons/apple-touch-icon-180.png">
+  <meta name="theme-color" media="(prefers-color-scheme: light)" content="#FBFAF8">
+  <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#16150F">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="FAC Chat">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <!-- Email-verification deep link: capture the token and strip it from the
        URL before ANY module script (including vue-router) loads. Classic
        inline scripts in <head> execute before module scripts in <body>, so

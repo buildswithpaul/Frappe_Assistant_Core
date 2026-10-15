@@ -66,6 +66,17 @@
 				</svg>
 				Help &amp; Feedback
 			</button>
+			<button v-if="canInstall" data-test="install-app" @click="handleInstall" class="dropdown-menu-item">
+				<svg class="menu-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path
+						stroke-linecap="round"
+						stroke-linejoin="round"
+						stroke-width="2"
+						d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14"
+					/>
+				</svg>
+				{{ __("Install app") }}
+			</button>
 			<hr class="dropdown-divider" />
 			<button @click="handleLogout" class="dropdown-menu-item">
 				<svg class="menu-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -86,6 +97,8 @@
 import { computed, ref, onMounted, onUnmounted } from "vue";
 import { useUserStore } from "@/stores/userStore";
 import { useSupportStore } from "@/stores/supportStore";
+import { usePwaInstall } from "@/composables/usePwaInstall";
+import { useToast } from "@/composables/useToast";
 import { formatCurrency } from "@/composables/useFormatters";
 import { __ } from "@/utils/i18n";
 
@@ -102,6 +115,8 @@ const dueTitle = computed(() => `${dueLabel.value} outstanding`);
 
 const userStore = useUserStore();
 const supportStore = useSupportStore();
+const { canInstall, needsInstructions, promptInstall } = usePwaInstall();
+const { showToast } = useToast();
 const isUserMenuOpen = ref(false);
 const userMenuRef = ref(null);
 
@@ -138,6 +153,16 @@ function handleHelp(e) {
 	e.stopPropagation();
 	isUserMenuOpen.value = false;
 	supportStore.open({ mode: "issue" });
+}
+
+function handleInstall(e) {
+	e.stopPropagation();
+	isUserMenuOpen.value = false;
+	if (needsInstructions.value) {
+		showToast(__("To install, tap Share, then Add to Home Screen."), "info", 6000);
+		return;
+	}
+	promptInstall();
 }
 
 async function handleLogout(e) {

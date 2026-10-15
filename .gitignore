@@ -52,6 +52,12 @@ frappe_assistant_core/public/dist/
 frappe_assistant_core/public/chat/spa/assets/
 frappe_assistant_core/public/chat/spa/index.html
 frappe_assistant_core/public/chat/spa/.vite/
+# PWA build output: the service worker, plus the manifest, offline page and icons
+# Vite copies from chat/frontend/public/.
+frappe_assistant_core/public/chat/spa/sw.js
+frappe_assistant_core/public/chat/spa/manifest.webmanifest
+frappe_assistant_core/public/chat/spa/offline.html
+frappe_assistant_core/public/chat/spa/icons/
 frappe_assistant_core/public/chat/widget-app/
 frappe_assistant_core/chat/frontend/dist/
 .vite/
