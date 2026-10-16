@@ -53,13 +53,24 @@ def _score(query_tokens: set, report: Dict[str, Any], purpose: Optional[str]) ->
     return 2 * len(name_hits) + len(other_hits)
 
 
-def _mandatory_filters(report_name: str) -> List[str]:
-    from frappe_assistant_core.plugins.core.tools.report_requirements import discover_filter_definitions
+def _mandatory_filters(report_name: str) -> Optional[List[str]]:
+    """Filters the report cannot run without.
+
+    ``[]`` means the report declares none; ``None`` means unknown (discovery failed or could
+    not tell), so the model must call report_requirements instead of assuming there are none.
+    """
+    from frappe_assistant_core.plugins.core.tools.report_requirements import discover_filter_contract
 
     try:
-        definitions = discover_filter_definitions(frappe.get_doc("Report", report_name))
-    except Exception:
-        return []
+        definitions = discover_filter_contract(frappe.get_doc("Report", report_name))
+    except Exception as e:
+        frappe.log_error(
+            title=_("Report Search Filter Discovery Error"),
+            message=f"Error discovering mandatory filters for {report_name}: {e}",
+        )
+        return None
+    if definitions is None:
+        return None
     return [fieldname for fieldname, definition in definitions.items() if definition.get("required")]
 
 
@@ -71,10 +82,15 @@ def _clamp_limit(limit: Any) -> int:
 
 
 def _candidate_reports(module: Optional[str]) -> List[Dict[str, Any]]:
-    # get_list applies the user's read permission on Report before the per-report run check.
+    # Report Builder reports are saved list views that generate_report refuses to run, so they
+    # are never offered as an answer. get_list applies the user's read permission on Report
+    # before the per-report run check.
+    filters: Dict[str, Any] = {"report_type": ["!=", "Report Builder"]}
+    if module:
+        filters["module"] = module
     return frappe.get_list(
         "Report",
-        filters={"module": module} if module else {},
+        filters=filters,
         fields=["name", "report_type", "module", "is_standard", "ref_doctype", "prepared_report"],
         limit_page_length=0,
     )
@@ -121,7 +137,7 @@ def search_reports(query: str, module: Optional[str] = None, limit: int = DEFAUL
     if not results:
         hint = _(
             "No report matches. Try other words or a module (report_list with module set). Otherwise "
-            "use get_doctype_info to find the DocType that holds this data, then answer with "
+            "use get_doctype_info(topic=...) to find the DocType that holds this data, then answer with "
             "list_documents using grouping."
         )
     return {"success": True, "count": len(results), "reports": results, "hint": hint}

@@ -18,6 +18,7 @@
 
 import json
 import unittest
+from unittest.mock import patch
 
 import frappe
 
@@ -110,8 +111,48 @@ class TestReportSearch(BaseAssistantTest):
 
         self.assertEqual(result["count"], 0)
         self.assertEqual(result["reports"], [])
-        self.assertIn("get_doctype_info", result["hint"])
+        self.assertIn("get_doctype_info(topic=", result["hint"])
         self.assertIn("module", result["hint"])
+
+    def test_report_builder_views_are_not_offered(self):
+        # Production reaches this whenever a user saves a Report Builder view in Desk: it is
+        # is_standard "No", which would otherwise earn the custom boost.
+        view = self._make_report("Boosted Builder View", report_type="Report Builder", query=None, json="{}")
+        runnable = self._make_report("Boosted Builder Query")
+
+        names = [r["name"] for r in search_reports("boosted builder")["reports"]]
+
+        self.assertIn(runnable, names)
+        self.assertNotIn(view, names)
+
+    def test_module_summary_does_not_count_report_builder_views(self):
+        before = module_summary()["modules"].get("Core", 0)
+        self._make_report("Counted Builder View", report_type="Report Builder", query=None, json="{}")
+        self._make_report("Counted Query Report")
+
+        after = module_summary()["modules"].get("Core", 0)
+
+        self.assertEqual(after, before + 1)
+
+    def test_unknown_filter_contract_is_null_not_empty(self):
+        # Production reaches this when discovery raises or cannot tell (a Script Report with
+        # no readable JS): the report may have mandatory filters, so [] would be a false claim.
+        name = self._make_report("Unknowable Filters Report")
+        with patch(
+            "frappe_assistant_core.plugins.core.tools.report_requirements.discover_filter_contract",
+            side_effect=RuntimeError("boom"),
+        ), patch.object(frappe, "log_error") as log_error:
+            found = {r["name"]: r for r in search_reports("unknowable filters")["reports"]}[name]
+
+        self.assertIsNone(found["mandatory_filters"])
+        log_error.assert_called_once()
+
+    def test_report_with_no_filters_has_an_empty_list(self):
+        name = self._make_report("Filterless Probe Report")
+
+        found = {r["name"]: r for r in search_reports("filterless probe")["reports"]}[name]
+
+        self.assertEqual(found["mandatory_filters"], [])
 
     def test_limit_is_capped_at_25(self):
         for i in range(MAX_LIMIT + 5):

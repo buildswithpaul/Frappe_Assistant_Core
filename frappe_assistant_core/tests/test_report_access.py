@@ -21,6 +21,7 @@ import unittest
 import frappe
 
 from frappe_assistant_core.plugins.core.tools.report_access import can_run_report, report_origin
+from frappe_assistant_core.plugins.core.tools.report_requirements import ReportRequirements
 from frappe_assistant_core.plugins.core.tools.report_tools import ReportTools
 from frappe_assistant_core.tests.base_test import BaseAssistantTest
 
@@ -95,6 +96,28 @@ class TestReportAccess(BaseAssistantTest):
 
         ReportTools.list_reports()
 
+        self.assertEqual(len(frappe.local.message_log), before)
+
+    def test_generate_report_refuses_a_hidden_report_without_a_popup(self):
+        # Desk User can read every Report row, so the role check is what hides this one.
+        name = self._make_report(ALLOWED_REF_DOCTYPE, roles=("Accounts Manager",))
+        self._as_system_manager()
+        before = len(frappe.local.message_log)
+
+        result = ReportTools.execute_report(name)
+
+        self.assertFalse(result["success"])
+        self.assertIn("No permission", result["error"])
+        self.assertEqual(len(frappe.local.message_log), before)
+
+    def test_report_requirements_refuses_a_hidden_report(self):
+        name = self._make_report(ALLOWED_REF_DOCTYPE, roles=("Accounts Manager",))
+        self._as_system_manager()
+        before = len(frappe.local.message_log)
+
+        result = ReportRequirements().execute({"report_name": name})
+
+        self.assertFalse(result["success"])
         self.assertEqual(len(frappe.local.message_log), before)
 
     def test_ui_built_report_is_custom(self):

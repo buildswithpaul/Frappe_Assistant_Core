@@ -25,7 +25,7 @@ from .report_access import can_run_report
 from .report_requirements import (
     PREPARED_REPORT_WAIT_SECONDS,
     VALUE_CONSTRAINED_FIELDTYPES,
-    discover_filter_definitions,
+    discover_filter_contract,
 )
 
 DEFAULT_MAX_ROWS = 500
@@ -95,7 +95,7 @@ class ReportTools:
                 return {"success": False, "error": f"Report '{report_name}' not found"}
 
             # Check permissions
-            if not frappe.has_permission("Report", "read", report_name):
+            if not can_run_report(report_name):
                 return {"success": False, "error": f"No permission to access report '{report_name}'"}
 
             # Get report document
@@ -106,7 +106,9 @@ class ReportTools:
             definitions = ReportTools._filter_definitions(report_doc)
 
             # Validate filters before execution
-            validation_result = ReportTools._validate_filters(filters or {}, report_doc, definitions)
+            validation_result = ReportTools._validate_filters(
+                filters or {}, report_doc, definitions if definitions is not None else {}
+            )
             if not validation_result.get("valid"):
                 return {
                     "success": False,
@@ -123,7 +125,9 @@ class ReportTools:
 
             # Execute report based on type
             if report_doc.report_type == "Query Report":
-                result = ReportTools._execute_query_report(report_doc, effective_filters)
+                result = ReportTools._execute_query_report(
+                    report_doc, effective_filters, definitions=definitions
+                )
             elif report_doc.report_type == "Script Report":
                 result = ReportTools._execute_script_report(report_doc, effective_filters, definitions)
             elif report_doc.report_type == "Report Builder":
@@ -150,13 +154,7 @@ class ReportTools:
                 # Determine which filters were auto-injected
                 auto_added = {k: v for k, v in final_filters.items() if k not in user_filter_keys}
 
-                # Filters FAC filled in because the caller left them out (or blank), so the
-                # model can state the period/company it actually used.
-                defaulted_filters = {
-                    k: v
-                    for k, v in final_filters.items()
-                    if v not in (None, "") and (filters or {}).get(k) in (None, "")
-                }
+                defaulted_filters = ReportTools._defaulted_filters(final_filters, filters, definitions)
 
                 row_count = len(data)
                 rows = _limit_rows(
@@ -226,6 +224,22 @@ class ReportTools:
             return {"success": False, "error": str(e)}
 
     @staticmethod
+    def _defaulted_filters(final_filters: dict, supplied: dict | None, definitions: dict | None):
+        """The filters FAC filled in that the report itself declares, so the model can name them.
+
+        None when the report's filter contract is unknown: nothing can be claimed as used.
+        A filter the report never declares is not reported, because the report ignored it.
+        """
+        if definitions is None:
+            return None
+        supplied = supplied or {}
+        return {
+            key: value
+            for key, value in final_filters.items()
+            if key in definitions and value not in (None, "") and supplied.get(key) in (None, "")
+        }
+
+    @staticmethod
     def list_reports(module: str = None, report_type: str = None) -> Dict[str, Any]:
         """Get list of available reports"""
         try:
@@ -262,7 +276,7 @@ class ReportTools:
             if not frappe.db.exists("Report", report_name):
                 return {"success": False, "error": f"Report '{report_name}' not found"}
 
-            if not frappe.has_permission("Report", "read", report_name):
+            if not can_run_report(report_name):
                 return {"success": False, "error": f"No permission to access report '{report_name}'"}
 
             report_doc = frappe.get_doc("Report", report_name)
@@ -517,7 +531,7 @@ class ReportTools:
             raise e
 
     @staticmethod
-    def _execute_query_report(report_doc, filters, get_columns_only=False):
+    def _execute_query_report(report_doc, filters, get_columns_only=False, definitions=None):
         """Execute a Query Report"""
         from frappe.desk.query_report import run
 
@@ -538,6 +552,7 @@ class ReportTools:
                 if value is not None:
                     cleaned_filters[key] = value
             filters = cleaned_filters
+            supplied_keys = set(filters)
 
             # Add default date filters if missing - use current fiscal year dates
             if not filters.get("from_date") and not filters.get("to_date"):
@@ -592,6 +607,8 @@ class ReportTools:
             # Quotation Trends defaults
             if "quotation trends" in report_name_lower and "based_on" not in filters:
                 filters["based_on"] = "Item"
+
+            filters = ReportTools._without_undeclared_defaults(filters, supplied_keys, definitions)
 
             # Final cleanup - ensure all filter values are strings or proper types
             final_filters = {}
@@ -649,6 +666,7 @@ class ReportTools:
                 if value is not None:
                     cleaned_filters[key] = value
             filters = cleaned_filters
+            supplied_keys = set(filters)
 
             # Add default date filters if missing - use current fiscal year dates
             if not filters.get("from_date") and not filters.get("to_date"):
@@ -712,6 +730,8 @@ class ReportTools:
 
             # Apply the defaults the report itself declares
             filters = ReportTools._apply_filter_defaults(report_doc, filters, definitions)
+
+            filters = ReportTools._without_undeclared_defaults(filters, supplied_keys, definitions)
 
             # Final cleanup - ensure all filter values are strings or proper types
             final_filters = {}
@@ -783,7 +803,7 @@ class ReportTools:
         details = []
 
         if definitions is None:
-            definitions = ReportTools._filter_definitions(report_doc)
+            definitions = ReportTools._filter_definitions(report_doc) or {}
 
         for filter_key, filter_value in filters.items():
             if not filter_value:
@@ -853,16 +873,28 @@ class ReportTools:
         }
 
     @staticmethod
-    def _filter_definitions(report_doc) -> Dict[str, Any]:
-        """The report's declared filter contract, or {} when discovery finds nothing."""
+    def _filter_definitions(report_doc) -> Dict[str, Any] | None:
+        """The report's declared filter contract: {} when it declares none, None when unknown."""
         try:
-            return discover_filter_definitions(report_doc)
+            return discover_filter_contract(report_doc)
         except Exception as e:
             frappe.log_error(
                 title=_("Report Filter Discovery Error"),
                 message=f"Error discovering filters for {report_doc.name}: {str(e)}",
             )
-            return {}
+            return None
+
+    @staticmethod
+    def _without_undeclared_defaults(filters: dict, supplied_keys: set, definitions: dict | None) -> dict:
+        """Drop FAC's period/company defaults that the report does not declare.
+
+        A filter the report never reads must not reach it, nor be reported as the
+        period or company the answer used. Caller-supplied keys always stay, and an
+        unknown contract (None) keeps the defaults, since the report may read them.
+        """
+        if definitions is None:
+            return filters
+        return {key: value for key, value in filters.items() if key in supplied_keys or key in definitions}
 
     @staticmethod
     def _link_value_suggestions(doctype: str, filter_value) -> list:
@@ -893,7 +925,7 @@ class ReportTools:
         """
         try:
             if definitions is None:
-                definitions = ReportTools._filter_definitions(report_doc)
+                definitions = ReportTools._filter_definitions(report_doc) or {}
 
             for fieldname, definition in definitions.items():
                 default = definition.get("default")

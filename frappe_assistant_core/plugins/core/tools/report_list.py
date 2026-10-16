@@ -43,9 +43,10 @@ class ReportList(BaseTool):
         self.name = "report_list"
         self.description = (
             "Find the report that answers a business question. Search with `query` first (for example "
-            "'receivables overdue' or 'sales by territory'); results rank a custom report above a "
-            "standard one. Then call report_requirements for the chosen report and generate_report to "
-            "run it. If nothing fits, call get_doctype_info(topic=...) to find the data, then use "
+            "'receivables overdue' or 'sales by territory'); a report built on this site ranks "
+            "above an equally matching standard one. Report Builder views are not reports to run; "
+            "use list_documents for those. Then call report_requirements for the chosen report and "
+            "generate_report to run it. If nothing fits, call get_doctype_info(topic=...) to find the data, then use "
             "list_documents with grouping. Cite the report and the filters you used in the answer. "
             "With no arguments it returns a count of reports per module, not every report."
         )

@@ -32,8 +32,9 @@ from frappe_assistant_core.tests.test_prepared_report_zero_rows import report_st
 class TestPreparedReportReuse(BaseAssistantTest):
     def test_retry_after_a_timeout_response_reuses_the_still_running_job(self):
         # Production reaches this on the retry after a timeout response: FAC polled for
-        # min(timeout, 300)s, gave up, and the RQ job (lifetime Report.timeout or
-        # REPORT_TIMEOUT) is still Queued/Started and older than the poll window.
+        # min(timeout, PREPARED_REPORT_WAIT_SECONDS) seconds, gave up, and the RQ job
+        # (lifetime Report.timeout or REPORT_TIMEOUT) is still Queued/Started and older
+        # than the poll window.
         in_flight = [{"name": "PREP-INFLIGHT", "creation": add_to_date(now_datetime(), seconds=-400)}]
         with stub_frappe(in_flight=in_flight, prepared_status="Queued", report_timeout=120) as mocks:
             result = ReportTools._handle_prepared_report_execution(report_stub(), {"company": "X"})
@@ -135,12 +136,34 @@ class TestTimeoutReachesTheCaller(BaseAssistantTest):
         self.assertIn("boom", result["error"])
 
 
+def make_dated_query_report() -> str:
+    """A UI-built Query Report whose SQL declares from_date and to_date, as Desk users write them."""
+    name = f"FAC Dated {frappe.generate_hash(length=8)}"
+    frappe.get_doc(
+        {
+            "doctype": "Report",
+            "report_name": name,
+            "ref_doctype": "ToDo",
+            "report_type": "Query Report",
+            "is_standard": "No",
+            "module": "Desk",
+            "prepared_report": 0,
+            "query": (
+                "select name as `Name:Link/ToDo:120` from `tabToDo` "
+                "where date(creation) between %(from_date)s and %(to_date)s"
+            ),
+        }
+    ).insert()
+    return name
+
+
 class TestDefaultedFiltersAreVisible(BaseAssistantTest):
     def setUp(self):
         super().setUp()
         # nosemgrep: frappe-setuser — test bootstrap; isolated transaction
         frappe.set_user("Administrator")
-        self.report = make_todo_query_report(1)
+        self.report = make_dated_query_report()
+        self.undated_report = make_todo_query_report(1)
 
     def test_result_lists_filters_that_were_defaulted(self):
         first = ReportTools.execute_report(self.report)
@@ -157,6 +180,25 @@ class TestDefaultedFiltersAreVisible(BaseAssistantTest):
         result = ReportTools.execute_report(self.report, filters={"from_date": ""})
 
         self.assertIn("from_date", result["defaulted_filters"])
+
+    def test_report_without_date_filters_reports_no_date_defaults(self):
+        # make_todo_query_report's SQL has no placeholders, so it takes no filters and
+        # answers for all time: claiming a fiscal year or company for it would mislead.
+        result = ReportTools.execute_report(self.undated_report)
+
+        self.assertTrue(result["success"], result)
+        self.assertEqual(result["defaulted_filters"], {})
+        self.assertNotIn("from_date", result["filters_applied"])
+        self.assertNotIn("company", result["filters_applied"])
+
+    def test_unknown_filter_contract_reports_null_not_empty(self):
+        # Production reaches None when discovery cannot tell (a Script Report with no
+        # readable JS, a Query Report with positional %s): the contract is unknown, not empty.
+        with patch.object(ReportTools, "_filter_definitions", return_value=None):
+            result = ReportTools.execute_report(self.undated_report)
+
+        self.assertTrue(result["success"], result)
+        self.assertIsNone(result["defaulted_filters"])
 
     def test_every_prepared_result_shape_carries_defaulted_filters(self):
         # The prepared handler returns these shapes in production; execute_report
