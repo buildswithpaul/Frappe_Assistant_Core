@@ -291,6 +291,64 @@ class TestListDocumentsGroupBy(BaseAssistantTest):
         self.assertEqual(result["row_count"], 1)
         self.assertTrue(result["has_more"])
 
+    def test_order_by_ranks_groups_by_total_before_the_limit_cuts(self):
+        self._seed()
+        aggregate = [{"function": "sum", "field": "amount"}]
+
+        biggest = self._run(group_by="category", aggregate=aggregate, order_by="sum_amount desc", limit=1)
+        smallest = self._run(group_by="category", aggregate=aggregate, order_by="sum_amount asc", limit=1)
+        busiest = self._run(group_by="region", order_by="count_name desc", limit=1)
+
+        self.assertEqual([r["group_value"] for r in biggest["rows"]], ["Hardware"])
+        self.assertEqual([r["group_value"] for r in smallest["rows"]], ["Services"])
+        self.assertEqual([r["group_value"] for r in busiest["rows"]], [REGION_ALLOWED])
+        self.assertTrue(biggest["has_more"])
+
+    def test_order_by_must_name_a_requested_aggregate(self):
+        self._seed()
+        aggregate = [{"function": "sum", "field": "amount"}]
+        cases = {
+            "a plain field": "category desc",
+            "an aggregate that was not requested": "avg_amount desc",
+            "an injected clause": "sum_amount desc, (select 1)",
+            "a bad direction": "sum_amount sideways",
+        }
+        for label, order_by in cases.items():
+            with self.subTest(label):
+                result = self._run(group_by="category", aggregate=aggregate, order_by=order_by)
+                self.assertFalse(result["success"], result)
+                self.assertIn("order_by", result["error"])
+
+    def test_order_by_without_group_by_is_refused(self):
+        self._seed()
+
+        result = self._run(aggregate=[{"function": "sum", "field": "amount"}], order_by="sum_amount desc")
+
+        self.assertFalse(result["success"], result)
+        self.assertIn("group_by", result["error"])
+
+    def test_v15_reports_its_own_error_not_the_dict_forms_rejection(self):
+        self._seed()
+        forms = []
+        real_get_list = frappe.get_list
+
+        def get_list(doctype, fields=None, **kwargs):
+            if doctype != SALE:
+                return real_get_list(doctype, fields=fields, **kwargs)
+            # Frappe v16 rejects the string form and v15 the dict form; v15 here fails on the filter itself.
+            forms.append("dict" if any(isinstance(f, dict) for f in fields) else "string")
+            if forms[-1] == "dict":
+                raise frappe.ValidationError("dict form is not supported")
+            raise frappe.ValidationError("Field not permitted in query: bogus")
+
+        # A v15 site reports frappe.__version__ "15.x"; this is the string the version check reads.
+        with patch.object(frappe, "__version__", "15.95.0"), patch.object(frappe, "get_list", get_list):
+            result = self._run(group_by="category")
+
+        self.assertFalse(result["success"])
+        self.assertIn("bogus", result["error"])
+        self.assertEqual(forms, ["string"])
+
     def test_v15_string_form_quotes_each_validated_field(self):
         specs = [
             {"function": "sum", "field": "amount", "alias": "sum_amount"},

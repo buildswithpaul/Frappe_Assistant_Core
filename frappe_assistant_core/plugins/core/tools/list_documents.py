@@ -372,6 +372,33 @@ def build_aggregate_specs(doctype: str, aggregates: Any, restricted: set) -> Lis
     return specs
 
 
+def parse_group_order(order_by: Any, specs: List[Dict[str, str]]) -> Optional[str]:
+    """`order_by` for a grouped query: one aggregate alias plus asc/desc, e.g. "sum_grand_total desc".
+
+    Returns the validated clause, or None when no order was asked for. Anything that is not
+    an alias built from the requested aggregates is refused, so nothing caller-supplied
+    reaches the ORDER BY except a name this module constructed from validated fieldnames.
+    """
+    if order_by is None or order_by == "":
+        return None
+
+    aliases = [spec["alias"] for spec in specs]
+    parts = str(order_by).split()
+    direction = parts[1].lower() if len(parts) == 2 else "asc"
+    if len(parts) not in (1, 2) or parts[0] not in aliases or direction not in ("asc", "desc"):
+        raise GroupedQueryError(
+            _(
+                "With group_by, order_by must be one of the aggregates ({0}) optionally followed by asc or desc."
+            ).format(", ".join(aliases))
+        )
+    return f"{parts[0]} {direction}"
+
+
+def frappe_major_version() -> int:
+    """Major version of the running Frappe (15, 16, ...)."""
+    return int(frappe.__version__.split(".")[0])
+
+
 def aggregate_query_fields(specs: List[Dict[str, str]], group_by: Optional[str], v16_form: bool) -> list:
     """The `fields` argument for frappe.get_list: v16 dict form, or the v15 SQL-string form."""
     fields = [group_by] if group_by else []
@@ -396,11 +423,14 @@ def run_grouped_query(
     group_by: Optional[str],
     specs: List[Dict[str, str]],
     limit: int,
+    order_by: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """Grouped totals through frappe.get_list, so User Permissions and sharing still apply.
 
-    Frappe v16 rejects SQL functions as strings in `fields`, so the dict form goes first
-    and v15 takes the string form (same fallback as the count query in execute).
+    Frappe v16 rejects SQL functions as strings in `fields`, so v16 gets the dict form and
+    v15 the string form. The form follows the version rather than a try/except fallback, so
+    a real error (a bad filter) is reported as itself instead of as the other form's rejection.
+    `order_by` is an aggregate clause from parse_group_order; it ranks groups by their total.
     """
     query = {
         "filters": filters,
@@ -409,19 +439,14 @@ def run_grouped_query(
     }
     if group_by:
         query["group_by"] = f"`tab{doctype}`.`{group_by}`"
-        query["order_by"] = f"`tab{doctype}`.`{group_by}` asc"
+        group_order = f"`tab{doctype}`.`{group_by}` asc"
+        query["order_by"] = f"{order_by}, {group_order}" if order_by else group_order
     else:
         # A bare aggregate has no GROUP BY, and the DocType default sort would break it.
         query["order_by"] = None
 
-    try:
-        return frappe.get_list(doctype, fields=aggregate_query_fields(specs, group_by, True), **query)
-    except Exception as v16_error:
-        try:
-            return frappe.get_list(doctype, fields=aggregate_query_fields(specs, group_by, False), **query)
-        except Exception:
-            # The string form is only a v15 compatibility path; its rejection on v16 would hide the cause.
-            raise v16_error from None
+    v16_form = frappe_major_version() >= 16
+    return frappe.get_list(doctype, fields=aggregate_query_fields(specs, group_by, v16_form), **query)
 
 
 class DocumentList(BaseTool):
@@ -438,7 +463,7 @@ class DocumentList(BaseTool):
     def __init__(self):
         super().__init__()
         self.name = "list_documents"
-        self.description = "Search and list Frappe documents with optional filtering. Use this when users want to find records, get lists of documents, or search for data. This is the primary tool for data exploration and discovery. For submittable DocTypes (invoices, orders, entries) only submitted documents are returned unless you pass docstatus explicitly. If a query returns nothing because a Link filter value matches no record, the response carries unresolved_filters with ranked suggestions — check it before reporting that no data exists. When has_more is true the response carries next_offset; pass it as offset to read the next page. For totals by group (sum, count, avg, min, max) pass group_by and aggregate — exact figures computed by the database over records the user may read; never add up listed rows yourself."
+        self.description = "Search and list Frappe documents with optional filtering. Use this when users want to find records, get lists of documents, or search for data. For business totals (sales, receivables, stock) try report_list(query=...) first and come here with group_by only when no report fits; cite the DocType and filters you used in the answer. For submittable DocTypes (invoices, orders, entries) only submitted documents are returned unless you pass docstatus explicitly. If a query returns nothing because a Link filter value matches no record, the response carries unresolved_filters with ranked suggestions — check it before reporting that no data exists. When has_more is true the response carries next_offset; pass it as offset to read the next page. For totals by group (sum, count, avg, min, max) pass group_by and aggregate — exact figures computed by the database over records the user may read; never add up listed rows yourself. To rank groups (top customers by sales) pass order_by as an aggregate alias, e.g. 'sum_grand_total desc'. Grouping by a Date field groups by exact day, not by month or year."
         self.requires_permission = None  # Permission checked dynamically per DocType
 
         self.inputSchema = {
@@ -472,11 +497,11 @@ class DocumentList(BaseTool):
                 },
                 "order_by": {
                     "type": "string",
-                    "description": "Order results by field, e.g. 'creation desc', 'name asc'. Omit to use the DocType's own default ordering (usually modified desc).",
+                    "description": "Order results by field, e.g. 'creation desc', 'name asc'. Omit to use the DocType's own default ordering (usually modified desc). With group_by, order_by must instead be one aggregate alias (function_field, e.g. 'sum_grand_total') plus asc or desc, to rank groups by total; groups otherwise sort by the group value.",
                 },
                 "group_by": {
                     "type": "string",
-                    "description": "Fieldname to group by, for totals per group (e.g. 'customer', 'territory', a custom field). The database computes the totals, over only records the user may read — use this instead of adding up listed rows yourself. Ignores fields and offset.",
+                    "description": "Fieldname to group by, for totals per group (e.g. 'customer', 'territory', a custom field). The database computes the totals, over only records the user may read — use this instead of adding up listed rows yourself. Ignores fields and offset. A Date field groups by exact day (each distinct date is its own group), not by month or year.",
                 },
                 "aggregate": {
                     "type": "array",
@@ -708,9 +733,12 @@ class DocumentList(BaseTool):
             if group_by:
                 resolve_queryable_field(doctype, group_by, restricted)
             specs = build_aggregate_specs(doctype, arguments.get("aggregate"), restricted)
+            group_order = parse_group_order(arguments.get("order_by"), specs)
+            if group_order and not group_by:
+                raise GroupedQueryError(_("order_by needs group_by: a total without groups has one row."))
 
             # One extra row tells us whether the groups were cut off by the limit.
-            raw_rows = run_grouped_query(doctype, filters, group_by, specs, limit + 1)
+            raw_rows = run_grouped_query(doctype, filters, group_by, specs, limit + 1, group_order)
         except GroupedQueryError as e:
             return {"success": False, "error": str(e), "doctype": doctype}
         except Exception as e:
