@@ -63,3 +63,51 @@ describe("getOrCreateStreamingMessage with a trailing queued bubble", () => {
 		expect(msgs[0].blocks.some((b) => b.type === "workflow_created")).toBe(true);
 	});
 });
+
+describe("recordInteractionDecision with don't-ask-again", () => {
+	const card = (id, tool, extra = {}) => ({
+		type: "interaction",
+		id,
+		interactionType: "approval",
+		tool_name: tool,
+		status: "pending",
+		interrupts: [{ id: `i-${id}`, reason: { type: "approval", tool } }],
+		...extra,
+	});
+	const turn = (...blocks) => [{ role: "assistant", isStreaming: true, _requestId: "req-1", blocks }];
+
+	it("settles every pending card for the same tool", () => {
+		const msgs = turn(card("a", "create_document"), card("b", "create_document"));
+		const batch = makeHandlers(msgs).recordInteractionDecision("a", "trusted", "trust", "trust");
+		expect(batch.responses).toEqual([
+			{ interruptId: "i-a", response: "trust" },
+			{ interruptId: "i-b", response: "trust" },
+		]);
+		expect(msgs[0].blocks[1].decision.resolution).toBe("trusted");
+	});
+
+	it("leaves cards for other tools waiting for their own answer", () => {
+		const msgs = turn(card("a", "create_document"), card("c", "send_email"));
+		const batch = makeHandlers(msgs).recordInteractionDecision("a", "trusted", "trust", "trust");
+		expect(batch).toBeNull();
+		expect(msgs[0].blocks[1].decision).toBeUndefined();
+	});
+
+	it("does not spread a one-time approval", () => {
+		const msgs = turn(card("a", "create_document"), card("b", "create_document"));
+		const batch = makeHandlers(msgs).recordInteractionDecision("a", "approved", "approve", "approve");
+		expect(batch).toBeNull();
+		expect(msgs[0].blocks[1].decision).toBeUndefined();
+	});
+
+	it("keeps a decision the user already made on another card", () => {
+		const msgs = turn(card("a", "create_document"), card("b", "create_document"));
+		const handlers = makeHandlers(msgs);
+		handlers.recordInteractionDecision("b", "rejected", "rejected", "rejected");
+		const batch = handlers.recordInteractionDecision("a", "trusted", "trust", "trust");
+		expect(batch.responses).toEqual([
+			{ interruptId: "i-a", response: "trust" },
+			{ interruptId: "i-b", response: "rejected" },
+		]);
+	});
+});

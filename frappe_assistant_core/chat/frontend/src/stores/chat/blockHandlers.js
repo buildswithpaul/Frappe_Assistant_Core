@@ -399,6 +399,28 @@ export function createBlockHandlers({
 		// succeeds (or revert it on failure).
 		block.isExpanded = false;
 
+		// "Don't ask again" is a decision about the tool, not the card: parallel calls to the
+		// same tool render one card each, and asking again on the siblings contradicts it.
+		if (response === "trust") {
+			for (const sibling of lastMsg.blocks) {
+				if (
+					sibling.type === "interaction" &&
+					sibling.status === "pending" &&
+					!sibling.decision &&
+					sibling.tool_name &&
+					sibling.tool_name === block.tool_name
+				) {
+					sibling.decision = {
+						resolution,
+						userResponse,
+						response,
+						responses: (sibling.interrupts || []).map((i) => ({ interruptId: i.id, response })),
+					};
+					sibling.isExpanded = false;
+				}
+			}
+		}
+
 		return collectPendingInteractionBatch();
 	}
 
