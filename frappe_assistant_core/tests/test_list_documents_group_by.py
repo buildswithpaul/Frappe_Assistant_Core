@@ -27,6 +27,7 @@ from unittest.mock import patch
 import frappe
 from frappe.database.database import Database
 
+from frappe_assistant_core.core.security_config import ADMIN_ONLY_FIELDS
 from frappe_assistant_core.plugins.core.tools.list_documents import DocumentList, aggregate_query_fields
 from frappe_assistant_core.tests.base_test import BaseAssistantTest
 
@@ -67,7 +68,8 @@ def _create_fixture() -> None:
             "create": 1,
             "submit": 1,
             "cancel": 1,
-        }
+        },
+        {"role": "Assistant User", "read": 1},
     ]
     fields = [
         {"fieldname": "region", "fieldtype": "Link", "options": "Country", "label": "Region"},
@@ -303,3 +305,40 @@ class TestListDocumentsGroupBy(BaseAssistantTest):
             aggregate_query_fields(specs, None, v16_form=True),
             [{"SUM": "amount", "as": "sum_amount"}, {"COUNT": "name", "as": "count_name"}],
         )
+
+    def test_wholly_admin_only_doctype_is_refused_for_an_assistant_user(self):
+        self._seed()
+        user = self.make_throwaway_user("assistant", roles=("Assistant User",))
+        # nosemgrep: frappe-setuser — the refusal depends on the acting user's FAC role
+        frappe.set_user(user)
+        self.addCleanup(frappe.set_user, "Administrator")
+        aggregate = [{"function": "sum", "field": "amount"}]
+
+        readable = self._run(group_by="category", aggregate=aggregate)
+        self.assertTrue(readable["success"], readable)  # the role can otherwise read the DocType
+
+        # FAC ships ADMIN_ONLY_FIELDS entries of "*" (Email Domain, System Settings, ...); the fixture
+        # is added to that same dict, so the Assistant User sees exactly what a shipped entry does.
+        with patch.dict(ADMIN_ONLY_FIELDS, {SALE: "*"}):
+            result = self._run(group_by="category", aggregate=aggregate)
+
+        self.assertFalse(result["success"])
+        self.assertIn("restricted", result["error"])
+        self.assertNotIn("rows", result)
+
+    def test_virtual_doctype_is_refused(self):
+        self._seed()
+        real_get_meta = frappe.get_meta
+        meta = real_get_meta(SALE)
+
+        def virtual_meta(doctype, *args, **kwargs):
+            return meta if doctype == SALE else real_get_meta(doctype, *args, **kwargs)
+
+        # A virtual DocType is one an app backs with its own controller; the tool only reads the
+        # meta flag, so the fixture's cached meta carries it for the duration of the call.
+        with patch.object(meta, "is_virtual", 1), patch("frappe.get_meta", side_effect=virtual_meta):
+            result = self._run(group_by="category", aggregate=[{"function": "sum", "field": "amount"}])
+
+        self.assertFalse(result["success"])
+        self.assertIn("virtual", result["error"])
+        self.assertNotIn("rows", result)

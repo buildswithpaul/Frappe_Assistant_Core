@@ -675,13 +675,33 @@ class DocumentList(BaseTool):
         arguments: Dict[str, Any],
     ) -> Dict[str, Any]:
         """Grouped totals; `fields` and `offset` do not apply."""
-        from frappe_assistant_core.core.security_config import get_restricted_fields
+        from frappe_assistant_core.core.security_config import ADMIN_ONLY_FIELDS, get_restricted_fields
 
         group_by = arguments.get("group_by") or None
         limit = arguments.get("limit")
         if not isinstance(limit, int) or isinstance(limit, bool) or limit < 1:
             limit = DEFAULT_GROUP_LIMIT
         limit = min(limit, 1000)
+
+        if frappe.get_meta(doctype).is_virtual:
+            # Frappe v16 ignores group_by and the aggregate fields for virtual DocTypes and
+            # returns one row per record, which would read as a real grouped answer.
+            return {
+                "success": False,
+                "error": _("{0} is a virtual DocType, which cannot be grouped or aggregated.").format(
+                    doctype
+                ),
+                "doctype": doctype,
+            }
+
+        # get_restricted_fields skips a whole-DocType "*" entry (create/update rely on that), but
+        # the plain path hides every field of such a DocType from an Assistant User, so must this.
+        if user_role == "Assistant User" and ADMIN_ONLY_FIELDS.get(doctype) == "*":
+            return {
+                "success": False,
+                "error": _("Access to {0} is restricted for your role.").format(doctype),
+                "doctype": doctype,
+            }
 
         try:
             restricted = get_restricted_fields(doctype, user_role)
