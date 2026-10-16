@@ -34,7 +34,7 @@
                             .addClass('fac-status-pill--running')
                             .html('<span class="fac-status-dot" aria-hidden="true"></span> Running');
                         toggleBtn.removeClass('btn-primary').addClass('btn-danger');
-                        toggleText.html('<i class="fa fa-stop" aria-hidden="true"></i> Disable');
+                        toggleText.html(`${ns.icon('square')} Disable`);
                     } else {
                         statusIcon.removeClass('active').addClass('inactive');
                         statusPill
@@ -42,7 +42,7 @@
                             .addClass('fac-status-pill--stopped')
                             .html('<span class="fac-status-dot" aria-hidden="true"></span> Stopped');
                         toggleBtn.removeClass('btn-danger').addClass('btn-primary');
-                        toggleText.html('<i class="fa fa-play" aria-hidden="true"></i> Enable');
+                        toggleText.html(`${ns.icon('play')} Enable`);
                     }
 
                     // Update MCP Endpoint URL from settings (with fallback)
@@ -133,14 +133,14 @@
                 .addClass('fac-status-pill--running')
                 .html('<span class="fac-status-dot" aria-hidden="true"></span> Enabled');
             btn.removeClass('btn-primary').addClass('btn-danger');
-            btnText.html('<i class="fa fa-power-off" aria-hidden="true"></i> Disable Chat');
+            btnText.html(`${ns.icon('power')} Disable Chat`);
         } else {
             pill
                 .removeClass('fac-status-pill--running')
                 .addClass('fac-status-pill--stopped')
                 .html('<span class="fac-status-dot" aria-hidden="true"></span> Disabled');
             btn.removeClass('btn-danger').addClass('btn-primary');
-            btnText.html('<i class="fa fa-play" aria-hidden="true"></i> Enable Chat');
+            btnText.html(`${ns.icon('play')} Enable Chat`);
         }
     };
 
@@ -363,7 +363,7 @@
                                 <div class="fac-plugin-header">
                                     <div class="fac-plugin-info">
                                         <div class="fac-plugin-name">
-                                            <i class="fa fa-cube"></i>
+                                            ${ns.icon('box')}
                                             ${plugin.name}
                                         </div>
                                     </div>
@@ -391,7 +391,7 @@
                     } else {
                         $('#tool-registry').html(`
                             <div class="fac-empty-state">
-                                <i class="fa fa-cube" aria-hidden="true"></i>
+                                ${ns.icon('box')}
                                 <div class="fac-empty-title">No plugins installed</div>
                                 <div class="fac-empty-subtitle">Install plugins to start registering tools with the MCP server.</div>
                             </div>
@@ -479,7 +479,7 @@
             if (zeroData) {
                 $('#tool-registry').html(`
                     <div class="fac-empty-state">
-                        <i class="fa fa-wrench" aria-hidden="true"></i>
+                        ${ns.icon('wrench')}
                         <div class="fac-empty-title">No tools registered</div>
                         <div class="fac-empty-subtitle">Enable a plugin in the Plugins tab to register tools.</div>
                     </div>
@@ -487,7 +487,7 @@
             } else {
                 $('#tool-registry').html(`
                     <div class="fac-empty-state">
-                        <i class="fa fa-search" aria-hidden="true"></i>
+                        ${ns.icon('search')}
                         <div class="fac-empty-title">No tools match the current filters</div>
                         <button type="button" class="btn btn-xs btn-default fac-clear-filters-btn">Clear filters</button>
                     </div>
@@ -505,7 +505,7 @@
                 `<span class="fac-role-tag" data-role="${r.role}">
                     ${r.role}
                     <button type="button" class="fac-role-remove-btn" aria-label="Remove role ${frappe.utils.escape_html(r.role)}" data-tool="${tool.name}" data-role="${r.role}">
-                        <i class="fa fa-times remove-role" data-tool="${tool.name}" data-role="${r.role}" aria-hidden="true"></i>
+                        ${ns.icon('x', { className: 'remove-role', attrs: `data-tool="${tool.name}" data-role="${r.role}"` })}
                     </button>
                 </span>`
             ).join('');
@@ -526,7 +526,7 @@
                                     aria-label="Configure role access for ${frappe.utils.escape_html(tool.display_name)}"
                                     aria-expanded="${isPanelOpen ? 'true' : 'false'}"
                                     title="Configure role access">
-                                <i class="fa fa-cog" aria-hidden="true"></i>
+                                ${ns.icon('settings')}
                             </button>
                             <label class="switch" style="margin: 0;">
                                 <input type="checkbox" class="fac-tool-toggle"
@@ -544,8 +544,8 @@
                     </div>
                     <div class="fac-tool-footer">
                         <span class="fac-tool-badge">${tool.plugin_display_name}</span>
-                        ${pluginDisabled ? '<span class="fac-plugin-disabled-notice"><i class="fa fa-exclamation-circle"></i> Plugin disabled</span>' : ''}
-                        ${tool.role_access_mode !== 'Allow All' ? '<span class="fac-tool-badge" style="background: var(--blue-100); color: var(--blue-600);"><i class="fa fa-lock"></i> Role restricted</span>' : ''}
+                        ${pluginDisabled ? `<span class="fac-plugin-disabled-notice">${ns.icon('circle-alert')} Plugin disabled</span>` : ''}
+                        ${tool.role_access_mode !== 'Allow All' ? `<span class="fac-tool-badge" style="background: var(--blue-100); color: var(--blue-600);">${ns.icon('lock')} Role restricted</span>` : ''}
                     </div>
 
                     <!-- Configuration Panel -->
@@ -574,7 +574,7 @@
                                 <div class="fac-role-tags" id="role-tags-${tool.name}">
                                     ${roleTagsHtml}
                                     <button type="button" class="fac-add-role-btn" data-tool="${tool.name}" aria-label="Add role to ${frappe.utils.escape_html(tool.display_name)}">
-                                        <i class="fa fa-plus" aria-hidden="true"></i> Add Role
+                                        ${ns.icon('plus')} Add Role
                                     </button>
                                 </div>
                             </div>
@@ -742,7 +742,7 @@
             <span class="fac-role-tag" data-role="${role}">
                 ${role}
                 <button type="button" class="fac-role-remove-btn" aria-label="Remove role ${frappe.utils.escape_html(role)}" data-tool="${toolName}" data-role="${role}">
-                    <i class="fa fa-times remove-role" data-tool="${toolName}" data-role="${role}" aria-hidden="true"></i>
+                    ${ns.icon('x', { className: 'remove-role', attrs: `data-tool="${toolName}" data-role="${role}"` })}
                 </button>
             </span>
         `);
@@ -773,7 +773,7 @@
 
         // Show saving state
         const saveBtn = panel.find('.fac-config-save');
-        saveBtn.prop('disabled', true).html('<i class="fa fa-spinner fa-spin"></i> Saving...');
+        saveBtn.prop('disabled', true).html(`${ns.icon('loader-circle', { spin: true })} Saving...`);
 
         // Update role access first
         frappe.call({
@@ -987,7 +987,7 @@
                                 <tbody>
                                     ${activities.slice(0, 5).map(a => {
                                         const ok = a.status === 'Success';
-                                        const icon = ok ? 'fa-check-circle' : 'fa-times-circle';
+                                        const icon = ok ? 'circle-check' : 'circle-x';
                                         return `
                                         <tr>
                                             <td>${frappe.utils.escape_html(a.action)}</td>
@@ -995,7 +995,7 @@
                                             <td>${frappe.utils.escape_html(a.user)}</td>
                                             <td>
                                                 <span class="indicator-pill ${ok ? 'green' : 'red'}">
-                                                    <i class="fa ${icon}" aria-hidden="true"></i>
+                                                    ${ns.icon(icon)}
                                                     ${frappe.utils.escape_html(a.status)}
                                                 </span>
                                             </td>
@@ -1011,7 +1011,7 @@
                     } else {
                         $('#recent-activity').html(`
                             <div class="fac-empty-state fac-empty-state--compact">
-                                <i class="fa fa-history" aria-hidden="true"></i>
+                                ${ns.icon('history')}
                                 <div class="fac-empty-title">No activity yet</div>
                                 <div class="fac-empty-subtitle">Tool calls will appear here.</div>
                             </div>
@@ -1076,7 +1076,7 @@
         $('#bulk-enable-btn, #bulk-disable-btn').prop('disabled', true);
         const btn = enabled ? $('#bulk-enable-btn') : $('#bulk-disable-btn');
         const originalHtml = btn.html();
-        btn.html(`<i class="fa fa-spinner fa-spin" aria-hidden="true"></i> ${enabled ? 'Enabling' : 'Disabling'}...`);
+        btn.html(`${ns.icon('loader-circle', { spin: true })} ${enabled ? 'Enabling' : 'Disabling'}...`);
 
         frappe.call({
             method: "frappe_assistant_core.api.admin_api.bulk_toggle_tools_by_category",

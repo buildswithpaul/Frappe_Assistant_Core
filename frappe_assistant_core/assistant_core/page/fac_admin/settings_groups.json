@@ -3,14 +3,14 @@
         {
             "key": "chat_widget",
             "label": "Chat & Widget",
-            "icon": "fa-comments",
+            "icon": "messages-square",
             "doctype": "FAC Chat Settings",
             "units": ["ui_settings_tab", "retention_tab"]
         },
         {
             "key": "other_apps",
             "label": "Other Frappe apps",
-            "icon": "fa-th-large",
+            "icon": "layout-grid",
             "doctype": "FAC Chat Settings",
             "units": ["widget_embed_section"],
             "renderer": "embed_apps"
@@ -18,14 +18,14 @@
         {
             "key": "mcp_server",
             "label": "MCP Server",
-            "icon": "fa-server",
+            "icon": "server",
             "doctype": "Assistant Core Settings",
             "units": ["general_tab", "mcp_section", "skills_section"]
         },
         {
             "key": "oauth",
             "label": "OAuth",
-            "icon": "fa-key",
+            "icon": "key-round",
             "doctype": "Assistant Core Settings",
             "units": ["oauth_authorization_section", "oauth_advanced_section", "oauth_metadata_section"],
 			"frappe_v15_only": true
@@ -33,21 +33,21 @@
         {
             "key": "security",
             "label": "Security",
-            "icon": "fa-shield",
+            "icon": "shield",
             "doctype": "Assistant Core Settings",
             "units": ["execution_limits_section", "audit_log_section"]
         },
         {
             "key": "ocr",
             "label": "OCR",
-            "icon": "fa-file-image-o",
+            "icon": "file-image",
             "doctype": "Assistant Core Settings",
             "units": ["ocr_section", "ollama_section"]
         },
         {
             "key": "fac_cloud",
             "label": "FAC Cloud connection",
-            "icon": "fa-cloud",
+            "icon": "cloud",
             "doctype": "FAC Chat Settings",
             "units": ["section_break_ar"],
             "read_only": true

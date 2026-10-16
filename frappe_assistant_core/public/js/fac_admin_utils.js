@@ -5,6 +5,67 @@
 (function() {
     const ns = frappe.fac_admin;
 
+    // Frappe v16 removed Font Awesome and draws icons from its Lucide sprite; v15 has
+    // no Lucide sprite but still bundles Font Awesome. Names are Lucide; each maps to
+    // the Font Awesome class used on v15.
+    const FA_FALLBACK = {
+        'arrow-right': 'fa-arrow-right',
+        'book': 'fa-book',
+        'box': 'fa-cube',
+        'chart-line': 'fa-line-chart',
+        'check': 'fa-check',
+        'circle-alert': 'fa-exclamation-circle',
+        'circle-check': 'fa-check-circle',
+        'circle-user': 'fa-user-circle-o',
+        'circle-x': 'fa-times-circle',
+        'clock': 'fa-clock-o',
+        'cloud': 'fa-cloud',
+        'copy': 'fa-copy',
+        'external-link': 'fa-external-link',
+        'eye': 'fa-eye',
+        'file-image': 'fa-file-image-o',
+        'file-text': 'fa-file-text-o',
+        'folder': 'fa-folder-o',
+        'graduation-cap': 'fa-graduation-cap',
+        'history': 'fa-history',
+        'key-round': 'fa-key',
+        'layout-grid': 'fa-th-large',
+        'loader-circle': 'fa-spinner',
+        'lock': 'fa-lock',
+        'messages-square': 'fa-comments',
+        'play': 'fa-play',
+        'plus': 'fa-plus',
+        'power': 'fa-power-off',
+        'refresh-cw': 'fa-refresh',
+        'search': 'fa-search',
+        'server': 'fa-server',
+        'settings': 'fa-cog',
+        'settings-2': 'fa-cogs',
+        'shield': 'fa-shield',
+        'sliders-horizontal': 'fa-sliders',
+        'square': 'fa-stop',
+        'wrench': 'fa-wrench',
+        'x': 'fa-times',
+        'zap': 'fa-bolt',
+    };
+
+    const hasLucideSprite = parseInt((frappe.boot.versions || {}).frappe, 10) >= 16;
+
+    // Return icon markup. `opts.spin` animates it; `opts.className` and `opts.attrs`
+    // (already-escaped attribute string) land on the outer element so click targets
+    // such as `.remove-role` keep working.
+    ns.icon = function(name, opts = {}) {
+        const classes = ['fac-icon', opts.spin ? 'fac-icon-spin' : '', opts.className || '']
+            .filter(Boolean).join(' ');
+        const attrs = opts.attrs ? ` ${opts.attrs}` : '';
+        if (!hasLucideSprite) {
+            const fa = FA_FALLBACK[name] || 'fa-circle-o';
+            return `<i class="fa ${fa} ${classes}"${attrs} aria-hidden="true"></i>`;
+        }
+        return frappe.utils.icon(name, opts.size || 'sm', '', '', classes)
+            .replace('<svg ', `<svg${attrs} `);
+    };
+
     // Render markdown with proper table support.
     // frappe.markdown() uses showdown but its whitespace preprocessing
     // can break table syntax, and the default converter has tables disabled.

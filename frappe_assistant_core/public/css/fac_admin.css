@@ -168,10 +168,10 @@
     background: var(--fac-accent-soft);
     text-decoration: none;
 }
-.fac-quick-list a:hover i {
+.fac-quick-list a:hover .fac-icon {
     color: var(--fac-accent);
 }
-.fac-quick-list a i {
+.fac-quick-list a .fac-icon {
     color: var(--text-muted);
     width: 16px;
     text-align: center;
@@ -296,7 +296,7 @@
     color: var(--fac-accent);
     background: var(--fac-accent-soft);
 }
-[data-theme="dark"] .fac-quick-list a:hover i {
+[data-theme="dark"] .fac-quick-list a:hover .fac-icon {
     color: var(--fac-accent);
 }
 [data-theme="dark"] .fac-top-tab.active .fac-tab-count {
@@ -414,7 +414,7 @@
     align-items: center;
     gap: 8px;
 }
-.fac-plugin-name i {
+.fac-plugin-name .fac-icon {
     color: var(--fac-accent);
 }
 /* Toggle Switch */
@@ -982,7 +982,7 @@ input:checked + .slider:before {
     background: var(--bg-color);
     border: 1px solid var(--border-color);
 }
-.fac-meta-chip i { font-size: 10px; }
+.fac-meta-chip .fac-icon { font-size: 10px; width: 12px; height: 12px; }
 .fac-meta-chip.system-chip {
     background: var(--blue-50, #eff6ff);
     color: var(--blue-600, #2563eb);
@@ -1129,8 +1129,10 @@ input:checked + .slider:before {
 .fac-empty-state--compact {
     padding: 24px 16px;
 }
-.fac-empty-state > .fa {
+.fac-empty-state > .fac-icon {
     font-size: 28px;
+    width: 28px;
+    height: 28px;
     opacity: 0.5;
     margin-bottom: 4px;
 }
@@ -1511,4 +1513,25 @@ mark.fac-hl {
     margin-left: auto;
     color: var(--text-muted);
     font-size: var(--text-xs);
+}
+
+/* Icons from ns.icon(): Lucide <svg> on Frappe v16, Font Awesome <i> on v15 */
+.fac-icon {
+    --icon-stroke: currentColor;
+    flex-shrink: 0;
+    vertical-align: -0.125em;
+    margin: 0;
+}
+svg.fac-icon.icon-sm {
+    width: 14px;
+    height: 14px;
+}
+.fac-icon-spin {
+    animation: fac-icon-spin 1s linear infinite;
+}
+@keyframes fac-icon-spin {
+    to { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+    .fac-icon-spin { animation: none; }
 }

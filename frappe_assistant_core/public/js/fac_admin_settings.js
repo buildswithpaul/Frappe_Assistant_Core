@@ -74,7 +74,7 @@
         $('#settings-nav').html(settings.groups.map(g => `
             <button type="button" class="fac-settings-nav-item" role="tab" data-group="${esc(g.key)}"
                     aria-selected="false" aria-controls="settings-pane" tabindex="-1">
-                <i class="fa ${esc(g.icon || 'fa-cog')}" aria-hidden="true"></i>
+                ${ns.icon(esc(g.icon || 'settings'))}
                 <span>${esc(__(g.label))}</span>
             </button>`).join(''));
     }

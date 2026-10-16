@@ -45,7 +45,7 @@
             if (zeroData) {
                 $('#prompt-templates-list').html(`
                     <div class="fac-empty-state">
-                        <i class="fa fa-file-text-o" aria-hidden="true"></i>
+                        ${ns.icon('file-text')}
                         <div class="fac-empty-title">No prompt templates yet</div>
                         <div class="fac-empty-subtitle">Create a prompt template to expose it to MCP clients.</div>
                         <a href="/app/prompt-template/new?status=Draft" class="btn btn-xs btn-primary">Create template</a>
@@ -54,7 +54,7 @@
             } else {
                 $('#prompt-templates-list').html(`
                     <div class="fac-empty-state">
-                        <i class="fa fa-search" aria-hidden="true"></i>
+                        ${ns.icon('search')}
                         <div class="fac-empty-title">No templates match the current filters</div>
                         <button type="button" class="btn btn-xs btn-default fac-clear-prompt-filters">Clear filters</button>
                     </div>
@@ -86,13 +86,13 @@
                                 data-name="${t.name}"
                                 aria-label="Preview template ${frappe.utils.escape_html(t.title)}"
                                 title="Preview template">
-                            <i class="fa fa-eye" aria-hidden="true"></i>
+                            ${ns.icon('eye')}
                         </button>
                         <a href="/app/prompt-template/${encodeURIComponent(t.name)}" target="_blank"
                            class="fac-tool-settings-btn"
                            aria-label="Open ${frappe.utils.escape_html(t.title)} in DocType editor"
                            title="Open in DocType">
-                            <i class="fa fa-external-link" aria-hidden="true"></i>
+                            ${ns.icon('external-link')}
                         </a>
                         <label class="switch" style="margin:0;" title="${isPublished ? 'Click to unpublish' : 'Click to publish'}">
                             <input type="checkbox" class="fac-prompt-toggle"
@@ -106,11 +106,11 @@
                 </div>
                 <div class="fac-item-subtitle">${frappe.utils.escape_html(t.prompt_id || t.name)}</div>
                 <div class="fac-item-meta">
-                    ${t.category ? `<span class="fac-meta-chip"><i class="fa fa-folder-o"></i> ${frappe.utils.escape_html(t.category)}</span>` : ''}
-                    <span class="fac-meta-chip"><i class="fa fa-eye"></i> ${t.visibility || 'Private'}</span>
+                    ${t.category ? `<span class="fac-meta-chip">${ns.icon('folder')} ${frappe.utils.escape_html(t.category)}</span>` : ''}
+                    <span class="fac-meta-chip">${ns.icon('eye')} ${t.visibility || 'Private'}</span>
                     ${t.is_system ? '<span class="fac-meta-chip system-chip">System</span>' : ''}
                     <span class="fac-meta-chip">Used ${t.use_count || 0}x</span>
-                    <span class="fac-meta-chip"><i class="fa fa-clock-o"></i> ${lastUsed}</span>
+                    <span class="fac-meta-chip">${ns.icon('clock')} ${lastUsed}</span>
                 </div>
                 <div class="fac-expand-panel" id="prompt-preview-${t.name}"></div>
             </div>`;
@@ -183,7 +183,7 @@
         }
 
         panel.addClass('open').html(
-            '<div style="color:var(--text-muted);font-size:12px;"><i class="fa fa-spinner fa-spin"></i> Loading preview...</div>'
+            `<div style="color:var(--text-muted);font-size:12px;">${ns.icon('loader-circle', { spin: true })} Loading preview...</div>`
         );
         btn.addClass('active');
 

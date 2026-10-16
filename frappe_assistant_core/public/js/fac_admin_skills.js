@@ -47,7 +47,7 @@
             if (zeroData) {
                 $('#skills-list').html(`
                     <div class="fac-empty-state">
-                        <i class="fa fa-graduation-cap" aria-hidden="true"></i>
+                        ${ns.icon('graduation-cap')}
                         <div class="fac-empty-title">No skills yet</div>
                         <div class="fac-empty-subtitle">Skills are reusable workflows or tool-usage patterns exposed to MCP clients.</div>
                         <a href="/app/fac-skill/new?status=Draft" class="btn btn-xs btn-primary">Create skill</a>
@@ -56,7 +56,7 @@
             } else {
                 $('#skills-list').html(`
                     <div class="fac-empty-state">
-                        <i class="fa fa-search" aria-hidden="true"></i>
+                        ${ns.icon('search')}
                         <div class="fac-empty-title">No skills match the current filters</div>
                         <button type="button" class="btn btn-xs btn-default fac-clear-skill-filters">Clear filters</button>
                     </div>
@@ -89,13 +89,13 @@
                                 data-name="${s.name}"
                                 aria-label="View content of skill ${frappe.utils.escape_html(s.title)}"
                                 title="View skill content">
-                            <i class="fa fa-book" aria-hidden="true"></i>
+                            ${ns.icon('book')}
                         </button>
                         <a href="/app/fac-skill/${encodeURIComponent(s.name)}" target="_blank"
                            class="fac-tool-settings-btn"
                            aria-label="Open ${frappe.utils.escape_html(s.title)} in DocType editor"
                            title="Open in DocType">
-                            <i class="fa fa-external-link" aria-hidden="true"></i>
+                            ${ns.icon('external-link')}
                         </a>
                         <label class="switch" style="margin:0;" title="${isPublished ? 'Click to unpublish' : 'Click to publish'}">
                             <input type="checkbox" class="fac-skill-toggle"
@@ -110,11 +110,11 @@
                 <div class="fac-item-subtitle">${frappe.utils.escape_html(s.skill_id || s.name)}</div>
                 <div class="fac-item-meta">
                     <span class="fac-meta-chip">${frappe.utils.escape_html(s.skill_type || '')}</span>
-                    ${s.linked_tool ? `<span class="fac-meta-chip"><i class="fa fa-wrench"></i> ${frappe.utils.escape_html(s.linked_tool)}</span>` : ''}
-                    <span class="fac-meta-chip"><i class="fa fa-eye"></i> ${s.visibility || 'Private'}</span>
+                    ${s.linked_tool ? `<span class="fac-meta-chip">${ns.icon('wrench')} ${frappe.utils.escape_html(s.linked_tool)}</span>` : ''}
+                    <span class="fac-meta-chip">${ns.icon('eye')} ${s.visibility || 'Private'}</span>
                     ${s.is_system ? '<span class="fac-meta-chip system-chip">System</span>' : ''}
                     <span class="fac-meta-chip">Used ${s.use_count || 0}x</span>
-                    <span class="fac-meta-chip"><i class="fa fa-clock-o"></i> ${lastUsed}</span>
+                    <span class="fac-meta-chip">${ns.icon('clock')} ${lastUsed}</span>
                 </div>
                 <div class="fac-expand-panel" id="skill-content-${s.name}"></div>
             </div>`;
@@ -187,7 +187,7 @@
         }
 
         panel.addClass('open').html(
-            '<div style="color:var(--text-muted);font-size:12px;"><i class="fa fa-spinner fa-spin"></i> Loading content...</div>'
+            `<div style="color:var(--text-muted);font-size:12px;">${ns.icon('loader-circle', { spin: true })} Loading content...</div>`
         );
         btn.addClass('active');
 
