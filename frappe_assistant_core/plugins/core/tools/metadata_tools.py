@@ -14,12 +14,17 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import frappe
 from frappe import _
 
 from .child_tables import multiselect_link_field
+from .report_search import _tokens
+
+DEFAULT_TOPIC_LIMIT = 8
+MAX_TOPIC_LIMIT = 25
+PARTY_LINK_TARGETS = frozenset({"Customer", "Supplier", "Party Type"})
 
 
 class MetadataTools:
@@ -34,8 +39,13 @@ class MetadataTools:
                 "description": "Get DocType metadata and field information",
                 "inputSchema": {
                     "type": "object",
-                    "properties": {"doctype": {"type": "string", "description": "DocType name"}},
-                    "required": ["doctype"],
+                    "properties": {
+                        "doctype": {"type": "string", "description": "DocType name"},
+                        "topic": {
+                            "type": "string",
+                            "description": "Where does this data live? Finds the DocTypes about a topic",
+                        },
+                    },
                 },
             },
             {
@@ -80,7 +90,9 @@ class MetadataTools:
     def execute_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
         """Execute a metadata tool with given arguments"""
         if tool_name == "get_doctype_info":
-            return MetadataTools.get_doctype_metadata(**arguments)
+            if not arguments.get("doctype") and arguments.get("topic"):
+                return MetadataTools.find_doctypes_for_topic(arguments["topic"])
+            return MetadataTools.get_doctype_metadata(**{k: v for k, v in arguments.items() if k != "topic"})
         elif tool_name == "metadata_list_doctypes":
             return MetadataTools.list_doctypes(**arguments)
         elif tool_name == "metadata_permissions":
@@ -181,6 +193,81 @@ class MetadataTools:
         except Exception as e:
             frappe.log_error(f"assistant Get DocType Metadata Error: {str(e)}")
             return {"success": False, "error": str(e)}
+
+    @staticmethod
+    def _topic_candidates(topic_tokens: set) -> List[Dict[str, Any]]:
+        """Non-child, non-single DocTypes whose name or module mentions a topic word, best first."""
+        if not topic_tokens:
+            return []
+        or_filters = [
+            [column, "like", f"%{token}%"] for token in sorted(topic_tokens) for column in ("name", "module")
+        ]
+        rows = frappe.get_all(
+            "DocType",
+            filters={"istable": 0, "issingle": 0},
+            or_filters=or_filters,
+            fields=["name", "module", "custom"],
+        )
+
+        def rank(row) -> tuple:
+            name_hits = len(topic_tokens & _tokens(row.name))
+            module_hits = len(topic_tokens & _tokens(row.module))
+            return (-(2 * name_hits + module_hits), not row.custom, row.name)
+
+        return sorted(rows, key=rank)
+
+    @staticmethod
+    def _describe_topic_doctype(row, restricted_for_role) -> Optional[Dict[str, Any]]:
+        """Shape one readable DocType for the topic answer; None when the user may not read it."""
+        from frappe_assistant_core.core.security_config import get_restricted_fields
+
+        doctype = row.name
+        if not frappe.has_permission(doctype, "read"):
+            return None
+        restricted = get_restricted_fields(doctype, restricted_for_role)
+        meta = frappe.get_meta(doctype)
+        permlevels = set(meta.get_permlevel_access("read"))
+        fields = [df for df in meta.fields if df.permlevel in permlevels and df.fieldname not in restricted]
+        custom_fieldnames = set(frappe.get_all("Custom Field", filters={"dt": doctype}, pluck="fieldname"))
+        return {
+            "doctype": doctype,
+            "module": row.module,
+            "custom": bool(meta.custom),
+            "is_submittable": bool(meta.is_submittable),
+            "has_data": bool(frappe.get_list(doctype, limit=1, pluck="name")),
+            "date_fields": [df.fieldname for df in fields if df.fieldtype in ("Date", "Datetime")],
+            "amount_fields": [df.fieldname for df in fields if df.fieldtype in ("Currency", "Float", "Int")],
+            "party_fields": [
+                df.fieldname
+                for df in fields
+                if df.fieldtype == "Dynamic Link"
+                or (df.fieldtype == "Link" and df.options in PARTY_LINK_TARGETS)
+            ],
+            "custom_fields": [df.fieldname for df in fields if df.fieldname in custom_fieldnames],
+        }
+
+    @staticmethod
+    def find_doctypes_for_topic(topic: str, limit: int = DEFAULT_TOPIC_LIMIT) -> Dict[str, Any]:
+        """The DocTypes the user may read that are about ``topic``, with the fields worth querying."""
+        from frappe_assistant_core.core.security_config import ADMIN_ONLY_FIELDS, get_user_primary_role
+
+        try:
+            limit = max(1, min(int(limit), MAX_TOPIC_LIMIT))
+        except (TypeError, ValueError):
+            limit = DEFAULT_TOPIC_LIMIT
+        role = get_user_primary_role(frappe.session.user)
+
+        doctypes = []
+        # Permission and data are checked only for the matches that can still fit in the answer.
+        for row in MetadataTools._topic_candidates(_tokens(topic)):
+            if len(doctypes) >= limit:
+                break
+            if role == "Assistant User" and ADMIN_ONLY_FIELDS.get(row.name) == "*":
+                continue
+            described = MetadataTools._describe_topic_doctype(row, role)
+            if described:
+                doctypes.append(described)
+        return {"success": True, "doctypes": doctypes}
 
     @staticmethod
     def list_doctypes(module: str = None, custom_only: bool = False) -> Dict[str, Any]:

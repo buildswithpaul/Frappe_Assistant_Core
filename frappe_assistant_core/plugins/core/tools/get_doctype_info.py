@@ -45,8 +45,18 @@ class GetDoctypeInfo(BaseTool):
 
         self.inputSchema = {
             "type": "object",
-            "properties": {"doctype": {"type": "string", "description": "DocType name"}},
-            "required": ["doctype"],
+            "properties": {
+                "doctype": {"type": "string", "description": "DocType name"},
+                "topic": {
+                    "type": "string",
+                    "description": (
+                        "Where does this data live? A subject such as 'bookings' or 'complaints': "
+                        "returns the DocTypes about it, whether they hold data, and their date, "
+                        "amount and party fields. Use when no report fits, instead of exploring. "
+                        "Ignored when doctype is given."
+                    ),
+                },
+            },
         }
 
     def execute(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
@@ -55,8 +65,11 @@ class GetDoctypeInfo(BaseTool):
             # Import the metadata implementation
             from .metadata_tools import MetadataTools
 
-            # Execute metadata retrieval using existing implementation
-            return MetadataTools.get_doctype_metadata(doctype=arguments.get("doctype"))
+            if arguments.get("doctype"):
+                return MetadataTools.get_doctype_metadata(doctype=arguments["doctype"])
+            if arguments.get("topic"):
+                return MetadataTools.find_doctypes_for_topic(topic=arguments["topic"])
+            return {"success": False, "error": _("Provide either a doctype or a topic")}
 
         except Exception as e:
             frappe.log_error(
