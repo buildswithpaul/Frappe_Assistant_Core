@@ -317,3 +317,73 @@ class TestConvertCrmLead(CrmTestCase):
         self.assertFalse(out["success"])
         self.assertIn("not found", out["error"])
         self.assertEqual(frappe.db.count("CRM Deal", {"lead": self.lead.name}), 0)
+
+
+class TestAddCrmActivity(CrmTestCase):
+    def _add(self, **args):
+        return tool("add_crm_activity").execute({"doctype": "CRM Lead", "name": self.lead.name, **args})
+
+    def test_a_note_is_linked_to_the_record(self):
+        frappe.set_user(OWNER)
+        out = self._add(kind="note", title="Call recap", content="Demo Wednesday 3pm; prefers WhatsApp.")
+        self.assertTrue(out["success"], out)
+        note = frappe.get_doc("FCRM Note", out["created"])
+        self.assertEqual((note.reference_doctype, note.reference_docname), ("CRM Lead", self.lead.name))
+        self.assertIn("WhatsApp", note.content)
+
+    def test_a_task_is_linked_and_assigned_to_the_user(self):
+        frappe.set_user(OWNER)
+        out = self._add(
+            kind="task", title="Send demo invite", due_date="2026-10-17 10:00:00", priority="High"
+        )
+        self.assertTrue(out["success"], out)
+        task = frappe.get_doc("CRM Task", out["created"])
+        self.assertEqual((task.reference_doctype, task.reference_docname), ("CRM Lead", self.lead.name))
+        self.assertEqual(task.assigned_to, OWNER)
+        self.assertEqual(task.status, "Todo")
+        self.assertTrue(
+            frappe.db.exists("ToDo", {"reference_type": "CRM Task", "allocated_to": OWNER, "status": "Open"})
+        )
+
+    def test_a_call_is_logged_on_the_record(self):
+        # Sales users and leads carry a mobile number in CRM; the fixtures start without one.
+        frappe.db.set_value("CRM Lead", self.lead.name, "mobile_no", "+919800000002")
+        frappe.db.set_value("User", OWNER, "mobile_no", "+919800000001")
+        frappe.set_user(OWNER)
+        out = self._add(kind="call", direction="Outgoing", duration_seconds=720, content="Agreed on a demo.")
+        self.assertTrue(out["success"], out)
+        call = frappe.get_doc("CRM Call Log", out["created"])
+        self.assertEqual((call.reference_doctype, call.reference_docname), ("CRM Lead", self.lead.name))
+        self.assertEqual((call.type, call.status, int(call.duration)), ("Outgoing", "Completed", 720))
+        self.assertEqual(call.telephony_medium, "Manual")
+        self.assertEqual((call.get("from"), call.to), ("+919800000001", "+919800000002"))
+        self.assertTrue(call.note)
+
+    def test_a_call_without_numbers_asks_for_them(self):
+        frappe.set_user(OWNER)
+        out = self._add(kind="call", duration_seconds=60)
+        self.assertFalse(out["success"])
+        self.assertIn("phone", out["error"].lower())
+        self.assertEqual(
+            frappe.get_all("CRM Call Log", filters={"reference_docname": self.lead.name, "duration": 60}), []
+        )
+        out = self._add(
+            kind="call", duration_seconds=60, our_phone="+919800000001", their_phone="+919800000002"
+        )
+        self.assertTrue(out["success"], out)
+
+    def test_the_activity_shows_on_the_timeline(self):
+        frappe.set_user(OWNER)
+        self._add(kind="note", title="Recap", content="x")
+        timeline = tool("get_crm_activity").execute({"doctype": "CRM Lead", "name": self.lead.name})
+        self.assertIn("Recap", [n["title"] for n in timeline["notes"]])
+
+    def test_a_record_the_user_cannot_read_is_not_found(self):
+        frappe.set_user(OUTSIDER)
+        out = self._add(kind="note", title="x", content="y")
+        self.assertFalse(out["success"])
+        self.assertIn("not found", out["error"])
+
+    def test_an_unknown_kind_is_refused(self):
+        out = self._add(kind="meeting", title="x")
+        self.assertFalse(out["success"])

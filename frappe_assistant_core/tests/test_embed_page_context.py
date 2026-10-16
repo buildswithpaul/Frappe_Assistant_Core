@@ -198,6 +198,7 @@ class TestEmbedPageContext(BaseAssistantTest):
             self.assertIn('get_crm_activity (doctype "CRM Lead", name "CRM-LEAD-1")', hint)
             self.assertIn('"This lead" means this record', hint)
             self.assertIn("/crm/leads/CRM-LEAD-1", hint)
+            self.assertIn("load the crm-follow-up skill", hint)
             self.assertIn("/crm/deals/D1", page_context.how_to_read("CRM Deal", "D1"))
         with patch(f"{PAGE}.insights_tools_enabled", autospec=True, return_value=False):
             self.assertEqual(

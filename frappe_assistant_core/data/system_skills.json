@@ -386,6 +386,17 @@
     "requires_app": "crm"
   },
   {
+    "skill_id": "add-crm-activity-usage",
+    "title": "How to Use add_crm_activity",
+    "description": "Adding a linked note, follow-up task or call log to a Frappe CRM lead or deal",
+    "skill_type": "Tool Usage",
+    "linked_tool": "add_crm_activity",
+    "status": "Published",
+    "visibility": "Public",
+    "content_file": "add_crm_activity.md",
+    "requires_app": "crm"
+  },
+  {
     "skill_id": "crm-follow-up",
     "title": "Following Up on Frappe CRM Leads and Deals",
     "description": "Briefing, emailing, converting and logging follow-ups on Frappe CRM leads and deals — which tools, which fields, which links",

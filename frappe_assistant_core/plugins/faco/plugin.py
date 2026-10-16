@@ -98,6 +98,7 @@ class FacoPlugin(BasePlugin):
             "get_crm_activity",
             "send_crm_email",
             "convert_crm_lead",
+            "add_crm_activity",
         ]
 
     def is_fac_cloud_only(self) -> bool:

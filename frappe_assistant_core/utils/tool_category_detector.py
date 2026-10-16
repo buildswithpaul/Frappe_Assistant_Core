@@ -110,6 +110,7 @@ WRITE_TOOLS = {
     "reply_to_helpdesk_ticket",
     "send_crm_email",
     "convert_crm_lead",
+    "add_crm_activity",
 }
 
 
