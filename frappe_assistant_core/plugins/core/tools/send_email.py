@@ -27,6 +27,7 @@ import frappe
 from frappe import _
 
 from frappe_assistant_core.core.base_tool import BaseTool
+from frappe_assistant_core.utils.message_body import as_html_body
 
 
 class SendEmail(BaseTool):
@@ -110,7 +111,7 @@ class SendEmail(BaseTool):
                 recipients=recipients,
                 cc=cc or None,
                 subject=subject,
-                message=message,
+                message=as_html_body(message),
                 delayed=True,
             )
             return {

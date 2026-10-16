@@ -81,6 +81,13 @@ def make_ticket():
     ).insert(ignore_permissions=True)
 
 
+def pin_reply_email(test, value: int) -> None:
+    """Pin HD Settings.enable_reply_email_via_agent for one test; admins set it in HD Settings."""
+    before = frappe.db.get_single_value("HD Settings", "enable_reply_email_via_agent")
+    test.addCleanup(frappe.db.set_single_value, "HD Settings", "enable_reply_email_via_agent", before)
+    frappe.db.set_single_value("HD Settings", "enable_reply_email_via_agent", value)
+
+
 class TestHelpdeskReplyTool(BaseAssistantTest):
     @classmethod
     def setUpClass(cls):
@@ -164,6 +171,61 @@ class TestHelpdeskReplyTool(BaseAssistantTest):
         self.assertTrue(out["success"], out)
         self.assertFalse(out["email_queued"])
         self.assertEqual(len(self._replies()), 1)
+
+    def test_email_not_queued_leaves_no_queue_row(self):
+        # Admins switch this off in HD Settings; production reaches it there.
+        pin_reply_email(self, 0)
+        frappe.set_user(AGENT)
+        out = self._tool().execute({"ticket": str(self.ticket.name), "message": "<p>Hi</p>"})
+        self.assertEqual(frappe.get_all("Email Queue", filters={"communication": out["communication"]}), [])
+
+    def test_email_queued_reads_the_queue_not_the_settings(self):
+        # Frappe's QueueBuilder logs and returns None instead of raising when an address is
+        # unusable, so a reply can be recorded with nothing queued while email is switched on.
+        pin_reply_email(self, 1)
+        frappe.set_user(AGENT)
+        with patch("frappe.sendmail", return_value=None):
+            out = self._tool().execute({"ticket": str(self.ticket.name), "message": "<p>Hi</p>"})
+        self.assertTrue(out["success"], out)
+        self.assertFalse(out["email_queued"])
+
+    def test_invalid_cc_is_refused_before_anything_is_written(self):
+        frappe.set_user(AGENT)
+        out = self._tool().execute({"ticket": str(self.ticket.name), "message": "<p>Hi</p>", "cc": ["ops"]})
+        self.assertFalse(out["success"])
+        self.assertIn("ops", out["error"])
+        self.assertEqual(self._replies(), [])
+
+    def test_failed_send_leaves_nothing_on_the_ticket(self):
+        # An outgoing-mail failure inside reply_via_agent, after it has inserted the Communication.
+        pin_reply_email(self, 1)
+        frappe.set_user(AGENT)
+        with patch("frappe.sendmail", side_effect=Exception("SMTP is down")):
+            out = self._tool().execute({"ticket": str(self.ticket.name), "message": "<p>Hi</p>"})
+        self.assertFalse(out["success"])
+        self.assertEqual(self._replies(), [])
+        self.assertFalse(frappe.db.get_value("HD Ticket", self.ticket.name, "first_responded_on"))
+
+    def test_non_agent_refused_where_helpdesk_does_not_check(self):
+        # Helpdesk before 1.23 posted an agent reply for anyone who could read the ticket.
+        from helpdesk.helpdesk.doctype.hd_ticket.hd_ticket import HDTicket
+
+        frappe.db.set_value("HD Ticket", self.ticket.name, "raised_by", NON_AGENT)
+        frappe.set_user(NON_AGENT)
+        with patch.object(HDTicket, "reply_via_agent", autospec=True) as reply:
+            out = self._tool().execute({"ticket": str(self.ticket.name), "message": "<p>Hi</p>"})
+        self.assertFalse(out["success"])
+        self.assertIn("agent", out["error"].lower())
+        reply.assert_not_called()
+
+    def test_plain_text_keeps_its_line_breaks(self):
+        frappe.set_user(AGENT)
+        out = self._tool().execute(
+            {"ticket": str(self.ticket.name), "message": "Hi Priya,\nThe fix ships *Friday*."}
+        )
+        self.assertTrue(out["success"], out)
+        content = frappe.db.get_value("Communication", out["communication"], "content")
+        self.assertIn("Hi Priya,<br>The fix ships *Friday*.", content)
 
     def test_dependency_gate(self):
         with patch("frappe_assistant_core.plugins.faco.helpdesk.tool.helpdesk_installed", return_value=False):
