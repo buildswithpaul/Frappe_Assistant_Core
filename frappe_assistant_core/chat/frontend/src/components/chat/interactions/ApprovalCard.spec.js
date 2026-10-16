@@ -26,15 +26,25 @@ beforeEach(() => {
 });
 
 describe("ApprovalCard for a message tool", () => {
-	it("shows the email preview with Send email, Reject and Always allow", async () => {
+	it("shows the email preview with Send email, Reject and the don't-ask-again choice", async () => {
 		messagePreview.mockResolvedValue({ can_send: true, title: "Send email", sender: "s@x.com", will_email: true });
 		const wrapper = mount(ApprovalCard, { props: { block: emailBlock() } });
 		await flushPromises();
 		expect(messagePreview).toHaveBeenCalledWith("send_email", {});
 		expect(wrapper.findComponent({ name: "EmailPreview" }).exists()).toBe(true);
 		expect(wrapper.find(".approval-table").exists()).toBe(false);
-		expect(buttons(wrapper)).toEqual(["Send email", "Reject", "Always allow this tool"]);
-		await wrapper.find(".ql-btn-trust").trigger("click");
+		expect(buttons(wrapper)).toEqual(["Send email", "Reject"]);
+		expect(wrapper.find(".trust-choice").text()).toBe("Don't ask again for this tool");
+		await wrapper.find(".ql-btn-approve").trigger("click");
+		expect(wrapper.emitted("approve")[0]).toEqual(["t1", [{ interruptId: "i1", response: "approve" }]]);
+	});
+
+	it("sends trust when don't-ask-again is ticked", async () => {
+		messagePreview.mockResolvedValue({ can_send: true, title: "Send email", sender: "s@x.com", will_email: true });
+		const wrapper = mount(ApprovalCard, { props: { block: emailBlock() } });
+		await flushPromises();
+		await wrapper.find(".trust-choice input").setValue(true);
+		await wrapper.find(".ql-btn-approve").trigger("click");
 		expect(wrapper.emitted("approve")[0]).toEqual(["t1", [{ interruptId: "i1", response: "trust" }]]);
 	});
 
@@ -61,7 +71,7 @@ describe("ApprovalCard for a message tool", () => {
 		messagePreview.mockReturnValue(new Promise(() => {}));
 		const wrapper = mount(ApprovalCard, { props: { block: emailBlock() } });
 		expect(wrapper.find(".ql-btn-approve").attributes("disabled")).toBeDefined();
-		expect(wrapper.find(".ql-btn-trust").attributes("disabled")).toBeDefined();
+		expect(wrapper.find(".trust-choice input").attributes("disabled")).toBeDefined();
 	});
 
 	it("offers only Reject when the preview cannot load", async () => {
@@ -70,6 +80,7 @@ describe("ApprovalCard for a message tool", () => {
 		await flushPromises();
 		expect(wrapper.text()).toContain("Couldn't load the preview");
 		expect(buttons(wrapper)).toEqual(["Reject"]);
+		expect(wrapper.find(".trust-choice").exists()).toBe(false);
 	});
 
 	it("shows the reason and only Dismiss when the user cannot send", async () => {
@@ -84,6 +95,7 @@ describe("ApprovalCard for a message tool", () => {
 		await flushPromises();
 		expect(wrapper.text()).toContain("Only Helpdesk agents can send replies.");
 		expect(buttons(wrapper)).toEqual(["Dismiss"]);
+		expect(wrapper.find(".trust-choice").exists()).toBe(false);
 		await wrapper.find("button").trigger("click");
 		expect(wrapper.emitted("reject")[0]).toEqual(["t3", [{ interruptId: "i1", response: "rejected" }]]);
 	});
@@ -95,6 +107,7 @@ describe("ApprovalCard for other tools", () => {
 		const wrapper = mount(ApprovalCard, { props: { block } });
 		expect(messagePreview).not.toHaveBeenCalled();
 		expect(wrapper.find(".approval-table").exists()).toBe(true);
-		expect(buttons(wrapper)).toEqual(["Approve", "Reject", "Always allow this tool"]);
+		expect(buttons(wrapper)).toEqual(["Approve", "Reject"]);
+		expect(wrapper.find(".trust-choice").exists()).toBe(true);
 	});
 });

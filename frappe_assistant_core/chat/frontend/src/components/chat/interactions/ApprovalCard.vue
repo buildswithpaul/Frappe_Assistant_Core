@@ -58,27 +58,25 @@
 			</button>
 		</div>
 
-		<div v-else class="approval-actions">
-			<button
-				v-if="!message.failed.value"
-				class="ql-btn ql-btn-approve"
-				:disabled="submitting || message.loading.value"
-				@click="handleApprove('approve')"
-			>
-				{{ message.entry.value ? __(message.entry.value.sendLabel) : "Approve" }}
-			</button>
-			<button class="ql-btn ql-btn-reject" :disabled="submitting" @click="handleReject">
-				Reject
-			</button>
-			<button
-				v-if="!message.failed.value"
-				class="ql-btn ql-btn-trust"
-				:disabled="submitting || message.loading.value"
-				@click="handleApprove('trust')"
-			>
-				Always allow this tool
-			</button>
-		</div>
+		<template v-else>
+			<label v-if="!message.failed.value" class="trust-choice">
+				<input v-model="dontAskAgain" type="checkbox" :disabled="submitting || message.loading.value" />
+				{{ __("Don't ask again for this tool") }}
+			</label>
+			<div class="approval-actions">
+				<button
+					v-if="!message.failed.value"
+					class="ql-btn ql-btn-approve"
+					:disabled="submitting || message.loading.value"
+					@click="handleApprove(dontAskAgain ? 'trust' : 'approve')"
+				>
+					{{ message.entry.value ? __(message.entry.value.sendLabel) : "Approve" }}
+				</button>
+				<button class="ql-btn ql-btn-reject" :disabled="submitting" @click="handleReject">
+					Reject
+				</button>
+			</div>
+		</template>
 	</div>
 </template>
 
@@ -105,6 +103,8 @@ const props = defineProps({
 const emit = defineEmits(["approve", "reject"]);
 
 const hasDecision = computed(() => Boolean(props.block.decision));
+// Ticked, the approve button also stops this tool asking again (AR Tool Trust "always").
+const dontAskAgain = ref(false);
 
 // Message tools (send_email, reply_to_helpdesk_ticket) show their draft as a message.
 const message = useMessagePreview(() => props.block);
@@ -402,15 +402,23 @@ function handleReject() {
 	border-color: var(--ql-danger);
 }
 
-.ql-btn-trust {
-	margin-left: auto;
-	padding: 7px 14px;
-	background: transparent;
-	color: var(--ql-text-muted);
-	border: none;
+.trust-choice {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 10px 14px 4px;
+	font-size: 12px;
+	color: var(--ql-text-secondary);
+	cursor: pointer;
 }
 
-.ql-btn-trust:hover:not(:disabled) {
-	color: var(--ql-text-secondary);
+.trust-choice input {
+	margin: 0;
+	accent-color: var(--ql-accent);
+}
+
+.trust-choice:has(input:disabled) {
+	cursor: default;
+	opacity: 0.6;
 }
 </style>
