@@ -6,6 +6,8 @@
  * surfaces to the user during approval — not general-purpose formatters.
  */
 
+import { titleWord } from "@/utils/toolLabel";
+
 const MAX_VALUE_LEN = 120;
 
 // Field-name patterns that mark a value as money or a date for display.
@@ -65,7 +67,7 @@ export function formatToolName(name) {
 	return name
 		.replace(/_/g, " ")
 		.split(" ")
-		.map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+		.map(titleWord)
 		.join(" ");
 }
 

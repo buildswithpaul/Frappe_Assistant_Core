@@ -6,6 +6,7 @@
 
 import { isInternalTool } from "@/utils/internalTools";
 import { describeDelegation } from "./delegationOutcome";
+import { titleWord } from "@/utils/toolLabel";
 
 export function formatToolName(name) {
 	if (!name) return "Tool";
@@ -13,7 +14,7 @@ export function formatToolName(name) {
 		.replace(/_/g, " ")
 		.replace(/([a-z])([A-Z])/g, "$1 $2")
 		.split(" ")
-		.map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+		.map(titleWord)
 		.join(" ");
 }
 
