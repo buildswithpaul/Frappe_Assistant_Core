@@ -353,6 +353,17 @@
     "content_file": "reply_to_helpdesk_ticket.md"
   },
   {
+    "skill_id": "get-crm-activity-usage",
+    "title": "How to Use get_crm_activity",
+    "description": "Reading a Frappe CRM lead's or deal's whole timeline before summarising or deciding a next step",
+    "skill_type": "Tool Usage",
+    "linked_tool": "get_crm_activity",
+    "status": "Published",
+    "visibility": "Public",
+    "content_file": "get_crm_activity.md",
+    "requires_app": "crm"
+  },
+  {
     "skill_id": "frappe-app-pages",
     "title": "Working in Frappe Apps (Helpdesk, CRM, Insights)",
     "description": "What to do when the user is on a Helpdesk, CRM, Insights or other Frappe app page — reading the page line, where each app keeps its data, what does not work outside Desk",
