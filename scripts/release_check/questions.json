@@ -2,7 +2,7 @@
   {
     "id": "sales_last_month",
     "site": "realistic",
-    "question": "What were our total sales last month?",
+    "question": "What were our total net sales (before tax) last month?",
     "expect": {
       "kind": "total",
       "source": "sales_last_month"
@@ -16,7 +16,7 @@
   {
     "id": "top_customers_quarter",
     "site": "realistic",
-    "question": "Who are our top 5 customers by sales this quarter?",
+    "question": "Who are our top 5 customers by net sales (before tax) this quarter?",
     "expect": {
       "kind": "top_n",
       "source": "top_customers_quarter"
@@ -31,7 +31,7 @@
   {
     "id": "receivables_ageing",
     "site": "realistic",
-    "question": "How much do customers owe us in total right now, and how old is it?",
+    "question": "How much do customers owe us in total as of today?",
     "expect": {
       "kind": "total",
       "source": "receivables_ageing"
@@ -98,7 +98,7 @@
   {
     "id": "ledger_heavy_report",
     "site": "large",
-    "question": "What is the total receivable balance on our books today, according to the ledger?",
+    "question": "What is the total customer receivable balance as of today, according to the ledger?",
     "expect": {
       "kind": "total",
       "source": "ledger_heavy_report"

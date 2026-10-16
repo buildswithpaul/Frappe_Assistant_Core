@@ -22,8 +22,9 @@ def parse_args(description: str) -> argparse.Namespace:
     parser.add_argument("--site", help="Bench site name (required unless --dry-run)")
     parser.add_argument(
         "--sites-path",
-        default=os.environ.get("FRAPPE_SITES_PATH", "./sites"),
-        help="Path to the bench sites directory (default: ./sites or $FRAPPE_SITES_PATH)",
+        default=os.environ.get("FRAPPE_SITES_PATH"),
+        help="Bench sites directory (default: $FRAPPE_SITES_PATH, else the current directory if it holds "
+        "the site, else ./sites)",
     )
     parser.add_argument(
         "--scale",
@@ -43,7 +44,7 @@ def run_cli(description: str, plan, run) -> None:
         return
     if not args.site:
         raise SystemExit("--site is required unless --dry-run is given")
-    frappe.init(args.site, sites_path=args.sites_path)
+    frappe.init(args.site, sites_path=resolve_sites_path(args.sites_path, args.site))
     frappe.connect()
     try:
         # CLI setup script, runs as Administrator by design
@@ -54,6 +55,15 @@ def run_cli(description: str, plan, run) -> None:
         frappe.db.commit()  # nosemgrep
     finally:
         frappe.destroy()
+
+
+def resolve_sites_path(given, site: str) -> str:
+    """Run from <bench>/sites (the documented place) or from <bench>: pick the directory that holds the site."""
+    candidates = [given] if given else [".", "./sites"]
+    for path in candidates:
+        if os.path.isdir(os.path.join(path, site)):
+            return path
+    raise SystemExit(f"Site {site} not found under {candidates}; run from <bench>/sites or pass --sites-path")
 
 
 def print_plan(steps: list, scale: float) -> None:
@@ -280,6 +290,8 @@ def make_payment_for(doctype: str, name: str, posting_date: date, tag: str):
     payment.reference_no = name
     payment.reference_date = posting_date
     payment.remarks = tag
+    # PaymentEntry.set_remarks() rewrites remarks on every validate unless custom_remarks is set
+    payment.custom_remarks = 1
     if not (payment.paid_to if payment.payment_type == "Receive" else payment.paid_from):
         company = payment.company
         account = frappe.get_cached_value("Company", company, "default_bank_account") or (

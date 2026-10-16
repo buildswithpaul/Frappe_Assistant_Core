@@ -20,41 +20,50 @@ inputs: the site setup scripts, `questions.json` and `expected.py`.
 
 ## Building the sites
 
-Both need Frappe and ERPNext (v15 or v16). Build them under any bench; the
-setup scripts connect with `frappe.init`, so run them with the bench's Python
-from its `sites` directory.
+Both need Frappe and ERPNext (v15 or v16). Run the setup scripts with the
+bench's Python from `<bench>/sites` (they connect with `frappe.init`; from
+`<bench>` also works, `--sites-path` overrides).
+
+**Step 1, per site: create it and complete the setup wizard.** The scripts need
+a default company and fiscal year, and fail without them. Headless (derived from
+`frappe.utils.install.complete_setup_wizard` and the keys ERPNext's setup stages
+read; replace 2026 with the current year; untested here, adjust if your version asks
+for more):
 
 ```bash
 cd <bench>
-
-# realistic site
 bench new-site realistic.test --admin-password admin --install-app erpnext
-cd sites
-../env/bin/python <fac-repo>/scripts/release_check/setup_realistic_site.py --site realistic.test
-cd ..
 bench --site realistic.test install-app frappe_assistant_core
+bench --site realistic.test execute frappe.desk.page.setup_wizard.setup_wizard.setup_complete --kwargs \
+  "{'args': {'language': 'English', 'country': 'United States', 'timezone': 'America/New_York', \
+  'currency': 'USD', 'full_name': 'Release Check', 'email': 'rc@example.com', 'password': 'admin', \
+  'company_name': 'RC Test Co', 'company_abbr': 'RTC', 'chart_of_accounts': 'Standard', \
+  'fy_start_date': '2026-01-01', 'fy_end_date': '2026-12-31', 'bank_account': 'Bank Account'}}"
+```
 
-# large site
-bench new-site large.test --admin-password admin --install-app erpnext
-bench --site large.test install-app frappe_assistant_core
-cd sites
+(Or open the site in a browser and finish the wizard by hand.) Repeat with
+`large.test` for the second site.
+
+**Step 2: run the setup script.**
+
+```bash
+cd <bench>/sites
+../env/bin/python <fac-repo>/scripts/release_check/setup_realistic_site.py --site realistic.test
 ../env/bin/python <fac-repo>/scripts/release_check/setup_large_site.py --site large.test
 ```
 
-Complete the ERPNext setup wizard on each site first (company, chart of
-accounts, fiscal year); the scripts need a default company. Run the scripts
-by the command lines above (not through `bench execute` or `bench console`,
-since they are not an importable app module).
+Not through `bench execute` or `bench console`: the scripts are not an
+importable app module.
 
 Options on both scripts:
 
 * `--dry-run` prints the plan and touches nothing (no site needed).
 * `--scale 0.01` runs the large site at 1% (about 200 invoices, 2,000 GL rows)
   for a smoke test.
-* `--sites-path` (default `./sites`, or `$FRAPPE_SITES_PATH`).
+* `--sites-path` (default `$FRAPPE_SITES_PATH`, else the current directory if it holds the site, else `./sites`).
 
 Both are idempotent and resumable: every step counts what exists (documents
-are tagged in `remarks`) and creates only the shortfall. Re-running the
+are tagged in `remarks`; Payment Entries also set `custom_remarks`, or ERPNext overwrites the tag) and creates only the shortfall. Re-running the
 realistic script on release day refreshes the "last month" and "this month"
 data, which the questions depend on. The large script commits every 200
 documents, so an interrupted run resumes where it stopped.
@@ -91,6 +100,13 @@ hand-typed number. Return shapes:
 * `top_n`: `[(name, value), ...]`, best first, ties broken by name.
 * `mentions`: strings the answer must contain; an element that is a list is a
   set of alternatives, any one of which satisfies it.
+
+Scoring definitions: sales questions are **net sales before tax**
+(`base_net_total`; the wording says so, because a company default tax template makes grand total
+differ). Receivable questions are the **customer party-ledger balance as on today**
+(GL debit minus credit on Receivable accounts, Customer party, posting date up to today),
+which is what Accounts Receivable totals. The age of the debt is not scored: the
+question asks only for the total (`receivables_ageing` keeps its id).
 
 `cite` lists the reports or doctypes whose use counts as answering the way we
 want (report-first); the runner scores whether the tool calls used one of them.

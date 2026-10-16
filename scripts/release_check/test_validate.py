@@ -31,7 +31,11 @@ class TestShippedQuestions(unittest.TestCase):
         self.assertTrue(public)
         for node in public:
             segment = ast.get_source_segment(source, node)
-            reads_data = "frappe.get_list" in segment or "_sales_invoices(" in segment
+            reads_data = (
+                "frappe.get_list" in segment
+                or "_sales_invoices(" in segment
+                or "_receivable_balance(" in segment
+            )
             self.assertTrue(reads_data, f"{node.name} must derive its answer from data")
 
 

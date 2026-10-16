@@ -19,6 +19,8 @@ import frappe
 from frappe.utils import flt, getdate, nowdate
 from site_common import month_window, quarter_start
 
+from frappe_assistant_core.plugins.core.tools.list_documents import run_grouped_query
+
 TOP_N = 5
 BOOKING_DOCTYPE = "Booking"
 STOCK_ITEM = "RC Widget"
@@ -35,14 +37,17 @@ def _sales_invoices(start, end, fields):
 
 
 def sales_last_month() -> float:
-    """Net sales (base_net_total) of submitted Sales Invoices in the previous calendar month."""
+    """Net sales before tax (base_net_total) of submitted Sales Invoices in the previous calendar month.
+
+    Questions say "net sales (before tax)": a company default Sales Taxes template makes grand total differ.
+    """
     start, end = month_window(getdate(nowdate()), 1)
     rows = _sales_invoices(start, end, ["base_net_total"])
     return flt(sum(row.base_net_total for row in rows), 2)
 
 
 def top_customers_quarter() -> list:
-    """Top customers by net sales, current calendar quarter to date."""
+    """Top customers by net sales before tax (base_net_total), current calendar quarter to date."""
     today = getdate(nowdate())
     rows = _sales_invoices(quarter_start(today), today, ["customer", "base_net_total"])
     totals = defaultdict(float)
@@ -52,15 +57,42 @@ def top_customers_quarter() -> list:
     return [(name, flt(value, 2)) for name, value in ranked[:TOP_N]]
 
 
-def receivables_ageing() -> float:
-    """Total outstanding receivable: sum of outstanding_amount over submitted Sales Invoices."""
-    rows = frappe.get_list(
-        "Sales Invoice",
-        filters={"docstatus": 1, "outstanding_amount": ["!=", 0]},
-        fields=["outstanding_amount"],
+def _receivable_balance() -> float:
+    """Customer receivable balance as on today, from the party ledger.
+
+    GL debit minus credit on Receivable accounts for rows that carry a Customer party, up to today,
+    excluding cancelled entries. Accounts Receivable nets unallocated payments and credit journals
+    (the ERPNext demo posts both) and ignores future-dated invoices, which a sum of Sales Invoice
+    outstanding_amount would not.
+    """
+    receivable_accounts = frappe.get_list(
+        "Account",
+        filters={"account_type": "Receivable", "is_group": 0},
+        pluck="name",
         limit_page_length=0,
     )
-    return flt(sum(row.outstanding_amount for row in rows), 2)
+    if not receivable_accounts:
+        return 0.0
+    specs = [
+        {"function": "sum", "field": "debit", "alias": "sum_debit"},
+        {"function": "sum", "field": "credit", "alias": "sum_credit"},
+    ]
+    filters = {
+        "account": ["in", receivable_accounts],
+        "party_type": "Customer",
+        "is_cancelled": 0,
+        "posting_date": ["<=", getdate(nowdate())],
+    }
+    totals = run_grouped_query("GL Entry", filters, None, specs, 1)[0]
+    return flt(flt(totals.get("sum_debit")) - flt(totals.get("sum_credit")), 2)
+
+
+def receivables_ageing() -> float:
+    """Total receivable owed by customers as on today (the total of Accounts Receivable).
+
+    The question asks only for this total; the age of the debt is not scored.
+    """
+    return _receivable_balance()
 
 
 def vendor_payment_history() -> list:
@@ -124,19 +156,9 @@ def bookings_this_month_custom_doctype() -> float:
 
 
 def ledger_heavy_report() -> float:
-    """Net receivable balance today: GL debit minus credit on Receivable accounts.
+    """Customer receivable balance as on today, read from the ledger.
 
-    This is what the Accounts Receivable report totals, taken straight from
-    the ledger so it is checked against the (prepared) report, not computed by it.
+    Same definition as receivables_ageing, on the large site, where the answer comes from a
+    prepared Accounts Receivable / General Ledger run instead of being computed by it.
     """
-    receivable_accounts = frappe.get_list(
-        "Account", filters={"account_type": "Receivable", "is_group": 0}, pluck="name", limit_page_length=0
-    )
-    if not receivable_accounts:
-        return 0.0
-    totals = frappe.get_list(
-        "GL Entry",
-        filters={"account": ["in", receivable_accounts], "is_cancelled": 0},
-        fields=["sum(debit) as debit", "sum(credit) as credit"],
-    )[0]
-    return flt(flt(totals.debit) - flt(totals.credit), 2)
+    return _receivable_balance()
