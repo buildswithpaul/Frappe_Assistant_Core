@@ -8,6 +8,10 @@ describe("isMessageTool", () => {
 		expect(isMessageTool("reply_to_helpdesk_ticket")).toBe(true);
 	});
 
+	it("matches the CRM email tool", () => {
+		expect(isMessageTool("send_crm_email")).toBe(true);
+	});
+
 	it("does not match a BYO server's prefixed tool or anything else", () => {
 		for (const name of ["myserver_send_email", "create_document", "", null, undefined, "toString"]) {
 			expect(isMessageTool(name)).toBe(false);
@@ -30,6 +34,23 @@ describe("MESSAGE_TOOLS.read", () => {
 		const out = MESSAGE_TOOLS.reply_to_helpdesk_ticket.read({ ticket: "12", message: "<p>Hi</p>" });
 		expect(out).toEqual({ to: null, cc: [], subject: null, body: "<p>Hi</p>" });
 		expect(MESSAGE_TOOLS.reply_to_helpdesk_ticket.previewArgs({ ticket: "12" })).toEqual({ ticket: "12" });
+	});
+});
+
+describe("MESSAGE_TOOLS.send_crm_email", () => {
+	it("previews the record and reads the draft from the input", () => {
+		const entry = MESSAGE_TOOLS.send_crm_email;
+		expect(entry.sendLabel).toBe("Send email");
+		expect(entry.previewArgs({ doctype: "CRM Lead", name: "CRM-LEAD-1", subject: "x" })).toEqual({
+			doctype: "CRM Lead",
+			name: "CRM-LEAD-1",
+		});
+		expect(entry.read({ recipients: [], cc: ["c@x.com"], subject: "S", message: "M" })).toEqual({
+			to: [],
+			cc: ["c@x.com"],
+			subject: "S",
+			body: "M",
+		});
 	});
 });
 

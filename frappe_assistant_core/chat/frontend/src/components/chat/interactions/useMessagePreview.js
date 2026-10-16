@@ -17,9 +17,10 @@ export function useMessagePreview(getBlock) {
 		if (!entry.value) return null;
 		const draft = entry.value.read(getBlock().input || {});
 		return {
-			to: preview.value?.to || draft.to || [],
+			// What the tool call names wins; the server fills only what it leaves out.
+			to: draft.to?.length ? draft.to : preview.value?.to || [],
 			cc: draft.cc,
-			subject: preview.value?.subject || draft.subject || "",
+			subject: draft.subject || preview.value?.subject || "",
 			body: draft.body,
 		};
 	});

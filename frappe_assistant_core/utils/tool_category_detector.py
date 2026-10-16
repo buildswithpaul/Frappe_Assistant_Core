@@ -108,6 +108,7 @@ WRITE_TOOLS = {
     # Communication tools (external, irreversible side effect)
     "send_email",
     "reply_to_helpdesk_ticket",
+    "send_crm_email",
 }
 
 

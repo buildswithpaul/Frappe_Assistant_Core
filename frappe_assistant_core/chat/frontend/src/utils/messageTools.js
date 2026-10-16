@@ -7,7 +7,7 @@
  *
  * Each entry: `sendLabel` for the approve button, `previewArgs(input)` for
  * `get_message_preview`, and `read(input)` → `{ to, cc, subject, body }` from the tool input
- * (`to`/`subject` null when the server preview resolves them).
+ * (`to`/`subject` null or empty when the server preview resolves them).
  */
 import DOMPurify from "dompurify";
 
@@ -18,6 +18,16 @@ export const MESSAGE_TOOLS = {
 		sendLabel: "Send reply",
 		previewArgs: (input) => ({ ticket: input.ticket }),
 		read: (input) => ({ to: null, cc: list(input.cc), subject: null, body: input.message || "" }),
+	},
+	send_crm_email: {
+		sendLabel: "Send email",
+		previewArgs: (input) => ({ doctype: input.doctype, name: input.name }),
+		read: (input) => ({
+			to: list(input.recipients),
+			cc: list(input.cc),
+			subject: input.subject || "",
+			body: input.message || "",
+		}),
 	},
 	send_email: {
 		sendLabel: "Send email",
