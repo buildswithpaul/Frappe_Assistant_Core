@@ -24,6 +24,7 @@ from typing import Any, Dict, List, Optional
 
 import frappe
 from frappe import _
+from frappe.model import no_value_fields, table_fields
 
 from frappe_assistant_core.core.base_tool import BaseTool
 
@@ -295,6 +296,134 @@ def stable_order_by(doctype: str, order_by: str) -> str:
     return f"{order_by}, {main_name} asc"
 
 
+# Grouped totals: the database computes them, over only the rows the user may read.
+AGGREGATE_FUNCTIONS = ("sum", "count", "avg", "min", "max")
+MAX_AGGREGATES = 5
+DEFAULT_GROUP_LIMIT = 100
+NUMERIC_FIELDTYPES = {"Currency", "Float", "Int", "Percent"}
+# Columns every DocType has that are not in its field list. Restricted ones are still
+# refused per role by get_restricted_fields.
+STANDARD_GROUP_FIELDS = {"name", "owner", "docstatus", "modified_by"}
+GROUP_VALUE_KEY = "group_value"
+
+
+class GroupedQueryError(ValueError):
+    """A grouped request the caller must change; the message is shown to them."""
+
+
+def resolve_queryable_field(doctype: str, fieldname: Any, restricted: set):
+    """The DocField (or None for a standard column) behind `fieldname`, if the user may query it.
+
+    Raises GroupedQueryError otherwise. This is also the SQL-injection guard: on Frappe v15 the
+    name is interpolated into a function string, so only real fieldnames get past here.
+    """
+    if not isinstance(fieldname, str) or not fieldname.isidentifier():
+        raise GroupedQueryError(_("{0} is not a valid field name.").format(fieldname))
+
+    meta = frappe.get_meta(doctype)
+    if fieldname in restricted:
+        raise GroupedQueryError(_("The field {0} is restricted and cannot be queried.").format(fieldname))
+
+    if fieldname in STANDARD_GROUP_FIELDS:
+        return None
+
+    df = meta.get_field(fieldname)
+    if not df or df.fieldtype in no_value_fields or df.fieldtype in table_fields:
+        raise GroupedQueryError(_("{0} is not a field of {1}.").format(fieldname, doctype))
+
+    if df.permlevel not in meta.get_permlevel_access("read"):
+        raise GroupedQueryError(_("You do not have permission to read the field {0}.").format(fieldname))
+
+    return df
+
+
+def build_aggregate_specs(doctype: str, aggregates: Any, restricted: set) -> List[Dict[str, str]]:
+    """Validated [{function, field, alias}] for the requested aggregates (count of name by default)."""
+    if aggregates is None or aggregates == []:
+        aggregates = [{"function": "count", "field": "name"}]
+
+    if not isinstance(aggregates, list) or len(aggregates) > MAX_AGGREGATES:
+        raise GroupedQueryError(_("aggregate must be a list of at most {0} items.").format(MAX_AGGREGATES))
+
+    specs = []
+    for item in aggregates:
+        if not isinstance(item, dict):
+            raise GroupedQueryError(_("Each aggregate must be an object with function and field."))
+
+        function = str(item.get("function") or "").lower()
+        if function not in AGGREGATE_FUNCTIONS:
+            raise GroupedQueryError(
+                _("Unknown aggregate function {0}. Use one of: {1}.").format(
+                    item.get("function"), ", ".join(AGGREGATE_FUNCTIONS)
+                )
+            )
+
+        fieldname = item.get("field")
+        df = resolve_queryable_field(doctype, fieldname, restricted)
+        if function in ("sum", "avg") and (df is None or df.fieldtype not in NUMERIC_FIELDTYPES):
+            raise GroupedQueryError(
+                _("{0} needs a numeric field (Currency, Float, Int or Percent); {1} is not one.").format(
+                    function, fieldname
+                )
+            )
+
+        specs.append({"function": function, "field": fieldname, "alias": f"{function}_{fieldname}"})
+
+    return specs
+
+
+def aggregate_query_fields(specs: List[Dict[str, str]], group_by: Optional[str], v16_form: bool) -> list:
+    """The `fields` argument for frappe.get_list: v16 dict form, or the v15 SQL-string form."""
+    fields = [group_by] if group_by else []
+    for spec in specs:
+        if v16_form:
+            fields.append({spec["function"].upper(): spec["field"], "as": spec["alias"]})
+        else:
+            fields.append(f"{spec['function']}(`{spec['field']}`) as {spec['alias']}")
+    return fields
+
+
+def number(value: Any) -> Any:
+    """Decimal/None from the database as a JSON number (None stays None: MIN/MAX of nothing)."""
+    if value is None or isinstance(value, (int, float)):
+        return value
+    return float(value)
+
+
+def run_grouped_query(
+    doctype: str,
+    filters: Any,
+    group_by: Optional[str],
+    specs: List[Dict[str, str]],
+    limit: int,
+) -> List[Dict[str, Any]]:
+    """Grouped totals through frappe.get_list, so User Permissions and sharing still apply.
+
+    Frappe v16 rejects SQL functions as strings in `fields`, so the dict form goes first
+    and v15 takes the string form (same fallback as the count query in execute).
+    """
+    query = {
+        "filters": filters,
+        "limit": limit,
+        "ignore_permissions": False,
+    }
+    if group_by:
+        query["group_by"] = f"`tab{doctype}`.`{group_by}`"
+        query["order_by"] = f"`tab{doctype}`.`{group_by}` asc"
+    else:
+        # A bare aggregate has no GROUP BY, and the DocType default sort would break it.
+        query["order_by"] = None
+
+    try:
+        return frappe.get_list(doctype, fields=aggregate_query_fields(specs, group_by, True), **query)
+    except Exception as v16_error:
+        try:
+            return frappe.get_list(doctype, fields=aggregate_query_fields(specs, group_by, False), **query)
+        except Exception:
+            # The string form is only a v15 compatibility path; its rejection on v16 would hide the cause.
+            raise v16_error from None
+
+
 class DocumentList(BaseTool):
     """
     Tool for listing and searching Frappe documents.
@@ -309,7 +438,7 @@ class DocumentList(BaseTool):
     def __init__(self):
         super().__init__()
         self.name = "list_documents"
-        self.description = "Search and list Frappe documents with optional filtering. Use this when users want to find records, get lists of documents, or search for data. This is the primary tool for data exploration and discovery. For submittable DocTypes (invoices, orders, entries) only submitted documents are returned unless you pass docstatus explicitly. If a query returns nothing because a Link filter value matches no record, the response carries unresolved_filters with ranked suggestions — check it before reporting that no data exists. When has_more is true the response carries next_offset; pass it as offset to read the next page."
+        self.description = "Search and list Frappe documents with optional filtering. Use this when users want to find records, get lists of documents, or search for data. This is the primary tool for data exploration and discovery. For submittable DocTypes (invoices, orders, entries) only submitted documents are returned unless you pass docstatus explicitly. If a query returns nothing because a Link filter value matches no record, the response carries unresolved_filters with ranked suggestions — check it before reporting that no data exists. When has_more is true the response carries next_offset; pass it as offset to read the next page. For totals by group (sum, count, avg, min, max) pass group_by and aggregate — exact figures computed by the database over records the user may read; never add up listed rows yourself."
         self.requires_permission = None  # Permission checked dynamically per DocType
 
         self.inputSchema = {
@@ -344,6 +473,29 @@ class DocumentList(BaseTool):
                 "order_by": {
                     "type": "string",
                     "description": "Order results by field, e.g. 'creation desc', 'name asc'. Omit to use the DocType's own default ordering (usually modified desc).",
+                },
+                "group_by": {
+                    "type": "string",
+                    "description": "Fieldname to group by, for totals per group (e.g. 'customer', 'territory', a custom field). The database computes the totals, over only records the user may read — use this instead of adding up listed rows yourself. Ignores fields and offset.",
+                },
+                "aggregate": {
+                    "type": "array",
+                    "maxItems": 5,
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "function": {
+                                "type": "string",
+                                "enum": ["sum", "count", "avg", "min", "max"],
+                            },
+                            "field": {
+                                "type": "string",
+                                "description": "Fieldname to aggregate. sum and avg need a Currency, Float, Int or Percent field.",
+                            },
+                        },
+                        "required": ["function", "field"],
+                    },
+                    "description": "Aggregates per group, e.g. [{'function': 'sum', 'field': 'grand_total'}]. With group_by and no aggregate you get the record count per group; without group_by you get one total row.",
                 },
             },
             "required": ["doctype"],
@@ -398,6 +550,9 @@ class DocumentList(BaseTool):
         # Submittable DocTypes default to submitted documents only, so cancelled and
         # draft records never reach a consumer that is summing monetary fields.
         filters, docstatus_defaulted = apply_default_docstatus(doctype, filters)
+
+        if arguments.get("group_by") or arguments.get("aggregate"):
+            return self._execute_grouped(doctype, filters, docstatus_defaulted, user_role, arguments)
 
         try:
             # Filter sensitive fields from requested fields for Assistant Users
@@ -510,6 +665,61 @@ class DocumentList(BaseTool):
             frappe.log_error(title=_("Document List Error"), message=f"Error listing {doctype}: {str(e)}")
 
             return {"success": False, "error": str(e), "doctype": doctype}
+
+    def _execute_grouped(
+        self,
+        doctype: str,
+        filters: Any,
+        docstatus_defaulted: bool,
+        user_role: str,
+        arguments: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Grouped totals; `fields` and `offset` do not apply."""
+        from frappe_assistant_core.core.security_config import get_restricted_fields
+
+        group_by = arguments.get("group_by") or None
+        limit = arguments.get("limit")
+        if not isinstance(limit, int) or isinstance(limit, bool) or limit < 1:
+            limit = DEFAULT_GROUP_LIMIT
+        limit = min(limit, 1000)
+
+        try:
+            restricted = get_restricted_fields(doctype, user_role)
+            if group_by:
+                resolve_queryable_field(doctype, group_by, restricted)
+            specs = build_aggregate_specs(doctype, arguments.get("aggregate"), restricted)
+
+            # One extra row tells us whether the groups were cut off by the limit.
+            raw_rows = run_grouped_query(doctype, filters, group_by, specs, limit + 1)
+        except GroupedQueryError as e:
+            return {"success": False, "error": str(e), "doctype": doctype}
+        except Exception as e:
+            frappe.log_error(title=_("Document List Error"), message=f"Error grouping {doctype}: {str(e)}")
+            return {"success": False, "error": str(e), "doctype": doctype}
+
+        has_more = len(raw_rows) > limit
+        rows = []
+        for raw in raw_rows[:limit]:
+            row = {GROUP_VALUE_KEY: raw.get(group_by)} if group_by else {}
+            for spec in specs:
+                row[spec["alias"]] = number(raw.get(spec["alias"]))
+            rows.append(row)
+
+        result = {
+            "success": True,
+            "doctype": doctype,
+            "group_by": group_by,
+            "rows": rows,
+            "row_count": len(rows),
+            "has_more": has_more,
+            "filters_applied": filters,
+            "docstatus_defaulted": docstatus_defaulted,
+        }
+        if has_more:
+            result["message"] = _("Only the first {0} groups are shown; raise limit to see the rest.").format(
+                limit
+            )
+        return result
 
 
 # Make sure class name matches file name for discovery

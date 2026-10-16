@@ -180,6 +180,27 @@ The key is absent when every filter value resolves, so its absence confirms caus
 ```
 Then check `total_count` in the response for the full count.
 
+### Totals by group (exact, permission-safe)
+```json
+{
+  "doctype": "Sales Invoice",
+  "filters": {"posting_date": [">=", "2026-01-01"]},
+  "group_by": "territory",
+  "aggregate": [
+    {"function": "sum", "field": "base_grand_total"},
+    {"function": "count", "field": "name"}
+  ]
+}
+```
+Returns `rows: [{"group_value": "North", "sum_base_grand_total": 125000.0, "count_name": 42}, ...]`, `row_count`, `has_more`, `filters_applied` and `docstatus_defaulted`. The database computes every figure over only the records the user may read (User Permissions included), so report these numbers as-is — never add up listed rows yourself.
+
+- `function` is one of `sum`, `count`, `avg`, `min`, `max`; at most 5 aggregates. `sum` and `avg` need a Currency, Float, Int or Percent field.
+- `group_by` and every `field` must be a real field the user may read. Restricted and higher-permlevel fields are refused with an explanation.
+- `group_by` alone returns the record count per group (`count_name`); `aggregate` alone returns a single total row without `group_value`.
+- `fields` and `offset` are ignored. `limit` caps the number of groups (default 100); `has_more: true` means groups were cut off.
+- Submittable DocTypes still default to submitted documents only (`docstatus_defaulted: true`).
+- Prefer a report (`report_list` / `generate_report`) when one fits; use grouped totals for custom DocTypes or grouping by a custom field.
+
 ### Recover from an unresolved entity name
 ```json
 {
@@ -196,4 +217,4 @@ Returns `count: 0` with `unresolved_filters.customer.suggestions: ["Grant Plasti
 - **Child tables** cannot be queried directly — query the parent DocType instead
 - **Permission filters** are applied automatically — results only include documents the user can read
 - **Link fields** store the `name` (ID), not the display value — use the ID in filters
-- **Maximum limit is 1000** — for larger datasets, use `run_python_code`: `tools.get_documents` takes `group_by` and aggregate fields, so totals are computed in the database with the same permission checks
+- **Maximum limit is 1000** — for totals over larger datasets, pass `group_by` and `aggregate` (above) instead of listing rows
