@@ -167,6 +167,20 @@ describe("BillingDetailsForm", () => {
 		expect(w.find("#bd-pincode").classes()).not.toContain("input-error");
 	});
 
+	it("reads the phone in the country chosen after it, not the default", async () => {
+		// The phone sits above the country select, which starts on India. Reading
+		// it on blur turned a US 415 555 2671 into a valid Indian +914155552671.
+		const w = await mountForm({ ...SAVED, billing_phone: "" });
+		await w.find("#bd-phone").setValue("415 555 2671");
+		await w.find("#bd-phone").trigger("blur");
+		await w.find("#bd-country").setValue("US");
+		await w.find("form").trigger("submit");
+		await flushPromises();
+		expect(w.find("#bd-phone").element.value).not.toContain("+91");
+		expect(saveBillingDetails).not.toHaveBeenCalled();
+		expect(w.text()).toContain("Add your country code");
+	});
+
 	it("clears a field error as soon as the user edits that field", async () => {
 		const w = await mountForm({ ...SAVED, billing_city: "" });
 		await w.find("form").trigger("submit");
