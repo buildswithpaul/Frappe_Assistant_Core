@@ -15,7 +15,7 @@ ticket thread the same.
 import html
 import re
 
-_LOOKS_LIKE_HTML = re.compile(r"<[a-z][\s\S]*>", re.IGNORECASE)
+_LOOKS_LIKE_HTML = re.compile(r"<[a-z][\s\S]*>", re.IGNORECASE | re.ASCII)
 
 
 def as_html_body(text: str) -> str:

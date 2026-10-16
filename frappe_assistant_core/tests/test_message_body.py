@@ -21,6 +21,10 @@ class TestMessageBody(BaseAssistantTest):
     def test_html_is_left_alone(self):
         self.assertEqual(as_html_body("<p>Hi</p>\n<p>Bye</p>"), "<div><p>Hi</p>\n<p>Bye</p></div>")
 
+    def test_classifies_html_like_the_card(self):
+        # Python's IGNORECASE folds "ſ" (long s) into [a-z]; the card's JavaScript /i does not.
+        self.assertEqual(as_html_body("<ſ>\nx"), "<div>&lt;ſ&gt;<br>x</div>")
+
     def test_markdown_leaves_the_body_alone(self):
         # Helpdesk sends with as_markdown=True; Frappe markdowns any body not starting with "<".
         self.assertNotIn("<em>", frappe.utils.md_to_html(as_html_body("Ships *Friday*\nThanks")))
