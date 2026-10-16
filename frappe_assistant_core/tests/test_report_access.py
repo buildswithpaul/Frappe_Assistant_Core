@@ -86,6 +86,17 @@ class TestReportAccess(BaseAssistantTest):
         listed = [r.name for r in ReportTools.list_reports()["reports"]]
         self.assertNotIn(name, listed)
 
+    def test_listing_refused_reports_queues_no_messages(self):
+        self._make_report(ALLOWED_REF_DOCTYPE, roles=("Accounts Manager",))
+        self._make_report(DENIED_REF_DOCTYPE)
+        self._make_report(ALLOWED_REF_DOCTYPE, disabled=1)
+        self._as_system_manager()
+        before = len(frappe.local.message_log)
+
+        ReportTools.list_reports()
+
+        self.assertEqual(len(frappe.local.message_log), before)
+
     def test_ui_built_report_is_custom(self):
         self.assertEqual(report_origin("Any", "Accounts", "No"), "custom")
 

@@ -33,13 +33,19 @@ def can_run_report(report_name: str) -> bool:
     Applies the rule Desk applies when opening a report, by calling the same
     function: the report's roles, read permission on its reference doctype, and
     the disabled flag. Custom Reports are checked against their base report.
+    Denials are muted: Desk's frappe.throw would otherwise queue one error
+    message per refused report for the caller's response.
     """
     from frappe.desk.query_report import get_report_doc
 
+    previous = frappe.flags.mute_messages
+    frappe.flags.mute_messages = True
     try:
         get_report_doc(report_name)
     except (frappe.PermissionError, frappe.ValidationError, frappe.DoesNotExistError):
         return False
+    finally:
+        frappe.flags.mute_messages = previous
     return True
 
 
