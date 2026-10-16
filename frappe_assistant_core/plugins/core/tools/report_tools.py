@@ -21,6 +21,7 @@ import frappe
 from frappe import _
 from frappe.utils import now_datetime, time_diff_in_seconds
 
+from .report_access import can_run_report
 from .report_requirements import VALUE_CONSTRAINED_FIELDTYPES, discover_filter_definitions
 
 DEFAULT_MAX_ROWS = 500
@@ -221,18 +222,14 @@ class ReportTools:
             if report_type:
                 filters["report_type"] = report_type
 
-            reports = frappe.get_all(
+            reports = frappe.get_list(
                 "Report",
                 filters=filters,
                 fields=["name", "report_name", "report_type", "module", "is_standard", "disabled"],
                 order_by="report_name",
             )
 
-            # Filter by permissions
-            accessible_reports = []
-            for report in reports:
-                if frappe.has_permission("Report", "read", report.name):
-                    accessible_reports.append(report)
+            accessible_reports = [r for r in reports if can_run_report(r.name)]
 
             return {
                 "success": True,

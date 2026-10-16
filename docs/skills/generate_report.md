@@ -19,6 +19,8 @@ Frappe/ERPNext includes hundreds of built-in business reports. Three tools work 
 
 Returns: `{ reports: [{ name, report_name, report_type, module, is_standard, disabled }], count }`.
 
+Only reports the current user can run are listed: enabled, permitted by the report's roles, and with `report` permission on the report's reference DocType.
+
 ## report_requirements Parameters
 
 | Parameter | Type | Required | Default | Description |
