@@ -42,8 +42,8 @@ const hiddenNote = computed(() => {
 	const count = rendered.value.hiddenCount;
 	if (!count) return "";
 	return count === 1
-		? __("1 image or other element is not shown here but will be sent.")
-		: __("{0} images or other elements are not shown here but will be sent.", [count]);
+		? __("1 part of this email is not shown here but will be sent.")
+		: __("{0} parts of this email are not shown here but will be sent.", [count]);
 });
 
 const senderLine = computed(() => {

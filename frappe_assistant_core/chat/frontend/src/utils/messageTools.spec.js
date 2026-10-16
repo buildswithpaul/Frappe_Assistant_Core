@@ -55,6 +55,31 @@ describe("renderMessageBody", () => {
 		expect(renderMessageBody("<p>plain</p>").hiddenCount).toBe(0);
 	});
 
+	it("shows text hidden with a class or the hidden attribute", () => {
+		const { html, hiddenCount } = renderMessageBody(
+			'<p>ok</p><div class="hidden">by class</div><p hidden>by attribute</p>',
+		);
+		expect(html).toContain("by class");
+		expect(html).toContain("by attribute");
+		expect(html).not.toContain("class=");
+		expect(html).not.toContain("hidden");
+		expect(hiddenCount).toBe(2);
+	});
+
+	it("drops every element that could fetch a remote URL", () => {
+		const { html } = renderMessageBody(
+			'<p>x</p><video poster="https://t.example/v.png"></video><svg><image href="https://t.example/s.png"/></svg><audio src="https://t.example/a.mp3"></audio>',
+		);
+		expect(html).not.toContain("t.example");
+	});
+
+	it("shows where a link really goes", () => {
+		const { html } = renderMessageBody('<p><a href="https://evil.example/x">your invoice</a></p>');
+		expect(html).toContain("your invoice");
+		expect(html).toContain("(https://evil.example/x)");
+		expect(renderMessageBody('<a href="https://a.example">https://a.example</a>').html).not.toContain("(https://a.example)");
+	});
+
 	it("shows text the email would hide with a style", () => {
 		const { html } = renderMessageBody('<p>ok</p><div style="display:none">secret instruction</div>');
 		expect(html).toContain("secret instruction");

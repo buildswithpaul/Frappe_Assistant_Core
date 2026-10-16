@@ -38,16 +38,46 @@ export function isMessageTool(name) {
 const escapeText = (text) =>
 	text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br>");
 
+// Formatting only. Anything else could hide text from the card (class, hidden, style) or fetch a
+// URL the model chose (img, video poster, svg image), so the preview drops it and says so.
+const PREVIEW_TAGS = [
+	"p", "br", "a", "b", "strong", "i", "em", "u", "s", "ul", "ol", "li", "blockquote",
+	"h1", "h2", "h3", "h4", "table", "thead", "tbody", "tr", "th", "td", "span", "div", "pre", "code", "hr",
+];
+const PREVIEW_ATTRS = ["href", "colspan", "rowspan"];
+
+// Link text can say anything; show the real address after it.
+function revealLinks(html) {
+	const doc = new DOMParser().parseFromString(`<body>${html}</body>`, "text/html");
+	for (const link of doc.querySelectorAll("a[href]")) {
+		const href = link.getAttribute("href");
+		if (link.textContent.trim() !== href) link.after(` (${href})`);
+	}
+	return doc.body.innerHTML;
+}
+
+// DOMPurify reports the parser's own wrappers as removed; they are not part of the email.
+const DOCUMENT_WRAPPERS = new Set(["HTML", "HEAD", "BODY"]);
+
+// Each dropped element once, plus attributes dropped from elements the preview kept.
+function countDropped(removed) {
+	const elements = new Set(
+		removed
+			.filter((entry) => entry.element && !DOCUMENT_WRAPPERS.has(entry.element.nodeName))
+			.map((entry) => entry.element),
+	);
+	const attributes = removed.filter((entry) => entry.attribute && !elements.has(entry.from));
+	return elements.size + attributes.length;
+}
+
 /**
  * Model-written body → `{ html, hiddenCount }` for the approval card. Plain text keeps its line
- * breaks. Images are dropped so the card never fetches a URL the model chose, and `style`
- * attributes are dropped so text the email would hide still shows here. The email itself is sent
- * unchanged, so `hiddenCount` (elements left out) lets the card say something is not shown.
+ * breaks. The email itself is sent unchanged, so `hiddenCount` (elements and attributes the
+ * preview dropped) lets the card say that part of it is not shown.
  */
 export function renderMessageBody(body) {
 	const text = String(body || "");
 	const source = /<[a-z][\s\S]*>/i.test(text) ? text : escapeText(text);
-	const html = DOMPurify.sanitize(source, { FORBID_TAGS: ["img", "style"], FORBID_ATTR: ["style"] });
-	const hiddenCount = DOMPurify.removed.filter((entry) => entry.element).length;
-	return { html, hiddenCount };
+	const html = DOMPurify.sanitize(source, { ALLOWED_TAGS: PREVIEW_TAGS, ALLOWED_ATTR: PREVIEW_ATTRS });
+	return { html: revealLinks(html), hiddenCount: countDropped(DOMPurify.removed) };
 }

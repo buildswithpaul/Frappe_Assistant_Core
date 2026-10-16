@@ -39,7 +39,7 @@ describe("EmailPreview", () => {
 
 	it("warns when the email carries content the preview does not show", () => {
 		const wrapper = mountPreview({ body: '<p>Hi</p><img src="https://t.example/p.gif">' });
-		expect(wrapper.find(".email-hidden").text()).toBe("1 image or other element is not shown here but will be sent.");
+		expect(wrapper.find(".email-hidden").text()).toBe("1 part of this email is not shown here but will be sent.");
 		expect(mountPreview().find(".email-hidden").exists()).toBe(false);
 	});
 
