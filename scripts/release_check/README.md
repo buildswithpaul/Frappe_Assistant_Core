@@ -130,7 +130,7 @@ writes a results file. Use the same model every time, or the comparison measures
 cd <bench>/sites
 export RELEASE_CHECK_API_KEY=<key> RELEASE_CHECK_API_SECRET=<secret>   # a chat-enabled user's API keys
 ../env/bin/python <fac-repo>/scripts/release_check/run.py --site realistic.test --profile realistic \
-    --url http://localhost:8000 --model <model_id> --out <fac-repo>/scripts/release_check/results/<version>.json
+    --url http://localhost:8000 --ar-site <cloud-site> --model <model_id> --out <fac-repo>/scripts/release_check/results/<version>.json
 ../env/bin/python <fac-repo>/scripts/release_check/run.py --site large.test --profile large \
     --url http://localhost:8001 --model <model_id> --out <fac-repo>/scripts/release_check/results/<version>-large.json
 ```
@@ -141,18 +141,25 @@ Why HTTP for the questions: `send_message` hands the turn to a background relay 
 reply over Socket.IO and saves it afterwards. Posting to the running web workers exercises exactly
 the path the SPA uses; the script then polls `get_session_history` for the assistant reply (up to
 `--timeout`, 300 s). Turns carry `client_type=release_check` so they are identifiable. The script
-connects to the site in-process only to compute the expected answers (`expected.py`) and, when FAC
-Cloud runs on the same bench, to read `AR Turn Usage` for the session.
+connects to `--site` in-process only to compute the expected answers (`expected.py`). `AR Turn Usage`
+lives on the FAC Cloud (assistant_runtime) site, not on these test sites: pass `--ar-site <that site>`
+(same bench) and the script sums the turn's rows by session id and `client_type=release_check`.
+Without `--ar-site`, `tool_calls`, `credits` and `input_tokens` are `null`.
 
-Each result: `id`, `answer`, `correct`, `cited`, `tool_calls`, `credits`, `input_tokens`
-(the last three are `null` without `AR Turn Usage`), `wall_seconds`, `blocked_over_60s`
-(the turn took longer than 60 s).
+Each result: `id`, `session_id`, `answer`, `correct`, `cited`, `tool_calls`, `credits`, `input_tokens`
+(the last three are `null` without `--ar-site`), `wall_seconds`, `blocked_over_60s` (over 60 s),
+`errored`, `aborted`, `timed_out` and `error` (a failed request or scoring error is recorded, the run
+continues, and the file is rewritten after every question). An errored, aborted, timed-out or empty
+turn is never scored correct. The reply wait ends early when the turn errored or was aborted.
 
 Scoring (`scoring.py`): `total` is correct when any number in the answer is within 0.5% of the
 expected total (supports `1,234,567`, Indian grouping `₹1,23,456.78`, `1.2M`, `1.2 million`,
 `12 lakh`, `1.5 crore`, `350K`, `2 billion`); `top_n` when every expected name appears;
 `mentions` when every term (or one of its alternatives) appears. Matching is case-insensitive.
-`cited` is true when any `cite` name appears in the answer or the recorded tool calls.
+Names and numbers match as whole tokens ("ABC" is not in "ABCD"), and numeric `mentions`
+alternatives are compared as numbers, exactly ("1,000.00" is not in "11,000.00"). `cited` is true
+when any `cite` name appears as a whole phrase in the answer or in a tool call's name or input;
+tool results never count.
 
 ## Comparing releases
 

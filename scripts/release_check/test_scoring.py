@@ -8,7 +8,16 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from scoring import extract_numbers, is_cited, regressions, score_mentions, score_top_n, score_total
+from scoring import (
+    citation_text,
+    extract_numbers,
+    is_cited,
+    is_non_answer,
+    regressions,
+    score_mentions,
+    score_top_n,
+    score_total,
+)
 
 HERE = Path(__file__).resolve().parent
 
@@ -91,7 +100,70 @@ class TestScoreMentions(unittest.TestCase):
         self.assertFalse(score_mentions("x", []))
 
 
+class TestWholeTokenMatching(unittest.TestCase):
+    def test_name_inside_longer_word_does_not_match(self):
+        self.assertFalse(score_top_n("ABCD Corp", ["ABC"]))
+        self.assertTrue(score_top_n("ABC, then ABCD", ["ABC"]))
+
+    def test_document_name_inside_longer_name_does_not_match(self):
+        self.assertFalse(score_mentions("ACC-PAY-2026-000012", ["ACC-PAY-2026-00001"]))
+        self.assertTrue(score_mentions("see ACC-PAY-2026-00001.", ["ACC-PAY-2026-00001"]))
+
+    def test_none_name_is_never_a_match_and_does_not_raise(self):
+        self.assertFalse(score_top_n("x", [None]))
+        self.assertFalse(score_mentions("x", [None]))
+
+
+class TestNumericMentions(unittest.TestCase):
+    ALTERNATIVES = ["1,000.00", "1000.00", "1,000", "1000"]
+
+    def test_amount_inside_a_larger_amount_does_not_match(self):
+        self.assertFalse(score_mentions("V paid 11,000.00", ["V", self.ALTERNATIVES]))
+
+    def test_rounded_alternative_inside_larger_number_does_not_match(self):
+        self.assertFalse(score_mentions("paid 1500 and 5000", [["500"]]))
+
+    def test_amount_matches_across_formatting(self):
+        self.assertTrue(score_mentions("V paid 1000.00 on the day", ["V", self.ALTERNATIVES]))
+        self.assertTrue(score_mentions("V paid $1,000.", ["V", self.ALTERNATIVES]))
+
+    def test_numeric_alternatives_are_compared_exactly_as_numbers(self):
+        self.assertFalse(score_mentions("paid 1,000.01", [self.ALTERNATIVES]))
+
+
+class TestIsNonAnswer(unittest.TestCase):
+    def test_flags_and_empty_content(self):
+        self.assertTrue(is_non_answer({"content": "partial", "errored": 1}))
+        self.assertTrue(is_non_answer({"content": "partial", "aborted": 1}))
+        self.assertTrue(is_non_answer({"content": "  "}))
+        self.assertTrue(is_non_answer(None))
+        self.assertFalse(is_non_answer({"content": "42", "errored": 0, "aborted": 0}))
+
+
+class TestCitationText(unittest.TestCase):
+    def test_uses_answer_tool_names_and_inputs_but_never_results(self):
+        calls = [
+            {"name": "report_list", "input": {"module": "Selling"}, "result": "Sales Register, Stock Ledger"},
+            {"name": "generate_report", "input": {"report_name": "Accounts Receivable"}},
+        ]
+        text = citation_text("answer", calls)
+        self.assertIn("Accounts Receivable", text)
+        self.assertIn("generate_report", text)
+        self.assertNotIn("Sales Register", text)
+
+    def test_accepts_json_string_and_garbage(self):
+        self.assertIn(
+            "Booking", citation_text("", '[{"name": "list_documents", "input": {"doctype": "Booking"}}]')
+        )
+        self.assertEqual(citation_text("a", "not json").strip(), "a")
+        self.assertEqual(citation_text("a", None).strip(), "a")
+
+
 class TestIsCited(unittest.TestCase):
+    def test_name_inside_longer_word_is_not_cited(self):
+        self.assertFalse(is_cited("see Stock Ledgers", ["Stock Ledger"]))
+        self.assertTrue(is_cited("see Stock Ledger.", ["Stock Ledger"]))
+
     def test_any_name_in_text(self):
         self.assertTrue(is_cited("I ran the Sales Register report", ["Sales Invoice", "Sales Register"]))
 

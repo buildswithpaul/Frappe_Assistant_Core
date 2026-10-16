@@ -23,7 +23,6 @@
     },
     "cite": [
       "Sales Invoice",
-      "Customer",
       "Sales Register",
       "Customer Ledger Summary"
     ]
@@ -66,9 +65,7 @@
     },
     "cite": [
       "Stock Balance",
-      "Stock Ledger",
-      "Bin",
-      "Item"
+      "Stock Ledger"
     ]
   },
   {

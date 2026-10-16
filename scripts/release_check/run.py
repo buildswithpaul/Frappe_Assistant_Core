@@ -4,8 +4,8 @@
         --url http://localhost:8000 --model <model_id> --out results/<version>.json
 
 Questions go over HTTP to the site's real web workers (so the Socket.IO relay runs exactly as it does
-for the SPA); expected answers and AR Turn Usage are read in-process from the same site, so the script
-needs the bench Python and `sites/` as the working directory. Credentials come from the environment:
+for the SPA); expected answers are read in-process from --site, and (with --ar-site) AR Turn Usage from the FAC
+Cloud site, so the script needs the bench Python and `sites/` as the working directory. Credentials come from the environment:
 RELEASE_CHECK_API_KEY and RELEASE_CHECK_API_SECRET (a user's API key and secret).
 
 --dry-run lists what would be asked and connects to nothing.
@@ -19,7 +19,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from scoring import is_cited, score_mentions, score_top_n, score_total
+from scoring import citation_text, is_cited, is_non_answer, score_mentions, score_top_n, score_total
 
 HERE = Path(__file__).resolve().parent
 CLIENT_TYPE = "release_check"
@@ -27,6 +27,7 @@ BLOCKED_AFTER_SECONDS = 60
 REPLY_TIMEOUT_SECONDS = 300
 POLL_SECONDS = 2
 USAGE_WAIT_SECONDS = 10
+REQUEST_TIMEOUT_SECONDS = 30
 API = "/api/method/frappe_assistant_core.chat.api."
 
 
@@ -44,6 +45,11 @@ def parse_args(argv=None) -> argparse.Namespace:
     parser.add_argument("--model", required=True, help="Model id, the same for every question")
     parser.add_argument("--out", required=True, help="Results file, e.g. results/3.2.0.json")
     parser.add_argument("--url", default="http://localhost:8000", help="Site URL the chat requests go to")
+    parser.add_argument(
+        "--ar-site",
+        help="FAC Cloud (assistant_runtime) site on the same bench; its AR Turn Usage fills tool_calls, "
+        "credits and input_tokens. Without it they are null.",
+    )
     parser.add_argument("--sites-path", default=os.environ.get("FRAPPE_SITES_PATH"))
     parser.add_argument(
         "--timeout", type=int, default=REPLY_TIMEOUT_SECONDS, help="Seconds to wait per reply"
@@ -59,6 +65,7 @@ def print_dry_run(args, questions: list) -> None:
     print(
         f"  profile: {args.profile}\n  model: {args.model}\n  client_type: {CLIENT_TYPE}\n  out: {args.out}"
     )
+    print(f"  ar_site: {args.ar_site or '(none: tool_calls, credits and input_tokens will be null)'}")
     print(f"  {len(questions)} question(s):")
     for question in questions:
         print(f"    {question['id']} [{question['expect']['kind']}]: {question['question']}")
@@ -94,8 +101,9 @@ class ChatClient:
         self.http.headers["Authorization"] = f"token {key}:{secret}"
 
     def _call(self, method: str, name: str, **params):
+        field = "data" if method == "POST" else "params"
         response = self.http.request(
-            method, self.base + API + name, **{"data" if method == "POST" else "params": params}
+            method, self.base + API + name, timeout=REQUEST_TIMEOUT_SECONDS, **{field: params}
         )
         response.raise_for_status()
         return response.json()["message"]
@@ -114,61 +122,108 @@ class ChatClient:
         )
 
     def wait_for_reply(self, session_id: str):
-        """Poll the history until an assistant message follows the question; None on timeout."""
+        """Poll the history for the assistant reply; None on timeout.
+
+        Returns a row with content, or one the turn ended without content (errored / aborted), so a
+        failed turn is reported at once instead of after the whole timeout.
+        """
         deadline = time.monotonic() + self.timeout
         while time.monotonic() < deadline:
             messages = self._call("GET", "get_session_history", session_id=session_id)["messages"]
-            replies = [m for m in messages if m["role"] == "assistant" and (m.get("content") or "").strip()]
-            if replies:
-                return replies[-1]
+            replies = [m for m in messages if m["role"] == "assistant"]
+            finished = [
+                m for m in replies if (m.get("content") or "").strip() or m.get("errored") or m.get("aborted")
+            ]
+            if finished:
+                return finished[-1]
             time.sleep(POLL_SECONDS)
         return None
 
 
-def usage_for(session_id: str) -> dict:
-    """tool_calls, credits and input tokens from AR Turn Usage; all None when FAC Cloud is not on this bench."""
+def fetch_usage(session_ids: list) -> dict:
+    """session_id -> tool_calls, credits, input_tokens summed over the turn's cycles, from AR Turn Usage.
+
+    Runs on the FAC Cloud (assistant_runtime) site, where AR writes one row per cycle keyed by FAC's
+    session_id. A session with no row (yet) is left out.
+    """
     import frappe
 
-    empty = {"tool_calls": None, "credits": None, "input_tokens": None}
-    if not frappe.db.exists("DocType", "AR Turn Usage"):
-        return empty
+    usage = {}
     deadline = time.monotonic() + USAGE_WAIT_SECONDS
-    while time.monotonic() < deadline:
-        # a new snapshot per read: usage rows are written by another process after the reply
+    while True:
+        # a new snapshot per read: the rows are written by another process after the reply
         frappe.db.rollback()
         rows = frappe.get_all(
             "AR Turn Usage",
-            filters={"session_id": session_id},
-            fields=["tool_calls", "credits", "tokens_input"],
+            filters={"session_id": ["in", session_ids], "client_type": CLIENT_TYPE},
+            fields=["session_id", "tool_calls", "credits", "tokens_input"],
         )
-        if rows:
-            return {
-                "tool_calls": sum(int(r.tool_calls or 0) for r in rows),
-                "credits": round(sum(float(r.credits or 0) for r in rows), 6),
-                "input_tokens": sum(int(r.tokens_input or 0) for r in rows),
-            }
+        usage = {}
+        for row in rows:
+            entry = usage.setdefault(row.session_id, {"tool_calls": 0, "credits": 0.0, "input_tokens": 0})
+            entry["tool_calls"] += int(row.tool_calls or 0)
+            entry["credits"] = round(entry["credits"] + float(row.credits or 0), 6)
+            entry["input_tokens"] += int(row.tokens_input or 0)
+        if len(usage) == len(session_ids) or time.monotonic() >= deadline:
+            return usage
         time.sleep(POLL_SECONDS)
-    return empty
+
+
+NO_USAGE = {"tool_calls": None, "credits": None, "input_tokens": None}
 
 
 def ask(client: ChatClient, question: dict, model: str, expected_value) -> dict:
+    """One question -> one result row. Any failure is recorded as `error`, never raised."""
     started = time.monotonic()
-    session_id = client.create_session()
-    client.send(session_id, question["question"], model)
-    reply = client.wait_for_reply(session_id)
+    row = {"id": question["id"], "session_id": None, "answer": "", "correct": False, "cited": False}
+    reply, error = None, None
+    try:
+        row["session_id"] = client.create_session()
+        client.send(row["session_id"], question["question"], model)
+        reply = client.wait_for_reply(row["session_id"])
+        if not is_non_answer(reply):
+            row["answer"] = reply["content"]
+            row["correct"] = correct_for(question, row["answer"], expected_value)
+            row["cited"] = is_cited(citation_text(row["answer"], reply.get("tool_calls")), question["cite"])
+    except Exception as exc:
+        error = f"{type(exc).__name__}: {exc}"
     wall = time.monotonic() - started
-    answer = (reply or {}).get("content") or ""
-    # tool calls are evidence of what the assistant opened, so they count towards "cited" as well
-    evidence = answer + " " + json.dumps((reply or {}).get("tool_calls") or "", default=str)
-    return {
-        "id": question["id"],
-        "answer": answer,
-        "correct": correct_for(question, answer, expected_value),
-        "cited": is_cited(evidence, question["cite"]),
-        **usage_for(session_id),
-        "wall_seconds": round(wall, 1),
-        "blocked_over_60s": wall > BLOCKED_AFTER_SECONDS,
+    row.update(NO_USAGE)
+    row.update(
+        {
+            "wall_seconds": round(wall, 1),
+            "blocked_over_60s": wall > BLOCKED_AFTER_SECONDS,
+            "errored": bool(reply and reply.get("errored")),
+            "aborted": bool(reply and reply.get("aborted")),
+            "timed_out": error is None and reply is None,
+            "error": error,
+        }
+    )
+    return row
+
+
+def write_results(args, results: list) -> None:
+    out = Path(args.out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    document = {
+        "model": args.model,
+        "site": args.site,
+        "profile": args.profile,
+        "client_type": CLIENT_TYPE,
+        "ar_site": args.ar_site,
+        "run_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "results": results,
     }
+    out.write_text(json.dumps(document, indent=2) + "\n")
+
+
+def connect(site: str, sites_path):
+    import frappe
+    from site_common import resolve_sites_path
+
+    frappe.init(site, sites_path=resolve_sites_path(sites_path, site))
+    frappe.connect()
+    return frappe
 
 
 def main(argv=None) -> int:
@@ -183,42 +238,34 @@ def main(argv=None) -> int:
             "--site, RELEASE_CHECK_API_KEY and RELEASE_CHECK_API_SECRET are required unless --dry-run"
         )
 
-    import frappe
-    from site_common import resolve_sites_path
-
-    frappe.init(args.site, sites_path=resolve_sites_path(args.sites_path, args.site))
-    frappe.connect()
+    # phase 1: expected answers, read from the site's own data (the script never writes)
+    frappe = connect(args.site, args.sites_path)
     try:
-        # reads the site's own data for the expected answers; the script never writes
-        frappe.set_user("Administrator")  # nosemgrep
-        client = ChatClient(args.url, key, secret, args.timeout)
-        results = []
-        for question in questions:
-            print(f"asking {question['id']} ...", flush=True)
-            results.append(ask(client, question, args.model, expected_for(question)))
-            print(
-                f"  correct={results[-1]['correct']} cited={results[-1]['cited']} {results[-1]['wall_seconds']}s"
-            )
+        expected_values = {question["id"]: expected_for(question) for question in questions}
     finally:
         frappe.destroy()
 
-    out = Path(args.out)
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(
-        json.dumps(
-            {
-                "model": args.model,
-                "site": args.site,
-                "profile": args.profile,
-                "client_type": CLIENT_TYPE,
-                "run_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-                "results": results,
-            },
-            indent=2,
-        )
-        + "\n"
-    )
-    print(f"wrote {out}")
+    # phase 2: ask over HTTP; the file is rewritten after every question so a late failure keeps the rest
+    client = ChatClient(args.url, key, secret, args.timeout)
+    results = []
+    for question in questions:
+        print(f"asking {question['id']} ...", flush=True)
+        results.append(ask(client, question, args.model, expected_values[question["id"]]))
+        row = results[-1]
+        print(f"  correct={row['correct']} cited={row['cited']} {row['wall_seconds']}s error={row['error']}")
+        write_results(args, results)
+
+    # phase 3: usage from the FAC Cloud site, when given
+    if args.ar_site:
+        frappe = connect(args.ar_site, args.sites_path)
+        try:
+            usage = fetch_usage([r["session_id"] for r in results if r["session_id"]])
+        finally:
+            frappe.destroy()
+        for row in results:
+            row.update(usage.get(row["session_id"], NO_USAGE))
+        write_results(args, results)
+    print(f"wrote {args.out}")
     return 0
 
 
