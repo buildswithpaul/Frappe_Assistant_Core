@@ -41,6 +41,7 @@ class SkillManager:
         "owner_user",
         "visibility",
         "is_system",
+        "requires_app",
         "modified",
     )
 
@@ -81,6 +82,10 @@ class SkillManager:
                 if s.skill_id not in seen:
                     skills.append(s)
                     seen.add(s.skill_id)
+
+        # A skill written for one app (CRM, Insights) does not exist where that app is missing.
+        installed = set(frappe.get_installed_apps())
+        skills = [s for s in skills if not s.get("requires_app") or s.requires_app in installed]
 
         # Dedup (own skill may also be Public/system).
         deduped: List[Dict[str, Any]] = []
@@ -137,6 +142,8 @@ class SkillManager:
             return None
 
         skill_doc = frappe.get_doc("FAC Skill", skill_name)
+        if skill_doc.requires_app and skill_doc.requires_app not in frappe.get_installed_apps():
+            return None
         user = frappe.session.user
 
         is_owner = skill_doc.owner_user == user

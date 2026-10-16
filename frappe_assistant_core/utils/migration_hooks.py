@@ -597,6 +597,10 @@ def _install_system_skills():
                     doc.source_app = "frappe_assistant_core"
                     needs_update = True
 
+                if (doc.requires_app or None) != (skill_data.get("requires_app") or None):
+                    doc.requires_app = skill_data.get("requires_app")
+                    needs_update = True
+
                 if needs_update:
                     doc.flags.ignore_permissions = True
                     doc.save()
@@ -617,6 +621,7 @@ def _install_system_skills():
                 doc.owner_user = "Administrator"
                 doc.category = skill_data.get("category")
                 doc.source_app = "frappe_assistant_core"
+                doc.requires_app = skill_data.get("requires_app")
 
                 doc.flags.ignore_permissions = True
                 doc.insert()
@@ -777,6 +782,10 @@ def _install_app_skills():
                         doc.source_app = app_name
                         needs_update = True
 
+                    if (doc.requires_app or None) != (skill_data.get("requires_app") or None):
+                        doc.requires_app = skill_data.get("requires_app")
+                        needs_update = True
+
                     if needs_update:
                         doc.flags.ignore_permissions = True
                         doc.save()
@@ -796,6 +805,7 @@ def _install_app_skills():
                     doc.content = content
                     doc.owner_user = "Administrator"
                     doc.source_app = app_name
+                    doc.requires_app = skill_data.get("requires_app")
 
                     doc.flags.ignore_permissions = True
                     doc.insert()

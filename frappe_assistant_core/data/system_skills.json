@@ -217,7 +217,8 @@
     "linked_tool": null,
     "status": "Published",
     "visibility": "Public",
-    "content_file": "insight_v3_skill.md"
+    "content_file": "insight_v3_skill.md",
+    "requires_app": "insights"
   },
   {
     "skill_id": "document-authoring",
