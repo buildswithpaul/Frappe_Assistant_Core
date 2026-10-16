@@ -85,6 +85,12 @@ export const useUserStore = defineStore("user", () => {
 		return userAuthStatus.value?.needs_reconnect || false;
 	});
 
+	// AR withdrew memory consent that came from a pre-ticked onboarding switch and
+	// waits for the user to confirm it (MemoryConsentPrompt).
+	const memoryConsentPending = computed(
+		() => userAuthStatus.value?.memory_consent_pending === true,
+	);
+
 	// AR is refusing gated features until the tenant re-accepts terms. Only
 	// meaningful once the site itself is registered — an unregistered site has
 	// no tenant to accept for, and must finish onboarding first.
@@ -465,6 +471,15 @@ export const useUserStore = defineStore("user", () => {
 		return data;
 	}
 
+	/**
+	 * Record the answer to the memory-consent confirmation. Keeping memory grants
+	 * consent; turning it off withdraws it and deletes the user's memories.
+	 */
+	async function confirmMemoryConsent(keep) {
+		await api.privacy.confirmMemoryConsent(keep);
+		userAuthStatus.value = { ...userAuthStatus.value, memory_consent_pending: false };
+	}
+
 	return {
 		// State
 		user,
@@ -494,11 +509,13 @@ export const useUserStore = defineStore("user", () => {
 		userInitial,
 		needsUserSetup,
 		needsReconnect,
+		memoryConsentPending,
 		userPublishingEnabled,
 
 		// Actions
 		loadUser,
 		ensureLoaded,
+		confirmMemoryConsent,
 		loadQuota,
 		loadMyCreditStatus,
 		applyQuotaFromStream,

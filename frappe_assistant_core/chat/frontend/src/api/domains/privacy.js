@@ -39,6 +39,14 @@ export const privacy = {
 			}
 		),
 
+	confirmMemoryConsent: (keep) =>
+		baseCall(
+			"frappe_assistant_core.chat.api.privacy.confirm_memory_consent",
+			{
+				keep,
+			}
+		),
+
 	saveInitialConsent: (memoryConsent) =>
 		baseCall(
 			"frappe_assistant_core.chat.api.privacy.save_initial_consent",

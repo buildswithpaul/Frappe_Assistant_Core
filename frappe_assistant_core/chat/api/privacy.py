@@ -338,6 +338,26 @@ def update_my_consent(consent_type: str | None = None, granted: bool = True) -> 
     return client.update_user_consent(user_id=_ar_user_id(user), consent_type=consent_type, granted=granted)
 
 
+@frappe.whitelist(methods=["POST"])
+def confirm_memory_consent(keep: bool = False) -> dict:
+    """Answer AR's memory-consent confirmation (``memory_consent_pending``).
+
+    AR withdrew consent that came from a pre-ticked onboarding switch. Keeping memory
+    grants consent again; turning it off keeps consent withdrawn and deletes the user's
+    memories. Either answer clears the pending flag on AR.
+    """
+    if isinstance(keep, str):
+        keep = keep.lower() in ("true", "1", "yes")
+
+    ar_user = _ar_user_id(frappe.session.user)
+    client = _get_client()
+    # Withdraw before deleting, so nothing new is written between the two calls.
+    client.update_user_consent(user_id=ar_user, consent_type="memory", granted=keep)
+    if not keep:
+        client.delete_all_memories(user_id=ar_user)
+    return {"memory_consent": keep}
+
+
 _CONSENT_POLICIES = ("Opt-In", "Opt-Out")
 
 
@@ -378,6 +398,7 @@ def get_privacy_config() -> dict:
         if user_data:
             result["user_privacy"] = {
                 "memory_consent": user_data.get("memory_consent", False),
+                "memory_consent_pending": user_data.get("memory_consent_pending", False),
                 "processing_restricted": user_data.get("processing_restricted", False),
             }
     except Exception:

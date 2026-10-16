@@ -412,6 +412,7 @@ def _format_user_auth(user_auth: dict | None, settings: Document) -> dict:
         "site_registered": True,
         "user_registered": user_exists,
         "user_status": user_auth.get("user_status", "unknown"),
+        "memory_consent_pending": bool(user_auth.get("memory_consent_pending", False)),
         "has_mcp_servers": has_mcp_servers,
         "active_server_count": active_server_count,
         "servers_with_expired_tokens": expired_count,

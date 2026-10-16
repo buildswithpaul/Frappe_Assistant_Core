@@ -38,6 +38,7 @@
 		<!-- Global tour modal — opens via tourStore.open() from anywhere -->
 		<TourPlayer />
 		<SpotlightHost />
+		<MemoryConsentPrompt />
 	</div>
 </template>
 
@@ -58,6 +59,7 @@ import EmailVerificationPending from "@/components/onboarding/EmailVerificationP
 import ToastContainer from "@/components/ui/ToastContainer.vue";
 import TourPlayer from "@/components/onboarding/TourPlayer.vue";
 import SpotlightHost from "@/components/spotlight/SpotlightHost.vue";
+import MemoryConsentPrompt from "@/components/privacy/MemoryConsentPrompt.vue";
 import NotificationHost from "@/components/notifications/NotificationHost.vue";
 
 const router = useRouter();
