@@ -10,6 +10,8 @@ from frappe_assistant_core.utils.savepoint import open_savepoint, release_savepo
 # convert_to_deal writes the contact, organization, deal and the lead's converted flag in
 # turn; a conversion CRM refuses partway must leave none of them behind.
 _SAVEPOINT = "fac_crm_convert"
+# CRM sets these itself; a model-supplied value would unlink the deal from its lead.
+_CRM_OWNED = ("name", "lead", "naming_series", "contacts", "organization", "doctype")
 
 
 class ConvertCrmLead(CrmTool):
@@ -43,6 +45,8 @@ class ConvertCrmLead(CrmTool):
             return error
         # CRM before 1.86 has no if_converted, so a retry would make a second deal.
         if existing := frappe.db.get_value("CRM Deal", {"lead": doc.name}, "name"):
+            if not frappe.has_permission("CRM Deal", "read", existing):
+                return {"success": True, "already_converted": True}
             return {
                 "success": True,
                 "deal": existing,
@@ -50,7 +54,9 @@ class ConvertCrmLead(CrmTool):
                 "already_converted": True,
             }
 
-        kwargs = {"lead": doc.name, "deal": arguments.get("deal_fields") or None}
+        fields = arguments.get("deal_fields")
+        fields = {k: v for k, v in fields.items() if k not in _CRM_OWNED} if isinstance(fields, dict) else {}
+        kwargs = {"lead": doc.name, "deal": fields or None}
         if "if_converted" in inspect.signature(convert_to_deal).parameters:
             kwargs["if_converted"] = "Return Existing"
         marks = open_savepoint(_SAVEPOINT)
