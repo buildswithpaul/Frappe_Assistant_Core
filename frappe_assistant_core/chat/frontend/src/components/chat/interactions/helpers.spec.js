@@ -80,3 +80,12 @@ describe("splitDetailFields", () => {
 		expect(splitDetailFields({}).overflowCount).toBe(0);
 	});
 });
+
+describe("formatToolName", () => {
+	it("keeps acronyms upper case", async () => {
+		const { formatToolName } = await import("./helpers");
+		expect(formatToolName("add_crm_activity")).toBe("Add CRM Activity");
+		expect(formatToolName("convert_crm_lead")).toBe("Convert CRM Lead");
+		expect(formatToolName("create_document")).toBe("Create Document");
+	});
+});
