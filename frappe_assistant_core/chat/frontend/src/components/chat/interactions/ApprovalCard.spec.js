@@ -61,6 +61,7 @@ describe("ApprovalCard for a message tool", () => {
 		messagePreview.mockReturnValue(new Promise(() => {}));
 		const wrapper = mount(ApprovalCard, { props: { block: emailBlock() } });
 		expect(wrapper.find(".ql-btn-approve").attributes("disabled")).toBeDefined();
+		expect(wrapper.find(".ql-btn-trust").attributes("disabled")).toBeDefined();
 	});
 
 	it("offers only Reject when the preview cannot load", async () => {

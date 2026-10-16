@@ -73,7 +73,7 @@
 			<button
 				v-if="!message.failed.value"
 				class="ql-btn ql-btn-trust"
-				:disabled="submitting"
+				:disabled="submitting || message.loading.value"
 				@click="handleApprove('trust')"
 			>
 				Always allow this tool
