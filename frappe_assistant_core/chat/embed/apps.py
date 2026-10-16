@@ -14,19 +14,20 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Frappe's standalone apps (Helpdesk, Insights, CRM…) that can show the FACO widget.
+"""Frappe's standalone apps (Helpdesk, Insights, CRM) that can show the FACO widget.
 
-Discovery reads every installed app's ``add_to_apps_screen`` hook, so a newly
-installed app appears without code here. Desk routes are refused: Desk loads
-the widget itself. Raven is never offered: it is a chat app, and FAC Bot answers inside it.
+Only apps FACO has been built and tested for are offered; their routes come from each
+app's ``add_to_apps_screen`` hook. Desk routes are refused: Desk loads the widget itself.
+Raven is never offered: it is a chat app, and FAC Bot answers inside it.
 """
 
 import frappe
 
 SETTINGS = "FAC Chat Settings"
 DESK_PREFIXES = ("/app", "/desk")
-# Apps where FACO lives inside the app instead: Raven is a chat app, and FAC Bot answers there.
-NOT_EMBEDDED = {"raven"}
+# Apps FACO knows: page context, skills and tools exist for these. Others (Builder…) are not
+# offered until they are built for, and a row an admin saved earlier for one serves nothing.
+SUPPORTED_APPS = ("helpdesk", "insights", "crm")
 ROUTES_CACHE_KEY = "fac_widget_embed_routes"
 
 
@@ -42,7 +43,7 @@ def normalise_route(route) -> str | None:
 def discover_spa_apps() -> list[dict]:
     apps = []
     for app in frappe.get_installed_apps():
-        if app in NOT_EMBEDDED:
+        if app not in SUPPORTED_APPS:
             continue
         for entry in frappe.get_hooks("add_to_apps_screen", app_name=app) or []:
             route = normalise_route(entry.get("route")) if isinstance(entry, dict) else None
