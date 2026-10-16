@@ -19,4 +19,12 @@ export const tools = {
 				preference,
 			}
 		),
+
+	// What a message tool will really send, for its approval card. `args` is the
+	// tool's previewArgs (e.g. { ticket }).
+	messagePreview: (toolName, args = {}) =>
+		getCall(
+			"frappe_assistant_core.chat.api.message_preview.get_message_preview",
+			{ tool_name: toolName, ...args }
+		),
 };

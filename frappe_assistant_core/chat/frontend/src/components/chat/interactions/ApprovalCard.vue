@@ -13,16 +13,24 @@
 				</svg>
 			</div>
 			<div class="approval-heading">
-				<div class="approval-title">Approve: {{ approvalTitle }}</div>
-				<div v-if="consequence" class="approval-subtitle">{{ consequence }}</div>
+				<div class="approval-title">{{ message.entry.value ? messageTitle : `Approve: ${approvalTitle}` }}</div>
+				<div v-if="subtitle" class="approval-subtitle">{{ subtitle }}</div>
 			</div>
 			<span v-if="!hasDecision" class="needs-you-pill">NEEDS YOU</span>
 		</div>
 
-		<p v-if="toolDescription" class="approval-description">{{ toolDescription }}</p>
+		<template v-if="message.entry.value">
+			<p v-if="message.failed.value" class="approval-description">{{ __("Couldn't load the preview") }}</p>
+			<p v-else-if="message.blockedReason.value !== null" class="approval-description">
+				{{ message.blockedReason.value }}
+			</p>
+			<EmailPreview v-else :preview="message.preview.value" v-bind="message.fields.value" />
+		</template>
+
+		<p v-else-if="toolDescription" class="approval-description">{{ toolDescription }}</p>
 
 		<!-- Scannable 2-col key/value table -->
-		<div v-if="hasDetails" class="approval-table">
+		<div v-if="!message.entry.value && hasDetails" class="approval-table">
 			<template v-for="[key, value] in visibleRows" :key="key">
 				<span class="field-key">{{ formatKey(key) }}</span>
 				<span
@@ -44,14 +52,30 @@
 			<span v-if="batchInfo" class="decided-batch">{{ batchInfo }}</span>
 		</div>
 
+		<div v-else-if="message.blockedReason.value !== null" class="approval-actions">
+			<button class="ql-btn ql-btn-reject" :disabled="submitting" @click="handleReject">
+				{{ __("Dismiss") }}
+			</button>
+		</div>
+
 		<div v-else class="approval-actions">
-			<button class="ql-btn ql-btn-approve" :disabled="submitting" @click="handleApprove('approve')">
-				Approve
+			<button
+				v-if="!message.failed.value"
+				class="ql-btn ql-btn-approve"
+				:disabled="submitting || message.loading.value"
+				@click="handleApprove('approve')"
+			>
+				{{ message.entry.value ? __(message.entry.value.sendLabel) : "Approve" }}
 			</button>
 			<button class="ql-btn ql-btn-reject" :disabled="submitting" @click="handleReject">
 				Reject
 			</button>
-			<button class="ql-btn ql-btn-trust" :disabled="submitting" @click="handleApprove('trust')">
+			<button
+				v-if="!message.failed.value"
+				class="ql-btn ql-btn-trust"
+				:disabled="submitting"
+				@click="handleApprove('trust')"
+			>
 				Always allow this tool
 			</button>
 		</div>
@@ -60,6 +84,9 @@
 
 <script setup>
 import { computed, ref } from "vue";
+import { __ } from "@/utils/i18n";
+import EmailPreview from "./EmailPreview.vue";
+import { useMessagePreview } from "./useMessagePreview";
 import {
 	flattenInput,
 	formatToolName,
@@ -78,6 +105,13 @@ const props = defineProps({
 const emit = defineEmits(["approve", "reject"]);
 
 const hasDecision = computed(() => Boolean(props.block.decision));
+
+// Message tools (send_email, reply_to_helpdesk_ticket) show their draft as a message.
+const message = useMessagePreview(() => props.block);
+const messageTitle = computed(() => message.preview.value?.title || __(message.entry.value.sendLabel));
+const subtitle = computed(() =>
+	message.entry.value ? message.preview.value?.context || "" : consequence.value,
+);
 
 const decidedLabel = computed(() => {
 	const r = props.block.decision?.resolution;
