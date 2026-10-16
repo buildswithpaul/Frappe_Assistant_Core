@@ -342,6 +342,16 @@
     "content_file": "get_insights_chart.md"
   },
   {
+    "skill_id": "reply-to-helpdesk-ticket-usage",
+    "title": "How to Use reply_to_helpdesk_ticket",
+    "description": "Replying to the customer on a Helpdesk ticket through Helpdesk's own flow, after the user approves the draft",
+    "skill_type": "Tool Usage",
+    "linked_tool": "reply_to_helpdesk_ticket",
+    "status": "Published",
+    "visibility": "Public",
+    "content_file": "reply_to_helpdesk_ticket.md"
+  },
+  {
     "skill_id": "frappe-app-pages",
     "title": "Working in Frappe Apps (Helpdesk, CRM, Insights)",
     "description": "What to do when the user is on a Helpdesk, CRM, Insights or other Frappe app page — reading the page line, where each app keeps its data, what does not work outside Desk",

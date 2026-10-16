@@ -92,6 +92,8 @@ class FacoPlugin(BasePlugin):
             "list_insights_dashboards",
             "get_insights_dashboard",
             "get_insights_chart",
+            # Replies on a Helpdesk ticket through Helpdesk's own flow. Skipped where Helpdesk is not installed.
+            "reply_to_helpdesk_ticket",
         ]
 
     def is_fac_cloud_only(self) -> bool:

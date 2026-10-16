@@ -106,6 +106,7 @@ WRITE_TOOLS = {
     "create_dashboard_chart",
     # Communication tools (external, irreversible side effect)
     "send_email",
+    "reply_to_helpdesk_ticket",
 }
 
 
