@@ -26,11 +26,9 @@ offer those. Links to Desk pages in your answer open in a new tab, so the user k
 
 ## CRM
 
-(From the Frappe CRM code; not verified on a live install — check field names with `get_doctype_info` if a call fails.)
-
-- **CRM Lead**: `lead_name`, `first_name`, `last_name`, `organization`, `email`, `mobile_no`, `status`, `source`, `industry`, `lead_owner`, `converted`.
-- **CRM Deal**: `organization`, `status`, `deal_value`, `expected_deal_value`, `expected_closure_date`, `probability`, `deal_owner`, `next_step`, `lost_reason`, `lead`.
-- **Notes** are `FCRM Note`, **tasks** `CRM Task`, **calls** `CRM Call Log` — each linked by `reference_doctype` + `reference_docname`.
+Load the `crm-follow-up` skill: it says which tools brief, email and convert a CRM lead or deal, which
+fields notes, tasks and call logs take, and how to link to CRM pages. On a CRM page "this lead" is the
+record on the page — never an ERPNext Lead or Contact.
 
 ## Insights
 
