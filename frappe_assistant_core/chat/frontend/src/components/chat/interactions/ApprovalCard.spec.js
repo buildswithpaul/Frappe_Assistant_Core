@@ -101,6 +101,39 @@ describe("ApprovalCard for a message tool", () => {
 	});
 });
 
+describe("ApprovalCard for a CRM email", () => {
+	const crmBlock = (input) => ({
+		id: "t5",
+		tool_name: "send_crm_email",
+		input: { doctype: "CRM Lead", name: "CRM-LEAD-1", subject: "Hi", message: "Body", ...input },
+		interrupts,
+	});
+
+	it("uses the recipients the tool call names over the record's email", async () => {
+		messagePreview.mockResolvedValue({ can_send: true, title: "Send email on Priya", to: ["lead@x.com"], sender: "s@x.com", will_email: true });
+		const wrapper = mount(ApprovalCard, { props: { block: crmBlock({ recipients: ["boss@x.com"] }) } });
+		await flushPromises();
+		expect(messagePreview).toHaveBeenCalledWith("send_crm_email", { doctype: "CRM Lead", name: "CRM-LEAD-1" });
+		expect(wrapper.text()).toContain("boss@x.com");
+		expect(wrapper.text()).not.toContain("lead@x.com");
+	});
+
+	it("falls back to the record's email when the call names none", async () => {
+		messagePreview.mockResolvedValue({ can_send: true, title: "Send email on Priya", to: ["lead@x.com"], sender: "s@x.com", will_email: true });
+		const wrapper = mount(ApprovalCard, { props: { block: crmBlock({ recipients: [] }) } });
+		await flushPromises();
+		expect(wrapper.text()).toContain("lead@x.com");
+	});
+
+	it("offers only Dismiss when the email has nobody to go to", async () => {
+		messagePreview.mockResolvedValue({ can_send: true, title: "Send email on Priya", to: null, sender: "s@x.com", will_email: true });
+		const wrapper = mount(ApprovalCard, { props: { block: crmBlock({ recipients: [] }) } });
+		await flushPromises();
+		expect(wrapper.text()).toContain("This email has no recipient.");
+		expect(buttons(wrapper)).toEqual(["Dismiss"]);
+	});
+});
+
 describe("ApprovalCard for other tools", () => {
 	it("keeps the field table and never fetches a preview", () => {
 		const block = { id: "t4", tool_name: "create_document", input: { doctype: "ToDo", description: "x" }, interrupts };
