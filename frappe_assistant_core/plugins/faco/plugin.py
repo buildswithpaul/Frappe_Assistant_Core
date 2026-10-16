@@ -94,6 +94,8 @@ class FacoPlugin(BasePlugin):
             "get_insights_chart",
             # Replies on a Helpdesk ticket through Helpdesk's own flow. Skipped where Helpdesk is not installed.
             "reply_to_helpdesk_ticket",
+            # Follow up on Frappe CRM leads and deals through CRM's own flows. Skipped without CRM.
+            "get_crm_activity",
         ]
 
     def is_fac_cloud_only(self) -> bool:
