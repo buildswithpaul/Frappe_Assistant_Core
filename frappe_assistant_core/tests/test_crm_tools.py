@@ -236,3 +236,44 @@ class TestSendCrmEmail(CrmTestCase):
         preview = get_message_preview("send_crm_email", doctype="CRM Lead", name=self.lead.name)
         self.assertFalse(preview["can_send"])
         self.assertIsNone(preview["to"])
+
+
+class TestConvertCrmLead(CrmTestCase):
+    def _convert(self, **args):
+        return tool("convert_crm_lead").execute({"lead": self.lead.name, **args})
+
+    def test_conversion_goes_through_crm(self):
+        frappe.set_user(OWNER)
+        out = self._convert(deal_fields={"next_step": "Send proposal"})
+        self.assertTrue(out["success"], out)
+        self.assertEqual(out["link"], f"/crm/deals/{out['deal']}")
+        frappe.set_user("Administrator")
+        self.assertEqual(frappe.db.get_value("CRM Lead", self.lead.name, "converted"), 1)
+        deal = frappe.get_doc("CRM Deal", out["deal"])
+        self.assertEqual(deal.lead, self.lead.name)
+        self.assertEqual(deal.next_step, "Send proposal")
+        self.assertEqual(deal.organization, "Acme FAC Test Retail")
+        self.assertTrue(frappe.db.exists("Contact", {"email_id": LEAD_EMAIL}))
+
+    def test_converting_twice_returns_the_same_deal(self):
+        frappe.set_user(OWNER)
+        first = self._convert()
+        second = self._convert()
+        self.assertEqual(first["deal"], second["deal"])
+        self.assertEqual(frappe.db.count("CRM Deal", {"lead": self.lead.name}), 1)
+
+    def test_a_lost_lead_is_refused_with_nothing_written(self):
+        # A salesperson marked the lead Unqualified (a Lost-type status) in CRM.
+        frappe.db.set_value("CRM Lead", self.lead.name, "status", "Unqualified")
+        frappe.set_user(OWNER)
+        out = self._convert()
+        self.assertFalse(out["success"])
+        self.assertEqual(frappe.db.count("CRM Deal", {"lead": self.lead.name}), 0)
+        self.assertFalse(frappe.db.exists("Contact", {"email_id": LEAD_EMAIL}))
+
+    def test_a_lead_the_user_cannot_change_is_not_found(self):
+        frappe.set_user(OUTSIDER)
+        out = self._convert()
+        self.assertFalse(out["success"])
+        self.assertIn("not found", out["error"])
+        self.assertEqual(frappe.db.count("CRM Deal", {"lead": self.lead.name}), 0)
