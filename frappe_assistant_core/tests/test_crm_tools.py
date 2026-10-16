@@ -271,6 +271,46 @@ class TestConvertCrmLead(CrmTestCase):
         self.assertEqual(frappe.db.count("CRM Deal", {"lead": self.lead.name}), 0)
         self.assertFalse(frappe.db.exists("Contact", {"email_id": LEAD_EMAIL}))
 
+    def test_a_refusal_after_crm_wrote_the_contact_leaves_nothing(self):
+        # Admins switch forecasting on in CRM settings; a deal then needs a value and a close date,
+        # which CRM checks only after it has inserted the contact and the organization.
+        before = frappe.db.get_single_value("FCRM Settings", "enable_forecasting")
+        self.addCleanup(frappe.db.set_single_value, "FCRM Settings", "enable_forecasting", before)
+        frappe.db.set_single_value("FCRM Settings", "enable_forecasting", 1)
+        frappe.set_user(OWNER)
+        out = self._convert()
+        self.assertFalse(out["success"])
+        frappe.set_user("Administrator")
+        self.assertFalse(frappe.db.exists("Contact", {"email_id": LEAD_EMAIL}))
+        self.assertFalse(frappe.db.exists("CRM Organization", "Acme FAC Test Retail"))
+        self.assertEqual(frappe.db.count("CRM Deal", {"lead": self.lead.name}), 0)
+        self.assertEqual(frappe.db.get_value("CRM Lead", self.lead.name, "converted"), 0)
+
+    def test_deal_fields_cannot_override_what_crm_links(self):
+        frappe.set_user(OWNER)
+        out = self._convert(
+            deal_fields={"lead": "CRM-LEAD-0000-00001", "naming_series": "X-", "next_step": "Call"}
+        )
+        self.assertTrue(out["success"], out)
+        frappe.set_user("Administrator")
+        self.assertEqual(frappe.db.get_value("CRM Deal", out["deal"], "lead"), self.lead.name)
+        self.assertEqual(self._convert()["deal"], out["deal"])
+
+    def test_an_existing_deal_the_user_cannot_read_is_not_named(self):
+        frappe.set_user(OWNER)
+        deal = self._convert()["deal"]
+        # The deal was reassigned to someone else after conversion, so OWNER no longer sees it.
+        frappe.set_user("Administrator")
+        frappe.db.set_value("CRM Deal", deal, "deal_owner", "Administrator")
+        for todo in frappe.get_all(
+            "ToDo", filters={"reference_type": "CRM Deal", "reference_name": deal}, pluck="name"
+        ):
+            frappe.db.set_value("ToDo", todo, "status", "Cancelled")
+        frappe.set_user(OWNER)
+        out = self._convert()
+        self.assertTrue(out["success"], out)
+        self.assertNotIn(deal, str(out))
+
     def test_a_lead_the_user_cannot_change_is_not_found(self):
         frappe.set_user(OUTSIDER)
         out = self._convert()
