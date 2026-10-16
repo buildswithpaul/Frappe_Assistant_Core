@@ -364,6 +364,17 @@
     "requires_app": "crm"
   },
   {
+    "skill_id": "send-crm-email-usage",
+    "title": "How to Use send_crm_email",
+    "description": "Emailing a Frappe CRM lead or deal through CRM's composer, after the user approves the email card",
+    "skill_type": "Tool Usage",
+    "linked_tool": "send_crm_email",
+    "status": "Published",
+    "visibility": "Public",
+    "content_file": "send_crm_email.md",
+    "requires_app": "crm"
+  },
+  {
     "skill_id": "frappe-app-pages",
     "title": "Working in Frappe Apps (Helpdesk, CRM, Insights)",
     "description": "What to do when the user is on a Helpdesk, CRM, Insights or other Frappe app page — reading the page line, where each app keeps its data, what does not work outside Desk",

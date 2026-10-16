@@ -29,7 +29,7 @@ def _preview(**fields) -> dict:
     }
 
 
-def _helpdesk_reply(ticket: str | None) -> dict:
+def _helpdesk_reply(ticket: str | None = None, **kwargs) -> dict:
     from frappe_assistant_core.plugins.faco.helpdesk.tool import helpdesk_installed, reply_emails_customer
 
     title = _("Send reply on {0}").format(ticket or "")
@@ -60,7 +60,7 @@ def _helpdesk_reply(ticket: str | None) -> dict:
     return preview
 
 
-def _send_email(ticket: str | None) -> dict:
+def _send_email(**kwargs) -> dict:
     # send_email passes no sender, so frappe.sendmail falls back to the default outgoing account.
     account = EmailAccount.find_default_outgoing()
     if not account:
@@ -72,14 +72,48 @@ def _send_email(ticket: str | None) -> dict:
     return _preview(title=_("Send email"), sender=account.email_id)
 
 
+def _crm_email(doctype: str | None = None, name: str | None = None, **kwargs) -> dict:
+    from frappe_assistant_core.plugins.faco.crm.email import crm_sender
+    from frappe_assistant_core.plugins.faco.crm.tool import crm_installed, resolve_record
+
+    if not crm_installed():
+        return _preview(title=_("Send email"), can_send=False, reason=_("Frappe CRM is not installed"))
+    doc, error = resolve_record(doctype, name)
+    if error:
+        return _preview(title=_("Send email"), can_send=False, reason=error["error"])
+    title = doc.get("lead_name") or doc.get("organization") or doc.name
+    preview = _preview(
+        title=_("Send email on {0}").format(title),
+        context=doc.name,
+        # The card shows these only when the tool call names no recipient.
+        to=[doc.email] if doc.get("email") else None,
+    )
+    if not frappe.has_permission(doc.doctype, "email", doc.name):
+        preview.update(
+            can_send=False, to=None, reason=_("You are not permitted to email from {0}").format(doc.name)
+        )
+        return preview
+    account = crm_sender()
+    if account:
+        preview["sender"] = account.email_id
+    else:
+        preview.update(
+            can_send=False, reason=_("No outgoing email account is set up, so this email cannot be sent.")
+        )
+    return preview
+
+
 _BUILDERS = {
     "reply_to_helpdesk_ticket": _helpdesk_reply,
     "send_email": _send_email,
+    "send_crm_email": _crm_email,
 }
 
 
 @frappe.whitelist(methods=["GET"])
-def get_message_preview(tool_name: str, ticket: str | None = None) -> dict:
+def get_message_preview(
+    tool_name: str, ticket: str | None = None, doctype: str | None = None, name: str | None = None
+) -> dict:
     """Resolve what a message tool's approval card should show.
 
     Returns:
@@ -89,4 +123,4 @@ def get_message_preview(tool_name: str, ticket: str | None = None) -> dict:
     builder = _BUILDERS.get(tool_name)
     if not builder:
         frappe.throw(_("No preview for {0}").format(tool_name), frappe.ValidationError)
-    return builder(ticket)
+    return builder(ticket=ticket, doctype=doctype, name=name)

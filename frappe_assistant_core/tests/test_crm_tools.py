@@ -153,3 +153,86 @@ class TestGetCrmActivity(CrmTestCase):
         from frappe_assistant_core.plugins.faco.plugin import FacoPlugin
 
         self.assertIn("get_crm_activity", FacoPlugin().get_tools())
+
+
+class TestSendCrmEmail(CrmTestCase):
+    def _send(self, **args):
+        return tool("send_crm_email").execute(
+            {
+                "doctype": "CRM Lead",
+                "name": self.lead.name,
+                "subject": "Inventory sync proposal",
+                "message": "Hi Priya,\nAttached.",
+                **args,
+            }
+        )
+
+    def _comms(self):
+        return frappe.get_all(
+            "Communication",
+            filters={
+                "reference_doctype": "CRM Lead",
+                "reference_name": self.lead.name,
+                "subject": "Inventory sync proposal",
+            },
+            fields=["name", "recipients", "content", "sender"],
+        )
+
+    def test_the_email_lands_on_the_lead_and_is_queued(self):
+        frappe.set_user(OWNER)
+        out = self._send()
+        self.assertTrue(out["success"], out)
+        comms = self._comms()
+        self.assertEqual([c.name for c in comms], [out["communication"]])
+        self.assertIn(LEAD_EMAIL, comms[0].recipients)
+        self.assertIn("Hi Priya,<br>Attached.", comms[0].content)
+        self.assertTrue(out["email_queued"])
+
+    def test_an_invalid_address_is_refused_before_anything_is_written(self):
+        frappe.set_user(OWNER)
+        out = self._send(recipients=["priya"])
+        self.assertFalse(out["success"])
+        self.assertIn("priya", out["error"])
+        self.assertEqual(self._comms(), [])
+
+    def test_a_failed_send_leaves_nothing_on_the_lead(self):
+        from unittest.mock import patch
+
+        from frappe.core.doctype.communication.communication import Communication
+
+        frappe.set_user(OWNER)
+        # An outgoing-mail failure after make() has inserted the Communication.
+        with patch.object(Communication, "send_email", autospec=True, side_effect=Exception("SMTP is down")):
+            out = self._send()
+        self.assertFalse(out["success"])
+        self.assertEqual(self._comms(), [])
+
+    def test_a_record_the_user_cannot_read_is_not_found(self):
+        frappe.set_user(OUTSIDER)
+        out = self._send()
+        self.assertFalse(out["success"])
+        self.assertIn("not found", out["error"])
+        self.assertEqual(self._comms(), [])
+
+    def test_the_card_shows_the_sender_the_tool_uses(self):
+        from frappe_assistant_core.chat.api.message_preview import get_message_preview
+        from frappe_assistant_core.plugins.faco.crm.email import crm_sender
+
+        frappe.set_user(OWNER)
+        preview = get_message_preview("send_crm_email", doctype="CRM Lead", name=self.lead.name)
+        self.assertTrue(preview["can_send"], preview)
+        self.assertEqual(preview["sender"], crm_sender().email_id)
+        self.assertEqual(preview["to"], [LEAD_EMAIL])
+        self.assertIn("Priya Raman", preview["title"])
+        out = self._send()
+        self.assertEqual(
+            frappe.db.get_value("Communication", out["communication"], "sender"), crm_sender().email_id
+        )
+
+    def test_the_card_refuses_a_user_who_cannot_email_the_record(self):
+        from frappe_assistant_core.chat.api.message_preview import get_message_preview
+
+        frappe.set_user(OUTSIDER)
+        preview = get_message_preview("send_crm_email", doctype="CRM Lead", name=self.lead.name)
+        self.assertFalse(preview["can_send"])
+        self.assertIsNone(preview["to"])
