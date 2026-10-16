@@ -22,7 +22,11 @@ from frappe import _
 from frappe.utils import now_datetime, time_diff_in_seconds
 
 from .report_access import can_run_report
-from .report_requirements import VALUE_CONSTRAINED_FIELDTYPES, discover_filter_definitions
+from .report_requirements import (
+    PREPARED_REPORT_WAIT_SECONDS,
+    VALUE_CONSTRAINED_FIELDTYPES,
+    discover_filter_definitions,
+)
 
 DEFAULT_MAX_ROWS = 500
 MAX_ROWS_CAP = 5000
@@ -146,6 +150,14 @@ class ReportTools:
                 # Determine which filters were auto-injected
                 auto_added = {k: v for k, v in final_filters.items() if k not in user_filter_keys}
 
+                # Filters FAC filled in because the caller left them out (or blank), so the
+                # model can state the period/company it actually used.
+                defaulted_filters = {
+                    k: v
+                    for k, v in final_filters.items()
+                    if v not in (None, "") and (filters or {}).get(k) in (None, "")
+                }
+
                 row_count = len(data)
                 rows = _limit_rows(
                     data,
@@ -163,6 +175,7 @@ class ReportTools:
                     "message": result.get("message"),
                     "filters_applied": final_filters,
                     "filters_auto_added": auto_added if auto_added else None,
+                    "defaulted_filters": defaulted_filters,
                     "raw_result_keys": list(result.keys()) if result else [],
                     "row_count": row_count,
                     "truncated": len(rows) < row_count,
@@ -430,7 +443,7 @@ class ReportTools:
                 )
 
             # Poll for completion with exponential backoff
-            max_wait_time = min(report_timeout, 300)  # Cap at 5 minutes for MCP tools
+            max_wait_time = min(report_timeout, PREPARED_REPORT_WAIT_SECONDS)
             poll_interval = 2.0  # Start with 2 seconds
             max_poll_interval = 15.0  # Max 15 seconds between polls
             elapsed_time = 0
@@ -438,8 +451,10 @@ class ReportTools:
             frappe.db.commit()  # Ensure job is committed to DB
 
             while elapsed_time < max_wait_time:
-                time.sleep(poll_interval)
-                elapsed_time += poll_interval
+                # Never sleep past the cap: the last poll is shortened to fit.
+                pause = min(poll_interval, max_wait_time - elapsed_time)
+                time.sleep(pause)
+                elapsed_time += pause
 
                 # Check prepared report status - get fresh data
                 frappe.db.rollback()
@@ -490,8 +505,8 @@ class ReportTools:
                 "prepared_report_name": prepared_report_name,
                 "message": _(
                     "The report {0} is still being prepared in the background (waited {1}s). "
-                    "Ask again with the same filters in a minute or two: the retry picks up this same "
-                    "report instead of starting a new one."
+                    "Call generate_report again with the same filters in a minute or two: the retry "
+                    "picks up this same report instead of starting a new one."
                 ).format(report_doc.name, int(elapsed_time)),
                 "retry_guidance": f"Use report_name='{report_doc.name}' with the same filters to retrieve results.",
                 "wait_time_seconds": int(elapsed_time),
