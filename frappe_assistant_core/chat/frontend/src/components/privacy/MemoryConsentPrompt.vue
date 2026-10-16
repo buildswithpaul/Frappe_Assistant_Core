@@ -104,7 +104,7 @@ async function answer(keep) {
 
 .consent-modal {
 	width: 100%;
-	max-width: 480px;
+	max-width: 560px;
 	background: var(--ql-surface, var(--ql-bg));
 	border: 1px solid var(--ql-border);
 	border-radius: 1rem;
@@ -205,7 +205,7 @@ async function answer(keep) {
 	color: var(--ql-text);
 }
 
-@media (max-width: 480px) {
+@media (max-width: 600px) {
 	.spacer {
 		display: none;
 	}
