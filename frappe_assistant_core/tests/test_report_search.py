@@ -78,17 +78,20 @@ class TestReportSearch(BaseAssistantTest):
         self.assertEqual(top["origin"], "custom")
 
     def test_result_carries_mandatory_filters_and_prepared_flag(self):
+        # Production reaches this the way Desk does: a Report with Report Filter child rows.
         name = self._make_report(
             "Invoice Backlog Check",
             prepared_report=1,
-            json=json.dumps([]),
-            query="select 1 as `n` where %(company)s",
+            filters=[
+                {"fieldname": "company", "label": "Company", "fieldtype": "Data", "mandatory": 1},
+                {"fieldname": "territory", "label": "Territory", "fieldtype": "Data", "mandatory": 0},
+            ],
         )
 
         found = {r["name"]: r for r in search_reports("invoice backlog")["reports"]}[name]
 
         self.assertTrue(found["prepared"])
-        self.assertIsInstance(found["mandatory_filters"], list)
+        self.assertEqual(found["mandatory_filters"], ["company"])
         self.assertEqual(found["ref_doctype"], ALLOWED_REF_DOCTYPE)
         self.assertIn("purpose", found)
 
@@ -108,6 +111,7 @@ class TestReportSearch(BaseAssistantTest):
         self.assertEqual(result["count"], 0)
         self.assertEqual(result["reports"], [])
         self.assertIn("get_doctype_info", result["hint"])
+        self.assertIn("module", result["hint"])
 
     def test_limit_is_capped_at_25(self):
         for i in range(MAX_LIMIT + 5):

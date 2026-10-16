@@ -129,8 +129,9 @@ def search_reports(query: str, module: Optional[str] = None, limit: int = DEFAUL
     hint = None
     if not results:
         hint = _(
-            "No report matches. Use get_doctype_info to find the DocType that holds this data, "
-            "then answer with list_documents using grouping."
+            "No report matches. Try other words or a module (report_list with module set). Otherwise "
+            "use get_doctype_info to find the DocType that holds this data, then answer with "
+            "list_documents using grouping."
         )
     return {"success": True, "count": len(results), "reports": results, "hint": hint}
 
