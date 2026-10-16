@@ -44,6 +44,16 @@ bench --site realistic.test execute frappe.desk.page.setup_wizard.setup_wizard.s
 (Or open the site in a browser and finish the wizard by hand.) Repeat with
 `large.test` for the second site.
 
+**Mark each site as a release-check site.** The setup scripts add an ERPNext demo company and,
+on the large site, 200,000 ledger rows, so they refuse any site that does not opt in:
+
+```bash
+bench --site realistic.test set-config release_check_site 1
+bench --site large.test set-config release_check_site 1
+```
+
+`--dry-run` skips this check because it touches nothing.
+
 **Step 2: run the setup script.**
 
 ```bash
@@ -140,10 +150,10 @@ export RELEASE_CHECK_API_KEY=<key> RELEASE_CHECK_API_SECRET=<secret>   # a chat-
 Why HTTP for the questions: `send_message` hands the turn to a background relay that streams the
 reply over Socket.IO and saves it afterwards. Posting to the running web workers exercises exactly
 the path the SPA uses; the script then polls `get_session_history` for the assistant reply (up to
-`--timeout`, 300 s). Turns carry `client_type=release_check` so they are identifiable. The script
+`--timeout`, 300 s). Turns are sent with `client_type=spa`, what the SPA sends, so they get the tool profile a customer's chat gets (a custom client type would get AR's fail-safe profile instead). The script
 connects to `--site` in-process only to compute the expected answers (`expected.py`). `AR Turn Usage`
 lives on the FAC Cloud (assistant_runtime) site, not on these test sites: pass `--ar-site <that site>`
-(same bench) and the script sums the turn's rows by session id and `client_type=release_check`.
+(same bench) and the script sums the turn's rows by session id; the runner creates every session fresh, so that identifies the turn.
 Without `--ar-site`, `tool_calls`, `credits` and `input_tokens` are `null`.
 
 Each result: `id`, `session_id`, `answer`, `correct`, `cited`, `tool_calls`, `credits`, `input_tokens`

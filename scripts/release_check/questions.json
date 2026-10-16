@@ -71,7 +71,7 @@
   {
     "id": "sales_by_region_custom_report",
     "site": "realistic",
-    "question": "Using our Sales Performance by Region report, which regions sell the most?",
+    "question": "Which regions bring in the most net sales?",
     "expect": {
       "kind": "top_n",
       "source": "sales_by_region_custom_report"

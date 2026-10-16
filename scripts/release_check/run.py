@@ -22,7 +22,8 @@ from pathlib import Path
 from scoring import citation_text, is_cited, is_non_answer, score_mentions, score_top_n, score_total
 
 HERE = Path(__file__).resolve().parent
-CLIENT_TYPE = "release_check"
+# What the Desk SPA sends, so the turn gets the same tool profile a customer's chat gets.
+CLIENT_TYPE = "spa"
 BLOCKED_AFTER_SECONDS = 60
 REPLY_TIMEOUT_SECONDS = 300
 POLL_SECONDS = 2
@@ -144,7 +145,7 @@ def fetch_usage(session_ids: list) -> dict:
     """session_id -> tool_calls, credits, input_tokens summed over the turn's cycles, from AR Turn Usage.
 
     Runs on the FAC Cloud (assistant_runtime) site, where AR writes one row per cycle keyed by FAC's
-    session_id. A session with no row (yet) is left out.
+    session_id; the runner creates every session fresh, so the session id alone identifies the turn. A session with no row (yet) is left out.
     """
     import frappe
 
@@ -155,7 +156,7 @@ def fetch_usage(session_ids: list) -> dict:
         frappe.db.rollback()
         rows = frappe.get_all(
             "AR Turn Usage",
-            filters={"session_id": ["in", session_ids], "client_type": CLIENT_TYPE},
+            filters={"session_id": ["in", session_ids]},
             fields=["session_id", "tool_calls", "credits", "tokens_input"],
         )
         usage = {}

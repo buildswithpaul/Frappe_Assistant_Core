@@ -13,13 +13,17 @@ from datetime import date
 
 import frappe
 from frappe.utils import add_days, add_months, getdate
+from site_guard import require_release_check_site
 
 SEED = 20261016
 
 
 def parse_args(description: str) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=description)
-    parser.add_argument("--site", help="Bench site name (required unless --dry-run)")
+    parser.add_argument(
+        "--site",
+        help="Bench site name (required unless --dry-run); it must carry release_check_site in site_config.json",
+    )
     parser.add_argument(
         "--sites-path",
         default=os.environ.get("FRAPPE_SITES_PATH"),
@@ -44,7 +48,9 @@ def run_cli(description: str, plan, run) -> None:
         return
     if not args.site:
         raise SystemExit("--site is required unless --dry-run is given")
-    frappe.init(args.site, sites_path=resolve_sites_path(args.sites_path, args.site))
+    sites_path = resolve_sites_path(args.sites_path, args.site)
+    require_release_check_site(sites_path, args.site)
+    frappe.init(args.site, sites_path=sites_path)
     frappe.connect()
     try:
         # CLI setup script, runs as Administrator by design
