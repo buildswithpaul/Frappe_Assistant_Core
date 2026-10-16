@@ -1,0 +1,112 @@
+[
+  {
+    "id": "sales_last_month",
+    "site": "realistic",
+    "question": "What were our total sales last month?",
+    "expect": {
+      "kind": "total",
+      "source": "sales_last_month"
+    },
+    "cite": [
+      "Sales Invoice",
+      "Sales Register",
+      "Sales Analytics"
+    ]
+  },
+  {
+    "id": "top_customers_quarter",
+    "site": "realistic",
+    "question": "Who are our top 5 customers by sales this quarter?",
+    "expect": {
+      "kind": "top_n",
+      "source": "top_customers_quarter"
+    },
+    "cite": [
+      "Sales Invoice",
+      "Customer",
+      "Sales Register",
+      "Customer Ledger Summary"
+    ]
+  },
+  {
+    "id": "receivables_ageing",
+    "site": "realistic",
+    "question": "How much do customers owe us in total right now, and how old is it?",
+    "expect": {
+      "kind": "total",
+      "source": "receivables_ageing"
+    },
+    "cite": [
+      "Accounts Receivable",
+      "Accounts Receivable Summary",
+      "Sales Invoice"
+    ]
+  },
+  {
+    "id": "vendor_payment_history",
+    "site": "realistic",
+    "question": "Show me the payment history for the supplier RC Vendor Alpha.",
+    "expect": {
+      "kind": "mentions",
+      "source": "vendor_payment_history"
+    },
+    "cite": [
+      "Payment Entry",
+      "Supplier Ledger Summary",
+      "General Ledger"
+    ]
+  },
+  {
+    "id": "stock_position",
+    "site": "realistic",
+    "question": "How many RC Widget units do we have in stock right now?",
+    "expect": {
+      "kind": "total",
+      "source": "stock_position"
+    },
+    "cite": [
+      "Stock Balance",
+      "Stock Ledger",
+      "Bin",
+      "Item"
+    ]
+  },
+  {
+    "id": "sales_by_region_custom_report",
+    "site": "realistic",
+    "question": "Using our Sales Performance by Region report, which regions sell the most?",
+    "expect": {
+      "kind": "top_n",
+      "source": "sales_by_region_custom_report"
+    },
+    "cite": [
+      "Sales Performance by Region"
+    ]
+  },
+  {
+    "id": "bookings_this_month_custom_doctype",
+    "site": "realistic",
+    "question": "What is the total value of bookings made this month?",
+    "expect": {
+      "kind": "total",
+      "source": "bookings_this_month_custom_doctype"
+    },
+    "cite": [
+      "Booking"
+    ]
+  },
+  {
+    "id": "ledger_heavy_report",
+    "site": "large",
+    "question": "What is the total receivable balance on our books today, according to the ledger?",
+    "expect": {
+      "kind": "total",
+      "source": "ledger_heavy_report"
+    },
+    "cite": [
+      "Accounts Receivable",
+      "General Ledger",
+      "Accounts Receivable Summary"
+    ]
+  }
+]
