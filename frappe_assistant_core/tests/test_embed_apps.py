@@ -116,3 +116,27 @@ class TestEmbedApps(BaseAssistantTest):
         # Production reads this from the Vite manifest that `yarn build` writes.
         with patch(f"{EMBED_API}.widget_entry", autospec=True, return_value=entry):
             self.assertEqual(get_widget_entry(), entry)
+
+
+class TestSupportedApps(BaseAssistantTest):
+    """The widget is offered only in apps FACO has been built and tested for."""
+
+    def tearDown(self):
+        clear_routes_cache()
+        super().tearDown()
+
+    def test_only_supported_apps_are_offered(self):
+        offered = {a["app"] for a in discover_spa_apps()}
+        installed = set(frappe.get_installed_apps())
+        self.assertEqual(offered, {"helpdesk", "insights", "crm"} & installed)
+        self.assertNotIn("builder", offered)
+
+    def test_a_row_saved_for_an_unsupported_app_serves_nothing(self):
+        if "builder" not in frappe.get_installed_apps():
+            self.skipTest("Builder is not installed")
+        # An admin could enable Builder before the allowlist existed; that row stays in the table.
+        settings = frappe.get_single("FAC Chat Settings")
+        settings.append("widget_embed_apps", {"app_name": "builder"})
+        settings.save(ignore_permissions=True)
+        clear_routes_cache()
+        self.assertNotIn("/builder", enabled_routes())
