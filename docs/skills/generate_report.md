@@ -14,12 +14,25 @@ Frappe/ERPNext includes hundreds of built-in business reports. Three tools work 
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
+| `query` | string | No | What the user wants to know, in their words (`"receivables overdue"`). Ranks the reports the user can run; start here |
+| `limit` | integer | No | Reports to return for a `query`. Default 10, maximum 25 |
 | `module` | string | No | Filter by module: `"Accounts"`, `"Selling"`, `"Stock"`, `"HR"`, `"CRM"` |
 | `report_type` | string | No | `"Script Report"`, `"Query Report"`, or `"Report Builder"` |
 
-Returns: `{ reports: [{ name, report_name, report_type, module, is_standard, disabled }], count }`.
+With `query`, returns `{ count, reports: [{ name, report_type, module, origin, ref_doctype, prepared, mandatory_filters, purpose }], hint }`, best match first. A report built in the UI (`origin: "custom"`) ranks above an equal standard report. `mandatory_filters` names the filters you must pass; `prepared` means the report runs in the background. When nothing matches, `hint` points to `get_doctype_info`.
+
+With `module` or `report_type` and no `query`, returns `{ reports: [{ name, report_name, report_type, module, is_standard, disabled }], count }`.
+
+With no arguments, returns only `{ modules: { <module>: <report count> } }`, not every report.
 
 Only reports the current user can run are listed: enabled, permitted by the report's roles, and with `report` permission on the report's reference DocType.
+
+### Finding a report for a question
+
+1. Call `report_list` with `query` set to the user's question. Prefer a custom report, then a standard one.
+2. Call `report_requirements` for the chosen report, then `generate_report`.
+3. If no report fits, call `get_doctype_info(topic=...)` to find the DocType, then `list_documents` with grouping.
+4. Name the report and the filters you used in the answer.
 
 ## report_requirements Parameters
 

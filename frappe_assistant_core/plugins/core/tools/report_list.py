@@ -41,12 +41,29 @@ class ReportList(BaseTool):
     def __init__(self):
         super().__init__()
         self.name = "report_list"
-        self.description = "Discover and search available Frappe business reports across all modules. Use this tool to find the appropriate report for business questions before attempting custom data analysis. Returns a list of available reports with descriptions, modules, and types. Available reports include Sales Analytics, Territory Analysis, Customer Reports, P&L Statement, Balance Sheet, Receivables/Payables, Inventory Reports, Item Movement, Stock Valuation, Payroll, Attendance, and Leave Reports. Always search for existing reports first before building custom queries or analysis."
+        self.description = (
+            "Find the report that answers a business question. Search with `query` first (for example "
+            "'receivables overdue' or 'sales by territory'); results rank a custom report above a "
+            "standard one. Then call report_requirements for the chosen report and generate_report to "
+            "run it. If nothing fits, call get_doctype_info(topic=...) to find the data, then use "
+            "list_documents with grouping. Cite the report and the filters you used in the answer. "
+            "With no arguments it returns a count of reports per module, not every report."
+        )
         self.requires_permission = None  # Permission checked dynamically per report
 
         self.inputSchema = {
             "type": "object",
             "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "What the user wants to know, in their words. Ranks the reports you can run by how well they match.",
+                },
+                "limit": {
+                    "type": "integer",
+                    "default": 10,
+                    "maximum": 25,
+                    "description": "Maximum reports to return for a query (default 10, at most 25).",
+                },
                 "module": {
                     "type": "string",
                     "description": "Filter by Frappe module (e.g., 'Accounts', 'Selling', 'Stock', 'HR', 'CRM'). Leave empty to see all modules.",
@@ -62,13 +79,24 @@ class ReportList(BaseTool):
     def execute(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
         """Execute report list discovery"""
         try:
-            # Import the report implementation
-            from .report_tools import ReportTools
+            module = arguments.get("module")
+            report_type = arguments.get("report_type")
 
-            # Execute report list using existing implementation
-            return ReportTools.list_reports(
-                module=arguments.get("module"), report_type=arguments.get("report_type")
-            )
+            if arguments.get("query"):
+                from .report_search import DEFAULT_LIMIT, search_reports
+
+                return search_reports(
+                    arguments["query"], module=module, limit=arguments.get("limit", DEFAULT_LIMIT)
+                )
+
+            if module or report_type:
+                from .report_tools import ReportTools
+
+                return ReportTools.list_reports(module=module, report_type=report_type)
+
+            from .report_search import module_summary
+
+            return module_summary()
 
         except Exception as e:
             frappe.log_error(title=_("Report List Error"), message=f"Error listing reports: {str(e)}")
