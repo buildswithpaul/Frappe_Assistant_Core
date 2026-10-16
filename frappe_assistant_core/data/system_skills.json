@@ -375,6 +375,17 @@
     "requires_app": "crm"
   },
   {
+    "skill_id": "convert-crm-lead-usage",
+    "title": "How to Use convert_crm_lead",
+    "description": "Converting a Frappe CRM lead into a deal through CRM's own conversion",
+    "skill_type": "Tool Usage",
+    "linked_tool": "convert_crm_lead",
+    "status": "Published",
+    "visibility": "Public",
+    "content_file": "convert_crm_lead.md",
+    "requires_app": "crm"
+  },
+  {
     "skill_id": "frappe-app-pages",
     "title": "Working in Frappe Apps (Helpdesk, CRM, Insights)",
     "description": "What to do when the user is on a Helpdesk, CRM, Insights or other Frappe app page — reading the page line, where each app keeps its data, what does not work outside Desk",

@@ -97,6 +97,7 @@ class FacoPlugin(BasePlugin):
             # Follow up on Frappe CRM leads and deals through CRM's own flows. Skipped without CRM.
             "get_crm_activity",
             "send_crm_email",
+            "convert_crm_lead",
         ]
 
     def is_fac_cloud_only(self) -> bool:
