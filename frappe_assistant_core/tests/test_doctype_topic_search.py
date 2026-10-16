@@ -17,16 +17,16 @@
 """Finding where a topic's data lives: get_doctype_info(topic=...)."""
 
 import unittest
-from contextlib import contextmanager
 from unittest.mock import patch
 
 import frappe
 from frappe.custom.doctype.custom_field.custom_field import create_custom_field
-from frappe.database.database import Database
 
+from frappe_assistant_core.core.security_config import ADMIN_ONLY_FIELDS
 from frappe_assistant_core.plugins.core.tools.get_doctype_info import GetDoctypeInfo
 from frappe_assistant_core.plugins.core.tools.metadata_tools import MetadataTools
 from frappe_assistant_core.tests.base_test import BaseAssistantTest
+from frappe_assistant_core.tests.ddl_fixtures import committing_ddl
 
 BOOKING = "FAC Topic Booking"
 BOOKING_LINE = "FAC Topic Booking Line"
@@ -36,27 +36,11 @@ FIXTURE_DOCTYPES = (BOOKING_LINE, BOOKING_SETTINGS, BOOKING)
 HAS_ERPNEXT = "erpnext" in frappe.get_installed_apps()
 
 
-@contextmanager
-def _committing_ddl():
-    """Run schema changes that commit for real, and commit nothing else.
-
-    Frappe refuses DDL inside a test transaction, and BaseAssistantTest turns commit() into a no-op.
-    Pending writes are rolled back first, so the only rows that reach the database are the ones the
-    block itself writes. Database.commit is the real commit that the subclass attribute shadows.
-    """
-    frappe.db.rollback()
-    try:
-        with patch.object(Database, "check_implicit_commit"):
-            yield
-    finally:
-        Database.commit(frappe.db)
-
-
 def _remove_fixtures() -> None:
     """Remove every fixture this module creates; safe when none, some or all exist."""
     # nosemgrep: frappe-setuser — fixture teardown runs as Administrator whatever the test left
     frappe.set_user("Administrator")
-    with _committing_ddl():
+    with committing_ddl():
         for doctype in FIXTURE_DOCTYPES:
             if frappe.db.exists("DocType", doctype):
                 frappe.delete_doc("DocType", doctype, force=True, ignore_permissions=True)
@@ -92,7 +76,7 @@ def _create_fixtures() -> None:
         booking_fields.append(
             {"fieldname": "client", "fieldtype": "Link", "options": "Customer", "label": "Client"}
         )
-    with _committing_ddl():
+    with committing_ddl():
         for name, fields, extra in (
             (BOOKING, booking_fields, {}),
             (BOOKING_LINE, note, {"istable": 1}),
@@ -167,6 +151,38 @@ class TestDoctypeTopicSearch(BaseAssistantTest):
         self.assertNotIn(BOOKING_LINE, names)
         self.assertNotIn(BOOKING_SETTINGS, names)
 
+    def test_one_broken_doctype_does_not_fail_the_whole_search(self):
+        real_describe = MetadataTools._describe_topic_doctype
+
+        def describe(row, role):
+            # Production reaches this when one candidate's table or controller is broken.
+            if row.name == "ToDo":
+                raise RuntimeError("broken table")
+            return real_describe(row, role)
+
+        with patch.object(MetadataTools, "_describe_topic_doctype", side_effect=describe), patch.object(
+            frappe, "log_error"
+        ) as log_error:
+            result = MetadataTools.find_doctypes_for_topic("todo booking", limit=25)
+
+        names = [row["doctype"] for row in result["doctypes"]]
+        self.assertTrue(result["success"])
+        self.assertIn(BOOKING, names)
+        self.assertNotIn("ToDo", names)
+        log_error.assert_called_once()
+
+    def test_assistant_user_does_not_see_a_wholly_admin_only_doctype(self):
+        user = self.make_throwaway_user("topic-assistant", roles=("Assistant User",))
+        # nosemgrep: frappe-setuser — the skip depends on the acting user's FAC role
+        frappe.set_user(user)
+        self.addCleanup(frappe.set_user, "Administrator")
+        self.assertIsNotNone(_doctype_row("todo", "ToDo"), "ToDo must be readable to this role")
+
+        # FAC ships ADMIN_ONLY_FIELDS entries of "*" (Email Domain, System Settings, ...); adding
+        # ToDo to that same dict gives the Assistant User exactly what a shipped entry does.
+        with patch.dict(ADMIN_ONLY_FIELDS, {"ToDo": "*"}):
+            self.assertIsNone(_doctype_row("todo", "ToDo"))
+
     def test_custom_fields_on_standard_doctype_are_listed(self):
         row = _doctype_row("todo", "ToDo")
 
@@ -221,6 +237,10 @@ class TestDoctypeTopicSearch(BaseAssistantTest):
 
         self.assertTrue(result["success"])
         self.assertEqual(result["doctype"], "ToDo")
+
+    def test_description_tells_the_model_when_to_use_topic(self):
+        self.assertIn("topic", GetDoctypeInfo().description)
+        self.assertIn("no report fits", GetDoctypeInfo().description)
 
     def test_neither_doctype_nor_topic_is_an_error(self):
         result = GetDoctypeInfo().execute({})

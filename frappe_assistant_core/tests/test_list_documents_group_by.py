@@ -21,36 +21,24 @@ the records the user may read, so the model never has to add up listed rows itse
 Runs against a real custom submittable DocType and real records. Nothing here is mocked.
 """
 
-from contextlib import contextmanager
 from unittest.mock import patch
 
 import frappe
-from frappe.database.database import Database
 
 from frappe_assistant_core.core.security_config import ADMIN_ONLY_FIELDS
 from frappe_assistant_core.plugins.core.tools.list_documents import DocumentList, aggregate_query_fields
 from frappe_assistant_core.tests.base_test import BaseAssistantTest
+from frappe_assistant_core.tests.ddl_fixtures import committing_ddl
 
 SALE = "FAC Group Sale"
 REGION_ALLOWED = "India"
 REGION_OTHER = "Germany"
 
 
-@contextmanager
-def _committing_ddl():
-    """Run schema changes that commit for real, and commit nothing else (see test_doctype_topic_search)."""
-    frappe.db.rollback()
-    try:
-        with patch.object(Database, "check_implicit_commit"):
-            yield
-    finally:
-        Database.commit(frappe.db)
-
-
 def _remove_fixture() -> None:
     # nosemgrep: frappe-setuser — fixture teardown runs as Administrator whatever the test left
     frappe.set_user("Administrator")
-    with _committing_ddl():
+    with committing_ddl():
         if frappe.db.exists("DocType", SALE):
             frappe.delete_doc("DocType", SALE, force=True, ignore_permissions=True)
         # A crash between CREATE TABLE and the DocType commit leaves a table with no row.
@@ -82,7 +70,7 @@ def _create_fixture() -> None:
         # Named in SENSITIVE_FIELDS["all_doctypes"].
         {"fieldname": "iban", "fieldtype": "Currency", "label": "IBAN"},
     ]
-    with _committing_ddl():
+    with committing_ddl():
         frappe.get_doc(
             {
                 "doctype": "DocType",
@@ -290,6 +278,13 @@ class TestListDocumentsGroupBy(BaseAssistantTest):
         self.assertTrue(result["success"], result)
         self.assertEqual(result["row_count"], 1)
         self.assertTrue(result["has_more"])
+
+    def test_description_sends_totals_to_reports_first_and_asks_for_citation(self):
+        description = DocumentList().description
+
+        self.assertIn("report_list(query=", description)
+        self.assertIn("cite the DocType and filters", description)
+        self.assertNotIn("primary tool", description)
 
     def test_order_by_ranks_groups_by_total_before_the_limit_cuts(self):
         self._seed()

@@ -16,12 +16,11 @@
 
 """The word normaliser shared by report search and topic search."""
 
-import unittest
-
+from frappe_assistant_core.tests.base_test import BaseAssistantTest
 from frappe_assistant_core.utils.search_tokens import singular, tokens
 
 
-class TestSearchTokens(unittest.TestCase):
+class TestSearchTokens(BaseAssistantTest):
     def test_plural_and_singular_normalise_to_the_same_word(self):
         for plural, word in (
             ("purchases", "purchase"),

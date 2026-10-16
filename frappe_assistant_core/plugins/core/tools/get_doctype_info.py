@@ -40,7 +40,7 @@ class GetDoctypeInfo(BaseTool):
     def __init__(self):
         super().__init__()
         self.name = "get_doctype_info"
-        self.description = "Get DocType metadata and field information"
+        self.description = "Get DocType metadata and field information. Pass doctype for its fields, or topic to find where data lives when no report fits."
         self.requires_permission = None  # Permission checked dynamically per DocType
 
         self.inputSchema = {

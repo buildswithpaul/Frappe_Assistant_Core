@@ -37,7 +37,7 @@ class MetadataTools:
         return [
             {
                 "name": "get_doctype_info",
-                "description": "Get DocType metadata and field information",
+                "description": "Get DocType metadata and field information. Pass doctype for its fields, or topic to find where data lives when no report fits.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -203,6 +203,8 @@ class MetadataTools:
         or_filters = [
             [column, "like", f"%{token}%"] for token in sorted(topic_tokens) for column in ("name", "module")
         ]
+        # get_all is safe: it only names candidates (DocType names and modules are not data);
+        # each name is checked with has_permission and permlevel before anything is returned.
         rows = frappe.get_all(
             "DocType",
             filters={"istable": 0, "issingle": 0},
@@ -229,6 +231,8 @@ class MetadataTools:
         meta = frappe.get_meta(doctype)
         permlevels = set(meta.get_permlevel_access("read"))
         fields = [df for df in meta.fields if df.permlevel in permlevels and df.fieldname not in restricted]
+        # get_all is safe: only fieldnames are read, and each is kept only when it passed the
+        # user's permlevel and the role's restricted-field filter above.
         custom_fieldnames = set(frappe.get_all("Custom Field", filters={"dt": doctype}, pluck="fieldname"))
         return {
             "doctype": doctype,
@@ -265,7 +269,15 @@ class MetadataTools:
                 break
             if role == "Assistant User" and ADMIN_ONLY_FIELDS.get(row.name) == "*":
                 continue
-            described = MetadataTools._describe_topic_doctype(row, role)
+            try:
+                described = MetadataTools._describe_topic_doctype(row, role)
+            except Exception:
+                # One DocType with a broken table or controller must not hide the others.
+                frappe.log_error(
+                    title=_("DocType Topic Search Error"),
+                    message=f"Could not describe {row.name}: {frappe.get_traceback()}",
+                )
+                continue
             if described:
                 doctypes.append(described)
         return {"success": True, "doctypes": doctypes}
