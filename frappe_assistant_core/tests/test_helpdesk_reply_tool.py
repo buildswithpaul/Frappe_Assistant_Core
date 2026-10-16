@@ -33,7 +33,7 @@ CUSTOMER = "test_fac_hd_customer@example.com"
 TOOL_MODULE = "frappe_assistant_core.plugins.faco.tools.reply_to_helpdesk_ticket"
 
 
-def _installed() -> bool:
+def installed() -> bool:
     return "helpdesk" in frappe.get_installed_apps()
 
 
@@ -45,42 +45,52 @@ def _user(email: str, roles: list[str]) -> None:
     frappe.get_doc("User", email).add_roles(*roles)
 
 
+def make_fixtures() -> None:
+    """An active agent, a non-agent desk user and an outgoing account, as an admin sets them up."""
+    frappe.set_user("Administrator")
+    _user(AGENT, ["Agent"])
+    if not frappe.db.exists("HD Agent", AGENT):
+        frappe.get_doc({"doctype": "HD Agent", "user": AGENT, "agent_name": "FAC Agent"}).insert(
+            ignore_permissions=True
+        )
+    _user(NON_AGENT, ["System Manager"])
+    if not frappe.db.exists("Email Account", {"email_id": "fac-hd-test@example.com"}):
+        frappe.get_doc(
+            {
+                "doctype": "Email Account",
+                "email_account_name": "FAC HD Reply Test",
+                "email_id": "fac-hd-test@example.com",
+                "enable_outgoing": 1,
+                "default_outgoing": 1,
+                "smtp_server": "localhost",
+                "no_smtp_authentication": 1,
+            }
+        ).insert(ignore_permissions=True)
+
+
+def make_ticket():
+    """A ticket a customer raised by email."""
+    frappe.set_user("Administrator")
+    return frappe.get_doc(
+        {
+            "doctype": "HD Ticket",
+            "subject": "Invoice PDF shows wrong tax total",
+            "description": "The tax total is off.",
+            "raised_by": CUSTOMER,
+        }
+    ).insert(ignore_permissions=True)
+
+
 class TestHelpdeskReplyTool(BaseAssistantTest):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        if not _installed():
+        if not installed():
             raise unittest.SkipTest("Helpdesk is not installed")
-        frappe.set_user("Administrator")
-        _user(AGENT, ["Agent"])
-        if not frappe.db.exists("HD Agent", AGENT):
-            frappe.get_doc({"doctype": "HD Agent", "user": AGENT, "agent_name": "FAC Agent"}).insert(
-                ignore_permissions=True
-            )
-        _user(NON_AGENT, ["System Manager"])
-        if not frappe.db.exists("Email Account", {"email_id": "fac-hd-test@example.com"}):
-            frappe.get_doc(
-                {
-                    "doctype": "Email Account",
-                    "email_account_name": "FAC HD Reply Test",
-                    "email_id": "fac-hd-test@example.com",
-                    "enable_outgoing": 1,
-                    "default_outgoing": 1,
-                    "smtp_server": "localhost",
-                    "no_smtp_authentication": 1,
-                }
-            ).insert(ignore_permissions=True)
+        make_fixtures()
 
     def setUp(self):
-        frappe.set_user("Administrator")
-        self.ticket = frappe.get_doc(
-            {
-                "doctype": "HD Ticket",
-                "subject": "Invoice PDF shows wrong tax total",
-                "description": "The tax total is off.",
-                "raised_by": CUSTOMER,
-            }
-        ).insert(ignore_permissions=True)
+        self.ticket = make_ticket()
 
     def tearDown(self):
         frappe.set_user("Administrator")
