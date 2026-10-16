@@ -8,8 +8,8 @@ the number the site's own data gives. The owner requires it because unit tests
 mock the boundaries the assistant crosses; only real questions against real
 reports and documents show whether "report-first" answering works.
 
-The runner and scoring are **Task 7** and come next. This directory holds the
-inputs: the site setup scripts, `questions.json` and `expected.py`.
+This directory holds the inputs (site setup scripts, `questions.json`, `expected.py`), the
+runner (`run.py`) and the comparison (`compare.py`); scoring lives in `scoring.py`.
 
 ## The two sites
 
@@ -120,3 +120,52 @@ python -m unittest discover -s scripts/release_check -p "test_*.py"
 
 Importing `expected` needs `scripts/release_check` on `sys.path` and a bench
 Python with Frappe installed.
+
+## Running the check
+
+One run asks every question of one site's profile through FAC Chat with one fixed model and
+writes a results file. Use the same model every time, or the comparison measures the model.
+
+```bash
+cd <bench>/sites
+export RELEASE_CHECK_API_KEY=<key> RELEASE_CHECK_API_SECRET=<secret>   # a chat-enabled user's API keys
+../env/bin/python <fac-repo>/scripts/release_check/run.py --site realistic.test --profile realistic \
+    --url http://localhost:8000 --model <model_id> --out <fac-repo>/scripts/release_check/results/<version>.json
+../env/bin/python <fac-repo>/scripts/release_check/run.py --site large.test --profile large \
+    --url http://localhost:8001 --model <model_id> --out <fac-repo>/scripts/release_check/results/<version>-large.json
+```
+
+`--dry-run` prints the questions, model and output path without connecting.
+
+Why HTTP for the questions: `send_message` hands the turn to a background relay that streams the
+reply over Socket.IO and saves it afterwards. Posting to the running web workers exercises exactly
+the path the SPA uses; the script then polls `get_session_history` for the assistant reply (up to
+`--timeout`, 300 s). Turns carry `client_type=release_check` so they are identifiable. The script
+connects to the site in-process only to compute the expected answers (`expected.py`) and, when FAC
+Cloud runs on the same bench, to read `AR Turn Usage` for the session.
+
+Each result: `id`, `answer`, `correct`, `cited`, `tool_calls`, `credits`, `input_tokens`
+(the last three are `null` without `AR Turn Usage`), `wall_seconds`, `blocked_over_60s`
+(the turn took longer than 60 s).
+
+Scoring (`scoring.py`): `total` is correct when any number in the answer is within 0.5% of the
+expected total (supports `1,234,567`, Indian grouping `₹1,23,456.78`, `1.2M`, `1.2 million`,
+`12 lakh`, `1.5 crore`, `350K`, `2 billion`); `top_n` when every expected name appears;
+`mentions` when every term (or one of its alternatives) appears. Matching is case-insensitive.
+`cited` is true when any `cite` name appears in the answer or the recorded tool calls.
+
+## Comparing releases
+
+```bash
+python scripts/release_check/compare.py results/<old>.json results/<new>.json
+```
+
+Prints a per-question table and exits 1 when any question went correct to incorrect (a question
+missing from the new file counts as a regression).
+
+## Creating the first baseline
+
+No baseline is committed. The owner creates it once on a release candidate: build both sites,
+run the two commands above with the chosen model, review the answers by hand (a wrong `correct`
+verdict from a scoring edge is a fix to `scoring.py`, not to the file), then commit the files under
+`scripts/release_check/results/`. Later releases are compared against the latest committed one.
