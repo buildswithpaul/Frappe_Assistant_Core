@@ -265,6 +265,8 @@ before_migrate = "frappe_assistant_core.utils.migration_hooks.before_migrate"
 after_migrate = [
     "frappe_assistant_core.startup.startup",
     "frappe_assistant_core.utils.migration_hooks.after_migrate",
+    # The widget's route list is cached without expiry; an upgrade can change which apps are supported.
+    "frappe_assistant_core.chat.embed.apps.clear_routes_cache",
 ]
 
 # Fixtures

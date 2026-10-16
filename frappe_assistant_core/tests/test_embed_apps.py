@@ -138,5 +138,10 @@ class TestSupportedApps(BaseAssistantTest):
         settings = frappe.get_single("FAC Chat Settings")
         settings.append("widget_embed_apps", {"app_name": "builder"})
         settings.save(ignore_permissions=True)
-        clear_routes_cache()
+        # The routes cache from before the upgrade still lists /builder; only migrate runs next.
+        frappe.cache().set_value("fac_widget_embed_routes", ["/builder"])
+        self.assertIn(
+            "frappe_assistant_core.chat.embed.apps.clear_routes_cache", frappe.get_hooks("after_migrate")
+        )
+        frappe.get_attr("frappe_assistant_core.chat.embed.apps.clear_routes_cache")()
         self.assertNotIn("/builder", enabled_routes())
