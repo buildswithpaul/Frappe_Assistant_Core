@@ -71,9 +71,11 @@ export const FALLBACK_COUNTRIES = [
 const GSTIN_SHAPE = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][A-Z0-9]Z[A-Z0-9]$/;
 // Six digits, no leading zero (India Compliance's PINCODE_FORMAT).
 const PINCODE_SHAPE = /^[1-9][0-9]{5}$/;
-// Deliberately permissive: 8-15 digits covers E.164 and every country we sell
-// in. A leading + is optional on input and normalised on save.
-const PHONE_SHAPE = /^\+?[0-9][0-9\s\-().]{7,20}$/;
+// E.164 after `normalisePhone`: a + then 8-15 digits. The server checks that
+// the number actually exists.
+const E164_SHAPE = /^\+[1-9][0-9]{7,14}$/;
+// Ten national digits, optionally after 0 or 91.
+const INDIAN_NUMBER = /^(?:91|0)?([1-9][0-9]{9})$/;
 const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const blank = (value) => !String(value ?? "").trim();
@@ -100,11 +102,14 @@ export function validateBillingForm(form = {}) {
 		errors.billing_email = "Enter a valid billing email address.";
 	}
 
-	if (blank(form.billing_phone)) {
+	const phone = normalisePhone(form.billing_phone, form.billing_country);
+	if (!phone) {
 		errors.billing_phone = "Enter a phone number, including the country code.";
-	} else if (!PHONE_SHAPE.test(String(form.billing_phone).trim())) {
+	} else if (!phone.startsWith("+")) {
+		errors.billing_phone = "Add your country code, starting with + (e.g. +1 415 555 2671).";
+	} else if (!E164_SHAPE.test(phone)) {
 		errors.billing_phone =
-			"Enter a valid phone number with country code, e.g. +91 99 0000 0000.";
+			"Enter a valid phone number with country code, e.g. +91 98765 43210.";
 	}
 
 	if (blank(form.billing_country)) {
@@ -149,9 +154,16 @@ export function validateBillingForm(form = {}) {
 	return errors;
 }
 
-/** Strip punctuation, keep a leading +, so the gateway receives E.164. */
-export function normalisePhone(value) {
-	const digits = String(value ?? "").trim().replace(/[^\d+]/g, "");
+/**
+ * Strip punctuation so the gateway receives E.164. An Indian number typed
+ * without its country code gains +91; anywhere else the customer types their
+ * own, because a guessed `+` is how `9876543210` became `+9876543210`.
+ */
+export function normalisePhone(value, country) {
+	const typed = String(value ?? "").trim();
+	const digits = typed.replace(/\D/g, "");
 	if (!digits) return "";
-	return digits.startsWith("+") ? digits : `+${digits}`;
+	if (typed.startsWith("+")) return `+${digits}`;
+	const national = country === "IN" && INDIAN_NUMBER.exec(digits)?.[1];
+	return national ? `+91${national}` : digits;
 }

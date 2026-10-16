@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { INDIAN_STATES, validateBillingForm } from "./billingValidation";
+import { INDIAN_STATES, normalisePhone, validateBillingForm } from "./billingValidation";
 
 // Mirrors what the server enforces (assistant_runtime_payments
 // api/billing_details._validate_billing_input). This runs first only so the
@@ -89,5 +89,45 @@ describe("validateBillingForm", () => {
 		expect(
 			validateBillingForm(valid({ billing_state: "Lakshadweep" }))
 		).toHaveProperty("billing_state");
+	});
+});
+
+// A bare `+` used to go in front of whatever was typed, so `9876543210` was
+// saved as `+9876543210` — country code 98 — and Razorpay refused it at
+// checkout with nothing on screen to say why.
+describe("normalisePhone", () => {
+	it.each([
+		["98765 43210", "+919876543210"],
+		["098765-43210", "+919876543210"],
+		["91 98765 43210", "+919876543210"],
+		["+91 (98765) 43210", "+919876543210"],
+	])("reads %s in India as %s", (typed, stored) => {
+		expect(normalisePhone(typed, "IN")).toBe(stored);
+	});
+
+	it("keeps a number typed with its own country code", () => {
+		expect(normalisePhone("+1 415-555-2671", "IN")).toBe("+14155552671");
+	});
+
+	it("never invents a country code outside India", () => {
+		expect(normalisePhone("415 555 2671", "US")).toBe("4155552671");
+	});
+});
+
+describe("validateBillingForm phone", () => {
+	it("asks for the country code when a number has none", () => {
+		const errors = validateBillingForm(
+			valid({ billing_country: "US", billing_state: "", billing_phone: "415 555 2671" })
+		);
+		expect(errors.billing_phone).toMatch(/country code/);
+	});
+
+	it("accepts an Indian mobile typed without +91", () => {
+		expect(validateBillingForm(valid({ billing_phone: "98765 43210" }))).toEqual({});
+	});
+
+	it("rejects a number too short to be real", () => {
+		expect(validateBillingForm(valid({ billing_phone: "+91 12345" })))
+			.toHaveProperty("billing_phone");
 	});
 });
