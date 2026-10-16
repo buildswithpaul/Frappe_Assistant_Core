@@ -31,16 +31,18 @@ record: it would not appear on the record's Emails tab.
 
 ## After a call: notes, tasks, call logs
 
-Create one record per thing asked, always linked with `reference_doctype` (`CRM Lead`/`CRM Deal`) and
-`reference_docname` (the record name), using `create_document`:
+Use `add_crm_activity` — one call per thing the user asked for:
 
-| Asked | DocType | Fields |
-|---|---|---|
-| A note | `FCRM Note` | `title`, `content` |
-| A follow-up / to-do | `CRM Task` | `title`, `description`, `due_date` (Datetime), `priority` Low/Medium/High, `status` Todo, `assigned_to` (the user; CRM creates the assignment) |
-| A call that happened | `CRM Call Log` | `type` Outgoing/Incoming, `status` Completed, `from`, `to` (phone numbers; use the record's `mobile_no`), `duration` (seconds), `telephony_medium` "Manual" |
+- `kind: "note"` with `title` and `content`.
+- `kind: "task"` with `title`, `content` (description), `due_date` (YYYY-MM-DD HH:MM:SS), `priority`
+  Low/Medium/High. It is assigned to the user unless `assigned_to` names someone else.
+- `kind: "call"` with `direction` Outgoing/Incoming, `duration_seconds`, and `content` for what was
+  discussed (saved as the call's note). If it says a phone number is missing, ask the user for it and pass
+  `our_phone` / `their_phone`.
 
-A note is an `FCRM Note`, not text inside a task. Report exactly the records the tools created.
+It links each one to the record so it shows on the Notes, Tasks or Calls tab. Never create these with
+`create_document`, and never make a Desk `ToDo` for a CRM follow-up. A note is a note, not text inside a
+task. Report exactly what the tool created.
 
 ## Links
 
@@ -50,8 +52,12 @@ Link records to the CRM app: `/crm/leads/<name>`, `/crm/deals/<name>`, `/crm/con
 ## Without the CRM tools
 
 Outside FAC Chat (another MCP client), or with the FACO plugin off, `get_crm_activity`,
-`send_crm_email` and `convert_crm_lead` do not exist:
+`send_crm_email`, `convert_crm_lead` and `add_crm_activity` do not exist:
 
+- Create notes, tasks and call logs with `create_document` on `FCRM Note` (`title`, `content`), `CRM Task`
+  (`title`, `description`, `due_date`, `priority`, `status` Todo, `assigned_to`) or `CRM Call Log` (`type`,
+  `status` Completed, `from`, `to`, `duration` seconds, `telephony_medium` Manual), always with
+  `reference_doctype` and `reference_docname`.
 - Read the timeline with `list_documents` on `FCRM Note`, `CRM Task` and `CRM Call Log` filtered by
   `reference_docname`, and on `Communication` filtered by `reference_name`.
 - Say plainly that sending CRM email and converting a lead are not available here, and point the user to

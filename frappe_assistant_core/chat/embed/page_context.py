@@ -71,7 +71,8 @@ def how_to_read(doctype: str, name: str) -> str:
         noun, route = CRM_RECORDS[doctype]
         return (
             f'read its history with get_crm_activity (doctype "{doctype}", name "{name}"). "This {noun}" '
-            f"means this record, never an ERPNext Lead or Contact; link it as /crm/{route}/{name}"
+            f"means this record, never an ERPNext Lead or Contact; link it as /crm/{route}/{name}. Before "
+            "emailing it, converting it or adding notes, tasks or calls, load the crm-follow-up skill"
         )
     return f'read it with get_document (doctype "{doctype}", name "{name}")'
 
