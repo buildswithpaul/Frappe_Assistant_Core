@@ -22,16 +22,23 @@ STOPWORDS = frozenset(
     "a an and are by do does doing for from how in is it me my of on our show the to us was we what "
     "when where which who with".split()
 )
-_ES_PLURAL_STEMS = ("s", "x", "ch", "sh")
+# "es" is part of the plural only after these; elsewhere (purchases, expenses) only the "s" goes.
+_ES_PLURAL_STEMS = ("x", "ch", "sh", "ss")
+# Singular endings whose "s" belongs to the word: status, analysis, address.
+_KEEP_S_ENDINGS = ("ss", "us", "is")
+# Plurals that no suffix rule maps back to a singular that also ends in s.
+_IRREGULAR_PLURALS = {"statuses": "status", "analyses": "analysis"}
 
 
 def singular(word: str) -> str:
-    """Strip a plural ending: companies -> company, taxes -> tax, sales -> sale, address stays."""
+    """Strip a plural ending so both sides of a match agree: purchases/purchase, companies/company."""
+    if word in _IRREGULAR_PLURALS:
+        return _IRREGULAR_PLURALS[word]
     if len(word) > 4 and word.endswith("ies"):
         return word[:-3] + "y"
     if len(word) > 4 and word.endswith("es") and word[:-2].endswith(_ES_PLURAL_STEMS):
         return word[:-2]
-    if len(word) > 3 and word.endswith("s") and not word.endswith("ss"):
+    if len(word) > 3 and word.endswith("s") and not word.endswith(_KEEP_S_ENDINGS):
         return word[:-1]
     return word
 

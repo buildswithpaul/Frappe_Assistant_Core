@@ -22,20 +22,31 @@ from frappe_assistant_core.utils.search_tokens import singular, tokens
 
 
 class TestSearchTokens(unittest.TestCase):
-    def test_plural_forms_meet_their_singular(self):
+    def test_plural_and_singular_normalise_to_the_same_word(self):
         for plural, word in (
-            ("sales", "sale"),
+            ("purchases", "purchase"),
+            ("warehouses", "warehouse"),
+            ("expenses", "expense"),
+            ("analyses", "analysis"),
+            ("statuses", "status"),
+            ("cases", "case"),
+            ("addresses", "address"),
+            ("taxes", "tax"),
+            ("batches", "batch"),
+            ("classes", "class"),
             ("deliveries", "delivery"),
             ("companies", "company"),
             ("entries", "entry"),
             ("currencies", "currency"),
-            ("addresses", "address"),
-            ("taxes", "tax"),
-            ("batches", "batch"),
+            ("sales", "sale"),
             ("invoices", "invoice"),
         ):
             with self.subTest(plural=plural):
                 self.assertEqual(singular(plural), singular(word))
+
+    def test_a_plural_meets_the_name_it_was_asked_about(self):
+        self.assertTrue(tokens("purchases") & tokens("Purchase Register"))
+        self.assertTrue(tokens("warehouses") & tokens("Warehouse wise Stock Balance"))
 
     def test_words_that_only_end_in_s_are_left_alone(self):
         self.assertEqual(singular("address"), "address")
