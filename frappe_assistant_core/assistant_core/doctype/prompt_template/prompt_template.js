@@ -90,6 +90,10 @@ frappe.ui.form.on('Prompt Template', {
             callback: function(r) {
                 if (r.message && r.message.length > 0) {
                     let html = '<div class="version-history" style="max-height: 400px; overflow-y: auto;">';
+                    // Frappe 16 removed Font Awesome; Frappe 15 has no Lucide sprite but keeps it.
+                    const restore_icon = parseInt(frappe.boot.versions.frappe, 10) >= 16
+                        ? frappe.utils.icon('undo-2', 'sm')
+                        : '<i class="fa fa-undo"></i>';
 
                     r.message.forEach((v, idx) => {
                         let changes_html = '';
@@ -113,7 +117,7 @@ frappe.ui.form.on('Prompt Template', {
                                 </div>
                                 <button class="btn btn-xs btn-default mt-2"
                                         onclick="frappe_assistant_core_restore_version('${frm.doc.name}', '${v.version_id}')">
-                                    <i class="fa fa-undo"></i> Restore
+                                    ${restore_icon} Restore
                                 </button>
                             </div>
                         `;
