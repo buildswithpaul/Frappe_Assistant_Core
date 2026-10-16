@@ -37,6 +37,12 @@ describe("EmailPreview", () => {
 		expect(mountPreview().find(".email-sender").text()).toBe("Sends from support@acme.com");
 	});
 
+	it("warns when the email carries content the preview does not show", () => {
+		const wrapper = mountPreview({ body: '<p>Hi</p><img src="https://t.example/p.gif">' });
+		expect(wrapper.find(".email-hidden").text()).toBe("1 image or other element is not shown here but will be sent.");
+		expect(mountPreview().find(".email-hidden").exists()).toBe(false);
+	});
+
 	it("says when Helpdesk will only record the reply", () => {
 		const wrapper = mountPreview({ preview: { will_email: false, sender: null } });
 		expect(wrapper.find(".email-sender").text()).toBe("Recorded on the ticket; Helpdesk won't email it.");

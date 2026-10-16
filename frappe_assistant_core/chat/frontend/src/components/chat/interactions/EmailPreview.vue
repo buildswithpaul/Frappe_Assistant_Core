@@ -7,7 +7,8 @@
 			</template>
 		</div>
 		<!-- eslint-disable-next-line vue/no-v-html -- sanitised by renderMessageBody -->
-		<div class="email-body" v-html="html"></div>
+		<div class="email-body" v-html="rendered.html"></div>
+		<div v-if="hiddenNote" class="email-hidden">{{ hiddenNote }}</div>
 		<div v-if="senderLine" class="email-sender">{{ senderLine }}</div>
 	</div>
 </template>
@@ -35,7 +36,15 @@ const rows = computed(() =>
 	].filter((row) => row.value),
 );
 
-const html = computed(() => renderMessageBody(props.body));
+const rendered = computed(() => renderMessageBody(props.body));
+
+const hiddenNote = computed(() => {
+	const count = rendered.value.hiddenCount;
+	if (!count) return "";
+	return count === 1
+		? __("1 image or other element is not shown here but will be sent.")
+		: __("{0} images or other elements are not shown here but will be sent.", [count]);
+});
 
 const senderLine = computed(() => {
 	if (!props.preview) return "";
@@ -80,6 +89,13 @@ const senderLine = computed(() => {
 
 .email-body :deep(p:last-child) {
 	margin-bottom: 0;
+}
+
+.email-hidden {
+	padding: 8px 14px;
+	font-size: 12px;
+	color: var(--ql-warning);
+	border-bottom: 1px solid var(--ql-border);
 }
 
 .email-sender {

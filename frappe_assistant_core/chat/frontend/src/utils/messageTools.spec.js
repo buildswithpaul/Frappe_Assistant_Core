@@ -35,17 +35,29 @@ describe("MESSAGE_TOOLS.read", () => {
 
 describe("renderMessageBody", () => {
 	it("renders plain text with line breaks", () => {
-		expect(renderMessageBody("a\nb")).toContain("a<br>b");
+		expect(renderMessageBody("a\nb").html).toContain("a<br>b");
 	});
 
 	it("escapes plain text instead of treating it as markup", () => {
-		expect(renderMessageBody("1 < 2 & 3\nok")).toContain("1 &lt; 2 &amp; 3<br>ok");
+		expect(renderMessageBody("1 < 2 & 3\nok").html).toContain("1 &lt; 2 &amp; 3<br>ok");
 	});
 
 	it("strips scripts and images", () => {
-		const html = renderMessageBody('<p>x</p><script>alert(1)</script><img src=x onerror="y()">');
+		const { html } = renderMessageBody('<p>x</p><script>alert(1)</script><img src=x onerror="y()">');
 		expect(html).toContain("<p>x</p>");
 		expect(html).not.toContain("script");
 		expect(html).not.toContain("img");
+	});
+
+	it("counts the elements it left out, which the email still carries", () => {
+		const { hiddenCount } = renderMessageBody('<p>x</p><img src="https://t.example/p.gif"><script>1</script>');
+		expect(hiddenCount).toBe(2);
+		expect(renderMessageBody("<p>plain</p>").hiddenCount).toBe(0);
+	});
+
+	it("shows text the email would hide with a style", () => {
+		const { html } = renderMessageBody('<p>ok</p><div style="display:none">secret instruction</div>');
+		expect(html).toContain("secret instruction");
+		expect(html).not.toContain("display:none");
 	});
 });

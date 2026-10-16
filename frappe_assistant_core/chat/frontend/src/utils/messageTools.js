@@ -39,11 +39,15 @@ const escapeText = (text) =>
 	text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br>");
 
 /**
- * Model-written body → safe HTML. Plain text keeps its line breaks; images are dropped so an
- * approval card never fetches a remote URL the model chose.
+ * Model-written body → `{ html, hiddenCount }` for the approval card. Plain text keeps its line
+ * breaks. Images are dropped so the card never fetches a URL the model chose, and `style`
+ * attributes are dropped so text the email would hide still shows here. The email itself is sent
+ * unchanged, so `hiddenCount` (elements left out) lets the card say something is not shown.
  */
 export function renderMessageBody(body) {
 	const text = String(body || "");
-	const html = /<[a-z][\s\S]*>/i.test(text) ? text : escapeText(text);
-	return DOMPurify.sanitize(html, { FORBID_TAGS: ["img", "style"] });
+	const source = /<[a-z][\s\S]*>/i.test(text) ? text : escapeText(text);
+	const html = DOMPurify.sanitize(source, { FORBID_TAGS: ["img", "style"], FORBID_ATTR: ["style"] });
+	const hiddenCount = DOMPurify.removed.filter((entry) => entry.element).length;
+	return { html, hiddenCount };
 }
