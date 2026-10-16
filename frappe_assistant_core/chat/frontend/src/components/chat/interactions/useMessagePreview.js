@@ -1,5 +1,6 @@
 import { computed, ref } from "vue";
 import { api } from "@/api/client";
+import { __ } from "@/utils/i18n";
 import { MESSAGE_TOOLS, isMessageTool } from "@/utils/messageTools";
 
 /**
@@ -25,7 +26,12 @@ export function useMessagePreview(getBlock) {
 		};
 	});
 
-	const blockedReason = computed(() => (preview.value?.can_send === false ? preview.value.reason || "" : null));
+	const blockedReason = computed(() => {
+		if (preview.value?.can_send === false) return preview.value.reason || "";
+		// Approving an email with no recipient would only fail after the click.
+		if (preview.value && fields.value && !fields.value.to.length) return __("This email has no recipient.");
+		return null;
+	});
 
 	async function load() {
 		if (!entry.value) return;
