@@ -19,8 +19,9 @@ from typing import Any, Dict, List, Optional
 import frappe
 from frappe import _
 
+from frappe_assistant_core.utils.search_tokens import tokens
+
 from .child_tables import multiselect_link_field
-from .report_search import _tokens
 
 DEFAULT_TOPIC_LIMIT = 8
 MAX_TOPIC_LIMIT = 25
@@ -210,8 +211,8 @@ class MetadataTools:
         )
 
         def rank(row) -> tuple:
-            name_hits = len(topic_tokens & _tokens(row.name))
-            module_hits = len(topic_tokens & _tokens(row.module))
+            name_hits = len(topic_tokens & tokens(row.name))
+            module_hits = len(topic_tokens & tokens(row.module))
             return (-(2 * name_hits + module_hits), not row.custom, row.name)
 
         return sorted(rows, key=rank)
@@ -259,7 +260,7 @@ class MetadataTools:
 
         doctypes = []
         # Permission and data are checked only for the matches that can still fit in the answer.
-        for row in MetadataTools._topic_candidates(_tokens(topic)):
+        for row in MetadataTools._topic_candidates(tokens(topic)):
             if len(doctypes) >= limit:
                 break
             if role == "Assistant User" and ADMIN_ONLY_FIELDS.get(row.name) == "*":

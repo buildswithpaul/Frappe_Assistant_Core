@@ -27,15 +27,12 @@ import frappe
 from frappe import _
 
 from frappe_assistant_core.plugins.core.tools.report_access import can_run_report, report_origin
+from frappe_assistant_core.utils.search_tokens import tokens
 
 DEFAULT_LIMIT = 10
 MAX_LIMIT = 25
 CUSTOM_BOOST = 1
 PURPOSES_FILE = Path(__file__).resolve().parents[3] / "data" / "standard_report_purposes.json"
-STOPWORDS = frozenset(
-    "a an and are by do does doing for from how in is it me my of on our show the to us was we what "
-    "when where which who with".split()
-)
 
 
 @lru_cache(maxsize=1)
@@ -48,17 +45,11 @@ def standard_report_purpose(report_name: str) -> Optional[str]:
     return _standard_purposes().get(report_name)
 
 
-def _tokens(text: str) -> set:
-    """Lower-case words without stopwords; a trailing "s" is dropped so sale matches sales."""
-    words = re.findall(r"[a-z0-9]+", (text or "").lower())
-    return {w[:-1] if len(w) > 3 and w.endswith("s") else w for w in words if w not in STOPWORDS}
-
-
 def _score(query_tokens: set, report: Dict[str, Any], purpose: Optional[str]) -> int:
     """A word in the report's name counts double: the name is what the report is about."""
-    name_hits = query_tokens & _tokens(report.name)
+    name_hits = query_tokens & tokens(report.name)
     context = " ".join(part for part in (report.module, report.ref_doctype, purpose) if part)
-    other_hits = query_tokens & _tokens(context)
+    other_hits = query_tokens & tokens(context)
     return 2 * len(name_hits) + len(other_hits)
 
 
@@ -91,7 +82,7 @@ def _candidate_reports(module: Optional[str]) -> List[Dict[str, Any]]:
 
 def search_reports(query: str, module: Optional[str] = None, limit: int = DEFAULT_LIMIT) -> Dict[str, Any]:
     """Reports the user can run, best match for ``query`` first; custom beats standard on a tie."""
-    query_tokens = _tokens(query)
+    query_tokens = tokens(query)
     ranked = []
     for report in _candidate_reports(module):
         purpose = standard_report_purpose(report.name)

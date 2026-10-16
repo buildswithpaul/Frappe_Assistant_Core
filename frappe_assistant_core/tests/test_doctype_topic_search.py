@@ -16,6 +16,7 @@
 
 """Finding where a topic's data lives: get_doctype_info(topic=...)."""
 
+import unittest
 from contextlib import contextmanager
 from unittest.mock import patch
 
@@ -31,43 +32,72 @@ BOOKING = "FAC Topic Booking"
 BOOKING_LINE = "FAC Topic Booking Line"
 BOOKING_SETTINGS = "FAC Topic Booking Settings"
 TODO_CUSTOM_FIELD = "fac_topic_probe"
+FIXTURE_DOCTYPES = (BOOKING_LINE, BOOKING_SETTINGS, BOOKING)
+HAS_ERPNEXT = "erpnext" in frappe.get_installed_apps()
 
 
 @contextmanager
-def _ddl_allowed():
-    """Let a schema change commit for real, then flush what follows it.
+def _committing_ddl():
+    """Run schema changes that commit for real, and commit nothing else.
 
-    Creating a DocType or Custom Field issues DDL, which MariaDB commits implicitly; Frappe refuses
-    that inside a test transaction. BaseAssistantTest also turns commit() into a no-op, so rows the
-    DDL committed would survive a plain delete that is rolled back with the class transaction.
-    Database.commit is the real commit that the subclass attribute shadows.
+    Frappe refuses DDL inside a test transaction, and BaseAssistantTest turns commit() into a no-op.
+    Pending writes are rolled back first, so the only rows that reach the database are the ones the
+    block itself writes. Database.commit is the real commit that the subclass attribute shadows.
     """
-    with patch.object(Database, "check_implicit_commit"):
-        yield
-    Database.commit(frappe.db)
+    frappe.db.rollback()
+    try:
+        with patch.object(Database, "check_implicit_commit"):
+            yield
+    finally:
+        Database.commit(frappe.db)
 
 
-def _delete_persistently(doctype: str, name: str) -> None:
-    with _ddl_allowed():
-        frappe.delete_doc(doctype, name, force=True, ignore_permissions=True)
-
-
-def _drop_todo_probe_column() -> None:
-    """Deleting a Custom Field leaves its column behind, so drop it to leave the table as found."""
-    with _ddl_allowed():
+def _remove_fixtures() -> None:
+    """Remove every fixture this module creates; safe when none, some or all exist."""
+    # nosemgrep: frappe-setuser — fixture teardown runs as Administrator whatever the test left
+    frappe.set_user("Administrator")
+    with _committing_ddl():
+        for doctype in FIXTURE_DOCTYPES:
+            if frappe.db.exists("DocType", doctype):
+                frappe.delete_doc("DocType", doctype, force=True, ignore_permissions=True)
+            # A crash between CREATE TABLE and the DocType commit leaves a table with no row.
+            frappe.db.sql_ddl(f"drop table if exists `tab{doctype}`")
+        todo_field = f"ToDo-{TODO_CUSTOM_FIELD}"
+        if frappe.db.exists("Custom Field", todo_field):
+            frappe.delete_doc("Custom Field", todo_field, force=True, ignore_permissions=True)
+        # Deleting a Custom Field leaves its column behind.
         frappe.db.sql_ddl(f"alter table `tabToDo` drop column if exists `{TODO_CUSTOM_FIELD}`")
+    frappe.clear_cache(doctype="ToDo")
 
 
 def _doctype_row(topic: str, doctype: str):
-    result = MetadataTools.find_doctypes_for_topic(topic)
+    result = MetadataTools.find_doctypes_for_topic(topic, limit=25)
     return next((row for row in result["doctypes"] if row["doctype"] == doctype), None)
 
 
-class TestDoctypeTopicSearch(BaseAssistantTest):
-    def _make_doctype(self, name: str, fields: list, **overrides) -> str:
-        # Production reaches this the way a site admin does: a custom DocType built in the UI
-        # (custom=1, module "Custom"), readable by System Manager only.
-        with _ddl_allowed():
+def _create_fixtures() -> None:
+    """A custom Booking DocType with a child table and a Single, plus a Custom Field on ToDo."""
+    # Production reaches this the way a site admin does: custom DocTypes built in the UI
+    # (custom=1, module "Custom"), readable by System Manager only.
+    permissions = [{"role": "System Manager", "read": 1, "write": 1, "create": 1}]
+    note = [{"fieldname": "note", "fieldtype": "Data", "label": "Note"}]
+    booking_fields = [
+        {"fieldname": "booking_date", "fieldtype": "Date", "label": "Booking Date"},
+        {"fieldname": "total_amount", "fieldtype": "Currency", "label": "Total Amount"},
+        # System Manager holds no permlevel-1 permission row, so this field is out of reach.
+        {"fieldname": "margin", "fieldtype": "Currency", "label": "Margin", "permlevel": 1},
+        {"fieldname": "iban", "fieldtype": "Currency", "label": "IBAN"},
+    ]
+    if HAS_ERPNEXT:
+        booking_fields.append(
+            {"fieldname": "client", "fieldtype": "Link", "options": "Customer", "label": "Client"}
+        )
+    with _committing_ddl():
+        for name, fields, extra in (
+            (BOOKING, booking_fields, {}),
+            (BOOKING_LINE, note, {"istable": 1}),
+            (BOOKING_SETTINGS, note, {"issingle": 1}),
+        ):
             frappe.get_doc(
                 {
                     "doctype": "DocType",
@@ -75,24 +105,23 @@ class TestDoctypeTopicSearch(BaseAssistantTest):
                     "module": "Custom",
                     "custom": 1,
                     "fields": fields,
-                    "permissions": [{"role": "System Manager", "read": 1, "write": 1, "create": 1}],
-                    **overrides,
+                    "permissions": permissions,
+                    **extra,
                 }
             ).insert(ignore_permissions=True)
-        self.addCleanup(_delete_persistently, "DocType", name)
-        return name
+        create_custom_field("ToDo", {"fieldname": TODO_CUSTOM_FIELD, "fieldtype": "Data", "label": "Probe"})
+    frappe.clear_cache(doctype="ToDo")
 
-    def _make_booking(self, extra_fields: list = ()) -> str:
-        fields = [
-            {"fieldname": "booking_date", "fieldtype": "Date", "label": "Booking Date"},
-            {"fieldname": "total_amount", "fieldtype": "Currency", "label": "Total Amount"},
-            *extra_fields,
-        ]
-        if "erpnext" in frappe.get_installed_apps():
-            fields.append(
-                {"fieldname": "client", "fieldtype": "Link", "options": "Customer", "label": "Client"}
-            )
-        return self._make_doctype(BOOKING, fields)
+
+class TestDoctypeTopicSearch(BaseAssistantTest):
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        # Registered before anything is created, so a failure midway still cleans up.
+        cls.addClassCleanup(_remove_fixtures)
+        # A crashed earlier run may have left fixtures behind.
+        _remove_fixtures()
+        _create_fixtures()
 
     def _add_booking_row(self) -> None:
         doc = frappe.get_doc({"doctype": BOOKING, "total_amount": 10}).insert(ignore_permissions=True)
@@ -106,8 +135,6 @@ class TestDoctypeTopicSearch(BaseAssistantTest):
         self.addCleanup(frappe.set_user, "Administrator")
 
     def test_topic_finds_custom_doctype(self):
-        self._make_booking()
-
         row = _doctype_row("bookings", BOOKING)
 
         self.assertIsNotNone(row, "plural topic 'bookings' must find the singular Booking DocType")
@@ -119,7 +146,6 @@ class TestDoctypeTopicSearch(BaseAssistantTest):
             self.assertIn("client", row["party_fields"])
 
     def test_has_data_is_boolean_never_a_count(self):
-        self._make_booking()
         self.assertIs(_doctype_row("booking", BOOKING)["has_data"], False)
 
         self._add_booking_row()
@@ -128,7 +154,6 @@ class TestDoctypeTopicSearch(BaseAssistantTest):
         self.assertIs(_doctype_row("booking", BOOKING)["has_data"], True)
 
     def test_doctypes_user_cannot_read_are_excluded(self):
-        self._make_booking()
         self.assertIsNotNone(_doctype_row("booking", BOOKING))
 
         self._act_as_user_without_roles()
@@ -136,14 +161,6 @@ class TestDoctypeTopicSearch(BaseAssistantTest):
         self.assertIsNone(_doctype_row("booking", BOOKING))
 
     def test_child_tables_and_singles_are_excluded(self):
-        self._make_booking()
-        self._make_doctype(
-            BOOKING_LINE, [{"fieldname": "note", "fieldtype": "Data", "label": "Note"}], istable=1
-        )
-        self._make_doctype(
-            BOOKING_SETTINGS, [{"fieldname": "note", "fieldtype": "Data", "label": "Note"}], issingle=1
-        )
-
         names = {row["doctype"] for row in MetadataTools.find_doctypes_for_topic("booking")["doctypes"]}
 
         self.assertIn(BOOKING, names)
@@ -151,14 +168,6 @@ class TestDoctypeTopicSearch(BaseAssistantTest):
         self.assertNotIn(BOOKING_SETTINGS, names)
 
     def test_custom_fields_on_standard_doctype_are_listed(self):
-        with _ddl_allowed():
-            create_custom_field(
-                "ToDo", {"fieldname": TODO_CUSTOM_FIELD, "fieldtype": "Data", "label": "Probe"}
-            )
-        self.addCleanup(frappe.clear_cache, doctype="ToDo")
-        self.addCleanup(_drop_todo_probe_column)
-        self.addCleanup(_delete_persistently, "Custom Field", f"ToDo-{TODO_CUSTOM_FIELD}")
-
         row = _doctype_row("todo", "ToDo")
 
         self.assertIsNotNone(row)
@@ -166,22 +175,27 @@ class TestDoctypeTopicSearch(BaseAssistantTest):
         self.assertIn(TODO_CUSTOM_FIELD, row["custom_fields"])
 
     def test_fields_above_the_users_permlevel_are_not_disclosed(self):
-        self._make_booking(
-            [{"fieldname": "margin", "fieldtype": "Currency", "label": "Margin", "permlevel": 1}]
-        )
-
         row = _doctype_row("booking", BOOKING)
 
-        # System Manager holds no permlevel-1 permission row, so the field is out of reach.
         self.assertIn("total_amount", row["amount_fields"])
         self.assertNotIn("margin", row["amount_fields"])
 
     def test_sensitive_fields_are_not_disclosed(self):
-        self._make_booking([{"fieldname": "iban", "fieldtype": "Currency", "label": "IBAN"}])
-
         row = _doctype_row("booking", BOOKING)
 
+        self.assertIn("total_amount", row["amount_fields"])
         self.assertNotIn("iban", row["amount_fields"])
+
+    @unittest.skipUnless(HAS_ERPNEXT, "ERPNext not installed")
+    def test_ies_plural_finds_delivery_note(self):
+        self.assertIsNotNone(_doctype_row("deliveries", "Delivery Note"))
+
+    @unittest.skipUnless(HAS_ERPNEXT, "ERPNext not installed")
+    def test_entries_finds_journal_entry(self):
+        self.assertIsNotNone(_doctype_row("entries", "Journal Entry"))
+
+    def test_es_plural_finds_address(self):
+        self.assertIsNotNone(_doctype_row("addresses", "Address"))
 
     def test_limit_caps_the_number_of_doctypes(self):
         # Frappe ships many "... Log" DocTypes, so the unbounded search has more than two to return.
@@ -197,8 +211,6 @@ class TestDoctypeTopicSearch(BaseAssistantTest):
         self.assertEqual(result, {"success": True, "doctypes": []})
 
     def test_tool_routes_topic_to_the_search(self):
-        self._make_booking()
-
         result = GetDoctypeInfo().execute({"topic": "bookings"})
 
         self.assertTrue(result["success"])
