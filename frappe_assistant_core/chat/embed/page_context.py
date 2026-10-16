@@ -59,10 +59,20 @@ def insights_tools_enabled() -> bool:
     return bool(frappe.db.get_value("FAC Plugin Configuration", "faco", "enabled"))
 
 
+# While the faco plugin is on, a CRM record's notes, calls and emails come from its timeline tool.
+CRM_RECORDS = {"CRM Lead": ("lead", "leads"), "CRM Deal": ("deal", "deals")}
+
+
 def how_to_read(doctype: str, name: str) -> str:
     tool = INSIGHTS_TOOLS.get(doctype)
     if tool and insights_tools_enabled():
         return f'read it with {tool} (name "{name}")'
+    if doctype in CRM_RECORDS and insights_tools_enabled():
+        noun, route = CRM_RECORDS[doctype]
+        return (
+            f'read its history with get_crm_activity (doctype "{doctype}", name "{name}"). "This {noun}" '
+            f"means this record, never an ERPNext Lead or Contact; link it as /crm/{route}/{name}"
+        )
     return f'read it with get_document (doctype "{doctype}", name "{name}")'
 
 

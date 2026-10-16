@@ -189,3 +189,18 @@ class TestEmbedPageContext(BaseAssistantTest):
                 page_context.how_to_read("HD Ticket", "1"),
                 'read it with get_document (doctype "HD Ticket", name "1")',
             )
+
+    def test_crm_records_point_at_their_history_while_faco_is_on(self):
+        from frappe_assistant_core.chat.embed import page_context
+
+        with patch(f"{PAGE}.insights_tools_enabled", autospec=True, return_value=True):
+            hint = page_context.how_to_read("CRM Lead", "CRM-LEAD-1")
+            self.assertIn('get_crm_activity (doctype "CRM Lead", name "CRM-LEAD-1")', hint)
+            self.assertIn('"This lead" means this record', hint)
+            self.assertIn("/crm/leads/CRM-LEAD-1", hint)
+            self.assertIn("/crm/deals/D1", page_context.how_to_read("CRM Deal", "D1"))
+        with patch(f"{PAGE}.insights_tools_enabled", autospec=True, return_value=False):
+            self.assertEqual(
+                page_context.how_to_read("CRM Lead", "CRM-LEAD-1"),
+                'read it with get_document (doctype "CRM Lead", name "CRM-LEAD-1")',
+            )

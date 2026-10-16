@@ -386,6 +386,17 @@
     "requires_app": "crm"
   },
   {
+    "skill_id": "crm-follow-up",
+    "title": "Following Up on Frappe CRM Leads and Deals",
+    "description": "Briefing, emailing, converting and logging follow-ups on Frappe CRM leads and deals — which tools, which fields, which links",
+    "skill_type": "Workflow",
+    "linked_tool": null,
+    "status": "Published",
+    "visibility": "Public",
+    "content_file": "crm_follow_up.md",
+    "requires_app": "crm"
+  },
+  {
     "skill_id": "frappe-app-pages",
     "title": "Working in Frappe Apps (Helpdesk, CRM, Insights)",
     "description": "What to do when the user is on a Helpdesk, CRM, Insights or other Frappe app page — reading the page line, where each app keeps its data, what does not work outside Desk",
