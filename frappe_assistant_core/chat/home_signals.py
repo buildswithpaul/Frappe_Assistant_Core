@@ -45,6 +45,7 @@ PAYABLES_WINDOW_DAYS = 7
 TOP_CUSTOMERS = 2
 QUOTATION_WINDOW_DAYS = 7
 STALE_LEAD_DAYS = 14
+REORDER_ITEMS_LIMIT = 500
 ERROR_LOG_INTERVAL = 3600
 ERROR_KEY_PREFIX = "fac_home_signals_err:"
 
@@ -478,6 +479,79 @@ def _stale_leads(user: str, company: str | None) -> SignalResult | None:
     )
 
 
+def _low_stock_item_codes() -> list[str]:
+    """Items whose projected quantity is below the reorder level of the same warehouse.
+
+    ``get_list`` cannot compare a Bin column with an Item Reorder column, so this
+    is a ``frappe.qb`` join; the caller applies the permission filter.
+    """
+    bin_ = frappe.qb.DocType("Bin")
+    reorder = frappe.qb.DocType("Item Reorder")
+    query = (
+        frappe.qb.from_(bin_)
+        .join(reorder)
+        .on((reorder.parent == bin_.item_code) & (reorder.warehouse == bin_.warehouse))
+        .where(reorder.parenttype == "Item")
+        .where(bin_.projected_qty < reorder.warehouse_reorder_level)
+        .select(bin_.item_code)
+        .distinct()
+        .orderby(bin_.item_code)
+        .limit(REORDER_ITEMS_LIMIT)
+    )
+    return query.run(pluck="item_code")
+
+
+def _below_reorder(user: str, company: str | None) -> SignalResult | None:
+    codes = _low_stock_item_codes()
+    visible = (
+        frappe.get_list("Item", filters={"name": ["in", codes]}, pluck="name", limit_page_length=0, user=user)
+        if codes
+        else []
+    )
+    count = len(visible)
+    return SignalResult(
+        count=count,
+        title=_("item below its reorder level") if count == 1 else _("items below their reorder level"),
+        detail=_("Stock has fallen under the reorder level of a warehouse"),
+        ask=_("Which items are below their reorder level?"),
+        source=_("Item"),
+    )
+
+
+def _late_purchase_orders(user: str, company: str | None) -> SignalResult | None:
+    count = count_visible(
+        "Purchase Order",
+        _company_scoped(
+            {
+                "docstatus": 1,
+                "schedule_date": ["<", today()],
+                "per_received": ["<", 100],
+                "status": ["not in", ["Closed", "Completed", "On Hold"]],
+            },
+            company,
+        ),
+        user,
+    )
+    return SignalResult(
+        count=count,
+        title=_("purchase order is late") if count == 1 else _("purchase orders are late"),
+        detail=_("Submitted orders past their required date that are not fully received"),
+        ask=_("Which purchase orders are late from suppliers?"),
+        source=_("Purchase Order"),
+    )
+
+
+def _pending_material_requests(user: str, company: str | None) -> SignalResult | None:
+    count = count_visible("Material Request", {"docstatus": 1, "status": "Pending"}, user)
+    return SignalResult(
+        count=count,
+        title=_("material request still pending") if count == 1 else _("material requests still pending"),
+        detail=_("Submitted requests that nobody has ordered or issued yet"),
+        ask=_("Show material requests that are still pending"),
+        source=_("Material Request"),
+    )
+
+
 CATALOGUE: list[Signal] = [
     Signal(
         id="approvals",
@@ -542,5 +616,29 @@ CATALOGUE: list[Signal] = [
         requires_doctypes=(),
         requires_apps=(),
         compute=_stale_leads,
+    ),
+    Signal(
+        id="below_reorder",
+        lenses=("stock",),
+        tone="danger",
+        requires_doctypes=("Item",),
+        requires_apps=(),
+        compute=_below_reorder,
+    ),
+    Signal(
+        id="late_purchase_orders",
+        lenses=("stock",),
+        tone="warning",
+        requires_doctypes=("Purchase Order",),
+        requires_apps=(),
+        compute=_late_purchase_orders,
+    ),
+    Signal(
+        id="pending_material_requests",
+        lenses=("stock",),
+        tone="neutral",
+        requires_doctypes=("Material Request",),
+        requires_apps=(),
+        compute=_pending_material_requests,
     ),
 ]
