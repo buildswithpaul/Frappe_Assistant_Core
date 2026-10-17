@@ -13,6 +13,9 @@ The `get_doctype_info` tool retrieves metadata about a Frappe DocType — its fi
 
 Passing neither returns `{"success": false, "error": ...}`.
 
+The `fields`, `link_fields` and `child_tables` lists leave out fields you are not allowed to
+read, so every field listed can be used in a `list_documents` filter.
+
 ## Response Format
 
 ```json

@@ -34,6 +34,15 @@ To opt out, pass `docstatus` explicitly:
 
 Non-submittable DocTypes (Customer, Item, Supplier, User, ToDo, …) have no `docstatus` semantics and are unaffected.
 
+## Fields You Cannot Read
+
+A field you are not allowed to read cannot be used to narrow or sort a query either. The tool
+refuses a request that names one in `filters`, in `order_by`, or inside an expression or alias in
+`fields` (such as `max(field)` or `field as x`), and says which field. That covers fields above
+your permission level and fields FAC withholds for your role, such as passwords and API keys.
+
+Retry without that field. Do not look for another way to reach its value.
+
 ## Response Format
 
 ```json

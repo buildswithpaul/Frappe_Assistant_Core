@@ -139,19 +139,38 @@ class MetadataTools:
             elif not frappe.has_permission(doctype, "read"):
                 return no_permission
 
-            meta = frappe.get_meta(doctype)
+            from frappe_assistant_core.core.field_access import is_field_readable
+            from frappe_assistant_core.core.security_config import get_user_primary_role
 
-            fields = [MetadataTools._serialize_field(field) for field in meta.fields]
+            meta = frappe.get_meta(doctype)
+            user_role = get_user_primary_role(frappe.session.user)
+            # A child's permlevels are granted through its parents; a field any of them grants is listed.
+            parenttypes = [parent["doctype"] for parent in parent_doctypes] if parent_doctypes else [None]
+
+            def readable(field_meta, field, parents):
+                return any(
+                    is_field_readable(field_meta, field.fieldname, user_role, parenttype=parent)
+                    for parent in parents
+                )
+
+            fields = [
+                MetadataTools._serialize_field(field)
+                for field in meta.fields
+                if readable(meta, field, parenttypes)
+            ]
 
             link_fields = [
                 {"fieldname": field.fieldname, "label": field.label, "options": field.options}
                 for field in meta.get_link_fields()
+                if readable(meta, field, parenttypes)
             ]
 
             # Child tables: include the child DocType's own field metadata so the
             # caller can build nested row objects without a second tool call (#192).
             child_tables = []
             for table_field in meta.get_table_fields():
+                if not readable(meta, table_field, parenttypes):
+                    continue
                 child_doctype = table_field.options
                 child_entry = {
                     "fieldname": table_field.fieldname,
@@ -163,7 +182,11 @@ class MetadataTools:
                 }
                 if child_doctype and frappe.db.exists("DocType", child_doctype):
                     child_meta = frappe.get_meta(child_doctype)
-                    child_entry["fields"] = [MetadataTools._serialize_field(f) for f in child_meta.fields]
+                    child_entry["fields"] = [
+                        MetadataTools._serialize_field(f)
+                        for f in child_meta.fields
+                        if readable(child_meta, f, [doctype])
+                    ]
                     if table_field.fieldtype == "Table MultiSelect":
                         # create/update_document accept bare values for this field and
                         # store them here, so the model knows what a value means.

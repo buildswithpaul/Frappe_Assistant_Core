@@ -52,6 +52,9 @@ def list_documents_harness(submittable=True, rows=None):
     rows = [{"name": "REC-0001", "grand_total": 100}] if rows is None else rows
 
     with ExitStack() as stack:
+        # frappe.get_meta and frappe.get_list are mocked globally here, which the field check
+        # reads; test_query_field_access covers it against real meta.
+        stack.enter_context(patch("frappe_assistant_core.core.field_access.check_query_fields"))
         stack.enter_context(
             patch(
                 "frappe_assistant_core.core.security_config.validate_document_access",

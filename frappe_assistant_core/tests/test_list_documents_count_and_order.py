@@ -39,6 +39,9 @@ def list_harness(submittable=False, rows=None, doctype="Customer"):
     # Warm the cache first, as production does, so the tool reads the real DocType.
     frappe.get_meta(doctype)
     with ExitStack() as stack:
+        # frappe.get_meta and frappe.get_list are mocked globally here, which the field check
+        # reads; test_query_field_access covers it against real meta.
+        stack.enter_context(patch("frappe_assistant_core.core.field_access.check_query_fields"))
         stack.enter_context(
             patch(
                 "frappe_assistant_core.core.security_config.validate_document_access",
@@ -115,6 +118,9 @@ class TestCountQueryNoDict(BaseAssistantTest):
         rows = [{"name": "REC-0001"}]
         frappe.get_meta("Customer")  # warm Meta before the get_list mock, see list_harness
         with ExitStack() as stack:
+            # frappe.get_meta and frappe.get_list are mocked globally here, which the field check
+            # reads; test_query_field_access covers it against real meta.
+            stack.enter_context(patch("frappe_assistant_core.core.field_access.check_query_fields"))
             stack.enter_context(
                 patch(
                     "frappe_assistant_core.core.security_config.validate_document_access",
@@ -161,6 +167,9 @@ class TestCountQueryNoDict(BaseAssistantTest):
         full_page = [{"name": f"REC-{i:04d}"} for i in range(20)]
         frappe.get_meta("Customer")  # warm Meta before the get_list mock, see list_harness
         with ExitStack() as stack:
+            # frappe.get_meta and frappe.get_list are mocked globally here, which the field check
+            # reads; test_query_field_access covers it against real meta.
+            stack.enter_context(patch("frappe_assistant_core.core.field_access.check_query_fields"))
             stack.enter_context(
                 patch(
                     "frappe_assistant_core.core.security_config.validate_document_access",
@@ -202,6 +211,9 @@ class TestCountQueryNoDict(BaseAssistantTest):
         partial_page = [{"name": f"REC-{i:04d}"} for i in range(5)]
         frappe.get_meta("Customer")  # warm Meta before the get_list mock, see list_harness
         with ExitStack() as stack:
+            # frappe.get_meta and frappe.get_list are mocked globally here, which the field check
+            # reads; test_query_field_access covers it against real meta.
+            stack.enter_context(patch("frappe_assistant_core.core.field_access.check_query_fields"))
             stack.enter_context(
                 patch(
                     "frappe_assistant_core.core.security_config.validate_document_access",

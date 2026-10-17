@@ -576,7 +576,22 @@ class DocumentList(BaseTool):
         # draft records never reach a consumer that is summing monetary fields.
         filters, docstatus_defaulted = apply_default_docstatus(doctype, filters)
 
-        if arguments.get("group_by") or arguments.get("aggregate"):
+        from frappe_assistant_core.core.field_access import FieldAccessError, check_query_fields
+
+        grouped = bool(arguments.get("group_by") or arguments.get("aggregate"))
+        try:
+            # A grouped query checks its own group_by, aggregate and order fields; filters apply to both.
+            check_query_fields(
+                doctype,
+                user_role,
+                filters=filters,
+                fields=None if grouped else fields,
+                order_by=None if grouped or order_by == "KEEP_DEFAULT_ORDERING" else order_by,
+            )
+        except FieldAccessError as e:
+            return {"success": False, "error": str(e), "doctype": doctype}
+
+        if grouped:
             return self._execute_grouped(doctype, filters, docstatus_defaulted, user_role, arguments)
 
         try:

@@ -107,6 +107,9 @@ def resolution_harness(existing=(), suggestions=None, has_permission=True, meta=
 def list_documents_harness(rows, meta=None, existing=(), suggestions=None):
     """Run DocumentList.execute() end to end with permissions and queries mocked."""
     with ExitStack() as stack:
+        # frappe.get_meta and frappe.get_list are mocked globally here, which the field check
+        # reads; test_query_field_access covers it against real meta.
+        stack.enter_context(patch("frappe_assistant_core.core.field_access.check_query_fields"))
         stack.enter_context(
             patch(
                 "frappe_assistant_core.core.security_config.validate_document_access",
