@@ -33,7 +33,11 @@ const SIGNALS = Array.from({ length: 4 }, (_, i) => ({
 const AGENTS_SIGNAL = { id: "agents", tone: "danger", source: "Agents", count: 1, title: "failed run", href: "/agents" };
 
 let routeChanged;
+let formRefreshed;
+const settle = () => new Promise((resolve) => setTimeout(resolve, 80)).then(flushPromises);
 function onRoute(route, form = null) {
+	// Desk raises form-refresh through jQuery on the document, once the doc has loaded.
+	window.jQuery = () => ({ on: (_e, fn) => (formRefreshed = fn), off: vi.fn() });
 	window.frappe = {
 		get_route: () => route,
 		router: { on: (_e, fn) => (routeChanged = fn), off: vi.fn() },
@@ -63,6 +67,7 @@ describe("widget home", () => {
 	});
 	afterEach(() => {
 		delete window.frappe;
+		delete window.jQuery;
 		vi.unstubAllGlobals();
 		vi.restoreAllMocks();
 	});
@@ -172,13 +177,21 @@ describe("widget home", () => {
 	describe("Desk navigation", () => {
 		const CUSTOMER_ASKS = [{ name: "c", description: "Is {name} a good {doctype} to chase?", source: "page" }];
 		const customerForm = { doctype: "Customer", doc: { name: "CUST-0001" }, is_new: () => false };
+		// Desk raises the router change before the target form's doc has loaded (it still shows the
+		// previous record, or nothing); form-refresh follows once the doc exists.
+		async function navigateToCustomer() {
+			onRoute(["Form", "Customer", "CUST-0001"], invoiceForm);
+			routeChanged();
+			await settle();
+			onRoute(["Form", "Customer", "CUST-0001"], customerForm);
+			formRefreshed();
+			await settle();
+		}
 
-		it("Sales Invoice to Customer reloads the asks for the new doctype", async () => {
+		it("Sales Invoice to Customer reloads the asks once the customer has loaded", async () => {
 			const w = await mountHome();
 			api.suggestions.get.mockResolvedValue({ suggestions: CUSTOMER_ASKS });
-			onRoute(["Form", "Customer", "CUST-0001"], customerForm);
-			routeChanged();
-			await flushPromises();
+			await navigateToCustomer();
 			expect(api.suggestions.get).toHaveBeenLastCalledWith({ type: "Form", doctype: "Customer" });
 			expect(w.findAll(".pa-chip").map((c) => c.text())).toEqual(["Is CUST-0001 a good Customer to chase?"]);
 		});
@@ -192,8 +205,8 @@ describe("widget home", () => {
 			expect(w.find(".pa-chip").text()).toBe("Summarise this Sales Invoice list");
 			api.suggestions.get.mockResolvedValue({ suggestions: PAGE_ASKS });
 			onRoute(["Form", "Sales Invoice", "SINV-0001"], invoiceForm);
-			routeChanged();
-			await flushPromises();
+			formRefreshed();
+			await settle();
 			expect(w.find(".pa-subject").text()).toBe("Sales Invoice SINV-0001");
 			expect(w.findAll(".pa-chip")).toHaveLength(2);
 		});
@@ -206,12 +219,17 @@ describe("widget home", () => {
 				.mockResolvedValueOnce({ suggestions: CUSTOMER_ASKS });
 			const w = mount(WidgetWelcome);
 			await flushPromises();
-			onRoute(["Form", "Customer", "CUST-0001"], customerForm);
-			routeChanged();
-			await flushPromises();
+			await navigateToCustomer();
 			resolveFirst({ suggestions: PAGE_ASKS });
 			await flushPromises();
 			expect(w.findAll(".pa-chip").map((c) => c.text())).toEqual(["Is CUST-0001 a good Customer to chase?"]);
+		});
+
+		it("a failed fetch leaves no stale asks under the new record's name", async () => {
+			const w = await mountHome();
+			api.suggestions.get.mockRejectedValue(new Error("offline"));
+			await navigateToCustomer();
+			expect(w.find(".pa").exists()).toBe(false);
 		});
 	});
 });

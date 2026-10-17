@@ -58,6 +58,10 @@ export const spaHost = {
 	user() {
 		return user;
 	},
+	/** The embedding page has no Desk forms to wait for, so it never changes context. */
+	onContextChange() {
+		return () => {};
+	},
 	onRouteChange(fn) {
 		listeners.add(fn);
 		if (!restoreHistory) restoreHistory = watchHistory();

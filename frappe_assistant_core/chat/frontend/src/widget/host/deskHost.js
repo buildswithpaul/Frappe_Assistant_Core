@@ -1,5 +1,8 @@
 import { detectContext } from "../desk/pageContext.js";
 
+// One navigation raises router change and form-refresh in quick succession.
+const CONTEXT_DEBOUNCE_MS = 50;
+
 /** Frappe Desk: the widget's original home, reached through Desk's own globals. */
 export const deskHost = {
 	name: "desk",
@@ -19,6 +22,25 @@ export const deskHost = {
 		if (!router) return () => {};
 		router.on("change", fn);
 		return () => router.off && router.off("change", fn);
+	},
+	/**
+	 * Fires once per navigation, after the page can be read. Desk raises the router `change`
+	 * before a form's doc has loaded, so a form's own `form-refresh` is what carries the record.
+	 */
+	onContextChange(fn) {
+		const stopRoute = this.onRouteChange(schedule);
+		const $ = window.jQuery || window.$;
+		if ($) $(document).on("form-refresh", schedule);
+		let timer = null;
+		function schedule() {
+			clearTimeout(timer);
+			timer = setTimeout(fn, CONTEXT_DEBOUNCE_MS);
+		}
+		return () => {
+			clearTimeout(timer);
+			stopRoute();
+			if ($) $(document).off("form-refresh", schedule);
+		};
 	},
 	isHiddenRoute() {
 		const route = window.frappe && window.frappe.get_route ? window.frappe.get_route() : [];

@@ -7,7 +7,10 @@ import { useTemplateStore } from "@/stores/templateStore";
 export const useSuggestionStore = defineStore("suggestions", () => {
 	const allSuggestions = ref([]);
 	const isLoading = ref(false);
+	// The context whose suggestions are in allSuggestions; set only after a successful load.
 	const lastContextKey = ref(null);
+	// The context currently being fetched, so a newer one can supersede it.
+	let inFlightKey = null;
 	const suggestionsDisabled = ref(false);
 
 	const hasSuggestions = computed(() => allSuggestions.value.length > 0);
@@ -16,17 +19,17 @@ export const useSuggestionStore = defineStore("suggestions", () => {
 		const contextKey = JSON.stringify(context);
 		// Avoid duplicate requests: skip the same context while it loads or once it has data.
 		// A different context supersedes the one in flight (Desk navigation).
-		if (isLoading.value && contextKey === lastContextKey.value) return;
+		if (isLoading.value && contextKey === inFlightKey) return;
 		if (!force && contextKey === lastContextKey.value && allSuggestions.value.length > 0) {
 			return;
 		}
 
 		try {
 			isLoading.value = true;
-			lastContextKey.value = contextKey;
+			inFlightKey = contextKey;
 
 			const result = await api.suggestions.get(context);
-			if (contextKey !== lastContextKey.value) return;
+			if (contextKey !== inFlightKey) return;
 
 			// Response is now { suggestions: [...], templates: {...} }
 			// Fall back to flat array for backward compatibility
@@ -41,16 +44,22 @@ export const useSuggestionStore = defineStore("suggestions", () => {
 				allSuggestions.value = result || [];
 			}
 			suggestionsDisabled.value = Boolean(result?.suggestions_disabled);
+			lastContextKey.value = contextKey;
 		} catch (err) {
 			logger.error("Failed to load suggestions:", err);
+			// The previous page's asks must not outlive a failed fetch for this one.
+			if (contextKey === inFlightKey) {
+				allSuggestions.value = allSuggestions.value.filter((s) => s.source !== "page");
+			}
 		} finally {
-			if (contextKey === lastContextKey.value) isLoading.value = false;
+			if (contextKey === inFlightKey) isLoading.value = false;
 		}
 	}
 
 	function clear() {
 		allSuggestions.value = [];
 		lastContextKey.value = null;
+		inFlightKey = null;
 	}
 
 	return {

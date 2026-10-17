@@ -39,7 +39,7 @@
 </template>
 
 <script setup>
-import { computed, ref, onMounted, onUnmounted } from "vue";
+import { computed, ref, onMounted, watch } from "vue";
 import { storeToRefs } from "pinia";
 import { useUserStore } from "@/stores/userStore";
 import { useChatStore } from "@/stores/chatStore";
@@ -55,7 +55,7 @@ import NeedsYou from "@/components/chat/welcome/NeedsYou.vue";
 import ContinueList from "@/components/chat/welcome/ContinueList.vue";
 import HomeStarters from "@/components/chat/welcome/HomeStarters.vue";
 import FirstRunStarters from "@/components/chat/welcome/FirstRunStarters.vue";
-import { getHost } from "../host/index.js";
+import { usePageContext } from "../usePageContext.js";
 
 defineEmits(["suggestion", "open-session"]);
 
@@ -93,7 +93,7 @@ const firstRunTiles = computed(() => {
 });
 
 // The document name stays in this browser: the server only ever sees {type, doctype}.
-const pageContext = ref({});
+const { pageContext } = usePageContext();
 const isForm = computed(() => pageContext.value.type === "Form");
 const filledAsks = computed(() => {
 	// Until the new page's set has arrived, the old page's asks would name the wrong thing.
@@ -114,23 +114,17 @@ function openInChat(href) {
 }
 
 // The endpoint ranks templates by the page's type and doctype; the name never goes to the server.
-function loadPageSuggestions() {
-	const { type, doctype } = pageContext.value;
-	suggestionStore.loadSuggestions(doctype ? { type, doctype } : { type });
-}
 // The curated asks differ per DocType, so a Desk navigation fetches the new page's set.
-function update() {
-	pageContext.value = getHost().detectContext() || {};
-	loadPageSuggestions();
-}
-let stopRouteWatch = () => {};
+const suggestionContext = computed(() => {
+	const { type, doctype } = pageContext.value;
+	return doctype ? { type, doctype } : { type };
+});
+watch(suggestionContext, (context) => suggestionStore.loadSuggestions(context), { deep: true });
 onMounted(async () => {
-	update();
-	stopRouteWatch = getHost().onRouteChange(update);
+	suggestionStore.loadSuggestions(suggestionContext.value);
 	if (!chatStore.sessions.length) await chatStore.loadSessions();
 	sessionsLoaded.value = true;
 });
-onUnmounted(() => stopRouteWatch());
 </script>
 
 <style scoped>

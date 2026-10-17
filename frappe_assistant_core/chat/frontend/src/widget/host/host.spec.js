@@ -103,3 +103,35 @@ describe("spaHost", () => {
 		open.mockRestore();
 	});
 });
+
+describe("deskHost.onContextChange", () => {
+	afterEach(() => {
+		delete window.frappe;
+		delete window.jQuery;
+		vi.useRealTimers();
+	});
+
+	it("fires once per navigation after router change and form-refresh, and unsubscribes", async () => {
+		vi.useFakeTimers();
+		const { deskHost } = await import("./deskHost.js");
+		const handlers = {};
+		const off = vi.fn();
+		window.jQuery = () => ({ on: (e, fn) => (handlers[e] = fn), off });
+		let routeFn;
+		window.frappe = { router: { on: (_e, fn) => (routeFn = fn), off: vi.fn() } };
+		const cb = vi.fn();
+		const stop = deskHost.onContextChange(cb);
+		routeFn();
+		handlers["form-refresh"]();
+		vi.advanceTimersByTime(100);
+		expect(cb).toHaveBeenCalledTimes(1);
+		stop();
+		expect(off).toHaveBeenCalledWith("form-refresh", handlers["form-refresh"]);
+		expect(window.frappe.router.off).toHaveBeenCalled();
+	});
+
+	it("is inert on the embedding page", async () => {
+		const spaHost = await loadSpaHost();
+		expect(spaHost.onContextChange(() => {})()).toBeUndefined();
+	});
+});

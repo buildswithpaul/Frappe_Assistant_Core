@@ -128,6 +128,7 @@ import OverageNotice from "./OverageNotice.vue";
 import WidgetPlanStrip from "./WidgetPlanStrip.vue";
 import { bridge } from "../bridge.js";
 import { getHost } from "../host/index.js";
+import { usePageContext } from "../usePageContext.js";
 import { handOffToFullPage } from "../desk/session.js";
 import { isBlocked, overageNoticeDue, markOverageNoticeShown } from "../desk/quotaGate.js";
 import { confirms, settleConfirm } from "./confirmQueue.js";
@@ -238,19 +239,12 @@ function expand() {
 }
 
 // The composer names the document the user is looking at, and follows Desk navigation.
-const pageContext = ref({});
+const { pageContext } = usePageContext();
 const composerPlaceholder = computed(() =>
 	pageContext.value.type === "Form" && pageContext.value.doctype
 		? __("Ask about this {0}…", [pageContext.value.doctype])
 		: ""
 );
-const updatePageContext = () => (pageContext.value = getHost().detectContext() || {});
-let stopRouteWatch = () => {};
-onMounted(() => {
-	updatePageContext();
-	stopRouteWatch = getHost().onRouteChange(updatePageContext);
-});
-onUnmounted(() => stopRouteWatch());
 
 // Disabled while a reply is still arriving, so a half-written answer is never abandoned by accident.
 const canStartNewChat = computed(

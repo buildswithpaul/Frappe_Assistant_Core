@@ -397,23 +397,33 @@ describe("widget panel", () => {
 		expect(w.find(".ww").exists()).toBe(false);
 	});
 
-	it("names the form in the composer placeholder, and follows Desk navigation", async () => {
+	it("names the form in the composer placeholder, once Desk has loaded each record", async () => {
 		let route = ["Form", "Sales Invoice", "SINV-0001"];
+		let formsByDoctype = { "Sales Invoice": { frm: { doctype: "Sales Invoice", doc: { name: "SINV-0001" }, is_new: () => false } } };
 		let onChange;
-		const form = { doctype: "Sales Invoice", doc: { name: "SINV-0001" }, is_new: () => false };
+		let onRefresh;
+		window.jQuery = () => ({ on: (_e, fn) => (onRefresh = fn), off: vi.fn() });
 		window.frappe = {
 			get_route: () => route,
 			router: { on: (_e, fn) => (onChange = fn), off: vi.fn() },
-			views: { formview: { "Sales Invoice": { frm: form } } },
+			views: { get formview() { return formsByDoctype; } },
 		};
+		const settle = () => new Promise((resolve) => setTimeout(resolve, 80));
 		const w = mount(WidgetPanel, { global: { stubs } });
 		await nextTick();
 		expect(w.findComponent(InputArea).props("placeholder")).toBe("Ask about this Sales Invoice…");
-		route = ["Workspaces", "Home"];
+		// Router change fires before the Customer doc exists: nothing to name yet.
+		route = ["Form", "Customer", "CUST-0001"];
+		formsByDoctype = {};
 		onChange();
-		await nextTick();
+		await settle();
 		expect(w.findComponent(InputArea).props("placeholder")).toBe("");
+		formsByDoctype = { Customer: { frm: { doctype: "Customer", doc: { name: "CUST-0001" }, is_new: () => false } } };
+		onRefresh();
+		await settle();
+		expect(w.findComponent(InputArea).props("placeholder")).toBe("Ask about this Customer…");
 		delete window.frappe;
+		delete window.jQuery;
 	});
 
 	it("sends a suggestion picked on the welcome", async () => {
