@@ -310,11 +310,12 @@ def _overdue_receivables(user: str, company: str | None) -> SignalResult | None:
     amount, currency, text = _amount_text(rows)
     customers, customer_count = _top_customers(rows)
     who = customers[0] if len(customers) == 1 else _("{0} and {1}").format(*customers)
-    if customer_count == 1:
-        by = _("All from {0}").format(who)
+    all_of_them = customer_count <= TOP_CUSTOMERS
+    if text:
+        template = _("{0} outstanding, all from {1}") if all_of_them else _("{0} outstanding, mostly {1}")
+        detail = template.format(text, who)
     else:
-        by = _("Mostly {0}").format(who)
-    detail = f"{text} outstanding. {by}" if text else by
+        detail = _("All from {0}").format(who) if all_of_them else _("Mostly {0}").format(who)
     return SignalResult(
         count=count,
         title=_("invoice overdue by 60+ days") if count == 1 else _("invoices overdue by 60+ days"),

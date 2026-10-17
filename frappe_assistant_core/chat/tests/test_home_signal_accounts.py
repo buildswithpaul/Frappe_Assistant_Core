@@ -124,7 +124,7 @@ class TestAccountsSignals(BaseAssistantTest):
         self.assertEqual(result.amount, invoice.outstanding_amount)
         self.assertEqual(result.currency, "INR")
         name = frappe.db.get_value("Customer", self.customer, "customer_name")
-        self.assertTrue(result.detail.endswith(f"All from {name}"), result.detail)
+        self.assertTrue(result.detail.endswith(f", all from {name}"), result.detail)
         self.assertEqual(result.ask, f"Show invoices for {COMPANY} overdue by more than 60 days, by customer")
 
     def test_a1_detail_names_top_two_customers_by_outstanding(self):
@@ -140,6 +140,7 @@ class TestAccountsSignals(BaseAssistantTest):
         self._invoice(90, customer=big, rate=900)
         self._invoice(90, customer=mid, rate=300)
         detail = self._a1().detail
+        self.assertIn(", mostly ", detail)
         names = [frappe.db.get_value("Customer", c, "customer_name") for c in (big, mid, small)]
         self.assertIn(names[0], detail)
         self.assertIn(names[1], detail)
