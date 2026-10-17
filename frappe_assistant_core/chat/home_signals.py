@@ -143,7 +143,7 @@ def compute_home_signals(user: str) -> dict:
     """Build the home payload for ``user``."""
     installed_apps = frappe.get_installed_apps()
     lenses = resolve_lenses(frappe.get_roles(user), installed_apps)
-    company = frappe.defaults.get_user_default("Company") or None
+    company = frappe.defaults.get_user_default("Company", user=user) or None
 
     results: list[tuple[Signal, SignalResult]] = []
     for signal in CATALOGUE:
@@ -174,7 +174,9 @@ def compute_home_signals(user: str) -> dict:
 
 def count_visible(doctype: str, filters: dict | list, user: str) -> int:
     """Count records of ``doctype`` that ``user`` may read (User Permissions apply)."""
-    rows = frappe.get_list(doctype, filters=filters, fields=[{"COUNT": "name", "as": "n"}], user=user)
+    rows = frappe.get_list(
+        doctype, filters=filters, fields=[{"COUNT": "name", "as": "n"}], order_by="", user=user
+    )
     return int(rows[0]["n"]) if rows else 0
 
 
