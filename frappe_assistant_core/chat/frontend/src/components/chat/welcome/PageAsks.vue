@@ -23,7 +23,10 @@ const props = defineProps({
 });
 defineEmits(["pick"]);
 
-const subject = computed(() => (props.name ? __("{0} {1}", [props.doctype, props.name]) : props.doctype));
+const subject = computed(() => {
+	const doctype = __(props.doctype);
+	return props.name ? __("{0} {1}", [doctype, props.name]) : doctype;
+});
 </script>
 
 <style scoped>

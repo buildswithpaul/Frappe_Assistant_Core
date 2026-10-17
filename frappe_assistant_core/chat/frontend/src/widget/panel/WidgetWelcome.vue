@@ -10,7 +10,7 @@
 		<PageAsks
 			v-if="filledAsks.length"
 			:doctype="pageContext.doctype"
-			:name="isForm ? pageContext.name : ''"
+			:name="savedName"
 			:asks="filledAsks"
 			@pick="(text) => $emit('suggestion', text)"
 		/>
@@ -95,12 +95,22 @@ const firstRunTiles = computed(() => {
 // The document name stays in this browser: the server only ever sees {type, doctype}.
 const { pageContext } = usePageContext();
 const isForm = computed(() => pageContext.value.type === "Form");
+// An unsaved form only has Frappe's temporary "new-…" name, which names nothing the user can ask about.
+const savedName = computed(() => {
+	const { name, is_new: isNew } = pageContext.value;
+	return isForm.value && name && !isNew && !name.startsWith("new-") ? name : "";
+});
 const filledAsks = computed(() => {
 	// Until the new page's set has arrived, the old page's asks would name the wrong thing.
 	if (suggestionStore.suggestionsDisabled || suggestionStore.isLoading || !["Form", "List"].includes(pageContext.value.type)) return [];
 	return allSuggestions.value
 		.filter((s) => s.source === "page")
-		.map((s) => fillPageAsk(s.description, pageContext.value))
+		.map((s) =>
+			fillPageAsk(s.description, {
+				doctype: pageContext.value.doctype && __(pageContext.value.doctype),
+				name: savedName.value,
+			})
+		)
 		.filter(Boolean);
 });
 

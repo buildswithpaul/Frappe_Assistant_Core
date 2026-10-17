@@ -62,7 +62,7 @@ describe("widget home", () => {
 			{ session_id: "s2", preview: "Second", last_activity: "2026-10-05 09:00:00" },
 		]);
 		api.suggestions.get.mockReset().mockResolvedValue({ suggestions: [...PAGE_ASKS, STARTER] });
-		api.home.get.mockReset().mockResolvedValue({ items: SIGNALS, area: "sales" });
+		api.home.get.mockReset().mockResolvedValue({ items: SIGNALS, area: "pipeline" });
 		onRoute(["Form", "Sales Invoice", "SINV-0001"], invoiceForm);
 	});
 	afterEach(() => {
@@ -99,6 +99,18 @@ describe("widget home", () => {
 		const w = await mountHome();
 		expect(w.findAll(".pa-chip").map((c) => c.text())).toEqual(["Summarise this Sales Invoice list"]);
 		expect(w.find(".pa-subject").text()).toBe("Sales Invoice");
+	});
+
+	it("an unsaved form drops the name asks and its temporary name", async () => {
+		const unsaved = { doctype: "Sales Invoice", doc: { name: "new-sales-invoice-abc" }, is_new: () => true };
+		onRoute(["Form", "Sales Invoice", "new-sales-invoice-abc"], unsaved);
+		api.suggestions.get.mockResolvedValue({
+			suggestions: [{ name: "g", description: "Check this {doctype} before I save", source: "page" }, ...PAGE_ASKS],
+		});
+		const w = await mountHome();
+		expect(w.findAll(".pa-chip").map((c) => c.text())).toEqual(["Check this Sales Invoice before I save"]);
+		expect(w.find(".pa-subject").text()).toBe("Sales Invoice");
+		expect(w.text()).not.toContain("new-sales-invoice-abc");
 	});
 
 	it("hides PageAsks when the operator turned suggestions off", async () => {
