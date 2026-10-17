@@ -126,6 +126,7 @@ class TestAccountsSignals(BaseAssistantTest):
         name = frappe.db.get_value("Customer", self.customer, "customer_name")
         self.assertTrue(result.detail.endswith(f", all from {name}"), result.detail)
         self.assertEqual(result.ask, f"Show invoices for {COMPANY} overdue by more than 60 days, by customer")
+        self.assertEqual(result.action, "Draft payment reminders")
 
     def test_a1_detail_names_top_two_customers_by_outstanding(self):
         big = self._customer("Big Debtor")
@@ -295,6 +296,7 @@ class TestAccountsSignals(BaseAssistantTest):
         self.assertEqual(result.amount, 70)
         self.assertEqual(result.currency, "INR")
         self.assertEqual(result.ask, f"Which purchase invoices for {COMPANY} fall due in the next 7 days?")
+        self.assertEqual(result.action, "See what's due")
 
     def _bank_account(self) -> str:
         bank = frappe.get_doc(

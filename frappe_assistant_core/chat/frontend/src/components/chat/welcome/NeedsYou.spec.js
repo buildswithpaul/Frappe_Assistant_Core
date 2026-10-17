@@ -33,6 +33,11 @@ describe("NeedsYou", () => {
 		expect(w.emitted("navigate")).toBeUndefined();
 	});
 
+	it("shows the short action as the link text, falling back to the ask", () => {
+		expect(make({ items: [{ ...base, action: "Draft reminders" }] }).find(".ny-ask").text()).toBe("Draft reminders →");
+		expect(make().find(".ny-ask").text()).toBe("Show overdue →");
+	});
+
 	it("href item emits navigate", async () => {
 		const w = make({ items: [{ ...base, id: "failed_workflows", href: "/agents" }] });
 		await w.find(".ny-main").trigger("click");

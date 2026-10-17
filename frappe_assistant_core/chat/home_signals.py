@@ -72,6 +72,7 @@ class SignalResult:
     title: str
     detail: str
     ask: str
+    action: str
     source: str
     amount: float | None = None
     currency: str | None = None
@@ -116,6 +117,7 @@ def rank(results: list[tuple[Signal, SignalResult]], cap: int) -> list[dict]:
             "title": result.title,
             "detail": result.detail,
             "ask": result.ask,
+            "action": result.action,
         }
         for signal, result in live[:cap]
     ]
@@ -254,6 +256,7 @@ def _approvals_waiting(user: str, company: str | None) -> SignalResult | None:
         title=_("approval waiting for you") if count == 1 else _("approvals waiting for you"),
         detail=_waited_detail(_(top_doctype), days),
         ask=_("Show the documents waiting for my approval"),
+        action=_("Review them"),
         source=_("Workflow · {0}").format(_(top_doctype)),
     )
 
@@ -265,6 +268,7 @@ def _todos_due(user: str, company: str | None) -> SignalResult | None:
         title=_("task due") if count == 1 else _("tasks due"),
         detail=_("Open ToDos due today or overdue"),
         ask=_("Show my open ToDos that are due today or overdue"),
+        action=_("See my tasks"),
         source=_("ToDo"),
     )
 
@@ -345,6 +349,7 @@ def _overdue_receivables(user: str, company: str | None) -> SignalResult | None:
             if company
             else _("Show invoices overdue by more than 60 days, by customer")
         ),
+        action=_("Draft payment reminders"),
         source=_("Sales Invoice"),
         amount=amount,
         currency=currency,
@@ -375,6 +380,7 @@ def _payables_due(user: str, company: str | None) -> SignalResult | None:
             if company
             else _("Which purchase invoices fall due in the next 7 days?")
         ),
+        action=_("See what's due"),
         source=_("Purchase Invoice"),
         amount=amount,
         currency=currency,
@@ -394,6 +400,7 @@ def _unreconciled_bank(user: str, company: str | None) -> SignalResult | None:
             if company
             else _("Which bank transactions are still unreconciled?")
         ),
+        action=_("Suggest matches"),
         source=_("Bank Transaction"),
     )
 
@@ -415,6 +422,7 @@ def _quotations_expiring(user: str, company: str | None) -> SignalResult | None:
         else _("quotations expire in the next 7 days"),
         detail=_("Open quotations whose validity ends within a week"),
         ask=_("Which quotations expire in the next 7 days?"),
+        action=_("Draft follow-ups"),
         source=_("Quotation"),
     )
 
@@ -444,6 +452,7 @@ def _late_sales_orders(user: str, company: str | None) -> SignalResult | None:
             if company
             else _("Which sales orders are past their delivery date?")
         ),
+        action=_("See what's holding them"),
         source=_("Sales Order"),
     )
 
@@ -506,6 +515,7 @@ def _stale_leads(user: str, company: str | None) -> SignalResult | None:
         ),
         detail=_("Records you own that nobody has touched in two weeks"),
         ask=_("Which of my leads and opportunities have had no activity for 14 days?"),
+        action=_("Plan follow-ups"),
         source=_("Leads and opportunities"),
     )
 
@@ -558,6 +568,7 @@ def _below_reorder(user: str, company: str | None) -> SignalResult | None:
         title=_("item below its reorder level") if count == 1 else _("items below their reorder level"),
         detail=_("Stock has fallen under the reorder level of a warehouse"),
         ask=_("Which items are below their reorder level?"),
+        action=_("Raise material requests"),
         source=_("Item"),
     )
 
@@ -581,6 +592,7 @@ def _late_purchase_orders(user: str, company: str | None) -> SignalResult | None
         title=_("purchase order is late") if count == 1 else _("purchase orders are late"),
         detail=_("Submitted orders past their required date that are not fully received"),
         ask=_("Which purchase orders are late from suppliers?"),
+        action=_("Draft chasers"),
         source=_("Purchase Order"),
     )
 
@@ -594,6 +606,7 @@ def _pending_material_requests(user: str, company: str | None) -> SignalResult |
         title=_("material request still pending") if count == 1 else _("material requests still pending"),
         detail=_("Submitted requests that nobody has ordered or issued yet"),
         ask=_("Show material requests that are still pending"),
+        action=_("Review them"),
         source=_("Material Request"),
     )
 
@@ -627,6 +640,7 @@ def _leave_to_approve(user: str, company: str | None) -> SignalResult | None:
         ),
         detail=detail,
         ask=_("Show leave applications waiting for my approval"),
+        action=_("Review them"),
         source=_("Leave Application"),
     )
 
@@ -647,6 +661,7 @@ def _expense_claims_to_approve(user: str, company: str | None) -> SignalResult |
         ),
         detail=_("Claims from your team that are waiting for your decision"),
         ask=_("Show expense claims waiting for my approval"),
+        action=_("Review them"),
         source=_("Expense Claim"),
     )
 

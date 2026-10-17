@@ -69,6 +69,7 @@ describe("useAttention", () => {
 			tone: "danger",
 			count: 2,
 			title: "workflows failed overnight",
+			action: "See what went wrong",
 			href: "/agents",
 			dismissible: true,
 		});

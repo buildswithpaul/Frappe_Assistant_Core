@@ -103,6 +103,7 @@ export function useAttention() {
 			count: a.count,
 			title: a.count === 1 ? __("workflow failed overnight") : __("workflows failed overnight"),
 			detail: a.workflowName || "",
+			action: __("See what went wrong"),
 			href: "/agents",
 			dismissible: true,
 		};

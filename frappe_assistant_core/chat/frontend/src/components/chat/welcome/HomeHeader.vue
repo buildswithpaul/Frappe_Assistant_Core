@@ -39,8 +39,12 @@ const chipLabel = computed(() => {
 </script>
 
 <style scoped>
-.hh { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--ql-space-4); }
-.hh-text { min-width: 0; }
+.hh {
+	display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between;
+	gap: var(--ql-space-2) var(--ql-space-4);
+}
+/* The basis lets the chip drop below the greeting when the container is narrow (the widget). */
+.hh-text { flex: 1 1 18rem; min-width: 0; }
 .hh-date {
 	font-size: var(--ql-label-size); font-weight: 600; text-transform: uppercase;
 	letter-spacing: var(--ql-label-tracking); color: var(--ql-text-muted);
@@ -55,7 +59,7 @@ const chipLabel = computed(() => {
 	flex: none; padding: var(--ql-space-1) var(--ql-space-3);
 	font-size: 12px; font-weight: 500; color: var(--ql-text-secondary);
 	background: var(--ql-subtle); border: 1px solid var(--ql-border); border-radius: 999px;
-	white-space: nowrap; max-width: 45%; overflow: hidden; text-overflow: ellipsis;
+	white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis;
 }
 @media (max-width: 719px) {
 	.hh { flex-direction: column; align-items: flex-start; gap: var(--ql-space-2); }

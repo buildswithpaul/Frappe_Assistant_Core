@@ -16,7 +16,7 @@
 						</span>
 						<span v-if="item.detail && variant === 'cards'" class="ny-detail">{{ item.detail }}</span>
 						<span v-if="item.ask || item.href" class="ny-ask">
-							{{ item.ask || __("Open") }} →
+							{{ item.action || item.ask || __("Open") }} →
 						</span>
 					</span>
 				</button>
@@ -94,7 +94,10 @@ function activate(item) {
 .ny-count { font-family: var(--ql-font-display); font-size: 28px; line-height: 1.1; font-weight: 500; }
 .ny-title { font-size: 14px; font-weight: 500; }
 .ny--list .ny-count { font-family: var(--ql-font-sans); font-size: 14px; font-weight: 700; }
-.ny-detail { font-size: 12px; color: var(--ql-text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ny-detail {
+	font-size: 12px; color: var(--ql-text-secondary); overflow: hidden;
+	display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2;
+}
 .ny-ask { font-size: 12px; font-weight: 600; color: var(--ql-accent); }
 .ny-main:hover .ny-ask { color: var(--ql-accent-hover); }
 .ny-main:focus-visible, .ny-dismiss:focus-visible { outline: 2px solid var(--ql-accent); outline-offset: -2px; }

@@ -33,7 +33,7 @@ def _signal(signal_id, tone="neutral", lenses=(), doctypes=(), compute=None):
 
 
 def _result(count):
-    return SignalResult(count=count, title="t", detail="d", ask="a", source="s")
+    return SignalResult(count=count, title="t", detail="d", ask="a", action="act", source="s")
 
 
 class TestResolveLenses(unittest.TestCase):
@@ -77,7 +77,16 @@ class TestRank(unittest.TestCase):
         item = rank([(_signal("a", "danger"), _result(4))], cap=3)[0]
         self.assertEqual(
             item,
-            {"id": "a", "tone": "danger", "source": "s", "count": 4, "title": "t", "detail": "d", "ask": "a"},
+            {
+                "id": "a",
+                "tone": "danger",
+                "source": "s",
+                "count": 4,
+                "title": "t",
+                "detail": "d",
+                "ask": "a",
+                "action": "act",
+            },
         )
 
 
