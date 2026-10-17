@@ -349,7 +349,7 @@ def _overdue_receivables(user: str, company: str | None) -> SignalResult | None:
             if company
             else _("Show invoices overdue by more than 60 days, by customer")
         ),
-        action=_("Draft payment reminders"),
+        action=_("See who owes it"),
         source=_("Sales Invoice"),
         amount=amount,
         currency=currency,
@@ -400,7 +400,7 @@ def _unreconciled_bank(user: str, company: str | None) -> SignalResult | None:
             if company
             else _("Which bank transactions are still unreconciled?")
         ),
-        action=_("Suggest matches"),
+        action=_("See unmatched lines"),
         source=_("Bank Transaction"),
     )
 
@@ -422,7 +422,7 @@ def _quotations_expiring(user: str, company: str | None) -> SignalResult | None:
         else _("quotations expire in the next 7 days"),
         detail=_("Open quotations whose validity ends within a week"),
         ask=_("Which quotations expire in the next 7 days?"),
-        action=_("Draft follow-ups"),
+        action=_("See which ones"),
         source=_("Quotation"),
     )
 
@@ -515,7 +515,7 @@ def _stale_leads(user: str, company: str | None) -> SignalResult | None:
         ),
         detail=_("Records you own that nobody has touched in two weeks"),
         ask=_("Which of my leads and opportunities have had no activity for 14 days?"),
-        action=_("Plan follow-ups"),
+        action=_("See which ones"),
         source=_("Leads and opportunities"),
     )
 
@@ -568,7 +568,7 @@ def _below_reorder(user: str, company: str | None) -> SignalResult | None:
         title=_("item below its reorder level") if count == 1 else _("items below their reorder level"),
         detail=_("Stock has fallen under the reorder level of a warehouse"),
         ask=_("Which items are below their reorder level?"),
-        action=_("Raise material requests"),
+        action=_("See which items"),
         source=_("Item"),
     )
 
@@ -592,7 +592,7 @@ def _late_purchase_orders(user: str, company: str | None) -> SignalResult | None
         title=_("purchase order is late") if count == 1 else _("purchase orders are late"),
         detail=_("Submitted orders past their required date that are not fully received"),
         ask=_("Which purchase orders are late from suppliers?"),
-        action=_("Draft chasers"),
+        action=_("See which orders"),
         source=_("Purchase Order"),
     )
 
