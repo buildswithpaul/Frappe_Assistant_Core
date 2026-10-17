@@ -31,7 +31,7 @@ class TestStockSignals(BaseAssistantTest):
 
     def setUp(self):
         super().setUp()
-        self.user = self.make_throwaway_user("storekeeper", roles=("Stock Manager", "Purchase Manager"))
+        self.user = self.make_throwaway_user("storekeeper", roles=("Stock User", "Purchase Manager"))
 
     def _item(self, reorder_level: int = REORDER_LEVEL) -> str:
         item = frappe.get_doc(
@@ -161,6 +161,34 @@ class TestStockSignals(BaseAssistantTest):
         before = self._count(home_signals._below_reorder)
         self._receive(self._item(), REORDER_LEVEL + 5)
         self.assertEqual(self._count(home_signals._below_reorder), before)
+
+    def test_k1_counts_item_exactly_at_reorder_level(self):
+        before = self._count(home_signals._below_reorder)
+        self._receive(self._item(), REORDER_LEVEL)
+        self.assertEqual(self._count(home_signals._below_reorder), before + 1)
+
+    def test_k1_ignores_disabled_item(self):
+        before = self._count(home_signals._below_reorder)
+        item = self._item()
+        self._receive(item, 2)
+        # Production reaches this when an item is disabled after it has stock.
+        frappe.db.set_value("Item", item, "disabled", 1, update_modified=False)
+        self.assertEqual(self._count(home_signals._below_reorder), before)
+
+    def test_k1_excludes_warehouse_hidden_by_user_permission(self):
+        item = self._item()
+        self._receive(item, 2)
+        self.assertGreaterEqual(self._count(home_signals._below_reorder), 1)
+        other = frappe.db.get_value(
+            "Warehouse", {"company": COMPANY, "is_group": 0, "name": ["!=", WAREHOUSE]}, "name"
+        )
+        # Manufactured: production reaches this when an administrator restricts the storekeeper to
+        # one Warehouse through a User Permission.
+        frappe.get_doc(
+            {"doctype": "User Permission", "user": self.user, "allow": "Warehouse", "for_value": other}
+        ).insert(ignore_permissions=True)
+        frappe.clear_cache(user=self.user)
+        self.assertEqual(self._count(home_signals._below_reorder), 0)
 
     def test_k1_excludes_item_hidden_by_user_permission(self):
         visible, hidden = self._item(), self._item()

@@ -479,20 +479,27 @@ def _stale_leads(user: str, company: str | None) -> SignalResult | None:
     )
 
 
-def _low_stock_item_codes() -> list[str]:
-    """Items whose projected quantity is below the reorder level of the same warehouse.
+def _low_stock_item_codes(warehouses: list[str]) -> list[str]:
+    """Reorderable items whose projected quantity is at or below the reorder level of a warehouse.
 
-    ``get_list`` cannot compare a Bin column with an Item Reorder column, so this
-    is a ``frappe.qb`` join; the caller applies the permission filter.
+    ``get_list`` cannot compare a Bin column with an Item Reorder column, so this is a
+    ``frappe.qb`` join, limited to ``warehouses``; the caller applies the Item permission
+    filter. The Item conditions mirror ERPNext's own reorder run (``reorder_item.py``).
     """
     bin_ = frappe.qb.DocType("Bin")
     reorder = frappe.qb.DocType("Item Reorder")
+    item = frappe.qb.DocType("Item")
     query = (
         frappe.qb.from_(bin_)
         .join(reorder)
         .on((reorder.parent == bin_.item_code) & (reorder.warehouse == bin_.warehouse))
+        .join(item)
+        .on(item.name == bin_.item_code)
         .where(reorder.parenttype == "Item")
-        .where(bin_.projected_qty < reorder.warehouse_reorder_level)
+        .where(bin_.warehouse.isin(warehouses))
+        .where(bin_.projected_qty <= reorder.warehouse_reorder_level)
+        .where((item.disabled == 0) & (item.is_stock_item == 1))
+        .where(item.end_of_life.isnull() | (item.end_of_life > today()))
         .select(bin_.item_code)
         .distinct()
         .orderby(bin_.item_code)
@@ -502,7 +509,13 @@ def _low_stock_item_codes() -> list[str]:
 
 
 def _below_reorder(user: str, company: str | None) -> SignalResult | None:
-    codes = _low_stock_item_codes()
+    # Scoped to the user's company through its warehouses (Bin has no company field), and to
+    # the warehouses the user may read, so User Permissions on Warehouse apply to the Bin side.
+    warehouse_filters = _company_scoped({"disabled": 0}, company)
+    warehouses = frappe.get_list("Warehouse", filters=warehouse_filters, pluck="name", user=user)
+    if not warehouses:
+        return None
+    codes = _low_stock_item_codes(warehouses)
     visible = (
         frappe.get_list("Item", filters={"name": ["in", codes]}, pluck="name", limit_page_length=0, user=user)
         if codes
@@ -542,7 +555,9 @@ def _late_purchase_orders(user: str, company: str | None) -> SignalResult | None
 
 
 def _pending_material_requests(user: str, company: str | None) -> SignalResult | None:
-    count = count_visible("Material Request", {"docstatus": 1, "status": "Pending"}, user)
+    count = count_visible(
+        "Material Request", _company_scoped({"docstatus": 1, "status": "Pending"}, company), user
+    )
     return SignalResult(
         count=count,
         title=_("material request still pending") if count == 1 else _("material requests still pending"),
@@ -621,7 +636,7 @@ CATALOGUE: list[Signal] = [
         id="below_reorder",
         lenses=("stock",),
         tone="danger",
-        requires_doctypes=("Item",),
+        requires_doctypes=("Item", "Warehouse"),
         requires_apps=(),
         compute=_below_reorder,
     ),
