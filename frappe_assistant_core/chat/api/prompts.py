@@ -354,6 +354,31 @@ def _get_default_prompts(context):
     return page_asks + _role_bucket_prompts(frappe.get_roles(frappe.session.user))
 
 
+SUGGESTIONS_CAP = 12
+
+
+def _cap_prompts(prompts_list: list[dict], cap: int) -> list[dict]:
+    """Keep at most ``cap`` prompts, in order, without dropping the page asks or the
+    first starter of each kind: templates are unbounded and would otherwise push both out."""
+    if len(prompts_list) <= cap:
+        return prompts_list
+    protected: set[int] = set()
+    kinds_seen: set[str] = set()
+    for index, prompt in enumerate(prompts_list):
+        kind = prompt.get("kind")
+        if prompt.get("source") == "page":
+            protected.add(index)
+        elif kind and kind not in kinds_seen:
+            kinds_seen.add(kind)
+            protected.add(index)
+    kept = set(protected)
+    for index in range(len(prompts_list)):
+        if len(kept) >= cap:
+            break
+        kept.add(index)
+    return [prompt for index, prompt in enumerate(prompts_list) if index in kept]
+
+
 @frappe.whitelist(methods=["GET"])
 def get_suggested_prompts(context: str | None = None):
     """
@@ -472,7 +497,7 @@ def get_suggested_prompts(context: str | None = None):
                 result.append(p)
                 seen_descriptions.add(p["description"].lower())
 
-        result = result[:12]
+        result = _cap_prompts(result, SUGGESTIONS_CAP)
 
         # Return suggestions + raw template data for frontend templateStore hydration.
         # This eliminates the need for a separate get_prompt_templates call.

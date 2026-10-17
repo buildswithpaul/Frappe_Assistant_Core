@@ -127,3 +127,23 @@ class TestPageAsks(unittest.TestCase):
         self.assertEqual(sources[0], "page")
         self.assertIn("default", sources)
         self.assertTrue(any(p["name"].startswith("accounts_") for p in result))
+
+
+class TestSuggestionCap(unittest.TestCase):
+    def test_templates_cannot_push_out_page_asks_or_starter_kinds(self):
+        # Manufactured: production reaches this when curated, pinned and marketplace templates
+        # together exceed the cap; the template source is patched to return that many.
+        templates = [
+            {"name": f"tpl_{i}", "description": f"Template {i}", "has_arguments": False, "source": "pinned"}
+            for i in range(14)
+        ]
+        context = '{"type": "Form", "doctype": "Sales Invoice"}'
+        with (
+            patch.object(prompts, "_get_template_suggestions", autospec=True, return_value=(templates, {})),
+            patch.object(frappe, "get_roles", autospec=True, return_value=["Accounts User"]),
+        ):
+            suggestions = prompts.get_suggested_prompts(context)["suggestions"]
+
+        self.assertEqual(len(suggestions), prompts.SUGGESTIONS_CAP)
+        self.assertTrue([s for s in suggestions if s["source"] == "page"])
+        self.assertEqual({s.get("kind") for s in suggestions if s.get("kind")}, set(prompts.STARTER_KINDS))
