@@ -45,6 +45,7 @@ PAYABLES_WINDOW_DAYS = 7
 TOP_CUSTOMERS = 2
 QUOTATION_WINDOW_DAYS = 7
 STALE_LEAD_DAYS = 14
+LEAVE_START_WINDOW_DAYS = 3
 REORDER_ITEMS_LIMIT = 500
 ERROR_LOG_INTERVAL = 3600
 ERROR_KEY_PREFIX = "fac_home_signals_err:"
@@ -567,6 +568,52 @@ def _pending_material_requests(user: str, company: str | None) -> SignalResult |
     )
 
 
+def _leave_to_approve(user: str, company: str | None) -> SignalResult | None:
+    filters = _company_scoped({"docstatus": 0, "status": "Open", "leave_approver": user}, company)
+    count = count_visible("Leave Application", filters, user)
+    soon = count_visible(
+        "Leave Application",
+        {**filters, "from_date": ["between", [today(), add_days(today(), LEAVE_START_WINDOW_DAYS)]]},
+        user,
+    )
+    if soon == 0:
+        detail = _("None of them start in the next 3 days")
+    elif soon == 1:
+        detail = _("{0} starts in the next 3 days").format(soon)
+    else:
+        detail = _("{0} start in the next 3 days").format(soon)
+    return SignalResult(
+        count=count,
+        title=(
+            _("leave application waiting for your approval")
+            if count == 1
+            else _("leave applications waiting for your approval")
+        ),
+        detail=detail,
+        ask=_("Show leave applications waiting for my approval"),
+        source=_("Leave Application"),
+    )
+
+
+def _expense_claims_to_approve(user: str, company: str | None) -> SignalResult | None:
+    count = count_visible(
+        "Expense Claim",
+        _company_scoped({"docstatus": 0, "approval_status": "Draft", "expense_approver": user}, company),
+        user,
+    )
+    return SignalResult(
+        count=count,
+        title=(
+            _("expense claim waiting for your approval")
+            if count == 1
+            else _("expense claims waiting for your approval")
+        ),
+        detail=_("Claims from your team that are waiting for your decision"),
+        ask=_("Show expense claims waiting for my approval"),
+        source=_("Expense Claim"),
+    )
+
+
 CATALOGUE: list[Signal] = [
     Signal(
         id="approvals",
@@ -655,5 +702,21 @@ CATALOGUE: list[Signal] = [
         requires_doctypes=("Material Request",),
         requires_apps=(),
         compute=_pending_material_requests,
+    ),
+    Signal(
+        id="leave_to_approve",
+        lenses=("hr",),
+        tone="warning",
+        requires_doctypes=("Leave Application",),
+        requires_apps=("hrms",),
+        compute=_leave_to_approve,
+    ),
+    Signal(
+        id="expense_claims_to_approve",
+        lenses=("hr",),
+        tone="neutral",
+        requires_doctypes=("Expense Claim",),
+        requires_apps=("hrms",),
+        compute=_expense_claims_to_approve,
     ),
 ]

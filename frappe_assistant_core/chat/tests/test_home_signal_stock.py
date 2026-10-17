@@ -225,5 +225,5 @@ class TestStockSignals(BaseAssistantTest):
         ids = [signal.id for signal in home_signals.CATALOGUE]
         sales_last = max(ids.index(i) for i in ("quotations_expiring", "late_sales_orders", "stale_leads"))
         self.assertEqual(ids[sales_last + 1 : sales_last + 1 + len(STOCK_IDS)], STOCK_IDS)
-        for signal in home_signals.CATALOGUE[sales_last + 1 :]:
+        for signal in home_signals.CATALOGUE[sales_last + 1 : sales_last + 1 + len(STOCK_IDS)]:
             self.assertEqual(signal.lenses, ("stock",))
