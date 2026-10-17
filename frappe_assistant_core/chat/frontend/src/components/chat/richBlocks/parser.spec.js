@@ -227,4 +227,31 @@ describe("metric fence carrying a JSON array", () => {
 		expect(componentProps(content)).toEqual([]);
 		expect(htmlParts(content).join("")).toContain("note");
 	});
+
+	// Live-bug repro (MSG-2026-00872): the model wrapped a KPI row in an
+	// object, `{"cards": [...]}`, and used `note` for the sub-line. The
+	// wrapper has no label/value, so the whole row fell back to raw JSON.
+	it("unwraps an object whose only key holds the array", () => {
+		expect(
+			componentProps(
+				'```metric\n{"cards": [{"label":"Total Sales (YTD)","value":"₹4.84 Cr",' +
+					'"note":"95 submitted invoices"},{"label":"Collected","value":"₹1.82 Cr"}]}\n```'
+			)
+		).toEqual([
+			{
+				title: "Total Sales (YTD)",
+				value: "₹4.84 Cr",
+				change: "",
+				trend: "",
+				description: "95 submitted invoices",
+			},
+			{ title: "Collected", value: "₹1.82 Cr", change: "", trend: "", description: "" },
+		]);
+	});
+
+	it("keeps a multi-key object with no label/value visible as code", () => {
+		const content = '```metric\n{"cards": [{"label":"A","value":"1"}], "other": []}\n```';
+		expect(componentProps(content)).toEqual([]);
+		expect(htmlParts(content).join("")).toContain("cards");
+	});
 });

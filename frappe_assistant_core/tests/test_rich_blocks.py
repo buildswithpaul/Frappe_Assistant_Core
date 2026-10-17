@@ -160,6 +160,16 @@ class TestMetricJsonArray(unittest.TestCase):
         self.assertEqual(out.count('class="metric-card"'), 2)
         self.assertNotIn('"label"', out)
 
+    def test_unwraps_an_object_whose_only_key_holds_the_array(self):
+        # Live-bug repro (MSG-2026-00872): `{"cards": [...]}` with `note` for the sub-line.
+        out = render(
+            '```metric\n{"cards": [{"label":"Total Sales (YTD)","value":"4.84 Cr",'
+            '"note":"95 submitted invoices"},{"label":"Collected","value":"1.82 Cr"}]}\n```'
+        )
+        self.assertEqual(out.count('class="metric-card"'), 2)
+        self.assertIn('<div class="metric-description">95 submitted invoices</div>', out)
+        self.assertNotIn("quot;", out)
+
     def test_escapes_markup_from_an_array_entry(self):
         out = render('```metric\n[{"label":"<script>x</script>","value":"1"}]\n```')
         self.assertIn('class="metric-card"', out)

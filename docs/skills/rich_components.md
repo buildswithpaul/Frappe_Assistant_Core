@@ -42,7 +42,7 @@ Single KPI display with optional trend indicator.
 - `trend` — `up`, `down`, or `flat`
 - `description` — optional qualifier under the value (e.g., `"per night"`)
 
-**Attributes go on the fence line, not in the body** — unlike `chart`, which takes a JSON body. A JSON body is also accepted as a fallback (`label`/`title`, `value`, `change`, `trend`, `suffix`/`description`), so this renders the same card:
+**Attributes go on the fence line, not in the body** — unlike `chart`, which takes a JSON body. A JSON body is also accepted as a fallback (`label`/`title`, `value`, `change`, `trend`, `suffix`/`note`/`description`), so this renders the same card:
 
 ```metric
 {"label": "Monthly Revenue", "value": "₹14,25,000", "change": "+18%", "trend": "up"}
@@ -53,6 +53,8 @@ A JSON **array** renders one card per entry — the way to write a whole KPI row
 ```metric
 [{"label": "Open tickets", "value": "15"}, {"label": "Resolved this week", "value": "42"}]
 ```
+
+An object holding just that array, such as `{"cards": [...]}`, renders the same row.
 
 Prefer the attribute form. A metric fence with neither a title nor a value renders as a plain code block, not a card; entries in an array that have neither are skipped.
 

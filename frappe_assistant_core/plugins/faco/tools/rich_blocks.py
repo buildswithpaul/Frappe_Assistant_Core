@@ -267,7 +267,7 @@ def _render_metric(attrs: dict[str, str], body: str = "") -> str:
     and in the chat-side renderers so one reply renders identically on screen
     and in the download. Attributes win when a fence carries both.
     """
-    parsed = _parse_json_body(body)
+    parsed = _unwrap_metric_row(_parse_json_body(body))
 
     if isinstance(parsed, list):
         cards = [_metric_card(attrs, entry if isinstance(entry, dict) else {}, body) for entry in parsed]
@@ -279,6 +279,19 @@ def _render_metric(attrs: dict[str, str], body: str = "") -> str:
     return _metric_card(attrs, parsed or {}, body) or (f"<pre><code>{html.escape(body)}</code></pre>")
 
 
+def _unwrap_metric_row(parsed: dict[str, Any] | list[Any] | None) -> dict[str, Any] | list[Any] | None:
+    """The array inside a ``{"cards": [...]}``-style wrapper, or ``parsed`` itself.
+
+    Only an object with a single array-valued key is unwrapped: the key name
+    varies (cards, metrics, items…), and anything richer is not a KPI row.
+    """
+    if isinstance(parsed, dict) and len(parsed) == 1:
+        (only,) = parsed.values()
+        if isinstance(only, list):
+            return only
+    return parsed
+
+
 def _metric_card(attrs: dict[str, str], json_body: dict[str, Any], body: str) -> str:
     """One KPI card, or ``""`` when neither a title nor a value is given."""
     pick = _body_picker(attrs, json_body)
@@ -287,7 +300,7 @@ def _metric_card(attrs: dict[str, str], json_body: dict[str, Any], body: str) ->
     value = pick("value")
     change = pick("change", "delta")
     trend = pick("trend") or "flat"
-    description = pick("description", "suffix")
+    description = pick("description", "suffix", "note")
 
     # Nothing renderable. The caller keeps the raw fence visible instead: an
     # empty card reads as a rendering glitch and gives the reader no clue the

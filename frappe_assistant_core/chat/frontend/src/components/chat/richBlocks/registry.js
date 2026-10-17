@@ -69,9 +69,20 @@ function metricProps(attrs, json) {
 		value: pick("value"),
 		change: pick("change", "delta"),
 		trend: pick("trend"),
-		description: pick("description", "suffix"),
+		description: pick("description", "suffix", "note"),
 	};
 	return props.title || props.value ? props : null;
+}
+
+/**
+ * The array inside a `{"cards": [...]}`-style wrapper, or `parsed` itself.
+ * Only an object with a single array-valued key is unwrapped: the key name
+ * varies (cards, metrics, items…), and anything richer is not a KPI row.
+ */
+function unwrapMetricRow(parsed) {
+	if (!parsed || Array.isArray(parsed)) return parsed;
+	const values = Object.values(parsed);
+	return values.length === 1 && Array.isArray(values[0]) ? values[0] : parsed;
 }
 
 export const blockRegistry = {
@@ -128,7 +139,7 @@ export const blockRegistry = {
 	metric: {
 		component: MetricBlock,
 		parseBody: (body, attrs) => {
-			const parsed = parseJsonBody(body);
+			const parsed = unwrapMetricRow(parseJsonBody(body));
 			if (Array.isArray(parsed)) {
 				return parsed
 					.map((entry) =>
