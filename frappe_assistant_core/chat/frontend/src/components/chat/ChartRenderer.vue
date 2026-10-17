@@ -6,7 +6,7 @@
 		:disabled="isStreaming"
 		title="chart"
 	>
-		<div class="chart-container">
+		<div ref="containerRef" class="chart-container">
 			<div v-if="error" class="chart-error">
 				<svg class="error-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 					<path
@@ -35,6 +35,7 @@ import { logger } from "@/utils/logger";
 import VChart from "vue-echarts";
 import { use, init as echartsInit } from "echarts/core";
 import ExpandableArtifact from "./artifact/ExpandableArtifact.vue";
+import { useChartTheme } from "@/composables/useChartTheme";
 import { BarChart, LineChart, PieChart, ScatterChart } from "echarts/charts";
 import {
 	GridComponent,
@@ -69,6 +70,12 @@ const props = defineProps({
 		default: false,
 	},
 });
+
+// ECharts paints on canvas and never sees the page theme: unthemed, it draws
+// light-mode greys and gives outside labels a white halo, which on the dark
+// surface smears every pie label into unreadable bold.
+const containerRef = ref(null);
+const { colors } = useChartTheme(containerRef);
 
 const error = ref(false);
 const errorMessage = ref("Failed to render chart");
@@ -120,9 +127,11 @@ const chartOption = computed(() => {
 
 		error.value = false;
 		const { type, title, data } = props.config;
+		const { text, textSecondary, muted, border, card } = colors.value;
 
 		// Base configuration
 		const option = {
+			textStyle: { color: text },
 			title: title
 				? {
 						text: title,
@@ -130,16 +139,17 @@ const chartOption = computed(() => {
 						textStyle: {
 							fontSize: 14,
 							fontWeight: 500,
+							color: text,
 						},
 				  }
 				: undefined,
 			tooltip: {
 				trigger: type === "pie" ? "item" : "axis",
-				backgroundColor: "rgba(255, 255, 255, 0.95)",
-				borderColor: "#e5e7eb",
+				backgroundColor: card || "rgba(255, 255, 255, 0.95)",
+				borderColor: border || "#e5e7eb",
 				borderWidth: 1,
 				textStyle: {
-					color: "#374151",
+					color: text || "#374151",
 				},
 			},
 			legend: {
@@ -147,7 +157,9 @@ const chartOption = computed(() => {
 				type: "scroll",
 				textStyle: {
 					fontSize: 12,
+					color: textSecondary,
 				},
+				pageTextStyle: { color: muted },
 			},
 			grid:
 				type !== "pie"
@@ -169,13 +181,17 @@ const chartOption = computed(() => {
 				axisLabel: {
 					rotate: data.categories.length > 6 ? 45 : 0,
 					fontSize: 11,
+					color: muted,
 				},
+				axisLine: { lineStyle: { color: border } },
 			};
 			option.yAxis = {
 				type: "value",
 				axisLabel: {
 					fontSize: 11,
+					color: muted,
 				},
+				splitLine: { lineStyle: { color: border } },
 			};
 		}
 
@@ -204,6 +220,8 @@ const chartOption = computed(() => {
 				seriesConfig.label = {
 					show: true,
 					formatter: "{b}: {d}%",
+					color: text,
+					textBorderWidth: 0,
 				};
 			} else {
 				// Bar, line, scatter data format
@@ -242,12 +260,13 @@ function chartReady() {
 	return chartMounted.value && !error.value && !!opt && !!chartRef.value?.chart;
 }
 
-// Export adapter: the inline chart's own getDataURL at 2x, white background.
+// Export adapter: the inline chart's own getDataURL at 2x, on the surface
+// colour — its text is themed, so a fixed white would hide it in dark mode.
 function exportPng() {
 	const inst = chartRef.value?.chart;
 	if (!inst) return Promise.reject(new Error("No chart to export"));
 	return Promise.resolve(
-		inst.getDataURL({ type: "png", pixelRatio: 2, backgroundColor: "#fff" })
+		inst.getDataURL({ type: "png", pixelRatio: 2, backgroundColor: colors.value.card || "#fff" })
 	);
 }
 
