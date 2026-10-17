@@ -53,7 +53,8 @@ function initMermaid() {
 	mermaid.initialize({
 		startOnLoad: false,
 		theme: "neutral",
-		securityLevel: "loose",
+		// Diagrams are written by the model; "loose" would let a `click … call` line run page functions.
+		securityLevel: "strict",
 		fontFamily: "inherit",
 		htmlLabels: false,
 		flowchart: {

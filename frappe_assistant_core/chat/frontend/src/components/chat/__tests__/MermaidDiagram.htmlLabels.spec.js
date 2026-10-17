@@ -30,4 +30,15 @@ describe("MermaidDiagram uses native SVG text labels (no foreignObject)", () => 
 		expect(cfg.htmlLabels).toBe(false);
 		expect(cfg.flowchart.htmlLabels).toBe(false);
 	});
+
+	it("initializes mermaid in strict mode, so diagram click directives cannot call page functions", async () => {
+		initializeSpy.mockClear();
+		mount(MermaidDiagram, {
+			props: { content: "graph TD; A-->B" },
+			global: { stubs: { ExpandableArtifact: ExpandableStub } },
+		});
+		await flushPromises();
+		const cfg = initializeSpy.mock.calls[0]?.[0];
+		expect(cfg?.securityLevel).toBe("strict");
+	});
 });
