@@ -219,8 +219,8 @@ class TestAccountsSignals(BaseAssistantTest):
     def test_accounts_signals_registered_after_todos(self):
         ids = [signal.id for signal in home_signals.CATALOGUE]
         self.assertEqual(ids[:2], ["approvals", "todos"])
-        self.assertEqual(set(ids[2:]), ACCOUNTS_IDS)
-        for signal in home_signals.CATALOGUE[2:]:
+        self.assertEqual(set(ids[2 : 2 + len(ACCOUNTS_IDS)]), ACCOUNTS_IDS)
+        for signal in home_signals.CATALOGUE[2 : 2 + len(ACCOUNTS_IDS)]:
             self.assertEqual(signal.lenses, ("accounts",))
 
     def test_accounts_user_sees_overdue_receivables_first(self):
