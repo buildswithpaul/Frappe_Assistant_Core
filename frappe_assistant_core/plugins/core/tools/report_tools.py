@@ -41,9 +41,13 @@ def _clamp_max_rows(value: Any) -> int:
 
 
 def _limit_rows(data: list, max_rows: int, summary_only: bool, keep_total_row: bool) -> list:
-    """The rows to return. A report's totals row is its last row and survives the cut."""
+    """The rows to return. A report's totals row is its last row and survives the cut.
+
+    summary_only keeps just the totals row; callers pass it only when the report has a totals row
+    or a report_summary to stand in for the rows.
+    """
     if summary_only:
-        return []
+        return [data[-1]] if keep_total_row and data else []
     if len(data) <= max_rows:
         return data
     if keep_total_row:
@@ -157,11 +161,17 @@ class ReportTools:
                 defaulted_filters = ReportTools._defaulted_filters(final_filters, filters, definitions)
 
                 row_count = len(data)
+                has_total_row = bool(result.get("add_total_row", getattr(report_doc, "add_total_row", 0)))
+                # A report with neither a totals row nor a summary has nothing to stand in for its
+                # rows; answering with no data would send the model to add up records itself.
+                summary_unavailable = bool(summary_only) and not (
+                    has_total_row or result.get("report_summary")
+                )
                 rows = _limit_rows(
                     data,
                     _clamp_max_rows(max_rows),
-                    bool(summary_only),
-                    bool(result.get("add_total_row", getattr(report_doc, "add_total_row", 0))),
+                    bool(summary_only) and not summary_unavailable,
+                    has_total_row,
                 )
 
                 debug_info = {
@@ -196,6 +206,12 @@ class ReportTools:
                     debug_info["prepared_report_name"] = result["prepared_report_name"]
                 if result.get("report_summary"):
                     debug_info["report_summary"] = result["report_summary"]
+                if summary_unavailable:
+                    debug_info["summary_unavailable"] = True
+                    debug_info["summary_note"] = _(
+                        "This report has no totals row or summary, so its rows are returned instead. "
+                        "Read totals from the report's own columns; do not add up rows yourself."
+                    )
                 if debug_info["truncated"] and not summary_only:
                     debug_info["truncation_note"] = _(
                         "Showing {0} of {1} rows. Pass max_rows (up to {2}) for more, or narrow the filters."

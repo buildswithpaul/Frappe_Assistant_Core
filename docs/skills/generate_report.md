@@ -90,7 +90,7 @@ When a value is rejected, `validation_errors` names the accepted values and `err
 | `filters` | object | No | `{}` | Filter key-value pairs |
 | `format` | string | No | `"json"` | `"json"`, `"csv"`, or `"excel"` |
 | `max_rows` | integer | No | `500` | Most rows to return (1 to 5000). Values above 5000 are clamped |
-| `summary_only` | boolean | No | `false` | Return columns, `row_count` and `report_summary` without rows |
+| `summary_only` | boolean | No | `false` | Return columns, `row_count` and only the totals row, or `report_summary` with no rows; a report with neither returns its rows with `summary_unavailable: true` |
 
 **Row-limit response fields:** `row_count` (rows the report produced), `truncated` (`true` when rows were left out),
 `total_count` (same as `row_count`, present when rows are returned), `summary_only`, `report_summary` (when the report returns one), and `truncation_note` (when truncated). `row_count` includes the totals row. A report with

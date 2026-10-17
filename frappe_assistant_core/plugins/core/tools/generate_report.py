@@ -44,7 +44,7 @@ class GenerateReport(BaseTool):
         super().__init__()
         self.name = "generate_report"
 
-        self.description = "Execute a Frappe report. IMPORTANT: Always call report_requirements(report_name) FIRST to get mandatory filters and valid options, then call this tool with explicit filters. Missing filters are auto-defaulted (dates, company) which often returns empty data; the filters FAC filled in come back in defaulted_filters, and your answer must state the period and company actually used (only those it lists; null means unknown, so do not cite one). If a required choice is ambiguous (which company, which period), ask the user instead of guessing. Use summary_only for totals questions. Supports Script Reports, Query Reports, and Custom Reports. Report Builder reports are not supported. A large prepared report is waited on for at most 15 seconds; if the result status is 'timeout', call generate_report again with the same filters to pick it up. Returns at most max_rows rows (default 500); check truncated and row_count."
+        self.description = "Execute a Frappe report. IMPORTANT: Always call report_requirements(report_name) FIRST to get mandatory filters and valid options, then call this tool with explicit filters. Missing filters are auto-defaulted (dates, company) which often returns empty data; the filters FAC filled in come back in defaulted_filters, and your answer must state the period and company actually used (only those it lists; null means unknown, so do not cite one). If a required choice is ambiguous (which company, which period), ask the user instead of guessing. Use summary_only for totals questions: it returns the report's totals row or report_summary, or the rows with summary_unavailable when the report has neither. Supports Script Reports, Query Reports, and Custom Reports. Report Builder reports are not supported. A large prepared report is waited on for at most 15 seconds; if the result status is 'timeout', call generate_report again with the same filters to pick it up. Returns at most max_rows rows (default 500); check truncated and row_count."
         self.requires_permission = None  # Permission checked dynamically per report
 
         self.inputSchema = {
@@ -75,7 +75,7 @@ class GenerateReport(BaseTool):
                 "summary_only": {
                     "type": "boolean",
                     "default": False,
-                    "description": "Return columns, row_count and the report's summary without any rows. Use it to size a large report before fetching rows.",
+                    "description": "Return columns, row_count and only the totals row (or the report_summary with no rows). A report with neither returns its rows with summary_unavailable: true. Use it for totals and to size a large report.",
                 },
             },
             "required": ["report_name"],

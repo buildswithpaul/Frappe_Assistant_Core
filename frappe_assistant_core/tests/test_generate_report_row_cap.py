@@ -53,11 +53,12 @@ class TestGenerateReportRowCap(BaseAssistantTest):
         self.assertEqual(capped["data"][-1], self.full["data"][-1])
         self.assertIn("truncation_note", capped)
 
-    def test_summary_only_returns_no_rows_but_the_count(self):
+    def test_summary_only_returns_just_the_totals_row_and_the_count(self):
         summary = ReportTools.execute_report(self.report, summary_only=True)
 
-        self.assertEqual(summary["data"], [])
+        self.assertEqual(summary["data"], [self.full["data"][-1]])
         self.assertEqual(summary["row_count"], ROWS + 1)
+        self.assertNotIn("summary_unavailable", summary)
         self.assertTrue(summary["columns"])
         self.assertNotIn("suggestion", summary)
 
@@ -97,7 +98,7 @@ class TestGenerateReportRowCap(BaseAssistantTest):
     def test_summary_only_passes_through_the_tool(self):
         result = GenerateReport().execute({"report_name": self.report, "summary_only": True})
 
-        self.assertEqual(result["data"], [])
+        self.assertEqual(result["data"], [self.full["data"][-1]])
         self.assertEqual(result["row_count"], ROWS + 1)
 
     def test_no_totals_row_when_frappe_skipped_it(self):
@@ -109,3 +110,27 @@ class TestGenerateReportRowCap(BaseAssistantTest):
             capped = ReportTools.execute_report(self.report, max_rows=3)
 
         self.assertEqual(capped["data"], rows[:3])
+
+    def test_summary_only_without_totals_or_summary_returns_the_rows(self):
+        # Sales Analytics and many Script Reports add no totals row and no report_summary;
+        # an empty answer sent the model back to listing and summing records itself.
+        rows = [{"name": f"r{i}", "amount": i} for i in range(4)]
+        stub = {"result": rows, "columns": [], "add_total_row": False}
+        with patch.object(ReportTools, "_execute_query_report", return_value=stub):
+            summary = ReportTools.execute_report(self.report, summary_only=True)
+
+        self.assertEqual(summary["data"], rows)
+        self.assertTrue(summary["summary_unavailable"])
+        self.assertIn("summary_note", summary)
+
+    def test_summary_only_with_a_report_summary_returns_no_rows(self):
+        # Reports such as Gross Profit return a report_summary block instead of a totals row.
+        rows = [{"name": f"r{i}"} for i in range(4)]
+        block = [{"label": "Total", "value": 10}]
+        stub = {"result": rows, "columns": [], "add_total_row": False, "report_summary": block}
+        with patch.object(ReportTools, "_execute_query_report", return_value=stub):
+            summary = ReportTools.execute_report(self.report, summary_only=True)
+
+        self.assertEqual(summary["data"], [])
+        self.assertEqual(summary["report_summary"], block)
+        self.assertNotIn("summary_unavailable", summary)
