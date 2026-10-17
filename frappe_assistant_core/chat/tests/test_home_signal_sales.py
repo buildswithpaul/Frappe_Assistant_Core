@@ -160,7 +160,9 @@ class TestSalesSignals(BaseAssistantTest):
 
     def test_s3_ignores_lead_owned_by_someone_else(self):
         before = self._count(home_signals._stale_leads)
-        self._lead("Administrator")
+        lead = self._lead("Administrator")
+        # Manufactured: production reaches this when a user creates a lead and assigns it to a colleague.
+        frappe.db.set_value("Lead", lead.name, "owner", self.user, update_modified=False)
         self.assertEqual(self._count(home_signals._stale_leads), before)
 
     @unittest.skipUnless("crm" in frappe.get_installed_apps(), "needs the CRM app")
