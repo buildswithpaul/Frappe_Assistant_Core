@@ -11,7 +11,6 @@ from frappe_assistant_core.chat import home_signals
 from frappe_assistant_core.tests.base_test import BaseAssistantTest
 
 COMPANY = "Northwind Demo Co"
-ABBR = "NDC"
 HR_IDS = ["leave_to_approve", "expense_claims_to_approve"]
 
 
@@ -89,12 +88,17 @@ class TestHrSignals(BaseAssistantTest):
         assignment.submit()
 
     def _expense_claim_type(self) -> str:
+        account = frappe.db.get_value(
+            "Account", {"company": COMPANY, "root_type": "Expense", "is_group": 0, "disabled": 0}, "name"
+        )
+        if not account:
+            self.skipTest(f"{COMPANY} has no expense account for an Expense Claim Type")
         return (
             frappe.get_doc(
                 {
                     "doctype": "Expense Claim Type",
                     "expense_type": f"Signal Expense {frappe.generate_hash(length=6)}",
-                    "accounts": [{"company": COMPANY, "default_account": f"GST Expense - {ABBR}"}],
+                    "accounts": [{"company": COMPANY, "default_account": account}],
                 }
             )
             .insert(ignore_permissions=True)
@@ -161,15 +165,33 @@ class TestHrSignals(BaseAssistantTest):
         self.assertEqual(result.count, before + 1)
         self.assertEqual(result.ask, "Show leave applications waiting for my approval")
 
-    def test_h1_detail_counts_leave_starting_within_three_days(self):
-        self._leave(self.user, starts_in_days=2)
-        result = home_signals._leave_to_approve(self.user, COMPANY)
-        self.assertRegex(result.detail, r"in the next 3 days$")
-        self.assertNotIn("None of them", result.detail)
+    def test_h1_detail_names_leave_starting_within_the_window(self):
+        window = home_signals.LEAVE_START_WINDOW_DAYS
         self._leave(self.user, starts_in_days=90)
-        later = home_signals._leave_to_approve(self.user, COMPANY)
-        self.assertEqual(later.count, result.count + 1)
-        self.assertEqual(later.detail, result.detail)
+        self.assertEqual(
+            home_signals._leave_to_approve(self.user, COMPANY).detail,
+            f"None of them start in the next {window} days",
+        )
+        self._leave(self.user, starts_in_days=2)
+        self.assertEqual(
+            home_signals._leave_to_approve(self.user, COMPANY).detail,
+            f"1 starts in the next {window} days",
+        )
+        self._leave(self.user, starts_in_days=3)
+        self.assertEqual(
+            home_signals._leave_to_approve(self.user, COMPANY).detail,
+            f"2 start in the next {window} days",
+        )
+
+    def test_h1_and_h2_ignore_the_default_company(self):
+        # An approver's default company is a UI preference; the queue is theirs whatever the company.
+        self._leave(self.user, starts_in_days=60)
+        self._claim(self.user)
+        for compute in (home_signals._leave_to_approve, home_signals._expense_claims_to_approve):
+            self.assertEqual(
+                compute(self.user, "Some Other Company").count, compute(self.user, COMPANY).count
+            )
+            self.assertGreaterEqual(compute(self.user, "Some Other Company").count, 1)
 
     def test_h1_ignores_leave_for_other_approver(self):
         before = self._count(home_signals._leave_to_approve)

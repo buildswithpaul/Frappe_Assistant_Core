@@ -569,19 +569,25 @@ def _pending_material_requests(user: str, company: str | None) -> SignalResult |
 
 
 def _leave_to_approve(user: str, company: str | None) -> SignalResult | None:
-    filters = _company_scoped({"docstatus": 0, "status": "Open", "leave_approver": user}, company)
+    # Not company-scoped: the queue is the approver's own work, whatever their default company.
+    filters = {"docstatus": 0, "status": "Open", "leave_approver": user}
     count = count_visible("Leave Application", filters, user)
-    soon = count_visible(
-        "Leave Application",
-        {**filters, "from_date": ["between", [today(), add_days(today(), LEAVE_START_WINDOW_DAYS)]]},
-        user,
+    soon = (
+        count_visible(
+            "Leave Application",
+            {**filters, "from_date": ["between", [today(), add_days(today(), LEAVE_START_WINDOW_DAYS)]]},
+            user,
+        )
+        if count
+        else 0
     )
+    days = LEAVE_START_WINDOW_DAYS
     if soon == 0:
-        detail = _("None of them start in the next 3 days")
+        detail = _("None of them start in the next {0} days").format(days)
     elif soon == 1:
-        detail = _("{0} starts in the next 3 days").format(soon)
+        detail = _("{0} starts in the next {1} days").format(soon, days)
     else:
-        detail = _("{0} start in the next 3 days").format(soon)
+        detail = _("{0} start in the next {1} days").format(soon, days)
     return SignalResult(
         count=count,
         title=(
@@ -596,9 +602,10 @@ def _leave_to_approve(user: str, company: str | None) -> SignalResult | None:
 
 
 def _expense_claims_to_approve(user: str, company: str | None) -> SignalResult | None:
+    # Not company-scoped: the queue is the approver's own work, whatever their default company.
     count = count_visible(
         "Expense Claim",
-        _company_scoped({"docstatus": 0, "approval_status": "Draft", "expense_approver": user}, company),
+        {"docstatus": 0, "approval_status": "Draft", "expense_approver": user},
         user,
     )
     return SignalResult(
