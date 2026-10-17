@@ -2,7 +2,7 @@
 	<div class="frs">
 		<button
 			v-for="card in cards"
-			:key="card.kind"
+			:key="card.text"
 			type="button"
 			class="frs-card"
 			@click="$emit('pick', card.text)"
@@ -18,7 +18,7 @@
 					<i v-for="w in EMAIL_WIDTHS" :key="w" :style="{ width: `${w}%` }"></i>
 				</template>
 			</span>
-			<span class="frs-label">{{ card.label }}</span>
+			<span v-if="card.label" class="frs-label">{{ card.label }}</span>
 			<span class="frs-text">{{ card.text }}</span>
 		</button>
 	</div>
@@ -35,15 +35,25 @@ const BAR_HEIGHTS = [38, 62, 48, 86, 70];
 const ROW_WIDTHS = [92, 78, 86, 64];
 const EMAIL_WIDTHS = [48, 100, 90, 56];
 
+const KIND_LABELS = [
+	{ kind: "see", label: () => __("See it") },
+	{ kind: "find", label: () => __("Find it") },
+	{ kind: "do", label: () => __("Do it") },
+];
+
+// One tile per kind, matched on what the starter produces. A kind the server
+// did not supply is filled from the remaining tiles, shown without a label.
 const cards = computed(() => {
-	const kinds = [
-		{ kind: "see", label: __("See it") },
-		{ kind: "find", label: __("Find it") },
-		{ kind: "do", label: __("Do it") },
-	];
-	return kinds
-		.map((k, i) => ({ ...k, text: props.tiles[i]?.description }))
-		.filter((c) => c.text);
+	const picked = KIND_LABELS.map(({ kind, label }) => {
+		const tile = props.tiles.find((t) => t.kind === kind);
+		return tile ? { kind, label: label(), tile } : { kind, label: "", tile: null };
+	});
+	const used = new Set(picked.map((c) => c.tile).filter(Boolean));
+	const spare = props.tiles.filter((t) => !used.has(t));
+	return picked
+		.map((c) => (c.tile ? c : { ...c, kind: "find", tile: spare.shift() || null }))
+		.filter((c) => c.tile)
+		.map((c) => ({ kind: c.kind, label: c.label, text: c.tile.description }));
 });
 </script>
 

@@ -122,8 +122,13 @@ def _current_month_name() -> str:
     return _(now_datetime().strftime("%B"))
 
 
-def _lens_prompt(name: str, description: str, subtext: str) -> dict:
-    return {"name": name, "description": description, "subtext": subtext}
+# What a starter produces, so the day-one cards can label it: a chart ("see"),
+# a lookup ("find") or a drafted/changed document ("do").
+STARTER_KINDS = ("see", "find", "do")
+
+
+def _lens_prompt(name: str, description: str, subtext: str, kind: str) -> dict:
+    return {"name": name, "description": description, "subtext": subtext, "kind": kind}
 
 
 def _lens_starters() -> dict[str, list[dict]]:
@@ -135,21 +140,25 @@ def _lens_starters() -> dict[str, list[dict]]:
                 "accounts_top_debtors",
                 _("Who owes us the most, and since when?"),
                 _("Largest receivables, oldest first"),
+                "find",
             ),
             _lens_prompt(
                 "accounts_collections_trend",
                 _("Compare collections this month with last month"),
                 _("Are payments speeding up or slowing down?"),
+                "see",
             ),
             _lens_prompt(
                 "accounts_gst_payable",
                 _("Summarise GST payable for {0}").format(_current_month_name()),
                 _("Tax collected against tax paid"),
+                "do",
             ),
             _lens_prompt(
                 "accounts_late_payers",
                 _("Which customers pay late most often?"),
                 _("Who to chase first"),
+                "find",
             ),
         ],
         "sales": [
@@ -157,21 +166,25 @@ def _lens_starters() -> dict[str, list[dict]]:
                 "sales_top_customers",
                 _("Top 10 customers by revenue this month"),
                 _("Ranked from your sales invoices"),
+                "see",
             ),
             _lens_prompt(
                 "sales_pending_orders",
                 _("Which sales orders are still waiting to be delivered?"),
                 _("What is due and what is stuck"),
+                "find",
             ),
             _lens_prompt(
                 "sales_quotations_to_chase",
                 _("Which open quotations should I follow up this week?"),
                 _("Sent, not yet won or lost"),
+                "do",
             ),
             _lens_prompt(
                 "sales_stale_leads",
                 _("Which leads have gone quiet for two weeks?"),
                 _("Before they go cold"),
+                "find",
             ),
         ],
         "stock": [
@@ -179,21 +192,25 @@ def _lens_starters() -> dict[str, list[dict]]:
                 "stock_low_items",
                 _("Which items are below reorder level?"),
                 _("Before they run out"),
+                "find",
             ),
             _lens_prompt(
                 "stock_open_purchase_orders",
                 _("Which purchase orders are overdue for delivery?"),
                 _("Supplier, value, promised date"),
+                "find",
             ),
             _lens_prompt(
                 "stock_supplier_spend",
                 _("Top suppliers by spend this quarter"),
                 _("Concentration at a glance"),
+                "see",
             ),
             _lens_prompt(
                 "stock_slow_movers",
                 _("Which items have not moved in 90 days?"),
                 _("Cash tied up on the shelf"),
+                "do",
             ),
         ],
         "hr": [
@@ -201,21 +218,25 @@ def _lens_starters() -> dict[str, list[dict]]:
                 "hr_on_leave",
                 _("Who is on leave this week?"),
                 _("From approved leave applications"),
+                "find",
             ),
             _lens_prompt(
                 "hr_pending_approvals",
                 _("Show leave and expense claims waiting for my approval"),
                 _("What is holding the team up"),
+                "do",
             ),
             _lens_prompt(
                 "hr_attendance_gaps",
                 _("Who has missed attendance marking this week?"),
                 _("Gaps worth a nudge"),
+                "see",
             ),
             _lens_prompt(
                 "hr_upcoming_events",
                 _("Whose birthdays and work anniversaries are coming up?"),
                 _("A small thing worth remembering"),
+                "find",
             ),
         ],
         "support": [
@@ -223,21 +244,25 @@ def _lens_starters() -> dict[str, list[dict]]:
                 "support_open_tickets",
                 _("Summarise my open tickets by priority"),
                 _("Triage in one view"),
+                "see",
             ),
             _lens_prompt(
                 "support_common_issues",
                 _("What are the most common support issues lately?"),
                 _("Patterns across recent tickets"),
+                "find",
             ),
             _lens_prompt(
                 "support_overdue_tickets",
                 _("Which tickets are about to breach their response time?"),
                 _("Oldest unanswered first"),
+                "find",
             ),
             _lens_prompt(
                 "support_unassigned",
                 _("Which tickets have no owner yet?"),
                 _("Needs someone to pick it up"),
+                "do",
             ),
         ],
         "generic": [
@@ -245,21 +270,25 @@ def _lens_starters() -> dict[str, list[dict]]:
                 "generic_help",
                 _("What can you help me with?"),
                 _("A quick tour of what I can do"),
+                "find",
             ),
             _lens_prompt(
                 "generic_create_document",
                 _("How do I create a new document?"),
                 _("Guided, step by step"),
+                "do",
             ),
             _lens_prompt(
                 "generic_recent_updates",
                 _("Show me recent updates in the system"),
                 _("What changed while you were away"),
+                "see",
             ),
             _lens_prompt(
                 "generic_explain_frappe",
                 _("Explain Frappe ERP to me"),
                 _("The lay of the land"),
+                "find",
             ),
         ],
     }
@@ -287,6 +316,7 @@ def _role_bucket_prompts(roles, installed_apps=None):
             "name": p["name"],
             "description": p["description"],
             "subtext": p.get("subtext"),
+            "kind": p["kind"],
             "has_arguments": False,
             "source": "default",
         }

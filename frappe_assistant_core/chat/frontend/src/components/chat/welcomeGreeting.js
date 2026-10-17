@@ -1,3 +1,5 @@
+import { __ } from "@/utils/i18n";
+
 // Time-aware greeting + a friendly display name derived from the username.
 export function greetingForHour(hour) {
 	const h = Number.isFinite(hour) ? hour : 12;
@@ -5,6 +7,14 @@ export function greetingForHour(hour) {
 	if (h < 12) return "Good morning";
 	if (h < 17) return "Good afternoon";
 	return "Good evening";
+}
+
+// The whole headline per time of day, so each sentence is translatable as one.
+export function greetingLineForHour(hour, name) {
+	const greeting = greetingForHour(hour);
+	if (greeting === "Good morning") return __("Good morning, {0}.", [name]);
+	if (greeting === "Good afternoon") return __("Good afternoon, {0}.", [name]);
+	return __("Good evening, {0}.", [name]);
 }
 
 export function displayNameFromUser(user) {

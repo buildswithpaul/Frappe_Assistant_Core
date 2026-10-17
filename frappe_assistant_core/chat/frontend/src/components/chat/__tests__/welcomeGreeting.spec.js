@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { greetingForHour, displayNameFromUser } from "../welcomeGreeting";
+import { greetingForHour, greetingLineForHour, displayNameFromUser } from "../welcomeGreeting";
 
 describe("greetingForHour", () => {
 	it("morning between 5 and 11", () => {
@@ -17,6 +17,14 @@ describe("greetingForHour", () => {
 	});
 	it("defaults to afternoon on bad input", () => {
 		expect(greetingForHour(undefined)).toBe("Good afternoon");
+	});
+});
+
+describe("greetingLineForHour", () => {
+	it("returns the whole headline for the time of day", () => {
+		expect(greetingLineForHour(8, "Jane")).toBe("Good morning, Jane.");
+		expect(greetingLineForHour(13, "Jane")).toBe("Good afternoon, Jane.");
+		expect(greetingLineForHour(20, "Jane")).toBe("Good evening, Jane.");
 	});
 });
 

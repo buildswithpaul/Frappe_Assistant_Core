@@ -1,6 +1,6 @@
 <template>
 	<div class="hs">
-		<h2 class="hs-heading">{{ __("Ask about your {0}", [__(area || "business")]) }}</h2>
+		<h2 class="hs-heading">{{ __("Ask about your {0}", [area ? __(area) : __("business")]) }}</h2>
 		<ul class="hs-list">
 			<li v-for="tile in tiles" :key="tile.name || tile.description">
 				<button type="button" class="hs-row" @click="$emit('pick', tile.description)">

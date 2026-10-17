@@ -69,6 +69,15 @@ class TestRoleBucketPrompts(unittest.TestCase):
         self.assertIn("Summarise GST payable for March", descriptions)
         self.assertIn("Which customers pay late most often?", descriptions)
 
+    def test_each_lens_offers_one_starter_of_every_kind(self):
+        for lens, starters in prompts._lens_starters().items():
+            kinds = {s["kind"] for s in starters}
+            self.assertEqual(kinds, set(prompts.STARTER_KINDS), lens)
+
+    def test_kind_is_passed_through_to_the_returned_prompts(self):
+        for p in _role_bucket_prompts(["Sales User"], APPS):
+            self.assertIn(p["kind"], prompts.STARTER_KINDS)
+
     def test_current_month_name_is_a_month(self):
         self.assertIn(
             prompts._current_month_name(),

@@ -9,7 +9,7 @@
 			</template>
 			<template v-else>
 				<div class="hh-date">{{ dateLabel }}</div>
-				<h1 class="hh-greeting">{{ __("{0}, {1}.", [greeting, displayName]) }}</h1>
+				<h1 class="hh-greeting">{{ greetingLine }}</h1>
 			</template>
 		</div>
 		<span v-if="chipLabel" class="hh-chip">{{ chipLabel }}</span>
@@ -22,7 +22,7 @@ import { formatDateLabel } from "@/components/chat/welcomeGreeting";
 import { __ } from "@/utils/i18n";
 
 const props = defineProps({
-	greeting: { type: String, required: true },
+	greetingLine: { type: String, required: true },
 	displayName: { type: String, required: true },
 	lensLabel: { type: String, default: "" },
 	company: { type: String, default: "" },

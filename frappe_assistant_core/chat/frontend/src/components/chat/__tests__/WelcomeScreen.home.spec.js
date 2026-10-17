@@ -2,13 +2,22 @@ import { mount, flushPromises } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const getHome = vi.fn();
+const { getHome, listRuns, dismissSpy } = vi.hoisted(() => ({
+	getHome: vi.fn(),
+	listRuns: vi.fn(),
+	dismissSpy: vi.fn(),
+}));
 vi.mock("@/api/client", () => ({
 	api: {
 		home: { get: (...a) => getHome(...a) },
-		workflows: { listRuns: vi.fn().mockResolvedValue({ runs: [] }), list: vi.fn() },
+		workflows: { listRuns: (...a) => listRuns(...a), list: vi.fn().mockResolvedValue({ workflows: [] }) },
 	},
 }));
+// Real composable, but dismiss is spied so we can prove which instance NeedsYou is wired to.
+vi.mock("@/composables/useHomeSignals", async (importOriginal) => {
+	const real = await importOriginal();
+	return { useHomeSignals: (...a) => ({ ...real.useHomeSignals(...a), dismiss: dismissSpy }) };
+});
 
 import WelcomeScreen from "../WelcomeScreen.vue";
 import { useChatStore } from "@/stores/chatStore";
@@ -26,15 +35,22 @@ const ITEM = {
 };
 const HOME = { lens_label: "Sales", area: "sales", company: "Acme Ltd", items: [ITEM] };
 const SESSION = { session_id: "s1", preview: "Q3 revenue", last_activity: "2026-10-16 10:00:00" };
-const TILES = ["One?", "Two?", "Three?", "Four?"].map((d) => ({
-	name: d,
-	description: d,
-	source: "default",
-}));
+const TILES = [
+	["One?", "find"],
+	["Two?", "see"],
+	["Three?", "do"],
+	["Four?", "find"],
+].map(([d, kind]) => ({ name: d, description: d, kind, source: "default" }));
 
-async function mountHome({ sessions = [SESSION], home = HOME, disabled = false } = {}) {
+async function mountHome({ sessions = [SESSION], home = HOME, disabled = false, failedRun = false } = {}) {
 	setActivePinia(createPinia());
 	getHome.mockReset();
+	listRuns.mockReset();
+	dismissSpy.mockReset();
+	listRuns.mockResolvedValue({
+		runs: failedRun ? [{ workflow: "WF-1", started_at: new Date().toISOString() }] : [],
+	});
+	useUserStore().workflowsEnabled = failedRun;
 	if (home instanceof Error) getHome.mockRejectedValue(home);
 	else getHome.mockResolvedValue(home);
 	vi.stubGlobal("requestAnimationFrame", (cb) => {
@@ -74,7 +90,7 @@ describe("WelcomeScreen home", () => {
 		expect(cards.map((c) => c.find(".frs-label").text())).toEqual(["See it", "Find it", "Do it"]);
 		expect(w.find(".hs").exists()).toBe(false);
 		await cards[0].trigger("click");
-		expect(w.emitted("suggestion")).toEqual([["One?"]]);
+		expect(w.emitted("suggestion")).toEqual([["Two?"]]);
 	});
 
 	it("day one with no signals shows the explanatory empty line", async () => {
@@ -111,6 +127,14 @@ describe("WelcomeScreen home", () => {
 		expect(withCompany.find(".hh-chip").text()).toBe("Sales · Acme Ltd");
 		const without = await mountHome({ home: { ...HOME, company: null } });
 		expect(without.find(".hh-chip").exists()).toBe(false);
+	});
+
+	it("a failed-workflows item navigates to /agents and dismiss uses the composable's dismiss", async () => {
+		const w = await mountHome({ failedRun: true, home: { ...HOME, items: [] } });
+		await w.find(".ny-main").trigger("click");
+		expect(w.emitted("navigate")).toEqual([["/agents"]]);
+		await w.find(".ny-dismiss").trigger("click");
+		expect(dismissSpy).toHaveBeenCalledTimes(1);
 	});
 
 	it("no AttentionLine is rendered", async () => {

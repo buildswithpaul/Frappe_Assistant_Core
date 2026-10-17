@@ -2,7 +2,7 @@
 	<div class="welcome-screen">
 		<div class="welcome-inner">
 			<HomeHeader
-				:greeting="greeting"
+				:greeting-line="greetingLine"
 				:display-name="displayName"
 				:lens-label="lensLabel || ''"
 				:company="company || ''"
@@ -26,7 +26,7 @@
 			/>
 
 			<template v-if="!suggestionStore.suggestionsDisabled">
-				<FirstRunStarters v-if="dayOne" :tiles="tiles.slice(0, 3)" @pick="(d) => $emit('suggestion', d)" />
+				<FirstRunStarters v-if="dayOne" :tiles="tiles" @pick="(d) => $emit('suggestion', d)" />
 				<div v-else class="welcome-lower" :class="{ 'no-continue': !resumeSessions.length }">
 					<ContinueList
 						v-if="resumeSessions.length"
@@ -54,7 +54,7 @@ import { useUserStore } from "@/stores/userStore";
 import { useSuggestionStore } from "@/stores/suggestionStore";
 import { usePacksStore } from "@/stores/packsStore";
 import { useChatStore } from "@/stores/chatStore";
-import { greetingForHour, displayNameFromUser } from "@/components/chat/welcomeGreeting";
+import { greetingLineForHour, displayNameFromUser } from "@/components/chat/welcomeGreeting";
 import { selectWelcomeTiles } from "@/components/chat/welcome/welcomeRelevance";
 import { useHomeSignals } from "@/composables/useHomeSignals";
 import { __ } from "@/utils/i18n";
@@ -75,8 +75,8 @@ const packsStore = usePacksStore();
 const chatStore = useChatStore();
 const { allSuggestions } = storeToRefs(suggestionStore);
 
-const greeting = computed(() => greetingForHour(new Date().getHours()));
 const displayName = computed(() => displayNameFromUser(userStore.user));
+const greetingLine = computed(() => greetingLineForHour(new Date().getHours(), displayName.value));
 
 // The welcome screen only mounts once sessions are loaded at boot, so an empty
 // list means a first-time user.
