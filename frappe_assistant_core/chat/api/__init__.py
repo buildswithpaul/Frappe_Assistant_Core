@@ -145,6 +145,9 @@ from .events import (
     get_tool_stats,
 )
 
+# ── Home ─────────────────────────────────────────────────────────────
+from .home import get_home_signals
+
 # ── SPA Initialization ─────────────────────────────────────────────
 from .init import initialize_spa
 
