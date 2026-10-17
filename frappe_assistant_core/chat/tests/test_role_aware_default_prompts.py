@@ -61,12 +61,11 @@ class TestRoleBucketPrompts(unittest.TestCase):
         prompts = _role_bucket_prompts(["Sales User"], APPS)
         self.assertTrue(any(p["name"].startswith("generic_") for p in prompts))
 
-    def test_accounts_starters_are_concrete_and_month_is_computed(self):
-        with patch.object(prompts, "_current_month_name", return_value="March"):
-            descriptions = [p["description"] for p in _role_bucket_prompts(["Accounts User"], APPS)]
+    def test_accounts_starters_are_concrete(self):
+        descriptions = [p["description"] for p in _role_bucket_prompts(["Accounts User"], APPS)]
         self.assertIn("Who owes us the most, and since when?", descriptions)
         self.assertIn("Compare collections this month with last month", descriptions)
-        self.assertIn("Summarise GST payable for March", descriptions)
+        self.assertIn("Draft a payment reminder to my most overdue customer", descriptions)
         self.assertIn("Which customers pay late most often?", descriptions)
 
     def test_each_lens_offers_one_starter_of_every_kind(self):
@@ -74,28 +73,15 @@ class TestRoleBucketPrompts(unittest.TestCase):
             kinds = {s["kind"] for s in starters}
             self.assertEqual(kinds, set(prompts.STARTER_KINDS), lens)
 
+    def test_do_starters_are_actions_that_draft_or_prepare(self):
+        for lens, starters in prompts._lens_starters().items():
+            do = [s for s in starters if s["kind"] == "do"]
+            self.assertEqual(len(do), 1, lens)
+            self.assertRegex(do[0]["description"], r"^(Draft|Prepare|Help me)", lens)
+
     def test_kind_is_passed_through_to_the_returned_prompts(self):
         for p in _role_bucket_prompts(["Sales User"], APPS):
             self.assertIn(p["kind"], prompts.STARTER_KINDS)
-
-    def test_current_month_name_is_a_month(self):
-        self.assertIn(
-            prompts._current_month_name(),
-            [
-                "January",
-                "February",
-                "March",
-                "April",
-                "May",
-                "June",
-                "July",
-                "August",
-                "September",
-                "October",
-                "November",
-                "December",
-            ],
-        )
 
 
 class TestPageAsks(unittest.TestCase):

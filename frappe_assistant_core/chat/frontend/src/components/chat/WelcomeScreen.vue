@@ -26,7 +26,7 @@
 			/>
 
 			<template v-if="!suggestionStore.suggestionsDisabled">
-				<FirstRunStarters v-if="dayOne" :tiles="tiles" @pick="(d) => $emit('suggestion', d)" />
+				<FirstRunStarters v-if="dayOne" :tiles="firstRunTiles" @pick="(d) => $emit('suggestion', d)" />
 				<div v-else class="welcome-lower" :class="{ 'no-continue': !resumeSessions.length }">
 					<ContinueList
 						v-if="resumeSessions.length"
@@ -91,6 +91,10 @@ const tiles = computed(() =>
 		resumePreviews: resumeSessions.value.map((s) => s.preview || ""),
 	})
 );
+
+// Day one picks one starter per kind from the full list, not the 4-tile cut,
+// so a multi-lens user still gets all three cards.
+const firstRunTiles = computed(() => (allSuggestions.value.length ? allSuggestions.value : tiles.value));
 
 // Needs-you signals: post-paint, fail-silent; dismiss belongs to this instance.
 const { items, lensLabel, area, company, loaded, failed, dismiss } = useHomeSignals({

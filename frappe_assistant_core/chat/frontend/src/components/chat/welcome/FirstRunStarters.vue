@@ -35,14 +35,18 @@ const BAR_HEIGHTS = [38, 62, 48, 86, 70];
 const ROW_WIDTHS = [92, 78, 86, 64];
 const EMAIL_WIDTHS = [48, 100, 90, 56];
 
+const KINDS = ["see", "find", "do"];
 const KIND_LABELS = [
 	{ kind: "see", label: () => __("See it") },
 	{ kind: "find", label: () => __("Find it") },
 	{ kind: "do", label: () => __("Do it") },
 ];
 
-// One tile per kind, matched on what the starter produces. A kind the server
-// did not supply is filled from the remaining tiles, shown without a label.
+// One tile per kind, matched on what the starter produces. `tiles` is the full
+// starter list in server order, so the first match per kind belongs to the
+// user's primary lens and a personalized tile without a kind never takes a
+// labelled slot. A missing kind is filled from the remaining tiles, shown
+// without a label and previewed as its own kind when it has one.
 const cards = computed(() => {
 	const picked = KIND_LABELS.map(({ kind, label }) => {
 		const tile = props.tiles.find((t) => t.kind === kind);
@@ -51,7 +55,11 @@ const cards = computed(() => {
 	const used = new Set(picked.map((c) => c.tile).filter(Boolean));
 	const spare = props.tiles.filter((t) => !used.has(t));
 	return picked
-		.map((c) => (c.tile ? c : { ...c, kind: "find", tile: spare.shift() || null }))
+		.map((c) => {
+			if (c.tile) return c;
+			const tile = spare.shift() || null;
+			return { ...c, kind: KINDS.includes(tile?.kind) ? tile.kind : "find", tile };
+		})
 		.filter((c) => c.tile)
 		.map((c) => ({ kind: c.kind, label: c.label, text: c.tile.description }));
 });
