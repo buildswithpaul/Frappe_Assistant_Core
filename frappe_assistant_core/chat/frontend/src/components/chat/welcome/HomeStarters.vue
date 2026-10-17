@@ -1,6 +1,6 @@
 <template>
 	<div class="hs">
-		<h2 class="hs-heading">{{ __("Ask about your {0}", [area ? __(area) : __("business")]) }}</h2>
+		<h2 class="hs-heading">{{ __("Ask about your {0}", [areaLabel]) }}</h2>
 		<ul class="hs-list">
 			<li v-for="tile in tiles" :key="tile.name || tile.description">
 				<button type="button" class="hs-row" @click="$emit('pick', tile.description)">
@@ -13,14 +13,27 @@
 </template>
 
 <script setup>
+import { computed } from "vue";
 import { __ } from "@/utils/i18n";
 
-defineProps({
+// Literals so the translation extractor sees each area word the server sends as a key.
+const AREA_LABELS = {
+	books: () => __("books"),
+	pipeline: () => __("pipeline"),
+	stock: () => __("stock"),
+	team: () => __("team"),
+	tickets: () => __("tickets"),
+	business: () => __("business"),
+};
+
+const props = defineProps({
 	tiles: { type: Array, default: () => [] },
 	// Null until the home endpoint answers; the heading falls back to "business".
 	area: { type: String, default: null },
 });
 defineEmits(["pick"]);
+
+const areaLabel = computed(() => (AREA_LABELS[props.area] || AREA_LABELS.business)());
 </script>
 
 <style scoped>

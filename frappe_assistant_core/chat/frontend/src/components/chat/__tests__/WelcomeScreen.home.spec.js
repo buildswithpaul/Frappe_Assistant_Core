@@ -33,7 +33,7 @@ const ITEM = {
 	detail: "Oldest 14 days",
 	ask: "Which invoices are overdue?",
 };
-const HOME = { lens_label: "Sales", area: "sales", company: "Acme Ltd", items: [ITEM] };
+const HOME = { lens_label: "Sales", area: "pipeline", company: "Acme Ltd", items: [ITEM] };
 const SESSION = { session_id: "s1", preview: "Q3 revenue", last_activity: "2026-10-16 10:00:00" };
 const TILES = [
 	["One?", "find"],
@@ -112,7 +112,7 @@ describe("WelcomeScreen home", () => {
 	it("returning user sees Continue and HomeStarters", async () => {
 		const w = await mountHome();
 		expect(w.find(".cl").exists()).toBe(true);
-		expect(w.find(".hs-heading").text()).toBe("Ask about your sales");
+		expect(w.find(".hs-heading").text()).toBe("Ask about your pipeline");
 		expect(w.find(".frs-card").exists()).toBe(false);
 		expect(w.text()).not.toContain("What should we work through today?");
 		await w.find(".hs-row").trigger("click");
