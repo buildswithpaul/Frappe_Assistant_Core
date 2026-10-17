@@ -21,6 +21,9 @@ export const useSuggestionStore = defineStore("suggestions", () => {
 		// A different context supersedes the one in flight (Desk navigation).
 		if (isLoading.value && contextKey === inFlightKey) return;
 		if (!force && contextKey === lastContextKey.value && allSuggestions.value.length > 0) {
+			// Back on the loaded context: a fetch started for a page in between is now stale.
+			inFlightKey = null;
+			isLoading.value = false;
 			return;
 		}
 

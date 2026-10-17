@@ -237,6 +237,34 @@ describe("widget home", () => {
 			expect(w.findAll(".pa-chip")).toHaveLength(2);
 		});
 
+		it("Customer to Customer keeps the doctype while the next record loads, then names it", async () => {
+			const asks = [...CUSTOMER_ASKS, { name: "d", description: "Which {doctype} owes the most?", source: "page" }];
+			// A fetch for any other context stays pending, as a slow server would, until form-refresh.
+			api.suggestions.get.mockImplementation(({ doctype }) =>
+				doctype === "Customer" ? Promise.resolve({ suggestions: asks }) : new Promise(() => {})
+			);
+			onRoute(["Form", "Customer", "CUST-0001"], customerForm);
+			const w = await mountHome();
+			api.suggestions.get.mockClear();
+
+			// Desk reuses the Customer form page: at the router change it still holds CUST-0001.
+			onRoute(["Form", "Customer", "CUST-0002"], customerForm);
+			routeChanged();
+			await settle();
+			expect(api.suggestions.get).not.toHaveBeenCalled();
+			expect(w.find(".pa-subject").text()).toBe("Customer");
+			expect(w.findAll(".pa-chip").map((c) => c.text())).toEqual(["Which Customer owes the most?"]);
+
+			onRoute(["Form", "Customer", "CUST-0002"], { ...customerForm, doc: { name: "CUST-0002" } });
+			formRefreshed();
+			await settle();
+			expect(w.find(".pa-subject").text()).toBe("Customer CUST-0002");
+			expect(w.findAll(".pa-chip").map((c) => c.text())).toEqual([
+				"Is CUST-0002 a good Customer to chase?",
+				"Which Customer owes the most?",
+			]);
+		});
+
 		it("an unmounted home no longer hears navigation, and mounts share one Desk registration", async () => {
 			const routerOn = vi.fn();
 			onRoute(["Workspaces", "Home"]);
@@ -248,8 +276,13 @@ describe("widget home", () => {
 			first.unmount();
 			second.unmount();
 			api.suggestions.get.mockClear();
+			// A different page. Vue stops an unmounted watcher, so a subscriber leaked past unmount
+			// shows only as detection still reading the route; neither may happen.
+			onRoute(["Form", "Customer", "CUST-0001"], customerForm);
+			const getRoute = vi.spyOn(window.frappe, "get_route");
 			routerOn.mock.calls[0][1]();
 			await settle();
+			expect(getRoute).not.toHaveBeenCalled();
 			expect(api.suggestions.get).not.toHaveBeenCalled();
 		});
 

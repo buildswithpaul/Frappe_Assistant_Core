@@ -412,12 +412,12 @@ describe("widget panel", () => {
 		const w = mount(WidgetPanel, { global: { stubs } });
 		await nextTick();
 		expect(w.findComponent(InputArea).props("placeholder")).toBe("Ask about this Sales Invoice…");
-		// Router change fires before the Customer doc exists: nothing to name yet.
+		// Router change fires before the Customer doc exists: the route already names the doctype.
 		route = ["Form", "Customer", "CUST-0001"];
 		formsByDoctype = {};
 		onChange();
 		await settle();
-		expect(w.findComponent(InputArea).props("placeholder")).toBe("");
+		expect(w.findComponent(InputArea).props("placeholder")).toBe("Ask about this Customer…");
 		formsByDoctype = { Customer: { frm: { doctype: "Customer", doc: { name: "CUST-0001" }, is_new: () => false } } };
 		onRefresh();
 		await settle();

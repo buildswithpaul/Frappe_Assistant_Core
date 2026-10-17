@@ -52,6 +52,12 @@ const ctx = {
 			};
 		}
 
+		// Desk is still loading the routed record into a reused form page: the doctype is already
+		// known, the record is not, so nothing may name the previous one.
+		if (route && route[0] === "Form" && route[1]) {
+			return { type: "Form", doctype: route[1], url: window.location.href };
+		}
+
 		if (route && route[0] === "List") {
 			return {
 				type: "List",

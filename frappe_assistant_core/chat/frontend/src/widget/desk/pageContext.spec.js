@@ -15,7 +15,8 @@ describe("detectContext on a form", () => {
 	it("does not report the previous record while Desk is still loading the one being opened", () => {
 		// The form page is reused per doctype and keeps the last record's doc until form-refresh.
 		deskOn(["Form", "Sales Invoice", "SINV-0002"], { "Sales Invoice": formPage("Sales Invoice", "SINV-0001") });
-		expect(detectContext().name).not.toBe("SINV-0001");
-		expect(detectContext().type).not.toBe("Form");
+		const context = detectContext();
+		expect(context).toMatchObject({ type: "Form", doctype: "Sales Invoice" });
+		expect(context).not.toHaveProperty("name");
 	});
 });
