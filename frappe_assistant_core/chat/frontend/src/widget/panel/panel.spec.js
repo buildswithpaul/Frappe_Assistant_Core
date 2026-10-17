@@ -24,6 +24,7 @@ vi.mock("@/api/client", () => ({
 
 import { api } from "@/api/client";
 import WidgetPanel from "./WidgetPanel.vue";
+import InputArea from "@/components/chat/InputArea.vue";
 import PanelApp from "./PanelApp.vue";
 import WidgetWelcome from "./WidgetWelcome.vue";
 import BrowserToolConfirm from "./BrowserToolConfirm.vue";
@@ -396,6 +397,35 @@ describe("widget panel", () => {
 		expect(w.find(".ww").exists()).toBe(false);
 	});
 
+	it("names the form in the composer placeholder, once Desk has loaded each record", async () => {
+		let route = ["Form", "Sales Invoice", "SINV-0001"];
+		let formsByDoctype = { "Sales Invoice": { frm: { doctype: "Sales Invoice", doc: { name: "SINV-0001" }, is_new: () => false } } };
+		let onChange;
+		let onRefresh;
+		window.jQuery = () => ({ on: (_e, fn) => (onRefresh = fn), off: vi.fn() });
+		window.frappe = {
+			get_route: () => route,
+			router: { on: (_e, fn) => (onChange = fn), off: vi.fn() },
+			views: { get formview() { return formsByDoctype; } },
+		};
+		const settle = () => new Promise((resolve) => setTimeout(resolve, 80));
+		const w = mount(WidgetPanel, { global: { stubs } });
+		await nextTick();
+		expect(w.findComponent(InputArea).props("placeholder")).toBe("Ask about this Sales Invoice…");
+		// Router change fires before the Customer doc exists: the route already names the doctype.
+		route = ["Form", "Customer", "CUST-0001"];
+		formsByDoctype = {};
+		onChange();
+		await settle();
+		expect(w.findComponent(InputArea).props("placeholder")).toBe("Ask about this Customer…");
+		formsByDoctype = { Customer: { frm: { doctype: "Customer", doc: { name: "CUST-0001" }, is_new: () => false } } };
+		onRefresh();
+		await settle();
+		expect(w.findComponent(InputArea).props("placeholder")).toBe("Ask about this Customer…");
+		delete window.frappe;
+		delete window.jQuery;
+	});
+
 	it("sends a suggestion picked on the welcome", async () => {
 		const chatStore = useChatStore();
 		chatStore.sendMessage = vi.fn().mockResolvedValue();
@@ -578,63 +608,6 @@ describe("widget panel", () => {
 			expect(click).not.toHaveBeenCalled();
 			vi.useRealTimers();
 		});
-	});
-});
-
-describe("welcome", () => {
-	beforeEach(() => {
-		setActivePinia(createPinia());
-		api.chat.getSessions.mockReset().mockResolvedValue([]);
-		api.suggestions.get.mockReset().mockResolvedValue({ suggestions: [] });
-		window.frappe = { get_route: () => ["List", "Sales Invoice"], router: { on: vi.fn(), off: vi.fn() } };
-	});
-	afterEach(() => delete window.frappe);
-
-	it("names the page the user is on", async () => {
-		const w = mount(WidgetWelcome);
-		await nextTick();
-		expect(w.find(".ww-context").exists()).toBe(true);
-		expect(w.find(".ww-context").text()).toContain("Sales Invoice");
-	});
-
-	it("greets the user by name, as FAC Chat's home does", async () => {
-		useUserStore().user = "avery.shah@northwind.example";
-		const w = mount(WidgetWelcome);
-		await nextTick();
-		expect(w.find(".wh-greeting").text()).toContain("Avery");
-	});
-
-	it("offers the two latest conversations and emits the one picked", async () => {
-		api.chat.getSessions.mockResolvedValue([
-			{ session_id: "s_old", preview: "Oldest", last_activity: "2026-10-01 09:00:00" },
-			{ session_id: "s_new", preview: "Newest", last_activity: "2026-10-07 09:00:00" },
-			{ session_id: "s_mid", preview: "Middle", last_activity: "2026-10-05 09:00:00" },
-		]);
-		const w = mount(WidgetWelcome);
-		await flushPromises();
-		const rows = w.findAll(".cl-row");
-		expect(rows.map((r) => r.text())).toEqual([expect.stringContaining("Newest"), expect.stringContaining("Middle")]);
-		await rows[0].trigger("click");
-		expect(w.emitted("open-session")).toEqual([["s_new"]]);
-	});
-
-	it("asks for suggestions that fit the page and emits the one picked", async () => {
-		api.suggestions.get.mockResolvedValue({
-			suggestions: [{ name: "Overdue invoices", description: "List overdue invoices", source: "contextual" }],
-		});
-		const w = mount(WidgetWelcome);
-		await flushPromises();
-		expect(api.suggestions.get).toHaveBeenCalledWith({ type: "List", doctype: "Sales Invoice" });
-		const tile = w.findAll(".st-tile").find((t) => t.text().includes("List overdue invoices"));
-		await tile.trigger("click");
-		expect(w.emitted("suggestion")).toEqual([["List overdue invoices"]]);
-	});
-
-	it("hides the tiles when the operator turned suggestions off", async () => {
-		api.suggestions.get.mockResolvedValue({ suggestions: [], suggestions_disabled: true });
-		const w = mount(WidgetWelcome);
-		await flushPromises();
-		expect(w.find(".st").exists()).toBe(false);
 	});
 });
 

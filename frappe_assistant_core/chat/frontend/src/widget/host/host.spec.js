@@ -103,3 +103,40 @@ describe("spaHost", () => {
 		open.mockRestore();
 	});
 });
+
+describe("deskHost.onContextChange", () => {
+	afterEach(() => {
+		delete window.frappe;
+		delete window.jQuery;
+		vi.useRealTimers();
+	});
+
+	it("fires once per navigation, shares one Desk registration, and stops after unsubscribe", async () => {
+		vi.useFakeTimers();
+		const { deskHost } = await import("./deskHost.js");
+		const handlers = {};
+		window.jQuery = () => ({ on: (e, fn) => (handlers[e] = fn), off: vi.fn() });
+		const routerOn = vi.fn();
+		window.frappe = { router: { on: routerOn, off: vi.fn() } };
+		const first = vi.fn();
+		const second = vi.fn();
+		const stopFirst = deskHost.onContextChange(first);
+		deskHost.onContextChange(second);
+		expect(routerOn).toHaveBeenCalledTimes(1);
+		routerOn.mock.calls[0][1]();
+		handlers["form-refresh"]();
+		vi.advanceTimersByTime(100);
+		expect(first).toHaveBeenCalledTimes(1);
+		expect(second).toHaveBeenCalledTimes(1);
+		stopFirst();
+		handlers["form-refresh"]();
+		vi.advanceTimersByTime(100);
+		expect(first).toHaveBeenCalledTimes(1);
+		expect(second).toHaveBeenCalledTimes(2);
+	});
+
+	it("is inert on the embedding page", async () => {
+		const spaHost = await loadSpaHost();
+		expect(spaHost.onContextChange(() => {})()).toBeUndefined();
+	});
+});

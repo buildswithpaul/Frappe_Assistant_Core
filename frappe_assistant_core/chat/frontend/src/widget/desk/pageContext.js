@@ -28,7 +28,10 @@ const ctx = {
 		// nosemgrep: frappe-cur-frm-usage
 		const frm = (page && page.frm) || window.cur_frm;
 
-		return frm && frm.doc ? frm : null;
+		// A form page is reused across records of a doctype, and keeps the previous record's doc
+		// until Desk refreshes it; the route already names the record being opened.
+		if (!frm || !frm.doc) return null;
+		return (frm.docname ?? frm.doc.name) === route[2] ? frm : null;
 	},
 
 	/**
@@ -47,6 +50,12 @@ const ctx = {
 				url: window.location.href,
 				is_new: frm.is_new(),
 			};
+		}
+
+		// Desk is still loading the routed record into a reused form page: the doctype is already
+		// known, the record is not, so nothing may name the previous one.
+		if (route && route[0] === "Form" && route[1]) {
+			return { type: "Form", doctype: route[1], url: window.location.href };
 		}
 
 		if (route && route[0] === "List") {

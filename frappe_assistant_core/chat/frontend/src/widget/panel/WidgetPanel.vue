@@ -100,6 +100,7 @@
 		<InputArea
 			:is-streaming="chatStore.isStreaming"
 			:interaction-mode="chatStore.pendingInteractionBlock?.regime || null"
+			:placeholder="composerPlaceholder"
 			@send="onSend"
 			@file-upload="handleFileUpload"
 			@abort="chatStore.abortStream"
@@ -127,10 +128,12 @@ import OverageNotice from "./OverageNotice.vue";
 import WidgetPlanStrip from "./WidgetPlanStrip.vue";
 import { bridge } from "../bridge.js";
 import { getHost } from "../host/index.js";
+import { usePageContext } from "../usePageContext.js";
 import { handOffToFullPage } from "../desk/session.js";
 import { isBlocked, overageNoticeDue, markOverageNoticeShown } from "../desk/quotaGate.js";
 import { confirms, settleConfirm } from "./confirmQueue.js";
 import { t } from "./i18n.js";
+import { __ } from "@/utils/i18n";
 import { deskRouteFor } from "./deskLinks.js";
 import { isStoppedTurn, turnWaitingOn } from "@/utils/turnState";
 import SpotlightHost from "@/components/spotlight/SpotlightHost.vue";
@@ -234,6 +237,14 @@ function expand() {
 	bridge.emit("close");
 	window.location.assign("/copilot");
 }
+
+// The composer names the document the user is looking at, and follows Desk navigation.
+const { pageContext } = usePageContext();
+const composerPlaceholder = computed(() =>
+	pageContext.value.type === "Form" && pageContext.value.doctype
+		? __("Ask about this {0}…", [__(pageContext.value.doctype)])
+		: ""
+);
 
 // Disabled while a reply is still arriving, so a half-written answer is never abandoned by accident.
 const canStartNewChat = computed(
