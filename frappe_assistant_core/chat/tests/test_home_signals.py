@@ -86,6 +86,8 @@ class TestHomeSignalsEndpoint(BaseAssistantTest):
         super().setUp()
         self.user = frappe.session.user
         frappe.cache.delete_value("fac_home_signals_err:boom")
+        self.addCleanup(frappe.cache.hdel, home.HOME_SIGNALS_CACHE_KEY, self.user)
+        self.addCleanup(frappe.cache.delete_value, "fac_home_signals_err:boom")
         frappe.cache.hdel(home.HOME_SIGNALS_CACHE_KEY, self.user)
 
     def _insert_todo(self, date):
@@ -101,8 +103,9 @@ class TestHomeSignalsEndpoint(BaseAssistantTest):
         ).insert()
 
     def _todo_count(self):
-        items = compute_home_signals(self.user)["items"]
-        return next((i["count"] for i in items if i["id"] == "todos"), 0)
+        # Call the signal itself: the payload is capped, so todos (lowest tone)
+        # can be pushed out once other signals exist.
+        return home_signals._todos_due(self.user, None).count
 
     def test_todo_due_today_is_counted(self):
         before = self._todo_count()
@@ -133,6 +136,7 @@ class TestHomeSignalsEndpoint(BaseAssistantTest):
         self.assertEqual(frappe.db.count("Error Log"), errors + 1)
 
     def test_mixed_lenses_use_business_area(self):
+        # Manufactured: production reaches this by an administrator granting the user these roles.
         with (
             patch.object(home_signals, "CATALOGUE", []),
             patch("frappe.get_roles", return_value=["Sales User", "Accounts User"]),
@@ -142,6 +146,7 @@ class TestHomeSignalsEndpoint(BaseAssistantTest):
         self.assertEqual(payload["lenses"], ["accounts", "sales"])
 
     def test_single_lens_uses_its_area(self):
+        # Manufactured: production reaches this by an administrator granting the user these roles.
         with patch.object(home_signals, "CATALOGUE", []), patch(
             "frappe.get_roles", return_value=["Sales User"]
         ):
@@ -153,6 +158,7 @@ class TestHomeSignalsEndpoint(BaseAssistantTest):
             _signal("acc", "neutral", lenses=("accounts",)),
             _signal("sal", "danger", lenses=("sales",)),
         ]
+        # Manufactured: production reaches this by an administrator granting the user these roles.
         with (
             patch.object(home_signals, "CATALOGUE", catalogue),
             patch("frappe.get_roles", return_value=["Sales User", "Accounts User"]),
@@ -169,6 +175,7 @@ class TestHomeSignalsEndpoint(BaseAssistantTest):
     def test_endpoint_recomputes_when_stale(self):
         home.get_home_signals()
         entry = frappe.cache.hget(home.HOME_SIGNALS_CACHE_KEY, self.user)
+        # Manufactured: production reaches a stale entry by 10 minutes passing.
         entry["computed_at"] = time.time() - 601
         frappe.cache.hset(home.HOME_SIGNALS_CACHE_KEY, self.user, entry)
         with patch.object(home, "compute_home_signals", autospec=True, return_value={"items": []}) as mocked:

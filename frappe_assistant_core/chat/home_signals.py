@@ -147,9 +147,9 @@ def compute_home_signals(user: str) -> dict:
 
     results: list[tuple[Signal, SignalResult]] = []
     for signal in CATALOGUE:
-        if not _is_applicable(signal, user, lenses, installed_apps):
-            continue
         try:
+            if not _is_applicable(signal, user, lenses, installed_apps):
+                continue
             result = signal.compute(user, company)
         except Exception:
             _log_signal_error(signal.id)
@@ -172,15 +172,14 @@ def compute_home_signals(user: str) -> dict:
     }
 
 
+def count_visible(doctype: str, filters: dict | list, user: str) -> int:
+    """Count records of ``doctype`` that ``user`` may read (User Permissions apply)."""
+    rows = frappe.get_list(doctype, filters=filters, fields=[{"COUNT": "name", "as": "n"}], user=user)
+    return int(rows[0]["n"]) if rows else 0
+
+
 def _todos_due(user: str, company: str | None) -> SignalResult | None:
-    count = len(
-        frappe.get_list(
-            "ToDo",
-            filters={"allocated_to": user, "status": "Open", "date": ["<=", today()]},
-            pluck="name",
-            limit_page_length=0,
-        )
-    )
+    count = count_visible("ToDo", {"allocated_to": user, "status": "Open", "date": ["<=", today()]}, user)
     return SignalResult(
         count=count,
         title=_("task due") if count == 1 else _("tasks due"),
