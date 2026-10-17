@@ -15,7 +15,7 @@ from dataclasses import dataclass
 
 import frappe
 from frappe import _
-from frappe.utils import get_datetime, now_datetime, today
+from frappe.utils import add_days, fmt_money, get_datetime, now_datetime, today
 
 from frappe_assistant_core.plugins.core.tools.get_pending_approvals import _open_workflow_actions
 
@@ -40,6 +40,9 @@ TONE_RANK = {"danger": 0, "warning": 1, "neutral": 2}
 
 ITEMS_CAP = 3
 APPROVALS_LIMIT = 200
+OVERDUE_DAYS = 60
+PAYABLES_WINDOW_DAYS = 7
+TOP_CUSTOMERS = 2
 ERROR_LOG_INTERVAL = 3600
 ERROR_KEY_PREFIX = "fac_home_signals_err:"
 
@@ -246,6 +249,121 @@ def _todos_due(user: str, company: str | None) -> SignalResult | None:
     )
 
 
+def money_summary(rows: list[dict]) -> tuple[float | None, str | None]:
+    """Sum ``outstanding_amount`` when every row shares one ``currency``, else ``(None, None)``."""
+    currencies = {row["currency"] for row in rows}
+    if len(currencies) != 1:
+        return None, None
+    return sum(row["outstanding_amount"] for row in rows), currencies.pop()
+
+
+def _company_scoped(filters: dict, company: str | None) -> dict:
+    return {**filters, "company": company} if company else filters
+
+
+def _ask_for(ask: str, company: str | None) -> str:
+    return _("{0} for {1}").format(ask, company) if company else ask
+
+
+def _invoice_rows(doctype: str, filters: dict, user: str, extra_fields: list[str]) -> list[dict]:
+    """Outstanding invoices ``user`` may read, with the figure and its own currency.
+
+    ``outstanding_amount`` is held in the party account currency, so that field
+    is read as ``currency`` rather than the document currency.
+    """
+    rows = frappe.get_list(
+        doctype,
+        filters=filters,
+        fields=["outstanding_amount", "party_account_currency", *extra_fields],
+        user=user,
+    )
+    for row in rows:
+        row["currency"] = row.pop("party_account_currency")
+    return rows
+
+
+def _top_customers(rows: list[dict]) -> list[str]:
+    totals: dict[str, float] = {}
+    for row in rows:
+        name = row.get("customer_name") or row["customer"]
+        totals[name] = totals.get(name, 0) + row["outstanding_amount"]
+    return sorted(totals, key=totals.get, reverse=True)[:TOP_CUSTOMERS]
+
+
+def _amount_text(rows: list[dict]) -> tuple[float | None, str | None, str | None]:
+    amount, currency = money_summary(rows)
+    text = fmt_money(amount, currency=currency) if amount is not None else None
+    return amount, currency, text
+
+
+def _overdue_receivables(user: str, company: str | None) -> SignalResult | None:
+    filters = _company_scoped(
+        {
+            "docstatus": 1,
+            "outstanding_amount": [">", 0],
+            "due_date": ["<", add_days(today(), -OVERDUE_DAYS)],
+        },
+        company,
+    )
+    rows = _invoice_rows("Sales Invoice", filters, user, ["customer", "customer_name"])
+    count = len(rows)
+    if not count:
+        return None
+
+    amount, currency, text = _amount_text(rows)
+    customers = _top_customers(rows)
+    who = customers[0] if len(customers) == 1 else _("{0} and {1}").format(*customers)
+    detail = _("{0} outstanding, mostly {1}").format(text, who) if text else _("Mostly {0}").format(who)
+    return SignalResult(
+        count=count,
+        title=_("invoice overdue by 60+ days") if count == 1 else _("invoices overdue by 60+ days"),
+        detail=detail,
+        ask=_ask_for(_("Show invoices overdue by more than 60 days, by customer"), company),
+        source=_("Sales Invoice"),
+        amount=amount,
+        currency=currency,
+    )
+
+
+def _payables_due(user: str, company: str | None) -> SignalResult | None:
+    filters = _company_scoped(
+        {
+            "docstatus": 1,
+            "outstanding_amount": [">", 0],
+            "due_date": ["between", [today(), add_days(today(), PAYABLES_WINDOW_DAYS)]],
+        },
+        company,
+    )
+    rows = _invoice_rows("Purchase Invoice", filters, user, [])
+    count = len(rows)
+    if not count:
+        return None
+
+    amount, currency, text = _amount_text(rows)
+    return SignalResult(
+        count=count,
+        title=_("bill due this week") if count == 1 else _("bills due this week"),
+        detail=_("{0} falls due in the next 7 days").format(text) if text else _("Due in the next 7 days"),
+        ask=_ask_for(_("Which purchase invoices fall due in the next 7 days?"), company),
+        source=_("Purchase Invoice"),
+        amount=amount,
+        currency=currency,
+    )
+
+
+def _unreconciled_bank(user: str, company: str | None) -> SignalResult | None:
+    count = count_visible(
+        "Bank Transaction", _company_scoped({"docstatus": 1, "status": "Unreconciled"}, company), user
+    )
+    return SignalResult(
+        count=count,
+        title=_("bank line unreconciled") if count == 1 else _("bank lines unreconciled"),
+        detail=_("Bank transactions not yet matched to a ledger entry"),
+        ask=_ask_for(_("Which bank transactions are still unreconciled?"), company),
+        source=_("Bank Transaction"),
+    )
+
+
 CATALOGUE: list[Signal] = [
     Signal(
         id="approvals",
@@ -262,5 +380,29 @@ CATALOGUE: list[Signal] = [
         requires_doctypes=("ToDo",),
         requires_apps=(),
         compute=_todos_due,
+    ),
+    Signal(
+        id="overdue_receivables",
+        lenses=("accounts",),
+        tone="danger",
+        requires_doctypes=("Sales Invoice",),
+        requires_apps=(),
+        compute=_overdue_receivables,
+    ),
+    Signal(
+        id="payables_due",
+        lenses=("accounts",),
+        tone="warning",
+        requires_doctypes=("Purchase Invoice",),
+        requires_apps=(),
+        compute=_payables_due,
+    ),
+    Signal(
+        id="unreconciled_bank",
+        lenses=("accounts",),
+        tone="neutral",
+        requires_doctypes=("Bank Transaction",),
+        requires_apps=(),
+        compute=_unreconciled_bank,
     ),
 ]
