@@ -10,6 +10,7 @@ vi.mock("@/api/client", () => ({
 			getMessages: vi.fn().mockResolvedValue({ messages: [] }),
 			getSessions: vi.fn().mockResolvedValue([]),
 			send: vi.fn().mockResolvedValue({}),
+			createSession: vi.fn().mockResolvedValue({ session_id: "faco_new" }),
 		},
 		suggestions: { get: vi.fn().mockResolvedValue({ suggestions: [] }) },
 		init: { initialize: vi.fn().mockResolvedValue(null) },
@@ -124,6 +125,7 @@ describe("widget panel", () => {
 	it("draws the header actions as icons that keep their accessible names", () => {
 		const w = mount(WidgetPanel, { global: { stubs } });
 		for (const [test, name] of [
+			["new-chat", "New chat"],
 			["expand", "Open Full Assistant"],
 			["close", "Close"],
 		]) {
@@ -138,7 +140,11 @@ describe("widget panel", () => {
 	// A one-click Hide left users with no visible way back; the preference stays in My Preferences.
 	it("offers no way to hide the widget from its header", () => {
 		const w = mount(WidgetPanel, { global: { stubs } });
-		expect(w.findAll(".wp-actions button").map((b) => b.attributes("data-test"))).toEqual(["expand", "close"]);
+		expect(w.findAll(".wp-actions button").map((b) => b.attributes("data-test"))).toEqual([
+			"new-chat",
+			"expand",
+			"close",
+		]);
 	});
 
 	it("asks the launcher to close, and hands the session to FAC Chat on expand", async () => {
@@ -153,6 +159,60 @@ describe("widget panel", () => {
 		await w.find('[data-test="expand"]').trigger("click");
 		expect(JSON.parse(sessionStorage.getItem("faco_active_session")).id).toBe("faco_1");
 		expect(assign).toHaveBeenCalledWith("/copilot");
+	});
+
+	describe("new chat", () => {
+		const newChatButton = (w) => w.find('[data-test="new-chat"]');
+
+		it("is disabled while the chat is empty, since it would start the chat already on screen", () => {
+			const w = mount(WidgetPanel, { global: { stubs } });
+			expect(newChatButton(w).attributes("disabled")).toBeDefined();
+		});
+
+		it("is disabled while a reply streams or an approved card resumes", async () => {
+			const chatStore = useChatStore();
+			chatStore.messages = [{ role: "user", content: "hi", blocks: [] }];
+			const w = mount(WidgetPanel, { global: { stubs } });
+			expect(newChatButton(w).attributes("disabled")).toBeUndefined();
+			chatStore.isStreaming = true;
+			await nextTick();
+			expect(newChatButton(w).attributes("disabled")).toBeDefined();
+			chatStore.isStreaming = false;
+			chatStore.isSubmittingInterrupts = true;
+			await nextTick();
+			expect(newChatButton(w).attributes("disabled")).toBeDefined();
+		});
+
+		it("starts a server session, shows the welcome, and offers the chat just left", async () => {
+			const chatStore = useChatStore();
+			chatStore.currentSessionId = "faco_1";
+			chatStore.messages = [{ role: "user", content: "hi", blocks: [] }];
+			// The list the welcome loaded before faco_1 existed; the server now has faco_1 in it.
+			chatStore.sessions = [{ session_id: "faco_old", preview: "Older chat" }];
+			api.chat.getSessions.mockResolvedValueOnce([
+				{ session_id: "faco_1", preview: "Chat just left" },
+				{ session_id: "faco_old", preview: "Older chat" },
+			]);
+			const w = mount(WidgetPanel, { global: { stubs } });
+			await newChatButton(w).trigger("click");
+			await flushPromises();
+			expect(api.chat.createSession).toHaveBeenCalled();
+			expect(chatStore.currentSessionId).toBe("faco_new");
+			expect(w.find(".ww").exists()).toBe(true);
+			expect(w.text()).toContain("Chat just left");
+		});
+
+		it("keeps the conversation when the server refuses a new session", async () => {
+			api.chat.createSession.mockRejectedValueOnce(new Error("offline"));
+			const chatStore = useChatStore();
+			chatStore.currentSessionId = "faco_1";
+			chatStore.messages = [{ role: "user", content: "hi", blocks: [] }];
+			const w = mount(WidgetPanel, { global: { stubs } });
+			await newChatButton(w).trigger("click");
+			await flushPromises();
+			expect(chatStore.currentSessionId).toBe("faco_1");
+			expect(chatStore.messages).toHaveLength(1);
+		});
 	});
 
 	it("shows the latest turn's plan above the composer, with its helpers' live labels", async () => {
@@ -650,6 +710,20 @@ describe("panel bootstrap", () => {
 		await flushPromises();
 		expect(useChatStore().currentSessionId).toBe("faco_1");
 		expect(emit).toHaveBeenCalledWith("session", "faco_1");
+	});
+
+	it("remembers a chat started from the header across a reload, and tells the launcher", async () => {
+		const emit = vi.spyOn(bridge, "emit");
+		const w = mount(PanelApp, {
+			global: { stubs: { ...stubs, ToastContainer: true, WidgetSetupGate: true } },
+		});
+		await flushPromises();
+		useChatStore().messages = [{ role: "user", content: "hi", blocks: [] }];
+		await nextTick();
+		await w.find('[data-test="new-chat"]').trigger("click");
+		await flushPromises();
+		expect(JSON.parse(sessionStorage.getItem("faco_widget_persistent_session")).id).toBe("faco_new");
+		expect(emit).toHaveBeenCalledWith("session", "faco_new");
 	});
 
 	it("restores the saved conversation when the launcher resumed one", async () => {

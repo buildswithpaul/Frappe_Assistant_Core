@@ -5,6 +5,19 @@
 			<div class="wp-actions">
 				<button
 					type="button"
+					data-test="new-chat"
+					:title="t('New chat')"
+					:aria-label="t('New chat')"
+					:disabled="!canStartNewChat"
+					@click="newChat"
+				>
+					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+						<line x1="12" y1="5" x2="12" y2="19" />
+						<line x1="5" y1="12" x2="19" y2="12" />
+					</svg>
+				</button>
+				<button
+					type="button"
 					data-test="expand"
 					:title="t('Open Full Assistant')"
 					:aria-label="t('Open Full Assistant')"
@@ -222,6 +235,17 @@ function expand() {
 	window.location.assign("/copilot");
 }
 
+// Disabled while a reply is still arriving, so a half-written answer is never abandoned by accident.
+const canStartNewChat = computed(
+	() => chatStore.messages.length > 0 && !chatStore.isStreaming && !chatStore.isSubmittingInterrupts
+);
+
+// The welcome lists sessions it loaded earlier, which can predate the chat being left; reload it so
+// that chat is offered to continue.
+async function newChat() {
+	if (await chatStore.createSession()) chatStore.loadSessions();
+}
+
 // The PanelApp watch on currentSessionId persists the choice and tells the launcher.
 async function openSession(sessionId) {
 	await chatStore.loadMessages(sessionId);
@@ -297,9 +321,13 @@ onUnmounted(stopMic);
 	width: 16px;
 	height: 16px;
 }
-.wp-actions button:hover {
+.wp-actions button:hover:not(:disabled) {
 	background: var(--ql-accent-soft);
 	color: var(--ql-text);
+}
+.wp-actions button:disabled {
+	opacity: 0.4;
+	cursor: default;
 }
 /* FAC Chat's composer is laid out for the SPA's wide page: its 64px gutters and the keyboard
    hint squeeze the toolbar pills under the right-hand group at 400px. */
