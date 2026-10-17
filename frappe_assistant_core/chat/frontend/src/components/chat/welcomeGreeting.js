@@ -18,7 +18,7 @@ export function greetingLineForHour(hour, name) {
 }
 
 export function displayNameFromUser(user) {
-	if (!user || user === "Guest") return "there";
+	if (!user || user === "Guest") return __("there");
 	const local = String(user).split("@")[0];
 	const first = local.split(/[._-]/)[0] || local;
 	return first.charAt(0).toUpperCase() + first.slice(1);

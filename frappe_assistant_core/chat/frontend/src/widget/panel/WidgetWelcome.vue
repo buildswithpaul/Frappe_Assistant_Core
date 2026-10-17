@@ -1,17 +1,40 @@
 <template>
 	<div class="ww">
-		<WelcomeHeader :greeting="greeting" :display-name="displayName" />
-		<p v-if="contextLine" class="ww-context" :title="contextLine">{{ contextLine }}</p>
-		<ContinueList
-			v-if="resumeSessions.length"
-			:sessions="resumeSessions"
-			@open="(id) => $emit('open-session', id)"
+		<HomeHeader
+			:greeting-line="greetingLine"
+			:display-name="displayName"
+			:lens-label="lensLabel || ''"
+			:company="company || ''"
+			:first-run="dayOne"
 		/>
-		<SuggestionTiles
-			v-if="!suggestionStore.suggestionsDisabled"
-			:tiles="tiles"
+		<PageAsks
+			v-if="filledAsks.length"
+			:doctype="pageContext.doctype"
+			:name="isForm ? pageContext.name : ''"
+			:asks="filledAsks"
 			@pick="(text) => $emit('suggestion', text)"
 		/>
+		<NeedsYou
+			:items="items"
+			:loaded="loaded"
+			:failed="failed"
+			:empty-text="dayOne ? __('Approvals, assignments and overdue items for you will appear here.') : ''"
+			variant="list"
+			@ask="(prompt) => $emit('suggestion', prompt)"
+			@navigate="openInChat"
+			@dismiss="dismiss"
+		/>
+		<template v-if="!suggestionStore.suggestionsDisabled">
+			<FirstRunStarters v-if="dayOne" :tiles="firstRunTiles" @pick="(d) => $emit('suggestion', d)" />
+			<template v-else>
+				<ContinueList
+					v-if="resumeSessions.length"
+					:sessions="resumeSessions"
+					@open="(id) => $emit('open-session', id)"
+				/>
+				<HomeStarters v-if="!isForm" :tiles="tiles" :area="area" @pick="(d) => $emit('suggestion', d)" />
+			</template>
+		</template>
 	</div>
 </template>
 
@@ -21,44 +44,83 @@ import { storeToRefs } from "pinia";
 import { useUserStore } from "@/stores/userStore";
 import { useChatStore } from "@/stores/chatStore";
 import { useSuggestionStore } from "@/stores/suggestionStore";
-import { greetingForHour, displayNameFromUser } from "@/components/chat/welcomeGreeting";
+import { greetingLineForHour, displayNameFromUser } from "@/components/chat/welcomeGreeting";
 import { selectWelcomeTiles } from "@/components/chat/welcome/welcomeRelevance";
-import WelcomeHeader from "@/components/chat/welcome/WelcomeHeader.vue";
+import { fillPageAsk } from "@/components/chat/welcome/pageAskFill";
+import { useHomeSignals } from "@/composables/useHomeSignals";
+import { __ } from "@/utils/i18n";
+import HomeHeader from "@/components/chat/welcome/HomeHeader.vue";
+import PageAsks from "@/components/chat/welcome/PageAsks.vue";
+import NeedsYou from "@/components/chat/welcome/NeedsYou.vue";
 import ContinueList from "@/components/chat/welcome/ContinueList.vue";
-import SuggestionTiles from "@/components/chat/welcome/SuggestionTiles.vue";
-import { contextDisplayText } from "../desk/pageContext.js";
+import HomeStarters from "@/components/chat/welcome/HomeStarters.vue";
+import FirstRunStarters from "@/components/chat/welcome/FirstRunStarters.vue";
 import { getHost } from "../host/index.js";
 
 defineEmits(["suggestion", "open-session"]);
+
+const NEEDS_YOU_CAP = 3;
+const NEEDS_YOU_CAP_ON_FORM = 2;
 
 const userStore = useUserStore();
 const chatStore = useChatStore();
 const suggestionStore = useSuggestionStore();
 const { allSuggestions } = storeToRefs(suggestionStore);
 
-const greeting = computed(() => greetingForHour(new Date().getHours()));
 const displayName = computed(() => displayNameFromUser(userStore.user));
+const greetingLine = computed(() => greetingLineForHour(new Date().getHours(), displayName.value));
 
+// The panel can open before the session list has loaded; an empty list only means a
+// first-time user once it has.
+const sessionsLoaded = ref(chatStore.sessions.length > 0);
+const dayOne = computed(() => sessionsLoaded.value && chatStore.sortedSessions.length === 0);
+
+// A Form leaves room for the page's own asks, so the widget shows one session to continue.
 const resumeSessions = computed(() =>
-	chatStore.sortedSessions.filter((s) => s.session_id !== chatStore.currentSessionId).slice(0, 2)
+	chatStore.sortedSessions.filter((s) => s.session_id !== chatStore.currentSessionId).slice(0, 1)
 );
+
+const starterSuggestions = computed(() => allSuggestions.value.filter((s) => s.source !== "page"));
 const tiles = computed(() =>
 	selectWelcomeTiles({
-		suggestions: allSuggestions.value,
+		suggestions: starterSuggestions.value,
 		resumePreviews: resumeSessions.value.map((s) => s.preview || ""),
 	})
 );
+const firstRunTiles = computed(() => {
+	const starters = starterSuggestions.value.filter((s) => s.description);
+	return starters.length ? starters : tiles.value;
+});
 
-const contextLine = ref("");
-const update = () => (contextLine.value = contextDisplayText(getHost().detectContext()) || "");
+// The document name stays in this browser: the server only ever sees {type, doctype}.
+const pageContext = ref({});
+const isForm = computed(() => pageContext.value.type === "Form");
+const filledAsks = computed(() => {
+	if (suggestionStore.suggestionsDisabled || !["Form", "List"].includes(pageContext.value.type)) return [];
+	return allSuggestions.value
+		.filter((s) => s.source === "page")
+		.map((s) => fillPageAsk(s.description, pageContext.value))
+		.filter(Boolean);
+});
+
+const { items, lensLabel, area, company, loaded, failed, dismiss } = useHomeSignals({
+	cap: computed(() => (isForm.value ? NEEDS_YOU_CAP_ON_FORM : NEEDS_YOU_CAP)),
+});
+
+// The widget has no pages of its own: signal links open FAC Chat.
+function openInChat(href) {
+	window.open("/copilot" + href, "_blank", "noopener");
+}
+
+const update = () => (pageContext.value = getHost().detectContext() || {});
 let stopRouteWatch = () => {};
-onMounted(() => {
+onMounted(async () => {
 	update();
 	stopRouteWatch = getHost().onRouteChange(update);
-	if (!chatStore.sessions.length) chatStore.loadSessions();
-	// The endpoint ranks templates by the page's type and doctype; nothing else from the page is sent.
-	const { type, doctype } = getHost().detectContext() || {};
+	const { type, doctype } = pageContext.value;
 	suggestionStore.loadSuggestions(doctype ? { type, doctype } : { type });
+	if (!chatStore.sessions.length) await chatStore.loadSessions();
+	sessionsLoaded.value = true;
 });
 onUnmounted(() => stopRouteWatch());
 </script>
@@ -71,40 +133,22 @@ onUnmounted(() => stopRouteWatch());
 	padding: 22px 18px 16px;
 }
 /* FAC Chat's masthead is sized for a page; its clamp() reads the browser viewport, not the panel. */
-.ww :deep(.wh-greeting) {
-	font-size: 26px;
+.ww :deep(.hh-greeting) {
+	font-size: 22px;
 }
-.ww :deep(.wh-sub) {
-	font-size: 14px;
-}
-/* The column's gap already spaces the rule. */
-.ww :deep(.wh-rule) {
-	margin-top: 0;
-}
-.ww-context {
-	align-self: flex-start;
-	max-width: 100%;
-	margin: -4px 0 0;
-	padding: 4px 10px;
-	border-radius: 999px;
-	background: var(--ql-accent-soft);
-	color: var(--ql-accent);
-	font-size: 12px;
-	white-space: nowrap;
-	overflow: hidden;
-	text-overflow: ellipsis;
+.ww :deep(.hh-sub) {
+	font-size: 13px;
 }
 .ww > * {
 	animation: ww-surface 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
-/* WelcomeHeader renders the masthead and its rule as two children. */
-.ww > :nth-child(3) {
+.ww > :nth-child(2) {
 	animation-delay: 0.06s;
 }
-.ww > :nth-child(4) {
+.ww > :nth-child(3) {
 	animation-delay: 0.12s;
 }
-.ww > :nth-child(5) {
+.ww > :nth-child(4) {
 	animation-delay: 0.18s;
 }
 @keyframes ww-surface {
