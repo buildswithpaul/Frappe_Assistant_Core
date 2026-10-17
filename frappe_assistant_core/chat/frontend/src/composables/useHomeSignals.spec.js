@@ -31,7 +31,11 @@ describe("useHomeSignals", () => {
 	beforeEach(() => {
 		setActivePinia(createPinia());
 		getHome.mockReset();
-		vi.stubGlobal("requestAnimationFrame", (cb) => cb());
+		vi.stubGlobal("requestAnimationFrame", (cb) => {
+			cb();
+			return 1;
+		});
+		vi.stubGlobal("cancelAnimationFrame", vi.fn());
 	});
 
 	it("loads after paint and applies the reactive cap", async () => {
@@ -44,7 +48,7 @@ describe("useHomeSignals", () => {
 		expect(s.items.value.map((i) => i.id)).toEqual(["a", "b"]);
 		cap.value = 3;
 		expect(s.items.value).toHaveLength(3);
-		expect(s.lens.value).toBe("Sales");
+		expect(s.lensLabel.value).toBe("Sales");
 	});
 
 	it("marks failed without throwing", async () => {

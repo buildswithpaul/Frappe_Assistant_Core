@@ -1,5 +1,5 @@
 <template>
-	<section v-if="loaded && !failed" class="ny" :class="`ny--${variant}`">
+	<section v-if="loaded && !(failed && !items.length)" class="ny" :class="`ny--${variant}`">
 		<h2 class="ny-heading">{{ __("Needs you") }}</h2>
 		<p v-if="!items.length" class="ny-empty">{{ __("Nothing is waiting on you right now.") }}</p>
 		<ul v-else class="ny-items">

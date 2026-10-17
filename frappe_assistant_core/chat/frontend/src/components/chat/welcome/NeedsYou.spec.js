@@ -11,8 +11,15 @@ describe("NeedsYou", () => {
 		expect(make({ loaded: false }).find("section").exists()).toBe(false);
 	});
 
-	it("NeedsYou hides on load failure", () => {
-		expect(make({ failed: true }).find("section").exists()).toBe(false);
+	it("NeedsYou hides on load failure with nothing to show", () => {
+		expect(make({ failed: true, items: [] }).find("section").exists()).toBe(false);
+	});
+
+	it("failed endpoint still shows the client-side workflow card", () => {
+		const wf = { ...base, id: "failed_workflows", href: "/agents", dismissible: true };
+		const w = make({ failed: true, items: [wf] });
+		expect(w.find("section").exists()).toBe(true);
+		expect(w.text()).toContain("overdue invoices");
 	});
 
 	it("shows caught-up line when empty", () => {
