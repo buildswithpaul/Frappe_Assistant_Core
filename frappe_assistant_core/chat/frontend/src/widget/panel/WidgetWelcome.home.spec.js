@@ -32,10 +32,11 @@ const SIGNALS = Array.from({ length: 4 }, (_, i) => ({
 }));
 const AGENTS_SIGNAL = { id: "agents", tone: "danger", source: "Agents", count: 1, title: "failed run", href: "/agents" };
 
+let routeChanged;
 function onRoute(route, form = null) {
 	window.frappe = {
 		get_route: () => route,
-		router: { on: vi.fn(), off: vi.fn() },
+		router: { on: (_e, fn) => (routeChanged = fn), off: vi.fn() },
 		views: { formview: form ? { [route[1]]: { frm: form } } : {} },
 	};
 }
@@ -150,5 +151,67 @@ describe("widget home", () => {
 		api.suggestions.get.mockResolvedValue({ suggestions: [], suggestions_disabled: true });
 		const w = await mountHome();
 		expect(w.find(".hs").exists()).toBe(false);
+	});
+
+	it("a first-time user on a form sees PageAsks and no starter cards", async () => {
+		api.chat.getSessions.mockResolvedValue([]);
+		const w = await mountHome();
+		expect(w.find(".pa").exists()).toBe(true);
+		expect(w.find(".frs").exists()).toBe(false);
+	});
+
+	it("opening a conversation and picking a starter are emitted", async () => {
+		onRoute(["Workspaces", "Home"]);
+		const w = await mountHome();
+		await w.find(".cl-row").trigger("click");
+		expect(w.emitted("open-session")).toEqual([["s1"]]);
+		await w.find(".hs-row").trigger("click");
+		expect(w.emitted("suggestion")).toEqual([["List overdue invoices"]]);
+	});
+
+	describe("Desk navigation", () => {
+		const CUSTOMER_ASKS = [{ name: "c", description: "Is {name} a good {doctype} to chase?", source: "page" }];
+		const customerForm = { doctype: "Customer", doc: { name: "CUST-0001" }, is_new: () => false };
+
+		it("Sales Invoice to Customer reloads the asks for the new doctype", async () => {
+			const w = await mountHome();
+			api.suggestions.get.mockResolvedValue({ suggestions: CUSTOMER_ASKS });
+			onRoute(["Form", "Customer", "CUST-0001"], customerForm);
+			routeChanged();
+			await flushPromises();
+			expect(api.suggestions.get).toHaveBeenLastCalledWith({ type: "Form", doctype: "Customer" });
+			expect(w.findAll(".pa-chip").map((c) => c.text())).toEqual(["Is CUST-0001 a good Customer to chase?"]);
+		});
+
+		it("List to Form shows the form's asks, not the list's", async () => {
+			onRoute(["List", "Sales Invoice"]);
+			api.suggestions.get.mockResolvedValue({
+				suggestions: [{ name: "l", description: "Summarise this {doctype} list", source: "page" }],
+			});
+			const w = await mountHome();
+			expect(w.find(".pa-chip").text()).toBe("Summarise this Sales Invoice list");
+			api.suggestions.get.mockResolvedValue({ suggestions: PAGE_ASKS });
+			onRoute(["Form", "Sales Invoice", "SINV-0001"], invoiceForm);
+			routeChanged();
+			await flushPromises();
+			expect(w.find(".pa-subject").text()).toBe("Sales Invoice SINV-0001");
+			expect(w.findAll(".pa-chip")).toHaveLength(2);
+		});
+
+		it("ignores a response for a page the user has already left", async () => {
+			let resolveFirst;
+			api.suggestions.get.mockReset();
+			api.suggestions.get
+				.mockImplementationOnce(() => new Promise((r) => (resolveFirst = r)))
+				.mockResolvedValueOnce({ suggestions: CUSTOMER_ASKS });
+			const w = mount(WidgetWelcome);
+			await flushPromises();
+			onRoute(["Form", "Customer", "CUST-0001"], customerForm);
+			routeChanged();
+			await flushPromises();
+			resolveFirst({ suggestions: PAGE_ASKS });
+			await flushPromises();
+			expect(w.findAll(".pa-chip").map((c) => c.text())).toEqual(["Is CUST-0001 a good Customer to chase?"]);
+		});
 	});
 });

@@ -3,7 +3,7 @@
 		<h2 class="pa-label">{{ __("On this page") }}</h2>
 		<p class="pa-subject" :title="subject">{{ subject }}</p>
 		<div class="pa-chips">
-			<button v-for="ask in asks" :key="ask" type="button" class="pa-chip" @click="$emit('pick', ask)">
+			<button v-for="(ask, index) in asks" :key="`${index}:${ask}`" type="button" class="pa-chip" @click="$emit('pick', ask)">
 				{{ ask }}
 			</button>
 		</div>

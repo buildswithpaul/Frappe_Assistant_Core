@@ -18,4 +18,8 @@ describe("fillPageAsk", () => {
 		);
 		expect(fillPageAsk("Summarise this {doctype} list", {})).toBeNull();
 	});
+
+	it("keeps replacement patterns in a document name literal", () => {
+		expect(fillPageAsk("About {name}", { name: "A-$&-$1-$$" })).toBe("About A-$&-$1-$$");
+	});
 });

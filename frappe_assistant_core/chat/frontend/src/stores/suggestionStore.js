@@ -13,9 +13,10 @@ export const useSuggestionStore = defineStore("suggestions", () => {
 	const hasSuggestions = computed(() => allSuggestions.value.length > 0);
 
 	async function loadSuggestions(context = {}, { force = false } = {}) {
-		// Avoid duplicate requests: skip if already loading or same context with data
-		if (isLoading.value) return;
 		const contextKey = JSON.stringify(context);
+		// Avoid duplicate requests: skip the same context while it loads or once it has data.
+		// A different context supersedes the one in flight (Desk navigation).
+		if (isLoading.value && contextKey === lastContextKey.value) return;
 		if (!force && contextKey === lastContextKey.value && allSuggestions.value.length > 0) {
 			return;
 		}
@@ -25,6 +26,7 @@ export const useSuggestionStore = defineStore("suggestions", () => {
 			lastContextKey.value = contextKey;
 
 			const result = await api.suggestions.get(context);
+			if (contextKey !== lastContextKey.value) return;
 
 			// Response is now { suggestions: [...], templates: {...} }
 			// Fall back to flat array for backward compatibility
@@ -42,7 +44,7 @@ export const useSuggestionStore = defineStore("suggestions", () => {
 		} catch (err) {
 			logger.error("Failed to load suggestions:", err);
 		} finally {
-			isLoading.value = false;
+			if (contextKey === lastContextKey.value) isLoading.value = false;
 		}
 	}
 

@@ -25,8 +25,8 @@
 			@dismiss="dismiss"
 		/>
 		<template v-if="!suggestionStore.suggestionsDisabled">
-			<FirstRunStarters v-if="dayOne" :tiles="firstRunTiles" @pick="(d) => $emit('suggestion', d)" />
-			<template v-else>
+			<FirstRunStarters v-if="dayOne && !isForm" :tiles="firstRunTiles" @pick="(d) => $emit('suggestion', d)" />
+			<template v-else-if="!dayOne">
 				<ContinueList
 					v-if="resumeSessions.length"
 					:sessions="resumeSessions"
@@ -75,7 +75,7 @@ const greetingLine = computed(() => greetingLineForHour(new Date().getHours(), d
 const sessionsLoaded = ref(chatStore.sessions.length > 0);
 const dayOne = computed(() => sessionsLoaded.value && chatStore.sortedSessions.length === 0);
 
-// A Form leaves room for the page's own asks, so the widget shows one session to continue.
+// The widget is narrow, so it offers one session to continue where the SPA offers two.
 const resumeSessions = computed(() =>
 	chatStore.sortedSessions.filter((s) => s.session_id !== chatStore.currentSessionId).slice(0, 1)
 );
@@ -96,7 +96,8 @@ const firstRunTiles = computed(() => {
 const pageContext = ref({});
 const isForm = computed(() => pageContext.value.type === "Form");
 const filledAsks = computed(() => {
-	if (suggestionStore.suggestionsDisabled || !["Form", "List"].includes(pageContext.value.type)) return [];
+	// Until the new page's set has arrived, the old page's asks would name the wrong thing.
+	if (suggestionStore.suggestionsDisabled || suggestionStore.isLoading || !["Form", "List"].includes(pageContext.value.type)) return [];
 	return allSuggestions.value
 		.filter((s) => s.source === "page")
 		.map((s) => fillPageAsk(s.description, pageContext.value))
@@ -112,13 +113,20 @@ function openInChat(href) {
 	window.open("/copilot" + href, "_blank", "noopener");
 }
 
-const update = () => (pageContext.value = getHost().detectContext() || {});
+// The endpoint ranks templates by the page's type and doctype; the name never goes to the server.
+function loadPageSuggestions() {
+	const { type, doctype } = pageContext.value;
+	suggestionStore.loadSuggestions(doctype ? { type, doctype } : { type });
+}
+// The curated asks differ per DocType, so a Desk navigation fetches the new page's set.
+function update() {
+	pageContext.value = getHost().detectContext() || {};
+	loadPageSuggestions();
+}
 let stopRouteWatch = () => {};
 onMounted(async () => {
 	update();
 	stopRouteWatch = getHost().onRouteChange(update);
-	const { type, doctype } = pageContext.value;
-	suggestionStore.loadSuggestions(doctype ? { type, doctype } : { type });
 	if (!chatStore.sessions.length) await chatStore.loadSessions();
 	sessionsLoaded.value = true;
 });

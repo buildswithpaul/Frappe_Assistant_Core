@@ -24,6 +24,7 @@ vi.mock("@/api/client", () => ({
 
 import { api } from "@/api/client";
 import WidgetPanel from "./WidgetPanel.vue";
+import InputArea from "@/components/chat/InputArea.vue";
 import PanelApp from "./PanelApp.vue";
 import WidgetWelcome from "./WidgetWelcome.vue";
 import BrowserToolConfirm from "./BrowserToolConfirm.vue";
@@ -394,6 +395,25 @@ describe("widget panel", () => {
 		useChatStore().messages = [{ role: "user", content: "hi", blocks: [] }];
 		await nextTick();
 		expect(w.find(".ww").exists()).toBe(false);
+	});
+
+	it("names the form in the composer placeholder, and follows Desk navigation", async () => {
+		let route = ["Form", "Sales Invoice", "SINV-0001"];
+		let onChange;
+		const form = { doctype: "Sales Invoice", doc: { name: "SINV-0001" }, is_new: () => false };
+		window.frappe = {
+			get_route: () => route,
+			router: { on: (_e, fn) => (onChange = fn), off: vi.fn() },
+			views: { formview: { "Sales Invoice": { frm: form } } },
+		};
+		const w = mount(WidgetPanel, { global: { stubs } });
+		await nextTick();
+		expect(w.findComponent(InputArea).props("placeholder")).toBe("Ask about this Sales Invoice…");
+		route = ["Workspaces", "Home"];
+		onChange();
+		await nextTick();
+		expect(w.findComponent(InputArea).props("placeholder")).toBe("");
+		delete window.frappe;
 	});
 
 	it("sends a suggestion picked on the welcome", async () => {

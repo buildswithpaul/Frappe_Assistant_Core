@@ -134,6 +134,8 @@ const props = defineProps({
 	context: { type: Object, default: null },
 	initialMessage: { type: String, default: "" },
 	interactionMode: { type: String, default: null },
+	// Replaces the idle placeholder only; streaming and pending-question states keep theirs.
+	placeholder: { type: String, default: "" },
 });
 
 const emit = defineEmits(["send", "file-upload", "abort", "pick-template", "browse-templates"]);
@@ -226,7 +228,7 @@ const canSend = computed(
 const placeholderText = computed(() => {
 	if (props.interactionMode === "question") return "Type your answer…";
 	if (props.isStreaming) return "Assistant is responding — Enter queues your message";
-	return "Ask me anything…";
+	return props.placeholder || "Ask me anything…";
 });
 
 const hasMarkdown = computed(() => {
