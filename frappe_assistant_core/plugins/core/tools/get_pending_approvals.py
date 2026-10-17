@@ -30,6 +30,47 @@ from frappe_assistant_core.core.base_tool import BaseTool
 MAX_TRANSITION_DOCS = 20
 
 
+def _open_workflow_actions(user: str, limit: int, doctype: str | None = None) -> list[frappe._dict]:
+    """Open Workflow Actions addressed to ``user``, newest first, at most ``limit``.
+
+    An action is addressed to the user by a permitted role or directly by ``user``;
+    Administrator sees all. This does not check access to the referenced documents.
+    """
+    roles = frappe.get_roles(user)
+
+    WA = DocType("Workflow Action")
+    WAPR = DocType("Workflow Action Permitted Role")
+
+    # Subquery: workflow action names where permitted roles overlap user's roles
+    role_subquery = (
+        frappe.qb.from_(WA).join(WAPR).on(WA.name == WAPR.parent).select(WA.name).where(WAPR.role.isin(roles))
+    )
+
+    query = (
+        frappe.qb.from_(WA)
+        .select(
+            WA.name,
+            WA.reference_doctype,
+            WA.reference_name,
+            WA.workflow_state,
+            WA.user,
+            WA.creation,
+        )
+        .where(WA.status == "Open")
+        .orderby(WA.creation, order=frappe.qb.desc)
+        .limit(limit)
+    )
+
+    # Administrator sees all; others filtered by role or direct user
+    if user != "Administrator":
+        query = query.where(WA.name.isin(role_subquery) | (WA.user == user))
+
+    if doctype:
+        query = query.where(WA.reference_doctype == doctype)
+
+    return query.run(as_dict=True)
+
+
 class GetPendingApprovals(BaseTool):
     """
     Tool for discovering documents pending the current user's approval.
@@ -83,45 +124,8 @@ class GetPendingApprovals(BaseTool):
         include_actions = arguments.get("include_actions", True)
 
         user = frappe.session.user
-        roles = frappe.get_roles(user)
-
-        WA = DocType("Workflow Action")
-        WAPR = DocType("Workflow Action Permitted Role")
-
-        # Subquery: workflow action names where permitted roles overlap user's roles
-        role_subquery = (
-            frappe.qb.from_(WA)
-            .join(WAPR)
-            .on(WA.name == WAPR.parent)
-            .select(WA.name)
-            .where(WAPR.role.isin(roles))
-        )
-
-        # Main query
-        query = (
-            frappe.qb.from_(WA)
-            .select(
-                WA.name,
-                WA.reference_doctype,
-                WA.reference_name,
-                WA.workflow_state,
-                WA.user,
-                WA.creation,
-            )
-            .where(WA.status == "Open")
-            .orderby(WA.creation, order=frappe.qb.desc)
-            .limit(limit)
-        )
-
-        # Administrator sees all; others filtered by role or direct user
-        if user != "Administrator":
-            query = query.where(WA.name.isin(role_subquery) | (WA.user == user))
-
-        if doctype_filter:
-            query = query.where(WA.reference_doctype == doctype_filter)
-
         try:
-            pending_actions = query.run(as_dict=True)
+            pending_actions = _open_workflow_actions(user, limit, doctype_filter)
         except Exception as e:
             frappe.log_error(
                 title=_("Pending Approvals Query Error"),
