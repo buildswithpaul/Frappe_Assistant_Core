@@ -1,7 +1,7 @@
 <template>
 	<section v-if="loaded && !(failed && !items.length)" class="ny" :class="`ny--${variant}`">
 		<h2 class="ny-heading">{{ __("Needs you") }}</h2>
-		<p v-if="!items.length" class="ny-empty">{{ __("Nothing is waiting on you right now.") }}</p>
+		<p v-if="!items.length" class="ny-empty">{{ emptyText || __("Nothing is waiting on you right now.") }}</p>
 		<ul v-else class="ny-items">
 			<li v-for="item in items" :key="item.id" class="ny-item" :class="`ny-item--${item.tone}`">
 				<button type="button" class="ny-main" @click="activate(item)">
@@ -42,6 +42,7 @@ defineProps({
 	items: { type: Array, default: () => [] },
 	loaded: { type: Boolean, default: false },
 	failed: { type: Boolean, default: false },
+	emptyText: { type: String, default: "" },
 	variant: { type: String, default: "cards", validator: (v) => ["cards", "list"].includes(v) },
 });
 

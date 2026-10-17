@@ -1,13 +1,12 @@
 <template>
 	<div class="welcome-screen">
 		<div class="welcome-inner">
-			<WelcomeHeader :greeting="greeting" :display-name="displayName" />
-
-			<AttentionLine
-				class="welcome-att"
-				:attention="attention"
-				@review="$emit('navigate', '/agents')"
-				@dismiss="dismissAttention"
+			<HomeHeader
+				:greeting="greeting"
+				:display-name="displayName"
+				:lens-label="lensLabel || ''"
+				:company="company || ''"
+				:first-run="dayOne"
 			/>
 
 			<!-- The REAL InputArea renders here on the empty state (hero slot) -->
@@ -15,21 +14,28 @@
 				<slot name="composer" />
 			</div>
 
-			<div
-				class="welcome-lower"
-				:class="{ 'no-continue': !resumeSessions.length, 'no-tiles': suggestionStore.suggestionsDisabled }"
-			>
-				<ContinueList
-					v-if="resumeSessions.length"
-					:sessions="resumeSessions"
-					@open="(id) => $emit('open-session', id)"
-				/>
-				<SuggestionTiles
-					v-if="!suggestionStore.suggestionsDisabled"
-					:tiles="tiles"
-					@pick="(d) => $emit('suggestion', d)"
-				/>
-			</div>
+			<NeedsYou
+				:items="items"
+				:loaded="loaded"
+				:failed="failed"
+				:empty-text="dayOne ? __('Approvals, assignments and overdue items for you will appear here.') : ''"
+				variant="cards"
+				@ask="(prompt) => $emit('suggestion', prompt)"
+				@navigate="(href) => $emit('navigate', href)"
+				@dismiss="dismiss"
+			/>
+
+			<template v-if="!suggestionStore.suggestionsDisabled">
+				<FirstRunStarters v-if="dayOne" :tiles="tiles.slice(0, 3)" @pick="(d) => $emit('suggestion', d)" />
+				<div v-else class="welcome-lower" :class="{ 'no-continue': !resumeSessions.length }">
+					<ContinueList
+						v-if="resumeSessions.length"
+						:sessions="resumeSessions"
+						@open="(id) => $emit('open-session', id)"
+					/>
+					<HomeStarters :tiles="tiles" :area="area" @pick="(d) => $emit('suggestion', d)" />
+				</div>
+			</template>
 
 			<PackNudge
 				v-if="showZeroPackBanner"
@@ -50,14 +56,18 @@ import { usePacksStore } from "@/stores/packsStore";
 import { useChatStore } from "@/stores/chatStore";
 import { greetingForHour, displayNameFromUser } from "@/components/chat/welcomeGreeting";
 import { selectWelcomeTiles } from "@/components/chat/welcome/welcomeRelevance";
-import { useAttention } from "@/composables/useAttention";
-import WelcomeHeader from "@/components/chat/welcome/WelcomeHeader.vue";
-import AttentionLine from "@/components/chat/welcome/AttentionLine.vue";
+import { useHomeSignals } from "@/composables/useHomeSignals";
+import { __ } from "@/utils/i18n";
+import HomeHeader from "@/components/chat/welcome/HomeHeader.vue";
+import NeedsYou from "@/components/chat/welcome/NeedsYou.vue";
 import ContinueList from "@/components/chat/welcome/ContinueList.vue";
-import SuggestionTiles from "@/components/chat/welcome/SuggestionTiles.vue";
+import HomeStarters from "@/components/chat/welcome/HomeStarters.vue";
+import FirstRunStarters from "@/components/chat/welcome/FirstRunStarters.vue";
 import PackNudge from "@/components/chat/welcome/PackNudge.vue";
 
 defineEmits(["suggestion", "navigate", "open-session"]);
+
+const NEEDS_YOU_CAP = 3;
 
 const userStore = useUserStore();
 const suggestionStore = useSuggestionStore();
@@ -67,6 +77,10 @@ const { allSuggestions } = storeToRefs(suggestionStore);
 
 const greeting = computed(() => greetingForHour(new Date().getHours()));
 const displayName = computed(() => displayNameFromUser(userStore.user));
+
+// The welcome screen only mounts once sessions are loaded at boot, so an empty
+// list means a first-time user.
+const dayOne = computed(() => chatStore.sortedSessions.length === 0);
 
 // Resume: top 2 sessions, already loaded at boot — zero new requests.
 const resumeSessions = computed(() => chatStore.sortedSessions.slice(0, 2));
@@ -78,8 +92,10 @@ const tiles = computed(() =>
 	})
 );
 
-// Attention line: capability-gated, post-paint, fail-silent (spec §5).
-const { attention, loadAttention, dismiss: dismissAttention } = useAttention();
+// Needs-you signals: post-paint, fail-silent; dismiss belongs to this instance.
+const { items, lensLabel, area, company, loaded, failed, dismiss } = useHomeSignals({
+	cap: NEEDS_YOU_CAP,
+});
 
 // Zero-pack nudge (demoted): admins only, dismissible, same storage key.
 const bannerDismissed = ref(localStorage.getItem("faco.zero_pack_banner_dismissed") === "1");
@@ -99,7 +115,6 @@ function dismissBanner() {
 }
 
 onMounted(() => {
-	loadAttention();
 	if (userStore.isAdmin && !packsStore.items.length && !packsStore.loading) {
 		packsStore.load();
 	}
@@ -129,7 +144,6 @@ onMounted(() => {
 	flex-direction: column;
 	gap: 18px;
 }
-.welcome-att { margin-top: 2px; }
 .welcome-composer-slot { width: 100%; }
 /* The docked composer carries large horizontal padding (gradient inset + edge
    breathing room). In the hero it must sit flush with the header rule and the
@@ -185,8 +199,7 @@ onMounted(() => {
 	margin-top: 10px;
 	min-width: 0;
 }
-.welcome-lower.no-continue,
-.welcome-lower.no-tiles { grid-template-columns: minmax(0, 1fr); }
+.welcome-lower.no-continue { grid-template-columns: minmax(0, 1fr); }
 
 /* Authored entrance: contents surface in the reading order a person would
    follow — masthead, then the writing line, then the day's entries.
@@ -198,6 +211,7 @@ onMounted(() => {
 .welcome-inner > :nth-child(2) { animation-delay: 0.12s; }
 .welcome-inner > :nth-child(3) { animation-delay: 0.2s; }
 .welcome-inner > :nth-child(4) { animation-delay: 0.28s; }
+.welcome-inner > :nth-child(5) { animation-delay: 0.34s; }
 @keyframes content-surface {
 	from { opacity: 0; transform: translateY(6px); }
 	to { opacity: 1; transform: translateY(0); }
