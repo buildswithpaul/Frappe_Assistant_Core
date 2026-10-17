@@ -44,7 +44,12 @@ describe("IssueForm attachments (real composable + child, regression for reactiv
 		vi.doMock("@/api/client", () => ({
 			api: { support: { uploadTicketAttachment: vi.fn() } },
 		}));
-		vi.stubGlobal("URL", { createObjectURL: () => "blob:x", revokeObjectURL() {} });
+		// jsdom has no createObjectURL. Keep URL constructible: vitest's module loader calls
+		// new URL() for the dynamic imports below.
+		class BlobURL extends URL {}
+		BlobURL.createObjectURL = () => "blob:x";
+		BlobURL.revokeObjectURL = () => {};
+		vi.stubGlobal("URL", BlobURL);
 
 		const { api } = await import("@/api/client");
 		let resolveUpload;

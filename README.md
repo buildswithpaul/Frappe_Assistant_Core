@@ -98,9 +98,9 @@ bench get-app https://github.com/buildswithpaul/Frappe_Assistant_Core
 bench --site <your-site> install-app frappe_assistant_core
 ```
 
-**Node 22+ is needed only to build the FAC Chat UI.** The assets are
+**Node 22.12+ is needed only to build the FAC Chat UI.** The assets are
 built on your instance rather than shipped pre-built, so a bench on an
-older Node will fail that build step. Upgrade Node to 22 and re-run
+older Node will fail that build step. Upgrade Node to 22.12 or newer and re-run
 `bench build`. A site using FAC purely as an MCP server does not need
 this.
 

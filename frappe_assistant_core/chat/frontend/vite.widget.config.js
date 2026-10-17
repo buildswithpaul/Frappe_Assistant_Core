@@ -14,24 +14,24 @@ export default defineConfig({
 		// Exact matches: the object form prefix-matches, which would rewrite subpath imports
 		// such as vue-echarts/dist/csp/style.css.
 		alias: [
-			{ find: /^@\//, replacement: resolve(__dirname, "src") + "/" },
-			{ find: /^frappe-ui$/, replacement: resolve(__dirname, "build/frappeUiCallShim.js") },
+			{ find: /^@\//, replacement: resolve(import.meta.dirname, "src") + "/" },
+			{ find: /^frappe-ui$/, replacement: resolve(import.meta.dirname, "build/frappeUiCallShim.js") },
 			{
 				find: /^vue-echarts$/,
-				replacement: resolve(__dirname, "node_modules/vue-echarts/dist/csp/index.esm.js"),
+				replacement: resolve(import.meta.dirname, "node_modules/vue-echarts/dist/csp/index.esm.js"),
 			},
 		],
 	},
 	css: { postcss: { plugins: [postcssShadowHost()] } },
 	build: {
-		outDir: resolve(__dirname, "../../public/chat/widget-app"),
+		outDir: resolve(import.meta.dirname, "../../public/chat/widget-app"),
 		emptyOutDir: true,
 		manifest: true,
 		cssCodeSplit: false,
 		sourcemap: false,
 		target: "es2019",
-		rollupOptions: {
-			input: { main: resolve(__dirname, "src/widget/main.js") },
+		rolldownOptions: {
+			input: { main: resolve(import.meta.dirname, "src/widget/main.js") },
 			// widget_loader.js calls the entry's boot(); Vite defaults to dropping entry exports.
 			preserveEntrySignatures: "exports-only",
 			external: (id) => id.startsWith("~icons/"),

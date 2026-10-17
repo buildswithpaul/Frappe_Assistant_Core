@@ -6,7 +6,7 @@ import frappeui from "frappe-ui/vite";
 import { VitePWA } from "vite-plugin-pwa";
 import { keepFirstScreen } from "./build/pwaPrecache.js";
 
-const OUT_DIR = resolve(__dirname, "../../public/chat/spa");
+const OUT_DIR = resolve(import.meta.dirname, "../../public/chat/spa");
 const SPA_BASE = "/assets/frappe_assistant_core/chat/spa/";
 
 export default defineConfig({
@@ -57,11 +57,11 @@ export default defineConfig({
 	],
 	resolve: {
 		alias: {
-			"@": resolve(__dirname, "src"),
+			"@": resolve(import.meta.dirname, "src"),
 		},
 	},
 	build: {
-		rollupOptions: {
+		rolldownOptions: {
 			// frappe-ui internally imports ~icons/lucide/* (unplugin-icons) in some
 			// components (Toast, etc.). When lucideIcons is disabled these can't be
 			// resolved — mark them as external so the build doesn't fail.
