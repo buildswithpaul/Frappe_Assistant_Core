@@ -261,10 +261,6 @@ def _company_scoped(filters: dict, company: str | None) -> dict:
     return {**filters, "company": company} if company else filters
 
 
-def _ask_for(ask: str, company: str | None) -> str:
-    return _("{0} for {1}").format(ask, company) if company else ask
-
-
 def _invoice_rows(doctype: str, filters: dict, user: str, extra_fields: list[str]) -> list[dict]:
     """Outstanding invoices ``user`` may read, with the figure and its own currency.
 
@@ -282,12 +278,13 @@ def _invoice_rows(doctype: str, filters: dict, user: str, extra_fields: list[str
     return rows
 
 
-def _top_customers(rows: list[dict]) -> list[str]:
+def _top_customers(rows: list[dict]) -> tuple[list[str], int]:
+    """The ``TOP_CUSTOMERS`` customers with the most outstanding, and how many customers there are."""
     totals: dict[str, float] = {}
     for row in rows:
         name = row.get("customer_name") or row["customer"]
         totals[name] = totals.get(name, 0) + row["outstanding_amount"]
-    return sorted(totals, key=totals.get, reverse=True)[:TOP_CUSTOMERS]
+    return sorted(totals, key=totals.get, reverse=True)[:TOP_CUSTOMERS], len(totals)
 
 
 def _amount_text(rows: list[dict]) -> tuple[float | None, str | None, str | None]:
@@ -311,14 +308,22 @@ def _overdue_receivables(user: str, company: str | None) -> SignalResult | None:
         return None
 
     amount, currency, text = _amount_text(rows)
-    customers = _top_customers(rows)
+    customers, customer_count = _top_customers(rows)
     who = customers[0] if len(customers) == 1 else _("{0} and {1}").format(*customers)
-    detail = _("{0} outstanding, mostly {1}").format(text, who) if text else _("Mostly {0}").format(who)
+    if customer_count == 1:
+        by = _("All from {0}").format(who)
+    else:
+        by = _("Mostly {0}").format(who)
+    detail = f"{text} outstanding. {by}" if text else by
     return SignalResult(
         count=count,
         title=_("invoice overdue by 60+ days") if count == 1 else _("invoices overdue by 60+ days"),
         detail=detail,
-        ask=_ask_for(_("Show invoices overdue by more than 60 days, by customer"), company),
+        ask=(
+            _("Show invoices for {0} overdue by more than 60 days, by customer").format(company)
+            if company
+            else _("Show invoices overdue by more than 60 days, by customer")
+        ),
         source=_("Sales Invoice"),
         amount=amount,
         currency=currency,
@@ -342,9 +347,13 @@ def _payables_due(user: str, company: str | None) -> SignalResult | None:
     amount, currency, text = _amount_text(rows)
     return SignalResult(
         count=count,
-        title=_("bill due this week") if count == 1 else _("bills due this week"),
+        title=_("bill due in the next 7 days") if count == 1 else _("bills due in the next 7 days"),
         detail=_("{0} falls due in the next 7 days").format(text) if text else _("Due in the next 7 days"),
-        ask=_ask_for(_("Which purchase invoices fall due in the next 7 days?"), company),
+        ask=(
+            _("Which purchase invoices for {0} fall due in the next 7 days?").format(company)
+            if company
+            else _("Which purchase invoices fall due in the next 7 days?")
+        ),
         source=_("Purchase Invoice"),
         amount=amount,
         currency=currency,
@@ -359,7 +368,11 @@ def _unreconciled_bank(user: str, company: str | None) -> SignalResult | None:
         count=count,
         title=_("bank line unreconciled") if count == 1 else _("bank lines unreconciled"),
         detail=_("Bank transactions not yet matched to a ledger entry"),
-        ask=_ask_for(_("Which bank transactions are still unreconciled?"), company),
+        ask=(
+            _("Which bank transactions for {0} are still unreconciled?").format(company)
+            if company
+            else _("Which bank transactions are still unreconciled?")
+        ),
         source=_("Bank Transaction"),
     )
 

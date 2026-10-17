@@ -42,6 +42,12 @@ class TestMoneySummary(unittest.TestCase):
     "needs ERPNext and the demo company",
 )
 class TestAccountsSignals(BaseAssistantTest):
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        # The defaults cache lives in Redis and survives the class rollback.
+        cls.addClassCleanup(frappe.clear_cache)
+
     def setUp(self):
         super().setUp()
         self.customer = self._customer("Signal Overdue Customer")
@@ -97,13 +103,15 @@ class TestAccountsSignals(BaseAssistantTest):
         return invoice
 
     def _set_default_company(self, company: str) -> None:
-        # Production reaches this through Global Defaults: with a global default Company set,
-        # frappe.defaults.get_user_default("Company") returns it for every user (a per-user
-        # DefaultValue row is ignored), so that is the setting an administrator changes.
-        settings = frappe.get_doc("Global Defaults")
-        settings.default_company = company
-        settings.save(ignore_permissions=True)
-        frappe.clear_cache()
+        # Production reaches this when a user has a Company default of their own (Desk user
+        # defaults): get_defaults(user) merges it over the global default.
+        frappe.defaults.set_user_default("company", company, self.user)
+        self.addCleanup(self._clear_default_company)
+        frappe.clear_cache(user=self.user)
+
+    def _clear_default_company(self) -> None:
+        frappe.defaults.clear_user_default("company", self.user)
+        frappe.clear_cache(user=self.user)
 
     def _a1(self):
         return home_signals._overdue_receivables(self.user, COMPANY)
@@ -115,8 +123,9 @@ class TestAccountsSignals(BaseAssistantTest):
         self.assertEqual(result.title, "invoice overdue by 60+ days")
         self.assertEqual(result.amount, invoice.outstanding_amount)
         self.assertEqual(result.currency, "INR")
-        self.assertIn(frappe.db.get_value("Customer", self.customer, "customer_name"), result.detail)
-        self.assertEqual(result.ask, f"Show invoices overdue by more than 60 days, by customer for {COMPANY}")
+        name = frappe.db.get_value("Customer", self.customer, "customer_name")
+        self.assertTrue(result.detail.endswith(f"All from {name}"), result.detail)
+        self.assertEqual(result.ask, f"Show invoices for {COMPANY} overdue by more than 60 days, by customer")
 
     def test_a1_detail_names_top_two_customers_by_outstanding(self):
         big = self._customer("Big Debtor")
@@ -171,6 +180,11 @@ class TestAccountsSignals(BaseAssistantTest):
         payload = home_signals.compute_home_signals(self.user)
         self.assertEqual(payload["company"], OTHER_COMPANY)
         self.assertNotIn("overdue_receivables", {item["id"] for item in payload["items"]})
+
+        self._set_default_company(COMPANY)
+        payload = home_signals.compute_home_signals(self.user)
+        self.assertEqual(payload["company"], COMPANY)
+        self.assertIn("overdue_receivables", {item["id"] for item in payload["items"]})
 
     def test_a1_mixed_currency_omits_amount(self):
         self._invoice(90)
@@ -279,7 +293,7 @@ class TestAccountsSignals(BaseAssistantTest):
         self.assertEqual(result.count, 1)
         self.assertEqual(result.amount, 70)
         self.assertEqual(result.currency, "INR")
-        self.assertEqual(result.ask, f"Which purchase invoices fall due in the next 7 days? for {COMPANY}")
+        self.assertEqual(result.ask, f"Which purchase invoices for {COMPANY} fall due in the next 7 days?")
 
     def _bank_account(self) -> str:
         bank = frappe.get_doc(
