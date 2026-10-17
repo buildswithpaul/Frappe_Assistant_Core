@@ -162,3 +162,7 @@ export const blockRegistry = {
 		}),
 	},
 };
+
+// The model also names a KPI row's fence `metrics` (plural); read it exactly as `metric`, or
+// the row shows as raw JSON in a code block.
+blockRegistry.metrics = blockRegistry.metric;

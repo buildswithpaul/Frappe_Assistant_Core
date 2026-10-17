@@ -21,6 +21,20 @@ function htmlParts(content) {
 // read only the attrs, so every one of them mounted MetricBlock with blank
 // props and rendered as an empty bordered box with no error anywhere.
 describe("metric fence dialects", () => {
+	// Live-bug repro (filming FAC Ep.13): Claude Sonnet 4.6 wrote a KPI row as a
+	// `metrics` fence holding a JSON array; the unknown fence name left it as raw
+	// JSON in a dark code block, and the headline total never showed.
+	it("reads a `metrics` fence as the same KPI row as `metric`", () => {
+		expect(
+			componentProps(
+				'```metrics\n[{"label":"Total Revenue","value":"₹9,38,720","delta":"+9.3%"},{"label":"Invoices Raised","value":"16"}]\n```'
+			)
+		).toEqual([
+			{ title: "Total Revenue", value: "₹9,38,720", change: "+9.3%", trend: "", description: "" },
+			{ title: "Invoices Raised", value: "16", change: "", trend: "", description: "" },
+		]);
+	});
+
 	it("parses the documented fence-attribute form", () => {
 		expect(
 			componentProps('```metric title="Monthly Revenue" value="₹14,25,000" change="+18%" trend="up"\n```')

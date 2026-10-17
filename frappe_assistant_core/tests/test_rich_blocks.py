@@ -152,6 +152,14 @@ class TestMetricJsonArray(unittest.TestCase):
         self.assertNotIn('class="metric-card"', out)
         self.assertIn("note", out)
 
+    def test_metrics_fence_renders_the_same_row(self):
+        # The model also names the fence `metrics` for a KPI row (filming FAC Ep.13).
+        out = render(
+            '```metrics\n[{"label":"Total Revenue","value":"9,38,720"},{"label":"Invoices","value":"16"}]\n```'
+        )
+        self.assertEqual(out.count('class="metric-card"'), 2)
+        self.assertNotIn('"label"', out)
+
     def test_escapes_markup_from_an_array_entry(self):
         out = render('```metric\n[{"label":"<script>x</script>","value":"1"}]\n```')
         self.assertIn('class="metric-card"', out)

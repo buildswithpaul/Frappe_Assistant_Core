@@ -29,7 +29,7 @@ from typing import Any
 # ``` blocks with our recognised types. Attributes are optional; body
 # may be empty for self-attribute components like ``metric``.
 _FENCE_RE = re.compile(
-    r"```(chart|callout|metric|cover|pagebreak)([ \t]+[^\n]*)?\n([\s\S]*?)```",
+    r"```(chart|callout|metrics|metric|cover|pagebreak)([ \t]+[^\n]*)?\n([\s\S]*?)```",
     re.MULTILINE,
 )
 
@@ -160,7 +160,7 @@ def _render_block(block_type: str, attrs: dict[str, str], body: str) -> str:
         return _render_chart(spec)
     if block_type == "callout":
         return _render_callout(attrs, body)
-    if block_type == "metric":
+    if block_type in ("metric", "metrics"):  # the model also names a KPI row's fence `metrics`
         return _render_metric(attrs, body)
     if block_type == "cover":
         return _render_cover(attrs, body)
