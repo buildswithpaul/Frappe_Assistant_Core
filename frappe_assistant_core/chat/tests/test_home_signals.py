@@ -125,15 +125,18 @@ class TestHomeSignalsEndpoint(BaseAssistantTest):
         self.assertEqual(payload["items"], [])
         self.assertEqual(frappe.db.count("Error Log"), errors)
 
-    def test_raising_signal_logs_once_per_hour(self):
+    def test_raising_signal_logs_once_per_hour_and_defers_the_insert(self):
         def boom(user, company):
             raise RuntimeError("nope")
 
-        errors = frappe.db.count("Error Log")
-        with patch.object(home_signals, "CATALOGUE", [_signal("boom", compute=boom)]):
+        # The endpoint is a GET and Frappe rolls those back, so the log must be deferred.
+        with (
+            patch.object(home_signals, "CATALOGUE", [_signal("boom", compute=boom)]),
+            patch.object(home_signals.frappe, "log_error", autospec=True) as log_error,
+        ):
             compute_home_signals(self.user)
             compute_home_signals(self.user)
-        self.assertEqual(frappe.db.count("Error Log"), errors + 1)
+        log_error.assert_called_once_with(title="Home signal failed: boom", defer_insert=True)
 
     def test_mixed_lenses_use_business_area(self):
         # Manufactured: production reaches this by an administrator granting the user these roles.
@@ -181,3 +184,28 @@ class TestHomeSignalsEndpoint(BaseAssistantTest):
         with patch.object(home, "compute_home_signals", autospec=True, return_value={"items": []}) as mocked:
             home.get_home_signals()
         mocked.assert_called_once()
+
+
+class TestCountVisible(unittest.TestCase):
+    def test_uses_the_dict_aggregate_when_supported(self):
+        with patch.object(
+            home_signals.frappe, "get_list", autospec=True, return_value=[{"n": 4}]
+        ) as get_list:
+            self.assertEqual(home_signals.count_visible("ToDo", {}, "u@example.com"), 4)
+        get_list.assert_called_once()
+        self.assertEqual(get_list.call_args.kwargs["fields"], [{"COUNT": "name", "as": "n"}])
+
+    def test_falls_back_to_the_string_aggregate_on_frappe_v15(self):
+        # Manufactured: Frappe v15 reaches this by sanitize_fields calling .lower() on the dict.
+        v15_error = AttributeError("'dict' object has no attribute 'lower'")
+
+        def get_list(doctype, **kwargs):
+            if kwargs["fields"] != ["count(name) as n"]:
+                raise v15_error
+            return [{"n": 7}]
+
+        with patch.object(home_signals.frappe, "get_list", autospec=True, side_effect=get_list) as mocked:
+            self.assertEqual(home_signals.count_visible("ToDo", {}, "u@example.com"), 7)
+        self.assertEqual(mocked.call_count, 2)
+        self.assertEqual(mocked.call_args.kwargs["order_by"], "")
+        self.assertEqual(mocked.call_args.kwargs["user"], "u@example.com")

@@ -140,7 +140,8 @@ def _log_signal_error(signal_id: str) -> None:
     if last and now - float(last) < ERROR_LOG_INTERVAL:
         return
     frappe.cache.set_value(key, now)
-    frappe.log_error(title=f"Home signal failed: {signal_id}")
+    # Deferred: the home endpoint is a GET, which Frappe rolls back, so an immediate insert would vanish.
+    frappe.log_error(title=f"Home signal failed: {signal_id}", defer_insert=True)
 
 
 def _primary_lens(ranked_lenses: list[str], lenses: list[str]) -> str | None:
@@ -184,9 +185,13 @@ def compute_home_signals(user: str) -> dict:
 
 def count_visible(doctype: str, filters: dict | list, user: str) -> int:
     """Count records of ``doctype`` that ``user`` may read (User Permissions apply)."""
-    rows = frappe.get_list(
-        doctype, filters=filters, fields=[{"COUNT": "name", "as": "n"}], order_by="", user=user
-    )
+    # Frappe v16 only accepts the dict aggregate and v15 only the string form.
+    try:
+        rows = frappe.get_list(
+            doctype, filters=filters, fields=[{"COUNT": "name", "as": "n"}], order_by="", user=user
+        )
+    except Exception:
+        rows = frappe.get_list(doctype, filters=filters, fields=["count(name) as n"], order_by="", user=user)
     return int(rows[0]["n"]) if rows else 0
 
 
@@ -220,7 +225,18 @@ def approvals_for_user(user: str, limit: int = 200) -> dict[str, list[str]]:
     return grouped
 
 
+def _waited_detail(doctype_label: str, days: int) -> str:
+    """Whole-sentence detail for the oldest waiting approval, by day count."""
+    if days <= 0:
+        return _("Mostly {0}; the oldest arrived today.").format(doctype_label)
+    if days == 1:
+        return _("Mostly {0}; the oldest has waited 1 day.").format(doctype_label)
+    return _("Mostly {0}; the oldest has waited {1} days.").format(doctype_label, days)
+
+
 def _approvals_waiting(user: str, company: str | None) -> SignalResult | None:
+    # APPROVALS_LIMIT caps the Workflow Action rows before the permission filter, so a user
+    # with more unreadable actions than the limit can see an undercount.
     actions = _readable_approvals(user, APPROVALS_LIMIT)
     documents = {(a.reference_doctype, a.reference_name) for a in actions}
     count = len(documents)
@@ -236,7 +252,7 @@ def _approvals_waiting(user: str, company: str | None) -> SignalResult | None:
     return SignalResult(
         count=count,
         title=_("approval waiting for you") if count == 1 else _("approvals waiting for you"),
-        detail=_("Mostly {0}; the oldest has waited {1} days.").format(_(top_doctype), days),
+        detail=_waited_detail(_(top_doctype), days),
         ask=_("Show the documents waiting for my approval"),
         source=_("Workflow · {0}").format(_(top_doctype)),
     )
@@ -445,17 +461,26 @@ def _closed_crm_deal_statuses() -> list[str]:
     return frappe.get_all("CRM Deal Status", filters={"type": ["in", ["Won", "Lost"]]}, pluck="name")
 
 
-def _stale_sources(user: str) -> list[tuple[str, dict]]:
-    """The (DocType, filters) pairs whose records ``user`` owns, before the staleness cut-off."""
-    sources: list[tuple[str, dict]] = [
-        ("Lead", {"lead_owner": user, "status": ["not in", ["Converted", "Do Not Contact"]]}),
-        ("Opportunity", {"opportunity_owner": user, "status": "Open"}),
+def _stale_sources(user: str) -> list[tuple[str, Callable[[], dict]]]:
+    """The (DocType, filters factory) pairs whose records ``user`` owns, before the staleness cut-off.
+
+    Filters are built lazily so a source whose configuration lookup fails drops only itself.
+    """
+    sources: list[tuple[str, Callable[[], dict]]] = [
+        (
+            "Lead",
+            lambda: {"lead_owner": user, "status": ["not in", ["Converted", "Do Not Contact"]]},
+        ),
+        ("Opportunity", lambda: {"opportunity_owner": user, "status": "Open"}),
     ]
     if _crm_installed():
-        sources.append(("CRM Lead", {"lead_owner": user, "converted": 0}))
+        sources.append(("CRM Lead", lambda: {"lead_owner": user, "converted": 0}))
         if frappe.db.exists("DocType", "CRM Deal Status"):
             sources.append(
-                ("CRM Deal", {"deal_owner": user, "status": ["not in", _closed_crm_deal_statuses()]})
+                (
+                    "CRM Deal",
+                    lambda: {"deal_owner": user, "status": ["not in", _closed_crm_deal_statuses()]},
+                )
             )
     return sources
 
@@ -463,10 +488,15 @@ def _stale_sources(user: str) -> list[tuple[str, dict]]:
 def _stale_leads(user: str, company: str | None) -> SignalResult | None:
     cutoff = add_days(today(), -STALE_LEAD_DAYS)
     count = 0
-    for doctype, filters in _stale_sources(user):
-        if not frappe.db.exists("DocType", doctype) or not frappe.has_permission(doctype, "read", user=user):
-            continue
-        count += count_visible(doctype, {**filters, "modified": ["<", cutoff]}, user)
+    for doctype, build_filters in _stale_sources(user):
+        try:
+            if not frappe.db.exists("DocType", doctype) or not frappe.has_permission(
+                doctype, "read", user=user
+            ):
+                continue
+            count += count_visible(doctype, {**build_filters(), "modified": ["<", cutoff]}, user)
+        except Exception:
+            _log_signal_error(f"stale_leads {doctype}")
     return SignalResult(
         count=count,
         title=(

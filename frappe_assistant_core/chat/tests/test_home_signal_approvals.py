@@ -2,6 +2,8 @@
 # Copyright (C) 2025 Paul Clinton
 # AGPL-3.0 License
 
+import unittest
+
 import frappe
 
 from frappe_assistant_core.chat import home_signals
@@ -111,3 +113,10 @@ class TestHomeSignalApprovals(BaseAssistantTest):
         self.assertEqual(
             set(entries[todo]), {"document_name", "workflow_state", "permitted_roles", "creation"}
         )
+
+
+class TestWaitedDetail(unittest.TestCase):
+    def test_today_singular_and_plural_are_whole_sentences(self):
+        self.assertEqual(home_signals._waited_detail("ToDo", 0), "Mostly ToDo; the oldest arrived today.")
+        self.assertEqual(home_signals._waited_detail("ToDo", 1), "Mostly ToDo; the oldest has waited 1 day.")
+        self.assertEqual(home_signals._waited_detail("ToDo", 5), "Mostly ToDo; the oldest has waited 5 days.")

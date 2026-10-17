@@ -187,6 +187,29 @@ class TestSalesSignals(BaseAssistantTest):
             )
         self.assertEqual(self._count(home_signals._stale_leads), before + 1)
 
+    def test_s3_one_failing_source_drops_only_that_source(self):
+        self._lead(self.user)
+        self.addCleanup(frappe.cache.delete_value, "fac_home_signals_err:stale_leads CRM Deal")
+        frappe.cache.delete_value("fac_home_signals_err:stale_leads CRM Deal")
+        # Manufactured: older CRM releases reach this because CRM Deal Status has no `type` column.
+        sources = [
+            (
+                "Lead",
+                lambda: {"lead_owner": self.user, "status": ["not in", ["Converted", "Do Not Contact"]]},
+            ),
+            ("CRM Deal", lambda: (_ for _ in ()).throw(RuntimeError("no type column"))),
+        ]
+        with (
+            patch.object(home_signals, "_stale_sources", autospec=True, return_value=sources),
+            patch.object(home_signals.frappe, "log_error", autospec=True) as log_error,
+            patch.object(home_signals.frappe.db, "exists", return_value=True),
+            patch.object(home_signals.frappe, "has_permission", return_value=True),
+        ):
+            result = home_signals._stale_leads(self.user, None)
+            home_signals._stale_leads(self.user, None)
+        self.assertGreaterEqual(result.count, 1)
+        log_error.assert_called_once_with(title="Home signal failed: stale_leads CRM Deal", defer_insert=True)
+
     def test_s3_skips_crm_doctypes_when_crm_absent(self):
         self._lead(self.user)
         counted: list[str] = []
