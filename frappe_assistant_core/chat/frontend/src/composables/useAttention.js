@@ -10,9 +10,10 @@
 //   - Dismissible via a watermark. Dismiss records the newest failure
 //     currently shown; the banner only returns when a NEWER failure arrives,
 //     so dismissing never blinds the user to future problems.
-import { ref } from "vue";
+import { computed, ref } from "vue";
 import { api } from "@/api/client";
 import { useUserStore } from "@/stores/userStore";
+import { __ } from "@/utils/i18n";
 
 export const FAILURE_WINDOW_MS = 24 * 60 * 60 * 1000;
 const DISMISS_KEY = "faco.attention_dismissed_ts";
@@ -91,5 +92,21 @@ export function useAttention() {
 		attention.value = null;
 	}
 
-	return { attention, loadAttention, dismiss };
+	// The same signal as a "Needs you" item for the home section.
+	const attentionItem = computed(() => {
+		const a = attention.value;
+		if (!a) return null;
+		return {
+			id: "failed_workflows",
+			tone: "danger",
+			source: __("Workflows"),
+			count: a.count,
+			title: a.count === 1 ? __("workflow failed overnight") : __("workflows failed overnight"),
+			detail: a.workflowName || "",
+			href: "/agents",
+			dismissible: true,
+		};
+	});
+
+	return { attention, attentionItem, loadAttention, dismiss };
 }

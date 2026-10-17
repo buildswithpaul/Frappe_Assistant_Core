@@ -53,6 +53,29 @@ describe("useAttention", () => {
 		expect(attention.value).toMatchObject({ count: 1, workflowName: "Invoice follow-up" });
 	});
 
+	it("exposes attentionItem as a dismissible danger item, null when clear", async () => {
+		useUserStore().workflowsEnabled = true;
+		listRuns.mockResolvedValue({
+			runs: [
+				{ workflow: "A", status: "Failed", started_at: isoMinutesAgo(60) },
+				{ workflow: "B", status: "Failed", started_at: isoMinutesAgo(90) },
+			],
+		});
+		const { attentionItem, loadAttention, dismiss } = useAttention();
+		expect(attentionItem.value).toBeNull();
+		await loadAttention();
+		expect(attentionItem.value).toMatchObject({
+			id: "failed_workflows",
+			tone: "danger",
+			count: 2,
+			title: "workflows failed overnight",
+			href: "/agents",
+			dismissible: true,
+		});
+		dismiss();
+		expect(attentionItem.value).toBeNull();
+	});
+
 	it("ignores failures older than the window", async () => {
 		useUserStore().workflowsEnabled = true;
 		listRuns.mockResolvedValue({
