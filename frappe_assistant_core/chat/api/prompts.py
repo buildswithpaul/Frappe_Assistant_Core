@@ -8,6 +8,10 @@ import json
 
 import frappe
 from frappe import _
+from frappe.utils import now_datetime
+
+from frappe_assistant_core.chat.home_signals import resolve_lenses
+from frappe_assistant_core.chat.page_asks import page_asks_for
 
 from ._helpers import _safe_error
 from .auth import _ar_user_id, _do_user_recovery, _ensure_user_registered
@@ -113,128 +117,170 @@ def _get_template_suggestions(context):
         return [], empty_templates
 
 
-# Role → domain-bucket mapping for landing-page default prompts (spec §7).
-_ROLE_BUCKETS = {
-    "sales": ("Sales User", "Sales Manager"),
-    "accounts": ("Accounts User", "Accounts Manager"),
-    "purchase": ("Purchase User", "Purchase Manager"),
-    "stock": ("Stock User", "Stock Manager"),
-    "support": ("Support Team", "Helpdesk Agent"),
-    "hr": ("HR User", "HR Manager"),
-}
-
-_BUCKET_PROMPTS = {
-    "sales": [
-        {
-            "name": "sales_top_customers",
-            "description": "Top 10 customers by revenue this month",
-            "subtext": "Ranked from your sales invoices",
-        },
-        {
-            "name": "sales_pending_orders",
-            "description": "Summarize my pending sales orders",
-            "subtext": "What's due and what's stuck",
-        },
-    ],
-    "accounts": [
-        {
-            "name": "accounts_unpaid_invoices",
-            "description": "Which invoices are overdue for payment?",
-            "subtext": "Receivables that need a nudge",
-        },
-        {
-            "name": "accounts_expense_summary",
-            "description": "Summarize this month's expenses by category",
-            "subtext": "Where the money went",
-        },
-    ],
-    "purchase": [
-        {
-            "name": "purchase_open_orders",
-            "description": "Review my open purchase orders",
-            "subtext": "Supplier, value, delivery date",
-        },
-        {
-            "name": "purchase_supplier_spend",
-            "description": "Top suppliers by spend this quarter",
-            "subtext": "Concentration at a glance",
-        },
-    ],
-    "stock": [
-        {
-            "name": "stock_low_items",
-            "description": "Which items are below reorder level?",
-            "subtext": "Before they run out",
-        },
-        {
-            "name": "stock_valuation",
-            "description": "Walk me through the inventory valuation report",
-            "subtext": "The numbers, explained",
-        },
-    ],
-    "support": [
-        {
-            "name": "support_common_issues",
-            "description": "What are the most common support issues lately?",
-            "subtext": "Patterns across recent tickets",
-        },
-        {
-            "name": "support_open_tickets",
-            "description": "Summarize my open tickets by priority",
-            "subtext": "Triage in one view",
-        },
-    ],
-    "hr": [
-        {
-            "name": "hr_leave_summary",
-            "description": "Who is on leave this week?",
-            "subtext": "From approved leave applications",
-        },
-        {
-            "name": "hr_pending_approvals",
-            "description": "Show pending HR approvals",
-            "subtext": "Leave and expense claims waiting",
-        },
-    ],
-    "generic": [
-        {
-            "name": "generic_help",
-            "description": "What can you help me with?",
-            "subtext": "A quick tour of what I can do",
-        },
-        {
-            "name": "generic_create_document",
-            "description": "How do I create a new document?",
-            "subtext": "Guided, step by step",
-        },
-        {
-            "name": "generic_recent_updates",
-            "description": "Show me recent updates in the system",
-            "subtext": "What changed while you were away",
-        },
-        {
-            "name": "generic_explain_frappe",
-            "description": "Explain Frappe ERP to me",
-            "subtext": "The lay of the land",
-        },
-    ],
-}
+def _current_month_name() -> str:
+    """Translated name of the current month, e.g. "October"."""
+    return _(now_datetime().strftime("%B"))
 
 
-def _role_bucket_prompts(roles):
-    """Default prompts matched to the user's roles, round-robin across
-    matched buckets, generic filler last. Pure — roles come in as a list."""
-    role_set = set(roles or [])
-    matched = [b for b, bucket_roles in _ROLE_BUCKETS.items() if role_set & set(bucket_roles)]
+def _lens_prompt(name: str, description: str, subtext: str) -> dict:
+    return {"name": name, "description": description, "subtext": subtext}
+
+
+def _lens_starters() -> dict[str, list[dict]]:
+    """Concrete, translated starter questions per lens (built per call so
+    ``_()`` resolves in the request language and the month stays current)."""
+    return {
+        "accounts": [
+            _lens_prompt(
+                "accounts_top_debtors",
+                _("Who owes us the most, and since when?"),
+                _("Largest receivables, oldest first"),
+            ),
+            _lens_prompt(
+                "accounts_collections_trend",
+                _("Compare collections this month with last month"),
+                _("Are payments speeding up or slowing down?"),
+            ),
+            _lens_prompt(
+                "accounts_gst_payable",
+                _("Summarise GST payable for {0}").format(_current_month_name()),
+                _("Tax collected against tax paid"),
+            ),
+            _lens_prompt(
+                "accounts_late_payers",
+                _("Which customers pay late most often?"),
+                _("Who to chase first"),
+            ),
+        ],
+        "sales": [
+            _lens_prompt(
+                "sales_top_customers",
+                _("Top 10 customers by revenue this month"),
+                _("Ranked from your sales invoices"),
+            ),
+            _lens_prompt(
+                "sales_pending_orders",
+                _("Which sales orders are still waiting to be delivered?"),
+                _("What is due and what is stuck"),
+            ),
+            _lens_prompt(
+                "sales_quotations_to_chase",
+                _("Which open quotations should I follow up this week?"),
+                _("Sent, not yet won or lost"),
+            ),
+            _lens_prompt(
+                "sales_stale_leads",
+                _("Which leads have gone quiet for two weeks?"),
+                _("Before they go cold"),
+            ),
+        ],
+        "stock": [
+            _lens_prompt(
+                "stock_low_items",
+                _("Which items are below reorder level?"),
+                _("Before they run out"),
+            ),
+            _lens_prompt(
+                "stock_open_purchase_orders",
+                _("Which purchase orders are overdue for delivery?"),
+                _("Supplier, value, promised date"),
+            ),
+            _lens_prompt(
+                "stock_supplier_spend",
+                _("Top suppliers by spend this quarter"),
+                _("Concentration at a glance"),
+            ),
+            _lens_prompt(
+                "stock_slow_movers",
+                _("Which items have not moved in 90 days?"),
+                _("Cash tied up on the shelf"),
+            ),
+        ],
+        "hr": [
+            _lens_prompt(
+                "hr_on_leave",
+                _("Who is on leave this week?"),
+                _("From approved leave applications"),
+            ),
+            _lens_prompt(
+                "hr_pending_approvals",
+                _("Show leave and expense claims waiting for my approval"),
+                _("What is holding the team up"),
+            ),
+            _lens_prompt(
+                "hr_attendance_gaps",
+                _("Who has missed attendance marking this week?"),
+                _("Gaps worth a nudge"),
+            ),
+            _lens_prompt(
+                "hr_upcoming_events",
+                _("Whose birthdays and work anniversaries are coming up?"),
+                _("A small thing worth remembering"),
+            ),
+        ],
+        "support": [
+            _lens_prompt(
+                "support_open_tickets",
+                _("Summarise my open tickets by priority"),
+                _("Triage in one view"),
+            ),
+            _lens_prompt(
+                "support_common_issues",
+                _("What are the most common support issues lately?"),
+                _("Patterns across recent tickets"),
+            ),
+            _lens_prompt(
+                "support_overdue_tickets",
+                _("Which tickets are about to breach their response time?"),
+                _("Oldest unanswered first"),
+            ),
+            _lens_prompt(
+                "support_unassigned",
+                _("Which tickets have no owner yet?"),
+                _("Needs someone to pick it up"),
+            ),
+        ],
+        "generic": [
+            _lens_prompt(
+                "generic_help",
+                _("What can you help me with?"),
+                _("A quick tour of what I can do"),
+            ),
+            _lens_prompt(
+                "generic_create_document",
+                _("How do I create a new document?"),
+                _("Guided, step by step"),
+            ),
+            _lens_prompt(
+                "generic_recent_updates",
+                _("Show me recent updates in the system"),
+                _("What changed while you were away"),
+            ),
+            _lens_prompt(
+                "generic_explain_frappe",
+                _("Explain Frappe ERP to me"),
+                _("The lay of the land"),
+            ),
+        ],
+    }
+
+
+def _role_bucket_prompts(roles, installed_apps=None):
+    """Default prompts matched to the user's lenses, round-robin across
+    matched lenses, generic filler last. Pure — roles and installed apps come
+    in as lists (apps default to the site's installed apps)."""
+    if installed_apps is None:
+        installed_apps = frappe.get_installed_apps()
+    starters = _lens_starters()
+    matched = resolve_lenses(list(roles or []), installed_apps)
 
     result = []
-    if matched:
-        queues = [list(_BUCKET_PROMPTS[b]) for b in matched]
-        while any(queues):
-            for q in queues:
-                if q:
-                    result.append(q.pop(0))
-    result.extend(_BUCKET_PROMPTS["generic"])
+    queues = [list(starters[lens]) for lens in matched]
+    while any(queues):
+        for q in queues:
+            if q:
+                result.append(q.pop(0))
+    result.extend(starters["generic"])
 
     return [
         {
@@ -249,66 +295,10 @@ def _role_bucket_prompts(roles):
 
 
 def _get_default_prompts(context):
-    """Return fallback prompts when no templates or history are available."""
-    context_type = context.get("type", "General")
-    doctype = context.get("doctype")
-
-    if context_type == "Form" and doctype:
-        return [
-            {
-                "name": "explain_form",
-                "description": f"Explain this {doctype} form to me",
-                "has_arguments": False,
-                "source": "default",
-            },
-            {
-                "name": "fill_form",
-                "description": "What should I fill in this form?",
-                "has_arguments": False,
-                "source": "default",
-            },
-            {
-                "name": "validation_rules",
-                "description": f"What are the validation rules for this {doctype}?",
-                "has_arguments": False,
-                "source": "default",
-            },
-            {
-                "name": "complete_form",
-                "description": "Help me complete this form",
-                "has_arguments": False,
-                "source": "default",
-            },
-        ]
-    elif context_type == "List" and doctype:
-        return [
-            {
-                "name": "create_doc",
-                "description": f"Show me how to create a new {doctype}",
-                "has_arguments": False,
-                "source": "default",
-            },
-            {
-                "name": "filter_list",
-                "description": f"How do I filter this {doctype} list?",
-                "has_arguments": False,
-                "source": "default",
-            },
-            {
-                "name": "explain_fields",
-                "description": f"What do the fields in {doctype} mean?",
-                "has_arguments": False,
-                "source": "default",
-            },
-            {
-                "name": "export_list",
-                "description": "Export this list to Excel",
-                "has_arguments": False,
-                "source": "default",
-            },
-        ]
-    else:
-        return _role_bucket_prompts(frappe.get_roles(frappe.session.user))
+    """Page asks (Form/List only) followed by the role starters, so the
+    landing grid can always backfill to four tiles."""
+    page_asks = page_asks_for(context.get("type", "General"), context.get("doctype"))
+    return page_asks + _role_bucket_prompts(frappe.get_roles(frappe.session.user))
 
 
 @frappe.whitelist(methods=["GET"])
