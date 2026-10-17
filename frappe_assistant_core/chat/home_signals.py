@@ -43,6 +43,8 @@ APPROVALS_LIMIT = 200
 OVERDUE_DAYS = 60
 PAYABLES_WINDOW_DAYS = 7
 TOP_CUSTOMERS = 2
+QUOTATION_WINDOW_DAYS = 7
+STALE_LEAD_DAYS = 14
 ERROR_LOG_INTERVAL = 3600
 ERROR_KEY_PREFIX = "fac_home_signals_err:"
 
@@ -378,6 +380,104 @@ def _unreconciled_bank(user: str, company: str | None) -> SignalResult | None:
     )
 
 
+def _quotations_expiring(user: str, company: str | None) -> SignalResult | None:
+    count = count_visible(
+        "Quotation",
+        {
+            "docstatus": 1,
+            "status": "Open",
+            "valid_till": ["between", [today(), add_days(today(), QUOTATION_WINDOW_DAYS)]],
+        },
+        user,
+    )
+    return SignalResult(
+        count=count,
+        title=_("quotation expires in the next 7 days")
+        if count == 1
+        else _("quotations expire in the next 7 days"),
+        detail=_("Open quotations whose validity ends within a week"),
+        ask=_("Which quotations expire in the next 7 days?"),
+        source=_("Quotation"),
+    )
+
+
+def _late_sales_orders(user: str, company: str | None) -> SignalResult | None:
+    count = count_visible(
+        "Sales Order",
+        _company_scoped(
+            {
+                "docstatus": 1,
+                "delivery_date": ["<", today()],
+                "per_delivered": ["<", 100],
+                "status": ["not in", ["Closed", "Completed", "On Hold"]],
+            },
+            company,
+        ),
+        user,
+    )
+    return SignalResult(
+        count=count,
+        title=_("sales order past its delivery date")
+        if count == 1
+        else _("sales orders past their delivery date"),
+        detail=_("Submitted orders that are not fully delivered"),
+        ask=(
+            _("Which sales orders for {0} are past their delivery date?").format(company)
+            if company
+            else _("Which sales orders are past their delivery date?")
+        ),
+        source=_("Sales Order"),
+    )
+
+
+def _crm_installed() -> bool:
+    return "crm" in frappe.get_installed_apps()
+
+
+def _closed_crm_deal_statuses() -> list[str]:
+    """Names of the CRM Deal Statuses that end a deal (type Won or Lost).
+
+    ``get_all`` is deliberate: this is configuration, not a user-visible count, and
+    the deals themselves are still counted through ``get_list``.
+    """
+    return frappe.get_all("CRM Deal Status", filters={"type": ["in", ["Won", "Lost"]]}, pluck="name")
+
+
+def _stale_sources(user: str) -> list[tuple[str, dict]]:
+    """The (DocType, filters) pairs whose records ``user`` owns, before the staleness cut-off."""
+    sources: list[tuple[str, dict]] = [
+        ("Lead", {"lead_owner": user, "status": ["not in", ["Converted", "Do Not Contact"]]}),
+        ("Opportunity", {"opportunity_owner": user, "status": "Open"}),
+    ]
+    if _crm_installed():
+        sources.append(("CRM Lead", {"lead_owner": user, "converted": 0}))
+        if frappe.db.exists("DocType", "CRM Deal Status"):
+            sources.append(
+                ("CRM Deal", {"deal_owner": user, "status": ["not in", _closed_crm_deal_statuses()]})
+            )
+    return sources
+
+
+def _stale_leads(user: str, company: str | None) -> SignalResult | None:
+    cutoff = add_days(today(), -STALE_LEAD_DAYS)
+    count = 0
+    for doctype, filters in _stale_sources(user):
+        if not frappe.db.exists("DocType", doctype) or not frappe.has_permission(doctype, "read", user=user):
+            continue
+        count += count_visible(doctype, {**filters, "modified": ["<", cutoff]}, user)
+    return SignalResult(
+        count=count,
+        title=(
+            _("lead or opportunity with no activity for 14 days")
+            if count == 1
+            else _("leads and opportunities with no activity for 14 days")
+        ),
+        detail=_("Records you own that nobody has touched in two weeks"),
+        ask=_("Which of my leads and opportunities have had no activity for 14 days?"),
+        source=_("Leads and opportunities"),
+    )
+
+
 CATALOGUE: list[Signal] = [
     Signal(
         id="approvals",
@@ -418,5 +518,29 @@ CATALOGUE: list[Signal] = [
         requires_doctypes=("Bank Transaction",),
         requires_apps=(),
         compute=_unreconciled_bank,
+    ),
+    Signal(
+        id="quotations_expiring",
+        lenses=("sales",),
+        tone="warning",
+        requires_doctypes=("Quotation",),
+        requires_apps=(),
+        compute=_quotations_expiring,
+    ),
+    Signal(
+        id="late_sales_orders",
+        lenses=("sales",),
+        tone="danger",
+        requires_doctypes=("Sales Order",),
+        requires_apps=(),
+        compute=_late_sales_orders,
+    ),
+    Signal(
+        id="stale_leads",
+        lenses=("sales",),
+        tone="neutral",
+        requires_doctypes=(),
+        requires_apps=(),
+        compute=_stale_leads,
     ),
 ]
