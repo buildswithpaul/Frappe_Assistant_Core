@@ -38,6 +38,11 @@ export function useAutoScroll(containerRef, messages, isStreaming) {
 		el.scrollTop = el.scrollHeight;
 	}
 
+	function scrollToTop() {
+		const el = containerRef.value;
+		if (el) el.scrollTop = 0;
+	}
+
 	function onScroll() {
 		const el = containerRef.value;
 		if (!el) return;
@@ -64,11 +69,12 @@ export function useAutoScroll(containerRef, messages, isStreaming) {
 
 	// New message added — always scroll. Sending a message is an explicit
 	// user action that resets intent (you want to see your own message land).
+	// An emptied list is a new chat, whose welcome reads from the top.
 	watch(
 		() => messages.value.length,
-		() => {
+		(length) => {
 			isFollowing.value = true;
-			nextTick(scrollToBottom);
+			nextTick(length ? scrollToBottom : scrollToTop);
 		}
 	);
 
