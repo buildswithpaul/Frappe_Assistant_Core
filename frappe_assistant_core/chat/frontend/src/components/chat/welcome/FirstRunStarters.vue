@@ -43,9 +43,8 @@ const KIND_LABELS = [
 ];
 
 // One tile per kind, matched on what the starter produces. `tiles` is the full
-// starter list in server order, so the first match per kind belongs to the
-// user's primary lens and a personalized tile without a kind never takes a
-// labelled slot. A missing kind is filled from the remaining tiles, shown
+// starter list in server order: the first tile per kind wins, and a
+// personalized tile without a kind never takes a labelled slot. A missing kind is filled from the remaining tiles, shown
 // without a label and previewed as its own kind when it has one.
 const cards = computed(() => {
 	const picked = KIND_LABELS.map(({ kind, label }) => {

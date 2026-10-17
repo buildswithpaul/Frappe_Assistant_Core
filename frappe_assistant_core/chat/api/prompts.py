@@ -7,7 +7,8 @@
 import json
 
 import frappe
-from frappe import _
+from frappe import _, _lt
+from frappe.utils import getdate
 
 from frappe_assistant_core.chat.home_signals import resolve_lenses
 from frappe_assistant_core.chat.page_asks import page_asks_for
@@ -116,6 +117,28 @@ def _get_template_suggestions(context):
         return [], empty_templates
 
 
+# Literals so the extractor sees each month name; indexed by today's month.
+_MONTH_NAMES = (
+    _lt("January"),
+    _lt("February"),
+    _lt("March"),
+    _lt("April"),
+    _lt("May"),
+    _lt("June"),
+    _lt("July"),
+    _lt("August"),
+    _lt("September"),
+    _lt("October"),
+    _lt("November"),
+    _lt("December"),
+)
+
+
+def _current_month_name() -> str:
+    """Translated name of the current month, e.g. "October"."""
+    return str(_MONTH_NAMES[getdate().month - 1])
+
+
 # What a starter produces, so the day-one cards can label it: a chart ("see"),
 # a lookup ("find") or a drafted/changed document ("do").
 STARTER_KINDS = ("see", "find", "do")
@@ -144,6 +167,12 @@ def _lens_starters() -> dict[str, list[dict]]:
             ),
             _lens_prompt(
                 "accounts_gst_payable",
+                _("Summarise GST payable for {0}").format(_current_month_name()),
+                _("Tax collected against tax paid"),
+                "see",
+            ),
+            _lens_prompt(
+                "accounts_payment_reminder",
                 _("Draft a payment reminder to my most overdue customer"),
                 _("Ready to review before it goes out"),
                 "do",
@@ -169,7 +198,7 @@ def _lens_starters() -> dict[str, list[dict]]:
                 "find",
             ),
             _lens_prompt(
-                "sales_quotations_to_chase",
+                "sales_quotation_followup",
                 _("Draft a follow-up for my oldest open quotation"),
                 _("Ready to review before it goes out"),
                 "do",
@@ -201,7 +230,7 @@ def _lens_starters() -> dict[str, list[dict]]:
                 "see",
             ),
             _lens_prompt(
-                "stock_slow_movers",
+                "stock_material_request",
                 _("Prepare a material request for items below reorder level"),
                 _("Drafted for you to review"),
                 "do",
@@ -215,7 +244,7 @@ def _lens_starters() -> dict[str, list[dict]]:
                 "find",
             ),
             _lens_prompt(
-                "hr_pending_approvals",
+                "hr_leave_reply",
                 _("Draft a reply approving or declining my pending leave requests"),
                 _("Ready to review before it goes out"),
                 "do",
@@ -253,7 +282,7 @@ def _lens_starters() -> dict[str, list[dict]]:
                 "find",
             ),
             _lens_prompt(
-                "support_unassigned",
+                "support_unassigned_reply",
                 _("Draft a reply to my oldest unassigned ticket"),
                 _("Ready to review before it goes out"),
                 "do",

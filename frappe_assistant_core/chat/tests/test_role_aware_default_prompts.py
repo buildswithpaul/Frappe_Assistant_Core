@@ -6,6 +6,7 @@
 with defaults matched to the user's Frappe roles — an Accounts user should
 never be offered "common support issues" as their default."""
 
+import datetime
 import unittest
 from unittest.mock import patch
 
@@ -66,7 +67,20 @@ class TestRoleBucketPrompts(unittest.TestCase):
         self.assertIn("Who owes us the most, and since when?", descriptions)
         self.assertIn("Compare collections this month with last month", descriptions)
         self.assertIn("Draft a payment reminder to my most overdue customer", descriptions)
+        self.assertIn(f"Summarise GST payable for {prompts._current_month_name()}", descriptions)
         self.assertIn("Which customers pay late most often?", descriptions)
+
+    def test_current_month_name_follows_todays_month(self):
+        for month, name in ((1, "January"), (3, "March"), (12, "December")):
+            with patch.object(prompts, "getdate", return_value=datetime.date(2026, month, 15)):
+                self.assertEqual(prompts._current_month_name(), name)
+
+    def test_gst_starter_names_the_month(self):
+        with patch.object(prompts, "getdate", return_value=datetime.date(2026, 3, 15)):
+            starters = prompts._lens_starters()["accounts"]
+        gst = next(s for s in starters if s["name"] == "accounts_gst_payable")
+        self.assertEqual(gst["description"], "Summarise GST payable for March")
+        self.assertEqual(gst["kind"], "see")
 
     def test_each_lens_offers_one_starter_of_every_kind(self):
         for lens, starters in prompts._lens_starters().items():

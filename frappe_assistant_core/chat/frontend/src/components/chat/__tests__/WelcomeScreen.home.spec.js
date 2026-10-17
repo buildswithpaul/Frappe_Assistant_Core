@@ -93,6 +93,17 @@ describe("WelcomeScreen home", () => {
 		expect(w.emitted("suggestion")).toEqual([["Two?"]]);
 	});
 
+	it("day one ignores page asks and blank rows when choosing cards", async () => {
+		const w = await mountHome({ sessions: [] });
+		useSuggestionStore().allSuggestions = [
+			{ name: "p", description: "Page see?", kind: "see", source: "page" },
+			{ name: "b", description: "", kind: "find", source: "default" },
+			...TILES,
+		];
+		await w.vm.$nextTick();
+		expect(w.findAll(".frs-text").map((n) => n.text())).toEqual(["Two?", "One?", "Three?"]);
+	});
+
 	it("day one with no signals shows the explanatory empty line", async () => {
 		const w = await mountHome({ sessions: [], home: { ...HOME, items: [] } });
 		expect(w.text()).toContain("Approvals, assignments and overdue items for you will appear here.");

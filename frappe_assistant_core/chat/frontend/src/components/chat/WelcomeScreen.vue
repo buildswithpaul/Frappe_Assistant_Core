@@ -94,7 +94,11 @@ const tiles = computed(() =>
 
 // Day one picks one starter per kind from the full list, not the 4-tile cut,
 // so a multi-lens user still gets all three cards.
-const firstRunTiles = computed(() => (allSuggestions.value.length ? allSuggestions.value : tiles.value));
+// Page asks and blank rows are not starters.
+const firstRunTiles = computed(() => {
+	const starters = allSuggestions.value.filter((s) => s.source !== "page" && s.description);
+	return starters.length ? starters : tiles.value;
+});
 
 // Needs-you signals: post-paint, fail-silent; dismiss belongs to this instance.
 const { items, lensLabel, area, company, loaded, failed, dismiss } = useHomeSignals({
