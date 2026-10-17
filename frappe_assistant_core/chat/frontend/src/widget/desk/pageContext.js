@@ -28,7 +28,10 @@ const ctx = {
 		// nosemgrep: frappe-cur-frm-usage
 		const frm = (page && page.frm) || window.cur_frm;
 
-		return frm && frm.doc ? frm : null;
+		// A form page is reused across records of a doctype, and keeps the previous record's doc
+		// until Desk refreshes it; the route already names the record being opened.
+		if (!frm || !frm.doc) return null;
+		return (frm.docname ?? frm.doc.name) === route[2] ? frm : null;
 	},
 
 	/**

@@ -214,15 +214,43 @@ describe("widget home", () => {
 		it("ignores a response for a page the user has already left", async () => {
 			let resolveFirst;
 			api.suggestions.get.mockReset();
-			api.suggestions.get
-				.mockImplementationOnce(() => new Promise((r) => (resolveFirst = r)))
-				.mockResolvedValueOnce({ suggestions: CUSTOMER_ASKS });
+			api.suggestions.get.mockImplementationOnce(() => new Promise((r) => (resolveFirst = r)));
+			api.suggestions.get.mockImplementation(async ({ doctype }) => ({
+				suggestions: doctype === "Customer" ? CUSTOMER_ASKS : [],
+			}));
 			const w = mount(WidgetWelcome);
 			await flushPromises();
 			await navigateToCustomer();
 			resolveFirst({ suggestions: PAGE_ASKS });
 			await flushPromises();
 			expect(w.findAll(".pa-chip").map((c) => c.text())).toEqual(["Is CUST-0001 a good Customer to chase?"]);
+		});
+
+		it("returning to the previous page after a failed fetch fetches again", async () => {
+			const w = await mountHome();
+			api.suggestions.get.mockRejectedValue(new Error("offline"));
+			await navigateToCustomer();
+			api.suggestions.get.mockResolvedValue({ suggestions: PAGE_ASKS });
+			onRoute(["Form", "Sales Invoice", "SINV-0001"], invoiceForm);
+			formRefreshed();
+			await settle();
+			expect(w.findAll(".pa-chip")).toHaveLength(2);
+		});
+
+		it("an unmounted home no longer hears navigation, and mounts share one Desk registration", async () => {
+			const routerOn = vi.fn();
+			onRoute(["Workspaces", "Home"]);
+			window.frappe.router = { on: routerOn, off: vi.fn() };
+			const first = mount(WidgetWelcome);
+			const second = mount(WidgetWelcome);
+			await flushPromises();
+			expect(routerOn).toHaveBeenCalledTimes(1);
+			first.unmount();
+			second.unmount();
+			api.suggestions.get.mockClear();
+			routerOn.mock.calls[0][1]();
+			await settle();
+			expect(api.suggestions.get).not.toHaveBeenCalled();
 		});
 
 		it("a failed fetch leaves no stale asks under the new record's name", async () => {

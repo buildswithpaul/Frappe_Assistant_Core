@@ -111,23 +111,28 @@ describe("deskHost.onContextChange", () => {
 		vi.useRealTimers();
 	});
 
-	it("fires once per navigation after router change and form-refresh, and unsubscribes", async () => {
+	it("fires once per navigation, shares one Desk registration, and stops after unsubscribe", async () => {
 		vi.useFakeTimers();
 		const { deskHost } = await import("./deskHost.js");
 		const handlers = {};
-		const off = vi.fn();
-		window.jQuery = () => ({ on: (e, fn) => (handlers[e] = fn), off });
-		let routeFn;
-		window.frappe = { router: { on: (_e, fn) => (routeFn = fn), off: vi.fn() } };
-		const cb = vi.fn();
-		const stop = deskHost.onContextChange(cb);
-		routeFn();
+		window.jQuery = () => ({ on: (e, fn) => (handlers[e] = fn), off: vi.fn() });
+		const routerOn = vi.fn();
+		window.frappe = { router: { on: routerOn, off: vi.fn() } };
+		const first = vi.fn();
+		const second = vi.fn();
+		const stopFirst = deskHost.onContextChange(first);
+		deskHost.onContextChange(second);
+		expect(routerOn).toHaveBeenCalledTimes(1);
+		routerOn.mock.calls[0][1]();
 		handlers["form-refresh"]();
 		vi.advanceTimersByTime(100);
-		expect(cb).toHaveBeenCalledTimes(1);
-		stop();
-		expect(off).toHaveBeenCalledWith("form-refresh", handlers["form-refresh"]);
-		expect(window.frappe.router.off).toHaveBeenCalled();
+		expect(first).toHaveBeenCalledTimes(1);
+		expect(second).toHaveBeenCalledTimes(1);
+		stopFirst();
+		handlers["form-refresh"]();
+		vi.advanceTimersByTime(100);
+		expect(first).toHaveBeenCalledTimes(1);
+		expect(second).toHaveBeenCalledTimes(2);
 	});
 
 	it("is inert on the embedding page", async () => {

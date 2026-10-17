@@ -242,7 +242,7 @@ function expand() {
 const { pageContext } = usePageContext();
 const composerPlaceholder = computed(() =>
 	pageContext.value.type === "Form" && pageContext.value.doctype
-		? __("Ask about this {0}…", [pageContext.value.doctype])
+		? __("Ask about this {0}…", [__(pageContext.value.doctype)])
 		: ""
 );
 

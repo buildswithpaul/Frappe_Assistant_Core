@@ -47,8 +47,10 @@ export const useSuggestionStore = defineStore("suggestions", () => {
 			lastContextKey.value = contextKey;
 		} catch (err) {
 			logger.error("Failed to load suggestions:", err);
-			// The previous page's asks must not outlive a failed fetch for this one.
+			// The previous page's asks must not outlive a failed fetch for this one, and
+			// returning to the previous context must fetch again.
 			if (contextKey === inFlightKey) {
+				lastContextKey.value = null;
 				allSuggestions.value = allSuggestions.value.filter((s) => s.source !== "page");
 			}
 		} finally {

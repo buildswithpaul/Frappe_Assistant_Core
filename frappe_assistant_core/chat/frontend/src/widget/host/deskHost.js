@@ -3,6 +3,30 @@ import { detectContext } from "../desk/pageContext.js";
 // One navigation raises router change and form-refresh in quick succession.
 const CONTEXT_DEBOUNCE_MS = 50;
 
+const subscribers = new Set();
+// What the listeners are attached to. Desk keeps one router and one jQuery for the page lifetime.
+let listenedRouter = null;
+let listenedJquery = null;
+let timer = null;
+
+function notifySubscribers() {
+	clearTimeout(timer);
+	timer = setTimeout(() => subscribers.forEach((fn) => fn()), CONTEXT_DEBOUNCE_MS);
+}
+
+function listenToDesk() {
+	const router = window.frappe && window.frappe.router;
+	if (router && router !== listenedRouter) {
+		listenedRouter = router;
+		router.on("change", notifySubscribers);
+	}
+	const $ = window.jQuery || window.$;
+	if ($ && $ !== listenedJquery) {
+		listenedJquery = $;
+		$(document).on("form-refresh", notifySubscribers);
+	}
+}
+
 /** Frappe Desk: the widget's original home, reached through Desk's own globals. */
 export const deskHost = {
 	name: "desk",
@@ -26,21 +50,13 @@ export const deskHost = {
 	/**
 	 * Fires once per navigation, after the page can be read. Desk raises the router `change`
 	 * before a form's doc has loaded, so a form's own `form-refresh` is what carries the record.
+	 * The Desk listeners are registered once, on first use: Frappe's emitter `off` cannot remove
+	 * a handler, so a per-subscriber registration would leak on every unmount.
 	 */
 	onContextChange(fn) {
-		const stopRoute = this.onRouteChange(schedule);
-		const $ = window.jQuery || window.$;
-		if ($) $(document).on("form-refresh", schedule);
-		let timer = null;
-		function schedule() {
-			clearTimeout(timer);
-			timer = setTimeout(fn, CONTEXT_DEBOUNCE_MS);
-		}
-		return () => {
-			clearTimeout(timer);
-			stopRoute();
-			if ($) $(document).off("form-refresh", schedule);
-		};
+		subscribers.add(fn);
+		listenToDesk();
+		return () => subscribers.delete(fn);
 	},
 	isHiddenRoute() {
 		const route = window.frappe && window.frappe.get_route ? window.frappe.get_route() : [];
