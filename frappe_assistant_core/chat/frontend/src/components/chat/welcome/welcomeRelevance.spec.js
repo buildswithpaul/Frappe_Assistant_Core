@@ -16,6 +16,33 @@ describe("selectWelcomeTiles", () => {
 		expect(tiles.map((t) => t.description)).toEqual(["z1", "z2", "z3", "p1"]);
 	});
 
+	it("ranks role starters before site templates, after pinned", () => {
+		const tiles = selectWelcomeTiles({
+			suggestions: [
+				s("contextual", "c1"), s("contextual", "c2"), s("default", "g1"),
+				s("role", "r1"), s("role", "r2"), s("role", "r3"), s("pinned", "p1"),
+			],
+			resumePreview: "",
+		});
+		expect(tiles.map((t) => t.description)).toEqual(["p1", "r1", "r2", "r3"]);
+	});
+
+	it("puts contextual templates then generic defaults after the role starters", () => {
+		const tiles = selectWelcomeTiles({
+			suggestions: [s("default", "g1"), s("contextual", "c1"), s("role", "r1"), s("role", "r2"), s("contextual", "c2")],
+			resumePreview: "",
+		});
+		expect(tiles.map((t) => t.description)).toEqual(["r1", "r2", "c1", "c2"]);
+	});
+
+	it("keeps personalized tiles ahead of role starters", () => {
+		const tiles = selectWelcomeTiles({
+			suggestions: [s("role", "r1"), s("personalized", "z1")],
+			resumePreview: "",
+		});
+		expect(tiles.map((t) => t.description).slice(0, 2)).toEqual(["z1", "r1"]);
+	});
+
 	it("drops suggestions duplicating ANY resume preview", () => {
 		const tiles = selectWelcomeTiles({
 			suggestions: [

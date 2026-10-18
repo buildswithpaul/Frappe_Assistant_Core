@@ -54,9 +54,13 @@ class TestRoleBucketPrompts(unittest.TestCase):
         self.assertGreaterEqual(len(prompts), 4)
         self.assertTrue(all(p["name"].startswith("generic_") for p in prompts))
 
-    def test_all_prompts_are_default_source(self):
+    def test_lens_starters_are_role_source_and_generic_filler_is_default(self):
         for p in _role_bucket_prompts(["Sales User", "HR User"], [*APPS, "hrms"]):
-            self.assertEqual(p["source"], "default")
+            expected = "default" if p["name"].startswith("generic_") else "role"
+            self.assertEqual(p["source"], expected, p["name"])
+
+    def test_unknown_roles_get_only_default_source(self):
+        self.assertEqual({p["source"] for p in _role_bucket_prompts(["Blogger"], APPS)}, {"default"})
 
     def test_generic_filler_always_appended(self):
         prompts = _role_bucket_prompts(["Sales User"], APPS)
@@ -125,6 +129,7 @@ class TestPageAsks(unittest.TestCase):
             result = _get_default_prompts({"type": "Form", "doctype": "Sales Invoice"})
         sources = [p["source"] for p in result]
         self.assertEqual(sources[0], "page")
+        self.assertIn("role", sources)
         self.assertIn("default", sources)
         self.assertTrue(any(p["name"].startswith("accounts_") for p in result))
 
@@ -147,3 +152,5 @@ class TestSuggestionCap(unittest.TestCase):
         self.assertEqual(len(suggestions), prompts.SUGGESTIONS_CAP)
         self.assertTrue([s for s in suggestions if s["source"] == "page"])
         self.assertEqual({s.get("kind") for s in suggestions if s.get("kind")}, set(prompts.STARTER_KINDS))
+        role = [s for s in suggestions if s["source"] == "role"]
+        self.assertEqual({s["kind"] for s in role}, set(prompts.STARTER_KINDS))

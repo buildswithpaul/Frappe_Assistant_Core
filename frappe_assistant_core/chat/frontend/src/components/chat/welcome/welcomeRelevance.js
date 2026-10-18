@@ -1,5 +1,5 @@
 // Relevance stack for the landing suggestion grid (spec §7).
-// Personalized (≤3) → pinned → contextual → defaults; dedup by description;
+// Personalized (≤3) → pinned → role starters → contextual → generic defaults; dedup by description;
 // drop anything the Resume cards already own; always fill to 4.
 
 const TILE_COUNT = 4;
@@ -59,6 +59,7 @@ export function selectWelcomeTiles({ suggestions = [], resumePreviews = [], resu
 	const ordered = [
 		...bySource("personalized").slice(0, PERSONALIZED_CAP),
 		...bySource("pinned"),
+		...bySource("role"),
 		...bySource("contextual"),
 		...bySource("default"),
 	];

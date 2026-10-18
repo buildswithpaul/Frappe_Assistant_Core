@@ -333,6 +333,7 @@ def _role_bucket_prompts(roles, installed_apps=None):
         for q in queues:
             if q:
                 result.append(q.pop(0))
+    role_count = len(result)
     result.extend(starters["generic"])
 
     return [
@@ -342,9 +343,9 @@ def _role_bucket_prompts(roles, installed_apps=None):
             "subtext": p.get("subtext"),
             "kind": p["kind"],
             "has_arguments": False,
-            "source": "default",
+            "source": "role" if index < role_count else "default",
         }
-        for p in result
+        for index, p in enumerate(result)
     ]
 
 
@@ -356,11 +357,12 @@ def _get_default_prompts(context):
 
 
 SUGGESTIONS_CAP = 12
+STARTER_SOURCES = ("role", "default")
 
 
 def _cap_prompts(prompts_list: list[dict], cap: int) -> list[dict]:
     """Keep at most ``cap`` prompts, in order, without dropping the page asks or the
-    first starter of each kind: templates are unbounded and would otherwise push both out."""
+    first role or generic starter of each kind: templates are unbounded and would otherwise push both out."""
     if len(prompts_list) <= cap:
         return prompts_list
     protected: set[int] = set()
@@ -369,7 +371,7 @@ def _cap_prompts(prompts_list: list[dict], cap: int) -> list[dict]:
         kind = prompt.get("kind")
         if prompt.get("source") == "page":
             protected.add(index)
-        elif kind and kind not in kinds_seen:
+        elif kind and prompt.get("source") in STARTER_SOURCES and kind not in kinds_seen:
             kinds_seen.add(kind)
             protected.add(index)
     kept = set(protected)
@@ -399,7 +401,7 @@ def get_suggested_prompts(context: str | None = None):
     - description: display text
     - has_arguments: whether template needs input
     - arguments: list of argument definitions (if any)
-    - source: "pinned", "contextual", "personalized", or "default"
+    - source: "pinned", "contextual", "personalized", "role" or "default"
     """
     try:
         if isinstance(context, str):
