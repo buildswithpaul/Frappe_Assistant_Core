@@ -10,9 +10,9 @@ import { useConversationsStore } from "@/stores/conversationsStore";
  * re-entrant coupling flagged by D5b. This composable only wraps the three safe
  * per-session actions that have no such recursion.
  *
- * @param {object} deps - { chatStore, router, handleNewChat }
+ * @param {object} deps - { chatStore, route, router, handleNewChat }
  */
-export function useChatSessionActions({ chatStore, router, handleNewChat }) {
+export function useChatSessionActions({ chatStore, route, router, handleNewChat }) {
 	async function handleSessionSelect(sessionId) {
 		router.push(`/chat/${sessionId}`);
 		// Drawer dismisses via NavigationSidebar's route watcher. Do not
@@ -25,10 +25,11 @@ export function useChatSessionActions({ chatStore, router, handleNewChat }) {
 			await api.chat.deleteSession(sessionId);
 			chatStore.removeSession(sessionId);
 			useConversationsStore().dropResult(sessionId);
-			if (chatStore.currentSessionId && chatStore.currentSessionId !== sessionId) {
-				router.push(`/chat/${chatStore.currentSessionId}`);
-			} else if (chatStore.sessions.length > 0) {
-				const nextSession = chatStore.sortedSessions[0];
+			// Only the chat on screen needs a replacement; archiving any other
+			// one (from a project page or home) keeps the user where they are.
+			if (route.params.sessionId !== sessionId) return;
+			const nextSession = chatStore.sortedSessions[0];
+			if (nextSession) {
 				router.push(`/chat/${nextSession.session_id}`);
 			} else {
 				await handleNewChat();

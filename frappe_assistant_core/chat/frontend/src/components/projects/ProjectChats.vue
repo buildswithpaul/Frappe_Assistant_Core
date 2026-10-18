@@ -99,20 +99,33 @@ function notifyFailure(err) {
 	showError(err?.message || __("Something went wrong"));
 }
 
-async function loadChats(projectId) {
-	loading.value = true;
-	chats.value = [];
+async function fetchChats(projectId) {
 	try {
 		const rows = await api.chat.getSessions({ limit: PROJECT_CHATS_LIMIT, project: projectId });
 		if (projectId === props.projectId) chats.value = rows || [];
 	} catch (err) {
 		if (projectId === props.projectId) notifyFailure(err);
-	} finally {
-		if (projectId === props.projectId) loading.value = false;
 	}
 }
 
+async function loadChats(projectId) {
+	loading.value = true;
+	chats.value = [];
+	await fetchChats(projectId);
+	if (projectId === props.projectId) loading.value = false;
+}
+
 watch(() => props.projectId, loadChats, { immediate: true });
+
+// A move made anywhere (sidebar, search, this list) changes which chats belong here.
+watch(
+	() => conversationsStore.lastMove,
+	(move) => {
+		if (!move) return;
+		if (move.project === props.projectId) fetchChats(props.projectId);
+		else chats.value = chats.value.filter((c) => c.session_id !== move.sessionId);
+	}
+);
 
 function autogrow() {
 	const el = inputRef.value;
@@ -161,9 +174,6 @@ async function renameChat(sessionId, title) {
 async function moveChat(sessionId, projectId) {
 	try {
 		await conversationsStore.moveSession(sessionId, projectId);
-		if (projectId !== props.projectId) {
-			chats.value = chats.value.filter((c) => c.session_id !== sessionId);
-		}
 	} catch (err) {
 		notifyFailure(err);
 	}

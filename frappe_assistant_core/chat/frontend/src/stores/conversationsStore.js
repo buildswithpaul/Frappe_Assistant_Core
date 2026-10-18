@@ -13,6 +13,8 @@ export const useConversationsStore = defineStore("conversations", () => {
 	const searchQuery = ref("");
 	const searchResults = ref([]);
 	const isSearching = ref(false);
+	// The latest successful move, so views holding their own chat list (a project page) can follow it.
+	const lastMove = ref(null);
 	let timer = null;
 	let latest = 0;
 
@@ -79,7 +81,18 @@ export const useConversationsStore = defineStore("conversations", () => {
 	async function moveSession(sessionId, projectId) {
 		const result = await api.chat.moveSessionToProject(sessionId, projectId);
 		patchEverywhere(sessionId, { project: result.project, project_title: result.project_title });
+		lastMove.value = { sessionId, project: result.project };
 	}
 
-	return { searchQuery, searchResults, isSearching, setSearch, clearSearch, dropResult, renameSession, moveSession };
+	return {
+		searchQuery,
+		searchResults,
+		isSearching,
+		lastMove,
+		setSearch,
+		clearSearch,
+		dropResult,
+		renameSession,
+		moveSession,
+	};
 });

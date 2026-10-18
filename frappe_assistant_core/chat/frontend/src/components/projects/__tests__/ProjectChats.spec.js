@@ -4,8 +4,15 @@ import { createPinia, setActivePinia } from "pinia";
 
 const getSessions = vi.fn();
 const createSession = vi.fn();
+const moveSessionToProject = vi.fn();
 vi.mock("@/api/client", () => ({
-	api: { chat: { getSessions: (...a) => getSessions(...a), createSession: (...a) => createSession(...a) } },
+	api: {
+		chat: {
+			getSessions: (...a) => getSessions(...a),
+			createSession: (...a) => createSession(...a),
+			moveSessionToProject: (...a) => moveSessionToProject(...a),
+		},
+	},
 }));
 const push = vi.fn();
 vi.mock("vue-router", () => ({ useRouter: () => ({ push }) }));
@@ -14,6 +21,7 @@ vi.mock("@/composables/useToast", () => ({ useToast: () => ({ showError }) }));
 
 import ProjectChats from "@/components/projects/ProjectChats.vue";
 import { useChatStore } from "@/stores/chatStore";
+import { useConversationsStore } from "@/stores/conversationsStore";
 
 beforeAll(() => {
 	window.__ = (s, args) => (args ? s.replace("{0}", args[0]) : s);
@@ -111,5 +119,33 @@ describe("ProjectChats", () => {
 	it("shows the empty state with no chats", async () => {
 		const w = await mountChats();
 		expect(w.find("[data-test=project-empty]").exists()).toBe(true);
+	});
+
+	// The sidebar's row menu moves through conversationsStore.moveSession, not this list.
+	it("lists a chat moved into this project from elsewhere", async () => {
+		getSessions.mockResolvedValue([{ session_id: "a", title: "One" }]);
+		const w = await mountChats();
+		getSessions.mockResolvedValue([
+			{ session_id: "b", title: "Two" },
+			{ session_id: "a", title: "One" },
+		]);
+		moveSessionToProject.mockResolvedValue({ success: true, project: "p1", project_title: "Q3 Close" });
+		await useConversationsStore().moveSession("b", "p1");
+		await flushPromises();
+		expect(w.findAllComponents(ChatRowStub).map((r) => r.props("session").session_id)).toEqual(["b", "a"]);
+		expect(w.find("[data-test=project-chats-count]").text()).toContain("2");
+	});
+
+	it("drops a chat moved out of this project from elsewhere", async () => {
+		getSessions.mockResolvedValue([
+			{ session_id: "a", title: "One" },
+			{ session_id: "b", title: "Two" },
+		]);
+		const w = await mountChats();
+		moveSessionToProject.mockResolvedValue({ success: true, project: null, project_title: null });
+		await useConversationsStore().moveSession("a", null);
+		await flushPromises();
+		expect(w.findAllComponents(ChatRowStub).map((r) => r.props("session").session_id)).toEqual(["b"]);
+		expect(getSessions).toHaveBeenCalledTimes(1);
 	});
 });

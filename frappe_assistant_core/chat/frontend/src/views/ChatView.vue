@@ -592,7 +592,7 @@ async function handleNewChat() {
 // Session lifecycle — select, delete (recurses into handleNewChat when list empties),
 // continue-archived. Extracted to keep ChatView under its size budget.
 const { handleSessionSelect, handleDeleteSession, handleContinueArchived } = useChatSessionActions(
-	{ chatStore, router, handleNewChat }
+	{ chatStore, route, router, handleNewChat }
 );
 
 // One InputArea instance: hero slot on the empty state, bottom dock in a
