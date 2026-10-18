@@ -1,0 +1,19 @@
+name: Pre-build assets
+
+# Publishes the built FAC Chat SPA and widget for each commit on main, as the
+# Frappe Marketplace requires: its get-app check fails a release whose commit
+# has no prebuilt assets. The chore(release) commit is pushed with RELEASE_PAT,
+# so it triggers this workflow too.
+on:
+  push:
+    branches: [main]
+
+jobs:
+  assets:
+    name: Pre-build assets
+    # Pinned: this job holds contents: write. Bump the SHA deliberately.
+    uses: frappe/pilot/.github/workflows/app-assets.yml@7adff1f07c016722ed63e99b7d4750d4632f6540 # develop
+    with:
+      frappe-branch: version-16
+    permissions:
+      contents: write

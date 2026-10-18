@@ -53,14 +53,15 @@ Releases are fully automated via `semantic-release` (same toolchain as Frappe an
 
 1. Merge feature/bug/improvement PRs into `develop`
 2. Write the change log file (see "Change Log Files" section below)
-3. Raise a PR from `develop` to `main` and **rebase-merge** it — `main` requires linear history, and the merge method has consequences; see "Merging develop into main" below
+3. Raise a PR from `develop` to `main`, wait for CI, then **fast-forward `main`** to `develop` — see "Merging develop into main" below
 4. **Automatic**: semantic-release runs on push to `main` and:
    - Detects version bump from commit messages
    - Updates `pyproject.toml` and `frappe_assistant_core/__init__.py`
    - Commits, tags, and pushes
    - Creates GitHub Release with auto-generated notes
-5. Reset `develop` to `main` — **not** `git merge main`, which duplicates history. See "Merging develop into main" below.
-6. Advertise the release on the Frappe Marketplace — **manual**, see "Publishing to the Frappe Marketplace" below.
+   - `assets.yml` then publishes the release commit's prebuilt assets
+5. Fast-forward `develop` to `main` — **not** `git merge main`, which duplicates history. See "Merging develop into main" below.
+6. Advertise the release on the Frappe Marketplace once `assets.yml` has finished — **manual**, see "Publishing to the Frappe Marketplace" below.
 
 No manual version bumping, tagging, or release creation needed. Do **not** hand-edit
 `__version__` or `pyproject.toml`; `.releaserc` rewrites both with `sed` and commits
@@ -68,30 +69,34 @@ them as `chore(release): vX.Y.Z`, so a hand-set value is overwritten.
 
 ## Merging develop into main
 
-`main` has **Require linear history** enabled, so a merge commit is rejected outright —
-the release PR can only be rebase-merged or squash-merged. Both rewrite SHAs, and that
-is the fact the rest of this section follows from.
+`main` has **Require linear history** enabled, so a merge commit is rejected outright.
+After each release `develop` is fast-forwarded to `main`, so `main` is always an ancestor
+of `develop` and the release can land as a plain fast-forward: no commit is rewritten.
 
-**Use rebase-and-merge, then reset `develop` to `main`. Never merge `main` back into
-`develop`.**
+**Fast-forward `main` to `develop`, then fast-forward `develop` to the release commit.
+Never merge `main` back into `develop`.**
 
 ```bash
-# 1. release
-gh pr create --base main --head develop --title "fix: <summary of the release>"
-gh pr merge --rebase              # semantic-release then tags and commits chore(release)
-
-# 2. reconcile — replaces step 5 of the release flow
-git checkout develop
+# 1. release — once CI on the develop -> main PR is green
 git fetch origin
-git reset --hard origin/main
-git push --force-with-lease
+git merge-base --is-ancestor origin/main origin/develop   # must succeed
+git push origin <develop-sha>:main     # the PR is marked merged; semantic-release runs
+
+# 2. reconcile — after chore(release) lands on main
+git fetch origin
+git push origin origin/main:refs/heads/develop             # a fast-forward, no force
 ```
 
-Rebase-and-merge is preferred over squash because it keeps one commit per change on
-`main`, which is what gives the GitHub release its per-change notes. A squash collapses
-the whole release to a single line.
+Pushing to `main` needs an admin, which branch protection allows because "Enforce for
+admins" is off. Do not use the PR's merge button:
 
-### Why the reset, and not `git merge main`
+- **Rebase and merge** fails on release PRs with "This branch can't be rebased", even with
+  no conflicts and no merge commits — it refused v3.2.0's 218 commits. v3.1.0 also landed
+  by fast-forward: its commits on `main` keep their `develop` SHAs.
+- **Squash and merge** collapses the release to one commit, so the GitHub release loses
+  its per-change notes.
+
+### Why not `git merge main`
 
 Rebase rewrites every commit's SHA. Merging those rewritten commits back into `develop`,
 which still holds the originals, leaves `develop` carrying two copies of every released
@@ -110,13 +115,10 @@ and the notes re-list changes that already shipped. That is exactly what happene
 2.5.0 and 2.5.1: `git log main..develop` reported 24 commits when only 11 were new, and
 an already-released `feat:` would have produced 2.6.0 instead of 2.5.1.
 
-The reset avoids it because at the moment of release the two branches hold the same tree
-apart from the version files semantic-release just bumped — so `reset --hard origin/main`
-discards no work and leaves `develop` an exact continuation of `main`. The next release
-then starts from a clean `git log <tag>..develop`.
-
-It does force-push a shared branch, so anyone with an open branch off `develop` needs to
-rebase onto the new `develop` afterwards. Worth a heads-up in the release announcement.
+The fast-forward avoids it: `develop` moves onto the tagged release commit itself, so the
+next release starts from a clean `git log <tag>..develop`. Nothing is force-pushed, and
+open branches off `develop` need no rebase. If commits landed on `develop` while the
+release ran, the fast-forward is refused — rebase those commits onto `main` instead.
 
 ### Commit subjects are the release notes
 
@@ -147,7 +149,10 @@ the registry still advertised 2.5.0. Every release needs a PR to the registry.
 
 ### After each stable release
 
-From a fork of `frappe/marketplace` (we have read access only, so PRs come from a fork):
+Wait until **Pre-build assets** (`assets.yml`) has finished for the `chore(release)`
+commit; the release `assets-main` then lists `frappe_assistant_core-<sha>.tar.gz` for it.
+Then, from a fork of `frappe/marketplace` (we have read access only, so PRs come from a
+fork):
 
 ```bash
 # the chore(release) commit semantic-release just pushed — NOT the merge commit,
@@ -190,8 +195,13 @@ The registry clones FAC at the advertised commit and fails the PR on:
    `frappe/semgrep-rules` set pre-commit runs. A finding blocks when the rule sets
    `is_blocking: true` or its severity is `ERROR`/`CRITICAL`/`HIGH`. `linter.yml` runs the
    same rules with the same blocking rule, so a PR into `develop` catches this first.
-3. **Install** — `bench get-app` into a clean venv against the Frappe version
-   `frappe_core` names. The `assistant_runtime_sdk==X.Y.Z` pin must already be on PyPI.
+3. **Install** — Pilot's `get-app` into a clean venv against the Frappe version
+   `frappe_core` names. The `assistant_runtime_sdk==X.Y.Z` pin must already be on PyPI,
+   and the commit must have **prebuilt assets** on the `assets-main` release — without
+   them the check fails as Critical. `assets.yml` publishes them, using the
+   `[tool.bench.assets]` SPA declaration in `pyproject.toml`; Pilot refuses to build an
+   app that has a `build` script and declares no SPA. v3.2.0's release commit predates
+   both, so the marketplace advertises the later `main` commit that added them.
 
 Suppress a reviewed finding with `# nosemgrep: <rule-id>` on the flagged line. Bandit's
 `# nosec` is ignored by semgrep — the v3.1.0 `subprocess.run` in
@@ -270,6 +280,7 @@ For urgent fixes that can't wait for the next release:
 | Linters (`linter.yml`) | PRs | Pre-commit hooks + Frappe semgrep rules + Frappe Marketplace semgrep rules + pip-audit |
 | Commit Lint (`commitlint.yml`) | PRs | Validates conventional commit format |
 | Release (`release.yml`) | Push to `main` or `beta` | Semantic-release: auto-version, tag, GitHub Release (pre-release on `beta`) |
+| Pre-build assets (`assets.yml`) | Push to `main` | Builds the FAC Chat SPA and widget with Pilot and uploads them to the `assets-main` release, for the Frappe Marketplace |
 | Stale (`stale.yml`) | Daily | Auto-closes issues after 30+7 days of inactivity |
 | Welcome (`welcome.yml`) | First issue/PR | Greets first-time contributors |
 
