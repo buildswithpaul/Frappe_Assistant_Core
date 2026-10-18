@@ -146,13 +146,19 @@ describe("NeedsYou", () => {
 			w.unmount();
 		});
 
-		it("focus lands on the note for the card just hidden", async () => {
-			const w = mountAttached({ items: [base, { ...base, id: "b" }] });
-			await w.findAll(".ny-options")[1].trigger("click");
+		it("focus lands on the note for the card just hidden, not the first note", async () => {
+			const b = { ...base, id: "b" };
+			const w = mountAttached({ items: [base, b] });
+			await w.find(".ny-options").trigger("click");
 			await w.find("[role=menuitem]").trigger("click");
-			await w.setProps({ items: [base] });
+			await w.setProps({ items: [b] });
 			await nextTick();
-			expect(document.activeElement).toBe(w.find('[data-note="b"] .ny-note-link').element);
+			await w.find(".ny-options").trigger("click");
+			await w.find("[role=menuitem]").trigger("click");
+			await w.setProps({ items: [] });
+			await nextTick();
+			expect(w.findAll(".ny-note")).toHaveLength(2);
+			expect(w.find('[data-note="b"]').element.contains(document.activeElement)).toBe(true);
 			w.unmount();
 		});
 
