@@ -57,6 +57,8 @@ export function useHomeSignals({ cap }) {
 		locallyHidden.value = [...locallyHidden.value, id];
 		try {
 			await api.home.hideSignal(id);
+			// The server cache is already invalidated: refetch so the next waiting signal fills the gap.
+			await loadHome();
 		} catch {
 			locallyHidden.value = locallyHidden.value.filter((hiddenId) => hiddenId !== id);
 			hideFailed.value = true;

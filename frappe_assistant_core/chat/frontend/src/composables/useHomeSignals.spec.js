@@ -1,7 +1,7 @@
 import { mount, flushPromises } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
 import { defineComponent, ref } from "vue";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const getHome = vi.fn();
 const hideSignal = vi.fn();
@@ -109,6 +109,28 @@ describe("useHomeSignals", () => {
 		expect(s.items.value.map((i) => i.id)).toEqual(["b", "c", "d"]);
 	});
 
+	it("hide refetches the home payload so the next waiting signal fills in", async () => {
+		const e = { ...items[0], id: "e" };
+		getHome
+			.mockResolvedValueOnce({ items: [items[0], items[1], items[2]] })
+			.mockResolvedValueOnce({ items: [items[1], items[2], e], hidden_signals: ["a"] });
+		hideSignal.mockResolvedValue({ hidden_signals: ["a"] });
+		const s = run(ref(3));
+		await flushPromises();
+		await s.hide("a");
+		expect(getHome).toHaveBeenCalledTimes(2);
+		expect(s.items.value.map((i) => i.id)).toEqual(["b", "c", "e"]);
+	});
+
+	it("hide does not refetch when the request fails", async () => {
+		getHome.mockResolvedValue({ items });
+		hideSignal.mockRejectedValue(new Error("boom"));
+		const s = run(ref(3));
+		await flushPromises();
+		await s.hide("a");
+		expect(getHome).toHaveBeenCalledTimes(1);
+	});
+
 	it("hide restores the card when the request fails", async () => {
 		getHome.mockResolvedValue({ items });
 		hideSignal.mockRejectedValue(new Error("boom"));
@@ -120,6 +142,12 @@ describe("useHomeSignals", () => {
 	});
 
 	describe("failed workflows attention item", () => {
+		const originalList = api.workflows.list;
+		afterEach(() => {
+			api.workflows.list = originalList;
+			api.workflows.listRuns.mockReset().mockResolvedValue({ runs: [] });
+			useUserStore().workflowsEnabled = false;
+		});
 		beforeEach(() => {
 			useUserStore().workflowsEnabled = true;
 			api.workflows.listRuns.mockResolvedValue({
