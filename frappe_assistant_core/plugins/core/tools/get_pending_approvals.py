@@ -34,7 +34,7 @@ def _open_workflow_actions(user: str, limit: int, doctype: str | None = None) ->
     """Open Workflow Actions addressed to ``user``, newest first, at most ``limit``.
 
     An action is addressed to the user by a permitted role or directly by ``user``;
-    Administrator sees all. This does not check access to the referenced documents.
+    Administrator sees all. It does not check access to the referenced documents; see ``readable_open_approvals``.
     """
     roles = frappe.get_roles(user)
 
@@ -71,6 +71,29 @@ def _open_workflow_actions(user: str, limit: int, doctype: str | None = None) ->
     return query.run(as_dict=True)
 
 
+def readable_open_approvals(user: str, limit: int, doctype: str | None = None) -> list[frappe._dict]:
+    """Open Workflow Actions for ``user`` whose documents ``user`` may read.
+
+    The Workflow Action query only matches roles and users, so each reference
+    DocType is re-checked through ``get_list`` to apply User Permissions. Ordering
+    is preserved; ``limit`` caps the rows before the permission filter.
+    """
+    actions = _open_workflow_actions(user, limit, doctype)
+    names_by_doctype: dict[str, set[str]] = {}
+    for action in actions:
+        names_by_doctype.setdefault(action.reference_doctype, set()).add(action.reference_name)
+
+    readable: set[tuple[str, str]] = set()
+    for ref_doctype, names in names_by_doctype.items():
+        if not frappe.db.exists("DocType", ref_doctype) or not frappe.has_permission(
+            ref_doctype, "read", user=user
+        ):
+            continue
+        visible = frappe.get_list(ref_doctype, filters={"name": ["in", list(names)]}, pluck="name", user=user)
+        readable.update((ref_doctype, name) for name in visible)
+    return [a for a in actions if (a.reference_doctype, a.reference_name) in readable]
+
+
 class GetPendingApprovals(BaseTool):
     """
     Tool for discovering documents pending the current user's approval.
@@ -88,7 +111,7 @@ class GetPendingApprovals(BaseTool):
             "about pending approvals, documents awaiting action, workflow items needing "
             "review, or approval queues. Queries the Workflow Action system — NOT Todos "
             "or Notifications. Returns documents grouped by type with workflow state and "
-            "available actions (Approve, Reject, etc.)."
+            "available actions (Approve, Reject, etc.), limited to documents the user can open."
         )
         self.requires_permission = None
 
@@ -125,7 +148,7 @@ class GetPendingApprovals(BaseTool):
 
         user = frappe.session.user
         try:
-            pending_actions = _open_workflow_actions(user, limit, doctype_filter)
+            pending_actions = readable_open_approvals(user, limit, doctype_filter)
         except Exception as e:
             frappe.log_error(
                 title=_("Pending Approvals Query Error"),

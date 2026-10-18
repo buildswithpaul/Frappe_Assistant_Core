@@ -18,7 +18,7 @@ from frappe import _, _lt
 from frappe.utils import add_days, fmt_money, get_datetime, now_datetime, today
 
 from frappe_assistant_core.chat.home_preferences import load_home_preferences
-from frappe_assistant_core.plugins.core.tools.get_pending_approvals import _open_workflow_actions
+from frappe_assistant_core.plugins.core.tools.get_pending_approvals import readable_open_approvals
 
 LENS_ROLES: dict[str, tuple[str, ...]] = {
     "accounts": ("Accounts Manager", "Accounts User"),
@@ -236,30 +236,10 @@ def count_visible(doctype: str, filters: dict | list, user: str) -> int:
     return int(rows[0]["n"]) if rows else 0
 
 
-def _readable_approvals(user: str, limit: int) -> list[frappe._dict]:
-    """Open Workflow Actions for ``user`` whose documents ``user`` may read.
-
-    The Workflow Action query only matches roles and users, so each reference
-    DocType is re-checked through ``get_list`` to apply User Permissions.
-    """
-    actions = _open_workflow_actions(user, limit)
-    names_by_doctype: dict[str, set[str]] = {}
-    for action in actions:
-        names_by_doctype.setdefault(action.reference_doctype, set()).add(action.reference_name)
-
-    readable: set[tuple[str, str]] = set()
-    for doctype, names in names_by_doctype.items():
-        if not frappe.db.exists("DocType", doctype) or not frappe.has_permission(doctype, "read", user=user):
-            continue
-        visible = frappe.get_list(doctype, filters={"name": ["in", list(names)]}, pluck="name", user=user)
-        readable.update((doctype, name) for name in visible)
-    return [a for a in actions if (a.reference_doctype, a.reference_name) in readable]
-
-
 def approvals_for_user(user: str, limit: int = 200) -> dict[str, list[str]]:
     """Documents awaiting ``user``'s approval, as reference DocType to readable names."""
     grouped: dict[str, list[str]] = {}
-    for action in _readable_approvals(user, limit):
+    for action in readable_open_approvals(user, limit):
         names = grouped.setdefault(action.reference_doctype, [])
         if action.reference_name not in names:
             names.append(action.reference_name)
@@ -278,7 +258,7 @@ def _waited_detail(doctype_label: str, days: int) -> str:
 def _approvals_waiting(user: str, company: str | None) -> SignalResult | None:
     # APPROVALS_LIMIT caps the Workflow Action rows before the permission filter, so a user
     # with more unreadable actions than the limit can see an undercount.
-    actions = _readable_approvals(user, APPROVALS_LIMIT)
+    actions = readable_open_approvals(user, APPROVALS_LIMIT)
     documents = {(a.reference_doctype, a.reference_name) for a in actions}
     count = len(documents)
     if not count:

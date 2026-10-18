@@ -114,6 +114,36 @@ class TestHomeSignalApprovals(BaseAssistantTest):
             set(entries[todo]), {"document_name", "workflow_state", "permitted_roles", "creation"}
         )
 
+    def _run_tool_as_user(self, **arguments) -> dict:
+        previous = frappe.session.user
+        self.addCleanup(frappe.set_user, previous)
+        frappe.set_user(self.user)
+        return GetPendingApprovals().execute({"doctype": "ToDo", "include_actions": False, **arguments})
+
+    def test_pending_approvals_tool_hides_documents_blocked_by_user_permission(self):
+        hidden = self._todo(role="Sales User")
+        visible = self._todo(role="Accounts User")
+        self._open_action(hidden, role=None, user=self.user)
+        self._open_action(visible, role=None, user=self.user)
+        # Manufactured: production reaches this when an administrator restricts the user to
+        # one Role value through a User Permission; ToDo.role is a Link to Role that
+        # enforces User Permissions (allocated_to ignores them).
+        frappe.get_doc(
+            {"doctype": "User Permission", "user": self.user, "allow": "Role", "for_value": "Accounts User"}
+        ).insert(ignore_permissions=True)
+        frappe.clear_cache(user=self.user)
+
+        result = self._run_tool_as_user()
+
+        names = {e["document_name"] for e in result["pending_approvals"].get("ToDo", [])}
+        self.assertNotIn(hidden, names)
+        self.assertIn(visible, names)
+        self.assertEqual(result["total_pending"], len(names))
+        self.assertEqual(
+            set(result),
+            {"success", "total_pending", "doctypes_with_pending", "pending_approvals", "message"},
+        )
+
 
 class TestWaitedDetail(unittest.TestCase):
     def test_today_singular_and_plural_are_whole_sentences(self):
