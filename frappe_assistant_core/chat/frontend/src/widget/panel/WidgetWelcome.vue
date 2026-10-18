@@ -15,6 +15,7 @@
 			@pick="(text) => $emit('suggestion', text)"
 		/>
 		<NeedsYou
+			v-if="homeEnabled"
 			:items="items"
 			:loaded="loaded"
 			:failed="failed"
@@ -23,6 +24,8 @@
 			@ask="(prompt) => $emit('suggestion', prompt)"
 			@navigate="openInChat"
 			@dismiss="dismiss"
+			@hide="hide"
+			@open-settings="openInChat('/settings/home')"
 		/>
 		<template v-if="!suggestionStore.suggestionsDisabled">
 			<FirstRunStarters v-if="dayOne && !isForm" :tiles="firstRunTiles" @pick="(d) => $emit('suggestion', d)" />
@@ -114,7 +117,7 @@ const filledAsks = computed(() => {
 		.filter(Boolean);
 });
 
-const { items, lensLabel, area, company, loaded, failed, dismiss } = useHomeSignals({
+const { items, lensLabel, area, company, loaded, failed, dismiss, hide, enabled: homeEnabled } = useHomeSignals({
 	cap: computed(() => (isForm.value ? NEEDS_YOU_CAP_ON_FORM : NEEDS_YOU_CAP)),
 });
 

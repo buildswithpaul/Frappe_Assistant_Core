@@ -305,4 +305,21 @@ describe("widget home", () => {
 			expect(w.find(".pa").exists()).toBe(false);
 		});
 	});
+
+	it("needs_you_enabled false hides the section", async () => {
+		api.home.get.mockResolvedValue({ items: [], needs_you_enabled: false, area: "pipeline" });
+		const w = await mountHome();
+		expect(w.find(".ny").exists()).toBe(false);
+	});
+
+	it("the hide note opens Home page settings in a new tab", async () => {
+		api.home.hideSignal = vi.fn().mockResolvedValue({ hidden_signals: ["sig0"] });
+		const open = vi.spyOn(window, "open").mockReturnValue(null);
+		const w = await mountHome();
+		await w.find(".ny-options").trigger("click");
+		await w.find("[role=menuitem]").trigger("click");
+		expect(api.home.hideSignal).toHaveBeenCalledWith("sig0");
+		await w.find(".ny-note-link").trigger("click");
+		expect(open).toHaveBeenCalledWith("/copilot/settings/home", "_blank", "noopener");
+	});
 });

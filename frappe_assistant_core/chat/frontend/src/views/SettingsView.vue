@@ -68,6 +68,7 @@ const showContent = computed(() => !isMobile.value || isLeaf.value);
 const leafTitles = {
 	profile: "Profile",
 	appearance: "Appearance",
+	home: "Home page",
 	privacy: "Privacy & Data",
 	"my-tickets": "Support",
 	memory: "Memory",

@@ -2,14 +2,15 @@ import { mount, flushPromises } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { getHome, listRuns, dismissSpy } = vi.hoisted(() => ({
+const { getHome, listRuns, dismissSpy, hideSignal } = vi.hoisted(() => ({
+	hideSignal: vi.fn(),
 	getHome: vi.fn(),
 	listRuns: vi.fn(),
 	dismissSpy: vi.fn(),
 }));
 vi.mock("@/api/client", () => ({
 	api: {
-		home: { get: (...a) => getHome(...a) },
+		home: { get: (...a) => getHome(...a), hideSignal: (...a) => hideSignal(...a) },
 		workflows: { listRuns: (...a) => listRuns(...a), list: vi.fn().mockResolvedValue({ workflows: [] }) },
 	},
 }));
@@ -47,6 +48,7 @@ async function mountHome({ sessions = [SESSION], home = HOME, disabled = false, 
 	getHome.mockReset();
 	listRuns.mockReset();
 	dismissSpy.mockReset();
+	hideSignal.mockReset().mockResolvedValue({ hidden_signals: [] });
 	listRuns.mockResolvedValue({
 		runs: failedRun ? [{ workflow: "WF-1", started_at: new Date().toISOString() }] : [],
 	});
@@ -122,6 +124,20 @@ describe("WelcomeScreen home", () => {
 	it("falls back to a generic area before the endpoint resolves", async () => {
 		const w = await mountHome({ home: new Error("boom") });
 		expect(w.find(".hs-heading").text()).toBe("Ask about your business");
+	});
+
+	it("needs_you_enabled false hides the whole section", async () => {
+		const w = await mountHome({ home: { ...HOME, needs_you_enabled: false, items: [] } });
+		expect(w.find(".ny").exists()).toBe(false);
+	});
+
+	it("hiding a card calls the hide wiring and the note navigates to Home page settings", async () => {
+		const w = await mountHome();
+		await w.find(".ny-options").trigger("click");
+		await w.find("[role=menuitem]").trigger("click");
+		expect(hideSignal).toHaveBeenCalledWith("overdue_si");
+		await w.find(".ny-note-link").trigger("click");
+		expect(w.emitted("navigate")).toEqual([["/settings/home"]]);
 	});
 
 	it("suggestions disabled keeps NeedsYou", async () => {

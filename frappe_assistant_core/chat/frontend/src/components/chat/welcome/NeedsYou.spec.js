@@ -1,5 +1,6 @@
 import { mount } from "@vue/test-utils";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { nextTick } from "vue";
 import NeedsYou from "./NeedsYou.vue";
 
 const base = { id: "a", tone: "danger", source: "Sales", count: 3, title: "overdue invoices", detail: "d", ask: "Show overdue" };
@@ -52,5 +53,67 @@ describe("NeedsYou", () => {
 		expect(buttons[0].attributes("aria-label")).toBeTruthy();
 		await buttons[0].trigger("click");
 		expect(w.emitted("dismiss")).toEqual([["b"]]);
+	});
+
+	describe("Don't show this", () => {
+		afterEach(() => vi.useRealTimers());
+		const mountAttached = (props) => {
+			const w = make(props);
+			return w;
+		};
+
+		it("each card has an icon-only options button labelled with its title", () => {
+			const w = make({ items: [base, { ...base, id: "b", title: "late orders" }] });
+			const labels = w.findAll(".ny-options").map((b) => b.attributes("aria-label"));
+			expect(labels).toEqual(["More options for overdue invoices", "More options for late orders"]);
+			expect(w.find(".ny-options").attributes("aria-expanded")).toBe("false");
+		});
+
+		it("opens a one-item menu, and Esc closes it", async () => {
+			const w = mountAttached();
+			await w.find(".ny-options").trigger("click");
+			expect(w.find(".ny-options").attributes("aria-expanded")).toBe("true");
+			const items = w.findAll("[role=menuitem]");
+			expect(items.map((i) => i.text())).toEqual(["Don't show this on my home"]);
+			await w.find(".ny-item").trigger("keydown", { key: "Escape" });
+			expect(w.find("[role=menu]").exists()).toBe(false);
+		});
+
+		it("choosing it emits hide with the id and shows a quiet note in place", async () => {
+			const w = make({ items: [base, { ...base, id: "b" }] });
+			await w.find(".ny-options").trigger("click");
+			await w.find("[role=menuitem]").trigger("click");
+			expect(w.emitted("hide")).toEqual([["a"]]);
+			// The parent removes the card; the note takes its slot.
+			await w.setProps({ items: [{ ...base, id: "b" }] });
+			const rows = w.findAll(".ny-items > li");
+			expect(rows[0].classes()).toContain("ny-note");
+			expect(rows[0].text()).toContain("Hidden. Bring it back in Settings → Home page.");
+			await rows[0].find("button").trigger("click");
+			expect(w.emitted("open-settings")).toHaveLength(1);
+		});
+
+		it("the note dismisses itself after about six seconds", async () => {
+			vi.useFakeTimers();
+			const w = make();
+			await w.find(".ny-options").trigger("click");
+			await w.find("[role=menuitem]").trigger("click");
+			await w.setProps({ items: [] });
+			expect(w.find(".ny-note").exists()).toBe(true);
+			vi.advanceTimersByTime(6100);
+			await nextTick();
+			expect(w.find(".ny-note").exists()).toBe(false);
+		});
+
+		it("the note goes away when the card returns because the hide failed", async () => {
+			const w = make();
+			await w.find(".ny-options").trigger("click");
+			await w.find("[role=menuitem]").trigger("click");
+			await w.setProps({ items: [] });
+			expect(w.find(".ny-note").exists()).toBe(true);
+			await w.setProps({ items: [base] });
+			expect(w.find(".ny-note").exists()).toBe(false);
+			expect(w.find(".ny-main").exists()).toBe(true);
+		});
 	});
 });

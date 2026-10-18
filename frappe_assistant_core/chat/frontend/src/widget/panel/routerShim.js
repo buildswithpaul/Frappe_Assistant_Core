@@ -12,6 +12,7 @@ const NAMED_ROUTES = [
 	["analytics", "/analytics"],
 	["settings-profile", "/settings/profile"],
 	["settings-appearance", "/settings/appearance"],
+	["settings-home", "/settings/home"],
 	["settings-privacy", "/settings/privacy"],
 	["MyTickets", "/settings/my-tickets"],
 	["settings-routing", "/settings/routing"],

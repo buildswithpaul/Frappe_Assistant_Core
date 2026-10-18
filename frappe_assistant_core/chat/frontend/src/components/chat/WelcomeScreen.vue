@@ -15,6 +15,7 @@
 			</div>
 
 			<NeedsYou
+				v-if="homeEnabled"
 				:items="items"
 				:loaded="loaded"
 				:failed="failed"
@@ -23,6 +24,8 @@
 				@ask="(prompt) => $emit('suggestion', prompt)"
 				@navigate="(href) => $emit('navigate', href)"
 				@dismiss="dismiss"
+				@hide="hide"
+				@open-settings="$emit('navigate', '/settings/home')"
 			/>
 
 			<template v-if="!suggestionStore.suggestionsDisabled">
@@ -101,7 +104,7 @@ const firstRunTiles = computed(() => {
 });
 
 // Needs-you signals: post-paint, fail-silent; dismiss belongs to this instance.
-const { items, lensLabel, area, company, loaded, failed, dismiss } = useHomeSignals({
+const { items, lensLabel, area, company, loaded, failed, dismiss, hide, enabled: homeEnabled } = useHomeSignals({
 	cap: NEEDS_YOU_CAP,
 });
 

@@ -82,6 +82,11 @@ const routes = [
 				component: () => import("@/components/settings/AppearanceSettings.vue"),
 			},
 			{
+				path: "home",
+				name: "settings-home",
+				component: () => import("@/components/settings/HomeSettings.vue"),
+			},
+			{
 				path: "privacy",
 				name: "settings-privacy",
 				component: () => import("@/components/settings/PrivacySettings.vue"),
