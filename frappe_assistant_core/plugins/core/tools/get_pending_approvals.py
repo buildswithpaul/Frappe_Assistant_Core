@@ -30,7 +30,9 @@ from frappe_assistant_core.core.base_tool import BaseTool
 MAX_TRANSITION_DOCS = 20
 
 
-def _open_workflow_actions(user: str, limit: int, doctype: str | None = None) -> list[frappe._dict]:
+def _open_workflow_actions(
+    user: str, limit: int, doctype: str | None = None, offset: int = 0
+) -> list[frappe._dict]:
     """Open Workflow Actions addressed to ``user``, newest first, at most ``limit``.
 
     An action is addressed to the user by a permitted role or directly by ``user``;
@@ -58,7 +60,9 @@ def _open_workflow_actions(user: str, limit: int, doctype: str | None = None) ->
         )
         .where(WA.status == "Open")
         .orderby(WA.creation, order=frappe.qb.desc)
+        .orderby(WA.name, order=frappe.qb.desc)
         .limit(limit)
+        .offset(offset)
     )
 
     # Administrator sees all; others filtered by role or direct user
@@ -71,14 +75,11 @@ def _open_workflow_actions(user: str, limit: int, doctype: str | None = None) ->
     return query.run(as_dict=True)
 
 
-def readable_open_approvals(user: str, limit: int, doctype: str | None = None) -> list[frappe._dict]:
-    """Open Workflow Actions for ``user`` whose documents ``user`` may read.
+MAX_SCANNED_ACTIONS = 1000
 
-    The Workflow Action query only matches roles and users, so each reference
-    DocType is re-checked through ``get_list`` to apply User Permissions. Ordering
-    is preserved; ``limit`` caps the rows before the permission filter.
-    """
-    actions = _open_workflow_actions(user, limit, doctype)
+
+def _readable_subset(user: str, actions: list[frappe._dict]) -> list[frappe._dict]:
+    """The ``actions`` whose referenced documents ``user`` may read (User Permissions apply)."""
     names_by_doctype: dict[str, set[str]] = {}
     for action in actions:
         names_by_doctype.setdefault(action.reference_doctype, set()).add(action.reference_name)
@@ -92,6 +93,27 @@ def readable_open_approvals(user: str, limit: int, doctype: str | None = None) -
         visible = frappe.get_list(ref_doctype, filters={"name": ["in", list(names)]}, pluck="name", user=user)
         readable.update((ref_doctype, name) for name in visible)
     return [a for a in actions if (a.reference_doctype, a.reference_name) in readable]
+
+
+def readable_open_approvals(user: str, limit: int, doctype: str | None = None) -> list[frappe._dict]:
+    """Up to ``limit`` open Workflow Actions for ``user`` whose documents ``user`` may read.
+
+    The Workflow Action query only matches roles and users, so each page is re-checked
+    through ``get_list`` to apply User Permissions. Pages of ``limit * 3`` newest-first rows
+    are scanned until ``limit`` readable rows are found, the source is exhausted, or
+    ``MAX_SCANNED_ACTIONS`` rows have been scanned, so hidden rows ahead of readable ones
+    do not shrink the result. Ordering is preserved.
+    """
+    page_size = max(limit, 1) * 3
+    readable: list[frappe._dict] = []
+    offset = 0
+    while len(readable) < limit and offset < MAX_SCANNED_ACTIONS:
+        page = _open_workflow_actions(user, min(page_size, MAX_SCANNED_ACTIONS - offset), doctype, offset)
+        readable.extend(_readable_subset(user, page))
+        if len(page) < min(page_size, MAX_SCANNED_ACTIONS - offset):
+            break
+        offset += len(page)
+    return readable[:limit]
 
 
 class GetPendingApprovals(BaseTool):

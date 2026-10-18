@@ -256,8 +256,7 @@ def _waited_detail(doctype_label: str, days: int) -> str:
 
 
 def _approvals_waiting(user: str, company: str | None) -> SignalResult | None:
-    # APPROVALS_LIMIT caps the Workflow Action rows before the permission filter, so a user
-    # with more unreadable actions than the limit can see an undercount.
+    # Counts readable approvals up to APPROVALS_LIMIT, scanning past hidden ones.
     actions = readable_open_approvals(user, APPROVALS_LIMIT)
     documents = {(a.reference_doctype, a.reference_name) for a in actions}
     count = len(documents)

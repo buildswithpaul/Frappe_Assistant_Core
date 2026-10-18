@@ -18,4 +18,4 @@ Results are limited to documents the user can open. A document hidden from the u
 
 1. **Act with `run_workflow`** — use the returned `available_actions` names exactly.
 2. **Filter by `doctype`** on large queues, and set `include_actions` to false for speed.
-3. **Treat the list as the user's view** — the limit is applied before the permission check, so a user with many hidden actions can see fewer rows than `limit`.
+3. **Treat the list as the user's view** — hidden documents are skipped before the limit is applied, up to a scan cap of 1000 actions, so very large queues of hidden items can return fewer than `limit` rows.

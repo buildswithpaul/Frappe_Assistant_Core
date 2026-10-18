@@ -392,7 +392,7 @@ def get_suggested_prompts(context: str | None = None):
     3. Context-aware templates (from AR MCP, matched locally to current page)
     4. Personalized suggestions (from AR suggestion engine; fallback when curated is empty)
 
-    Each prompt includes a 'source' field: "pinned", "contextual", "personalized", or "default".
+    Each prompt includes a 'source' field: "pinned", "contextual", "personalized", "role" or "default".
     The response also carries `suggestions_disabled` — true when the user has turned off
     the suggestion grid via FAC Chat User Preferences.
 

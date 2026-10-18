@@ -5,6 +5,7 @@
 import unittest
 
 import frappe
+from frappe.utils import add_to_date, now_datetime
 
 from frappe_assistant_core.chat import home_signals
 from frappe_assistant_core.chat.home_signals import approvals_for_user
@@ -143,6 +144,59 @@ class TestHomeSignalApprovals(BaseAssistantTest):
             set(result),
             {"success", "total_pending", "doctypes_with_pending", "pending_approvals", "message"},
         )
+
+    def test_pending_approvals_tool_fills_the_limit_past_hidden_rows(self):
+        readable = self._todo(role="Accounts User")
+        self._open_action(readable, role=None, user=self.user)
+        # Manufactured: production reaches this when newer approvals are hidden from the user;
+        # the readable action is aged so the hidden ones sort ahead of it.
+        frappe.db.set_value(
+            "Workflow Action",
+            {"reference_name": readable},
+            "creation",
+            add_to_date(now_datetime(), days=-2),
+            update_modified=False,
+        )
+        for _i in range(4):
+            self._open_action(self._todo(role="Sales User"), role=None, user=self.user)
+        # Manufactured: production reaches this when an administrator restricts the user to
+        # one Role value through a User Permission (ToDo.role enforces it).
+        frappe.get_doc(
+            {"doctype": "User Permission", "user": self.user, "allow": "Role", "for_value": "Accounts User"}
+        ).insert(ignore_permissions=True)
+        frappe.clear_cache(user=self.user)
+
+        result = self._run_tool_as_user(limit=1)
+
+        self.assertEqual(result["total_pending"], 1)
+        self.assertEqual([e["document_name"] for e in result["pending_approvals"]["ToDo"]], [readable])
+
+    def test_pending_approvals_tool_skips_a_doctype_the_user_cannot_read(self):
+        outsider = self.make_throwaway_user("outsider")
+        log = frappe.get_doc({"doctype": "Error Log", "method": "approval test", "error": "x"}).insert(
+            ignore_permissions=True
+        )
+        # Manufactured: production creates these rows when a document enters a workflow state;
+        # a user holding no role on Error Log can still be named as the action's user.
+        frappe.get_doc(
+            {
+                "doctype": "Workflow Action",
+                "status": "Open",
+                "reference_doctype": "Error Log",
+                "reference_name": log.name,
+                "workflow_state": "Pending",
+                "user": outsider,
+            }
+        ).insert(ignore_permissions=True)
+        previous = frappe.session.user
+        self.addCleanup(frappe.set_user, previous)
+        frappe.set_user(outsider)
+
+        result = GetPendingApprovals().execute({"doctype": "Error Log", "include_actions": False})
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["total_pending"], 0)
+        self.assertEqual(result["pending_approvals"], {})
 
 
 class TestWaitedDetail(unittest.TestCase):

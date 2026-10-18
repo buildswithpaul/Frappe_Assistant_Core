@@ -24,16 +24,28 @@ export function displayNameFromUser(user) {
 	return first.charAt(0).toUpperCase() + first.slice(1);
 }
 
-// "Monday · 6 July" — locale-aware pieces, ledger-label composition.
-export function formatDateLabel(date = new Date()) {
-	const weekday = date.toLocaleDateString(undefined, { weekday: "long" });
-	const day = date.getDate();
-	const month = date.toLocaleDateString(undefined, { month: "long" });
-	return `${weekday} · ${day} ${month}`;
+// The user's Frappe language when the page has one, else the browser's. An invalid tag falls back too.
+export function uiLocale() {
+	const lang =
+		(typeof window !== "undefined" && window.frappe?.boot?.lang) ||
+		(typeof document !== "undefined" && document.documentElement?.lang) ||
+		undefined;
+	try {
+		return lang ? Intl.getCanonicalLocales(lang)[0] : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+// "Monday · 6 July" — the day and month order follows the locale.
+export function formatDateLabel(date = new Date(), locale = uiLocale()) {
+	const weekday = date.toLocaleDateString(locale, { weekday: "long" });
+	const dayMonth = date.toLocaleDateString(locale, { day: "numeric", month: "long" });
+	return `${weekday} · ${dayMonth}`;
 }
 
 // Compact relative time for Resume rows. Frappe datetimes are naive strings.
-export function relativeTimeLabel(value, now = new Date()) {
+export function relativeTimeLabel(value, now = new Date(), locale = uiLocale()) {
 	const then = value instanceof Date ? value : new Date(String(value).replace(" ", "T"));
 	const diffMs = now - then;
 	const mins = Math.floor(diffMs / 60000);
@@ -44,6 +56,5 @@ export function relativeTimeLabel(value, now = new Date()) {
 	const days = Math.floor(diffMs / 86400000);
 	if (days <= 1) return __("yesterday");
 	if (days < 7) return __("{0}d ago", [days]);
-	const month = then.toLocaleDateString(undefined, { month: "short" });
-	return `${then.getDate()} ${month}`;
+	return then.toLocaleDateString(locale, { day: "numeric", month: "short" });
 }

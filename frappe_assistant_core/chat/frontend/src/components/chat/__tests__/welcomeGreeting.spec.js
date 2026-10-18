@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import { greetingForHour, greetingLineForHour, displayNameFromUser } from "../welcomeGreeting";
 
 describe("greetingForHour", () => {
@@ -40,11 +40,14 @@ describe("displayNameFromUser", () => {
 	});
 });
 
-import { formatDateLabel, relativeTimeLabel } from "../welcomeGreeting";
+import { formatDateLabel, relativeTimeLabel, uiLocale } from "../welcomeGreeting";
 
 describe("formatDateLabel", () => {
-	it("renders weekday · day month", () => {
-		expect(formatDateLabel(new Date(2026, 6, 6))).toBe("Monday · 6 July");
+	it("puts the day before the month in en-GB", () => {
+		expect(formatDateLabel(new Date(2026, 6, 6), "en-GB")).toBe("Monday · 6 July");
+	});
+	it("puts the month before the day in en-US", () => {
+		expect(formatDateLabel(new Date(2026, 6, 6), "en-US")).toBe("Monday · July 6");
 	});
 });
 
@@ -54,13 +57,16 @@ describe("relativeTimeLabel", () => {
 	it("hours", () => expect(relativeTimeLabel("2026-07-06 16:00:00", now)).toBe("2h ago"));
 	it("yesterday", () => expect(relativeTimeLabel("2026-07-05 20:00:00", now)).toBe("yesterday"));
 	it("days", () => expect(relativeTimeLabel("2026-07-03 12:00:00", now)).toBe("3d ago"));
-	it("older falls back to short date", () =>
-		expect(relativeTimeLabel("2026-06-12 12:00:00", now)).toBe("12 Jun"));
+	it("older falls back to a short date in the locale's order", () => {
+		expect(relativeTimeLabel("2026-06-12 12:00:00", now, "en-GB")).toBe("12 Jun");
+		expect(relativeTimeLabel("2026-06-12 12:00:00", now, "en-US")).toBe("Jun 12");
+	});
 	it("just now", () => expect(relativeTimeLabel("2026-07-06 17:59:40", now)).toBe("just now"));
 });
 
 describe("relativeTimeLabel translation", () => {
 	const now = new Date(2026, 6, 6, 18, 0, 0);
+	afterEach(() => vi.doUnmock("@/utils/i18n"));
 
 	it("builds every branch through __ with whole-string placeholders", async () => {
 		vi.resetModules();
@@ -79,8 +85,26 @@ describe("relativeTimeLabel translation", () => {
 		expect(label("2026-07-05 20:00:00", now)).toBe("T(yesterday)");
 		expect(label("2026-07-03 12:00:00", now)).toBe("T({0}d ago)");
 		// Older dates are a locale-formatted day and month, not translated copy.
-		expect(label("2026-06-12 12:00:00", now)).toBe("12 Jun");
+		expect(label("2026-06-12 12:00:00", now, "en-GB")).toBe("12 Jun");
 		expect(calls.filter(([, args]) => args).map(([, args]) => args[0])).toEqual([12, 2, 3]);
-		vi.doUnmock("@/utils/i18n");
+	});
+});
+
+describe("uiLocale", () => {
+	afterEach(() => {
+		delete window.frappe;
+		document.documentElement.lang = "";
+	});
+
+	it("prefers the Frappe boot language, then the document language", () => {
+		document.documentElement.lang = "de";
+		expect(uiLocale()).toBe("de");
+		window.frappe = { boot: { lang: "pt-BR" } };
+		expect(uiLocale()).toBe("pt-BR");
+	});
+
+	it("falls back to undefined without a usable language", () => {
+		window.frappe = { boot: { lang: "not a tag!" } };
+		expect(uiLocale()).toBeUndefined();
 	});
 });
