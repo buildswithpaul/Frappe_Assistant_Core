@@ -99,10 +99,11 @@ const firstRunTiles = computed(() => {
 // The document name stays in this browser: the server only ever sees {type, doctype}.
 const { pageContext } = usePageContext();
 const isForm = computed(() => pageContext.value.type === "Form");
-// An unsaved form only has Frappe's temporary "new-…" name, which names nothing the user can ask about.
+// An unsaved form only has Frappe's temporary name, which names nothing the user can ask about.
+// Only is_new says so: a saved record may legitimately be named "new-…".
 const savedName = computed(() => {
 	const { name, is_new: isNew } = pageContext.value;
-	return isForm.value && name && !isNew && !name.startsWith("new-") ? name : "";
+	return isForm.value && name && !isNew ? name : "";
 });
 const filledAsks = computed(() => {
 	// Until the new page's set has arrived, the old page's asks would name the wrong thing.

@@ -113,6 +113,16 @@ describe("widget home", () => {
 		expect(w.text()).not.toContain("new-sales-invoice-abc");
 	});
 
+	it("a saved record whose real name starts with new- keeps its name asks", async () => {
+		const saved = { doctype: "Sales Invoice", doc: { name: "new-widget-01" }, is_new: () => false };
+		onRoute(["Form", "Sales Invoice", "new-widget-01"], saved);
+		const w = await mountHome();
+		expect(w.findAll(".pa-chip").map((c) => c.text())).toEqual([
+			"Summarise this Sales Invoice: new-widget-01",
+			"What changed on Sales Invoice new-widget-01 recently?",
+		]);
+	});
+
 	it("hides PageAsks when the operator turned suggestions off", async () => {
 		api.suggestions.get.mockResolvedValue({ suggestions: PAGE_ASKS, suggestions_disabled: true });
 		const w = await mountHome();
