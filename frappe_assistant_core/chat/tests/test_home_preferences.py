@@ -266,3 +266,27 @@ class TestPersonalisedSuggestionsSwitch(HomePreferencesTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestQueuedCuratedJobHonoursTheSwitch(HomePreferencesTestCase):
+    def _run_job(self):
+        from frappe_assistant_core.chat.api import curated
+
+        with patch.object(curated, "get_fac_cloud_client", autospec=True, return_value=None) as ar:
+            curated.regenerate_curated_suggestions(for_user=self.user)
+        return ar
+
+    def test_job_queued_before_switch_off_makes_no_ar_call(self):
+        # Manufactured: production reaches this when a user turns the switch off after the
+        # deduplicated job was enqueued by an earlier home load and before the worker picked it up.
+        home.update_home_preferences(show_personalized_suggestions=False)
+        self._run_job().assert_not_called()
+
+    def test_job_with_the_switch_on_still_reaches_ar(self):
+        self._run_job().assert_called_once_with()
+
+    def test_job_fails_closed_when_the_preference_is_unreadable(self):
+        from frappe_assistant_core.chat.api import curated
+
+        with patch.object(curated, "load_home_preferences", autospec=True, side_effect=RuntimeError("down")):
+            self._run_job().assert_not_called()

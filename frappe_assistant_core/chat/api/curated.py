@@ -11,6 +11,7 @@ import frappe
 from frappe_assistant_core.chat.api.auth import _ar_user_id
 from frappe_assistant_core.chat.api.suggestion_signals import gather_suggestion_signals
 from frappe_assistant_core.chat.fac_cloud_client import get_fac_cloud_client
+from frappe_assistant_core.chat.home_preferences import load_home_preferences
 
 CACHE_TTL = 86400  # 24h — AR's 20h rate limit stays under this
 # An empty or failed generation (AR refusal, timeout) is remembered briefly,
@@ -46,11 +47,22 @@ def schedule_regeneration_if_stale(user: str) -> None:
     )
 
 
+def _personalisation_enabled(user: str) -> bool:
+    try:
+        return load_home_preferences(user)["show_personalized_suggestions"]
+    except Exception:
+        # Fail closed: an unreadable preference must not trigger generation.
+        return False
+
+
 def regenerate_curated_suggestions(for_user: str) -> None:
     """Background job: gather local signals, call AR, cache the result.
 
-    frappe.enqueue reserves the `user` kwarg — hence `for_user`.
+    frappe.enqueue reserves the `user` kwarg — hence `for_user`. A job queued before the user
+    switched personalised suggestions off must not spend AI, so the preference is re-read here.
     """
+    if not _personalisation_enabled(for_user):
+        return
     client = get_fac_cloud_client()
     if not client:
         return
