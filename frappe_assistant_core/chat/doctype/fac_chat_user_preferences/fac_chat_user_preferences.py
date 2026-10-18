@@ -27,7 +27,11 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.utils import cint
 
-from frappe_assistant_core.chat.home_preferences import HOME_SIGNALS_CACHE_KEY, clamp_needs_you_count
+from frappe_assistant_core.chat.home_preferences import (
+    HOME_SIGNALS_CACHE_KEY,
+    clamp_needs_you_count,
+    parse_hidden_signals,
+)
 
 
 class FACChatUserPreferences(Document):
@@ -43,7 +47,11 @@ class FACChatUserPreferences(Document):
         frappe.cache.hdel(HOME_SIGNALS_CACHE_KEY, self.user)
 
     def validate_home_preferences(self):
-        """Clamp the card count and keep ``hidden_home_signals`` a deduplicated list of known ids."""
+        """Clamp the card count and keep ``hidden_home_signals`` a deduplicated list of known ids.
+
+        A stored id that has since been retired is dropped silently, so the user can still save;
+        only an id added by this save is rejected when unknown.
+        """
         self.needs_you_count = clamp_needs_you_count(cint(self.needs_you_count))
         if not self.has_value_changed("hidden_home_signals"):
             return
@@ -57,10 +65,18 @@ class FACChatUserPreferences(Document):
         if not isinstance(hidden, list):
             frappe.throw(_("Hidden signals must be a list of signal ids."), frappe.ValidationError)
         known = hideable_signal_ids()
+        previous = self._previously_stored_hidden_signals()
+        kept = []
         for signal_id in hidden:
-            if not isinstance(signal_id, str) or signal_id not in known:
+            if isinstance(signal_id, str) and signal_id in known:
+                kept.append(signal_id)
+            elif not isinstance(signal_id, str) or signal_id not in previous:
                 frappe.throw(_("Unknown home signal: {0}").format(signal_id), frappe.ValidationError)
-        self.hidden_home_signals = json.dumps(list(dict.fromkeys(hidden)))
+        self.hidden_home_signals = json.dumps(list(dict.fromkeys(kept)))
+
+    def _previously_stored_hidden_signals(self) -> set[str]:
+        before = self.get_doc_before_save()
+        return set(parse_hidden_signals(before.hidden_home_signals)) if before else set()
 
     def validate_keyboard_shortcut(self):
         """Ensure keyboard shortcut is valid format"""

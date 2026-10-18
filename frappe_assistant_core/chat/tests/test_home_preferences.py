@@ -158,6 +158,29 @@ class TestPreferencesController(HomePreferencesTestCase):
         with self.assertRaises(frappe.ValidationError):
             prefs.save(ignore_permissions=True)
 
+    def test_retired_stored_id_is_dropped_but_a_new_unknown_id_is_rejected(self):
+        home.update_home_preferences(hidden_signals=["todos"])
+        # Manufactured: production reaches this when a later release retires a signal id that
+        # users had already hidden, leaving the retired id in their stored JSON.
+        frappe.db.set_value(
+            "FAC Chat User Preferences",
+            self.user,
+            "hidden_home_signals",
+            json.dumps(["todos", "retired_signal"]),
+        )
+        self.assertNotIn("retired_signal", home.get_home_preferences()["hidden_signals"])
+
+        prefs = FACChatUserPreferences.get_or_create_preferences(self.user)
+        prefs.show_needs_you = 0
+        prefs.hidden_home_signals = json.dumps(["todos", "retired_signal", "brand_new_unknown"])
+        with self.assertRaises(frappe.ValidationError):
+            prefs.save(ignore_permissions=True)
+
+        prefs = FACChatUserPreferences.get_or_create_preferences(self.user)
+        prefs.hidden_home_signals = json.dumps(["todos", "retired_signal", "approvals"])
+        prefs.save(ignore_permissions=True)
+        self.assertEqual(json.loads(prefs.hidden_home_signals), ["todos", "approvals"])
+
     def test_direct_save_clamps_count(self):
         prefs = FACChatUserPreferences.get_or_create_preferences(self.user)
         prefs.needs_you_count = 99

@@ -13,7 +13,12 @@ from frappe.utils import cint, sbool
 
 from ..doctype.fac_chat_user_preferences.fac_chat_user_preferences import FACChatUserPreferences
 from ..home_preferences import HOME_SIGNALS_CACHE_KEY, load_home_preferences, parse_hidden_signals
-from ..home_signals import CLIENT_SIDE_SIGNAL_ID, applicable_signals, compute_home_signals
+from ..home_signals import (
+    CLIENT_SIDE_SIGNAL_ID,
+    applicable_signals,
+    compute_home_signals,
+    hideable_signal_ids,
+)
 
 HOME_SIGNALS_MAX_AGE = 600
 
@@ -44,10 +49,11 @@ def _preferences_payload(user: str) -> dict:
     prefs = load_home_preferences(user)
     signals = [{"id": signal.id, "label": str(signal.label)} for signal in applicable_signals(user)]
     signals.append({"id": CLIENT_SIDE_SIGNAL_ID, "label": _("Failed workflows")})
+    known = hideable_signal_ids()
     return {
         "show_needs_you": prefs["show_needs_you"],
         "needs_you_count": prefs["needs_you_count"],
-        "hidden_signals": prefs["hidden_signals"],
+        "hidden_signals": [signal_id for signal_id in prefs["hidden_signals"] if signal_id in known],
         "show_suggested_prompts": prefs["show_suggested_prompts"],
         "show_personalized_suggestions": prefs["show_personalized_suggestions"],
         "signals": signals,
