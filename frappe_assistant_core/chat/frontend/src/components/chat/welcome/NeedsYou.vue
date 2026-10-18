@@ -1,6 +1,6 @@
 <template>
 	<section v-if="loaded && !(failed && !items.length && !notes.length)" ref="root" class="ny" :class="`ny--${variant}`">
-		<h2 class="ny-heading">{{ __("Needs you") }}</h2>
+		<h2 ref="heading" class="ny-heading" tabindex="-1">{{ __("Needs you") }}</h2>
 		<p v-if="hideFailed" class="ny-note" role="alert">
 			{{ __("Couldn't hide that card. Try again.") }}
 		</p>
@@ -16,6 +16,7 @@
 				<li
 					v-else
 					class="ny-item"
+					:data-item="row.item.id"
 					:class="[`ny-item--${row.item.tone}`, { 'ny-item--dismissible': row.item.dismissible }]"
 					@keydown.esc="closeMenu(true)"
 					@focusout="onFocusOut"
@@ -86,6 +87,7 @@ const props = defineProps({
 const emit = defineEmits(["ask", "navigate", "dismiss", "hide", "open-settings"]);
 
 const root = ref(null);
+const heading = ref(null);
 const openMenuId = ref(null);
 // A hidden card leaves `items` at once; its note keeps the slot it had until it times out.
 const pendingNotes = ref([]);
@@ -151,6 +153,32 @@ watch(
 		);
 		noteRow?.querySelector(".ny-note-link")?.focus();
 	}
+);
+
+// A note that leaves while it holds focus (it timed out, or its card came back after a failed hide)
+// would drop focus to the page: hand it to the restored card, else the next card, else the heading.
+watch(
+	notes,
+	async (current, previous) => {
+		const gone = previous.filter((note) => !current.some((n) => n.id === note.id));
+		const holder = gone.find((note) =>
+			[...(root.value?.querySelectorAll("[data-note]") ?? [])].some(
+				(el) => el.dataset.note === note.id && el.contains(document.activeElement)
+			)
+		);
+		if (!holder) return;
+		await nextTick();
+		const restored = [...(root.value?.querySelectorAll("[data-item]") ?? [])].find(
+			(el) => el.dataset.item === holder.id
+		);
+		const next = rows.value.slice(holder.index).find((row) => row.item);
+		const nextCard = next && [...(root.value?.querySelectorAll("[data-item]") ?? [])].find(
+			(el) => el.dataset.item === next.item.id
+		);
+		const target = (restored ?? nextCard)?.querySelector(".ny-options") ?? heading.value;
+		target?.focus();
+	},
+	{ flush: "pre" }
 );
 
 function onFocusOut(event) {
@@ -245,7 +273,7 @@ onBeforeUnmount(() => {
 .ny-menu-item {
 	display: block; width: 100%; min-height: 44px; padding: var(--ql-space-2) var(--ql-space-3);
 	background: transparent; border: none; border-radius: var(--ql-radius-md);
-	font-family: var(--ql-font-sans); font-size: 13px; text-align: left; color: var(--ql-text); cursor: pointer;
+	font-family: var(--ql-font-sans); font-size: 13px; text-align: start; color: var(--ql-text); cursor: pointer;
 }
 .ny-menu-item:hover { background: var(--ql-subtle); }
 .ny-note {

@@ -173,6 +173,67 @@ describe("NeedsYou", () => {
 			w.unmount();
 		});
 
+		it("when the focused note times out, focus moves to the next card's options button", async () => {
+			vi.useFakeTimers();
+			const b = { ...base, id: "b", title: "late orders" };
+			const w = mountAttached({ items: [base, b] });
+			await w.find(".ny-options").trigger("click");
+			await w.find("[role=menuitem]").trigger("click");
+			await w.setProps({ items: [b] });
+			await nextTick();
+			expect(document.activeElement).toBe(w.find(".ny-note-link").element);
+			vi.advanceTimersByTime(6100);
+			await nextTick();
+			await nextTick();
+			expect(w.find(".ny-note").exists()).toBe(false);
+			expect(document.activeElement).toBe(w.find('[data-item="b"] .ny-options').element);
+			w.unmount();
+		});
+
+		it("when the focused note times out with no card left, focus moves to the heading", async () => {
+			vi.useFakeTimers();
+			const w = mountAttached();
+			await w.find(".ny-options").trigger("click");
+			await w.find("[role=menuitem]").trigger("click");
+			await w.setProps({ items: [] });
+			await nextTick();
+			vi.advanceTimersByTime(6100);
+			await nextTick();
+			await nextTick();
+			expect(document.activeElement).toBe(w.find(".ny-heading").element);
+			expect(w.find(".ny-heading").attributes("tabindex")).toBe("-1");
+			w.unmount();
+		});
+
+		it("when a failed hide restores the card, focus moves to its options button", async () => {
+			const w = mountAttached();
+			await w.find(".ny-options").trigger("click");
+			await w.find("[role=menuitem]").trigger("click");
+			await w.setProps({ items: [] });
+			await nextTick();
+			expect(document.activeElement).toBe(w.find(".ny-note-link").element);
+			await w.setProps({ items: [base] });
+			await nextTick();
+			await nextTick();
+			expect(document.activeElement).toBe(w.find(".ny-options").element);
+			w.unmount();
+		});
+
+		it("a note that did not hold focus leaves focus alone", async () => {
+			vi.useFakeTimers();
+			const w = mountAttached();
+			await w.find(".ny-options").trigger("click");
+			await w.find("[role=menuitem]").trigger("click");
+			await w.setProps({ items: [] });
+			await nextTick();
+			document.activeElement.blur();
+			vi.advanceTimersByTime(6100);
+			await nextTick();
+			await nextTick();
+			expect(document.activeElement).toBe(document.body);
+			w.unmount();
+		});
+
 		it("re-hiding the same card keeps one note and one live timer", async () => {
 			vi.useFakeTimers();
 			const w = make();
