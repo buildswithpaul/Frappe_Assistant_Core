@@ -52,10 +52,10 @@ describe("HomeSettings", () => {
 		const w = await mountSettings();
 		await w.find("#home-show_needs_you").setValue(false);
 		expect(updatePreferences).toHaveBeenLastCalledWith({ show_needs_you: false });
-		await w.find("#home-show_suggested_prompts").setValue(false);
-		expect(updatePreferences).toHaveBeenLastCalledWith({ show_suggested_prompts: false });
 		await w.find("#home-show_personalized_suggestions").setValue(false);
 		expect(updatePreferences).toHaveBeenLastCalledWith({ show_personalized_suggestions: false });
+		await w.find("#home-show_suggested_prompts").setValue(false);
+		expect(updatePreferences).toHaveBeenLastCalledWith({ show_suggested_prompts: false });
 	});
 
 	it("the cards select saves a number", async () => {
@@ -111,5 +111,46 @@ describe("HomeSettings", () => {
 		await w.find("#home-show_suggested_prompts").setValue(false);
 		await flushPromises();
 		expect(loadSuggestions).not.toHaveBeenCalled();
+	});
+
+	it("disables Personalised suggestions, with a hint, while Suggested questions is off", async () => {
+		const w = await mountSettings({ ...PREFS, show_suggested_prompts: false });
+		const toggle = w.find("#home-show_personalized_suggestions");
+		expect(toggle.attributes("disabled")).toBeDefined();
+		expect(toggle.attributes("aria-disabled")).toBe("true");
+		expect(toggle.attributes("aria-describedby")).toBe("home-show_personalized_suggestions-hint");
+		expect(w.find("#home-show_personalized_suggestions-hint").text()).toBe(
+			"Turn on Suggested questions to use this."
+		);
+		await w.find("#home-show_suggested_prompts").setValue(true);
+		await flushPromises();
+		expect(w.find("#home-show_personalized_suggestions").attributes("disabled")).toBeUndefined();
+		expect(w.find("#home-show_personalized_suggestions-hint").exists()).toBe(false);
+	});
+
+	it("the latest save wins when an older response arrives last", async () => {
+		let finishFirst;
+		updatePreferences.mockReset();
+		updatePreferences
+			.mockImplementationOnce(() => new Promise((resolve) => (finishFirst = resolve)))
+			.mockImplementationOnce(async (patch) => ({ ...PREFS, ...patch }));
+		const w = await mountSettings();
+		await w.find("#home-show_suggested_prompts").setValue(false);
+		await w.find("#home-needs-you-count").setValue("2");
+		await flushPromises();
+		finishFirst({ ...PREFS, show_suggested_prompts: false });
+		await flushPromises();
+		// The older response carries the old count of 3; it must not overwrite the newer choice of 2.
+		expect(w.find("#home-needs-you-count").element.value).toBe("2");
+	});
+
+	it("says so, and shows no controls, when the settings cannot be loaded", async () => {
+		getPreferences.mockRejectedValue(new Error("down"));
+		const w = mount(HomeSettings);
+		await flushPromises();
+		expect(w.find("[role=alert]").text()).toBe(
+			"Your home page settings could not be loaded. Refresh the page to try again."
+		);
+		expect(w.find("input").exists()).toBe(false);
 	});
 });

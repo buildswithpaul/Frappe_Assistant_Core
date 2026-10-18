@@ -14,12 +14,18 @@
 					<div class="setting-info">
 						<label class="setting-label" :for="`home-${row.key}`">{{ row.label }}</label>
 						<p class="setting-description">{{ row.description }}</p>
+						<p v-if="isDisabled(row)" :id="`home-${row.key}-hint`" class="setting-description">
+							{{ __("Turn on Suggested questions to use this.") }}
+						</p>
 					</div>
 					<label class="toggle">
 						<input
 							:id="`home-${row.key}`"
 							type="checkbox"
 							:checked="prefs[row.key]"
+							:disabled="isDisabled(row)"
+							:aria-disabled="isDisabled(row)"
+							:aria-describedby="isDisabled(row) ? `home-${row.key}-hint` : null"
 							@change="save({ [row.key]: $event.target.checked })"
 						/>
 						<span class="toggle-slider"></span>
@@ -101,6 +107,9 @@ const toggleRows = computed(() => [
 		description: __("Uses AI about once a day to suggest questions for you. Turn off to save usage."),
 	},
 ]);
+
+// Personalised suggestions only appear inside the suggested-questions grid, so they have no effect without it.
+const isDisabled = (row) => row.key === "show_personalized_suggestions" && !prefs.value.show_suggested_prompts;
 
 onMounted(async () => {
 	try {
