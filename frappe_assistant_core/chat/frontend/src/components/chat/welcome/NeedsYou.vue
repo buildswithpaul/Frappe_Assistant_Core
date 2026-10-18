@@ -16,7 +16,7 @@
 				<li
 					v-else
 					class="ny-item"
-					:class="`ny-item--${row.item.tone}`"
+					:class="[`ny-item--${row.item.tone}`, { 'ny-item--dismissible': row.item.dismissible }]"
 					@keydown.esc="closeMenu(true)"
 					@focusout="onFocusOut"
 				>
@@ -218,17 +218,25 @@ onBeforeUnmount(() => {
 .ny-main:focus-visible, .ny-icon-btn:focus-visible, .ny-menu-item:focus-visible, .ny-note-link:focus-visible {
 	outline: 2px solid var(--ql-accent); outline-offset: -2px;
 }
+/* Both icon buttons sit in the card's top-right corner, level with the source label; the visible
+   glyph is small but the 44px box is the hit area. The card's text reserves room for them. */
 .ny-icon-btn {
+	position: absolute; top: 0; right: 0; z-index: 1;
 	display: flex; align-items: center; justify-content: center;
-	min-width: 44px; min-height: 44px; padding: 0;
-	background: transparent; border: none; border-radius: inherit;
+	width: 44px; height: 44px; padding: 0;
+	background: transparent; border: none; border-radius: var(--ql-radius-lg);
 	font-size: 13px; color: var(--ql-text-muted); cursor: pointer;
 }
 .ny-icon-btn:hover { color: var(--ql-text); background: var(--ql-subtle); }
+.ny-dismiss { right: 44px; }
 .ny-options { font-size: 18px; line-height: 1; }
+.ny-item .ny-source { padding-right: 44px; }
+.ny-item--dismissible .ny-source { padding-right: 88px; }
+.ny--list .ny-main { padding-right: 44px; }
+.ny--list .ny-item--dismissible .ny-main { padding-right: 88px; }
 .ny-menu {
-	position: absolute; top: 44px; right: var(--ql-space-2); z-index: 5;
-	min-width: 200px; padding: var(--ql-space-1);
+	position: absolute; top: 40px; right: var(--ql-space-1); z-index: 10;
+	min-width: min(200px, calc(100% - var(--ql-space-2))); padding: var(--ql-space-1);
 	background: var(--ql-surface); border: 1px solid var(--ql-border);
 	border-radius: var(--ql-radius-lg); box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
 }
@@ -239,12 +247,12 @@ onBeforeUnmount(() => {
 }
 .ny-menu-item:hover { background: var(--ql-subtle); }
 .ny-note {
-	display: flex; flex-wrap: wrap; align-items: center; gap: var(--ql-space-2);
-	min-height: 44px; padding: var(--ql-space-2) var(--ql-space-3);
+	display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 0;
+	min-height: 44px; padding: var(--ql-space-2) var(--ql-space-4);
 	font-size: 13px; color: var(--ql-text-muted);
 }
 .ny-note-link {
-	min-height: 44px; padding: 0 var(--ql-space-2); background: transparent; border: none;
+	min-height: 44px; padding: 0; background: transparent; border: none;
 	font-family: var(--ql-font-sans); font-size: 13px; font-weight: 600; color: var(--ql-accent); cursor: pointer;
 }
 .ny-note-link:hover { color: var(--ql-accent-hover); }
