@@ -136,6 +136,26 @@ describe("NeedsYou", () => {
 			w.unmount();
 		});
 
+		it("focusout with no related target keeps the menu open, and the next trigger click closes it", async () => {
+			const w = mountAttached();
+			await w.find(".ny-options").trigger("click");
+			await w.find(".ny-item").trigger("focusout", { relatedTarget: null });
+			expect(w.find("[role=menu]").exists()).toBe(true);
+			await w.find(".ny-options").trigger("click");
+			expect(w.find("[role=menu]").exists()).toBe(false);
+			w.unmount();
+		});
+
+		it("focus lands on the note for the card just hidden", async () => {
+			const w = mountAttached({ items: [base, { ...base, id: "b" }] });
+			await w.findAll(".ny-options")[1].trigger("click");
+			await w.find("[role=menuitem]").trigger("click");
+			await w.setProps({ items: [base] });
+			await nextTick();
+			expect(document.activeElement).toBe(w.find('[data-note="b"] .ny-note-link').element);
+			w.unmount();
+		});
+
 		it("focus lands on the note's link after hiding", async () => {
 			const w = mountAttached();
 			await w.find(".ny-options").trigger("click");

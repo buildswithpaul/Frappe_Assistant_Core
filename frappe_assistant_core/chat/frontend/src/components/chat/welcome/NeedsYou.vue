@@ -144,12 +144,18 @@ watch(
 	async (count, before) => {
 		if (count <= before) return;
 		await nextTick();
-		root.value?.querySelector(".ny-note-link")?.focus();
+		const newest = notes.value.at(-1);
+		const noteRow = [...(root.value?.querySelectorAll("[data-note]") ?? [])].find(
+			(el) => el.dataset.note === newest.id
+		);
+		noteRow?.querySelector(".ny-note-link")?.focus();
 	}
 );
 
 function onFocusOut(event) {
-	if (openMenuId.value !== null && !event.currentTarget.contains(event.relatedTarget)) closeMenu();
+	// Safari and Firefox on macOS do not focus a clicked button (relatedTarget is null); an outside
+	// click is closed by onDocumentClick, so a null target must not close and then reopen the menu.
+	if (openMenuId.value !== null && event.relatedTarget && !event.currentTarget.contains(event.relatedTarget)) closeMenu();
 }
 
 function onDocumentClick() {
