@@ -14,7 +14,7 @@ to HMAC-signed AR API calls.
 import frappe
 from frappe import _
 
-from frappe_assistant_core.chat.home_preferences import parse_hidden_signals
+from frappe_assistant_core.chat.home_preferences import HOME_SIGNALS_CACHE_KEY, parse_hidden_signals
 
 from .auth import _ar_user_id
 from .chat.projects import project_documents_enabled, project_memory_enabled
@@ -199,6 +199,8 @@ def erase_my_data(password: str | None = None) -> dict:
 
     prefs_name = frappe.db.get_value("FAC Chat User Preferences", {"user": user}, "name")
     frappe.db.delete("FAC Chat User Preferences", {"user": user})
+    # db.delete skips the controller's on_update, which is what drops the cached home payload.
+    frappe.cache.hdel(HOME_SIGNALS_CACHE_KEY, user)
 
     # FACO Usage Log — ships with the app; safe no-op if table absent.
     usage_log_deleted = 0
