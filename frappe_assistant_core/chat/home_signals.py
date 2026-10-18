@@ -14,9 +14,10 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 import frappe
-from frappe import _
+from frappe import _, _lt
 from frappe.utils import add_days, fmt_money, get_datetime, now_datetime, today
 
+from frappe_assistant_core.chat.home_preferences import load_home_preferences
 from frappe_assistant_core.plugins.core.tools.get_pending_approvals import _open_workflow_actions
 
 LENS_ROLES: dict[str, tuple[str, ...]] = {
@@ -38,7 +39,6 @@ DEFAULT_AREA = "business"
 
 TONE_RANK = {"danger": 0, "warning": 1, "neutral": 2}
 
-ITEMS_CAP = 3
 APPROVALS_LIMIT = 200
 OVERDUE_DAYS = 60
 PAYABLES_WINDOW_DAYS = 7
@@ -81,6 +81,7 @@ class SignalResult:
 @dataclass(frozen=True)
 class Signal:
     id: str
+    label: str
     lenses: tuple[str, ...]
     tone: str
     requires_doctypes: tuple[str, ...]
@@ -152,14 +153,52 @@ def _primary_lens(ranked_lenses: list[str], lenses: list[str]) -> str | None:
     return lenses[0] if lenses else None
 
 
+def _home_payload(
+    lenses: list[str], company: str | None, items: list[dict], prefs: dict, ranked_lenses: list[str]
+) -> dict:
+    lens = _primary_lens(ranked_lenses, lenses)
+    return {
+        "lens": lens,
+        "lens_label": _lens_label(lens) if lens else None,
+        "lenses": lenses,
+        "area": LENS_AREA[lens] if len(lenses) == 1 else DEFAULT_AREA,
+        "company": company,
+        "items": items,
+        "needs_you_enabled": prefs["show_needs_you"],
+        "needs_you_count": prefs["needs_you_count"],
+        "hidden_signals": prefs["hidden_signals"],
+    }
+
+
+def applicable_signals(user: str) -> list[Signal]:
+    """Catalogue signals that apply to ``user`` (lens, installed apps, DocType read access)."""
+    installed_apps = frappe.get_installed_apps()
+    lenses = resolve_lenses(frappe.get_roles(user), installed_apps)
+    applicable = []
+    for signal in CATALOGUE:
+        try:
+            if _is_applicable(signal, user, lenses, installed_apps):
+                applicable.append(signal)
+        except Exception:
+            _log_signal_error(signal.id)
+    return applicable
+
+
 def compute_home_signals(user: str) -> dict:
-    """Build the home payload for ``user``."""
+    """Build the home payload for ``user``, honouring their home preferences."""
+    prefs = load_home_preferences(user)
     installed_apps = frappe.get_installed_apps()
     lenses = resolve_lenses(frappe.get_roles(user), installed_apps)
     company = frappe.defaults.get_user_default("Company", user=user) or None
 
+    if not prefs["show_needs_you"]:
+        return _home_payload(lenses, company, [], prefs, [])
+
+    hidden = set(prefs["hidden_signals"])
     results: list[tuple[Signal, SignalResult]] = []
     for signal in CATALOGUE:
+        if signal.id in hidden:
+            continue
         try:
             if not _is_applicable(signal, user, lenses, installed_apps):
                 continue
@@ -170,19 +209,10 @@ def compute_home_signals(user: str) -> dict:
         if result is not None:
             results.append((signal, result))
 
-    items = rank(results, ITEMS_CAP)
+    items = rank(results, prefs["needs_you_count"])
     by_id = {signal.id: signal for signal, _result in results}
     ranked_lenses = [lens for item in items for lens in by_id[item["id"]].lenses if lens in lenses]
-    lens = _primary_lens(ranked_lenses, lenses)
-
-    return {
-        "lens": lens,
-        "lens_label": _lens_label(lens) if lens else None,
-        "lenses": lenses,
-        "area": LENS_AREA[lens] if len(lenses) == 1 else DEFAULT_AREA,
-        "company": company,
-        "items": items,
-    }
+    return _home_payload(lenses, company, items, prefs, ranked_lenses)
 
 
 def count_visible(doctype: str, filters: dict | list, user: str) -> int:
@@ -669,6 +699,7 @@ def _expense_claims_to_approve(user: str, company: str | None) -> SignalResult |
 CATALOGUE: list[Signal] = [
     Signal(
         id="approvals",
+        label=_lt("Approvals waiting for you"),
         lenses=(),
         tone="warning",
         requires_doctypes=(),
@@ -677,6 +708,7 @@ CATALOGUE: list[Signal] = [
     ),
     Signal(
         id="todos",
+        label=_lt("ToDos due"),
         lenses=(),
         tone="neutral",
         requires_doctypes=("ToDo",),
@@ -685,6 +717,7 @@ CATALOGUE: list[Signal] = [
     ),
     Signal(
         id="overdue_receivables",
+        label=_lt("Invoices overdue 60+ days"),
         lenses=("accounts",),
         tone="danger",
         requires_doctypes=("Sales Invoice",),
@@ -693,6 +726,7 @@ CATALOGUE: list[Signal] = [
     ),
     Signal(
         id="payables_due",
+        label=_lt("Purchase invoices due soon"),
         lenses=("accounts",),
         tone="warning",
         requires_doctypes=("Purchase Invoice",),
@@ -701,6 +735,7 @@ CATALOGUE: list[Signal] = [
     ),
     Signal(
         id="unreconciled_bank",
+        label=_lt("Unreconciled bank lines"),
         lenses=("accounts",),
         tone="neutral",
         requires_doctypes=("Bank Transaction",),
@@ -709,6 +744,7 @@ CATALOGUE: list[Signal] = [
     ),
     Signal(
         id="quotations_expiring",
+        label=_lt("Quotations expiring"),
         lenses=("sales",),
         tone="warning",
         requires_doctypes=("Quotation",),
@@ -717,6 +753,7 @@ CATALOGUE: list[Signal] = [
     ),
     Signal(
         id="late_sales_orders",
+        label=_lt("Late sales orders"),
         lenses=("sales",),
         tone="danger",
         requires_doctypes=("Sales Order",),
@@ -725,6 +762,7 @@ CATALOGUE: list[Signal] = [
     ),
     Signal(
         id="stale_leads",
+        label=_lt("Leads with no activity"),
         lenses=("sales",),
         tone="neutral",
         requires_doctypes=(),
@@ -733,6 +771,7 @@ CATALOGUE: list[Signal] = [
     ),
     Signal(
         id="below_reorder",
+        label=_lt("Items at reorder level"),
         lenses=("stock",),
         tone="danger",
         requires_doctypes=("Item", "Warehouse"),
@@ -741,6 +780,7 @@ CATALOGUE: list[Signal] = [
     ),
     Signal(
         id="late_purchase_orders",
+        label=_lt("Late purchase orders"),
         lenses=("stock",),
         tone="warning",
         requires_doctypes=("Purchase Order",),
@@ -749,6 +789,7 @@ CATALOGUE: list[Signal] = [
     ),
     Signal(
         id="pending_material_requests",
+        label=_lt("Pending material requests"),
         lenses=("stock",),
         tone="neutral",
         requires_doctypes=("Material Request",),
@@ -757,6 +798,7 @@ CATALOGUE: list[Signal] = [
     ),
     Signal(
         id="leave_to_approve",
+        label=_lt("Leave to approve"),
         lenses=("hr",),
         tone="warning",
         requires_doctypes=("Leave Application",),
@@ -765,6 +807,7 @@ CATALOGUE: list[Signal] = [
     ),
     Signal(
         id="expense_claims_to_approve",
+        label=_lt("Expense claims to approve"),
         lenses=("hr",),
         tone="neutral",
         requires_doctypes=("Expense Claim",),

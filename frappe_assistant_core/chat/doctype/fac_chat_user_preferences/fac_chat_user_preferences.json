@@ -14,6 +14,10 @@
   "hide_widget",
   "column_break_display",
   "show_suggested_prompts",
+  "show_needs_you",
+  "needs_you_count",
+  "hidden_home_signals",
+  "show_personalized_suggestions",
   "pinned_prompt_templates",
   "section_break_privacy",
   "privacy_consent_complete",
@@ -78,6 +82,30 @@
    "fieldname": "show_suggested_prompts",
    "fieldtype": "Check",
    "label": "Show Suggested Prompts"
+  },
+  {
+   "default": "1",
+   "fieldname": "show_needs_you",
+   "fieldtype": "Check",
+   "label": "Show Needs You"
+  },
+  {
+   "default": "3",
+   "fieldname": "needs_you_count",
+   "fieldtype": "Int",
+   "label": "Needs You Cards"
+  },
+  {
+   "description": "JSON array of signal ids hidden from the home page",
+   "fieldname": "hidden_home_signals",
+   "fieldtype": "Small Text",
+   "label": "Hidden Home Signals"
+  },
+  {
+   "default": "1",
+   "fieldname": "show_personalized_suggestions",
+   "fieldtype": "Check",
+   "label": "Show Personalised Suggestions"
   },
   {
    "fieldname": "pinned_prompt_templates",

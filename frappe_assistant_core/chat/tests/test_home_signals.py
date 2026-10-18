@@ -24,6 +24,7 @@ from frappe_assistant_core.tests.base_test import BaseAssistantTest
 def _signal(signal_id, tone="neutral", lenses=(), doctypes=(), compute=None):
     return Signal(
         id=signal_id,
+        label=signal_id,
         lenses=lenses,
         tone=tone,
         requires_doctypes=doctypes,

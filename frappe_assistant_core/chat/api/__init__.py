@@ -146,7 +146,12 @@ from .events import (
 )
 
 # ── Home ─────────────────────────────────────────────────────────────
-from .home import get_home_signals
+from .home import (
+    get_home_preferences,
+    get_home_signals,
+    hide_home_signal,
+    update_home_preferences,
+)
 
 # ── SPA Initialization ─────────────────────────────────────────────
 from .init import initialize_spa

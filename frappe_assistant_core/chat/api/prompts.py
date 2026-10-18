@@ -10,6 +10,7 @@ import frappe
 from frappe import _, _lt
 from frappe.utils import getdate
 
+from frappe_assistant_core.chat.home_preferences import load_home_preferences
 from frappe_assistant_core.chat.home_signals import resolve_lenses
 from frappe_assistant_core.chat.page_asks import page_asks_for
 
@@ -405,14 +406,14 @@ def get_suggested_prompts(context: str | None = None):
             context = json.loads(context) if context else {}
 
         show_grid = True
+        show_personalized = True
         try:
-            prefs_val = frappe.db.get_value(
-                "FAC Chat User Preferences", frappe.session.user, "show_suggested_prompts"
-            )
-            if prefs_val is not None and not int(prefs_val):
-                show_grid = False
+            home_prefs = load_home_preferences(frappe.session.user)
+            show_grid = home_prefs["show_suggested_prompts"]
+            show_personalized = home_prefs["show_personalized_suggestions"]
         except Exception:
             show_grid = True
+            show_personalized = True
 
         result = []
         seen_descriptions = set()
@@ -421,7 +422,7 @@ def get_suggested_prompts(context: str | None = None):
         # blocks on AR. Emitted first so the result[:12] cap below can never
         # truncate it out once templates are appended ===
         curated_emitted = False
-        if show_grid:
+        if show_grid and show_personalized:
             try:
                 from frappe_assistant_core.chat.api.curated import (
                     curated_row_name,
@@ -462,7 +463,7 @@ def get_suggested_prompts(context: str | None = None):
 
         # === Source 3: Personalized from AR suggestion engine — fallback
         # only when the curated cache had nothing to offer yet ===
-        if show_grid and not curated_emitted:
+        if show_grid and show_personalized and not curated_emitted:
             try:
                 from frappe_assistant_core.chat.fac_cloud_client import get_fac_cloud_client
 
