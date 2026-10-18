@@ -76,6 +76,7 @@ def _open_workflow_actions(
 
 
 MAX_SCANNED_ACTIONS = 1000
+MIN_PAGE_SIZE = 100
 
 
 def _readable_subset(user: str, actions: list[frappe._dict]) -> list[frappe._dict]:
@@ -99,12 +100,12 @@ def readable_open_approvals(user: str, limit: int, doctype: str | None = None) -
     """Up to ``limit`` open Workflow Actions for ``user`` whose documents ``user`` may read.
 
     The Workflow Action query only matches roles and users, so each page is re-checked
-    through ``get_list`` to apply User Permissions. Pages of ``limit * 3`` newest-first rows
+    through ``get_list`` to apply User Permissions. Pages of ``max(limit * 3, MIN_PAGE_SIZE)`` newest-first rows
     are scanned until ``limit`` readable rows are found, the source is exhausted, or
     ``MAX_SCANNED_ACTIONS`` rows have been scanned, so hidden rows ahead of readable ones
     do not shrink the result. Ordering is preserved.
     """
-    page_size = max(limit, 1) * 3
+    page_size = max(limit * 3, MIN_PAGE_SIZE)
     readable: list[frappe._dict] = []
     offset = 0
     while len(readable) < limit and offset < MAX_SCANNED_ACTIONS:

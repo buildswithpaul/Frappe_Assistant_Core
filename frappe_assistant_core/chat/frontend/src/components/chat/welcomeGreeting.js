@@ -24,17 +24,23 @@ export function displayNameFromUser(user) {
 	return first.charAt(0).toUpperCase() + first.slice(1);
 }
 
-// The user's Frappe language when the page has one, else the browser's. An invalid tag falls back too.
-export function uiLocale() {
-	const lang =
-		(typeof window !== "undefined" && window.frappe?.boot?.lang) ||
-		(typeof document !== "undefined" && document.documentElement?.lang) ||
-		undefined;
+function canonical(tag) {
 	try {
-		return lang ? Intl.getCanonicalLocales(lang)[0] : undefined;
+		return tag ? Intl.getCanonicalLocales(tag)[0] : null;
 	} catch {
-		return undefined;
+		return null;
 	}
+}
+
+// The Frappe language (Desk boot, or window.lang in the SPA) unless it is bare and the browser
+// refines it with a region ("en" with "en-IN"). Undefined lets the runtime use its default.
+export function uiLocale() {
+	const win = typeof window !== "undefined" ? window : {};
+	const frappeLang = canonical(win.frappe?.boot?.lang || win.lang);
+	const browser = canonical(typeof navigator !== "undefined" ? navigator.language : null);
+	if (frappeLang?.includes("-")) return frappeLang;
+	if (frappeLang && browser?.startsWith(`${frappeLang}-`)) return browser;
+	return frappeLang || browser || undefined;
 }
 
 // "Monday · 6 July" — the day and month order follows the locale.

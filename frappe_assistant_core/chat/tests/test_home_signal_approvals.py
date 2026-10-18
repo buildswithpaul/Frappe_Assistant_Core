@@ -3,12 +3,14 @@
 # AGPL-3.0 License
 
 import unittest
+from unittest.mock import patch
 
 import frappe
 from frappe.utils import add_to_date, now_datetime
 
 from frappe_assistant_core.chat import home_signals
 from frappe_assistant_core.chat.home_signals import approvals_for_user
+from frappe_assistant_core.plugins.core.tools import get_pending_approvals as approvals_tool
 from frappe_assistant_core.plugins.core.tools.get_pending_approvals import GetPendingApprovals
 from frappe_assistant_core.tests.base_test import BaseAssistantTest
 
@@ -166,7 +168,9 @@ class TestHomeSignalApprovals(BaseAssistantTest):
         ).insert(ignore_permissions=True)
         frappe.clear_cache(user=self.user)
 
-        result = self._run_tool_as_user(limit=1)
+        # A small page forces the scan past the hidden rows; production pages are 100+ rows.
+        with patch.object(approvals_tool, "MIN_PAGE_SIZE", 3):
+            result = self._run_tool_as_user(limit=1)
 
         self.assertEqual(result["total_pending"], 1)
         self.assertEqual([e["document_name"] for e in result["pending_approvals"]["ToDo"]], [readable])

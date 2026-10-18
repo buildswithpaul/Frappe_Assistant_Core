@@ -91,20 +91,42 @@ describe("relativeTimeLabel translation", () => {
 });
 
 describe("uiLocale", () => {
+	const setBrowser = (language) => vi.spyOn(navigator, "language", "get").mockReturnValue(language);
 	afterEach(() => {
+		vi.restoreAllMocks();
 		delete window.frappe;
-		document.documentElement.lang = "";
+		delete window.lang;
 	});
 
-	it("prefers the Frappe boot language, then the document language", () => {
-		document.documentElement.lang = "de";
-		expect(uiLocale()).toBe("de");
-		window.frappe = { boot: { lang: "pt-BR" } };
+	it("reads window.lang when the SPA has no Frappe boot", () => {
+		setBrowser("en-US");
+		window.lang = "pt-BR";
+		expect(window.frappe).toBeUndefined();
 		expect(uiLocale()).toBe("pt-BR");
 	});
 
-	it("falls back to undefined without a usable language", () => {
-		window.frappe = { boot: { lang: "not a tag!" } };
+	it("prefers the Desk boot language", () => {
+		setBrowser("en-US");
+		window.frappe = { boot: { lang: "en-GB" } };
+		expect(uiLocale()).toBe("en-GB");
+	});
+
+	it("refines a bare language with the browser's region", () => {
+		setBrowser("en-IN");
+		window.lang = "en";
+		expect(uiLocale()).toBe("en-IN");
+	});
+
+	it("keeps the Frappe language when the browser is another language", () => {
+		setBrowser("en-US");
+		window.lang = "de";
+		expect(uiLocale()).toBe("de");
+	});
+
+	it("uses the browser without a Frappe language, and undefined for a bad tag", () => {
+		setBrowser("fr-CA");
+		expect(uiLocale()).toBe("fr-CA");
+		setBrowser("not a tag!");
 		expect(uiLocale()).toBeUndefined();
 	});
 });
