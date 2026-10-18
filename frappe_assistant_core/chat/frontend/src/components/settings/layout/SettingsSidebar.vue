@@ -46,6 +46,7 @@
 import { computed, h } from "vue";
 import { useRouter } from "vue-router";
 import { useUserStore } from "@/stores/userStore";
+import { __ } from "@/utils/i18n";
 import { useTourStore } from "@/stores/tourStore";
 
 const router = useRouter();
@@ -178,7 +179,7 @@ const visibleGroups = computed(() => {
 	const personalItems = [
 		{ to: "/settings/profile", label: "Profile", icon: ProfileIcon },
 		{ to: "/settings/appearance", label: "Appearance", icon: AppearanceIcon },
-		{ to: "/settings/home", label: "Home page", icon: HomeIcon },
+		{ to: "/settings/home", label: __("Home page"), icon: HomeIcon },
 		{ to: "/settings/privacy", label: "Privacy & Data", icon: PrivacyIcon },
 	];
 	personalItems.push({ to: "/settings/my-tickets", label: "Support", icon: TicketIcon });

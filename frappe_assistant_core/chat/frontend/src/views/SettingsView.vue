@@ -52,6 +52,7 @@ import NavigationSidebar from "@/components/layout/NavigationSidebar.vue";
 import SettingsSidebar from "@/components/settings/layout/SettingsSidebar.vue";
 import { useIsMobile } from "@/composables/useIsMobile";
 import { useNavToggle } from "@/composables/useNavToggle";
+import { __ } from "@/utils/i18n";
 
 const route = useRoute();
 const router = useRouter();
@@ -68,7 +69,10 @@ const showContent = computed(() => !isMobile.value || isLeaf.value);
 const leafTitles = {
 	profile: "Profile",
 	appearance: "Appearance",
-	home: "Home page",
+	// A getter, so the label is translated when read, after the catalogue has loaded.
+	get home() {
+		return __("Home page");
+	},
 	privacy: "Privacy & Data",
 	"my-tickets": "Support",
 	memory: "Memory",
