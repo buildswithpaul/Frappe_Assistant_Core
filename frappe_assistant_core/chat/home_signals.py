@@ -170,6 +170,15 @@ def _home_payload(
     }
 
 
+# Computed in the browser from the workflow list, so it has no catalogue entry but can be hidden.
+CLIENT_SIDE_SIGNAL_ID = "failed_workflows"
+
+
+def hideable_signal_ids() -> set[str]:
+    """Ids a user may hide from their home page."""
+    return {signal.id for signal in CATALOGUE} | {CLIENT_SIDE_SIGNAL_ID}
+
+
 def applicable_signals(user: str) -> list[Signal]:
     """Catalogue signals that apply to ``user`` (lens, installed apps, DocType read access)."""
     installed_apps = frappe.get_installed_apps()

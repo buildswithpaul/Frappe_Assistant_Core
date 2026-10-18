@@ -412,8 +412,9 @@ def get_suggested_prompts(context: str | None = None):
             show_grid = home_prefs["show_suggested_prompts"]
             show_personalized = home_prefs["show_personalized_suggestions"]
         except Exception:
+            # Fail closed on the AI-spending part: an unreadable preference must not trigger generation.
             show_grid = True
-            show_personalized = True
+            show_personalized = False
 
         result = []
         seen_descriptions = set()

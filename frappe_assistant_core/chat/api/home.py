@@ -12,13 +12,10 @@ from frappe import _
 from frappe.utils import cint, sbool
 
 from ..doctype.fac_chat_user_preferences.fac_chat_user_preferences import FACChatUserPreferences
-from ..home_preferences import clamp_needs_you_count, load_home_preferences, parse_hidden_signals
-from ..home_signals import CATALOGUE, applicable_signals, compute_home_signals
+from ..home_preferences import HOME_SIGNALS_CACHE_KEY, load_home_preferences, parse_hidden_signals
+from ..home_signals import CLIENT_SIDE_SIGNAL_ID, applicable_signals, compute_home_signals
 
-HOME_SIGNALS_CACHE_KEY = "fac_home_signals"
 HOME_SIGNALS_MAX_AGE = 600
-# Computed in the browser from the workflow list, so it has no catalogue entry but can be hidden.
-CLIENT_SIDE_SIGNAL_ID = "failed_workflows"
 
 
 @frappe.whitelist(methods=["GET"])
@@ -36,30 +33,6 @@ def get_home_signals() -> dict:
     payload = compute_home_signals(user)
     frappe.cache.hset(HOME_SIGNALS_CACHE_KEY, user, {"computed_at": time.time(), "payload": payload})
     return payload
-
-
-def _invalidate_home_cache(user: str) -> None:
-    frappe.cache.hdel(HOME_SIGNALS_CACHE_KEY, user)
-
-
-def _hideable_signal_ids() -> set[str]:
-    return {signal.id for signal in CATALOGUE} | {CLIENT_SIDE_SIGNAL_ID}
-
-
-def _validated_signal_ids(raw: list | str) -> list[str]:
-    """Deduplicated signal ids; anything outside the hideable set is rejected."""
-    if isinstance(raw, str):
-        try:
-            raw = json.loads(raw) if raw.strip() else []
-        except ValueError:
-            frappe.throw(_("Hidden signals must be a list of signal ids."), frappe.ValidationError)
-    if not isinstance(raw, list):
-        frappe.throw(_("Hidden signals must be a list of signal ids."), frappe.ValidationError)
-    known = _hideable_signal_ids()
-    for signal_id in raw:
-        if signal_id not in known:
-            frappe.throw(_("Unknown home signal: {0}").format(signal_id), frappe.ValidationError)
-    return list(dict.fromkeys(raw))
 
 
 def _flag(value: bool | int | str) -> int:
@@ -104,9 +77,11 @@ def update_home_preferences(
     if show_needs_you is not None:
         changes["show_needs_you"] = _flag(show_needs_you)
     if needs_you_count is not None:
-        changes["needs_you_count"] = clamp_needs_you_count(cint(needs_you_count))
+        changes["needs_you_count"] = cint(needs_you_count)
     if hidden_signals is not None:
-        changes["hidden_home_signals"] = json.dumps(_validated_signal_ids(hidden_signals))
+        changes["hidden_home_signals"] = (
+            hidden_signals if isinstance(hidden_signals, str) else json.dumps(hidden_signals)
+        )
     if show_suggested_prompts is not None:
         changes["show_suggested_prompts"] = _flag(show_suggested_prompts)
     if show_personalized_suggestions is not None:
@@ -116,7 +91,6 @@ def update_home_preferences(
         prefs = FACChatUserPreferences.get_or_create_preferences(user)
         prefs.update(changes)
         prefs.save(ignore_permissions=True)
-        _invalidate_home_cache(user)
     return _preferences_payload(user)
 
 
@@ -124,10 +98,8 @@ def update_home_preferences(
 def hide_home_signal(signal_id: str) -> dict:
     """Add ``signal_id`` to the user's hidden home signals (idempotent)."""
     user = frappe.session.user
-    new_ids = _validated_signal_ids([signal_id])
     prefs = FACChatUserPreferences.get_or_create_preferences(user)
-    hidden = list(dict.fromkeys([*parse_hidden_signals(prefs.hidden_home_signals), *new_ids]))
+    hidden = [*parse_hidden_signals(prefs.hidden_home_signals), signal_id]
     prefs.hidden_home_signals = json.dumps(hidden)
     prefs.save(ignore_permissions=True)
-    _invalidate_home_cache(user)
-    return {"hidden_signals": hidden}
+    return {"hidden_signals": parse_hidden_signals(prefs.hidden_home_signals)}

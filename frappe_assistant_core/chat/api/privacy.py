@@ -14,6 +14,8 @@ to HMAC-signed AR API calls.
 import frappe
 from frappe import _
 
+from frappe_assistant_core.chat.home_preferences import parse_hidden_signals
+
 from .auth import _ar_user_id
 from .chat.projects import project_documents_enabled, project_memory_enabled
 
@@ -72,7 +74,16 @@ def export_my_data() -> dict:
     prefs = frappe.db.get_value(
         "FAC Chat User Preferences",
         {"user": user},
-        ["widget_position", "widget_theme", "keyboard_shortcut", "show_suggested_prompts"],
+        [
+            "widget_position",
+            "widget_theme",
+            "keyboard_shortcut",
+            "show_suggested_prompts",
+            "show_needs_you",
+            "needs_you_count",
+            "hidden_home_signals",
+            "show_personalized_suggestions",
+        ],
         as_dict=True,
     )
     if prefs:
@@ -81,6 +92,10 @@ def export_my_data() -> dict:
             "widget_theme": prefs.widget_theme,
             "keyboard_shortcut": prefs.keyboard_shortcut,
             "show_suggested_prompts": bool(prefs.show_suggested_prompts),
+            "show_needs_you": bool(prefs.show_needs_you),
+            "needs_you_count": prefs.needs_you_count,
+            "hidden_home_signals": parse_hidden_signals(prefs.hidden_home_signals),
+            "show_personalized_suggestions": bool(prefs.show_personalized_suggestions),
         }
 
     faco_data["faco_projects"] = frappe.get_all(

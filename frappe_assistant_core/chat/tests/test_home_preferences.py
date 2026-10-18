@@ -10,6 +10,9 @@ import frappe
 
 from frappe_assistant_core.chat import home_signals
 from frappe_assistant_core.chat.api import home, prompts
+from frappe_assistant_core.chat.doctype.fac_chat_user_preferences.fac_chat_user_preferences import (
+    FACChatUserPreferences,
+)
 from frappe_assistant_core.chat.home_preferences import load_home_preferences
 from frappe_assistant_core.chat.home_signals import Signal, SignalResult, compute_home_signals
 from frappe_assistant_core.tests.base_test import BaseAssistantTest
@@ -134,18 +137,35 @@ class TestPreferenceEndpoints(HomePreferencesTestCase):
         home.update_home_preferences(show_needs_you=True)
         self.assertIsNone(frappe.cache.hget(home.HOME_SIGNALS_CACHE_KEY, self.user))
 
-    def test_existing_row_reads_defaults_for_new_fields(self):
-        # Manufactured: production reaches this by `bench migrate` adding the columns to a row that predates them.
-        row = frappe.db.get_value(
-            "FAC Chat User Preferences",
-            {"name": ["is", "set"]},
-            ["show_needs_you", "needs_you_count", "show_personalized_suggestions"],
-        )
-        if row is None:
-            self.skipTest("No preferences row on this site")
-        self.assertEqual(tuple(row), (1, 3, 1))
+    def test_non_string_ids_raise_a_validation_error(self):
+        for bad in ({}, 5, None):
+            with self.assertRaises(frappe.ValidationError):
+                home.update_home_preferences(hidden_signals=[bad])
+        with self.assertRaises(frappe.ValidationError):
+            home.update_home_preferences(hidden_signals="5")
 
 
+class TestPreferencesController(HomePreferencesTestCase):
+    def test_direct_save_invalidates_cache_and_rejects_unknown_id(self):
+        # Direct save is how Desk, REST and the privacy erase write the row.
+        prefs = FACChatUserPreferences.get_or_create_preferences(self.user)
+        frappe.cache.hset(home.HOME_SIGNALS_CACHE_KEY, self.user, {"computed_at": 1, "payload": {}})
+        prefs.show_needs_you = 0
+        prefs.save(ignore_permissions=True)
+        self.assertIsNone(frappe.cache.hget(home.HOME_SIGNALS_CACHE_KEY, self.user))
+
+        prefs.hidden_home_signals = json.dumps(["nope"])
+        with self.assertRaises(frappe.ValidationError):
+            prefs.save(ignore_permissions=True)
+
+    def test_direct_save_clamps_count(self):
+        prefs = FACChatUserPreferences.get_or_create_preferences(self.user)
+        prefs.needs_you_count = 99
+        prefs.save(ignore_permissions=True)
+        self.assertEqual(prefs.needs_you_count, 3)
+
+
+@unittest.skipUnless("erpnext" in frappe.get_installed_apps(), "needs ERPNext's role set")
 class TestApplicableSignals(HomePreferencesTestCase):
     def test_accounts_only_user_does_not_see_hr_or_stock_signals(self):
         email = "home-prefs-accounts@example.com"
@@ -202,6 +222,15 @@ class TestPersonalisedSuggestionsSwitch(HomePreferencesTestCase):
         result, scheduler, _ar = self._suggestions()
         scheduler.assert_called_once_with(self.user)
         self.assertIn("personalized", {s["source"] for s in result["suggestions"]})
+
+    def test_unreadable_preferences_fail_closed(self):
+        with patch.object(
+            prompts, "load_home_preferences", autospec=True, side_effect=RuntimeError("db down")
+        ):
+            result, scheduler, ar = self._suggestions()
+        scheduler.assert_not_called()
+        ar.assert_not_called()
+        self.assertNotIn("personalized", {s["source"] for s in result["suggestions"]})
 
     def test_off_serves_no_curated_and_schedules_nothing(self):
         home.update_home_preferences(show_personalized_suggestions=False)

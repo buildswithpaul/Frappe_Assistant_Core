@@ -13,6 +13,7 @@ import json
 import frappe
 
 PREFERENCES_DOCTYPE = "FAC Chat User Preferences"
+HOME_SIGNALS_CACHE_KEY = "fac_home_signals"
 NEEDS_YOU_MIN_COUNT = 1
 NEEDS_YOU_MAX_COUNT = 3
 
