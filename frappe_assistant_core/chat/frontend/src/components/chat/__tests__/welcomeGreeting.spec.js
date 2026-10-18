@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { greetingForHour, greetingLineForHour, displayNameFromUser } from "../welcomeGreeting";
 
 describe("greetingForHour", () => {
@@ -57,4 +57,30 @@ describe("relativeTimeLabel", () => {
 	it("older falls back to short date", () =>
 		expect(relativeTimeLabel("2026-06-12 12:00:00", now)).toBe("12 Jun"));
 	it("just now", () => expect(relativeTimeLabel("2026-07-06 17:59:40", now)).toBe("just now"));
+});
+
+describe("relativeTimeLabel translation", () => {
+	const now = new Date(2026, 6, 6, 18, 0, 0);
+
+	it("builds every branch through __ with whole-string placeholders", async () => {
+		vi.resetModules();
+		const calls = [];
+		vi.doMock("@/utils/i18n", () => ({
+			__: (text, args) => {
+				calls.push([text, args]);
+				return `T(${text})`;
+			},
+		}));
+		const { relativeTimeLabel: label } = await import("../welcomeGreeting");
+
+		expect(label("2026-07-06 17:59:40", now)).toBe("T(just now)");
+		expect(label("2026-07-06 17:48:00", now)).toBe("T({0}m ago)");
+		expect(label("2026-07-06 16:00:00", now)).toBe("T({0}h ago)");
+		expect(label("2026-07-05 20:00:00", now)).toBe("T(yesterday)");
+		expect(label("2026-07-03 12:00:00", now)).toBe("T({0}d ago)");
+		// Older dates are a locale-formatted day and month, not translated copy.
+		expect(label("2026-06-12 12:00:00", now)).toBe("12 Jun");
+		expect(calls.filter(([, args]) => args).map(([, args]) => args[0])).toEqual([12, 2, 3]);
+		vi.doUnmock("@/utils/i18n");
+	});
 });

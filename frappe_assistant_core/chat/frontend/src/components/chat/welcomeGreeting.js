@@ -37,13 +37,13 @@ export function relativeTimeLabel(value, now = new Date()) {
 	const then = value instanceof Date ? value : new Date(String(value).replace(" ", "T"));
 	const diffMs = now - then;
 	const mins = Math.floor(diffMs / 60000);
-	if (mins < 1) return "just now";
-	if (mins < 60) return `${mins}m ago`;
+	if (mins < 1) return __("just now");
+	if (mins < 60) return __("{0}m ago", [mins]);
 	const hours = Math.floor(mins / 60);
-	if (hours < 24 && then.getDate() === now.getDate()) return `${hours}h ago`;
+	if (hours < 24 && then.getDate() === now.getDate()) return __("{0}h ago", [hours]);
 	const days = Math.floor(diffMs / 86400000);
-	if (days <= 1) return "yesterday";
-	if (days < 7) return `${days}d ago`;
+	if (days <= 1) return __("yesterday");
+	if (days < 7) return __("{0}d ago", [days]);
 	const month = then.toLocaleDateString(undefined, { month: "short" });
 	return `${then.getDate()} ${month}`;
 }

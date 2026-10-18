@@ -1,6 +1,6 @@
 <template>
 	<div v-if="sessions.length" class="cl">
-		<div class="cl-label">Pick up where you left off</div>
+		<div class="cl-label">{{ __("Pick up where you left off") }}</div>
 		<button
 			v-for="s in sessions"
 			:key="s.session_id"
@@ -11,13 +11,14 @@
 			<span class="cl-icon" aria-hidden="true">↩</span>
 			<span class="cl-body">
 				<span class="cl-preview">“{{ s.preview }}”</span>
-				<span class="cl-meta">Continue · {{ relativeTimeLabel(s.last_activity) }}</span>
+				<span class="cl-meta">{{ __("Continue · {0}", [relativeTimeLabel(s.last_activity)]) }}</span>
 			</span>
 		</button>
 	</div>
 </template>
 
 <script setup>
+import { __ } from "@/utils/i18n";
 import { relativeTimeLabel } from "@/components/chat/welcomeGreeting";
 
 defineProps({ sessions: { type: Array, default: () => [] } });
