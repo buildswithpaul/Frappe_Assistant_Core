@@ -57,10 +57,11 @@ describe("NeedsYou", () => {
 
 	describe("Don't show this", () => {
 		afterEach(() => vi.useRealTimers());
-		const mountAttached = (props) => {
-			const w = make(props);
-			return w;
-		};
+		const mountAttached = (props = {}) =>
+			mount(NeedsYou, {
+				attachTo: document.body,
+				props: { items: [base], loaded: true, failed: false, variant: "cards", ...props },
+			});
 
 		it("each card has an icon-only options button labelled with its title", () => {
 			const w = make({ items: [base, { ...base, id: "b", title: "late orders" }] });
@@ -114,6 +115,72 @@ describe("NeedsYou", () => {
 			await w.setProps({ items: [base] });
 			expect(w.find(".ny-note").exists()).toBe(false);
 			expect(w.find(".ny-main").exists()).toBe(true);
+		});
+
+		it("focus moves into the menu on open and back to the trigger on Esc", async () => {
+			const w = mountAttached();
+			await w.find(".ny-options").trigger("click");
+			await nextTick();
+			expect(document.activeElement).toBe(w.find("[role=menuitem]").element);
+			await w.find(".ny-item").trigger("keydown", { key: "Escape" });
+			expect(document.activeElement).toBe(w.find(".ny-options").element);
+			w.unmount();
+		});
+
+		it("the menu closes when focus leaves it", async () => {
+			const w = mountAttached();
+			await w.find(".ny-options").trigger("click");
+			await nextTick();
+			await w.find(".ny-item").trigger("focusout", { relatedTarget: document.body });
+			expect(w.find("[role=menu]").exists()).toBe(false);
+			w.unmount();
+		});
+
+		it("focus lands on the note's link after hiding", async () => {
+			const w = mountAttached();
+			await w.find(".ny-options").trigger("click");
+			await w.find("[role=menuitem]").trigger("click");
+			await w.setProps({ items: [] });
+			await nextTick();
+			expect(document.activeElement).toBe(w.find(".ny-note-link").element);
+			w.unmount();
+		});
+
+		it("re-hiding the same card keeps one note and one live timer", async () => {
+			vi.useFakeTimers();
+			const w = make();
+			const hideOnce = async () => {
+				await w.find(".ny-options").trigger("click");
+				await w.find("[role=menuitem]").trigger("click");
+				await w.setProps({ items: [] });
+			};
+			await hideOnce();
+			await w.setProps({ items: [base] }); // the hide failed and the card came back
+			vi.advanceTimersByTime(3000);
+			await hideOnce();
+			expect(w.findAll(".ny-note")).toHaveLength(1);
+			// The first note's clock (at 6 s) must not cut the second note short.
+			vi.advanceTimersByTime(3500);
+			await nextTick();
+			expect(w.findAll(".ny-note")).toHaveLength(1);
+			vi.advanceTimersByTime(2600);
+			await nextTick();
+			expect(w.find(".ny-note").exists()).toBe(false);
+		});
+
+		it("clears its timers on unmount", async () => {
+			vi.useFakeTimers();
+			const w = make();
+			await w.find(".ny-options").trigger("click");
+			await w.find("[role=menuitem]").trigger("click");
+			w.unmount();
+			expect(vi.getTimerCount()).toBe(0);
+		});
+
+		it("says so when the hide failed", () => {
+			const w = make({ hideFailed: true });
+			expect(w.find("[role=alert]").text()).toBe("Couldn't hide that card. Try again.");
+			expect(make().find("[role=alert]").exists()).toBe(false);
 		});
 	});
 });

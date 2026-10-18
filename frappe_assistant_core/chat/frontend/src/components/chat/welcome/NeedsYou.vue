@@ -1,10 +1,13 @@
 <template>
 	<section v-if="loaded && !(failed && !items.length && !notes.length)" ref="root" class="ny" :class="`ny--${variant}`">
 		<h2 class="ny-heading">{{ __("Needs you") }}</h2>
+		<p v-if="hideFailed" class="ny-note" role="alert">
+			{{ __("Couldn't hide that card. Try again.") }}
+		</p>
 		<p v-if="!rows.length" class="ny-empty">{{ emptyText || __("Nothing is waiting on you right now.") }}</p>
 		<ul v-else class="ny-items">
 			<template v-for="row in rows" :key="row.key">
-				<li v-if="row.note" class="ny-note" role="status">
+				<li v-if="row.note" class="ny-note" role="status" :data-note="row.note.id">
 					<span>{{ __("Hidden. Bring it back in Settings → Home page.") }}</span>
 					<button type="button" class="ny-note-link" @click="$emit('open-settings')">
 						{{ __("Open settings") }}
@@ -15,6 +18,7 @@
 					class="ny-item"
 					:class="`ny-item--${row.item.tone}`"
 					@keydown.esc="closeMenu(true)"
+					@focusout="onFocusOut"
 				>
 					<button type="button" class="ny-main" @click="activate(row.item)">
 						<span class="ny-source">
@@ -65,7 +69,7 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { __ } from "@/utils/i18n";
 
 const NOTE_LIFETIME_MS = 6000;
@@ -75,6 +79,7 @@ const props = defineProps({
 	loaded: { type: Boolean, default: false },
 	failed: { type: Boolean, default: false },
 	emptyText: { type: String, default: "" },
+	hideFailed: { type: Boolean, default: false },
 	variant: { type: String, default: "cards", validator: (v) => ["cards", "list"].includes(v) },
 });
 
@@ -120,7 +125,9 @@ function hide(row) {
 	const id = row.item.id;
 	const index = rows.value.findIndex((r) => r.key === row.key);
 	closeMenu();
-	pendingNotes.value = [...pendingNotes.value, { id, index }];
+	// One note per card: hiding it again replaces the earlier note and restarts its clock.
+	clearTimeout(timers.get(id));
+	pendingNotes.value = [...pendingNotes.value.filter((note) => note.id !== id), { id, index }];
 	timers.set(
 		id,
 		setTimeout(() => {
@@ -131,6 +138,20 @@ function hide(row) {
 	emit("hide", id);
 }
 
+// Focus must not fall to the page when the hidden card's menu item disappears.
+watch(
+	() => notes.value.length,
+	async (count, before) => {
+		if (count <= before) return;
+		await nextTick();
+		root.value?.querySelector(".ny-note-link")?.focus();
+	}
+);
+
+function onFocusOut(event) {
+	if (openMenuId.value !== null && !event.currentTarget.contains(event.relatedTarget)) closeMenu();
+}
+
 function onDocumentClick() {
 	if (openMenuId.value !== null) closeMenu();
 }
@@ -138,6 +159,7 @@ onMounted(() => document.addEventListener("click", onDocumentClick));
 onBeforeUnmount(() => {
 	document.removeEventListener("click", onDocumentClick);
 	timers.forEach(clearTimeout);
+	timers.clear();
 });
 </script>
 

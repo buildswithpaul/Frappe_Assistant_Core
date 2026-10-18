@@ -24,6 +24,7 @@
 			@ask="(prompt) => $emit('suggestion', prompt)"
 			@navigate="openInChat"
 			@dismiss="dismiss"
+			:hide-failed="hideFailed"
 			@hide="hide"
 			@open-settings="openInChat('/settings/home')"
 		/>
@@ -117,7 +118,7 @@ const filledAsks = computed(() => {
 		.filter(Boolean);
 });
 
-const { items, lensLabel, area, company, loaded, failed, dismiss, hide, enabled: homeEnabled } = useHomeSignals({
+const { items, lensLabel, area, company, loaded, failed, dismiss, hide, hideFailed, enabled: homeEnabled } = useHomeSignals({
 	cap: computed(() => (isForm.value ? NEEDS_YOU_CAP_ON_FORM : NEEDS_YOU_CAP)),
 });
 

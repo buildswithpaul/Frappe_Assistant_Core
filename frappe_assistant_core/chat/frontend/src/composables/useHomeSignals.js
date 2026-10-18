@@ -7,12 +7,16 @@ import { api } from "@/api/client";
 import { mergeSignals } from "@/components/chat/welcome/homeSignals";
 import { useAttention } from "@/composables/useAttention";
 
+const HIDE_FAILED_MS = 6000;
+
 export function useHomeSignals({ cap }) {
 	const server = ref(null);
 	const loaded = ref(false);
 	const failed = ref(false);
 	const { attentionItem, loadAttention, dismiss } = useAttention();
 	const locallyHidden = ref([]);
+	const hideFailed = ref(false);
+	let hideFailedTimer = null;
 
 	async function loadHome() {
 		try {
@@ -33,6 +37,7 @@ export function useHomeSignals({ cap }) {
 	});
 	onBeforeUnmount(() => {
 		if (frame !== null) cancelAnimationFrame(frame);
+		clearTimeout(hideFailedTimer);
 	});
 
 	const isHidden = (item) =>
@@ -48,16 +53,20 @@ export function useHomeSignals({ cap }) {
 	);
 
 	async function hide(id) {
+		hideFailed.value = false;
 		locallyHidden.value = [...locallyHidden.value, id];
 		try {
 			await api.home.hideSignal(id);
 		} catch {
 			locallyHidden.value = locallyHidden.value.filter((hiddenId) => hiddenId !== id);
+			hideFailed.value = true;
+			clearTimeout(hideFailedTimer);
+			hideFailedTimer = setTimeout(() => (hideFailed.value = false), HIDE_FAILED_MS);
 		}
 	}
 	const lensLabel = computed(() => server.value?.lens_label ?? null);
 	const area = computed(() => server.value?.area ?? null);
 	const company = computed(() => server.value?.company ?? null);
 
-	return { items, enabled, lensLabel, area, company, loaded, failed, dismiss, hide };
+	return { items, enabled, lensLabel, area, company, loaded, failed, dismiss, hide, hideFailed };
 }

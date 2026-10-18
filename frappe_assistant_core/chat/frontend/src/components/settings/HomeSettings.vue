@@ -69,12 +69,15 @@
 <script setup>
 import { computed, onMounted, ref } from "vue";
 import { api } from "@/api/client";
+import { useSuggestionStore } from "@/stores/suggestionStore";
 import { useToast } from "@/composables/useToast";
 import { __ } from "@/utils/i18n";
 
 const COUNT_OPTIONS = [1, 2, 3];
 
 const { showError } = useToast();
+const suggestionStore = useSuggestionStore();
+const SUGGESTION_KEYS = ["show_suggested_prompts", "show_personalized_suggestions"];
 const prefs = ref(null);
 const loadFailed = ref(false);
 const saveNote = ref("");
@@ -116,6 +119,8 @@ async function save(patch) {
 		const saved = await api.home.updatePreferences(patch);
 		if (seq === saveSeq) prefs.value = saved;
 		saveNote.value = __("Saved");
+		// The home reads suggestions once per session; make it fetch the new set (signals refetch on mount).
+		if (SUGGESTION_KEYS.some((key) => key in patch)) suggestionStore.loadSuggestions({}, { force: true });
 	} catch (error) {
 		if (seq === saveSeq) prefs.value = previous;
 		showError(error?.message || __("Could not save your home page settings."));

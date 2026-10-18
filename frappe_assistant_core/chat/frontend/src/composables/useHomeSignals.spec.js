@@ -116,6 +116,7 @@ describe("useHomeSignals", () => {
 		await flushPromises();
 		await s.hide("a");
 		expect(s.items.value.map((i) => i.id)).toEqual(["a", "b", "c"]);
+		expect(s.hideFailed.value).toBe(true);
 	});
 
 	describe("failed workflows attention item", () => {

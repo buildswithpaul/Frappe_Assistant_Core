@@ -6,7 +6,7 @@ vi.mock("@/api/client", () => ({
 	api: {
 		chat: { getSessions: vi.fn().mockResolvedValue([]) },
 		suggestions: { get: vi.fn() },
-		home: { get: vi.fn() },
+		home: { get: vi.fn(), hideSignal: vi.fn() },
 		workflows: { listRuns: vi.fn().mockResolvedValue({ runs: [] }) },
 	},
 }));
@@ -313,7 +313,7 @@ describe("widget home", () => {
 	});
 
 	it("the hide note opens Home page settings in a new tab", async () => {
-		api.home.hideSignal = vi.fn().mockResolvedValue({ hidden_signals: ["sig0"] });
+		api.home.hideSignal.mockResolvedValue({ hidden_signals: ["sig0"] });
 		const open = vi.spyOn(window, "open").mockReturnValue(null);
 		const w = await mountHome();
 		await w.find(".ny-options").trigger("click");

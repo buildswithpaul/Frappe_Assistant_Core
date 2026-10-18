@@ -24,6 +24,7 @@
 				@ask="(prompt) => $emit('suggestion', prompt)"
 				@navigate="(href) => $emit('navigate', href)"
 				@dismiss="dismiss"
+				:hide-failed="hideFailed"
 				@hide="hide"
 				@open-settings="$emit('navigate', '/settings/home')"
 			/>
@@ -104,7 +105,7 @@ const firstRunTiles = computed(() => {
 });
 
 // Needs-you signals: post-paint, fail-silent; dismiss belongs to this instance.
-const { items, lensLabel, area, company, loaded, failed, dismiss, hide, enabled: homeEnabled } = useHomeSignals({
+const { items, lensLabel, area, company, loaded, failed, dismiss, hide, hideFailed, enabled: homeEnabled } = useHomeSignals({
 	cap: NEEDS_YOU_CAP,
 });
 

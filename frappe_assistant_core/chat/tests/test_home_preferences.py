@@ -171,7 +171,6 @@ class TestPreferencesController(HomePreferencesTestCase):
         self.assertNotIn("retired_signal", home.get_home_preferences()["hidden_signals"])
 
         prefs = FACChatUserPreferences.get_or_create_preferences(self.user)
-        prefs.show_needs_you = 0
         prefs.hidden_home_signals = json.dumps(["todos", "retired_signal", "brand_new_unknown"])
         with self.assertRaises(frappe.ValidationError):
             prefs.save(ignore_permissions=True)

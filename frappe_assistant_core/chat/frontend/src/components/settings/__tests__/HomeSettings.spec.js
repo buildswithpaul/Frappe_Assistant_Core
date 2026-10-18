@@ -1,7 +1,8 @@
 import { flushPromises, mount } from "@vue/test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { getPreferences, updatePreferences, showError } = vi.hoisted(() => ({
+const { getPreferences, updatePreferences, showError, loadSuggestions } = vi.hoisted(() => ({
+	loadSuggestions: vi.fn(),
 	getPreferences: vi.fn(),
 	updatePreferences: vi.fn(),
 	showError: vi.fn(),
@@ -9,6 +10,7 @@ const { getPreferences, updatePreferences, showError } = vi.hoisted(() => ({
 vi.mock("@/api/client", () => ({
 	api: { home: { getPreferences: (...a) => getPreferences(...a), updatePreferences: (...a) => updatePreferences(...a) } },
 }));
+vi.mock("@/stores/suggestionStore", () => ({ useSuggestionStore: () => ({ loadSuggestions }) }));
 vi.mock("@/composables/useToast", () => ({ useToast: () => ({ showError }) }));
 
 import HomeSettings from "../HomeSettings.vue";
@@ -38,6 +40,7 @@ describe("HomeSettings", () => {
 		getPreferences.mockReset();
 		updatePreferences.mockReset().mockImplementation(async (patch) => ({ ...PREFS, ...patch }));
 		showError.mockReset();
+		loadSuggestions.mockReset();
 	});
 
 	it("explains the AI cost of personalised suggestions", async () => {
@@ -89,5 +92,24 @@ describe("HomeSettings", () => {
 		await flushPromises();
 		expect(showError).toHaveBeenCalledWith("nope");
 		expect(w.find("#home-show_suggested_prompts").element.checked).toBe(true);
+	});
+
+	it("changing a suggestions toggle forces the store to refetch; other changes do not", async () => {
+		const w = await mountSettings();
+		await w.find("#home-show_personalized_suggestions").setValue(false);
+		await flushPromises();
+		expect(loadSuggestions).toHaveBeenCalledWith({}, { force: true });
+		loadSuggestions.mockReset();
+		await w.find("#home-needs-you-count").setValue("2");
+		await flushPromises();
+		expect(loadSuggestions).not.toHaveBeenCalled();
+	});
+
+	it("does not refetch when the save fails", async () => {
+		updatePreferences.mockRejectedValue(new Error("nope"));
+		const w = await mountSettings();
+		await w.find("#home-show_suggested_prompts").setValue(false);
+		await flushPromises();
+		expect(loadSuggestions).not.toHaveBeenCalled();
 	});
 });
