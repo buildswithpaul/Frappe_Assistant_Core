@@ -145,6 +145,7 @@ watch(
 		if (count <= before) return;
 		await nextTick();
 		const newest = notes.value.at(-1);
+		if (!newest) return;
 		const noteRow = [...(root.value?.querySelectorAll("[data-note]") ?? [])].find(
 			(el) => el.dataset.note === newest.id
 		);
@@ -215,27 +216,28 @@ onBeforeUnmount(() => {
 }
 .ny-ask { font-size: 12px; font-weight: 600; color: var(--ql-accent); }
 .ny-main:hover .ny-ask { color: var(--ql-accent-hover); }
-.ny-main:focus-visible, .ny-icon-btn:focus-visible, .ny-menu-item:focus-visible, .ny-note-link:focus-visible {
+.ny-main:focus-visible, .ny-icon-btn:focus-visible, .ny-menu-item:focus-visible {
 	outline: 2px solid var(--ql-accent); outline-offset: -2px;
 }
 /* Both icon buttons sit in the card's top-right corner, level with the source label; the visible
    glyph is small but the 44px box is the hit area. The card's text reserves room for them. */
 .ny-icon-btn {
-	position: absolute; top: 0; right: 0; z-index: 1;
+	position: absolute; top: 0; inset-inline-end: 0; z-index: 1;
 	display: flex; align-items: center; justify-content: center;
 	width: 44px; height: 44px; padding: 0;
 	background: transparent; border: none; border-radius: var(--ql-radius-lg);
 	font-size: 13px; color: var(--ql-text-muted); cursor: pointer;
 }
 .ny-icon-btn:hover { color: var(--ql-text); background: var(--ql-subtle); }
-.ny-dismiss { right: 44px; }
+.ny-dismiss { inset-inline-end: 44px; }
 .ny-options { font-size: 18px; line-height: 1; }
-.ny-item .ny-source { padding-right: 44px; }
-.ny-item--dismissible .ny-source { padding-right: 88px; }
-.ny--list .ny-main { padding-right: 44px; }
-.ny--list .ny-item--dismissible .ny-main { padding-right: 88px; }
+/* Cards reserve the corner on the source row; list rows reserve it on the whole row instead. */
+.ny--cards .ny-item .ny-source { padding-inline-end: 44px; }
+.ny--cards .ny-item--dismissible .ny-source { padding-inline-end: 88px; }
+.ny--list .ny-main { padding-inline-end: 44px; }
+.ny--list .ny-item--dismissible .ny-main { padding-inline-end: 88px; }
 .ny-menu {
-	position: absolute; top: 40px; right: var(--ql-space-1); z-index: 10;
+	position: absolute; top: 40px; inset-inline-end: var(--ql-space-1); z-index: 10;
 	min-width: min(200px, calc(100% - var(--ql-space-2))); padding: var(--ql-space-1);
 	background: var(--ql-surface); border: 1px solid var(--ql-border);
 	border-radius: var(--ql-radius-lg); box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
@@ -252,8 +254,10 @@ onBeforeUnmount(() => {
 	font-size: 13px; color: var(--ql-text-muted);
 }
 .ny-note-link {
-	min-height: 44px; padding: 0; background: transparent; border: none;
+	min-height: 44px; padding: 0 var(--ql-space-1); margin-inline-start: calc(-1 * var(--ql-space-1));
+	background: transparent; border: none; border-radius: var(--ql-radius-md);
 	font-family: var(--ql-font-sans); font-size: 13px; font-weight: 600; color: var(--ql-accent); cursor: pointer;
 }
 .ny-note-link:hover { color: var(--ql-accent-hover); }
+.ny-note-link:focus-visible { outline: 2px solid var(--ql-accent); outline-offset: 2px; }
 </style>

@@ -2,6 +2,7 @@ import { mount } from "@vue/test-utils";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { nextTick } from "vue";
 import NeedsYou from "./NeedsYou.vue";
+import needsYouSource from "./NeedsYou.vue?raw";
 
 const base = { id: "a", tone: "danger", source: "Sales", count: 3, title: "overdue invoices", detail: "d", ask: "Show overdue" };
 const make = (props = {}) =>
@@ -208,5 +209,15 @@ describe("NeedsYou", () => {
 			expect(w.find("[role=alert]").text()).toBe("Couldn't hide that card. Try again.");
 			expect(make().find("[role=alert]").exists()).toBe(false);
 		});
+	});
+
+	// jsdom applies no layout, so this reads the style block: the list variant (Desk widget) has no
+	// source label, and a corner reserve on its source row would open a gap after the dot.
+	it("reserves the corner on the source row only in the cards variant", () => {
+		const style = needsYouSource.slice(needsYouSource.indexOf("<style")).replace(/\/\*[\s\S]*?\*\//g, "");
+		const rules = [...style.matchAll(/([^{}]+)\{([^}]*)\}/g)].map(([, sel, body]) => ({ sel: sel.trim(), body }));
+		const reserves = rules.filter((r) => /\.ny-source\b/.test(r.sel) && /padding-(inline-end|right)/.test(r.body));
+		expect(reserves.length).toBeGreaterThan(0);
+		for (const r of reserves) for (const sel of r.sel.split(",")) expect(sel.trim()).toMatch(/^\.ny--cards\s/);
 	});
 });
