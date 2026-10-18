@@ -61,6 +61,8 @@ Returns filter definitions with field types, required flags, and valid options.
 
 For a value-constrained filter (`Select`, `Autocomplete`), `options` is always an explicit list of the accepted values — use one of them verbatim. For a `Link` filter, `options` is the target DocType and the value must be an existing record name.
 
+A `MultiSelectList` filter (such as `party` or `customer_group` on Accounts Receivable) takes an array of record names: `"party": ["Blue Harbor Cafe"]`. A single name is accepted and sent as a one-item array.
+
 **Every advertised `default` is guaranteed executable.** Passing the defaults `report_requirements` returns will never be rejected as an invalid value, and omitting a filter applies that same default.
 
 When a value is rejected, `validation_errors` names the accepted values and `error_details` carries them as structured data:
@@ -147,4 +149,5 @@ plain slicing, so a child can lose its parent. Use `summary_only` to size a larg
 - **Report Builder reports are NOT supported** — only Script Reports and Query Reports work.
 - **Large reports** — the tool waits at most 15 seconds for a prepared report. A slow one returns `status: "timeout"` with a `prepared_report_name`: the report is still being prepared, not empty. Call `generate_report` again with the same filters in a minute or two and the retry picks up that same report instead of starting a new one.
 - **Defaulted filters** — every result carries `defaulted_filters`, the filters FAC filled in because they were omitted or blank (for example `from_date`, `to_date`, `company`). Only filters the report itself declares are listed: a report with no date filter ignores dates, so none is reported for it. It is `{}` when you passed everything, and `null` when FAC could not determine the report's filters (do not cite a period or company then). State the period and company actually used in your answer; if a required choice is ambiguous, ask the user rather than relying on a default. Use `summary_only` for totals questions.
+- **A report that fails** returns `success: false` and the `error` text (a Script Report adds a `suggestion`). It is a failure, not an empty result: read `error`, fix the filters it points at, and ask again.
 - **A prepared report that fails** returns `success: false`, `status: "error"`, the `error` text and the `prepared_report_name`. It is a failure, not an empty result: read `error`, fix the filters it points at, and ask again.

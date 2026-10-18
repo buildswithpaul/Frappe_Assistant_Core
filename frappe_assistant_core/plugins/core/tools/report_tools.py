@@ -193,12 +193,14 @@ class ReportTools:
                 }
                 if rows:
                     debug_info["total_count"] = row_count
-                if result.get("status") == "error":
+                # A failed Script Report returns its error without a status.
+                if result.get("status") == "error" or result.get("error"):
                     return {
                         "success": False,
                         "error": result.get("error") or _("Report generation failed"),
                         "status": "error",
                         "prepared_report_name": result.get("prepared_report_name"),
+                        "suggestion": result.get("suggestion"),
                     }
                 if result.get("status"):
                     debug_info["status"] = result["status"]
@@ -626,18 +628,7 @@ class ReportTools:
 
             filters = ReportTools._without_undeclared_defaults(filters, supplied_keys, definitions)
 
-            # Final cleanup - ensure all filter values are strings or proper types
-            final_filters = {}
-            for key, value in filters.items():
-                if value is not None:
-                    # Convert dates to strings if they're not already
-                    if hasattr(value, "strftime"):  # datetime object
-                        final_filters[key] = value.strftime("%Y-%m-%d")
-                    elif isinstance(value, (str, int, float, bool)):
-                        final_filters[key] = value
-                    else:
-                        final_filters[key] = str(value)
-            filters = final_filters
+            filters = ReportTools._normalize_filter_values(filters, definitions)
 
             result = run(
                 report_name=report_doc.name,
@@ -669,7 +660,9 @@ class ReportTools:
         if getattr(report_doc, "prepared_report", False) and not getattr(
             report_doc, "disable_prepared_report", False
         ):
-            return ReportTools._handle_prepared_report_execution(report_doc, filters)
+            return ReportTools._handle_prepared_report_execution(
+                report_doc, ReportTools._normalize_filter_values(filters, definitions)
+            )
 
         try:
             # Ensure filters is a proper dict and clean None values
@@ -749,18 +742,7 @@ class ReportTools:
 
             filters = ReportTools._without_undeclared_defaults(filters, supplied_keys, definitions)
 
-            # Final cleanup - ensure all filter values are strings or proper types
-            final_filters = {}
-            for key, value in filters.items():
-                if value is not None:
-                    # Convert dates to strings if they're not already
-                    if hasattr(value, "strftime"):  # datetime object
-                        final_filters[key] = value.strftime("%Y-%m-%d")
-                    elif isinstance(value, (str, int, float, bool)):
-                        final_filters[key] = value
-                    else:
-                        final_filters[key] = str(value)
-            filters = final_filters
+            filters = ReportTools._normalize_filter_values(filters, definitions)
 
             # Check if this is a prepared report (after all filter processing)
             if getattr(report_doc, "prepared_report", False) and not getattr(
@@ -899,6 +881,32 @@ class ReportTools:
                 message=f"Error discovering filters for {report_doc.name}: {str(e)}",
             )
             return None
+
+    @staticmethod
+    def _normalize_filter_values(filters: dict, definitions: dict | None) -> dict:
+        """Shape filter values the way Desk sends them to a report.
+
+        Desk always sends a MultiSelectList filter as a list, and reports hand it
+        straight to ``isin()``, which takes a string for a query term: Accounts
+        Receivable fails with "'str' object has no attribute 'nodes_'". So lists
+        pass through as lists, and a single value for a MultiSelectList is wrapped.
+        """
+        definitions = definitions or {}
+        normalized = {}
+        for key, value in (filters or {}).items():
+            if value is None:
+                continue
+            if hasattr(value, "strftime"):
+                value = value.strftime("%Y-%m-%d")
+            elif isinstance(value, (list, tuple, set)):
+                value = list(value)
+            elif not isinstance(value, (str, int, float, bool)):
+                value = str(value)
+            is_multi_select = (definitions.get(key) or {}).get("fieldtype") == "MultiSelectList"
+            if is_multi_select and value and isinstance(value, str):
+                value = [value]
+            normalized[key] = value
+        return normalized
 
     @staticmethod
     def _without_undeclared_defaults(filters: dict, supplied_keys: set, definitions: dict | None) -> dict:
