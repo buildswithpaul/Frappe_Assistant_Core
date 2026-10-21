@@ -27,6 +27,7 @@ from typing import Any, Dict, Iterable, Optional
 
 import frappe
 from frappe import _
+from frappe.model.meta import Meta
 from frappe.utils import cint, get_url_to_form
 
 CUSTOMISATION_DOCTYPES = frozenset(
@@ -148,7 +149,11 @@ def applies_to(doctype: str, values: Any) -> Optional[Dict[str, str]]:
 
 
 def customisation_result(doctype: str, doc: Any, warning: Optional[str] = None) -> Dict[str, Any]:
-    """The customisation details a create or update result adds: applies_to, location, warning."""
+    """The customisation details a create or update result adds.
+
+    applies_to, location and warning, plus placement_warning when a Custom Field landed
+    collapsed or off the first tab.
+    """
     details: Dict[str, Any] = {}
     customised = applies_to(doctype, doc)
     if customised:
@@ -157,6 +162,9 @@ def customisation_result(doctype: str, doc: Any, warning: Optional[str] = None) 
         location = custom_field_location(doc)
         if location:
             details["location"] = location
+            sentence = placement_warning(location)
+            if sentence:
+                details["placement_warning"] = sentence
     if warning:
         details["warning"] = warning
     return details
@@ -196,3 +204,85 @@ def custom_field_location(doc: Any) -> Optional[Dict[str, Any]]:
     if not doc.get("dt") or not doc.get("fieldname"):
         return None
     return locate_field(frappe.get_meta(doc.dt, cached=False).fields, doc.fieldname)
+
+
+PROBE_FIELDNAME = "fac_placement_probe"
+
+
+class _ProbeMeta(Meta):
+    """A doctype's meta with one extra Custom Field, ordered by Frappe's own sort_fields."""
+
+    def __init__(self, doctype: str, probe: Dict[str, Any]):
+        self._probe = probe
+        super().__init__(doctype)
+
+    def add_custom_fields(self):
+        super().add_custom_fields()
+        self.extend("fields", [self._probe])
+        # Custom fields are read in idx order, so the probe goes where its idx puts it.
+        probe = self.fields.pop()
+        position = next(
+            (
+                i
+                for i, f in enumerate(self.fields)
+                if getattr(f, "is_custom_field", False) and cint(f.idx) >= cint(probe.idx)
+            ),
+            len(self.fields),
+        )
+        self.fields.insert(position, probe)
+
+
+def predict_field_location(
+    dt: str, insert_after: Optional[str], fieldtype: Optional[str] = None
+) -> Optional[Dict[str, Any]]:
+    """Where a Custom Field would show if saved now, before it exists.
+
+    The field gets the idx Frappe gives a new Custom Field (just after `insert_after`), is added
+    to a fresh meta of `dt` and is laid out by Frappe's own ordering, so the prediction follows
+    the running version's rules (an unknown insert_after puts it at the end of the form). Same
+    shape as ``location``. Nothing is written.
+    """
+    fieldnames = [f.fieldname for f in frappe.get_meta(dt, cached=False).fields]
+    probe = {
+        "doctype": "Custom Field",
+        "dt": dt,
+        "fieldname": PROBE_FIELDNAME,
+        "fieldtype": fieldtype or "Data",
+        "label": PROBE_FIELDNAME,
+        "insert_after": insert_after or None,
+        "is_custom_field": 1,
+    }
+    if insert_after in fieldnames:
+        probe["idx"] = fieldnames.index(insert_after) + 1
+    return locate_field(_ProbeMeta(dt, probe).fields, PROBE_FIELDNAME)
+
+
+def placement_sentence(location: Dict[str, Any]) -> str:
+    """Plain-language description of where a field shows."""
+    tab, section = location.get("tab"), location.get("section")
+    if tab and section:
+        sentence = _("Will appear on the {0} tab, in the {1} section").format(tab, section)
+    elif tab:
+        sentence = _("Will appear on the {0} tab").format(tab)
+    elif section:
+        sentence = _("Will appear in the {0} section").format(section)
+    else:
+        sentence = _("Will appear on the form")
+    if location.get("collapsed"):
+        sentence += " " + _("(collapsed, hidden until someone opens it)")
+    return sentence
+
+
+def placement_warning(location: Dict[str, Any]) -> Optional[str]:
+    """A sentence to show when the field is hidden away: collapsed, or not on the first tab."""
+    collapsed = bool(location.get("collapsed"))
+    off_first_tab = not location.get("first_tab", True)
+    if not (collapsed or off_first_tab):
+        return None
+    if collapsed and off_first_tab:
+        reason = _("People may not notice it: the section is collapsed and the tab is not the first one.")
+    elif collapsed:
+        reason = _("People may not notice it: the section is collapsed.")
+    else:
+        reason = _("People may not notice it: it is not on the first tab.")
+    return f"{placement_sentence(location)}. {reason}"

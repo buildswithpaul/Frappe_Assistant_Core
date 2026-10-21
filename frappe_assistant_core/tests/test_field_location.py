@@ -20,10 +20,11 @@ import unittest
 
 import frappe
 
+from frappe_assistant_core.chat.api.field_placement import get_field_placement
 from frappe_assistant_core.plugins.core.tools.create_document import DocumentCreate
 from frappe_assistant_core.plugins.core.tools.update_document import DocumentUpdate
 from frappe_assistant_core.tests.base_test import BaseAssistantTest
-from frappe_assistant_core.utils.customisation import locate_field
+from frappe_assistant_core.utils.customisation import locate_field, predict_field_location
 
 
 def _field(fieldname, fieldtype="Data", label=None, collapsible=0):
@@ -172,3 +173,91 @@ class TestCustomFieldLocationInResults(BaseAssistantTest):
             self.assertNotIn("location", result)
         finally:
             frappe.delete_doc("ToDo", result["name"], force=True, ignore_permissions=True)
+
+    def test_a_field_on_a_later_tab_in_a_collapsed_section_carries_a_placement_warning(self):
+        result = self._create_field(PROBE_SECTION)
+
+        warning = result["placement_warning"]
+        self.assertIn("Probe Tab", warning)
+        self.assertIn("Probe Section", warning)
+        self.assertIn("collapsed", warning)
+        self.assertIn("first one", warning)
+
+    def test_a_field_on_the_first_tab_carries_no_placement_warning(self):
+        result = self._create_field(MOVE_TARGET)
+
+        self.assertTrue(result["success"], result)
+        self.assertNotIn("placement_warning", result)
+
+    def test_prediction_for_a_collapsed_section_on_a_later_tab(self):
+        self.assertEqual(
+            predict_field_location("ToDo", PROBE_SECTION),
+            {"tab": "Probe Tab", "section": "Probe Section", "collapsed": True, "first_tab": False},
+        )
+
+    def test_prediction_for_the_first_tab(self):
+        location = predict_field_location("ToDo", MOVE_TARGET, "Data")
+
+        self.assertEqual(location["tab"], "Details")
+        self.assertTrue(location["first_tab"])
+        self.assertFalse(location["collapsed"])
+
+    def test_prediction_matches_where_frappe_places_the_saved_field(self):
+        for insert_after in (PROBE_SECTION, PROBE_TAB, MOVE_TARGET, "status", "no_such_field", None):
+            with self.subTest(insert_after=insert_after):
+                predicted = predict_field_location("ToDo", insert_after)
+                self._insert(PROBE_FIELD, "Data", "Where", insert_after)
+                try:
+                    actual = DocumentUpdate().execute(
+                        {"doctype": "Custom Field", "name": f"ToDo-{PROBE_FIELD}", "data": {"label": "Where"}}
+                    )["location"]
+                finally:
+                    frappe.delete_doc(
+                        "Custom Field", f"ToDo-{PROBE_FIELD}", force=True, ignore_permissions=True
+                    )
+                    frappe.clear_cache(doctype="ToDo")
+                self.assertEqual(predicted, actual)
+
+    def test_prediction_writes_nothing(self):
+        before = frappe.db.count("Custom Field", {"dt": "ToDo"})
+
+        predict_field_location("ToDo", PROBE_SECTION)
+
+        self.assertEqual(frappe.db.count("Custom Field", {"dt": "ToDo"}), before)
+        self.assertFalse(frappe.get_meta("ToDo", cached=False).has_field("fac_placement_probe"))
+
+    def test_endpoint_describes_a_hidden_placement_and_warns(self):
+        placement = get_field_placement("ToDo", PROBE_SECTION, "Data")
+
+        self.assertEqual(placement["tab"], "Probe Tab")
+        self.assertTrue(placement["warning"])
+        self.assertEqual(
+            placement["sentence"],
+            "Will appear on the Probe Tab tab, in the Probe Section section "
+            "(collapsed, hidden until someone opens it)",
+        )
+
+    def test_endpoint_does_not_warn_for_the_first_tab(self):
+        placement = get_field_placement("ToDo", MOVE_TARGET)
+
+        self.assertFalse(placement["warning"])
+        self.assertNotIn("collapsed", placement["sentence"])
+        self.assertTrue(placement["sentence"].startswith("Will appear on the Details tab"))
+
+    def test_endpoint_is_get_only(self):
+        self.assertIn(get_field_placement, frappe.whitelisted)
+        self.assertEqual(frappe.allowed_http_methods_for_whitelisted_func[get_field_placement], ["GET"])
+
+    def test_endpoint_refused_without_read_permission(self):
+        email = "field-placement-outsider@example.com"
+        if not frappe.db.exists("User", email):
+            frappe.get_doc(
+                {"doctype": "User", "email": email, "first_name": "Placement", "send_welcome_email": 0}
+            ).insert(ignore_permissions=True)
+        try:
+            frappe.set_user(email)
+            with self.assertRaises(frappe.PermissionError):
+                get_field_placement("Customer", PROBE_SECTION)
+        finally:
+            frappe.set_user("Administrator")
+            frappe.delete_doc("User", email, force=True, ignore_permissions=True)
