@@ -38,8 +38,7 @@ describe("modelStore persistence", () => {
 	});
 
 	it("server choice wins over localStorage", async () => {
-		// a second browser has an empty localStorage, so only the server row carries the choice
-		// (here the cache is stale instead, which is the stronger form of the same state)
+		// a second browser has a stale localStorage (another model), so only the server row carries the choice
 		localStorage.setItem(KEY, "claude-other");
 		getAvailable.mockResolvedValue(payload("gpt-saved"));
 		const store = useModelStore();
@@ -70,6 +69,22 @@ describe("modelStore persistence", () => {
 		getAvailable.mockResolvedValue(payload("gpt-saved"));
 		await store.loadModels();
 		expect(setSelected).toHaveBeenCalledTimes(1);
+	});
+
+	it("missing model at load does not overwrite the server choice", async () => {
+		// production reaches this when the saved model is briefly absent from the list
+		// (a health-excluded or briefly disabled provider) while the server row still holds it
+		getAvailable.mockResolvedValue({ ...payload("gpt-saved"), models: [payload().models[1]] });
+		const store = useModelStore();
+		await store.loadModels();
+		expect(store.currentModelId).toBe("auto");
+		expect(setSelected).not.toHaveBeenCalled();
+
+		getAvailable.mockResolvedValue(payload("gpt-saved"));
+		const next = useModelStore();
+		next.isLoading = false;
+		await next.loadModels();
+		expect(next.currentModelId).toBe("gpt-saved");
 	});
 
 	it("setSelectedModel posts the choice", async () => {

@@ -172,23 +172,18 @@ export const useModelStore = defineStore("models", () => {
 	// Set selected model: updates memory and the local cache now, the server row in the background
 	function setSelectedModel(modelId) {
 		if (pinned.value) return false;
-		// Special case: "auto" is always valid if auto mode is enabled
-		if (modelId === "auto" && isAutoModeEnabled.value) {
-			selectedModel.value = modelId;
-			saveSelectedModel(modelId);
-			saveToServer(modelId);
-			return true;
-		}
+		if (!isUsableChoice(modelId)) return false;
+		selectedModel.value = modelId;
+		saveSelectedModel(modelId);
+		saveToServer(modelId);
+		return true;
+	}
 
-		// Validate that model exists and is accessible
-		const model = models.value.find((m) => m.model_id === modelId);
-		if (model && isModelAccessible(model)) {
-			selectedModel.value = modelId;
-			saveSelectedModel(modelId);
-			saveToServer(modelId);
-			return true;
-		}
-		return false;
+	// A load-time reset (the saved model is missing from the list right now) is local only:
+	// the server row is every browser's choice and a transient gap must not wipe it.
+	function resetSelectionLocally() {
+		selectedModel.value = null;
+		saveSelectedModel(null);
 	}
 
 	// Clear selected model (reverts to default)
@@ -227,30 +222,15 @@ export const useModelStore = defineStore("models", () => {
 					loadSelectedModel(serverChoice);
 				}
 
-				// Validate stored selection is still valid (a pin is not a stored selection)
-				if (selectedModel.value && !pinned.value) {
-					// Special case: "auto" is valid if auto mode is enabled
-					if (selectedModel.value === "auto" && isAutoModeEnabled.value) {
-						// Keep auto mode selection
-					} else if (selectedModel.value === "auto" && !isAutoModeEnabled.value) {
-						// Auto mode was selected but is no longer available
-						clearSelectedModel();
-					} else {
-						const storedModel = models.value.find(
-							(m) => m.model_id === selectedModel.value
-						);
-						if (!storedModel || !isModelAccessible(storedModel)) {
-							// Stored model no longer valid, clear it
-							clearSelectedModel();
-						}
-					}
+				// A pin is not a stored selection
+				if (selectedModel.value && !pinned.value && !isUsableChoice(selectedModel.value)) {
+					resetSelectionLocally();
 				}
 
 				// Default to auto mode if enabled and no model selected
 				if (!selectedModel.value && !pinned.value && isAutoModeEnabled.value) {
 					selectedModel.value = "auto";
 					saveSelectedModel("auto");
-					saveToServer("auto");
 				}
 			} else {
 				error.value = result?.error || "Failed to load models";
