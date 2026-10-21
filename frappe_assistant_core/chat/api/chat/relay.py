@@ -312,6 +312,9 @@ def _dispatch_relay_event(
                 "tier_wanted": data.get("tier_wanted"),
                 "band": data.get("band"),
                 "scope": data.get("scope"),
+                "from": data.get("from"),
+                "to": data.get("to"),
+                "reason": data.get("reason"),
             },
         )
 

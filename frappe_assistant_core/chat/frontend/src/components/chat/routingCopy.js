@@ -8,6 +8,7 @@
  */
 
 import { LEVEL_LABELS } from "@/stores/composerModesStore";
+import { __ } from "@/utils/i18n";
 
 export const TIER_LABELS = {
 	Economy: "Economy",
@@ -59,6 +60,25 @@ export const CLASSIFICATION_SOURCES = {
 export const NOTICES = {
 	downgraded_for_credits: "Capacity was tight, so a lower grade ran this turn.",
 };
+
+// A customisation task keeps one model; this says why a different one took over. Literal
+// strings so the translation extractor sees them; any other reason gets the generic line.
+export function taskModelChangedText(reason) {
+	switch (reason) {
+		case "unavailable":
+			return __("Switched to a different model for this task because the previous one isn't available right now");
+		case "rate_limited":
+			return __("Switched to a different model for this task because the previous one is busy right now");
+		case "plan":
+			return __("Switched to a different model for this task because the previous one isn't included in your plan");
+		case "health":
+			return __("Switched to a different model for this task because the previous one is having problems right now");
+		case "tier":
+			return __("Switched to a stronger model for this step");
+		default:
+			return __("Switched to a different model for this task");
+	}
+}
 
 export const BAND_LABELS = {
 	healthy: "healthy",

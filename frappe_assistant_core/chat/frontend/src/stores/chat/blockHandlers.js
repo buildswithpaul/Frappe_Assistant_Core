@@ -143,6 +143,15 @@ export function createBlockHandlers({
 		}
 	}
 
+	// Only task_model_changed has a client-side line today; other codes reach the receipt.
+	function handleRoutingNotice(data) {
+		if (data?.code !== "task_model_changed") return;
+		const lastMsg = findActiveMessage(messages.value);
+		if (lastMsg && lastMsg.role === "assistant") {
+			lastMsg.taskModelChange = { reason: data.reason || null, from: data.from, to: data.to };
+		}
+	}
+
 	function handleThinkingEvent(data) {
 		const msg = getOrCreateStreamingMessage();
 
@@ -539,6 +548,7 @@ export function createBlockHandlers({
 		handleTaskActivity,
 		handleWorkflowCreatedEvent,
 		handleModelSelected,
+		handleRoutingNotice,
 		handleThinkingEvent,
 		completeThinkingBlock,
 		handleToolCallStart,

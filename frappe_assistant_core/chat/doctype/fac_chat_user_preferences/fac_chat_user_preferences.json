@@ -19,6 +19,7 @@
   "hidden_home_signals",
   "show_personalized_suggestions",
   "pinned_prompt_templates",
+  "selected_model",
   "section_break_privacy",
   "privacy_consent_complete",
   "processing_restricted"
@@ -113,6 +114,14 @@
    "label": "Pinned Prompt Templates",
    "description": "JSON array of pinned prompt template names (max 5)",
    "hidden": 1
+  },
+  {
+   "description": "The model the user chose in FAC Chat: \"auto\" or a model id. Shared by every browser and the Desk widget.",
+   "fieldname": "selected_model",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Selected Model",
+   "length": 140
   },
   {
    "fieldname": "section_break_privacy",

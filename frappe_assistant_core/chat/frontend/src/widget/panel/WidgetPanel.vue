@@ -113,6 +113,7 @@
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { useChatStore } from "@/stores/chatStore";
 import { useUserStore } from "@/stores/userStore";
+import { useModelStore } from "@/stores/modelStore";
 import { useSpotlightStore } from "@/stores/spotlightStore";
 import { resolveComposerRoute } from "@/stores/chat/composerRouting";
 import { useMessageFileUpload } from "@/composables/useMessageFileUpload";
@@ -140,6 +141,7 @@ import SpotlightHost from "@/components/spotlight/SpotlightHost.vue";
 import NotificationHost from "@/components/notifications/NotificationHost.vue";
 
 const chatStore = useChatStore();
+const modelStore = useModelStore();
 const userStore = useUserStore();
 const spotlight = useSpotlightStore();
 const { handleFileUpload, consumeUploadedFiles, discardUploads } = useMessageFileUpload();
@@ -204,7 +206,7 @@ async function onSend({ message, files = [] }) {
 	if (route === "abort-then-send") await chatStore.abortPendingInteraction();
 	const uploaded = await consumeUploadedFiles(files);
 	const page = getHost().sendContext();
-	await chatStore.sendMessage(message, uploaded, page ? JSON.stringify(page) : null, null, null, {
+	await chatStore.sendMessage(message, uploaded, page ? JSON.stringify(page) : null, modelStore.currentModelId, null, {
 		skipQueue: route === "abort-then-send",
 	});
 }

@@ -27,6 +27,7 @@
 		>{{ creditsLabel }}</button>
 		<span v-else-if="!isUser && message.credits_used" class="message-credits" :title="creditsTooltip">{{ creditsLabel }}</span>
 	</div>
+	<p v-if="taskModelChangeLine" class="message-task-model-change">{{ taskModelChangeLine }}</p>
 	<RoutingPanel
 		v-if="showRouting && routingOpen"
 		:receipt="message.routing"
@@ -46,6 +47,7 @@ import {
 	hasRouting,
 	routingChipLabel,
 	routingHeadline,
+	taskModelChangedText,
 } from "./routingCopy.js";
 
 const props = defineProps({
@@ -58,6 +60,9 @@ const modelStore = useModelStore();
 
 const showTimestamps = computed(() => preferences.showTimestamps);
 const routingOpen = ref(false);
+const taskModelChangeLine = computed(() =>
+	props.message.taskModelChange ? taskModelChangedText(props.message.taskModelChange.reason) : ""
+);
 const routingTrigger = ref(null);
 
 // The guard stays `!isUser && ...`: get_session_messages returns the routing
@@ -144,6 +149,12 @@ const creditsDoorTitle = computed(
 </script>
 
 <style scoped>
+.message-task-model-change {
+	margin: 0.25rem 0 0;
+	font-size: 0.75rem;
+	color: var(--ql-text-muted);
+}
+
 .message-footer {
 	display: flex;
 	align-items: center;

@@ -12,6 +12,16 @@ from ._helpers import (
     _safe_error,
 )
 
+PREFERENCES_DOCTYPE = "FAC Chat User Preferences"
+MAX_MODEL_ID_LENGTH = 140
+
+
+def _saved_model() -> str:
+    """The session user's saved model choice ("" when none, or before the column is migrated)."""
+    if not frappe.db.has_column(PREFERENCES_DOCTYPE, "selected_model"):
+        return ""
+    return frappe.db.get_value(PREFERENCES_DOCTYPE, frappe.session.user, "selected_model") or ""
+
 
 @frappe.whitelist(methods=["GET"])
 def get_available_models():
@@ -19,8 +29,8 @@ def get_available_models():
     Get available AI models from AR based on subscription tier.
 
     Uses the new streaming.list_available_models endpoint which supports
-    per-request model selection. Model selection is now handled client-side
-    via localStorage instead of server-side preferred model setting.
+    per-request model selection. The user's choice is saved on the server
+    (``selected_model``) so every browser and the Desk widget share it.
 
     Returns:
             dict: {
@@ -28,6 +38,7 @@ def get_available_models():
                     "models": [...],
                     "max_tier_rank": float,
                     "default_model": str,
+                    "selected_model": str,  # "" when the user has not chosen
                     "auto_mode": {
                             "enabled": bool,
                             "description": str,
@@ -74,6 +85,7 @@ def get_available_models():
             "models_by_tier": models_by_tier,
             "max_tier_rank": result.get("max_tier_rank", 999),
             "default_model": result.get("default_model"),
+            "selected_model": _saved_model(),
             "auto_mode": result.get("auto_mode"),
         }
 
@@ -112,3 +124,31 @@ def set_preferred_model(model_id: str | None = None):
     except Exception as e:
         frappe.log_error(title="FACO Model Error", message=f"Error setting model: {e!s}")
         return {"success": False, "error": _safe_error(e, "FACO Model Error")}
+
+
+@frappe.whitelist(methods=["POST"])
+def set_selected_model(model_id: str) -> dict:
+    """
+    Save the session user's model choice so it follows them across browsers.
+
+    Args:
+            model_id: "auto", a model id (at most 140 characters), or "" to clear
+
+    Returns:
+            dict: {"success": True, "selected_model": str}
+    """
+    from frappe_assistant_core.chat.doctype.fac_chat_user_preferences.fac_chat_user_preferences import (
+        FACChatUserPreferences,
+    )
+
+    model_id = (model_id or "").strip()
+    if len(model_id) > MAX_MODEL_ID_LENGTH:
+        frappe.throw(
+            _("A model id can be at most {0} characters.").format(MAX_MODEL_ID_LENGTH),
+            frappe.ValidationError,
+        )
+
+    prefs = FACChatUserPreferences.get_or_create_preferences()
+    prefs.selected_model = model_id
+    prefs.save(ignore_permissions=True)
+    return {"success": True, "selected_model": model_id}

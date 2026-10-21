@@ -189,6 +189,7 @@ from .memories import (
 from .models import (
     get_available_models,
     set_preferred_model,
+    set_selected_model,
 )
 
 # ── Profile ──────────────────────────────────────────────────────────

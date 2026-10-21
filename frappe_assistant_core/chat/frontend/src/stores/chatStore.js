@@ -1175,6 +1175,7 @@ export const useChatStore = defineStore("chat", () => {
 		handleTaskActivity: blocks.handleTaskActivity,
 		handleWorkflowCreatedEvent: blocks.handleWorkflowCreatedEvent,
 		handleModelSelected: blocks.handleModelSelected,
+		handleRoutingNotice: blocks.handleRoutingNotice,
 		handleThinkingEvent: blocks.handleThinkingEvent,
 		completeThinkingBlock: blocks.completeThinkingBlock,
 		handleToolCallStart: blocks.handleToolCallStart,

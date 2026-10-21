@@ -201,6 +201,16 @@ class TestRoutingRelay(unittest.TestCase):
         self.assertEqual(payload["band"], "critical")
         self.assertEqual(payload["scope"], "tenant")
 
+    def test_task_model_changed_carries_which_model_and_why(self):
+        handled, emit = self._dispatch(
+            "routing_notice",
+            {"code": "task_model_changed", "from": "model-a", "to": "model-b", "reason": "tier"},
+        )
+        self.assertTrue(handled)
+        payload = emit.call_args[0][1]
+        self.assertEqual(payload["code"], "task_model_changed")
+        self.assertEqual((payload["from"], payload["to"], payload["reason"]), ("model-a", "model-b", "tier"))
+
     def test_routing_notice_reaches_the_resume_loop_too(self):
         """The shared set is what keeps the two loops from drifting."""
         from frappe_assistant_core.chat.api.chat import relay

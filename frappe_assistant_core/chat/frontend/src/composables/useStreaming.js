@@ -336,6 +336,9 @@ export function useStreaming() {
 				// Data: { mode, complexity, task_type, selected: "model-id", tier, shortlist_size }
 				chatStore.handleModelSelected(data);
 				break;
+			case "routing_notice":
+				chatStore.handleRoutingNotice(data);
+				break;
 			case "stream_chunk":
 				chatStore.appendStreamChunk(data.chunk);
 				break;
