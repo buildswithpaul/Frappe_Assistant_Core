@@ -326,6 +326,7 @@ class DocumentUpdate(BaseTool):
                 data,
                 current_disabled=doc.get("disabled"),
                 current_reference_doctype=doc.get("reference_doctype"),
+                current_script_type=doc.get("script_type"),
             )
             if refusal:
                 return refusal

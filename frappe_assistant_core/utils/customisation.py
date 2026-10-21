@@ -53,6 +53,7 @@ def server_script_guard(
     data: Dict[str, Any],
     current_disabled: Optional[int] = None,
     current_reference_doctype: Optional[str] = None,
+    current_script_type: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
     """Refuse an active Server Script when server scripts are switched off on the site.
 
@@ -66,7 +67,7 @@ def server_script_guard(
     if disabled:
         return None
 
-    script_type = data.get("script_type") or "DocType Event"
+    script_type = data.get("script_type") or current_script_type or "DocType Event"
     if script_type == "DocType Event":
         reference_doctype = data.get("reference_doctype") or current_reference_doctype or _("document")
         error = _(

@@ -94,6 +94,19 @@ class TestServerScriptGuard(BaseAssistantTest):
         self.assertIn("would not run", result["error"])
         self.assertNotIn("ToDo", result["error"])
 
+    def test_update_uses_stored_script_type_for_wording(self):
+        with patch(SCRIPTS_ENABLED, return_value=False):
+            result = server_script_guard(
+                "Server Script",
+                {"disabled": 0},
+                current_disabled=1,
+                current_reference_doctype="ToDo",
+                current_script_type="Scheduler Event",
+            )
+
+        self.assertEqual(result["error_type"], "server_scripts_disabled")
+        self.assertIn("would not run", result["error"])
+
     def test_update_falls_back_to_stored_reference_doctype(self):
         with patch(SCRIPTS_ENABLED, return_value=False):
             result = server_script_guard(
