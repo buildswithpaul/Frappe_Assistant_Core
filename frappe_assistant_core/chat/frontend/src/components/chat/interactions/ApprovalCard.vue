@@ -70,7 +70,8 @@ import { __ } from "@/utils/i18n";
 import ApprovalDetails from "./ApprovalDetails.vue";
 import EmailPreview from "./EmailPreview.vue";
 import { useMessagePreview } from "./useMessagePreview";
-import { isCustomisationRisk, writeConsequence } from "./customisation";
+import { isCustomisationRisk } from "@/utils/toolNames";
+import { writeConsequence } from "./customisation";
 import { formatToolName } from "./helpers";
 
 const props = defineProps({

@@ -7,7 +7,10 @@
  */
 
 import { __ } from "@/utils/i18n";
+import { baseToolName, isCustomisationRisk } from "@/utils/toolNames";
 import { flattenInput } from "./helpers";
+
+export { baseToolName, isCustomisationRisk };
 
 // The doctypes whose writes change how the site behaves; mirrors the server-side set.
 const CUSTOMISATION_DOCTYPES = new Set([
@@ -26,40 +29,36 @@ const CUSTOMISATION_DOCTYPES = new Set([
 	"Notification",
 ]);
 
-// A second connection's tools arrive prefixed ("prod_create_document"); the base name decides.
-const WRITE_TOOL_NAMES = ["create_document", "update_document", "delete_document", "document_action"];
-
-export function baseToolName(toolName) {
-	if (typeof toolName !== "string") return "";
-	return WRITE_TOOL_NAMES.find((name) => toolName === name || toolName.endsWith(`_${name}`)) || toolName;
-}
-
-// AR flags writes to customisation doctypes on the interrupt reason.
-export function isCustomisationRisk(block) {
-	return block?.interrupts?.[0]?.reason?.risk === "customisation";
-}
-
 const startsWithVowel = (word) => /^[aeiou]/i.test(word);
 
-// One whole sentence per event and article, so each translates as a unit.
-const SERVER_SCRIPT_EVENTS = {
-	"Before Save": { a: "This code will run every time someone saves a {0}", an: "This code will run every time someone saves an {0}" },
-	"After Save": { a: "This code will run every time someone saves a {0}", an: "This code will run every time someone saves an {0}" },
-	"Before Submit": { a: "This code will run every time someone submits a {0}", an: "This code will run every time someone submits an {0}" },
-	"Before Cancel": { a: "This code will run every time someone cancels a {0}", an: "This code will run every time someone cancels an {0}" },
-};
-const SERVER_SCRIPT_OTHER_EVENT = {
-	a: "This code will run every time someone uses a {0}",
-	an: "This code will run every time someone uses an {0}",
-};
+function serverScriptEventSentence(event, doctype) {
+	const an = startsWithVowel(doctype);
+	switch (event) {
+		case "Before Save":
+		case "After Save":
+			return an
+				? __("This code will run every time someone saves an {0}", [doctype])
+				: __("This code will run every time someone saves a {0}", [doctype]);
+		case "Before Submit":
+			return an
+				? __("This code will run every time someone submits an {0}", [doctype])
+				: __("This code will run every time someone submits a {0}", [doctype]);
+		case "Before Cancel":
+			return an
+				? __("This code will run every time someone cancels an {0}", [doctype])
+				: __("This code will run every time someone cancels a {0}", [doctype]);
+		default:
+			return an
+				? __("This code will run every time someone uses an {0}", [doctype])
+				: __("This code will run every time someone uses a {0}", [doctype]);
+	}
+}
 
 function serverScriptConsequence(fields) {
 	if (fields.script_type === "API") return __("This code will run on the server when called");
 	if (fields.script_type === "Scheduler Event") return __("This code will run on a schedule");
 	if (!fields.doctype_event || !fields.reference_doctype) return null;
-	const sentences = SERVER_SCRIPT_EVENTS[fields.doctype_event] || SERVER_SCRIPT_OTHER_EVENT;
-	const doctype = fields.reference_doctype;
-	return startsWithVowel(doctype) ? __(sentences.an, [doctype]) : __(sentences.a, [doctype]);
+	return serverScriptEventSentence(fields.doctype_event, fields.reference_doctype);
 }
 
 function propertySetterConsequence(fields) {
@@ -70,20 +69,21 @@ function propertySetterConsequence(fields) {
 		: __("Changes how a {0} field behaves for everyone", [doctype]);
 }
 
-const needs = (field, text) => (fields) => (fields[field] ? __(text, [fields[field]]) : null);
 const accessLine = () => __("Changes who can see or do what on this site");
 
 // One line per doctype. A partial update may omit the field that drives the sentence;
 // the line is then null and the card falls back to the generic update copy.
 const CUSTOMISATION_CONSEQUENCES = {
 	"Server Script": serverScriptConsequence,
-	"Client Script": needs("dt", "This changes how the {0} form behaves in Desk for everyone"),
-	"Custom Field": needs("dt", "Adds a field to every {0}"),
+	"Client Script": (f) => (f.dt ? __("This changes how the {0} form behaves in Desk for everyone", [f.dt]) : null),
+	"Custom Field": (f) => (f.dt ? __("Adds a field to every {0}", [f.dt]) : null),
 	"Property Setter": propertySetterConsequence,
-	Workflow: needs("document_type", "Changes how {0} records are approved for everyone"),
-	"Print Format": needs("doc_type", "Changes how {0} prints"),
-	Notification: needs("document_type", "Sends messages automatically when {0} records change"),
-	Report: needs("ref_doctype", "Adds a report on {0}"),
+	Workflow: (f) =>
+		f.document_type ? __("Changes how {0} records are approved for everyone", [f.document_type]) : null,
+	"Print Format": (f) => (f.doc_type ? __("Changes how {0} prints", [f.doc_type]) : null),
+	Notification: (f) =>
+		f.document_type ? __("Sends messages automatically when {0} records change", [f.document_type]) : null,
+	Report: (f) => (f.ref_doctype ? __("Adds a report on {0}", [f.ref_doctype]) : null),
 	Role: accessLine,
 	"Custom DocPerm": accessLine,
 	DocType: accessLine,

@@ -125,3 +125,13 @@ describe("buildTimelineRows for prefixed tool names", () => {
 		expect(row.label).toBe("Created Role → Auditor");
 	});
 });
+
+describe("buildTimelineRows status of a failure payload", () => {
+	it("marks a step whose result says success false as an error", () => {
+		const [row] = buildTimelineRows([
+			{ type: "tool_call", id: "f", tool_name: "create_document", status: "success", input: { doctype: "Role" }, result: { success: false, error: "Name taken" } },
+		]);
+		expect(row.status).toBe("error");
+		expect(row.reason).toBe("Name taken");
+	});
+});

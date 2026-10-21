@@ -171,3 +171,21 @@ describe("deriveArtifacts failed steps and question titles", () => {
 		expect(r.approval.title).toBe("Which warehouse is this one for snake_case?");
 	});
 });
+
+describe("question titles keep ordinary punctuation", () => {
+	const title = (question) =>
+		deriveArtifacts([{ type: "interaction", id: "q", status: "pending", interactionType: "confirm", question }]).approval.title;
+
+	it("keeps a greater-than sign and tildes inside a sentence", () => {
+		expect(title("Is the total > 100 or ~50?")).toBe("Is the total > 100 or ~50?");
+	});
+
+	it("strips a leading quote marker and heading hashes", () => {
+		expect(title("> Quoted question?")).toBe("Quoted question?");
+		expect(title("## Which one?")).toBe("Which one?");
+	});
+
+	it("strips emphasis and code markers", () => {
+		expect(title("**Which** `warehouse` and __this__ *one*?")).toBe("Which warehouse and this one?");
+	});
+});

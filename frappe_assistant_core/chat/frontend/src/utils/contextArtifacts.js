@@ -52,8 +52,11 @@ function recordLabel(block, result) {
 function plainText(markdown) {
 	return String(markdown || "")
 		.replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
-		.replace(/[*`#>~]/g, "")
-		.replace(/(?<!\w)_+|_+(?!\w)/g, "")
+		.replace(/^[ \t]{0,3}(?:#{1,6}|>)+[ \t]*/gm, "")
+		.replace(/`/g, "")
+		.replace(/~~/g, "")
+		.replace(/(?<!\s)\*+|\*+(?!\s)/g, "")
+		.replace(/(?<!\w)_+(?=\w)|(?<=\w)_+(?!\w)/g, "")
 		.replace(/\s+/g, " ")
 		.trim();
 }

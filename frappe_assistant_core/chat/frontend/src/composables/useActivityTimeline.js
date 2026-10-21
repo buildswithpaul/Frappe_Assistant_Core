@@ -8,7 +8,7 @@
 
 import { isInternalTool } from "@/utils/internalTools";
 import { __ } from "@/utils/i18n";
-import { baseToolName } from "@/components/chat/interactions/customisation";
+import { baseToolName } from "@/utils/toolNames";
 import { failureReason, toolFailed, toolResult } from "@/utils/toolResult";
 
 // Friendly verb + object phrasing per known MCP tool. Falls back to a
@@ -98,7 +98,7 @@ export function toolRowFrom(block) {
 
 	return {
 		id: block.id,
-		status: block.status, // "running" | "success" | "error" | "cancelled"
+		status: toolFailed(block) ? "error" : block.status, // "running" | "success" | "error" | "cancelled"
 		label: target ? `${base} → ${target}` : base,
 		labelPrefix: target ? `${base} → ` : base,
 		target,

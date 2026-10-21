@@ -8,7 +8,7 @@
 import { ref, watch } from "vue";
 import { generateBlockId, findActiveMessage } from "./utils";
 import { INTERNAL_TOOLS } from "@/utils/internalTools";
-import { isCustomisationRisk } from "@/components/chat/interactions/customisation";
+import { isCustomisationRisk } from "@/utils/toolNames";
 
 export { INTERNAL_TOOLS };
 
