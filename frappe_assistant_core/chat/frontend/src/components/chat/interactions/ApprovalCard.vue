@@ -70,7 +70,7 @@ import { __ } from "@/utils/i18n";
 import ApprovalDetails from "./ApprovalDetails.vue";
 import EmailPreview from "./EmailPreview.vue";
 import { useMessagePreview } from "./useMessagePreview";
-import { writeConsequence } from "./customisation";
+import { isCustomisationRisk, writeConsequence } from "./customisation";
 import { formatToolName } from "./helpers";
 
 const props = defineProps({
@@ -82,7 +82,7 @@ const emit = defineEmits(["approve", "reject"]);
 
 const hasDecision = computed(() => Boolean(props.block.decision));
 // AR flags customisation writes: they are always asked about, so no "don't ask again".
-const isCustomisation = computed(() => props.block.interrupts?.[0]?.reason?.risk === "customisation");
+const isCustomisation = computed(() => isCustomisationRisk(props.block));
 // Ticked, the approve button also stops this tool asking again (AR Tool Trust "always").
 const dontAskAgain = ref(false);
 

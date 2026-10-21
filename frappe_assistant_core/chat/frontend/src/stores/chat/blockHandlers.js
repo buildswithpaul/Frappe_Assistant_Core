@@ -8,6 +8,7 @@
 import { ref, watch } from "vue";
 import { generateBlockId, findActiveMessage } from "./utils";
 import { INTERNAL_TOOLS } from "@/utils/internalTools";
+import { isCustomisationRisk } from "@/components/chat/interactions/customisation";
 
 export { INTERNAL_TOOLS };
 
@@ -407,6 +408,7 @@ export function createBlockHandlers({
 					sibling.type === "interaction" &&
 					sibling.status === "pending" &&
 					!sibling.decision &&
+					!isCustomisationRisk(sibling) &&
 					sibling.tool_name &&
 					sibling.tool_name === block.tool_name
 				) {

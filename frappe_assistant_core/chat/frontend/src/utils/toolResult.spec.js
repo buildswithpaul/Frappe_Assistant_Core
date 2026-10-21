@@ -21,7 +21,7 @@ describe("safeUrl", () => {
 	it("accepts site paths and web URLs only", () => {
 		expect(safeUrl("/desk/server-script/X")).toBe("/desk/server-script/X");
 		expect(safeUrl("https://a.example/desk/x")).toBe("https://a.example/desk/x");
-		for (const bad of ["javascript:alert(1)", "//evil.example", "", null, 5]) {
+		for (const bad of ["javascript:alert(1)", "//evil.example", "/\\evil.example", "", null, 5]) {
 			expect(safeUrl(bad)).toBe(null);
 		}
 	});

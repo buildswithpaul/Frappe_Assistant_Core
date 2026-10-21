@@ -39,7 +39,9 @@ describe("lineDiff size cap", () => {
 	});
 
 	it("still diffs just under the cap", () => {
-		expect(lineDiff(lines(1000, "a"), lines(1000, "a"))).toHaveLength(1000);
+		const rows = lineDiff(lines(1999, "a"), lines(2000, "b"));
+		expect(rows).toHaveLength(3999);
+		expect(1999 * 2000).toBeLessThanOrEqual(MAX_DIFF_CELLS);
 	});
 });
 

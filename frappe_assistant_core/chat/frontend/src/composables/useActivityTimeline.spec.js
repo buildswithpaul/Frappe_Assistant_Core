@@ -117,3 +117,11 @@ describe("buildTimelineRows for customisation writes", () => {
 	});
 });
 
+describe("buildTimelineRows for prefixed tool names", () => {
+	it("reads a second connection's create as Created", () => {
+		const [row] = buildTimelineRows([
+			{ type: "tool_call", id: "p", tool_name: "prod_create_document", status: "success", input: { doctype: "Role" }, result: { name: "Auditor" } },
+		]);
+		expect(row.label).toBe("Created Role → Auditor");
+	});
+});

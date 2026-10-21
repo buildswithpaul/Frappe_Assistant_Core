@@ -24,7 +24,7 @@ export function toolResult(block) {
 export function safeUrl(value) {
 	if (typeof value !== "string") return null;
 	const url = value.trim();
-	if (/^\/(?!\/)/.test(url) || /^https?:\/\//i.test(url)) return url;
+	if (/^\/(?![\/\\])/.test(url) || /^https?:\/\//i.test(url)) return url;
 	return null;
 }
 
@@ -33,11 +33,11 @@ export function toolFailed(block) {
 }
 
 /** One short sentence saying why a step failed, or "" when there is nothing safe to show. */
-export function failureReason(block) {
+export function failureReason(block, maxLength = REASON_MAX) {
 	if (!toolFailed(block)) return "";
 	const result = toolResult(block);
 	const raw = [result.error, result.message].find((v) => typeof v === "string" && v.trim());
 	if (!raw || /Traceback \(most recent call last\)/i.test(raw)) return "";
 	const sentence = raw.trim().split(/\n|(?<=[.!?])\s/)[0].trim();
-	return sentence.length > REASON_MAX ? `${sentence.slice(0, REASON_MAX - 1)}…` : sentence;
+	return sentence.length > maxLength ? `${sentence.slice(0, maxLength - 1)}…` : sentence;
 }

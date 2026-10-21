@@ -37,10 +37,10 @@ onMounted(() => ensureHljs().then(() => (hljsReady.value = true)));
 const highlightLanguage = computed(() => (hljsReady.value ? props.language : ""));
 const highlighted = computed(() => highlightCode(props.code, highlightLanguage.value));
 // Null shows the new code alone: no previous code, or too large to diff.
-const diffRows = computed(() => {
-	const rows = props.previous === null ? null : lineDiff(props.previous, props.code);
-	return rows && rows.map((row) => ({ ...row, html: highlightCode(row.text, highlightLanguage.value) }));
-});
+const diff = computed(() => (props.previous === null ? null : lineDiff(props.previous, props.code)));
+const diffRows = computed(
+	() => diff.value && diff.value.map((row) => ({ ...row, html: highlightCode(row.text, highlightLanguage.value) })),
+);
 </script>
 
 <style scoped>

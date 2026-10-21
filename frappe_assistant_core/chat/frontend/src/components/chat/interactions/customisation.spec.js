@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { customisationConsequence, writeConsequence } from "./customisation";
+import { customisationConsequence, isCustomisationRisk, writeConsequence } from "./customisation";
 
 describe("writeConsequence", () => {
 	it("states the write effect for record tools", () => {
@@ -69,5 +69,52 @@ describe("customisationConsequence", () => {
 
 	it("is what the write consequence says for a customisation", () => {
 		expect(writeConsequence("create_document", create("Custom Field", { dt: "Item" }))).toBe("Adds a field to every Item");
+	});
+});
+
+describe("customisationConsequence on partial updates", () => {
+	const update = (doctype, data) => customisationConsequence("update_document", { doctype, name: "X", data });
+
+	it("says nothing when the field that drives the sentence is missing", () => {
+		expect(update("Server Script", { script: "x" })).toBe(null);
+		expect(update("Server Script", { script_type: "DocType Event" })).toBe(null);
+		expect(update("Client Script", { script: "x" })).toBe(null);
+		expect(update("Custom Field", { label: "x" })).toBe(null);
+		expect(update("Property Setter", { value: "1" })).toBe(null);
+		expect(update("Workflow", { is_active: 1 })).toBe(null);
+		expect(update("Print Format", { html: "x" })).toBe(null);
+		expect(update("Notification", { subject: "x" })).toBe(null);
+		expect(update("Report", { query: "x" })).toBe(null);
+	});
+
+	it("falls back to the generic update line on the card", () => {
+		expect(writeConsequence("update_document", { doctype: "Server Script", name: "X", data: { script: "x" } })).toBe(
+			"This will modify an existing record in your ERP",
+		);
+	});
+
+	it("still describes an update that restates the driving fields", () => {
+		expect(update("Server Script", { reference_doctype: "Item", doctype_event: "Before Save" })).toBe(
+			"This code will run every time someone saves an Item",
+		);
+	});
+});
+
+describe("connection-prefixed tool names", () => {
+	it("match the plain tool", () => {
+		const input = { doctype: "Custom Field", data: { dt: "Item" } };
+		expect(customisationConsequence("prod_create_document", input)).toBe("Adds a field to every Item");
+		expect(customisationConsequence("prod_delete_document", { doctype: "Role" })).toBe(
+			"This removes a customisation from your site for everyone",
+		);
+		expect(writeConsequence("prod_document_action", { action: "cancel" })).toContain("cancel a submitted record");
+		expect(customisationConsequence("my_other_tool", input)).toBe(null);
+	});
+
+	it("isCustomisationRisk reads the first interrupt reason", () => {
+		expect(isCustomisationRisk({ interrupts: [{ reason: { risk: "customisation" } }] })).toBe(true);
+		expect(isCustomisationRisk({ interrupts: [{ reason: { risk: "other" } }] })).toBe(false);
+		expect(isCustomisationRisk({})).toBe(false);
+		expect(isCustomisationRisk(null)).toBe(false);
 	});
 });

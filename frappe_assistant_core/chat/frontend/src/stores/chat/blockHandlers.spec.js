@@ -100,6 +100,15 @@ describe("recordInteractionDecision with don't-ask-again", () => {
 		expect(msgs[0].blocks[1].decision).toBeUndefined();
 	});
 
+	it("never settles a customisation card by trust given on another card", () => {
+		const risky = (id, tool) =>
+			card(id, tool, { interrupts: [{ id: `i-${id}`, reason: { type: "approval", risk: "customisation" } }] });
+		const msgs = turn(card("a", "create_document"), risky("b", "create_document"), risky("c", "prod_create_document"));
+		const batch = makeHandlers(msgs).recordInteractionDecision("a", "trusted", "trust", "trust");
+		expect(batch).toBeNull();
+		expect(msgs[0].blocks[1].decision).toBeUndefined();
+	});
+
 	it("keeps a decision the user already made on another card", () => {
 		const msgs = turn(card("a", "create_document"), card("b", "create_document"));
 		const handlers = makeHandlers(msgs);

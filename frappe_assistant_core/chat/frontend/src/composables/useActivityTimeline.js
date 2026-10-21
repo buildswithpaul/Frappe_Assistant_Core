@@ -8,6 +8,7 @@
 
 import { isInternalTool } from "@/utils/internalTools";
 import { __ } from "@/utils/i18n";
+import { baseToolName } from "@/components/chat/interactions/customisation";
 import { failureReason, toolFailed, toolResult } from "@/utils/toolResult";
 
 // Friendly verb + object phrasing per known MCP tool. Falls back to a
@@ -26,19 +27,27 @@ const TOOL_PHRASING = {
 	generate_report: { verb: "Generated", noun: "report" },
 };
 
-const DOCUMENT_ACTION_VERBS = { submit: "Submitted", cancel: "Cancelled", amend: "Amended" };
+// Literal strings, so each verb is a translatable key of its own.
+const DONE_VERBS = {
+	create_document: () => __("Created"),
+	update_document: () => __("Updated"),
+};
+const DOCUMENT_ACTION_VERBS = {
+	submit: () => __("Submitted"),
+	cancel: () => __("Cancelled"),
+	amend: () => __("Amended"),
+};
 
 // Once a write has succeeded the row says what was done, not what was prepared.
 function donePhrasing(block) {
 	const doctype = block.input?.doctype || "record";
-	if (block.tool_name === "create_document") return { verb: __("Created"), noun: doctype };
-	if (block.tool_name === "update_document") return { verb: __("Updated"), noun: doctype };
-	if (block.tool_name === "document_action") {
-		const action = String(block.input?.action || "submit").trim().toLowerCase();
-		const verb = DOCUMENT_ACTION_VERBS[action];
-		return verb ? { verb: __(verb), noun: doctype } : null;
+	const tool = baseToolName(block.tool_name);
+	if (tool === "document_action") {
+		const verb = DOCUMENT_ACTION_VERBS[String(block.input?.action || "submit").trim().toLowerCase()];
+		return verb ? { verb: verb(), noun: doctype } : null;
 	}
-	return null;
+	const verb = DONE_VERBS[tool];
+	return verb ? { verb: verb(), noun: doctype } : null;
 }
 
 function humanizeToolName(name) {
@@ -79,7 +88,7 @@ export function toolRowFrom(block) {
 
 	const succeeded = block.status === "success" && !toolFailed(block);
 	const done = succeeded ? donePhrasing(block) : null;
-	const phrasing = done || TOOL_PHRASING[block.tool_name];
+	const phrasing = done || TOOL_PHRASING[baseToolName(block.tool_name)];
 	const target = done
 		? toolResult(block).name || block.input?.name || block.input?.docname || null
 		: extractTarget(block);

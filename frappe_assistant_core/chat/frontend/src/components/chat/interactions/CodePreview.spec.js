@@ -1,11 +1,17 @@
-import { mount } from "@vue/test-utils";
+import { flushPromises, mount } from "@vue/test-utils";
 import { describe, it, expect, vi } from "vitest";
-import { highlightCode } from "@/utils/markdown";
+import { ensureHljs, highlightCode } from "@/utils/markdown";
+import { lineDiff } from "./lineDiff";
 import CodePreview from "./CodePreview.vue";
 
 vi.mock("@/utils/markdown", async (importOriginal) => {
 	const original = await importOriginal();
 	return { ...original, highlightCode: vi.fn(original.highlightCode) };
+});
+
+vi.mock("./lineDiff", async (importOriginal) => {
+	const original = await importOriginal();
+	return { ...original, lineDiff: vi.fn(original.lineDiff) };
 });
 
 const script = (n) => Array.from({ length: n }, (_, i) => `line_${i} = ${i}`).join("\n");
@@ -61,5 +67,13 @@ describe("CodePreview", () => {
 		await wrapper.find(".code-toggle").trigger("click");
 		await wrapper.find(".code-toggle").trigger("click");
 		expect(highlightCode).not.toHaveBeenCalled();
+	});
+
+	it("does not re-run the line diff when highlighting loads", async () => {
+		await ensureHljs();
+		lineDiff.mockClear();
+		mount(CodePreview, { props: { code: "a\nnew", previous: "a\nold", language: "python" } });
+		await flushPromises();
+		expect(lineDiff).toHaveBeenCalledTimes(1);
 	});
 });

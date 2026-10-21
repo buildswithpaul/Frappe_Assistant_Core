@@ -112,3 +112,25 @@ describe("processingSummary — thinking", () => {
 		expect(processingSummary([getSkill], false)).toBe("Loaded skill documentation");
 	});
 });
+
+describe("processingSummary with failed steps", () => {
+	const create = (extra) => ({ type: "tool_call", id: "c", tool_name: "create_document", input: {}, ...extra });
+
+	it("collapsed header carries the first failed step's reason", () => {
+		const block = create({ status: "error", result: { success: false, error: "Server scripts are disabled. Ask an admin." } });
+		expect(processingSummary([block], false)).toBe("Used Create Document (1 failed: Server scripts are disabled.)");
+	});
+
+	it("counts a failure payload on a step marked successful, and keeps the bare count without a reason", () => {
+		expect(processingSummary([create({ status: "success", result: { success: false, error: "Name taken" } })], false)).toBe(
+			"Used Create Document (1 failed: Name taken)",
+		);
+		expect(processingSummary([create({ status: "error", result: '{"su' })], false)).toBe("Used Create Document (1 failed)");
+	});
+
+	it("shortens a long reason", () => {
+		const text = processingSummary([create({ status: "error", result: { error: "x".repeat(200) } })], false);
+		expect(text.length).toBeLessThan(120);
+		expect(text).toContain("…");
+	});
+});

@@ -153,3 +153,21 @@ describe("deriveArtifacts activity", () => {
 		expect(out.activity).toHaveLength(0);
 	});
 });
+
+describe("deriveArtifacts failed steps and question titles", () => {
+	it("gives a failed write no record chip", () => {
+		const input = { doctype: "Server Script", data: {} };
+		const r = deriveArtifacts([
+			{ type: "tool_call", id: "a", status: "error", tool_name: "create_document", input },
+			{ type: "tool_call", id: "b", status: "success", tool_name: "create_document", input, result: { success: false, error: "no" } },
+		]);
+		expect(r.records).toEqual([]);
+	});
+
+	it("strips markdown before cutting the question title", () => {
+		const r = deriveArtifacts([
+			{ type: "interaction", id: "q", status: "pending", interactionType: "confirm", question: "**Which** `warehouse` is [this one](http://x.test) for snake_case?" },
+		]);
+		expect(r.approval.title).toBe("Which warehouse is this one for snake_case?");
+	});
+});

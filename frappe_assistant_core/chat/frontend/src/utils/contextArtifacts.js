@@ -8,15 +8,15 @@
 import { formatToolName, flattenInput } from "@/components/chat/interactions/helpers.js";
 import { buildTimelineRows } from "@/composables/useActivityTimeline.js";
 import { isApprovalInteraction } from "@/stores/chat/interactionRegime";
-import { safeUrl, toolResult } from "@/utils/toolResult";
+import { safeUrl, toolFailed, toolResult } from "@/utils/toolResult";
 import { __ } from "@/utils/i18n";
 // formatToolName is still used for the approval card title (an interaction, not
 // a record); record chips deliberately do NOT fall back to a tool name.
 
-// Tool names that read/touch ERP records but do not write. Used to label a
-// touched record as a "source" rather than a mutation in the Records list.
 const QUESTION_TITLE_MAX = 60;
 
+// Tool names that read/touch ERP records but do not write. Used to label a
+// touched record as a "source" rather than a mutation in the Records list.
 const READ_TOOLS = new Set([
 	"search_documents",
 	"get_document",
@@ -48,6 +48,16 @@ function recordLabel(block, result) {
 	return null;
 }
 
+// Plain text of an agent-written markdown question, for a one-line title.
+function plainText(markdown) {
+	return String(markdown || "")
+		.replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+		.replace(/[*`#>~]/g, "")
+		.replace(/(?<!\w)_+|_+(?!\w)/g, "")
+		.replace(/\s+/g, " ")
+		.trim();
+}
+
 /**
  * Derive the rail content for a single assistant turn.
  * @param {Array} blocks
@@ -67,7 +77,7 @@ export function deriveArtifacts(blocks) {
 				id: b.id,
 				kind: isQuestion ? "question" : "approval",
 				title: isQuestion
-					? String(b.question || "").trim().slice(0, QUESTION_TITLE_MAX) || __("Question")
+					? plainText(b.question).slice(0, QUESTION_TITLE_MAX) || __("Question")
 					: formatToolName(b.tool_name),
 				subtitle: isQuestion ? "" : [flat.name || flat.docname || flat.title, flat.grand_total || flat.amount || flat.total]
 					.filter(Boolean)
@@ -95,7 +105,7 @@ export function deriveArtifacts(blocks) {
 	};
 
 	for (const b of safe) {
-		if (b.type === "tool_call" && b.status === "success") {
+		if (b.type === "tool_call" && b.status === "success" && !toolFailed(b)) {
 			const isRead = READ_TOOLS.has(b.tool_name);
 			const result = toolResult(b);
 			pushRecord(`tool-${b.id}`, recordLabel(b, result), isRead ? "source" : "record", safeUrl(result.url));
