@@ -42,6 +42,8 @@ from .child_tables import ChildRowError, child_table_fields, normalize_child_row
 
 # The submit after a create runs inside this savepoint, so a refused submit leaves the draft.
 _SUBMIT_SAVEPOINT = "fac_create_document_submit"
+# A validate_only dry run is rolled back to this savepoint.
+_VALIDATE_SAVEPOINT = "fac_create_document_validate"
 
 
 def _default_todo_allocation(doc: Any) -> None:
@@ -231,12 +233,17 @@ class DocumentCreate(BaseTool):
 
             # Handle validation-only mode
             if validate_only:
-                # insert() refuses a document this user may not create, so say so here
-                # instead of reporting a validation the real create would then fail.
-                doc.check_permission("create")
-
-                # Run validation without saving
-                doc.run_method("validate")
+                # validate() can write (a Property Setter deletes its predecessors, a Workflow
+                # deactivates its siblings, scripts and hooks run), so the dry run is undone
+                # whatever the outcome. Work Frappe queued for the commit is unwound with it.
+                marks = open_savepoint(_VALIDATE_SAVEPOINT)
+                try:
+                    # insert() refuses a document this user may not create, so say so here
+                    # instead of reporting a validation the real create would then fail.
+                    doc.check_permission("create")
+                    doc.run_method("validate")
+                finally:
+                    rollback_to_savepoint(_VALIDATE_SAVEPOINT, marks, doctype, doc.name)
 
                 return {
                     "success": True,

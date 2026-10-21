@@ -385,3 +385,82 @@ class TestScriptReportWarning(BaseAssistantTest):
         with patch(SCRIPTS_ENABLED, return_value=False):
             self.assertIsNone(script_report_warning("ToDo", _report_data()))
             self.assertIsNone(script_report_warning("Report", _report_data(is_standard="Yes")))
+
+
+class TestValidateOnlyWritesNothing(BaseAssistantTest):
+    """A validate_only dry run must undo whatever validate() wrote (#34357)."""
+
+    def setUp(self):
+        super().setUp()
+        self.setter = frappe.get_doc(
+            {
+                "doctype": "Property Setter",
+                "doc_type": "ToDo",
+                "doctype_or_field": "DocField",
+                "field_name": "description",
+                "property": "bold",
+                "property_type": "Check",
+                "value": "1",
+            }
+        ).insert()
+
+    def tearDown(self):
+        frappe.db.delete("Property Setter", {"doc_type": "ToDo", "field_name": "description"})
+        super().tearDown()
+
+    def _dry_run_property_setter(self) -> dict:
+        return DocumentCreate().execute(
+            {
+                "doctype": "Property Setter",
+                "data": {
+                    "doc_type": "ToDo",
+                    "doctype_or_field": "DocField",
+                    "field_name": "description",
+                    "property": "bold",
+                    "property_type": "Check",
+                    "value": "0",
+                },
+                "validate_only": True,
+            }
+        )
+
+    def test_dry_run_keeps_the_property_setter_validate_would_delete(self):
+        # Property Setter.validate deletes the setters it replaces; execute() returns inside
+        # this test, so only the savepoint rollback can have put the row back.
+        result = self._dry_run_property_setter()
+
+        self.assertTrue(result["success"], result)
+        self.assertTrue(frappe.db.exists("Property Setter", self.setter.name))
+
+    def test_failed_dry_run_returns_the_error_and_writes_nothing(self):
+        # Production reaches this with a Before Save script or app hook that writes, then throws.
+        def writes_then_refuses(doc, *args, **kwargs):
+            frappe.db.delete("Property Setter", {"name": self.setter.name})
+            frappe.throw(frappe._("refused by validate"))
+
+        with patch("frappe.desk.doctype.todo.todo.ToDo.validate", writes_then_refuses):
+            result = DocumentCreate().execute(
+                {"doctype": "ToDo", "data": {"description": "fac dry run"}, "validate_only": True}
+            )
+
+        self.assertFalse(result["success"])
+        self.assertIn("refused by validate", result["error"])
+        self.assertEqual(result["doctype"], "ToDo")
+        self.assertTrue(frappe.db.exists("Property Setter", self.setter.name))
+        self.assertFalse(frappe.db.exists("ToDo", {"description": "fac dry run"}))
+
+    def test_dry_run_drops_commit_work_validate_queued(self):
+        # A Before Save script or hook that does frappe.enqueue(..., enqueue_after_commit=True)
+        # or db.after_commit.add(...) queues work the request's commit would otherwise run.
+        def queued():
+            pass
+
+        def queues_work(doc, *args, **kwargs):
+            frappe.db.after_commit.add(queued)
+
+        with patch("frappe.desk.doctype.todo.todo.ToDo.validate", queues_work):
+            DocumentCreate().execute(
+                {"doctype": "ToDo", "data": {"description": "fac dry run"}, "validate_only": True}
+            )
+
+        self.assertNotIn(queued, frappe.db.after_commit._functions)
