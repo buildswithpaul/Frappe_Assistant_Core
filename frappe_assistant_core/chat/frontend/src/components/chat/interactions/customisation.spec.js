@@ -4,6 +4,8 @@ import {
 	conditionNotice,
 	customisationConsequence,
 	fieldPlacementTarget,
+	renameNotice,
+	renameKeys,
 	writesCondition,
 	writeConsequence,
 } from "./customisation";
@@ -221,5 +223,20 @@ describe("fieldPlacementTarget", () => {
 	it("follows a prefixed tool name", () => {
 		const input = { doctype: "Custom Field", data: { dt: "Customer" } };
 		expect(fieldPlacementTarget("prod_create_document", input)).toMatchObject({ doctype: "Customer" });
+	});
+});
+
+describe("renameNotice", () => {
+	it("explains a rename on an update and names the keys to hide", () => {
+		const input = { doctype: "Role", name: "A", data: { name: "B", disabled: 1 } };
+		expect(renameNotice("update_document", input)).toBe("Renaming isn't possible here. Only the other changes will be saved.");
+		expect(renameKeys("update_document", input)).toEqual(["new_name", "rename"]);
+	});
+
+	it("is null for a create, a plain update and a restated name", () => {
+		expect(renameNotice("create_document", { doctype: "Role", data: { name: "B" } })).toBeNull();
+		expect(renameNotice("update_document", { doctype: "Role", name: "A", data: { disabled: 1 } })).toBeNull();
+		expect(renameNotice("update_document", { doctype: "Role", name: "A", data: { name: "A" } })).toBeNull();
+		expect(renameKeys("update_document", { doctype: "Role", name: "A", data: {} })).toEqual([]);
 	});
 });

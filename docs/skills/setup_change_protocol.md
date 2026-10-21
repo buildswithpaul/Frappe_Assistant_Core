@@ -39,6 +39,7 @@ Every other setup skill (`add-custom-field`, `server-script`, `client-script`, `
 
 ## Gotchas
 
+- **Name records by what they do, never by a value that may change (no limits, percentages or dates in names):** 'Discount limit on Sales Invoice submit', not 'Block discount above 15%'. Changing a value never needs a rename. The update tool cannot rename a record; if the user wants a different name, tell them to use Rename from the record's menu in Desk.
 - **Single doctypes** (Stock Settings, Selling Settings, Accounts Settings…) are updated with `name` equal to the doctype name.
 - **A setting change applies to future transactions only.** Turning off negative stock doesn't fix existing negative stock. Say so, so the user doesn't expect it to.
 - **Test on a copy first** when the user has a staging or test site and the change is on the hard-to-undo list. Recommend it; don't insist.

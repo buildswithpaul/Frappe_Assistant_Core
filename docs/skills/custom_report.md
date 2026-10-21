@@ -63,6 +63,7 @@ Each entry in `fields` is `[fieldname, doctype]` and each filter is `[doctype, f
 
 ## Gotchas
 
+- **Name records by what they do, never by a value that may change (no limits, percentages or dates in names):** 'Discount limit on Sales Invoice submit', not 'Block discount above 15%'. Changing a value never needs a rename. The update tool cannot rename a record; if the user wants a different name, tell them to use Rename from the record's menu in Desk.
 - A Query Report ignores user permissions unless the query filters for them. Warn the user if the data is sensitive.
 - Cancelled and draft documents are included unless the query filters `docstatus`.
 

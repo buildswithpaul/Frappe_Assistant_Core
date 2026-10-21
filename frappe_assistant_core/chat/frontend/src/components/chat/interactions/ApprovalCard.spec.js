@@ -267,12 +267,31 @@ describe("ApprovalCard plain-language copy and trust", () => {
 		expect(wrapper.find(".approval-subtitle").text()).toBe("Changes how records are approved for everyone");
 	});
 
-	it("rename update card shows the old and the new name", () => {
-		const input = { doctype: "Server Script", name: "Old Script", data: { name: "New Script" } };
+	it("rename update card flags the rename and does not list it as a change", () => {
+		const input = { doctype: "Server Script", name: "Old Script", data: { name: "New Script", script: "pass" } };
 		const wrapper = mount(ApprovalCard, { props: { block: { id: "c6", tool_name: "update_document", input, interrupts } } });
 		const rows = wrapper.findAll(".field-key").map((k) => k.text());
-		expect(rows).toEqual(["Doctype", "Name", "New Name"]);
-		expect(wrapper.text()).toContain("New Script");
+		expect(rows).toEqual(["Doctype", "Name"]);
+		expect(wrapper.text()).not.toContain("New Script");
+		expect(wrapper.find("[data-test='rename-notice']").text()).toBe(
+			"Renaming isn't possible here. Only the other changes will be saved.",
+		);
+	});
+
+	it.each([
+		["new_name inside data", { doctype: "Role", name: "A", data: { new_name: "B", desk_access: 1 } }],
+		["rename inside data", { doctype: "Role", name: "A", data: { rename: "B", desk_access: 1 } }],
+		["top-level new_name", { doctype: "Role", name: "A", new_name: "B", data: { desk_access: 1 } }],
+	])("flags a rename sent as %s on a prefixed update tool", (_label, input) => {
+		const wrapper = mount(ApprovalCard, { props: { block: { id: "c7", tool_name: "erp_update_document", input, interrupts } } });
+		expect(wrapper.find("[data-test='rename-notice']").exists()).toBe(true);
+		expect(wrapper.findAll(".field-key").map((k) => k.text())).toEqual(["Doctype", "Name", "Desk Access"]);
+	});
+
+	it("shows no rename notice when the update restates the same name or does not rename", () => {
+		const input = { doctype: "Role", name: "A", data: { name: "A", desk_access: 1 } };
+		const wrapper = mount(ApprovalCard, { props: { block: { id: "c8", tool_name: "update_document", input, interrupts } } });
+		expect(wrapper.find("[data-test='rename-notice']").exists()).toBe(false);
 	});
 
 	it("trust checkbox hidden for customisation risk", () => {

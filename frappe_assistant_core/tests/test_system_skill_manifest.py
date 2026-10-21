@@ -173,6 +173,26 @@ class TestSystemSkillManifest(BaseAssistantTest):
         self.assertIn("private bench", report)
         self.assertIn("blocks saving or submitting", self._read_skill("notification.md"))
 
+    def test_customisation_skills_name_records_by_purpose_not_by_value(self):
+        rule = (
+            "Name records by what they do, never by a value that may change "
+            "(no limits, percentages or dates in names)"
+        )
+        for name in (
+            "server_script.md",
+            "client_script.md",
+            "notification.md",
+            "custom_report.md",
+            "print_format.md",
+            "setup_change_protocol.md",
+        ):
+            text = self._read_skill(name)
+            self.assertIn(rule, text, name)
+            self.assertIn(
+                "'Discount limit on Sales Invoice submit', not 'Block discount above 15%'", text, name
+            )
+            self.assertIn("Changing a value never needs a rename.", text, name)
+
     def test_retired_export_template_is_removed(self):
         self.assertNotIn(
             RETIRED_TEMPLATE,

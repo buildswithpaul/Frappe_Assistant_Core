@@ -48,6 +48,7 @@ Sends an email, a system alert or a message when something happens to a document
 
 ## Gotchas
 
+- **Name records by what they do, never by a value that may change (no limits, percentages or dates in names):** 'Discount limit on Sales Invoice submit', not 'Block discount above 15%'. Changing a value never needs a rename. The update tool cannot rename a record; if the user wants a different name, tell them to use Rename from the record's menu in Desk.
 - **A broken condition is rejected when you save**, so a saved notification has a valid one. A condition that passes the save check can still fail on some documents (for example one with a missing value). That is logged in the Error Log, and for a save or submit event it blocks saving or submitting that document, so the person's own save fails. Test the condition on a test document straight after switching the notification on, sending only to the user.
 - A notification sent to a role reaches every enabled user with that role. Say how many.
 

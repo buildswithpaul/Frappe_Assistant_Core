@@ -2,12 +2,13 @@
 	<p v-if="placement" class="approval-note" :class="{ 'note-warning': placement.warning }" data-test="placement">
 		{{ placement.sentence }}
 	</p>
+	<p v-if="rename" class="approval-note note-warning" data-test="rename-notice">{{ rename }}</p>
 	<p v-if="notice" class="approval-note" data-test="condition-notice">{{ notice }}</p>
 </template>
 
 <script setup>
 import { computed } from "vue";
-import { conditionNotice } from "./customisation";
+import { conditionNotice, renameNotice } from "./customisation";
 import { useFieldPlacement } from "./useFieldPlacement";
 
 const props = defineProps({
@@ -15,6 +16,7 @@ const props = defineProps({
 });
 
 const placement = useFieldPlacement(() => props.block);
+const rename = computed(() => renameNotice(props.block.tool_name, props.block.input));
 const notice = computed(() => conditionNotice(props.block.tool_name, props.block.input));
 </script>
 

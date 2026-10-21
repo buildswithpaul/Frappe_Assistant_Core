@@ -52,6 +52,7 @@ Adds a rule that runs on the server when a document is saved, submitted, cancell
 
 ## Gotchas
 
+- **Name records by what they do, never by a value that may change (no limits, percentages or dates in names):** 'Discount limit on Sales Invoice submit', not 'Block discount above 15%'. Changing a value never needs a rename. The update tool cannot rename a record; if the user wants a different name, tell them to use Rename from the record's menu in Desk.
 - **A script that fails breaks saving for everyone** on that doctype. That is why it starts switched off, is switched on only with the user's go-ahead, and is tested straight away.
 - **Submitted documents.** A `Before Save` script does not run when a submitted document is updated after submit. Use `Before Submit` for "must hold at submit".
 - **An update that flips `disabled` from 1 to 0 is refused when scripts are off**, the same as a create. Do not retry.

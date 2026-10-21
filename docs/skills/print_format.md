@@ -44,6 +44,7 @@ Creates how a document looks when printed or saved as a PDF, such as "an invoice
 
 ## Gotchas
 
+- **Name records by what they do, never by a value that may change (no limits, percentages or dates in names):** 'Discount limit on Sales Invoice submit', not 'Block discount above 15%'. Changing a value never needs a rename. The update tool cannot rename a record; if the user wants a different name, tell them to use Rename from the record's menu in Desk.
 - **Test with a real document.** Print preview with a submitted invoice shows what a draft does not: taxes and totals.
 - A format that errors prints a blank page or an error for that document type until it is fixed or removed.
 

@@ -191,3 +191,24 @@ export function fieldPlacementTarget(toolName, input) {
 	if (baseToolName(toolName) === "update_document" && !hasText(fields.insert_after)) return null;
 	return { doctype: fields.dt, insertAfter: fields.insert_after, fieldtype: fields.fieldtype };
 }
+
+// The keys update_document refuses as a rename; flattenInput turns a differing data.name into new_name.
+const RENAME_KEYS = ["new_name", "rename"];
+
+function renameRequested(toolName, input) {
+	if (baseToolName(toolName) !== "update_document" || !input || typeof input !== "object") return false;
+	const fields = flattenInput(input);
+	return RENAME_KEYS.some((key) => hasText(fields[key]));
+}
+
+/** The keys to hide from the changed-fields list: the rename keys when the update asks for one, else none. */
+export function renameKeys(toolName, input) {
+	return renameRequested(toolName, input) ? RENAME_KEYS : [];
+}
+
+/** The caveat on an update that tries to rename a record, which the tool saves without. */
+export function renameNotice(toolName, input) {
+	return renameRequested(toolName, input)
+		? __("Renaming isn't possible here. Only the other changes will be saved.")
+		: null;
+}

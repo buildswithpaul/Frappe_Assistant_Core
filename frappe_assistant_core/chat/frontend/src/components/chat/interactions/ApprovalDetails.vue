@@ -39,7 +39,7 @@ import ApprovalNotes from "./ApprovalNotes.vue";
 import ChildTable from "./ChildTable.vue";
 import ConditionValue from "./ConditionValue.vue";
 import CodePreview from "./CodePreview.vue";
-import { writesCondition } from "./customisation";
+import { renameKeys, writesCondition } from "./customisation";
 import { useCurrentCode } from "./useCurrentCode";
 import {
 	flattenInput,
@@ -60,7 +60,14 @@ const props = defineProps({
 const showAllFields = ref(false);
 const currentCode = useCurrentCode(() => props.block);
 
-const flat = computed(() => (props.block.input ? flattenInput(props.block.input) : {}));
+// A rename the tool will not make is a notice (ApprovalNotes), never a changed field.
+const flat = computed(() => {
+	if (!props.block.input) return {};
+	const hidden = renameKeys(props.block.tool_name, props.block.input);
+	return Object.fromEntries(
+		Object.entries(flattenInput(props.block.input)).filter(([key]) => !hidden.includes(key)),
+	);
+});
 const hasDetails = computed(() => Object.keys(flat.value).length > 0);
 const doctype = computed(() => flat.value.doctype);
 

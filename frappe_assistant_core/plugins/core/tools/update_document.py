@@ -19,7 +19,7 @@ Document Update Tool for Core Plugin.
 Updates existing Frappe documents.
 """
 
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 import frappe
 from frappe import _
@@ -156,6 +156,22 @@ def _apply_child_table_update(
     return None
 
 
+RENAME_KEYS = ("new_name", "rename")
+
+
+def _split_rename(name: str, data: Dict[str, Any], arguments: Dict[str, Any]) -> Tuple[Dict[str, Any], bool]:
+    """Separate a rename from the field changes in an update.
+
+    A rename is `new_name` or `rename` (in `data` or beside it), or a `data["name"]` that
+    differs from the record being updated. Returns the data without those keys and whether
+    any was present. Restating the record's own name is not a rename.
+    """
+    fields = {k: v for k, v in data.items() if k not in RENAME_KEYS and k != "name"}
+    requested = any(data.get(k) or arguments.get(k) for k in RENAME_KEYS)
+    requested = requested or ("name" in data and data["name"] not in (None, "", name))
+    return fields, requested
+
+
 class DocumentUpdate(BaseTool):
     """
     Tool for updating existing Frappe documents.
@@ -217,6 +233,19 @@ class DocumentUpdate(BaseTool):
         doctype = arguments.get("doctype")
         name = arguments.get("name")
         data = arguments.get("data", {})
+
+        data, rename_requested = _split_rename(name, data, arguments)
+        if rename_requested and not data:
+            return {
+                "success": False,
+                "error": _(
+                    "The update tool can't rename a record, and there is nothing else to change. "
+                    "Rename it in Desk: open the record and choose Rename from its menu."
+                ),
+                "error_type": "rename_not_supported",
+                "doctype": doctype,
+                "name": name,
+            }
 
         # Reject direct updates to child-table doctypes. Saving a child row in isolation
         # bypasses the parent's validate() pipeline, so derived fields (e.g. ERPNext's
@@ -338,6 +367,13 @@ class DocumentUpdate(BaseTool):
 
             # Read before the setattr loop below, which overwrites the stored values
             warning = script_report_warning(doctype, data, current=doc)
+            if rename_requested:
+                skipped = _(
+                    "The rename was skipped: the update tool can't rename a record. The other "
+                    "changes were saved. To rename it, open the record in Desk and choose Rename "
+                    "from its menu."
+                )
+                warning = f"{warning} {skipped}" if warning else skipped
 
             # Apply updates: child tables go through helper, scalars use setattr.
             for field, value in data.items():
