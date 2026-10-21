@@ -211,6 +211,13 @@ describe("fieldPlacementTarget", () => {
 		expect(fieldPlacementTarget("delete_document", { doctype: "Custom Field", data: { dt: "Customer" } })).toBeNull();
 	});
 
+	it("needs insert_after on an update, so a condition-only change makes no claim about placement", () => {
+		const bare = { doctype: "Custom Field", name: "x", data: { dt: "Customer", depends_on: "eval:doc.qty" } };
+		expect(fieldPlacementTarget("update_document", bare)).toBeNull();
+		const moved = { doctype: "Custom Field", name: "x", data: { dt: "Customer", insert_after: "email_id" } };
+		expect(fieldPlacementTarget("update_document", moved)).toMatchObject({ doctype: "Customer", insertAfter: "email_id" });
+	});
+
 	it("follows a prefixed tool name", () => {
 		const input = { doctype: "Custom Field", data: { dt: "Customer" } };
 		expect(fieldPlacementTarget("prod_create_document", input)).toMatchObject({ doctype: "Customer" });

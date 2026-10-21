@@ -339,6 +339,12 @@ describe("ApprovalCard Custom Field placement", () => {
 		await flushPromises();
 		expect(fieldPlacement).not.toHaveBeenCalled();
 	});
+
+	it("makes no lookup for an update that names dt but not insert_after", async () => {
+		mount(ApprovalCard, { props: { block: customField({ dt: "Customer", depends_on: "eval:doc.qty" }, "update_document", { name: "Customer-po" }) } });
+		await flushPromises();
+		expect(fieldPlacement).not.toHaveBeenCalled();
+	});
 });
 
 describe("ApprovalCard field conditions", () => {
@@ -355,6 +361,14 @@ describe("ApprovalCard field conditions", () => {
 		expect(wrapper.text()).not.toContain("eval:doc");
 		await wrapper.find(".condition-toggle").trigger("click");
 		expect(wrapper.find(".condition-code").text()).toBe("eval:doc.base_grand_total > 100000");
+	});
+
+	it("shows a condition sentence in the normal font", async () => {
+		const wrapper = card(conditionInput);
+		await flushPromises();
+		const value = wrapper.findAll(".field-value").find((v) => v.find(".condition-value").exists());
+		expect(value.classes()).not.toContain("value-mono");
+		expect(value.classes()).not.toContain("value-money");
 	});
 
 	it("falls back to 'Has a condition' for an expression it cannot read", async () => {

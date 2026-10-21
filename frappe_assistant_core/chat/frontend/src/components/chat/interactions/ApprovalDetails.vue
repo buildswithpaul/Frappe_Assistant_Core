@@ -4,7 +4,10 @@
 			<span class="field-key">{{ formatKey(key) }}</span>
 			<span
 				class="field-value"
-				:class="{ 'value-mono': isMonoValue(key, value), 'value-money': isMoneyKey(key) }"
+				:class="{
+					'value-mono': !isCondition(key) && isMonoValue(key, value),
+					'value-money': !isCondition(key) && isMoneyKey(key),
+				}"
 			>
 				<ConditionValue v-if="isCondition(key)" :expression="value" />
 				<template v-else>{{ formatValue(value) }}</template>

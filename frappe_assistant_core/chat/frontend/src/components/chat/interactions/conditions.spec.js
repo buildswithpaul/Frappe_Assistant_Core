@@ -15,6 +15,12 @@ describe("describeCondition", () => {
 		expect(describeCondition('eval:doc.status != "Closed"')).toBe("when Status is not Closed");
 	});
 
+	it("reads an empty quoted value as empty or set, never as a blank", () => {
+		expect(describeCondition("eval:doc.status == ''")).toBe("when Status is empty");
+		expect(describeCondition('eval:doc.status === ""')).toBe("when Status is empty");
+		expect(describeCondition("eval:doc.status != ''")).toBe("when Status is set");
+	});
+
 	it("reads a bare field as set", () => {
 		expect(describeCondition("eval:doc.customer_po")).toBe("when Customer Po is set");
 	});

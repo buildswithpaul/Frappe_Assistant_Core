@@ -28,12 +28,20 @@ SENTENCES["!=="] = SENTENCES["!="];
 
 const unquote = (value) => (/^['"]/.test(value) ? value.slice(1, -1) : value);
 
+// Comparing with an empty string asks whether the field is blank, which a blank in the sentence would hide.
+const BLANK_SENTENCES = {
+	"==": (field) => __("when {0} is empty", [field]),
+	"!=": (field) => __("when {0} is set", [field]),
+};
+
 export function describeCondition(expression) {
 	const text = typeof expression === "string" ? expression.trim() : "";
 	const comparison = COMPARISON.exec(text);
 	if (comparison) {
 		const [, field, operator, value] = comparison;
-		return SENTENCES[operator](formatKey(field), unquote(value));
+		const label = formatKey(field);
+		if (unquote(value) === "" && /^['"]/.test(value)) return BLANK_SENTENCES[operator.slice(0, 2)](label);
+		return SENTENCES[operator](label, unquote(value));
 	}
 	const bare = BARE_FIELD.exec(text);
 	if (bare) return __("when {0} is set", [formatKey(bare[1])]);

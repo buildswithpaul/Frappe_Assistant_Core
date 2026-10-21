@@ -10,25 +10,11 @@ import { createRouterShim } from "./routerShim.js";
 import { placePanel } from "./placement.js";
 import { isolateTyping } from "./keyIsolation.js";
 import { TELEPORT_TARGET_KEY } from "@/composables/useTeleportTarget";
-import { configureSurface } from "@/stores/chat/surface";
+import { configureWidgetSurface } from "./widgetSurface.js";
 import { mirrorDeskTheme } from "../launcher/theme.js";
-import { getHost } from "../host/index.js";
-
-function clientSignals() {
-	const d = window.FACODiagnostics;
-	if (!d) return null;
-	const counts = d.counts();
-	return counts.console || counts.failed_requests ? JSON.stringify({ recent_errors: counts }) : null;
-}
 
 export async function mountPanel(config) {
-	configureSurface({
-		name: "widget",
-		clientType: getHost().clientType,
-		modelId: "auto",
-		spotlightSurface: "widget",
-		clientSignals,
-	});
+	configureWidgetSurface();
 
 	const host = document.createElement("div");
 	host.id = "fac-widget-panel";
