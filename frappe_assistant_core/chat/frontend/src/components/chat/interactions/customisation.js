@@ -9,6 +9,7 @@
 import { __ } from "@/utils/i18n";
 import { baseToolName } from "@/utils/toolNames";
 import { flattenInput } from "./helpers";
+import { isConditionKey } from "./conditions";
 
 // The doctypes whose writes change how the site behaves; mirrors the server-side set.
 const CUSTOMISATION_DOCTYPES = new Set([
@@ -145,4 +146,44 @@ export function writeConsequence(toolName, input) {
 	if (tool === "document_action") return documentActionConsequence(input);
 	const consequence = WRITE_CONSEQUENCES[tool];
 	return consequence ? consequence() : "";
+}
+
+const WRITE_TOOLS = ["create_document", "update_document"];
+
+function writeFields(toolName, input, doctype) {
+	if (!WRITE_TOOLS.includes(baseToolName(toolName)) || !input || typeof input !== "object") return null;
+	const fields = flattenInput(input);
+	return fields.doctype === doctype ? fields : null;
+}
+
+const hasText = (value) => typeof value === "string" && value.trim() !== "";
+
+/**
+ * True when `key` holds a condition expression in this write: a Custom Field's own
+ * depends_on-style field, or the value of a Property Setter that sets one.
+ */
+export function writesCondition(toolName, input, key) {
+	const field = writeFields(toolName, input, "Custom Field");
+	if (field) return isConditionKey(key) && hasText(field[key]);
+	const setter = writeFields(toolName, input, "Property Setter");
+	return Boolean(setter) && key === "value" && isConditionKey(setter.property) && hasText(setter.value);
+}
+
+const NO_CONDITION_CHECK = () =>
+	__("Checked in the Desk form only — imports, the API and FACO's own writes are not checked.");
+
+/** The caveat a write that sets a field condition always carries, or null for any other write. */
+export function conditionNotice(toolName, input) {
+	const customField = writeFields(toolName, input, "Custom Field");
+	if (customField && Object.keys(customField).some((key) => writesCondition(toolName, input, key))) {
+		return NO_CONDITION_CHECK();
+	}
+	return writesCondition(toolName, input, "value") ? NO_CONDITION_CHECK() : null;
+}
+
+/** Where a new or changed Custom Field will land: null unless the input names the form (dt). */
+export function fieldPlacementTarget(toolName, input) {
+	const fields = writeFields(toolName, input, "Custom Field");
+	if (!fields || !hasText(fields.dt)) return null;
+	return { doctype: fields.dt, insertAfter: fields.insert_after, fieldtype: fields.fieldtype };
 }

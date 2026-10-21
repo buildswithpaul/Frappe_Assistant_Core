@@ -1,6 +1,12 @@
 import { describe, it, expect } from "vitest";
 import { isCustomisationRisk } from "@/utils/toolNames";
-import { customisationConsequence, writeConsequence } from "./customisation";
+import {
+	conditionNotice,
+	customisationConsequence,
+	fieldPlacementTarget,
+	writesCondition,
+	writeConsequence,
+} from "./customisation";
 
 describe("writeConsequence", () => {
 	it("states the write effect for record tools", () => {
@@ -152,5 +158,61 @@ describe("connection-prefixed tool names", () => {
 		expect(isCustomisationRisk({ interrupts: [{ reason: { risk: "other" } }] })).toBe(false);
 		expect(isCustomisationRisk({})).toBe(false);
 		expect(isCustomisationRisk(null)).toBe(false);
+	});
+});
+
+const NOTICE = "Checked in the Desk form only — imports, the API and FACO's own writes are not checked.";
+
+describe("conditionNotice", () => {
+	it("applies to a Custom Field create that sets a condition", () => {
+		const input = { doctype: "Custom Field", data: { dt: "Sales Order", depends_on: "eval:doc.qty > 1" } };
+		expect(conditionNotice("create_document", input)).toBe(NOTICE);
+	});
+
+	it("applies to a Custom Field update that sets a condition", () => {
+		const input = { doctype: "Custom Field", name: "Sales Order-x", data: { mandatory_depends_on: "eval:doc.qty" } };
+		expect(conditionNotice("update_document", input)).toBe(NOTICE);
+	});
+
+	it("applies to a Property Setter whose property is a condition", () => {
+		const input = { doctype: "Property Setter", data: { property: "read_only_depends_on", value: "eval:doc.qty" } };
+		expect(conditionNotice("create_document", input)).toBe(NOTICE);
+	});
+
+	it("stays quiet for everything else", () => {
+		const other = { doctype: "Property Setter", data: { property: "hidden", value: "1" } };
+		expect(conditionNotice("create_document", other)).toBeNull();
+		expect(conditionNotice("create_document", { doctype: "Custom Field", data: { label: "PO" } })).toBeNull();
+		expect(conditionNotice("create_document", { doctype: "Custom Field", data: { depends_on: "" } })).toBeNull();
+		expect(conditionNotice("delete_document", { doctype: "Custom Field", name: "x" })).toBeNull();
+		expect(conditionNotice("create_document", { doctype: "ToDo", data: { depends_on: "eval:1" } })).toBeNull();
+	});
+
+	it("finds a condition value the notice is about", () => {
+		const input = { doctype: "Property Setter", data: { property: "depends_on", value: "eval:doc.qty" } };
+		expect(writesCondition("create_document", input, "value")).toBe(true);
+		expect(writesCondition("create_document", input, "property")).toBe(false);
+	});
+});
+
+describe("fieldPlacementTarget", () => {
+	it("reads dt, insert_after and fieldtype from a Custom Field create", () => {
+		const input = { doctype: "Custom Field", data: { dt: "Customer", insert_after: "email_id", fieldtype: "Data" } };
+		expect(fieldPlacementTarget("create_document", input)).toEqual({
+			doctype: "Customer",
+			insertAfter: "email_id",
+			fieldtype: "Data",
+		});
+	});
+
+	it("is null for an update without dt, another doctype, or another tool", () => {
+		expect(fieldPlacementTarget("update_document", { doctype: "Custom Field", name: "x", data: { label: "y" } })).toBeNull();
+		expect(fieldPlacementTarget("create_document", { doctype: "ToDo", data: { dt: "Customer" } })).toBeNull();
+		expect(fieldPlacementTarget("delete_document", { doctype: "Custom Field", data: { dt: "Customer" } })).toBeNull();
+	});
+
+	it("follows a prefixed tool name", () => {
+		const input = { doctype: "Custom Field", data: { dt: "Customer" } };
+		expect(fieldPlacementTarget("prod_create_document", input)).toMatchObject({ doctype: "Customer" });
 	});
 });

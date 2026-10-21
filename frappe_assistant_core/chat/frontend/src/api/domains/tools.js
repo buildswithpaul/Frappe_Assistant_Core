@@ -34,4 +34,11 @@ export const tools = {
 			"frappe_assistant_core.chat.api.current_code.get_current_code",
 			{ doctype, name, fields: JSON.stringify(fields) }
 		),
+
+	// Where a Custom Field will land on its form (tab, section, collapsed), for its approval card.
+	fieldPlacement: (doctype, insertAfter, fieldtype) =>
+		getCall(
+			"frappe_assistant_core.chat.api.field_placement.get_field_placement",
+			{ doctype, insert_after: insertAfter, fieldtype }
+		),
 };

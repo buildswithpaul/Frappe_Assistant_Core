@@ -3,8 +3,15 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const messagePreview = vi.fn();
 const currentCode = vi.fn();
+const fieldPlacement = vi.fn();
 vi.mock("@/api/client", () => ({
-	api: { tools: { messagePreview: (...a) => messagePreview(...a), currentCode: (...a) => currentCode(...a) } },
+	api: {
+		tools: {
+			messagePreview: (...a) => messagePreview(...a),
+			currentCode: (...a) => currentCode(...a),
+			fieldPlacement: (...a) => fieldPlacement(...a),
+		},
+	},
 }));
 
 import ApprovalCard from "@/components/chat/interactions/ApprovalCard.vue";
@@ -28,6 +35,8 @@ beforeEach(() => {
 	messagePreview.mockReset();
 	currentCode.mockReset();
 	currentCode.mockRejectedValue(new Error("not fetched"));
+	fieldPlacement.mockReset();
+	fieldPlacement.mockRejectedValue(new Error("not fetched"));
 });
 
 describe("ApprovalCard for a message tool", () => {
@@ -281,3 +290,99 @@ describe("ApprovalCard plain-language copy and trust", () => {
 	});
 });
 
+
+describe("ApprovalCard Custom Field placement", () => {
+	const customField = (data, tool = "create_document", extra = {}) => ({
+		id: "p1",
+		tool_name: tool,
+		input: { doctype: "Custom Field", data, ...extra },
+		interrupts,
+	});
+	const field = { dt: "Customer", insert_after: "email_id", fieldtype: "Data", label: "PO" };
+
+	it("shows where the field will appear, taken from the server's sentence", async () => {
+		fieldPlacement.mockResolvedValue({
+			sentence: "Will appear on the Details tab, in the Customer section",
+			warning: false,
+		});
+		const wrapper = mount(ApprovalCard, { props: { block: customField(field) } });
+		await flushPromises();
+		expect(fieldPlacement).toHaveBeenCalledWith("Customer", "email_id", "Data");
+		const line = wrapper.find('[data-test="placement"]');
+		expect(line.text()).toBe("Will appear on the Details tab, in the Customer section");
+		expect(line.classes()).not.toContain("note-warning");
+	});
+
+	it("flags a hidden spot with the warning style", async () => {
+		fieldPlacement.mockResolvedValue({
+			sentence: "Will appear on the More Info tab (collapsed — hidden until someone opens it)",
+			warning: true,
+		});
+		const wrapper = mount(ApprovalCard, { props: { block: customField(field) } });
+		await flushPromises();
+		expect(wrapper.find('[data-test="placement"]').classes()).toContain("note-warning");
+	});
+
+	it("shows nothing and still lets the user approve when the lookup fails", async () => {
+		const wrapper = mount(ApprovalCard, { props: { block: customField(field) } });
+		await flushPromises();
+		expect(wrapper.find('[data-test="placement"]').exists()).toBe(false);
+		await wrapper.find(".ql-btn-approve").trigger("click");
+		expect(wrapper.emitted("approve")).toHaveLength(1);
+	});
+
+	it("skips the lookup for an update that does not name the form, and for other records", async () => {
+		mount(ApprovalCard, { props: { block: customField({ label: "PO" }, "update_document", { name: "Customer-po" }) } });
+		mount(ApprovalCard, {
+			props: { block: { id: "p2", tool_name: "create_document", input: { doctype: "ToDo", data: { dt: "Customer" } }, interrupts } },
+		});
+		await flushPromises();
+		expect(fieldPlacement).not.toHaveBeenCalled();
+	});
+});
+
+describe("ApprovalCard field conditions", () => {
+	const NOTICE = "Checked in the Desk form only — imports, the API and FACO's own writes are not checked.";
+	const card = (input, tool = "create_document") =>
+		mount(ApprovalCard, { props: { block: { id: "d1", tool_name: tool, input, interrupts } } });
+	const conditionInput = { doctype: "Custom Field", data: { dt: "Sales Order", depends_on: "eval:doc.base_grand_total > 100000" } };
+
+	it("Custom Field create: sentence in the row, raw expression only under the toggle, and the notice", async () => {
+		const wrapper = card(conditionInput);
+		await flushPromises();
+		expect(wrapper.text()).toContain("when Base Grand Total is over 100000");
+		expect(wrapper.text()).toContain(NOTICE);
+		expect(wrapper.text()).not.toContain("eval:doc");
+		await wrapper.find(".condition-toggle").trigger("click");
+		expect(wrapper.find(".condition-code").text()).toBe("eval:doc.base_grand_total > 100000");
+	});
+
+	it("falls back to 'Has a condition' for an expression it cannot read", async () => {
+		const wrapper = card({ doctype: "Custom Field", data: { dt: "Sales Order", depends_on: "eval:doc.a > 1 && doc.b" } });
+		await flushPromises();
+		expect(wrapper.find(".condition-value").text()).toContain("Has a condition");
+		expect(wrapper.text()).not.toContain("doc.a > 1");
+	});
+
+	it("Custom Field update carries the notice", async () => {
+		const wrapper = card({ doctype: "Custom Field", name: "Sales Order-po", data: { mandatory_depends_on: "eval:doc.qty" } }, "update_document");
+		await flushPromises();
+		expect(wrapper.find('[data-test="condition-notice"]').text()).toBe(NOTICE);
+		expect(wrapper.text()).toContain("when Qty is set");
+	});
+
+	it("Property Setter carries the notice and reads its value as a sentence", async () => {
+		const wrapper = card({ doctype: "Property Setter", data: { doc_type: "Sales Order", property: "read_only_depends_on", value: "eval:doc.status == 'Closed'" } });
+		await flushPromises();
+		expect(wrapper.find('[data-test="condition-notice"]').text()).toBe(NOTICE);
+		expect(wrapper.text()).toContain("when Status is Closed");
+		expect(wrapper.text()).not.toContain("eval:doc");
+	});
+
+	it("a write that sets no condition has no notice", async () => {
+		const wrapper = card({ doctype: "Property Setter", data: { property: "hidden", value: "1" } });
+		await flushPromises();
+		expect(wrapper.find('[data-test="condition-notice"]').exists()).toBe(false);
+		expect(wrapper.find(".condition-toggle").exists()).toBe(false);
+	});
+});

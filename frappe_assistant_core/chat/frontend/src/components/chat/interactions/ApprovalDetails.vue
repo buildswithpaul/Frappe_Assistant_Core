@@ -5,8 +5,10 @@
 			<span
 				class="field-value"
 				:class="{ 'value-mono': isMonoValue(key, value), 'value-money': isMoneyKey(key) }"
-				>{{ formatValue(value) }}</span
 			>
+				<ConditionValue v-if="isCondition(key)" :expression="value" />
+				<template v-else>{{ formatValue(value) }}</template>
+			</span>
 		</template>
 		<template v-if="fieldSplit.overflowCount > 0">
 			<span class="field-more">{{ __("+ {0} more", [fieldSplit.overflowCount]) }}</span>
@@ -23,14 +25,18 @@
 			:previous="previousCode(key)"
 		/>
 		<ChildTable v-for="[key, rows] in tableRows" :key="key" :label="key" :rows="rows" />
+		<ApprovalNotes :block="block" />
 	</div>
 </template>
 
 <script setup>
 import { computed, ref } from "vue";
 import { __ } from "@/utils/i18n";
+import ApprovalNotes from "./ApprovalNotes.vue";
 import ChildTable from "./ChildTable.vue";
+import ConditionValue from "./ConditionValue.vue";
 import CodePreview from "./CodePreview.vue";
+import { writesCondition } from "./customisation";
 import { useCurrentCode } from "./useCurrentCode";
 import {
 	flattenInput,
@@ -72,6 +78,9 @@ const fieldSplit = computed(() => splitDetailFields(plainFields.value, 4));
 const visibleRows = computed(() =>
 	showAllFields.value ? [...fieldSplit.value.primary, ...fieldSplit.value.overflow] : fieldSplit.value.primary,
 );
+
+// A condition expression is read as a sentence; the raw text stays behind a toggle.
+const isCondition = (key) => writesCondition(props.block.tool_name, props.block.input, key);
 
 function previousCode(key) {
 	const stored = currentCode.value?.[key];
