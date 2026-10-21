@@ -8,7 +8,7 @@
 import { formatToolName, flattenInput } from "@/components/chat/interactions/helpers.js";
 import { buildTimelineRows } from "@/composables/useActivityTimeline.js";
 import { isApprovalInteraction } from "@/stores/chat/interactionRegime";
-import { isDryRun, safeUrl, toolFailed, toolResult } from "@/utils/toolResult";
+import { appliesTo, isDryRun, safeUrl, toolFailed, toolResult } from "@/utils/toolResult";
 import { __ } from "@/utils/i18n";
 // formatToolName is still used for the approval card title (an interaction, not
 // a record); record chips deliberately do NOT fall back to a tool name.
@@ -109,19 +109,20 @@ export function deriveArtifacts(blocks) {
 	const records = [];
 	const seen = new Set();
 	const byIdentity = new Map();
-	const pushRecord = (key, label, kind, url = null, identity = null) => {
+	const pushRecord = (key, label, kind, url = null, identity = null, opens = null) => {
 		if (!label) return;
 		const earlier = identity ? byIdentity.get(identity) : null;
 		if (earlier) {
 			// The same record touched again: keep one chip, with the latest result and a write over a read.
 			earlier.label = label;
 			earlier.url = url ?? earlier.url;
+			if (opens) earlier.appliesTo = opens;
 			if (kind === "record") earlier.kind = kind;
 			return;
 		}
 		if (seen.has(key)) return;
 		seen.add(key);
-		const record = { key, label, kind, url };
+		const record = { key, label, kind, url, ...(opens ? { appliesTo: opens } : {}) };
 		records.push(record);
 		if (identity) byIdentity.set(identity, record);
 	};
@@ -130,7 +131,7 @@ export function deriveArtifacts(blocks) {
 		if (b.type === "tool_call" && b.status === "success" && !toolFailed(b) && !isDryRun(b)) {
 			const isRead = READ_TOOLS.has(b.tool_name);
 			const result = toolResult(b);
-			pushRecord(`tool-${b.id}`, recordLabel(b, result), isRead ? "source" : "record", safeUrl(result.url), recordIdentity(b, result));
+			pushRecord(`tool-${b.id}`, recordLabel(b, result), isRead ? "source" : "record", safeUrl(result.url), recordIdentity(b, result), appliesTo(b));
 		}
 		if (b.type === "sources" && Array.isArray(b.items)) {
 			for (const item of b.items) {

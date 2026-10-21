@@ -52,6 +52,14 @@ export function safeUrl(value) {
 	return null;
 }
 
+/** The form a successful customisation write changes: `{doctype, url}` with a safe url, or null. */
+export function appliesTo(block) {
+	if (toolFailed(block) || isDryRun(block)) return null;
+	const target = toolResult(block).applies_to;
+	const url = safeUrl(target?.url);
+	return url && typeof target.doctype === "string" && target.doctype ? { doctype: target.doctype, url } : null;
+}
+
 export function toolFailed(block) {
 	return block?.status === "error" || block?.result?.isError === true || toolResult(block).success === false;
 }

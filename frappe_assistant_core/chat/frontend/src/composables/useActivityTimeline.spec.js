@@ -160,3 +160,27 @@ describe("buildTimelineRows status of a failure payload", () => {
 		expect(row.reason).toBe("Name taken");
 	});
 });
+
+describe("toolRowFrom open link", () => {
+	const write = (result, extra = {}) => ({
+		type: "tool_call",
+		id: "w1",
+		tool_name: "create_document",
+		status: "success",
+		input: { doctype: "Custom Field", data: { dt: "Customer" } },
+		result,
+		...extra,
+	});
+
+	it("carries the form to open when a successful write names one", () => {
+		const [row] = buildTimelineRows([write({ name: "Customer-po", applies_to: { doctype: "Customer", url: "/desk/customer/new" } })]);
+		expect(row.appliesTo).toEqual({ doctype: "Customer", url: "/desk/customer/new" });
+	});
+
+	it("has no link without applies_to, with an unsafe url, or on a failed write", () => {
+		expect(buildTimelineRows([write({ name: "x" })])[0].appliesTo).toBeNull();
+		expect(buildTimelineRows([write({ applies_to: { doctype: "Customer", url: "javascript:alert(1)" } })])[0].appliesTo).toBeNull();
+		const failed = write({ success: false, applies_to: { doctype: "Customer", url: "/desk/customer/new" } });
+		expect(buildTimelineRows([failed])[0].appliesTo).toBeNull();
+	});
+});

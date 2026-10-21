@@ -44,6 +44,34 @@ describe("ContextRail records", () => {
 	});
 });
 
+describe("ContextRail open link", () => {
+	beforeEach(() => setActivePinia(createPinia()));
+
+	const field = (result) => ({
+		type: "tool_call",
+		id: "f1",
+		tool_name: "create_document",
+		status: "success",
+		input: { doctype: "Custom Field", data: { dt: "Customer" } },
+		result,
+	});
+
+	it("offers a link to a new form of the doctype the change applies to", () => {
+		const wrapper = mountRail([field({ name: "Customer-po", url: "/desk/custom-field/Customer-po", applies_to: { doctype: "Customer", url: "/desk/customer/new" } })]);
+		const link = wrapper.find("a.rail-chip-open");
+		expect(link.text()).toBe("Open a new Customer");
+		expect(link.attributes("href")).toBe("/desk/customer/new");
+		expect(link.attributes("target")).toBe("_blank");
+		expect(link.attributes("rel")).toBe("noopener");
+	});
+
+	it("has no link without applies_to or with an unsafe url", () => {
+		expect(mountRail([field({ name: "Customer-po" })]).find("a.rail-chip-open").exists()).toBe(false);
+		const unsafe = field({ name: "Customer-po", applies_to: { doctype: "Customer", url: "javascript:alert(1)" } });
+		expect(mountRail([unsafe]).find("a.rail-chip-open").exists()).toBe(false);
+	});
+});
+
 describe("ContextRail pending interaction", () => {
 	beforeEach(() => setActivePinia(createPinia()));
 

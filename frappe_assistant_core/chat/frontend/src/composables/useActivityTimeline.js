@@ -9,7 +9,7 @@
 import { isInternalTool } from "@/utils/internalTools";
 import { __ } from "@/utils/i18n";
 import { baseToolName } from "@/utils/toolNames";
-import { failureReason, isDryRun, toolFailed, toolResult } from "@/utils/toolResult";
+import { appliesTo, failureReason, isDryRun, toolFailed, toolResult } from "@/utils/toolResult";
 
 // Friendly verb + object phrasing per known MCP tool. Falls back to a
 // humanized tool name. `target` is pulled from the tool input when present
@@ -105,6 +105,7 @@ export function toolRowFrom(block) {
 		target,
 		toolName: block.tool_name,
 		reason: failureReason(block),
+		appliesTo: appliesTo(block),
 		hasTarget: Boolean(target),
 		block, // raw block for the expandable I/O drawer
 	};
