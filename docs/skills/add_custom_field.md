@@ -42,8 +42,10 @@ Adds a field to an existing form, such as "add a vehicle number to Delivery Note
    | Another record (a Customer, an Employee) | `Link` | The DocType name |
    | A file | `Attach` | — |
 
-4. **Place it where people will see it.** Unless the user says otherwise, put the new field on the **first tab**, in an **expanded** section (not a collapsed one), so it is visible without clicking. Set `insert_after` to the `fieldname` of an existing field in that section, taken from your search results. Search for a neighbouring field the same way if you need one. It must exist, or the save fails. Tell the user in plain words where it will appear ("under Customer, on the first tab"), and use the `applies_to.url` link in the result to show the form.
+4. **Place it where people will see it.** Unless the user says otherwise, put the new field on the **first tab**, in an **expanded** section (not a collapsed one), so it is visible without clicking. Set `insert_after` to the `fieldname` of an existing field in that section, taken from your search results. Search for a neighbouring field the same way if you need one. It must exist, or the save fails.
 5. **Plan, confirm and create** through the protocol.
+6. **Read where it landed and say so.** The `create_document` and `update_document` result carries `location`: the tab, the section, whether that section starts collapsed, and whether the tab is the first one. Tell the user in business words ("on the Details tab, in the Customer section"). If it is collapsed, or on a tab other than the first, and the user did not choose that place, move it before you report: `update_document` the same Custom Field with a new `insert_after` pointing at a field in an expanded section on the first tab, then read the new `location`. If the user did pick the place, report it as it is and mention that the section starts closed.
+7. **Link the form, not the setup record.** Give the user the `applies_to.url` link, which opens the form that now has the field. Never offer the link to the Custom Field record as the place the field shows: it opens the setup record, not the form.
 
 ## Reference
 

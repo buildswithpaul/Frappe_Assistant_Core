@@ -15,7 +15,7 @@ Every other setup skill (`add-custom-field`, `server-script`, `client-script`, `
 
 ## Workflow
 
-**Plain words, always.** Never show field names, flags or option keys (such as a server-scripts flag, `custom_` names, "Insert after" or a date field's code name) in text for the user unless they ask. Say "the Required By date", "after the Customer field", "server scripts are switched off".
+**Plain words, always.** Never show field names, flags or option keys (such as a server-scripts flag, `custom_` names, "Insert after" or a date field's code name) in text for the user unless they ask. Say "the Required By date", "after the Customer field", "server scripts are switched off". The same goes for conditions: write them as a sentence ("when the grand total is over 100,000"), never as an expression such as `eval:doc.base_grand_total > 100000`, in the plan, the questions and the change log. Show the expression only if the user asks for it.
 
 1. **Check who you're working for.** `Custom Field`, `Property Setter`, `Workflow`, `Workflow State`, `Workflow Transition`, `Role`, `DocType`, `Server Script` and `Client Script` (also `Custom DocPerm`, `User Permission` and similar permission records) are write-protected for everyone except a **System Manager**. If the user isn't one, say so up front and stop. Don't attempt the write to find out. `Report`, `Print Format` and `Notification` are not on that list: normal permissions apply, so try the write and relay a refusal in plain words. Query and Script Reports need the Script Manager role.
 2. **Read the current state.** Look at what already exists before planning — the field may already be there, the fiscal year may exist, the template may be disabled rather than missing. Never plan a duplicate.
@@ -47,6 +47,7 @@ Every other setup skill (`add-custom-field`, `server-script`, `client-script`, `
 ## Anti-patterns
 
 - Writing first and explaining afterwards.
+- Pasting a raw condition (`eval:doc...`) into the plan or the change log instead of saying it in words.
 - A plan that says "configure GST" instead of listing the actual records.
 - Treating a passed `validate_only` as proof the insert will succeed.
 - Updating a record without noting its old value, so it can't be undone.

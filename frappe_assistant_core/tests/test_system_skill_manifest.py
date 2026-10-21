@@ -104,6 +104,26 @@ class TestSystemSkillManifest(BaseAssistantTest):
         self.assertNotIn("drops the column", text)
         self.assertIn("keeps its database column", text)
 
+    def test_add_custom_field_reports_placement_and_links_the_form(self):
+        text = self._read_skill("add_custom_field.md")
+        self.assertIn("`location`", text)
+        self.assertIn("did not choose that place, move it before you report", text)
+        self.assertIn("`applies_to.url`", text)
+        self.assertIn("Never offer the link to the Custom Field record", text)
+        self.assertIn("keeps its database column", text)
+
+    def test_conditions_are_said_as_sentences_not_expressions(self):
+        wording = {
+            "setup_change_protocol.md": "never as an expression such as",
+            "notification.md": "never as the expression",
+            "set_up_approval_workflow.md": "never as the expression",
+        }
+        for name, phrase in wording.items():
+            self.assertIn(phrase, self._read_skill(name), name)
+        protocol = self._read_skill("setup_change_protocol.md")
+        self.assertIn("when the grand total is over 100,000", protocol)
+        self.assertIn("Pasting a raw condition", protocol)
+
     def _read_skill(self, name: str) -> str:
         with open(os.path.join(REPO_DIR, "docs", "skills", name), encoding="utf-8") as f:
             return f.read()

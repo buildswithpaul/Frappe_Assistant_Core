@@ -63,7 +63,7 @@ Before this is created, `Draft` and `Cancelled` (Workflow State) and `Submit`, `
 
 - **`doc_status`** is what the state does to the document: `0` Draft, `1` Submitted, `2` Cancelled. Moving into a `1` state submits it, so the Approve action is the submit.
 - **`allow_edit`** is the role that can edit the document while it sits in that state.
-- **`condition`** is a Python expression over `doc`. Every transition out of a state that has a condition needs a partner that covers the other side (`<=` and `>`). Otherwise some documents have no action available.
+- **`condition`** is a Python expression over `doc`. In the plan and the change log, say each condition as a sentence ("when the grand total is over 50,000"), never as the expression, unless the user asks. Every transition out of a state that has a condition needs a partner that covers the other side (`<=` and `>`). Otherwise some documents have no action available.
 
 ## Gotchas
 
