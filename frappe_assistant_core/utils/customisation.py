@@ -16,7 +16,7 @@
 
 """Shared helpers for customisation work: which doctypes count, and the Server Script safety guard."""
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Iterable, Optional
 
 import frappe
 from frappe import _
@@ -138,3 +138,39 @@ def applies_to(doctype: str, values: Any) -> Optional[Dict[str, str]]:
     if not target:
         return None
     return {"doctype": target, "url": get_url_to_form(target, "new")}
+
+
+def locate_field(fields: Iterable[Any], fieldname: str) -> Optional[Dict[str, Any]]:
+    """Where a field shows on its form, from the form's fields in layout (idx) order.
+
+    Mirrors how Desk lays a form out: fields before the first Tab Break sit on a default
+    "Details" tab when the form has tabs at all, and a field belongs to the nearest Section
+    Break above it. `collapsed` is true when that section starts folded.
+    """
+    fields = list(fields)
+    tabbed = any(f.fieldtype == "Tab Break" for f in fields)
+    first_tab = True
+    tab: Optional[str] = _("Details") if tabbed and fields and fields[0].fieldtype != "Tab Break" else None
+    section: Optional[str] = None
+    collapsed = False
+    seen_tabs = 1 if tab else 0
+
+    for field in fields:
+        if field.fieldname == fieldname:
+            return {"tab": tab, "section": section, "collapsed": collapsed, "first_tab": first_tab}
+        if field.fieldtype == "Tab Break":
+            seen_tabs += 1
+            first_tab = seen_tabs == 1
+            tab = field.label or None
+            section, collapsed = None, False
+        elif field.fieldtype == "Section Break":
+            section = field.label or None
+            collapsed = bool(cint(field.collapsible))
+    return None
+
+
+def custom_field_location(doc: Any) -> Optional[Dict[str, Any]]:
+    """Where a saved Custom Field shows, read from the target form's meta after the save."""
+    if not doc.get("dt") or not doc.get("fieldname"):
+        return None
+    return locate_field(frappe.get_meta(doc.dt, cached=False).fields, doc.fieldname)
