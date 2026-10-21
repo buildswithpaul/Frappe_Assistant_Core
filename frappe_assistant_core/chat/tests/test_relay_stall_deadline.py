@@ -4,6 +4,7 @@
 
 """A relay that gets no real progress from AR stops waiting and ends the turn with an error."""
 
+import json
 import time
 from contextlib import ExitStack
 from types import SimpleNamespace
@@ -22,6 +23,22 @@ EVENT_CAP = 200
 
 def _event(name: str, **data) -> dict:
     return {"event": name, "data": data}
+
+
+# Reads are 60 s apart, so the 36th read lands past RELAY_MAX_TURN_SECONDS.
+LATE_CHUNKS = 35
+PAUSED_BLOCKS = [
+    {"type": "text", "id": "text-1", "content": "I will create the ToDo once you approve."},
+    {
+        "type": "interaction",
+        "id": "toolu_1",
+        "interactionType": "approval",
+        "tool_name": "create_document",
+        "input": {"doctype": "ToDo"},
+        "interrupts": [{"id": "int-1", "name": "create_document", "reason": {"type": "approval"}}],
+        "status": "pending",
+    },
+]
 
 
 class FakeStream:
@@ -125,10 +142,14 @@ class RelayStallBase(BaseAssistantTest):
             stream,
         )
 
-    def _resume(self, stream):
+    def _resume(self, stream, message_id=None):
         return self._run(
             lambda: relay._relay_ar_interrupt_resume(
-                self.sid, [{"interruptId": "i1", "response": "approve"}], self.user, frappe.local.site
+                self.sid,
+                [{"interruptId": "i1", "response": "approve"}],
+                self.user,
+                frappe.local.site,
+                message_id=message_id,
             ),
             stream,
         )
@@ -191,6 +212,55 @@ class TestSendRelayStalls(RelayStallBase):
         self.assertEqual(emitted[-1]["event"], "stream_complete")
         self.assertNotIn("stream_error", [e["event"] for e in emitted])
 
+    def test_a_final_event_past_the_turn_bound_still_completes_the_turn(self):
+        complete = _event(
+            "stream_complete",
+            full_response="x" * LATE_CHUNKS,
+            credits_used=3,
+            model="m1",
+            session_state="blob",
+        )
+        stream = FakeStream(
+            [
+                _event("stream_start", message_id=MESSAGE_ID, zero_retention=True),
+                *[_event("stream_chunk", content="x") for _ in range(LATE_CHUNKS)],
+                complete,
+            ]
+        )
+
+        with patch.object(relay, "_persist_session_blob") as persist_blob:
+            emitted = self._send(stream)
+
+        self.assertFalse(stream.closed)
+        self.assertEqual(emitted[-1]["event"], "stream_complete")
+        self.assertNotIn("stream_error", [e["event"] for e in emitted])
+        persist_blob.assert_called_once()
+        self.assertEqual(persist_blob.call_args[0][2]["session_state"], "blob")
+        row = frappe.db.get_value(
+            "FAC Chat Message",
+            {"session_id": self.sid, "role": "assistant"},
+            ["credits_used", "errored"],
+            as_dict=True,
+        )
+        self.assertEqual(row.credits_used, 3)
+        self.assertFalse(row.errored)
+
+    def test_a_chunk_past_the_turn_bound_is_kept_and_the_next_heartbeat_trips(self):
+        stream = FakeStream(
+            [
+                _event("stream_start", message_id=MESSAGE_ID),
+                *[_event("stream_chunk", content="x") for _ in range(LATE_CHUNKS)],
+            ],
+            tail=_event("heartbeat"),
+        )
+
+        emitted = self._send(stream)
+
+        self.assertEndedAsStalled(emitted, stream)
+        self.assertEqual(emitted[-1]["partial_response"], "x" * LATE_CHUNKS)
+        self.assertEqual(self._stored().content, "x" * LATE_CHUNKS)
+        self.assertEqual(stream.yielded, LATE_CHUNKS + 2)
+
 
 class TestResumeRelayStalls(RelayStallBase):
     def test_heartbeats_alone_end_a_resumed_turn(self):
@@ -221,3 +291,78 @@ class TestResumeRelayStalls(RelayStallBase):
 
         self.assertFalse(stream.closed)
         self.assertNotIn("stream_error", [e["event"] for e in emitted])
+
+    def test_a_final_event_past_the_turn_bound_still_completes_a_resumed_turn(self):
+        stream = FakeStream(
+            [
+                _event("stream_start", message_id=MESSAGE_ID, zero_retention=True),
+                *[_event("stream_chunk", content="x") for _ in range(LATE_CHUNKS)],
+                _event(
+                    "stream_complete",
+                    full_response="x" * LATE_CHUNKS,
+                    credits_used=3,
+                    model="m1",
+                    session_state="blob",
+                ),
+            ]
+        )
+
+        with patch.object(relay, "_persist_session_blob") as persist_blob:
+            emitted = self._resume(stream)
+
+        self.assertFalse(stream.closed)
+        self.assertEqual(emitted[-1]["event"], "stream_complete")
+        self.assertNotIn("stream_error", [e["event"] for e in emitted])
+        persist_blob.assert_called_once()
+        self.assertEqual(persist_blob.call_args[0][2]["session_state"], "blob")
+
+    def test_a_chunk_past_the_turn_bound_is_kept_and_the_next_heartbeat_trips_a_resume(self):
+        stream = FakeStream(
+            [
+                _event("stream_start", message_id=MESSAGE_ID),
+                *[_event("stream_chunk", content="x") for _ in range(LATE_CHUNKS)],
+            ],
+            tail=_event("heartbeat"),
+        )
+
+        emitted = self._resume(stream)
+
+        self.assertEndedAsStalled(emitted, stream)
+        self.assertEqual(emitted[-1]["partial_response"], "x" * LATE_CHUNKS)
+        self.assertEqual(self._stored().content, "x" * LATE_CHUNKS)
+        self.assertEqual(stream.yielded, LATE_CHUNKS + 2)
+
+    def test_a_stall_before_the_pause_is_consumed_leaves_the_cards_and_the_row_alone(self):
+        # AR accepted the resume (stream_start) but its agent parks before running anything,
+        # heartbeating the whole time; the pause is still held on AR's side.
+        row = (
+            frappe.get_doc(
+                {
+                    "doctype": "FAC Chat Message",
+                    "session_id": self.sid,
+                    "message_id": MESSAGE_ID,
+                    "user": self.user,
+                    "role": "assistant",
+                    "content": "paused",
+                    "blocks": json.dumps(PAUSED_BLOCKS),
+                }
+            )
+            .insert(ignore_permissions=True)
+            .name
+        )
+        stream = FakeStream(
+            [_event("stream_start", message_id=MESSAGE_ID, resumed=True)], tail=_event("heartbeat")
+        )
+
+        with patch.object(relay, "_set_faco_message_with_retry") as write:
+            emitted = self._resume(stream, message_id=MESSAGE_ID)
+
+        self.assertTrue(stream.closed)
+        self.assertEqual(emitted[-1]["event"], "stream_error")
+        self.assertEqual(emitted[-1]["error_code"], "RELAY_STALLED")
+        interactions = [b for b in emitted[-1]["blocks"] if b["type"] == "interaction"]
+        self.assertEqual([b["status"] for b in interactions], ["pending"])
+        write.assert_not_called()
+        stored = frappe.db.get_value("FAC Chat Message", row, ["content", "blocks"], as_dict=True)
+        self.assertEqual(stored.content, "paused")
+        self.assertEqual(json.loads(stored.blocks), PAUSED_BLOCKS)

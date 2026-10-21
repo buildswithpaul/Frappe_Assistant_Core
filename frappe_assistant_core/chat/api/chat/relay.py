@@ -365,6 +365,8 @@ def _relay_deadline_tripped(started: float, last_progress: float, now: float) ->
     ``last_progress`` is the time of the last event that is not a heartbeat:
     AR keeps heartbeating while its agent is parked, so a heartbeat says the
     connection is alive, not that the turn is moving.
+    The loops ask only when a heartbeat arrives, so a real event (a final
+    ``stream_complete``, an approval card) is never replaced by the trip.
     """
     if now - last_progress >= RELAY_NO_PROGRESS_SECONDS:
         return "no_progress"
@@ -936,7 +938,7 @@ def _relay_ar_interrupt_resume(
             now = time.monotonic()
             if event_type != "heartbeat":
                 last_progress = now
-            if _relay_deadline_tripped(started, last_progress, now):
+            elif _relay_deadline_tripped(started, last_progress, now):
                 event_type, data = _relay_stalled_event(stream_iter, session_id)
                 stalled = True
 
@@ -1554,7 +1556,7 @@ def _relay_ar_stream(
             now = time.monotonic()
             if event_type != "heartbeat":
                 last_progress = now
-            if _relay_deadline_tripped(started, last_progress, now):
+            elif _relay_deadline_tripped(started, last_progress, now):
                 event_type, data = _relay_stalled_event(stream_iter, session_id)
                 stalled = True
 
