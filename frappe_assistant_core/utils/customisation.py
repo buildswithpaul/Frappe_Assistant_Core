@@ -20,7 +20,7 @@ from typing import Any, Dict, Optional
 
 import frappe
 from frappe import _
-from frappe.utils import cint, get_url_to_form
+from frappe.utils import cint, get_url, get_url_to_form
 
 CUSTOMISATION_DOCTYPES = frozenset(
     {
@@ -39,6 +39,13 @@ CUSTOMISATION_DOCTYPES = frozenset(
         "Notification",
     }
 )
+
+APPLIES_TO_FIELDS = {
+    "Custom Field": "dt",
+    "Property Setter": "doc_type",
+    "Client Script": "dt",
+    "Server Script": "reference_doctype",
+}
 
 
 def server_scripts_enabled() -> bool:
@@ -96,3 +103,12 @@ def server_script_guard(
 def desk_url(doctype: str, name: str) -> str:
     """Link to a record's form in Desk."""
     return get_url_to_form(doctype, name)
+
+
+def applies_to(doctype: str, values: Any) -> Optional[Dict[str, str]]:
+    """The doctype a customisation changes, with a link to where to see it in Desk."""
+    field = APPLIES_TO_FIELDS.get(doctype)
+    target = values.get(field) if field else None
+    if not target:
+        return None
+    return {"doctype": target, "url": get_url(f"/app/{frappe.scrub(target).replace('_', '-')}/new")}

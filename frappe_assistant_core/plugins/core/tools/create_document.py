@@ -25,7 +25,7 @@ import frappe
 from frappe import _
 
 from frappe_assistant_core.core.base_tool import BaseTool, exception_message, permission_error_result
-from frappe_assistant_core.utils.customisation import server_script_guard
+from frappe_assistant_core.utils.customisation import applies_to, desk_url, server_script_guard
 from frappe_assistant_core.utils.savepoint import (
     open_savepoint,
     release_savepoint,
@@ -92,7 +92,7 @@ class DocumentCreate(BaseTool):
                 "validate_only": {
                     "type": "boolean",
                     "default": False,
-                    "description": "Only validate the document without saving it. Use this to test data format and required fields before actual creation.",
+                    "description": "Run the document's validation without saving. Checks permissions and validation rules; it does not check mandatory fields.",
                 },
             },
             "required": ["doctype", "data"],
@@ -118,6 +118,7 @@ class DocumentCreate(BaseTool):
             doctype=doctype,
             name=None,  # No specific document for create operation
             perm_type="create",
+            data=data,
         )
 
         if not validation_result["success"]:
@@ -282,9 +283,13 @@ class DocumentCreate(BaseTool):
                 "docstatus": doc.docstatus,
                 "owner": doc.owner,
                 "creation": str(doc.creation),
+                "url": desk_url(doctype, doc.name),
                 "submitted": False,
                 "can_submit": False,
             }
+            customised = applies_to(doctype, doc)
+            if customised:
+                result["applies_to"] = customised
 
             # Submit if requested and allowed
             from frappe.model.workflow import get_workflow_name

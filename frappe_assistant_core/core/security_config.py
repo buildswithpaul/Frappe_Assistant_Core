@@ -24,6 +24,7 @@ and security policies following Frappe Framework standards.
 from typing import Any, Dict, List, Optional, Set
 
 import frappe
+from frappe import _
 
 # Basic Core tools available to ALL users (document permissions will control access)
 BASIC_CORE_TOOLS = [
@@ -272,6 +273,8 @@ ADMIN_ONLY_FIELDS = {
     "Social Login Key": "*",
     "Dropbox Settings": "*",
 }
+
+SCRIPT_REPORT_TYPES = ("Query Report", "Script Report")
 
 # DocTypes whose contents are executable code, or which define the schema and the
 # permission model itself. Writing to any of these over MCP is a privilege-escalation
@@ -535,6 +538,16 @@ def is_doctype_accessible(doctype: str, user_role: str, perm_type: str = "read")
     return doctype not in WRITE_PROTECTED_DOCTYPES
 
 
+def _missing_permission_message(perm_type: str, doctype: str, data: Any) -> str:
+    """Say what is missing; scripts need the Script Manager role, which System Manager lacks."""
+    report_type = data.get("report_type") if isinstance(data, dict) else None
+    if doctype == "Server Script" or (doctype == "Report" and report_type in SCRIPT_REPORT_TYPES):
+        return _("Working with {0} needs the Script Manager role, which your account does not have.").format(
+            doctype
+        )
+    return _("Insufficient {0} permissions for {1}").format(perm_type, doctype)
+
+
 def validate_document_access(
     user: str, doctype: str, name: str, perm_type: str = "read", data: str = ""
 ) -> Dict[str, Any]:
@@ -559,8 +572,10 @@ def validate_document_access(
         if not is_doctype_accessible(doctype, primary_role, perm_type):
             return {
                 "success": False,
-                "error": f"{perm_type.capitalize()} access to {doctype} is blocked over MCP "
-                f"because it defines executable code, schema or permissions",
+                "error": _(
+                    "Changing {0} needs a System Manager. Ask one to make this change in Desk."
+                ).format(doctype),
+                "error_type": "permission_error",
             }
 
         # A child row is only ever written through its parent, which is where the
@@ -576,7 +591,11 @@ def validate_document_access(
             # decision, but say why instead of reporting a missing permission.
             if frappe.is_table(doctype):
                 return child_table_doctype_error(doctype, perm_type, user)
-            return {"success": False, "error": f"Insufficient {perm_type} permissions for {doctype}"}
+            return {
+                "success": False,
+                "error": _missing_permission_message(perm_type, doctype, data),
+                "error_type": "permission_error",
+            }
 
         # Check document-level permissions (if document exists)
         if name:

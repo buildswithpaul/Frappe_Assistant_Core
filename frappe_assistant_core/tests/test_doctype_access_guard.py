@@ -90,7 +90,8 @@ class TestValidateDocumentAccess(BaseAssistantTest):
             result = validate_document_access("someone@example.com", "Server Script", "", "read")
 
         self.assertFalse(result["success"])
-        self.assertIn("Insufficient read permissions", result["error"])
+        self.assertIn("Script Manager", result["error"])
+        self.assertNotIn("System Manager", result["error"])
 
     def test_granted_read_permission_now_takes_effect(self):
         """The reporter's case: a Custom DocPerm granting read is finally honoured."""
@@ -111,5 +112,5 @@ class TestValidateDocumentAccess(BaseAssistantTest):
             result = validate_document_access("someone@example.com", "Server Script", "", "write")
 
         self.assertFalse(result["success"])
-        self.assertIn("blocked over MCP", result["error"])
+        self.assertIn("needs a System Manager", result["error"])
         has_permission.assert_not_called()

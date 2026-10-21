@@ -26,7 +26,7 @@ from frappe import _
 
 from frappe_assistant_core.core.base_tool import BaseTool, exception_message, permission_error_result
 from frappe_assistant_core.core.security_config import get_restricted_fields
-from frappe_assistant_core.utils.customisation import server_script_guard
+from frappe_assistant_core.utils.customisation import applies_to, desk_url, server_script_guard
 
 from .child_tables import ChildRowError, child_table_fields, normalize_child_rows
 
@@ -358,6 +358,7 @@ class DocumentUpdate(BaseTool):
                 "success": True,
                 "name": doc.name,
                 "doctype": doctype,
+                "url": desk_url(doctype, doc.name),
                 "updated_fields": list(data.keys()),
                 "docstatus": updated_docstatus,
                 "state_description": "Draft" if updated_docstatus == 0 else "Unknown",
@@ -367,6 +368,10 @@ class DocumentUpdate(BaseTool):
                 "modified_by": doc.modified_by,
                 "message": f"{doctype} '{doc.name}' updated successfully",
             }
+
+            customised = applies_to(doctype, doc)
+            if customised:
+                result["applies_to"] = customised
 
             # Check if user can submit this document
             if updated_docstatus == 0:  # Only for draft documents
