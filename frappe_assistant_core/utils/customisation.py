@@ -20,7 +20,7 @@ from typing import Any, Dict, Optional
 
 import frappe
 from frappe import _
-from frappe.utils import get_url_to_form
+from frappe.utils import cint, get_url_to_form
 
 CUSTOMISATION_DOCTYPES = frozenset(
     {
@@ -49,28 +49,41 @@ def server_scripts_enabled() -> bool:
 
 
 def server_script_guard(
-    doctype: str, data: Dict[str, Any], current_disabled: Optional[int] = None
+    doctype: str,
+    data: Dict[str, Any],
+    current_disabled: Optional[int] = None,
+    current_reference_doctype: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
     """Refuse an active Server Script when server scripts are switched off on the site.
 
-    Frappe then raises on every save of the script's document type, so an active script
-    would stop that type from saving. Returns None when the write is allowed.
+    A DocType Event script would stop its document type from saving; other script types
+    would simply never run. Returns None when the write is allowed.
     """
     if doctype != "Server Script" or server_scripts_enabled():
         return None
 
-    disabled = data.get("disabled", current_disabled if current_disabled is not None else 0)
+    disabled = cint(data["disabled"]) if "disabled" in data else cint(current_disabled)
     if disabled:
         return None
 
-    reference_doctype = data.get("reference_doctype") or _("document")
-    return {
-        "success": False,
-        "error": _(
+    script_type = data.get("script_type") or "DocType Event"
+    if script_type == "DocType Event":
+        reference_doctype = data.get("reference_doctype") or current_reference_doctype or _("document")
+        error = _(
             "Server scripts are switched off on this site, so this script would stop every "
             "{0} from saving. An administrator can switch them on (on Frappe Cloud this needs "
             "a private bench). I can save it switched off instead, or use a different approach."
-        ).format(reference_doctype),
+        ).format(reference_doctype)
+    else:
+        error = _(
+            "Server scripts are switched off on this site, so this script would not run. "
+            "An administrator can switch them on (on Frappe Cloud this needs a private bench). "
+            "I can save it switched off instead, or use a different approach."
+        )
+
+    return {
+        "success": False,
+        "error": error,
         "error_type": "server_scripts_disabled",
         "guidance": _(
             "Save the script with disabled set to 1, or achieve the same result with a "

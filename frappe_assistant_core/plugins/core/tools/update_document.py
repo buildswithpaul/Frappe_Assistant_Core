@@ -321,6 +321,15 @@ class DocumentUpdate(BaseTool):
                     ),
                 }
 
+            refusal = server_script_guard(
+                doctype,
+                data,
+                current_disabled=doc.get("disabled"),
+                current_reference_doctype=doc.get("reference_doctype"),
+            )
+            if refusal:
+                return refusal
+
             # Apply updates: child tables go through helper, scalars use setattr.
             for field, value in data.items():
                 if field in table_fields:
@@ -335,10 +344,6 @@ class DocumentUpdate(BaseTool):
                         return err
                 else:
                     setattr(doc, field, value)
-
-            refusal = server_script_guard(doctype, data, current_disabled=doc.get("disabled"))
-            if refusal:
-                return refusal
 
             # Save document
             doc.save()

@@ -22,6 +22,7 @@ import frappe
 
 from frappe_assistant_core.plugins.core.tools.create_document import DocumentCreate
 from frappe_assistant_core.plugins.core.tools.get_doctype_info import GetDoctypeInfo
+from frappe_assistant_core.plugins.core.tools.update_document import DocumentUpdate
 from frappe_assistant_core.tests.base_test import BaseAssistantTest
 from frappe_assistant_core.utils.customisation import CUSTOMISATION_DOCTYPES, server_script_guard
 
@@ -71,6 +72,51 @@ class TestServerScriptGuard(BaseAssistantTest):
             result = server_script_guard("Server Script", {"disabled": 0}, current_disabled=1)
 
         self.assertEqual(result["error_type"], "server_scripts_disabled")
+
+    def test_string_zero_disabled_counts_as_enabled_on_create(self):
+        with patch(SCRIPTS_ENABLED, return_value=False):
+            result = server_script_guard("Server Script", _script_data(disabled="0"))
+
+        self.assertEqual(result["error_type"], "server_scripts_disabled")
+
+    def test_string_zero_disabled_counts_as_enabled_on_update(self):
+        with patch(SCRIPTS_ENABLED, return_value=False):
+            result = server_script_guard("Server Script", {"disabled": "0"}, current_disabled=1)
+
+        self.assertEqual(result["error_type"], "server_scripts_disabled")
+
+    def test_non_event_script_gets_neutral_wording(self):
+        with patch(SCRIPTS_ENABLED, return_value=False):
+            result = server_script_guard(
+                "Server Script", {"script_type": "Scheduler Event", "reference_doctype": "ToDo"}
+            )
+
+        self.assertIn("would not run", result["error"])
+        self.assertNotIn("ToDo", result["error"])
+
+    def test_update_falls_back_to_stored_reference_doctype(self):
+        with patch(SCRIPTS_ENABLED, return_value=False):
+            result = server_script_guard(
+                "Server Script", {"disabled": 0}, current_disabled=1, current_reference_doctype="ToDo"
+            )
+
+        self.assertIn("every ToDo", result["error"])
+
+    def test_update_document_tool_refuses_enabling_script(self):
+        # Production reaches this state on a site with scripts off: a script saved disabled
+        # earlier (the guard allows it), which the model later tries to switch on.
+        with patch(SCRIPTS_ENABLED, return_value=True):
+            frappe.get_doc({"doctype": "Server Script", **_script_data(disabled=1)}).insert()
+
+        with patch(SCRIPTS_ENABLED, return_value=False):
+            result = DocumentUpdate().execute(
+                {"doctype": "Server Script", "name": SCRIPT_NAME, "data": {"disabled": 0}}
+            )
+
+        self.assertFalse(result["success"])
+        self.assertEqual(result["error_type"], "server_scripts_disabled")
+        self.assertIn("every ToDo", result["error"])
+        self.assertEqual(frappe.db.get_value("Server Script", SCRIPT_NAME, "disabled"), 1)
 
     def test_update_leaving_server_script_disabled_allowed(self):
         with patch(SCRIPTS_ENABLED, return_value=False):
