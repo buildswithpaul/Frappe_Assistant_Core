@@ -6,7 +6,7 @@ Adds a rule that runs on the server when a document is saved, submitted, cancell
 
 **Only a System Manager can do this**, and the user needs the Script Manager role too. If a role is missing, the error names it. Tell the user which role and who can grant it.
 
-**Talk to the user in business words.** Say "this checks every Sales Invoice when it is submitted", not `before_submit` or `reference_doctype`. Field names belong in the record, not in the conversation, unless the user asks. Never show field names, flags or option keys in what you tell the user unless they ask (for example a server-scripts flag, `custom_` names or "Insert after"). Say "server scripts are switched off", "after the Customer field", "the Required By date". See `setup-change-protocol`.
+**Talk to the user in business words.** Say "this checks every Sales Invoice when it is submitted", not `before_submit` or `reference_doctype`. Never show field names, flags or option keys in what you tell the user unless they ask (for example a server-scripts flag, `custom_` names or "Insert after"). Say "server scripts are switched off", "after the Customer field", "the Required By date". See `setup-change-protocol`.
 
 ## When to use
 
@@ -26,7 +26,7 @@ Adds a rule that runs on the server when a document is saved, submitted, cancell
 4. **Check scripts are allowed.** Call `get_doctype_info` on `Server Script` and read `server_scripts_enabled`. If it is false, tell the user in plain words that server scripts are switched off on this site. An active rule on a document type would make every save of that document fail, so the write is refused. An administrator with server access can switch them on (on Frappe Cloud this needs a private bench). **Ask the user before** doing anything else: offer to save the rule switched off (`disabled: 1`) so it is ready, say clearly that it will not run until an administrator switches scripts on, or offer a Client Script or another approach. Do not create the switched-off copy until they say yes.
 5. **List what already exists** on the same doctype and event: `list_documents` on `Server Script` with `reference_doctype` and `doctype_event`. Two scripts on one event run in an undefined order. If one overlaps, offer to change it instead of adding another.
 6. **Show the full code** in a fenced block, then explain in plain words what it does and when it runs. The user must be able to approve it without reading Python.
-7. **Create it with `disabled: 1`.** Ask the user to test it (say exactly what to do, for example "save a draft invoice below cost"), and only after they confirm, update it with `disabled: 0`.
+7. **Create it with `disabled: 1`**, which does nothing yet. Show what it will do and ask the user whether to go ahead. Only after they say yes, update it with `disabled: 0`. Then straight away ask them to test it on a draft or test document (say exactly what to do, for example "save a draft invoice below cost"), and offer to switch it off again if it misbehaves.
 8. **Link the result**: the new record and the form where the change shows. A create result carries `url` for the record and `applies_to.url` for the form. Give both as links, and say the user may need to reload the form.
 
 ## Reference
@@ -52,7 +52,7 @@ Adds a rule that runs on the server when a document is saved, submitted, cancell
 
 ## Gotchas
 
-- **A script that fails breaks saving for everyone** on that doctype. That is why it starts switched off and is tested first.
+- **A script that fails breaks saving for everyone** on that doctype. That is why it starts switched off, is switched on only with the user's go-ahead, and is tested straight away.
 - **Submitted documents.** A `Before Save` script does not run when a submitted document is updated after submit. Use `Before Submit` for "must hold at submit".
 - **An update that flips `disabled` from 1 to 0 is refused when scripts are off**, the same as a create. Do not retry.
 - The approval card appears for every customisation write, and "Don't ask again" never applies to one. That is intended; do not tell the user to switch it off.
@@ -60,6 +60,7 @@ Adds a rule that runs on the server when a document is saved, submitted, cancell
 ## Anti-patterns
 
 - Reaching for a script when a field property or Client Script would do.
-- Creating the script active, or enabling it before the user has tested it.
+- Creating the script active, or switching it on without the user's go-ahead.
+- Asking the user to test a script that is still switched off. It does nothing, so the test shows nothing.
 - Describing a Client Script or `mandatory_depends_on` rule as if it protected imports and API writes.
 - Pasting code without saying in plain words what it does.

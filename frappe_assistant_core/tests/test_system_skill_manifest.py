@@ -151,6 +151,21 @@ class TestSystemSkillManifest(BaseAssistantTest):
             entry = next(e for e in _load_manifest("system_skills.json") if e["skill_id"] == skill_id)
             self.assertIn("Never show", self._read_skill(entry["content_file"]), skill_id)
 
+    def test_switch_on_skills_ask_before_switching_on_and_test_only_after(self):
+        steps = {
+            "server_script.md": "7. **Create it",
+            "client_script.md": "6. **Create it",
+            "notification.md": "6. **Show the plan",
+            "custom_report.md": "7. **Create it",
+        }
+        for name, marker in steps.items():
+            step = self._read_skill(name).split(marker)[1].split("\n")[0]
+            self.assertIn("whether to go ahead", step, name)
+            self.assertIn("straight away", step, name)
+            self.assertLess(step.index("whether to go ahead"), step.index("straight away"), name)
+            self.assertIn("switch it off again", step, name)
+            self.assertNotIn("only after they confirm", step, name)
+
     def test_report_builder_example_uses_fields_and_notification_warns_about_blocked_saves(self):
         report = self._read_skill("custom_report.md")
         self.assertIn('\\"fields\\": [[', report)

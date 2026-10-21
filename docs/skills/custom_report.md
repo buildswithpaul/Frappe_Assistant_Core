@@ -18,11 +18,11 @@ Builds a report the standard list does not give, such as "overdue invoices by sa
 
 1. **Report Builder first.** It needs no code: columns, filters and grouping on one doctype. Use it whenever the answer comes from one doctype. Create it as a `Report` of type Report Builder (shape under Reference), or, if the user prefers, point them to the report view of that list in Desk, where they can pick columns and filters and use Save.
 2. **Query Report next**, when the report must join several doctypes. The query is `SELECT` or `WITH` only. Anything that writes is refused.
-3. **Script Report last**, only when scripts are on. Call `get_doctype_info` on `Report` and read `server_scripts_enabled`. If it is false, saving a Script Report is still allowed, but it will show an error whenever someone runs it until an administrator with server access switches scripts on (on Frappe Cloud this needs a private bench). **Tell the user this and ask whether to go ahead before saving.** Offer a Report Builder or Query Report instead, which run without scripts. If they go ahead, relay the warning in the result in plain words. Do not save it without asking.
+3. **Script Report last**, only when scripts are on. Call `get_doctype_info` on `Report` and read `server_scripts_enabled`. If it is false, saving a Script Report is still allowed, but it will show an error whenever someone runs it until an administrator with server access switches scripts on (on Frappe Cloud this needs a private bench). **Tell the user this and ask whether to go ahead before saving.** Offer a Report Builder or Query Report instead, which run without scripts. If they go ahead, save it switched off (step 7) and relay the warning in the result in plain words. Do not save it without asking.
 4. **State the scope in one plain sentence**: "This adds a new report on Sales Invoice. It only reads data; nothing else changes."
 5. **List existing reports** on the doctype (`list_documents` on `Report` with `ref_doctype`) and offer to reuse one.
 6. **Show the full query or code** in a fenced block and explain in plain words what each column means and which records are included.
-7. **Create it, run it once** with `generate_report` or in Desk, and show the user the first rows before calling it done. Create a script report with `disabled: 1` and enable it only after the user confirms the output.
+7. **Create it and check the output.** A Report Builder or Query Report only reads data, so create it, run it once with `generate_report` or in Desk, and show the user the first rows before calling it done. A Script Report runs code, so create it with `disabled: 1`, which does nothing yet, show what it will do and ask the user whether to go ahead. Only after they say yes, update it with `disabled: 0`, then straight away run it once, show the first rows and ask them to check the output. Offer to switch it off again if it misbehaves.
 8. **Amounts.** Use company-currency `base_*` amounts when summing across currencies, and say whether item-level discounts are included.
 9. **Link the result**: the new report and the doctype it reports on (`applies_to` is not set for reports, so link the report's own `url`).
 
@@ -69,5 +69,6 @@ Each entry in `fields` is `[fieldname, doctype]` and each filter is `[doctype, f
 ## Anti-patterns
 
 - A Script Report where a Report Builder would do.
+- Switching a Script Report on without the user's go-ahead, or asking them to check one that is still switched off.
 - Showing the user the SQL but not what the columns mean.
 - Summing `grand_total` across currencies.

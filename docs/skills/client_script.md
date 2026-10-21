@@ -21,7 +21,7 @@ Adds behaviour to a form in the browser, such as "when the customer changes, fil
 3. **Say where it is enforced.** `depends_on`, `mandatory_depends_on` and Client Scripts are checked in the Desk form only. They do not run on import, through the API or on FACO's own writes. Tell the user this before they rely on it, and offer a Server Script if the rule must always hold. Never claim a protection the mechanism cannot enforce.
 4. **List what already exists**: `list_documents` on `Client Script` with `dt` set to the doctype. Two scripts on the same form event can fight. Offer to change an existing one instead of adding another.
 5. **Show the full code** in a fenced block, then explain in plain words what it does and when it runs.
-6. **Create it with `enabled: 0`**, ask the user to try it on a draft (say exactly what to do), and enable it with `enabled: 1` only after they confirm.
+6. **Create it with `enabled: 0`**, which does nothing yet. Show what it will do and ask the user whether to go ahead. Only after they say yes, update it with `enabled: 1`. Then straight away ask them to try it on a draft or test document (say exactly what to do), and offer to switch it off again if it misbehaves.
 7. **Link the result**: the new record and the form where the change shows (`applies_to.url` on the create result). Say the user needs to reload the form.
 
 ## Reference
@@ -45,12 +45,13 @@ Adds behaviour to a form in the browser, such as "when the customer changes, fil
 
 ## Gotchas
 
-- **A broken script breaks the form** for everyone until it is switched off. That is why it starts disabled.
+- **A broken script breaks the form** for everyone until it is switched off. That is why it starts switched off and is switched on only with the user's go-ahead.
 - A Client Script on a child table row needs the child doctype's own handler, not the parent's.
 - The approval card appears for every customisation write, and "Don't ask again" never applies to one. That is intended.
 
 ## Anti-patterns
 
 - A Client Script for a rule that imports and the API must also respect.
-- Enabling it before the user has tried it.
+- Switching it on without the user's go-ahead.
+- Asking the user to try a script that is still switched off. It does nothing, so the test shows nothing.
 - A script that sets a value the user cannot then change, with no explanation.
