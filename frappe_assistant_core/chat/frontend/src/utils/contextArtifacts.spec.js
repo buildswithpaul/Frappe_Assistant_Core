@@ -172,6 +172,62 @@ describe("deriveArtifacts failed steps and question titles", () => {
 	});
 });
 
+describe("deriveArtifacts reads the stored MCP result shape", () => {
+	const stored = (payload) => [{ text: JSON.stringify(payload) }];
+	const call = (id, input, payload) => ({
+		type: "tool_call",
+		id,
+		status: "success",
+		tool_name: "create_document",
+		input,
+		result: stored(payload),
+	});
+
+	it("gives an add-field chip its name and a link", () => {
+		const r = deriveArtifacts([
+			call("a", { doctype: "Custom Field", data: { dt: "Lead" } }, { success: true, name: "Lead-custom_x", url: "/desk/lead/view" }),
+		]);
+		expect(r.records).toEqual([
+			{ key: "tool-a", label: "Custom Field: Lead-custom_x", kind: "record", url: "/desk/lead/view" },
+		]);
+	});
+
+	it("lists a record once, keeping the latest result", () => {
+		const input = { doctype: "Custom Field", data: {} };
+		const r = deriveArtifacts([
+			call("a", input, { success: true, name: "Lead-custom_x" }),
+			call("b", input, { success: true, name: "Lead-custom_x", url: "/desk/custom-field/Lead-custom_x" }),
+		]);
+		expect(r.records).toEqual([
+			{ key: "tool-a", label: "Custom Field: Lead-custom_x", kind: "record", url: "/desk/custom-field/Lead-custom_x" },
+		]);
+	});
+
+	it("does not let a later read downgrade a written record", () => {
+		const r = deriveArtifacts([
+			call("a", { doctype: "Lead", name: "L-1", data: {} }, { success: true, name: "L-1", url: "/desk/lead/L-1" }),
+			{ type: "tool_call", id: "b", status: "success", tool_name: "get_document", input: { doctype: "Lead", name: "L-1" }, result: { name: "L-1" } },
+		]);
+		expect(r.records).toHaveLength(1);
+		expect(r.records[0]).toMatchObject({ kind: "record", url: "/desk/lead/L-1" });
+	});
+
+	it("gives a validate_only create no record chip", () => {
+		const r = deriveArtifacts([
+			{ ...call("a", { doctype: "Server Script", validate_only: true, data: {} }, { success: true, validation_passed: true }) },
+		]);
+		expect(r.records).toEqual([]);
+	});
+
+	it("falls back to a label for a truncated result", () => {
+		const block = call("a", { doctype: "Custom Field", data: {} }, {});
+		block.result = [{ text: '{"success":true,"na' }];
+		expect(deriveArtifacts([block]).records).toEqual([
+			{ key: "tool-a", label: "Custom Field", kind: "record", url: null },
+		]);
+	});
+});
+
 describe("question titles keep ordinary punctuation", () => {
 	const title = (question) =>
 		deriveArtifacts([{ type: "interaction", id: "q", status: "pending", interactionType: "confirm", question }]).approval.title;

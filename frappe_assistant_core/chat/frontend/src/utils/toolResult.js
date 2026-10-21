@@ -1,23 +1,47 @@
 /**
  * Reads a tool_call block's `result` defensively.
  *
- * The stream hands the SPA an object, but a result can also arrive as a string
- * (a persisted turn, or a truncated SSE payload), so anything that is not a
- * parseable JSON object counts as having no fields.
+ * A result reaches the SPA in several shapes: the object a tool returned; a JSON string
+ * (a persisted turn, or a truncated SSE payload); or the MCP content parts the runtime
+ * streams and stores, `[{"text": "<json>"}]` (Strands) or `[{"type": "text", "text": "<json>"}]`
+ * (the FAC MCP server), optionally inside a `{content, isError, structuredContent}` wrapper.
+ * All of them unwrap to the tool's own object; anything that is not a parseable JSON object
+ * counts as having no fields.
  */
 
 const REASON_MAX = 140;
 
-export function toolResult(block) {
-	let result = block?.result;
-	if (typeof result === "string") {
-		try {
-			result = JSON.parse(result);
-		} catch {
-			return {};
-		}
+const isObject = (value) => Boolean(value) && typeof value === "object" && !Array.isArray(value);
+
+function parseObject(text) {
+	if (typeof text !== "string") return null;
+	try {
+		return unwrap(JSON.parse(text));
+	} catch {
+		return null;
 	}
-	return result && typeof result === "object" && !Array.isArray(result) ? result : {};
+}
+
+function fromParts(parts) {
+	for (const part of parts) {
+		if (!isObject(part)) continue;
+		const found = isObject(part.json) ? part.json : parseObject(part.text);
+		if (found) return found;
+	}
+	return null;
+}
+
+function unwrap(value) {
+	if (Array.isArray(value)) return fromParts(value);
+	if (!isObject(value)) return null;
+	if (isObject(value.structuredContent)) return value.structuredContent;
+	if (Array.isArray(value.content)) return fromParts(value.content) ?? value;
+	return value;
+}
+
+export function toolResult(block) {
+	const result = block?.result;
+	return (typeof result === "string" ? parseObject(result) : unwrap(result)) ?? {};
 }
 
 // Only same-site paths and web URLs become links; anything else (javascript:) is a label.
@@ -29,7 +53,12 @@ export function safeUrl(value) {
 }
 
 export function toolFailed(block) {
-	return block?.status === "error" || toolResult(block).success === false;
+	return block?.status === "error" || block?.result?.isError === true || toolResult(block).success === false;
+}
+
+/** A create that only ran validation: it saved nothing, so it must not read as a created record. */
+export function isDryRun(block) {
+	return block?.input?.validate_only === true || toolResult(block).validation_passed === true;
 }
 
 /** One short sentence saying why a step failed, or "" when there is nothing safe to show. */

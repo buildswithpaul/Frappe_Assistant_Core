@@ -8,7 +8,7 @@
 import { formatToolName, flattenInput } from "@/components/chat/interactions/helpers.js";
 import { buildTimelineRows } from "@/composables/useActivityTimeline.js";
 import { isApprovalInteraction } from "@/stores/chat/interactionRegime";
-import { safeUrl, toolFailed, toolResult } from "@/utils/toolResult";
+import { isDryRun, safeUrl, toolFailed, toolResult } from "@/utils/toolResult";
 import { __ } from "@/utils/i18n";
 // formatToolName is still used for the approval card title (an interaction, not
 // a record); record chips deliberately do NOT fall back to a tool name.
@@ -46,6 +46,13 @@ function recordLabel(block, result) {
 	if (doctype) return doctype;
 	if (name) return String(name);
 	return null;
+}
+
+// The doctype and name together say which record a call touched; null when either is unknown.
+function recordIdentity(block, result) {
+	const flat = block.input ? flattenInput(block.input) : {};
+	const name = result.name || flat.name || flat.docname;
+	return flat.doctype && name ? `${flat.doctype}\u0000${name}` : null;
 }
 
 // Plain text of an agent-written markdown question, for a one-line title.
@@ -101,17 +108,29 @@ export function deriveArtifacts(blocks) {
 	// 2) Records & sources the AI touched (tool_call blocks + RAG sources).
 	const records = [];
 	const seen = new Set();
-	const pushRecord = (key, label, kind, url = null) => {
-		if (!label || seen.has(key)) return;
+	const byIdentity = new Map();
+	const pushRecord = (key, label, kind, url = null, identity = null) => {
+		if (!label) return;
+		const earlier = identity ? byIdentity.get(identity) : null;
+		if (earlier) {
+			// The same record touched again: keep one chip, with the latest result and a write over a read.
+			earlier.label = label;
+			earlier.url = url ?? earlier.url;
+			if (kind === "record") earlier.kind = kind;
+			return;
+		}
+		if (seen.has(key)) return;
 		seen.add(key);
-		records.push({ key, label, kind, url });
+		const record = { key, label, kind, url };
+		records.push(record);
+		if (identity) byIdentity.set(identity, record);
 	};
 
 	for (const b of safe) {
-		if (b.type === "tool_call" && b.status === "success" && !toolFailed(b)) {
+		if (b.type === "tool_call" && b.status === "success" && !toolFailed(b) && !isDryRun(b)) {
 			const isRead = READ_TOOLS.has(b.tool_name);
 			const result = toolResult(b);
-			pushRecord(`tool-${b.id}`, recordLabel(b, result), isRead ? "source" : "record", safeUrl(result.url));
+			pushRecord(`tool-${b.id}`, recordLabel(b, result), isRead ? "source" : "record", safeUrl(result.url), recordIdentity(b, result));
 		}
 		if (b.type === "sources" && Array.isArray(b.items)) {
 			for (const item of b.items) {

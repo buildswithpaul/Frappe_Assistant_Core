@@ -9,7 +9,7 @@
 import { isInternalTool } from "@/utils/internalTools";
 import { __ } from "@/utils/i18n";
 import { baseToolName } from "@/utils/toolNames";
-import { failureReason, toolFailed, toolResult } from "@/utils/toolResult";
+import { failureReason, isDryRun, toolFailed, toolResult } from "@/utils/toolResult";
 
 // Friendly verb + object phrasing per known MCP tool. Falls back to a
 // humanized tool name. `target` is pulled from the tool input when present
@@ -46,6 +46,7 @@ function donePhrasing(block) {
 		const verb = DOCUMENT_ACTION_VERBS[String(block.input?.action || "submit").trim().toLowerCase()];
 		return verb ? { verb: verb(), noun: doctype } : null;
 	}
+	if (tool === "create_document" && isDryRun(block)) return { verb: __("Checked"), noun: doctype };
 	const verb = DONE_VERBS[tool];
 	return verb ? { verb: verb(), noun: doctype } : null;
 }

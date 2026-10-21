@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { toolResult, safeUrl, failureReason } from "./toolResult";
+import { toolResult, safeUrl, failureReason, toolFailed } from "./toolResult";
 
 describe("toolResult", () => {
 	it("returns an object result as is", () => {
@@ -14,6 +14,52 @@ describe("toolResult", () => {
 		for (const result of ['{"name":"A","ur', "ok", [{}], null, undefined, 5]) {
 			expect(toolResult({ result })).toEqual({});
 		}
+	});
+});
+
+describe("toolResult unwraps tool-result content parts", () => {
+	const payload = { success: true, name: "SS-1", url: "/desk/server-script/SS-1", applies_to: { doctype: "Lead" } };
+	const json = JSON.stringify(payload);
+
+	it("reads Strands text parts, as the runtime streams and stores them", () => {
+		expect(toolResult({ result: [{ text: json }] })).toEqual(payload);
+	});
+
+	it("reads MCP text parts and skips non-text parts", () => {
+		expect(toolResult({ result: [{ type: "text", text: json }, { type: "image", data: "xx" }] })).toEqual(payload);
+	});
+
+	it("reads a json part", () => {
+		expect(toolResult({ result: [{ json: payload }] })).toEqual(payload);
+	});
+
+	it("reads an MCP result wrapper with content parts", () => {
+		expect(toolResult({ result: { content: [{ type: "text", text: json }], isError: false } })).toEqual(payload);
+	});
+
+	it("prefers structuredContent over the text parts", () => {
+		const wrapper = { content: [{ text: '{"name":"from text"}' }], structuredContent: payload };
+		expect(toolResult({ result: wrapper })).toEqual(payload);
+	});
+
+	it("reads parts that arrive as a JSON string", () => {
+		expect(toolResult({ result: JSON.stringify([{ text: json }]) })).toEqual(payload);
+	});
+
+	it("treats parts with truncated or plain text as having no fields", () => {
+		expect(toolResult({ result: [{ text: '{"name":"SS' }] })).toEqual({});
+		expect(toolResult({ result: [{ text: "Done." }] })).toEqual({});
+		expect(toolResult({ result: [{ text: json.slice(0, 20) }] })).toEqual({});
+	});
+
+	it("keeps a plain result that happens to have a content field", () => {
+		expect(toolResult({ result: { name: "N", content: "hello" } })).toEqual({ name: "N", content: "hello" });
+	});
+
+	it("flags an MCP error wrapper as failed", () => {
+		const result = { content: [{ type: "text", text: '{"error":"Nope. More."}' }], isError: true };
+		expect(toolFailed({ status: "success", result })).toBe(true);
+		expect(failureReason({ status: "success", result })).toBe("Nope.");
 	});
 });
 

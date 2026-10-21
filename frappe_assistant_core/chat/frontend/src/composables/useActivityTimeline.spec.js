@@ -93,6 +93,31 @@ describe("buildTimelineRows for customisation writes", () => {
 		expect(cut.hasTarget).toBe(false);
 	});
 
+	it("reads the name from the stored content-parts result", () => {
+		const result = [{ text: JSON.stringify({ success: true, name: "Discount limit" }) }];
+		const [row] = buildTimelineRows([create({ status: "success", result })]);
+		expect(row.label).toBe("Created Server Script → Discount limit");
+	});
+
+	it("labels a validate_only create as Checked, not Created", () => {
+		const input = { doctype: "Server Script", validate_only: true, data: {} };
+		const result = [{ text: JSON.stringify({ success: true, validation_passed: true, doctype: "Server Script" }) }];
+		const [row] = buildTimelineRows([create({ status: "success", input, result })]);
+		expect(row.label).toBe("Checked Server Script");
+		expect(row.hasTarget).toBe(false);
+	});
+
+	it("labels a validation result as Checked even when the input flag is missing", () => {
+		const [row] = buildTimelineRows([create({ status: "success", result: { success: true, validation_passed: true } })]);
+		expect(row.label).toBe("Checked Server Script");
+	});
+
+	it("a real create with validate_only false still reads Created", () => {
+		const input = { doctype: "Server Script", validate_only: false };
+		const [row] = buildTimelineRows([create({ status: "success", input, result: { success: true, name: "X" } })]);
+		expect(row.label).toBe("Created Server Script → X");
+	});
+
 	it("pending and failed create keep the prepared wording", () => {
 		const [running] = buildTimelineRows([create({ status: "running", result: null })]);
 		expect(running.label).toBe("Prepared new record → Server Script");
