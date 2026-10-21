@@ -40,6 +40,7 @@ from ..chat.relay import (
     _relay_ar_stream,
 )
 from ..chat.sessions import conversation_row
+from ..models import _saved_model
 
 # Bounded thread pool for relaying AR SSE streams to Socket.IO. Replaces
 # unbounded ``threading.Thread`` spawning (FACO-H14). Workers are daemon
@@ -67,6 +68,16 @@ def _mark_turn_started(
     except Exception as e:
         frappe.logger("fac_live_turn").warning(f"Could not mark turn started for {session_id}: {e!s}")
         return None
+
+
+def _effective_model_id(model_id: str | None) -> str | None:
+    """The model a turn runs on: the client's explicit choice, else the user's saved one.
+
+    "auto" is an explicit choice and stays "auto". A client that sends nothing (a fresh browser,
+    the Desk widget before its model list loads, the Raven bot) gets the saved model, or None
+    so AR applies its own default.
+    """
+    return (model_id or "").strip() or _saved_model() or None
 
 
 def _flag(value) -> bool:
@@ -324,6 +335,8 @@ def start_turn(
     effort = _effort(reasoning_effort)
     if effort is not None:
         thinking_enabled = effort != "off"
+
+    model_id = _effective_model_id(model_id)
 
     turn = _mark_turn_started(session_id, restricted=restricted, client_turn=client_turn_id)
     try:
