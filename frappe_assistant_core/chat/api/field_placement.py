@@ -51,14 +51,12 @@ def get_field_placement(doctype: str, insert_after: str | None = None, fieldtype
         return {}
     if placement_is_ambiguous(doctype, insert_after):
         label = frappe.get_meta(doctype).get_label(insert_after)
-        return {
-            **location,
-            "sentence": _(
-                "Will appear next to {0}. Its tab and section cannot be told until it is saved"
-            ).format(_(label)),
-            "warning": True,
-            "ambiguous": True,
-        }
+        if label:
+            sentence = _("Will appear next to {0}. Its tab and section can only be known once it is saved.")
+            sentence = sentence.format(_(label))
+        else:
+            sentence = _("Its tab and section can only be known once it is saved.")
+        return {**location, "sentence": sentence, "warning": True, "ambiguous": True}
     return {
         **location,
         "sentence": placement_sentence(location),

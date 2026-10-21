@@ -225,7 +225,22 @@ class TestCustomFieldLocationInResults(BaseAssistantTest):
 
         self.assertTrue(placement["ambiguous"])
         self.assertTrue(placement["warning"])
-        self.assertIn("next to", placement["sentence"])
+        self.assertEqual(
+            placement["sentence"],
+            "Will appear next to Status. Its tab and section can only be known once it is saved.",
+        )
+
+    def test_an_ambiguous_position_after_an_unlabelled_field_names_no_label(self):
+        # column_break_2 has no label; another field already added after it makes the position a tie.
+        self._insert(PROBE_FIELD, "Data", "Where", "column_break_2")
+        try:
+            placement = get_field_placement("ToDo", "column_break_2")
+        finally:
+            frappe.delete_doc("Custom Field", f"ToDo-{PROBE_FIELD}", force=True, ignore_permissions=True)
+
+        self.assertTrue(placement["ambiguous"])
+        self.assertNotIn("None", placement["sentence"])
+        self.assertEqual(placement["sentence"], "Its tab and section can only be known once it is saved.")
 
     def test_a_free_position_is_not_ambiguous(self):
         self.assertFalse(get_field_placement("ToDo", MOVE_TARGET)["ambiguous"])

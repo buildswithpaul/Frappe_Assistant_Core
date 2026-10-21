@@ -239,13 +239,17 @@ def _new_field_idx(dt: str, insert_after: Optional[str]) -> Optional[int]:
 
 
 def placement_is_ambiguous(dt: str, insert_after: Optional[str]) -> bool:
-    """Whether another Custom Field already holds the idx a new one would get.
+    """Whether another Custom Field after the same field already holds the idx a new one would get.
 
     Frappe orders custom fields by idx alone, so on a tie the database decides which comes first
-    and the layout, hence the prediction, cannot be known in advance.
+    and the layout, hence the prediction, cannot be known in advance. A tie matters only between
+    fields with the same insert_after. On v16 Tab and Section Breaks are moved to the end of their
+    tab, so the flag can still be cautious there.
     """
     idx = _new_field_idx(dt, insert_after)
-    return bool(idx and frappe.db.exists("Custom Field", {"dt": dt, "idx": idx}))
+    return bool(
+        idx and frappe.db.exists("Custom Field", {"dt": dt, "idx": idx, "insert_after": insert_after})
+    )
 
 
 def predict_field_location(
