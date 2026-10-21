@@ -26,6 +26,7 @@ from frappe import _
 
 from frappe_assistant_core.core.base_tool import BaseTool, exception_message, permission_error_result
 from frappe_assistant_core.core.security_config import get_restricted_fields
+from frappe_assistant_core.utils.customisation import server_script_guard
 
 from .child_tables import ChildRowError, child_table_fields, normalize_child_rows
 
@@ -334,6 +335,10 @@ class DocumentUpdate(BaseTool):
                         return err
                 else:
                     setattr(doc, field, value)
+
+            refusal = server_script_guard(doctype, data, current_disabled=doc.get("disabled"))
+            if refusal:
+                return refusal
 
             # Save document
             doc.save()

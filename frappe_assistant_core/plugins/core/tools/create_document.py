@@ -25,6 +25,7 @@ import frappe
 from frappe import _
 
 from frappe_assistant_core.core.base_tool import BaseTool, exception_message, permission_error_result
+from frappe_assistant_core.utils.customisation import server_script_guard
 from frappe_assistant_core.utils.savepoint import (
     open_savepoint,
     release_savepoint,
@@ -195,6 +196,10 @@ class DocumentCreate(BaseTool):
                         "field": field,
                     }
                 child_rows[field] = rows
+
+            refusal = server_script_guard(doctype, data)
+            if refusal:
+                return refusal
 
             # Create document
             doc = frappe.new_doc(doctype)

@@ -19,6 +19,7 @@ from typing import Any, Dict, List, Optional
 import frappe
 from frappe import _
 
+from frappe_assistant_core.utils import customisation
 from frappe_assistant_core.utils.search_tokens import tokens
 
 from .child_tables import multiselect_link_field
@@ -208,6 +209,8 @@ class MetadataTools:
                 "child_tables": child_tables,
                 "permissions": [p.as_dict() for p in meta.permissions],
             }
+            if doctype in ("Server Script", "Report"):
+                result["server_scripts_enabled"] = customisation.server_scripts_enabled()
             if parent_doctypes is not None:
                 # Where this child's rows live: write them through these with update_document.
                 result["parent_doctypes"] = parent_doctypes
