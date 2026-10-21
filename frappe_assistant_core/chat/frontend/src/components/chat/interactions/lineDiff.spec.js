@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { lineDiff } from "./lineDiff";
+import { lineDiff, MAX_DIFF_CELLS } from "./lineDiff";
 
 const flat = (rows) => rows.map((r) => `${r.type}:${r.text}`);
 
@@ -29,3 +29,17 @@ describe("lineDiff", () => {
 		expect(rows).toHaveLength(401);
 	});
 });
+
+describe("lineDiff size cap", () => {
+	const lines = (n, tag) => Array.from({ length: n }, (_, i) => `${tag} ${i}`).join("\n");
+
+	it("skips the diff when the line table would be too large", () => {
+		const side = Math.ceil(Math.sqrt(MAX_DIFF_CELLS)) + 1;
+		expect(lineDiff(lines(side, "old"), lines(side, "new"))).toBe(null);
+	});
+
+	it("still diffs just under the cap", () => {
+		expect(lineDiff(lines(1000, "a"), lines(1000, "a"))).toHaveLength(1000);
+	});
+});
+

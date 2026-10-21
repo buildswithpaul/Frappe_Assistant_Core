@@ -9,9 +9,9 @@
 			>
 		</template>
 		<template v-if="fieldSplit.overflowCount > 0">
-			<span class="field-more">+ {{ fieldSplit.overflowCount }} more</span>
+			<span class="field-more">{{ __("+ {0} more", [fieldSplit.overflowCount]) }}</span>
 			<button class="field-toggle" @click="showAllFields = !showAllFields">
-				{{ showAllFields ? "Show fewer fields ‹" : "Show all fields ›" }}
+				{{ showAllFields ? __("Show fewer fields ‹") : __("Show all fields ›") }}
 			</button>
 		</template>
 		<CodePreview
@@ -28,6 +28,7 @@
 
 <script setup>
 import { computed, ref } from "vue";
+import { __ } from "@/utils/i18n";
 import ChildTable from "./ChildTable.vue";
 import CodePreview from "./CodePreview.vue";
 import { useCurrentCode } from "./useCurrentCode";

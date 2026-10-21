@@ -15,12 +15,13 @@
 				</tbody>
 			</table>
 		</div>
-		<div v-if="rows.length > MAX_ROWS" class="field-more">+ {{ rows.length - MAX_ROWS }} more</div>
+		<div v-if="rows.length > MAX_ROWS" class="field-more">{{ __("+ {0} more", [rows.length - MAX_ROWS]) }}</div>
 	</div>
 </template>
 
 <script setup>
 import { computed } from "vue";
+import { __ } from "@/utils/i18n";
 import { formatKey, formatValue } from "./helpers";
 
 const props = defineProps({

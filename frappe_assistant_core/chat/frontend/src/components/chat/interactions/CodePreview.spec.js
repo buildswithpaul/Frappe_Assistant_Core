@@ -1,6 +1,12 @@
 import { mount } from "@vue/test-utils";
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
+import { highlightCode } from "@/utils/markdown";
 import CodePreview from "./CodePreview.vue";
+
+vi.mock("@/utils/markdown", async (importOriginal) => {
+	const original = await importOriginal();
+	return { ...original, highlightCode: vi.fn(original.highlightCode) };
+});
 
 const script = (n) => Array.from({ length: n }, (_, i) => `line_${i} = ${i}`).join("\n");
 
@@ -38,5 +44,22 @@ describe("CodePreview", () => {
 	it("shows the code alone when there is no previous code", () => {
 		const wrapper = mount(CodePreview, { props: { code: "a\nb", language: "python" } });
 		expect(wrapper.find(".diff-add").exists()).toBe(false);
+	});
+
+	it("shows the new code alone when the code is too large to diff", () => {
+		const wrapper = mount(CodePreview, {
+			props: { code: script(2100), previous: script(2100).replace("line_5 =", "changed ="), language: "python" },
+		});
+		expect(wrapper.find(".diff-line").exists()).toBe(false);
+		expect(wrapper.find("pre").text()).toContain("line_2099 = 2099");
+	});
+
+	it("highlights each diff line once, not on every render", async () => {
+		const wrapper = mount(CodePreview, { props: { code: "a\nnew\nc", previous: "a\nold\nc", language: "python" } });
+		await new Promise((r) => setTimeout(r, 0));
+		highlightCode.mockClear();
+		await wrapper.find(".code-toggle").trigger("click");
+		await wrapper.find(".code-toggle").trigger("click");
+		expect(highlightCode).not.toHaveBeenCalled();
 	});
 });

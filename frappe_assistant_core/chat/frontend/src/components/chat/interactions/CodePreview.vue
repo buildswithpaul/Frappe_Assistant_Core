@@ -8,7 +8,7 @@
 		</div>
 		<div class="code-scroll" :style="expanded ? null : { maxHeight: `${maxHeight}px` }">
 			<pre v-if="!diffRows"><code v-html="highlighted"></code></pre>
-			<pre v-else><code><span v-for="(row, i) in diffRows" :key="i" class="diff-line" :class="`diff-${row.type}`"><span class="diff-mark">{{ MARKS[row.type] }}</span><span v-html="highlightLine(row.text)"></span></span></code></pre>
+			<pre v-else><code><span v-for="(row, i) in diffRows" :key="i" class="diff-line" :class="`diff-${row.type}`"><span class="diff-mark">{{ MARKS[row.type] }}</span><span v-html="row.html"></span></span></code></pre>
 		</div>
 	</div>
 </template>
@@ -34,12 +34,13 @@ const expanded = ref(false);
 const hljsReady = ref(false);
 onMounted(() => ensureHljs().then(() => (hljsReady.value = true)));
 
-function highlightLine(text) {
-	return hljsReady.value ? highlightCode(text, props.language) : highlightCode(text, "");
-}
-
-const highlighted = computed(() => (hljsReady.value ? highlightCode(props.code, props.language) : highlightCode(props.code, "")));
-const diffRows = computed(() => (props.previous === null ? null : lineDiff(props.previous, props.code)));
+const highlightLanguage = computed(() => (hljsReady.value ? props.language : ""));
+const highlighted = computed(() => highlightCode(props.code, highlightLanguage.value));
+// Null shows the new code alone: no previous code, or too large to diff.
+const diffRows = computed(() => {
+	const rows = props.previous === null ? null : lineDiff(props.previous, props.code);
+	return rows && rows.map((row) => ({ ...row, html: highlightCode(row.text, highlightLanguage.value) }));
+});
 </script>
 
 <style scoped>

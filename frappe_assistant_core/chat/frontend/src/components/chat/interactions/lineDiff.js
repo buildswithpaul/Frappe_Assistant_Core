@@ -1,10 +1,14 @@
 /**
  * Line diff between two texts, for the approval card's old-vs-new code view.
- * Returns ordered rows of { type: "same" | "del" | "add", text }.
+ * Returns ordered rows of { type: "same" | "del" | "add", text }, or null when the texts
+ * are too large to diff (the table below is lines-old x lines-new in memory).
  */
+export const MAX_DIFF_CELLS = 4_000_000;
+
 export function lineDiff(oldText, newText) {
 	const a = oldText === "" ? [] : oldText.split("\n");
 	const b = newText === "" ? [] : newText.split("\n");
+	if (a.length * b.length > MAX_DIFF_CELLS) return null;
 
 	// lcs[i][j] = length of the longest common subsequence of a[i:] and b[j:].
 	const lcs = Array.from({ length: a.length + 1 }, () => new Uint32Array(b.length + 1));
