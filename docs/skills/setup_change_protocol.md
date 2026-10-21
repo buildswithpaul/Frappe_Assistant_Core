@@ -15,7 +15,9 @@ Every other setup skill (`add-custom-field`, `server-script`, `client-script`, `
 
 ## Workflow
 
-1. **Check who you're working for.** `Custom Field`, `Property Setter`, `Workflow`, `Workflow State`, `Workflow Transition`, `Role` and `DocType` (and `Server Script`, `Client Script`, `Report`, `Print Format` and `Notification`) are write-protected for everyone except a **System Manager**. If the user isn't one, say so up front and stop. Don't attempt the write to find out.
+**Plain words, always.** Never show field names, flags or option keys (such as a server-scripts flag, `custom_` names, "Insert after" or a date field's code name) in text for the user unless they ask. Say "the Required By date", "after the Customer field", "server scripts are switched off".
+
+1. **Check who you're working for.** `Custom Field`, `Property Setter`, `Workflow`, `Workflow State`, `Workflow Transition`, `Role`, `DocType`, `Server Script` and `Client Script` (also `Custom DocPerm`, `User Permission` and similar permission records) are write-protected for everyone except a **System Manager**. If the user isn't one, say so up front and stop. Don't attempt the write to find out. `Report`, `Print Format` and `Notification` are not on that list: normal permissions apply, so try the write and relay a refusal in plain words. Query and Script Reports need the Script Manager role.
 2. **Read the current state.** Look at what already exists before planning — the field may already be there, the fiscal year may exist, the template may be disabled rather than missing. Never plan a duplicate.
 3. **Write the plan as a table** and show it. Use plain business language in every cell ("Add a Sales Channel choice to Sales Invoice"), not field names or code; keep those inside the write itself and mention them only if the user asks:
 

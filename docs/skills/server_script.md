@@ -6,7 +6,7 @@ Adds a rule that runs on the server when a document is saved, submitted, cancell
 
 **Only a System Manager can do this**, and the user needs the Script Manager role too. If a role is missing, the error names it. Tell the user which role and who can grant it.
 
-**Talk to the user in business words.** Say "this checks every Sales Invoice when it is submitted", not `before_submit` or `reference_doctype`. Field names belong in the record, not in the conversation, unless the user asks.
+**Talk to the user in business words.** Say "this checks every Sales Invoice when it is submitted", not `before_submit` or `reference_doctype`. Field names belong in the record, not in the conversation, unless the user asks. Never show field names, flags or option keys in what you tell the user unless they ask (for example a server-scripts flag, `custom_` names or "Insert after"). Say "server scripts are switched off", "after the Customer field", "the Required By date". See `setup-change-protocol`.
 
 ## When to use
 
@@ -23,7 +23,7 @@ Adds a rule that runs on the server when a document is saved, submitted, cancell
    4. A `Workflow` only when the user asked for an approval process (`get_skill("set-up-approval-workflow")`).
 2. **State the scope in one plain sentence** before anything else: "This affects every Sales Invoice submit. Nothing else changes."
 3. **Say where the rule is enforced.** A Server Script runs for the Desk form, imports, the API and FACO's own writes. `depends_on`, `mandatory_depends_on` and Client Scripts are checked in the Desk form only, so tell the user that a rule built from them does not stop an import or an API write. Never claim a protection the mechanism cannot enforce. A Custom Field of type Code, for example, stores text and runs nothing.
-4. **Check scripts are allowed.** Call `get_doctype_info` on `Server Script` and read `server_scripts_enabled`. If it is false, tell the user in plain words that this site does not run scripts, so an active script would do nothing. Offer to save it switched off (`disabled: 1`) so a System Manager can switch the site setting on later. Do not try to create it active; the write is refused.
+4. **Check scripts are allowed.** Call `get_doctype_info` on `Server Script` and read `server_scripts_enabled`. If it is false, tell the user in plain words that server scripts are switched off on this site. An active rule on a document type would make every save of that document fail, so the write is refused. An administrator with server access can switch them on (on Frappe Cloud this needs a private bench). **Ask the user before** doing anything else: offer to save the rule switched off (`disabled: 1`) so it is ready, say clearly that it will not run until an administrator switches scripts on, or offer a Client Script or another approach. Do not create the switched-off copy until they say yes.
 5. **List what already exists** on the same doctype and event: `list_documents` on `Server Script` with `reference_doctype` and `doctype_event`. Two scripts on one event run in an undefined order. If one overlaps, offer to change it instead of adding another.
 6. **Show the full code** in a fenced block, then explain in plain words what it does and when it runs. The user must be able to approve it without reading Python.
 7. **Create it with `disabled: 1`.** Ask the user to test it (say exactly what to do, for example "save a draft invoice below cost"), and only after they confirm, update it with `disabled: 0`.
@@ -40,12 +40,13 @@ Adds a rule that runs on the server when a document is saved, submitted, cancell
     "reference_doctype": "Sales Invoice",
     "doctype_event": "Before Submit",
     "disabled": 1,
-    "script": "for row in doc.items:\n    if row.base_net_rate < row.valuation_rate:\n        frappe.throw(f\"Row {row.idx} is priced below cost\")"
+    "script": "for row in doc.items:\n    cost = frappe.db.get_value(\"Bin\", {\"item_code\": row.item_code, \"warehouse\": row.warehouse}, \"valuation_rate\") or 0\n    if row.base_net_rate / (row.conversion_factor or 1) < cost:\n        frappe.throw(f\"Row {row.idx} is priced below cost\")"
   }
 }
 ```
 
 - `doc` is the document being saved. `frappe.throw` stops the save and shows the message to the user.
+- Cost lives on the stock record (`Bin`), not on the invoice line, and it is per stock unit. `base_net_rate` is per selling unit, so divide it by `conversion_factor`.
 - **Amounts and discounts.** Compare percentages, or totals before the discount, or the company-currency `base_*` amounts (`base_net_rate`, `base_grand_total`). Never compare a foreign-currency `rate` or `grand_total` with a company-currency limit. Item-level discounts change the net rate, so handle them in the rule or say plainly that the rule ignores them.
 - Server Scripts run in a restricted sandbox: no imports, limited functions.
 

@@ -6,7 +6,7 @@ Adds behaviour to a form in the browser, such as "when the customer changes, fil
 
 **Only a System Manager can do this.** Anyone else gets "Changing Client Script needs a System Manager". Tell the user who can do it.
 
-**Talk to the user in business words.** Say "when someone picks a customer on a Sales Invoice", not `frappe.ui.form.on` or `refresh`.
+**Talk to the user in business words.** Say "when someone picks a customer on a Sales Invoice", not `frappe.ui.form.on` or `refresh`. Never show field names, flags or option keys in what you tell the user unless they ask (for example a server-scripts flag, `custom_` names or "Insert after"). Say "server scripts are switched off", "after the Customer field", "the Required By date". See `setup-change-protocol`.
 
 ## When to use
 
@@ -30,14 +30,16 @@ Adds behaviour to a form in the browser, such as "when the customer changes, fil
 {
   "doctype": "Client Script",
   "data": {
+    "name": "Sales Invoice - discount warning",
     "dt": "Sales Invoice",
     "view": "Form",
     "enabled": 0,
-    "script": "frappe.ui.form.on('Sales Invoice', {\n  discount_amount(frm) {\n    if (frm.doc.additional_discount_percentage > 20) {\n      frappe.msgprint('Discount is above 20%');\n    }\n  }\n});"
+    "script": "frappe.ui.form.on('Sales Invoice', {\n  additional_discount_percentage(frm) {\n    if (frm.doc.additional_discount_percentage > 20) {\n      frappe.msgprint('Discount is above 20%');\n    }\n  }\n});"
   }
 }
 ```
 
+- **Always give the record a `name`** (as above). A Client Script is named by hand, and a dry run (`validate_only`) does not catch a missing name, so the real create fails.
 - **Amounts and discounts.** Use percentage fields or totals before the discount, and the company-currency `base_*` amounts, not a foreign-currency amount compared with a company-currency limit. Handle item-level discounts or say plainly that the rule ignores them.
 - The script runs in the user's browser and sees only what is on the form.
 

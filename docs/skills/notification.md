@@ -4,9 +4,9 @@
 
 Sends an email, a system alert or a message when something happens to a document, such as "email the sales manager when an invoice above 1 lakh is submitted" or "remind the owner a week before a contract ends". This creates a `Notification` document. Follow `get_skill("setup-change-protocol")` for the plan, the confirmation and the change log. This skill covers what goes into the record.
 
-**Only a System Manager can do this.** Anyone else gets "Changing Notification needs a System Manager".
+**Who can do this:** Frappe's normal permissions apply, so anyone allowed to create notifications can. If the write is refused, relay the error in plain words. Do not turn someone away because they are not a System Manager.
 
-**Talk to the user in business words.** Say "when an invoice is submitted", not `event` or `condition`.
+**Talk to the user in business words.** Say "when an invoice is submitted", not `event` or `condition`. Never show field names, flags or option keys in what you tell the user unless they ask (for example a server-scripts flag, `custom_` names or "Insert after"). Say "server scripts are switched off", "after the Customer field", "the Required By date". See `setup-change-protocol`.
 
 ## When to use
 
@@ -22,7 +22,7 @@ Sends an email, a system alert or a message when something happens to a document
 4. **Be honest about the condition.** A condition is a Python-style expression checked on the server when the event fires, so it also applies to imports and API writes. Use company-currency `base_*` amounts or percentages, not a foreign-currency amount against a company-currency limit, and say whether item-level discounts count.
 5. **Check email is set up.** Look for an outgoing `Email Account`. If there is none, tell the user the notification will be saved but nothing will be sent until one exists.
 6. **Show the plan in plain words**: when it fires, who gets it, the subject and message as they will read. Create it with `enabled: 0`, ask the user to trigger it once on a test document, and enable it only after they confirm what arrived.
-7. **Link the result**: the new notification and the form where the event happens (`applies_to.url` where present).
+7. **Link the result**: the new notification and the form where the event happens (the result's `applies_to.url` opens a new form of that document type).
 
 ## Reference
 
@@ -48,7 +48,7 @@ Sends an email, a system alert or a message when something happens to a document
 
 ## Gotchas
 
-- **A broken condition silently sends nothing.** Test it on a real document.
+- **A broken condition is rejected when you save**, so a saved notification has a valid one. A failure when it fires (for example a missing value on one document) goes to the Error Log and that email is not sent. Test it on a real document.
 - A notification sent to a role reaches every enabled user with that role. Say how many.
 
 ## Anti-patterns

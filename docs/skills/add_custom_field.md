@@ -6,6 +6,8 @@ Adds a field to an existing form, such as "add a vehicle number to Delivery Note
 
 **Only a System Manager can do this.** `Custom Field` is write-protected for every other role.
 
+**Talk to the user in business words.** Never show field names, flags or option keys in what you tell the user unless they ask (for example a server-scripts flag, `custom_` names or "Insert after"). Say "server scripts are switched off", "after the Customer field", "the Required By date". See `setup-change-protocol`.
+
 ## When to use
 
 - "Add a field for X on Y", "we need to capture X on every Y", "can Y have a place to enter X?"

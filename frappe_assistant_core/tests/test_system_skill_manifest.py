@@ -70,7 +70,7 @@ class TestSystemSkillManifest(BaseAssistantTest):
     def test_setup_skills_install_as_published_system_skills(self):
         _install_system_skills()
 
-        for skill_id in SETUP_SKILLS:
+        for skill_id in SETUP_SKILLS + CUSTOMISATION_SKILLS:
             skill = frappe.db.get_value(
                 "FAC Skill",
                 {"skill_id": skill_id},
@@ -103,6 +103,33 @@ class TestSystemSkillManifest(BaseAssistantTest):
         self.assertNotIn("drop any values", text)
         self.assertNotIn("drops the column", text)
         self.assertIn("keeps its database column", text)
+
+    def _read_skill(self, name: str) -> str:
+        with open(os.path.join(REPO_DIR, "docs", "skills", name), encoding="utf-8") as f:
+            return f.read()
+
+    def test_server_script_skill_states_what_scripts_off_really_does(self):
+        text = self._read_skill("server_script.md")
+        self.assertNotIn("would do nothing", text)
+        self.assertNotIn("System Manager can switch", text)
+        self.assertIn("private bench", text)
+
+    def test_report_print_notification_skills_do_not_claim_system_manager_only(self):
+        for name in ("custom_report.md", "print_format.md", "notification.md"):
+            text = self._read_skill(name)
+            self.assertNotIn("Only a System Manager", text, name)
+            self.assertNotIn("needs a System Manager", text, name)
+        protocol = self._read_skill("setup_change_protocol.md")
+        step_one = protocol.split("1. **Check who")[1].split("If the user isn't one")[0]
+        for doctype in ("`Report`", "`Print Format`", "`Notification`"):
+            self.assertNotIn(doctype, step_one)
+
+    def test_customisation_skills_ask_before_the_switched_off_fallback_and_hide_names(self):
+        for name in ("server_script.md", "custom_report.md"):
+            self.assertIn("Ask the user before", self._read_skill(name), name)
+        for skill_id in CUSTOMISATION_SKILLS:
+            entry = next(e for e in _load_manifest("system_skills.json") if e["skill_id"] == skill_id)
+            self.assertIn("Never show", self._read_skill(entry["content_file"]), skill_id)
 
     def test_retired_export_template_is_removed(self):
         self.assertNotIn(
