@@ -246,6 +246,26 @@ describe("ApprovalCard plain-language copy and trust", () => {
 		expect(wrapper.find(".approval-subtitle").text()).toBe("This code will run every time someone submits a Sales Invoice");
 	});
 
+	it("update card for a Server Script with no event says what it changes, not the generic ERP line", () => {
+		const input = { doctype: "Server Script", name: "SS-1", data: { disabled: 1 } };
+		const wrapper = mount(ApprovalCard, { props: { block: { id: "c4", tool_name: "update_document", input, interrupts } } });
+		expect(wrapper.find(".approval-subtitle").text()).toBe("Changes server code that runs on this site");
+	});
+
+	it("Workflow State create says it changes how records are approved", () => {
+		const input = { doctype: "Workflow State", data: { workflow_state_name: "Pending" } };
+		const wrapper = mount(ApprovalCard, { props: { block: { id: "c5", tool_name: "create_document", input, interrupts } } });
+		expect(wrapper.find(".approval-subtitle").text()).toBe("Changes how records are approved for everyone");
+	});
+
+	it("rename update card shows the old and the new name", () => {
+		const input = { doctype: "Server Script", name: "Old Script", data: { name: "New Script" } };
+		const wrapper = mount(ApprovalCard, { props: { block: { id: "c6", tool_name: "update_document", input, interrupts } } });
+		const rows = wrapper.findAll(".field-key").map((k) => k.text());
+		expect(rows).toEqual(["Doctype", "Name", "New Name"]);
+		expect(wrapper.text()).toContain("New Script");
+	});
+
 	it("trust checkbox hidden for customisation risk", () => {
 		const block = { id: "c2", tool_name: "create_document", input: { doctype: "Server Script", data: { script: "x" } }, interrupts: customisationInterrupts };
 		const wrapper = mount(ApprovalCard, { props: { block } });

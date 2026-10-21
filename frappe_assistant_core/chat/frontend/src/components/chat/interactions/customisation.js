@@ -57,36 +57,54 @@ function serverScriptEventSentence(event, doctype) {
 function serverScriptConsequence(fields) {
 	if (fields.script_type === "API") return __("This code will run on the server when called");
 	if (fields.script_type === "Scheduler Event") return __("This code will run on a schedule");
-	if (!fields.doctype_event || !fields.reference_doctype) return null;
+	if (!fields.doctype_event || !fields.reference_doctype) return __("Changes server code that runs on this site");
 	return serverScriptEventSentence(fields.doctype_event, fields.reference_doctype);
 }
 
 function propertySetterConsequence(fields) {
 	const doctype = fields.doc_type;
-	if (!doctype) return null;
+	if (!doctype) return __("Changes how a field behaves for everyone");
 	return startsWithVowel(doctype)
 		? __("Changes how an {0} field behaves for everyone", [doctype])
 		: __("Changes how a {0} field behaves for everyone", [doctype]);
 }
 
 const accessLine = () => __("Changes who can see or do what on this site");
+const approvalLine = () => __("Changes how records are approved for everyone");
 
-// One line per doctype. A partial update may omit the field that drives the sentence;
-// the line is then null and the card falls back to the generic update copy.
+// One line per doctype, for a create (isUpdate false) or an update. A partial update may omit
+// the field that drives the sentence; each line then falls back to a doctype-level sentence
+// that stays true, so a customisation never shows the generic ERP write copy.
 const CUSTOMISATION_CONSEQUENCES = {
 	"Server Script": serverScriptConsequence,
-	"Client Script": (f) => (f.dt ? __("This changes how the {0} form behaves in Desk for everyone", [f.dt]) : null),
-	"Custom Field": (f) => (f.dt ? __("Adds a field to every {0}", [f.dt]) : null),
+	"Client Script": (f) =>
+		f.dt
+			? __("This changes how the {0} form behaves in Desk for everyone", [f.dt])
+			: __("Changes how a form behaves in Desk for everyone"),
+	"Custom Field": (f, isUpdate) => {
+		if (isUpdate) return f.dt ? __("Changes a field on every {0}", [f.dt]) : __("Changes a field on a form for everyone");
+		return f.dt ? __("Adds a field to every {0}", [f.dt]) : __("Adds a field to a form for everyone");
+	},
 	"Property Setter": propertySetterConsequence,
 	Workflow: (f) =>
-		f.document_type ? __("Changes how {0} records are approved for everyone", [f.document_type]) : null,
-	"Print Format": (f) => (f.doc_type ? __("Changes how {0} prints", [f.doc_type]) : null),
+		f.document_type
+			? __("Changes how {0} records are approved for everyone", [f.document_type])
+			: approvalLine(),
+	"Workflow State": approvalLine,
+	"Workflow Action Master": approvalLine,
+	"Print Format": (f) =>
+		f.doc_type ? __("Changes how {0} prints", [f.doc_type]) : __("Changes how a document prints"),
 	Notification: (f) =>
-		f.document_type ? __("Sends messages automatically when {0} records change", [f.document_type]) : null,
-	Report: (f) => (f.ref_doctype ? __("Adds a report on {0}", [f.ref_doctype]) : null),
+		f.document_type
+			? __("Sends messages automatically when {0} records change", [f.document_type])
+			: __("Changes messages that are sent automatically when records change"),
+	Report: (f, isUpdate) => {
+		if (isUpdate) return f.ref_doctype ? __("Changes a report on {0}", [f.ref_doctype]) : __("Changes a report");
+		return f.ref_doctype ? __("Adds a report on {0}", [f.ref_doctype]) : __("Adds a report");
+	},
 	Role: accessLine,
 	"Custom DocPerm": accessLine,
-	DocType: accessLine,
+	DocType: () => __("Changes how a kind of record is built for everyone"),
 };
 
 /**
@@ -100,7 +118,7 @@ export function customisationConsequence(toolName, input) {
 	const fields = flattenInput(input);
 	if (!CUSTOMISATION_DOCTYPES.has(fields.doctype)) return null;
 	if (tool === "delete_document") return __("This removes a customisation from your site for everyone");
-	return CUSTOMISATION_CONSEQUENCES[fields.doctype]?.(fields) ?? null;
+	return CUSTOMISATION_CONSEQUENCES[fields.doctype](fields, tool === "update_document");
 }
 
 // document_action submits, cancels or amends, so its warning follows the requested action.

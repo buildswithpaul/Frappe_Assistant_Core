@@ -62,7 +62,8 @@ export function isChildTable(value) {
  * ARE the meaningful detail — flatten them onto the top level so each field
  * gets its own row. Boilerplate keys (`validate_only`, `ignore_permissions`,
  * `ignore_mandatory`) are dropped so the approval card stays focused on the
- * actual changes the user is being asked to authorize.
+ * actual changes the user is being asked to authorize. A nested key that collides with a
+ * record identity key (`data.name` on an update) is kept as `new_<key>`.
  */
 export function flattenInput(input) {
 	const result = {};
@@ -80,6 +81,8 @@ export function flattenInput(input) {
 		if (isPlainObject(input[key])) {
 			for (const [fk, fv] of Object.entries(input[key])) {
 				if (!(fk in result)) result[fk] = fv;
+				// A data key that shares a name with the record's identity (a rename) is a change, not a duplicate.
+				else if (metaKeys.includes(fk) && result[fk] !== fv && !isPlainObject(fv)) result[`new_${fk}`] ??= fv;
 			}
 		}
 	}
@@ -155,7 +158,7 @@ export function isMonoValue(key, value) {
  * Returns ordered [key, value] pairs (not objects) to keep render order stable.
  */
 export function splitDetailFields(flat, primaryCount = 4) {
-	const priorityOrder = ["doctype", "name", "docname", "title", "customer", "status"];
+	const priorityOrder = ["doctype", "name", "new_name", "docname", "title", "customer", "status"];
 	const entries = Object.entries(flat || {});
 	entries.sort((a, b) => {
 		const ai = priorityOrder.indexOf(a[0]);

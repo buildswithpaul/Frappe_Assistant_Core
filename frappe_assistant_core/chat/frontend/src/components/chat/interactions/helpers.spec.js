@@ -50,6 +50,29 @@ describe("isMonoValue", () => {
 	});
 });
 
+describe("flattenInput on an update that renames", () => {
+	it("keeps a data key that collides with the record name as a new value", () => {
+		const flat = flattenInput({ doctype: "Server Script", name: "Old Script", data: { name: "New Script" } });
+		expect(flat).toEqual({ doctype: "Server Script", name: "Old Script", new_name: "New Script" });
+	});
+
+	it("keeps top-level rename keys and other keys beside data", () => {
+		const flat = flattenInput({ doctype: "Role", name: "A", new_name: "B", merge: true, data: { desk_access: 1 } });
+		expect(flat).toMatchObject({ doctype: "Role", name: "A", new_name: "B", merge: true, desk_access: 1 });
+	});
+
+	it("does not duplicate a data key that restates the same value", () => {
+		const flat = flattenInput({ doctype: "ToDo", name: "T1", data: { name: "T1", status: "Open" } });
+		expect(flat).toEqual({ doctype: "ToDo", name: "T1", status: "Open" });
+	});
+
+	it("shows the rename ahead of other changed fields", () => {
+		const flat = flattenInput({ doctype: "Server Script", name: "Old", data: { disabled: 1, name: "New" } });
+		const keys = splitDetailFields(flat, 3).primary.map(([k]) => k);
+		expect(keys).toEqual(["doctype", "name", "new_name"]);
+	});
+});
+
 describe("splitDetailFields", () => {
 	const flat = flattenInput({
 		doctype: "Sales Order",

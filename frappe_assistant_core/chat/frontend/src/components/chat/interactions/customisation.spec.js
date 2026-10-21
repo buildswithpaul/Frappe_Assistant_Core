@@ -53,7 +53,7 @@ describe("customisationConsequence", () => {
 		expect(c("Print Format", { doc_type: "Quotation" })).toBe("Changes how Quotation prints");
 		expect(c("Notification", { document_type: "Lead" })).toBe("Sends messages automatically when Lead records change");
 		expect(c("Report", { ref_doctype: "Sales Order" })).toBe("Adds a report on Sales Order");
-		for (const dt of ["Role", "Custom DocPerm", "DocType"]) {
+		for (const dt of ["Role", "Custom DocPerm"]) {
 			expect(c(dt)).toBe("Changes who can see or do what on this site");
 		}
 	});
@@ -75,27 +75,62 @@ describe("customisationConsequence", () => {
 describe("customisationConsequence on partial updates", () => {
 	const update = (doctype, data) => customisationConsequence("update_document", { doctype, name: "X", data });
 
-	it("says nothing when the field that drives the sentence is missing", () => {
-		expect(update("Server Script", { script: "x" })).toBe(null);
-		expect(update("Server Script", { script_type: "DocType Event" })).toBe(null);
-		expect(update("Client Script", { script: "x" })).toBe(null);
-		expect(update("Custom Field", { label: "x" })).toBe(null);
-		expect(update("Property Setter", { value: "1" })).toBe(null);
-		expect(update("Workflow", { is_active: 1 })).toBe(null);
-		expect(update("Print Format", { html: "x" })).toBe(null);
-		expect(update("Notification", { subject: "x" })).toBe(null);
-		expect(update("Report", { query: "x" })).toBe(null);
+	it("falls back to a doctype-level sentence when the driving field is missing", () => {
+		expect(update("Server Script", { script: "x" })).toBe("Changes server code that runs on this site");
+		expect(update("Server Script", { script_type: "DocType Event" })).toBe("Changes server code that runs on this site");
+		expect(update("Client Script", { script: "x" })).toBe("Changes how a form behaves in Desk for everyone");
+		expect(update("Custom Field", { label: "x" })).toBe("Changes a field on a form for everyone");
+		expect(update("Property Setter", { value: "1" })).toBe("Changes how a field behaves for everyone");
+		expect(update("Workflow", { is_active: 1 })).toBe("Changes how records are approved for everyone");
+		expect(update("Print Format", { html: "x" })).toBe("Changes how a document prints");
+		expect(update("Notification", { subject: "x" })).toBe("Changes messages that are sent automatically when records change");
+		expect(update("Report", { query: "x" })).toBe("Changes a report");
 	});
 
-	it("falls back to the generic update line on the card", () => {
+	it("never shows the generic ERP line for a customisation update", () => {
 		expect(writeConsequence("update_document", { doctype: "Server Script", name: "X", data: { script: "x" } })).toBe(
-			"This will modify an existing record in your ERP",
+			"Changes server code that runs on this site",
 		);
 	});
 
 	it("still describes an update that restates the driving fields", () => {
 		expect(update("Server Script", { reference_doctype: "Item", doctype_event: "Before Save" })).toBe(
 			"This code will run every time someone saves an Item",
+		);
+	});
+});
+
+describe("customisationConsequence for every customisation doctype", () => {
+	const DOCTYPES = [
+		["Server Script", { script_type: "DocType Event", reference_doctype: "Lead", doctype_event: "Before Save" }, "This code will run every time someone saves a Lead", "This code will run every time someone saves a Lead"],
+		["Client Script", { dt: "Lead" }, "This changes how the Lead form behaves in Desk for everyone", "This changes how the Lead form behaves in Desk for everyone"],
+		["Custom Field", { dt: "Lead" }, "Adds a field to every Lead", "Changes a field on every Lead"],
+		["Property Setter", { doc_type: "Lead" }, "Changes how a Lead field behaves for everyone", "Changes how a Lead field behaves for everyone"],
+		["Workflow", { document_type: "Lead" }, "Changes how Lead records are approved for everyone", "Changes how Lead records are approved for everyone"],
+		["Workflow State", {}, "Changes how records are approved for everyone", "Changes how records are approved for everyone"],
+		["Workflow Action Master", {}, "Changes how records are approved for everyone", "Changes how records are approved for everyone"],
+		["Custom DocPerm", {}, "Changes who can see or do what on this site", "Changes who can see or do what on this site"],
+		["DocType", {}, "Changes how a kind of record is built for everyone", "Changes how a kind of record is built for everyone"],
+		["Role", {}, "Changes who can see or do what on this site", "Changes who can see or do what on this site"],
+		["Report", { ref_doctype: "Lead" }, "Adds a report on Lead", "Changes a report on Lead"],
+		["Print Format", { doc_type: "Lead" }, "Changes how Lead prints", "Changes how Lead prints"],
+		["Notification", { document_type: "Lead" }, "Sends messages automatically when Lead records change", "Sends messages automatically when Lead records change"],
+	];
+
+	it.each(DOCTYPES)("%s: create and update each have their own sentence", (doctype, data, created, updated) => {
+		expect(customisationConsequence("create_document", { doctype, data })).toBe(created);
+		expect(customisationConsequence("update_document", { doctype, name: "X", data })).toBe(updated);
+	});
+
+	it.each(DOCTYPES)("%s: an update with no fields never falls to the generic line", (doctype) => {
+		const text = writeConsequence("update_document", { doctype, name: "X", data: {} });
+		expect(text).not.toMatch(/your ERP/);
+		expect(text).not.toBe("");
+	});
+
+	it("keeps Workflow State a sentence even though its record carries no doctype", () => {
+		expect(writeConsequence("create_document", { doctype: "Workflow State", data: { workflow_state_name: "Pending" } })).toBe(
+			"Changes how records are approved for everyone",
 		);
 	});
 });
