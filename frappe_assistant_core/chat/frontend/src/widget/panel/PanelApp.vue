@@ -49,9 +49,10 @@ const ready = computed(
 
 onMounted(async () => {
 	await userStore.init();
-	// The widget has no picker: it starts on auto and loadModels() swaps in the user's saved
-	// server-side choice. Pinned, so it never touches localStorage or writes the choice back.
-	modelStore.pinModel("auto");
+	// The widget has no picker: it sends no model until loadModels() swaps in the user's saved
+	// server-side choice (or auto), and the server uses the saved choice for a turn sent before then.
+	// Pinned, so it never touches localStorage or writes the choice back.
+	modelStore.pinModel();
 	modelStore.loadModels();
 	if (!ready.value) return;
 	if (bridge.state.restored) {

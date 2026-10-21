@@ -12,9 +12,11 @@ export const useModelStore = defineStore("models", () => {
 	const models = ref([]);
 	const modelsByTier = ref({});
 	const selectedModel = ref(null); // User's selected model (server first, localStorage as cache)
-	// The Desk widget's in-memory choice: starts on auto, then follows the server-side choice.
-	// While set it wins and nothing below reads or writes localStorage or the server row.
+	// The Desk widget's in-memory choice: empty until the catalogue loads (the server then uses the
+	// saved choice), then the saved choice or auto. While isPinned nothing below reads or writes
+	// localStorage or the server row.
 	const pinned = ref(null);
+	const isPinned = ref(false);
 	const defaultModel = ref(null); // Tenant's default model (from AR)
 	const maxTierRank = ref(999);
 	const isLoading = ref(false);
@@ -130,7 +132,7 @@ export const useModelStore = defineStore("models", () => {
 	// Server first. A browser that holds a choice the server has never seen (made before the
 	// server row existed) uploads it once; after that the server row is the source.
 	function loadSelectedModel(serverChoice) {
-		if (pinned.value) return;
+		if (isPinned.value) return;
 		const cached = readCachedModel();
 		if (serverChoice) {
 			selectedModel.value = serverChoice;
@@ -149,7 +151,7 @@ export const useModelStore = defineStore("models", () => {
 
 	// Save selected model to localStorage
 	function saveSelectedModel(modelId) {
-		if (pinned.value) return;
+		if (isPinned.value) return;
 		try {
 			if (modelId) {
 				localStorage.setItem(STORAGE_KEY, modelId);
@@ -164,14 +166,15 @@ export const useModelStore = defineStore("models", () => {
 	// Actions
 
 	// Hold `modelId` in memory only; FAC Chat's saved selection is left exactly as it is.
-	function pinModel(modelId) {
+	function pinModel(modelId = null) {
+		isPinned.value = true;
 		pinned.value = modelId;
 		selectedModel.value = modelId;
 	}
 
 	// Set selected model: updates memory and the local cache now, the server row in the background
 	function setSelectedModel(modelId) {
-		if (pinned.value) return false;
+		if (isPinned.value) return false;
 		if (!isUsableChoice(modelId)) return false;
 		selectedModel.value = modelId;
 		saveSelectedModel(modelId);
@@ -188,7 +191,7 @@ export const useModelStore = defineStore("models", () => {
 
 	// Clear selected model (reverts to default)
 	function clearSelectedModel() {
-		if (pinned.value) return;
+		if (isPinned.value) return;
 		selectedModel.value = null;
 		saveSelectedModel(null);
 		saveToServer("");
@@ -212,23 +215,22 @@ export const useModelStore = defineStore("models", () => {
 				autoMode.value = result.auto_mode || null;
 
 				const serverChoice = result.selected_model || "";
-				if (pinned.value) {
-					// The widget follows the saved choice without writing it anywhere.
-					if (isUsableChoice(serverChoice)) {
-						pinned.value = serverChoice;
-						selectedModel.value = serverChoice;
-					}
+				if (isPinned.value) {
+					// The widget follows the saved choice without writing it anywhere, else routes automatically.
+					const choice = isUsableChoice(serverChoice) ? serverChoice : pinned.value || (isAutoModeEnabled.value ? "auto" : null);
+					pinned.value = choice;
+					selectedModel.value = choice;
 				} else {
 					loadSelectedModel(serverChoice);
 				}
 
 				// A pin is not a stored selection
-				if (selectedModel.value && !pinned.value && !isUsableChoice(selectedModel.value)) {
+				if (selectedModel.value && !isPinned.value && !isUsableChoice(selectedModel.value)) {
 					resetSelectionLocally();
 				}
 
 				// Default to auto mode if enabled and no model selected
-				if (!selectedModel.value && !pinned.value && isAutoModeEnabled.value) {
+				if (!selectedModel.value && !isPinned.value && isAutoModeEnabled.value) {
 					selectedModel.value = "auto";
 					saveSelectedModel("auto");
 				}
