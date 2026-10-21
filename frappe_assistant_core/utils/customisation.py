@@ -14,7 +14,14 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Shared helpers for customisation work: which doctypes count, and the Server Script safety guard."""
+"""Shared helpers for customisation work: records that change how a site behaves.
+
+Covers which doctypes count (``CUSTOMISATION_DOCTYPES``, the canonical list, mirrored by the
+Chat SPA and by AR), the Server Script safety guard, the warning for a Script Report saved
+while server scripts are off, links to a record and to the form a customisation changes
+(``applies_to``), where a new Custom Field shows on its form (``location``), and
+``customisation_result`` which puts those into a create or update tool result.
+"""
 
 from typing import Any, Dict, Iterable, Optional
 
@@ -138,6 +145,21 @@ def applies_to(doctype: str, values: Any) -> Optional[Dict[str, str]]:
     if not target:
         return None
     return {"doctype": target, "url": get_url_to_form(target, "new")}
+
+
+def customisation_result(doctype: str, doc: Any, warning: Optional[str] = None) -> Dict[str, Any]:
+    """The customisation details a create or update result adds: applies_to, location, warning."""
+    details: Dict[str, Any] = {}
+    customised = applies_to(doctype, doc)
+    if customised:
+        details["applies_to"] = customised
+    if doctype == "Custom Field":
+        location = custom_field_location(doc)
+        if location:
+            details["location"] = location
+    if warning:
+        details["warning"] = warning
+    return details
 
 
 def locate_field(fields: Iterable[Any], fieldname: str) -> Optional[Dict[str, Any]]:

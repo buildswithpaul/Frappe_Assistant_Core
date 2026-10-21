@@ -25,7 +25,9 @@ the cancellation of its GL entries after commit. Desk raises instead, and its
 full rollback resets those queues; ``rollback_to_savepoint`` puts back what the
 refused action added to them.
 
-Used by document_action (submit, cancel, amend) and create_document (submit).
+Used by document_action (submit, cancel, amend), create_document (submit and its
+validate_only dry run, which undoes whatever validate() wrote) and the FACO CRM and
+Helpdesk tools.
 """
 
 import copy

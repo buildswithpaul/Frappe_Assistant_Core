@@ -538,6 +538,16 @@ def is_doctype_accessible(doctype: str, user_role: str, perm_type: str = "read")
     return doctype not in WRITE_PROTECTED_DOCTYPES
 
 
+def _write_protected_message(doctype: str) -> str:
+    """Refusal for a write-protected doctype; Server Script also needs the Script Manager role."""
+    if doctype == "Server Script":
+        return _(
+            "Changing {0} needs a System Manager with the Script Manager role. "
+            "Ask one to make this change in Desk."
+        ).format(doctype)
+    return _("Changing {0} needs a System Manager. Ask one to make this change in Desk.").format(doctype)
+
+
 def _missing_permission_message(perm_type: str, doctype: str, data: Any) -> str:
     """Say what is missing; scripts need the Script Manager role, which System Manager lacks."""
     report_type = data.get("report_type") if isinstance(data, dict) else None
@@ -549,7 +559,7 @@ def _missing_permission_message(perm_type: str, doctype: str, data: Any) -> str:
 
 
 def validate_document_access(
-    user: str, doctype: str, name: str, perm_type: str = "read", data: str = ""
+    user: str, doctype: str, name: str, perm_type: str = "read", data: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
     """
     Validate if a user can access a specific document with proper Frappe permission checking.
@@ -572,9 +582,7 @@ def validate_document_access(
         if not is_doctype_accessible(doctype, primary_role, perm_type):
             return {
                 "success": False,
-                "error": _(
-                    "Changing {0} needs a System Manager. Ask one to make this change in Desk."
-                ).format(doctype),
+                "error": _write_protected_message(doctype),
                 "error_type": "permission_error",
             }
 

@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { customisationConsequence, isCustomisationRisk, writeConsequence } from "./customisation";
+import { isCustomisationRisk } from "@/utils/toolNames";
+import { customisationConsequence, writeConsequence } from "./customisation";
 
 describe("writeConsequence", () => {
 	it("states the write effect for record tools", () => {

@@ -27,8 +27,7 @@ from frappe import _
 from frappe_assistant_core.core.base_tool import BaseTool, exception_message, permission_error_result
 from frappe_assistant_core.core.security_config import get_restricted_fields
 from frappe_assistant_core.utils.customisation import (
-    applies_to,
-    custom_field_location,
+    customisation_result,
     desk_url,
     script_report_warning,
     server_script_guard,
@@ -378,15 +377,7 @@ class DocumentUpdate(BaseTool):
                 "message": f"{doctype} '{doc.name}' updated successfully",
             }
 
-            customised = applies_to(doctype, doc)
-            if customised:
-                result["applies_to"] = customised
-            if doctype == "Custom Field":
-                location = custom_field_location(doc)
-                if location:
-                    result["location"] = location
-            if warning:
-                result["warning"] = warning
+            result.update(customisation_result(doctype, doc, warning))
 
             # Check if user can submit this document
             if updated_docstatus == 0:  # Only for draft documents

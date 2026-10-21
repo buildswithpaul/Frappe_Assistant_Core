@@ -7,10 +7,8 @@
  */
 
 import { __ } from "@/utils/i18n";
-import { baseToolName, isCustomisationRisk } from "@/utils/toolNames";
+import { baseToolName } from "@/utils/toolNames";
 import { flattenInput } from "./helpers";
-
-export { baseToolName, isCustomisationRisk };
 
 // The doctypes whose writes change how the site behaves; mirrors the server-side set.
 const CUSTOMISATION_DOCTYPES = new Set([
@@ -123,23 +121,21 @@ export function customisationConsequence(toolName, input) {
 
 // document_action submits, cancels or amends, so its warning follows the requested action.
 const DOCUMENT_ACTION_CONSEQUENCES = {
-	submit: "This will submit a record — it becomes immutable",
-	cancel: "This will cancel a submitted record and reverse its accounting and stock entries",
-	amend: "This will create a new draft copy of a cancelled record",
+	submit: () => __("This will submit a record — it becomes immutable"),
+	cancel: () => __("This will cancel a submitted record and reverse its accounting and stock entries"),
+	amend: () => __("This will create a new draft copy of a cancelled record"),
 };
 
 const WRITE_CONSEQUENCES = {
-	create_document: "This will write a new record to your ERP",
-	update_document: "This will modify an existing record in your ERP",
-	delete_document: "This will permanently delete a record from your ERP",
+	create_document: () => __("This will write a new record to your ERP"),
+	update_document: () => __("This will modify an existing record in your ERP"),
+	delete_document: () => __("This will permanently delete a record from your ERP"),
 };
 
 function documentActionConsequence(input) {
 	const action = input && typeof input === "object" ? String(input.action || "submit") : "";
-	return (
-		DOCUMENT_ACTION_CONSEQUENCES[action.trim().toLowerCase()] ||
-		"This will submit, cancel or amend a record in your ERP"
-	);
+	const consequence = DOCUMENT_ACTION_CONSEQUENCES[action.trim().toLowerCase()];
+	return consequence ? consequence() : __("This will submit, cancel or amend a record in your ERP");
 }
 
 export function writeConsequence(toolName, input) {
@@ -147,5 +143,6 @@ export function writeConsequence(toolName, input) {
 	if (customisation) return customisation;
 	const tool = baseToolName(toolName);
 	if (tool === "document_action") return documentActionConsequence(input);
-	return WRITE_CONSEQUENCES[tool] || "";
+	const consequence = WRITE_CONSEQUENCES[tool];
+	return consequence ? consequence() : "";
 }

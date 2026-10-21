@@ -26,8 +26,7 @@ from frappe import _
 
 from frappe_assistant_core.core.base_tool import BaseTool, exception_message, permission_error_result
 from frappe_assistant_core.utils.customisation import (
-    applies_to,
-    custom_field_location,
+    customisation_result,
     desk_url,
     script_report_warning,
     server_script_guard,
@@ -300,16 +299,9 @@ class DocumentCreate(BaseTool):
                 "submitted": False,
                 "can_submit": False,
             }
-            customised = applies_to(doctype, doc)
-            if customised:
-                result["applies_to"] = customised
-            if doctype == "Custom Field":
-                location = custom_field_location(doc)
-                if location:
-                    result["location"] = location
-            warning = script_report_warning(doctype, data)
-            if warning:
-                result["warning"] = warning
+            result.update(
+                customisation_result(doctype, doc, script_report_warning(doctype, data, current=doc))
+            )
 
             # Submit if requested and allowed
             from frappe.model.workflow import get_workflow_name

@@ -112,5 +112,16 @@ class TestValidateDocumentAccess(BaseAssistantTest):
             result = validate_document_access("someone@example.com", "Server Script", "", "write")
 
         self.assertFalse(result["success"])
-        self.assertIn("needs a System Manager", result["error"])
+        self.assertIn("needs a System Manager with the Script Manager role", result["error"])
         has_permission.assert_not_called()
+
+    def test_other_protected_doctype_does_not_name_script_manager(self):
+        with patch(
+            "frappe_assistant_core.core.security_config.get_user_primary_role",
+            return_value=LOW_PRIV_ROLE,
+        ), patch("frappe.has_permission", return_value=True):
+            result = validate_document_access("someone@example.com", "Client Script", "", "write")
+
+        self.assertFalse(result["success"])
+        self.assertIn("needs a System Manager", result["error"])
+        self.assertNotIn("Script Manager", result["error"])
