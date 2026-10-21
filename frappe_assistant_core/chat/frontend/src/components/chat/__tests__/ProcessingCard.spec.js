@@ -17,16 +17,16 @@ const QUOTE = {
 	tool_name: "create_document",
 	input: { doctype: "Quotation" },
 	status: "success",
-	result: "ok",
+	result: { success: true, name: "QTN-0001" },
 };
 
 const SUBMIT = {
 	type: "tool_call",
 	id: "c2",
 	tool_name: "document_action",
-	input: { doctype: "Quotation" },
+	input: { doctype: "Quotation", name: "QTN-0001", action: "submit" },
 	status: "success",
-	result: "ok",
+	result: { success: true },
 };
 
 describe("ProcessingCard chronology", () => {
@@ -47,9 +47,9 @@ describe("ProcessingCard chronology", () => {
 			);
 
 		expect(sequence).toEqual([
-			"Prepared new record → Quotation",
+			"Created Quotation → QTN-0001",
 			"thinking",
-			"Prepared submission → Quotation",
+			"Submitted Quotation → QTN-0001",
 		]);
 	});
 
@@ -91,8 +91,8 @@ describe("ProcessingCard tool rows", () => {
 		const wrapper = mountCard([QUOTE]);
 
 		const label = wrapper.find(".timeline-label");
-		expect(label.find("strong").text()).toBe("Quotation");
-		expect(label.text()).toBe("Prepared new record → Quotation");
+		expect(label.find("strong").text()).toBe("QTN-0001");
+		expect(label.text()).toBe("Created Quotation → QTN-0001");
 	});
 
 	it("shows tool I/O without repeating the tool header inside the drawer", async () => {
@@ -132,3 +132,18 @@ describe("ProcessingCard on a turn that has ended", () => {
 		expect(wrapper.find(".timeline-row .chip-spinner").exists()).toBe(true);
 	});
 });
+
+describe("ProcessingCard failed step", () => {
+	it("failed step shows the plain reason", () => {
+		const wrapper = mountCard([
+			{ ...QUOTE, status: "error", result: { success: false, error: "Server scripts are disabled. Ask an admin." } },
+		]);
+		expect(wrapper.find(".timeline-reason").text()).toBe("Server scripts are disabled.");
+	});
+
+	it("shows no reason line when the failure carries no message", () => {
+		const wrapper = mountCard([{ ...QUOTE, status: "error", result: '{"succ' }]);
+		expect(wrapper.find(".timeline-reason").exists()).toBe(false);
+	});
+});
+

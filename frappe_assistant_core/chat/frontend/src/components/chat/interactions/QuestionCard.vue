@@ -1,8 +1,8 @@
 <template>
 	<!-- single_select (pill buttons) -->
 	<div v-if="interactionType === 'single_select'" class="question-block">
-		<div class="question-text">{{ block.question }}</div>
-		<div v-if="block.description" class="question-description">{{ block.description }}</div>
+		<div class="question-text" v-html="questionHtml"></div>
+		<div v-if="block.description" class="question-description" v-html="descriptionHtml"></div>
 		<div class="option-pills">
 			<button
 				v-for="option in block.options"
@@ -46,8 +46,8 @@
 
 	<!-- multi_select (checkboxes) -->
 	<div v-else-if="interactionType === 'multi_select'" class="question-block">
-		<div class="question-text">{{ block.question }}</div>
-		<div v-if="block.description" class="question-description">{{ block.description }}</div>
+		<div class="question-text" v-html="questionHtml"></div>
+		<div v-if="block.description" class="question-description" v-html="descriptionHtml"></div>
 		<div class="multi-options">
 			<label
 				v-for="option in block.options"
@@ -76,8 +76,8 @@
 
 	<!-- confirm (yes/no) -->
 	<div v-else-if="interactionType === 'confirm'" class="question-block">
-		<div class="question-text">{{ block.question }}</div>
-		<div v-if="block.description" class="question-description">{{ block.description }}</div>
+		<div class="question-text" v-html="questionHtml"></div>
+		<div v-if="block.description" class="question-description" v-html="descriptionHtml"></div>
 		<div class="confirm-actions">
 			<button class="ql-btn ql-btn-reject" :disabled="locked" @click="emit('respond', 'no')">
 				No
@@ -90,8 +90,8 @@
 
 	<!-- text_input -->
 	<div v-else-if="interactionType === 'text_input'" class="question-block">
-		<div class="question-text">{{ block.question }}</div>
-		<div v-if="block.description" class="question-description">{{ block.description }}</div>
+		<div class="question-text" v-html="questionHtml"></div>
+		<div v-if="block.description" class="question-description" v-html="descriptionHtml"></div>
 		<div class="text-input-row">
 			<input
 				v-model="textValue"
@@ -114,6 +114,7 @@
 
 <script setup>
 import { computed, nextTick, ref, watch } from "vue";
+import { renderMarkdown } from "@/utils/markdown";
 
 const props = defineProps({
 	block: { type: Object, required: true },
@@ -124,6 +125,10 @@ const emit = defineEmits(["respond"]);
 
 // Answered (a decision is recorded) or being sent: the card takes no more input.
 const locked = computed(() => props.submitting || Boolean(props.block.decision));
+
+// The agent writes questions in markdown; renderMarkdown sanitises the HTML.
+const questionHtml = computed(() => renderMarkdown(String(props.block.question ?? "")));
+const descriptionHtml = computed(() => renderMarkdown(String(props.block.description ?? "")));
 
 const selectedOptions = ref([]);
 const textValue = ref("");
@@ -148,6 +153,16 @@ watch(showCustom, (open) => {
 	color: var(--ql-text);
 	line-height: 1.5;
 	margin-bottom: 4px;
+}
+
+.question-text :deep(p),
+.question-description :deep(p) {
+	margin: 0;
+}
+
+.question-text :deep(p + p),
+.question-description :deep(p + p) {
+	margin-top: 6px;
 }
 
 .question-description {

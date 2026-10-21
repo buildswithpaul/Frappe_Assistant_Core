@@ -72,6 +72,7 @@
 				/>
 			</svg>
 		</button>
+		<p v-if="row.reason" class="timeline-reason">{{ row.reason }}</p>
 		<div v-if="expanded" class="timeline-drawer">
 			<!-- The row above already names the action and its status, so the
 			     drawer carries only the payload — its own header would repeat
@@ -182,6 +183,13 @@ const expanded = ref(false);
 .timeline-label strong {
 	font-weight: 600;
 	color: var(--ql-text);
+}
+
+.timeline-reason {
+	margin: 2px 0 0 21px;
+	font-size: 11px;
+	line-height: 1.4;
+	color: var(--ql-danger);
 }
 
 .timeline-chevron {

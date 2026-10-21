@@ -235,3 +235,29 @@ describe("ApprovalCard for customisations", () => {
 		expect(currentCode).not.toHaveBeenCalled();
 	});
 });
+
+describe("ApprovalCard plain-language copy and trust", () => {
+	const customisationInterrupts = [{ id: "i1", reason: { risk: "customisation" } }];
+
+	it("server script card says when the code runs", () => {
+		const data = { script_type: "DocType Event", reference_doctype: "Sales Invoice", doctype_event: "Before Submit", script: "x" };
+		const block = { id: "c1", tool_name: "create_document", input: { doctype: "Server Script", data }, interrupts };
+		const wrapper = mount(ApprovalCard, { props: { block } });
+		expect(wrapper.find(".approval-subtitle").text()).toBe("This code will run every time someone submits a Sales Invoice");
+	});
+
+	it("trust checkbox hidden for customisation risk", () => {
+		const block = { id: "c2", tool_name: "create_document", input: { doctype: "Server Script", data: { script: "x" } }, interrupts: customisationInterrupts };
+		const wrapper = mount(ApprovalCard, { props: { block } });
+		expect(wrapper.find(".trust-choice").exists()).toBe(false);
+		expect(wrapper.text()).not.toContain("Don't ask again");
+		expect(wrapper.find(".ql-btn-approve").text()).toBe("Approve");
+	});
+
+	it("trust checkbox shown otherwise", () => {
+		const block = { id: "c3", tool_name: "create_document", input: { doctype: "ToDo", data: {} }, interrupts: [{ id: "i1", reason: { risk: "other" } }] };
+		const wrapper = mount(ApprovalCard, { props: { block } });
+		expect(wrapper.find(".trust-choice").text()).toBe("Don't ask again for this tool");
+	});
+});
+

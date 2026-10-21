@@ -85,3 +85,24 @@ describe("QuestionCard once answered", () => {
 		}
 	});
 });
+
+describe("QuestionCard markdown", () => {
+	it("question text renders markdown", () => {
+		const block = { question: "Use **bold** here?<script>alert(1)</script>", description: "See `code`" };
+		const wrapper = mount(QuestionCard, { props: { block, interactionType: "confirm" } });
+		const question = wrapper.find(".question-text");
+		expect(question.html()).toContain("<strong>bold</strong>");
+		expect(question.text()).not.toContain("**");
+		expect(question.html()).not.toContain("<script");
+		expect(wrapper.find(".question-description").html()).toContain("<code>code</code>");
+	});
+
+	it("renders markdown for every question type", () => {
+		for (const interactionType of ["single_select", "multi_select", "text_input"]) {
+			const block = { question: "Pick **one**", options: ["a"] };
+			const wrapper = mount(QuestionCard, { props: { block, interactionType } });
+			expect(wrapper.find(".question-text strong").text()).toBe("one");
+		}
+	});
+});
+

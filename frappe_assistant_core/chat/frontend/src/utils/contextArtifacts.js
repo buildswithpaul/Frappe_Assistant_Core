@@ -7,11 +7,16 @@
 
 import { formatToolName, flattenInput } from "@/components/chat/interactions/helpers.js";
 import { buildTimelineRows } from "@/composables/useActivityTimeline.js";
+import { isApprovalInteraction } from "@/stores/chat/interactionRegime";
+import { safeUrl, toolResult } from "@/utils/toolResult";
+import { __ } from "@/utils/i18n";
 // formatToolName is still used for the approval card title (an interaction, not
 // a record); record chips deliberately do NOT fall back to a tool name.
 
 // Tool names that read/touch ERP records but do not write. Used to label a
 // touched record as a "source" rather than a mutation in the Records list.
+const QUESTION_TITLE_MAX = 60;
+
 const READ_TOOLS = new Set([
 	"search_documents",
 	"get_document",
@@ -32,10 +37,11 @@ const READ_TOOLS = new Set([
  * the old tool-name fallback produced). Only tool calls that name an actual
  * ERP document earn a chip.
  */
-function recordLabel(block) {
+function recordLabel(block, result) {
 	const flat = block.input ? flattenInput(block.input) : {};
 	const doctype = flat.doctype || "";
-	const name = flat.name || flat.docname || flat.title || "";
+	// A created record's name is only known from the tool's result.
+	const name = result.name || flat.name || flat.docname || flat.title || "";
 	if (doctype && name) return `${doctype}: ${name}`;
 	if (doctype) return doctype;
 	if (name) return String(name);
@@ -56,10 +62,14 @@ export function deriveArtifacts(blocks) {
 	for (const b of safe) {
 		if (b.type === "interaction" && b.status === "pending") {
 			const flat = b.input ? flattenInput(b.input) : {};
+			const isQuestion = !isApprovalInteraction(b.interactionType);
 			approval = {
 				id: b.id,
-				title: formatToolName(b.tool_name),
-				subtitle: [flat.name || flat.docname || flat.title, flat.grand_total || flat.amount || flat.total]
+				kind: isQuestion ? "question" : "approval",
+				title: isQuestion
+					? String(b.question || "").trim().slice(0, QUESTION_TITLE_MAX) || __("Question")
+					: formatToolName(b.tool_name),
+				subtitle: isQuestion ? "" : [flat.name || flat.docname || flat.title, flat.grand_total || flat.amount || flat.total]
 					.filter(Boolean)
 					.join(" · "),
 			};
@@ -78,16 +88,17 @@ export function deriveArtifacts(blocks) {
 	// 2) Records & sources the AI touched (tool_call blocks + RAG sources).
 	const records = [];
 	const seen = new Set();
-	const pushRecord = (key, label, kind) => {
+	const pushRecord = (key, label, kind, url = null) => {
 		if (!label || seen.has(key)) return;
 		seen.add(key);
-		records.push({ key, label, kind });
+		records.push({ key, label, kind, url });
 	};
 
 	for (const b of safe) {
 		if (b.type === "tool_call" && b.status === "success") {
 			const isRead = READ_TOOLS.has(b.tool_name);
-			pushRecord(`tool-${b.id}`, recordLabel(b), isRead ? "source" : "record");
+			const result = toolResult(b);
+			pushRecord(`tool-${b.id}`, recordLabel(b, result), isRead ? "source" : "record", safeUrl(result.url));
 		}
 		if (b.type === "sources" && Array.isArray(b.items)) {
 			for (const item of b.items) {

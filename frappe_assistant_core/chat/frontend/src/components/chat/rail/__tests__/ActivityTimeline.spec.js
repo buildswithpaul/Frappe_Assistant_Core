@@ -79,3 +79,17 @@ describe("ActivityTimeline after the turn ends", () => {
 		expect(wrapper.find(".tl-row .tl-duration").text()).toBe("5.0s…");
 	});
 });
+
+describe("ActivityTimeline failed step", () => {
+	it("failed step shows the plain reason", () => {
+		const row = { ...doneRow, id: "t3", status: "error", reason: "Server scripts are disabled." };
+		const wrapper = mount(ActivityTimeline, { props: { rows: [row] } });
+		expect(wrapper.find(".tl-reason").text()).toBe("Server scripts are disabled.");
+	});
+
+	it("shows no reason line for a step that worked", () => {
+		const wrapper = mount(ActivityTimeline, { props: { rows: [{ ...doneRow, reason: "" }] } });
+		expect(wrapper.find(".tl-reason").exists()).toBe(false);
+	});
+});
+

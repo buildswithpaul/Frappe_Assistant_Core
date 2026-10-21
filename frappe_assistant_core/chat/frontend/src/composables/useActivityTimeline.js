@@ -7,6 +7,8 @@
  */
 
 import { isInternalTool } from "@/utils/internalTools";
+import { __ } from "@/utils/i18n";
+import { failureReason, toolFailed, toolResult } from "@/utils/toolResult";
 
 // Friendly verb + object phrasing per known MCP tool. Falls back to a
 // humanized tool name. `target` is pulled from the tool input when present
@@ -23,6 +25,21 @@ const TOOL_PHRASING = {
 	document_action: { verb: "Prepared", noun: "submission" },
 	generate_report: { verb: "Generated", noun: "report" },
 };
+
+const DOCUMENT_ACTION_VERBS = { submit: "Submitted", cancel: "Cancelled", amend: "Amended" };
+
+// Once a write has succeeded the row says what was done, not what was prepared.
+function donePhrasing(block) {
+	const doctype = block.input?.doctype || "record";
+	if (block.tool_name === "create_document") return { verb: __("Created"), noun: doctype };
+	if (block.tool_name === "update_document") return { verb: __("Updated"), noun: doctype };
+	if (block.tool_name === "document_action") {
+		const action = String(block.input?.action || "submit").trim().toLowerCase();
+		const verb = DOCUMENT_ACTION_VERBS[action];
+		return verb ? { verb: __(verb), noun: doctype } : null;
+	}
+	return null;
+}
 
 function humanizeToolName(name) {
 	if (!name) return "Tool";
@@ -60,8 +77,12 @@ export function toolRowFrom(block) {
 	if (!block || block.type !== "tool_call") return null;
 	if (isInternalTool(block)) return null;
 
-	const phrasing = TOOL_PHRASING[block.tool_name];
-	const target = extractTarget(block);
+	const succeeded = block.status === "success" && !toolFailed(block);
+	const done = succeeded ? donePhrasing(block) : null;
+	const phrasing = done || TOOL_PHRASING[block.tool_name];
+	const target = done
+		? toolResult(block).name || block.input?.name || block.input?.docname || null
+		: extractTarget(block);
 	const base = phrasing
 		? `${phrasing.verb} ${phrasing.noun}`
 		: humanizeToolName(block.tool_name);
@@ -73,6 +94,7 @@ export function toolRowFrom(block) {
 		labelPrefix: target ? `${base} → ` : base,
 		target,
 		toolName: block.tool_name,
+		reason: failureReason(block),
 		hasTarget: Boolean(target),
 		block, // raw block for the expandable I/O drawer
 	};

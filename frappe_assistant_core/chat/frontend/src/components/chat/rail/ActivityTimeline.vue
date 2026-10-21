@@ -13,6 +13,7 @@
 				</span>
 				<span class="tl-label">{{ row.label }}</span>
 				<span class="tl-duration">{{ durationLabel(row) }}</span>
+				<span v-if="row.reason" class="tl-reason">{{ row.reason }}</span>
 			</li>
 		</ul>
 	</section>
@@ -117,6 +118,7 @@ onUnmounted(() => {
 	position: relative;
 	display: flex;
 	gap: 9px;
+	flex-wrap: wrap;
 	align-items: baseline;
 	font-size: 11.5px;
 	line-height: 1.5;
@@ -166,6 +168,13 @@ onUnmounted(() => {
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
+}
+.tl-reason {
+	flex-basis: 100%;
+	padding-left: 24px;
+	font-size: 11px;
+	line-height: 1.4;
+	color: var(--ql-danger);
 }
 .tl-duration {
 	flex-shrink: 0;
