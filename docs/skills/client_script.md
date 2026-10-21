@@ -1,0 +1,54 @@
+# Client Script
+
+## Overview
+
+Adds behaviour to a form in the browser, such as "when the customer changes, fill the region", "hide this field unless the order is an export" or "show a warning when the discount is high". This creates a `Client Script` document. Follow `get_skill("setup-change-protocol")` for the plan, the confirmation and the change log. This skill covers what goes into the record.
+
+**Only a System Manager can do this.** Anyone else gets "Changing Client Script needs a System Manager". Tell the user who can do it.
+
+**Talk to the user in business words.** Say "when someone picks a customer on a Sales Invoice", not `frappe.ui.form.on` or `refresh`.
+
+## When to use
+
+- "When X is chosen, fill / show / hide Y", "warn the user if X", "add a button on the form".
+
+**Not for** a rule that must hold for imports, the API or FACO's own writes. That needs a Server Script (`get_skill("server-script")`).
+
+## Workflow
+
+1. **Smallest mechanism first.** A field property (`reqd`, `read_only`, `hidden`, `default`) through a `Property Setter`, or `depends_on` / `mandatory_depends_on` on the field, comes before a Client Script. A Client Script comes before a Server Script. A `Workflow` only when the user asked for an approval process.
+2. **State the scope in one plain sentence**: "This affects the Sales Invoice form for everyone who opens it. Nothing else changes."
+3. **Say where it is enforced.** `depends_on`, `mandatory_depends_on` and Client Scripts are checked in the Desk form only. They do not run on import, through the API or on FACO's own writes. Tell the user this before they rely on it, and offer a Server Script if the rule must always hold. Never claim a protection the mechanism cannot enforce.
+4. **List what already exists**: `list_documents` on `Client Script` with `dt` set to the doctype. Two scripts on the same form event can fight. Offer to change an existing one instead of adding another.
+5. **Show the full code** in a fenced block, then explain in plain words what it does and when it runs.
+6. **Create it with `enabled: 0`**, ask the user to try it on a draft (say exactly what to do), and enable it with `enabled: 1` only after they confirm.
+7. **Link the result**: the new record and the form where the change shows (`applies_to.url` on the create result). Say the user needs to reload the form.
+
+## Reference
+
+```json
+{
+  "doctype": "Client Script",
+  "data": {
+    "dt": "Sales Invoice",
+    "view": "Form",
+    "enabled": 0,
+    "script": "frappe.ui.form.on('Sales Invoice', {\n  discount_amount(frm) {\n    if (frm.doc.additional_discount_percentage > 20) {\n      frappe.msgprint('Discount is above 20%');\n    }\n  }\n});"
+  }
+}
+```
+
+- **Amounts and discounts.** Use percentage fields or totals before the discount, and the company-currency `base_*` amounts, not a foreign-currency amount compared with a company-currency limit. Handle item-level discounts or say plainly that the rule ignores them.
+- The script runs in the user's browser and sees only what is on the form.
+
+## Gotchas
+
+- **A broken script breaks the form** for everyone until it is switched off. That is why it starts disabled.
+- A Client Script on a child table row needs the child doctype's own handler, not the parent's.
+- The approval card appears for every customisation write, and "Don't ask again" never applies to one. That is intended.
+
+## Anti-patterns
+
+- A Client Script for a rule that imports and the API must also respect.
+- Enabling it before the user has tried it.
+- A script that sets a value the user cannot then change, with no explanation.

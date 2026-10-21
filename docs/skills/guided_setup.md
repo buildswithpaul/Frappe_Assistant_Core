@@ -24,6 +24,8 @@ Sets up an ERPNext site through a conversation about the business, not the ERP. 
    - Approvals → `set-up-approval-workflow`
    - Numbering → `configure-naming-series`
    - Extra fields → `add-custom-field`
+   - Rules that run when a document is saved or submitted → `server-script`; behaviour in the form → `client-script`
+   - How a document prints → `print-format`; a new report → `custom-report`; an email or alert on an event → `notification-setup`
 5. **Finish with a re-run** of the health check, and show before-and-after counts.
 
 ## Reference

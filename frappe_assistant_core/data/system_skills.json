@@ -436,5 +436,50 @@
     "status": "Published",
     "visibility": "Public",
     "content_file": "raven_bot.md"
+  },
+  {
+    "skill_id": "server-script",
+    "title": "Adding a Server Script",
+    "description": "Use when asked for a rule that runs when a document is saved or submitted, such as blocking a sale below cost or filling a value automatically, and a field property or Client Script won't do.",
+    "skill_type": "Workflow",
+    "status": "Published",
+    "visibility": "Public",
+    "content_file": "server_script.md"
+  },
+  {
+    "skill_id": "client-script",
+    "title": "Adding a Client Script",
+    "description": "Use when asked to fill, show, hide or warn on a form as the user works, such as filling a region when a customer is chosen.",
+    "skill_type": "Workflow",
+    "status": "Published",
+    "visibility": "Public",
+    "content_file": "client_script.md"
+  },
+  {
+    "skill_id": "print-format",
+    "title": "Creating a Print Format",
+    "description": "Use when asked to change how an invoice, delivery note or other document prints, or to add a version without prices or with bank details.",
+    "skill_type": "Workflow",
+    "status": "Published",
+    "visibility": "Public",
+    "content_file": "print_format.md"
+  },
+  {
+    "skill_id": "custom-report",
+    "title": "Building a Custom Report",
+    "description": "Use when asked for a report the standard lists don't give, such as overdue invoices by sales person, or to save a list as a report.",
+    "skill_type": "Workflow",
+    "status": "Published",
+    "visibility": "Public",
+    "content_file": "custom_report.md"
+  },
+  {
+    "skill_id": "notification-setup",
+    "title": "Setting Up a Notification",
+    "description": "Use when asked to email or alert someone when a document is saved or submitted, or to remind someone before a date.",
+    "skill_type": "Workflow",
+    "status": "Published",
+    "visibility": "Public",
+    "content_file": "notification.md"
   }
 ]

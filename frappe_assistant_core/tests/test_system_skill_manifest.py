@@ -38,6 +38,13 @@ SETUP_SKILLS = (
     "set-up-approval-workflow",
     "configure-naming-series",
 )
+CUSTOMISATION_SKILLS = (
+    "server-script",
+    "client-script",
+    "print-format",
+    "custom-report",
+    "notification-setup",
+)
 RETIRED_TEMPLATE = "export_fac_skills"
 
 
@@ -75,6 +82,27 @@ class TestSystemSkillManifest(BaseAssistantTest):
             self.assertEqual(skill.status, "Published")
             self.assertEqual(skill.skill_type, "Workflow")
             self.assertTrue(skill.content.startswith("# "))
+
+    def test_customisation_skills_registered(self):
+        entries = {e["skill_id"]: e for e in _load_manifest("system_skills.json")}
+        for skill_id in CUSTOMISATION_SKILLS:
+            self.assertIn(skill_id, entries)
+            entry = entries[skill_id]
+            self.assertEqual(entry["skill_type"], "Workflow")
+            self.assertEqual(entry["status"], "Published")
+            self.assertEqual(entry["visibility"], "Public")
+            path = os.path.join(REPO_DIR, "docs", "skills", entry["content_file"])
+            self.assertTrue(os.path.isfile(path), f"{skill_id}: {path} missing")
+            with open(path, encoding="utf-8") as f:
+                self.assertIn("setup-change-protocol", f.read(), skill_id)
+
+    def test_add_custom_field_undo_note_corrected(self):
+        path = os.path.join(REPO_DIR, "docs", "skills", "add_custom_field.md")
+        with open(path, encoding="utf-8") as f:
+            text = f.read()
+        self.assertNotIn("drop any values", text)
+        self.assertNotIn("drops the column", text)
+        self.assertIn("keeps its database column", text)
 
     def test_retired_export_template_is_removed(self):
         self.assertNotIn(

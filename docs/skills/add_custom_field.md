@@ -40,7 +40,7 @@ Adds a field to an existing form, such as "add a vehicle number to Delivery Note
    | Another record (a Customer, an Employee) | `Link` | The DocType name |
    | A file | `Attach` | — |
 
-4. **Pick `insert_after`**: the `fieldname` of an existing field on that doctype, taken from your search results. Search for a neighbouring field the same way if you need one. It must exist, or the save fails.
+4. **Place it where people will see it.** Unless the user says otherwise, put the new field on the **first tab**, in an **expanded** section (not a collapsed one), so it is visible without clicking. Set `insert_after` to the `fieldname` of an existing field in that section, taken from your search results. Search for a neighbouring field the same way if you need one. It must exist, or the save fails. Tell the user in plain words where it will appear ("under Customer, on the first tab"), and use the `applies_to.url` link in the result to show the form.
 5. **Plan, confirm and create** through the protocol.
 
 ## Reference
@@ -71,7 +71,7 @@ Adds a field to an existing form, such as "add a vehicle number to Delivery Note
 - **Mandatory on an existing form.** Existing drafts can't be saved until someone fills the new field. Submitted documents aren't affected. Warn the user before setting `reqd: 1`.
 - **The fieldtype is mostly permanent.** Frappe only allows changes between compatible types, so `Data` → `Link` later is refused. Choose carefully now.
 - **Submitted documents won't show a value.** The field is empty on everything created before it existed.
-- **Undoing it deletes data.** Deleting the Custom Field drops the column and every value in it.
+- **Undoing it keeps the data.** Deleting a Custom Field removes it from the form, but Frappe keeps its database column and the values already saved. Nothing is lost, and nothing is shown. Say so, so the user does not expect deletion to clear old values.
 - The user may need to reload the form to see the new field.
 
 ## Anti-patterns

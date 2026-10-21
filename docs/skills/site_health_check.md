@@ -79,6 +79,15 @@ Then:
 
 Count `docstatus = 0` with `posting_date` more than 30 days ago on `Sales Invoice`, `Purchase Invoice`, `Delivery Note`, `Purchase Receipt` and `Journal Entry` → **Note** per doctype with a count. Forgotten drafts are the usual reason "the report doesn't match".
 
+### H. Customisations
+
+When the user asks what has been customised, list custom fields, property setters, scripts, reports, print formats, notifications and workflows in two groups, and say which is which:
+
+- **Made on this site**: records someone created here.
+- **Installed by an app**: records with `is_system_generated = 1`, standard records (`is_standard = "Yes"` or a standard `module` file), and records whose `module` belongs to an installed app (for example HRMS or India Compliance fields on Sales Invoice).
+
+Count only the first group as "your customisations". Don't count standard naming series, and don't list app-installed fields as something the user added. If you can't tell which group a record belongs to, say so rather than guessing.
+
 ## Reporting
 
 1. One line: "**2 critical**, 3 warnings and 4 notes across 6 areas."
