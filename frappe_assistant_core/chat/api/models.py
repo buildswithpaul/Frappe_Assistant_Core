@@ -17,6 +17,7 @@ from ._helpers import (
 PREFERENCES_DOCTYPE = "FAC Chat User Preferences"
 MAX_MODEL_ID_LENGTH = 140
 AVAILABLE_MODELS_TTL = 300  # seconds a user's available-model ids are trusted
+AVAILABLE_MODELS_FAILURE_TTL = 30  # seconds an AR outage is remembered, so turns do not each wait
 AVAILABLE_MODELS_TIMEOUT = 3  # a turn waits at most this long for AR's list
 
 
@@ -31,7 +32,8 @@ def available_models_key() -> str:
     return f"fac_available_models::{frappe.session.user}"
 
 
-def _remember_available(model_ids: list[str]) -> None:
+def _remember_available(model_ids: list[str] | None) -> None:
+    """Keep the ids for AVAILABLE_MODELS_TTL; None records that AR could not answer."""
     # Aged in code, not by a Redis TTL: a TTL'd key reads back as a miss within the request that
     # set it on Frappe v15.
     frappe.cache.set_value(available_models_key(), {"ids": model_ids, "at": time.time()})
@@ -44,18 +46,20 @@ def _available_model_ids() -> list[str] | None:
     only when there is none.
     """
     cached = frappe.cache.get_value(available_models_key())
-    if cached and time.time() - cached["at"] < AVAILABLE_MODELS_TTL:
-        return cached["ids"]
+    if cached:
+        ttl = AVAILABLE_MODELS_TTL if cached["ids"] is not None else AVAILABLE_MODELS_FAILURE_TTL
+        if time.time() - cached["at"] < ttl:
+            return cached["ids"]
+    ids = None
     try:
         from frappe_assistant_core.chat.fac_cloud_client import get_fac_cloud_client
 
         client = get_fac_cloud_client()
         result = client.list_available_models(timeout=AVAILABLE_MODELS_TIMEOUT) if client else None
-        if not result or result.get("error_code"):
-            return None
-        ids = [m.get("model_id") for m in result.get("models", [])]
+        if result and not result.get("error_code"):
+            ids = [m.get("model_id") for m in result.get("models", [])]
     except Exception:
-        return None
+        pass
     _remember_available(ids)
     return ids
 
@@ -72,16 +76,6 @@ def usable_saved_model() -> str:
         return saved
     ids = _available_model_ids()
     return saved if ids is not None and saved in ids else ""
-
-
-def _clear_selected_model() -> None:
-    from frappe_assistant_core.chat.doctype.fac_chat_user_preferences.fac_chat_user_preferences import (
-        FACChatUserPreferences,
-    )
-
-    prefs = FACChatUserPreferences.get_or_create_preferences()
-    prefs.selected_model = ""
-    prefs.save(ignore_permissions=True)
 
 
 @frappe.whitelist(methods=["GET"])
@@ -144,9 +138,8 @@ def get_available_models():
         if models:
             model_ids = [m.get("model_id") for m in models]
             _remember_available(model_ids)
-            # A saved choice that is no longer offered would fail every turn that defaults to it.
-            if selected and selected != "auto" and selected not in model_ids:
-                _clear_selected_model()
+            # The stored row stays: a GET's writes are rolled back, and turns skip a stale id anyway.
+            if selected != "auto" and selected not in model_ids:
                 selected = ""
 
         return {
@@ -221,4 +214,5 @@ def set_selected_model(model_id: str) -> dict:
     prefs = FACChatUserPreferences.get_or_create_preferences()
     prefs.selected_model = model_id
     prefs.save(ignore_permissions=True)
+    frappe.cache.delete_value(available_models_key())
     return {"success": True, "selected_model": model_id}

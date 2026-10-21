@@ -84,3 +84,17 @@ class TestTurnModelDefault(BaseAssistantTest):
         _, ar = self._turn(SAVED)
         self._turn(SAVED)
         self.assertEqual(ar.list_available_models.call_count, 1)
+
+    def test_an_ar_outage_is_remembered_briefly_so_turns_do_not_each_wait(self):
+        ar = MagicMock()
+        ar.list_available_models.side_effect = RuntimeError("AR down")
+        with (
+            patch(GATE, return_value={"can_use": True}),
+            patch.object(models, "_saved_model", return_value=SAVED),
+            patch(CLIENT, return_value=ar),
+            patch.object(messages._relay_pool, "submit", return_value=Future()) as submit,
+        ):
+            messages.start_turn("s-model-default", "hi")
+            messages.start_turn("s-model-default", "hi again")
+        self.assertEqual(ar.list_available_models.call_count, 1)
+        self.assertIsNone(_sent_model(submit))

@@ -107,8 +107,10 @@ class TestSelectedModelPreference(FrappeTestCase):
             result = models.get_available_models()
         self.assertEqual(result["selected_model"], "gpt-saved")
 
-    def test_get_available_models_clears_a_saved_model_that_is_no_longer_offered(self):
-        # Production reaches this when a model is retired or the plan is downgraded after the user chose it.
+    def test_get_available_models_hides_a_saved_model_that_is_no_longer_offered(self):
+        # Production reaches this when a model is retired or the plan is downgraded after the user
+        # chose it. The stored row is intentionally untouched: Frappe rolls back writes made in a
+        # GET, and a stale id is harmless (turns skip it, and it returns if the model is offered again).
         self._as(self.user)
         models.set_selected_model("retired-model")
         client = MagicMock()
@@ -116,7 +118,13 @@ class TestSelectedModelPreference(FrappeTestCase):
         with patch("frappe_assistant_core.chat.fac_cloud_client.get_fac_cloud_client", return_value=client):
             result = models.get_available_models()
         self.assertEqual(result["selected_model"], "")
-        self.assertEqual(models._saved_model(), "")
+        self.assertEqual(models._saved_model(), "retired-model")
+
+    def test_choosing_a_model_drops_the_cached_availability(self):
+        self._as(self.user)
+        models._remember_available(["gpt-5"])
+        models.set_selected_model("claude-new")
+        self.assertIsNone(frappe.cache.get_value(models.available_models_key()))
 
     def test_get_available_models_keeps_auto_and_an_offered_model(self):
         self._as(self.user)
