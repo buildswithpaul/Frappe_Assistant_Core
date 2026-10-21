@@ -195,10 +195,14 @@ export function fieldPlacementTarget(toolName, input) {
 // The keys update_document refuses as a rename; flattenInput turns a differing data.name into new_name.
 const RENAME_KEYS = ["new_name", "rename"];
 
+// A value names a rename unless it is null, false or blank once stringified (numbers and true count);
+// update_document's `_has_rename_value` applies the same rule.
+const hasRenameValue = (value) => value != null && value !== false && String(value).trim() !== "";
+
 function renameRequested(toolName, input) {
 	if (baseToolName(toolName) !== "update_document" || !input || typeof input !== "object") return false;
 	const fields = flattenInput(input);
-	return RENAME_KEYS.some((key) => hasText(fields[key]));
+	return RENAME_KEYS.some((key) => hasRenameValue(fields[key]));
 }
 
 /** The keys to hide from the changed-fields list: the rename keys when the update asks for one, else none. */

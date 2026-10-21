@@ -81,8 +81,9 @@ export function flattenInput(input) {
 		if (isPlainObject(input[key])) {
 			for (const [fk, fv] of Object.entries(input[key])) {
 				if (!(fk in result)) result[fk] = fv;
-				// A data key that shares a name with the record's identity (a rename) is a change, not a duplicate.
-				else if (metaKeys.includes(fk) && result[fk] !== fv && !isPlainObject(fv)) result[`new_${fk}`] ??= fv;
+				// A data key that shares a name with the record's identity (a rename) is a change, not a duplicate;
+				// compared as trimmed strings so 5 and "5" are the same record, as in update_document.
+				else if (metaKeys.includes(fk) && String(result[fk]).trim() !== String(fv).trim() && !isPlainObject(fv)) result[`new_${fk}`] ??= fv;
 			}
 		}
 	}

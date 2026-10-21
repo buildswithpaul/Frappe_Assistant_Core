@@ -159,6 +159,14 @@ def _apply_child_table_update(
 RENAME_KEYS = ("new_name", "rename")
 
 
+def _has_rename_value(value: Any) -> bool:
+    """A value names a rename unless it is None, False or blank once stringified.
+
+    Numbers and True count; the chat card's `hasRenameValue` applies the same rule.
+    """
+    return value is not None and value is not False and str(value).strip() != ""
+
+
 def _split_rename(name: str, data: Dict[str, Any], arguments: Dict[str, Any]) -> Tuple[Dict[str, Any], bool]:
     """Separate a rename from the field changes in an update.
 
@@ -167,8 +175,9 @@ def _split_rename(name: str, data: Dict[str, Any], arguments: Dict[str, Any]) ->
     any was present. Restating the record's own name is not a rename.
     """
     fields = {k: v for k, v in data.items() if k not in RENAME_KEYS and k != "name"}
-    requested = any(data.get(k) or arguments.get(k) for k in RENAME_KEYS)
-    requested = requested or ("name" in data and data["name"] not in (None, "", name))
+    requested = any(_has_rename_value(v) for k in RENAME_KEYS for v in (data.get(k), arguments.get(k)))
+    if "name" in data and _has_rename_value(data["name"]):
+        requested = requested or str(data["name"]).strip() != str(name).strip()
     return fields, requested
 
 

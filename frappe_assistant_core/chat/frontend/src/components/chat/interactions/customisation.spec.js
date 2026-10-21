@@ -227,6 +227,23 @@ describe("fieldPlacementTarget", () => {
 });
 
 describe("renameNotice", () => {
+	it("treats a number or true as a rename value, and null, false or blank as none", () => {
+		const update = (data) => ({ doctype: "Role", name: "A", data });
+		expect(renameNotice("update_document", update({ disabled: 1, new_name: 42 }))).not.toBeNull();
+		expect(renameNotice("update_document", update({ disabled: 1, rename: true }))).not.toBeNull();
+		for (const blank of [null, false, "", "  "]) {
+			expect(renameNotice("update_document", update({ disabled: 1, new_name: blank }))).toBeNull();
+		}
+	});
+
+	it("does not call a restated name a rename when only its type differs", () => {
+		const asNumber = { doctype: "ToDo", name: "5", data: { status: "Closed", name: 5 } };
+		const asString = { doctype: "ToDo", name: 5, data: { status: "Closed", name: "5" } };
+		expect(renameNotice("update_document", asNumber)).toBeNull();
+		expect(renameNotice("update_document", asString)).toBeNull();
+		expect(renameKeys("update_document", asString)).toEqual([]);
+	});
+
 	it("explains a rename on an update and names the keys to hide", () => {
 		const input = { doctype: "Role", name: "A", data: { name: "B", disabled: 1 } };
 		expect(renameNotice("update_document", input)).toBe("Renaming isn't possible here. Only the other changes will be saved.");
