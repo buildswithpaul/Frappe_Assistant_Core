@@ -353,6 +353,46 @@ def _dispatch_relay_event(
     return True
 
 
+# AR's own watchdog (utils/sse.py) fires first at 360 s; these catch a turn
+# whose AR end never answered at all.
+RELAY_NO_PROGRESS_SECONDS = 420
+RELAY_MAX_TURN_SECONDS = 1800
+
+
+def _relay_deadline_tripped(started: float, last_progress: float, now: float) -> str | None:
+    """Why the relay should stop waiting on AR, or None to keep going.
+
+    ``last_progress`` is the time of the last event that is not a heartbeat:
+    AR keeps heartbeating while its agent is parked, so a heartbeat says the
+    connection is alive, not that the turn is moving.
+    """
+    if now - last_progress >= RELAY_NO_PROGRESS_SECONDS:
+        return "no_progress"
+    if now - started >= RELAY_MAX_TURN_SECONDS:
+        return "max_turn"
+    return None
+
+
+def _relay_stalled_event(stream_iter, session_id: str) -> tuple[str, dict]:
+    """Drop the AR connection and return the ``stream_error`` that ends the stalled turn.
+
+    The loops finish it in their own ``stream_error`` branch, which saves the
+    partial turn as errored.
+    """
+    try:
+        stream_iter.close()
+    except Exception as e:
+        frappe.logger("faco.chat.cancel").warning(
+            f"stream_iter.close() raised during stall abort for {session_id}: {e}"
+        )
+    return "stream_error", {
+        "error": _(
+            "FACO stopped waiting for a reply. Nothing new was saved after the last step shown. Try again."
+        ),
+        "error_code": "RELAY_STALLED",
+    }
+
+
 def _normalize_ar_event(event_type: str, data: dict) -> tuple[str, dict]:
     """Rename an AR event the clients cannot act on into one they can.
 
@@ -847,6 +887,8 @@ def _relay_ar_interrupt_resume(
             context=context,
             **_sdk_composer_kwargs(client.stream_chat, web_search, thinking_enabled, reasoning_effort),
         )
+        started = last_progress = time.monotonic()
+        stalled = False
         for event in stream_iter:
             # Cooperative cancellation: same treatment as the send funnel.
             # Without this, Stop pressed while a resume is streaming was a
@@ -890,6 +932,13 @@ def _relay_ar_interrupt_resume(
 
             # A rate_limited refusal arrives here as a stream_error (_normalize_ar_event).
             event_type, data = _normalize_ar_event(event.get("event"), event.get("data", {}))
+
+            now = time.monotonic()
+            if event_type != "heartbeat":
+                last_progress = now
+            if _relay_deadline_tripped(started, last_progress, now):
+                event_type, data = _relay_stalled_event(stream_iter, session_id)
+                stalled = True
 
             if not pause_consumed and event_type in _RESUME_PROGRESS_EVENTS:
                 # AR is running the resumed turn, so it has consumed the pause.
@@ -1263,6 +1312,9 @@ def _relay_ar_interrupt_resume(
                     },
                 )
 
+            if stalled:
+                return
+
     except Exception as e:
         import traceback
 
@@ -1476,6 +1528,8 @@ def _relay_ar_stream(
             message_id=continue_from_message_id,
             **_sdk_composer_kwargs(client.stream_chat, web_search, thinking_enabled, reasoning_effort),
         )
+        started = last_progress = time.monotonic()
+        stalled = False
         for event in stream_iter:
             # Cooperative cancellation: the cancel_stream endpoint sets a
             # Redis-backed flag, visible to any gunicorn worker. We poll it
@@ -1496,6 +1550,13 @@ def _relay_ar_stream(
 
             # A rate_limited refusal arrives here as a stream_error (_normalize_ar_event).
             event_type, data = _normalize_ar_event(event.get("event"), event.get("data", {}))
+
+            now = time.monotonic()
+            if event_type != "heartbeat":
+                last_progress = now
+            if _relay_deadline_tripped(started, last_progress, now):
+                event_type, data = _relay_stalled_event(stream_iter, session_id)
+                stalled = True
 
             if _dispatch_relay_event(
                 event_type, data, session_id, block_builder, ar_message_id=ar_message_id
@@ -1894,6 +1955,9 @@ def _relay_ar_stream(
                         "partial_response": full_response,
                     },
                 )
+
+            if stalled:
+                return
 
     except Exception as e:
         import traceback
