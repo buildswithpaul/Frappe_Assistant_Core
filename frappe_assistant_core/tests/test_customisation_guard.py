@@ -475,3 +475,87 @@ class TestValidateOnlyWritesNothing(BaseAssistantTest):
             )
 
         self.assertNotIn(queued, frappe.db.after_commit._functions)
+
+
+class TestValidateOnlyRunsInsertPreparation(BaseAssistantTest):
+    """A dry run must do what Document.insert does before validate, then undo it."""
+
+    def tearDown(self):
+        frappe.db.delete("Custom Field", {"dt": "ToDo", "label": "Fac Dry Run Label"})
+        super().tearDown()
+
+    def _dry_run_custom_field(self) -> dict:
+        return DocumentCreate().execute(
+            {
+                "doctype": "Custom Field",
+                "data": {"dt": "ToDo", "label": "Fac Dry Run Label", "fieldtype": "Data"},
+                "validate_only": True,
+            }
+        )
+
+    def test_custom_field_dry_run_passes_and_leaves_nothing(self):
+        # Frappe's Custom Field derives fieldname in before_insert, so validate() alone
+        # always throws "Fieldname not set"; the agent sends exactly these three fields.
+        errors_before = frappe.db.count("Error Log")
+
+        result = self._dry_run_custom_field()
+
+        self.assertTrue(result["success"], result)
+        self.assertTrue(result["validation_passed"])
+        self.assertFalse(frappe.db.exists("Custom Field", {"dt": "ToDo", "label": "Fac Dry Run Label"}))
+        self.assertEqual(frappe.db.count("Error Log"), errors_before)
+
+    @staticmethod
+    def _series_counter(key: str):
+        series = frappe.qb.DocType("Series")
+        rows = frappe.qb.from_(series).select(series.current).where(series.name == key).run()
+        return rows[0][0] if rows else None
+
+    def test_dry_run_does_not_advance_a_naming_series(self):
+        # Event is named EV.#####; Frappe bumps tabSeries while naming, in the same transaction
+        # the dry run's savepoint covers. Production reaches this with any series-named doctype.
+        before = self._series_counter("EV")
+
+        result = DocumentCreate().execute(
+            {
+                "doctype": "Event",
+                "data": {
+                    "subject": "fac dry run",
+                    "starts_on": "2030-01-01 10:00:00",
+                    "event_type": "Private",
+                },
+                "validate_only": True,
+            }
+        )
+
+        self.assertTrue(result["success"], result)
+        self.assertEqual(self._series_counter("EV"), before)
+
+    def test_failed_validation_in_a_dry_run_is_not_logged_as_an_error(self):
+        errors_before = frappe.db.count("Error Log")
+
+        def refuses(doc, *args, **kwargs):
+            frappe.throw(frappe._("refused by validate"))
+
+        with patch("frappe.desk.doctype.todo.todo.ToDo.validate", refuses):
+            result = DocumentCreate().execute(
+                {"doctype": "ToDo", "data": {"description": "fac dry run"}, "validate_only": True}
+            )
+
+        self.assertFalse(result["success"])
+        self.assertIn("refused by validate", result["error"])
+        self.assertEqual(frappe.db.count("Error Log"), errors_before)
+
+    def test_unexpected_error_in_a_dry_run_is_still_logged(self):
+        errors_before = frappe.db.count("Error Log")
+
+        def explodes(doc, *args, **kwargs):
+            raise RuntimeError("boom")
+
+        with patch("frappe.desk.doctype.todo.todo.ToDo.validate", explodes):
+            result = DocumentCreate().execute(
+                {"doctype": "ToDo", "data": {"description": "fac dry run"}, "validate_only": True}
+            )
+
+        self.assertFalse(result["success"])
+        self.assertEqual(frappe.db.count("Error Log"), errors_before + 1)

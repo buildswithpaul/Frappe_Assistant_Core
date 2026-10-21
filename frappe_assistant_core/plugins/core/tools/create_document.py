@@ -63,6 +63,25 @@ def _default_todo_allocation(doc: Any) -> None:
         doc.allocated_to = frappe.session.user
 
 
+def _prepare_for_insert(doc: Any) -> None:
+    """Run the steps ``Document.insert`` takes before ``validate``, in its order, without the insert.
+
+    Controllers rely on them: Custom Field sets its fieldname in before_insert, and naming
+    fills ``doc.name`` and the child rows' parents. check_if_latest sets the ``_action`` that
+    link validation reads; the caller has already run check_permission. The methods exist on
+    Frappe v15 and v16. The caller rolls back, which also undoes the naming-series counter.
+    """
+    doc._set_defaults()
+    doc.set_user_and_timestamp()
+    doc.set_docstatus()
+    doc.check_if_latest()
+    doc._validate_links()
+    doc.run_method("before_insert")
+    doc.set_new_name()
+    doc.set_parent_in_children()
+    doc.validate_higher_perm_levels()
+
+
 class DocumentCreate(BaseTool):
     """
     Tool for creating new Frappe documents.
@@ -240,6 +259,7 @@ class DocumentCreate(BaseTool):
                     # insert() refuses a document this user may not create, so say so here
                     # instead of reporting a validation the real create would then fail.
                     doc.check_permission("create")
+                    _prepare_for_insert(doc)
                     doc.run_method("validate")
                 finally:
                     rollback_to_savepoint(_VALIDATE_SAVEPOINT, marks, doctype, doc.name)
@@ -415,16 +435,19 @@ class DocumentCreate(BaseTool):
             # Frappe raises this with no message and keeps the reason in
             # frappe.flags.error_message; exception_message() recovers it.
             error_msg = exception_message(e, _("Insufficient permission to create {0}").format(doctype))
-            frappe.log_error(
-                title=_("Document Creation Error"), message=f"Error creating {doctype}: {error_msg}"
-            )
+            if not validate_only:
+                frappe.log_error(
+                    title=_("Document Creation Error"), message=f"Error creating {doctype}: {error_msg}"
+                )
 
             return permission_error_result(doctype, error_msg)
         except Exception as e:
             error_msg = exception_message(e)
-            frappe.log_error(
-                title=_("Document Creation Error"), message=f"Error creating {doctype}: {error_msg}"
-            )
+            # A dry run refused by validation is the answer the caller asked for, not a fault.
+            if not (validate_only and isinstance(e, frappe.ValidationError)):
+                frappe.log_error(
+                    title=_("Document Creation Error"), message=f"Error creating {doctype}: {error_msg}"
+                )
 
             # Provide specific guidance based on error type
             result = {"success": False, "error": error_msg, "doctype": doctype}
