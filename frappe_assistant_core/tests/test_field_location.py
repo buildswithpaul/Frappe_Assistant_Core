@@ -85,6 +85,9 @@ class TestLocateField(unittest.TestCase):
 PROBE_TAB = "custom_probe_tab"
 PROBE_SECTION = "custom_probe_section"
 PROBE_FIELD = "custom_probe_where"
+# ToDo's first field, ahead of every probe tab on both Frappe versions: v15 slots a Tab Break straight
+# after its insert_after field (splitting ToDo's standard fields), v16 appends it after the last field.
+MOVE_TARGET = "description_and_status"
 
 
 class TestCustomFieldLocationInResults(BaseAssistantTest):
@@ -153,7 +156,7 @@ class TestCustomFieldLocationInResults(BaseAssistantTest):
             {
                 "doctype": "Custom Field",
                 "name": f"ToDo-{PROBE_FIELD}",
-                "data": {"insert_after": "description"},
+                "data": {"insert_after": MOVE_TARGET},
             }
         )
 
