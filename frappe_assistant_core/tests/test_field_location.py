@@ -204,7 +204,7 @@ class TestCustomFieldLocationInResults(BaseAssistantTest):
         self.assertFalse(location["collapsed"])
 
     def test_prediction_matches_where_frappe_places_the_saved_field(self):
-        for insert_after in (PROBE_SECTION, MOVE_TARGET, "status", "no_such_field", None):
+        for insert_after in (PROBE_SECTION, MOVE_TARGET, "description", "no_such_field", None):
             with self.subTest(insert_after=insert_after):
                 predicted = predict_field_location("ToDo", insert_after)
                 self._insert(PROBE_FIELD, "Data", "Where", insert_after)
@@ -218,6 +218,18 @@ class TestCustomFieldLocationInResults(BaseAssistantTest):
                     )
                     frappe.clear_cache(doctype="ToDo")
                 self.assertEqual(predicted, actual)
+
+    def test_a_position_another_custom_field_holds_is_flagged_as_ambiguous(self):
+        # setUp's tab was added after "status", so a second field after "status" ties on idx.
+        placement = get_field_placement("ToDo", "status")
+
+        self.assertTrue(placement["ambiguous"])
+        self.assertTrue(placement["warning"])
+        self.assertIn("next to", placement["sentence"])
+
+    def test_a_free_position_is_not_ambiguous(self):
+        self.assertFalse(get_field_placement("ToDo", MOVE_TARGET)["ambiguous"])
+        self.assertFalse(get_field_placement("ToDo", "no_such_field")["ambiguous"])
 
     def test_prediction_writes_nothing(self):
         before = frappe.db.count("Custom Field", {"dt": "ToDo"})

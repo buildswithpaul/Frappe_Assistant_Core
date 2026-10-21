@@ -14,6 +14,7 @@ from frappe import _
 
 from frappe_assistant_core.utils.customisation import (
     is_hidden,
+    placement_is_ambiguous,
     placement_sentence,
     predict_field_location,
 )
@@ -38,8 +39,9 @@ def get_field_placement(doctype: str, insert_after: str | None = None, fieldtype
     """Say where a Custom Field added to `doctype` after `insert_after` would appear.
 
     Returns:
-            {tab, section, collapsed, first_tab, sentence, warning}; warning is true when the
-            field would be collapsed or not on the first tab.
+            {tab, section, collapsed, first_tab, sentence, warning, ambiguous}; warning is true when
+            the field would be collapsed, not on the first tab, or ambiguous (another custom field
+            already sits where this one would go, so its place is only known once saved).
     """
     if not _can_read(doctype):
         frappe.throw(_("You do not have permission to read {0}").format(doctype), frappe.PermissionError)
@@ -47,8 +49,19 @@ def get_field_placement(doctype: str, insert_after: str | None = None, fieldtype
     location = predict_field_location(doctype, insert_after, fieldtype)
     if not location:
         return {}
+    if placement_is_ambiguous(doctype, insert_after):
+        label = frappe.get_meta(doctype).get_label(insert_after)
+        return {
+            **location,
+            "sentence": _(
+                "Will appear next to {0}. Its tab and section cannot be told until it is saved"
+            ).format(_(label)),
+            "warning": True,
+            "ambiguous": True,
+        }
     return {
         **location,
         "sentence": placement_sentence(location),
         "warning": is_hidden(location),
+        "ambiguous": False,
     }

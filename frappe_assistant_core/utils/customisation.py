@@ -232,6 +232,22 @@ class _ProbeMeta(Meta):
         self.fields.insert(position, probe)
 
 
+def _new_field_idx(dt: str, insert_after: Optional[str]) -> Optional[int]:
+    """The idx Frappe gives a new Custom Field: just after insert_after in the form's order."""
+    fieldnames = [f.fieldname for f in frappe.get_meta(dt, cached=False).fields]
+    return fieldnames.index(insert_after) + 1 if insert_after in fieldnames else None
+
+
+def placement_is_ambiguous(dt: str, insert_after: Optional[str]) -> bool:
+    """Whether another Custom Field already holds the idx a new one would get.
+
+    Frappe orders custom fields by idx alone, so on a tie the database decides which comes first
+    and the layout, hence the prediction, cannot be known in advance.
+    """
+    idx = _new_field_idx(dt, insert_after)
+    return bool(idx and frappe.db.exists("Custom Field", {"dt": dt, "idx": idx}))
+
+
 def predict_field_location(
     dt: str, insert_after: Optional[str], fieldtype: Optional[str] = None
 ) -> Optional[Dict[str, Any]]:
@@ -244,10 +260,9 @@ def predict_field_location(
 
     Frappe reads custom fields ORDER BY idx with no tie-break, so when another custom field
     already sits at the new field's idx (a second field added after the same one) the database
-    decides their order and the prediction can differ. The probe goes first, as it did in every
-    run observed.
+    decides their order and the prediction can differ: see placement_is_ambiguous. The probe
+    goes first on a tie.
     """
-    fieldnames = [f.fieldname for f in frappe.get_meta(dt, cached=False).fields]
     probe = {
         "doctype": "Custom Field",
         "dt": dt,
@@ -257,8 +272,9 @@ def predict_field_location(
         "insert_after": insert_after or None,
         "is_custom_field": 1,
     }
-    if insert_after in fieldnames:
-        probe["idx"] = fieldnames.index(insert_after) + 1
+    idx = _new_field_idx(dt, insert_after)
+    if idx:
+        probe["idx"] = idx
     return locate_field(_ProbeMeta(dt, probe).fields, PROBE_FIELDNAME)
 
 
