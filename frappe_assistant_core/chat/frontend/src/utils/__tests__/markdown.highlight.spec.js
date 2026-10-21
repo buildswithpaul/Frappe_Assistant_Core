@@ -19,7 +19,7 @@ describe("code highlighting", () => {
 	it("ships only the languages we chose, not all 190", async () => {
 		const { default: hljs } = await import("@/utils/highlight");
 		expect(hljs.listLanguages().sort()).toEqual(
-			["bash", "css", "javascript", "json", "python", "sql", "xml", "yaml"].sort()
+			["bash", "css", "django", "javascript", "json", "python", "sql", "xml", "yaml"].sort()
 		);
 	});
 });

@@ -6,6 +6,7 @@
 import hljs from "highlight.js/lib/core";
 import bash from "highlight.js/lib/languages/bash";
 import css from "highlight.js/lib/languages/css";
+import django from "highlight.js/lib/languages/django";
 import javascript from "highlight.js/lib/languages/javascript";
 import json from "highlight.js/lib/languages/json";
 import python from "highlight.js/lib/languages/python";
@@ -15,6 +16,7 @@ import yaml from "highlight.js/lib/languages/yaml";
 
 hljs.registerLanguage("bash", bash);
 hljs.registerLanguage("css", css);
+hljs.registerLanguage("django", django);
 hljs.registerLanguage("javascript", javascript);
 hljs.registerLanguage("json", json);
 hljs.registerLanguage("python", python);

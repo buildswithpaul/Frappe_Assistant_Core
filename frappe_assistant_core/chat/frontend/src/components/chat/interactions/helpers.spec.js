@@ -5,6 +5,10 @@ import {
 	isDateValue,
 	isMonoValue,
 	splitDetailFields,
+	CODE_KEYS,
+	isCodeKey,
+	codeLanguage,
+	isChildTable,
 } from "./helpers";
 
 describe("isMoneyKey", () => {
@@ -87,5 +91,42 @@ describe("formatToolName", () => {
 		expect(formatToolName("add_crm_activity")).toBe("Add CRM Activity");
 		expect(formatToolName("convert_crm_lead")).toBe("Convert CRM Lead");
 		expect(formatToolName("create_document")).toBe("Create Document");
+	});
+});
+
+describe("code keys", () => {
+	it("lists the fields that hold code", () => {
+		expect(CODE_KEYS).toEqual([
+			"script",
+			"condition",
+			"query",
+			"html",
+			"javascript",
+			"report_script",
+			"css",
+			"message",
+		]);
+		expect(isCodeKey("script")).toBe(true);
+		expect(isCodeKey("subject")).toBe(false);
+	});
+
+	it("picks the language from the key and doctype", () => {
+		expect(codeLanguage("script", "Server Script")).toBe("python");
+		expect(codeLanguage("report_script", "Report")).toBe("python");
+		expect(codeLanguage("condition", "Notification")).toBe("python");
+		expect(codeLanguage("javascript", "Report")).toBe("javascript");
+		expect(codeLanguage("query", "Report")).toBe("sql");
+		expect(codeLanguage("html", "Print Format")).toBe("django");
+		expect(codeLanguage("html", "Web Page")).toBe("xml");
+		expect(codeLanguage("css", "Print Format")).toBe("xml");
+	});
+});
+
+describe("isChildTable", () => {
+	it("is true only for a non-empty array of plain objects", () => {
+		expect(isChildTable([{ state: "A" }])).toBe(true);
+		expect(isChildTable([])).toBe(false);
+		expect(isChildTable(["a"])).toBe(false);
+		expect(isChildTable("x")).toBe(false);
 	});
 });

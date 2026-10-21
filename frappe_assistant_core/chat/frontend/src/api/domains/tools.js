@@ -27,4 +27,11 @@ export const tools = {
 			"frappe_assistant_core.chat.api.message_preview.get_message_preview",
 			{ tool_name: toolName, ...args }
 		),
+
+	// Stored values of the code fields an update_document call will change, for the old-vs-new diff.
+	currentCode: (doctype, name, fields) =>
+		getCall(
+			"frappe_assistant_core.chat.api.current_code.get_current_code",
+			{ doctype, name, fields: JSON.stringify(fields) }
+		),
 };

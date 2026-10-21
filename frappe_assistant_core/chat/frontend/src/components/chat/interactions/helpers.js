@@ -23,6 +23,37 @@ function isPlainObject(v) {
 	return v && typeof v === "object" && !Array.isArray(v);
 }
 
+// Fields that hold code or markup. Mirrored in chat/api/current_code.py.
+export const CODE_KEYS = [
+	"script",
+	"condition",
+	"query",
+	"html",
+	"javascript",
+	"report_script",
+	"css",
+	"message",
+];
+
+export function isCodeKey(key) {
+	return CODE_KEYS.includes(key);
+}
+
+const PYTHON_KEYS = new Set(["script", "report_script", "condition"]);
+
+export function codeLanguage(key, doctype) {
+	if (PYTHON_KEYS.has(key)) return "python";
+	if (key === "javascript") return "javascript";
+	if (key === "query") return "sql";
+	if (key === "html" && doctype === "Print Format") return "django";
+	return "xml";
+}
+
+/** True for a non-empty array of plain objects, i.e. the rows of a child table. */
+export function isChildTable(value) {
+	return Array.isArray(value) && value.length > 0 && value.every(isPlainObject);
+}
+
 /**
  * Flatten a tool input dict for human display.
  *

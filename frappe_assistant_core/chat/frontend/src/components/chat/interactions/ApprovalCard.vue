@@ -29,23 +29,7 @@
 
 		<p v-else-if="toolDescription" class="approval-description">{{ toolDescription }}</p>
 
-		<!-- Scannable 2-col key/value table -->
-		<div v-if="!message.entry.value && hasDetails" class="approval-table">
-			<template v-for="[key, value] in visibleRows" :key="key">
-				<span class="field-key">{{ formatKey(key) }}</span>
-				<span
-					class="field-value"
-					:class="{ 'value-mono': isMonoValue(key, value), 'value-money': isMoneyKey(key) }"
-					>{{ formatValue(value) }}</span
-				>
-			</template>
-			<template v-if="fieldSplit.overflowCount > 0">
-				<span class="field-more">+ {{ fieldSplit.overflowCount }} more</span>
-				<button class="field-toggle" @click="showAllFields = !showAllFields">
-					{{ showAllFields ? "Show fewer fields ‹" : "Show all fields ›" }}
-				</button>
-			</template>
-		</div>
+		<ApprovalDetails v-if="!message.entry.value" :block="block" />
 
 		<div v-if="hasDecision" class="decided-banner">
 			<span class="decided-label">{{ decidedLabel }}</span>
@@ -83,17 +67,11 @@
 <script setup>
 import { computed, ref } from "vue";
 import { __ } from "@/utils/i18n";
+import ApprovalDetails from "./ApprovalDetails.vue";
 import EmailPreview from "./EmailPreview.vue";
 import { useMessagePreview } from "./useMessagePreview";
-import {
-	flattenInput,
-	formatToolName,
-	formatKey,
-	formatValue,
-	isMonoValue,
-	isMoneyKey,
-	splitDetailFields,
-} from "./helpers";
+import { writeConsequence } from "./customisation";
+import { formatToolName } from "./helpers";
 
 const props = defineProps({
 	block: { type: Object, required: true },
@@ -131,57 +109,7 @@ const approvalTitle = computed(() => {
 	return map[props.block.tool_name] || formatToolName(props.block.tool_name);
 });
 
-const hasDetails = computed(
-	() => props.block.input && Object.keys(flattenInput(props.block.input)).length > 0,
-);
-
-const showAllFields = ref(false);
-
-const fieldSplit = computed(() => {
-	if (!props.block.input) return { primary: [], overflow: [], overflowCount: 0 };
-	return splitDetailFields(flattenInput(props.block.input), 4);
-});
-
-// Consequence subtitle — states the concrete write effect, but ONLY for tools
-// we can be certain write to the ERP. Showing "This action will write to your
-// ERP" for every other tool was misleading: read-only/clarification tools (e.g.
-// ask_user, get_skill) and dynamic tools (run_python_code) don't necessarily
-// write, and a false "will write" warning erodes trust and trains users to
-// ignore it on calls that genuinely do mutate data. For unmapped tools we show
-// no consequence line — the title, tool description and input table already
-// convey what is about to happen.
-// document_action submits, cancels or amends, so its warning follows the requested action.
-const DOCUMENT_ACTION_CONSEQUENCES = {
-	submit: "This will submit a record — it becomes immutable",
-	cancel: "This will cancel a submitted record and reverse its accounting and stock entries",
-	amend: "This will create a new draft copy of a cancelled record",
-};
-
-function documentActionConsequence(input) {
-	const action = input && typeof input === "object" ? String(input.action || "submit") : "";
-	return (
-		DOCUMENT_ACTION_CONSEQUENCES[action.trim().toLowerCase()] ||
-		"This will submit, cancel or amend a record in your ERP"
-	);
-}
-
-const consequence = computed(() => {
-	if (props.block.tool_name === "document_action") {
-		return documentActionConsequence(props.block.input);
-	}
-	const map = {
-		create_document: "This will write a new record to your ERP",
-		update_document: "This will modify an existing record in your ERP",
-		delete_document: "This will permanently delete a record from your ERP",
-	};
-	return map[props.block.tool_name] || "";
-});
-
-const visibleRows = computed(() =>
-	showAllFields.value
-		? [...fieldSplit.value.primary, ...fieldSplit.value.overflow]
-		: fieldSplit.value.primary,
-);
+const consequence = computed(() => writeConsequence(props.block.tool_name, props.block.input));
 
 // First sentence of the full MCP tool description so the user sees *what
 // this tool does* before approving. Falls back to null if unavailable.
@@ -282,55 +210,6 @@ function handleReject() {
 	font-size: 12px;
 	color: var(--ql-text-secondary);
 	line-height: 1.45;
-}
-
-/* Scannable 2-col key/value table */
-.approval-table {
-	display: grid;
-	grid-template-columns: auto 1fr;
-	gap: 5px 14px;
-	padding: 10px 14px;
-	font-size: 11.5px;
-}
-
-.field-key {
-	color: var(--ql-text-muted);
-}
-
-.field-value {
-	color: var(--ql-text);
-	font-weight: 500;
-	word-break: break-word;
-}
-
-/* Tabular mono numerals/dates so values align on the decimal (spec §2.2) */
-.value-mono {
-	font-family: ui-monospace, "SF Mono", "Cascadia Code", monospace;
-	font-variant-numeric: tabular-nums;
-}
-
-/* Gold reserved for money (spec §2.1) */
-.value-money {
-	color: var(--ql-gold);
-}
-
-.field-more {
-	color: var(--ql-text-muted);
-	align-self: start;
-}
-
-.field-toggle {
-	justify-self: start;
-	background: transparent;
-	border: none;
-	padding: 0;
-	font-size: 11.5px;
-	color: var(--ql-accent);
-	cursor: pointer;
-}
-
-.field-toggle:hover {
-	color: var(--ql-accent-hover);
 }
 
 /* Decided banner (post-click, pre-resume) */
