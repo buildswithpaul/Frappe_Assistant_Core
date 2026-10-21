@@ -166,12 +166,15 @@ class RelayStallBase(BaseAssistantTest):
         self.assertTrue(stream.closed, "the AR connection must be closed")
         self.assertEqual(emitted[-1]["event"], "stream_error")
         self.assertEqual(emitted[-1]["error_code"], "RELAY_STALLED")
-        self.assertIn("FACO stopped waiting", emitted[-1]["error"])
+        self.assertEqual(
+            emitted[-1]["error"],
+            "The assistant stopped waiting for a reply. Anything after the last step shown may not have finished; check before trying again.",
+        )
         self.assertEqual([e["event"] for e in emitted].count("stream_error"), 1)
 
 
 class TestSendRelayStalls(RelayStallBase):
-    # AR heartbeats every 10 s while the agent is parked (utils/sse.py:219-236), so a
+    # AR heartbeats every 10 s while a turn is parked, so a
     # turn that hangs mid-tool reaches the relay as stream_start, a chunk, then heartbeats.
     def test_heartbeats_alone_end_the_turn_and_keep_the_partial(self):
         stream = FakeStream(

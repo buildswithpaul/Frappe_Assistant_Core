@@ -356,8 +356,9 @@ def _dispatch_relay_event(
     return True
 
 
-# AR's own watchdog (utils/sse.py) fires first at 360 s; these catch a turn
-# whose AR end never answered at all.
+# AR gives up on a parked turn on its own at about 360 s. These catch one it keeps
+# alive: they trip only on a heartbeat, so an AR that goes fully silent is bounded
+# by the SDK read timeout instead.
 RELAY_NO_PROGRESS_SECONDS = 420
 RELAY_MAX_TURN_SECONDS = 1800
 
@@ -392,7 +393,8 @@ def _relay_stalled_event(stream_iter, session_id: str) -> tuple[str, dict]:
         )
     return "stream_error", {
         "error": _(
-            "FACO stopped waiting for a reply. Nothing new was saved after the last step shown. Try again."
+            "The assistant stopped waiting for a reply. Anything after the last step shown may not have "
+            "finished; check before trying again."
         ),
         "error_code": "RELAY_STALLED",
     }

@@ -14,7 +14,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Where a new Custom Field shows on its form, reported in the tool result (#34354)."""
+"""Where a new Custom Field shows on its form, reported in the tool result."""
 
 import unittest
 

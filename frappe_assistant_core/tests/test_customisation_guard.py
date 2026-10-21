@@ -14,7 +14,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Refusing active Server Scripts on a site where server scripts are switched off (#34355)."""
+"""Refusing active Server Scripts on a site where server scripts are switched off."""
 
 from unittest.mock import patch
 
@@ -353,6 +353,17 @@ class TestScriptReportWarning(BaseAssistantTest):
         self.assertEqual(result["warning"], SCRIPT_REPORT_WARNING)
         self.assertTrue(frappe.db.exists("Report", REPORT_NAME))
 
+    def test_create_omitting_is_standard_still_warns(self):
+        # Report.validate stores "No" for a non-Administrator, so a create that leaves
+        # is_standard out reaches the same stored state as one that sets it.
+        data = _report_data()
+        del data["is_standard"]
+        with patch(SCRIPTS_ENABLED, return_value=False):
+            result = DocumentCreate().execute({"doctype": "Report", "data": data})
+
+        self.assertTrue(result["success"], result)
+        self.assertEqual(result["warning"], SCRIPT_REPORT_WARNING)
+
     def test_no_warning_when_scripts_on(self):
         with patch(SCRIPTS_ENABLED, return_value=True):
             result = self._create()
@@ -388,7 +399,7 @@ class TestScriptReportWarning(BaseAssistantTest):
 
 
 class TestValidateOnlyWritesNothing(BaseAssistantTest):
-    """A validate_only dry run must undo whatever validate() wrote (#34357)."""
+    """A validate_only dry run must undo whatever validate() wrote."""
 
     def setUp(self):
         super().setUp()
