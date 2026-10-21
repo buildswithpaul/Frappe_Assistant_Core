@@ -20,7 +20,7 @@ from typing import Any, Dict, Optional
 
 import frappe
 from frappe import _
-from frappe.utils import cint, get_url, get_url_to_form
+from frappe.utils import cint, get_url_to_form
 
 CUSTOMISATION_DOCTYPES = frozenset(
     {
@@ -45,6 +45,8 @@ APPLIES_TO_FIELDS = {
     "Property Setter": "doc_type",
     "Client Script": "dt",
     "Server Script": "reference_doctype",
+    "Print Format": "doc_type",
+    "Notification": "document_type",
 }
 
 
@@ -111,4 +113,4 @@ def applies_to(doctype: str, values: Any) -> Optional[Dict[str, str]]:
     target = values.get(field) if field else None
     if not target:
         return None
-    return {"doctype": target, "url": get_url(f"/app/{frappe.scrub(target).replace('_', '-')}/new")}
+    return {"doctype": target, "url": get_url_to_form(target, "new")}

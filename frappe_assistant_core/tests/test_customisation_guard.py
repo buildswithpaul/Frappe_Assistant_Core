@@ -28,6 +28,7 @@ from frappe_assistant_core.tests.base_test import BaseAssistantTest
 from frappe_assistant_core.utils.customisation import (
     CUSTOMISATION_DOCTYPES,
     applies_to,
+    desk_url,
     server_script_guard,
 )
 
@@ -202,17 +203,25 @@ class TestAppliesToHelper(BaseAssistantTest):
             "Property Setter": {"doc_type": "ToDo"},
             "Client Script": {"dt": "ToDo"},
             "Server Script": {"reference_doctype": "ToDo"},
+            "Print Format": {"doc_type": "ToDo"},
+            "Notification": {"document_type": "ToDo"},
         }
         for doctype, values in cases.items():
             with self.subTest(doctype=doctype):
                 result = applies_to(doctype, values)
                 self.assertEqual(result["doctype"], "ToDo")
-                self.assertTrue(result["url"].endswith("/app/todo/new"))
+                self.assertTrue(result["url"].endswith("/todo/new"))
+
+    def test_url_shares_the_record_url_scheme(self):
+        record = desk_url("ToDo", "x")
+        target = applies_to("Custom Field", {"dt": "ToDo"})["url"]
+
+        self.assertEqual(record.rsplit("/", 2)[0], target.rsplit("/", 2)[0])
 
     def test_slug_uses_hyphens(self):
         result = applies_to("Custom Field", {"dt": "Sales Invoice"})
 
-        self.assertTrue(result["url"].endswith("/app/sales-invoice/new"))
+        self.assertTrue(result["url"].endswith("/sales-invoice/new"))
 
     def test_none_for_other_doctypes_or_missing_target(self):
         self.assertIsNone(applies_to("ToDo", {"dt": "ToDo"}))
@@ -251,7 +260,7 @@ class TestWriteResultLinks(BaseAssistantTest):
 
         self.assertTrue(result["success"], result)
         self.assertEqual(result["applies_to"]["doctype"], "ToDo")
-        self.assertTrue(result["applies_to"]["url"].endswith("/app/todo/new"))
+        self.assertTrue(result["applies_to"]["url"].endswith("/todo/new"))
 
     def test_update_result_has_url(self):
         name = self._create_todo()["name"]
