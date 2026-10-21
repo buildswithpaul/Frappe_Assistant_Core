@@ -57,6 +57,30 @@ def server_scripts_enabled() -> bool:
     return bool(is_safe_exec_enabled())
 
 
+def script_report_warning(doctype: str, data: Dict[str, Any], current: Optional[Any] = None) -> Optional[str]:
+    """Warn when a custom Script Report is saved while server scripts are off.
+
+    The save is allowed: the report is harmless until someone runs it. `current` is the stored
+    record on an update, used for whatever `data` leaves out.
+    """
+    if doctype != "Report" or server_scripts_enabled():
+        return None
+
+    def value(field: str) -> Any:
+        if field in data:
+            return data[field]
+        return current.get(field) if current is not None else None
+
+    if value("report_type") != "Script Report" or value("is_standard") != "No":
+        return None
+
+    return _(
+        "Server scripts are switched off on this site, so this report will show an error when "
+        "someone runs it until an administrator switches them on (on Frappe Cloud this needs a "
+        "private bench)."
+    )
+
+
 def server_script_guard(
     doctype: str,
     data: Dict[str, Any],

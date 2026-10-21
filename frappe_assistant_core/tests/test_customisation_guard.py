@@ -29,6 +29,7 @@ from frappe_assistant_core.utils.customisation import (
     CUSTOMISATION_DOCTYPES,
     applies_to,
     desk_url,
+    script_report_warning,
     server_script_guard,
 )
 
@@ -313,3 +314,74 @@ class TestPlainLanguageErrors(BaseAssistantTest):
         description = DocumentCreate().inputSchema["properties"]["validate_only"]["description"]
 
         self.assertIn("does not check mandatory fields", description)
+
+
+REPORT_NAME = "FAC Warning Probe Report"
+SCRIPT_REPORT_WARNING = (
+    "Server scripts are switched off on this site, so this report will show an error when "
+    "someone runs it until an administrator switches them on (on Frappe Cloud this needs a "
+    "private bench)."
+)
+
+
+def _report_data(**overrides) -> dict:
+    data = {
+        "report_name": REPORT_NAME,
+        "ref_doctype": "ToDo",
+        "report_type": "Script Report",
+        "is_standard": "No",
+        "report_script": "result = [], []",
+    }
+    data.update(overrides)
+    return data
+
+
+class TestScriptReportWarning(BaseAssistantTest):
+    def tearDown(self):
+        if frappe.db.exists("Report", REPORT_NAME):
+            frappe.delete_doc("Report", REPORT_NAME, force=True, ignore_permissions=True)
+        super().tearDown()
+
+    def _create(self, **overrides) -> dict:
+        return DocumentCreate().execute({"doctype": "Report", "data": _report_data(**overrides)})
+
+    def test_create_warns_but_still_saves_when_scripts_off(self):
+        with patch(SCRIPTS_ENABLED, return_value=False):
+            result = self._create()
+
+        self.assertTrue(result["success"], result)
+        self.assertEqual(result["warning"], SCRIPT_REPORT_WARNING)
+        self.assertTrue(frappe.db.exists("Report", REPORT_NAME))
+
+    def test_no_warning_when_scripts_on(self):
+        with patch(SCRIPTS_ENABLED, return_value=True):
+            result = self._create()
+
+        self.assertTrue(result["success"], result)
+        self.assertNotIn("warning", result)
+
+    def test_query_report_gets_no_warning(self):
+        with patch(SCRIPTS_ENABLED, return_value=False):
+            result = self._create(
+                report_type="Query Report", query="SELECT name FROM `tabToDo`", report_script=None
+            )
+
+        self.assertTrue(result["success"], result)
+        self.assertNotIn("warning", result)
+
+    def test_update_of_stored_script_report_still_warns(self):
+        with patch(SCRIPTS_ENABLED, return_value=True):
+            self._create()
+
+        with patch(SCRIPTS_ENABLED, return_value=False):
+            result = DocumentUpdate().execute(
+                {"doctype": "Report", "name": REPORT_NAME, "data": {"report_script": "result = [], [], 1"}}
+            )
+
+        self.assertTrue(result["success"], result)
+        self.assertEqual(result["warning"], SCRIPT_REPORT_WARNING)
+
+    def test_helper_ignores_other_doctypes_and_standard_reports(self):
+        with patch(SCRIPTS_ENABLED, return_value=False):
+            self.assertIsNone(script_report_warning("ToDo", _report_data()))
+            self.assertIsNone(script_report_warning("Report", _report_data(is_standard="Yes")))

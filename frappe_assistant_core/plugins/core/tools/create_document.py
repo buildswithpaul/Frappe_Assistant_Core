@@ -25,7 +25,12 @@ import frappe
 from frappe import _
 
 from frappe_assistant_core.core.base_tool import BaseTool, exception_message, permission_error_result
-from frappe_assistant_core.utils.customisation import applies_to, desk_url, server_script_guard
+from frappe_assistant_core.utils.customisation import (
+    applies_to,
+    desk_url,
+    script_report_warning,
+    server_script_guard,
+)
 from frappe_assistant_core.utils.savepoint import (
     open_savepoint,
     release_savepoint,
@@ -290,6 +295,9 @@ class DocumentCreate(BaseTool):
             customised = applies_to(doctype, doc)
             if customised:
                 result["applies_to"] = customised
+            warning = script_report_warning(doctype, data)
+            if warning:
+                result["warning"] = warning
 
             # Submit if requested and allowed
             from frappe.model.workflow import get_workflow_name

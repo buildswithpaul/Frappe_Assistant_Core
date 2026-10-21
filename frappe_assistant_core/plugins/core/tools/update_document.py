@@ -26,7 +26,12 @@ from frappe import _
 
 from frappe_assistant_core.core.base_tool import BaseTool, exception_message, permission_error_result
 from frappe_assistant_core.core.security_config import get_restricted_fields
-from frappe_assistant_core.utils.customisation import applies_to, desk_url, server_script_guard
+from frappe_assistant_core.utils.customisation import (
+    applies_to,
+    desk_url,
+    script_report_warning,
+    server_script_guard,
+)
 
 from .child_tables import ChildRowError, child_table_fields, normalize_child_rows
 
@@ -331,6 +336,9 @@ class DocumentUpdate(BaseTool):
             if refusal:
                 return refusal
 
+            # Read before the setattr loop below, which overwrites the stored values
+            warning = script_report_warning(doctype, data, current=doc)
+
             # Apply updates: child tables go through helper, scalars use setattr.
             for field, value in data.items():
                 if field in table_fields:
@@ -372,6 +380,8 @@ class DocumentUpdate(BaseTool):
             customised = applies_to(doctype, doc)
             if customised:
                 result["applies_to"] = customised
+            if warning:
+                result["warning"] = warning
 
             # Check if user can submit this document
             if updated_docstatus == 0:  # Only for draft documents
