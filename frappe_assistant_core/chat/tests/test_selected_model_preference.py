@@ -106,3 +106,23 @@ class TestSelectedModelPreference(FrappeTestCase):
         with patch("frappe_assistant_core.chat.fac_cloud_client.get_fac_cloud_client", return_value=client):
             result = models.get_available_models()
         self.assertEqual(result["selected_model"], "gpt-saved")
+
+    def test_get_available_models_clears_a_saved_model_that_is_no_longer_offered(self):
+        # Production reaches this when a model is retired or the plan is downgraded after the user chose it.
+        self._as(self.user)
+        models.set_selected_model("retired-model")
+        client = MagicMock()
+        client.list_available_models.return_value = {"models": [{"model_id": "gpt-5"}]}
+        with patch("frappe_assistant_core.chat.fac_cloud_client.get_fac_cloud_client", return_value=client):
+            result = models.get_available_models()
+        self.assertEqual(result["selected_model"], "")
+        self.assertEqual(models._saved_model(), "")
+
+    def test_get_available_models_keeps_auto_and_an_offered_model(self):
+        self._as(self.user)
+        client = MagicMock()
+        client.list_available_models.return_value = {"models": [{"model_id": "gpt-5"}]}
+        with patch("frappe_assistant_core.chat.fac_cloud_client.get_fac_cloud_client", return_value=client):
+            for saved in ("auto", "gpt-5"):
+                models.set_selected_model(saved)
+                self.assertEqual(models.get_available_models()["selected_model"], saved)

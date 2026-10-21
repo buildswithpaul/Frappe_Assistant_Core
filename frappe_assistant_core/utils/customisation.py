@@ -241,6 +241,11 @@ def predict_field_location(
     to a fresh meta of `dt` and is laid out by Frappe's own ordering, so the prediction follows
     the running version's rules (an unknown insert_after puts it at the end of the form). Same
     shape as ``location``. Nothing is written.
+
+    Frappe reads custom fields ORDER BY idx with no tie-break, so when another custom field
+    already sits at the new field's idx (a second field added after the same one) the database
+    decides their order and the prediction can differ. The probe goes first, as it did in every
+    run observed.
     """
     fieldnames = [f.fieldname for f in frappe.get_meta(dt, cached=False).fields]
     probe = {
@@ -257,9 +262,15 @@ def predict_field_location(
     return locate_field(_ProbeMeta(dt, probe).fields, PROBE_FIELDNAME)
 
 
+def is_hidden(location: Dict[str, Any]) -> bool:
+    """Whether a field is easy to miss: in a collapsed section, or not on the first tab."""
+    return bool(location.get("collapsed")) or not location.get("first_tab", True)
+
+
 def placement_sentence(location: Dict[str, Any]) -> str:
-    """Plain-language description of where a field shows."""
-    tab, section = location.get("tab"), location.get("section")
+    """Plain-language description of where a field shows, labels translated as Desk does."""
+    tab = _(location["tab"]) if location.get("tab") else None
+    section = _(location["section"]) if location.get("section") else None
     if tab and section:
         sentence = _("Will appear on the {0} tab, in the {1} section").format(tab, section)
     elif tab:
@@ -275,11 +286,10 @@ def placement_sentence(location: Dict[str, Any]) -> str:
 
 def placement_warning(location: Dict[str, Any]) -> Optional[str]:
     """A sentence to show when the field is hidden away: collapsed, or not on the first tab."""
-    collapsed = bool(location.get("collapsed"))
-    off_first_tab = not location.get("first_tab", True)
-    if not (collapsed or off_first_tab):
+    if not is_hidden(location):
         return None
-    if collapsed and off_first_tab:
+    collapsed = bool(location.get("collapsed"))
+    if collapsed and not location.get("first_tab", True):
         reason = _("People may not notice it: the section is collapsed and the tab is not the first one.")
     elif collapsed:
         reason = _("People may not notice it: the section is collapsed.")

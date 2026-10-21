@@ -4,6 +4,8 @@
 
 """AI model listing and preference management."""
 
+import time
+
 import frappe
 from frappe import _
 
@@ -14,6 +16,8 @@ from ._helpers import (
 
 PREFERENCES_DOCTYPE = "FAC Chat User Preferences"
 MAX_MODEL_ID_LENGTH = 140
+AVAILABLE_MODELS_TTL = 300  # seconds a user's available-model ids are trusted
+AVAILABLE_MODELS_TIMEOUT = 3  # a turn waits at most this long for AR's list
 
 
 def _saved_model() -> str:
@@ -21,6 +25,63 @@ def _saved_model() -> str:
     if not frappe.db.has_column(PREFERENCES_DOCTYPE, "selected_model"):
         return ""
     return frappe.db.get_value(PREFERENCES_DOCTYPE, frappe.session.user, "selected_model") or ""
+
+
+def available_models_key() -> str:
+    return f"fac_available_models::{frappe.session.user}"
+
+
+def _remember_available(model_ids: list[str]) -> None:
+    # Aged in code, not by a Redis TTL: a TTL'd key reads back as a miss within the request that
+    # set it on Frappe v15.
+    frappe.cache.set_value(available_models_key(), {"ids": model_ids, "at": time.time()})
+
+
+def _available_model_ids() -> list[str] | None:
+    """Ids of the models the session user can use now, or None when AR cannot say.
+
+    Served from the copy get_available_models leaves; asks AR (once per AVAILABLE_MODELS_TTL)
+    only when there is none.
+    """
+    cached = frappe.cache.get_value(available_models_key())
+    if cached and time.time() - cached["at"] < AVAILABLE_MODELS_TTL:
+        return cached["ids"]
+    try:
+        from frappe_assistant_core.chat.fac_cloud_client import get_fac_cloud_client
+
+        client = get_fac_cloud_client()
+        result = client.list_available_models(timeout=AVAILABLE_MODELS_TIMEOUT) if client else None
+        if not result or result.get("error_code"):
+            return None
+        ids = [m.get("model_id") for m in result.get("models", [])]
+    except Exception:
+        return None
+    _remember_available(ids)
+    return ids
+
+
+def usable_saved_model() -> str:
+    """The saved model, but only when the user can still use it ("" otherwise).
+
+    A turn that defaults to the saved model must never fail because of it: AR refuses a model
+    that was retired or that the plan no longer includes, so a stale or unverifiable choice falls
+    back to AR's own default. "auto" is a mode, not a model, and always passes.
+    """
+    saved = _saved_model()
+    if not saved or saved == "auto":
+        return saved
+    ids = _available_model_ids()
+    return saved if ids is not None and saved in ids else ""
+
+
+def _clear_selected_model() -> None:
+    from frappe_assistant_core.chat.doctype.fac_chat_user_preferences.fac_chat_user_preferences import (
+        FACChatUserPreferences,
+    )
+
+    prefs = FACChatUserPreferences.get_or_create_preferences()
+    prefs.selected_model = ""
+    prefs.save(ignore_permissions=True)
 
 
 @frappe.whitelist(methods=["GET"])
@@ -79,13 +140,22 @@ def get_available_models():
                 models_by_tier[tier] = []
             models_by_tier[tier].append(model)
 
+        selected = _saved_model()
+        if models:
+            model_ids = [m.get("model_id") for m in models]
+            _remember_available(model_ids)
+            # A saved choice that is no longer offered would fail every turn that defaults to it.
+            if selected and selected != "auto" and selected not in model_ids:
+                _clear_selected_model()
+                selected = ""
+
         return {
             "success": True,
             "models": models,
             "models_by_tier": models_by_tier,
             "max_tier_rank": result.get("max_tier_rank", 999),
             "default_model": result.get("default_model"),
-            "selected_model": _saved_model(),
+            "selected_model": selected,
             "auto_mode": result.get("auto_mode"),
         }
 

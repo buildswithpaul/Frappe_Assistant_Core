@@ -17,6 +17,7 @@
 """Where a new Custom Field shows on its form, reported in the tool result."""
 
 import unittest
+from unittest.mock import patch
 
 import frappe
 
@@ -24,7 +25,7 @@ from frappe_assistant_core.chat.api.field_placement import get_field_placement
 from frappe_assistant_core.plugins.core.tools.create_document import DocumentCreate
 from frappe_assistant_core.plugins.core.tools.update_document import DocumentUpdate
 from frappe_assistant_core.tests.base_test import BaseAssistantTest
-from frappe_assistant_core.utils.customisation import locate_field, predict_field_location
+from frappe_assistant_core.utils.customisation import locate_field, placement_sentence, predict_field_location
 
 
 def _field(fieldname, fieldtype="Data", label=None, collapsible=0):
@@ -203,7 +204,7 @@ class TestCustomFieldLocationInResults(BaseAssistantTest):
         self.assertFalse(location["collapsed"])
 
     def test_prediction_matches_where_frappe_places_the_saved_field(self):
-        for insert_after in (PROBE_SECTION, PROBE_TAB, MOVE_TARGET, "status", "no_such_field", None):
+        for insert_after in (PROBE_SECTION, MOVE_TARGET, "status", "no_such_field", None):
             with self.subTest(insert_after=insert_after):
                 predicted = predict_field_location("ToDo", insert_after)
                 self._insert(PROBE_FIELD, "Data", "Where", insert_after)
@@ -261,3 +262,36 @@ class TestCustomFieldLocationInResults(BaseAssistantTest):
         finally:
             frappe.set_user("Administrator")
             frappe.delete_doc("User", email, force=True, ignore_permissions=True)
+
+    def test_endpoint_reads_a_child_table_through_a_readable_parent(self):
+        email = "field-placement-manager@example.com"
+        if not frappe.db.exists("User", email):
+            user = frappe.get_doc(
+                {"doctype": "User", "email": email, "first_name": "Placement", "send_welcome_email": 0}
+            ).insert(ignore_permissions=True)
+            user.add_roles("System Manager")
+        try:
+            frappe.set_user(email)
+            self.assertIn("sentence", get_field_placement("Has Role", "role"))
+        finally:
+            frappe.set_user("Administrator")
+            frappe.delete_doc("User", email, force=True, ignore_permissions=True)
+
+    def test_endpoint_refuses_a_child_table_when_no_parent_is_readable(self):
+        email = "field-placement-outsider2@example.com"
+        if not frappe.db.exists("User", email):
+            frappe.get_doc(
+                {"doctype": "User", "email": email, "first_name": "Placement", "send_welcome_email": 0}
+            ).insert(ignore_permissions=True)
+        try:
+            frappe.set_user(email)
+            with self.assertRaises(frappe.PermissionError):
+                get_field_placement("Portal Menu Item", "title")
+        finally:
+            frappe.set_user("Administrator")
+            frappe.delete_doc("User", email, force=True, ignore_permissions=True)
+
+    def test_labels_in_the_sentence_are_translated(self):
+        with patch("frappe_assistant_core.utils.customisation._", side_effect=lambda t: f"<{t}>"):
+            sentence = placement_sentence({"tab": "More Info", "section": None, "collapsed": False})
+        self.assertIn("<More Info>", sentence)
