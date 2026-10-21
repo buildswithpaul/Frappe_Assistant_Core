@@ -48,7 +48,7 @@ Sends an email, a system alert or a message when something happens to a document
 
 ## Gotchas
 
-- **A broken condition is rejected when you save**, so a saved notification has a valid one. A failure when it fires (for example a missing value on one document) goes to the Error Log and that email is not sent. Test it on a real document.
+- **A broken condition is rejected when you save**, so a saved notification has a valid one. A condition that passes the save check can still fail on some documents (for example one with a missing value). That is logged in the Error Log, and for a save or submit event it blocks saving or submitting that document, so the person's own save fails. Test the condition on real records before enabling the notification.
 - A notification sent to a role reaches every enabled user with that role. Say how many.
 
 ## Anti-patterns

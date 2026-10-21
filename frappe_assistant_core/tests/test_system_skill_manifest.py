@@ -125,11 +125,18 @@ class TestSystemSkillManifest(BaseAssistantTest):
             self.assertNotIn(doctype, step_one)
 
     def test_customisation_skills_ask_before_the_switched_off_fallback_and_hide_names(self):
-        for name in ("server_script.md", "custom_report.md"):
-            self.assertIn("Ask the user before", self._read_skill(name), name)
+        self.assertIn("Ask the user before", self._read_skill("server_script.md"))
+        self.assertIn("ask whether to go ahead", self._read_skill("custom_report.md"))
         for skill_id in CUSTOMISATION_SKILLS:
             entry = next(e for e in _load_manifest("system_skills.json") if e["skill_id"] == skill_id)
             self.assertIn("Never show", self._read_skill(entry["content_file"]), skill_id)
+
+    def test_report_builder_example_uses_fields_and_notification_warns_about_blocked_saves(self):
+        report = self._read_skill("custom_report.md")
+        self.assertIn('\\"fields\\": [[', report)
+        self.assertNotIn('\\"columns\\": [[', report)
+        self.assertIn("private bench", report)
+        self.assertIn("blocks saving or submitting", self._read_skill("notification.md"))
 
     def test_retired_export_template_is_removed(self):
         self.assertNotIn(

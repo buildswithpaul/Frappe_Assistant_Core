@@ -18,7 +18,7 @@ Builds a report the standard list does not give, such as "overdue invoices by sa
 
 1. **Report Builder first.** It needs no code: columns, filters and grouping on one doctype. Use it whenever the answer comes from one doctype. Create it as a `Report` of type Report Builder (shape under Reference), or, if the user prefers, point them to the report view of that list in Desk, where they can pick columns and filters and use Save.
 2. **Query Report next**, when the report must join several doctypes. The query is `SELECT` or `WITH` only. Anything that writes is refused.
-3. **Script Report last**, only when scripts are on. Call `get_doctype_info` on `Report` and read `server_scripts_enabled`. If it is false, say in plain words that this site does not run scripts, and that an active Script Report will not run. **Ask the user before** doing anything else: offer a Report Builder or Query Report instead, or to save the script report switched off (`disabled: 1`) with a clear note that it will not run until an administrator with server access switches scripts on. Do not create the switched-off copy until they say yes.
+3. **Script Report last**, only when scripts are on. Call `get_doctype_info` on `Report` and read `server_scripts_enabled`. If it is false, saving a Script Report is still allowed, but it will show an error whenever someone runs it until an administrator with server access switches scripts on (on Frappe Cloud this needs a private bench). **Tell the user this and ask whether to go ahead before saving.** Offer a Report Builder or Query Report instead, which run without scripts. If they go ahead, relay the warning in the result in plain words. Do not save it without asking.
 4. **State the scope in one plain sentence**: "This adds a new report on Sales Invoice. It only reads data; nothing else changes."
 5. **List existing reports** on the doctype (`list_documents` on `Report` with `ref_doctype`) and offer to reuse one.
 6. **Show the full query or code** in a fenced block and explain in plain words what each column means and which records are included.
@@ -43,7 +43,7 @@ Builds a report the standard list does not give, such as "overdue invoices by sa
 
 - Column format is `Label:Type/Options:Width`.
 
-A Report Builder report keeps its columns, filters and sorting in `json`, as a string. Without it the report silently falls back to the default list columns:
+A Report Builder report keeps its columns, filters and sorting in `json`, as a string. Without `fields` the report opens with the default list columns:
 
 ```json
 {
@@ -53,12 +53,12 @@ A Report Builder report keeps its columns, filters and sorting in `json`, as a s
     "ref_doctype": "Sales Invoice",
     "report_type": "Report Builder",
     "is_standard": "No",
-    "json": "{\"columns\": [[\"name\", \"Sales Invoice\"], [\"customer\", \"Sales Invoice\"], [\"base_grand_total\", \"Sales Invoice\"]], \"filters\": [[\"Sales Invoice\", \"status\", \"=\", \"Overdue\"]], \"order_by\": \"`tabSales Invoice`.`creation` desc\", \"add_totals_row\": 1}"
+    "json": "{\"fields\": [[\"name\", \"Sales Invoice\"], [\"customer\", \"Sales Invoice\"], [\"base_grand_total\", \"Sales Invoice\"]], \"filters\": [[\"Sales Invoice\", \"status\", \"=\", \"Overdue\"]], \"order_by\": \"`tabSales Invoice`.`creation` desc\", \"add_totals_row\": 1}"
   }
 }
 ```
 
-Each column is `[fieldname, doctype]` and each filter is `[doctype, fieldname, operator, value]`.
+Each entry in `fields` is `[fieldname, doctype]` and each filter is `[doctype, fieldname, operator, value]`.
 - Roles that can open the report are set in its `roles` table; by default only the roles that can read the doctype.
 
 ## Gotchas
