@@ -21,6 +21,13 @@ describe("describeCondition", () => {
 		expect(describeCondition("eval:doc.status != ''")).toBe("when Status is set");
 	});
 
+	it("does not throw on an ordering comparison with an empty string, or on garbage", () => {
+		expect(describeCondition("eval:doc.x > ''")).toBe("Has a condition");
+		expect(describeCondition('eval:doc.x <= ""')).toBe("Has a condition");
+		expect(describeCondition({ not: "a string" })).toBe("Has a condition");
+		expect(describeCondition(null)).toBe("Has a condition");
+	});
+
 	it("reads a bare field as set", () => {
 		expect(describeCondition("eval:doc.customer_po")).toBe("when Customer Po is set");
 	});

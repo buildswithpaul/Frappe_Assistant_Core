@@ -34,16 +34,23 @@ const BLANK_SENTENCES = {
 	"!=": (field) => __("when {0} is set", [field]),
 };
 
-export function describeCondition(expression) {
-	const text = typeof expression === "string" ? expression.trim() : "";
+function derive(text) {
 	const comparison = COMPARISON.exec(text);
 	if (comparison) {
 		const [, field, operator, value] = comparison;
 		const label = formatKey(field);
-		if (unquote(value) === "" && /^['"]/.test(value)) return BLANK_SENTENCES[operator.slice(0, 2)](label);
+		if (value.length === 2 && /^['"]/.test(value)) return BLANK_SENTENCES[operator.slice(0, 2)]?.(label);
 		return SENTENCES[operator](label, unquote(value));
 	}
 	const bare = BARE_FIELD.exec(text);
-	if (bare) return __("when {0} is set", [formatKey(bare[1])]);
-	return __("Has a condition");
+	return bare ? __("when {0} is set", [formatKey(bare[1])]) : undefined;
+}
+
+// A card must still render for any value the model wrote, so nothing here may throw.
+export function describeCondition(expression) {
+	try {
+		return derive(typeof expression === "string" ? expression.trim() : "") ?? __("Has a condition");
+	} catch {
+		return __("Has a condition");
+	}
 }
