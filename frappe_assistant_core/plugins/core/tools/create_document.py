@@ -69,7 +69,9 @@ def _prepare_for_insert(doc: Any) -> None:
     Controllers rely on them: Custom Field sets its fieldname in before_insert, and naming
     fills ``doc.name`` and the child rows' parents. check_if_latest sets the ``_action`` that
     link validation reads; the caller has already run check_permission. The methods exist on
-    Frappe v15 and v16. The caller rolls back, which also undoes the naming-series counter.
+    Frappe v15 and v16. The caller rolls back, which undoes the naming-series and naming-rule
+    counters. It does not undo an autoincrement sequence: NEXTVAL is not transactional, so a
+    dry run on an autoincrement doctype uses up one id, as a failed real insert does.
     """
     doc._set_defaults()
     doc.set_user_and_timestamp()
@@ -80,6 +82,10 @@ def _prepare_for_insert(doc: Any) -> None:
     doc.set_new_name()
     doc.set_parent_in_children()
     doc.validate_higher_perm_levels()
+    doc.flags.in_insert = True
+    # run_before_save_methods would also run before_save, which a dry run must not.
+    if doc._action in ("save", "submit"):
+        doc.run_method("before_validate")
 
 
 class DocumentCreate(BaseTool):

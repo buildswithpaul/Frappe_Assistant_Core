@@ -531,6 +531,73 @@ class TestValidateOnlyRunsInsertPreparation(BaseAssistantTest):
         self.assertTrue(result["success"], result)
         self.assertEqual(self._series_counter("EV"), before)
 
+    def test_dry_run_names_the_document_before_validate(self):
+        seen = {}
+
+        def records_name(doc, *args, **kwargs):
+            seen["name"] = doc.name
+
+        with patch("frappe.desk.doctype.event.event.Event.validate", records_name):
+            DocumentCreate().execute(
+                {
+                    "doctype": "Event",
+                    "data": {
+                        "subject": "fac dry run",
+                        "starts_on": "2030-01-01 10:00:00",
+                        "event_type": "Private",
+                    },
+                    "validate_only": True,
+                }
+            )
+
+        self.assertRegex(seen["name"], r"^EV\d{5}$")
+
+    def test_dry_run_runs_before_validate_in_insert_mode(self):
+        # Document.insert runs before_validate with flags.in_insert set, ahead of validate;
+        # controllers and Before Validate scripts prepare state validate then checks.
+        def before_validate(doc, *args, **kwargs):
+            doc.flags.fac_prepared = bool(doc.flags.in_insert)
+
+        def validate(doc, *args, **kwargs):
+            if not doc.flags.fac_prepared:
+                frappe.throw(frappe._("before_validate did not run in insert mode"))
+
+        with (
+            patch("frappe.desk.doctype.todo.todo.ToDo.before_validate", before_validate, create=True),
+            patch("frappe.desk.doctype.todo.todo.ToDo.validate", validate),
+        ):
+            result = DocumentCreate().execute(
+                {"doctype": "ToDo", "data": {"description": "fac dry run"}, "validate_only": True}
+            )
+
+        self.assertTrue(result["success"], result)
+
+    def test_dry_run_does_not_run_before_save(self):
+        calls = []
+
+        with patch(
+            "frappe.desk.doctype.todo.todo.ToDo.before_save",
+            lambda doc, *a, **k: calls.append(1),
+            create=True,
+        ):
+            DocumentCreate().execute(
+                {"doctype": "ToDo", "data": {"description": "fac dry run"}, "validate_only": True}
+            )
+
+        self.assertEqual(calls, [])
+
+    def test_real_create_failing_validation_is_still_logged(self):
+        errors_before = frappe.db.count("Error Log")
+
+        def refuses(doc, *args, **kwargs):
+            frappe.throw(frappe._("refused by validate"))
+
+        with patch("frappe.desk.doctype.todo.todo.ToDo.validate", refuses):
+            result = DocumentCreate().execute({"doctype": "ToDo", "data": {"description": "fac real"}})
+
+        self.assertFalse(result["success"])
+        self.assertEqual(frappe.db.count("Error Log"), errors_before + 1)
+
     def test_failed_validation_in_a_dry_run_is_not_logged_as_an_error(self):
         errors_before = frappe.db.count("Error Log")
 
