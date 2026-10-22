@@ -414,7 +414,7 @@ function onCitationNavigate(n) {
 	font-variant-numeric: tabular-nums;
 }
 
-.text-block :deep(td) {
+.text-block :deep(td.md-num) {
 	font-family: var(--ql-font-mono);
 }
 
@@ -516,6 +516,15 @@ function onCitationNavigate(n) {
 
 .text-block :deep(.md-nowrap) {
 	white-space: nowrap;
+}
+
+/* A phone fits more of a wide table in view; the rest scrolls inside .md-table-scroll. */
+@media (max-width: 640px) {
+	.text-block :deep(th),
+	.text-block :deep(td) {
+		padding: 0.375rem 0.5rem;
+		font-size: 0.8125rem;
+	}
 }
 
 /* Streaming indicator */

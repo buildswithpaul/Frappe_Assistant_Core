@@ -54,13 +54,24 @@ export function highlightCode(code, lang) {
 
 const NOWRAP_MAX = 40;
 
-// A cell holding one token (an invoice number, a date, an amount) is
-// unreadable once the browser breaks it at a hyphen. Prose cells may wrap.
-function isNowrapCell(html) {
-	// No DOM (SSR/worker): keep wrapping, the safe default.
-	if (typeof DOMParser === "undefined") return false;
-	const text = (new DOMParser().parseFromString(html, "text/html").body.textContent || "").trim();
-	return text.length > 0 && text.length <= NOWRAP_MAX && !/\s/.test(text);
+const NUMERIC_CELL = /^[-+(]?[₹$€£¥]?\s?\d[\d,]*(\.\d+)?\s?%?\)?$/;
+
+// Decoded text, so an entity does not count as several characters. Empty with no DOM
+// (SSR/worker), which leaves the cell unclassed: wrapping, in the message font.
+function cellText(html) {
+	if (typeof DOMParser === "undefined") return "";
+	return (new DOMParser().parseFromString(html, "text/html").body.textContent || "").trim();
+}
+
+// md-nowrap: one token (an invoice number, a date, an amount) is unreadable once the browser
+// breaks it at a hyphen; prose cells may wrap. md-num: a figure keeps the tabular monospace so a
+// column aligns on the digit; every other cell reads in the message font.
+function cellClasses(html) {
+	const text = cellText(html);
+	const classes = [];
+	if (text.length > 0 && text.length <= NOWRAP_MAX && !/\s/.test(text)) classes.push("md-nowrap");
+	if (NUMERIC_CELL.test(text)) classes.push("md-num");
+	return classes.length ? ` class="${classes.join(" ")}"` : "";
 }
 
 const tableRenderer = {
@@ -71,8 +82,7 @@ const tableRenderer = {
 	tablecell(content, flags) {
 		const tag = flags.header ? "th" : "td";
 		const align = flags.align ? ` align="${flags.align}"` : "";
-		const cls = isNowrapCell(content) ? ' class="md-nowrap"' : "";
-		return `<${tag}${align}${cls}>${content}</${tag}>\n`;
+		return `<${tag}${align}${cellClasses(content)}>${content}</${tag}>\n`;
 	},
 };
 

@@ -16,7 +16,7 @@ describe("tables", () => {
 	it("keeps identifier-like cells on one line", () => {
 		const html = renderMarkdown(TABLE);
 		expect(html).toMatch(/<td class="md-nowrap">ACC-SINV-0041<\/td>/);
-		expect(html).toMatch(/<td align="right" class="md-nowrap">12,500.00<\/td>/);
+		expect(html).toMatch(/<td align="right" class="md-nowrap md-num">12,500.00<\/td>/);
 	});
 
 	it("lets prose cells wrap", () => {
@@ -32,5 +32,18 @@ describe("tables", () => {
 	it("lets a cell wrap when markup surrounds one word of several", () => {
 		const html = renderMarkdown("| Name |\n|---|\n| **Acme** Corp |");
 		expect(html).toMatch(/<td><strong>Acme<\/strong> Corp<\/td>/);
+	});
+
+	// Redmine #34377: every cell used to render in monospace, so prose cells broke into tall,
+	// wide columns on a phone. Only figures keep the tabular font.
+	it("marks figures for the tabular font and leaves words and codes in the message font", () => {
+		const html = renderMarkdown(
+			"| Item | Code | Qty | Rate | Tax |\n|---|---|---:|---:|---:|\n| Steel Bolt M8 | SB-M8-001 | 1,000 | ₹12.50 | 18% |"
+		);
+		expect(html).toMatch(/<td>Steel Bolt M8<\/td>/);
+		expect(html).toMatch(/<td class="md-nowrap">SB-M8-001<\/td>/);
+		expect(html).toMatch(/<td align="right" class="md-nowrap md-num">1,000<\/td>/);
+		expect(html).toMatch(/<td align="right" class="md-nowrap md-num">₹12.50<\/td>/);
+		expect(html).toMatch(/<td align="right" class="md-nowrap md-num">18%<\/td>/);
 	});
 });

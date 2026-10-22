@@ -238,8 +238,8 @@ function copyMessage() {
 	line-height: var(--ql-body-leading);
 }
 
-/* ERP figures / money align on the decimal */
-.ql-turn-content :deep(td),
+/* ERP figures / money align on the decimal; other table cells read in the message font */
+.ql-turn-content :deep(td.md-num),
 .ql-turn-content :deep(.ql-num) {
 	font-variant-numeric: tabular-nums;
 	font-family: var(--ql-font-mono);
