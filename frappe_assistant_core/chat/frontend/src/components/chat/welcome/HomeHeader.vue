@@ -63,6 +63,8 @@ const chipLabel = computed(() => {
 }
 @media (max-width: 719px) {
 	.hh { flex-direction: column; align-items: flex-start; gap: var(--ql-space-2); }
+	/* In a column the 18rem basis becomes a height and leaves a gap above the chip. */
+	.hh-text { flex: none; }
 	.hh-greeting { font-size: 24px; }
 	.hh-chip { max-width: 100%; }
 }
