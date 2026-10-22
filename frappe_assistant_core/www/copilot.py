@@ -77,6 +77,8 @@ def get_boot():
         "lang": str(frappe.local.lang or "en"),
         "theme": theme,
         "socketio_port": frappe.conf.get("socketio_port") or 9000,
+        # The site's own address, so the SPA can keep links to it on the address it is open on.
+        "site_url": frappe.utils.get_url(),
     }
 
     # Get user's full name for display

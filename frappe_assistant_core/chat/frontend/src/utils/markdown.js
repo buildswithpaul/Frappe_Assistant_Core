@@ -16,6 +16,7 @@
 import { marked } from "marked";
 import { markedHighlight } from "marked-highlight";
 import DOMPurify from "dompurify";
+import { localizeSiteLink } from "./siteLinks";
 
 let hljsPromise = null;
 let hljs = null;
@@ -98,7 +99,14 @@ function configure() {
 			highlight: (code, lang) => highlightCode(code, lang),
 		})
 	);
-	marked.use({ breaks: true, gfm: true, renderer: tableRenderer });
+	marked.use({
+		breaks: true,
+		gfm: true,
+		renderer: tableRenderer,
+		walkTokens(token) {
+			if (token.type === "link") token.href = localizeSiteLink(token.href);
+		},
+	});
 }
 
 /**
