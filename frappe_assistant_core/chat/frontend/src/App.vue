@@ -156,6 +156,12 @@ onMounted(async () => {
 	overflow: hidden;
 	padding-bottom: env(safe-area-inset-bottom, 0px);
 }
+/* The keyboard covers the home indicator, so its inset is dead space while typing. */
+@media (max-width: 640px) {
+	:global(html.ql-composer-focused .app-root) {
+		padding-bottom: 0;
+	}
+}
 .app-route {
 	flex: 1;
 	min-height: 0;

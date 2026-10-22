@@ -424,6 +424,18 @@ function handleStop() {
 	}
 }
 
+/* With the keyboard up on a phone, trim the composer's chrome and cap a long draft at about
+   four lines so the conversation keeps most of the visible height (useComposerFocus). */
+@media (max-width: 640px) {
+	:global(html.ql-composer-focused .input-area-container) {
+		padding-top: 0.5rem;
+		padding-bottom: 0.5rem;
+	}
+	:global(html.ql-composer-focused .input-textarea) {
+		max-height: 6.5rem;
+	}
+}
+
 /* Centered composer column. Width is capped by the parent for the docked
    instance (to match the message reading column); the hero instance fills its
    wider welcome column. See ChatView .chat-area > .composer-dock-enter. */

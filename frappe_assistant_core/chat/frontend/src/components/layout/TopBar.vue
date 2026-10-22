@@ -152,6 +152,14 @@ const { editing, draft, inputRef, start, commit, cancel } = useInlineTitleEdit(
 	z-index: 20;
 }
 
+/* While the composer has the keyboard on a phone, the conversation gets the header's room
+   (useComposerFocus). It returns as soon as the composer loses focus. */
+@media (max-width: 640px) {
+	:global(html.ql-composer-focused .top-bar) {
+		display: none;
+	}
+}
+
 .top-bar-content {
 	height: 100%;
 	padding: 0 1rem;

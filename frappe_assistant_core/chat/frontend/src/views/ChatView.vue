@@ -278,6 +278,7 @@ import { useChatSessionActions } from "@/composables/useChatSessionActions";
 import { useRobotMoodWiring } from "@/composables/useRobotMoodWiring";
 import { useContextRail } from "@/composables/useContextRail";
 import { useSheetDismiss } from "@/composables/useSheetDismiss";
+import { useComposerFocus } from "@/composables/useComposerFocus";
 import { deriveArtifacts } from "@/utils/contextArtifacts";
 import { isPausedTurn, isStoppedTurn } from "@/utils/turnState";
 import ContextRail from "@/components/chat/ContextRail.vue";
@@ -289,6 +290,7 @@ import { useLedgerIndex } from "@/composables/useLedgerIndex";
 import { loadPins, togglePin } from "@/utils/indexPins.js";
 
 useRobotMoodWiring();
+useComposerFocus();
 
 const route = useRoute();
 const router = useRouter();
