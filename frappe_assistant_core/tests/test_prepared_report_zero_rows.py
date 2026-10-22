@@ -61,6 +61,7 @@ from frappe_assistant_core.tests.base_test import BaseAssistantTest
 
 PREPARED_REPORT = "frappe.core.doctype.prepared_report.prepared_report"
 QUERY_REPORT = "frappe.desk.query_report"
+REPORT_TOOLS = "frappe_assistant_core.plugins.core.tools.report_tools"
 
 COLUMNS = [{"fieldname": "item_code", "label": "Item", "fieldtype": "Data"}]
 
@@ -136,7 +137,7 @@ def stub_frappe(
         mocks = frappe._dict(
             get_completed=stack.enter_context(
                 patch(
-                    f"{PREPARED_REPORT}.get_completed_prepared_report",
+                    f"{REPORT_TOOLS}.completed_prepared_report",
                     autospec=True,
                     return_value=completed_name,
                 )
