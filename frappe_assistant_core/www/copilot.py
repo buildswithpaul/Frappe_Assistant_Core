@@ -31,7 +31,8 @@ def get_context(context):
         if query:
             target = f"{target}?{query.decode()}"
         frappe.local.flags.redirect_location = "/login?redirect-to=" + urllib.parse.quote(target)
-        raise frappe.Redirect
+        # Temporary: browsers may cache a permanent (301) redirect and keep bouncing after sign-in.
+        raise frappe.Redirect(302)
 
     csrf_token = frappe.sessions.get_csrf_token()
     # CSRF token is generated lazily and must be persisted before the page
