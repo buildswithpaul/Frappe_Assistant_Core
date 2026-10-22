@@ -1,6 +1,6 @@
 <template>
 	<div class="input-area-container">
-		<div class="input-column">
+		<div class="input-column" @mousedown="keepComposerFocus">
 			<!-- File Previews (above input) -->
 			<AttachedFilePreview :files="attachedFiles" @remove="removeFile" />
 
@@ -103,6 +103,7 @@ import ComposerPlusMenu from "@/components/chat/ComposerPlusMenu.vue";
 import ThinkingLevelMenu from "@/components/chat/ThinkingLevelMenu.vue";
 import AttachedFilePreview from "@/components/chat/AttachedFilePreview.vue";
 import InputToolbar from "@/components/chat/InputToolbar.vue";
+import { keepComposerFocus } from "@/composables/useComposerFocus";
 import {
 	useComposerAttachments,
 	UPLOAD_ACCEPT_ATTR,
@@ -397,7 +398,12 @@ function onGlobalKeydown(e) {
 }
 
 onMounted(() => document.addEventListener("keydown", onGlobalKeydown));
-onBeforeUnmount(() => document.removeEventListener("keydown", onGlobalKeydown));
+onBeforeUnmount(() => {
+	document.removeEventListener("keydown", onGlobalKeydown);
+	// Removing a focused field fires no blur, so the phone layout (useComposerFocus) would stay
+	// collapsed after the first send swaps the welcome composer for the docked one.
+	if (document.activeElement === textInput.value) textInput.value.blur();
+});
 
 function handleStop() {
 	emit("abort");

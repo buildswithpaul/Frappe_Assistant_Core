@@ -5,6 +5,19 @@ export const COMPOSER_FOCUSED_CLASS = "ql-composer-focused";
 const isComposer = (el) => Boolean(el?.classList?.contains("input-textarea"));
 
 /**
+ * Mousedown handler for the composer: pressing one of its buttons keeps focus where it is.
+ *
+ * Otherwise the text box loses focus on the press, the phone layout below collapses under
+ * the finger, and the click lands on whatever moved there: Send took two taps (#34382).
+ * Checking `relatedTarget` on blur would not help, because Safari never focuses a tapped
+ * button, so it is always null there. Tab and Enter never fire mousedown, so keyboard use
+ * of the buttons is unchanged.
+ */
+export function keepComposerFocus(event) {
+	if (event.target?.closest?.("button")) event.preventDefault();
+}
+
+/**
  * Mark the page while the chat composer has focus, so small screens can give the conversation
  * the room a phone keyboard takes: TopBar, App and InputArea collapse their chrome under
  * `html.ql-composer-focused` in a max-width media query. Desktop styles never read the class.
