@@ -1,35 +1,11 @@
 <template>
 	<div class="model-selector" ref="selectorRef">
-		<!-- Trigger Button -->
-		<button
-			@click="toggleDropdown"
-			class="model-trigger"
+		<ModelTrigger
+			:name="modelStore.currentModelName"
+			:open="isOpen"
 			:disabled="modelStore.isLoading && !isOpen"
-		>
-			<svg class="model-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-				<path
-					stroke-linecap="round"
-					stroke-linejoin="round"
-					stroke-width="2"
-					d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
-				/>
-			</svg>
-			<span class="model-name">{{ modelStore.currentModelName }}</span>
-			<svg
-				class="chevron-icon"
-				:class="{ open: isOpen }"
-				fill="none"
-				stroke="currentColor"
-				viewBox="0 0 24 24"
-			>
-				<path
-					stroke-linecap="round"
-					stroke-linejoin="round"
-					stroke-width="2"
-					d="M19 9l-7 7-7-7"
-				/>
-			</svg>
-		</button>
+			@toggle="toggleDropdown"
+		/>
 
 		<!-- Dropdown -->
 		<Transition name="dropdown">
@@ -148,6 +124,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from "vue";
 import { useModelStore } from "@/stores/modelStore";
+import ModelTrigger from "./ModelTrigger.vue";
 
 const modelStore = useModelStore();
 const selectorRef = ref(null);
@@ -224,56 +201,6 @@ onUnmounted(() => {
 <style scoped>
 .model-selector {
 	position: relative;
-}
-
-.model-trigger {
-	display: flex;
-	align-items: center;
-	gap: 0.5rem;
-	padding: 0.5rem 0.75rem;
-	font-size: 0.875rem;
-	font-weight: 500;
-	color: var(--ql-text);
-	background: var(--ql-subtle);
-	border: 1px solid var(--ql-border);
-	border-radius: 0.5rem;
-	cursor: pointer;
-	transition: all 0.15s ease;
-	max-width: 200px;
-}
-
-.model-trigger:hover {
-	background-color: var(--ql-border);
-}
-
-.model-trigger:disabled {
-	opacity: 0.6;
-	cursor: not-allowed;
-}
-
-.model-icon {
-	width: 1rem;
-	height: 1rem;
-	flex-shrink: 0;
-	color: var(--ql-text-muted);
-}
-
-.model-name {
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
-}
-
-.chevron-icon {
-	width: 1rem;
-	height: 1rem;
-	flex-shrink: 0;
-	color: var(--ql-text-muted);
-	transition: transform 0.2s ease;
-}
-
-.chevron-icon.open {
-	transform: rotate(180deg);
 }
 
 /* Dropdown */
@@ -477,14 +404,6 @@ onUnmounted(() => {
 
 /* Mobile adjustments */
 @media (max-width: 640px) {
-	.model-trigger {
-		max-width: 120px;
-	}
-
-	.model-name {
-		display: none;
-	}
-
 	/* Fixed to the viewport, not the trigger. A 100vw panel anchored to
 	   `right: 0` on a mid-bar button used to hang off the left edge. */
 	.model-dropdown {
