@@ -225,3 +225,15 @@ body {
     outline-offset: 2px;
   }
 }
+
+/* iOS zooms the whole page into any focused field whose text is under 16px, and a home-screen
+   app never zooms back out. Touch screens get 16px fields so focus never zooms, while
+   pinch-zoom stays available (no maximum-scale on the viewport). !important because component
+   styles are scoped and would otherwise outrank this one rule for every field in the app. */
+@media (pointer: coarse) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]),
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+}
