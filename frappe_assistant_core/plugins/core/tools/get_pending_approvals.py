@@ -23,11 +23,15 @@ from typing import Any, Dict
 
 import frappe
 from frappe import _
+from frappe.model.document import Document
+from frappe.model.workflow import get_workflow_name
 from frappe.query_builder import DocType
 
 from frappe_assistant_core.core.base_tool import BaseTool
 
 MAX_TRANSITION_DOCS = 20
+# How many documents are counted, so the total matches the home page's approvals card.
+COUNT_LIMIT = 200
 
 
 def _open_workflow_actions(
@@ -96,8 +100,43 @@ def _readable_subset(user: str, actions: list[frappe._dict]) -> list[frappe._dic
     return [a for a in actions if (a.reference_doctype, a.reference_name) in readable]
 
 
+def active_workflow(doctype: str) -> Document | None:
+    """The active Workflow of ``doctype``, or ``None``."""
+    name = get_workflow_name(doctype)
+    return frappe.get_cached_doc("Workflow", name) if name else None
+
+
+def actionable_states(workflow: Document) -> set[str]:
+    """States of ``workflow`` with a next step that neither cancels the document nor is optional.
+
+    Frappe opens a Workflow Action for any state with a non-optional next step, so a submitted
+    document whose only step left is Cancel stays in the queue although nothing awaits approval.
+    """
+    cancelled = {s.state for s in workflow.states if str(s.doc_status) == "2"}
+    optional = {s.state for s in workflow.states if s.is_optional_state}
+    return {
+        t.state
+        for t in workflow.transitions
+        if t.next_state not in cancelled and t.next_state not in optional
+    }
+
+
+def _awaiting_approval(actions: list[frappe._dict]) -> list[frappe._dict]:
+    """The ``actions`` whose state still has an approval step; doctypes without an active Workflow are kept."""
+    states_by_doctype: dict[str, set[str] | None] = {}
+    for doctype in {a.reference_doctype for a in actions}:
+        workflow = active_workflow(doctype)
+        states_by_doctype[doctype] = actionable_states(workflow) if workflow else None
+    return [
+        a
+        for a in actions
+        if states_by_doctype[a.reference_doctype] is None
+        or a.workflow_state in states_by_doctype[a.reference_doctype]
+    ]
+
+
 def readable_open_approvals(user: str, limit: int, doctype: str | None = None) -> list[frappe._dict]:
-    """Up to ``limit`` open Workflow Actions for ``user`` whose documents ``user`` may read.
+    """Up to ``limit`` open Workflow Actions for ``user`` whose documents ``user`` may read and approve.
 
     The Workflow Action query only matches roles and users, so each page is re-checked
     through ``get_list`` to apply User Permissions. Pages of ``max(limit * 3, MIN_PAGE_SIZE)`` newest-first rows
@@ -110,11 +149,23 @@ def readable_open_approvals(user: str, limit: int, doctype: str | None = None) -
     offset = 0
     while len(readable) < limit and offset < MAX_SCANNED_ACTIONS:
         page = _open_workflow_actions(user, min(page_size, MAX_SCANNED_ACTIONS - offset), doctype, offset)
-        readable.extend(_readable_subset(user, page))
+        readable.extend(_awaiting_approval(_readable_subset(user, page)))
         if len(page) < min(page_size, MAX_SCANNED_ACTIONS - offset):
             break
         offset += len(page)
     return readable[:limit]
+
+
+def _one_per_document(actions: list[frappe._dict]) -> list[frappe._dict]:
+    """The newest action of each document, keeping order."""
+    seen: set[tuple[str, str]] = set()
+    unique = []
+    for action in actions:
+        key = (action.reference_doctype, action.reference_name)
+        if key not in seen:
+            seen.add(key)
+            unique.append(action)
+    return unique
 
 
 class GetPendingApprovals(BaseTool):
@@ -149,7 +200,7 @@ class GetPendingApprovals(BaseTool):
                     "type": "integer",
                     "default": 50,
                     "maximum": 200,
-                    "description": "Maximum number of pending actions to return. Default 50.",
+                    "description": "Maximum number of documents to list. Default 50. total_pending always counts up to 200.",
                 },
                 "include_actions": {
                     "type": "boolean",
@@ -171,7 +222,7 @@ class GetPendingApprovals(BaseTool):
 
         user = frappe.session.user
         try:
-            pending_actions = readable_open_approvals(user, limit, doctype_filter)
+            counted = _one_per_document(readable_open_approvals(user, COUNT_LIMIT, doctype_filter))
         except Exception as e:
             frappe.log_error(
                 title=_("Pending Approvals Query Error"),
@@ -179,6 +230,7 @@ class GetPendingApprovals(BaseTool):
             )
             return {"success": False, "error": str(e)}
 
+        pending_actions = counted[:limit]
         if not pending_actions:
             return {
                 "success": True,
@@ -243,14 +295,18 @@ class GetPendingApprovals(BaseTool):
 
         result = {
             "success": True,
-            "total_pending": len(pending_actions),
+            "total_pending": len(counted),
             "doctypes_with_pending": list(grouped.keys()),
             "pending_approvals": grouped,
             "message": (
-                f"Found {len(pending_actions)} document(s) pending your approval "
+                f"Found {len(counted)} document(s) pending your approval "
                 f"across {len(grouped)} document type(s)"
             ),
         }
+
+        if len(counted) > len(pending_actions):
+            result["listed"] = len(pending_actions)
+            result["message"] += f"; listing the {len(pending_actions)} newest"
 
         if actions_truncated:
             result["actions_truncated"] = True

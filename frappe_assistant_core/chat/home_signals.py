@@ -18,7 +18,10 @@ from frappe import _, _lt
 from frappe.utils import add_days, fmt_money, get_datetime, now_datetime, today
 
 from frappe_assistant_core.chat.home_preferences import load_home_preferences
-from frappe_assistant_core.plugins.core.tools.get_pending_approvals import readable_open_approvals
+from frappe_assistant_core.plugins.core.tools.get_pending_approvals import (
+    COUNT_LIMIT,
+    readable_open_approvals,
+)
 
 LENS_ROLES: dict[str, tuple[str, ...]] = {
     "accounts": ("Accounts Manager", "Accounts User"),
@@ -39,7 +42,7 @@ DEFAULT_AREA = "business"
 
 TONE_RANK = {"danger": 0, "warning": 1, "neutral": 2}
 
-APPROVALS_LIMIT = 200
+APPROVALS_LIMIT = COUNT_LIMIT
 OVERDUE_DAYS = 60
 PAYABLES_WINDOW_DAYS = 7
 TOP_CUSTOMERS = 2

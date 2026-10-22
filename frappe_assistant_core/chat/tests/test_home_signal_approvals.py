@@ -11,13 +11,16 @@ from frappe.utils import add_to_date, now_datetime
 from frappe_assistant_core.chat import home_signals
 from frappe_assistant_core.chat.home_signals import approvals_for_user
 from frappe_assistant_core.plugins.core.tools import get_pending_approvals as approvals_tool
-from frappe_assistant_core.plugins.core.tools.get_pending_approvals import GetPendingApprovals
+from frappe_assistant_core.plugins.core.tools.get_pending_approvals import (
+    GetPendingApprovals,
+    actionable_states,
+)
 from frappe_assistant_core.tests.base_test import BaseAssistantTest
 
 APPROVER_ROLE = "System Manager"
 
 
-class TestHomeSignalApprovals(BaseAssistantTest):
+class ApprovalTestCase(BaseAssistantTest):
     def setUp(self):
         super().setUp()
         self.user = self.make_throwaway_user("approver", roles=(APPROVER_ROLE,))
@@ -38,7 +41,9 @@ class TestHomeSignalApprovals(BaseAssistantTest):
             .name
         )
 
-    def _open_action(self, todo: str, role: str | None = APPROVER_ROLE, user: str | None = None) -> str:
+    def _open_action(
+        self, todo: str, role: str | None = APPROVER_ROLE, user: str | None = None, state: str = "Pending"
+    ) -> str:
         # Manufactured: production creates these rows when a document enters a workflow state.
         # A Workflow is not created here: inserting one adds a Custom Field by DDL, which commits.
         action = frappe.get_doc(
@@ -47,7 +52,7 @@ class TestHomeSignalApprovals(BaseAssistantTest):
                 "status": "Open",
                 "reference_doctype": "ToDo",
                 "reference_name": todo,
-                "workflow_state": "Pending",
+                "workflow_state": state,
                 "user": user,
                 "permitted_roles": [{"role": role}] if role else [],
             }
@@ -57,6 +62,14 @@ class TestHomeSignalApprovals(BaseAssistantTest):
     def _waiting(self) -> list[str]:
         return approvals_for_user(self.user).get("ToDo", [])
 
+    def _run_tool_as_user(self, **arguments) -> dict:
+        previous = frappe.session.user
+        self.addCleanup(frappe.set_user, previous)
+        frappe.set_user(self.user)
+        return GetPendingApprovals().execute({"doctype": "ToDo", "include_actions": False, **arguments})
+
+
+class TestHomeSignalApprovals(ApprovalTestCase):
     def test_u1_counts_actions_for_users_role(self):
         before = len(self._waiting())
         todo = self._todo()
@@ -116,12 +129,6 @@ class TestHomeSignalApprovals(BaseAssistantTest):
         self.assertEqual(
             set(entries[todo]), {"document_name", "workflow_state", "permitted_roles", "creation"}
         )
-
-    def _run_tool_as_user(self, **arguments) -> dict:
-        previous = frappe.session.user
-        self.addCleanup(frappe.set_user, previous)
-        frappe.set_user(self.user)
-        return GetPendingApprovals().execute({"doctype": "ToDo", "include_actions": False, **arguments})
 
     def test_pending_approvals_tool_hides_documents_blocked_by_user_permission(self):
         hidden = self._todo(role="Sales User")
@@ -201,6 +208,111 @@ class TestHomeSignalApprovals(BaseAssistantTest):
         self.assertTrue(result["success"])
         self.assertEqual(result["total_pending"], 0)
         self.assertEqual(result["pending_approvals"], {})
+
+
+def _purchase_order_workflow() -> "frappe.model.document.Document":
+    """The shape of a common approval workflow: once approved, the only step left is Cancel."""
+    return frappe.get_doc(
+        {
+            "doctype": "Workflow",
+            "workflow_name": "Approval test",
+            "document_type": "ToDo",
+            "workflow_state_field": "workflow_state",
+            "states": [
+                {"state": "Draft", "doc_status": "0", "allow_edit": APPROVER_ROLE},
+                {"state": "Pending", "doc_status": "0", "allow_edit": APPROVER_ROLE},
+                {"state": "Approved", "doc_status": "1", "allow_edit": APPROVER_ROLE},
+                {"state": "Rejected", "doc_status": "0", "allow_edit": APPROVER_ROLE},
+                {"state": "Cancelled", "doc_status": "2", "allow_edit": APPROVER_ROLE},
+                {"state": "Archived", "doc_status": "0", "allow_edit": APPROVER_ROLE, "is_optional_state": 1},
+            ],
+            "transitions": [
+                {"state": "Draft", "action": "Archive", "next_state": "Archived", "allowed": APPROVER_ROLE},
+                {"state": "Pending", "action": "Approve", "next_state": "Approved", "allowed": APPROVER_ROLE},
+                {"state": "Pending", "action": "Reject", "next_state": "Rejected", "allowed": APPROVER_ROLE},
+                {
+                    "state": "Approved",
+                    "action": "Cancel",
+                    "next_state": "Cancelled",
+                    "allowed": APPROVER_ROLE,
+                },
+            ],
+        }
+    )
+
+
+class TestCancelOnlyApprovals(ApprovalTestCase):
+    """Redmine #34441: a document whose only step left is Cancel is not waiting for approval."""
+
+    def test_actionable_states_drop_cancel_only_and_optional_only_states(self):
+        self.assertEqual(actionable_states(_purchase_order_workflow()), {"Pending"})
+
+    def _with_workflow(self):
+        # Manufactured: production reaches this when an active Workflow exists for the doctype.
+        # Inserting one adds a Custom Field by DDL, which commits, so the lookup is patched instead.
+        patcher = patch.object(
+            approvals_tool, "active_workflow", autospec=True, return_value=_purchase_order_workflow()
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def _action_in_state(self, state: str) -> str:
+        todo = self._todo()
+        self._open_action(todo, state=state)
+        return todo
+
+    def test_card_skips_document_whose_only_step_is_cancel(self):
+        self._with_workflow()
+        approved = self._action_in_state("Approved")
+        pending = self._action_in_state("Pending")
+
+        waiting = self._waiting()
+
+        self.assertNotIn(approved, waiting)
+        self.assertIn(pending, waiting)
+
+    def test_tool_skips_document_whose_only_step_is_cancel(self):
+        self._with_workflow()
+        approved = self._action_in_state("Approved")
+        pending = self._action_in_state("Pending")
+
+        result = self._run_tool_as_user()
+
+        names = {e["document_name"] for e in result["pending_approvals"].get("ToDo", [])}
+        self.assertNotIn(approved, names)
+        self.assertIn(pending, names)
+
+    def test_doctype_without_an_active_workflow_is_still_counted(self):
+        todo = self._todo()
+        self._open_action(todo)
+        self.assertIn(todo, self._waiting())
+
+
+class TestApprovalTotals(ApprovalTestCase):
+    """Redmine #34441: the answer reports the same total the card shows, even when it lists fewer."""
+
+    def test_tool_total_counts_past_its_listing_limit(self):
+        todos = [self._todo() for _i in range(3)]
+        for todo in todos:
+            self._open_action(todo, role=None, user=self.user)
+        card = len(self._waiting())
+
+        result = self._run_tool_as_user(limit=1)
+
+        self.assertEqual(result["total_pending"], card)
+        self.assertEqual(result["listed"], 1)
+        self.assertEqual(len(result["pending_approvals"]["ToDo"]), 1)
+
+    def test_tool_lists_each_document_once(self):
+        todo = self._todo()
+        self._open_action(todo, role=None, user=self.user)
+        self._open_action(todo, role=None, user=self.user)
+
+        result = self._run_tool_as_user()
+
+        names = [e["document_name"] for e in result["pending_approvals"]["ToDo"]]
+        self.assertEqual(names.count(todo), 1)
+        self.assertEqual(result["total_pending"], len(names))
 
 
 class TestWaitedDetail(unittest.TestCase):
