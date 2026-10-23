@@ -157,16 +157,23 @@ def _is_custom(name: str) -> int:
     return cint(frappe.db.get_value("DocType", name, "custom"))
 
 
-# Field types through which another form links to or embeds a DocType.
-_REFERENCE_FIELDTYPES = ("Link", "Table", "Table MultiSelect")
-
-
 def _referenced_elsewhere(name: str) -> bool:
-    """Whether a field on another DocType links to or embeds this one."""
-    filters = {"fieldtype": ["in", _REFERENCE_FIELDTYPES], "options": name}
+    """Whether a field on another DocType may link to or embed this one.
+
+    Any field whose options name it counts, whatever its type, because a Property Setter can turn
+    the field into a Link or Table; so does a Property Setter that points a field's options at it.
+    """
     return bool(
-        frappe.get_all("DocField", filters={**filters, "parent": ["!=", name]}, pluck="name", limit=1)
-        or frappe.get_all("Custom Field", filters={**filters, "dt": ["!=", name]}, pluck="name", limit=1)
+        frappe.get_all("DocField", filters={"options": name, "parent": ["!=", name]}, pluck="name", limit=1)
+        or frappe.get_all(
+            "Custom Field", filters={"options": name, "dt": ["!=", name]}, pluck="name", limit=1
+        )
+        or frappe.get_all(
+            "Property Setter",
+            filters={"property": "options", "value": name, "doc_type": ["!=", name]},
+            pluck="name",
+            limit=1,
+        )
     )
 
 

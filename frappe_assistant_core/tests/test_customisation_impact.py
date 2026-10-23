@@ -264,6 +264,29 @@ class TestCustomisationImpact(BaseAssistantTest):
         self.assertTrue(facts["in_use"])
         self.assertFalse(r["dormant"])
 
+    def test_a_property_setter_pointing_a_field_at_the_doctype_makes_it_live(self):
+        # Console Log stands in for a custom DocType with only System Manager rows that no field
+        # names. Production reaches the reference when Customize Form repoints a field's options
+        # on another form; db_insert writes that Property Setter row without its cache hooks and
+        # it rolls back with the test.
+        with patch(IS_CUSTOM, autospec=True, return_value=1), patch(DB_COUNT, autospec=True, return_value=0):
+            before = _impact("update_document", "DocType", {"description": "x"}, "Console Log")
+            frappe.get_doc(
+                {
+                    "doctype": "Property Setter",
+                    "name": "ToDo-description-options-fac-probe",
+                    "doc_type": "ToDo",
+                    "doctype_or_field": "DocField",
+                    "field_name": "description",
+                    "property": "options",
+                    "property_type": "Text",
+                    "value": "Console Log",
+                }
+            ).db_insert()
+            after = _impact("update_document", "DocType", {"description": "x"}, "Console Log")
+        self.assertTrue(before["dormant"])
+        self.assertFalse(after["dormant"])
+
     @staticmethod
     def _dormant_only(*names):
         return lambda name: (
