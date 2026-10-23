@@ -6,7 +6,7 @@
 
 import frappe
 
-from frappe_assistant_core.chat.api.current_code import CODE_KEYS, get_current_code
+from frappe_assistant_core.chat.api.current_code import CODE_KEYS, GO_LIVE_KEYS, get_current_code
 from frappe_assistant_core.tests.base_test import BaseAssistantTest
 
 READER = "current-code-reader@example.com"
@@ -71,3 +71,45 @@ class TestGetCurrentCode(BaseAssistantTest):
             list(CODE_KEYS),
             ["script", "condition", "query", "html", "javascript", "report_script", "css", "message"],
         )
+
+
+class TestGetCurrentCodeGoesLive(BaseAssistantTest):
+    """A card switching a Notification on shows its stored subject, a Jinja template it emails."""
+
+    def setUp(self):
+        super().setUp()
+        frappe.set_user("Administrator")
+        # Left disabled, as a dormant notification sits before the card that switches it on.
+        self.notification = frappe.get_doc(
+            {
+                "doctype": "Notification",
+                "name": "current-code-test-notification",
+                "subject": "ToDo {{ doc.name }} changed",
+                "document_type": "ToDo",
+                "event": "New",
+                "channel": "System Notification",
+                "enabled": 0,
+                "condition": "doc.priority == 'High'",
+                "message": "Hello {{ doc.owner }}",
+            }
+        ).insert()
+
+    def tearDown(self):
+        frappe.set_user("Administrator")
+        frappe.delete_doc("Notification", self.notification.name, force=True, ignore_permissions=True)
+        super().tearDown()
+
+    def test_returns_the_stored_subject_with_condition_and_message(self):
+        out = get_current_code("Notification", self.notification.name, ["subject", "condition", "message"])
+        self.assertEqual(
+            out,
+            {
+                "subject": "ToDo {{ doc.name }} changed",
+                "condition": "doc.priority == 'High'",
+                "message": "Hello {{ doc.owner }}",
+            },
+        )
+
+    def test_go_live_keys_stay_out_of_the_code_keys(self):
+        self.assertEqual(GO_LIVE_KEYS, ("subject",))
+        self.assertNotIn("subject", CODE_KEYS)

@@ -280,7 +280,7 @@ describe("ApprovalCard switching code on", () => {
 		currentCode.mockResolvedValue({ condition: "doc.grand_total > 0", message: "<p>Hi {{ doc.name }}</p>" });
 		const wrapper = mount(ApprovalCard, { props: { block: switchBlock("Notification", { enabled: true }) } });
 		await flushPromises();
-		expect(currentCode).toHaveBeenCalledWith("Notification", "REC-1", ["condition", "message"]);
+		expect(currentCode).toHaveBeenCalledWith("Notification", "REC-1", ["subject", "condition", "message"]);
 		const text = wrapper.findAll(".code-preview pre").map((p) => p.text()).join("\n");
 		expect(text).toContain("doc.grand_total > 0");
 		expect(text).toContain("Hi {{ doc.name }}");
@@ -311,6 +311,64 @@ describe("ApprovalCard switching code on", () => {
 		);
 	});
 
+	it("keeps Approve disabled while the code that goes live loads", async () => {
+		let resolve;
+		currentCode.mockReset();
+		currentCode.mockReturnValue(new Promise((r) => (resolve = r)));
+		const wrapper = mount(ApprovalCard, { props: { block: switchBlock("Client Script", { enabled: 1 }) } });
+		await flushPromises();
+		expect(wrapper.find('[data-test="goes-live-loading"]').text()).toBe("Loading the code that goes live…");
+		expect(wrapper.find(".ql-btn-approve").attributes("disabled")).toBeDefined();
+		resolve({ script: "console.log(1)" });
+		await flushPromises();
+		expect(wrapper.find('[data-test="goes-live-loading"]').exists()).toBe(false);
+		expect(wrapper.find(".ql-btn-approve").attributes("disabled")).toBeUndefined();
+	});
+
+	it("leaves Approve enabled beside the notice when the stored code cannot be fetched", async () => {
+		currentCode.mockReset();
+		currentCode.mockRejectedValue(new Error("denied"));
+		const wrapper = mount(ApprovalCard, { props: { block: switchBlock("Server Script", { disabled: 0 }) } });
+		await flushPromises();
+		expect(wrapper.find('[data-test="goes-live-missing"]').exists()).toBe(true);
+		expect(wrapper.find(".ql-btn-approve").attributes("disabled")).toBeUndefined();
+	});
+
+	it("Notification switched on: shows its stored subject", async () => {
+		currentCode.mockReset();
+		currentCode.mockResolvedValue({ subject: "Order {{ doc.name }} approved", condition: "", message: "" });
+		const wrapper = mount(ApprovalCard, { props: { block: switchBlock("Notification", { enabled: 1 }) } });
+		await flushPromises();
+		expect(currentCode).toHaveBeenCalledWith("Notification", "REC-1", ["subject", "condition", "message"]);
+		expect(wrapper.find(".code-preview pre").text()).toContain("Order {{ doc.name }} approved");
+	});
+
+	it.each([[""], [null], [" 0 "], [0.4]])("Server Script disabled %j switches it on, as Frappe's cint reads it", async (value) => {
+		currentCode.mockReset();
+		currentCode.mockResolvedValue({ script: "x = 1" });
+		const wrapper = mount(ApprovalCard, { props: { block: switchBlock("Server Script", { disabled: value }) } });
+		await flushPromises();
+		expect(currentCode).toHaveBeenCalledWith("Server Script", "REC-1", ["script"]);
+		expect(goesLive(wrapper).exists()).toBe(true);
+	});
+
+	it.each([["2"], [" 1 "], ["1.5"]])("Client Script enabled %j switches it on, as Frappe's cint reads it", async (value) => {
+		currentCode.mockReset();
+		currentCode.mockResolvedValue({ script: "x" });
+		const wrapper = mount(ApprovalCard, { props: { block: switchBlock("Client Script", { enabled: value }) } });
+		await flushPromises();
+		expect(goesLive(wrapper).exists()).toBe(true);
+	});
+
+	it("says (empty) when every stored field that goes live is empty", async () => {
+		currentCode.mockReset();
+		currentCode.mockResolvedValue({ script: "" });
+		const wrapper = mount(ApprovalCard, { props: { block: switchBlock("Client Script", { enabled: 1 }) } });
+		await flushPromises();
+		expect(wrapper.find('[data-test="goes-live-empty"]').text()).toBe("(empty)");
+		expect(wrapper.find(".code-preview").exists()).toBe(false);
+	});
+
 	it("an update that does not switch on makes no extra fetch and shows no go-live label", async () => {
 		currentCode.mockReset();
 		currentCode.mockResolvedValue({});
@@ -318,6 +376,10 @@ describe("ApprovalCard switching code on", () => {
 			switchBlock("Client Script", { enabled: 0 }),
 			switchBlock("Server Script", { disabled: 1 }),
 			switchBlock("Notification", { enabled: "0" }),
+			switchBlock("Notification", { enabled: "abc" }),
+			switchBlock("Server Script", { disabled: "1.9" }),
+			switchBlock("Server Script", { script_type: "API" }),
+			switchBlock("Client Script", { dt: "Lead" }),
 			switchBlock("ToDo", { enabled: 1 }),
 		]) {
 			const wrapper = mount(ApprovalCard, { props: { block } });
