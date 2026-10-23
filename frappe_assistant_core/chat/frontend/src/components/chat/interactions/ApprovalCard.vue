@@ -29,7 +29,7 @@
 
 		<p v-else-if="toolDescription" class="approval-description">{{ toolDescription }}</p>
 
-		<ApprovalDetails v-if="!message.entry.value" :block="block" />
+		<ApprovalDetails v-if="!message.entry.value" :block="block" @blocking="codeLoading = $event" />
 
 		<div v-if="hasDecision" class="decided-banner">
 			<span class="decided-label">{{ decidedLabel }}</span>
@@ -51,7 +51,7 @@
 				<button
 					v-if="!message.failed.value"
 					class="ql-btn ql-btn-approve"
-					:disabled="submitting || message.loading.value"
+					:disabled="submitting || message.loading.value || codeLoading"
 					@click="handleApprove(dontAskAgain && !isCustomisation ? 'trust' : 'approve')"
 				>
 					{{ message.entry.value ? __(message.entry.value.sendLabel) : "Approve" }}
@@ -86,6 +86,8 @@ const hasDecision = computed(() => Boolean(props.block.decision));
 const isCustomisation = computed(() => isCustomisationRisk(props.block));
 // Ticked, the approve button also stops this tool asking again (AR Tool Trust "always").
 const dontAskAgain = ref(false);
+// True while the stored code a switch-on would run is loading; approving it unseen is the hole.
+const codeLoading = ref(false);
 
 // Message tools (send_email, reply_to_helpdesk_ticket) show their draft as a message.
 const message = useMessagePreview(() => props.block);

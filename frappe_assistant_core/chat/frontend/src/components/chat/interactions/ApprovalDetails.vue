@@ -21,6 +21,10 @@
 		</template>
 		<template v-if="liveFields.length">
 			<div class="goes-live" data-test="goes-live">{{ __("This goes live") }}</div>
+			<p v-if="codeLoading" class="goes-live-note" data-test="goes-live-loading">
+				{{ __("Loading the code that goes live…") }}
+			</p>
+			<p v-else-if="liveEmpty" class="goes-live-note" data-test="goes-live-empty">{{ __("(empty)") }}</p>
 			<p v-if="liveMissing" class="goes-live-missing" data-test="goes-live-missing">
 				{{ __("Couldn't load the code that goes live. Check it in Desk before approving.") }}
 			</p>
@@ -46,7 +50,7 @@
 </template>
 
 <script setup>
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { __ } from "@/utils/i18n";
 import ApprovalNotes from "./ApprovalNotes.vue";
 import ChildTable from "./ChildTable.vue";
@@ -69,9 +73,16 @@ import {
 const props = defineProps({
 	block: { type: Object, required: true },
 });
+// True while the code that goes live is loading: the card must not be approved unseen.
+const emit = defineEmits(["blocking"]);
 
 const showAllFields = ref(false);
-const { current: currentCode, failed: currentCodeFailed } = useCurrentCode(() => props.block);
+const {
+	current: currentCode,
+	failed: currentCodeFailed,
+	loading: codeLoading,
+} = useCurrentCode(() => props.block);
+watch(codeLoading, (loading) => emit("blocking", loading), { immediate: true });
 
 // A rename the tool will not make is a notice (ApprovalNotes), never a changed field.
 const flat = computed(() => {
@@ -104,13 +115,18 @@ const visibleRows = computed(() =>
 
 // Switching code on runs what is stored, so the card shows it, not just "Enabled 1".
 const liveFields = computed(() => goesLiveFields(props.block.tool_name, props.block.input));
-const unchangedLiveFields = computed(() =>
-	liveFields.value.filter((key) => !codeRows.value.some(([ck]) => ck === key)),
-);
+// A go-live field the update also writes shows its new value (diff or table row) instead.
+const unchangedLiveFields = computed(() => liveFields.value.filter((key) => !(key in flat.value)));
 const storedLiveRows = computed(() =>
 	unchangedLiveFields.value
 		.map((key) => [key, currentCode.value?.[key]])
 		.filter(([, stored]) => typeof stored === "string" && stored !== ""),
+);
+const liveEmpty = computed(
+	() =>
+		currentCode.value !== null &&
+		unchangedLiveFields.value.length > 0 &&
+		unchangedLiveFields.value.every((key) => currentCode.value[key] === ""),
 );
 const liveMissing = computed(
 	() =>
@@ -168,6 +184,12 @@ function previousCode(key) {
 	margin-top: 4px;
 	font-weight: 600;
 	color: var(--ql-warning);
+}
+
+.goes-live-note {
+	grid-column: 1 / -1;
+	margin: 0;
+	color: var(--ql-text-muted);
 }
 
 .goes-live-missing {

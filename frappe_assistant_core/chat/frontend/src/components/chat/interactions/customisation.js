@@ -217,14 +217,26 @@ export function renameNotice(toolName, input) {
 		: null;
 }
 
-const isOn = (value) => value === 1 || value === "1" || value === true;
-const isOff = (value) => value === 0 || value === "0" || value === false;
+// Frappe's cint: booleans read as 1/0; blank, null and anything that does not parse read as 0;
+// decimals truncate.
+export function cint(value) {
+	if (value === null || value === undefined) return 0;
+	if (typeof value === "boolean") return value ? 1 : 0;
+	const parsed = Math.trunc(Number.parseFloat(String(value).trim()));
+	return Number.isNaN(parsed) ? 0 : parsed;
+}
 
-// The switch each code doctype uses, and the stored fields that run once it is on.
+const has = (fields, key) => Object.prototype.hasOwnProperty.call(fields, key);
+
+// The switch each code doctype uses, and the stored fields that run once it is on. The switch
+// counts only when the update names it, and is read the way Frappe saves it (cint).
 const SWITCHED_CODE = {
-	"Server Script": { switchedOn: (f) => isOff(f.disabled), fields: ["script"] },
-	"Client Script": { switchedOn: (f) => isOn(f.enabled), fields: ["script"] },
-	Notification: { switchedOn: (f) => isOn(f.enabled), fields: ["condition", "message"] },
+	"Server Script": { switchedOn: (f) => has(f, "disabled") && cint(f.disabled) === 0, fields: ["script"] },
+	"Client Script": { switchedOn: (f) => has(f, "enabled") && cint(f.enabled) !== 0, fields: ["script"] },
+	Notification: {
+		switchedOn: (f) => has(f, "enabled") && cint(f.enabled) !== 0,
+		fields: ["subject", "condition", "message"],
+	},
 };
 
 /**

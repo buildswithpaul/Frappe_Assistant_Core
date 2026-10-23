@@ -26,11 +26,16 @@ CODE_KEYS = (
     "message",
 )
 
+# Not code on every card, but run once an update switches the record on, so the card shows the
+# stored value: a Notification's subject is a Jinja template rendered into the email it sends.
+# Mirrored in customisation.js (SWITCHED_CODE).
+GO_LIVE_KEYS = ("subject",)
+
 
 def _requested_fields(fields: list | str) -> list[str]:
     if isinstance(fields, str):
         fields = frappe.parse_json(fields)
-    return [f for f in fields if isinstance(f, str) and f in CODE_KEYS]
+    return [f for f in fields if isinstance(f, str) and (f in CODE_KEYS or f in GO_LIVE_KEYS)]
 
 
 @frappe.whitelist(methods=["GET"])
@@ -38,8 +43,8 @@ def get_current_code(doctype: str, name: str, fields: list | str) -> dict:
     """Return the stored values of the requested code fields of one record.
 
     Args:
-            fields: Field names, as a list or a JSON-encoded list. Names outside CODE_KEYS,
-                    unknown to the doctype, or above the caller's permission level are ignored.
+            fields: Field names, as a list or a JSON-encoded list. Names outside CODE_KEYS and
+                    GO_LIVE_KEYS, unknown to the doctype, or above the caller's permission level are ignored.
 
     Returns:
             {fieldname: stored value or ""}.
