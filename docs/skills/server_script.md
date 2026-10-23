@@ -50,13 +50,18 @@ Adds a rule that runs on the server when a document is saved, submitted, cancell
 - **Amounts and discounts.** Compare percentages, or totals before the discount, or the company-currency `base_*` amounts (`base_net_rate`, `base_grand_total`). Never compare a foreign-currency `rate` or `grand_total` with a company-currency limit. Item-level discounts change the net rate, so handle them in the rule or say plainly that the rule ignores them.
 - Server Scripts run in a restricted sandbox: no imports, limited functions.
 
+## Plan before a multi-record setup
+
+When you have the `propose_build_plan` tool and are changing two or more scripts or other records,
+propose a build plan first, as the `setup-change-protocol` skill describes.
+
 ## Gotchas
 
 - **Name records by what they do, never by a value that may change (no limits, percentages or dates in names):** 'Discount limit on Sales Invoice submit', not 'Block discount above 15%'. Changing a value never needs a rename. The update tool cannot rename a record; if the user wants a different name, tell them to use Rename from the record's menu in Desk.
 - **A script that fails breaks saving for everyone** on that doctype. That is why it starts switched off, is switched on only with the user's go-ahead, and is tested straight away.
 - **Submitted documents.** A `Before Save` script does not run when a submitted document is updated after submit. Use `Before Submit` for "must hold at submit".
 - **An update that flips `disabled` from 1 to 0 is refused when scripts are off**, the same as a create. Do not retry.
-- The approval card appears for every customisation write, and "Don't ask again" never applies to one. That is intended; do not tell the user to switch it off.
+- The approval card appears for every customisation write unless the write is on an approved build plan, and "Don't ask again" never applies to one. That is intended; do not tell the user to switch it off.
 
 ## Anti-patterns
 

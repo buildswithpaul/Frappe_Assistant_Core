@@ -43,12 +43,17 @@ Adds behaviour to a form in the browser, such as "when the customer changes, fil
 - **Amounts and discounts.** Use percentage fields or totals before the discount, and the company-currency `base_*` amounts, not a foreign-currency amount compared with a company-currency limit. Handle item-level discounts or say plainly that the rule ignores them.
 - The script runs in the user's browser and sees only what is on the form.
 
+## Plan before a multi-record setup
+
+When you have the `propose_build_plan` tool and are changing two or more scripts or other records,
+propose a build plan first, as the `setup-change-protocol` skill describes.
+
 ## Gotchas
 
 - **Name records by what they do, never by a value that may change (no limits, percentages or dates in names):** 'Discount limit on Sales Invoice submit', not 'Block discount above 15%'. Changing a value never needs a rename. The update tool cannot rename a record; if the user wants a different name, tell them to use Rename from the record's menu in Desk.
 - **A broken script breaks the form** for everyone until it is switched off. That is why it starts switched off and is switched on only with the user's go-ahead.
 - A Client Script on a child table row needs the child doctype's own handler, not the parent's.
-- The approval card appears for every customisation write, and "Don't ask again" never applies to one. That is intended.
+- The approval card appears for every customisation write unless the write is on an approved build plan, and "Don't ask again" never applies to one. That is intended.
 
 ## Anti-patterns
 
