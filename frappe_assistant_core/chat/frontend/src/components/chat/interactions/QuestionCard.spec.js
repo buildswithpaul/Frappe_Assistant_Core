@@ -134,3 +134,18 @@ describe("QuestionCard keeps the picked answer visible", () => {
 		expect(wrapper.find(".text-input-row button").text()).toBe("Done");
 	});
 });
+
+describe("QuestionCard confirm inside a group", () => {
+	// Live pass: a filled Yes button read as an answer already chosen.
+	it("shows Yes and No alike until one is picked", async () => {
+		const wrapper = mount(QuestionCard, {
+			props: { block: { question: "Include drafts?" }, interactionType: "confirm", mode: "group" },
+		});
+		const [no, yes] = wrapper.findAll(".confirm-actions button");
+		expect(no.classes()).toContain("pill");
+		expect(yes.classes()).toContain("pill");
+		expect(yes.classes()).not.toContain("ql-btn-approve");
+		await yes.trigger("click");
+		expect(yes.classes()).toContain("selected");
+	});
+});

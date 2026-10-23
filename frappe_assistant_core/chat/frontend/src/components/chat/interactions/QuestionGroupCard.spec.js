@@ -1,7 +1,11 @@
 import { mount } from "@vue/test-utils";
-import { describe, it, expect } from "vitest";
+import { createPinia, setActivePinia } from "pinia";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 
 import QuestionGroupCard from "./QuestionGroupCard.vue";
+import { useChatStore } from "@/stores/chatStore";
+
+vi.mock("frappe-ui", () => ({ call: vi.fn() }));
 
 // Three parallel ask_user calls, as the stream delivers them: one pending card each.
 function questions() {
@@ -35,8 +39,18 @@ function questions() {
 	];
 }
 
+let store;
+
+beforeEach(() => {
+	setActivePinia(createPinia());
+	store = useChatStore();
+});
+
+// The card receives the very block objects the store holds, as MessageBlockRenderer passes them.
 function mountGroup(blocks = questions(), props = {}) {
-	return mount(QuestionGroupCard, { props: { blocks, ...props }, attachTo: document.body });
+	store.messages = [{ role: "assistant", message_id: "m1", blocks }];
+	const live = store.messages[0].blocks;
+	return mount(QuestionGroupCard, { props: { blocks: live, ...props }, attachTo: document.body });
 }
 
 const pill = (wrapper, label) => wrapper.findAll(".pill").find((p) => p.text().includes(label));
@@ -47,7 +61,7 @@ async function answerAll(wrapper) {
 	await pill(wrapper, "Northwind Demo Co").trigger("click");
 	await wrapper.find('[data-question-id="q2"] input[value="Amount"]').setValue(true);
 	await wrapper.find('[data-question-id="q2"] .submit-btn').trigger("click");
-	await wrapper.findAll('[data-question-id="q3"] .ql-btn').find((b) => b.text() === "No").trigger("click");
+	await wrapper.findAll('[data-question-id="q3"] .confirm-actions button').find((b) => b.text() === "No").trigger("click");
 }
 
 describe("QuestionGroupCard", () => {
@@ -124,6 +138,24 @@ describe("QuestionGroupCard", () => {
 		]);
 		expect(wrapper.find(".qg-change").exists()).toBe(false);
 		expect(wrapper.find(".qg-send").exists()).toBe(false);
+	});
+
+	it("keeps a reopened question open until it is answered again", async () => {
+		const wrapper = mountGroup();
+		await pill(wrapper, "Northwind Demo Co").trigger("click");
+		await answeredRow(wrapper, "q1").find(".qg-change").trigger("click");
+		await wrapper.vm.$nextTick();
+		expect(wrapper.find('[data-question-id="q1"] .qg-open').exists()).toBe(true);
+	});
+
+	it("takes an answer typed in the composer for the open question and moves on", async () => {
+		const wrapper = mountGroup();
+		await store.answerPendingQuestion("Southwind Ltd");
+		await wrapper.vm.$nextTick();
+
+		expect(answeredRow(wrapper, "q1").find(".qg-a").text()).toBe("Southwind Ltd");
+		expect(wrapper.find('[data-question-id="q2"] .qg-open').exists()).toBe(true);
+		expect(wrapper.emitted("approve")).toBeUndefined();
 	});
 
 	it("locks Change and Send while the answers are being sent", async () => {

@@ -854,6 +854,15 @@ export const useChatStore = defineStore("chat", () => {
 	async function answerPendingQuestion(text) {
 		const pending = pendingInteractionBlock.value;
 		if (!pending || pending.regime !== "question") return false;
+		// Questions asked together wait for the group's Send: a typed answer fills the next
+		// unanswered one as a draft, or replaces the last answer when all have one.
+		const grouped = (findActiveMessage(messages.value)?.blocks || []).filter(
+			(b) => b.type === "interaction" && b.status === "pending" && !b.decision
+		);
+		if (grouped.length > 1) {
+			const target = grouped.find((b) => b.draft == null) || grouped[grouped.length - 1];
+			return blocks.setInteractionDraft(target.id, text);
+		}
 		await submitInterruptDecision({
 			blockId: pending.block.id,
 			resolution: "answered",
@@ -1185,6 +1194,7 @@ export const useChatStore = defineStore("chat", () => {
 		resolveInteraction: blocks.resolveInteraction,
 		submitInterruptDecision,
 		answerPendingQuestion,
+		setQuestionDraft: blocks.setInteractionDraft,
 		abortPendingInteraction,
 		hydratePendingInterrupt,
 		markInterruptExpired,

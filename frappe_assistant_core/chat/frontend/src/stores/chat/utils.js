@@ -24,15 +24,17 @@ export function isFinalizedRow(msg) {
 export function carryCardDecisions(localBlocks, snapshotBlocks) {
 	const decided = new Map(
 		(Array.isArray(localBlocks) ? localBlocks : [])
-			.filter((b) => b?.type === "interaction" && b.decision)
+			.filter((b) => b?.type === "interaction" && (b.decision || b.draft != null))
 			.map((b) => [b.id, b])
 	);
 	if (!decided.size || !Array.isArray(snapshotBlocks)) return snapshotBlocks;
 	return snapshotBlocks.map((b) => {
 		const local = b?.type === "interaction" && b.status === "pending" && decided.get(b.id);
 		if (!local || !sameInterrupts(local, b)) return b;
-		const { decision, status, userResponse, endTime, isExpanded } = local;
-		return { ...b, decision, status, userResponse, endTime, isExpanded };
+		// An unsent answer on a grouped question survives the refresh too.
+		if (!local.decision) return { ...b, draft: local.draft };
+		const { decision, status, userResponse, endTime, isExpanded, draft } = local;
+		return { ...b, decision, status, userResponse, endTime, isExpanded, draft };
 	});
 }
 

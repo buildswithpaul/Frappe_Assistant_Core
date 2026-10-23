@@ -82,17 +82,16 @@
 		<div v-if="block.description" class="question-description" v-html="descriptionHtml"></div>
 		<div class="confirm-actions">
 			<button
-				class="ql-btn ql-btn-reject"
-				:class="{ selected: picked === 'no' }"
+				:class="[mode === 'group' ? 'pill' : 'ql-btn ql-btn-reject', { selected: picked === 'no' }]"
 				:aria-pressed="picked === 'no'"
 				:disabled="locked"
 				@click="respond('no')"
 			>
 				{{ __("No") }}
 			</button>
+			<!-- In a group, Yes and No look alike: a filled Yes would read as already chosen. -->
 			<button
-				class="ql-btn ql-btn-approve"
-				:class="{ selected: picked === 'yes' }"
+				:class="[mode === 'group' ? 'pill' : 'ql-btn ql-btn-approve', { selected: picked === 'yes' }]"
 				:aria-pressed="picked === 'yes'"
 				:disabled="locked"
 				@click="respond('yes')"

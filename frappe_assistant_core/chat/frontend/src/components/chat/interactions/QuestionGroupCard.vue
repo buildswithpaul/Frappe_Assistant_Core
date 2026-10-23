@@ -8,7 +8,13 @@
 		</header>
 
 		<ol class="qg-list">
-			<li v-for="(block, index) in blocks" :key="block.id" class="qg-item" :data-question-id="block.id">
+			<li
+				v-for="(block, index) in blocks"
+				:key="block.id"
+				class="qg-item"
+				:data-question-id="block.id"
+				:data-interaction-id="block.id"
+			>
 				<div v-if="!settled && openId === block.id" class="qg-open">
 					<span class="qg-num">{{ index + 1 }}</span>
 					<QuestionCard
@@ -16,7 +22,7 @@
 						:block="block"
 						:interaction-type="block.interactionType"
 						mode="group"
-						:initial-answer="answers[block.id] ?? null"
+						:initial-answer="block.draft ?? null"
 						:submitting="locked"
 						@respond="(answer) => record(block, answer)"
 					/>
@@ -63,9 +69,10 @@
 </template>
 
 <script setup>
-import { computed, nextTick, reactive, ref } from "vue";
+import { computed, nextTick, ref, watch } from "vue";
 import QuestionCard from "./QuestionCard.vue";
 import { answerText, plainQuestion, responsesFor } from "./questionGroup";
+import { useChatStore } from "@/stores/chatStore";
 import { __ } from "@/utils/i18n";
 
 const props = defineProps({
@@ -75,8 +82,9 @@ const props = defineProps({
 });
 const emit = defineEmits(["approve"]);
 
-// Answers are drafts held here until Send; nothing reaches the store before then.
-const answers = reactive({});
+const chatStore = useChatStore();
+// Answers are drafts on the cards (block.draft) until Send records them as decisions. The
+// composer fills the same drafts, so a typed answer joins the card like a tapped one.
 const rootEl = ref(null);
 const sendEl = ref(null);
 
@@ -85,8 +93,7 @@ const settled = computed(() => props.blocks.every((b) => b.status !== "pending")
 const locked = computed(() => props.submitting || props.blocks.every((b) => b.decision));
 
 function answerOf(block) {
-	if (block.id in answers) return answers[block.id];
-	return block.decision?.userResponse ?? block.userResponse;
+	return block.draft ?? block.decision?.userResponse ?? block.userResponse;
 }
 
 function isAnswered(block) {
@@ -116,8 +123,7 @@ function open(id) {
 	focusOpenQuestion();
 }
 
-function record(block, answer) {
-	answers[block.id] = answer;
+function openNextAfter(block) {
 	const index = props.blocks.indexOf(block);
 	const next = [...props.blocks.slice(index + 1), ...props.blocks.slice(0, index)].find(
 		(b) => !isAnswered(b),
@@ -125,11 +131,25 @@ function record(block, answer) {
 	open(next?.id ?? null);
 }
 
+function record(block, answer) {
+	chatStore.setQuestionDraft(block.id, answer);
+	openNextAfter(block);
+}
+
+// An answer typed in the composer can fill the open question; move on as a tap would.
+watch(
+	() => [openId.value, props.blocks.find((b) => b.id === openId.value)?.draft],
+	([id, draft], [previousId, previousDraft]) => {
+		const block = props.blocks.find((b) => b.id === id);
+		if (block && id === previousId && draft != null && draft !== previousDraft) openNextAfter(block);
+	},
+);
+
 function send() {
 	if (!allAnswered.value || locked.value) return;
 	for (const block of props.blocks) {
 		if (block.decision) continue;
-		emit("approve", block.id, responsesFor(block, answers[block.id]));
+		emit("approve", block.id, responsesFor(block, block.draft));
 	}
 }
 </script>

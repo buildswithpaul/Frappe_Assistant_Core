@@ -36,7 +36,7 @@
 		<div v-if="artifacts.approval" class="rail-approval">
 			<div class="rail-approval-head">
 				<span class="rail-approval-dot" aria-hidden="true"></span>
-				<span class="rail-approval-count">{{ artifacts.approval.kind === "question" ? __("1 question waiting") : __("1 approval waiting") }}</span>
+				<span class="rail-approval-count">{{ waitingLabel }}</span>
 			</div>
 			<div class="rail-approval-body">
 				<div class="rail-approval-title">{{ artifacts.approval.title }}</div>
@@ -108,6 +108,7 @@
 </template>
 
 <script setup>
+import { computed } from "vue";
 import ActivityTimeline from "./rail/ActivityTimeline.vue";
 import TaskList from "./rail/TaskList.vue";
 import { useChatStore } from "@/stores/chatStore";
@@ -115,7 +116,7 @@ import { __ } from "@/utils/i18n";
 
 const chatStore = useChatStore();
 
-defineProps({
+const props = defineProps({
 	artifacts: {
 		type: Object,
 		required: true,
@@ -145,6 +146,14 @@ defineProps({
 	},
 });
 defineEmits(["review-approval", "collapse"]);
+
+const waitingLabel = computed(() => {
+	const { kind, count = 1 } = props.artifacts.approval || {};
+	if (kind === "question") {
+		return count > 1 ? __("{0} questions waiting", [count]) : __("1 question waiting");
+	}
+	return count > 1 ? __("{0} approvals waiting", [count]) : __("1 approval waiting");
+});
 </script>
 
 <style scoped>
