@@ -146,9 +146,18 @@ def server_script_guard(
     }
 
 
+def _is_plain_name(value: Any) -> bool:
+    """Whether a record or DocType name is a non-empty string.
+
+    Anything else (a dict, a list) acts as a filter once it reaches the database, so it could
+    read another record's facts.
+    """
+    return isinstance(value, str) and bool(value)
+
+
 def _stored_record(doctype: str, name: Optional[str]) -> Optional[Dict[str, Any]]:
     """The stored record's fields, or None when it does not exist."""
-    if not name:
+    if not _is_plain_name(name):
         return None
     return frappe.db.get_value(doctype, name, "*", as_dict=True) or None
 
@@ -188,7 +197,7 @@ def _stored_doctype(name: str) -> Optional[Dict[str, Any]]:
     """
     kind = (
         frappe.db.get_value("DocType", name, ["issingle", "is_virtual", "istable"], as_dict=True)
-        if name
+        if _is_plain_name(name)
         else None
     )
     if not kind:
@@ -221,7 +230,7 @@ def _stored_facts_are_dormant(facts: Optional[Dict[str, Any]]) -> bool:
 
 
 def _stored_doctype_is_dormant(name: Optional[str]) -> bool:
-    return _stored_facts_are_dormant(_stored_doctype(name) if name else None)
+    return _stored_facts_are_dormant(_stored_doctype(name) if _is_plain_name(name) else None)
 
 
 def _doctype_write_is_dormant(creating: bool, data: Dict[str, Any], stored: Optional[Dict[str, Any]]) -> bool:
@@ -248,6 +257,14 @@ def _schema_default(doctype: str, field: str) -> int:
     return cint(meta_field.default) if meta_field else 0
 
 
+_NOT_PLAIN_DOCTYPE = "The target DocType is not a plain name"
+
+
+def _targets_are_plain(creating: bool, before: Any, after: Any, field: str) -> bool:
+    """Whether the target DocType, stored and after the write, is a plain name."""
+    return _is_plain_name(after(field)) and (creating or _is_plain_name(before(field)))
+
+
 def customisation_impact(tool_name: str, tool_input: Any) -> Dict[str, Any]:
     """Whether a customisation write changes nothing anyone but its builder can feel yet.
 
@@ -270,6 +287,9 @@ def customisation_impact(tool_name: str, tool_input: Any) -> Dict[str, Any]:
     creating = tool_name == "create_document"
     if tool_name == "delete_document":
         data = {}
+
+    if not creating and not _is_plain_name(name):
+        return {"dormant": False, "reason": "The record name is not a plain name"}
 
     stored = None if creating else _stored_record(doctype, name)
     if not creating and stored is None:
@@ -298,12 +318,16 @@ def customisation_impact(tool_name: str, tool_input: Any) -> Dict[str, Any]:
 
     if doctype in ("Custom Field", "Property Setter"):
         target_field = "dt" if doctype == "Custom Field" else "doc_type"
+        if not _targets_are_plain(creating, before, after, target_field):
+            return {"dormant": False, "reason": _NOT_PLAIN_DOCTYPE}
         stored_ok = creating or _stored_doctype_is_dormant(before(target_field))
         if stored_ok and _stored_doctype_is_dormant(after(target_field)):
             return {"dormant": True, "reason": f"{doctype} changes a DocType nobody else can reach yet"}
         return {"dormant": False, "reason": f"{doctype} changes a DocType other people can reach"}
 
     if doctype == "Custom DocPerm":
+        if not _targets_are_plain(creating, before, after, "parent"):
+            return {"dormant": False, "reason": _NOT_PLAIN_DOCTYPE}
         stored_ok = creating or (
             before("role") in SYSTEM_ROLES and _stored_doctype_is_dormant(before("parent"))
         )
