@@ -245,6 +245,89 @@ describe("ApprovalCard for customisations", () => {
 	});
 });
 
+describe("ApprovalCard switching code on", () => {
+	const switchBlock = (doctype, data, name = "REC-1") => ({
+		id: "t10",
+		tool_name: "update_document",
+		input: { doctype, name, data },
+		interrupts,
+	});
+	const goesLive = (wrapper) => wrapper.find('[data-test="goes-live"]');
+
+	it("Client Script switched on: fetches the stored script and shows it as going live", async () => {
+		currentCode.mockReset();
+		currentCode.mockResolvedValue({ script: "frappe.ui.form.on('Lead', {})" });
+		const wrapper = mount(ApprovalCard, { props: { block: switchBlock("Client Script", { enabled: 1 }) } });
+		await flushPromises();
+		expect(currentCode).toHaveBeenCalledWith("Client Script", "REC-1", ["script"]);
+		expect(goesLive(wrapper).text()).toBe("This goes live");
+		expect(wrapper.find(".code-preview pre").text()).toContain("frappe.ui.form.on('Lead', {})");
+		expect(wrapper.find(".diff-add").exists()).toBe(false);
+	});
+
+	it("Server Script switched on with disabled 0: shows the stored script as going live", async () => {
+		currentCode.mockReset();
+		currentCode.mockResolvedValue({ script: "frappe.db.delete('ToDo')" });
+		const wrapper = mount(ApprovalCard, { props: { block: switchBlock("Server Script", { disabled: "0" }) } });
+		await flushPromises();
+		expect(currentCode).toHaveBeenCalledWith("Server Script", "REC-1", ["script"]);
+		expect(goesLive(wrapper).text()).toBe("This goes live");
+		expect(wrapper.find(".code-preview pre").text()).toContain("frappe.db.delete('ToDo')");
+	});
+
+	it("Notification switched on: shows its stored condition and message", async () => {
+		currentCode.mockReset();
+		currentCode.mockResolvedValue({ condition: "doc.grand_total > 0", message: "<p>Hi {{ doc.name }}</p>" });
+		const wrapper = mount(ApprovalCard, { props: { block: switchBlock("Notification", { enabled: true }) } });
+		await flushPromises();
+		expect(currentCode).toHaveBeenCalledWith("Notification", "REC-1", ["condition", "message"]);
+		const text = wrapper.findAll(".code-preview pre").map((p) => p.text()).join("\n");
+		expect(text).toContain("doc.grand_total > 0");
+		expect(text).toContain("Hi {{ doc.name }}");
+	});
+
+	it("switch on that also changes the code keeps the diff and still says it goes live", async () => {
+		currentCode.mockReset();
+		currentCode.mockResolvedValue({ script: "a\nold\nc" });
+		const wrapper = mount(ApprovalCard, {
+			props: { block: switchBlock("Server Script", { disabled: 0, script: "a\nnew\nc" }) },
+		});
+		await flushPromises();
+		expect(currentCode).toHaveBeenCalledWith("Server Script", "REC-1", ["script"]);
+		expect(goesLive(wrapper).text()).toBe("This goes live");
+		expect(wrapper.findAll(".code-preview")).toHaveLength(1);
+		expect(wrapper.find(".diff-del").text()).toContain("old");
+		expect(wrapper.find(".diff-add").text()).toContain("new");
+	});
+
+	it("says the code could not be loaded when the stored code cannot be fetched", async () => {
+		currentCode.mockReset();
+		currentCode.mockRejectedValue(new Error("denied"));
+		const wrapper = mount(ApprovalCard, { props: { block: switchBlock("Client Script", { enabled: "1" }) } });
+		await flushPromises();
+		expect(goesLive(wrapper).text()).toBe("This goes live");
+		expect(wrapper.find('[data-test="goes-live-missing"]').text()).toBe(
+			"Couldn't load the code that goes live. Check it in Desk before approving.",
+		);
+	});
+
+	it("an update that does not switch on makes no extra fetch and shows no go-live label", async () => {
+		currentCode.mockReset();
+		currentCode.mockResolvedValue({});
+		for (const block of [
+			switchBlock("Client Script", { enabled: 0 }),
+			switchBlock("Server Script", { disabled: 1 }),
+			switchBlock("Notification", { enabled: "0" }),
+			switchBlock("ToDo", { enabled: 1 }),
+		]) {
+			const wrapper = mount(ApprovalCard, { props: { block } });
+			await flushPromises();
+			expect(goesLive(wrapper).exists()).toBe(false);
+		}
+		expect(currentCode).not.toHaveBeenCalled();
+	});
+});
+
 describe("ApprovalCard plain-language copy and trust", () => {
 	const customisationInterrupts = [{ id: "i1", reason: { risk: "customisation" } }];
 

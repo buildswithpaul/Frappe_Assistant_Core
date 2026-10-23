@@ -216,3 +216,24 @@ export function renameNotice(toolName, input) {
 		? __("Renaming isn't possible here. Only the other changes will be saved.")
 		: null;
 }
+
+const isOn = (value) => value === 1 || value === "1" || value === true;
+const isOff = (value) => value === 0 || value === "0" || value === false;
+
+// The switch each code doctype uses, and the stored fields that run once it is on.
+const SWITCHED_CODE = {
+	"Server Script": { switchedOn: (f) => isOff(f.disabled), fields: ["script"] },
+	"Client Script": { switchedOn: (f) => isOn(f.enabled), fields: ["script"] },
+	Notification: { switchedOn: (f) => isOn(f.enabled), fields: ["condition", "message"] },
+};
+
+/**
+ * The code fields an update switches on, so the card can show the stored code that goes live
+ * with it; an empty list when the write switches nothing on.
+ */
+export function goesLiveFields(toolName, input) {
+	if (baseToolName(toolName) !== "update_document" || !input || typeof input !== "object") return [];
+	const fields = flattenInput(input);
+	const entry = SWITCHED_CODE[fields.doctype];
+	return entry && entry.switchedOn(fields) ? entry.fields : [];
+}

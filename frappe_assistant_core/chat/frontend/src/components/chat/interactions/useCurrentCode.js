@@ -1,31 +1,38 @@
 import { ref } from "vue";
 import { api } from "@/api/client";
+import { goesLiveFields } from "./customisation";
 import { flattenInput, isCodeKey } from "./helpers";
 
 /**
  * Current stored values of the code fields an update_document call is about to change, so the
- * card can diff old against new. Stays null for any other tool and when the fetch fails, and
- * the card then shows the new code alone.
+ * card can diff old against new, plus the code an update switches on, so the user sees what
+ * goes live. `current` stays null for any other tool and when the fetch fails, and the card then
+ * shows the new code alone; `failed` tells a failed fetch apart from one still in flight.
  */
 export function useCurrentCode(getBlock) {
 	const current = ref(null);
+	const failed = ref(false);
 
 	async function load() {
 		const block = getBlock();
-		if (block.tool_name !== "update_document" || !block.input) return;
+		if (!block.input) return;
+		const live = goesLiveFields(block.tool_name, block.input);
+		if (block.tool_name !== "update_document" && !live.length) return;
 		const flat = flattenInput(block.input);
 		const { doctype, name } = flat;
 		if (typeof doctype !== "string" || typeof name !== "string") return;
-		const fields = Object.keys(flat).filter((k) => isCodeKey(k) && typeof flat[k] === "string");
+		const changed = Object.keys(flat).filter((k) => isCodeKey(k) && typeof flat[k] === "string");
+		const fields = [...new Set([...changed, ...live])];
 		if (!fields.length) return;
 		try {
 			current.value = await api.tools.currentCode(doctype, name, fields);
 		} catch {
 			current.value = null;
+			failed.value = true;
 		}
 	}
 
 	load();
 
-	return current;
+	return { current, failed };
 }
