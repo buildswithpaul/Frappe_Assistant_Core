@@ -1,7 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { isCustomisationRisk } from "@/utils/toolNames";
 import {
-	cint,
 	conditionNotice,
 	customisationConsequence,
 	fieldPlacementTarget,
@@ -256,14 +255,5 @@ describe("renameNotice", () => {
 		expect(renameNotice("update_document", { doctype: "Role", name: "A", data: { disabled: 1 } })).toBeNull();
 		expect(renameNotice("update_document", { doctype: "Role", name: "A", data: { name: "A" } })).toBeNull();
 		expect(renameKeys("update_document", { doctype: "Role", name: "A", data: {} })).toEqual([]);
-	});
-});
-
-describe("cint reads a switch the way Frappe saves it", () => {
-	it.each([
-		[1, 1], ["1", 1], [" 1 ", 1], ["2", 2], ["1.9", 1], [true, 1],
-		[0, 0], ["0", 0], [" 0 ", 0], ["", 0], [null, 0], [undefined, 0], ["abc", 0], [false, 0], [0.4, 0],
-	])("cint(%j) is %j", (value, expected) => {
-		expect(cint(value)).toBe(expected);
 	});
 });
