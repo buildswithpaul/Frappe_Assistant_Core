@@ -19,6 +19,12 @@
 				{{ showAllFields ? __("Show fewer fields ‹") : __("Show all fields ›") }}
 			</button>
 		</template>
+		<template v-if="liveFields.length">
+			<div class="goes-live" data-test="goes-live">{{ __("This goes live") }}</div>
+			<p v-if="liveMissing" class="goes-live-missing" data-test="goes-live-missing">
+				{{ __("Couldn't load the code that goes live. Check it in Desk before approving.") }}
+			</p>
+		</template>
 		<CodePreview
 			v-for="[key, value] in codeRows"
 			:key="key"
@@ -26,6 +32,13 @@
 			:code="value"
 			:language="codeLanguage(key, doctype)"
 			:previous="previousCode(key)"
+		/>
+		<CodePreview
+			v-for="[key, value] in storedLiveRows"
+			:key="`live-${key}`"
+			:label="formatKey(key)"
+			:code="value"
+			:language="codeLanguage(key, doctype)"
 		/>
 		<ChildTable v-for="[key, rows] in tableRows" :key="key" :label="key" :rows="rows" />
 		<ApprovalNotes :block="block" />
@@ -39,7 +52,7 @@ import ApprovalNotes from "./ApprovalNotes.vue";
 import ChildTable from "./ChildTable.vue";
 import ConditionValue from "./ConditionValue.vue";
 import CodePreview from "./CodePreview.vue";
-import { renameKeys, writesCondition } from "./customisation";
+import { goesLiveFields, renameKeys, writesCondition } from "./customisation";
 import { useCurrentCode } from "./useCurrentCode";
 import {
 	flattenInput,
@@ -58,7 +71,7 @@ const props = defineProps({
 });
 
 const showAllFields = ref(false);
-const currentCode = useCurrentCode(() => props.block);
+const { current: currentCode, failed: currentCodeFailed } = useCurrentCode(() => props.block);
 
 // A rename the tool will not make is a notice (ApprovalNotes), never a changed field.
 const flat = computed(() => {
@@ -87,6 +100,22 @@ const plainFields = computed(() =>
 const fieldSplit = computed(() => splitDetailFields(plainFields.value, 4));
 const visibleRows = computed(() =>
 	showAllFields.value ? [...fieldSplit.value.primary, ...fieldSplit.value.overflow] : fieldSplit.value.primary,
+);
+
+// Switching code on runs what is stored, so the card shows it, not just "Enabled 1".
+const liveFields = computed(() => goesLiveFields(props.block.tool_name, props.block.input));
+const unchangedLiveFields = computed(() =>
+	liveFields.value.filter((key) => !codeRows.value.some(([ck]) => ck === key)),
+);
+const storedLiveRows = computed(() =>
+	unchangedLiveFields.value
+		.map((key) => [key, currentCode.value?.[key]])
+		.filter(([, stored]) => typeof stored === "string" && stored !== ""),
+);
+const liveMissing = computed(
+	() =>
+		currentCodeFailed.value ||
+		(currentCode.value !== null && unchangedLiveFields.value.some((key) => currentCode.value[key] === undefined)),
 );
 
 // A condition expression is read as a sentence; the raw text stays behind a toggle.
@@ -132,6 +161,19 @@ function previousCode(key) {
 .field-more {
 	color: var(--ql-text-muted);
 	align-self: start;
+}
+
+.goes-live {
+	grid-column: 1 / -1;
+	margin-top: 4px;
+	font-weight: 600;
+	color: var(--ql-warning);
+}
+
+.goes-live-missing {
+	grid-column: 1 / -1;
+	margin: 0;
+	color: var(--ql-danger);
 }
 
 .field-toggle {
