@@ -14,6 +14,11 @@ describe("isInternalTool", () => {
 		expect(isInternalTool({ tool_name: "list_documents", isInternal: false })).toBe(false);
 	});
 
+	// Its card shows the plan; a tool row for the same call would repeat it.
+	it("keeps the build plan tool out of the tool rows", () => {
+		expect(isInternalTool({ tool_name: "propose_build_plan", isInternal: false })).toBe(true);
+	});
+
 	it("is the list the stream handlers flag blocks with", () => {
 		expect(STREAM_INTERNAL_TOOLS).toBe(INTERNAL_TOOLS);
 	});

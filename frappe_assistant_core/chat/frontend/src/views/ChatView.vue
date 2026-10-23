@@ -246,6 +246,7 @@ import { useUserStore } from "@/stores/userStore";
 import { useModelStore } from "@/stores/modelStore";
 import { useSuggestionStore } from "@/stores/suggestionStore";
 import { resolveComposerRoute } from "@/stores/chat/composerRouting";
+import { resolutionFor } from "@/stores/chat/interactionRegime";
 import { useToast } from "@/composables/useToast";
 import { __ } from "@/utils/i18n";
 import { storeToRefs } from "pinia";
@@ -675,15 +676,9 @@ async function handleApprovalResponse(blockId, responses) {
 
 	const firstResponse = responses[0].response;
 
-	let resolution;
-	if (firstResponse === "trust") resolution = "trusted";
-	else if (firstResponse === "rejected") resolution = "rejected";
-	else if (firstResponse === "approve") resolution = "approved";
-	else resolution = "answered"; // question-type responses (string, array, etc.)
-
 	await chatStore.submitInterruptDecision({
 		blockId,
-		resolution,
+		resolution: resolutionFor(firstResponse),
 		userResponse: firstResponse,
 		response: firstResponse,
 	});

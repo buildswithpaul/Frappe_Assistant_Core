@@ -24,6 +24,8 @@
 
 <script setup>
 import { computed } from "vue";
+import { isBuildPlanInteraction } from "@/stores/chat/interactionRegime";
+import { __ } from "@/utils/i18n";
 import { formatToolName } from "./helpers";
 
 const props = defineProps({
@@ -51,6 +53,10 @@ const resolvedLabel = computed(() => {
 	if (status === "aborted") {
 		const action = props.block.action || formatToolName(props.block.tool_name);
 		return isApproval ? `Stopped before: ${action}` : "Stopped by user";
+	}
+	if (isBuildPlanInteraction(props.interactionType)) {
+		if (status === "approved") return __("Plan approved");
+		if (props.block.userResponse) return __("Changes requested");
 	}
 	if (isApproval) {
 		const action = props.block.action || formatToolName(props.block.tool_name);

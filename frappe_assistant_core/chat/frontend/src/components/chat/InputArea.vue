@@ -103,7 +103,7 @@ import ComposerPlusMenu from "@/components/chat/ComposerPlusMenu.vue";
 import ThinkingLevelMenu from "@/components/chat/ThinkingLevelMenu.vue";
 import AttachedFilePreview from "@/components/chat/AttachedFilePreview.vue";
 import InputToolbar from "@/components/chat/InputToolbar.vue";
-import { keepComposerFocus } from "@/composables/useComposerFocus";
+import { keepComposerFocus, onComposerFocusRequest } from "@/composables/useComposerFocus";
 import {
 	useComposerAttachments,
 	UPLOAD_ACCEPT_ATTR,
@@ -155,6 +155,7 @@ const {
 
 const message = ref("");
 const textInput = ref(null);
+onComposerFocusRequest(() => textInput.value?.focus());
 const showMarkdownPreview = ref(false);
 const slashMenuRef = ref(null);
 

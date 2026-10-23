@@ -1,0 +1,133 @@
+:root {
+	--mk-bg: #ffffff;
+	--mk-surface: #f8f8f8;
+	--mk-border: #ededed;
+	--mk-text: #171717;
+	--mk-text-muted: #7c7c7c;
+	--mk-primary: #171717;
+	--mk-primary-text: #ffffff;
+	--mk-radius: 8px;
+	--mk-font: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+* {
+	box-sizing: border-box;
+}
+
+body {
+	margin: 0;
+	background: var(--mk-bg);
+	color: var(--mk-text);
+	font: 14px/1.5 var(--mk-font);
+}
+
+.mk-page {
+	padding: 16px;
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+}
+
+.mk-card {
+	background: var(--mk-bg);
+	border: 1px solid var(--mk-border);
+	border-radius: var(--mk-radius);
+	padding: 12px 16px;
+}
+
+.mk-btn {
+	display: inline-flex;
+	align-items: center;
+	padding: 6px 12px;
+	border: 1px solid var(--mk-border);
+	border-radius: var(--mk-radius);
+	background: var(--mk-surface);
+	color: var(--mk-text);
+	font: inherit;
+	cursor: default;
+}
+
+.mk-btn-primary {
+	background: var(--mk-primary);
+	border-color: var(--mk-primary);
+	color: var(--mk-primary-text);
+}
+
+.mk-badge {
+	display: inline-block;
+	padding: 1px 8px;
+	border-radius: 999px;
+	background: var(--mk-surface);
+	color: var(--mk-text-muted);
+	font-size: 12px;
+}
+
+.mk-table {
+	width: 100%;
+	border-collapse: collapse;
+}
+
+.mk-table th,
+.mk-table td {
+	padding: 8px 12px;
+	border-bottom: 1px solid var(--mk-border);
+	text-align: left;
+}
+
+.mk-table th {
+	color: var(--mk-text-muted);
+	font-weight: 500;
+	font-size: 12px;
+}
+
+.mk-field {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+}
+
+.mk-field label {
+	color: var(--mk-text-muted);
+	font-size: 12px;
+}
+
+.mk-field input,
+.mk-field select,
+.mk-field textarea {
+	padding: 6px 10px;
+	border: 1px solid var(--mk-border);
+	border-radius: var(--mk-radius);
+	background: var(--mk-surface);
+	font: inherit;
+}
+
+.mk-tabs {
+	display: flex;
+	gap: 16px;
+	border-bottom: 1px solid var(--mk-border);
+}
+
+.mk-tabs > * {
+	padding: 6px 0;
+	color: var(--mk-text-muted);
+}
+
+.mk-tabs > .active {
+	color: var(--mk-text);
+	border-bottom: 2px solid var(--mk-text);
+}
+
+.mk-stat {
+	display: flex;
+	flex-direction: column;
+}
+
+.mk-stat > :first-child {
+	color: var(--mk-text-muted);
+	font-size: 12px;
+}
+
+.mk-stat > :last-child {
+	font-size: 24px;
+	font-weight: 600;
+}

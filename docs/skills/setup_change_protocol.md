@@ -32,10 +32,20 @@ Every other setup skill (`add-custom-field`, `server-script`, `client-script`, `
    - The **chart of accounts template**, the **fiscal year dates** and the **stock valuation method** can't be changed once transactions exist. The same goes for an item's batch/serial tracking once it has stock transactions.
    - An activated **Workflow** immediately stamps a state on every existing document of that type and changes who can edit them.
    - Deleting a **Custom Field** removes it from the form but keeps its database column and values, so a later field with the same name picks the old values up.
-5. **Confirm once, then wait.** `ask_user` with `confirm`, stating the count and scope: "Create these 4 records and change 1 setting?" Wait for the answer before any write, including a dry run. No answer is not a yes. The per-write approval cards still appear after that, and for a customisation (field, script, workflow, report, print format, notification) "Don't ask again" never applies, so expect a card for every write. This confirmation is for the plan as a whole.
+5. **Confirm once, then wait.** `ask_user` with `confirm`, stating the count and scope: "Create these 4 records and change 1 setting?" Wait for the answer before any write, including a dry run. No answer is not a yes. The per-write approval cards still appear after that, and for a customisation (field, script, workflow, report, print format, notification) "Don't ask again" never applies, so expect a card for every write unless it is on an approved build plan. This confirmation is for the plan as a whole; a build plan card replaces it (see below).
 6. **Dry-run each create.** Call `create_document` with `validate_only: true`. **It only runs the doctype's own `validate()`.** It does *not* check mandatory fields, whether linked records exist, or duplicate names, so the real insert can still fail. Check links yourself beforehand (`search_documents` with `purpose: "link_value"`). `update_document` has no dry run at all.
 7. **Execute in order, one write at a time.** Stop at the first failure. Don't improvise a workaround write that isn't in the plan — report what failed and what's still pending, and re-plan with the user.
 8. **Close with the change log**: the same table, now with a Result column and a link to every record. This is the user's undo list, so keep it accurate.
+
+## Plan before a multi-record setup
+
+When you have the `propose_build_plan` tool, call it before creating or changing two or more setup records.
+List every change, mark the ones that go live, and wait for the approval. Writes the plan lists
+then run without a card each; anything else still asks. The plan card then stands in for the
+confirmation in step 5. Give each entry the `name` Frappe will give the record (a Report's
+`report_name`, a Workflow's `workflow_name`, a Role's `role_name`, the name you set for a script),
+or for a Custom Field, Property Setter or Custom DocPerm its `identity` fields. A record Frappe
+names by hash or series cannot be listed, so its write still asks.
 
 ## Gotchas
 

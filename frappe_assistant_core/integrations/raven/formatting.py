@@ -74,6 +74,11 @@ def _describe(tool_name: str, tool_input: dict) -> str:
     name = tool_input.get("name") or tool_input.get("docname") or ""
     if tool_name == "ask_user":
         return _("FACO has a question for you")
+    if tool_name == "propose_build_plan":
+        count = len(tool_input.get("changes") or [])
+        if count == 1:
+            return _("FACO has a build plan for you to review (1 change)")
+        return _("FACO has a build plan for you to review ({0} changes)").format(count)
     if tool_name == "create_document" and doctype:
         return _("FACO would like to create a {0}").format(doctype)
     if tool_name in ("update_document", "delete_document", "document_action") and doctype:

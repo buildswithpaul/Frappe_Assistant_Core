@@ -116,6 +116,7 @@ import { useUserStore } from "@/stores/userStore";
 import { useModelStore } from "@/stores/modelStore";
 import { useSpotlightStore } from "@/stores/spotlightStore";
 import { resolveComposerRoute } from "@/stores/chat/composerRouting";
+import { resolutionFor } from "@/stores/chat/interactionRegime";
 import { useMessageFileUpload } from "@/composables/useMessageFileUpload";
 import { useAutoScroll } from "@/composables/useAutoScroll";
 import { reconnectSocket } from "@/composables/useStreaming";
@@ -215,9 +216,12 @@ async function onSend({ message, files = [] }) {
 async function onDecision(blockId, responses) {
 	if (!responses?.length) return;
 	const first = responses[0].response;
-	const resolution =
-		first === "trust" ? "trusted" : first === "rejected" ? "rejected" : first === "approve" ? "approved" : "answered";
-	await chatStore.submitInterruptDecision({ blockId, resolution, userResponse: first, response: first });
+	await chatStore.submitInterruptDecision({
+		blockId,
+		resolution: resolutionFor(first),
+		userResponse: first,
+		response: first,
+	});
 }
 
 const reconnecting = ref(false);

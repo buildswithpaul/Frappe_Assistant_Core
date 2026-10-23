@@ -7,7 +7,8 @@
 
 import { formatToolName, flattenInput } from "@/components/chat/interactions/helpers.js";
 import { buildTimelineRows } from "@/composables/useActivityTimeline.js";
-import { isApprovalInteraction } from "@/stores/chat/interactionRegime";
+import { planOf } from "@/components/chat/interactions/buildPlan.js";
+import { isApprovalInteraction, isBuildPlanInteraction } from "@/stores/chat/interactionRegime";
 import { appliesTo, isDryRun, safeUrl, toolFailed, toolResult } from "@/utils/toolResult";
 import { __ } from "@/utils/i18n";
 // formatToolName is still used for the approval card title (an interaction, not
@@ -68,6 +69,17 @@ function plainText(markdown) {
 		.trim();
 }
 
+function cardKind(block) {
+	if (isBuildPlanInteraction(block.interactionType)) return "build_plan";
+	return isApprovalInteraction(block.interactionType) ? "approval" : "question";
+}
+
+function cardTitle(block, kind) {
+	if (kind === "build_plan") return planOf(block).summary || __("Build plan");
+	if (kind === "question") return plainText(block.question).slice(0, QUESTION_TITLE_MAX) || __("Question");
+	return formatToolName(block.tool_name);
+}
+
 /**
  * Derive the rail content for a single assistant turn.
  * @param {Array} blocks
@@ -83,18 +95,18 @@ export function deriveArtifacts(blocks) {
 	for (const b of safe) {
 		if (b.type === "interaction" && b.status === "pending") {
 			const flat = b.input ? flattenInput(b.input) : {};
-			const isQuestion = !isApprovalInteraction(b.interactionType);
+			const kind = cardKind(b);
 			approval = {
 				id: b.id,
-				kind: isQuestion ? "question" : "approval",
+				kind,
 				// Cards of this kind waiting together, e.g. questions FACO asked at once.
-				count: waiting.filter((w) => isApprovalInteraction(w.interactionType) !== isQuestion).length,
-				title: isQuestion
-					? plainText(b.question).slice(0, QUESTION_TITLE_MAX) || __("Question")
-					: formatToolName(b.tool_name),
-				subtitle: isQuestion ? "" : [flat.name || flat.docname || flat.title, flat.grand_total || flat.amount || flat.total]
-					.filter(Boolean)
-					.join(" · "),
+				count: waiting.filter((w) => cardKind(w) === kind).length,
+				title: cardTitle(b, kind),
+				subtitle: kind === "approval"
+					? [flat.name || flat.docname || flat.title, flat.grand_total || flat.amount || flat.total]
+						.filter(Boolean)
+						.join(" · ")
+					: "",
 			};
 			break; // one approval shown at a time
 		}

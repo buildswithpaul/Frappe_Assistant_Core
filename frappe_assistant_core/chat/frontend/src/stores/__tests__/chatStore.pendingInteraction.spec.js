@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { setActivePinia, createPinia } from "pinia";
 import { useChatStore } from "@/stores/chatStore";
 import { api } from "@/api/client";
+import { resolveComposerRoute } from "@/stores/chat/composerRouting";
+import { PLAN_ID, planBlock } from "@/components/chat/interactions/buildPlan.testdata";
 
 vi.mock("@/api/client", () => ({
 	api: { chat: { getMessages: vi.fn(), cancelStream: vi.fn().mockResolvedValue({}) } },
@@ -103,6 +105,43 @@ describe("pendingInteractionBlock", () => {
 				]),
 			})
 		);
+	});
+
+	it("answers a waiting build plan with the composer text, which leaves it unapproved", async () => {
+		// The user types feedback instead of approving: the model gets the text as the answer.
+		const { call } = await import("frappe-ui");
+		store.currentSessionId = "s1";
+		store.messages = [{ role: "assistant", message_id: "m1", blocks: [planBlock()] }];
+
+		expect(resolveComposerRoute({ isStreaming: false, pendingInteraction: store.pendingInteractionBlock })).toBe(
+			"answer"
+		);
+		await store.answerPendingQuestion("Use a Select field");
+
+		expect(call).toHaveBeenCalledWith(
+			"frappe_assistant_core.chat.api.chat.resume_interrupt",
+			expect.objectContaining({
+				interrupt_response: JSON.stringify([{ interruptId: "int-plan", response: "Use a Select field" }]),
+			})
+		);
+		expect(store.messages[0].blocks[0].status).toBe("answered");
+	});
+
+	it("sends a build plan approval as the object the card made", async () => {
+		const { call } = await import("frappe-ui");
+		store.currentSessionId = "s1";
+		store.messages = [{ role: "assistant", message_id: "m1", blocks: [planBlock()] }];
+		const response = { decision: "approve", plan_id: PLAN_ID };
+
+		await store.submitInterruptDecision({
+			blockId: "toolu_plan",
+			resolution: "approved",
+			userResponse: response,
+			response,
+		});
+
+		const payload = call.mock.calls.at(-1)[1];
+		expect(JSON.parse(payload.interrupt_response)).toEqual([{ interruptId: "int-plan", response }]);
 	});
 
 	it("abortPendingInteraction calls cancelStream for the current session", async () => {
