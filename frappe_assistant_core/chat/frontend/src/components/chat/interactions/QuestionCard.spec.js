@@ -106,3 +106,31 @@ describe("QuestionCard markdown", () => {
 	});
 });
 
+
+describe("QuestionCard keeps the picked answer visible", () => {
+	// Redmine #34474: tapping an option locked the card and greyed out every pill, the chosen
+	// one included, so nothing showed what was picked until the answer came back.
+	it("marks the tapped option while the card is locked", async () => {
+		const wrapper = mountSingleSelect();
+		await wrapper.findAll(".pill")[0].trigger("click");
+		await wrapper.setProps({ submitting: true });
+
+		const picked = wrapper.findAll(".pill")[0];
+		expect(picked.classes()).toContain("selected");
+		expect(picked.attributes("aria-pressed")).toBe("true");
+		expect(wrapper.findAll(".pill")[1].classes()).not.toContain("selected");
+	});
+
+	it("marks the recorded answer while other questions in the turn are still open", () => {
+		const block = { ...singleSelectBlock, decision: { response: "December 25-26, 2025" } };
+		const wrapper = mountSingleSelect(block);
+		expect(wrapper.findAll(".pill")[0].classes()).toContain("selected");
+	});
+
+	it("says Done instead of Send inside a group", async () => {
+		const wrapper = mount(QuestionCard, {
+			props: { block: { question: "Name?" }, interactionType: "text_input", mode: "group" },
+		});
+		expect(wrapper.find(".text-input-row button").text()).toBe("Done");
+	});
+});

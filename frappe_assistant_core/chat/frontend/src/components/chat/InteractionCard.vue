@@ -30,6 +30,7 @@ import { isApprovalInteraction } from "@/stores/chat/interactionRegime";
 import { findActiveMessage } from "@/stores/chat/utils";
 import ApprovalCard from "./interactions/ApprovalCard.vue";
 import QuestionCard from "./interactions/QuestionCard.vue";
+import { responsesFor } from "./interactions/questionGroup";
 import ResolvedIndicator from "./interactions/ResolvedIndicator.vue";
 
 const props = defineProps({
@@ -68,10 +69,6 @@ const batchInfo = computed(() => {
 });
 
 function handleRespond(answer) {
-	const responses = (props.block.interrupts || []).map((i) => ({
-		interruptId: i.id,
-		response: answer,
-	}));
-	emit("approve", props.block.id, responses);
+	emit("approve", props.block.id, responsesFor(props.block, answer));
 }
 </script>

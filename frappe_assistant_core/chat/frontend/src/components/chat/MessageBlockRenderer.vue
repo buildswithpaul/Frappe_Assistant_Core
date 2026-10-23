@@ -13,6 +13,14 @@
 				@toggle-block="(msgIdx, blockId) => $emit('toggleBlock', msgIdx, blockId)"
 			/>
 
+			<!-- Questions FACO asked together, answered and sent as one card -->
+			<QuestionGroupCard
+				v-else-if="segment.type === 'question_group'"
+				:blocks="segment.blocks"
+				:submitting="isResuming"
+				@approve="(blockId, responses) => $emit('approve', blockId, responses)"
+			/>
+
 			<!-- Interaction Card: HITL approval + LLM questions -->
 			<InteractionCard
 				v-else-if="segment.type === 'interaction'"
@@ -98,6 +106,8 @@ import { computed, reactive, ref, watch, onMounted } from "vue";
 import ProcessingCard from "./ProcessingCard.vue";
 import ProcessingIndicator from "./ProcessingIndicator.vue";
 import InteractionCard from "./InteractionCard.vue";
+import QuestionGroupCard from "./interactions/QuestionGroupCard.vue";
+import { findQuestionGroups } from "./interactions/questionGroup";
 import SourcesBlock from "./SourcesBlock.vue";
 import GeneratedDocumentsBlock from "./GeneratedDocumentsBlock.vue";
 import WorkflowCreatedBlock from "./WorkflowCreatedBlock.vue";
@@ -188,9 +198,18 @@ const groupedContent = computed(() => {
 	// Set once a group has taken an approval receipt: siblings of that approval
 	// still belong to it, but the next unit of work starts a new card.
 	let sealedByApproval = false;
+	const questionGroups = findQuestionGroups(props.blocks);
+	const grouped = new Set([...questionGroups.values()].flat().map((b) => b.id));
 
 	for (const block of props.blocks) {
-		if (block.type === "interaction") {
+		if (block.type === "interaction" && grouped.has(block.id)) {
+			// The whole group renders where its first question sits, waiting or answered.
+			if (questionGroups.has(block.id)) {
+				currentGroup = null;
+				sealedByApproval = false;
+				segments.push({ type: "question_group", id: `qg_${block.id}`, blocks: questionGroups.get(block.id) });
+			}
+		} else if (block.type === "interaction") {
 			if (block.status === "pending") {
 				// Pending interactions render at top level — prominent and actionable
 				currentGroup = null;
