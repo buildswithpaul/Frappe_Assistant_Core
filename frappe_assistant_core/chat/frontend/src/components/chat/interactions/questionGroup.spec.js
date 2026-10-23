@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 
+import { planBlock } from "./buildPlan.testdata";
 import { answerText, findQuestionGroups } from "./questionGroup";
 
 function question(id, status = "pending", extra = {}) {
@@ -39,6 +40,12 @@ describe("findQuestionGroups", () => {
 	it("never pulls an approval into a group", () => {
 		const groups = findQuestionGroups([question("q1"), approval("a1"), question("q2"), question("q3")]);
 		expect(idsOf(groups)).toEqual([["q2", "q3"]]);
+	});
+
+	it("never folds a build plan into a group", () => {
+		const plan = { ...planBlock(), id: "p1" };
+		expect(findQuestionGroups([question("q1"), plan]).size).toBe(0);
+		expect(idsOf(findQuestionGroups([plan, question("q2"), question("q3")]))).toEqual([["q2", "q3"]]);
 	});
 
 	it("splits groups at prose", () => {
