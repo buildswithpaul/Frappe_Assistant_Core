@@ -25,6 +25,7 @@ from frappe_assistant_core.utils.customisation import SYSTEM_ROLES, _stored_doct
 
 STORED_DOCTYPE = "frappe_assistant_core.utils.customisation._stored_doctype"
 STORED_RECORD = "frappe_assistant_core.utils.customisation._stored_record"
+DB_COUNT = "frappe.database.database.Database.count"
 IS_CUSTOM = "frappe_assistant_core.utils.customisation._is_custom"
 DORMANT_FACTS = {"custom": 1, "roles": ["System Manager"], "custom_roles": [], "records": 0}
 
@@ -177,12 +178,19 @@ class TestCustomisationImpact(BaseAssistantTest):
         self.assertTrue(_impact("create_document", "Client Script")["dormant"])
         self.assertFalse(_impact("create_document", "Server Script")["dormant"])
 
+    def test_create_with_the_flag_sent_as_none_uses_the_schema_default(self):
+        # Frappe fills a None field with its schema default on insert, so this saves as enabled
+        self.assertFalse(_impact("create_document", "Notification", {"enabled": None})["dormant"])
+        self.assertTrue(_impact("create_document", "Client Script", {"enabled": None})["dormant"])
+
     def test_single_doctype_is_never_dormant_and_is_not_counted(self):
         # Production reaches a custom Single when a builder saves one; System Settings stands in
         # (no custom Single on this site) with only the custom check forced on.
         with patch(IS_CUSTOM, autospec=True, return_value=1):
-            r = _impact("update_document", "DocType", {"description": "x"}, "System Settings")
+            with patch(DB_COUNT, autospec=True) as count:
+                r = _impact("update_document", "DocType", {"description": "x"}, "System Settings")
         self.assertFalse(r["dormant"])
+        count.assert_not_called()
 
     def test_real_role_and_record_reads_run_for_a_custom_doctype(self):
         # ToDo stands in for a custom DocType (none on this site; creating one commits DDL)
