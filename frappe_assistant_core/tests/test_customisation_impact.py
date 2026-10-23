@@ -27,7 +27,7 @@ STORED_DOCTYPE = "frappe_assistant_core.utils.customisation._stored_doctype"
 STORED_RECORD = "frappe_assistant_core.utils.customisation._stored_record"
 DB_COUNT = "frappe.database.database.Database.count"
 IS_CUSTOM = "frappe_assistant_core.utils.customisation._is_custom"
-DORMANT_FACTS = {"custom": 1, "roles": ["System Manager"], "custom_roles": [], "records": 0}
+DORMANT_FACTS = {"custom": 1, "roles": ["System Manager"], "custom_roles": [], "records": 0, "in_use": False}
 
 
 def _impact(tool: str, doctype: str, data: dict | None = None, name: str | None = None) -> dict:
@@ -231,12 +231,45 @@ class TestCustomisationImpact(BaseAssistantTest):
             r = _impact("update_document", "DocType", {"permissions": [{"role": "System Manager"}]}, "ToDo")
         self.assertFalse(r["dormant"])
 
+    # Final review: a DocType other forms use
+
+    def test_update_of_a_stored_custom_child_table_is_live(self):
+        # User Workspaces stands in for a custom child table: production holds one with no
+        # DocPerm rows (Frappe skips them for child tables) and no rows until a parent form saves.
+        # Only the custom check and the record count are forced; istable is read for real.
+        with patch(IS_CUSTOM, autospec=True, return_value=1), patch(DB_COUNT, autospec=True, return_value=0):
+            r = _impact("update_document", "DocType", {"description": "x"}, "User Workspaces")
+        self.assertFalse(r["dormant"])
+
+    def test_delete_of_a_doctype_a_table_field_embeds_is_live(self):
+        # Has Role is embedded by Table fields on User and others, as a custom child table is once
+        # a builder adds it to a live form; deleting it would cascade to those forms.
+        with patch(IS_CUSTOM, autospec=True, return_value=1), patch(DB_COUNT, autospec=True, return_value=0):
+            r = _impact("delete_document", "DocType", name="Has Role")
+        self.assertFalse(r["dormant"])
+
+    def test_custom_field_on_a_doctype_other_forms_link_to_is_live(self):
+        # Role Profile stands in for a custom DocType with only System Manager rows and no records
+        # that a Link field on another form (User) already points at.
+        with patch(IS_CUSTOM, autospec=True, return_value=1), patch(DB_COUNT, autospec=True, return_value=0):
+            r = _impact("create_document", "Custom Field", {"dt": "Role Profile", "fieldname": "x"})
+        self.assertFalse(r["dormant"])
+
+    def test_real_reference_lookup_runs_for_a_linked_doctype(self):
+        # Module Profile: standard, System Manager only, linked from User. Only the custom check
+        # and the record count are forced; the reference lookup runs against the real schema.
+        with patch(IS_CUSTOM, autospec=True, return_value=1), patch(DB_COUNT, autospec=True, return_value=0):
+            facts = _stored_doctype("Module Profile")
+            r = _impact("update_document", "DocType", {"description": "x"}, "Module Profile")
+        self.assertTrue(facts["in_use"])
+        self.assertFalse(r["dormant"])
+
     @staticmethod
     def _dormant_only(*names):
         return lambda name: (
             dict(DORMANT_FACTS)
             if name in names
-            else {"custom": 0, "roles": [], "custom_roles": [], "records": 0}
+            else {"custom": 0, "roles": [], "custom_roles": [], "records": 0, "in_use": False}
         )
 
 
