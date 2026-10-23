@@ -162,6 +162,27 @@ class TestCustomisationImpact(BaseAssistantTest):
         self.assertFalse(_impact("get_document", "Server Script", {"disabled": 1})["dormant"])
         self.assertFalse(_impact("create_document", "ToDo", {"disabled": 1})["dormant"])
 
+    def test_a_name_that_is_not_a_plain_string_is_not_dormant(self):
+        # A dict reaches get_value as a filter, so it would judge another record's state. Tool
+        # input is model-written JSON, so production can receive this shape.
+        for bad in ({"disabled": 1}, ["x"], 5, ""):
+            result = _impact("update_document", "Server Script", {"disabled": 1}, bad)
+            self.assertFalse(result["dormant"], bad)
+            self.assertNotIn("disabled", result["reason"])
+
+    def test_a_target_doctype_that_is_not_a_plain_string_is_not_dormant(self):
+        # The stored-facts patch would call any value dormant, so only the plain-name check can
+        # make these live. Data comes from model-written JSON.
+        with patch(STORED_DOCTYPE, autospec=True, return_value=dict(DORMANT_FACTS)):
+            for doctype, field in (
+                ("Custom Field", "dt"),
+                ("Property Setter", "doc_type"),
+                ("Custom DocPerm", "parent"),
+            ):
+                data = {field: {"custom": 1}, "role": "System Manager"}
+                result = _impact("create_document", doctype, data)
+                self.assertFalse(result["dormant"], doctype)
+
     def test_reason_never_echoes_stored_values(self):
         data = {"custom": 1, "permissions": [{"role": "Secret Role"}]}
         reason = _impact("create_document", "DocType", data)["reason"]
