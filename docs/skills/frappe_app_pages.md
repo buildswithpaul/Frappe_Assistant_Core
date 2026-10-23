@@ -35,6 +35,18 @@ record on the page — never an ERPNext Lead or Contact.
 - Use `get_insights_dashboard` / `get_insights_chart` (when the page line names them). `get_document` on a dashboard returns its layout JSON, not its numbers.
 - Always say the numbers use the dashboard's default filters, and offer to apply the user's filters.
 
+## Building pages and screens
+
+When you have the `propose_build_plan` tool and the user asks for a page, workspace or any screen
+that takes more than one record to build, call it before the first write instead of asking in text.
+
+- List every record the build creates or changes, one entry each, with its action, and set `goes_live`
+  to true for what users see at once. A script or similar record you create switched off is not live.
+- Send a `mockup_html` for each screen, written with the classes in the `mockup-kit` skill. Show the
+  layout, not real data.
+- Wait for the approval. Writes the plan lists then run without a card each; anything you add later
+  asks as usual, so propose a new plan if the scope grows.
+
 ## Any other app
 
 Say what you can see (the app, not the screen) and work from the records the user names.
