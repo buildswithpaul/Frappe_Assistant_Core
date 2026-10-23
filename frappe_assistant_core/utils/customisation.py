@@ -247,7 +247,7 @@ def customisation_impact(tool_name: str, tool_input: Any) -> Dict[str, Any]:
 
     if doctype in _SWITCH_FIELDS:
         field, off = _SWITCH_FIELDS[doctype]
-        value = after(field) if not creating or field in data else _schema_default(doctype, field)
+        value = _schema_default(doctype, field) if creating and data.get(field) is None else after(field)
         stored_off = creating or cint(before(field)) == off
         if stored_off and cint(value) == off:
             return {"dormant": True, "reason": f"{doctype} is switched off"}
