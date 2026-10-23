@@ -8,8 +8,10 @@
 				v-for="option in block.options"
 				:key="option"
 				class="pill"
+				:class="{ selected: picked === option }"
+				:aria-pressed="picked === option"
 				:disabled="locked"
-				@click="emit('respond', option)"
+				@click="respond(option)"
 			>
 				{{ option }}
 			</button>
@@ -21,7 +23,7 @@
 				:disabled="locked"
 				@click="showCustom = true"
 			>
-				Type a different answer
+				{{ __("Type a different answer") }}
 			</button>
 		</div>
 		<div v-if="showCustom" class="text-input-row custom-input-row">
@@ -31,15 +33,15 @@
 				type="text"
 				class="text-field"
 				:disabled="locked"
-				:placeholder="block.placeholder || 'Type your answer…'"
-				@keydown.enter="!locked && textValue.trim() && emit('respond', textValue.trim())"
+				:placeholder="block.placeholder || __('Type your answer…')"
+				@keydown.enter="!locked && textValue.trim() && respond(textValue.trim())"
 			/>
 			<button
 				class="ql-btn ql-btn-approve"
 				:disabled="!textValue.trim() || locked"
-				@click="emit('respond', textValue.trim())"
+				@click="respond(textValue.trim())"
 			>
-				Send
+				{{ sendLabel }}
 			</button>
 		</div>
 	</div>
@@ -68,9 +70,9 @@
 		<button
 			class="ql-btn ql-btn-approve submit-btn"
 			:disabled="selectedOptions.length === 0 || locked"
-			@click="emit('respond', selectedOptions)"
+			@click="respond([...selectedOptions])"
 		>
-			Submit{{ selectedOptions.length ? ` (${selectedOptions.length})` : "" }}
+			{{ multiLabel }}
 		</button>
 	</div>
 
@@ -79,11 +81,23 @@
 		<div class="question-text" v-html="questionHtml"></div>
 		<div v-if="block.description" class="question-description" v-html="descriptionHtml"></div>
 		<div class="confirm-actions">
-			<button class="ql-btn ql-btn-reject" :disabled="locked" @click="emit('respond', 'no')">
-				No
+			<button
+				class="ql-btn ql-btn-reject"
+				:class="{ selected: picked === 'no' }"
+				:aria-pressed="picked === 'no'"
+				:disabled="locked"
+				@click="respond('no')"
+			>
+				{{ __("No") }}
 			</button>
-			<button class="ql-btn ql-btn-approve" :disabled="locked" @click="emit('respond', 'yes')">
-				Yes
+			<button
+				class="ql-btn ql-btn-approve"
+				:class="{ selected: picked === 'yes' }"
+				:aria-pressed="picked === 'yes'"
+				:disabled="locked"
+				@click="respond('yes')"
+			>
+				{{ __("Yes") }}
 			</button>
 		</div>
 	</div>
@@ -98,15 +112,15 @@
 				type="text"
 				class="text-field"
 				:disabled="locked"
-				:placeholder="block.placeholder || 'Type your answer...'"
-				@keydown.enter="!locked && textValue.trim() && emit('respond', textValue.trim())"
+				:placeholder="block.placeholder || __('Type your answer…')"
+				@keydown.enter="!locked && textValue.trim() && respond(textValue.trim())"
 			/>
 			<button
 				class="ql-btn ql-btn-approve"
 				:disabled="!textValue.trim() || locked"
-				@click="emit('respond', textValue.trim())"
+				@click="respond(textValue.trim())"
 			>
-				Send
+				{{ sendLabel }}
 			</button>
 		</div>
 	</div>
@@ -115,11 +129,17 @@
 <script setup>
 import { computed, nextTick, ref, watch } from "vue";
 import { renderMarkdown } from "@/utils/markdown";
+import { __ } from "@/utils/i18n";
 
 const props = defineProps({
 	block: { type: Object, required: true },
 	interactionType: { type: String, required: true },
 	submitting: { type: Boolean, default: false },
+	// "group": one question inside a QuestionGroupCard, where an answer is a draft until
+	// the group is sent, so the buttons read "Done".
+	mode: { type: String, default: "single" },
+	// The answer to show selected when a grouped question is reopened with Change.
+	initialAnswer: { type: [String, Array], default: null },
 });
 const emit = defineEmits(["respond"]);
 
@@ -130,11 +150,30 @@ const locked = computed(() => props.submitting || Boolean(props.block.decision))
 const questionHtml = computed(() => renderMarkdown(String(props.block.question ?? "")));
 const descriptionHtml = computed(() => renderMarkdown(String(props.block.description ?? "")));
 
-const selectedOptions = ref([]);
-const textValue = ref("");
+const startAnswer = props.initialAnswer ?? props.block.decision?.response ?? null;
+const isCannedOption = (answer) => (props.block.options || []).includes(answer);
 
-// single_select free-text escape hatch.
-const showCustom = ref(false);
+// The answer the user picked stays marked, so a locked card still shows what was chosen.
+const picked = ref(typeof startAnswer === "string" ? startAnswer : null);
+const selectedOptions = ref(Array.isArray(startAnswer) ? [...startAnswer] : []);
+const textValue = ref(typeof startAnswer === "string" && !isCannedOption(startAnswer) ? startAnswer : "");
+
+const sendLabel = computed(() => (props.mode === "group" ? __("Done") : __("Send")));
+const multiLabel = computed(() => {
+	if (props.mode === "group") return __("Done");
+	const count = selectedOptions.value.length;
+	return count ? __("Submit ({0})", [count]) : __("Submit");
+});
+
+function respond(answer) {
+	picked.value = typeof answer === "string" ? answer : null;
+	emit("respond", answer);
+}
+
+// single_select free-text escape hatch, open when the answer being changed was typed.
+const showCustom = ref(
+	props.interactionType === "single_select" && typeof startAnswer === "string" && !isCannedOption(startAnswer),
+);
 const customInputEl = ref(null);
 watch(showCustom, (open) => {
 	if (open) nextTick(() => customInputEl.value?.focus());
@@ -200,6 +239,24 @@ watch(showCustom, (open) => {
 
 .pill:active {
 	transform: scale(0.97);
+}
+
+/* The picked answer stays filled, including while the card is locked. */
+.pill.selected,
+.pill.selected:disabled {
+	background: var(--ql-accent);
+	border-color: var(--ql-accent);
+	color: #fff;
+	opacity: 1;
+}
+
+.pill.selected::before {
+	content: "✓ ";
+}
+
+.pill:disabled:not(.selected) {
+	opacity: 0.45;
+	cursor: default;
 }
 
 /* Secondary affordance — dashed outline marks it as "write your own" rather
@@ -302,6 +359,11 @@ watch(showCustom, (open) => {
 .ql-btn:disabled {
 	opacity: 0.4;
 	cursor: not-allowed;
+}
+
+.ql-btn.selected:disabled {
+	opacity: 1;
+	box-shadow: 0 0 0 2px var(--ql-accent-soft);
 }
 
 .ql-btn-approve {
