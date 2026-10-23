@@ -343,7 +343,7 @@ describe("ApprovalCard switching code on", () => {
 		expect(wrapper.find(".code-preview pre").text()).toContain("Order {{ doc.name }} approved");
 	});
 
-	it.each([[""], [null], [" 0 "], [0.4]])("Server Script disabled %j switches it on, as Frappe's cint reads it", async (value) => {
+	it.each([[""], [null], [" 0 "], [0.4], ["1abc"], ["Infinity"]])("Server Script disabled %j is not canonical, so the card shows the code", async (value) => {
 		currentCode.mockReset();
 		currentCode.mockResolvedValue({ script: "x = 1" });
 		const wrapper = mount(ApprovalCard, { props: { block: switchBlock("Server Script", { disabled: value }) } });
@@ -352,7 +352,7 @@ describe("ApprovalCard switching code on", () => {
 		expect(goesLive(wrapper).exists()).toBe(true);
 	});
 
-	it.each([["2"], [" 1 "], ["1.5"]])("Client Script enabled %j switches it on, as Frappe's cint reads it", async (value) => {
+	it.each([["2"], [" 1 "], ["1.5"], [" 0 "], ["abc"]])("Client Script enabled %j is not canonical, so the card shows the code", async (value) => {
 		currentCode.mockReset();
 		currentCode.mockResolvedValue({ script: "x" });
 		const wrapper = mount(ApprovalCard, { props: { block: switchBlock("Client Script", { enabled: value }) } });
@@ -376,8 +376,9 @@ describe("ApprovalCard switching code on", () => {
 			switchBlock("Client Script", { enabled: 0 }),
 			switchBlock("Server Script", { disabled: 1 }),
 			switchBlock("Notification", { enabled: "0" }),
-			switchBlock("Notification", { enabled: "abc" }),
-			switchBlock("Server Script", { disabled: "1.9" }),
+			switchBlock("Server Script", { disabled: "1" }),
+			switchBlock("Server Script", { disabled: true }),
+			switchBlock("Client Script", { enabled: false }),
 			switchBlock("Server Script", { script_type: "API" }),
 			switchBlock("Client Script", { dt: "Lead" }),
 			switchBlock("ToDo", { enabled: 1 }),

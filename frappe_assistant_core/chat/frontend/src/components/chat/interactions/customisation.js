@@ -217,24 +217,25 @@ export function renameNotice(toolName, input) {
 		: null;
 }
 
-// Frappe's cint: booleans read as 1/0; blank, null and anything that does not parse read as 0;
-// decimals truncate.
-export function cint(value) {
-	if (value === null || value === undefined) return 0;
-	if (typeof value === "boolean") return value ? 1 : 0;
-	const parsed = Math.trunc(Number.parseFloat(String(value).trim()));
-	return Number.isNaN(parsed) ? 0 : parsed;
-}
-
+const ON_VALUES = [1, "1", true];
+const OFF_VALUES = [0, "0", false];
 const has = (fields, key) => Object.prototype.hasOwnProperty.call(fields, key);
 
-// The switch each code doctype uses, and the stored fields that run once it is on. The switch
-// counts only when the update names it, and is read the way Frappe saves it (cint).
+// True when the update names the switch with a value that turns the code on. Fails closed: a
+// value other than 0, 1, "0", "1", true or false may still switch it on once Frappe saves it,
+// so it counts as switching on and the card shows the code.
+function switches(fields, key, onValues) {
+	if (!has(fields, key)) return false;
+	const value = fields[key];
+	return onValues.includes(value) || ![...ON_VALUES, ...OFF_VALUES].includes(value);
+}
+
+// The switch each code doctype uses, and the stored fields that run once it is on.
 const SWITCHED_CODE = {
-	"Server Script": { switchedOn: (f) => has(f, "disabled") && cint(f.disabled) === 0, fields: ["script"] },
-	"Client Script": { switchedOn: (f) => has(f, "enabled") && cint(f.enabled) !== 0, fields: ["script"] },
+	"Server Script": { switchedOn: (f) => switches(f, "disabled", OFF_VALUES), fields: ["script"] },
+	"Client Script": { switchedOn: (f) => switches(f, "enabled", ON_VALUES), fields: ["script"] },
 	Notification: {
-		switchedOn: (f) => has(f, "enabled") && cint(f.enabled) !== 0,
+		switchedOn: (f) => switches(f, "enabled", ON_VALUES),
 		fields: ["subject", "condition", "message"],
 	},
 };
