@@ -157,20 +157,41 @@ def _is_custom(name: str) -> int:
     return cint(frappe.db.get_value("DocType", name, "custom"))
 
 
+# Field types through which another form links to or embeds a DocType.
+_REFERENCE_FIELDTYPES = ("Link", "Table", "Table MultiSelect")
+
+
+def _referenced_elsewhere(name: str) -> bool:
+    """Whether a field on another DocType links to or embeds this one."""
+    filters = {"fieldtype": ["in", _REFERENCE_FIELDTYPES], "options": name}
+    return bool(
+        frappe.get_all("DocField", filters={**filters, "parent": ["!=", name]}, pluck="name", limit=1)
+        or frappe.get_all("Custom Field", filters={**filters, "dt": ["!=", name]}, pluck="name", limit=1)
+    )
+
+
 def _stored_doctype(name: str) -> Optional[Dict[str, Any]]:
     """What decides whether a stored DocType is dormant, or None when it does not exist.
 
     A Single or virtual DocType has no table to count, so it is never reported custom (never
     dormant). `custom_roles` are the Custom DocPerm roles, which override the standard ones.
+    `in_use` is true for a child table (it has no DocPerm rows and no records until a parent
+    saves, yet shows inside its parent's form) and for a DocType another form links to or embeds:
+    deleting it reaches those forms.
     """
-    kind = frappe.db.get_value("DocType", name, ["issingle", "is_virtual"], as_dict=True) if name else None
+    kind = (
+        frappe.db.get_value("DocType", name, ["issingle", "is_virtual", "istable"], as_dict=True)
+        if name
+        else None
+    )
     if not kind:
         return None
-    facts: Dict[str, Any] = {"custom": 0, "roles": [], "custom_roles": [], "records": 0}
+    facts: Dict[str, Any] = {"custom": 0, "roles": [], "custom_roles": [], "records": 0, "in_use": False}
     if cint(kind.issingle) or cint(kind.is_virtual):
         return facts
     facts["custom"] = _is_custom(name)
     if facts["custom"]:
+        facts["in_use"] = bool(cint(kind.istable)) or _referenced_elsewhere(name)
         facts["custom_roles"] = frappe.get_all("Custom DocPerm", filters={"parent": name}, pluck="role")
         standard_roles = frappe.get_all("DocPerm", filters={"parent": name}, pluck="role")
         facts["roles"] = standard_roles + facts["custom_roles"]
@@ -183,9 +204,17 @@ def _doctype_is_dormant(custom: int, roles: Iterable[Optional[str]], records: in
     return bool(custom) and not records and all(role in SYSTEM_ROLES for role in roles)
 
 
+def _stored_facts_are_dormant(facts: Optional[Dict[str, Any]]) -> bool:
+    """Whether a stored DocType is dormant: no other form uses it and nobody else can reach it."""
+    return (
+        bool(facts)
+        and not facts["in_use"]
+        and _doctype_is_dormant(facts["custom"], facts["roles"], facts["records"])
+    )
+
+
 def _stored_doctype_is_dormant(name: Optional[str]) -> bool:
-    facts = _stored_doctype(name) if name else None
-    return bool(facts) and _doctype_is_dormant(facts["custom"], facts["roles"], facts["records"])
+    return _stored_facts_are_dormant(_stored_doctype(name) if name else None)
 
 
 def _doctype_write_is_dormant(creating: bool, data: Dict[str, Any], stored: Optional[Dict[str, Any]]) -> bool:
@@ -198,7 +227,7 @@ def _doctype_write_is_dormant(creating: bool, data: Dict[str, Any], stored: Opti
     if creating:
         roles = [row.get("role") for row in data.get("permissions") or [] if isinstance(row, dict)]
         return _doctype_is_dormant(cint(data.get("custom")), roles, 0)
-    if not stored or not _doctype_is_dormant(stored["custom"], stored["roles"], stored["records"]):
+    if not _stored_facts_are_dormant(stored):
         return False
     if "permissions" not in data:
         return True
@@ -216,7 +245,8 @@ def customisation_impact(tool_name: str, tool_input: Any) -> Dict[str, Any]:
     """Whether a customisation write changes nothing anyone but its builder can feel yet.
 
     Dormant: a switched-off script or notification, or anything that only touches a custom
-    DocType that nobody outside the system roles can reach and that holds no records. A write
+    DocType that nobody outside the system roles can reach, that holds no records and that is
+    not a child table or used by another form. A write
     is dormant only when the stored state and the state after the write both are, so switching
     a script on or moving a field onto a live DocType is live, and any doubt counts as live.
     Never writes. The reason is plain words for logs and never repeats stored values.

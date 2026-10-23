@@ -31,7 +31,8 @@ class CustomisationImpact(BaseTool):
         self.description = (
             "Used by FAC Cloud to decide whether a customisation write needs an approval card: reports "
             "whether the write would change anything other than its builder can feel yet. Never writes. "
-            "Not for answering users."
+            "Not for answering users. Switching this tool or the FAC Cloud plugin off makes every "
+            "customisation write ask for approval again."
         )
         self.requires_permission = None
         self.inputSchema = {
