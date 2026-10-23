@@ -7,6 +7,8 @@ export default defineConfig({
 	test: {
 		environment: "jsdom",
 		globals: true,
+		// Vitest blanks every stylesheet by default, including ?raw imports; MockupFrame inlines this one.
+		css: { include: [/mockupKit\.css/] },
 		include: ["src/**/*.spec.js"],
 	},
 	resolve: {

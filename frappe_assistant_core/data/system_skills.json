@@ -481,5 +481,14 @@
     "status": "Published",
     "visibility": "Public",
     "content_file": "notification.md"
+  },
+  {
+    "skill_id": "mockup-kit",
+    "title": "Mockup Kit",
+    "description": "Use when writing the mockup HTML for a build plan: the available mk- classes, the sandbox limits and one example.",
+    "skill_type": "Workflow",
+    "status": "Published",
+    "visibility": "Public",
+    "content_file": "mockup_kit.md"
   }
 ]
