@@ -99,6 +99,8 @@ class FacoPlugin(BasePlugin):
             "send_crm_email",
             "convert_crm_lead",
             "add_crm_activity",
+            # FAC Cloud's approval hook asks whether a customisation write is dormant. Never shown to the model.
+            "customisation_impact",
         ]
 
     def is_fac_cloud_only(self) -> bool:
