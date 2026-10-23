@@ -436,6 +436,19 @@ export function createBlockHandlers({
 	}
 
 	/**
+	 * Hold an unsent answer on a question card that is grouped with others. Questions FACO
+	 * asks together are answered one by one and sent together, so an answer stays a draft
+	 * (shown in the card, changeable) until the group's Send records every decision.
+	 */
+	function setInteractionDraft(blockId, draft) {
+		const lastMsg = findActiveMessage(messages.value);
+		const block = lastMsg?.blocks?.find((b) => b.type === "interaction" && b.id === blockId);
+		if (!block || block.status !== "pending" || block.decision) return false;
+		block.draft = draft;
+		return true;
+	}
+
+	/**
 	 * If every pending interaction block on the streaming message has a
 	 * recorded decision, return the consolidated interrupt_response array
 	 * (and the block IDs to mark resolved on success). Otherwise null.
@@ -559,6 +572,7 @@ export function createBlockHandlers({
 		dismissResolvedInterrupt,
 		resolveInteraction,
 		recordInteractionDecision,
+		setInteractionDraft,
 		collectPendingInteractionBatch,
 		applyInteractionDecisions,
 		revertInteractionDecisions,

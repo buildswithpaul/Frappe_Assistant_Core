@@ -112,3 +112,42 @@ describe("a Stop names the request it stops", () => {
 		expect(api.chat.cancelStream).toHaveBeenCalledWith("s1", null, null);
 	});
 });
+
+describe("an answer typed while FACO waits on several questions", () => {
+	// Redmine #34474: the composer answered the last question, whichever was open, and a
+	// typed answer to an already-answered question was dropped.
+	let store, call;
+
+	beforeEach(async () => {
+		setActivePinia(createPinia());
+		vi.clearAllMocks();
+		({ call } = await import("frappe-ui"));
+		store = useChatStore();
+		store.currentSessionId = "s1";
+		const ask = (id) => ({
+			type: "interaction",
+			id,
+			status: "pending",
+			interactionType: "text_input",
+			interrupts: [{ id: `int_${id}` }],
+		});
+		store.messages = [{ role: "assistant", message_id: "msg-9", blocks: [ask("q1"), ask("q2")] }];
+	});
+
+	it("fills the first unanswered question as a draft and sends nothing", async () => {
+		await store.answerPendingQuestion("Acme Ltd");
+		const [q1, q2] = store.messages[0].blocks;
+		expect(q1.draft).toBe("Acme Ltd");
+		expect(q2.draft).toBeUndefined();
+		expect(q1.decision).toBeUndefined();
+		expect(call).not.toHaveBeenCalled();
+	});
+
+	it("replaces the last answer once every question has one", async () => {
+		await store.answerPendingQuestion("first");
+		await store.answerPendingQuestion("second");
+		await store.answerPendingQuestion("second, corrected");
+		expect(store.messages[0].blocks.map((b) => b.draft)).toEqual(["first", "second, corrected"]);
+		expect(call).not.toHaveBeenCalled();
+	});
+});

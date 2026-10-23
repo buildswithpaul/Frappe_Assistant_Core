@@ -85,6 +85,14 @@ describe("ContextRail pending interaction", () => {
 		expect(wrapper.text()).not.toContain("Ask User");
 	});
 
+	it("counts questions FACO asked together", () => {
+		// Redmine #34474: three parallel ask_user cards read as "1 question waiting".
+		const ask = (id) => ({ type: "interaction", id, status: "pending", interactionType: "single_select", question: `Q ${id}?`, input: {} });
+		const wrapper = mountRail([ask("q1"), ask("q2"), ask("q3")]);
+		expect(wrapper.find(".rail-approval-count").text()).toBe("3 questions waiting");
+		expect(wrapper.find(".rail-approval-title").text()).toBe("Q q1?");
+	});
+
 	it("approval interaction keeps its approval wording", () => {
 		const wrapper = mountRail([
 			{ type: "interaction", id: "a1", status: "pending", interactionType: "approval", tool_name: "create_document", input: {} },

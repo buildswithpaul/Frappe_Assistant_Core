@@ -79,6 +79,7 @@ export function deriveArtifacts(blocks) {
 	// 1) Pending approval (mirrors the in-thread interaction card).
 	let approval = null;
 	let plan = null;
+	const waiting = safe.filter((b) => b.type === "interaction" && b.status === "pending");
 	for (const b of safe) {
 		if (b.type === "interaction" && b.status === "pending") {
 			const flat = b.input ? flattenInput(b.input) : {};
@@ -86,6 +87,8 @@ export function deriveArtifacts(blocks) {
 			approval = {
 				id: b.id,
 				kind: isQuestion ? "question" : "approval",
+				// Cards of this kind waiting together, e.g. questions FACO asked at once.
+				count: waiting.filter((w) => isApprovalInteraction(w.interactionType) !== isQuestion).length,
 				title: isQuestion
 					? plainText(b.question).slice(0, QUESTION_TITLE_MAX) || __("Question")
 					: formatToolName(b.tool_name),

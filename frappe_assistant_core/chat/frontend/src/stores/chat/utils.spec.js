@@ -83,4 +83,13 @@ describe("carryCardDecisions", () => {
 		const [card] = carryCardDecisions([decided], [snapshotCard([{ id: "int2" }])]);
 		expect(card.decision).toBeUndefined();
 	});
+
+	// Redmine #34474: an unsent answer on a grouped question must survive a history refresh.
+	it("carries an unsent answer without inventing a decision", () => {
+		const drafted = { type: "interaction", id: "call_1", status: "pending", interrupts: [{ id: "int1" }], draft: "Retail" };
+		const [card] = carryCardDecisions([drafted], [snapshotCard([{ id: "int1" }])]);
+		expect(card.draft).toBe("Retail");
+		expect(card.decision).toBeUndefined();
+		expect(card.status).toBe("pending");
+	});
 });
