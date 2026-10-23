@@ -48,6 +48,18 @@ CUSTOMISATION_DOCTYPES = frozenset(
     }
 )
 
+# Roles that do not count as "other people" when judging whether a customisation can be felt.
+SYSTEM_ROLES = frozenset({"System Manager", "Administrator"})
+
+# Doctype -> the flag that switches it off, and the value that means "off".
+_SWITCH_FIELDS = {
+    "Server Script": ("disabled", 1),
+    "Client Script": ("enabled", 0),
+    "Notification": ("enabled", 0),
+}
+
+_WRITE_TOOLS = frozenset({"create_document", "update_document", "delete_document"})
+
 APPLIES_TO_FIELDS = {
     "Custom Field": "dt",
     "Property Setter": "doc_type",
@@ -132,6 +144,97 @@ def server_script_guard(
             "Client Script, a Workflow or a Notification."
         ),
     }
+
+
+def _stored_doctype(name: str) -> Optional[Dict[str, Any]]:
+    """What decides whether a stored DocType is dormant, or None when it does not exist."""
+    custom = frappe.db.get_value("DocType", name, "custom")
+    if custom is None:
+        return None
+    facts: Dict[str, Any] = {"custom": cint(custom), "roles": [], "records": 0}
+    if facts["custom"]:
+        for perm_doctype in ("DocPerm", "Custom DocPerm"):
+            facts["roles"] += frappe.get_all(perm_doctype, filters={"parent": name}, pluck="role")
+        facts["records"] = frappe.db.count(name)
+    return facts
+
+
+def _doctype_is_dormant(custom: int, roles: Iterable[Optional[str]], records: int) -> bool:
+    """A custom DocType nobody outside the system roles can reach, with no records yet."""
+    return bool(custom) and not records and all(role in SYSTEM_ROLES for role in roles)
+
+
+def _stored_doctype_is_dormant(name: Optional[str]) -> bool:
+    facts = _stored_doctype(name) if name else None
+    return bool(facts) and _doctype_is_dormant(facts["custom"], facts["roles"], facts["records"])
+
+
+def _doctype_write_is_dormant(data: Dict[str, Any], stored: Optional[Dict[str, Any]]) -> bool:
+    """Whether the DocType is dormant after the write: `data` wins, the stored record fills the rest."""
+    stored = stored or {"custom": 0, "roles": [], "records": 0}
+    custom = cint(data["custom"]) if "custom" in data else stored["custom"]
+    if "permissions" in data:
+        roles = [row.get("role") for row in data["permissions"] or [] if isinstance(row, dict)]
+    else:
+        roles = stored["roles"]
+    return _doctype_is_dormant(custom, roles, stored["records"])
+
+
+def customisation_impact(tool_name: str, tool_input: Any) -> Dict[str, Any]:
+    """Whether a customisation write changes nothing anyone but its builder can feel yet.
+
+    Dormant: a switched-off script or notification, or anything that only touches a custom
+    DocType that nobody outside the system roles can reach and that holds no records. Judged
+    on the state after the write, so switching a script on is live. Never writes. The reason
+    is plain words for logs and never repeats stored values.
+    """
+    if tool_name not in _WRITE_TOOLS or not isinstance(tool_input, dict):
+        return {"dormant": False, "reason": "Not a customisation write"}
+    doctype = tool_input.get("doctype")
+    if doctype not in CUSTOMISATION_DOCTYPES:
+        return {"dormant": False, "reason": "Not a customisation doctype"}
+
+    data = tool_input.get("data")
+    data = data if isinstance(data, dict) else {}
+    name = tool_input.get("name")
+    creating = tool_name == "create_document"
+    deleting = tool_name == "delete_document"
+    if deleting:
+        data = {}
+
+    stored: Dict[str, Any] = {}
+    if not creating:
+        if not name or not frappe.db.exists(doctype, name):
+            return {"dormant": False, "reason": "The record does not exist"}
+        stored = frappe.db.get_value(doctype, name, "*", as_dict=True) or {}
+
+    def after(field: str) -> Any:
+        return data[field] if field in data else stored.get(field)
+
+    if doctype in _SWITCH_FIELDS:
+        field, off = _SWITCH_FIELDS[doctype]
+        if cint(after(field)) == off:
+            return {"dormant": True, "reason": f"{doctype} is switched off"}
+        return {"dormant": False, "reason": f"{doctype} is switched on"}
+
+    if doctype == "DocType":
+        stored_facts = None if creating else _stored_doctype(name)
+        if _doctype_write_is_dormant(data, stored_facts):
+            return {"dormant": True, "reason": "DocType is not reachable by anyone else yet"}
+        return {"dormant": False, "reason": "DocType may be reachable by other people"}
+
+    if doctype in ("Custom Field", "Property Setter"):
+        target = after("dt" if doctype == "Custom Field" else "doc_type")
+        if _stored_doctype_is_dormant(target):
+            return {"dormant": True, "reason": f"{doctype} changes a DocType nobody else can reach yet"}
+        return {"dormant": False, "reason": f"{doctype} changes a DocType other people can reach"}
+
+    if doctype == "Custom DocPerm":
+        if after("role") in SYSTEM_ROLES and _stored_doctype_is_dormant(after("parent")):
+            return {"dormant": True, "reason": "Permission only covers system roles on a dormant DocType"}
+        return {"dormant": False, "reason": "Permission may open a DocType to other people"}
+
+    return {"dormant": False, "reason": f"{doctype} changes always count"}
 
 
 def desk_url(doctype: str, name: str) -> str:
