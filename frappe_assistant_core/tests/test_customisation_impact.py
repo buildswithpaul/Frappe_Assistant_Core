@@ -238,3 +238,47 @@ class TestCustomisationImpact(BaseAssistantTest):
             if name in names
             else {"custom": 0, "roles": [], "custom_roles": [], "records": 0}
         )
+
+
+class TestCustomisationImpactTool(BaseAssistantTest):
+    @staticmethod
+    def _tool():
+        from frappe_assistant_core.plugins.faco.tools.customisation_impact import CustomisationImpact
+
+        return CustomisationImpact()
+
+    def test_returns_rule_result(self):
+        result = self._tool().execute(
+            {
+                "tool_name": "create_document",
+                "tool_input": {"doctype": "Server Script", "data": {"disabled": 1}},
+            }
+        )
+        self.assertTrue(result["success"])
+        self.assertTrue(result["dormant"])
+        self.assertTrue(result["reason"])
+
+    def test_live_write_is_not_dormant(self):
+        result = self._tool().execute({"tool_name": "send_email", "tool_input": {}})
+        self.assertTrue(result["success"])
+        self.assertFalse(result["dormant"])
+
+    def test_rejects_missing_arguments(self):
+        result = self._tool().execute({"tool_name": "create_document"})
+        self.assertFalse(result["success"])
+        self.assertTrue(result["error"])
+
+    def test_rejects_non_object_tool_input(self):
+        result = self._tool().execute({"tool_name": "create_document", "tool_input": "x"})
+        self.assertFalse(result["success"])
+
+    def test_is_read_only_and_fac_cloud_only(self):
+        from frappe_assistant_core.plugins.faco.plugin import FacoPlugin
+        from frappe_assistant_core.utils.tool_category_detector import detect_tool_category
+
+        # No write to the database happens here, so approval-wise it is a read; AR calls it from
+        # its approval hook, and gating the check itself behind an approval would loop.
+        self.assertEqual(detect_tool_category(self._tool()), "read_only")
+        plugin = FacoPlugin()
+        self.assertTrue(plugin.is_fac_cloud_only())
+        self.assertIn("customisation_impact", plugin.get_tools())
