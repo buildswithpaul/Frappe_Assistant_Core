@@ -146,15 +146,34 @@ def server_script_guard(
     }
 
 
-def _stored_doctype(name: str) -> Optional[Dict[str, Any]]:
-    """What decides whether a stored DocType is dormant, or None when it does not exist."""
-    custom = frappe.db.get_value("DocType", name, "custom")
-    if custom is None:
+def _stored_record(doctype: str, name: Optional[str]) -> Optional[Dict[str, Any]]:
+    """The stored record's fields, or None when it does not exist."""
+    if not name:
         return None
-    facts: Dict[str, Any] = {"custom": cint(custom), "roles": [], "records": 0}
+    return frappe.db.get_value(doctype, name, "*", as_dict=True) or None
+
+
+def _is_custom(name: str) -> int:
+    return cint(frappe.db.get_value("DocType", name, "custom"))
+
+
+def _stored_doctype(name: str) -> Optional[Dict[str, Any]]:
+    """What decides whether a stored DocType is dormant, or None when it does not exist.
+
+    A Single or virtual DocType has no table to count, so it is never reported custom (never
+    dormant). `custom_roles` are the Custom DocPerm roles, which override the standard ones.
+    """
+    kind = frappe.db.get_value("DocType", name, ["issingle", "is_virtual"], as_dict=True) if name else None
+    if not kind:
+        return None
+    facts: Dict[str, Any] = {"custom": 0, "roles": [], "custom_roles": [], "records": 0}
+    if cint(kind.issingle) or cint(kind.is_virtual):
+        return facts
+    facts["custom"] = _is_custom(name)
     if facts["custom"]:
-        for perm_doctype in ("DocPerm", "Custom DocPerm"):
-            facts["roles"] += frappe.get_all(perm_doctype, filters={"parent": name}, pluck="role")
+        facts["custom_roles"] = frappe.get_all("Custom DocPerm", filters={"parent": name}, pluck="role")
+        standard_roles = frappe.get_all("DocPerm", filters={"parent": name}, pluck="role")
+        facts["roles"] = standard_roles + facts["custom_roles"]
         facts["records"] = frappe.db.count(name)
     return facts
 
@@ -169,24 +188,38 @@ def _stored_doctype_is_dormant(name: Optional[str]) -> bool:
     return bool(facts) and _doctype_is_dormant(facts["custom"], facts["roles"], facts["records"])
 
 
-def _doctype_write_is_dormant(data: Dict[str, Any], stored: Optional[Dict[str, Any]]) -> bool:
-    """Whether the DocType is dormant after the write: `data` wins, the stored record fills the rest."""
-    stored = stored or {"custom": 0, "roles": [], "records": 0}
-    custom = cint(data["custom"]) if "custom" in data else stored["custom"]
-    if "permissions" in data:
-        roles = [row.get("role") for row in data["permissions"] or [] if isinstance(row, dict)]
-    else:
-        roles = stored["roles"]
-    return _doctype_is_dormant(custom, roles, stored["records"])
+def _doctype_write_is_dormant(creating: bool, data: Dict[str, Any], stored: Optional[Dict[str, Any]]) -> bool:
+    """Whether a DocType write is dormant before and after it (an error or a doubt is not).
+
+    custom and the record count come from the stored DocType only, so data cannot turn a standard
+    DocType custom. Supplied permissions replace the standard rows, but stored Custom DocPerm
+    rows still apply.
+    """
+    if creating:
+        roles = [row.get("role") for row in data.get("permissions") or [] if isinstance(row, dict)]
+        return _doctype_is_dormant(cint(data.get("custom")), roles, 0)
+    if not stored or not _doctype_is_dormant(stored["custom"], stored["roles"], stored["records"]):
+        return False
+    if "permissions" not in data:
+        return True
+    supplied = [row.get("role") for row in data["permissions"] or [] if isinstance(row, dict)]
+    return _doctype_is_dormant(stored["custom"], supplied + stored["custom_roles"], stored["records"])
+
+
+def _schema_default(doctype: str, field: str) -> int:
+    """The default a field takes when a new record leaves it out."""
+    meta_field = frappe.get_meta(doctype).get_field(field)
+    return cint(meta_field.default) if meta_field else 0
 
 
 def customisation_impact(tool_name: str, tool_input: Any) -> Dict[str, Any]:
     """Whether a customisation write changes nothing anyone but its builder can feel yet.
 
     Dormant: a switched-off script or notification, or anything that only touches a custom
-    DocType that nobody outside the system roles can reach and that holds no records. Judged
-    on the state after the write, so switching a script on is live. Never writes. The reason
-    is plain words for logs and never repeats stored values.
+    DocType that nobody outside the system roles can reach and that holds no records. A write
+    is dormant only when the stored state and the state after the write both are, so switching
+    a script on or moving a field onto a live DocType is live, and any doubt counts as live.
+    Never writes. The reason is plain words for logs and never repeats stored values.
     """
     if tool_name not in _WRITE_TOOLS or not isinstance(tool_input, dict):
         return {"dormant": False, "reason": "Not a customisation write"}
@@ -198,39 +231,46 @@ def customisation_impact(tool_name: str, tool_input: Any) -> Dict[str, Any]:
     data = data if isinstance(data, dict) else {}
     name = tool_input.get("name")
     creating = tool_name == "create_document"
-    deleting = tool_name == "delete_document"
-    if deleting:
+    if tool_name == "delete_document":
         data = {}
 
-    stored: Dict[str, Any] = {}
-    if not creating:
-        if not name or not frappe.db.exists(doctype, name):
-            return {"dormant": False, "reason": "The record does not exist"}
-        stored = frappe.db.get_value(doctype, name, "*", as_dict=True) or {}
+    stored = None if creating else _stored_record(doctype, name)
+    if not creating and stored is None:
+        return {"dormant": False, "reason": "The record does not exist"}
+    stored = stored or {}
+
+    def before(field: str) -> Any:
+        return stored.get(field)
 
     def after(field: str) -> Any:
         return data[field] if field in data else stored.get(field)
 
     if doctype in _SWITCH_FIELDS:
         field, off = _SWITCH_FIELDS[doctype]
-        if cint(after(field)) == off:
+        value = after(field) if not creating or field in data else _schema_default(doctype, field)
+        stored_off = creating or cint(before(field)) == off
+        if stored_off and cint(value) == off:
             return {"dormant": True, "reason": f"{doctype} is switched off"}
         return {"dormant": False, "reason": f"{doctype} is switched on"}
 
     if doctype == "DocType":
         stored_facts = None if creating else _stored_doctype(name)
-        if _doctype_write_is_dormant(data, stored_facts):
+        if _doctype_write_is_dormant(creating, data, stored_facts):
             return {"dormant": True, "reason": "DocType is not reachable by anyone else yet"}
         return {"dormant": False, "reason": "DocType may be reachable by other people"}
 
     if doctype in ("Custom Field", "Property Setter"):
-        target = after("dt" if doctype == "Custom Field" else "doc_type")
-        if _stored_doctype_is_dormant(target):
+        target_field = "dt" if doctype == "Custom Field" else "doc_type"
+        stored_ok = creating or _stored_doctype_is_dormant(before(target_field))
+        if stored_ok and _stored_doctype_is_dormant(after(target_field)):
             return {"dormant": True, "reason": f"{doctype} changes a DocType nobody else can reach yet"}
         return {"dormant": False, "reason": f"{doctype} changes a DocType other people can reach"}
 
     if doctype == "Custom DocPerm":
-        if after("role") in SYSTEM_ROLES and _stored_doctype_is_dormant(after("parent")):
+        stored_ok = creating or (
+            before("role") in SYSTEM_ROLES and _stored_doctype_is_dormant(before("parent"))
+        )
+        if stored_ok and after("role") in SYSTEM_ROLES and _stored_doctype_is_dormant(after("parent")):
             return {"dormant": True, "reason": "Permission only covers system roles on a dormant DocType"}
         return {"dormant": False, "reason": "Permission may open a DocType to other people"}
 
