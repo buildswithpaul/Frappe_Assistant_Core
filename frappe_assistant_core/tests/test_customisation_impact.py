@@ -21,10 +21,12 @@ from unittest.mock import patch
 import frappe
 
 from frappe_assistant_core.tests.base_test import BaseAssistantTest
-from frappe_assistant_core.utils.customisation import SYSTEM_ROLES, customisation_impact
+from frappe_assistant_core.utils.customisation import SYSTEM_ROLES, _stored_doctype, customisation_impact
 
 STORED_DOCTYPE = "frappe_assistant_core.utils.customisation._stored_doctype"
-DORMANT_FACTS = {"custom": 1, "roles": ["System Manager"], "records": 0}
+STORED_RECORD = "frappe_assistant_core.utils.customisation._stored_record"
+IS_CUSTOM = "frappe_assistant_core.utils.customisation._is_custom"
+DORMANT_FACTS = {"custom": 1, "roles": ["System Manager"], "custom_roles": [], "records": 0}
 
 
 def _impact(tool: str, doctype: str, data: dict | None = None, name: str | None = None) -> dict:
@@ -108,8 +110,9 @@ class TestCustomisationImpact(BaseAssistantTest):
         self.assertFalse(_impact("update_document", "DocType", {"description": "x"}, "ToDo")["dormant"])
 
     def test_stored_dormant_doctype_update_follows_permissions_after_the_write(self):
-        # "ToDo" is only a name that exists; the patch stands in for a custom DocType saved with only System Manager: creating one runs DDL,
-        # which commits and escapes the test rollback, and this site has none to borrow.
+        # "ToDo" is only a name that exists; the patch stands in for a custom DocType saved with
+        # only System Manager. Creating one runs DDL, which commits and escapes the test
+        # rollback, and this site has none to borrow.
         with patch(STORED_DOCTYPE, autospec=True, return_value=dict(DORMANT_FACTS)):
             quiet = _impact("update_document", "DocType", {"description": "x"}, "ToDo")
             opened = _impact("update_document", "DocType", {"permissions": [{"role": "Employee"}]}, "ToDo")
@@ -165,3 +168,65 @@ class TestCustomisationImpact(BaseAssistantTest):
 
     def test_system_roles(self):
         self.assertEqual(SYSTEM_ROLES, frozenset({"System Manager", "Administrator"}))
+
+    # Fix round 1
+
+    def test_create_without_the_flag_uses_the_schema_default(self):
+        # A Notification saved without `enabled` is on (schema default 1); a Client Script is off
+        self.assertFalse(_impact("create_document", "Notification")["dormant"])
+        self.assertTrue(_impact("create_document", "Client Script")["dormant"])
+        self.assertFalse(_impact("create_document", "Server Script")["dormant"])
+
+    def test_single_doctype_is_never_dormant_and_is_not_counted(self):
+        # Production reaches a custom Single when a builder saves one; System Settings stands in
+        # (no custom Single on this site) with only the custom check forced on.
+        with patch(IS_CUSTOM, autospec=True, return_value=1):
+            r = _impact("update_document", "DocType", {"description": "x"}, "System Settings")
+        self.assertFalse(r["dormant"])
+
+    def test_real_role_and_record_reads_run_for_a_custom_doctype(self):
+        # ToDo stands in for a custom DocType (none on this site; creating one commits DDL)
+        with patch(IS_CUSTOM, autospec=True, return_value=1):
+            facts = _stored_doctype("ToDo")
+            r = _impact("update_document", "DocType", {"description": "x"}, "ToDo")
+        expected = frappe.get_all("DocPerm", filters={"parent": "ToDo"}, pluck="role")
+        self.assertTrue(set(expected) <= set(facts["roles"]))
+        self.assertIsInstance(facts["records"], int)
+        self.assertFalse(r["dormant"])
+
+    def test_data_cannot_make_a_stored_standard_doctype_custom(self):
+        data = {"custom": 1, "permissions": [{"role": "System Manager"}]}
+        self.assertFalse(_impact("update_document", "DocType", data, "ToDo")["dormant"])
+
+    def test_moving_a_stored_custom_field_to_a_dormant_target_is_live(self):
+        # Production holds a Custom Field row on a live DocType; inserting one runs DDL, which
+        # commits and escapes the test rollback, so the stored row is patched in.
+        stored = {"dt": "ToDo", "fieldname": "fac_impact_probe"}
+        with patch(STORED_RECORD, autospec=True, return_value=stored):
+            with patch(STORED_DOCTYPE, autospec=True, side_effect=self._dormant_only("Dormant Target")):
+                r = _impact("update_document", "Custom Field", {"dt": "Dormant Target"}, "ToDo-probe")
+        self.assertFalse(r["dormant"])
+
+    def test_widening_a_stored_custom_docperm_role_is_live(self):
+        # Production holds a Custom DocPerm row granting Employee; the row is patched in because
+        # saving one rebuilds the DocType's permission cache.
+        stored = {"parent": "ToDo", "role": "Employee"}
+        with patch(STORED_RECORD, autospec=True, return_value=stored):
+            with patch(STORED_DOCTYPE, autospec=True, side_effect=self._dormant_only("ToDo")):
+                r = _impact("update_document", "Custom DocPerm", {"role": "System Manager"}, "perm-probe")
+        self.assertFalse(r["dormant"])
+
+    def test_supplied_permissions_do_not_hide_stored_custom_docperm_roles(self):
+        # Custom DocPerm rows override DocPerm, so a stored Employee grant still counts
+        facts = dict(DORMANT_FACTS, custom_roles=["Employee"])
+        with patch(STORED_DOCTYPE, autospec=True, return_value=facts):
+            r = _impact("update_document", "DocType", {"permissions": [{"role": "System Manager"}]}, "ToDo")
+        self.assertFalse(r["dormant"])
+
+    @staticmethod
+    def _dormant_only(*names):
+        return lambda name: (
+            dict(DORMANT_FACTS)
+            if name in names
+            else {"custom": 0, "roles": [], "custom_roles": [], "records": 0}
+        )
