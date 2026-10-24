@@ -28,7 +28,7 @@ from typing import Any, Dict, Iterable, Optional
 import frappe
 from frappe import _
 from frappe.model.meta import Meta
-from frappe.utils import cint, get_url_to_form
+from frappe.utils import cint, get_url, get_url_to_form
 
 CUSTOMISATION_DOCTYPES = frozenset(
     {
@@ -45,6 +45,7 @@ CUSTOMISATION_DOCTYPES = frozenset(
         "Report",
         "Print Format",
         "Notification",
+        "FAC Page",
     }
 )
 
@@ -56,6 +57,7 @@ _SWITCH_FIELDS = {
     "Server Script": ("disabled", 1),
     "Client Script": ("enabled", 0),
     "Notification": ("enabled", 0),
+    "FAC Page": ("published", 0),
 }
 
 _WRITE_TOOLS = frozenset({"create_document", "update_document", "delete_document"})
@@ -268,11 +270,11 @@ def _targets_are_plain(creating: bool, before: Any, after: Any, field: str) -> b
 def customisation_impact(tool_name: str, tool_input: Any) -> Dict[str, Any]:
     """Whether a customisation write changes nothing anyone but its builder can feel yet.
 
-    Dormant: a switched-off script or notification, or anything that only touches a custom
-    DocType that nobody outside the system roles can reach, that holds no records and that is
-    not a child table or used by another form. A write
-    is dormant only when the stored state and the state after the write both are, so switching
-    a script on or moving a field onto a live DocType is live, and any doubt counts as live.
+    Dormant: a switched-off script or notification, an unpublished FAC Page, or anything that
+    only touches a custom DocType that nobody outside the system roles can reach, that holds no
+    records and that is not a child table or used by another form. A write is dormant only when
+    the stored state and the state after the write both are, so switching a script on, publishing
+    a page or moving a field onto a live DocType is live, and any doubt counts as live.
     Never writes. The reason is plain words for logs and never repeats stored values.
     """
     if tool_name not in _WRITE_TOOLS or not isinstance(tool_input, dict):
@@ -343,6 +345,11 @@ def desk_url(doctype: str, name: str) -> str:
     return get_url_to_form(doctype, name)
 
 
+def fac_page_url(slug: str) -> str:
+    """Where a published FAC Page opens in Desk."""
+    return get_url(f"/app/fac-pages/{slug}")
+
+
 def applies_to(doctype: str, values: Any) -> Optional[Dict[str, str]]:
     """The doctype a customisation changes, with a link to where to see it in Desk."""
     field = APPLIES_TO_FIELDS.get(doctype)
@@ -356,12 +363,14 @@ def customisation_result(doctype: str, doc: Any, warning: Optional[str] = None) 
     """The customisation details a create or update result adds.
 
     applies_to, location and warning, plus placement_warning when a Custom Field landed
-    collapsed or off the first tab.
+    collapsed or off the first tab, and page_url for a FAC Page (``url`` stays its form).
     """
     details: Dict[str, Any] = {}
     customised = applies_to(doctype, doc)
     if customised:
         details["applies_to"] = customised
+    if doctype == "FAC Page":
+        details["page_url"] = fac_page_url(doc.name)
     if doctype == "Custom Field":
         location = custom_field_location(doc)
         if location:

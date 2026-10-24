@@ -15,6 +15,7 @@ vi.mock("@/api/client", () => ({
 }));
 
 import ApprovalCard from "@/components/chat/interactions/ApprovalCard.vue";
+import CodePreview from "@/components/chat/interactions/CodePreview.vue";
 
 const interrupts = [{ id: "i1", reason: { type: "approval" } }];
 
@@ -286,6 +287,106 @@ describe("ApprovalCard switching code on", () => {
 		expect(text).toContain("Hi {{ doc.name }}");
 	});
 
+	it("FAC Page published: shows its stored html, script and style as going live", async () => {
+		currentCode.mockReset();
+		currentCode.mockResolvedValue({ html: "<div id='planner'></div>", script: "renderPlanner()", style: ".planner { gap: 8px; }" });
+		const wrapper = mount(ApprovalCard, { props: { block: switchBlock("FAC Page", { published: 1 }, "team-planner") } });
+		await flushPromises();
+		expect(currentCode).toHaveBeenCalledWith("FAC Page", "team-planner", ["html", "script", "style", "roles"]);
+		expect(goesLive(wrapper).text()).toBe("This goes live");
+		const text = wrapper.findAll(".code-preview pre").map((p) => p.text()).join("\n");
+		expect(text).toContain("<div id='planner'></div>");
+		expect(text).toContain("renderPlanner()");
+		expect(text).toContain(".planner { gap: 8px; }");
+	});
+
+	const preview = (wrapper, label) => wrapper.findAllComponents(CodePreview).find((c) => c.props("label") === label);
+
+	const publish = async (roles) => {
+		currentCode.mockReset();
+		currentCode.mockResolvedValue({ html: "<p>x</p>", script: "", style: "", roles });
+		const wrapper = mount(ApprovalCard, { props: { block: switchBlock("FAC Page", { published: 1 }, "team-planner") } });
+		await flushPromises();
+		return wrapper;
+	};
+	const audience = (wrapper) => wrapper.find('[data-test="goes-live-audience"]');
+	const everyone = (wrapper) => wrapper.find('[data-test="goes-live-everyone"]');
+
+	it("FAC Page published: says which roles it goes live to", async () => {
+		const wrapper = await publish(["Sales User", "Report Manager"]);
+		expect(audience(wrapper).text()).toBe("Goes live to: Sales User, Report Manager");
+		expect(everyone(wrapper).exists()).toBe(false);
+	});
+
+	it("FAC Page published with no code and no roles: says (empty) and raises no load error", async () => {
+		currentCode.mockReset();
+		currentCode.mockResolvedValue({ html: "", script: "", style: "", roles: [] });
+		const empty = mount(ApprovalCard, { props: { block: switchBlock("FAC Page", { published: 1 }, "team-planner") } });
+		await flushPromises();
+		expect(empty.find('[data-test="goes-live-empty"]').text()).toBe("(empty)");
+		expect(empty.find('[data-test="goes-live-missing"]').exists()).toBe(false);
+		expect(audience(empty).text()).toBe("Goes live to: System Managers only");
+	});
+
+	it("FAC Page published with no roles: says System Managers only", async () => {
+		const wrapper = await publish([]);
+		expect(audience(wrapper).text()).toBe("Goes live to: System Managers only");
+	});
+
+	it.each([["All"], ["Guest"]])("FAC Page published to %s: names it and warns it reaches every user", async (role) => {
+		const wrapper = await publish(["Sales User", role]);
+		expect(audience(wrapper).text()).toBe(`Goes live to: Sales User, ${role}`);
+		expect(everyone(wrapper).text()).toBe("All and Guest include every user who can log in.");
+	});
+
+	it("an update that also sets the roles shows them as the change, not the stored ones", async () => {
+		currentCode.mockReset();
+		currentCode.mockResolvedValue({ html: "", script: "", style: "", roles: [] });
+		const wrapper = mount(ApprovalCard, {
+			props: { block: switchBlock("FAC Page", { published: 1, roles: [{ role: "Sales User" }] }, "team-planner") },
+		});
+		await flushPromises();
+		expect(audience(wrapper).exists()).toBe(false);
+		expect(wrapper.text()).toContain("Sales User");
+	});
+
+	it("FAC Page style change: shows style as a diffed CSS code block, not a plain field", async () => {
+		currentCode.mockReset();
+		currentCode.mockResolvedValue({ style: ".a {}\n.old {}" });
+		const wrapper = mount(ApprovalCard, {
+			props: { block: switchBlock("FAC Page", { style: ".a {}\n.new {}" }, "team-planner") },
+		});
+		await flushPromises();
+		expect(currentCode).toHaveBeenCalledWith("FAC Page", "team-planner", ["style"]);
+		expect(preview(wrapper, "Style").props("language")).toBe("css");
+		expect(wrapper.find(".diff-del").text()).toContain(".old {}");
+		expect(wrapper.find(".diff-add").text()).toContain(".new {}");
+		expect(wrapper.findAll(".field-key").map((k) => k.text())).not.toContain("Style");
+	});
+
+	it("FAC Page published with a style change: diffs the style and shows the stored html and script", async () => {
+		currentCode.mockReset();
+		currentCode.mockResolvedValue({ style: ".old {}", html: "<div id='planner'></div>", script: "renderPlanner()" });
+		const wrapper = mount(ApprovalCard, {
+			props: { block: switchBlock("FAC Page", { published: 1, style: ".new {}" }, "team-planner") },
+		});
+		await flushPromises();
+		expect(currentCode).toHaveBeenCalledWith("FAC Page", "team-planner", ["style", "html", "script", "roles"]);
+		expect(goesLive(wrapper).text()).toBe("This goes live");
+		expect(wrapper.find(".diff-del").text()).toContain(".old {}");
+		expect(wrapper.find(".diff-add").text()).toContain(".new {}");
+		const text = wrapper.findAll(".code-preview pre").map((p) => p.text()).join("\n");
+		expect(text).toContain("<div id='planner'></div>");
+		expect(text).toContain("renderPlanner()");
+	});
+
+	it("style on any other doctype stays a plain field", async () => {
+		const wrapper = mount(ApprovalCard, { props: { block: switchBlock("Web Page", { style: ".x {}" }) } });
+		await flushPromises();
+		expect(preview(wrapper, "Style")).toBeUndefined();
+		expect(currentCode).not.toHaveBeenCalled();
+	});
+
 	it("switch on that also changes the code keeps the diff and still says it goes live", async () => {
 		currentCode.mockReset();
 		currentCode.mockResolvedValue({ script: "a\nold\nc" });
@@ -379,6 +480,8 @@ describe("ApprovalCard switching code on", () => {
 			switchBlock("Server Script", { disabled: "1" }),
 			switchBlock("Server Script", { disabled: true }),
 			switchBlock("Client Script", { enabled: false }),
+			switchBlock("FAC Page", { published: 0 }),
+			switchBlock("FAC Page", { title: "Planner" }),
 			switchBlock("Server Script", { script_type: "API" }),
 			switchBlock("Client Script", { dt: "Lead" }),
 			switchBlock("ToDo", { enabled: 1 }),

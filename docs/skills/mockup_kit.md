@@ -4,6 +4,8 @@
 
 Use this kit to write the `mockup_html` shown with a build plan. The mockup is plain HTML in a sandboxed preview that already carries the kit's styles. It cannot load anything from the network and cannot reach the page around it, so write static markup only.
 
+The same classes work in a FAC Page's `html` (see the `fac-page` skill), so a mockup can become the page itself.
+
 ## Rules
 
 - Write the inside of a page: no `<html>`, `<head>` or `<body>` tags.

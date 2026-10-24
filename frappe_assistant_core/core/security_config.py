@@ -291,6 +291,7 @@ WRITE_PROTECTED_DOCTYPES = [
     "Server Script",
     "Client Script",
     "Custom Script",
+    "FAC Page",
     # Schema and customization
     "DocType",
     "DocField",

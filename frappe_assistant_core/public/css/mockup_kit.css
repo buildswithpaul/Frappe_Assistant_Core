@@ -1,4 +1,8 @@
-:root {
+/* The mockup kit. MockupFrame inlines it in a sandboxed iframe (:root, body); the fac-pages Desk page
+   links it into a shadow root (:host, .fac-page-root). Keep both selector forms on each base rule. */
+
+:root,
+:host {
 	--mk-bg: #ffffff;
 	--mk-surface: #f8f8f8;
 	--mk-border: #ededed;
@@ -14,7 +18,8 @@
 	box-sizing: border-box;
 }
 
-body {
+body,
+.fac-page-root {
 	margin: 0;
 	background: var(--mk-bg);
 	color: var(--mk-text);

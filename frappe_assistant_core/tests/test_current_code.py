@@ -110,6 +110,54 @@ class TestGetCurrentCodeGoesLive(BaseAssistantTest):
             },
         )
 
+    def test_returns_a_fac_page_html_script_and_style(self):
+        # Production reaches this draft when a builder saves a FAC Page before publishing it.
+        page = frappe.get_doc(
+            {
+                "doctype": "FAC Page",
+                "title": "Current code page",
+                "slug": "current-code-page",
+                "html": "<div id='app'></div>",
+                "script": "render()",
+                "style": ".x { color: red; }",
+            }
+        ).insert()
+        out = get_current_code("FAC Page", page.name, ["html", "script", "style"])
+        self.assertEqual(
+            out, {"html": "<div id='app'></div>", "script": "render()", "style": ".x { color: red; }"}
+        )
+
+    def test_returns_the_roles_a_fac_page_goes_live_to(self):
+        # Production reaches these drafts when a builder saves a FAC Page before publishing it;
+        # the card switching it on must say who will see it.
+        listed = frappe.get_doc(
+            {
+                "doctype": "FAC Page",
+                "title": "Roles page",
+                "slug": "current-code-roles",
+                "roles": [{"role": "All"}, {"role": "Report Manager"}],
+            }
+        ).insert()
+        unlisted = frappe.get_doc(
+            {"doctype": "FAC Page", "title": "No roles page", "slug": "current-code-no-roles"}
+        ).insert()
+        _make_user(READER, ["System Manager"])
+        self.addCleanup(frappe.delete_doc, "User", READER, force=True, ignore_permissions=True)
+        frappe.set_user(READER)
+
+        self.assertEqual(
+            get_current_code("FAC Page", listed.name, ["html", "roles"]),
+            {"html": "", "roles": ["All", "Report Manager"]},
+        )
+        self.assertEqual(get_current_code("FAC Page", unlisted.name, ["roles"]), {"roles": []})
+
+        _make_user(OUTSIDER, [])
+        self.addCleanup(frappe.delete_doc, "User", OUTSIDER, force=True, ignore_permissions=True)
+        frappe.set_user(OUTSIDER)
+        with self.assertRaises(frappe.PermissionError):
+            get_current_code("FAC Page", listed.name, ["roles"])
+
     def test_go_live_keys_stay_out_of_the_code_keys(self):
-        self.assertEqual(GO_LIVE_KEYS, ("subject",))
-        self.assertNotIn("subject", CODE_KEYS)
+        self.assertEqual(GO_LIVE_KEYS, ("subject", "style", "roles"))
+        for key in GO_LIVE_KEYS:
+            self.assertNotIn(key, CODE_KEYS)

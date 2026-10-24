@@ -25,6 +25,12 @@
 				{{ __("Loading the code that goes live…") }}
 			</p>
 			<p v-else-if="liveEmpty" class="goes-live-note" data-test="goes-live-empty">{{ __("(empty)") }}</p>
+			<p v-if="audience" class="goes-live-note" data-test="goes-live-audience">
+				{{ __("Goes live to: {0}", [audience.text]) }}
+			</p>
+			<p v-if="audience?.everyone" class="goes-live-missing" data-test="goes-live-everyone">
+				{{ __("All and Guest include every user who can log in.") }}
+			</p>
 			<p v-if="liveMissing" class="goes-live-missing" data-test="goes-live-missing">
 				{{ __("Couldn't load the code that goes live. Check it in Desk before approving.") }}
 			</p>
@@ -56,7 +62,7 @@ import ApprovalNotes from "./ApprovalNotes.vue";
 import ChildTable from "./ChildTable.vue";
 import ConditionValue from "./ConditionValue.vue";
 import CodePreview from "./CodePreview.vue";
-import { goesLiveFields, renameKeys, writesCondition } from "./customisation";
+import { goesLiveAudience, goesLiveFields, renameKeys, writesCondition } from "./customisation";
 import { useCurrentCode } from "./useCurrentCode";
 import {
 	flattenInput,
@@ -64,7 +70,7 @@ import {
 	formatValue,
 	isMonoValue,
 	isMoneyKey,
-	isCodeKey,
+	isCodeField,
 	isChildTable,
 	codeLanguage,
 	splitDetailFields,
@@ -97,7 +103,9 @@ const doctype = computed(() => flat.value.doctype);
 
 // Code and child tables always show in full; only the plain fields fold behind "Show all fields".
 const codeRows = computed(() =>
-	Object.entries(flat.value).filter(([k, v]) => isCodeKey(k) && typeof v === "string" && v !== ""),
+	Object.entries(flat.value).filter(
+		([k, v]) => isCodeField(k, doctype.value) && typeof v === "string" && v !== "",
+	),
 );
 const tableRows = computed(() => Object.entries(flat.value).filter(([, v]) => isChildTable(v)));
 const plainFields = computed(() =>
@@ -122,11 +130,17 @@ const storedLiveRows = computed(() =>
 		.map((key) => [key, currentCode.value?.[key]])
 		.filter(([, stored]) => typeof stored === "string" && stored !== ""),
 );
+// A FAC Page's stored roles; an update that sets roles shows them as a changed child table.
+const audience = computed(() =>
+	unchangedLiveFields.value.includes("roles") ? goesLiveAudience(currentCode.value?.roles) : null,
+);
+// roles is an audience, not code: an empty list must not hide "(empty)" for empty code.
+const unchangedLiveCode = computed(() => unchangedLiveFields.value.filter((key) => key !== "roles"));
 const liveEmpty = computed(
 	() =>
 		currentCode.value !== null &&
-		unchangedLiveFields.value.length > 0 &&
-		unchangedLiveFields.value.every((key) => currentCode.value[key] === ""),
+		unchangedLiveCode.value.length > 0 &&
+		unchangedLiveCode.value.every((key) => currentCode.value[key] === ""),
 );
 const liveMissing = computed(
 	() =>

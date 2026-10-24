@@ -4,6 +4,7 @@ import { readFileSync } from "fs";
 import { resolve } from "path";
 import frappeui from "frappe-ui/vite";
 import { VitePWA } from "vite-plugin-pwa";
+import { fsAllow } from "./build/fsAllow.js";
 import { keepFirstScreen } from "./build/pwaPrecache.js";
 
 const OUT_DIR = resolve(import.meta.dirname, "../../public/chat/spa");
@@ -60,6 +61,7 @@ export default defineConfig({
 			"@": resolve(import.meta.dirname, "src"),
 		},
 	},
+	server: { fs: { allow: fsAllow } },
 	build: {
 		rolldownOptions: {
 			// frappe-ui internally imports ~icons/lucide/* (unplugin-icons) in some

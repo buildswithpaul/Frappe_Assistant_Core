@@ -4,7 +4,7 @@
 
 The safety procedure for changing how a site is set up — creating a company, fiscal year, account, warehouse or tax template, adding a custom field, setting up an approval workflow, changing naming series or a Settings page. Setup mistakes are expensive: a wrong chart of accounts or tax setup made today is posted against by every transaction after it. So you **plan, confirm, dry-run, then write**, and you leave a record of what you changed and how to undo it.
 
-Every other setup skill (`add-custom-field`, `server-script`, `client-script`, `print-format`, `custom-report`, `notification-setup`, `set-up-approval-workflow`, `configure-naming-series`, `guided-setup`) follows this protocol.
+Every other setup skill (`add-custom-field`, `server-script`, `client-script`, `print-format`, `custom-report`, `notification-setup`, `fac-page`, `set-up-approval-workflow`, `configure-naming-series`, `guided-setup`) follows this protocol.
 
 ## When to use
 
@@ -17,7 +17,7 @@ Every other setup skill (`add-custom-field`, `server-script`, `client-script`, `
 
 **Plain words, always.** Never show field names, flags or option keys (such as a server-scripts flag, `custom_` names, "Insert after" or a date field's code name) in text for the user unless they ask. Say "the Required By date", "after the Customer field", "server scripts are switched off". The same goes for conditions: write them as a sentence ("when the grand total is over 100,000"), never as an expression such as `eval:doc.base_grand_total > 100000`, in the plan, the questions and the change log. Show the expression only if the user asks for it.
 
-1. **Check who you're working for.** `Custom Field`, `Property Setter`, `Workflow`, `Workflow State`, `Workflow Transition`, `Role`, `DocType`, `Server Script` and `Client Script` (also `Custom DocPerm`, `User Permission` and similar permission records) are write-protected for everyone except a **System Manager**. If the user isn't one, say so up front and stop. Don't attempt the write to find out. `Report`, `Print Format` and `Notification` are not on that list: normal permissions apply, so try the write and relay a refusal in plain words. Query and Script Reports need the Script Manager role.
+1. **Check who you're working for.** `Custom Field`, `Property Setter`, `Workflow`, `Workflow State`, `Workflow Transition`, `Role`, `DocType`, `Server Script`, `Client Script` and `FAC Page` (also `Custom DocPerm`, `User Permission` and similar permission records) are write-protected for everyone except a **System Manager**. If the user isn't one, say so up front and stop. Don't attempt the write to find out. `Report`, `Print Format` and `Notification` are not on that list: normal permissions apply, so try the write and relay a refusal in plain words. Query and Script Reports need the Script Manager role.
 2. **Read the current state.** Look at what already exists before planning — the field may already be there, the fiscal year may exist, the template may be disabled rather than missing. Never plan a duplicate.
 3. **Write the plan as a table** and show it. Use plain business language in every cell ("Add a Sales Channel choice to Sales Invoice"), not field names or code; keep those inside the write itself and mention them only if the user asks:
 
@@ -43,7 +43,8 @@ When you have the `propose_build_plan` tool, call it before creating or changing
 List every change, mark the ones that go live, and wait for the approval. Writes the plan lists
 then run without a card each; anything else still asks. The plan card then stands in for the
 confirmation in step 5. Give each entry the `name` Frappe will give the record (a Report's
-`report_name`, a Workflow's `workflow_name`, a Role's `role_name`, the name you set for a script),
+`report_name`, a Workflow's `workflow_name`, a Role's `role_name`, a FAC Page's `slug`, the name you
+set for a script),
 or for a Custom Field, Property Setter or Custom DocPerm its `identity` fields. A record Frappe
 names by hash or series cannot be listed, so its write still asks.
 
