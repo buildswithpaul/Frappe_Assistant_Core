@@ -376,7 +376,8 @@ def _plan_change_goes_live(change: Dict[str, Any]) -> bool:
         return goes_live
     if doctype not in _SWITCH_FIELDS:
         return True
-    tool_name = _PLAN_ACTION_TOOLS.get(change.get("action"))
+    action = change.get("action")
+    tool_name = _PLAN_ACTION_TOOLS.get(action) if isinstance(action, str) else None
     name = change.get("name")
     if tool_name and _is_plain_name(name) and frappe.db.exists(doctype, name):
         return not customisation_impact(tool_name, {"doctype": doctype, "name": name, "data": {}})["dormant"]
@@ -386,7 +387,7 @@ def _plan_change_goes_live(change: Dict[str, Any]) -> bool:
 def check_plan_changes(changes: list[dict]) -> list[dict]:
     """Check each entry of a build plan against the site before the plan is shown.
 
-    One result per change, in order: ``problem`` is why the entry cannot be written as listed
+    One result per change, numbered from 1 as AR numbers them: ``problem`` is why the entry cannot be written as listed
     (None when it can) and ``goes_live`` is the entry's flag, corrected when the site shows a
     dormant claim cannot hold. Never writes.
     """
@@ -403,7 +404,7 @@ def check_plan_changes(changes: list[dict]) -> list[dict]:
             "problem": _plan_change_problem(change.get("doctype"), planned_doctypes),
             "goes_live": _plan_change_goes_live(change),
         }
-        for index, change in enumerate(changes)
+        for index, change in enumerate(changes, start=1)
     ]
 
 

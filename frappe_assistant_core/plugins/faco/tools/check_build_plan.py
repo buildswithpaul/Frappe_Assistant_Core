@@ -23,6 +23,9 @@ from frappe import _
 from frappe_assistant_core.core.base_tool import BaseTool
 from frappe_assistant_core.utils.customisation import check_plan_changes
 
+# The most changes FAC Cloud puts in one build plan.
+MAX_PLAN_CHANGES = 50
+
 
 class CheckBuildPlan(BaseTool):
     def __init__(self):
@@ -42,6 +45,7 @@ class CheckBuildPlan(BaseTool):
                     "type": "array",
                     "description": "The plan's changes: doctype, action, name or identity, goes_live",
                     "items": {"type": "object"},
+                    "maxItems": MAX_PLAN_CHANGES,
                 },
             },
             "required": ["changes"],
@@ -51,4 +55,9 @@ class CheckBuildPlan(BaseTool):
         changes = arguments.get("changes")
         if not isinstance(changes, list) or not all(isinstance(change, dict) for change in changes):
             return {"success": False, "error": _("changes must be a list of objects")}
+        if len(changes) > MAX_PLAN_CHANGES:
+            return {
+                "success": False,
+                "error": _("A build plan can list at most {0} changes").format(MAX_PLAN_CHANGES),
+            }
         return {"success": True, "results": check_plan_changes(changes)}

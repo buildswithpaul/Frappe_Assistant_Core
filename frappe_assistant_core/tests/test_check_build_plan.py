@@ -126,9 +126,17 @@ class TestCheckPlanChanges(BaseAssistantTest):
 
     def test_one_result_per_change_in_order(self):
         results = check_plan_changes([_change("ToDo"), _change("Has Role"), _change("Role")])
-        self.assertEqual([r["index"] for r in results], [0, 1, 2])
+        # AR numbers plan changes 1..n and drops a result with any other index.
+        self.assertEqual(results[0]["index"], 1)
+        self.assertEqual([r["index"] for r in results], [1, 2, 3])
         self.assertIsNone(results[0]["problem"])
         self.assertIsNotNone(results[1]["problem"])
+
+    def test_an_action_that_is_not_a_string_is_ignored(self):
+        change = _change("Server Script", ["update"], name=self.on_script)
+        [result] = check_plan_changes([change])
+        self.assertFalse(result["goes_live"])
+        self.assertIsNone(result["problem"])
 
     def test_a_doctype_that_is_not_a_plain_name_is_not_looked_up(self):
         [result] = check_plan_changes([_change({"name": "ToDo"})])
@@ -148,7 +156,7 @@ class TestCheckBuildPlanTool(BaseAssistantTest):
         self.assertTrue(result["success"])
         self.assertEqual(
             [(r["index"], r["goes_live"]) for r in result["results"]],
-            [(0, True), (1, True)],
+            [(1, True), (2, True)],
         )
         self.assertIsNone(result["results"][0]["problem"])
         self.assertIn("User", result["results"][1]["problem"])
@@ -159,6 +167,13 @@ class TestCheckBuildPlanTool(BaseAssistantTest):
                 result = self._tool().execute({"changes": changes})
                 self.assertFalse(result["success"])
                 self.assertTrue(result["error"])
+
+    def test_refuses_more_changes_than_ar_sends(self):
+        self.assertEqual(self._tool().inputSchema["properties"]["changes"]["maxItems"], 50)
+        self.assertTrue(self._tool().execute({"changes": [_change("ToDo")] * 50})["success"])
+        result = self._tool().execute({"changes": [_change("ToDo")] * 51})
+        self.assertFalse(result["success"])
+        self.assertTrue(result["error"])
 
     def test_refuses_a_user_without_system_manager(self):
         user = self.make_throwaway_user("plan-check", roles=("Employee",))
