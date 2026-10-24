@@ -70,6 +70,9 @@ class CorePlugin(BasePlugin):
             "send_email",
             # Permission checks
             "test_as_user",
+            # Builder checks
+            "sandbox_reference",
+            "recent_errors",
         ]
 
     def validate_environment(self):

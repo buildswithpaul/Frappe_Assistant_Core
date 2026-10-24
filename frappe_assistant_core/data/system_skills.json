@@ -491,5 +491,25 @@
     "status": "Published",
     "visibility": "Public",
     "content_file": "test_as_user.md"
+  },
+  {
+    "skill_id": "sandbox-reference-usage",
+    "title": "How to Use sandbox_reference",
+    "description": "Looking up the names and rules of the Server Script sandbox before writing a script",
+    "skill_type": "Tool Usage",
+    "linked_tool": "sandbox_reference",
+    "status": "Published",
+    "visibility": "Public",
+    "content_file": "sandbox_reference.md"
+  },
+  {
+    "skill_id": "recent-errors-usage",
+    "title": "How to Use recent_errors",
+    "description": "Reading the Error Log and failed scheduled jobs to see what a script or hook caused",
+    "skill_type": "Tool Usage",
+    "linked_tool": "recent_errors",
+    "status": "Published",
+    "visibility": "Public",
+    "content_file": "recent_errors.md"
   }
 ]
