@@ -126,7 +126,7 @@ class TestCheckPlanChanges(BaseAssistantTest):
 
     def test_one_result_per_change_in_order(self):
         results = check_plan_changes([_change("ToDo"), _change("Has Role"), _change("Role")])
-        # AR numbers plan changes 1..n and drops a result with any other index.
+        # FAC Cloud numbers plan changes 1..n and drops a result with any other index.
         self.assertEqual(results[0]["index"], 1)
         self.assertEqual([r["index"] for r in results], [1, 2, 3])
         self.assertIsNone(results[0]["problem"])
@@ -193,7 +193,7 @@ class TestCheckBuildPlanTool(BaseAssistantTest):
         from frappe_assistant_core.plugins.faco.plugin import FacoPlugin
         from frappe_assistant_core.utils.tool_category_detector import detect_tool_category
 
-        # It never writes, and AR calls it before showing a plan card, so gating it behind an
+        # It never writes, and FAC Cloud calls it before showing a plan card, so gating it behind an
         # approval would ask for approval of the approval.
         self.assertEqual(detect_tool_category(self._tool()), "read_only")
         plugin = FacoPlugin()

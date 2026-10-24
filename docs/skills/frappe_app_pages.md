@@ -49,6 +49,10 @@ A full screen with its own layout (planner, board, tracker) is a FAC Page: see t
   Server Script or Client Script. A Custom Field, Property Setter or Custom DocPerm may give `identity`
   instead (`dt` + `fieldname`; `doc_type` + `field_name` + `property`; `parent` + `role` +
   `permlevel`). A record Frappe names by hash or series cannot be listed, so its write still asks.
+- List each record the way Frappe saves it: a new doctype as a `DocType` create, and a role assignment
+  as an update of each `User` by name (never `Has Role`). Check what exists with `list_documents`,
+  `get_doctype_info` and `test_as_user`, not `run_database_query`, which asks on every call. See
+  `setup-change-protocol` for the full rules.
 - Send a `mockup_html` for each screen, written with the classes in the `mockup-kit` skill. Show the
   layout, not real data.
 - Wait for the approval. Writes the plan lists then run without a card each; anything you add later

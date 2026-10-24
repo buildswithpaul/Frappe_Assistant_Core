@@ -387,8 +387,8 @@ def _plan_change_goes_live(change: Dict[str, Any]) -> bool:
 def check_plan_changes(changes: list[dict]) -> list[dict]:
     """Check each entry of a build plan against the site before the plan is shown.
 
-    One result per change, numbered from 1 as AR numbers them: ``problem`` is why the entry cannot be written as listed
-    (None when it can) and ``goes_live`` is the entry's flag, corrected when the site shows a
+    One result per change, numbered from 1 as FAC Cloud numbers them: ``problem`` is why the entry
+    cannot be written as listed (None when it can) and ``goes_live`` is the entry's flag, corrected when the site shows a
     dormant claim cannot hold. Never writes.
     """
     planned_doctypes = {
