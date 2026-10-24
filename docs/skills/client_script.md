@@ -24,6 +24,12 @@ Adds behaviour to a form in the browser, such as "when the customer changes, fil
 6. **Create it with `enabled: 0`**, which does nothing yet. Show what it will do and ask the user whether to go ahead. Only after they say yes, update it with `enabled: 1`. Then straight away ask them to try it on a draft or test document (say exactly what to do), and offer to switch it off again if it misbehaves.
 7. **Link the result**: the new record and the form where the change shows (`applies_to.url` on the create result). Say the user needs to reload the form.
 
+## Checking it after you switch it on
+
+Once the script is switched on, open the form or page it changes (`browser_navigate_to`) and look at it with `browser_take_screenshot`. If something looks wrong or nothing changed, use `browser_capture_diagnostics` for the page's console errors and failed requests. Do not ask the user to describe the page when you can look.
+
+Each capture asks the user first. The card has an "Allow on this page in this chat" choice: it stops the questions for that tool on that page for the rest of this chat. Mention it so the user is not asked on every capture. "Always Allow" covers the tool on every page, so do not recommend it.
+
 ## Reference
 
 ```json

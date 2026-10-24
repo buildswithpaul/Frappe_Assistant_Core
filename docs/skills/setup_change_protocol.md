@@ -37,12 +37,20 @@ Every other setup skill (`add-custom-field`, `server-script`, `client-script`, `
 7. **Execute in order, one write at a time.** Stop at the first failure. Don't improvise a workaround write that isn't in the plan — report what failed and what's still pending, and re-plan with the user.
 8. **Close with the change log**: the same table, now with a Result column and a link to every record. This is the user's undo list, so keep it accurate.
 
+## Building and checking without probe scripts
+
+1. **Look it up first.** Read how the thing works (`sandbox_reference` for script code, `get_doctype_info` for fields) instead of guessing or creating a throwaway record to find out.
+2. **Build it switched off.** A script that is switched off changes nothing, and a switched-off Server Script needs no approval card.
+3. **Switch it on with one card**, then trigger it or open the page it changes. For a form or page, look with `browser_take_screenshot` / `browser_capture_diagnostics`.
+4. **If it fails, read `recent_errors`**, filtered by the record's name, then fix and trigger again.
+5. **Check who can use it** with `test_as_user`.
+
 ## Gotchas
 
 - **Name records by what they do, never by a value that may change (no limits, percentages or dates in names):** 'Discount limit on Sales Invoice submit', not 'Block discount above 15%'. Changing a value never needs a rename. The update tool cannot rename a record; if the user wants a different name, tell them to use Rename from the record's menu in Desk.
 - **Single doctypes** (Stock Settings, Selling Settings, Accounts Settings…) are updated with `name` equal to the doctype name.
 - **A setting change applies to future transactions only.** Turning off negative stock doesn't fix existing negative stock. Say so, so the user doesn't expect it to.
-- **Test on a copy first** when the user has a staging or test site and the change is on the hard-to-undo list. Recommend it; don't insist.
+- **Check as you build.** Use the loop under "Building and checking without probe scripts" below; don't test on a copy or create a throwaway record to find out how something works.
 - **One plan, one purpose.** Don't fold an unrelated "while I'm here" fix into someone's plan. Offer it separately afterwards.
 
 ## Anti-patterns
