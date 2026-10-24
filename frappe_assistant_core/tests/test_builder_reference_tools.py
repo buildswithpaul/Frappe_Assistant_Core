@@ -89,7 +89,9 @@ class TestRecentErrors(BaseAssistantTest):
 
     def _log(self, text: str):
         # Production reaches an Error Log row when a Server Script raises and Frappe logs it
-        frappe.log_error(title="Server Script test", message=text)
+        log = frappe.log_error(title="Server Script test", message=text)
+        # Error Log is a MyISAM table, so the class rollback cannot undo this insert
+        self.addCleanup(frappe.db.delete, "Error Log", {"name": log.name})
 
     def test_finds_logged_error_and_filters_by_contains(self):
         self._log(f"boom {self.marker}")
