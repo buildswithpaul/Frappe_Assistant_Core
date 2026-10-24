@@ -124,6 +124,7 @@ describe("customisationConsequence for every customisation doctype", () => {
 		["Report", { ref_doctype: "Lead" }, "Adds a report on Lead", "Changes a report on Lead"],
 		["Print Format", { doc_type: "Lead" }, "Changes how Lead prints", "Changes how Lead prints"],
 		["Notification", { document_type: "Lead" }, "Sends messages automatically when Lead records change", "Sends messages automatically when Lead records change"],
+		["FAC Page", { slug: "team-planner" }, "Adds a page to Desk", "Changes a page in Desk"],
 	];
 
 	it.each(DOCTYPES)("%s: create and update each have their own sentence", (doctype, data, created, updated) => {

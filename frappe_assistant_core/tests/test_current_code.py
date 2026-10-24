@@ -110,6 +110,24 @@ class TestGetCurrentCodeGoesLive(BaseAssistantTest):
             },
         )
 
+    def test_returns_a_fac_page_html_script_and_style(self):
+        # Production reaches this draft when a builder saves a FAC Page before publishing it.
+        page = frappe.get_doc(
+            {
+                "doctype": "FAC Page",
+                "title": "Current code page",
+                "slug": "current-code-page",
+                "html": "<div id='app'></div>",
+                "script": "render()",
+                "style": ".x { color: red; }",
+            }
+        ).insert()
+        out = get_current_code("FAC Page", page.name, ["html", "script", "style"])
+        self.assertEqual(
+            out, {"html": "<div id='app'></div>", "script": "render()", "style": ".x { color: red; }"}
+        )
+
     def test_go_live_keys_stay_out_of_the_code_keys(self):
-        self.assertEqual(GO_LIVE_KEYS, ("subject",))
-        self.assertNotIn("subject", CODE_KEYS)
+        self.assertEqual(GO_LIVE_KEYS, ("subject", "style"))
+        for key in GO_LIVE_KEYS:
+            self.assertNotIn(key, CODE_KEYS)

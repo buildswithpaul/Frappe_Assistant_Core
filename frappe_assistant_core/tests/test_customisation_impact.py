@@ -46,6 +46,9 @@ class TestCustomisationImpact(BaseAssistantTest):
         # Rolled back with the class-level transaction.
         cls.off_script = cls._insert_script("FAC Impact Off Script", disabled=1)
         cls.on_script = cls._insert_script("FAC Impact On Script", disabled=0)
+        # Production reaches these when a builder saves a FAC Page as a draft or publishes it.
+        cls.draft_page = cls._insert_page("fac-impact-draft", published=0)
+        cls.live_page = cls._insert_page("fac-impact-live", published=1)
 
     @staticmethod
     def _insert_script(name: str, disabled: int) -> str:
@@ -61,6 +64,36 @@ class TestCustomisationImpact(BaseAssistantTest):
         )
         doc.insert(ignore_permissions=True)
         return doc.name
+
+    @staticmethod
+    def _insert_page(slug: str, published: int) -> str:
+        doc = frappe.get_doc(
+            {"doctype": "FAC Page", "title": slug, "slug": slug, "published": published, "html": "<p>x</p>"}
+        )
+        doc.insert(ignore_permissions=True)
+        return doc.name
+
+    def test_unpublished_fac_page_create_and_update_are_dormant(self):
+        self.assertTrue(_impact("create_document", "FAC Page", {"slug": "team-planner"})["dormant"])
+        self.assertTrue(
+            _impact("create_document", "FAC Page", {"slug": "team-planner", "published": 0})["dormant"]
+        )
+        self.assertTrue(
+            _impact("update_document", "FAC Page", {"html": "<p>y</p>"}, self.draft_page)["dormant"]
+        )
+
+    def test_publishing_a_fac_page_is_live(self):
+        self.assertFalse(
+            _impact("create_document", "FAC Page", {"slug": "team-planner", "published": 1})["dormant"]
+        )
+        self.assertFalse(_impact("update_document", "FAC Page", {"published": 1}, self.draft_page)["dormant"])
+        self.assertFalse(
+            _impact("update_document", "FAC Page", {"html": "<p>y</p>"}, self.live_page)["dormant"]
+        )
+
+    def test_delete_of_an_unpublished_fac_page_is_dormant(self):
+        self.assertTrue(_impact("delete_document", "FAC Page", name=self.draft_page)["dormant"])
+        self.assertFalse(_impact("delete_document", "FAC Page", name=self.live_page)["dormant"])
 
     def test_server_script_created_switched_off_is_dormant(self):
         r = _impact("create_document", "Server Script", {"name": "x", "disabled": 1})

@@ -286,6 +286,19 @@ describe("ApprovalCard switching code on", () => {
 		expect(text).toContain("Hi {{ doc.name }}");
 	});
 
+	it("FAC Page published: shows its stored html, script and style as going live", async () => {
+		currentCode.mockReset();
+		currentCode.mockResolvedValue({ html: "<div id='planner'></div>", script: "renderPlanner()", style: ".planner { gap: 8px; }" });
+		const wrapper = mount(ApprovalCard, { props: { block: switchBlock("FAC Page", { published: 1 }, "team-planner") } });
+		await flushPromises();
+		expect(currentCode).toHaveBeenCalledWith("FAC Page", "team-planner", ["html", "script", "style"]);
+		expect(goesLive(wrapper).text()).toBe("This goes live");
+		const text = wrapper.findAll(".code-preview pre").map((p) => p.text()).join("\n");
+		expect(text).toContain("<div id='planner'></div>");
+		expect(text).toContain("renderPlanner()");
+		expect(text).toContain(".planner { gap: 8px; }");
+	});
+
 	it("switch on that also changes the code keeps the diff and still says it goes live", async () => {
 		currentCode.mockReset();
 		currentCode.mockResolvedValue({ script: "a\nold\nc" });
@@ -379,6 +392,8 @@ describe("ApprovalCard switching code on", () => {
 			switchBlock("Server Script", { disabled: "1" }),
 			switchBlock("Server Script", { disabled: true }),
 			switchBlock("Client Script", { enabled: false }),
+			switchBlock("FAC Page", { published: 0 }),
+			switchBlock("FAC Page", { title: "Planner" }),
 			switchBlock("Server Script", { script_type: "API" }),
 			switchBlock("Client Script", { dt: "Lead" }),
 			switchBlock("ToDo", { enabled: 1 }),

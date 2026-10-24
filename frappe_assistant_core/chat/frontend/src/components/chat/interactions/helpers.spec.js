@@ -142,6 +142,7 @@ describe("code keys", () => {
 		expect(codeLanguage("html", "Print Format")).toBe("django");
 		expect(codeLanguage("html", "Web Page")).toBe("xml");
 		expect(codeLanguage("css", "Print Format")).toBe("xml");
+		expect(codeLanguage("script", "FAC Page")).toBe("javascript");
 	});
 });
 

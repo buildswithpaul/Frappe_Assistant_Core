@@ -27,9 +27,10 @@ CODE_KEYS = (
 )
 
 # Not code on every card, but run once an update switches the record on, so the card shows the
-# stored value: a Notification's subject is a Jinja template rendered into the email it sends.
+# stored value: a Notification's subject is a Jinja template rendered into the email it sends,
+# and a FAC Page's style is applied to the page once it is published.
 # Mirrored in customisation.js (SWITCHED_CODE).
-GO_LIVE_KEYS = ("subject",)
+GO_LIVE_KEYS = ("subject", "style")
 
 
 def _requested_fields(fields: list | str) -> list[str]:

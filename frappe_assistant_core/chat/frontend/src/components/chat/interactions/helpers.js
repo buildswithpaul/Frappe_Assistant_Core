@@ -42,6 +42,7 @@ export function isCodeKey(key) {
 const PYTHON_KEYS = new Set(["script", "report_script", "condition"]);
 
 export function codeLanguage(key, doctype) {
+	if (key === "script" && doctype === "FAC Page") return "javascript";
 	if (PYTHON_KEYS.has(key)) return "python";
 	if (key === "javascript") return "javascript";
 	if (key === "query") return "sql";

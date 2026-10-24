@@ -26,6 +26,7 @@ const CUSTOMISATION_DOCTYPES = new Set([
 	"Report",
 	"Print Format",
 	"Notification",
+	"FAC Page",
 ]);
 
 const startsWithVowel = (word) => /^[aeiou]/i.test(word);
@@ -104,6 +105,7 @@ const CUSTOMISATION_CONSEQUENCES = {
 	Role: accessLine,
 	"Custom DocPerm": accessLine,
 	DocType: () => __("Changes how a kind of record is built for everyone"),
+	"FAC Page": (f, isUpdate) => (isUpdate ? __("Changes a page in Desk") : __("Adds a page to Desk")),
 };
 
 /**
@@ -238,6 +240,7 @@ const SWITCHED_CODE = {
 		switchedOn: (f) => switches(f, "enabled", ON_VALUES),
 		fields: ["subject", "condition", "message"],
 	},
+	"FAC Page": { switchedOn: (f) => switches(f, "published", ON_VALUES), fields: ["html", "script", "style"] },
 };
 
 /**
