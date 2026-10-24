@@ -16,13 +16,31 @@
 
 """Read endpoint for FAC Page records, shown by the ``fac-pages`` Desk page."""
 
+import re
+
 import frappe
 from frappe import _
 from frappe.utils.html_utils import sanitize_html
 
 SYSTEM_MANAGER = "System Manager"
-# Tags that act on the whole document (a refresh, a stylesheet) rather than inside the page.
-DRAFT_DISALLOWED_TAGS = ["meta", "link", "html", "head", "body"]
+# Tags that act on the whole document (a refresh, a stylesheet), or that could draw a fake
+# prompt posting to another server, rather than showing the page.
+DRAFT_DISALLOWED_TAGS = [
+    "meta",
+    "link",
+    "html",
+    "head",
+    "body",
+    "form",
+    "input",
+    "button",
+    "select",
+    "textarea",
+]
+_CSS_ESCAPE = re.compile(r"\\([0-9a-fA-F]{1,6})\s?|\\(.)", re.DOTALL)
+_CSS_IMPORT = re.compile(r"@import\b[^;]*;?", re.IGNORECASE)
+# A url() or image-set() value, allowing one level of nested parentheses.
+_CSS_FETCH = re.compile(r"(?:url|(?:-webkit-)?image-set)\s*\((?:[^()]|\([^()]*\))*\)", re.IGNORECASE)
 
 
 @frappe.whitelist(methods=["GET"])
@@ -31,8 +49,9 @@ def get_page(slug: str) -> dict:
 
     The FAC Page DocType is System Manager only, so access to a page is decided here from
     its ``published`` flag and ``roles`` table rather than by DocType permission. A draft is
-    served without its script and with sanitised html: it is dormant, so previewing it must run
-    no code until it is published (publishing goes through an approval card).
+    served without its script and with sanitised html and style: it is dormant, so previewing it
+    must run no code and reach no other server until it is published (publishing goes through
+    an approval card).
     """
     if frappe.session.user == "Guest":
         frappe.throw(_("Log in to view this page."), frappe.PermissionError)
@@ -59,15 +78,37 @@ def get_page(slug: str) -> dict:
         "title": page.title,
         "html": _draft_html(page.html) if draft else page.html,
         "script": "" if draft else page.script,
-        "style": page.style,
+        "style": _draft_style(page.style) if draft else page.style,
         "draft": draft,
     }
 
 
 def _draft_html(html: str | None) -> str | None:
-    """A draft's html without inline handlers or javascript: links.
+    """A draft's html without inline handlers, javascript: links, form controls or url() values.
 
     The host page's create_shadow_element strips only <script> and <style>, so attributes such
     as onerror would still run in the previewer's session.
     """
-    return sanitize_html(html, always_sanitize=True, disallowed_tags=DRAFT_DISALLOWED_TAGS)
+    html = sanitize_html(html, always_sanitize=True, disallowed_tags=DRAFT_DISALLOWED_TAGS)
+    # Inline style attributes keep url() through sanitize_html.
+    return _CSS_FETCH.sub("none", html) if html else html
+
+
+def _unescape_css(match: re.Match) -> str:
+    hex_digits, char = match.groups()
+    if hex_digits is None:
+        return char
+    code = int(hex_digits, 16)
+    return chr(code) if 0 < code <= 0x10FFFF and not 0xD800 <= code <= 0xDFFF else "\ufffd"
+
+
+def _draft_style(style: str | None) -> str | None:
+    """A draft's style without @import rules or url()/image-set() values, so it fetches nothing.
+
+    CSS escapes are decoded first, so a spelling such as ``\\75 rl(`` is caught too. A backslash
+    left after decoding (from an escaped backslash) is dropped, or the browser would decode again.
+    """
+    if not style:
+        return style
+    style = _CSS_ESCAPE.sub(_unescape_css, style).replace("\\", "")
+    return _CSS_FETCH.sub("none", _CSS_IMPORT.sub("", style))

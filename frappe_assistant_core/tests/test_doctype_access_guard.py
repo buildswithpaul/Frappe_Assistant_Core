@@ -115,6 +115,22 @@ class TestValidateDocumentAccess(BaseAssistantTest):
         self.assertIn("needs a System Manager with the Script Manager role", result["error"])
         has_permission.assert_not_called()
 
+    def test_fac_page_write_is_refused_for_a_non_system_manager(self):
+        """A FAC Page holds code that runs in Desk, so only a System Manager may write it."""
+        # A site admin may grant FAC Page write by Custom DocPerm; the guard must still refuse.
+        with patch(
+            "frappe_assistant_core.core.security_config.get_user_primary_role",
+            autospec=True,
+            return_value=LOW_PRIV_ROLE,
+        ), patch("frappe.has_permission", autospec=True, return_value=True) as has_permission:
+            for perm_type in ("create", "write", "delete"):
+                with self.subTest(perm_type=perm_type):
+                    result = validate_document_access("someone@example.com", "FAC Page", "", perm_type)
+                    self.assertFalse(result["success"])
+                    self.assertIn("needs a System Manager", result["error"])
+        has_permission.assert_not_called()
+        self.assertTrue(is_doctype_accessible("FAC Page", "System Manager", "write"))
+
     def test_other_protected_doctype_does_not_name_script_manager(self):
         with patch(
             "frappe_assistant_core.core.security_config.get_user_primary_role",
