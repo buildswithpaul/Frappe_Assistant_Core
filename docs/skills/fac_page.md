@@ -4,7 +4,7 @@
 
 A `FAC Page` is a full screen with its own layout, such as a planner, a board or a tracker, stored as a record and opened at `/app/fac-pages/<slug>`. Follow `get_skill("setup-change-protocol")` for the plan and the change log. This skill covers what goes into the record.
 
-**Only a System Manager can create or change one.** Tell anyone else who can do it.
+**Only a System Manager can create or change one.** If the user is not a System Manager, say so and stop.
 
 ## When to use
 
@@ -16,7 +16,7 @@ A `FAC Page` is a full screen with its own layout, such as a planner, a board or
 
 1. **Plan it.** When you have the `propose_build_plan` tool, list the page with its `slug` as the `name`, mark it as going live, and send a `mockup_html` written with the `mockup-kit` classes.
 2. **Build it with `published: 0`.** An unpublished page is a draft: creating, changing or deleting it needs no card. Only System Managers can open a draft, and it is shown without its script, so the preview runs no code.
-3. **Publish with one card.** Update it with `published: 1`. That is the go-live change and asks for approval, unless the approved build plan marked the page as going live. Any change to a published page asks again.
+3. **Publish with one card.** Update it with `published: 1`. That is the go-live change and asks for approval, unless the approved build plan marked the page as going live. Any change to a published page asks again, and so does unpublishing it.
 4. **Check it.** Open the `page_url` from the create or update result with `browser_navigate_to` and look with `browser_take_screenshot`. Then check access with `test_as_user`: `read` on every doctype the page reads, and `write` or `create` on those it changes, for a user who should see the page and one who should not.
 5. **Link it.** To put it on a Workspace, add a shortcut of type `URL` to `/app/fac-pages/<slug>`.
 
@@ -31,7 +31,7 @@ A `FAC Page` is a full screen with its own layout, such as a planner, a board or
     "published": 0,
     "roles": [{"role": "Projects User"}],
     "html": "<div class=\"mk-page\"><div class=\"mk-card\"><table class=\"mk-table\" id=\"tasks\"></table></div></div>",
-    "script": "frappe.db.get_list('Task', {fields: ['name', 'subject', 'status'], limit: 20}).then((rows) => {\n  root_element.querySelector('#tasks').innerHTML = rows.map((r) => `<tr><td>${frappe.utils.escape_html(r.subject)}</td><td>${r.status}</td></tr>`).join('');\n});",
+    "script": "frappe.db.get_list('Task', {fields: ['name', 'subject', 'status'], limit: 20}).then((rows) => {\n  root_element.querySelector('#tasks').innerHTML = rows.map((r) => `<tr><td>${frappe.utils.escape_html(r.subject)}</td><td>${frappe.utils.escape_html(r.status)}</td></tr>`).join('');\n});",
     "style": "#tasks td { padding: 4px 8px; }"
   }
 }
