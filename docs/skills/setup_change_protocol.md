@@ -18,7 +18,7 @@ Every other setup skill (`add-custom-field`, `server-script`, `client-script`, `
 **Plain words, always.** Never show field names, flags or option keys (such as a server-scripts flag, `custom_` names, "Insert after" or a date field's code name) in text for the user unless they ask. Say "the Required By date", "after the Customer field", "server scripts are switched off". The same goes for conditions: write them as a sentence ("when the grand total is over 100,000"), never as an expression such as `eval:doc.base_grand_total > 100000`, in the plan, the questions and the change log. Show the expression only if the user asks for it.
 
 1. **Check who you're working for.** `Custom Field`, `Property Setter`, `Workflow`, `Workflow State`, `Workflow Transition`, `Role`, `DocType`, `Server Script`, `Client Script` and `FAC Page` (also `Custom DocPerm`, `User Permission` and similar permission records) are write-protected for everyone except a **System Manager**. If the user isn't one, say so up front and stop. Don't attempt the write to find out. `Report`, `Print Format` and `Notification` are not on that list: normal permissions apply, so try the write and relay a refusal in plain words. Query and Script Reports need the Script Manager role.
-2. **Read the current state.** Look at what already exists before planning — the field may already be there, the fiscal year may exist, the template may be disabled rather than missing. Never plan a duplicate.
+2. **Read the current state** with `list_documents`, `get_document` and `get_doctype_info` (and `test_as_user` for who can reach what), not `run_database_query`, which asks for approval on every call. Look at what already exists before planning — the field may already be there, the fiscal year may exist, the template may be disabled rather than missing. Never plan a duplicate.
 3. **Write the plan as a table** and show it. Use plain business language in every cell ("Add a Sales Channel choice to Sales Invoice"), not field names or code; keep those inside the write itself and mention them only if the user asks:
 
    | # | Action | DocType | Record | Key values | Undo |
@@ -47,6 +47,20 @@ confirmation in step 5. Give each entry the `name` Frappe will give the record (
 set for a script),
 or for a Custom Field, Property Setter or Custom DocPerm its `identity` fields. A record Frappe
 names by hash or series cannot be listed, so its write still asks.
+
+List each change the way Frappe saves it:
+
+- **A new doctype** is a `DocType` create named after it, not an entry for the new doctype itself.
+- **A role assignment** is an update of each `User` by name. `Has Role` is a child table, and a child
+  row is always saved through its parent, so list the parent record.
+- **Mark `goes_live` honestly.** Mark a new Role, DocType, Custom Field, permission and anything else
+  without an on/off switch as going live. A plan entry carries no field values, so FAC cannot prove such
+  a record is dormant and shows it under Goes live to be safe. Only a Server Script, Client Script,
+  Notification or FAC Page created switched off (or unpublished) can stay dormant, and an update of one
+  that is on now goes live.
+
+FAC checks the plan before the card shows. An entry it cannot match to a save comes back to you with
+the reason: fix the entry and propose again. A dormant claim FAC cannot prove is shown as going live.
 
 ## Gotchas
 

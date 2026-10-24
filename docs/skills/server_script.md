@@ -53,7 +53,9 @@ Adds a rule that runs on the server when a document is saved, submitted, cancell
 ## Plan before a multi-record setup
 
 When you have the `propose_build_plan` tool and are changing two or more scripts or other records,
-propose a build plan first, as the `setup-change-protocol` skill describes.
+propose a build plan first, as the `setup-change-protocol` skill describes. A script you create with
+`disabled: 1` is dormant; switching it on, or changing one that is on now, goes live. Check what exists
+with `list_documents` and `get_doctype_info`, not `run_database_query`, which asks on every call.
 
 ## Gotchas
 
