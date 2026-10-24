@@ -28,9 +28,12 @@ CODE_KEYS = (
 
 # Not code on every card, but run once an update switches the record on, so the card shows the
 # stored value: a Notification's subject is a Jinja template rendered into the email it sends,
-# and a FAC Page's style is applied to the page once it is published.
-# Mirrored in customisation.js (SWITCHED_CODE).
-GO_LIVE_KEYS = ("subject", "style")
+# and a FAC Page's style is applied to the page once it is published. A FAC Page's roles say who
+# it goes live to. Mirrored in customisation.js (SWITCHED_CODE).
+GO_LIVE_KEYS = ("subject", "style", "roles")
+
+# Child tables among GO_LIVE_KEYS, and the column each returns, one value per row.
+TABLE_COLUMNS = {"roles": "role"}
 
 
 def _requested_fields(fields: list | str) -> list[str]:
@@ -48,16 +51,30 @@ def get_current_code(doctype: str, name: str, fields: list | str) -> dict:
                     GO_LIVE_KEYS, unknown to the doctype, or above the caller's permission level are ignored.
 
     Returns:
-            {fieldname: stored value or ""}.
+            {fieldname: stored value or ""}; a child table in TABLE_COLUMNS gives a list of values.
     """
     if not frappe.has_permission(doctype, "read", doc=name):
         frappe.throw(
             _("You do not have permission to read {0} {1}").format(doctype, name), frappe.PermissionError
         )
 
+    requested = _requested_fields(fields)
     permitted = get_permitted_fields(doctype)
-    wanted = [f for f in _requested_fields(fields) if f in permitted]
-    if not wanted:
-        return {}
-    values = frappe.db.get_value(doctype, name, wanted, as_dict=True) or {}
-    return {f: values.get(f) or "" for f in wanted}
+    columns = [f for f in requested if f in permitted]
+    # get_permitted_fields leaves child tables out, so their permission level is checked here.
+    meta = frappe.get_meta(doctype)
+    levels = meta.get_permlevel_access("read")
+    tables = [
+        df.fieldname
+        for df in meta.get_table_fields()
+        if df.fieldname in requested and df.fieldname in TABLE_COLUMNS and df.permlevel in levels
+    ]
+    out = {}
+    if columns:
+        values = frappe.db.get_value(doctype, name, columns, as_dict=True) or {}
+        out = {f: values.get(f) or "" for f in columns}
+    if tables:
+        # Read was checked above; child rows come from the record itself.
+        doc = frappe.get_doc(doctype, name)
+        out.update({f: [row.get(TABLE_COLUMNS[f]) for row in doc.get(f)] for f in tables})
+    return out

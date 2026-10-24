@@ -25,6 +25,12 @@
 				{{ __("Loading the code that goes live…") }}
 			</p>
 			<p v-else-if="liveEmpty" class="goes-live-note" data-test="goes-live-empty">{{ __("(empty)") }}</p>
+			<p v-if="audience" class="goes-live-note" data-test="goes-live-audience">
+				{{ __("Goes live to: {0}", [audience.text]) }}
+			</p>
+			<p v-if="audience?.everyone" class="goes-live-missing" data-test="goes-live-everyone">
+				{{ __("All and Guest include every user who can log in.") }}
+			</p>
 			<p v-if="liveMissing" class="goes-live-missing" data-test="goes-live-missing">
 				{{ __("Couldn't load the code that goes live. Check it in Desk before approving.") }}
 			</p>
@@ -56,7 +62,7 @@ import ApprovalNotes from "./ApprovalNotes.vue";
 import ChildTable from "./ChildTable.vue";
 import ConditionValue from "./ConditionValue.vue";
 import CodePreview from "./CodePreview.vue";
-import { goesLiveFields, renameKeys, writesCondition } from "./customisation";
+import { goesLiveAudience, goesLiveFields, renameKeys, writesCondition } from "./customisation";
 import { useCurrentCode } from "./useCurrentCode";
 import {
 	flattenInput,
@@ -123,6 +129,10 @@ const storedLiveRows = computed(() =>
 	unchangedLiveFields.value
 		.map((key) => [key, currentCode.value?.[key]])
 		.filter(([, stored]) => typeof stored === "string" && stored !== ""),
+);
+// A FAC Page's stored roles; an update that sets roles shows them as a changed child table.
+const audience = computed(() =>
+	unchangedLiveFields.value.includes("roles") ? goesLiveAudience(currentCode.value?.roles) : null,
 );
 const liveEmpty = computed(
 	() =>

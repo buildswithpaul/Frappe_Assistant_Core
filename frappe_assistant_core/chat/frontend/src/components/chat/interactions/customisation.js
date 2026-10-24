@@ -240,7 +240,11 @@ const SWITCHED_CODE = {
 		switchedOn: (f) => switches(f, "enabled", ON_VALUES),
 		fields: ["subject", "condition", "message"],
 	},
-	"FAC Page": { switchedOn: (f) => switches(f, "published", ON_VALUES), fields: ["html", "script", "style"] },
+	// roles is the page's audience, shown as a sentence rather than as code.
+	"FAC Page": {
+		switchedOn: (f) => switches(f, "published", ON_VALUES),
+		fields: ["html", "script", "style", "roles"],
+	},
 };
 
 /**
@@ -252,4 +256,20 @@ export function goesLiveFields(toolName, input) {
 	const fields = flattenInput(input);
 	const entry = SWITCHED_CODE[fields.doctype];
 	return entry && entry.switchedOn(fields) ? entry.fields : [];
+}
+
+// Roles every user who can log in holds, so a page listing one reaches everyone.
+const EVERYONE_ROLES = ["All", "Guest"];
+
+/**
+ * Who a FAC Page goes live to, from its stored role names: `{ text, everyone }`, or null when
+ * the roles are not a list. No roles means only System Managers can open it.
+ */
+export function goesLiveAudience(roles) {
+	if (!Array.isArray(roles)) return null;
+	const names = roles.filter((role) => typeof role === "string" && role);
+	return {
+		text: names.length ? names.join(", ") : __("System Managers only"),
+		everyone: names.some((role) => EVERYONE_ROLES.includes(role)),
+	};
 }

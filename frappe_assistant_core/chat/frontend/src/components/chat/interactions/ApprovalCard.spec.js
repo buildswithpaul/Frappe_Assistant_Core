@@ -292,7 +292,7 @@ describe("ApprovalCard switching code on", () => {
 		currentCode.mockResolvedValue({ html: "<div id='planner'></div>", script: "renderPlanner()", style: ".planner { gap: 8px; }" });
 		const wrapper = mount(ApprovalCard, { props: { block: switchBlock("FAC Page", { published: 1 }, "team-planner") } });
 		await flushPromises();
-		expect(currentCode).toHaveBeenCalledWith("FAC Page", "team-planner", ["html", "script", "style"]);
+		expect(currentCode).toHaveBeenCalledWith("FAC Page", "team-planner", ["html", "script", "style", "roles"]);
 		expect(goesLive(wrapper).text()).toBe("This goes live");
 		const text = wrapper.findAll(".code-preview pre").map((p) => p.text()).join("\n");
 		expect(text).toContain("<div id='planner'></div>");
@@ -301,6 +301,44 @@ describe("ApprovalCard switching code on", () => {
 	});
 
 	const preview = (wrapper, label) => wrapper.findAllComponents(CodePreview).find((c) => c.props("label") === label);
+
+	const publish = async (roles) => {
+		currentCode.mockReset();
+		currentCode.mockResolvedValue({ html: "<p>x</p>", script: "", style: "", roles });
+		const wrapper = mount(ApprovalCard, { props: { block: switchBlock("FAC Page", { published: 1 }, "team-planner") } });
+		await flushPromises();
+		return wrapper;
+	};
+	const audience = (wrapper) => wrapper.find('[data-test="goes-live-audience"]');
+	const everyone = (wrapper) => wrapper.find('[data-test="goes-live-everyone"]');
+
+	it("FAC Page published: says which roles it goes live to", async () => {
+		const wrapper = await publish(["Sales User", "Report Manager"]);
+		expect(audience(wrapper).text()).toBe("Goes live to: Sales User, Report Manager");
+		expect(everyone(wrapper).exists()).toBe(false);
+	});
+
+	it("FAC Page published with no roles: says System Managers only", async () => {
+		const wrapper = await publish([]);
+		expect(audience(wrapper).text()).toBe("Goes live to: System Managers only");
+	});
+
+	it.each([["All"], ["Guest"]])("FAC Page published to %s: names it and warns it reaches every user", async (role) => {
+		const wrapper = await publish(["Sales User", role]);
+		expect(audience(wrapper).text()).toBe(`Goes live to: Sales User, ${role}`);
+		expect(everyone(wrapper).text()).toBe("All and Guest include every user who can log in.");
+	});
+
+	it("an update that also sets the roles shows them as the change, not the stored ones", async () => {
+		currentCode.mockReset();
+		currentCode.mockResolvedValue({ html: "", script: "", style: "", roles: [] });
+		const wrapper = mount(ApprovalCard, {
+			props: { block: switchBlock("FAC Page", { published: 1, roles: [{ role: "Sales User" }] }, "team-planner") },
+		});
+		await flushPromises();
+		expect(audience(wrapper).exists()).toBe(false);
+		expect(wrapper.text()).toContain("Sales User");
+	});
 
 	it("FAC Page style change: shows style as a diffed CSS code block, not a plain field", async () => {
 		currentCode.mockReset();
@@ -323,7 +361,7 @@ describe("ApprovalCard switching code on", () => {
 			props: { block: switchBlock("FAC Page", { published: 1, style: ".new {}" }, "team-planner") },
 		});
 		await flushPromises();
-		expect(currentCode).toHaveBeenCalledWith("FAC Page", "team-planner", ["style", "html", "script"]);
+		expect(currentCode).toHaveBeenCalledWith("FAC Page", "team-planner", ["style", "html", "script", "roles"]);
 		expect(goesLive(wrapper).text()).toBe("This goes live");
 		expect(wrapper.find(".diff-del").text()).toContain(".old {}");
 		expect(wrapper.find(".diff-add").text()).toContain(".new {}");
