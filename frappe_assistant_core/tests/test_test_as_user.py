@@ -14,12 +14,12 @@
 """Tests for the test_as_user permission check tool."""
 
 import json
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import frappe
 from frappe import _
 
-from frappe_assistant_core.plugins.core.tools.test_as_user import TestAsUser
+from frappe_assistant_core.plugins.core.tools.test_as_user import TestAsUser, _roles_that_allow
 from frappe_assistant_core.tests.base_test import BaseAssistantTest
 
 SENTINEL = "SENTINEL-description-4f9a2c"
@@ -189,17 +189,26 @@ class TestTestAsUser(BaseAssistantTest):
         self.assertIn("System Manager", row["roles_that_allow"])
 
     def test_non_system_manager_is_refused(self):
-        # nosemgrep: frappe-setuser — tests run in an isolated transaction
-        frappe.set_user(self.nobody)
-        try:
-            response = self.tool._safe_execute(
-                {"user": self.nobody, "checks": [{"ptype": "read", "doctype": "ToDo"}]}
-            )
-        finally:
-            # nosemgrep: frappe-setuser — tests run in an isolated transaction
-            frappe.set_user("Administrator")
-        self.assertFalse(response["success"])
-        self.assertEqual(response["error_type"], "PermissionError")
+        # A user without the role is what calls the tool in production when it is exposed to them
+        with patch("frappe.get_roles", autospec=True, return_value=["Guest"]):
+            with self.assertRaises(frappe.PermissionError):
+                self.tool.check_permission()
+
+    def test_roles_that_allow_ignore_higher_permission_levels(self):
+        # Production reaches this when a DocType carries a DocPerm row at permlevel 1, as
+        # field-level permissions on ERPNext DocTypes do.
+        rows = [
+            frappe._dict(role="Level Zero", read=1, permlevel=0),
+            frappe._dict(role="Level Zero", read=1, permlevel=0),
+            frappe._dict(role="No Level", read=1),
+            frappe._dict(role="Level One", read=1, permlevel=1),
+            frappe._dict(role="Cannot Read", read=0, permlevel=0),
+        ]
+        meta = MagicMock()
+        meta.get.return_value = rows
+        with patch("frappe.get_meta", autospec=True, return_value=meta):
+            roles = _roles_that_allow("ToDo", "read")
+        self.assertEqual(roles, ["Level Zero", "No Level"])
 
     def test_declares_system_manager_only(self):
         self.assertEqual(self.tool.required_roles, ["System Manager"])

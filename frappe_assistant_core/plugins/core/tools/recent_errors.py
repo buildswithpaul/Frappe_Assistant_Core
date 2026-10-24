@@ -61,7 +61,7 @@ class RecentErrors(BaseTool):
             "scheduled job you built, to see the traceback it caused. Pass contains, such as "
             "the script name, to narrow the list."
         )
-        self.category = "Customization"
+        self.category = "Builder checks"
         self.requires_permission = None
         self.required_roles = ["System Manager"]
 

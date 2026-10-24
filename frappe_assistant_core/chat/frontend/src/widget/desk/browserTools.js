@@ -118,7 +118,7 @@ const FACOBrowserTools = {
 	_trustedThisSession: new Set(),
 
 	/**
-	 * `${sessionId}|${route}|${tool_name}` keys the user allowed for one page in one chat.
+	 * `JSON.stringify([sessionId, route, tool_name])` keys the user allowed for one page in one chat.
 	 */
 	_trustedPages: new Set(),
 

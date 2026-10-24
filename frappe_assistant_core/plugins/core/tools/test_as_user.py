@@ -24,7 +24,6 @@ from typing import Any, Dict, List
 
 import frappe
 from frappe import _
-from frappe.permissions import get_doctype_roles
 
 from frappe_assistant_core.core.base_tool import BaseTool
 
@@ -55,6 +54,12 @@ def _permission_doctype(doctype: str, parent_doctype: str | None, name: str | No
         if parent:
             return parent
     return parent_doctype or doctype
+
+
+def _roles_that_allow(doctype: str, ptype: str) -> List[str]:
+    """Roles granting ``ptype`` at permission level 0, in role-table order without repeats."""
+    permissions = frappe.get_meta(doctype).get("permissions")
+    return list(dict.fromkeys(row.role for row in permissions if row.get(ptype) and not row.get("permlevel")))
 
 
 def _check_one(user: str, check: Dict[str, Any]) -> Dict[str, Any]:
@@ -92,7 +97,7 @@ def _check_one(user: str, check: Dict[str, Any]) -> Dict[str, Any]:
         return result
 
     allowed = frappe.has_permission(doctype, ptype, doc=name, user=user, parent_doctype=parent_doctype)
-    result["roles_that_allow"] = get_doctype_roles(_permission_doctype(doctype, parent_doctype, name), ptype)
+    result["roles_that_allow"] = _roles_that_allow(_permission_doctype(doctype, parent_doctype, name), ptype)
     result["outcome"] = "allowed" if allowed else "refused"
     if not allowed:
         if name:
@@ -143,10 +148,11 @@ class TestAsUser(BaseTool):
             "Check what another user is allowed to do, without switching user or saving anything. "
             "Use this after changing roles, User Permissions or sharing for a build, to confirm the "
             "right people can read, write, create, submit or print and the wrong people cannot. "
-            "Each check is allowed, refused or error; a refused check lists roles_that_allow, the "
-            "roles that grant that permission on the DocType. Never returns field values."
+            "Each check is allowed, refused or error; every check lists roles_that_allow, "
+            "the roles that grant that permission on the DocType at permission level 0. "
+            "Never returns field values."
         )
-        self.category = "Permissions"
+        self.category = "Builder checks"
         self.requires_permission = None
         self.required_roles = ["System Manager"]
 

@@ -108,7 +108,7 @@ class SandboxReference(BaseTool):
             "before writing a Server Script instead of guessing what the sandbox allows. Pass a "
             "prefix such as frappe.db to narrow the list."
         )
-        self.category = "Customization"
+        self.category = "Builder checks"
         self.requires_permission = None
         self.required_roles = ["System Manager"]
 
