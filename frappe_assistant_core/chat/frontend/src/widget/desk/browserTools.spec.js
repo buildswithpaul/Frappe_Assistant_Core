@@ -276,6 +276,63 @@ describe("the confirmation gate fails closed", () => {
 		expect(run).toHaveBeenCalledTimes(2);
 	});
 
+	describe("trust_page", () => {
+		const setRoute = (route) => {
+			globalThis.frappe.get_route = () => route;
+		};
+		const startAs = async (confirm, sid = "s1") => {
+			(await import("./browserTools.js")).startBrowserTools({ getSessionId: () => sid, confirm });
+		};
+
+		it("is not asked again for the same tool, route and chat", async () => {
+			const confirm = vi.fn(async () => "trust_page");
+			setRoute(["Form", "Task", "T-1"]);
+			await startAs(confirm);
+			await call("g1");
+			await call("g2");
+			expect(confirm).toHaveBeenCalledTimes(1);
+			expect(run).toHaveBeenCalledTimes(2);
+		});
+
+		it("asks again on another route", async () => {
+			const confirm = vi.fn(async () => "trust_page");
+			setRoute(["Form", "Task", "T-1"]);
+			await startAs(confirm);
+			await call("r1");
+			setRoute(["Form", "Task", "T-2"]);
+			await call("r2");
+			expect(confirm).toHaveBeenCalledTimes(2);
+		});
+
+		it("asks again in another chat", async () => {
+			const confirm = vi.fn(async () => "trust_page");
+			setRoute(["List", "Task"]);
+			await startAs(confirm, "s1");
+			await call("c1");
+			await startAs(confirm, "s2");
+			await call("c2");
+			expect(confirm).toHaveBeenCalledTimes(2);
+		});
+
+		it("covers only the tool that was trusted", async () => {
+			const confirm = vi.fn(async () => "trust_page");
+			setRoute(["List", "Task"]);
+			await startAs(confirm);
+			await call("d1");
+			vi.spyOn(tools.handlers, "get_form_data").mockResolvedValue({ success: true });
+			await tools._handleToolCall({ call_id: "d2", tool_name: "get_form_data", params: {} });
+			expect(confirm).toHaveBeenCalledTimes(2);
+		});
+
+		it("does not make the tool trusted everywhere", async () => {
+			const confirm = vi.fn(async () => "trust_page");
+			setRoute(["List", "Task"]);
+			await startAs(confirm);
+			await call("e1");
+			expect(tools._trustedThisSession.has("take_screenshot")).toBe(false);
+		});
+	});
+
 	it("ignores a call addressed to another session: no ack, no prompt, no result", async () => {
 		const confirm = vi.fn(async () => "approve");
 		await start(confirm);

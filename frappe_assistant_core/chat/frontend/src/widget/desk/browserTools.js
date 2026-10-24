@@ -118,6 +118,11 @@ const FACOBrowserTools = {
 	_trustedThisSession: new Set(),
 
 	/**
+	 * `${sessionId}|${route}|${tool_name}` keys the user allowed for one page in one chat.
+	 */
+	_trustedPages: new Set(),
+
+	/**
 	 * Tool handlers - each handler receives params and returns a result
 	 */
 	handlers: {
@@ -703,7 +708,7 @@ const FACOBrowserTools = {
 					);
 					return;
 				}
-				// 'approve' or 'trust' — fall through and execute.
+				// 'approve', 'trust' or 'trust_page' — fall through and execute.
 			}
 
 			this.report_progress(call_id, "executing");
@@ -727,13 +732,21 @@ const FACOBrowserTools = {
 	_requiresConfirmation(tool_name) {
 		if (!TOOLS_REQUIRING_CONFIRMATION.has(tool_name)) return false;
 		if (this._trustedThisSession.has(tool_name)) return false;
+		if (this._trustedPages.has(this._pageTrustKey(tool_name))) return false;
 		return true;
+	},
+
+	/** Scope of a "trust_page" decision: this chat, the current Desk route, this tool. */
+	_pageTrustKey(tool_name) {
+		const route = (window.frappe?.get_route?.() || []).join("/");
+		return `${deps.getSessionId()}|${route}|${tool_name}`;
 	},
 
 	/**
 	 * Ask the host to prompt the user and resolve with one of
-	 * 'approve' | 'trust' | 'deny'. The host opens the panel if it is closed —
-	 * a silent prompt defeats the purpose. 'trust' is remembered per session.
+	 * 'approve' | 'trust' | 'trust_page' | 'deny'. The host opens the panel if it is
+	 * closed — a silent prompt defeats the purpose. 'trust' is remembered per session;
+	 * 'trust_page' only for the current page in the current chat.
 	 */
 	async _requestUserConfirmation(tool_name, params) {
 		let decision;
@@ -748,13 +761,15 @@ const FACOBrowserTools = {
 			logger.warn("Confirmation failed; denying tool call by default.", e);
 			return "deny";
 		}
-		// Anything but an explicit approve/trust is a refusal: the gate must not
+		// Anything but an explicit approval is a refusal: the gate must not
 		// read an undefined or misspelt decision as consent.
-		if (decision !== "approve" && decision !== "trust") {
+		if (!["approve", "trust", "trust_page"].includes(decision)) {
 			return "deny";
 		}
 		if (decision === "trust") {
 			this._trustedThisSession.add(tool_name);
+		} else if (decision === "trust_page") {
+			this._trustedPages.add(this._pageTrustKey(tool_name));
 		}
 		return decision;
 	},
