@@ -38,8 +38,3 @@ class FACPage(Document):
                     "at most {0} characters."
                 ).format(SLUG_MAX_LENGTH)
             )
-        # Frappe reads a Page's or Report's roles from Has Role rows by parent name alone, with
-        # no parenttype filter, so this page's roles would also gate a Page or Report so named.
-        for doctype in ("Page", "Report"):
-            if frappe.db.exists(doctype, self.slug):
-                frappe.throw(_("Slug {0} is already the name of a {1}.").format(self.slug, _(doctype)))

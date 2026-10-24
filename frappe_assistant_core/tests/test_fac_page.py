@@ -127,9 +127,12 @@ class TestFACPage(BaseAssistantTest):
             with self.subTest(slug=slug), self.assertRaises(frappe.ValidationError):
                 self._make_page(slug=slug)
 
-    def test_a_slug_naming_a_desk_page_is_refused(self):
-        with self.assertRaises(frappe.ValidationError):
-            self._make_page(slug=HOST_PAGE)
+    def test_page_roles_never_reach_has_role(self):
+        # Frappe's Page, Report and Custom HTML Block checks read Has Role by parent name
+        # alone, so a Has Role row named after the slug would widen access to any of them.
+        slug = self._make_page(roles=("Report Manager",))
+
+        self.assertFalse(frappe.db.exists("Has Role", {"parent": slug}))
 
     def test_a_long_slug_up_to_the_limit_is_kept(self):
         self.assertEqual(self._make_page(slug="a" * 80), "a" * 80)

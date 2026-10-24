@@ -42,7 +42,7 @@ def get_page(slug: str) -> dict:
 
     if not is_system_manager:
         allowed_roles = frappe.get_all(
-            "Has Role", filters={"parenttype": "FAC Page", "parent": slug}, pluck="role"
+            "FAC Page Role", filters={"parenttype": "FAC Page", "parent": slug}, pluck="role"
         )
         if not user_roles.intersection(allowed_roles):
             frappe.throw(_("You are not allowed to view this page."), frappe.PermissionError)

@@ -58,7 +58,7 @@
    "fieldname": "roles",
    "fieldtype": "Table",
    "label": "Roles",
-   "options": "Has Role"
+   "options": "FAC Page Role"
   },
   {
    "fieldname": "content_section",
