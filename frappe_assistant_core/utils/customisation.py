@@ -19,8 +19,9 @@
 Covers which doctypes count (``CUSTOMISATION_DOCTYPES``, the canonical list, mirrored by the
 Chat SPA and by AR), the Server Script safety guard, the warning for a Script Report saved
 while server scripts are off, links to a record and to the form a customisation changes
-(``applies_to``), where a new Custom Field shows on its form (``location``), and
-``customisation_result`` which puts those into a create or update tool result.
+(``applies_to``), where a new Custom Field shows on its form (``location``),
+``customisation_result`` which puts those into a create or update tool result, and
+``check_plan_changes`` which checks a build plan against the site before it is shown.
 """
 
 from typing import Any, Dict, Iterable, Optional
@@ -338,6 +339,72 @@ def customisation_impact(tool_name: str, tool_input: Any) -> Dict[str, Any]:
         return {"dormant": False, "reason": "Permission may open a DocType to other people"}
 
     return {"dormant": False, "reason": f"{doctype} changes always count"}
+
+
+_PLAN_ACTION_TOOLS = {"update": "update_document", "delete": "delete_document"}
+
+
+def _plan_change_problem(doctype: Any, planned_doctypes: set) -> Optional[str]:
+    """Why a plan entry cannot be written as listed: an unknown doctype or a child table."""
+    if _is_plain_name(doctype) and doctype in planned_doctypes:
+        return None
+    kind = frappe.db.get_value("DocType", doctype, "istable") if _is_plain_name(doctype) else None
+    if kind is None:
+        return _(
+            '{0} is not a doctype on this site. To create a new doctype, list it with doctype "DocType" and name "{0}".'
+        ).format(doctype)
+    if not cint(kind):
+        return None
+    problem = _(
+        "{0} is a child table and is saved through its parent record; list the parent record instead."
+    ).format(doctype)
+    if doctype == "Has Role":
+        problem += " " + _("For a role assignment, list an update of each User by name.")
+    return problem
+
+
+def _plan_change_goes_live(change: Dict[str, Any]) -> bool:
+    """Whether a plan entry goes live, correcting a dormant claim the stored state contradicts.
+
+    A customisation doctype without a switch can never be dormant. An update or delete of a stored
+    switchable record goes live unless that record is switched off now. Anything else keeps the
+    flag as sent, and a true flag is never turned false.
+    """
+    goes_live = bool(change.get("goes_live"))
+    doctype = change.get("doctype")
+    if goes_live or not _is_plain_name(doctype) or doctype not in CUSTOMISATION_DOCTYPES:
+        return goes_live
+    if doctype not in _SWITCH_FIELDS:
+        return True
+    tool_name = _PLAN_ACTION_TOOLS.get(change.get("action"))
+    name = change.get("name")
+    if tool_name and _is_plain_name(name) and frappe.db.exists(doctype, name):
+        return not customisation_impact(tool_name, {"doctype": doctype, "name": name, "data": {}})["dormant"]
+    return goes_live
+
+
+def check_plan_changes(changes: list[dict]) -> list[dict]:
+    """Check each entry of a build plan against the site before the plan is shown.
+
+    One result per change, in order: ``problem`` is why the entry cannot be written as listed
+    (None when it can) and ``goes_live`` is the entry's flag, corrected when the site shows a
+    dormant claim cannot hold. Never writes.
+    """
+    planned_doctypes = {
+        change.get("name")
+        for change in changes
+        if change.get("doctype") == "DocType"
+        and change.get("action") == "create"
+        and _is_plain_name(change.get("name"))
+    }
+    return [
+        {
+            "index": index,
+            "problem": _plan_change_problem(change.get("doctype"), planned_doctypes),
+            "goes_live": _plan_change_goes_live(change),
+        }
+        for index, change in enumerate(changes)
+    ]
 
 
 def desk_url(doctype: str, name: str) -> str:
