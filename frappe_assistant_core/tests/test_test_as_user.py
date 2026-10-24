@@ -98,6 +98,7 @@ class TestTestAsUser(BaseAssistantTest):
         self.assertFalse(missing["success"])
         self.assertNotIn("results", missing)
 
+        # Production reaches this by a System Manager unticking Enabled on the User form.
         frappe.db.set_value("User", self.nobody, "enabled", 0)
         disabled = self._run(checks)
         self.assertFalse(disabled["success"])
@@ -134,13 +135,58 @@ class TestTestAsUser(BaseAssistantTest):
         # hooks msgprint to explain a denial; this registers one for ToDo.
         with (
             patch(hook_path, autospec=True, return_value=True) as hook,
-            patch.object(frappe, "get_hooks", side_effect=get_hooks),
+            patch.object(frappe, "get_hooks", autospec=True, side_effect=get_hooks),
         ):
             hook.side_effect = lambda **kwargs: frappe.msgprint(_("hook says: secret")) or True
             before = len(frappe.local.message_log)
             self._run([{"ptype": "read", "doctype": "ToDo", "name": self.own_todo}])
             self.assertTrue(hook.called)
         self.assertEqual(len(frappe.local.message_log), before)
+
+    def test_unexpected_failure_is_an_error_row_without_writes(self):
+        errors = frappe.db.count("Error Log")
+        with patch.object(frappe, "has_permission", autospec=True, side_effect=Exception("boom")):
+            row = self._run([{"ptype": "read", "doctype": "ToDo", "name": self.own_todo}])["results"][0]
+        self.assertEqual(row["outcome"], "error")
+        self.assertEqual((row["ptype"], row["doctype"], row["name"]), ("read", "ToDo", self.own_todo))
+        self.assertNotIn("boom", json.dumps(row))
+        self.assertEqual(frappe.db.count("Error Log"), errors)
+
+    def test_non_string_name_is_an_error_row(self):
+        row = self._run([{"ptype": "read", "doctype": "ToDo", "name": 123}])["results"][0]
+        self.assertEqual(row["outcome"], "error")
+        self.assertEqual(row["reason"], "name and parent_doctype must be text.")
+
+    def test_single_doctype_is_answered(self):
+        row = self._run([{"ptype": "write", "doctype": "System Settings", "name": "ignored"}])["results"][0]
+        self.assertEqual(row["outcome"], "refused")
+        self.assertIsNone(row["name"])
+        self.assertEqual(row["reason"], f"{self.nobody} may not write System Settings records.")
+
+    def test_user_permission_restricts_to_one_record(self):
+        # Production reaches this when a System Manager adds a User Permission for the user.
+        manager = self.make_throwaway_user("restricted", roles=("System Manager",))
+        frappe.get_doc(
+            {"doctype": "User Permission", "user": manager, "allow": "Role", "for_value": "Report Manager"}
+        ).insert(ignore_permissions=True)
+        results = self._run(
+            [
+                {"ptype": "read", "doctype": "Role", "name": "Report Manager"},
+                {"ptype": "read", "doctype": "Role", "name": "Website Manager"},
+            ],
+            user=manager,
+        )["results"]
+        self.assertEqual([r["outcome"] for r in results], ["allowed", "refused"])
+
+    def test_share_grants_read_on_a_record_not_owned(self):
+        # Production reaches this when the owner shares the record with the user.
+        frappe.share.add("ToDo", self.other_todo, self.nobody, read=1)
+        row = self._run([{"ptype": "read", "doctype": "ToDo", "name": self.other_todo}])["results"][0]
+        self.assertEqual(row["outcome"], "allowed")
+
+    def test_child_roles_come_from_the_parent(self):
+        row = self._run([{"ptype": "read", "doctype": "Has Role", "parent_doctype": "User"}])["results"][0]
+        self.assertIn("System Manager", row["roles_that_allow"])
 
     def test_non_system_manager_is_refused(self):
         # nosemgrep: frappe-setuser — tests run in an isolated transaction

@@ -32,7 +32,12 @@ Each check:
 
 ## Reading roles_that_allow
 
-`roles_that_allow` lists the roles that grant that permission on the DocType at permission level 0. When a check is `refused`, it shows which role to grant. A record-level refusal can still happen to a user who holds one of these roles, because User Permissions, sharing and the owner rule apply on top.
+`roles_that_allow` lists the roles that grant that permission on the DocType at permission level 0. When a check is `refused`, it shows which role to grant. For a child table, the roles come from the parent DocType. Roles marked "if owner" in the role table are listed here but only allow the record's owner. A record-level refusal can still happen to a user who holds one of these roles, because User Permissions, sharing and the owner rule apply on top.
+
+## Limits
+
+- Administrator is always allowed.
+- A permission hook that reads `frappe.session.user` instead of its `user` argument answers for the caller, not the user you named.
 
 ## Best Practices
 

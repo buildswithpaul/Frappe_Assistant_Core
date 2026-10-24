@@ -46,8 +46,19 @@ MIN_CHECKS = 1
 MAX_CHECKS = 20
 
 
+def _permission_doctype(doctype: str, parent_doctype: str | None, name: str | None) -> str:
+    """The DocType whose role table decides ``doctype``: the parent for a child table, else itself."""
+    if not frappe.is_table(doctype):
+        return doctype
+    if name:
+        parent = frappe.db.get_value(doctype, name, "parenttype")
+        if parent:
+            return parent
+    return parent_doctype or doctype
+
+
 def _check_one(user: str, check: Dict[str, Any]) -> Dict[str, Any]:
-    """Answer one check as ``allowed``, ``refused`` or ``error``; never raises on bad input."""
+    """Answer one check as ``allowed``, ``refused`` or ``error``."""
     ptype = check.get("ptype")
     doctype = check.get("doctype")
     name = check.get("name") or None
@@ -67,13 +78,21 @@ def _check_one(user: str, check: Dict[str, Any]) -> Dict[str, Any]:
     if not isinstance(doctype, str) or not frappe.db.exists("DocType", doctype):
         result["reason"] = _("DocType {0} does not exist.").format(doctype)
         return result
+    if not all(value is None or isinstance(value, str) for value in (name, parent_doctype)):
+        result["reason"] = _("name and parent_doctype must be text.")
+        return result
+
+    meta = frappe.get_meta(doctype)
+    if meta.issingle:
+        # A Single has one record, named after the DocType; has_permission ignores any name
+        name = result["name"] = None
     # has_permission loads the record by name and raises when it is missing
-    if name and not frappe.db.exists(doctype, name):
+    elif name and not meta.get("is_virtual") and not frappe.db.exists(doctype, name):
         result["reason"] = _("{0} {1} does not exist.").format(doctype, name)
         return result
 
     allowed = frappe.has_permission(doctype, ptype, doc=name, user=user, parent_doctype=parent_doctype)
-    result["roles_that_allow"] = get_doctype_roles(doctype, ptype)
+    result["roles_that_allow"] = get_doctype_roles(_permission_doctype(doctype, parent_doctype, name), ptype)
     result["outcome"] = "allowed" if allowed else "refused"
     if not allowed:
         if name:
@@ -89,14 +108,16 @@ def _run_checks(user: str, checks: List[Dict[str, Any]]) -> List[Dict[str, Any]]
     try:
         results = []
         for index, check in enumerate(checks, start=1):
+            check = check if isinstance(check, dict) else {}
             try:
-                answer = _check_one(user, check if isinstance(check, dict) else {})
+                answer = _check_one(user, check)
             except Exception:
-                frappe.log_error(title=_("Permission Check Error"))
+                # Not log_error: that would write an Error Log row from a read-only tool
+                frappe.logger("frappe_assistant_core").exception("test_as_user check failed")
                 answer = {
-                    "ptype": None,
-                    "doctype": None,
-                    "name": None,
+                    "ptype": check.get("ptype"),
+                    "doctype": check.get("doctype"),
+                    "name": check.get("name"),
                     "outcome": "error",
                     "reason": _("This check could not be completed."),
                     "roles_that_allow": [],
