@@ -17,6 +17,7 @@
 """Read endpoint for FAC Page records, shown by the ``fac-pages`` Desk page."""
 
 import frappe
+from bs4 import BeautifulSoup
 from frappe import _
 from frappe.utils.html_utils import sanitize_html
 
@@ -78,9 +79,17 @@ def get_page(slug: str) -> dict:
 
 
 def _draft_html(html: str | None) -> str | None:
-    """A draft's html without inline handlers, javascript: links or form controls.
+    """A draft's html without inline handlers, form controls or link targets.
 
-    Defence in depth: the host page already renders a draft in an empty-sandbox iframe, so none
-    of these could run or submit there.
+    Defence in depth for most of it: the host page already renders a draft in an empty-sandbox
+    iframe, where none of these could run or submit. A link could still navigate that frame to a
+    remote page, so anchors and image-map areas lose their href.
     """
-    return sanitize_html(html, always_sanitize=True, disallowed_tags=DRAFT_DISALLOWED_TAGS)
+    html = sanitize_html(html, always_sanitize=True, disallowed_tags=DRAFT_DISALLOWED_TAGS)
+    if not html:
+        return html
+    soup = BeautifulSoup(html, "html.parser")
+    for link in soup.find_all(["a", "area"]):
+        for attr in ("href", "xlink:href", "target", "ping"):
+            link.attrs.pop(attr, None)
+    return str(soup)

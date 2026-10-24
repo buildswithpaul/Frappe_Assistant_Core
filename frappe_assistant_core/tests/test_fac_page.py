@@ -152,6 +152,24 @@ class TestFACPage(BaseAssistantTest):
             self.assertNotIn(tag, served)
         self.assertIn('class="mk-card"', served)
 
+    def test_a_draft_link_cannot_navigate(self):
+        # A clicked link would navigate the sandboxed preview to a remote page.
+        html = (
+            '<a class="mk-link" href="https://evil.example/x" target="_top">Go</a>'
+            '<map><area href="https://evil.example/y"></map><a class="mk-anchor">Plain</a>'
+            '<svg><a xlink:href="https://evil.example/z"><text>Svg</text></a></svg>'
+        )
+        slug = self._make_page(published=0, html=html)
+        self._act_as("fac-page-draft-link", roles=("System Manager",))
+
+        served = get_page(slug)["html"]
+
+        for unsafe in ("href", "evil.example", "target"):
+            self.assertNotIn(unsafe, served)
+        self.assertIn('class="mk-link"', served)
+        self.assertIn(">Plain</a>", served)
+        self.assertIn(">Go</a>", served)
+
     def test_the_host_page_inlines_the_draft_preview(self):
         # Desk loads the page script through Page.load_assets, which resolves the include.
         page = frappe.get_doc("Page", HOST_PAGE)

@@ -318,6 +318,16 @@ describe("ApprovalCard switching code on", () => {
 		expect(everyone(wrapper).exists()).toBe(false);
 	});
 
+	it("FAC Page published with no code and no roles: says (empty) and raises no load error", async () => {
+		currentCode.mockReset();
+		currentCode.mockResolvedValue({ html: "", script: "", style: "", roles: [] });
+		const empty = mount(ApprovalCard, { props: { block: switchBlock("FAC Page", { published: 1 }, "team-planner") } });
+		await flushPromises();
+		expect(empty.find('[data-test="goes-live-empty"]').text()).toBe("(empty)");
+		expect(empty.find('[data-test="goes-live-missing"]').exists()).toBe(false);
+		expect(audience(empty).text()).toBe("Goes live to: System Managers only");
+	});
+
 	it("FAC Page published with no roles: says System Managers only", async () => {
 		const wrapper = await publish([]);
 		expect(audience(wrapper).text()).toBe("Goes live to: System Managers only");

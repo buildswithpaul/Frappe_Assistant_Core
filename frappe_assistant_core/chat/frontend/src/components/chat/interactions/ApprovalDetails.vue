@@ -134,11 +134,13 @@ const storedLiveRows = computed(() =>
 const audience = computed(() =>
 	unchangedLiveFields.value.includes("roles") ? goesLiveAudience(currentCode.value?.roles) : null,
 );
+// roles is an audience, not code: an empty list must not hide "(empty)" for empty code.
+const unchangedLiveCode = computed(() => unchangedLiveFields.value.filter((key) => key !== "roles"));
 const liveEmpty = computed(
 	() =>
 		currentCode.value !== null &&
-		unchangedLiveFields.value.length > 0 &&
-		unchangedLiveFields.value.every((key) => currentCode.value[key] === ""),
+		unchangedLiveCode.value.length > 0 &&
+		unchangedLiveCode.value.every((key) => currentCode.value[key] === ""),
 );
 const liveMissing = computed(
 	() =>

@@ -63,6 +63,8 @@
 
 	// The sandboxed frame cannot load the kit itself (its CSP allows no fetches), so it is inlined.
 	function render_draft(page, data, is_latest) {
+		// Clear now, so the previous page does not stay on screen while the kit loads.
+		page.main.empty();
 		fetch(KIT_CSS_URL)
 			.then((r) => (r.ok ? r.text() : ""))
 			.catch(() => "")

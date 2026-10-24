@@ -151,6 +151,12 @@ class TestGetCurrentCodeGoesLive(BaseAssistantTest):
         )
         self.assertEqual(get_current_code("FAC Page", unlisted.name, ["roles"]), {"roles": []})
 
+        _make_user(OUTSIDER, [])
+        self.addCleanup(frappe.delete_doc, "User", OUTSIDER, force=True, ignore_permissions=True)
+        frappe.set_user(OUTSIDER)
+        with self.assertRaises(frappe.PermissionError):
+            get_current_code("FAC Page", listed.name, ["roles"])
+
     def test_go_live_keys_stay_out_of_the_code_keys(self):
         self.assertEqual(GO_LIVE_KEYS, ("subject", "style", "roles"))
         for key in GO_LIVE_KEYS:
