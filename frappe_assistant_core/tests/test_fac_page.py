@@ -137,6 +137,14 @@ class TestFACPage(BaseAssistantTest):
     def test_a_long_slug_up_to_the_limit_is_kept(self):
         self.assertEqual(self._make_page(slug="a" * 80), "a" * 80)
 
+    def test_the_slug_cannot_change_after_save(self):
+        # The slug names the record, so a changed slug would leave get_page serving the old URL.
+        doc = frappe.get_doc("FAC Page", self._make_page())
+        doc.slug = "renamed-page"
+
+        with self.assertRaises(frappe.ValidationError):
+            doc.save(ignore_permissions=True)
+
     def test_a_duplicate_slug_is_refused(self):
         self._make_page(slug="team-planner-dup")
 

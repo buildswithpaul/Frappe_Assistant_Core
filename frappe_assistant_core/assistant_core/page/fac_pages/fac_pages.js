@@ -8,14 +8,14 @@
 			title: __("FAC Page"),
 			single_column: true,
 		});
-		wrapper.fac_page = { page, slug: undefined };
+		wrapper.fac_page = { page, request: 0 };
 	};
 
+	// Fetch on every show, so an edited page is current when the user comes back to it.
 	frappe.pages["fac-pages"].on_page_show = function (wrapper) {
 		const state = wrapper.fac_page;
-		const slug = frappe.get_route()[1] || null;
-		if (slug === state.slug) return;
-		state.slug = slug;
+		const request = ++state.request;
+		const slug = frappe.get_route()[1];
 
 		if (!slug) {
 			state.page.set_title(__("FAC Page"));
@@ -23,20 +23,17 @@
 			return;
 		}
 
+		// A later show may start another request; only the latest one may draw.
+		const is_latest = () => request === state.request;
 		frappe.call({
 			method: "frappe_assistant_core.api.fac_page.get_page",
 			type: "GET",
 			args: { slug },
 			callback(r) {
-				// The route may have moved on while this request was in flight.
-				if (state.slug !== slug) return;
-				render(state.page, r.message);
+				if (is_latest()) render(state.page, r.message);
 			},
 			error() {
-				if (state.slug !== slug) return;
-				// Forget the slug so the next visit asks again instead of keeping this failure.
-				state.slug = undefined;
-				show_message(state.page, __("This page could not be shown."));
+				if (is_latest()) show_message(state.page, __("This page could not be shown."));
 			},
 		});
 	};

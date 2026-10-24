@@ -28,13 +28,14 @@
    "reqd": 1
   },
   {
-   "description": "Lower-case letters and digits in words joined by single hyphens, at most 80 characters. The page opens at /app/fac-pages/<slug>.",
+   "description": "Lower-case letters and digits in words joined by single hyphens, at most 80 characters. The page opens at /app/fac-pages/<slug>. It cannot change after the page is saved.",
    "fieldname": "slug",
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Slug",
    "reqd": 1,
-   "unique": 1
+   "unique": 1,
+   "set_only_once": 1
   },
   {
    "fieldname": "column_break_main",
@@ -54,7 +55,7 @@
    "label": "Access"
   },
   {
-   "description": "Users with any of these roles can open the page. With no roles, only System Managers can.",
+   "description": "Users with any of these roles can open the page. With no roles, only System Managers can. Listing \"All\" or \"Guest\" opens the page to every logged-in user, website users included.",
    "fieldname": "roles",
    "fieldtype": "Table",
    "label": "Roles",

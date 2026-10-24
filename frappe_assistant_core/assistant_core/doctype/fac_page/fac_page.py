@@ -29,6 +29,7 @@ SLUG_MAX_LENGTH = 80
 class FACPage(Document):
     def validate(self):
         self.validate_slug()
+        self.validate_slug_unchanged()
 
     def validate_slug(self):
         if len(self.slug or "") > SLUG_MAX_LENGTH or not SLUG_PATTERN.match(self.slug or ""):
@@ -38,3 +39,8 @@ class FACPage(Document):
                     "at most {0} characters."
                 ).format(SLUG_MAX_LENGTH)
             )
+
+    def validate_slug_unchanged(self):
+        # The slug is the record's name; set_only_once alone is skipped by some write paths.
+        if not self.is_new() and self.slug != self.name:
+            frappe.throw(_("The slug cannot change after the page is saved."))
