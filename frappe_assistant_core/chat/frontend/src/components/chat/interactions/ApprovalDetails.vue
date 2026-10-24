@@ -64,7 +64,7 @@ import {
 	formatValue,
 	isMonoValue,
 	isMoneyKey,
-	isCodeKey,
+	isCodeField,
 	isChildTable,
 	codeLanguage,
 	splitDetailFields,
@@ -97,7 +97,9 @@ const doctype = computed(() => flat.value.doctype);
 
 // Code and child tables always show in full; only the plain fields fold behind "Show all fields".
 const codeRows = computed(() =>
-	Object.entries(flat.value).filter(([k, v]) => isCodeKey(k) && typeof v === "string" && v !== ""),
+	Object.entries(flat.value).filter(
+		([k, v]) => isCodeField(k, doctype.value) && typeof v === "string" && v !== "",
+	),
 );
 const tableRows = computed(() => Object.entries(flat.value).filter(([, v]) => isChildTable(v)));
 const plainFields = computed(() =>

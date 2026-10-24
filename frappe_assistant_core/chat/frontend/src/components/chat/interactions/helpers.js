@@ -39,10 +39,20 @@ export function isCodeKey(key) {
 	return CODE_KEYS.includes(key);
 }
 
+// Code keys a single doctype adds, so other doctypes' fields of the same name stay plain.
+// The server returns these through GO_LIVE_KEYS in chat/api/current_code.py.
+const DOCTYPE_CODE_KEYS = { "FAC Page": ["style"] };
+
+/** True when `key` holds code on a `doctype` record: a CODE_KEYS field or one that doctype adds. */
+export function isCodeField(key, doctype) {
+	return isCodeKey(key) || Boolean(DOCTYPE_CODE_KEYS[doctype]?.includes(key));
+}
+
 const PYTHON_KEYS = new Set(["script", "report_script", "condition"]);
 
 export function codeLanguage(key, doctype) {
 	if (key === "script" && doctype === "FAC Page") return "javascript";
+	if (key === "style" && doctype === "FAC Page") return "css";
 	if (PYTHON_KEYS.has(key)) return "python";
 	if (key === "javascript") return "javascript";
 	if (key === "query") return "sql";

@@ -7,6 +7,7 @@ import {
 	splitDetailFields,
 	CODE_KEYS,
 	isCodeKey,
+	isCodeField,
 	codeLanguage,
 	isChildTable,
 } from "./helpers";
@@ -143,6 +144,14 @@ describe("code keys", () => {
 		expect(codeLanguage("html", "Web Page")).toBe("xml");
 		expect(codeLanguage("css", "Print Format")).toBe("xml");
 		expect(codeLanguage("script", "FAC Page")).toBe("javascript");
+		expect(codeLanguage("style", "FAC Page")).toBe("css");
+	});
+
+	it("treats a FAC Page's style as code and leaves style alone elsewhere", () => {
+		expect(isCodeField("style", "FAC Page")).toBe(true);
+		expect(isCodeField("script", "FAC Page")).toBe(true);
+		expect(isCodeField("style", "Web Page")).toBe(false);
+		expect(isCodeField("title", "FAC Page")).toBe(false);
 	});
 });
 

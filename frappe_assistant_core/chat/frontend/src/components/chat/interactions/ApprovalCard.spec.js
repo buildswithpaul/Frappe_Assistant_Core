@@ -15,6 +15,7 @@ vi.mock("@/api/client", () => ({
 }));
 
 import ApprovalCard from "@/components/chat/interactions/ApprovalCard.vue";
+import CodePreview from "@/components/chat/interactions/CodePreview.vue";
 
 const interrupts = [{ id: "i1", reason: { type: "approval" } }];
 
@@ -297,6 +298,45 @@ describe("ApprovalCard switching code on", () => {
 		expect(text).toContain("<div id='planner'></div>");
 		expect(text).toContain("renderPlanner()");
 		expect(text).toContain(".planner { gap: 8px; }");
+	});
+
+	const preview = (wrapper, label) => wrapper.findAllComponents(CodePreview).find((c) => c.props("label") === label);
+
+	it("FAC Page style change: shows style as a diffed CSS code block, not a plain field", async () => {
+		currentCode.mockReset();
+		currentCode.mockResolvedValue({ style: ".a {}\n.old {}" });
+		const wrapper = mount(ApprovalCard, {
+			props: { block: switchBlock("FAC Page", { style: ".a {}\n.new {}" }, "team-planner") },
+		});
+		await flushPromises();
+		expect(currentCode).toHaveBeenCalledWith("FAC Page", "team-planner", ["style"]);
+		expect(preview(wrapper, "Style").props("language")).toBe("css");
+		expect(wrapper.find(".diff-del").text()).toContain(".old {}");
+		expect(wrapper.find(".diff-add").text()).toContain(".new {}");
+		expect(wrapper.findAll(".field-key").map((k) => k.text())).not.toContain("Style");
+	});
+
+	it("FAC Page published with a style change: diffs the style and shows the stored html and script", async () => {
+		currentCode.mockReset();
+		currentCode.mockResolvedValue({ style: ".old {}", html: "<div id='planner'></div>", script: "renderPlanner()" });
+		const wrapper = mount(ApprovalCard, {
+			props: { block: switchBlock("FAC Page", { published: 1, style: ".new {}" }, "team-planner") },
+		});
+		await flushPromises();
+		expect(currentCode).toHaveBeenCalledWith("FAC Page", "team-planner", ["style", "html", "script"]);
+		expect(goesLive(wrapper).text()).toBe("This goes live");
+		expect(wrapper.find(".diff-del").text()).toContain(".old {}");
+		expect(wrapper.find(".diff-add").text()).toContain(".new {}");
+		const text = wrapper.findAll(".code-preview pre").map((p) => p.text()).join("\n");
+		expect(text).toContain("<div id='planner'></div>");
+		expect(text).toContain("renderPlanner()");
+	});
+
+	it("style on any other doctype stays a plain field", async () => {
+		const wrapper = mount(ApprovalCard, { props: { block: switchBlock("Web Page", { style: ".x {}" }) } });
+		await flushPromises();
+		expect(preview(wrapper, "Style")).toBeUndefined();
+		expect(currentCode).not.toHaveBeenCalled();
 	});
 
 	it("switch on that also changes the code keeps the diff and still says it goes live", async () => {
