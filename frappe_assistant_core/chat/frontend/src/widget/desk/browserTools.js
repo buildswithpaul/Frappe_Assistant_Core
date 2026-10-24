@@ -118,6 +118,11 @@ const FACOBrowserTools = {
 	_trustedThisSession: new Set(),
 
 	/**
+	 * `JSON.stringify([sessionId, route, tool_name])` keys the user allowed for one page in one chat.
+	 */
+	_trustedPages: new Set(),
+
+	/**
 	 * Tool handlers - each handler receives params and returns a result
 	 */
 	handlers: {
@@ -703,7 +708,7 @@ const FACOBrowserTools = {
 					);
 					return;
 				}
-				// 'approve' or 'trust' — fall through and execute.
+				// 'approve', 'trust' or 'trust_page' — fall through and execute.
 			}
 
 			this.report_progress(call_id, "executing");
@@ -727,15 +732,31 @@ const FACOBrowserTools = {
 	_requiresConfirmation(tool_name) {
 		if (!TOOLS_REQUIRING_CONFIRMATION.has(tool_name)) return false;
 		if (this._trustedThisSession.has(tool_name)) return false;
+		const pageKey = this._pageTrustKey(tool_name);
+		if (pageKey && this._trustedPages.has(pageKey)) return false;
 		return true;
 	},
 
 	/**
+	 * Scope of a "trust_page" decision: this chat, the current Desk route, this tool.
+	 * Null without a chat id: trust must never outlive or cross a chat, so there is nothing to key.
+	 */
+	_pageTrustKey(tool_name) {
+		const sid = deps.getSessionId();
+		if (!sid) return null;
+		const route = window.frappe?.get_route?.() || [];
+		return JSON.stringify([sid, route, tool_name]);
+	},
+
+	/**
 	 * Ask the host to prompt the user and resolve with one of
-	 * 'approve' | 'trust' | 'deny'. The host opens the panel if it is closed —
-	 * a silent prompt defeats the purpose. 'trust' is remembered per session.
+	 * 'approve' | 'trust' | 'trust_page' | 'deny'. The host opens the panel if it is
+	 * closed — a silent prompt defeats the purpose. 'trust' is remembered per session;
+	 * 'trust_page' only for the current page in the current chat.
 	 */
 	async _requestUserConfirmation(tool_name, params) {
+		// Taken before the card opens: the user is answering about this page.
+		const pageKey = this._pageTrustKey(tool_name);
 		let decision;
 		try {
 			decision = await deps.confirm({
@@ -748,13 +769,16 @@ const FACOBrowserTools = {
 			logger.warn("Confirmation failed; denying tool call by default.", e);
 			return "deny";
 		}
-		// Anything but an explicit approve/trust is a refusal: the gate must not
+		// Anything but an explicit approval is a refusal: the gate must not
 		// read an undefined or misspelt decision as consent.
-		if (decision !== "approve" && decision !== "trust") {
+		if (!["approve", "trust", "trust_page"].includes(decision)) {
 			return "deny";
 		}
 		if (decision === "trust") {
 			this._trustedThisSession.add(tool_name);
+		} else if (decision === "trust_page" && pageKey && pageKey === this._pageTrustKey(tool_name)) {
+			// A different page or chat by now (or none): the click stays a one-off approval.
+			this._trustedPages.add(pageKey);
 		}
 		return decision;
 	},
