@@ -81,6 +81,7 @@ READ_ONLY_TOOLS = {
     "get_insights_chart",
     "get_crm_activity",  # Reads a CRM lead's/deal's timeline
     "customisation_impact",  # Evaluates the dormancy rule; never writes
+    "test_as_user",  # Asks the permission rules; never saves or switches user
     # Approval tools
     "get_pending_approvals",  # Reads the workflow approval queue, no mutation
     # Browser tools (read the page or move the user's view; no data mutation)
