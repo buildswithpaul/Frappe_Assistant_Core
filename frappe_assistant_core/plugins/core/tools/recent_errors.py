@@ -33,6 +33,12 @@ MAX_LIMIT = 50
 MAX_TEXT = 4000
 
 
+def _like(text: str) -> str:
+    """A LIKE pattern matching ``text`` literally anywhere."""
+    escaped = text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return f"%{escaped}%"
+
+
 def _tail(text: str | None) -> str:
     """The last MAX_TEXT characters, where a traceback names its cause."""
     return (text or "")[-MAX_TEXT:]
@@ -86,7 +92,7 @@ class RecentErrors(BaseTool):
     def _errors(self, since, contains: str, limit: int) -> List[Dict[str, Any]]:
         filters = [["creation", ">=", since]]
         if contains:
-            filters.append(["error", "like", f"%{contains}%"])
+            filters.append(["error", "like", _like(contains)])
         rows = frappe.get_all(
             "Error Log",
             filters=filters,
@@ -107,11 +113,14 @@ class RecentErrors(BaseTool):
 
     def _failed_jobs(self, since, contains: str, limit: int) -> List[Dict[str, Any]]:
         filters = [["creation", ">=", since], ["status", "=", "Failed"]]
+        or_filters = None
         if contains:
-            filters.append(["details", "like", f"%{contains}%"])
+            pattern = _like(contains)
+            or_filters = [["scheduled_job_type", "like", pattern], ["details", "like", pattern]]
         rows = frappe.get_all(
             "Scheduled Job Log",
             filters=filters,
+            or_filters=or_filters,
             fields=["creation", "scheduled_job_type", "details"],
             order_by="creation desc",
             limit_page_length=limit,

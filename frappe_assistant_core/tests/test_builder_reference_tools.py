@@ -44,6 +44,33 @@ class TestSandboxReference(BaseAssistantTest):
         self.assertTrue(result["truncated"])
         self.assertFalse(full["truncated"])
 
+    def test_request_data_is_listed_by_name_not_by_key(self):
+        # A request carries arbitrary form_dict keys; production reaches this on any API call
+        frappe.local.form_dict["sentinel_key_7c1"] = "x"
+        names = self.tool.execute({"limit": 500})["names"]
+        self.assertIn("frappe.form_dict", names)
+        self.assertFalse([n for n in names if "sentinel_key_7c1" in n])
+
+    def test_builtins_and_public_underscore_names_listed_guards_hidden(self):
+        names = self.tool.execute({"limit": 500})["names"]
+        for expected in ("len", "str", "_", "_dict"):
+            self.assertIn(expected, names)
+        self.assertNotIn("_getattr_", names)
+        self.assertFalse([n for n in names if n.startswith("__")])
+
+    def test_form_dict_underscore_key_survives(self):
+        # Browsers add a "_" cache-buster to the query string of every GET request
+        frappe.local.form_dict["_"] = "1700000000"
+        self.tool.execute({})
+        self.assertEqual(frappe.local.form_dict.get("_"), "1700000000")
+
+    def test_marks_names_blocked_in_doctype_events(self):
+        result = self.tool.execute({"prefix": "frappe.db"})
+        self.assertEqual(
+            result["not_in_doctype_event"],
+            ["frappe.db.add_index", "frappe.db.commit", "frappe.db.rollback"],
+        )
+
     def test_rules_present(self):
         self.assertTrue(self.tool.execute({})["rules"])
 
@@ -74,6 +101,12 @@ class TestRecentErrors(BaseAssistantTest):
         self.assertEqual(found["errors"][0]["title"], "Server Script test")
         self.assertEqual(self.tool.execute({"contains": "no-such-text-xyz"})["errors"], [])
 
+    def test_contains_is_literal_not_a_pattern(self):
+        self._log(f"axb {self.marker}")
+        self.assertEqual(self.tool.execute({"contains": f"a_b {self.marker}"})["errors"], [])
+        self.assertEqual(len(self.tool.execute({"contains": f"axb {self.marker}"})["errors"]), 1)
+        self.assertEqual(self.tool.execute({"contains": "%"})["errors"], [])
+
     def test_excludes_rows_older_than_minutes(self):
         self._log(f"old {self.marker}")
         name = frappe.get_all("Error Log", filters=[["error", "like", f"%{self.marker}%"]], pluck="name")[0]
@@ -103,6 +136,20 @@ class TestRecentErrors(BaseAssistantTest):
         jobs = self.tool.execute({"contains": self.marker})["failed_jobs"]
         self.assertEqual(len(jobs), 1)
         self.assertEqual(jobs[0]["job"], job_type)
+
+    def test_failed_job_matched_by_job_name(self):
+        job_type = frappe.get_all("Scheduled Job Type", pluck="name", limit_page_length=1)[0]
+        # The scheduler writes these rows when a job finishes; here one is inserted directly
+        frappe.get_doc(
+            {
+                "doctype": "Scheduled Job Log",
+                "scheduled_job_type": job_type,
+                "status": "Failed",
+                "details": "x",
+            }
+        ).insert(ignore_permissions=True)
+        jobs = self.tool.execute({"contains": job_type})["failed_jobs"]
+        self.assertTrue([j for j in jobs if j["job"] == job_type])
 
     def test_does_not_log_errors_itself(self):
         before = frappe.db.count("Error Log")

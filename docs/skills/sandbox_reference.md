@@ -15,8 +15,9 @@ Use it before writing a Server Script, instead of guessing which `frappe.*` func
 
 ## Reading the result
 
-- `names`: sorted dotted names, for example `frappe.db.get_value`. A name in the list is available to the script; a name that is missing is not.
+- `names`: sorted dotted names, for example `frappe.db.get_value`, including builtins such as `len` and `str`. A name in the list is available to the script; a name that is missing is not. Per-request data (`form_dict`, `args`, `response`, `session`, `request`) is listed by name only, never by its keys.
 - `truncated`: `true` when more names matched than `limit`. Narrow with `prefix` or raise `limit`.
+- `not_in_doctype_event`: the listed names that exist in the sandbox but are removed in DocType Event scripts (`frappe.db.commit`, `frappe.db.rollback`, `frappe.db.add_index`). Do not use them there.
 - `rules`: what scripts may and may not do, such as SELECT-only `frappe.db.sql`, no `import`, and what each script type receives.
 
 ## Best Practices
