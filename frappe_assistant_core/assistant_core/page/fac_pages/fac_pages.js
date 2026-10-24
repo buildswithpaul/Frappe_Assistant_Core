@@ -41,7 +41,14 @@
 	function render(page, data) {
 		page.set_title(data.title);
 		const host = document.createElement("div");
-		page.main.empty().append(host);
+		page.main.empty();
+		// A draft arrives without its script, so the preview runs no code until it is published.
+		if (data.draft) {
+			page.main.append(
+				$('<p class="text-muted"></p>').text(__("Draft. Its script runs once the page is published."))
+			);
+		}
+		page.main.append(host);
 		// @import must lead the stylesheet; the page's own style follows so it can override the kit.
 		const css = `@import url("${KIT_CSS_URL}");\n${data.style || ""}`;
 		frappe.create_shadow_element(

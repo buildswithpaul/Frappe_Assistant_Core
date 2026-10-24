@@ -24,10 +24,12 @@ SYSTEM_MANAGER = "System Manager"
 
 @frappe.whitelist(methods=["GET"])
 def get_page(slug: str) -> dict:
-    """Return a FAC Page's title, html, script and style if the session user may see it.
+    """Return a FAC Page's title, html, script, style and draft flag if the session user may see it.
 
     The FAC Page DocType is System Manager only, so access to a page is decided here from
-    its ``published`` flag and ``roles`` table rather than by DocType permission.
+    its ``published`` flag and ``roles`` table rather than by DocType permission. A draft is
+    served without its script: it is dormant, so previewing it must run no code until it is
+    published (publishing goes through an approval card).
     """
     if frappe.session.user == "Guest":
         frappe.throw(_("Log in to view this page."), frappe.PermissionError)
@@ -49,4 +51,11 @@ def get_page(slug: str) -> dict:
 
     # Access was decided above; the reader cannot read the DocType itself.
     page = frappe.get_doc("FAC Page", slug)
-    return {"title": page.title, "html": page.html, "script": page.script, "style": page.style}
+    draft = not published
+    return {
+        "title": page.title,
+        "html": page.html,
+        "script": "" if draft else page.script,
+        "style": page.style,
+        "draft": draft,
+    }

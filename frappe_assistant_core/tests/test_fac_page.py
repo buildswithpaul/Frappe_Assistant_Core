@@ -108,6 +108,27 @@ class TestFACPage(BaseAssistantTest):
 
         self.assertEqual(get_page(slug)["html"], '<div class="mk-card">Plan</div>')
 
+    def test_a_draft_is_served_without_its_script(self):
+        # A draft is dormant, so previewing it must run no code: the script waits for publishing.
+        slug = self._make_page(published=0)
+        self._act_as("fac-page-draft-preview", roles=("System Manager",))
+
+        page = get_page(slug)
+
+        self.assertEqual(page["script"], "")
+        self.assertTrue(page["draft"])
+        self.assertEqual(page["html"], '<div class="mk-card">Plan</div>')
+        self.assertEqual(page["style"], ".mk-card { color: red; }")
+
+    def test_a_published_page_is_served_with_its_script(self):
+        slug = self._make_page(published=1)
+        self._act_as("fac-page-published-sysman", roles=("System Manager",))
+
+        page = get_page(slug)
+
+        self.assertIn("dataset.ready", page["script"])
+        self.assertFalse(page["draft"])
+
     def test_a_missing_page_does_not_exist(self):
         self._act_as("fac-page-missing", roles=("System Manager",))
 

@@ -87,6 +87,10 @@ class TestCustomisationImpact(BaseAssistantTest):
             _impact("create_document", "FAC Page", {"slug": "team-planner", "published": 1})["dormant"]
         )
         self.assertFalse(_impact("update_document", "FAC Page", {"published": 1}, self.draft_page)["dormant"])
+        publish_with_edit = {"published": 1, "html": "<p>y</p>"}
+        self.assertFalse(
+            _impact("update_document", "FAC Page", publish_with_edit, self.draft_page)["dormant"]
+        )
         self.assertFalse(
             _impact("update_document", "FAC Page", {"html": "<p>y</p>"}, self.live_page)["dormant"]
         )
