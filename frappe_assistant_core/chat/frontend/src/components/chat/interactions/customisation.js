@@ -127,10 +127,31 @@ const DOCUMENT_ACTION_CONSEQUENCES = {
 	amend: () => __("This will create a new draft copy of a cancelled record"),
 };
 
+// A bulk call lists its records under one of these keys; the count is what the person approves.
+const batchSize = (input, ...keys) => {
+	const list = keys.map((key) => input?.[key]).find(Array.isArray);
+	return list ? list.length : 0;
+};
+
 const WRITE_CONSEQUENCES = {
-	create_document: () => __("This will write a new record to your ERP"),
-	update_document: () => __("This will modify an existing record in your ERP"),
-	delete_document: () => __("This will permanently delete a record from your ERP"),
+	create_document: (input) => {
+		const count = batchSize(input, "records");
+		return count > 1
+			? __("This will write {0} new records to your ERP", [count])
+			: __("This will write a new record to your ERP");
+	},
+	update_document: (input) => {
+		const count = batchSize(input, "names", "records");
+		return count > 1
+			? __("This will modify {0} existing records in your ERP", [count])
+			: __("This will modify an existing record in your ERP");
+	},
+	delete_document: (input) => {
+		const count = batchSize(input, "names");
+		return count > 1
+			? __("This will permanently delete {0} records from your ERP", [count])
+			: __("This will permanently delete a record from your ERP");
+	},
 };
 
 function documentActionConsequence(input) {
@@ -145,7 +166,7 @@ export function writeConsequence(toolName, input) {
 	const tool = baseToolName(toolName);
 	if (tool === "document_action") return documentActionConsequence(input);
 	const consequence = WRITE_CONSEQUENCES[tool];
-	return consequence ? consequence() : "";
+	return consequence ? consequence(input) : "";
 }
 
 const WRITE_TOOLS = ["create_document", "update_document"];
