@@ -16,10 +16,29 @@
 
 """FAC Page records, the role-checked read endpoint and the host Desk page."""
 
+import glob
+import json
+import os
+
 import frappe
 
 from frappe_assistant_core.api.fac_page import get_page
 from frappe_assistant_core.tests.base_test import BaseAssistantTest
+
+HOST_PAGE = "fac-pages"
+
+
+def _app_records(kind: str) -> set:
+    """Names of the standard DocTypes or Pages this app ships, read from their JSON."""
+    names = set()
+    for module in frappe.get_module_list("frappe_assistant_core"):
+        module_path = frappe.get_app_path("frappe_assistant_core", frappe.scrub(module))
+        for path in glob.glob(os.path.join(module_path, kind, "*", "*.json")):
+            with open(path) as f:
+                record = json.load(f)
+            if record.get("doctype") == ("DocType" if kind == "doctype" else "Page"):
+                names.add(record["name"])
+    return names
 
 
 class TestFACPage(BaseAssistantTest):
@@ -110,7 +129,7 @@ class TestFACPage(BaseAssistantTest):
 
     def test_a_slug_naming_a_desk_page_is_refused(self):
         with self.assertRaises(frappe.ValidationError):
-            self._make_page(slug="fac-page")
+            self._make_page(slug=HOST_PAGE)
 
     def test_a_long_slug_up_to_the_limit_is_kept(self):
         self.assertEqual(self._make_page(slug="a" * 80), "a" * 80)
@@ -122,7 +141,16 @@ class TestFACPage(BaseAssistantTest):
             self._make_page(slug="team-planner-dup")
 
     def test_the_host_page_is_installed(self):
-        self.assertTrue(frappe.db.exists("Page", "fac-page"))
+        self.assertTrue(frappe.db.exists("Page", HOST_PAGE))
+
+    def test_no_desk_page_shares_a_doctype_route(self):
+        # Desk resolves /app/<segment> to a readable DocType before any Page, by
+        # frappe.router.slug (lower-case, spaces to hyphens), so a Page named like
+        # a DocType's slug is unreachable for anyone who can read that DocType.
+        doctype_routes = {name.lower().replace(" ", "-") for name in _app_records("doctype")}
+
+        self.assertIn(HOST_PAGE, _app_records("page"))
+        self.assertEqual(doctype_routes & _app_records("page"), set())
 
     def test_only_system_manager_has_doctype_permissions(self):
         roles = {perm.role for perm in frappe.get_meta("FAC Page").permissions}

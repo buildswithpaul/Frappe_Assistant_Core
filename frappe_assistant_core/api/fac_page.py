@@ -14,7 +14,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Read endpoint for FAC Page records, shown by the ``fac-page`` Desk page."""
+"""Read endpoint for FAC Page records, shown by the ``fac-pages`` Desk page."""
 
 import frappe
 from frappe import _

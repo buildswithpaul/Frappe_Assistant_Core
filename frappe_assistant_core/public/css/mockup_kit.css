@@ -1,4 +1,4 @@
-/* The mockup kit. MockupFrame inlines it in a sandboxed iframe (:root, body); the fac-page Desk page
+/* The mockup kit. MockupFrame inlines it in a sandboxed iframe (:root, body); the fac-pages Desk page
    links it into a shadow root (:host, .fac-page-root). Keep both selector forms on each base rule. */
 
 :root,

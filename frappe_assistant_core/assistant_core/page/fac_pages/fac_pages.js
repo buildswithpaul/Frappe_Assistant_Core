@@ -1,8 +1,8 @@
-// Shows a FAC Page record at /app/fac-page/<slug>, inside a shadow root with the mockup kit.
+// Shows a FAC Page record at /app/fac-pages/<slug>, inside a shadow root with the mockup kit.
 (function () {
 	const KIT_CSS_URL = "/assets/frappe_assistant_core/css/mockup_kit.css";
 
-	frappe.pages["fac-page"].on_page_load = function (wrapper) {
+	frappe.pages["fac-pages"].on_page_load = function (wrapper) {
 		const page = frappe.ui.make_app_page({
 			parent: wrapper,
 			title: __("FAC Page"),
@@ -11,7 +11,7 @@
 		wrapper.fac_page = { page, slug: undefined };
 	};
 
-	frappe.pages["fac-page"].on_page_show = function (wrapper) {
+	frappe.pages["fac-pages"].on_page_show = function (wrapper) {
 		const state = wrapper.fac_page;
 		const slug = frappe.get_route()[1] || null;
 		if (slug === state.slug) return;

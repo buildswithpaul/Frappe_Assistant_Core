@@ -3,7 +3,7 @@
  "allow_rename": 0,
  "autoname": "field:slug",
  "creation": "2026-10-24 00:00:00.000000",
- "description": "A full page stored in the database and shown at /app/fac-page/<slug>.",
+ "description": "A full page stored in the database and shown at /app/fac-pages/<slug>.",
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
@@ -28,7 +28,7 @@
    "reqd": 1
   },
   {
-   "description": "Lower-case letters and digits in words joined by single hyphens, at most 80 characters. The page opens at /app/fac-page/<slug>.",
+   "description": "Lower-case letters and digits in words joined by single hyphens, at most 80 characters. The page opens at /app/fac-pages/<slug>.",
    "fieldname": "slug",
    "fieldtype": "Data",
    "in_list_view": 1,

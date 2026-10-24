@@ -14,7 +14,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""A full page stored in the database and shown by the ``fac-page`` Desk page."""
+"""A full page stored in the database and shown by the ``fac-pages`` Desk page."""
 
 import re
 

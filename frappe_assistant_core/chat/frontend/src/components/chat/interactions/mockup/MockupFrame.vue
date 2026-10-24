@@ -15,7 +15,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 
 import { __ } from "@/utils/i18n";
-// The one copy of the kit, also served to the fac-page Desk page from /assets.
+// The one copy of the kit, also served to the fac-pages Desk page from /assets.
 import kitCss from "../../../../../../../public/css/mockup_kit.css?raw";
 
 const MAX_BYTES = 200 * 1024;
