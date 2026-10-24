@@ -17,6 +17,21 @@ describe("writeConsequence", () => {
 		expect(writeConsequence("delete_document", {})).toBe("This will permanently delete a record from your ERP");
 	});
 
+	it("counts the records of a bulk write", () => {
+		expect(writeConsequence("create_document", { records: [{}, {}, {}] })).toBe(
+			"This will write 3 new records to your ERP",
+		);
+		expect(writeConsequence("update_document", { names: ["a", "b"], data: {} })).toBe(
+			"This will modify 2 existing records in your ERP",
+		);
+		expect(writeConsequence("update_document", { records: [{ name: "a", data: {} }] })).toBe(
+			"This will modify an existing record in your ERP",
+		);
+		expect(writeConsequence("delete_document", { names: ["a", "b", "c", "d"] })).toBe(
+			"This will permanently delete 4 records from your ERP",
+		);
+	});
+
 	it("follows the requested document action", () => {
 		expect(writeConsequence("document_action", { action: "cancel" })).toContain("cancel a submitted record");
 		expect(writeConsequence("document_action", {})).toContain("submit a record");

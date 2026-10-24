@@ -9,7 +9,9 @@ The `create_document` tool creates new Frappe documents (records). It handles fi
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
 | `doctype` | string | **Yes** | — | Exact DocType name |
-| `data` | object | **Yes** | — | Field values as key-value pairs |
+| `data` | object | One of `data`/`records` | — | Field values as key-value pairs |
+| `records` | array | One of `data`/`records` | — | Several records to create, each a field dict like `data` |
+| `mode` | string | No | `all_or_nothing` | For `records`: `all_or_nothing` or `continue` |
 | `submit` | boolean | No | `false` | Submit after creation (for submittable DocTypes). Under an active Workflow the document is created as a draft instead |
 | `validate_only` | boolean | No | `false` | Validate without saving — use to test data format |
 
@@ -100,6 +102,25 @@ A Table MultiSelect takes an array of its link values, as Desk sends it. Each va
   "submit": true
 }
 ```
+
+## Creating many records
+
+Pass `records` instead of `data`. Each record is checked exactly as a single create would be, including child tables, restricted fields and `submit`.
+
+```json
+{
+  "doctype": "ToDo",
+  "records": [
+    {"description": "Call supplier A"},
+    {"description": "Call supplier B"}
+  ]
+}
+```
+
+- With `validate_only: true`, every record is checked, nothing is saved, and every failing record is reported, not just the first.
+- At most 100 records per call; split a larger job into several calls.
+- `mode: "all_or_nothing"` (the default) saves nothing if any record fails, and `failed_record` names the record and its error. `mode: "continue"` saves the records that pass and lists each record's outcome in `results`.
+- Customisation DocTypes (Custom Field, Property Setter, Server Script, Client Script, DocType, Workflow, Report, Print Format, Notification and similar) are refused in a batch: write them one at a time so each one is previewed.
 
 ## Edge Cases
 

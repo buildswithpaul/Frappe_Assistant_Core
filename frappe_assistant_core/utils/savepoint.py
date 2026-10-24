@@ -31,7 +31,7 @@ Helpdesk tools.
 """
 
 import copy
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import frappe
 from frappe import _
@@ -93,14 +93,19 @@ def _unwind_commit_work(marks: Dict[str, Any]) -> None:
                 queue.pop()
 
 
-def rollback_to_savepoint(savepoint: str, marks: Dict[str, Any], doctype: str, name: str) -> None:
-    """Undo everything since ``open_savepoint``: the SQL and the commit work it queued."""
+def rollback_to_savepoint(savepoint: str, marks: Dict[str, Any], doctype: str, name: Optional[str]) -> bool:
+    """Undo everything since ``open_savepoint``: the SQL and the commit work it queued.
+
+    Returns False when the savepoint was already gone, so the work could not be undone.
+    """
+    rolled_back = True
     try:
         frappe.db.rollback(save_point=savepoint)
     except Exception:
         # The savepoint only disappears if something inside the call committed, in which
         # case its partial changes are already persisted and need a human to look at them.
         # That commit also ran its queued work, so there is nothing left to unwind.
+        rolled_back = False
         frappe.log_error(
             title=_("Document Rollback Error"),
             message=f"Could not roll back {doctype} '{name}':\n{frappe.get_traceback()}",
@@ -109,6 +114,7 @@ def rollback_to_savepoint(savepoint: str, marks: Dict[str, Any], doctype: str, n
         _unwind_commit_work(marks)
     # A doc cached while the rolled-back changes were visible would otherwise outlive them.
     frappe.clear_document_cache(doctype, name)
+    return rolled_back
 
 
 def release_savepoint(savepoint: str) -> None:
