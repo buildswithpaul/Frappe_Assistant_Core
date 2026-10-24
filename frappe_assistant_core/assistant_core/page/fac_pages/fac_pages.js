@@ -42,10 +42,10 @@
 		page.set_title(data.title);
 		const host = document.createElement("div");
 		page.main.empty();
-		// A draft arrives without its script, so the preview runs no code until it is published.
+		// A draft arrives without scripts or inline handlers, so the preview runs no code.
 		if (data.draft) {
 			page.main.append(
-				$('<p class="text-muted"></p>').text(__("Draft. Its script runs once the page is published."))
+				$('<p class="text-muted"></p>').text(__("Draft. Scripts run once the page is published."))
 			);
 		}
 		page.main.append(host);

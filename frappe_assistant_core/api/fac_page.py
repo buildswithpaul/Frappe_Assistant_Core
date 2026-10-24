@@ -18,8 +18,11 @@
 
 import frappe
 from frappe import _
+from frappe.utils.html_utils import sanitize_html
 
 SYSTEM_MANAGER = "System Manager"
+# Tags that act on the whole document (a refresh, a stylesheet) rather than inside the page.
+DRAFT_DISALLOWED_TAGS = ["meta", "link", "html", "head", "body"]
 
 
 @frappe.whitelist(methods=["GET"])
@@ -28,8 +31,8 @@ def get_page(slug: str) -> dict:
 
     The FAC Page DocType is System Manager only, so access to a page is decided here from
     its ``published`` flag and ``roles`` table rather than by DocType permission. A draft is
-    served without its script: it is dormant, so previewing it must run no code until it is
-    published (publishing goes through an approval card).
+    served without its script and with sanitised html: it is dormant, so previewing it must run
+    no code until it is published (publishing goes through an approval card).
     """
     if frappe.session.user == "Guest":
         frappe.throw(_("Log in to view this page."), frappe.PermissionError)
@@ -54,8 +57,17 @@ def get_page(slug: str) -> dict:
     draft = not published
     return {
         "title": page.title,
-        "html": page.html,
+        "html": _draft_html(page.html) if draft else page.html,
         "script": "" if draft else page.script,
         "style": page.style,
         "draft": draft,
     }
+
+
+def _draft_html(html: str | None) -> str | None:
+    """A draft's html without inline handlers or javascript: links.
+
+    The host page's create_shadow_element strips only <script> and <style>, so attributes such
+    as onerror would still run in the previewer's session.
+    """
+    return sanitize_html(html, always_sanitize=True, disallowed_tags=DRAFT_DISALLOWED_TAGS)

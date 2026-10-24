@@ -120,6 +120,29 @@ class TestFACPage(BaseAssistantTest):
         self.assertEqual(page["html"], '<div class="mk-card">Plan</div>')
         self.assertEqual(page["style"], ".mk-card { color: red; }")
 
+    def test_a_draft_is_served_without_inline_handlers(self):
+        # create_shadow_element strips only <script> and <style>, so a draft's html must not carry
+        # handlers or javascript: links that would run code in the previewer's session.
+        html = (
+            '<div class="mk-card">Plan<img src="x" onerror="alert(1)">'
+            '<a href="javascript:alert(1)">go</a><meta http-equiv="refresh" content="0"></div>'
+        )
+        slug = self._make_page(published=0, html=html)
+        self._act_as("fac-page-draft-handlers", roles=("System Manager",))
+
+        served = get_page(slug)["html"]
+
+        for unsafe in ("onerror", "javascript:", "<meta", "alert(1)"):
+            self.assertNotIn(unsafe, served)
+        self.assertIn('class="mk-card"', served)
+
+    def test_a_published_page_html_is_served_unchanged(self):
+        html = '<div class="mk-card" onclick="go()"><img src="x" onerror="track()"></div>'
+        slug = self._make_page(published=1, html=html)
+        self._act_as("fac-page-published-html", roles=("System Manager",))
+
+        self.assertEqual(get_page(slug)["html"], html)
+
     def test_a_published_page_is_served_with_its_script(self):
         slug = self._make_page(published=1)
         self._act_as("fac-page-published-sysman", roles=("System Manager",))
