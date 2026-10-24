@@ -33,10 +33,14 @@ Adds a rule that runs on the server when a document is saved, submitted, cancell
 
 1. **Look up the sandbox before writing code.** Call `sandbox_reference` (with a `prefix` such as `frappe.db` to keep it short) and use only names it lists. Do not guess what the sandbox allows.
 2. **Build the script switched off** (`disabled: 1`). While it is off it cannot run, so there is no approval card.
-3. **Switch it on once, when it is ready.** That is the one approval card. Then trigger it, for example by saving a draft document.
+3. **Switch it on once, when it is ready.** That is the one approval card. Then trigger it to match its type:
+   - DocType Event: save a draft of that document type.
+   - API: call the endpoint.
+   - Scheduler Event: wait for the job or run it.
+   - Permission Query: open the list as an affected user.
 4. **If it fails, read `recent_errors`** with `contains` set to the script's name, fix the script, and trigger it again.
 5. **Never create a throwaway "probe" script** to find out what the sandbox allows. That is what `sandbox_reference` is for.
-6. **Check who can use the result** with `test_as_user`, for example whether the people who should be stopped or allowed really are.
+6. **Check who can read, write or submit the target document type or record** with `test_as_user`. It checks permissions only; it does not show what a validation script blocks.
 
 ## Reference
 
