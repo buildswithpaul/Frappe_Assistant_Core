@@ -39,12 +39,14 @@ record on the page — never an ERPNext Lead or Contact.
 
 When you have the `propose_build_plan` tool and the user asks for a page, workspace or any screen
 that takes more than one record to build, call it before the first write instead of asking in text.
+A full screen with its own layout (planner, board, tracker) is a FAC Page: see the `fac-page` skill.
 
 - List every record the build creates or changes, one entry each, with its action, and set `goes_live`
-  to true for what users see at once. A script or similar record you create switched off is not live.
-- Give each entry the `name` Frappe will give the record: a Workspace's label, a Report's
-  `report_name`, a Workflow's `workflow_name`, a Role's `role_name`, or the name you set for a Server
-  Script or Client Script. A Custom Field, Property Setter or Custom DocPerm may give `identity`
+  to true for what users see at once. A script or similar record you create switched off is not live;
+  publishing a FAC Page is.
+- Give each entry the `name` Frappe will give the record: a Workspace's label, a FAC Page's `slug`, a
+  Report's `report_name`, a Workflow's `workflow_name`, a Role's `role_name`, or the name you set for a
+  Server Script or Client Script. A Custom Field, Property Setter or Custom DocPerm may give `identity`
   instead (`dt` + `fieldname`; `doc_type` + `field_name` + `property`; `parent` + `role` +
   `permlevel`). A record Frappe names by hash or series cannot be listed, so its write still asks.
 - Send a `mockup_html` for each screen, written with the classes in the `mockup-kit` skill. Show the

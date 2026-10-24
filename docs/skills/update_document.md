@@ -36,7 +36,7 @@ The `update_document` tool modifies field values on an existing Frappe document.
 }
 ```
 
-The response confirms which fields were updated and shows the document's current state.
+The response confirms which fields were updated and shows the document's current state. For a `FAC Page` it also returns `page_url`, the `/app/fac-pages/<slug>` link where the page opens (`url` stays the form).
 
 ## Updating child-table rows
 

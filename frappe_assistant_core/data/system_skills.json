@@ -490,5 +490,14 @@
     "status": "Published",
     "visibility": "Public",
     "content_file": "mockup_kit.md"
+  },
+  {
+    "skill_id": "fac-page",
+    "title": "Building a FAC Page",
+    "description": "Use when asked for a full screen of its own, such as a planner, board or tracker, that a Workspace's cards, shortcuts and charts can't give.",
+    "skill_type": "Workflow",
+    "status": "Published",
+    "visibility": "Public",
+    "content_file": "fac_page.md"
   }
 ]

@@ -28,6 +28,8 @@ The `create_document` tool creates new Frappe documents (records). It handles fi
 }
 ```
 
+`url` links to the record's form. For a `FAC Page`, `page_url` is also returned: the `/app/fac-pages/<slug>` link where the page itself opens.
+
 ## Best Practices
 
 1. **Check required fields first** — use `get_doctype_info` to see mandatory fields before creating.
