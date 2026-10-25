@@ -505,9 +505,20 @@ def child_table_doctype_error(doctype: str, perm_type: str, user: str) -> Dict[s
             "Work through the parent document instead. To add or change rows, call "
             "update_document on the parent with the table field. Rows without a 'name' "
             "replace the whole table, so include the 'name' of existing rows you want to "
-            "keep. Use get_document on the parent to read them."
+            "keep. Use get_document on the parent to read them. " + _child_filter_hint(doctype, parents)
         ),
     }
+
+
+def _child_filter_hint(doctype: str, parents: List[Dict[str, str]]) -> str:
+    """How to find parent records by a value in this child table, with one ready example."""
+    names = [p["doctype"] for p in parents]
+    parent = "User" if "User" in names else (names[0] if names else "<parent doctype>")
+    return (
+        "To find the parent records that have a value in this table (for example which users "
+        f'hold a role), call list_documents on "{parent}" with filters '
+        f'[["{doctype}", "<field>", "=", "<value>"]].'
+    )
 
 
 def is_doctype_accessible(doctype: str, user_role: str, perm_type: str = "read") -> bool:
