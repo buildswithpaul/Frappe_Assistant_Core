@@ -46,7 +46,7 @@ To share a user's personal page, update it with `visibility: "Shared"`, the `rol
 ```
 
 - **`slug`**: lower-case words joined by single hyphens, at most 80 characters. A shared page's name is its slug; a personal page's name adds the owner's tag. It must be unique among shared pages, and among each user's own pages. It cannot change after the page is saved.
-- **`html`** is static markup. The `mockup-kit` classes (`mk-page`, `mk-card`, `mk-table` and the rest) work here as in a mockup.
+- **`html`** is static markup. The `mockup-kit` classes (`mk-page`, `mk-card`, `mk-table` and the rest) work here as in a mockup. Put event handlers in the `script` (`root_element.querySelector(...).addEventListener(...)`), never inline. A personal page's html is served without inline handlers (`onclick`, `onerror` and the rest), `javascript:` links, `<script>`, `<iframe>`, `<object>`, `<embed>` and `<base>`, so its code lives only in `script`, behind **Run new version**. Forms, inputs and buttons are kept. Inline `<svg>` shapes lose their drawing attributes there, so draw charts with `fac.chart` from the script.
 - **`script`** runs after the html renders. `root_element` is the page's shadow root, so find elements with `root_element.querySelector`, not `document`. In Desk it has the normal `frappe` object; in the chat panel only a small part of it (see `pages-in-chat`). It runs as the viewer, so `frappe.call` and `frappe.db` read and write only what that user may.
 - **`style`** applies to this page only.
 - **`roles`** (shared pages only): users with any listed role can open the page. No roles means System Managers only. "All" or "Guest" opens it to every logged-in user, website users included, so pick roles on purpose.

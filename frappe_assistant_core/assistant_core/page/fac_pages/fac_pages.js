@@ -82,6 +82,7 @@
 	// The page as get_page sent it; without run_script, its html and style only, under review_bar.
 	function render_published(page, data, is_latest, { run_script, review_bar }) {
 		const script = run_script ? data.script || "" : "";
+		const html = run_script ? data.html || "" : strip_inline_code(data.html || "");
 		// Only a script that names fac can draw a chart, so only such a page pays for the bundle.
 		const ready = /\bfac\b/.test(script) ? load_charts() : Promise.resolve();
 		ready.then(() => {
@@ -95,11 +96,30 @@
 			const css = `@import url("${KIT_CSS_URL}");\n${data.style || ""}`;
 			frappe.create_shadow_element(
 				host,
-				`<div class="fac-page-root">${data.html || ""}</div>`,
+				`<div class="fac-page-root">${html}</div>`,
 				css,
 				with_fac(script)
 			);
 		});
+	}
+
+	// get_page already serves a personal page's html without inline code; while its script is held,
+	// this strips it here as well, so nothing runs before Run new version. Forms and buttons stay.
+	const HELD_DROPPED_TAGS = "script, iframe, object, embed, base, meta, link";
+	const URL_ATTRIBUTES = ["href", "src", "xlink:href", "action", "formaction"];
+	function strip_inline_code(html) {
+		const template = document.createElement("template");
+		template.innerHTML = html;
+		template.content.querySelectorAll(HELD_DROPPED_TAGS).forEach((el) => el.remove());
+		template.content.querySelectorAll("*").forEach((el) => {
+			for (const { name, value } of [...el.attributes]) {
+				// A browser ignores tabs, newlines and other control characters in a URL's scheme.
+				const scheme = value.replace(/[\u0000-\u0020]/g, "").toLowerCase();
+				const runs_code = URL_ATTRIBUTES.includes(name) && scheme.startsWith("javascript:");
+				if (name.startsWith("on") || runs_code) el.removeAttribute(name);
+			}
+		});
+		return template.innerHTML;
 	}
 
 	// Once per Desk session. frappe.require cannot take the ?v= URL (it reads the extension after

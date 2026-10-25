@@ -24,6 +24,7 @@ When a user asks for a report, a summary or "a PDF of …", build it as a person
 
 - **The `mockup-kit` classes** (`mk-page`, `mk-card`, `mk-table`, `mk-stat`, `mk-badge`, `mk-btn`, `mk-field`, `mk-tabs`, `mk-chart`).
 - **`root_element`**, the page's shadow root. Find elements with `root_element.querySelector`.
+- **Event handlers in the script only**: `root_element.querySelector("#refresh").addEventListener("click", load)`. Inline handlers (`onclick="..."`) and `javascript:` links are stripped from a personal page's html.
 - **`fac.chart(el, option)`** draws an ECharts bar, line or pie chart as SVG (see `mockup-kit`).
 - **`__(text)`** for translatable text.
 - **`frappe`**: in the chat panel, only these members:
@@ -62,4 +63,5 @@ frappe.db.get_list("Sales Invoice", {
 - Judging new code from a screenshot taken before the user clicked **Run new version**.
 - Pasting numbers into the html instead of fetching them.
 - A slug like `report` or `page-2` that the user can't find again in **My pages**.
+- Inline `onclick` or `onerror` handlers in the html. They are stripped, so the button does nothing.
 - Reaching for Desk-only `frappe` members, so the page shows **Open in Desk** instead of the report.

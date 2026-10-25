@@ -5,6 +5,7 @@ const baseCall = vi.fn();
 vi.mock("@/api/_core", () => ({ baseCall: (...a) => baseCall(...a), getCall: vi.fn() }));
 
 import { usePagePanel } from "@/composables/usePagePanel";
+import { fireInlineHandlers } from "@/utils/__tests__/inlineHandlers";
 import PageView from "./PageView.vue";
 
 let wrapper;
@@ -149,6 +150,27 @@ describe("PageView", () => {
 		w.unmount();
 		wrapper = null;
 		expect(usePagePanel().pageView.value).toBe(null);
+	});
+
+	it("runs no inline code from a held page's html, and keeps its forms and buttons", () => {
+		// get_page strips these from a personal page's html; this is the host's own second line.
+		const page = {
+			...published,
+			html:
+				'<img src="x" onerror="window.__inlineRan = 1"><svg onload="window.__inlineRan = 2"></svg>' +
+				'<a class="go" href="javascript:window.__inlineRan = 3">go</a><iframe src="https://evil.example"></iframe>' +
+				'<form class="mk-form"><input name="q"><button type="button">Go</button></form>',
+			script: "window.__inlineRan = 'script';",
+		};
+		wrapper = mount(PageView, { props: { page, user: "avery@example.com", holdScript: true }, attachTo: document.body });
+		const shadow = wrapper.find(".page-view-host").element.shadowRoot;
+		fireInlineHandlers(shadow, "error");
+		fireInlineHandlers(shadow, "load");
+		expect(window.__inlineRan).toBeUndefined();
+		expect(shadow.querySelector(".go").getAttribute("href")).toBeNull();
+		expect(shadow.querySelector("iframe")).toBeNull();
+		expect(shadow.querySelector("form.mk-form input[name=q]")).not.toBeNull();
+		expect(shadow.querySelector("form.mk-form button")).not.toBeNull();
 	});
 
 	it("marks a draft's frame, which cannot be captured", () => {

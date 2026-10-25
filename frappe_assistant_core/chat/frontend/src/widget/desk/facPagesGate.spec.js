@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { fireInlineHandlers } from "@/utils/__tests__/inlineHandlers";
 import { fac_page_approve_script, fac_page_approved_script } from "@/utils/facPageApproval";
 
 import { facPagesSource } from "./facPagesSource";
@@ -94,6 +95,24 @@ describe("fac-pages Desk page: code FACO writes runs only after the user has see
 		bar().querySelector(".fac-page-review-toggle").click();
 		expect(diff.hidden).toBe(false);
 		expect([...diff.children].map((line) => line.textContent)).toEqual([`- ${SCRIPT}`, `+ ${SCRIPT_V2}`]);
+	});
+
+	it("runs no inline code from a held page's html, and keeps its forms and buttons", async () => {
+		// get_page strips these from a personal page's html; this is the host's own second line.
+		const html =
+			'<p>Sales</p><img src="x" onerror="window.__deskInlineRan = 1"><svg onload="window.__deskInlineRan = 2"></svg>' +
+			'<a class="go" href=" java\tscript:window.__deskInlineRan = 3">go</a><iframe src="https://evil.example"></iframe>' +
+			'<form class="mk-form"><input name="q"><button type="button">Go</button></form>';
+		await show(personal({ html }));
+		const root = document.createElement("div");
+		root.innerHTML = frappe.create_shadow_element.mock.calls.at(-1)[1];
+		fireInlineHandlers(root, "error");
+		fireInlineHandlers(root, "load");
+		expect(window.__deskInlineRan).toBeUndefined();
+		expect(root.querySelector(".go").getAttribute("href")).toBeNull();
+		expect(root.querySelector("iframe")).toBeNull();
+		expect(root.querySelector("form.mk-form input[name=q]")).not.toBeNull();
+		expect(root.querySelector("form.mk-form button")).not.toBeNull();
 	});
 
 	it("never holds a Shared page", async () => {

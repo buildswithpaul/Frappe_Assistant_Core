@@ -348,6 +348,26 @@ class TestPersonalFACPage(BaseAssistantTest):
 
         self.assertEqual(get_page(doc.name)["html"], "<p>Edited</p>")
 
+    def test_a_personal_page_is_served_without_inline_code(self):
+        # A personal page's script waits for the owner's Run new version; an inline handler or a
+        # javascript: link in its html would run without it.
+        user = self._desk_user("fac-page-inline-code")
+        html = (
+            '<div class="mk-card"><img src="x" onerror="alert(1)">'
+            '<svg onload="alert(2)"><circle r="1"></circle></svg>'
+            '<a class="mk-link" href="javascript:alert(3)">go</a>'
+            '<iframe src="https://evil.example"></iframe><base href="https://evil.example/">'
+            '<form class="mk-form"><input name="q"><button type="button">Go</button></form></div>'
+        )
+        name = self._build(user, html=html)
+
+        served = get_page(name)["html"]
+
+        for unsafe in ("onerror", "onload", "javascript:", "alert(", "<iframe", "<base"):
+            self.assertNotIn(unsafe, served)
+        for kept in ('class="mk-card"', 'class="mk-link"', "<form", '<input name="q"', "<button", "<svg"):
+            self.assertIn(kept, served)
+
     def test_a_personal_page_does_not_exist_for_anyone_else(self):
         name = self._build(self._desk_user("fac-page-private"))
 

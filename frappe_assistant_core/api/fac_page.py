@@ -38,6 +38,21 @@ DRAFT_DISALLOWED_TAGS = [
     "textarea",
 ]
 
+# A personal page keeps its form controls, which its own script may wire, but loses every tag
+# that runs code, embeds another document or acts on the whole document.
+PERSONAL_DISALLOWED_TAGS = [
+    "script",
+    "iframe",
+    "object",
+    "embed",
+    "meta",
+    "link",
+    "base",
+    "html",
+    "head",
+    "body",
+]
+
 
 @frappe.whitelist(methods=["GET"])
 def get_page(slug: str) -> dict:
@@ -71,7 +86,7 @@ def get_page(slug: str) -> dict:
     page = frappe.get_doc("FAC Page", slug)
     return {
         "title": page.title,
-        "html": _draft_html(page.html) if draft else page.html,
+        "html": _served_html(page.html, draft, page.visibility),
         "script": "" if draft else page.script,
         "style": page.style,
         "draft": draft,
@@ -97,6 +112,25 @@ def _check_shared_access(name: str, published: int) -> None:
     )
     if not user_roles.intersection(allowed_roles):
         frappe.throw(_("You are not allowed to view this page."), frappe.PermissionError)
+
+
+def _served_html(html: str | None, draft: bool, visibility: str) -> str | None:
+    """The html a host page may render: a shared published page's as approved on its publish
+    card; a draft's and a personal page's cleaned of inline code."""
+    if draft:
+        return _draft_html(html)
+    if visibility != SHARED:
+        return _personal_html(html)
+    return html
+
+
+def _personal_html(html: str | None) -> str | None:
+    """A personal page's html without inline handlers, javascript: URLs or code-bearing tags.
+
+    The page's code may only live in ``script``, which the host pages run once the owner has seen
+    it and clicked Run new version. An inline handler in the html would run without that.
+    """
+    return sanitize_html(html, always_sanitize=True, disallowed_tags=PERSONAL_DISALLOWED_TAGS)
 
 
 def _draft_html(html: str | None) -> str | None:
