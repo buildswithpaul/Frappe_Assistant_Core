@@ -175,8 +175,51 @@ class TestCustomisationImpact(BaseAssistantTest):
             customisation_impact("create_document", {"doctype": "ToDo"}),
         ):
             self.assertIs(result["switches_on"], False)
+            self.assertIs(result["changes_live_code"], False)
             self.assertIn("dormant", result)
             self.assertIn("reason", result)
+
+    def test_editing_a_published_pages_code_changes_live_code(self):
+        for field in ("html", "script", "style"):
+            r = _impact("update_document", "FAC Page", {field: "/* new */"}, self.live_page)
+            self.assertTrue(r["changes_live_code"], field)
+            self.assertIs(r["switches_on"], False, field)
+
+    def test_editing_an_enabled_server_scripts_code_changes_live_code(self):
+        r = _impact("update_document", "Server Script", {"script": "x = 1"}, self.on_script)
+        self.assertTrue(r["changes_live_code"])
+
+    def test_writes_that_leave_live_code_alone_do_not_change_live_code(self):
+        for result in (
+            # The stored script is "pass", so sending it again changes nothing.
+            _impact("update_document", "Server Script", {"script": "pass"}, self.on_script),
+            _impact("update_document", "FAC Page", {"title": "Renamed"}, self.live_page),
+            _impact("update_document", "Server Script", {"script": "x = 1"}, self.off_script),
+            _impact("update_document", "FAC Page", {"published": 1, "html": "<p>y</p>"}, self.draft_page),
+            # Unpublished in the same write, so the new markup never runs.
+            _impact("update_document", "FAC Page", {"published": 0, "html": "<p>y</p>"}, self.live_page),
+            _impact("create_document", "Server Script", {"disabled": 0, "script": "x = 1"}),
+            _impact("create_document", "Custom Field", {"dt": "Sales Invoice", "fieldname": "x"}),
+            _impact("delete_document", "Server Script", name=self.on_script),
+        ):
+            self.assertIs(result["changes_live_code"], False, result["reason"])
+
+    def test_code_of_an_always_live_doctype_changes_live_code(self):
+        stored = {"name": "Margins", "report_type": "Script Report", "report_script": "old", "query": ""}
+        with patch(STORED_RECORD, autospec=True, return_value=stored):
+            changed = _impact("update_document", "Report", {"report_script": "new"}, "Margins")
+            same = _impact("update_document", "Report", {"report_script": "old"}, "Margins")
+            other = _impact("update_document", "Report", {"disabled": 1}, "Margins")
+        self.assertTrue(changed["changes_live_code"])
+        self.assertIs(same["changes_live_code"], False)
+        self.assertIs(other["changes_live_code"], False)
+
+    def test_a_notifications_templates_are_live_code(self):
+        stored = {"name": "Low stock", "enabled": 1, "subject": "a", "message": "b", "condition": ""}
+        with patch(STORED_RECORD, autospec=True, return_value=stored):
+            for field in ("subject", "message", "condition"):
+                r = _impact("update_document", "Notification", {field: "{{ doc.name }}"}, "Low stock")
+                self.assertTrue(r["changes_live_code"], field)
 
     def test_new_doctype_visible_only_to_system_manager_is_dormant(self):
         data = {"custom": 1, "permissions": [{"role": "System Manager"}, {"role": "Administrator"}]}
@@ -430,6 +473,7 @@ class TestCustomisationImpactTool(BaseAssistantTest):
         self.assertTrue(result["success"])
         self.assertFalse(result["dormant"])
         self.assertTrue(result["switches_on"])
+        self.assertIs(result["changes_live_code"], False)
 
     def test_live_write_is_not_dormant(self):
         result = self._tool().execute({"tool_name": "send_email", "tool_input": {}})

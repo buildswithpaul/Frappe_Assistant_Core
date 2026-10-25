@@ -31,6 +31,8 @@ from frappe import _
 from frappe.model.meta import Meta
 from frappe.utils import cint, get_url, get_url_to_form
 
+from frappe_assistant_core.chat.api.current_code import CODE_KEYS
+
 CUSTOMISATION_DOCTYPES = frozenset(
     {
         "Server Script",
@@ -62,6 +64,10 @@ _SWITCH_FIELDS = {
 }
 
 _WRITE_TOOLS = frozenset({"create_document", "update_document", "delete_document"})
+
+# Fields that run besides the shared CODE_KEYS, per doctype: a FAC Page's style is applied to the
+# page, and a Notification's subject is a Jinja template rendered into the email it sends.
+_DOCTYPE_CODE_KEYS = {"FAC Page": ("style",), "Notification": ("subject",)}
 
 APPLIES_TO_FIELDS = {
     "Custom Field": "dt",
@@ -277,13 +283,21 @@ def customisation_impact(tool_name: str, tool_input: Any) -> Dict[str, Any]:
     the stored state and the state after the write both are, so switching a script on, publishing
     a page or moving a field onto a live DocType is live, and any doubt counts as live.
     ``switches_on`` is true when the write turns a ``_SWITCH_FIELDS`` record from off to on,
-    including a create saved switched on; FAC Cloud then shows its card even when an approved
-    build plan lists the write, so the user sees the final code.
+    including a create saved switched on. ``changes_live_code`` is true when an update changes a
+    code field of a record that is live before and after the write. FAC Cloud shows its card for
+    either even when an approved build plan lists the write, so the user sees the final code.
     Never writes. The reason is plain words for logs and never repeats stored values.
     """
     result = _dormancy(tool_name, tool_input)
     result.setdefault("switches_on", False)
+    result.setdefault("changes_live_code", False)
     return result
+
+
+def _changes_code(doctype: str, data: Dict[str, Any], stored: Dict[str, Any]) -> bool:
+    """Whether ``data`` gives any code field of ``doctype`` a value other than the stored one."""
+    fields = CODE_KEYS + _DOCTYPE_CODE_KEYS.get(doctype, ())
+    return any(field in data and (data[field] or "") != (stored.get(field) or "") for field in fields)
 
 
 def _dormancy(tool_name: str, tool_input: Any) -> Dict[str, Any]:
@@ -320,7 +334,13 @@ def _dormancy(tool_name: str, tool_input: Any) -> Dict[str, Any]:
         stored_off = creating or cint(before(field)) == off
         if stored_off and cint(value) == off:
             return {"dormant": True, "reason": f"{doctype} is switched off"}
-        return {"dormant": False, "reason": f"{doctype} is switched on", "switches_on": stored_off}
+        stays_on = not stored_off and cint(value) != off
+        return {
+            "dormant": False,
+            "reason": f"{doctype} is switched on",
+            "switches_on": stored_off,
+            "changes_live_code": stays_on and _changes_code(doctype, data, stored),
+        }
 
     if doctype == "DocType":
         stored_facts = None if creating else _stored_doctype(name)
@@ -347,7 +367,11 @@ def _dormancy(tool_name: str, tool_input: Any) -> Dict[str, Any]:
             return {"dormant": True, "reason": "Permission only covers system roles on a dormant DocType"}
         return {"dormant": False, "reason": "Permission may open a DocType to other people"}
 
-    return {"dormant": False, "reason": f"{doctype} changes always count"}
+    return {
+        "dormant": False,
+        "reason": f"{doctype} changes always count",
+        "changes_live_code": not creating and _changes_code(doctype, data, stored),
+    }
 
 
 _PLAN_ACTION_TOOLS = {"update": "update_document", "delete": "delete_document"}
