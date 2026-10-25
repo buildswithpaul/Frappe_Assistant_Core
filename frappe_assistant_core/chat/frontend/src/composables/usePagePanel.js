@@ -25,6 +25,17 @@ function registerDock() {
 	};
 }
 
+// The page the panel shows, for FACO's screenshot: its element, and whether it is a draft's frame.
+const pageView = shallowRef(null);
+
+/** Called by a mounted PageView; returns the call that withdraws it. */
+function showPageView(view) {
+	pageView.value = view;
+	return () => {
+		if (pageView.value === view) pageView.value = null;
+	};
+}
+
 function open(name) {
 	openName.value = name || null;
 }
@@ -56,5 +67,5 @@ function trackPageWrites(messages) {
  */
 export function usePagePanel(messages) {
 	if (messages) trackPageWrites(messages);
-	return { openName, refreshKey, chips, dockMounted, registerDock, open, close };
+	return { openName, refreshKey, chips, dockMounted, registerDock, open, close, pageView, showPageView };
 }

@@ -16,6 +16,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 
 import { baseCall, getCall } from "@/api/_core";
+import { usePagePanel } from "@/composables/usePagePanel";
 import { fac_page_draft_srcdoc } from "@/utils/facPageDraft";
 import { chart } from "@/utils/pageCharts";
 import { snapshotHtml } from "@/utils/pagePrint";
@@ -75,11 +76,19 @@ function render() {
 	if (result.error && !result.unsupported) emit("error", result.error);
 }
 
+// FACO's screenshot captures the page shown here; a draft's frame cannot be read.
+let hidePageView = () => {};
+
 onMounted(() => {
 	if (published.value) render();
+	const element = published.value ? host.value : draftFrame.value;
+	hidePageView = usePagePanel().showPageView({ element, draft: !published.value });
 });
 
-onBeforeUnmount(() => charts.splice(0).forEach((handle) => handle.dispose()));
+onBeforeUnmount(() => {
+	hidePageView();
+	charts.splice(0).forEach((handle) => handle.dispose());
+});
 
 // What Download PDF prints: the page as drawn now, after its script and charts ran. A draft's
 // frame cannot be read from here, so it prints the sanitised html the frame shows.

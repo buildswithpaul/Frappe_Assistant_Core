@@ -1,6 +1,14 @@
 <template>
 	<aside v-if="openName" class="page-dock">
+		<!-- FACO asks here before it captures the page below. -->
+		<BrowserToolConfirm
+			v-for="c in confirms"
+			:key="c.id"
+			:request="c.request"
+			@decide="(decision) => settleConfirm(c, decision)"
+		/>
 		<PagePanel
+			class="page-dock-panel"
 			:name="openName"
 			:version="openChip?.version || 0"
 			:pending="Boolean(openChip?.pending)"
@@ -16,6 +24,9 @@
 import { computed, onBeforeUnmount, onMounted, toRef, watch } from "vue";
 
 import { usePagePanel } from "@/composables/usePagePanel";
+import { useSpaBrowserTools } from "@/composables/useSpaBrowserTools";
+import BrowserToolConfirm from "@/widget/panel/BrowserToolConfirm.vue";
+import { confirms, settleConfirm } from "@/widget/panel/confirmQueue";
 
 import PagePanel from "./PagePanel.vue";
 
@@ -37,8 +48,12 @@ onBeforeUnmount(() => unregister());
 
 const openChip = computed(() => chips.value.find((chip) => chip.name === openName.value));
 
+useSpaBrowserTools({ getSessionId: () => props.sessionId });
+
 watch(openName, (name) => {
 	if (name) emit("open", name);
+	// A closed page takes its cards with it, and leaves nothing to capture.
+	else confirms.value.forEach((entry) => settleConfirm(entry, "deny"));
 });
 
 // A page belongs to the conversation that made it; another conversation starts without one.
@@ -58,11 +73,17 @@ function onShare(text) {
 
 <style scoped>
 .page-dock {
+	display: flex;
+	flex-direction: column;
 	flex: 0 0 50%;
 	min-width: 420px;
 	height: 100%;
 	overflow: hidden;
 	border-left: 1px solid var(--ql-border);
+}
+.page-dock-panel {
+	flex: 1;
+	min-height: 0;
 }
 
 @media (max-width: 767px) {

@@ -23,47 +23,8 @@ afterEach(async () => {
 const toolsJs = resolve(process.cwd(), "src/widget/desk/browserTools.js");
 const src = () => readFileSync(toolsJs, "utf8");
 
-/**
- * The widget half of the browser-tool budget contract. The server suspends its
- * short delivery deadline only while the widget says a human is deciding, so if
- * these reports stop being emitted — or are emitted in the wrong order —
- * screenshots silently go back to timing out mid-approval.
- */
-describe("browser tool progress reports", () => {
-	it("reports receipt before doing anything else", () => {
-		const handler = src().match(/async _handleToolCall\(data\) \{([\s\S]*?)\n\t\},/);
-		expect(handler).not.toBeNull();
-		expect(handler[1]).toMatch(/report_progress\(call_id, "received"\)/);
-	});
-
-	it("reports awaiting_user BEFORE blocking on the approval card", () => {
-		const body = src();
-		const awaitingAt = body.indexOf('report_progress(call_id, "awaiting_user")');
-		const confirmAt = body.indexOf("await this._requestUserConfirmation(");
-
-		expect(awaitingAt).toBeGreaterThan(-1);
-		expect(confirmAt).toBeGreaterThan(-1);
-		expect(awaitingAt).toBeLessThan(confirmAt);
-	});
-
-	it("reports executing before running the handler", () => {
-		const body = src();
-		const executingAt = body.indexOf('report_progress(call_id, "executing")');
-		const handlerAt = body.indexOf("await handler.call(this.handlers,");
-
-		expect(executingAt).toBeGreaterThan(-1);
-		expect(executingAt).toBeLessThan(handlerAt);
-	});
-
-	it("does not await progress reports — they must never gate execution", () => {
-		const body = src();
-		expect(body).not.toMatch(/await this\.report_progress/);
-	});
-
-	it("targets the ack endpoint the server actually exposes", () => {
-		expect(src()).toMatch(/browser_bridge\.submit_browser_tool_ack/);
-	});
-});
+// The progress reports (received, awaiting_user, executing) and their order are the
+// dispatcher's: see utils/browserToolDispatch.spec.js.
 
 describe("capture library", () => {
 	it("bundles html2canvas-pro, never the unmaintained 1.4.1", () => {

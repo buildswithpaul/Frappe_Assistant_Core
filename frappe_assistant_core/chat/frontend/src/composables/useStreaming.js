@@ -22,6 +22,8 @@ import { io } from "socket.io-client";
 // Singleton socket connection for the SPA
 let spaSocket = null;
 let spaSocketInitialized = false;
+// Listeners other composables add through onSpaSocketEvent, kept for a socket made later.
+const spaSocketListeners = new Set();
 
 /** Extract a cookie value by name (used for Frappe session ID). */
 function getCookieValue(name) {
@@ -148,6 +150,7 @@ function initializeSpaSocket(chatStore) {
 		createVisibilityHandler(chatStore, () => spaSocket)
 	);
 
+	spaSocketListeners.forEach(({ event, fn }) => spaSocket.on(event, fn));
 	spaSocketInitialized = true;
 	return spaSocket;
 }
@@ -610,4 +613,19 @@ export function reconnectSocket() {
  */
 export function getSpaSocket() {
 	return spaSocket;
+}
+
+/**
+ * Listen for an event on the SPA socket, which sits in this conversation's task_progress room.
+ * A listener added before the socket exists is attached when it is made. Returns the call that
+ * removes it.
+ */
+export function onSpaSocketEvent(event, fn) {
+	const entry = { event, fn };
+	spaSocketListeners.add(entry);
+	spaSocket?.on(event, fn);
+	return () => {
+		spaSocketListeners.delete(entry);
+		spaSocket?.off(event, fn);
+	};
 }

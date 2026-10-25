@@ -30,6 +30,7 @@
 import { logger } from "@/utils/logger";
 import pageContext from "./pageContext.js";
 import { getCsrfToken } from "@/api/_core.js";
+import { createDispatcher } from "@/utils/browserToolDispatch.js";
 
 const loadHtml2canvas = () => import("html2canvas-pro").then((m) => m.default || m);
 
@@ -96,27 +97,10 @@ const SCREENSHOT_HIDDEN_SELECTORS = [
 	".faco-widget",
 ];
 
-export const TOOL_CONFIRMATION_COPY = {
-	take_screenshot: {
-		action: "Capture screenshot",
-		detail: "The AI wants to capture what you're looking at and send it to the assistant. The screenshot may contain any PII visible on screen.",
-	},
-	get_form_data: {
-		action: "Read form data",
-		detail: "The AI wants to read every field on the open record (including child tables) and send it to the assistant.",
-	},
-	capture_diagnostics: {
-		action: "Collect page diagnostics",
-		detail: "The AI wants to collect this page's recent console errors, failed network requests and a screenshot, and send them to the assistant. These may contain any PII visible on screen or named in an error.",
-	},
-};
+// The approval card's copy is in toolConfirmationCopy.js, so the chat SPA can show the card
+// without loading this module.
 
 const FACOBrowserTools = {
-	/**
-	 * Tools the current widget session has trusted. Cleared on reload.
-	 */
-	_trustedThisSession: new Set(),
-
 	/**
 	 * Tool handlers - each handler receives params and returns a result
 	 */
@@ -611,11 +595,6 @@ const FACOBrowserTools = {
 	_instanceId: Math.random().toString(36).substring(2, 8),
 
 	/**
-	 * Track processed call_ids to prevent duplicate processing across tabs
-	 */
-	_processedCalls: new Set(),
-
-	/**
 	 * Initialize browser tools - set up Socket.IO listener
 	 * This is called automatically when the script loads (see bottom of file)
 	 */
@@ -636,10 +615,10 @@ const FACOBrowserTools = {
 		// Use explicit reference to FACOBrowserTools to avoid `this` binding issues
 		const self = FACOBrowserTools;
 
-		// Register Socket.IO listener (fast path — immediate delivery)
-		window.frappe.realtime.on("faco_browser_tool_call", (data) => {
-			if (self._enabled) self._handleToolCall(data);
-		});
+		// Register Socket.IO listener (fast path — immediate delivery). frappe.realtime cannot
+		// remove it, so stopBrowserTools turns it inert through _enabled instead.
+		dispatcher.stop();
+		dispatcher.start();
 
 		this._initialized = true;
 		logger.debug(`[${this._instanceId}] Initialized - listener registered`);
@@ -650,113 +629,11 @@ const FACOBrowserTools = {
 	},
 
 	/**
-	 * Handle a single tool call — used by both Socket.IO listener and pending queue.
-	 * Deduplicates via _processedCalls Set.
+	 * Handle a single tool call — used by both the Socket.IO listener and the pending queue.
+	 * The session check, de-duplication, acks, confirmation and retries live in the dispatcher.
 	 */
-	async _handleToolCall(data) {
-		const { call_id, tool_name, params } = data;
-
-		// A call addressed to a conversation may only be answered by the tab
-		// holding it — otherwise another tab reports its own page. Defence in
-		// depth; the task_progress room scoping is the primary filter.
-		const sid = deps.getSessionId();
-		if (data.session_id && sid && data.session_id !== sid) {
-			return;
-		}
-
-		// Check if this call was already processed (duplicate from Socket.IO + Redis)
-		if (this._processedCalls.has(call_id)) {
-			return;
-		}
-		this._processedCalls.add(call_id);
-
-		// Clean up old call_ids after 60 seconds to prevent memory leaks
-		setTimeout(() => this._processedCalls.delete(call_id), 60000);
-
-		// Tell the server we have the call. Until this lands it cannot tell
-		// "widget isn't listening" from "user hasn't clicked yet", and has to
-		// budget every call for the worst case.
-		this.report_progress(call_id, "received");
-
-		logger.debug(`[${this._instanceId}] Executing: ${tool_name} (call_id: ${call_id})`);
-
-		try {
-			const handler = this.handlers[tool_name];
-			if (!handler) {
-				logger.error(`Unknown tool: ${tool_name}`);
-				await this.submit_result(call_id, null, `Unknown browser tool: ${tool_name}`);
-				return;
-			}
-
-			// FACO-H5: gate high-risk tools behind a user confirmation.
-			if (this._requiresConfirmation(tool_name)) {
-				// The server suspends its short delivery deadline while a human
-				// is deciding — without this the approval card routinely outlived
-				// the tool's budget and every screenshot "timed out".
-				this.report_progress(call_id, "awaiting_user");
-				const decision = await this._requestUserConfirmation(tool_name, params || {});
-				if (decision === "deny") {
-					await this.submit_result(
-						call_id,
-						null,
-						"User declined to execute this browser tool. Ask before attempting again."
-					);
-					return;
-				}
-				// 'approve' or 'trust' — fall through and execute.
-			}
-
-			this.report_progress(call_id, "executing");
-			const result = await handler.call(this.handlers, params || {});
-
-			if (result && result.error) {
-				await this.submit_result(call_id, null, result.error);
-			} else {
-				await this.submit_result(call_id, result, null);
-			}
-		} catch (error) {
-			logger.error(`Tool execution failed:`, error);
-			await this.submit_result(call_id, null, error.message);
-		}
-	},
-
-	/**
-	 * Decide whether a tool needs user confirmation before executing.
-	 * Tools already trusted for the current session short-circuit to false.
-	 */
-	_requiresConfirmation(tool_name) {
-		if (!TOOLS_REQUIRING_CONFIRMATION.has(tool_name)) return false;
-		if (this._trustedThisSession.has(tool_name)) return false;
-		return true;
-	},
-
-	/**
-	 * Ask the host to prompt the user and resolve with one of
-	 * 'approve' | 'trust' | 'deny'. The host opens the panel if it is closed —
-	 * a silent prompt defeats the purpose. 'trust' is remembered per session.
-	 */
-	async _requestUserConfirmation(tool_name, params) {
-		let decision;
-		try {
-			decision = await deps.confirm({
-				tool_name,
-				params,
-				description: this._describeParams(tool_name, params),
-			});
-		} catch (e) {
-			// Fail closed: a broken prompt must never read as consent.
-			logger.warn("Confirmation failed; denying tool call by default.", e);
-			return "deny";
-		}
-		// Anything but an explicit approve/trust is a refusal: the gate must not
-		// read an undefined or misspelt decision as consent.
-		if (decision !== "approve" && decision !== "trust") {
-			return "deny";
-		}
-		if (decision === "trust") {
-			this._trustedThisSession.add(tool_name);
-		}
-		return decision;
+	_handleToolCall(data) {
+		return dispatcher.handle(data);
 	},
 
 	/**
@@ -804,113 +681,27 @@ const FACOBrowserTools = {
 	},
 
 	/**
-	 * Fetch and process any pending tool calls from Redis.
-	 * Called on widget initialization to catch up on calls that were sent
-	 * while the widget was not active (e.g., after page navigation).
+	 * Fetch and process any pending tool calls from Redis: calls sent while the widget was not
+	 * active (e.g., after page navigation).
 	 */
-	async _processPendingCalls() {
-		try {
-			const sid = deps.getSessionId();
-			const response = await window.frappe.call({
-				method: "frappe_assistant_core.plugins.faco.tools.browser_bridge.get_pending_browser_tool_calls",
-				args: { session_id: sid || null },
-			});
-
-			const pendingCalls = response.message || [];
-			if (pendingCalls.length === 0) return;
-
-			logger.debug(
-				`[${this._instanceId}] Processing ${pendingCalls.length} pending call(s)`
-			);
-
-			for (const call of pendingCalls) {
-				await this._handleToolCall(call);
-			}
-		} catch (e) {
-			// Not critical — calls will time out naturally on the server side
-			logger.warn("Failed to fetch pending calls:", e);
-		}
-	},
-
-	/**
-	 * Report progress on an in-flight call so the server can budget the right
-	 * phase. Deliberately fire-and-forget: this is telemetry for the waiter's
-	 * deadline, never a gate on execution, so a failed report must not delay or
-	 * block the tool. The server only ever extends its deadline, so reports
-	 * arriving out of order are harmless.
-	 *
-	 * @param {string} call_id
-	 * @param {"received"|"awaiting_user"|"executing"} state
-	 */
-	report_progress(call_id, state) {
-		try {
-			window.frappe.call({
-				method: "frappe_assistant_core.plugins.faco.tools.browser_bridge.submit_browser_tool_ack",
-				args: { call_id: call_id, state: state },
-			});
-		} catch (e) {
-			logger.debug(`Progress report '${state}' failed for ${call_id}:`, e);
-		}
-	},
-
-	/**
-	 * Submit tool result back to server with retry logic
-	 * @param {string} call_id - The call ID to respond to
-	 * @param {Object|null} result - The result object (if successful)
-	 * @param {string|null} error - The error message (if failed)
-	 * @param {number} retries - Number of retry attempts (default: 3)
-	 */
-	async submit_result(call_id, result, error, retries = 3) {
-		for (let attempt = 1; attempt <= retries; attempt++) {
-			try {
-				// Build args, only including non-null values
-				// Frappe's type validation rejects empty strings for Dict types
-				const args = { call_id: call_id };
-				if (result !== null && result !== undefined) {
-					args.result = result;
-				}
-				if (error !== null && error !== undefined) {
-					args.error = error;
-				}
-
-				logger.debug(
-					`[${FACOBrowserTools._instanceId}] Submitting result for call_id: ${call_id} (attempt ${attempt}/${retries})`
-				);
-				logger.debug(
-					`[${FACOBrowserTools._instanceId}] Result type: ${typeof result}, keys: ${
-						result ? Object.keys(result) : "null"
-					}`
-				);
-
-				await window.frappe.call({
-					method: "frappe_assistant_core.plugins.faco.tools.browser_bridge.submit_browser_tool_result",
-					args: args,
-				});
-
-				logger.debug(
-					`[${FACOBrowserTools._instanceId}] Result submitted successfully for call_id: ${call_id}`
-				);
-				return; // Success - exit the retry loop
-			} catch (e) {
-				logger.error(
-					`[${FACOBrowserTools._instanceId}] Attempt ${attempt}/${retries} failed for call_id ${call_id}:`,
-					e
-				);
-
-				if (attempt === retries) {
-					logger.error(
-						`[${FACOBrowserTools._instanceId}] All ${retries} retries exhausted for call_id: ${call_id}`
-					);
-				} else {
-					// Exponential backoff: 500ms, 1000ms, 1500ms...
-					const delay = 500 * attempt;
-					logger.debug(`Retrying in ${delay}ms...`);
-					await new Promise((resolve) => setTimeout(resolve, delay));
-				}
-			}
-		}
+	_processPendingCalls() {
+		return dispatcher.drainPending();
 	},
 };
+
+const dispatcher = createDispatcher({
+	transport: {
+		on: (event, fn) =>
+			window.frappe.realtime.on(event, (data) => (FACOBrowserTools._enabled ? fn(data) : undefined)),
+		call: async (method, args) => (await window.frappe.call({ method, args }))?.message,
+	},
+	handlers: FACOBrowserTools.handlers,
+	confirmTools: TOOLS_REQUIRING_CONFIRMATION,
+	describe: (tool_name, params) => FACOBrowserTools._describeParams(tool_name, params),
+	// The host prompts and opens the panel if it is closed: a silent prompt defeats the purpose.
+	confirm: (request) => deps.confirm(request),
+	getSessionId: () => deps.getSessionId(),
+});
 
 let stopCurrent = null;
 

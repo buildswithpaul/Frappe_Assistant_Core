@@ -26,7 +26,7 @@
 
 <script setup>
 import { computed } from "vue";
-import { TOOL_CONFIRMATION_COPY } from "../desk/browserTools.js";
+import { TOOL_CONFIRMATION_COPY } from "../desk/toolConfirmationCopy.js";
 import { t } from "./i18n.js";
 
 const props = defineProps({

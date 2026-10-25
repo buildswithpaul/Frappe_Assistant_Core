@@ -4,6 +4,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest
 const baseCall = vi.fn();
 vi.mock("@/api/_core", () => ({ baseCall: (...a) => baseCall(...a), getCall: vi.fn() }));
 
+import { usePagePanel } from "@/composables/usePagePanel";
 import PageView from "./PageView.vue";
 
 let wrapper;
@@ -137,5 +138,18 @@ describe("PageView", () => {
 		const snap = mountView({ ...published, draft: true }).vm.printSnapshot();
 		expect(snap.draft).toBe(true);
 		expect(snap.html).toBe('<div class="fac-page-root"><div class="mk-card">Sales this month</div></div>');
+	});
+
+	it("offers its page element to FACO's screenshot, and withdraws it on unmount", () => {
+		const w = mountView(published);
+		expect(usePagePanel().pageView.value).toEqual({ element: w.find(".page-view-host").element, draft: false });
+		w.unmount();
+		wrapper = null;
+		expect(usePagePanel().pageView.value).toBe(null);
+	});
+
+	it("marks a draft's frame, which cannot be captured", () => {
+		const w = mountView({ ...published, draft: true });
+		expect(usePagePanel().pageView.value).toEqual({ element: w.find("iframe").element, draft: true });
 	});
 });

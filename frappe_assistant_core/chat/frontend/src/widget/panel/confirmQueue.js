@@ -9,10 +9,17 @@ import { bridge } from "../bridge.js";
 export const confirms = ref([]);
 let nextId = 0;
 
+function enqueue(request, resolve) {
+	confirms.value.push({ id: ++nextId, request, resolve });
+}
+
 export function listenForConfirms() {
-	return bridge.on("confirm", ({ request, resolve }) => {
-		confirms.value.push({ id: ++nextId, request, resolve });
-	});
+	return bridge.on("confirm", ({ request, resolve }) => enqueue(request, resolve));
+}
+
+/** Ask without the launcher, as the chat SPA does; resolves with the user's decision. */
+export function askConfirm(request) {
+	return new Promise((resolve) => enqueue(request, resolve));
 }
 
 export function settleConfirm(entry, decision) {

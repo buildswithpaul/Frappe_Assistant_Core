@@ -5,9 +5,11 @@ import { nextTick } from "vue";
 vi.mock("@/api/domains/facPage", () => ({
 	facPage: { getPage: vi.fn().mockResolvedValue(null), listMine: vi.fn().mockResolvedValue([]) },
 }));
-vi.mock("@/api/_core", () => ({ baseCall: vi.fn(), getCall: vi.fn() }));
+vi.mock("@/api/_core", () => ({ baseCall: vi.fn().mockResolvedValue([]), getCall: vi.fn() }));
 
 import { usePagePanel } from "@/composables/usePagePanel";
+import BrowserToolConfirm from "@/widget/panel/BrowserToolConfirm.vue";
+import { askConfirm, confirms, resetConfirms } from "@/widget/panel/confirmQueue";
 import PageDock from "./PageDock.vue";
 import PagePanel from "./PagePanel.vue";
 
@@ -23,6 +25,7 @@ beforeEach(() => setPhone(false));
 afterEach(() => {
 	wrapper?.unmount();
 	usePagePanel().close();
+	resetConfirms();
 	delete window.matchMedia;
 });
 
@@ -70,5 +73,18 @@ describe("PageDock", () => {
 		wrapper.unmount();
 		wrapper = null;
 		expect(usePagePanel().dockMounted.value).toBe(false);
+	});
+
+	it("shows FACO's screenshot request above the open page, and denies it when the page closes", async () => {
+		const w = mountDock();
+		usePagePanel().open("sales-a1b2c3");
+		await flushPromises();
+		const decision = askConfirm({ tool_name: "take_screenshot", params: {}, description: "" });
+		await nextTick();
+		expect(w.findComponent(BrowserToolConfirm).exists()).toBe(true);
+
+		usePagePanel().close();
+		await expect(decision).resolves.toBe("deny");
+		expect(confirms.value).toEqual([]);
 	});
 });
