@@ -3,7 +3,19 @@
  * frame, so the PDF keeps the page's design and its SVG charts without a server round trip.
  */
 
+import { FAC_PAGE_DRAFT_CSP } from "@/utils/facPageDraft";
+
 const FRAME_CLASS = "fac-page-print";
+
+// The chat's own title while a print carries the page's, kept here so that replacing a frame whose
+// afterprint never came still gives it back.
+let chatTitle = null;
+let printTitle = null;
+
+function restoreChatTitle() {
+	if (chatTitle !== null && document.title === printTitle) document.title = chatTitle;
+	chatTitle = printTitle = null;
+}
 
 const pad = (n) => String(n).padStart(2, "0");
 
@@ -18,11 +30,14 @@ const escapeHtml = (text) =>
 // Style text sits inside <style>; a closing tag in it would end the element early.
 const safeStyle = (css) => String(css || "").replace(/<\/style/gi, "<\\/style");
 
-function srcdoc({ name, kitCss, style, html, wide }) {
+function srcdoc({ name, kitCss, style, html, wide, draft }) {
 	const page = `@page { size: A4 ${wide ? "landscape" : "portrait"}; margin: 12mm }`;
+	// A draft stays offline when printed, as in its preview; the policy must come before anything
+	// it governs.
+	const csp = draft ? `<meta http-equiv="Content-Security-Policy" content="${FAC_PAGE_DRAFT_CSP}">` : "";
 	return [
 		"<!doctype html>",
-		'<html><head><meta charset="utf-8">',
+		`<html><head>${csp}<meta charset="utf-8">`,
 		`<title>${escapeHtml(name)}</title>`,
 		`<style>${safeStyle(kitCss)}\n${safeStyle(style)}\n${page}</style>`,
 		`</head><body>${html || ""}</body></html>`,
@@ -49,12 +64,18 @@ export function snapshotHtml(element) {
 /**
  * Print a page snapshot; the browser's dialog offers Save as PDF under `{title} {YYYY-MM-DD}`.
  *
- * @param {{title: string, kitCss: string, style: string, html: string, wide: boolean}} snapshot
- *   `html` is the rendered page after its script and charts ran; `wide` prints A4 landscape.
+ * @param {object} snapshot
+ * @param {string} snapshot.title the page title
+ * @param {string} snapshot.kitCss the mockup kit
+ * @param {string} snapshot.style the page's own style
+ * @param {string} snapshot.html the rendered page after its script and charts ran
+ * @param {boolean} snapshot.wide prints A4 landscape
+ * @param {boolean} [snapshot.draft] prints under the draft preview's Content-Security-Policy
  */
-export function printPage({ title, kitCss, style, html, wide }) {
-	// A frame whose print never reported back must not pile up.
+export function printPage({ title, kitCss, style, html, wide, draft = false }) {
+	// A frame whose print never reported back must not pile up, nor keep the chat's title.
 	document.querySelectorAll(`iframe.${FRAME_CLASS}`).forEach((el) => el.remove());
+	restoreChatTitle();
 
 	const name = `${title || ""} ${today()}`.trim();
 	const frame = document.createElement("iframe");
@@ -65,20 +86,21 @@ export function printPage({ title, kitCss, style, html, wide }) {
 	frame.tabIndex = -1;
 	// Not display or visibility: some browsers then print a blank page.
 	Object.assign(frame.style, { position: "fixed", right: "0", bottom: "0", width: "0", height: "0", border: "0" });
-	frame.setAttribute("srcdoc", srcdoc({ name, kitCss, style, html, wide }));
+	frame.setAttribute("srcdoc", srcdoc({ name, kitCss, style, html, wide, draft }));
 
 	frame.addEventListener(
 		"load",
 		() => {
 			const win = frame.contentWindow;
 			// Browsers differ in which document's title names the PDF, so both carry it while printing.
-			const chatTitle = document.title;
+			chatTitle = document.title;
+			printTitle = name;
 			win.document.title = name;
 			document.title = name;
 			win.addEventListener(
 				"afterprint",
 				() => {
-					if (document.title === name) document.title = chatTitle;
+					restoreChatTitle();
 					frame.remove();
 				},
 				{ once: true },

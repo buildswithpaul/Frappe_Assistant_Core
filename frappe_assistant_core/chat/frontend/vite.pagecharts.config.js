@@ -6,6 +6,8 @@ import { resolve } from "path";
 export default defineConfig({
 	// public/ holds the SPA's PWA files; they do not belong next to Desk's scripts.
 	publicDir: false,
+	// Library mode leaves ECharts' process.env.NODE_ENV checks in, and a browser has no process.
+	define: { "process.env.NODE_ENV": JSON.stringify("production") },
 	resolve: {
 		alias: [{ find: /^@\//, replacement: resolve(import.meta.dirname, "src") + "/" }],
 	},

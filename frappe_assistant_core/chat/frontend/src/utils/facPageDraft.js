@@ -7,7 +7,7 @@
 // it renders in an iframe with an empty sandbox (no scripts, forms, popups or top navigation) and
 // a Content-Security-Policy that allows only inline styles and data: images.
 
-const FAC_PAGE_DRAFT_CSP = "default-src 'none'; style-src 'unsafe-inline'; img-src data:";
+export const FAC_PAGE_DRAFT_CSP = "default-src 'none'; style-src 'unsafe-inline'; img-src data:";
 
 export function fac_page_draft_srcdoc({ html, style, kit_css } = {}) {
 	// A style that closes its own tag would otherwise end the style element early.

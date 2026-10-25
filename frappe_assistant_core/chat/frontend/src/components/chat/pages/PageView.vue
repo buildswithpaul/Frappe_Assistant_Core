@@ -84,7 +84,7 @@ onBeforeUnmount(() => charts.splice(0).forEach((handle) => handle.dispose()));
 // What Download PDF prints: the page as drawn now, after its script and charts ran. A draft's
 // frame cannot be read from here, so it prints the sanitised html the frame shows.
 function printSnapshot() {
-	const base = { kitCss, style: props.page.style || "" };
+	const base = { kitCss, style: props.page.style || "", draft: !published.value };
 	if (!published.value) {
 		const html = `<div class="fac-page-root">${props.page.html || ""}</div>`;
 		return { ...base, html, wide: (draftFrame.value?.offsetWidth || 0) > WIDE_PAGE_PX };

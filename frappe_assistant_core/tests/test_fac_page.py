@@ -193,8 +193,8 @@ class TestFACPage(BaseAssistantTest):
         page.load_assets()
 
         self.assertIn("/assets/frappe_assistant_core/js/fac_page_charts.js?v=", page.script)
-        self.assertIn("window.fac_page_charts.chart", page.script)
-        self.assertIn("with_fac(data.script", page.script)
+        self.assertIn("const bundle = window.fac_page_charts;", page.script)
+        self.assertIn("with_fac(script)", page.script)
 
     def test_a_published_page_html_is_served_unchanged(self):
         html = '<div class="mk-card" onclick="go()"><img src="x" onerror="track()"></div>'

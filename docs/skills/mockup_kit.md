@@ -47,7 +47,7 @@ The same classes work in a FAC Page's `html` (see the `fac-page` skill), so a mo
 
 A mockup is static, so it cannot draw a chart; show a sample chart as an inline `<svg>` there. A published FAC Page's `script` can call `fac.chart(el, option)`, which draws an [ECharts](https://echarts.apache.org/en/option.html) `option` into `el` as SVG. It works the same in the chat's page panel and in Desk.
 
-- Bar, line and pie charts, with the grid, tooltip, legend and title components. No other ECharts chart type or component is loaded.
+- Bar, line and pie charts, with the grid, tooltip, legend and title components. No other ECharts chart type or component is loaded, and `fac.chart` throws for any other series type.
 - Series take the FAC palette unless the option sets its own `color`.
 - It returns `{update(option), dispose()}`. `update` merges a new option in, as ECharts' `setOption` does.
 - The container gets `mk-chart`. Set a different height in the page's `style` if 320 px does not suit.

@@ -23,6 +23,14 @@ use([
 
 // The kit sizes and print-protects this class; pages render on the kit's light surface.
 const CHART_CLASS = "mk-chart";
+// The series types registered above; ECharts would skip any other silently.
+const SERIES_TYPES = ["bar", "line", "pie"];
+
+function checkSeries(option) {
+	const series = [].concat(option?.series || []);
+	const other = series.find((s) => s && s.type && !SERIES_TYPES.includes(s.type));
+	if (other) throw new Error(`fac.chart draws bar, line and pie series, not "${other.type}"`);
+}
 
 /**
  * Draw `option` (an ECharts option) into `el`.
@@ -31,8 +39,10 @@ const CHART_CLASS = "mk-chart";
  * @param {object} option an ECharts option; `color` defaults to the data-viz palette
  * @returns {{update: (option: object) => void, dispose: () => void}} `update` merges a new option
  *   in, as ECharts' setOption does; `dispose` removes the chart and empties `el`.
+ * @throws {Error} for a series type other than bar, line or pie.
  */
 export function chart(el, option = {}) {
+	checkSeries(option);
 	el.classList.add(CHART_CLASS);
 	const instance = init(el, null, { renderer: "svg" });
 	instance.setOption({ color: QL_VIZ_SEQUENCE, ...option });
@@ -43,6 +53,7 @@ export function chart(el, option = {}) {
 
 	return {
 		update(next) {
+			checkSeries(next);
 			instance.setOption(next);
 		},
 		dispose() {

@@ -6,6 +6,8 @@
 	// fac.chart, built from the chat's pageCharts module (vite.pagecharts.config.js).
 	const CHARTS_URL = `/assets/frappe_assistant_core/js/fac_page_charts.js?v=${window._version_number || ""}`;
 	let charts_loaded = null;
+	// The fac handed to the shown page's script, and how to dispose the charts it drew.
+	let shown = null;
 
 	// fac_page_draft_srcdoc and fac_page_draft_frame, inlined by render_include on page load.
 	// {% include "frappe_assistant_core/assistant_core/page/fac_pages/fac_page_draft.js" %}
@@ -47,14 +49,19 @@
 	};
 
 	function render(page, data, is_latest) {
+		dispose_shown_charts();
 		page.set_title(data.title);
 		if (data.draft) {
 			render_draft(page, data, is_latest);
 			return;
 		}
 		page.main.empty();
-		load_charts().then(() => {
+		const script = data.script || "";
+		// Only a script that names fac can draw a chart, so only such a page pays for the bundle.
+		const ready = /\bfac\b/.test(script) ? load_charts() : Promise.resolve();
+		ready.then(() => {
 			if (!is_latest()) return;
+			shown = make_fac();
 			const host = document.createElement("div");
 			page.main.empty().append(host);
 			// @import must lead the stylesheet; the page's own style follows so it can override the kit.
@@ -63,7 +70,7 @@
 				host,
 				`<div class="fac-page-root">${data.html || ""}</div>`,
 				css,
-				with_fac(data.script || "")
+				with_fac(script)
 			);
 		});
 	}
@@ -87,12 +94,36 @@
 		return charts_loaded;
 	}
 
-	// create_shadow_element runs the script as a global <script>, which sees no variable of ours.
-	// The chat panel runs it as new Function("root_element", "frappe", "__", "fac", script), so
-	// here it runs as a function of fac as well: the same scoping, and no global named fac.
+	// fac.chart as the chat panel offers it, recording each chart so the next render disposes it.
+	function make_fac() {
+		const handles = [];
+		const fac = {
+			chart(el, option) {
+				const bundle = window.fac_page_charts;
+				if (!bundle) throw new Error(__("Charts could not be loaded"));
+				const handle = bundle.chart(el, option);
+				handles.push(handle);
+				// A chart drawn after the user moved on belongs to a page no longer shown.
+				if (!shown || shown.fac !== fac) dispose();
+				return handle;
+			},
+		};
+		const dispose = () => handles.splice(0).forEach((handle) => handle.dispose());
+		return { fac, dispose };
+	}
+
+	function dispose_shown_charts() {
+		if (shown) shown.dispose();
+		shown = null;
+	}
+
+	// create_shadow_element runs the script as a global <script>, which sees no variable of ours,
+	// so the fac it gets is read from this Desk page's frappe.pages entry when it starts. The chat
+	// panel runs it as new Function("root_element", "frappe", "__", "fac", script), so here it runs
+	// as a function of fac as well: the same scoping, and no global named fac.
 	function with_fac(script) {
-		const fac = "{ chart: window.fac_page_charts && window.fac_page_charts.chart }";
-		return `(function (fac) {\n${script}\n})(${fac});`;
+		frappe.pages["fac-pages"].fac = shown.fac;
+		return `(function (fac) {\n${script}\n})(frappe.pages["fac-pages"].fac);`;
 	}
 
 	// The sandboxed frame cannot load the kit itself (its CSP allows no fetches), so it is inlined.

@@ -122,6 +122,7 @@ describe("PageView", () => {
 		expect(snap.kitCss).toContain("--mk-radius");
 		expect(snap.style).toBe(".mk-card { color: teal; }");
 		expect(snap.wide).toBe(false);
+		expect(snap.draft).toBe(false);
 	});
 
 	it("calls a page wider than 900px wide", () => {
@@ -134,6 +135,7 @@ describe("PageView", () => {
 
 	it("snapshots a draft from its sanitised html", () => {
 		const snap = mountView({ ...published, draft: true }).vm.printSnapshot();
+		expect(snap.draft).toBe(true);
 		expect(snap.html).toBe('<div class="fac-page-root"><div class="mk-card">Sales this month</div></div>');
 	});
 });

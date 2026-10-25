@@ -72,6 +72,14 @@ describe("chart", () => {
 		expect(el.querySelector("svg")).toBeNull();
 	});
 
+	it("names the series types it draws when a page asks for another", () => {
+		expect(() => mountChart({ series: [{ type: "scatter", data: [[1, 2]] }] })).toThrow(
+			'fac.chart draws bar, line and pie series, not "scatter"',
+		);
+		mountChart();
+		expect(() => handle.update({ series: { type: "radar", data: [] } })).toThrow('not "radar"');
+	});
+
 	it("draws a pie and a line chart", () => {
 		mountChart({ series: [{ type: "pie", data: [{ name: "A", value: 1 }, { name: "B", value: 2 }] }] });
 		expect(el.querySelectorAll("path").length).toBeGreaterThan(1);

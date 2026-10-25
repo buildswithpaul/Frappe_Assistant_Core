@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { FAC_PAGE_DRAFT_CSP } from "./facPageDraft";
 import { printPage, snapshotHtml } from "./pagePrint";
 
 const snapshot = {
@@ -53,6 +54,31 @@ describe("printPage", () => {
 		expect(srcdoc).toContain("@page { size: A4 portrait; margin: 12mm }");
 		expect(srcdoc).toContain('<svg width="400" height="200"><rect/></svg>');
 		expect(srcdoc.indexOf(snapshot.kitCss)).toBeLessThan(srcdoc.indexOf(snapshot.style));
+	});
+
+	it("prints a draft under the draft's CSP, as the first thing in its head", () => {
+		printPage({ ...snapshot, draft: true });
+		const srcdoc = frame().getAttribute("srcdoc");
+		expect(srcdoc).toContain(
+			`<head><meta http-equiv="Content-Security-Policy" content="${FAC_PAGE_DRAFT_CSP}">`,
+		);
+	});
+
+	it("prints a published page without the draft CSP", () => {
+		printPage(snapshot);
+		expect(frame().getAttribute("srcdoc")).not.toContain("Content-Security-Policy");
+	});
+
+	it("gives the chat its title back when a frame whose print never reported back is replaced", async () => {
+		printPage(snapshot);
+		await loadFrame();
+		expect(document.title).toBe("Sales 2026-10-05");
+		printPage({ ...snapshot, title: "Costs" });
+		expect(document.title).toBe("FAC Chat");
+		const win = await loadFrame();
+		expect(document.title).toBe("Costs 2026-10-05");
+		win.dispatchEvent(new Event("afterprint"));
+		expect(document.title).toBe("FAC Chat");
 	});
 
 	it("prints landscape when the page is wide", () => {
