@@ -238,6 +238,15 @@ class TestCustomisationImpact(BaseAssistantTest):
                 "Print Format",
                 {"name": "Invoice", "doc_type": "Sales Invoice", "html": "<p>{{ doc.name }}</p>"},
             ),
+            ("Print Format", {"name": "Label", "raw_printing": 1, "raw_commands": "^XA^FD{{ doc.name }}^XZ"}),
+            (
+                "Print Format",
+                {"name": "Designed", "format_data": '[{"fieldtype": "Custom HTML", "options": "{{ x }}"}]'},
+            ),
+            (
+                "Report",
+                {"report_name": "Open tasks", "report_type": "Report Builder", "roles": [{"role": "Guest"}]},
+            ),
         ):
             r = _impact("create_document", doctype, data)
             self.assertTrue(r["changes_live_code"], data)
@@ -246,7 +255,11 @@ class TestCustomisationImpact(BaseAssistantTest):
     def test_creating_an_always_live_record_without_code_does_not_change_live_code(self):
         for doctype, data in (
             ("Report", {"report_name": "Open tasks", "report_type": "Report Builder", "ref_doctype": "ToDo"}),
-            ("Report", {"report_name": "Margins", "report_script": "", "query": "   "}),
+            ("Report", {"report_name": "Margins", "report_script": "", "query": "   ", "roles": []}),
+            (
+                "Print Format",
+                {"name": "Plain", "doc_type": "Sales Invoice", "raw_commands": "", "format_data": ""},
+            ),
             ("Role", {"role_name": "Planner"}),
             ("Workflow State", {"workflow_state_name": "Checked", "style": "Success"}),
         ):
@@ -268,6 +281,13 @@ class TestCustomisationImpact(BaseAssistantTest):
         same = _impact("update_document", "Report", {"roles": [{"role": "System Manager"}]}, report.name)
         self.assertTrue(widened["changes_live_code"])
         self.assertIs(same["changes_live_code"], False)
+
+    def test_a_print_formats_templates_are_live_code_on_update(self):
+        stored = {"name": "Label", "raw_commands": "old", "format_data": "[]", "html": ""}
+        with patch(STORED_RECORD, autospec=True, return_value=stored):
+            for field in ("raw_commands", "format_data"):
+                r = _impact("update_document", "Print Format", {field: "{{ doc.name }}"}, "Label")
+                self.assertTrue(r["changes_live_code"], field)
 
     def test_code_of_an_always_live_doctype_changes_live_code(self):
         stored = {"name": "Margins", "report_type": "Script Report", "report_script": "old", "query": ""}

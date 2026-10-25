@@ -180,5 +180,15 @@ class TestGetCurrentCodeGoesLive(BaseAssistantTest):
     def test_go_live_keys_stay_out_of_the_code_keys(self):
         self.assertEqual(GO_LIVE_KEYS, ("subject", "style", "roles"))
         self.assertEqual(GO_LIVE_KEYS_BY_DOCTYPE["Report"], ("roles",))
+
+    def test_every_card_code_key_is_code_on_some_doctype(self):
+        from frappe_assistant_core.chat.api.current_code import CODE_KEYS_BY_DOCTYPE
+
+        registered = {key for keys in CODE_KEYS_BY_DOCTYPE.values() for key in keys}
+        self.assertLessEqual(set(CODE_KEYS), registered)
+        for doctype, keys in CODE_KEYS_BY_DOCTYPE.items():
+            meta = frappe.get_meta(doctype)
+            for key in keys:
+                self.assertIsNotNone(meta.get_field(key), (doctype, key))
         for key in GO_LIVE_KEYS:
             self.assertNotIn(key, CODE_KEYS)

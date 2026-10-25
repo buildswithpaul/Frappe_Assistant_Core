@@ -31,7 +31,11 @@ from frappe import _
 from frappe.model.meta import Meta
 from frappe.utils import cint, get_url, get_url_to_form
 
-from frappe_assistant_core.chat.api.current_code import CODE_KEYS, GO_LIVE_KEYS_BY_DOCTYPE, TABLE_COLUMNS
+from frappe_assistant_core.chat.api.current_code import (
+    CODE_KEYS_BY_DOCTYPE,
+    GO_LIVE_KEYS_BY_DOCTYPE,
+    TABLE_COLUMNS,
+)
 
 CUSTOMISATION_DOCTYPES = frozenset(
     {
@@ -280,9 +284,9 @@ def customisation_impact(tool_name: str, tool_input: Any) -> Dict[str, Any]:
     a page or moving a field onto a live DocType is live, and any doubt counts as live.
     ``switches_on`` is true when the write turns a ``_SWITCH_FIELDS`` record from off to on,
     including a create saved switched on. ``changes_live_code`` is true when an update changes a
-    code field (CODE_KEYS) or a go-live field (GO_LIVE_KEYS_BY_DOCTYPE, such as a FAC Page's or a
-    Report's roles, compared as a set) of a record that is live before and after the write, and
-    when a create of a doctype without a switch (a Report, a Print Format) carries code. FAC Cloud shows its card for
+    live field (``_live_fields``: code, templates and audience, such as a Report's roles, compared
+    as a set) of a record that is live before and after the write, and when a create of a doctype
+    without a switch (a Report, a Print Format) sets any live field. FAC Cloud shows its card for
     either even when an approved build plan lists the write, so the user sees the final code.
     Never writes. The reason is plain words for logs and never repeats stored values.
     """
@@ -299,12 +303,19 @@ def _row_values(rows: Any, column: str) -> Optional[frozenset]:
     return frozenset(row.get(column) if isinstance(row, dict) else row for row in rows)
 
 
-def _carries_code(data: Dict[str, Any]) -> bool:
-    """Whether a create sets any CODE_KEYS field to something other than blank text."""
-    return any(
-        data.get(field) and not (isinstance(data[field], str) and not data[field].strip())
-        for field in CODE_KEYS
-    )
+def _live_fields(doctype: str) -> tuple:
+    """The fields of ``doctype`` whose value runs or reaches people: code, templates and audience."""
+    return CODE_KEYS_BY_DOCTYPE.get(doctype, ()) + GO_LIVE_KEYS_BY_DOCTYPE.get(doctype, ())
+
+
+def _non_empty(value: Any) -> bool:
+    """Whether a sent value says something: text that is not blank, a child table with a row."""
+    return bool(value.strip()) if isinstance(value, str) else bool(value)
+
+
+def _carries_live_fields(doctype: str, data: Dict[str, Any]) -> bool:
+    """Whether a create sets any live field of ``doctype``."""
+    return any(_non_empty(data.get(field)) for field in _live_fields(doctype))
 
 
 def _changes_live_fields(doctype: str, data: Dict[str, Any], stored: Dict[str, Any]) -> bool:
@@ -313,7 +324,7 @@ def _changes_live_fields(doctype: str, data: Dict[str, Any], stored: Dict[str, A
     A child table is compared as the set of its rows' values, so reordering rows is no change and
     rows that cannot be read count as one.
     """
-    for field in CODE_KEYS + GO_LIVE_KEYS_BY_DOCTYPE.get(doctype, ()):
+    for field in _live_fields(doctype):
         if field not in data:
             continue
         if field in TABLE_COLUMNS:
@@ -400,7 +411,9 @@ def _dormancy(tool_name: str, tool_input: Any) -> Dict[str, Any]:
     return {
         "dormant": False,
         "reason": f"{doctype} changes always count",
-        "changes_live_code": _carries_code(data) if creating else _changes_live_fields(doctype, data, stored),
+        "changes_live_code": (
+            _carries_live_fields(doctype, data) if creating else _changes_live_fields(doctype, data, stored)
+        ),
     }
 
 

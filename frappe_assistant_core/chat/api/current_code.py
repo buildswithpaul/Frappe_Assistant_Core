@@ -39,6 +39,19 @@ GO_LIVE_KEYS_BY_DOCTYPE = {
 }
 GO_LIVE_KEYS = tuple(dict.fromkeys(key for keys in GO_LIVE_KEYS_BY_DOCTYPE.values() for key in keys))
 
+# Every field each doctype runs as code or renders as a template, which utils/customisation.py
+# reads to judge whether a write runs code the user has not seen. Wider than CODE_KEYS, the fields
+# the card shows as code: a raw print's commands and a print designer layout (which can hold
+# Jinja in custom HTML) render too.
+CODE_KEYS_BY_DOCTYPE = {
+    "Server Script": ("script",),
+    "Client Script": ("script",),
+    "Notification": ("condition", "message"),
+    "FAC Page": ("html", "script"),
+    "Report": ("report_script", "query", "javascript"),
+    "Print Format": ("html", "css", "raw_commands", "format_data"),
+}
+
 # Child tables among GO_LIVE_KEYS, and the column each returns, one value per row.
 TABLE_COLUMNS = {"roles": "role"}
 
