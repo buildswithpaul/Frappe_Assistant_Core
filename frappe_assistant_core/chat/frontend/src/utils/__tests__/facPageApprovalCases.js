@@ -27,9 +27,12 @@ export function describePageApproval(label, api) {
 		});
 
 		it("stores the approval per user and page, under the key Desk and the chat share", async () => {
-			expect(api.fac_page_approval_key(USER, NAME)).toBe(`fac_page_approved:${USER}:${NAME}`);
+			const key = `fac_page_approved:avery%40example.com:${NAME}`;
+			expect(api.fac_page_approval_key(USER, NAME)).toBe(key);
+			// A ":" in either part cannot make one user's key read as another's.
+			expect(api.fac_page_approval_key("a:b", "c")).not.toBe(api.fac_page_approval_key("a", "b:c"));
 			expect(await api.fac_page_approve_script(USER, NAME, "abc")).toBe(true);
-			const stored = JSON.parse(window.localStorage.getItem(`fac_page_approved:${USER}:${NAME}`));
+			const stored = JSON.parse(window.localStorage.getItem(key));
 			expect(stored).toEqual({ hash: ABC_SHA256, script: "abc" });
 			expect(api.fac_page_approved_script(USER, NAME)).toEqual(stored);
 			expect(api.fac_page_approved_script("other@example.com", NAME)).toBeNull();
@@ -79,10 +82,19 @@ export function describePageApproval(label, api) {
 			expect((await api.fac_page_script_review(USER, NAME, page)).state).toBe("first");
 		});
 
-		it("never holds a shared page, someone else's page, a draft or a page without a script", async () => {
+		it("holds a page whose visibility or draft flag is missing or blank", async () => {
+			// get_page always sends both; a response without them must fail closed, not run code.
+			const { visibility, ...noVisibility } = personalPage();
+			const { draft, ...noDraft } = personalPage();
+			for (const page of [noVisibility, personalPage({ visibility: "" }), noDraft, personalPage({ owner_is_me: false })]) {
+				expect(api.fac_page_needs_review(page)).toBe(true);
+				expect((await api.fac_page_script_review(USER, NAME, page)).state).toBe("first");
+			}
+		});
+
+		it("never holds a shared page, a draft or a page without a script", async () => {
 			for (const page of [
 				personalPage({ visibility: "Shared" }),
-				personalPage({ owner_is_me: false }),
 				personalPage({ draft: true }),
 				personalPage({ script: "  \n" }),
 			]) {
@@ -100,6 +112,10 @@ export function describePageApproval(label, api) {
 				{ type: "same", text: "c" },
 				{ type: "added", text: "d" },
 			]);
+			const long = Array.from({ length: 1001 }, (_, i) => `line ${i}`).join("\n");
+			const shown = api.fac_page_line_diff(long, `${long}\nnew`);
+			expect(shown).toHaveLength(1002);
+			expect(shown.every((line) => line.type === "added")).toBe(true);
 			expect(api.fac_page_line_diff("", "x\ny")).toEqual([
 				{ type: "added", text: "x" },
 				{ type: "added", text: "y" },

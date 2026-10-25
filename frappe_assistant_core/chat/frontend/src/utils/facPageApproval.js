@@ -8,7 +8,7 @@
 // unavailable nothing is remembered, and every open asks again.
 
 export function fac_page_approval_key(user, name) {
-	return `fac_page_approved:${user}:${name}`;
+	return `fac_page_approved:${encodeURIComponent(user)}:${encodeURIComponent(name)}`;
 }
 
 // FNV-1a, for a browser without crypto.subtle (an insecure http origin). The stored script is
@@ -55,14 +55,9 @@ export async function fac_page_approve_script(user, name, script) {
 }
 
 // A shared page's code was approved on its publish card, and a draft runs no script at all.
+// Every other page with a script is held, so a response with a missing field fails closed.
 export function fac_page_needs_review(page) {
-	return Boolean(
-		page &&
-			page.draft === false &&
-			page.owner_is_me === true &&
-			page.visibility === "Only me" &&
-			(page.script || "").trim(),
-	);
+	return Boolean(page && page.draft !== true && page.visibility !== "Shared" && (page.script || "").trim());
 }
 
 /**
@@ -83,10 +78,15 @@ export async function fac_page_script_review(user, name, page) {
 	return approved ? { state: "changed", approved: approved.script } : { state: "first", approved: "" };
 }
 
+// Past this many line pairs the diff's table grows too large to build; View changes then shows
+// the whole new script.
+const LINE_DIFF_MAX_CELLS = 1000000;
+
 /** A line diff of `before` against `after`: [{type: "same" | "removed" | "added", text}]. */
 export function fac_page_line_diff(before, after) {
 	const a = before ? before.split("\n") : [];
 	const b = after ? after.split("\n") : [];
+	if (a.length * b.length > LINE_DIFF_MAX_CELLS) return b.map((text) => ({ type: "added", text }));
 	// common[i][j]: the longest common subsequence of a[i..] and b[j..].
 	const common = Array.from({ length: a.length + 1 }, () => new Array(b.length + 1).fill(0));
 	for (let i = a.length - 1; i >= 0; i--) {

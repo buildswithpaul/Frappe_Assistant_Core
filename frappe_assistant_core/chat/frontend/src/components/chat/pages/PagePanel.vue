@@ -149,8 +149,9 @@ function onScriptError(error) {
 // cannot keep the approval still runs it now; the next open asks again.
 async function runNewVersion() {
 	const shown = page.value;
-	await fac_page_approve_script(props.user, props.name, shown.script);
-	if (page.value !== shown) return;
+	const name = props.name;
+	await fac_page_approve_script(props.user, name, shown.script);
+	if (page.value !== shown || props.name !== name) return;
 	review.value = null;
 	renderKey.value++;
 }

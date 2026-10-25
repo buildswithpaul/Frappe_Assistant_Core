@@ -9,11 +9,13 @@ const CHARTS_SRC = "/assets/frappe_assistant_core/js/fac_page_charts.js?v=build-
 let frappe;
 let wrapper;
 
+// A shared published page, whose script runs at once; facPagesGate.spec.js covers held ones.
 const published = {
 	title: "Sales",
 	html: '<div class="chart"></div>',
 	style: "",
 	draft: false,
+	visibility: "Shared",
 	script: "fac.chart(root_element.querySelector('.chart'), {series: [{type: 'bar', data: [1]}]});",
 };
 

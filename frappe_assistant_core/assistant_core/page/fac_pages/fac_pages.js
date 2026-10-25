@@ -54,7 +54,8 @@
 	function render(page, name, data, is_latest) {
 		dispose_shown_charts();
 		page.set_title(data.title);
-		if (data.draft) {
+		// Only a page that says it is not a draft runs, so a response missing the flag fails closed.
+		if (data.draft !== false) {
 			render_draft(page, data, is_latest);
 			return;
 		}
@@ -206,16 +207,9 @@
 		diff.className = "fac-page-review-diff";
 		diff.hidden = true;
 		diff.style.cssText = "max-height:40vh;overflow:auto;margin:8px 0 0;";
-		const marks = { same: " ", removed: "-", added: "+" };
-		const colours = { same: "", removed: "var(--red-600)", added: "var(--green-600)" };
-		for (const line of fac_page_line_diff(review.approved, script)) {
-			const row = document.createElement("span");
-			row.className = `fac-page-review-line is-${line.type}`;
-			row.style.cssText = `display:block;white-space:pre;color:${colours[line.type]};`;
-			row.textContent = `${marks[line.type]} ${line.text}`;
-			diff.append(row);
-		}
 		toggle.addEventListener("click", () => {
+			// Built on first look: most opens are a Run new version without one.
+			if (!diff.childElementCount) fill_diff(diff, review.approved, script);
 			diff.hidden = !diff.hidden;
 			toggle.textContent = diff.hidden ? __("View changes") : __("Hide changes");
 		});
@@ -225,6 +219,18 @@
 		});
 		bar.append(message, " ", toggle, " ", run_button, diff);
 		return bar;
+	}
+
+	function fill_diff(diff, approved, script) {
+		const marks = { same: " ", removed: "-", added: "+" };
+		const colours = { same: "", removed: "var(--red-600)", added: "var(--green-600)" };
+		for (const line of fac_page_line_diff(approved, script)) {
+			const row = document.createElement("span");
+			row.className = `fac-page-review-line is-${line.type}`;
+			row.style.cssText = `display:block;white-space:pre;color:${colours[line.type]};`;
+			row.textContent = `${marks[line.type]} ${line.text}`;
+			diff.append(row);
+		}
 	}
 
 	function make_button(label, class_name) {

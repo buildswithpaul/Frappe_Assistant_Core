@@ -278,12 +278,21 @@ describe("PagePanel: code FACO writes runs only after the user has seen it", () 
 		}
 	});
 
-	it("never holds a Shared page or someone else's page", async () => {
-		for (const extra of [{ visibility: "Shared" }, { owner_is_me: false }]) {
-			getPage.mockResolvedValue(page({ script: SCRIPT, ...extra }));
+	it("never holds a Shared page", async () => {
+		getPage.mockResolvedValue(page({ script: SCRIPT, visibility: "Shared" }));
+		const w = await mountPanel();
+		expect(w.find(".page-code-review").exists()).toBe(false);
+		expect(shownText(w)).toBe("ran v1");
+	});
+
+	it("holds a page whose visibility is missing or blank", async () => {
+		// get_page always sends visibility; a response without it must fail closed, not run code.
+		const { visibility, ...noVisibility } = page({ script: SCRIPT });
+		for (const response of [noVisibility, page({ script: SCRIPT, visibility: "" })]) {
+			getPage.mockResolvedValue(response);
 			const w = await mountPanel();
-			expect(w.find(".page-code-review").exists()).toBe(false);
-			expect(shownText(w)).toBe("ran v1");
+			expect(w.find(".page-code-review").exists()).toBe(true);
+			expect(shownText(w)).toBe("Sales");
 			w.unmount();
 		}
 	});

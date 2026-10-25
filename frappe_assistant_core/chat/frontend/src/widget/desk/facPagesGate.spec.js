@@ -29,7 +29,7 @@ let main;
 
 function loadDeskPage(data) {
 	main = document.createElement("div");
-	const page_main = { empty: () => ((main.innerHTML = ""), page_main), append: (el) => main.append(el) };
+	const page_main = { empty: () => ((main.innerHTML = ""), page_main), append: (...els) => main.append(...els) };
 	frappe = {
 		pages: { "fac-pages": {} },
 		session: { user: USER },
@@ -38,7 +38,9 @@ function loadDeskPage(data) {
 		call: ({ callback }) => callback({ message: data }),
 		create_shadow_element: vi.fn(),
 	};
-	new Function("frappe", "__", "$", SOURCE)(frappe, (s) => s, vi.fn());
+	// Desk's jQuery, as far as the draft view uses it: $(html).text(message).
+	const $ = () => ({ text: (message) => Object.assign(document.createElement("p"), { textContent: message }) });
+	new Function("frappe", "__", "$", SOURCE)(frappe, (s) => s, $);
 	wrapper = {};
 	frappe.pages["fac-pages"].on_page_load(wrapper);
 }
@@ -92,6 +94,7 @@ describe("fac-pages Desk page: code FACO writes runs only after the user has see
 		expect(shownText()).toBe("Sales");
 		const diff = bar().querySelector(".fac-page-review-diff");
 		expect(diff.hidden).toBe(true);
+		expect(diff.childElementCount).toBe(0);
 		bar().querySelector(".fac-page-review-toggle").click();
 		expect(diff.hidden).toBe(false);
 		expect([...diff.children].map((line) => line.textContent)).toEqual([`- ${SCRIPT}`, `+ ${SCRIPT_V2}`]);
@@ -113,6 +116,15 @@ describe("fac-pages Desk page: code FACO writes runs only after the user has see
 		expect(root.querySelector("iframe")).toBeNull();
 		expect(root.querySelector("form.mk-form input[name=q]")).not.toBeNull();
 		expect(root.querySelector("form.mk-form button")).not.toBeNull();
+	});
+
+	it("shows a response that does not say it is published as a draft, running nothing", async () => {
+		const { draft, ...unmarked } = personal({ visibility: "Shared" });
+		loadDeskPage(unmarked);
+		frappe.pages["fac-pages"].on_page_show(wrapper);
+		await vi.waitFor(() => expect(main.querySelector("iframe.fac-page-draft-frame")).not.toBeNull());
+		expect(main.querySelector("iframe").getAttribute("sandbox")).toBe("");
+		expect(frappe.create_shadow_element).not.toHaveBeenCalled();
 	});
 
 	it("never holds a Shared page", async () => {

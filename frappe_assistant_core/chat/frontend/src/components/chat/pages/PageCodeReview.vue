@@ -1,9 +1,6 @@
 <template>
 	<div class="page-code-review" role="status">
-		<div
-			class="page-code-review-bar"
-			:title="__('Until you run it, Download PDF and FACO\'s screenshots show the page without this code.')"
-		>
+		<div class="page-code-review-bar" :title="tooltip">
 			<span class="page-code-review-message">
 				{{ state === "first" ? __("This page has code FACO wrote.") : __("FACO changed this page's code.") }}
 			</span>
@@ -43,6 +40,7 @@ const props = defineProps({
 const emit = defineEmits(["run"]);
 
 const MARKS = { same: " ", removed: "-", added: "+" };
+const tooltip = __("Until you run it, Download PDF and FACO's screenshots show the page without this code.");
 
 const showing = ref(false);
 const lines = computed(() => fac_page_line_diff(props.approved, props.script));
