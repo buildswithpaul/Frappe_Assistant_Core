@@ -1,6 +1,7 @@
 // Draft preview for a FAC Page in the chat panel. The fac-pages Desk page keeps its own copy in
 // assistant_core/page/fac_pages/fac_page_draft.js, because render_include inlines a plain script
-// and cannot load a module; utils/facPageDraftCases.js tests both copies against the same cases.
+// and cannot load a module; utils/__tests__/facPageDraftCases.js tests both copies against the
+// same cases.
 //
 // A draft is dormant, so the browser itself keeps it from running code or reaching the network:
 // it renders in an iframe with an empty sandbox (no scripts, forms, popups or top navigation) and

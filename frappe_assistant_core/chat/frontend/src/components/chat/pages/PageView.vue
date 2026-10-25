@@ -1,7 +1,8 @@
 <template>
-	<!-- A draft is dormant: no script, sanitised html, and a frame that can run nothing. -->
+	<!-- A draft is dormant: no script, sanitised html, and a frame that can run nothing. Only a
+	     page that says it is not a draft runs, so a response missing the flag fails closed. -->
 	<iframe
-		v-if="page.draft"
+		v-if="!published"
 		sandbox=""
 		class="page-view-draft"
 		:title="page.title"
@@ -28,6 +29,7 @@ const props = defineProps({
 const emit = defineEmits(["unsupported", "error"]);
 
 const host = ref(null);
+const published = computed(() => props.page.draft === false);
 
 const draftSrcdoc = computed(() =>
 	fac_page_draft_srcdoc({ html: props.page.html, style: props.page.style, kit_css: kitCss }),
@@ -51,14 +53,14 @@ function render() {
 
 	const standIn = makeFrappeStandIn(
 		{ baseCall, getCall, user: props.user },
-		{ onUnsupported: (name) => emit("unsupported", name) },
+		{ onUnsupported: (name) => emit("unsupported", name), onError: (error) => emit("error", error) },
 	);
 	const result = runPageScript(props.page.script, root, standIn);
 	if (result.error && !result.unsupported) emit("error", result.error);
 }
 
 onMounted(() => {
-	if (!props.page.draft) render();
+	if (published.value) render();
 });
 </script>
 

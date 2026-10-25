@@ -14,7 +14,7 @@
 				<a class="page-panel-action page-panel-fullscreen" :href="deskUrl" target="_blank" rel="noopener">
 					{{ __("Full screen") }}
 				</a>
-				<button type="button" class="page-panel-action page-panel-share" @click="share">
+				<button v-if="shareable" type="button" class="page-panel-action page-panel-share" @click="share">
 					{{ __("Share…") }}
 				</button>
 				<button type="button" class="page-panel-action" disabled>{{ __("Download PDF") }}</button>
@@ -23,12 +23,13 @@
 		</header>
 
 		<p v-if="shareNote" class="page-panel-note" role="status">{{ shareNote }}</p>
-		<p v-if="unsupported" class="page-panel-note page-panel-unsupported" role="status">
-			{{ __("This page uses parts of Desk the chat can't run.") }}
+		<p v-if="unsupported || scriptFailed" class="page-panel-note" role="status">
+			{{
+				unsupported
+					? __("This page uses parts of Desk the chat can't run.")
+					: __("Part of this page didn't load.")
+			}}
 			<a class="page-panel-open-desk" :href="deskUrl" target="_blank" rel="noopener">{{ __("Open in Desk") }}</a>
-		</p>
-		<p v-else-if="scriptFailed" class="page-panel-note" role="status">
-			{{ __("Part of this page didn't load.") }}
 		</p>
 
 		<div class="page-panel-body">
@@ -81,6 +82,8 @@ const renderKey = ref(0);
 let request = 0;
 
 const title = computed(() => page.value?.title || props.name);
+// Sharing is for the owner's personal page; a Shared page already is.
+const shareable = computed(() => page.value?.visibility !== "Shared" && page.value?.owner_is_me !== false);
 const deskUrl = computed(() => `/app/fac-pages/${encodeURIComponent(props.name)}`);
 
 async function load() {
@@ -91,6 +94,7 @@ async function load() {
 	try {
 		const data = await facPage.getPage(props.name);
 		if (current !== request) return;
+		if (!data || typeof data !== "object") throw new Error("get_page returned no page");
 		page.value = data;
 		renderKey.value++;
 	} catch (error) {

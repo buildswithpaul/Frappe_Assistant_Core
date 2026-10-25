@@ -1,5 +1,5 @@
 import { mount } from "@vue/test-utils";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import MessageBlockRenderer from "@/components/chat/MessageBlockRenderer.vue";
 import { usePagePanel } from "@/composables/usePagePanel";
@@ -20,7 +20,13 @@ function mountRenderer(blocks) {
 	});
 }
 
-afterEach(() => usePagePanel().close());
+// The SPA mounts a PageDock beside the conversation; the widget does not (FacPageChip.spec covers it).
+let unregister;
+beforeEach(() => (unregister = usePagePanel().registerDock()));
+afterEach(() => {
+	unregister();
+	usePagePanel().close();
+});
 
 describe("page chips in the message footer", () => {
 	it("shows a chip for a page this message wrote, and opens it on click", async () => {

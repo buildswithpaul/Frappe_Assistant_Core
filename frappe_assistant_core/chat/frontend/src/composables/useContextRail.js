@@ -18,8 +18,10 @@ export function resolveRailMode(width, hasArtifacts) {
 
 /**
  * @param {import('vue').Ref<boolean>|import('vue').ComputedRef<boolean>} hasArtifacts
+ * @param {{holdCollapsed?: import('vue').Ref<boolean>}} options while `holdCollapsed` is true, a
+ *   new turn's artifacts leave a collapsed dock collapsed (an open page needs the room)
  */
-export function useContextRail(hasArtifacts) {
+export function useContextRail(hasArtifacts, { holdCollapsed } = {}) {
 	const viewportWidth = ref(typeof window !== "undefined" ? window.innerWidth : 1280);
 
 	// Whether the collapsible surface (tab → panel, or bottom sheet) is open.
@@ -68,7 +70,7 @@ export function useContextRail(hasArtifacts) {
 	watch(
 		() => hasArtifacts.value,
 		(has) => {
-			if (has) dockCollapsed.value = false;
+			if (has && !holdCollapsed?.value) dockCollapsed.value = false;
 		},
 	);
 

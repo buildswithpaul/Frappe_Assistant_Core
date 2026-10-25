@@ -119,4 +119,21 @@ describe("makeFrappeStandIn", () => {
 		expect(frappe.db.get_single_value).toBeUndefined();
 		expect(onUnsupported).toHaveBeenCalledWith("db.get_single_value");
 	});
+
+	it("reports a failed call the script gave no error callback for", async () => {
+		api.baseCall.mockRejectedValue(new Error("denied"));
+		const onError = vi.fn();
+		const frappe = makeFrappeStandIn(api, { onError });
+		await frappe.db.insert({ doctype: "ToDo" }).catch(() => {});
+		expect(onError).toHaveBeenCalledWith(expect.objectContaining({ message: "denied" }));
+	});
+
+	it("leaves a failure to the script's own error callback", async () => {
+		api.baseCall.mockRejectedValue(new Error("denied"));
+		const onError = vi.fn();
+		await makeFrappeStandIn(api, { onError })
+			.call({ method: "x.y.z", error: () => {} })
+			.catch(() => {});
+		expect(onError).not.toHaveBeenCalled();
+	});
 });

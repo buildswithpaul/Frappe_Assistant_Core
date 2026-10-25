@@ -5,7 +5,7 @@
 // it renders in an iframe with an empty sandbox (no scripts, forms, popups or top navigation) and
 // a Content-Security-Policy that allows only inline styles and data: images. The chat panel has an
 // ES-module copy in chat/frontend/src/utils/facPageDraft.js; both are tested against the cases in
-// chat/frontend/src/utils/facPageDraftCases.js, run by
+// chat/frontend/src/utils/__tests__/facPageDraftCases.js, run by
 // chat/frontend/src/widget/desk/facPageDraft.spec.js.
 
 const FAC_PAGE_DRAFT_CSP = "default-src 'none'; style-src 'unsafe-inline'; img-src data:";

@@ -1,7 +1,8 @@
-import { mount } from "@vue/test-utils";
+import { flushPromises, mount } from "@vue/test-utils";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("@/api/_core", () => ({ baseCall: vi.fn(), getCall: vi.fn() }));
+const baseCall = vi.fn();
+vi.mock("@/api/_core", () => ({ baseCall: (...a) => baseCall(...a), getCall: vi.fn() }));
 
 import PageView from "./PageView.vue";
 
@@ -56,5 +57,20 @@ describe("PageView", () => {
 	it("reports the Desk feature a script needs", () => {
 		const page = { ...published, script: "frappe.ui.form.on('x', {});" };
 		expect(mountView(page).emitted("unsupported")).toEqual([["ui"]]);
+	});
+
+	it("treats a page that does not say it is published as a draft", () => {
+		const { draft, ...unmarked } = published;
+		const frame = mountView({ ...unmarked, script: "window.__unmarkedRan = true;" }).find("iframe");
+		expect(frame.attributes("sandbox")).toBe("");
+		expect(window.__unmarkedRan).toBeUndefined();
+	});
+
+	it("reports a data call the script made that failed", async () => {
+		baseCall.mockRejectedValue(new Error("denied"));
+		const page = { ...published, script: "frappe.db.insert({doctype: 'ToDo'}).catch(() => {});" };
+		const w = mountView(page);
+		await flushPromises();
+		expect(w.emitted("error")[0][0].message).toBe("denied");
 	});
 });

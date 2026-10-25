@@ -293,6 +293,7 @@ import { deriveArtifacts } from "@/utils/contextArtifacts";
 import { isPausedTurn, isStoppedTurn } from "@/utils/turnState";
 import ContextRail from "@/components/chat/ContextRail.vue";
 import PageDock from "@/components/chat/pages/PageDock.vue";
+import { usePagePanel } from "@/composables/usePagePanel";
 import { logger } from "@/utils/logger";
 import { usePreferences } from "@/composables/usePreferences";
 import { resolveReadWidth } from "@/utils/chatWidth";
@@ -454,6 +455,9 @@ const activeTurnPaused = computed(
 );
 
 const railHasArtifacts = computed(() => activeArtifacts.value.hasArtifacts);
+// Each page write is a rail artifact; an open page keeps the docked rail folded to its tab.
+const { openName: openPageName } = usePagePanel();
+const pageOpen = computed(() => Boolean(openPageName.value));
 const {
 	mode: railMode,
 	isVisible: railVisible,
@@ -464,7 +468,7 @@ const {
 	toggle: toggleRail,
 	collapseDock: collapseRailDock,
 	expandDock: expandRailDock,
-} = useContextRail(railHasArtifacts);
+} = useContextRail(railHasArtifacts, { holdCollapsed: pageOpen });
 
 const {
 	style: sheetDragStyle,

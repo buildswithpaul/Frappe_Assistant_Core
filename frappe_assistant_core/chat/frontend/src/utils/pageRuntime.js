@@ -68,9 +68,11 @@ function guard(target, path, report) {
  * The `frappe` a page script sees in the panel.
  *
  * @param {{baseCall: Function, getCall: Function, user: string}} api the SPA transport and session user
- * @param {{onUnsupported?: (name: string) => void}} options called with each unsupported member's path
+ * @param {{onUnsupported?: (name: string) => void, onError?: (error: Error) => void}} options
+ *   `onUnsupported` gets each unsupported member's path; `onError` gets a failed call the script
+ *   passed no error callback for, which would otherwise leave part of the page silently empty.
  */
-export function makeFrappeStandIn(api, { onUnsupported } = {}) {
+export function makeFrappeStandIn(api, { onUnsupported, onError } = {}) {
 	const unsupported = [];
 	const report = (name) => {
 		unsupported.push(name);
@@ -90,7 +92,8 @@ export function makeFrappeStandIn(api, { onUnsupported } = {}) {
 				return r;
 			},
 			(error) => {
-				o.error?.(error);
+				if (o.error) o.error(error);
+				else onError?.(error);
 				throw error;
 			},
 		);

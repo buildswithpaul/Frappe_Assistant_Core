@@ -1,22 +1,32 @@
 <template>
-	<button type="button" class="fac-page-chip" :aria-label="__('Open {0}', [chip.title])" @click="open(chip.name)">
+	<!-- Without a dock beside the chat (the Desk widget), the page opens in Desk instead. -->
+	<component
+		:is="dockMounted ? 'button' : 'a'"
+		v-bind="dockMounted ? { type: 'button' } : { href: deskUrl }"
+		class="fac-page-chip"
+		:aria-label="__('Open {0}', [chip.title])"
+		@click="dockMounted && open(chip.name)"
+	>
 		<span class="fac-page-chip-icon" aria-hidden="true">▤</span>
 		<span class="fac-page-chip-title">{{ chip.title }}</span>
 		<span class="fac-page-chip-version">v{{ chip.version }}</span>
 		<span v-if="chip.pending" class="fac-page-chip-pending">{{ __("Updating…") }}</span>
-	</button>
+	</component>
 </template>
 
 <script setup>
+import { computed } from "vue";
+
 import { usePagePanel } from "@/composables/usePagePanel";
 import { __ } from "@/utils/i18n";
 
-defineProps({
+const props = defineProps({
 	// {name, title, version, pending}, from derivePageChips.
 	chip: { type: Object, required: true },
 });
 
-const { open } = usePagePanel();
+const { open, dockMounted } = usePagePanel();
+const deskUrl = computed(() => `/app/fac-pages/${encodeURIComponent(props.chip.name)}`);
 </script>
 
 <style scoped>
@@ -31,6 +41,7 @@ const { open } = usePagePanel();
 	background: var(--ql-surface);
 	color: var(--ql-text);
 	font-size: 13px;
+	text-decoration: none;
 	cursor: pointer;
 }
 .fac-page-chip:hover {

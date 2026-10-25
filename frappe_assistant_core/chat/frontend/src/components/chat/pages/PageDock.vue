@@ -13,7 +13,7 @@
 </template>
 
 <script setup>
-import { computed, toRef, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, toRef, watch } from "vue";
 
 import { usePagePanel } from "@/composables/usePagePanel";
 
@@ -28,7 +28,12 @@ const props = defineProps({
 
 const emit = defineEmits(["open", "share"]);
 
-const { openName, refreshKey, chips, close } = usePagePanel(toRef(props, "messages"));
+const { openName, refreshKey, chips, close, registerDock } = usePagePanel(toRef(props, "messages"));
+
+// Chips open this panel only while it is mounted; elsewhere they link to Desk.
+let unregister = () => {};
+onMounted(() => (unregister = registerDock()));
+onBeforeUnmount(() => unregister());
 
 const openChip = computed(() => chips.value.find((chip) => chip.name === openName.value));
 

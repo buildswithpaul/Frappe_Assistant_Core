@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-import { describeDraftBuilder } from "@/utils/facPageDraftCases";
+import { describeDraftBuilder } from "@/utils/__tests__/facPageDraftCases";
 
 // The Desk page inlines this plain script with Frappe's render_include, so the test loads it the same way:
 // as source text, evaluated for the functions it declares.

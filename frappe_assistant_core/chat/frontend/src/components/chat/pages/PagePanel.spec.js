@@ -114,4 +114,28 @@ describe("PagePanel", () => {
 		getPage.mockRejectedValue(new Error("This page does not exist."));
 		expect((await mountPanel()).text()).toContain("This page could not be shown.");
 	});
+
+	it("offers Open in Desk when the script throws", async () => {
+		getPage.mockResolvedValue(page({ script: "throw new Error('x');" }));
+		const w = await mountPanel();
+		expect(w.text()).toContain("Part of this page didn't load.");
+		expect(w.find("a.page-panel-open-desk").attributes("href")).toBe("/app/fac-pages/sales-a1b2c3");
+	});
+
+	it("treats a response that is not a page as a failed load", async () => {
+		getPage.mockResolvedValue(null);
+		const w = await mountPanel();
+		expect(w.text()).toContain("This page could not be shown.");
+		expect(w.text()).not.toContain("Loading…");
+	});
+
+	it("hides Share… for a page that is already Shared", async () => {
+		getPage.mockResolvedValue(page({ visibility: "Shared", owner_is_me: true }));
+		expect((await mountPanel({ canShare: true })).find("button.page-panel-share").exists()).toBe(false);
+	});
+
+	it("hides Share… for a page someone else owns", async () => {
+		getPage.mockResolvedValue(page({ owner_is_me: false }));
+		expect((await mountPanel({ canShare: true })).find("button.page-panel-share").exists()).toBe(false);
+	});
 });

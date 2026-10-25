@@ -11,6 +11,19 @@ export const pageDockWidth = (shellWidth) => Math.max(PAGE_DOCK_MIN_WIDTH, shell
 const openName = ref(null);
 const refreshKey = ref(0);
 const chips = shallowRef([]);
+// How many PageDocks are mounted: the SPA has one, the Desk widget none.
+const docks = ref(0);
+const dockMounted = computed(() => docks.value > 0);
+
+/** Called by a mounted PageDock; returns the call that unregisters it. */
+function registerDock() {
+	docks.value++;
+	let registered = true;
+	return () => {
+		if (registered) docks.value--;
+		registered = false;
+	};
+}
 
 function open(name) {
 	openName.value = name || null;
@@ -43,5 +56,5 @@ function trackPageWrites(messages) {
  */
 export function usePagePanel(messages) {
 	if (messages) trackPageWrites(messages);
-	return { openName, refreshKey, chips, open, close };
+	return { openName, refreshKey, chips, dockMounted, registerDock, open, close };
 }
