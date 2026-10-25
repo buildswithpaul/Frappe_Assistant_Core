@@ -141,6 +141,16 @@ class TestCustomisationImpact(BaseAssistantTest):
         # Unpublished, yet the owner sees the change: a personal page opens for them unpublished.
         self.assertFalse(_impact("update_document", "FAC Page", {"html": "<p>y</p>"}, name)["dormant"])
 
+    def test_a_non_system_manager_creating_a_shared_page_is_live(self):
+        # Frappe refuses this write; the card must not call it dormant either.
+        user = self.make_throwaway_user("fac-impact-builder", roles=("Report Manager",))
+        # nosemgrep: frappe-setuser — a Desk user asks for the write inside the test transaction
+        frappe.set_user(user)
+
+        self.assertFalse(
+            _impact("create_document", "FAC Page", {"slug": "x", "visibility": "Shared"})["dormant"]
+        )
+
     def test_switching_a_personal_page_to_shared_is_live(self):
         name, _owner = self._personal_page()
 

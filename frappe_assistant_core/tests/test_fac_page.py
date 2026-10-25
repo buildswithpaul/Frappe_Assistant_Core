@@ -22,6 +22,8 @@ import json
 import os
 
 import frappe
+from frappe.client import delete, set_value
+from frappe.share import add as share_with
 
 from frappe_assistant_core.api.fac_page import get_page
 from frappe_assistant_core.plugins.core.tools.create_document import DocumentCreate
@@ -381,6 +383,50 @@ class TestPersonalFACPage(BaseAssistantTest):
         with self.assertRaises(frappe.ValidationError):
             doc.save(ignore_permissions=True)
 
+    def test_a_peer_given_a_share_cannot_change_the_page(self):
+        # A changed script would run in the owner's session the next time they open the page.
+        owner = self._desk_user("fac-page-shared-owner")
+        name = self._build(owner, slug="shared-with-peer")
+        # The class shares one transaction; an everyone-share would widen later tests' lists.
+        self.addCleanup(frappe.db.delete, "DocShare", {"share_doctype": "FAC Page", "share_name": name})
+        peer = self._desk_user("fac-page-share-peer")
+        for share in ({"user": peer}, {"everyone": 1}):
+            with self.subTest(share=share):
+                # Production: an Administrator uses Desk's Share sidebar, which no FAC Page
+                # permission row allows anyone else to do.
+                self._act_as("Administrator")
+                share_with("FAC Page", name, read=1, write=1, **share)
+                self._act_as(peer)
+                with self.assertRaises(frappe.ValidationError):
+                    set_value("FAC Page", name, "script", "alert('peer')")
+        self._act_as(owner)
+        self.assertIn("dataset.ready", get_page(name)["script"])
+
+    def test_no_one_but_the_administrator_can_share_a_page(self):
+        name = self._build(self._desk_user("fac-page-unshareable"))
+        self._act_as(self._desk_user("fac-page-share-sysman", roles=("System Manager",)))
+
+        with self.assertRaises(frappe.PermissionError):
+            share_with("FAC Page", name, user="Administrator")
+
+    def test_a_system_user_cannot_set_value_their_page_to_shared(self):
+        user = self._desk_user("fac-page-set-value")
+        name = self._build(user)
+
+        with self.assertRaises(frappe.PermissionError):
+            set_value("FAC Page", name, "visibility", "Shared")
+        self.assertEqual(frappe.db.get_value("FAC Page", name, "visibility"), "Only me")
+
+    def test_the_former_owner_cannot_delete_a_shared_page(self):
+        user = self._desk_user("fac-page-delete")
+        name = self._build(user, slug="former-owner-board")
+        self._share(name)
+        self._act_as(user)
+
+        with self.assertRaises(frappe.PermissionError):
+            delete("FAC Page", name)
+        self.assertTrue(frappe.db.exists("FAC Page", name))
+
     def test_a_website_user_cannot_build_a_page(self):
         # make_throwaway_user with no roles is a Website User, as a portal signup is. Desk User is
         # never theirs, so Frappe refuses the create; validate refuses it on any other path.
@@ -444,6 +490,22 @@ class TestPersonalFACPage(BaseAssistantTest):
 
         self.assertTrue(result.get("success"), result)
         self.assertEqual([row["name"] for row in result["data"]], [mine])
+
+    def test_list_documents_shows_a_system_manager_shared_pages_and_their_own(self):
+        # Someone else's personal page is listed nowhere, though the form still opens it by name.
+        peer_page = self._build(self._desk_user("fac-page-list-peer"), slug="peer-board")
+        sysman = self._desk_user("fac-page-list-sysman", roles=("System Manager",))
+        own = self._build(sysman, slug="sysman-board")
+        shared = frappe.get_doc(
+            {"doctype": "FAC Page", "title": "Shared", "slug": "sysman-shared", "visibility": "Shared"}
+        ).insert()
+
+        result = DocumentList().execute({"doctype": "FAC Page", "fields": ["name"], "limit": 500})
+
+        names = {row["name"] for row in result["data"]}
+        self.assertTrue({own, shared.name} <= names, result)
+        self.assertNotIn(peer_page, names)
+        self.assertTrue(DocumentGet().execute({"doctype": "FAC Page", "name": peer_page}).get("success"))
 
     def test_get_document_reads_a_personal_page_only_for_its_owner_or_a_system_manager(self):
         # A System Manager may read the record as data, as in the Desk form; get_page, which

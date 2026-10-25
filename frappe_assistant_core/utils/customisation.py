@@ -31,7 +31,11 @@ from frappe import _
 from frappe.model.meta import Meta
 from frappe.utils import cint, get_url, get_url_to_form
 
-from frappe_assistant_core.assistant_core.doctype.fac_page.fac_page import PERSONAL, SHARED
+from frappe_assistant_core.assistant_core.doctype.fac_page.fac_page import (
+    PERSONAL,
+    SHARED,
+    SYSTEM_MANAGER,
+)
 
 CUSTOMISATION_DOCTYPES = frozenset(
     {
@@ -270,6 +274,9 @@ def _targets_are_plain(creating: bool, before: Any, after: Any, field: str) -> b
     return _is_plain_name(after(field)) and (creating or _is_plain_name(before(field)))
 
 
+_LIVE_PAGE = {"dormant": False, "reason": "FAC Page opens for other people"}
+
+
 def _personal_page_impact(
     creating: bool, data: Dict[str, Any], before: Callable[[str], Any], after: Callable[[str], Any]
 ) -> Optional[Dict[str, Any]]:
@@ -282,14 +289,15 @@ def _personal_page_impact(
     default = frappe.get_meta("FAC Page").get_field("visibility").default
     visibility = (data.get("visibility") or default) if creating else after("visibility")
     was_personal = not creating and before("visibility") != SHARED
-    if visibility == SHARED and not was_personal:
-        return None
     user = frappe.session.user
+    if visibility == SHARED and not was_personal:
+        # Frappe refuses anyone else's shared-page write, so it cannot be dormant.
+        return None if SYSTEM_MANAGER in frappe.get_roles(user) else dict(_LIVE_PAGE)
     # A new page's owner is always the session user; Frappe overwrites any supplied owner.
     owned = creating or (before("owner") == user and after("owner") == user)
     if owned and visibility == PERSONAL and (creating or before("visibility") == PERSONAL):
         return {"dormant": True, "reason": _("only you can open this page")}
-    return {"dormant": False, "reason": "FAC Page opens for other people"}
+    return dict(_LIVE_PAGE)
 
 
 def customisation_impact(tool_name: str, tool_input: Any) -> Dict[str, Any]:

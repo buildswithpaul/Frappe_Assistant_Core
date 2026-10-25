@@ -1,4 +1,4 @@
-// Shows a FAC Page record at /app/fac-pages/<slug>: a published page inside a shadow root with
+// Shows a FAC Page record at /app/fac-pages/<name>: a published page inside a shadow root with
 // the mockup kit, a draft inside a sandboxed iframe that runs no code.
 (function () {
 	// Desk's build version (v15 and v16 set it in the page template), so a rebuilt kit is refetched.

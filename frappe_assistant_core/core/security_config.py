@@ -521,7 +521,9 @@ def _child_filter_hint(doctype: str, parents: List[Dict[str, str]]) -> str:
     )
 
 
-def is_doctype_accessible(doctype: str, user_role: str, perm_type: str = "read") -> bool:
+def is_doctype_accessible(
+    doctype: str, user_role: str, perm_type: str = "read", user: Optional[str] = None
+) -> bool:
     """
     Check whether a role may perform ``perm_type`` on ``doctype`` at the FAC layer.
 
@@ -537,6 +539,7 @@ def is_doctype_accessible(doctype: str, user_role: str, perm_type: str = "read")
         doctype: DocType name
         user_role: User role name
         perm_type: Permission being requested (read, write, create, delete, ...)
+        user: The user asking, the session user when omitted
 
     Returns:
         bool: True if FAC allows the operation to proceed to the Frappe permission check
@@ -547,11 +550,11 @@ def is_doctype_accessible(doctype: str, user_role: str, perm_type: str = "read")
     if perm_type not in WRITE_PERM_TYPES:
         return True  # Reads and anything non-mutating defer entirely to Frappe
 
-    # Anyone at the Desk may build a FAC Page only they can open. FAC Page's has_permission hook
-    # and validate refuse the rest (sharing, publishing, roles, someone else's page) for every
-    # write path, so this layer hands the decision to them.
+    # A Desk user may build a FAC Page only they can open. FAC Page's has_permission hook and
+    # validate refuse the rest (sharing, publishing, roles, someone else's page) on every write
+    # path, so for Desk users this layer hands the decision to them.
     if doctype == "FAC Page":
-        return True
+        return frappe.get_cached_value("User", user or frappe.session.user, "user_type") == "System User"
 
     return doctype not in WRITE_PROTECTED_DOCTYPES
 
@@ -597,7 +600,7 @@ def validate_document_access(
 
         # FAC-level guard: blocks writes to code-execution / schema DocTypes only.
         # Reads fall straight through to the Frappe permission check below.
-        if not is_doctype_accessible(doctype, primary_role, perm_type):
+        if not is_doctype_accessible(doctype, primary_role, perm_type, user):
             return {
                 "success": False,
                 "error": _write_protected_message(doctype),

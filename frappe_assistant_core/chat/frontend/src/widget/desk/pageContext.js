@@ -118,7 +118,7 @@ const ctx = {
 				page_name: route[0],
 				url: window.location.href,
 			};
-			// The fac-pages host shows one FAC Page, named by its slug.
+			// The fac-pages host shows one FAC Page, addressed by its record name.
 			if (route[0] === "fac-pages" && route[1]) context.fac_page = route[1];
 			return context;
 		}

@@ -4,7 +4,7 @@
   "title": "FAC Pages",
   "icon": "octicon octicon-file",
   "page_name": "fac-pages",
-  "description": "Shows a FAC Page record stored in the database at /app/fac-pages/<slug>.",
+  "description": "Shows a FAC Page record stored in the database at /app/fac-pages/<name>.",
   "standard": "Yes",
   "module": "Assistant Core",
   "creation": "2026-10-24 00:00:00.000000",

@@ -75,6 +75,9 @@ class FACPage(Document):
             frappe.throw(_("Only Desk users can build pages."))
         if is_system_manager(user):
             return
+        # A DocShare can let another user past has_permission; the page stays its owner's alone.
+        if not self.is_new() and self.owner != user:
+            frappe.throw(_("Only the page's owner or a System Manager can change it."))
         if self.visibility == SHARED or (stored and stored.visibility == SHARED):
             frappe.throw(_("Only a System Manager can share a page or change a shared one."))
         if self.roles or cint(self.published):
@@ -117,8 +120,12 @@ def has_permission(doc, ptype: str | None = None, user: str | None = None, debug
 
 
 def get_permission_query_conditions(user: str | None = None) -> str:
-    """List views show a non-System-Manager their own personal pages only."""
+    """List views show a user their own personal pages, and a System Manager shared pages too.
+
+    Someone else's personal page is listed nowhere; a System Manager can still open it by name.
+    """
     user = user or frappe.session.user
+    mine = f"(`tabFAC Page`.`owner` = {frappe.db.escape(user)} and `tabFAC Page`.`visibility` = '{PERSONAL}')"
     if is_system_manager(user):
-        return ""
-    return f"(`tabFAC Page`.`owner` = {frappe.db.escape(user)} and `tabFAC Page`.`visibility` = '{PERSONAL}')"
+        return f"({mine} or `tabFAC Page`.`visibility` = '{SHARED}')"
+    return mine

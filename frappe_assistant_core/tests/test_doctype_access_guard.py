@@ -68,6 +68,14 @@ class TestDocTypeAccessGuard(BaseAssistantTest):
             with self.subTest(perm_type=perm_type):
                 self.assertTrue(is_doctype_accessible("FAC Page", LOW_PRIV_ROLE, perm_type))
 
+    def test_fac_page_writes_are_blocked_for_a_website_user(self):
+        """Website users cannot build pages, so the guard stops them before Frappe's check."""
+        # make_throwaway_user with no roles is a Website User, as a portal signup is.
+        user = self.make_throwaway_user("fac-guard-website")
+        for perm_type in sorted(WRITE_PERM_TYPES):
+            with self.subTest(perm_type=perm_type):
+                self.assertFalse(is_doctype_accessible("FAC Page", LOW_PRIV_ROLE, perm_type, user))
+
     def test_assistant_admin_is_not_collapsed_to_assistant_user(self):
         """Pre-#249 both roles indexed into the same blocklist; roles no longer key it."""
         for role in ("Assistant Admin", "Assistant User", "MCP Read Only"):
@@ -124,7 +132,9 @@ class TestValidateDocumentAccess(BaseAssistantTest):
         has_permission.assert_not_called()
 
     def test_fac_page_write_is_decided_by_frappe_for_a_non_system_manager(self):
-        """Anyone may build a page only they can open, so FAC Page's own permission rules decide."""
+        """A Desk user may build a page only they can open, so FAC Page's own permission rules decide."""
+        # Production: a Desk user with an ordinary role asks FACO to build a page.
+        user = self.make_throwaway_user("fac-guard-desk", roles=("Report Manager",))
         with patch(
             "frappe_assistant_core.core.security_config.get_user_primary_role",
             autospec=True,
@@ -132,7 +142,7 @@ class TestValidateDocumentAccess(BaseAssistantTest):
         ), patch("frappe.has_permission", autospec=True, return_value=False) as has_permission:
             for perm_type in ("create", "write", "delete"):
                 with self.subTest(perm_type=perm_type):
-                    result = validate_document_access("someone@example.com", "FAC Page", "", perm_type)
+                    result = validate_document_access(user, "FAC Page", "", perm_type)
                     self.assertFalse(result["success"])
                     self.assertNotIn("needs a System Manager", result["error"])
         self.assertEqual(has_permission.call_count, 3)
