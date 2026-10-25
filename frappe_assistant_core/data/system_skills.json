@@ -499,5 +499,14 @@
     "status": "Published",
     "visibility": "Public",
     "content_file": "fac_page.md"
+  },
+  {
+    "skill_id": "pages-in-chat",
+    "title": "Pages in Chat",
+    "description": "Use when the user asks for a report, a summary, a chart or a PDF of something: build it as a personal page beside the chat, look at it, and fix it with them.",
+    "skill_type": "Workflow",
+    "status": "Published",
+    "visibility": "Public",
+    "content_file": "pages_in_chat.md"
   }
 ]

@@ -28,7 +28,7 @@ The `create_document` tool creates new Frappe documents (records). It handles fi
 }
 ```
 
-`url` links to the record's form. For a `FAC Page`, `page_url` is also returned: the `/app/fac-pages/<slug>` link where the page itself opens.
+`url` links to the record's form. For a `FAC Page`, `page_url` is also returned: the `/app/fac-pages/<name>` link (a personal page's name is its slug plus an owner tag) where the page itself opens.
 
 ## Best Practices
 
