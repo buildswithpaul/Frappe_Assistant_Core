@@ -22,6 +22,7 @@ from frappe import _
 from frappe.utils.html_utils import sanitize_html
 
 SYSTEM_MANAGER = "System Manager"
+_OPEN, _NOT_FOUND, _NOT_ALLOWED = "open", "not found", "not allowed"
 # Tags that act on the whole document (a refresh, a stylesheet), or that could draw a fake
 # prompt posting to another server, rather than showing the page.
 DRAFT_DISALLOWED_TAGS = [
@@ -51,24 +52,16 @@ def get_page(slug: str) -> dict:
     if frappe.session.user == "Guest":
         frappe.throw(_("Log in to view this page."), frappe.PermissionError)
 
-    user_roles = set(frappe.get_roles())
-    is_system_manager = SYSTEM_MANAGER in user_roles
-
-    published = frappe.db.get_value("FAC Page", slug, "published")
+    access = _page_access(slug, frappe.session.user)
     # An unpublished page reads as missing, so the response does not reveal that it exists.
-    if published is None or (not published and not is_system_manager):
+    if access == _NOT_FOUND:
         frappe.throw(_("This page does not exist."), frappe.DoesNotExistError)
-
-    if not is_system_manager:
-        allowed_roles = frappe.get_all(
-            "FAC Page Role", filters={"parenttype": "FAC Page", "parent": slug}, pluck="role"
-        )
-        if not user_roles.intersection(allowed_roles):
-            frappe.throw(_("You are not allowed to view this page."), frappe.PermissionError)
+    if access == _NOT_ALLOWED:
+        frappe.throw(_("You are not allowed to view this page."), frappe.PermissionError)
 
     # Access was decided above; the reader cannot read the DocType itself.
     page = frappe.get_doc("FAC Page", slug)
-    draft = not published
+    draft = not page.published
     return {
         "title": page.title,
         "html": _draft_html(page.html) if draft else page.html,
@@ -76,6 +69,41 @@ def get_page(slug: str) -> dict:
         "style": page.style,
         "draft": draft,
     }
+
+
+def can_open_page(name: str, user: str) -> bool:
+    """Whether ``user`` may open the FAC Page ``name``, decided as ``get_page`` decides it."""
+    return _page_access(name, user) == _OPEN
+
+
+def roles_that_open_page(name: str) -> list[str]:
+    """Roles that open the page: its listed roles while published, and always System Manager."""
+    roles = _listed_roles(name) if frappe.db.get_value("FAC Page", name, "published") else []
+    return list(dict.fromkeys([*roles, SYSTEM_MANAGER]))
+
+
+def _page_access(name: str, user: str) -> str:
+    """``_OPEN``, ``_NOT_FOUND`` or ``_NOT_ALLOWED`` for ``user`` and the FAC Page ``name``.
+
+    A published page opens for a System Manager or a holder of one of its roles, so a page with
+    no roles is System Manager only. An unpublished page opens for a System Manager only, and
+    is not found for anyone else.
+    """
+    if user == "Guest":
+        return _NOT_ALLOWED
+    user_roles = set(frappe.get_roles(user))
+    is_system_manager = SYSTEM_MANAGER in user_roles
+    published = frappe.db.get_value("FAC Page", name, "published")
+    if published is None or (not published and not is_system_manager):
+        return _NOT_FOUND
+    if is_system_manager or user_roles.intersection(_listed_roles(name)):
+        return _OPEN
+    return _NOT_ALLOWED
+
+
+def _listed_roles(name: str) -> list[str]:
+    """The roles in the page's FAC Page Role rows."""
+    return frappe.get_all("FAC Page Role", filters={"parenttype": "FAC Page", "parent": name}, pluck="role")
 
 
 def _draft_html(html: str | None) -> str | None:

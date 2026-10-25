@@ -34,6 +34,10 @@ Each check:
 
 `roles_that_allow` lists the roles that grant that permission on the DocType at permission level 0. It is filled on every check, allowed or refused; on a refusal it shows which role to grant. For a child table, the roles come from the parent DocType. Roles marked "if owner" in the role table are listed here but only allow the record's owner. A record-level refusal can still happen to a user who holds one of these roles, because User Permissions, sharing and the owner rule apply on top.
 
+## FAC Pages
+
+A `read` check on a named FAC Page answers whether the user can open that page, as the page itself decides it: a published page opens for a holder of one of its roles, an unpublished page or one with no roles for a System Manager only. `roles_that_allow` then lists the page's roles (while it is published) and System Manager, not the DocType's roles. Other permission types on FAC Page are answered from the DocType, which is System Manager only.
+
 ## Limits
 
 - Administrator is always allowed.
