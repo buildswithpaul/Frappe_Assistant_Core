@@ -65,6 +65,20 @@ describe("runPageScript", () => {
 });
 
 describe("makeFrappeStandIn", () => {
+	it("escapes html as Desk's frappe.utils.escape_html does, and reports any other utils member", () => {
+		const onUnsupported = vi.fn();
+		const frappe = makeFrappeStandIn(api, { onUnsupported });
+		expect(frappe.utils.escape_html(`<a href="x" title='y'>\`1=1\` & co</a>`)).toBe(
+			"&lt;a href&#x3D;&quot;x&quot; title&#x3D;&#39;y&#39;&gt;&#x60;1&#x3D;1&#x60; &amp; co&lt;/a&gt;",
+		);
+		expect(frappe.utils.escape_html(null)).toBe("");
+		expect(frappe.utils.escape_html(undefined)).toBe("");
+		expect(frappe.utils.escape_html(0)).toBe("0");
+		expect(frappe.utils.escape_html(false)).toBe("false");
+		expect(frappe.utils.get_url).toBeUndefined();
+		expect(onUnsupported).toHaveBeenCalledWith("utils.get_url");
+	});
+
 	it("calls back and resolves frappe.call with the response, GET by type", async () => {
 		const callback = vi.fn();
 		const frappe = makeFrappeStandIn(api);

@@ -34,7 +34,7 @@ from frappe.utils import cint, get_url, get_url_to_form
 from frappe_assistant_core.assistant_core.doctype.fac_page.fac_page import (
     PERSONAL,
     SHARED,
-    SYSTEM_MANAGER,
+    is_system_manager,
 )
 
 CUSTOMISATION_DOCTYPES = frozenset(
@@ -292,7 +292,7 @@ def _personal_page_impact(
     user = frappe.session.user
     if visibility == SHARED and not was_personal:
         # Frappe refuses anyone else's shared-page write, so it cannot be dormant.
-        return None if SYSTEM_MANAGER in frappe.get_roles(user) else dict(_LIVE_PAGE)
+        return None if is_system_manager(user) else dict(_LIVE_PAGE)
     # A new page's owner is always the session user; Frappe overwrites any supplied owner.
     owned = creating or (before("owner") == user and after("owner") == user)
     if owned and visibility == PERSONAL and (creating or before("visibility") == PERSONAL):
@@ -401,17 +401,26 @@ def _plan_change_problem(doctype: Any, planned_doctypes: set) -> Optional[str]:
     return problem
 
 
+def _plan_entry_shares(change: Dict[str, Any]) -> bool:
+    """Whether a plan entry says it sets the page to Shared, on the entry or in its data."""
+    data = change.get("data") if isinstance(change.get("data"), dict) else {}
+    return SHARED in (change.get("visibility"), data.get("visibility"))
+
+
 def _plan_change_goes_live(change: Dict[str, Any]) -> bool:
     """Whether a plan entry goes live, correcting a dormant claim the stored state contradicts.
 
     A customisation doctype without a switch can never be dormant. An update or delete of a stored
-    switchable record goes live unless that record is switched off now. Anything else keeps the
-    flag as sent, and a true flag is never turned false.
+    switchable record goes live unless that record is switched off now, and a FAC Page update that
+    shares the page goes live. Anything else keeps the flag as sent, and a true flag is never turned
+    false.
     """
     goes_live = bool(change.get("goes_live"))
     doctype = change.get("doctype")
     if goes_live or not _is_plain_name(doctype) or doctype not in CUSTOMISATION_DOCTYPES:
         return goes_live
+    if doctype == "FAC Page" and change.get("action") == "update" and _plan_entry_shares(change):
+        return True
     if doctype not in _SWITCH_FIELDS:
         return True
     action = change.get("action")

@@ -88,7 +88,9 @@ let request = 0;
 
 const title = computed(() => page.value?.title || props.name);
 // Sharing is for the owner's personal page; a Shared page already is.
-const shareable = computed(() => page.value?.visibility !== "Shared" && page.value?.owner_is_me !== false);
+const shareable = computed(
+	() => Boolean(page.value) && page.value.visibility !== "Shared" && page.value.owner_is_me !== false,
+);
 const deskUrl = computed(() => `/app/fac-pages/${encodeURIComponent(props.name)}`);
 
 async function load() {

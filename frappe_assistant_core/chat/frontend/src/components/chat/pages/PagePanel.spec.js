@@ -140,6 +140,14 @@ describe("PagePanel", () => {
 		expect((await mountPanel({ canShare: true })).find("button.page-panel-share").exists()).toBe(false);
 	});
 
+	it("hides Share… while the page loads and when it could not be loaded", async () => {
+		getPage.mockReturnValue(new Promise(() => {}));
+		expect((await mountPanel({ canShare: true })).find("button.page-panel-share").exists()).toBe(false);
+		wrapper.unmount();
+		getPage.mockRejectedValue(new Error("gone"));
+		expect((await mountPanel({ canShare: true })).find("button.page-panel-share").exists()).toBe(false);
+	});
+
 	it("hides Share… for a page someone else owns", async () => {
 		getPage.mockResolvedValue(page({ owner_is_me: false }));
 		expect((await mountPanel({ canShare: true })).find("button.page-panel-share").exists()).toBe(false);

@@ -4,6 +4,7 @@
  */
 
 import { FAC_PAGE_DRAFT_CSP } from "@/utils/facPageDraft";
+import { today } from "@/utils/pageRuntime";
 
 const FRAME_CLASS = "fac-page-print";
 
@@ -15,13 +16,6 @@ let printTitle = null;
 function restoreChatTitle() {
 	if (chatTitle !== null && document.title === printTitle) document.title = chatTitle;
 	chatTitle = printTitle = null;
-}
-
-const pad = (n) => String(n).padStart(2, "0");
-
-function today() {
-	const now = new Date();
-	return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 }
 
 const escapeHtml = (text) =>

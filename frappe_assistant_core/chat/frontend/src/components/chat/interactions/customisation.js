@@ -241,8 +241,9 @@ const SWITCHED_CODE = {
 		fields: ["subject", "condition", "message"],
 	},
 	// roles is the page's audience, shown as a sentence rather than as code.
+	// Sharing a personal page opens it to other people, as publishing a shared one does.
 	"FAC Page": {
-		switchedOn: (f) => switches(f, "published", ON_VALUES),
+		switchedOn: (f) => switches(f, "published", ON_VALUES) || f.visibility === "Shared",
 		fields: ["html", "script", "style", "roles"],
 	},
 };

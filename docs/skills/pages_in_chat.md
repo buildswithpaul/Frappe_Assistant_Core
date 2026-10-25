@@ -30,12 +30,13 @@ When a user asks for a report, a summary or "a PDF of …", build it as a person
   - `frappe.db.get_list`, `get_value`, `get_doc`, `insert`, `set_value` and `delete_doc`;
   - `frappe.session.user`;
   - `frappe.datetime.get_today` and `str_to_user`;
+  - `frappe.utils.escape_html`, the same as in Desk;
   - `frappe.format`.
 
-  The script runs as the user, so it reads and writes only what they may. Any other member, such as `frappe.utils`, `frappe.ui`, `frappe.realtime` or `frappe.set_route`, makes the panel say the page needs Desk and offer **Open in Desk**. Write your own small helpers instead, for example to escape text.
+  The script runs as the user, so it reads and writes only what they may. Any other member, such as the rest of `frappe.utils`, `frappe.ui`, `frappe.realtime` or `frappe.set_route`, makes the panel say the page needs Desk and offer **Open in Desk**. Write your own small helpers for anything else.
 
 ```js
-const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const esc = frappe.utils.escape_html;
 frappe.db.get_list("Sales Invoice", {
   fields: ["name", "customer", "outstanding_amount"],
   filters: { docstatus: 1, outstanding_amount: [">", 0] },

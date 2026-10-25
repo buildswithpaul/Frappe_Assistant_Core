@@ -31,8 +31,11 @@ function pageProblem() {
 /**
  * FACO's screenshot in the chat SPA: the page open beside the chat, never the chat itself, so
  * `selector` and `full_page` do not apply.
+ *
+ * @param {object} params the tool's parameters
+ * @param {string} [askedAbout] the page open when the user was asked; another page is not captured
  */
-export async function takePageScreenshot(params = {}) {
+export async function takePageScreenshot(params = {}, askedAbout = undefined) {
 	const panel = usePagePanel();
 	const problem = pageProblem();
 	if (problem) return { error: problem };
@@ -44,6 +47,9 @@ export async function takePageScreenshot(params = {}) {
 	await new Promise((resolve) => requestAnimationFrame(() => resolve()));
 	const settledProblem = pageProblem();
 	if (settledProblem) return { error: settledProblem };
+	if (askedAbout !== undefined && panel.openName.value !== askedAbout) {
+		return { error: __("Another page was opened before this one could be captured. Ask again.") };
+	}
 	const view = panel.pageView.value;
 	try {
 		const html2canvas = await loadHtml2canvas();
@@ -91,9 +97,18 @@ const pageCopy = () => ({
  * @param {{getSessionId: () => string|null}} options
  */
 export function useSpaBrowserTools({ getSessionId }) {
+	// The page each call was about when it was accepted, keyed by the call's params object, which
+	// the dispatcher hands unchanged to preflight and then to the handler.
+	const askedAbout = new WeakMap();
+	function preflight(toolName, params) {
+		const problem = pageProblem();
+		if (!problem) askedAbout.set(params, usePagePanel().openName.value);
+		return problem;
+	}
+
 	const dispatcher = createDispatcher({
 		transport: { on: onSpaSocketEvent, call: baseCall },
-		handlers: { take_screenshot: takePageScreenshot },
+		handlers: { take_screenshot: (params) => takePageScreenshot(params, askedAbout.get(params)) },
 		// The chat app's turns only; an older AR names no client and never offers the chat app a tool.
 		ownsCall: (call) => call?.client_type === SPA_CLIENT_TYPE && useChatStore().isOwnLiveTurn(call.session_id),
 		// The widget's other tools may reach this room; they are the widget's to answer.
@@ -102,7 +117,7 @@ export function useSpaBrowserTools({ getSessionId }) {
 		trustKey: (toolName) => `${getSessionId()}|${usePagePanel().openName.value}|${toolName}`,
 		describe: () => __("The page open beside the chat"),
 		// With nothing to capture, answer at once rather than ask the user to approve nothing.
-		preflight: pageProblem,
+		preflight,
 		confirm: (request) => askConfirm({ ...request, copy: pageCopy() }),
 		getSessionId,
 	});

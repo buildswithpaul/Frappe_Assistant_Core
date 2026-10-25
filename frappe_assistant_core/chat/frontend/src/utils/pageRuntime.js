@@ -21,9 +21,18 @@ const UNSUPPORTED = new WeakMap();
 
 const pad = (n) => String(n).padStart(2, "0");
 
-function today() {
+/** Today in the browser's time zone, as YYYY-MM-DD: Desk's frappe.datetime.get_today. */
+export function today() {
 	const now = new Date();
 	return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
+
+// Desk's frappe.utils.escape_html (frappe/public/js/frappe/utils/utils.js), character for character.
+const ESCAPE_HTML = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;", "`": "&#x60;", "=": "&#x3D;" };
+
+function escapeHtml(text) {
+	if (text == null) return "";
+	return String(text).replace(/[&<>"'`=]/g, (char) => ESCAPE_HTML[char] || char);
 }
 
 function strToUser(value) {
@@ -142,6 +151,7 @@ export function makeFrappeStandIn(api, { onUnsupported, onError } = {}) {
 			db: guard(db, "db", report),
 			session: guard({ user: api.user }, "session", report),
 			datetime: guard({ get_today: today, str_to_user: strToUser }, "datetime", report),
+			utils: guard({ escape_html: escapeHtml }, "utils", report),
 			format,
 		},
 		"",

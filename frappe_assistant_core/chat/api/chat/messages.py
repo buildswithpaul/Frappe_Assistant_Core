@@ -80,11 +80,16 @@ def _effective_model_id(model_id: str | None) -> str | None:
     return (model_id or "").strip() or usable_saved_model() or None
 
 
+# The clients that send turns. FAC Cloud picks each one's tools by this name, so a turn's own
+# claim is kept only when it is one of these.
+KNOWN_CLIENT_TYPES = frozenset({"widget", "spa", "mobile", "api", "raven"})
+
+
 def _effective_client_type(client_type: str | None) -> str:
-    """The client a turn is filtered for. The widget and the chat app always name themselves;
-    an omitted value is "api", which FAC Cloud offers no browser tools (the chat app is offered
-    the page screenshot now, so it is no longer a safe default)."""
-    return client_type or "api"
+    """The client a turn is filtered for. The widget, the chat app, the mobile app and Raven name
+    themselves; an omitted or unknown value is "api", which FAC Cloud offers no browser tools (the
+    chat app is offered the page screenshot now, so it is no longer a safe default)."""
+    return client_type if isinstance(client_type, str) and client_type in KNOWN_CLIENT_TYPES else "api"
 
 
 def _flag(value) -> bool:

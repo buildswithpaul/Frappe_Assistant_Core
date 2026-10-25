@@ -45,7 +45,8 @@ def is_system_manager(user: str) -> bool:
     return SYSTEM_MANAGER in frappe.get_roles(user)
 
 
-def _is_desk_user(user: str) -> bool:
+def is_desk_user(user: str) -> bool:
+    """A System User: one who works at the Desk, as opposed to a Website User."""
     return frappe.get_cached_value("User", user, "user_type") == "System User"
 
 
@@ -64,14 +65,23 @@ class FACPage(Document):
             if self.is_new()
             else frappe.db.get_value("FAC Page", self.name, ["slug", "visibility"], as_dict=True)
         )
+        self.drop_audience_when_unshared(stored)
         self.validate_builder(stored)
         self.validate_slug()
         self.validate_slug_unchanged(stored)
         self.validate_slug_free()
 
+    def drop_audience_when_unshared(self, stored):
+        # A personal page opens for its owner alone, whatever its roles or published flag say.
+        # Left in place they would lock the owner out of their own page, and come back live if
+        # it were shared again; sharing again starts from an unpublished page with no roles.
+        if stored and stored.visibility == SHARED and self.visibility != SHARED:
+            self.published = 0
+            self.set("roles", [])
+
     def validate_builder(self, stored):
         user = frappe.session.user
-        if not _is_desk_user(user):
+        if not is_desk_user(user):
             frappe.throw(_("Only Desk users can build pages."))
         if is_system_manager(user):
             return
@@ -116,7 +126,7 @@ def has_permission(doc, ptype: str | None = None, user: str | None = None, debug
     user = user or frappe.session.user
     if is_system_manager(user):
         return True
-    return _is_desk_user(user) and doc.owner == user and doc.visibility == PERSONAL
+    return is_desk_user(user) and doc.owner == user and doc.visibility == PERSONAL
 
 
 def get_permission_query_conditions(user: str | None = None) -> str:

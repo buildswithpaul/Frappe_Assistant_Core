@@ -393,6 +393,29 @@ class TestPersonalFACPage(BaseAssistantTest):
         with self.assertRaises(frappe.ValidationError):
             doc.save(ignore_permissions=True)
 
+    def test_the_owner_edits_their_page_again_once_it_is_unshared(self):
+        user = self._desk_user("fac-page-unshared")
+        name = self._build(user, slug="back-to-me")
+        # Production: a System Manager shares the page, publishes it for a role, then sets it back
+        # to "Only me" in Desk.
+        self._act_as("Administrator")
+        doc = frappe.get_doc("FAC Page", name)
+        doc.visibility = "Shared"
+        doc.published = 1
+        doc.set("roles", [{"role": "Report Manager"}])
+        doc.save()
+        doc.visibility = "Only me"
+        doc.save()
+
+        # A personal page opens for its owner alone, so its audience goes with the sharing.
+        self.assertEqual(frappe.db.get_value("FAC Page", name, "published"), 0)
+        self.assertEqual(frappe.get_all("FAC Page Role", filters={"parent": name}), [])
+        self._act_as(user)
+        doc = frappe.get_doc("FAC Page", name)
+        doc.html = "<p>Mine again</p>"
+        doc.save()
+        self.assertEqual(get_page(name)["html"], "<p>Mine again</p>")
+
     def test_a_peer_given_a_share_cannot_change_the_page(self):
         # A changed script would run in the owner's session the next time they open the page.
         owner = self._desk_user("fac-page-shared-owner")

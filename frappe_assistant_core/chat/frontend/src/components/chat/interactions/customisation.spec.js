@@ -4,6 +4,7 @@ import {
 	conditionNotice,
 	customisationConsequence,
 	fieldPlacementTarget,
+	goesLiveFields,
 	renameNotice,
 	renameKeys,
 	writesCondition,
@@ -256,5 +257,20 @@ describe("renameNotice", () => {
 		expect(renameNotice("update_document", { doctype: "Role", name: "A", data: { disabled: 1 } })).toBeNull();
 		expect(renameNotice("update_document", { doctype: "Role", name: "A", data: { name: "A" } })).toBeNull();
 		expect(renameKeys("update_document", { doctype: "Role", name: "A", data: {} })).toEqual([]);
+	});
+});
+
+describe("goesLiveFields for a FAC Page", () => {
+	const update = (data) => ({ doctype: "FAC Page", name: "my-board-abc123", data });
+	const PAGE_FIELDS = ["html", "script", "style", "roles"];
+
+	it("shows the page's code and roles when an update publishes it or shares it", () => {
+		expect(goesLiveFields("update_document", update({ published: 1 }))).toEqual(PAGE_FIELDS);
+		expect(goesLiveFields("update_document", update({ visibility: "Shared" }))).toEqual(PAGE_FIELDS);
+	});
+
+	it("shows nothing for an update that keeps the page personal and unpublished", () => {
+		expect(goesLiveFields("update_document", update({ visibility: "Only me" }))).toEqual([]);
+		expect(goesLiveFields("update_document", update({ published: 0, html: "<p>x</p>" }))).toEqual([]);
 	});
 });

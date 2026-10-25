@@ -39,7 +39,7 @@ To share a user's personal page, update it with `visibility: "Shared"`, the `rol
     "published": 0,
     "roles": [{"role": "Projects User"}],
     "html": "<div class=\"mk-page\"><div class=\"mk-card\"><table class=\"mk-table\" id=\"tasks\"></table></div></div>",
-    "script": "const esc = (s) => String(s ?? '').replace(/[&<>\"]/g, (c) => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;'})[c]);\nfrappe.db.get_list('Task', {fields: ['name', 'subject', 'status'], limit: 20}).then((rows) => {\n  root_element.querySelector('#tasks').innerHTML = rows.map((r) => `<tr><td>${esc(r.subject)}</td><td>${esc(r.status)}</td></tr>`).join('');\n});",
+    "script": "const esc = frappe.utils.escape_html;\nfrappe.db.get_list('Task', {fields: ['name', 'subject', 'status'], limit: 20}).then((rows) => {\n  root_element.querySelector('#tasks').innerHTML = rows.map((r) => `<tr><td>${esc(r.subject)}</td><td>${esc(r.status)}</td></tr>`).join('');\n});",
     "style": "#tasks td { padding: 4px 8px; }"
   }
 }
@@ -53,7 +53,7 @@ To share a user's personal page, update it with `visibility: "Shared"`, the `rol
 
 ## Gotchas
 
-- Escape record values before putting them into html (`frappe.utils.escape_html` in Desk; the chat panel has no `frappe.utils`, so a page meant for both uses its own helper).
+- Escape record values before putting them into html with `frappe.utils.escape_html`, which works in Desk and in the chat panel.
 - The script runs again on every visit, so guard anything that outlives it. Keep a `setInterval` handle on `root_element` and clear it first, and call `frappe.realtime.off` before `frappe.realtime.on`, or the handlers pile up.
 - A role on the page lets a user open it, not read the data. The script's calls still need that user's permission on each doctype, which is why step 4 checks them.
 

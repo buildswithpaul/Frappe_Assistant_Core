@@ -52,6 +52,12 @@ class TestOmittedClientTypeIsApi(BaseAssistantTest):
         self.assertEqual(messages_mod._effective_client_type(""), "api")
         self.assertEqual(messages_mod._effective_client_type("spa"), "spa")
         self.assertEqual(messages_mod._effective_client_type("widget"), "widget")
+        for known in ("mobile", "api", "raven"):
+            self.assertEqual(messages_mod._effective_client_type(known), known)
+
+    def test_an_unknown_client_type_is_api(self):
+        for unknown in ("SPA", "spa ", "desktop", "browser", 7, ["spa"]):
+            self.assertEqual(messages_mod._effective_client_type(unknown), "api", unknown)
 
     def test_continue_without_a_client_type_is_api(self):
         client_type = self._submitted_client_type(

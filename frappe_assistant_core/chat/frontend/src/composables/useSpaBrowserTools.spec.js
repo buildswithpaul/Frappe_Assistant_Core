@@ -182,6 +182,19 @@ describe("useSpaBrowserTools", () => {
 		expect(results()[0]).toMatchObject({ call_id: "c2", result: { file_url: "/private/files/shot.jpg" } });
 	});
 
+	it("captures nothing when another page was opened while the user decided", async () => {
+		showPage();
+		wrapper = mount(Host);
+		const pending = call("c9");
+		await flushPromises();
+		usePagePanel().open("another-page");
+		showPage();
+		settleConfirm(confirms.value[0], "approve");
+		await pending;
+		expect(h2c.calls).toEqual([]);
+		expect(results()[0].error).toMatch(/Another page was opened/);
+	});
+
 	it("keeps Always Allow to that page in that conversation", async () => {
 		showPage();
 		wrapper = mount(Host);

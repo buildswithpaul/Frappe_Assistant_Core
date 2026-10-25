@@ -554,7 +554,9 @@ def is_doctype_accessible(
     # validate refuse the rest (sharing, publishing, roles, someone else's page) on every write
     # path, so for Desk users this layer hands the decision to them.
     if doctype == "FAC Page":
-        return frappe.get_cached_value("User", user or frappe.session.user, "user_type") == "System User"
+        from frappe_assistant_core.assistant_core.doctype.fac_page.fac_page import is_desk_user
+
+        return is_desk_user(user or frappe.session.user)
 
     return doctype not in WRITE_PROTECTED_DOCTYPES
 

@@ -119,6 +119,16 @@ class TestCheckPlanChanges(BaseAssistantTest):
         )
         self.assertEqual([r["goes_live"] for r in results], [True, True, True])
 
+    def test_an_update_that_shares_a_page_goes_live(self):
+        # Sharing opens a personal page to other people, whatever flag the model sent.
+        results = check_plan_changes(
+            [
+                _change("FAC Page", "update", name="my-board-abc123", visibility="Shared"),
+                _change("FAC Page", "update", name="my-board-abc123", data={"visibility": "Shared"}),
+            ]
+        )
+        self.assertEqual([r["goes_live"] for r in results], [True, True])
+
     def test_non_customisation_entries_keep_their_flag(self):
         [result] = check_plan_changes([_change("ToDo")])
         self.assertFalse(result["goes_live"])
