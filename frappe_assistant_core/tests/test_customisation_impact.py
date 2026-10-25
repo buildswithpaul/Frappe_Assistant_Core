@@ -49,6 +49,8 @@ class TestCustomisationImpact(BaseAssistantTest):
         # Production reaches these when a builder saves a FAC Page as a draft or publishes it.
         cls.draft_page = cls._insert_page("fac-impact-draft", published=0)
         cls.live_page = cls._insert_page("fac-impact-live", published=1)
+        # Production reaches this when a builder publishes a page for one role.
+        cls.shared_page = cls._insert_page("fac-impact-shared", published=1, roles=["System Manager"])
 
     @staticmethod
     def _insert_script(name: str, disabled: int) -> str:
@@ -66,9 +68,16 @@ class TestCustomisationImpact(BaseAssistantTest):
         return doc.name
 
     @staticmethod
-    def _insert_page(slug: str, published: int) -> str:
+    def _insert_page(slug: str, published: int, roles: list | None = None) -> str:
         doc = frappe.get_doc(
-            {"doctype": "FAC Page", "title": slug, "slug": slug, "published": published, "html": "<p>x</p>"}
+            {
+                "doctype": "FAC Page",
+                "title": slug,
+                "slug": slug,
+                "published": published,
+                "html": "<p>x</p>",
+                "roles": [{"role": role} for role in roles or []],
+            }
         )
         doc.insert(ignore_permissions=True)
         return doc.name
@@ -203,6 +212,20 @@ class TestCustomisationImpact(BaseAssistantTest):
             _impact("delete_document", "Server Script", name=self.on_script),
         ):
             self.assertIs(result["changes_live_code"], False, result["reason"])
+
+    def test_changing_a_published_pages_roles_is_a_live_change(self):
+        for roles in ([{"role": "System Manager"}, {"role": "Guest"}], [], [{"role": "Guest"}], "Guest"):
+            r = _impact("update_document", "FAC Page", {"roles": roles}, self.shared_page)
+            self.assertTrue(r["changes_live_code"], roles)
+
+    def test_the_same_role_set_or_a_draft_pages_roles_are_not_a_live_change(self):
+        same = _impact(
+            "update_document", "FAC Page", {"roles": [{"role": "System Manager"}]}, self.shared_page
+        )
+        as_names = _impact("update_document", "FAC Page", {"roles": ["System Manager"]}, self.shared_page)
+        draft = _impact("update_document", "FAC Page", {"roles": [{"role": "Guest"}]}, self.draft_page)
+        for result in (same, as_names, draft):
+            self.assertIs(result["changes_live_code"], False)
 
     def test_code_of_an_always_live_doctype_changes_live_code(self):
         stored = {"name": "Margins", "report_type": "Script Report", "report_script": "old", "query": ""}

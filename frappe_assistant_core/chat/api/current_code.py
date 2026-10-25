@@ -29,8 +29,11 @@ CODE_KEYS = (
 # Not code on every card, but run once an update switches the record on, so the card shows the
 # stored value: a Notification's subject is a Jinja template rendered into the email it sends,
 # and a FAC Page's style is applied to the page once it is published. A FAC Page's roles say who
-# it goes live to. Mirrored in customisation.js (SWITCHED_CODE).
-GO_LIVE_KEYS = ("subject", "style", "roles")
+# it goes live to. Keyed by the doctype each belongs to, since another doctype's field of the same
+# name may be no code at all (a Workflow State's style is a colour); utils/customisation.py reads
+# the same map. Mirrored in customisation.js (SWITCHED_CODE).
+GO_LIVE_KEYS_BY_DOCTYPE = {"Notification": ("subject",), "FAC Page": ("style", "roles")}
+GO_LIVE_KEYS = tuple(key for keys in GO_LIVE_KEYS_BY_DOCTYPE.values() for key in keys)
 
 # Child tables among GO_LIVE_KEYS, and the column each returns, one value per row.
 TABLE_COLUMNS = {"roles": "role"}

@@ -31,7 +31,7 @@ from frappe import _
 from frappe.model.meta import Meta
 from frappe.utils import cint, get_url, get_url_to_form
 
-from frappe_assistant_core.chat.api.current_code import CODE_KEYS
+from frappe_assistant_core.chat.api.current_code import CODE_KEYS, GO_LIVE_KEYS_BY_DOCTYPE, TABLE_COLUMNS
 
 CUSTOMISATION_DOCTYPES = frozenset(
     {
@@ -64,10 +64,6 @@ _SWITCH_FIELDS = {
 }
 
 _WRITE_TOOLS = frozenset({"create_document", "update_document", "delete_document"})
-
-# Fields that run besides the shared CODE_KEYS, per doctype: a FAC Page's style is applied to the
-# page, and a Notification's subject is a Jinja template rendered into the email it sends.
-_DOCTYPE_CODE_KEYS = {"FAC Page": ("style",), "Notification": ("subject",)}
 
 APPLIES_TO_FIELDS = {
     "Custom Field": "dt",
@@ -284,7 +280,8 @@ def customisation_impact(tool_name: str, tool_input: Any) -> Dict[str, Any]:
     a page or moving a field onto a live DocType is live, and any doubt counts as live.
     ``switches_on`` is true when the write turns a ``_SWITCH_FIELDS`` record from off to on,
     including a create saved switched on. ``changes_live_code`` is true when an update changes a
-    code field of a record that is live before and after the write. FAC Cloud shows its card for
+    code field (CODE_KEYS) or a go-live field (GO_LIVE_KEYS_BY_DOCTYPE, such as a FAC Page's
+    roles, compared as a set) of a record that is live before and after the write. FAC Cloud shows its card for
     either even when an approved build plan lists the write, so the user sees the final code.
     Never writes. The reason is plain words for logs and never repeats stored values.
     """
@@ -294,10 +291,34 @@ def customisation_impact(tool_name: str, tool_input: Any) -> Dict[str, Any]:
     return result
 
 
-def _changes_code(doctype: str, data: Dict[str, Any], stored: Dict[str, Any]) -> bool:
-    """Whether ``data`` gives any code field of ``doctype`` a value other than the stored one."""
-    fields = CODE_KEYS + _DOCTYPE_CODE_KEYS.get(doctype, ())
-    return any(field in data and (data[field] or "") != (stored.get(field) or "") for field in fields)
+def _row_values(rows: Any, column: str) -> Optional[frozenset]:
+    """The set of ``column`` values in sent child rows (dicts or bare values); None if not a list."""
+    if not isinstance(rows, list):
+        return None
+    return frozenset(row.get(column) if isinstance(row, dict) else row for row in rows)
+
+
+def _changes_live_fields(doctype: str, data: Dict[str, Any], stored: Dict[str, Any]) -> bool:
+    """Whether ``data`` gives a code or go-live field of ``doctype`` a value other than the stored one.
+
+    A child table is compared as the set of its rows' values, so reordering rows is no change and
+    rows that cannot be read count as one.
+    """
+    for field in CODE_KEYS + GO_LIVE_KEYS_BY_DOCTYPE.get(doctype, ()):
+        if field not in data:
+            continue
+        if field in TABLE_COLUMNS:
+            column = TABLE_COLUMNS[field]
+            current = frappe.get_all(
+                frappe.get_meta(doctype).get_field(field).options,
+                filters={"parent": stored.get("name"), "parenttype": doctype, "parentfield": field},
+                pluck=column,
+            )
+            if _row_values(data[field], column) != frozenset(current):
+                return True
+        elif (data[field] or "") != (stored.get(field) or ""):
+            return True
+    return False
 
 
 def _dormancy(tool_name: str, tool_input: Any) -> Dict[str, Any]:
@@ -339,7 +360,7 @@ def _dormancy(tool_name: str, tool_input: Any) -> Dict[str, Any]:
             "dormant": False,
             "reason": f"{doctype} is switched on",
             "switches_on": stored_off,
-            "changes_live_code": stays_on and _changes_code(doctype, data, stored),
+            "changes_live_code": stays_on and _changes_live_fields(doctype, data, stored),
         }
 
     if doctype == "DocType":
@@ -370,7 +391,7 @@ def _dormancy(tool_name: str, tool_input: Any) -> Dict[str, Any]:
     return {
         "dormant": False,
         "reason": f"{doctype} changes always count",
-        "changes_live_code": not creating and _changes_code(doctype, data, stored),
+        "changes_live_code": not creating and _changes_live_fields(doctype, data, stored),
     }
 
 
