@@ -227,6 +227,48 @@ class TestCustomisationImpact(BaseAssistantTest):
         for result in (same, as_names, draft):
             self.assertIs(result["changes_live_code"], False)
 
+    def test_creating_an_always_live_record_with_code_changes_live_code(self):
+        for doctype, data in (
+            (
+                "Report",
+                {"report_name": "Margins", "report_type": "Script Report", "report_script": "data = []"},
+            ),
+            ("Report", {"report_name": "Margins", "report_type": "Query Report", "query": "select 1"}),
+            (
+                "Print Format",
+                {"name": "Invoice", "doc_type": "Sales Invoice", "html": "<p>{{ doc.name }}</p>"},
+            ),
+        ):
+            r = _impact("create_document", doctype, data)
+            self.assertTrue(r["changes_live_code"], data)
+            self.assertIs(r["switches_on"], False, data)
+
+    def test_creating_an_always_live_record_without_code_does_not_change_live_code(self):
+        for doctype, data in (
+            ("Report", {"report_name": "Open tasks", "report_type": "Report Builder", "ref_doctype": "ToDo"}),
+            ("Report", {"report_name": "Margins", "report_script": "", "query": "   "}),
+            ("Role", {"role_name": "Planner"}),
+            ("Workflow State", {"workflow_state_name": "Checked", "style": "Success"}),
+        ):
+            self.assertIs(_impact("create_document", doctype, data)["changes_live_code"], False, data)
+
+    def test_changing_a_reports_roles_is_a_live_change(self):
+        # Production reaches this when a builder saves a Report Builder report for one role.
+        report = frappe.get_doc(
+            {
+                "doctype": "Report",
+                "report_name": "FAC Impact Open Tasks",
+                "ref_doctype": "ToDo",
+                "report_type": "Report Builder",
+                "is_standard": "No",
+                "roles": [{"role": "System Manager"}],
+            }
+        ).insert(ignore_permissions=True)
+        widened = _impact("update_document", "Report", {"roles": [{"role": "Guest"}]}, report.name)
+        same = _impact("update_document", "Report", {"roles": [{"role": "System Manager"}]}, report.name)
+        self.assertTrue(widened["changes_live_code"])
+        self.assertIs(same["changes_live_code"], False)
+
     def test_code_of_an_always_live_doctype_changes_live_code(self):
         stored = {"name": "Margins", "report_type": "Script Report", "report_script": "old", "query": ""}
         with patch(STORED_RECORD, autospec=True, return_value=stored):

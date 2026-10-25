@@ -280,8 +280,9 @@ def customisation_impact(tool_name: str, tool_input: Any) -> Dict[str, Any]:
     a page or moving a field onto a live DocType is live, and any doubt counts as live.
     ``switches_on`` is true when the write turns a ``_SWITCH_FIELDS`` record from off to on,
     including a create saved switched on. ``changes_live_code`` is true when an update changes a
-    code field (CODE_KEYS) or a go-live field (GO_LIVE_KEYS_BY_DOCTYPE, such as a FAC Page's
-    roles, compared as a set) of a record that is live before and after the write. FAC Cloud shows its card for
+    code field (CODE_KEYS) or a go-live field (GO_LIVE_KEYS_BY_DOCTYPE, such as a FAC Page's or a
+    Report's roles, compared as a set) of a record that is live before and after the write, and
+    when a create of a doctype without a switch (a Report, a Print Format) carries code. FAC Cloud shows its card for
     either even when an approved build plan lists the write, so the user sees the final code.
     Never writes. The reason is plain words for logs and never repeats stored values.
     """
@@ -296,6 +297,14 @@ def _row_values(rows: Any, column: str) -> Optional[frozenset]:
     if not isinstance(rows, list):
         return None
     return frozenset(row.get(column) if isinstance(row, dict) else row for row in rows)
+
+
+def _carries_code(data: Dict[str, Any]) -> bool:
+    """Whether a create sets any CODE_KEYS field to something other than blank text."""
+    return any(
+        data.get(field) and not (isinstance(data[field], str) and not data[field].strip())
+        for field in CODE_KEYS
+    )
 
 
 def _changes_live_fields(doctype: str, data: Dict[str, Any], stored: Dict[str, Any]) -> bool:
@@ -391,7 +400,7 @@ def _dormancy(tool_name: str, tool_input: Any) -> Dict[str, Any]:
     return {
         "dormant": False,
         "reason": f"{doctype} changes always count",
-        "changes_live_code": not creating and _changes_live_fields(doctype, data, stored),
+        "changes_live_code": _carries_code(data) if creating else _changes_live_fields(doctype, data, stored),
     }
 
 
