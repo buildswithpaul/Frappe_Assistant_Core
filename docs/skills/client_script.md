@@ -21,8 +21,14 @@ Adds behaviour to a form in the browser, such as "when the customer changes, fil
 3. **Say where it is enforced.** `depends_on`, `mandatory_depends_on` and Client Scripts are checked in the Desk form only. They do not run on import, through the API or on FACO's own writes. Tell the user this before they rely on it, and offer a Server Script if the rule must always hold. Never claim a protection the mechanism cannot enforce.
 4. **List what already exists**: `list_documents` on `Client Script` with `dt` set to the doctype. Two scripts on the same form event can fight. Offer to change an existing one instead of adding another.
 5. **Show the full code** in a fenced block, then explain in plain words what it does and when it runs.
-6. **Create it with `enabled: 0`**, which does nothing yet. Show what it will do and ask the user whether to go ahead. Only after they say yes, update it with `enabled: 1`. Then straight away ask them to try it on a draft or test document (say exactly what to do), and offer to switch it off again if it misbehaves.
+6. **Create it with `enabled: 0`**, which does nothing yet. Show what it will do and ask the user whether to go ahead. Only after they say yes, update it with `enabled: 1`. Then straight away look at it yourself first with the browser tools (see "Checking it after you switch it on"), then ask them to try it on a draft or test document (say exactly what to do), and offer to switch it off again if it misbehaves.
 7. **Link the result**: the new record and the form where the change shows (`applies_to.url` on the create result). Say the user needs to reload the form.
+
+## Checking it after you switch it on
+
+Once the script is switched on, open the form or page it changes (`browser_navigate_to`) and look at it with `browser_take_screenshot`. If something looks wrong or nothing changed, use `browser_capture_diagnostics` for the page's console errors and failed requests. Do not ask the user to describe the page when you can look.
+
+Each capture asks the user first. The card has an "Allow on this page in this chat" choice: it stops the questions for that tool on that page for the rest of this chat. Mention it so the user is not asked on every capture. "Always Allow" covers the tool on every page, so do not recommend it.
 
 ## Reference
 
@@ -53,7 +59,7 @@ propose a build plan first, as the `setup-change-protocol` skill describes.
 - **Name records by what they do, never by a value that may change (no limits, percentages or dates in names):** 'Discount limit on Sales Invoice submit', not 'Block discount above 15%'. Changing a value never needs a rename. The update tool cannot rename a record; if the user wants a different name, tell them to use Rename from the record's menu in Desk.
 - **A broken script breaks the form** for everyone until it is switched off. That is why it starts switched off and is switched on only with the user's go-ahead.
 - A Client Script on a child table row needs the child doctype's own handler, not the parent's.
-- The approval card appears for every customisation write unless the write is on an approved build plan, and "Don't ask again" never applies to one. That is intended.
+- The approval card appears for every customisation write that has an effect, unless the write is on an approved build plan, and "Don't ask again" never applies to one. Edits to a script that is switched off need no card; switching it on, or changing a live one, asks. That is intended.
 
 ## Anti-patterns
 
