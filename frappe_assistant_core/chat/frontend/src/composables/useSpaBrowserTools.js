@@ -4,6 +4,7 @@ import { baseCall } from "@/api/_core";
 import { chat } from "@/api/domains/chat";
 import { onSpaSocketEvent } from "@/composables/useStreaming";
 import { usePagePanel } from "@/composables/usePagePanel";
+import { useChatStore } from "@/stores/chatStore";
 import { createDispatcher } from "@/utils/browserToolDispatch";
 import { __ } from "@/utils/i18n";
 import { logger } from "@/utils/logger";
@@ -14,6 +15,10 @@ const loadHtml2canvas = () => import("html2canvas-pro").then((m) => m.default ||
 // The same bounds as the Desk widget's capture (widget/desk/browserTools.js).
 const MAX_SCREENSHOT_SCALE = 1.5;
 const SCREENSHOT_IMAGE_TIMEOUT_MS = 3000;
+// How long a capture waits for a write to the open page to land and redraw.
+const PAGE_SETTLE_TIMEOUT_MS = 10000;
+// The client_type the chat app sends with its turns (api/domains/chat.js).
+const SPA_CLIENT_TYPE = "spa";
 
 /** Why the open page cannot be captured, or null when it can. */
 function pageProblem() {
@@ -28,9 +33,18 @@ function pageProblem() {
  * `selector` and `full_page` do not apply.
  */
 export async function takePageScreenshot(params = {}) {
+	const panel = usePagePanel();
 	const problem = pageProblem();
 	if (problem) return { error: problem };
-	const view = usePagePanel().pageView.value;
+	// A capture right after a change must show the new version: wait for the write to land and
+	// the page to redraw, then for the frame to paint.
+	if (!(await panel.whenPageSettled(PAGE_SETTLE_TIMEOUT_MS))) {
+		return { error: __("The page is still updating. Try again in a moment.") };
+	}
+	await new Promise((resolve) => requestAnimationFrame(() => resolve()));
+	const settledProblem = pageProblem();
+	if (settledProblem) return { error: settledProblem };
+	const view = panel.pageView.value;
 	try {
 		const html2canvas = await loadHtml2canvas();
 		const canvas = await html2canvas(view.element, {
@@ -44,7 +58,7 @@ export async function takePageScreenshot(params = {}) {
 		const size = { width: canvas.width, height: canvas.height };
 		const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", (params.quality || 80) / 100));
 		// A canvas past the browser's maximum size encodes to null.
-		if (!blob) return { error: "Screenshot too large to encode.", ...size };
+		if (!blob) return { error: __("Screenshot too large to encode."), ...size };
 
 		const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
 		const file = new File([blob], `page_screenshot_${timestamp}.jpg`, { type: "image/jpeg" });
@@ -58,34 +72,43 @@ export async function takePageScreenshot(params = {}) {
 		};
 	} catch (error) {
 		logger.error("Page screenshot failed:", error);
-		return { error: `Screenshot failed: ${error.message}` };
+		return { error: __("Screenshot failed: {0}", [error.message]) };
 	}
 }
 
+const pageCopy = () => ({
+	action: __("Look at the page"),
+	detail: __(
+		"FACO wants to look at the page open beside the chat and send a picture of it to the assistant. It may contain any data the page shows.",
+	),
+});
+
 /**
  * Let FACO look at the page open in the side panel. Calls arrive on the SPA socket, which sits in
- * the conversation's task_progress room; each screenshot asks the user first.
+ * the conversation's task_progress room; each screenshot asks the user first, and "Always Allow"
+ * covers that page in that conversation only.
  *
  * @param {{getSessionId: () => string|null}} options
  */
 export function useSpaBrowserTools({ getSessionId }) {
-	// A call without a session went to every tab of the user (an older AR); a Desk widget may hold it.
-	const onSessionCall = (event, fn) => onSpaSocketEvent(event, (data) => (data?.session_id ? fn(data) : undefined));
 	const dispatcher = createDispatcher({
-		transport: { on: onSessionCall, call: baseCall },
+		transport: { on: onSpaSocketEvent, call: baseCall },
 		handlers: { take_screenshot: takePageScreenshot },
+		// The chat app's turns only; an older AR names no client and never offers the chat app a tool.
+		ownsCall: (call) => call?.client_type === SPA_CLIENT_TYPE && useChatStore().isOwnLiveTurn(call.session_id),
+		// The widget's other tools may reach this room; they are the widget's to answer.
+		ignoreUnknownTools: true,
 		confirmTools: new Set(["take_screenshot"]),
+		trustKey: (toolName) => `${getSessionId()}|${usePagePanel().openName.value}|${toolName}`,
 		describe: () => __("The page open beside the chat"),
 		// With nothing to capture, answer at once rather than ask the user to approve nothing.
 		preflight: pageProblem,
-		confirm: askConfirm,
+		confirm: (request) => askConfirm({ ...request, copy: pageCopy() }),
 		getSessionId,
 	});
 
-	onMounted(() => {
-		dispatcher.start();
-		// Without a conversation the drain would empty the user's shared queue instead.
-		if (getSessionId()) dispatcher.drainPending();
-	});
+	// No drain of the pending queue: the socket is in the room before this tab sends a turn, and
+	// draining would take calls queued for a Desk widget.
+	onMounted(() => dispatcher.start());
 	onBeforeUnmount(() => dispatcher.stop());
 }

@@ -131,6 +131,7 @@ def send_browser_tool_call(
     tool_name: str,
     params: dict[str, Any],
     session_id: str | None = None,
+    client_type: str | None = None,
 ) -> None:
     """
     Send a browser tool call request to the FACO widget.
@@ -147,6 +148,8 @@ def send_browser_tool_call(
         session_id: Conversation the call belongs to. Absent (older AR that does
             not send the session header) delivery falls back to the user room,
             which every tab of that user receives.
+        client_type: The client whose turn asked (widget, spa). The widget and the chat app can
+            hold the same conversation, so each answers only its own. None from an older AR.
     """
     # Record ownership first so submit_browser_tool_result can enforce it.
     _remember_call_owner(call_id, user)
@@ -158,6 +161,7 @@ def send_browser_tool_call(
             "tool_name": tool_name,
             "params": params,
             "session_id": session_id,
+            "client_type": client_type,
             "created_at": time.time(),
         }
     )
@@ -176,6 +180,7 @@ def send_browser_tool_call(
         "tool_name": tool_name,
         "params": params,
         "session_id": session_id,
+        "client_type": client_type,
     }
     if session_id:
         frappe.publish_realtime(

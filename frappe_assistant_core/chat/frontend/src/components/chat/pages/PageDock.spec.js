@@ -87,4 +87,14 @@ describe("PageDock", () => {
 		await expect(decision).resolves.toBe("deny");
 		expect(confirms.value).toEqual([]);
 	});
+
+	it("denies a card still open when it unmounts", async () => {
+		const w = mountDock();
+		usePagePanel().open("sales-a1b2c3");
+		await flushPromises();
+		const decision = askConfirm({ tool_name: "take_screenshot", params: {}, description: "" });
+		w.unmount();
+		wrapper = null;
+		await expect(decision).resolves.toBe("deny");
+	});
 });

@@ -183,6 +183,40 @@ describe("createDispatcher", () => {
 		expect(t.unsubscribe).toHaveBeenCalledTimes(1);
 	});
 
+	it("leaves a call it does not own alone: no ack, no prompt, no result", async () => {
+		const t = setup({ ownsCall: (call) => call.client_type === "spa" });
+		await t.dispatcher.handle(shot("w1", { client_type: "widget" }));
+		expect(t.calls).toEqual([]);
+		await t.dispatcher.handle(shot("w2", { client_type: "spa" }));
+		expect(t.handlers.take_screenshot).toHaveBeenCalledTimes(1);
+	});
+
+	it("can leave a tool it has no handler for unanswered", async () => {
+		const t = setup({ ignoreUnknownTools: true });
+		await t.dispatcher.handle({ call_id: "u1", tool_name: "get_form_data", params: {} });
+		expect(t.calls).toEqual([]);
+	});
+
+	it("scopes Always Allow by its trust key", async () => {
+		let page = "a";
+		const t = setup({ confirm: async () => "trust", trustKey: (tool) => `${page}|${tool}` });
+		await t.dispatcher.handle(shot("k1"));
+		await t.dispatcher.handle(shot("k2"));
+		page = "b";
+		await t.dispatcher.handle(shot("k3"));
+		expect(t.sequence().filter((s) => s === "awaiting_user")).toHaveLength(2);
+	});
+
+	it("denies a confirmation still open when it stops", async () => {
+		const t = setup({ confirm: () => new Promise(() => {}) });
+		const pending = t.dispatcher.handle(shot("s1"));
+		await Promise.resolve();
+		t.dispatcher.stop();
+		await pending;
+		expect(t.handlers.take_screenshot).not.toHaveBeenCalled();
+		expect(t.submits()[0].args.error).toMatch(DECLINED);
+	});
+
 	it("drains this session's pending calls", async () => {
 		const t = setup({ pending: [shot("q1"), shot("q2")] });
 		await t.dispatcher.drainPending();

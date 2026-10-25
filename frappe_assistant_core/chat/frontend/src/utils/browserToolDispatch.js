@@ -45,6 +45,13 @@ const DEDUPE_WINDOW_MS = 60000;
  * @param {(toolName: string, params: object) => string} [options.describe] a short summary for the card.
  * @param {(toolName: string, params: object) => string|null} [options.preflight] an error to answer with
  *   before asking the user, when the tool cannot run at all.
+ * @param {(call: object) => boolean} [options.ownsCall] whether this client asked for the call. The widget
+ *   and the chat app can hold the same conversation and share its room; a call this client does not
+ *   own is left alone, with no ack and no result, for the client that does.
+ * @param {boolean} [options.ignoreUnknownTools] leave a call for a tool with no handler unanswered,
+ *   rather than answer it with an error; for a client that runs only some of the tools.
+ * @param {(toolName: string, params: object) => string} [options.trustKey] what "Always Allow" covers;
+ *   the tool by default.
  */
 export function createDispatcher({
 	transport,
@@ -54,12 +61,17 @@ export function createDispatcher({
 	confirmTools = new Set(),
 	describe = () => "",
 	preflight = () => null,
+	ownsCall = () => true,
+	ignoreUnknownTools = false,
+	trustKey = (toolName) => toolName,
 	retries = 3,
 	retryDelayMs = 500,
 }) {
 	const processed = new Set();
 	// "Always Allow" lasts as long as this dispatcher: a reload forgets it.
 	const trusted = new Set();
+	// Settles each confirmation still open when the dispatcher stops.
+	const openAsks = new Set();
 	let listening = false;
 	let unsubscribe = null;
 
@@ -90,17 +102,23 @@ export function createDispatcher({
 		}
 	}
 
-	async function askUser(tool_name, params) {
+	async function askUser(tool_name, params, key) {
 		let decision;
+		let settleOnStop;
+		const stopped = new Promise((resolve) => (settleOnStop = () => resolve("deny")));
+		openAsks.add(settleOnStop);
 		try {
-			decision = await confirm({ tool_name, params, description: describe(tool_name, params) });
+			const asked = confirm({ tool_name, params, description: describe(tool_name, params) });
+			decision = await Promise.race([asked, stopped]);
 		} catch (e) {
 			// A broken prompt must never read as consent.
 			logger.warn("Confirmation failed; denying tool call by default.", e);
 			return "deny";
+		} finally {
+			openAsks.delete(settleOnStop);
 		}
 		if (decision !== "approve" && decision !== "trust") return "deny";
-		if (decision === "trust") trusted.add(tool_name);
+		if (decision === "trust") trusted.add(key);
 		return decision;
 	}
 
@@ -112,6 +130,8 @@ export function createDispatcher({
 		// page. The task_progress room is the primary filter, this is defence in depth.
 		const sid = getSessionId();
 		if (data?.session_id && sid && data.session_id !== sid) return;
+		if (!ownsCall(data)) return;
+		if (ignoreUnknownTools && !handlers[tool_name]) return;
 
 		if (processed.has(call_id)) return;
 		processed.add(call_id);
@@ -131,10 +151,11 @@ export function createDispatcher({
 				await submit(call_id, null, blocked);
 				return;
 			}
-			if (confirmTools.has(tool_name) && !trusted.has(tool_name)) {
+			const key = trustKey(tool_name, params);
+			if (confirmTools.has(tool_name) && !trusted.has(key)) {
 				// The server suspends its short delivery deadline while a human decides.
 				reportProgress(call_id, "awaiting_user");
-				if ((await askUser(tool_name, params)) === "deny") {
+				if ((await askUser(tool_name, params, key)) === "deny") {
 					await submit(call_id, null, DECLINED_ERROR);
 					return;
 				}
@@ -167,7 +188,9 @@ export function createDispatcher({
 		unsubscribe = typeof off === "function" ? off : null;
 	}
 
+	/** Stop listening, and deny any confirmation still open: nobody is left to answer it. */
 	function stop() {
+		openAsks.forEach((settle) => settle());
 		listening = false;
 		if (unsubscribe) unsubscribe();
 		unsubscribe = null;

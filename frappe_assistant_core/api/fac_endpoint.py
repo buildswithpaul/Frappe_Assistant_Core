@@ -413,6 +413,9 @@ def handle_mcp():
     # read it to reach the one tab that asked; absent, they fall back to the
     # user room (every tab).
     frappe.local.ar_session_id = frappe.request.headers.get("X-AR-Session-Id") or None
+    # The client whose turn it is: the widget and the chat app can share a conversation, and each
+    # answers only its own browser tool calls.
+    frappe.local.ar_client_type = frappe.request.headers.get("X-AR-Client-Type") or None
 
     # Check if user has assistant access enabled
     if not _check_assistant_enabled(authenticated_user):

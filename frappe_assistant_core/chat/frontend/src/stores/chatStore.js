@@ -1109,6 +1109,22 @@ export const useChatStore = defineStore("chat", () => {
 		streamingMessage.value = "";
 	}
 
+	/**
+	 * Whether this tab sent the live turn of `sessionId`. Another tab, or the Desk widget, can hold
+	 * the same conversation and see its stream; a request it makes back is only this tab's to answer
+	 * when this tab asked.
+	 */
+	function isOwnLiveTurn(sessionId) {
+		const last = messages.value[messages.value.length - 1];
+		return (
+			currentSessionId.value === sessionId &&
+			last?.role === "assistant" &&
+			Boolean(last.isStreaming) &&
+			Boolean(streamRequestId.value) &&
+			last._requestId === streamRequestId.value
+		);
+	}
+
 	return {
 		// State
 		sessions,
@@ -1176,6 +1192,7 @@ export const useChatStore = defineStore("chat", () => {
 		setStreamDispatcher,
 		admitStreamEvent,
 		recoverLiveTurn,
+		isOwnLiveTurn,
 		clearSocketError: stream.clearSocketError,
 		// Block-based message actions (delegated)
 		handlePlanEvent: blocks.handlePlanEvent,

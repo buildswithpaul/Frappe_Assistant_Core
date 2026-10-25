@@ -142,7 +142,10 @@ describe("PageView", () => {
 
 	it("offers its page element to FACO's screenshot, and withdraws it on unmount", () => {
 		const w = mountView(published);
-		expect(usePagePanel().pageView.value).toEqual({ element: w.find(".page-view-host").element, draft: false });
+		expect(usePagePanel().pageView.value).toMatchObject({
+			element: w.find(".page-view-host").element,
+			draft: false,
+		});
 		w.unmount();
 		wrapper = null;
 		expect(usePagePanel().pageView.value).toBe(null);
@@ -150,6 +153,6 @@ describe("PageView", () => {
 
 	it("marks a draft's frame, which cannot be captured", () => {
 		const w = mountView({ ...published, draft: true });
-		expect(usePagePanel().pageView.value).toEqual({ element: w.find("iframe").element, draft: true });
+		expect(usePagePanel().pageView.value).toMatchObject({ element: w.find("iframe").element, draft: true });
 	});
 });

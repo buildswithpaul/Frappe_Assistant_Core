@@ -34,9 +34,11 @@ const props = defineProps({
 });
 defineEmits(["decide"]);
 
-// The tool name and params come from the model: rendered as text only, never as HTML.
+// The tool name and params come from the model: rendered as text only, never as HTML. A host
+// whose tool does something narrower (the chat app's page screenshot) brings its own copy.
 const copy = computed(
 	() =>
+		props.request.copy ||
 		TOOL_CONFIRMATION_COPY[props.request.tool_name] || {
 			action: t("Run browser tool"),
 			detail: `The AI wants to run the \`${props.request.tool_name}\` browser tool.`,

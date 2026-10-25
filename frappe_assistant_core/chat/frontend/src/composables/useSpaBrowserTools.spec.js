@@ -24,6 +24,12 @@ vi.mock("@/composables/useStreaming", () => ({
 	},
 }));
 
+// chatStore.isOwnLiveTurn has its own spec; here it says whether this tab sent the live turn.
+const store = vi.hoisted(() => ({ ownsTurn: true }));
+vi.mock("@/stores/chatStore", () => ({
+	useChatStore: () => ({ isOwnLiveTurn: () => store.ownsTurn }),
+}));
+
 import { RESULT_METHOD } from "@/utils/browserToolDispatch";
 import { confirms, resetConfirms, settleConfirm } from "@/widget/panel/confirmQueue";
 import { usePagePanel } from "./usePagePanel";
@@ -34,8 +40,10 @@ const NO_PAGE = "No page is open in the panel.";
 let hide = () => {};
 let wrapper;
 let pageElement;
+let session = "s1";
 
 function showPage({ draft = false } = {}) {
+	hide();
 	pageElement = document.createElement(draft ? "iframe" : "div");
 	hide = usePagePanel().showPageView({ element: pageElement, draft });
 }
@@ -43,12 +51,17 @@ function showPage({ draft = false } = {}) {
 beforeEach(() => {
 	h2c.calls = [];
 	baseCall.mockClear();
+	store.ownsTurn = true;
+	session = "s1";
+	usePagePanel().open("sales-a1b2c3");
 	uploadFile.mockReset().mockResolvedValue({ file_url: "/private/files/shot.jpg", file_name: "shot.jpg" });
 });
 afterEach(() => {
 	hide();
+	hide = () => {};
 	wrapper?.unmount();
 	wrapper = null;
+	usePagePanel().close();
 	resetConfirms();
 });
 
@@ -91,17 +104,40 @@ describe("takePageScreenshot", () => {
 		uploadFile.mockRejectedValue(new Error("too big"));
 		expect((await takePageScreenshot({})).error).toMatch(/too big/);
 	});
+
+	it("waits for a write that landed to redraw the page, then captures the new version", async () => {
+		showPage();
+		// usePagePanel bumps refreshKey when a write to the open page lands; PagePanel then refetches
+		// and mounts a new PageView.
+		usePagePanel().refreshKey.value++;
+		const shot = takePageScreenshot({});
+		// Longer than the animation frame a settled page waits for.
+		await new Promise((resolve) => setTimeout(resolve, 60));
+		expect(h2c.calls).toEqual([]);
+
+		showPage();
+		await shot;
+		expect(h2c.calls).toHaveLength(1);
+		expect(h2c.calls[0].el).toBe(pageElement);
+	});
 });
 
 describe("useSpaBrowserTools", () => {
 	const Host = defineComponent({
 		setup() {
-			useSpaBrowserTools({ getSessionId: () => "s1" });
+			useSpaBrowserTools({ getSessionId: () => session });
 			return () => h("div");
 		},
 	});
-	const call = (call_id) =>
-		socket.listeners.faco_browser_tool_call({ call_id, session_id: "s1", tool_name: "take_screenshot", params: {} });
+	const call = (call_id, extra = {}) =>
+		socket.listeners.faco_browser_tool_call({
+			call_id,
+			session_id: session,
+			client_type: "spa",
+			tool_name: "take_screenshot",
+			params: {},
+			...extra,
+		});
 	const results = () => baseCall.mock.calls.filter(([method]) => method === RESULT_METHOD).map(([, args]) => args);
 
 	it("answers at once, without asking, when no page is open", async () => {
@@ -119,21 +155,25 @@ describe("useSpaBrowserTools", () => {
 		expect(results()[0].error).toMatch(/draft/i);
 	});
 
-	it("leaves a call without a session to the Desk widget", async () => {
+	it("leaves the widget's calls, another tab's turn and tools it lacks alone, and drains nothing", async () => {
+		showPage();
 		wrapper = mount(Host);
-		await socket.listeners.faco_browser_tool_call({ call_id: "c4", tool_name: "take_screenshot", params: {} });
-		expect(baseCall.mock.calls.map(([method]) => method.split(".").pop())).toEqual([
-			"get_pending_browser_tool_calls",
-		]);
+		await call("c4", { client_type: "widget" });
+		await call("c5", { client_type: undefined });
+		await call("c6", { tool_name: "get_page_context" });
+		store.ownsTurn = false;
+		await call("c7");
+		expect(baseCall).not.toHaveBeenCalled();
+		expect(confirms.value).toEqual([]);
 	});
 
-	it("asks first, then captures the open page once the user approves", async () => {
+	it("asks first, in its own words, then captures the open page once the user approves", async () => {
 		showPage();
 		wrapper = mount(Host);
 		const pending = call("c2");
 		await flushPromises();
 		expect(confirms.value).toHaveLength(1);
-		expect(confirms.value[0].request.tool_name).toBe("take_screenshot");
+		expect(confirms.value[0].request.copy.detail).toMatch(/page open beside the chat/);
 		expect(uploadFile).not.toHaveBeenCalled();
 
 		settleConfirm(confirms.value[0], "approve");
@@ -142,11 +182,39 @@ describe("useSpaBrowserTools", () => {
 		expect(results()[0]).toMatchObject({ call_id: "c2", result: { file_url: "/private/files/shot.jpg" } });
 	});
 
-	it("stops listening when its host unmounts", () => {
+	it("keeps Always Allow to that page in that conversation", async () => {
+		showPage();
 		wrapper = mount(Host);
-		expect(socket.listeners.faco_browser_tool_call).toBeTypeOf("function");
+		const trustOnce = async (id) => {
+			const pending = call(id);
+			await flushPromises();
+			if (confirms.value.length) settleConfirm(confirms.value[0], "trust");
+			await pending;
+		};
+		const asked = () => baseCall.mock.calls.filter(([, args]) => args?.state === "awaiting_user").length;
+
+		await trustOnce("t1");
+		await trustOnce("t2");
+		expect(asked()).toBe(1);
+
+		usePagePanel().open("another-page");
+		await trustOnce("t3");
+		expect(asked()).toBe(2);
+
+		session = "s2";
+		await trustOnce("t4");
+		expect(asked()).toBe(3);
+	});
+
+	it("denies a card still open when its host unmounts, and stops listening", async () => {
+		showPage();
+		wrapper = mount(Host);
+		const pending = call("c8");
+		await flushPromises();
 		wrapper.unmount();
 		wrapper = null;
+		await pending;
+		expect(results()[0].error).toMatch(/declined/);
 		expect(socket.listeners.faco_browser_tool_call).toBeUndefined();
 	});
 });

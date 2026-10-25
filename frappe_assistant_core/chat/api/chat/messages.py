@@ -80,6 +80,13 @@ def _effective_model_id(model_id: str | None) -> str | None:
     return (model_id or "").strip() or usable_saved_model() or None
 
 
+def _effective_client_type(client_type: str | None) -> str:
+    """The client a turn is filtered for. The widget and the chat app always name themselves;
+    an omitted value is "api", which FAC Cloud offers no browser tools (the chat app is offered
+    the page screenshot now, so it is no longer a safe default)."""
+    return client_type or "api"
+
+
 def _flag(value) -> bool:
     """Coerce a composer toggle to a real bool.
 
@@ -319,8 +326,7 @@ def start_turn(
     if page_addendum:
         system_prompt_addendum = (system_prompt_addendum or "") + page_addendum
 
-    # Default to "spa" if client_type not specified (fail-safe: blocks browser tools)
-    effective_client_type = client_type or "spa"
+    effective_client_type = _effective_client_type(client_type)
 
     # Zero-retention: load the client-held session blob to round-trip to AR.
     # Skipped for restricted users — we never load or store their state.
@@ -545,7 +551,7 @@ def resume_interrupt(
             session_id: Conversation session ID (same session that was interrupted)
             interrupt_response: JSON array of responses.
                     Each: {"interruptId": str, "response": "approve"|"rejected"|"trust"|"session"}
-            client_type: Optional client type (widget/spa/mobile/api)
+            client_type: Optional client type (widget/spa/mobile/api); omitted is "api"
             model_id: Model the interrupted turn was sent with, carried so the
                     resume finishes on it. Sent only for an explicit user choice —
                     in auto mode it is omitted, never the literal "auto", because
@@ -586,7 +592,7 @@ def resume_interrupt(
         # names this request (cancel.clear).
         clear_cancel(session_id, keep_turn=client_turn_id)
 
-        effective_client_type = client_type or "spa"
+        effective_client_type = _effective_client_type(client_type)
 
         # Zero-retention: load the client-held session blob to round-trip on
         # resume. Skipped for GDPR-restricted users (FACO-M15) — same rule as
@@ -675,7 +681,7 @@ def continue_response(
     Args:
             session_id: Conversation session ID (same session that was truncated)
             message_id: The AR message ID of the truncated assistant turn to continue
-            client_type: Optional client type (widget/spa/mobile/api)
+            client_type: Optional client type (widget/spa/mobile/api); omitted is "api"
             web_search: Composer toggle for the conversation being continued. Same
                     None-vs-explicit semantics and ``_flag`` coercion as send_message.
             thinking_enabled: Composer toggle for AR extended thinking, same rules.
@@ -705,7 +711,7 @@ def continue_response(
         # names this request (cancel.clear).
         clear_cancel(session_id, keep_turn=client_turn_id)
 
-        effective_client_type = client_type or "spa"
+        effective_client_type = _effective_client_type(client_type)
 
         # Zero-retention: load the client-held session blob to round-trip on
         # continue. Skipped for GDPR-restricted users (FACO-M15) — same rule

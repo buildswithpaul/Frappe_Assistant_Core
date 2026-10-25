@@ -76,6 +76,9 @@ let deps = {
 //   - On Reject we submit an error result so the model learns from the
 //     refusal rather than waiting for a server-side timeout.
 
+// The client_type the widget sends with its turns (widget/host/deskHost.js).
+const WIDGET_CLIENT_TYPE = "widget";
+
 const TOOLS_REQUIRING_CONFIRMATION = new Set([
 	"take_screenshot",
 	"get_form_data",
@@ -696,6 +699,9 @@ const dispatcher = createDispatcher({
 		call: async (method, args) => (await window.frappe.call({ method, args }))?.message,
 	},
 	handlers: FACOBrowserTools.handlers,
+	// The chat app can hold the same conversation; its calls are not the widget's to answer. An older
+	// AR names no client, and its calls are the widget's, as before.
+	ownsCall: (call) => !call?.client_type || call.client_type === WIDGET_CLIENT_TYPE,
 	confirmTools: TOOLS_REQUIRING_CONFIRMATION,
 	describe: (tool_name, params) => FACOBrowserTools._describeParams(tool_name, params),
 	// The host prompts and opens the panel if it is closed: a silent prompt defeats the purpose.

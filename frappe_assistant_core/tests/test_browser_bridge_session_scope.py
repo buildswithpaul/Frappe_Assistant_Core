@@ -14,6 +14,8 @@ not (an older AR that never sends the header).
 import unittest
 from unittest.mock import patch
 
+import frappe
+
 from frappe_assistant_core.plugins.faco.tools.browser_bridge import (
     PENDING_CALLS_PREFIX,
     _pending_calls_key,
@@ -91,6 +93,46 @@ class TestOwnershipStillEnforced(unittest.TestCase):
             _, cache = _send(session_id)
             keys = [c.args[0] for c in cache.set_value.call_args_list]
             self.assertTrue(any(k.endswith("call-1") for k in keys))
+
+
+class TestClientTypeIsCarried(unittest.TestCase):
+    """The widget and the chat app can hold the same conversation and both sit in its room, so a
+    call must say which client's turn asked; each answers only its own."""
+
+    def _send(self, client_type):
+        with patch(f"{_MOD}.frappe.publish_realtime") as publish, patch(f"{_MOD}.frappe.cache") as cache:
+            send_browser_tool_call(
+                user="owner@example.com",
+                call_id="call-1",
+                tool_name="take_screenshot",
+                params={},
+                session_id="sess-abc",
+                client_type=client_type,
+            )
+        return publish, cache
+
+    def test_socket_and_queue_payloads_carry_the_client_type(self):
+        import json
+
+        publish, cache = self._send("spa")
+        self.assertEqual(publish.call_args.kwargs["message"]["client_type"], "spa")
+        self.assertEqual(json.loads(cache.lpush.call_args.args[1])["client_type"], "spa")
+
+    def test_an_older_ar_sends_none(self):
+        publish, _ = self._send(None)
+        self.assertIsNone(publish.call_args.kwargs["message"]["client_type"])
+
+    def test_the_browser_tool_passes_the_turns_client_type(self):
+        from frappe_assistant_core.plugins.faco.tools.browser_take_screenshot import BrowserTakeScreenshot
+
+        # fac_endpoint sets these from AR's X-AR-Session-Id and X-AR-Client-Type headers.
+        with patch(f"{_MOD}.send_browser_tool_call", autospec=True) as send, patch(
+            f"{_MOD}.wait_for_browser_response", autospec=True, return_value=(None, None)
+        ), patch.object(frappe.local, "ar_session_id", "sess-abc", create=True), patch.object(
+            frappe.local, "ar_client_type", "spa", create=True
+        ):
+            BrowserTakeScreenshot().execute({})
+        self.assertEqual(send.call_args.kwargs["client_type"], "spa")
 
 
 if __name__ == "__main__":

@@ -25,15 +25,38 @@ function registerDock() {
 	};
 }
 
-// The page the panel shows, for FACO's screenshot: its element, and whether it is a draft's frame.
+// The page the panel shows, for FACO's screenshot: its element, whether it is a draft's frame, and
+// the refreshKey it was drawn for.
 const pageView = shallowRef(null);
 
 /** Called by a mounted PageView; returns the call that withdraws it. */
-function showPageView(view) {
+function showPageView({ element, draft }) {
+	const view = { element, draft, refreshKey: refreshKey.value };
 	pageView.value = view;
 	return () => {
 		if (pageView.value === view) pageView.value = null;
 	};
+}
+
+// Drawn, with no write to it in flight and none landed since it was drawn.
+function pageSettled() {
+	const view = pageView.value;
+	const chip = chips.value.find((c) => c.name === openName.value);
+	return Boolean(view) && !chip?.pending && view.refreshKey === refreshKey.value;
+}
+
+/** Resolves true once the open page is settled, or false after `timeoutMs`. */
+function whenPageSettled(timeoutMs) {
+	if (pageSettled()) return Promise.resolve(true);
+	return new Promise((resolve) => {
+		const finish = (settled) => {
+			clearTimeout(timer);
+			stop();
+			resolve(settled);
+		};
+		const timer = setTimeout(() => finish(false), timeoutMs);
+		const stop = watch(pageSettled, (settled) => settled && finish(true));
+	});
 }
 
 function open(name) {
@@ -67,5 +90,16 @@ function trackPageWrites(messages) {
  */
 export function usePagePanel(messages) {
 	if (messages) trackPageWrites(messages);
-	return { openName, refreshKey, chips, dockMounted, registerDock, open, close, pageView, showPageView };
+	return {
+		openName,
+		refreshKey,
+		chips,
+		dockMounted,
+		registerDock,
+		open,
+		close,
+		pageView,
+		showPageView,
+		whenPageSettled,
+	};
 }

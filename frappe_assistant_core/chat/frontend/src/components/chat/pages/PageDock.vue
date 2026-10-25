@@ -44,7 +44,14 @@ const { openName, refreshKey, chips, close, registerDock } = usePagePanel(toRef(
 // Chips open this panel only while it is mounted; elsewhere they link to Desk.
 let unregister = () => {};
 onMounted(() => (unregister = registerDock()));
-onBeforeUnmount(() => unregister());
+
+// A card nobody can see any more must not wait for an answer.
+const denyCards = () => confirms.value.forEach((entry) => settleConfirm(entry, "deny"));
+
+onBeforeUnmount(() => {
+	unregister();
+	denyCards();
+});
 
 const openChip = computed(() => chips.value.find((chip) => chip.name === openName.value));
 
@@ -53,7 +60,7 @@ useSpaBrowserTools({ getSessionId: () => props.sessionId });
 watch(openName, (name) => {
 	if (name) emit("open", name);
 	// A closed page takes its cards with it, and leaves nothing to capture.
-	else confirms.value.forEach((entry) => settleConfirm(entry, "deny"));
+	else denyCards();
 });
 
 // A page belongs to the conversation that made it; another conversation starts without one.
