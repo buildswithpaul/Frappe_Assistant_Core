@@ -75,6 +75,11 @@ export async function takePageScreenshot(params = {}, askedAbout = undefined) {
 			file_name: uploaded.file_name,
 			...size,
 			mime_type: "image/jpeg",
+			...(view.codeWaiting && {
+				note: __(
+					"The page's new code has not run: the user has not clicked Run new version yet, so this picture shows the page without it.",
+				),
+			}),
 		};
 	} catch (error) {
 		logger.error("Page screenshot failed:", error);

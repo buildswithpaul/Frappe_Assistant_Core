@@ -42,10 +42,10 @@ let wrapper;
 let pageElement;
 let session = "s1";
 
-function showPage({ draft = false } = {}) {
+function showPage({ draft = false, codeWaiting = false } = {}) {
 	hide();
 	pageElement = document.createElement(draft ? "iframe" : "div");
-	hide = usePagePanel().showPageView({ element: pageElement, draft });
+	hide = usePagePanel().showPageView({ element: pageElement, draft, codeWaiting });
 }
 
 beforeEach(() => {
@@ -90,6 +90,13 @@ describe("takePageScreenshot", () => {
 			height: 480,
 			mime_type: "image/jpeg",
 		});
+	});
+
+	it("tells FACO the picture lacks the page's new code while it waits for Run new version", async () => {
+		showPage({ codeWaiting: true });
+		expect((await takePageScreenshot({})).note).toMatch(/has not clicked Run new version/);
+		showPage();
+		expect((await takePageScreenshot({})).note).toBeUndefined();
 	});
 
 	it("says a draft's preview cannot be captured", async () => {

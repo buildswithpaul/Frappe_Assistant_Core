@@ -12,6 +12,9 @@
 	// fac_page_draft_srcdoc and fac_page_draft_frame, inlined by render_include on page load.
 	// {% include "frappe_assistant_core/assistant_core/page/fac_pages/fac_page_draft.js" %}
 
+	// fac_page_script_review, fac_page_approve_script and fac_page_line_diff, inlined the same way.
+	// {% include "frappe_assistant_core/assistant_core/page/fac_pages/fac_page_approval.js" %}
+
 	frappe.pages["fac-pages"].on_page_load = function (wrapper) {
 		const page = frappe.ui.make_app_page({
 			parent: wrapper,
@@ -40,7 +43,7 @@
 			type: "GET",
 			args: { slug },
 			callback(r) {
-				if (is_latest()) render(state.page, r.message, is_latest);
+				if (is_latest()) render(state.page, slug, r.message, is_latest);
 			},
 			error() {
 				if (is_latest()) show_message(state.page, __("This page could not be shown."));
@@ -48,7 +51,7 @@
 		});
 	};
 
-	function render(page, data, is_latest) {
+	function render(page, name, data, is_latest) {
 		dispose_shown_charts();
 		page.set_title(data.title);
 		if (data.draft) {
@@ -56,14 +59,38 @@
 			return;
 		}
 		page.main.empty();
-		const script = data.script || "";
+		// A personal page's script runs once the user has seen it: see fac_page_approval.js.
+		if (!fac_page_needs_review(data)) {
+			render_published(page, data, is_latest, { run_script: true });
+			return;
+		}
+		fac_page_script_review(frappe.session.user, name, data).then((review) => {
+			if (!is_latest()) return;
+			const run = () =>
+				fac_page_approve_script(frappe.session.user, name, data.script).then(() => {
+					if (!is_latest()) return;
+					dispose_shown_charts();
+					render_published(page, data, is_latest, { run_script: true });
+				});
+			render_published(page, data, is_latest, {
+				run_script: !review,
+				review_bar: review && make_review_bar(review, data.script, run),
+			});
+		});
+	}
+
+	// The page as get_page sent it; without run_script, its html and style only, under review_bar.
+	function render_published(page, data, is_latest, { run_script, review_bar }) {
+		const script = run_script ? data.script || "" : "";
 		// Only a script that names fac can draw a chart, so only such a page pays for the bundle.
 		const ready = /\bfac\b/.test(script) ? load_charts() : Promise.resolve();
 		ready.then(() => {
 			if (!is_latest()) return;
 			shown = make_fac();
 			const host = document.createElement("div");
-			page.main.empty().append(host);
+			page.main.empty();
+			if (review_bar) page.main.append(review_bar);
+			page.main.append(host);
 			// @import must lead the stylesheet; the page's own style follows so it can override the kit.
 			const css = `@import url("${KIT_CSS_URL}");\n${data.style || ""}`;
 			frappe.create_shadow_element(
@@ -142,6 +169,50 @@
 						fac_page_draft_frame({ html: data.html, style: data.style, kit_css })
 					);
 			});
+	}
+
+	// What the chat panel's PageCodeReview shows: why the script waits, View changes and Run new version.
+	function make_review_bar(review, script, run) {
+		const bar = document.createElement("div");
+		bar.className = "fac-page-review alert alert-warning";
+		bar.title = __("Until you run it, Download PDF and FACO's screenshots show the page without this code.");
+		const message = document.createElement("span");
+		message.className = "fac-page-review-message";
+		message.textContent =
+			review.state === "first" ? __("This page has code FACO wrote.") : __("FACO changed this page's code.");
+		const toggle = make_button(__("View changes"), "btn btn-default btn-xs fac-page-review-toggle");
+		const run_button = make_button(__("Run new version"), "btn btn-primary btn-xs fac-page-review-run");
+		const diff = document.createElement("pre");
+		diff.className = "fac-page-review-diff";
+		diff.hidden = true;
+		diff.style.cssText = "max-height:40vh;overflow:auto;margin:8px 0 0;";
+		const marks = { same: " ", removed: "-", added: "+" };
+		const colours = { same: "", removed: "var(--red-600)", added: "var(--green-600)" };
+		for (const line of fac_page_line_diff(review.approved, script)) {
+			const row = document.createElement("span");
+			row.className = `fac-page-review-line is-${line.type}`;
+			row.style.cssText = `display:block;white-space:pre;color:${colours[line.type]};`;
+			row.textContent = `${marks[line.type]} ${line.text}`;
+			diff.append(row);
+		}
+		toggle.addEventListener("click", () => {
+			diff.hidden = !diff.hidden;
+			toggle.textContent = diff.hidden ? __("View changes") : __("Hide changes");
+		});
+		run_button.addEventListener("click", () => {
+			run_button.disabled = true;
+			run();
+		});
+		bar.append(message, " ", toggle, " ", run_button, diff);
+		return bar;
+	}
+
+	function make_button(label, class_name) {
+		const button = document.createElement("button");
+		button.type = "button";
+		button.className = class_name;
+		button.textContent = label;
+		return button;
 	}
 
 	function show_message(page, message) {

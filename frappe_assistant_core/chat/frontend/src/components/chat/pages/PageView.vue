@@ -28,6 +28,8 @@ const props = defineProps({
 	// get_page's response: {title, html, script, style, draft}.
 	page: { type: Object, required: true },
 	user: { type: String, default: "" },
+	// The script waits for the user's Run new version: the page shows its html and style only.
+	holdScript: { type: Boolean, default: false },
 });
 
 const emit = defineEmits(["unsupported", "error"]);
@@ -59,7 +61,7 @@ function render() {
 	const style = document.createElement("style");
 	style.textContent = `${kitCss}\n${props.page.style || ""}`;
 	root.append(style, pageFragment(props.page.html));
-	if (!props.page.script) return;
+	if (!props.page.script || props.holdScript) return;
 
 	const standIn = makeFrappeStandIn(
 		{ baseCall, getCall, user: props.user },
@@ -82,7 +84,11 @@ let hidePageView = () => {};
 onMounted(() => {
 	if (published.value) render();
 	const element = published.value ? host.value : draftFrame.value;
-	hidePageView = usePagePanel().showPageView({ element, draft: !published.value });
+	hidePageView = usePagePanel().showPageView({
+		element,
+		draft: !published.value,
+		codeWaiting: published.value && props.holdScript && Boolean(props.page.script),
+	});
 });
 
 onBeforeUnmount(() => {

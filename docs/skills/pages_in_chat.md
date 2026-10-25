@@ -12,12 +12,13 @@ When a user asks for a report, a summary or "a PDF of …", build it as a person
 
 ## Workflow
 
-1. **Create it personal.** `create_document` on `FAC Page` with a `title`, a readable `slug` (`overdue-invoices`, not `page-1`), `html`, `script` and `style`. Leave `visibility` out, or set it to `"Only me"`. A personal page opens only for its owner, needs no approval card and is live once saved. Leave out `published` and `roles`. Only a System Manager can set them.
+1. **Create it personal.** `create_document` on `FAC Page` with a `title`, a readable `slug` (`overdue-invoices`, not `page-1`), `html`, `script` and `style`. Leave `visibility` out, or set it to `"Only me"`. A personal page opens only for its owner, needs no approval card, and its html and style show once saved. Its script waits for the user (step 4). Leave out `published` and `roles`. Only a System Manager can set them.
 2. **Fetch data live in the script.** Don't paste figures into the html. The script reads them each time the page opens, so the page stays current.
 3. **Point to the chip.** The page appears as a chip in your reply, and the chip opens it beside the chat. Tell the user to open it. Don't paste the html into the chat.
-4. **Look before you reply.** After every create or change, call `browser_take_screenshot`. In the chat app it captures the page open beside the chat, after the user approves. Fix what looks off (cut-off text, an empty table, a chart with no data) and look again before you answer. If the screenshot is declined or unavailable, or no page is open, say plainly that you couldn't look at the page.
-5. **Change it on request.** Use `update_document` with the record `name` from the create result, which is the slug plus a short tag, not the slug alone. Send only the fields that change. The panel redraws and shows the new version number. Then look again (step 4).
-6. **For a PDF, point to Download PDF** in the panel header. It prints the page as it is shown, A4, in landscape when the page is wide. Don't offer to generate a PDF any other way.
+4. **Ask the user to run your code.** The first time a page has a script, and every time you change the script, the panel and the Desk page show the html and style but don't run the script. They show **Run new version** and **View changes** until the user has seen the code and clicked **Run new version**. Tell the user to click it. Until they do, Download PDF and your screenshots show the page without the new code, and the screenshot result says so in its `note`. So you can't look at what the new code does until they click. Changes to the html or style alone show at once.
+5. **Look before you reply.** After every create or change, call `browser_take_screenshot`. In the chat app it captures the page open beside the chat, after the user approves. Fix what looks off (cut-off text, an empty table, a chart with no data) and look again before you answer. If the screenshot is declined or unavailable, or no page is open, say plainly that you couldn't look at the page.
+6. **Change it on request.** Use `update_document` with the record `name` from the create result, which is the slug plus a short tag, not the slug alone. Send only the fields that change. The panel redraws and shows the new version number. If you changed the `script`, ask the user to click **Run new version** (step 4). Then look again (step 5).
+7. **For a PDF, point to Download PDF** in the panel header. It prints the page as it is shown, A4, in landscape when the page is wide. Don't offer to generate a PDF any other way.
 
 ## What a page can use
 
@@ -58,6 +59,7 @@ frappe.db.get_list("Sales Invoice", {
 ## Anti-patterns
 
 - Replying "done" without looking at the page.
+- Judging new code from a screenshot taken before the user clicked **Run new version**.
 - Pasting numbers into the html instead of fetching them.
 - A slug like `report` or `page-2` that the user can't find again in **My pages**.
 - Reaching for Desk-only `frappe` members, so the page shows **Open in Desk** instead of the report.

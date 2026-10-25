@@ -34,6 +34,14 @@
 			<a class="page-panel-open-desk" :href="deskUrl" target="_blank" rel="noopener">{{ __("Open in Desk") }}</a>
 		</p>
 
+		<PageCodeReview
+			v-if="page && review"
+			:state="review.state"
+			:approved="review.approved"
+			:script="page.script"
+			@run="runNewVersion"
+		/>
+
 		<div class="page-panel-body">
 			<p v-if="loadFailed" class="page-panel-message">{{ __("This page could not be shown.") }}</p>
 			<p v-else-if="!page" class="page-panel-message">{{ __("Loading…") }}</p>
@@ -43,6 +51,7 @@
 				:key="renderKey"
 				:page="page"
 				:user="user"
+				:hold-script="Boolean(review)"
 				@unsupported="unsupported = $event"
 				@error="onScriptError"
 			/>
@@ -55,10 +64,12 @@ import { computed, ref, watch } from "vue";
 
 import { facPage } from "@/api/domains/facPage";
 import { usePagePanel } from "@/composables/usePagePanel";
+import { fac_page_approve_script, fac_page_script_review } from "@/utils/facPageApproval";
 import { __ } from "@/utils/i18n";
 import { logger } from "@/utils/logger";
 import { printPage } from "@/utils/pagePrint";
 
+import PageCodeReview from "./PageCodeReview.vue";
 import PageListMenu from "./PageListMenu.vue";
 import PageView from "./PageView.vue";
 
@@ -78,6 +89,8 @@ const emit = defineEmits(["share"]);
 const { close } = usePagePanel();
 
 const page = ref(null);
+// Why the page's script waits for the user (facPageApproval's review), or null when it runs.
+const review = ref(null);
 const loadFailed = ref(false);
 const unsupported = ref(null);
 const scriptFailed = ref(false);
@@ -102,7 +115,10 @@ async function load() {
 		const data = await facPage.getPage(props.name);
 		if (current !== request) return;
 		if (!data || typeof data !== "object") throw new Error("get_page returned no page");
+		const nextReview = await fac_page_script_review(props.user, props.name, data);
+		if (current !== request) return;
 		page.value = data;
+		review.value = nextReview;
 		renderKey.value++;
 	} catch (error) {
 		if (current !== request) return;
@@ -127,6 +143,16 @@ watch(() => props.refreshKey, load);
 function onScriptError(error) {
 	logger.error("FAC Page script failed", error);
 	scriptFailed.value = true;
+}
+
+// Approve the script the user was shown, then draw the page again with it running. Storage that
+// cannot keep the approval still runs it now; the next open asks again.
+async function runNewVersion() {
+	const shown = page.value;
+	await fac_page_approve_script(props.user, props.name, shown.script);
+	if (page.value !== shown) return;
+	review.value = null;
+	renderKey.value++;
 }
 
 function downloadPdf() {

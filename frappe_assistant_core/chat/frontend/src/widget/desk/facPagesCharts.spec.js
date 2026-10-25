@@ -1,13 +1,9 @@
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
-
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { facPagesSource } from "./facPagesSource";
+
 // The fac-pages Desk page script, run as Desk runs it: a plain script with frappe and __ global.
-const SOURCE = readFileSync(
-	resolve(import.meta.dirname, "../../../../../assistant_core/page/fac_pages/fac_pages.js"),
-	"utf-8",
-);
+const SOURCE = facPagesSource();
 const CHARTS_SRC = "/assets/frappe_assistant_core/js/fac_page_charts.js?v=build-7";
 
 let frappe;
