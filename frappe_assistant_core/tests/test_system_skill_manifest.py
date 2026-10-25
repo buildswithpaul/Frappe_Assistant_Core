@@ -166,6 +166,22 @@ class TestSystemSkillManifest(BaseAssistantTest):
             self.assertIn("switch it off again", step, name)
             self.assertNotIn("only after they confirm", step, name)
 
+    def test_publishing_and_switching_on_ask_with_the_final_code_even_on_the_plan(self):
+        # FAC Cloud shows the card for a write that switches something on, plan or not.
+        stale = (
+            "unless the approved build plan marked the page as going live",
+            "so the approved plan covers it",
+            "so the approved plan is that yes",
+            "or the plan entry for switching it on",
+            "(or its plan entry)",
+        )
+        for name in ("fac_page.md", "server_script.md", "setup_change_protocol.md"):
+            text = self._read_skill(name)
+            self.assertIn("asks once, with the final code, even when it is on the plan", text, name)
+            self.assertIn("so the user sees it coming", text, name)
+            for phrase in stale:
+                self.assertNotIn(phrase, text, name)
+
     def test_report_builder_example_uses_fields_and_notification_warns_about_blocked_saves(self):
         report = self._read_skill("custom_report.md")
         self.assertIn('\\"fields\\": [[', report)

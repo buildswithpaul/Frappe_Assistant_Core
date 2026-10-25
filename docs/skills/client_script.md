@@ -59,7 +59,7 @@ propose a build plan first, as the `setup-change-protocol` skill describes.
 - **Name records by what they do, never by a value that may change (no limits, percentages or dates in names):** 'Discount limit on Sales Invoice submit', not 'Block discount above 15%'. Changing a value never needs a rename. The update tool cannot rename a record; if the user wants a different name, tell them to use Rename from the record's menu in Desk.
 - **A broken script breaks the form** for everyone until it is switched off. That is why it starts switched off and is switched on only with the user's go-ahead.
 - A Client Script on a child table row needs the child doctype's own handler, not the parent's.
-- The approval card appears for every customisation write that has an effect, unless the write is on an approved build plan, and "Don't ask again" never applies to one. Edits to a script that is switched off need no card; switching it on, or changing a live one, asks. That is intended.
+- The approval card appears for every customisation write that has an effect, unless the write is on an approved build plan and switches nothing on, and "Don't ask again" never applies to one. Edits to a script that is switched off need no card; switching it on, or changing a live one, asks. That is intended.
 
 ## Anti-patterns
 

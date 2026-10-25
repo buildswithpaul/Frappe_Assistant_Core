@@ -41,8 +41,8 @@ Every other setup skill (`add-custom-field`, `server-script`, `client-script`, `
 
 When you have the `propose_build_plan` tool, call it before creating or changing two or more setup records.
 List every change, mark the ones that go live, and wait for the approval. Writes the plan lists
-then run without a card each; anything else still asks. The plan card then stands in for the
-confirmation in step 5. Give each entry the `name` Frappe will give the record (a Report's
+then run without a card each, except publishing a FAC Page or switching a rule on; anything else
+still asks. The plan card then stands in for the confirmation in step 5. Give each entry the `name` Frappe will give the record (a Report's
 `report_name`, a Workflow's `workflow_name`, a Role's `role_name`, a FAC Page's `slug`, the name you
 set for a script),
 or for a Custom Field, Property Setter or Custom DocPerm its `identity` fields. A record Frappe
@@ -54,7 +54,9 @@ List each change the way Frappe saves it:
 - **A role assignment** is an update of each `User` by name. `Has Role` is a child table, and a child
   row is always saved through its parent, so list the parent record.
 - **Switching a rule on** (a script or Notification built switched off) is its own update entry marked
-  `goes_live`, so the approved plan covers it. Switching it on later without one asks again.
+  `goes_live`, so the user sees it coming. Publishing a page or switching a rule on still
+  asks once, with the final code, even when it is on the plan: the code was written after the plan
+  was approved.
 - **Mark `goes_live` honestly.** Mark a new Role, DocType, Custom Field, permission and anything else
   without an on/off switch as going live. A plan entry carries no field values, so FAC cannot prove such
   a record is dormant and shows it under Goes live to be safe. Only a Server Script, Client Script,
@@ -68,7 +70,7 @@ the reason: fix the entry and propose again. A dormant claim FAC cannot prove is
 
 1. **Look it up first.** Read how the thing works (`sandbox_reference` for script code, `get_doctype_info` for fields) instead of guessing or creating a throwaway record to find out.
 2. **Build it switched off.** A script that is switched off changes nothing, and a switched-off Server Script needs no approval card.
-3. **Switch it on with one card** (or its plan entry), then trigger it or open the page it changes. For a form or page, look with `browser_take_screenshot` / `browser_capture_diagnostics`. Trigger a rule with `create_document` and `validate_only: true`, never by creating real records and deleting them, and never as another user.
+3. **Switch it on with one card**, shown even when the plan lists it, then trigger it or open the page it changes. For a form or page, look with `browser_take_screenshot` / `browser_capture_diagnostics`. Trigger a rule with `create_document` and `validate_only: true`, never by creating real records and deleting them, and never as another user.
 4. **If it fails, read `recent_errors`**, filtered by the record's name, then fix and trigger again.
 5. **Check who can use it** with `test_as_user`.
 
