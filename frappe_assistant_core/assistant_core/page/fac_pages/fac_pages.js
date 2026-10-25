@@ -104,22 +104,52 @@
 		});
 	}
 
-	// get_page already serves a personal page's html without inline code; while its script is held,
-	// this strips it here as well, so nothing runs before Run new version. Forms and buttons stay.
-	const HELD_DROPPED_TAGS = "script, iframe, object, embed, base, meta, link";
-	const URL_ATTRIBUTES = ["href", "src", "xlink:href", "action", "formaction"];
+	// get_page already serves a personal page's html through an allowlist; while its script is held,
+	// this keeps only allowlisted tags and attributes here as well, so nothing in the html runs
+	// before Run new version. Forms and buttons stay, because the page's script may wire them.
+	const HELD_TAGS = new Set(
+		(
+			"a abbr article aside b blockquote br button caption code col colgroup dd del details div dl dt " +
+			"em fieldset figcaption figure footer form h1 h2 h3 h4 h5 h6 header hr i img input ins kbd label " +
+			"legend li main mark meter nav ol optgroup option p pre progress q s section select small span " +
+			"strong sub summary sup table tbody td textarea tfoot th thead time tr u ul " +
+			"svg g path circle ellipse line polyline polygon rect text tspan defs lineargradient " +
+			"radialgradient stop title desc"
+		).split(" ")
+	);
+	const HELD_ATTRIBUTES = new Set(
+		(
+			"class id style title role name type value placeholder for colspan rowspan href src alt width " +
+			"height checked disabled selected readonly required multiple min max step rows cols maxlength " +
+			"open datetime target rel action method " +
+			"viewbox xmlns d cx cy r rx ry x y x1 y1 x2 y2 points fill stroke stroke-width " +
+			"stroke-linecap stroke-linejoin transform opacity fill-opacity offset stop-color " +
+			"text-anchor font-size font-weight dominant-baseline gradientunits"
+		).split(" ")
+	);
+	const URL_ATTRIBUTES = new Set(["href", "src", "action"]);
+	// javascript: runs code, and data: can carry a document that does.
+	const CODE_SCHEMES = /^(?:javascript|vbscript|data):/;
+
 	function strip_inline_code(html) {
 		const template = document.createElement("template");
 		template.innerHTML = html;
-		template.content.querySelectorAll(HELD_DROPPED_TAGS).forEach((el) => el.remove());
-		template.content.querySelectorAll("*").forEach((el) => {
+		for (const el of template.content.querySelectorAll("*")) {
+			if (!HELD_TAGS.has(el.localName.toLowerCase())) {
+				el.remove();
+				continue;
+			}
 			for (const { name, value } of [...el.attributes]) {
+				const attribute = name.toLowerCase();
+				const allowed =
+					HELD_ATTRIBUTES.has(attribute) || /^(?:data|aria)-[\w-]+$/.test(attribute);
 				// A browser ignores tabs, newlines and other control characters in a URL's scheme.
 				const scheme = value.replace(/[\u0000-\u0020]/g, "").toLowerCase();
-				const runs_code = URL_ATTRIBUTES.includes(name) && scheme.startsWith("javascript:");
-				if (name.startsWith("on") || runs_code) el.removeAttribute(name);
+				if (!allowed || (URL_ATTRIBUTES.has(attribute) && CODE_SCHEMES.test(scheme))) {
+					el.removeAttribute(name);
+				}
 			}
-		});
+		}
 		return template.innerHTML;
 	}
 

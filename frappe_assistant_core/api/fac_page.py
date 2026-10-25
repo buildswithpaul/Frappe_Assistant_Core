@@ -38,8 +38,10 @@ DRAFT_DISALLOWED_TAGS = [
     "textarea",
 ]
 
-# A personal page keeps its form controls, which its own script may wire, but loses every tag
-# that runs code, embeds another document or acts on the whole document.
+# sanitize_html keeps only Frappe's allowlisted tags and attributes, and only safe URL schemes
+# (no javascript: or data:). A personal page keeps its form controls, which its own script may
+# wire, but also loses these allowlisted tags: ones that act on the whole document, and SVG
+# animation, which can set an attribute to a javascript: URL after the page is sanitised.
 PERSONAL_DISALLOWED_TAGS = [
     "script",
     "iframe",
@@ -51,6 +53,11 @@ PERSONAL_DISALLOWED_TAGS = [
     "html",
     "head",
     "body",
+    "animate",
+    "animateColor",
+    "animateMotion",
+    "animateTransform",
+    "set",
 ]
 
 

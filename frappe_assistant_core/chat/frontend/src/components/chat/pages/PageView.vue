@@ -13,13 +13,13 @@
 </template>
 
 <script setup>
-import DOMPurify from "dompurify";
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 
 import { baseCall, getCall } from "@/api/_core";
 import { usePagePanel } from "@/composables/usePagePanel";
 import { fac_page_draft_srcdoc } from "@/utils/facPageDraft";
 import { chart } from "@/utils/pageCharts";
+import { heldPageHtml } from "@/utils/heldPageHtml";
 import { snapshotHtml } from "@/utils/pagePrint";
 import { makeFrappeStandIn, runPageScript } from "@/utils/pageRuntime";
 // The one copy of the kit, also served to the fac-pages Desk page from /assets.
@@ -48,16 +48,11 @@ const draftSrcdoc = computed(() =>
 	fac_page_draft_srcdoc({ html: props.page.html, style: props.page.style, kit_css: kitCss }),
 );
 
-// Tags that embed another document or act on the whole one, dropped from a held page's html.
-const HELD_FORBID_TAGS = ["iframe", "object", "embed", "base", "meta", "link"];
-
 // Desk's create_shadow_element drops these from the html, so the page renders the same in both.
-// get_page already serves a personal page's html without inline code; while its script is held,
-// inline handlers and javascript: URLs are stripped here as well, so nothing runs before Run new
-// version. DOMPurify's defaults keep forms and buttons, which the page's script may wire.
+// While the script is held, the html goes through heldPageHtml too, so nothing in it runs either.
 function pageFragment(html) {
 	const template = document.createElement("template");
-	const body = props.holdScript ? DOMPurify.sanitize(html || "", { FORBID_TAGS: HELD_FORBID_TAGS }) : html || "";
+	const body = props.holdScript ? heldPageHtml(html) : html || "";
 	template.innerHTML = `<div class="fac-page-root">${body}</div>`;
 	template.content.querySelectorAll("script, style, link").forEach((el) => el.remove());
 	return template.content;

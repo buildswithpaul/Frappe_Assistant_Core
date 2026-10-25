@@ -349,23 +349,51 @@ class TestPersonalFACPage(BaseAssistantTest):
         self.assertEqual(get_page(doc.name)["html"], "<p>Edited</p>")
 
     def test_a_personal_page_is_served_without_inline_code(self):
-        # A personal page's script waits for the owner's Run new version; an inline handler or a
-        # javascript: link in its html would run without it.
+        # A personal page's script waits for the owner's Run new version; inline code in its html
+        # would run without it.
         user = self._desk_user("fac-page-inline-code")
         html = (
             '<div class="mk-card"><img src="x" onerror="alert(1)">'
-            '<svg onload="alert(2)"><circle r="1"></circle></svg>'
-            '<a class="mk-link" href="javascript:alert(3)">go</a>'
-            '<iframe src="https://evil.example"></iframe><base href="https://evil.example/">'
-            '<form class="mk-form"><input name="q"><button type="button">Go</button></form></div>'
+            '<svg onload="alert(2)"><animate attributeName="href" to="javascript:alert(3)"></animate>'
+            '<set attributeName="href" to="javascript:alert(4)"></set></svg>'
+            '<a class="mk-link" href="javascript:alert(5)">go</a>'
+            '<a class="mk-doc" href="data:text/html,x">doc</a><img class="mk-pic" src="data:image/png,x">'
+            '<iframe srcdoc="&lt;script&gt;alert(6)&lt;/script&gt;"></iframe><base href="https://evil.example/">'
+            '<object data="x"></object><embed src="x"><meta http-equiv="refresh" content="0">'
+            '<form class="mk-form" action="javascript:alert(7)"><input name="q">'
+            '<button type="submit" formaction="data:text/html,x">Go</button></form>'
+            '<form class="mk-local" action="/api/method/x"></form></div>'
         )
         name = self._build(user, html=html)
 
         served = get_page(name)["html"]
 
-        for unsafe in ("onerror", "onload", "javascript:", "alert(", "<iframe", "<base"):
+        for unsafe in (
+            "onerror",
+            "onload",
+            "javascript:",
+            "data:",
+            "alert(",
+            "srcdoc",
+            "formaction",
+            "<iframe",
+            "<object",
+            "<embed",
+            "<base",
+            "<meta",
+            "<animate",
+            "<set",
+        ):
             self.assertNotIn(unsafe, served)
-        for kept in ('class="mk-card"', 'class="mk-link"', "<form", '<input name="q"', "<button", "<svg"):
+        for kept in (
+            'class="mk-card"',
+            'class="mk-link"',
+            '<form class="mk-form">',
+            '<input name="q">',
+            '<button type="submit">',
+            'action="/api/method/x"',
+            "<svg",
+        ):
             self.assertIn(kept, served)
 
     def test_a_personal_page_does_not_exist_for_anyone_else(self):
