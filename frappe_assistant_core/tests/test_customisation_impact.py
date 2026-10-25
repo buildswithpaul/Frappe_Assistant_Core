@@ -131,6 +131,53 @@ class TestCustomisationImpact(BaseAssistantTest):
             self.assertTrue(_impact("create_document", doctype, {"enabled": 0})["dormant"], doctype)
             self.assertFalse(_impact("create_document", doctype, {"enabled": 1})["dormant"], doctype)
 
+    def test_publishing_a_draft_fac_page_switches_it_on(self):
+        for data in ({"published": 1}, {"published": 1, "html": "<p>y</p>"}):
+            self.assertTrue(
+                _impact("update_document", "FAC Page", data, self.draft_page)["switches_on"], data
+            )
+        created = _impact("create_document", "FAC Page", {"slug": "team-planner", "published": 1})
+        self.assertTrue(created["switches_on"])
+
+    def test_editing_a_switched_off_record_does_not_switch_it_on(self):
+        page = _impact("update_document", "FAC Page", {"html": "<p>y</p>"}, self.draft_page)
+        script = _impact("update_document", "Server Script", {"script": "pass"}, self.off_script)
+        created_off = _impact("create_document", "Server Script", {"disabled": 1})
+        for result in (page, script, created_off):
+            self.assertIs(result["switches_on"], False)
+
+    def test_un_disabling_a_server_script_switches_it_on(self):
+        r = _impact("update_document", "Server Script", {"disabled": 0}, self.off_script)
+        self.assertTrue(r["switches_on"])
+
+    def test_creating_a_server_script_with_disabled_0_switches_it_on(self):
+        self.assertTrue(_impact("create_document", "Server Script", {"disabled": 0})["switches_on"])
+        self.assertTrue(_impact("create_document", "Server Script")["switches_on"])
+
+    def test_client_script_and_notification_switch_on_with_enabled(self):
+        for doctype in ("Client Script", "Notification"):
+            self.assertTrue(_impact("create_document", doctype, {"enabled": 1})["switches_on"], doctype)
+            self.assertFalse(_impact("create_document", doctype, {"enabled": 0})["switches_on"], doctype)
+
+    def test_records_already_on_and_their_deletes_do_not_switch_on(self):
+        edit = _impact("update_document", "FAC Page", {"html": "<p>y</p>"}, self.live_page)
+        unpublish = _impact("update_document", "FAC Page", {"published": 0}, self.live_page)
+        delete = _impact("delete_document", "Server Script", name=self.on_script)
+        for result in (edit, unpublish, delete):
+            self.assertFalse(result["dormant"])
+            self.assertIs(result["switches_on"], False)
+
+    def test_every_result_says_whether_it_switches_on(self):
+        for result in (
+            _impact("create_document", "Custom Field", {"dt": "Sales Invoice", "fieldname": "x"}),
+            _impact("update_document", "Server Script", {}, "FAC Impact Missing"),
+            customisation_impact("send_email", {}),
+            customisation_impact("create_document", {"doctype": "ToDo"}),
+        ):
+            self.assertIs(result["switches_on"], False)
+            self.assertIn("dormant", result)
+            self.assertIn("reason", result)
+
     def test_new_doctype_visible_only_to_system_manager_is_dormant(self):
         data = {"custom": 1, "permissions": [{"role": "System Manager"}, {"role": "Administrator"}]}
         self.assertTrue(_impact("create_document", "DocType", data)["dormant"])
@@ -371,6 +418,18 @@ class TestCustomisationImpactTool(BaseAssistantTest):
         self.assertTrue(result["success"])
         self.assertTrue(result["dormant"])
         self.assertTrue(result["reason"])
+        self.assertIs(result["switches_on"], False)
+
+    def test_passes_switches_on_through(self):
+        result = self._tool().execute(
+            {
+                "tool_name": "create_document",
+                "tool_input": {"doctype": "Server Script", "data": {"disabled": 0}},
+            }
+        )
+        self.assertTrue(result["success"])
+        self.assertFalse(result["dormant"])
+        self.assertTrue(result["switches_on"])
 
     def test_live_write_is_not_dormant(self):
         result = self._tool().execute({"tool_name": "send_email", "tool_input": {}})

@@ -276,8 +276,17 @@ def customisation_impact(tool_name: str, tool_input: Any) -> Dict[str, Any]:
     records and that is not a child table or used by another form. A write is dormant only when
     the stored state and the state after the write both are, so switching a script on, publishing
     a page or moving a field onto a live DocType is live, and any doubt counts as live.
+    ``switches_on`` is true when the write turns a ``_SWITCH_FIELDS`` record from off to on,
+    including a create saved switched on; FAC Cloud then shows its card even when an approved
+    build plan lists the write, so the user sees the final code.
     Never writes. The reason is plain words for logs and never repeats stored values.
     """
+    result = _dormancy(tool_name, tool_input)
+    result.setdefault("switches_on", False)
+    return result
+
+
+def _dormancy(tool_name: str, tool_input: Any) -> Dict[str, Any]:
     if tool_name not in _WRITE_TOOLS or not isinstance(tool_input, dict):
         return {"dormant": False, "reason": "Not a customisation write"}
     doctype = tool_input.get("doctype")
@@ -311,7 +320,7 @@ def customisation_impact(tool_name: str, tool_input: Any) -> Dict[str, Any]:
         stored_off = creating or cint(before(field)) == off
         if stored_off and cint(value) == off:
             return {"dormant": True, "reason": f"{doctype} is switched off"}
-        return {"dormant": False, "reason": f"{doctype} is switched on"}
+        return {"dormant": False, "reason": f"{doctype} is switched on", "switches_on": stored_off}
 
     if doctype == "DocType":
         stored_facts = None if creating else _stored_doctype(name)
