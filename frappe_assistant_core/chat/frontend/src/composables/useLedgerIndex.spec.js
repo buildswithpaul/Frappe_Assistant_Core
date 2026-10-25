@@ -27,3 +27,12 @@ describe("resolveIndexMode", () => {
 		expect(resolveIndexMode({ ...base, shellWidth: 1180, columnWidth: 720, railDockWidth: 0 })).toBe("full"); // 412
 	});
 });
+
+describe("resolveIndexMode with the page dock open", () => {
+	it("counts the dock's width against the room", () => {
+		expect(resolveIndexMode({ ...base, pageDockWidth: 720 })).toBe("hidden"); // 1440-720-960-48 < 28
+	});
+	it("adds the dock to a docked rail", () => {
+		expect(resolveIndexMode({ ...base, shellWidth: 1900, railDockWidth: 300, pageDockWidth: 420 })).toBe("spine"); // 172
+	});
+});

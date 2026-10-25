@@ -1,0 +1,47 @@
+import { computed, ref, shallowRef, watch } from "vue";
+
+import { derivePageChips } from "@/utils/pageChips";
+
+/** The page dock takes half the chat shell, and never less than this. */
+export const PAGE_DOCK_MIN_WIDTH = 420;
+
+export const pageDockWidth = (shellWidth) => Math.max(PAGE_DOCK_MIN_WIDTH, shellWidth / 2);
+
+// One panel per SPA: a chip deep in the message tree and the dock beside the chat share it.
+const openName = ref(null);
+const refreshKey = ref(0);
+const chips = shallowRef([]);
+
+function open(name) {
+	openName.value = name || null;
+}
+
+function close() {
+	openName.value = null;
+}
+
+function trackPageWrites(messages) {
+	const conversationChips = computed(() =>
+		derivePageChips((messages.value || []).flatMap((message) => message?.blocks || [])),
+	);
+	watch(conversationChips, (value) => (chips.value = value), { immediate: true });
+
+	const openVersion = computed(
+		() => conversationChips.value.find((chip) => chip.name === openName.value)?.version ?? 0,
+	);
+	// Refetch when a write to the page already open lands, not when another page is opened.
+	watch([openName, openVersion], ([name, version], [previousName, previousVersion]) => {
+		if (name && name === previousName && version !== previousVersion) refreshKey.value++;
+	});
+}
+
+/**
+ * The page panel's state: which page is open, and a key that changes when it must be refetched.
+ *
+ * @param {import('vue').Ref<Array>} [messages] the conversation; the dock passes it so writes to
+ *   the open page refresh it and `chips` carries every page's version and pending state.
+ */
+export function usePagePanel(messages) {
+	if (messages) trackPageWrites(messages);
+	return { openName, refreshKey, chips, open, close };
+}

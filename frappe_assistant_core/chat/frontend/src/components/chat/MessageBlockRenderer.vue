@@ -87,6 +87,11 @@
 				v-else-if="segment.type === 'workflow_created'"
 				:block="segment"
 			/>
+
+			<!-- FAC Pages this turn wrote; a chip opens one in the page panel. -->
+			<div v-else-if="segment.type === 'page_chips'" class="page-chips">
+				<FacPageChip v-for="chip in segment.chips" :key="chip.name" :chip="chip" />
+			</div>
 		</template>
 
 		<!-- Streaming indicator when actively streaming text -->
@@ -111,6 +116,9 @@ import { findQuestionGroups } from "./interactions/questionGroup";
 import SourcesBlock from "./SourcesBlock.vue";
 import GeneratedDocumentsBlock from "./GeneratedDocumentsBlock.vue";
 import WorkflowCreatedBlock from "./WorkflowCreatedBlock.vue";
+import FacPageChip from "./pages/FacPageChip.vue";
+import { usePagePanel } from "@/composables/usePagePanel";
+import { chipsForMessage } from "@/utils/pageChips";
 import CitationPill from "./CitationPill.vue";
 import { parseRichBlocks } from "./richBlocks/parser";
 import { renderMarkdown as renderMd, ensureHljs } from "@/utils/markdown.js";
@@ -141,6 +149,8 @@ const props = defineProps({
 });
 
 defineEmits(["toggleBlock", "approve", "reject", "previewDocument"]);
+
+const { chips: conversationPageChips } = usePagePanel();
 
 const waitingOn = computed(() => turnWaitingOn(props.blocks, props.isResuming));
 
@@ -263,6 +273,10 @@ const groupedContent = computed(() => {
 			segments.push(block);
 		}
 	}
+
+	// Derived from the tool_call blocks at render time, so a reloaded conversation keeps its chips.
+	const chips = chipsForMessage(props.blocks, conversationPageChips.value);
+	if (chips.length) segments.push({ type: "page_chips", id: "page_chips", chips });
 
 	return segments;
 });
@@ -394,6 +408,13 @@ function onCitationNavigate(n) {
 .message-blocks {
 	display: flex;
 	flex-direction: column;
+}
+
+.page-chips {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	margin: 6px 0;
 }
 
 /* Text block inherits message-text styles from parent */

@@ -137,6 +137,15 @@
 				/>
 			</div>
 
+			<PageDock
+				:messages="messages"
+				:session-id="currentSessionId"
+				:can-share="isAdmin"
+				:user="user || ''"
+				@open="collapseRailDock(); closeRail()"
+				@share="prefillComposer"
+			/>
+
 			<!-- Docked rail (>=1280px) — collapsible to reclaim the reading width -->
 			<aside v-if="railMode === 'rail' && railVisible" class="rail-dock">
 				<ContextRail
@@ -239,7 +248,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, defineAsyncComponent } from "vue";
+import { ref, computed, watch, nextTick, defineAsyncComponent } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useChatStore } from "@/stores/chatStore";
 import { useUserStore } from "@/stores/userStore";
@@ -283,6 +292,7 @@ import { useComposerFocus } from "@/composables/useComposerFocus";
 import { deriveArtifacts } from "@/utils/contextArtifacts";
 import { isPausedTurn, isStoppedTurn } from "@/utils/turnState";
 import ContextRail from "@/components/chat/ContextRail.vue";
+import PageDock from "@/components/chat/pages/PageDock.vue";
 import { logger } from "@/utils/logger";
 import { usePreferences } from "@/composables/usePreferences";
 import { resolveReadWidth } from "@/utils/chatWidth";
@@ -333,6 +343,7 @@ const {
 	userAuthStatus,
 	privacyConsentComplete,
 	termsAcceptanceRequired,
+	user,
 } = storeToRefs(userStore);
 
 // Initialize streaming listener for realtime events
@@ -511,6 +522,12 @@ function unpinMessage(messageId) {
 function onPinJump(messageId) {
 	const i = (messages.value || []).findIndex((m) => m?.message_id === messageId);
 	if (i >= 0) indexJumpTo(i);
+}
+
+// Share… puts its request in the composer to send; clearing first lets the same text land again.
+function prefillComposer(text) {
+	pendingPrompt.value = "";
+	nextTick(() => (pendingPrompt.value = text));
 }
 
 // Clicking "Review & approve" in the rail scrolls the matching in-thread
