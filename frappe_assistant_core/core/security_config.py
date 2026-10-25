@@ -517,7 +517,7 @@ def _child_filter_hint(doctype: str, parents: List[Dict[str, str]]) -> str:
     return (
         "To find the parent records that have a value in this table (for example which users "
         f'hold a role), call list_documents on "{parent}" with filters '
-        f'[["{doctype}", "<field>", "=", "<value>"]].'
+        f'{{"{doctype}.<field>": "<value>"}}.'
     )
 
 

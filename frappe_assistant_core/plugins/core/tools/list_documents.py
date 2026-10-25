@@ -103,6 +103,43 @@ def normalize_docstatus_filter(filters: Any) -> Any:
     return normalized
 
 
+def expand_child_table_filters(doctype: str, filters: Any) -> Any:
+    """Turn {"Has Role.role": "X"} (or {"roles.role": "X"}) into Frappe's child-table condition.
+
+    The filters schema is an object, and Frappe reads a dotted key only as a Link path, so a
+    filter on a child table row needs the list form [child doctype, field, op, value]. Other keys
+    keep their meaning. Filters without a child-table key are returned unchanged.
+    """
+    if not isinstance(filters, dict) or not any("." in str(key) for key in filters):
+        return filters
+
+    try:
+        meta = frappe.get_meta(doctype)
+    except Exception:
+        return filters
+    child_doctypes = {}
+    for df in meta.get_table_fields():
+        child_doctypes[df.options] = df.options
+        child_doctypes[df.fieldname] = df.options
+
+    def condition(target: Optional[str], fieldname: str, value: Any) -> list:
+        if isinstance(value, (list, tuple)) and len(value) == 2 and isinstance(value[0], str):
+            operator, operand = value
+        else:
+            operator, operand = "=", value
+        return [target, fieldname, operator, operand] if target else [fieldname, operator, operand]
+
+    conditions = []
+    for key, value in filters.items():
+        prefix, _sep, fieldname = str(key).partition(".")
+        target = child_doctypes.get(prefix) if fieldname else None
+        conditions.append(condition(target, fieldname, value) if target else condition(None, key, value))
+
+    if not any(len(c) == 4 for c in conditions):
+        return filters
+    return conditions
+
+
 def apply_default_docstatus(doctype: str, filters: Any) -> tuple:
     """Default submittable DocTypes to submitted documents only.
 
@@ -476,7 +513,7 @@ class DocumentList(BaseTool):
                 "filters": {
                     "type": "object",
                     "default": {},
-                    "description": "Search filters as key-value pairs. Examples: {'status': 'Active'}, {'customer_type': 'Company'}, {'creation': ['>', '2024-01-01']}. Use empty {} to get all records. For submittable DocTypes, docstatus=1 (submitted) is applied automatically unless you set docstatus yourself — pass {'docstatus': 2} for cancelled, {'docstatus': [0, 1]} for drafts and submitted.",
+                    "description": "Search filters as key-value pairs. Examples: {'status': 'Active'}, {'customer_type': 'Company'}, {'creation': ['>', '2024-01-01']}. Use empty {} to get all records. For submittable DocTypes, docstatus=1 (submitted) is applied automatically unless you set docstatus yourself — pass {'docstatus': 2} for cancelled, {'docstatus': [0, 1]} for drafts and submitted. To filter by a value in a child table, name it 'Child DocType.field', e.g. {'Has Role.role': 'Sales User'} on User.",
                 },
                 "fields": {
                     "type": "array",
@@ -571,6 +608,8 @@ class DocumentList(BaseTool):
             if not filters:
                 filters = {}
             filters["name"] = current_user
+
+        filters = expand_child_table_filters(doctype, filters)
 
         # Submittable DocTypes default to submitted documents only, so cancelled and
         # draft records never reach a consumer that is summing monetary fields.

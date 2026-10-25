@@ -253,7 +253,29 @@ class TestChildDoctypeAccess(BaseAssistantTest):
         self.assertFalse(result.get("success"), result)
         self.assertEqual(result.get("error_type"), "child_table_doctype")
         self.assertIn('list_documents on "User"', result["suggestion"])
-        self.assertIn('[["Has Role", "<field>", "=", "<value>"]]', result["suggestion"])
+        self.assertIn('{"Has Role.<field>": "<value>"}', result["suggestion"])
+
+    def test_a_child_table_key_filters_the_parent(self):
+        # The hint above sends FACO here: list_documents on User with {"Has Role.role": ...}. The
+        # filters schema is an object, so the call must pass argument validation in that form.
+        user = self.make_throwaway_user("fac34508-holder", roles=("System Manager",))
+        frappe.set_user(user)
+        try:
+            tool = DocumentList()
+            for key in ("Has Role.role", "roles.role"):
+                arguments = {
+                    "doctype": "User",
+                    "filters": {key: "System Manager"},
+                    "fields": ["name"],
+                    "limit": 500,
+                }
+                tool.validate_arguments(arguments)
+                result = tool.execute(arguments)
+                self.assertTrue(result.get("success"), result)
+                self.assertIn(user, [row["name"] for row in result["data"]], key)
+                self.assertNotIn("Guest", [row["name"] for row in result["data"]], key)
+        finally:
+            frappe.set_user("Administrator")
 
     def test_non_admin_is_told_which_parent_to_use(self):
         user = self.make_throwaway_user("fac291-sysmgr", roles=("System Manager",))

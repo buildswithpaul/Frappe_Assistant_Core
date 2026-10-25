@@ -139,12 +139,14 @@ The key is absent when every filter value resolves, so its absence confirms caus
 ```
 
 ### By a value in a child table
-A child table (such as `Has Role`) cannot be listed on its own. List the parent and filter on
-the child row as `[child doctype, field, operator, value]`. To see who holds a role:
+A child table (such as `Has Role`) cannot be listed on its own. List the parent and name the
+child field as `"<child doctype>.<field>"` (the table's fieldname works too, e.g. `"roles.role"`).
+To see who holds a role:
 ```json
-{"doctype": "User", "filters": [["Has Role", "role", "=", "Sales User"]], "fields": ["name", "full_name"]}
+{"doctype": "User", "filters": {"Has Role.role": "Sales User"}, "fields": ["name", "full_name"]}
 ```
-Use this instead of `run_database_query`, which asks for approval on every call.
+Operators work as usual: `{"Has Role.role": ["in", ["Sales User", "Sales Manager"]]}`. Use this
+instead of `run_database_query`, which asks for approval on every call.
 
 ## Best Practices
 
