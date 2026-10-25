@@ -24,6 +24,7 @@ The same classes work in a FAC Page's `html` (see the `fac-page` skill), so a mo
 | `mk-field` | a label above an input, select or textarea |
 | `mk-tabs` | row of tabs; mark the current child with `active` |
 | `mk-stat` | a small label over a large number |
+| `mk-chart` | a chart container, full width and 320 px high; `fac.chart` adds it |
 
 ## Example
 
@@ -41,3 +42,41 @@ The same classes work in a FAC Page's `html` (see the `fac-page` skill), so a mo
   <button class="mk-btn mk-btn-primary">Save</button>
 </div>
 ```
+
+## Charts in a FAC Page
+
+A mockup is static, so it cannot draw a chart; show a sample chart as an inline `<svg>` there. A published FAC Page's `script` can call `fac.chart(el, option)`, which draws an [ECharts](https://echarts.apache.org/en/option.html) `option` into `el` as SVG. It works the same in the chat's page panel and in Desk.
+
+- Bar, line and pie charts, with the grid, tooltip, legend and title components. No other ECharts chart type or component is loaded.
+- Series take the FAC palette unless the option sets its own `color`.
+- It returns `{update(option), dispose()}`. `update` merges a new option in, as ECharts' `setOption` does.
+- The container gets `mk-chart`. Set a different height in the page's `style` if 320 px does not suit.
+
+```html
+<div class="mk-page">
+  <div class="mk-card"><div class="sales-chart"></div></div>
+</div>
+```
+
+```js
+frappe.db.get_list("Sales Invoice", {
+  fields: ["customer", "grand_total"],
+  filters: { docstatus: 1 },
+  limit: 10,
+}).then((rows) => {
+  fac.chart(root_element.querySelector(".sales-chart"), {
+    tooltip: {},
+    xAxis: { type: "category", data: rows.map((r) => r.customer) },
+    yAxis: { type: "value" },
+    series: [{ type: "bar", data: rows.map((r) => r.grand_total) }],
+  });
+});
+```
+
+## Printing
+
+The chat's page panel has a Download PDF button. It prints the page as it is drawn at that moment, charts included, in the kit's design:
+
+- A4 portrait, or landscape when the page is wider than 900 px, with 12 mm margins. The suggested file name is the page title and today's date.
+- Shadows are dropped and colours print as shown.
+- A card, a table row and a chart are not split across sheets. A chart wider than the sheet is scaled down to fit.

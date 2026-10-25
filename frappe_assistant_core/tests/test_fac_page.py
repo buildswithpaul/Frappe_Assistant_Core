@@ -186,6 +186,16 @@ class TestFACPage(BaseAssistantTest):
         self.assertIn('frame.setAttribute("sandbox", "")', page.script)
         self.assertNotIn("{% include", page.script)
 
+    def test_the_host_page_gives_page_scripts_fac_chart(self):
+        # The page script runs with fac in Desk as in the chat panel; the built helper is served
+        # from /assets, and bench build makes it (it is not committed).
+        page = frappe.get_doc("Page", HOST_PAGE)
+        page.load_assets()
+
+        self.assertIn("/assets/frappe_assistant_core/js/fac_page_charts.js?v=", page.script)
+        self.assertIn("window.fac_page_charts.chart", page.script)
+        self.assertIn("with_fac(data.script", page.script)
+
     def test_a_published_page_html_is_served_unchanged(self):
         html = '<div class="mk-card" onclick="go()"><img src="x" onerror="track()"></div>'
         slug = self._make_page(published=1, html=html)

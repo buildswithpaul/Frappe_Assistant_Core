@@ -17,7 +17,9 @@
 				<button v-if="shareable" type="button" class="page-panel-action page-panel-share" @click="share">
 					{{ __("Share…") }}
 				</button>
-				<button type="button" class="page-panel-action" disabled>{{ __("Download PDF") }}</button>
+				<button type="button" class="page-panel-action page-panel-pdf" :disabled="!page" @click="downloadPdf">
+					{{ __("Download PDF") }}
+				</button>
 				<button type="button" class="page-panel-close" :aria-label="__('Close page')" @click="close">×</button>
 			</div>
 		</header>
@@ -37,6 +39,7 @@
 			<p v-else-if="!page" class="page-panel-message">{{ __("Loading…") }}</p>
 			<PageView
 				v-else
+				ref="view"
 				:key="renderKey"
 				:page="page"
 				:user="user"
@@ -54,6 +57,7 @@ import { facPage } from "@/api/domains/facPage";
 import { usePagePanel } from "@/composables/usePagePanel";
 import { __ } from "@/utils/i18n";
 import { logger } from "@/utils/logger";
+import { printPage } from "@/utils/pagePrint";
 
 import PageListMenu from "./PageListMenu.vue";
 import PageView from "./PageView.vue";
@@ -79,6 +83,7 @@ const unsupported = ref(null);
 const scriptFailed = ref(false);
 const shareNote = ref("");
 const renderKey = ref(0);
+const view = ref(null);
 let request = 0;
 
 const title = computed(() => page.value?.title || props.name);
@@ -120,6 +125,10 @@ watch(() => props.refreshKey, load);
 function onScriptError(error) {
 	logger.error("FAC Page script failed", error);
 	scriptFailed.value = true;
+}
+
+function downloadPdf() {
+	printPage({ title: title.value, ...view.value.printSnapshot() });
 }
 
 function share() {

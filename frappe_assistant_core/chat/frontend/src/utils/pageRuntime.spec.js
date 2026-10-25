@@ -27,6 +27,13 @@ describe("runPageScript", () => {
 		expect(root.textContent).toBe("avery@example.com Hi object");
 	});
 
+	it("hands the script the fac it is given", () => {
+		const chart = vi.fn();
+		const result = runPageScript("fac.chart(root_element, {series: []});", root, makeFrappeStandIn(api), { chart });
+		expect(result).toEqual({ ok: true });
+		expect(chart).toHaveBeenCalledWith(root, { series: [] });
+	});
+
 	it("sends frappe.db.get_list through frappe.client.get_list on the stand-in API", async () => {
 		await run(
 			"window.__pageRows = frappe.db.get_list('Sales Invoice', {fields: ['name'], filters: {status: 'Paid'}, limit: 5});",

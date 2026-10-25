@@ -3,6 +3,9 @@
 (function () {
 	// Desk's build version (v15 and v16 set it in the page template), so a rebuilt kit is refetched.
 	const KIT_CSS_URL = `/assets/frappe_assistant_core/css/mockup_kit.css?v=${window._version_number || ""}`;
+	// fac.chart, built from the chat's pageCharts module (vite.pagecharts.config.js).
+	const CHARTS_URL = `/assets/frappe_assistant_core/js/fac_page_charts.js?v=${window._version_number || ""}`;
+	let charts_loaded = null;
 
 	// fac_page_draft_srcdoc and fac_page_draft_frame, inlined by render_include on page load.
 	// {% include "frappe_assistant_core/assistant_core/page/fac_pages/fac_page_draft.js" %}
@@ -49,16 +52,47 @@
 			render_draft(page, data, is_latest);
 			return;
 		}
-		const host = document.createElement("div");
-		page.main.empty().append(host);
-		// @import must lead the stylesheet; the page's own style follows so it can override the kit.
-		const css = `@import url("${KIT_CSS_URL}");\n${data.style || ""}`;
-		frappe.create_shadow_element(
-			host,
-			`<div class="fac-page-root">${data.html || ""}</div>`,
-			css,
-			data.script || ""
-		);
+		page.main.empty();
+		load_charts().then(() => {
+			if (!is_latest()) return;
+			const host = document.createElement("div");
+			page.main.empty().append(host);
+			// @import must lead the stylesheet; the page's own style follows so it can override the kit.
+			const css = `@import url("${KIT_CSS_URL}");\n${data.style || ""}`;
+			frappe.create_shadow_element(
+				host,
+				`<div class="fac-page-root">${data.html || ""}</div>`,
+				css,
+				with_fac(data.script || "")
+			);
+		});
+	}
+
+	// Once per Desk session. frappe.require cannot take the ?v= URL (it reads the extension after
+	// the "?"), so a plain script tag loads it. A failed load is retried on the next show; the page
+	// still renders, and a script that calls fac.chart fails as it would in the chat panel.
+	function load_charts() {
+		if (!charts_loaded) {
+			charts_loaded = new Promise((resolve) => {
+				const script = document.createElement("script");
+				script.src = CHARTS_URL;
+				script.onload = resolve;
+				script.onerror = () => {
+					charts_loaded = null;
+					resolve();
+				};
+				document.head.appendChild(script);
+			});
+		}
+		return charts_loaded;
+	}
+
+	// create_shadow_element runs the script as a global <script>, which sees no variable of ours.
+	// The chat panel runs it as new Function("root_element", "frappe", "__", "fac", script), so
+	// here it runs as a function of fac as well: the same scoping, and no global named fac.
+	function with_fac(script) {
+		const fac = "{ chart: window.fac_page_charts && window.fac_page_charts.chart }";
+		return `(function (fac) {\n${script}\n})(${fac});`;
 	}
 
 	// The sandboxed frame cannot load the kit itself (its CSP allows no fetches), so it is inlined.

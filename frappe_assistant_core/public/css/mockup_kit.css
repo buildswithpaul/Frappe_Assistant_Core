@@ -136,3 +136,34 @@ body,
 	font-size: 24px;
 	font-weight: 600;
 }
+
+/* A fac.chart() container: full width, a readable default height the page's own style may change. */
+.mk-chart {
+	width: 100%;
+	height: 320px;
+}
+
+/* Download PDF prints the page: flat, in its own colours, without splitting a card, row or chart. */
+@media print {
+	* {
+		box-shadow: none !important;
+		-webkit-print-color-adjust: exact;
+		print-color-adjust: exact;
+	}
+
+	.mk-card,
+	.mk-table tr,
+	.mk-chart {
+		break-inside: avoid;
+	}
+
+	/* A chart drawn wider than the sheet scales down instead of being cut off. */
+	.mk-chart,
+	.mk-chart * {
+		max-width: 100%;
+	}
+
+	.mk-chart svg {
+		height: auto;
+	}
+}

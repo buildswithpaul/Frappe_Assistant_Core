@@ -59,6 +59,8 @@ frappe_assistant_core/public/chat/spa/manifest.webmanifest
 frappe_assistant_core/public/chat/spa/offline.html
 frappe_assistant_core/public/chat/spa/icons/
 frappe_assistant_core/public/chat/widget-app/
+# fac.chart for the fac-pages Desk page, built by vite.pagecharts.config.js.
+frappe_assistant_core/public/js/fac_page_charts.js
 frappe_assistant_core/chat/frontend/dist/
 .vite/
 

@@ -1,5 +1,5 @@
 import { flushPromises, mount } from "@vue/test-utils";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 const baseCall = vi.fn();
 vi.mock("@/api/_core", () => ({ baseCall: (...a) => baseCall(...a), getCall: vi.fn() }));
@@ -8,6 +8,15 @@ import PageView from "./PageView.vue";
 
 let wrapper;
 afterEach(() => wrapper?.unmount());
+
+// ECharts measures label text on a 2D canvas, which every browser has and jsdom lacks.
+beforeAll(() => {
+	vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
+		font: "",
+		measureText: (text) => ({ width: String(text).length * 7 }),
+	});
+});
+afterAll(() => vi.restoreAllMocks());
 
 const published = {
 	title: "Sales",
@@ -72,5 +81,59 @@ describe("PageView", () => {
 		const w = mountView(page);
 		await flushPromises();
 		expect(w.emitted("error")[0][0].message).toBe("denied");
+	});
+
+	it("gives the script fac.chart, which draws an svg chart", () => {
+		const page = {
+			...published,
+			html: '<div class="chart"></div>',
+			script:
+				"fac.chart(root_element.querySelector('.chart'), {xAxis: {type: 'category', data: ['A']}, yAxis: {}, series: [{type: 'bar', data: [3]}]});",
+		};
+		const shadow = mountView(page).find(".page-view-host").element.shadowRoot;
+		expect(shadow.querySelector(".chart svg")).not.toBeNull();
+		expect(wrapper.emitted("error")).toBeUndefined();
+	});
+
+	it("disposes the page's charts when it unmounts", () => {
+		const page = {
+			...published,
+			html: '<div class="chart"></div>',
+			script: "fac.chart(root_element.querySelector('.chart'), {series: [{type: 'pie', data: [1, 2]}]});",
+		};
+		const shadow = mountView(page).find(".page-view-host").element.shadowRoot;
+		const el = shadow.querySelector(".chart");
+		expect(el.querySelector("svg")).not.toBeNull();
+		wrapper.unmount();
+		wrapper = null;
+		expect(el.querySelector("svg")).toBeNull();
+	});
+
+	it("snapshots the rendered page for print, after the script and its charts ran", () => {
+		const page = {
+			...published,
+			html: '<div class="chart"></div>',
+			script: "fac.chart(root_element.querySelector('.chart'), {series: [{type: 'pie', data: [1, 2]}]});",
+		};
+		const snap = mountView(page).vm.printSnapshot();
+		expect(snap.html).toMatch(/^<div class="fac-page-root">/);
+		expect(snap.html).toContain("<svg");
+		expect(snap.html).not.toContain("--mk-radius");
+		expect(snap.kitCss).toContain("--mk-radius");
+		expect(snap.style).toBe(".mk-card { color: teal; }");
+		expect(snap.wide).toBe(false);
+	});
+
+	it("calls a page wider than 900px wide", () => {
+		const w = mountView(published);
+		const root = w.find(".page-view-host").element.shadowRoot.querySelector(".fac-page-root");
+		// jsdom lays nothing out; a browser reports the page's rendered width here.
+		Object.defineProperty(root, "scrollWidth", { value: 901 });
+		expect(w.vm.printSnapshot().wide).toBe(true);
+	});
+
+	it("snapshots a draft from its sanitised html", () => {
+		const snap = mountView({ ...published, draft: true }).vm.printSnapshot();
+		expect(snap.html).toBe('<div class="fac-page-root"><div class="mk-card">Sales this month</div></div>');
 	});
 });

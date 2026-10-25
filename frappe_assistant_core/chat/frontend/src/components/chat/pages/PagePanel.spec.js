@@ -7,6 +7,11 @@ vi.mock("@/api/domains/facPage", () => ({
 	facPage: { getPage: (...a) => getPage(...a), listMine: (...a) => listMine(...a) },
 }));
 vi.mock("@/api/_core", () => ({ baseCall: vi.fn(), getCall: vi.fn() }));
+const printPage = vi.fn();
+vi.mock("@/utils/pagePrint", async (importOriginal) => ({
+	...(await importOriginal()),
+	printPage: (...a) => printPage(...a),
+}));
 
 import { usePagePanel } from "@/composables/usePagePanel";
 import PagePanel from "./PagePanel.vue";
@@ -34,6 +39,7 @@ async function mountPanel(props = {}) {
 
 beforeEach(() => {
 	getPage.mockReset().mockResolvedValue(page());
+	printPage.mockReset();
 	listMine.mockReset().mockResolvedValue([]);
 });
 afterEach(() => {
@@ -137,5 +143,24 @@ describe("PagePanel", () => {
 	it("hides Share… for a page someone else owns", async () => {
 		getPage.mockResolvedValue(page({ owner_is_me: false }));
 		expect((await mountPanel({ canShare: true })).find("button.page-panel-share").exists()).toBe(false);
+	});
+
+	it("prints the rendered page under its title from Download PDF", async () => {
+		const w = await mountPanel();
+		const button = w.find("button.page-panel-pdf");
+		expect(button.attributes("disabled")).toBeUndefined();
+		await button.trigger("click");
+		expect(printPage).toHaveBeenCalledOnce();
+		const args = printPage.mock.calls[0][0];
+		expect(args.title).toBe("Sales this month");
+		expect(args.html).toContain("Sales");
+		expect(args.kitCss).toContain("--mk-radius");
+		expect(args.wide).toBe(false);
+	});
+
+	it("offers Download PDF only once the page has loaded", async () => {
+		getPage.mockRejectedValue(new Error("gone"));
+		const w = await mountPanel();
+		expect(w.find("button.page-panel-pdf").attributes("disabled")).toBeDefined();
 	});
 });
