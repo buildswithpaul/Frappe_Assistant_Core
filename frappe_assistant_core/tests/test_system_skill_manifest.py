@@ -151,20 +151,6 @@ class TestSystemSkillManifest(BaseAssistantTest):
             entry = next(e for e in _load_manifest("system_skills.json") if e["skill_id"] == skill_id)
             self.assertIn("Never show", self._read_skill(entry["content_file"]), skill_id)
 
-    def test_switch_on_skills_ask_before_switching_on_and_test_only_after(self):
-        steps = {
-            "client_script.md": "6. **Create it",
-            "notification.md": "6. **Show the plan",
-            "custom_report.md": "7. **Create it",
-        }
-        for name, marker in steps.items():
-            step = self._read_skill(name).split(marker)[1].split("\n")[0]
-            self.assertIn("whether to go ahead", step, name)
-            self.assertIn("straight away", step, name)
-            self.assertLess(step.index("whether to go ahead"), step.index("straight away"), name)
-            self.assertIn("switch it off again", step, name)
-            self.assertNotIn("only after they confirm", step, name)
-
     def test_publishing_and_switching_on_ask_with_the_final_code_even_on_the_plan(self):
         # FAC Cloud shows the card for a write that switches something on, plan or not.
         stale = (
@@ -181,13 +167,22 @@ class TestSystemSkillManifest(BaseAssistantTest):
             for phrase in stale:
                 self.assertNotIn(phrase, text, name)
 
-    def test_server_script_switch_on_card_is_the_go_ahead(self):
-        # Switching a script on always shows the card, so a chat question first asks twice.
-        step = self._read_skill("server_script.md").split("7. **Create it")[1].split("\n")[0]
-        self.assertNotIn("whether to go ahead", step)
-        self.assertIn("the card is the user's go-ahead", step)
-        self.assertLess(step.index("the card is the user's go-ahead"), step.index("straight away"))
-        self.assertIn("switch it off again", step)
+    def test_switch_on_card_is_the_go_ahead_and_testing_follows(self):
+        # Switching code on always shows the card, so a chat question first asks twice.
+        steps = {
+            "server_script.md": "7. **Create it",
+            "client_script.md": "6. **Create it",
+            "notification.md": "6. **Show the plan",
+            "custom_report.md": "7. **Create it",
+        }
+        for name, marker in steps.items():
+            step = self._read_skill(name).split(marker)[1].split("\n")[0]
+            self.assertNotIn("whether to go ahead", step, name)
+            self.assertNotIn("Only after they say yes", step, name)
+            self.assertIn("the card is the user's go-ahead", step, name)
+            self.assertIn("straight away", step, name)
+            self.assertLess(step.index("the card is the user's go-ahead"), step.index("straight away"), name)
+            self.assertIn("switch it off again", step, name)
 
     def test_skills_say_editing_live_code_asks_even_on_the_plan(self):
         for name in (
