@@ -17,12 +17,16 @@
 """FAC Page records, the role-checked read endpoint and the host Desk page."""
 
 import glob
+import hashlib
 import json
 import os
 
 import frappe
 
 from frappe_assistant_core.api.fac_page import get_page
+from frappe_assistant_core.plugins.core.tools.create_document import DocumentCreate
+from frappe_assistant_core.plugins.core.tools.get_document import DocumentGet
+from frappe_assistant_core.plugins.core.tools.list_documents import DocumentList
 from frappe_assistant_core.tests.base_test import BaseAssistantTest
 
 HOST_PAGE = "fac-pages"
@@ -49,6 +53,7 @@ class TestFACPage(BaseAssistantTest):
                 "doctype": "FAC Page",
                 "title": "Team Planner",
                 "slug": slug,
+                "visibility": "Shared",
                 "published": published,
                 "roles": [{"role": role} for role in roles],
                 "html": '<div class="mk-card">Plan</div>',
@@ -250,7 +255,214 @@ class TestFACPage(BaseAssistantTest):
         self.assertIn(HOST_PAGE, _app_records("page"))
         self.assertEqual(doctype_routes & _app_records("page"), set())
 
-    def test_only_system_manager_has_doctype_permissions(self):
-        roles = {perm.role for perm in frappe.get_meta("FAC Page").permissions}
+    def test_a_shared_page_is_named_by_its_slug(self):
+        self.assertEqual(self._make_page(slug="team-planner-shared"), "team-planner-shared")
 
-        self.assertEqual(roles, {"System Manager"})
+    def test_only_system_manager_has_full_doctype_permissions(self):
+        # Other Desk users reach FAC Page only through the Desk User row, for pages they own.
+        perms = {perm.role: perm for perm in frappe.get_meta("FAC Page").permissions}
+
+        self.assertEqual(set(perms), {"System Manager", "Desk User"})
+        self.assertFalse(perms["System Manager"].if_owner)
+        self.assertTrue(perms["Desk User"].if_owner)
+
+
+def _owner_tag(user: str) -> str:
+    return hashlib.sha1(user.encode()).hexdigest()[:6]
+
+
+class TestPersonalFACPage(BaseAssistantTest):
+    """A page anyone at the Desk can build, which opens only for the user who built it."""
+
+    def _desk_user(self, prefix: str, roles: tuple = ("Report Manager",)) -> str:
+        # Production: a Desk (System) user with an ordinary role builds the page through FACO.
+        user = self.make_throwaway_user(prefix, roles=roles)
+        self.assertEqual(frappe.db.get_value("User", user, "user_type"), "System User")
+        return user
+
+    def _act_as(self, user: str) -> None:
+        # nosemgrep: frappe-setuser — test acts as a non-Administrator inside the test transaction
+        frappe.set_user(user)
+
+    def _build(self, user: str, slug: str = "my-planner", **overrides) -> str:
+        # Production: FACO's create_document builds a new doc and calls insert() as the session
+        # user, with permissions checked; this is the same call.
+        self._act_as(user)
+        doc = frappe.get_doc(
+            {
+                "doctype": "FAC Page",
+                "title": "My Planner",
+                "slug": slug,
+                "html": '<div class="mk-card">Mine</div>',
+                "script": "root_element.querySelector('.mk-card').dataset.ready = '1';",
+                **overrides,
+            }
+        )
+        doc.insert()
+        return doc.name
+
+    def _share(self, name: str) -> None:
+        # Production: a System Manager opens the user's page in Desk and sets it to Shared.
+        self._act_as("Administrator")
+        doc = frappe.get_doc("FAC Page", name)
+        doc.visibility = "Shared"
+        doc.save()
+
+    def test_a_system_user_builds_a_page_only_they_open(self):
+        user = self._desk_user("fac-page-builder")
+
+        name = self._build(user, slug="my-planner")
+
+        self.assertEqual(name, f"my-planner-{_owner_tag(user)}")
+        page = get_page(name)
+        self.assertIn("dataset.ready", page["script"])
+        self.assertFalse(page["draft"])
+        self.assertEqual(page["visibility"], "Only me")
+        self.assertTrue(page["owner_is_me"])
+
+    def test_two_users_build_pages_with_the_same_slug(self):
+        first = self._build(self._desk_user("fac-page-first"), slug="team-board")
+        second = self._build(self._desk_user("fac-page-second"), slug="team-board")
+
+        self.assertNotEqual(first, second)
+        self.assertEqual(frappe.db.get_value("FAC Page", second, "slug"), "team-board")
+
+    def test_the_owner_edits_their_page(self):
+        user = self._desk_user("fac-page-editor")
+        doc = frappe.get_doc("FAC Page", self._build(user))
+
+        doc.html = "<p>Edited</p>"
+        doc.save()
+
+        self.assertEqual(get_page(doc.name)["html"], "<p>Edited</p>")
+
+    def test_a_personal_page_does_not_exist_for_anyone_else(self):
+        name = self._build(self._desk_user("fac-page-private"))
+
+        for other in (
+            self._desk_user("fac-page-sysman", roles=("System Manager",)),
+            "Administrator",
+            self._desk_user("fac-page-peer"),
+        ):
+            with self.subTest(user=other):
+                self._act_as(other)
+                with self.assertRaises(frappe.DoesNotExistError):
+                    get_page(name)
+
+    def test_a_system_user_cannot_share_publish_or_set_roles(self):
+        user = self._desk_user("fac-page-limited")
+        for i, overrides in enumerate(({"published": 1}, {"roles": [{"role": "Report Manager"}]})):
+            with self.subTest(overrides=overrides), self.assertRaises(frappe.ValidationError):
+                self._build(user, slug=f"limited-{i}", **overrides)
+
+        # The permission hook refuses a shared page first; validate refuses it for a write path
+        # that skips the permission check, such as server code acting for the user.
+        with self.assertRaises(frappe.PermissionError):
+            self._build(user, slug="limited-shared", visibility="Shared")
+        doc = frappe.get_doc("FAC Page", self._build(user, slug="limited-own"))
+        doc.visibility = "Shared"
+        with self.assertRaises(frappe.PermissionError):
+            doc.save()
+        with self.assertRaises(frappe.ValidationError):
+            doc.save(ignore_permissions=True)
+
+    def test_a_system_user_cannot_edit_their_page_once_shared(self):
+        user = self._desk_user("fac-page-was-mine")
+        name = self._build(user)
+        self._share(name)
+        self._act_as(user)
+        doc = frappe.get_doc("FAC Page", name)
+        doc.html = "<p>Changed</p>"
+
+        with self.assertRaises(frappe.PermissionError):
+            doc.save()
+        # A write path that skips the permission check, such as server code acting for the
+        # user, still meets the rule in validate.
+        with self.assertRaises(frappe.ValidationError):
+            doc.save(ignore_permissions=True)
+
+    def test_a_website_user_cannot_build_a_page(self):
+        # make_throwaway_user with no roles is a Website User, as a portal signup is. Desk User is
+        # never theirs, so Frappe refuses the create; validate refuses it on any other path.
+        user = self.make_throwaway_user("fac-page-website")
+
+        with self.assertRaises(frappe.PermissionError):
+            self._build(user, slug="portal-page")
+        doc = frappe.get_doc({"doctype": "FAC Page", "title": "Portal", "slug": "portal-page"})
+        with self.assertRaises(frappe.ValidationError):
+            doc.insert(ignore_permissions=True)
+
+    def test_the_owner_cannot_hand_the_page_to_someone_else(self):
+        # Handing a page with a script to an admin would run that script in the admin's session.
+        # The permission hook refuses it, and Frappe keeps owner set-once for any other save.
+        user = self._desk_user("fac-page-giver")
+        doc = frappe.get_doc("FAC Page", self._build(user))
+        doc.owner = "Administrator"
+
+        with self.assertRaises(frappe.PermissionError):
+            doc.save()
+        with self.assertRaises(frappe.ValidationError):
+            doc.save(ignore_permissions=True)
+
+    def test_a_shared_slug_stays_unique_after_a_page_is_shared(self):
+        # A shared page keeps the name it was built with, so the primary key alone misses this.
+        name = self._build(self._desk_user("fac-page-shared-slug"), slug="ops-board")
+        self._share(name)
+
+        with self.assertRaises(frappe.DuplicateEntryError):
+            frappe.get_doc(
+                {"doctype": "FAC Page", "title": "Ops", "slug": "ops-board", "visibility": "Shared"}
+            ).insert()
+
+    def test_a_personal_slug_is_unique_per_owner(self):
+        # Production: a System Manager sets a shared page back to Only me; it keeps its slug-only
+        # name, so a second personal page with that slug would get a different name.
+        self._act_as("Administrator")
+        frappe.get_doc(
+            {"doctype": "FAC Page", "title": "Desk", "slug": "desk-board", "visibility": "Shared"}
+        ).insert()
+        doc = frappe.get_doc("FAC Page", "desk-board")
+        doc.visibility = "Only me"
+        doc.save()
+
+        with self.assertRaises(frappe.DuplicateEntryError):
+            self._build("Administrator", slug="desk-board")
+
+    def test_list_documents_shows_a_system_user_only_their_pages(self):
+        user = self._desk_user("fac-page-lister")
+        mine = self._build(user, slug="list-mine")
+        # The Desk User row's if_owner lets a user's own page through; once shared, it must drop out.
+        self._share(self._build(user, slug="list-mine-shared"))
+        self._build(self._desk_user("fac-page-other-lister"), slug="list-theirs")
+        self._act_as("Administrator")
+        frappe.get_doc(
+            {"doctype": "FAC Page", "title": "Shared", "slug": "list-shared", "visibility": "Shared"}
+        ).insert()
+        self._act_as(user)
+
+        result = DocumentList().execute({"doctype": "FAC Page", "fields": ["name"], "limit": 100})
+
+        self.assertTrue(result.get("success"), result)
+        self.assertEqual([row["name"] for row in result["data"]], [mine])
+
+    def test_get_document_reads_a_personal_page_only_for_its_owner_or_a_system_manager(self):
+        # A System Manager may read the record as data, as in the Desk form; get_page, which
+        # renders it, still refuses them (see above).
+        name = self._build(self._desk_user("fac-page-get"))
+
+        self._act_as(self._desk_user("fac-page-get-peer"))
+        self.assertFalse(DocumentGet().execute({"doctype": "FAC Page", "name": name}).get("success"))
+
+        self._act_as(self._desk_user("fac-page-get-sysman", roles=("System Manager",)))
+        self.assertTrue(DocumentGet().execute({"doctype": "FAC Page", "name": name}).get("success"))
+
+    def test_a_system_user_builds_a_page_through_create_document(self):
+        user = self._desk_user("fac-page-tool-builder")
+        self._act_as(user)
+
+        result = DocumentCreate().execute(
+            {"doctype": "FAC Page", "data": {"title": "Tool", "slug": "tool-page", "html": "<p>x</p>"}}
+        )
+
+        self.assertTrue(result.get("success"), result)
+        self.assertEqual(result["name"], f"tool-page-{_owner_tag(user)}")

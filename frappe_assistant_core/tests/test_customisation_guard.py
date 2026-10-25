@@ -268,7 +268,10 @@ class TestWriteResultLinks(BaseAssistantTest):
 
     def test_fac_page_result_links_to_the_page_and_keeps_the_form_link(self):
         result = DocumentCreate().execute(
-            {"doctype": "FAC Page", "data": {"title": "Team Planner", "slug": "fac-link-probe-page"}}
+            {
+                "doctype": "FAC Page",
+                "data": {"title": "Team Planner", "slug": "fac-link-probe-page", "visibility": "Shared"},
+            }
         )
 
         self.assertTrue(result["success"], result)

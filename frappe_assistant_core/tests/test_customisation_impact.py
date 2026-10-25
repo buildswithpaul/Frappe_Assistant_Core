@@ -68,23 +68,33 @@ class TestCustomisationImpact(BaseAssistantTest):
     @staticmethod
     def _insert_page(slug: str, published: int) -> str:
         doc = frappe.get_doc(
-            {"doctype": "FAC Page", "title": slug, "slug": slug, "published": published, "html": "<p>x</p>"}
+            {
+                "doctype": "FAC Page",
+                "title": slug,
+                "slug": slug,
+                "visibility": "Shared",
+                "published": published,
+                "html": "<p>x</p>",
+            }
         )
         doc.insert(ignore_permissions=True)
         return doc.name
 
     def test_unpublished_fac_page_create_and_update_are_dormant(self):
-        self.assertTrue(_impact("create_document", "FAC Page", {"slug": "team-planner"})["dormant"])
-        self.assertTrue(
-            _impact("create_document", "FAC Page", {"slug": "team-planner", "published": 0})["dormant"]
-        )
+        shared = {"slug": "team-planner", "visibility": "Shared"}
+        self.assertTrue(_impact("create_document", "FAC Page", shared)["dormant"])
+        self.assertTrue(_impact("create_document", "FAC Page", {**shared, "published": 0})["dormant"])
         self.assertTrue(
             _impact("update_document", "FAC Page", {"html": "<p>y</p>"}, self.draft_page)["dormant"]
         )
 
     def test_publishing_a_fac_page_is_live(self):
         self.assertFalse(
-            _impact("create_document", "FAC Page", {"slug": "team-planner", "published": 1})["dormant"]
+            _impact(
+                "create_document",
+                "FAC Page",
+                {"slug": "team-planner", "visibility": "Shared", "published": 1},
+            )["dormant"]
         )
         self.assertFalse(_impact("update_document", "FAC Page", {"published": 1}, self.draft_page)["dormant"])
         publish_with_edit = {"published": 1, "html": "<p>y</p>"}
@@ -98,6 +108,43 @@ class TestCustomisationImpact(BaseAssistantTest):
     def test_delete_of_an_unpublished_fac_page_is_dormant(self):
         self.assertTrue(_impact("delete_document", "FAC Page", name=self.draft_page)["dormant"])
         self.assertFalse(_impact("delete_document", "FAC Page", name=self.live_page)["dormant"])
+
+    def _personal_page(self, published: int = 0) -> tuple[str, str]:
+        """A personal page and its owner, built by that owner as FACO's create_document does."""
+        owner = self.make_throwaway_user("fac-impact-owner", roles=("Report Manager",))
+        # nosemgrep: frappe-setuser — the owner builds the page inside the test transaction
+        frappe.set_user(owner)
+        doc = frappe.get_doc({"doctype": "FAC Page", "title": "Mine", "slug": "mine", "html": "<p>x</p>"})
+        doc.insert()
+        if published:
+            # Production: a System Manager may tick Published on it; it still opens only for its owner.
+            frappe.db.set_value("FAC Page", doc.name, "published", 1)
+        return doc.name, owner
+
+    def test_the_owner_changing_their_personal_page_is_dormant(self):
+        name, _owner = self._personal_page(published=1)
+
+        result = _impact("update_document", "FAC Page", {"html": "<p>y</p>"}, name)
+
+        self.assertTrue(result["dormant"])
+        self.assertEqual(result["reason"], "only you can open this page")
+        self.assertTrue(
+            _impact("create_document", "FAC Page", {"slug": "mine-too", "published": 1})["dormant"]
+        )
+
+    def test_a_system_manager_changing_someone_elses_personal_page_is_live(self):
+        name, _owner = self._personal_page()
+        sysman = self.make_throwaway_user("fac-impact-sysman", roles=("System Manager",))
+        # nosemgrep: frappe-setuser — a System Manager edits the page inside the test transaction
+        frappe.set_user(sysman)
+
+        # Unpublished, yet the owner sees the change: a personal page opens for them unpublished.
+        self.assertFalse(_impact("update_document", "FAC Page", {"html": "<p>y</p>"}, name)["dormant"])
+
+    def test_switching_a_personal_page_to_shared_is_live(self):
+        name, _owner = self._personal_page()
+
+        self.assertFalse(_impact("update_document", "FAC Page", {"visibility": "Shared"}, name)["dormant"])
 
     def test_server_script_created_switched_off_is_dormant(self):
         r = _impact("create_document", "Server Script", {"name": "x", "disabled": 1})

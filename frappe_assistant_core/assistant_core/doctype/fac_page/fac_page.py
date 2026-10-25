@@ -14,22 +14,71 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""A full page stored in the database and shown by the ``fac-pages`` Desk page."""
+"""A full page stored in the database and shown by the ``fac-pages`` Desk page.
 
+A page is personal ("Only me") or Shared. Any Desk user can build a personal page, and it opens
+only for that user. Only System Managers can share a page, publish it, give it roles or change a
+shared one.
+"""
+
+import hashlib
 import re
 
 import frappe
 from frappe import _
 from frappe.model.document import Document
+from frappe.utils import cint
 
 SLUG_PATTERN = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 SLUG_MAX_LENGTH = 80
+PERSONAL = "Only me"
+SHARED = "Shared"
+SYSTEM_MANAGER = "System Manager"
+
+
+def owner_tag(user: str) -> str:
+    """The suffix that keeps one user's personal page name apart from another's with the same slug."""
+    return hashlib.sha1(user.encode()).hexdigest()[:6]
+
+
+def is_system_manager(user: str) -> bool:
+    return SYSTEM_MANAGER in frappe.get_roles(user)
+
+
+def _is_desk_user(user: str) -> bool:
+    return frappe.get_cached_value("User", user, "user_type") == "System User"
 
 
 class FACPage(Document):
+    def autoname(self):
+        # A shared page is named by its slug; a personal one adds its owner's tag, so two users can
+        # use the same slug. The primary key keeps a personal name from taking a shared one.
+        if self.visibility == SHARED:
+            self.name = self.slug
+        else:
+            self.name = f"{self.slug}-{owner_tag(self.owner)}"
+
     def validate(self):
+        stored = (
+            None
+            if self.is_new()
+            else frappe.db.get_value("FAC Page", self.name, ["slug", "visibility"], as_dict=True)
+        )
+        self.validate_builder(stored)
         self.validate_slug()
-        self.validate_slug_unchanged()
+        self.validate_slug_unchanged(stored)
+        self.validate_slug_free()
+
+    def validate_builder(self, stored):
+        user = frappe.session.user
+        if not _is_desk_user(user):
+            frappe.throw(_("Only Desk users can build pages."))
+        if is_system_manager(user):
+            return
+        if self.visibility == SHARED or (stored and stored.visibility == SHARED):
+            frappe.throw(_("Only a System Manager can share a page or change a shared one."))
+        if self.roles or cint(self.published):
+            frappe.throw(_("Only a System Manager can publish a page or choose who opens it."))
 
     def validate_slug(self):
         if len(self.slug or "") > SLUG_MAX_LENGTH or not SLUG_PATTERN.match(self.slug or ""):
@@ -40,7 +89,36 @@ class FACPage(Document):
                 ).format(SLUG_MAX_LENGTH)
             )
 
-    def validate_slug_unchanged(self):
-        # The slug is the record's name; set_only_once alone is skipped by some write paths.
-        if not self.is_new() and self.slug != self.name:
+    def validate_slug_unchanged(self, stored):
+        # The slug is in the record's name; set_only_once alone is skipped by some write paths.
+        if stored and self.slug != stored.slug:
             frappe.throw(_("The slug cannot change after the page is saved."))
+
+    def validate_slug_free(self):
+        filters = {"slug": self.slug, "visibility": self.visibility, "name": ["!=", self.name]}
+        if self.visibility != SHARED:
+            filters["owner"] = self.owner
+        if frappe.db.exists("FAC Page", filters):
+            frappe.throw(
+                _("A page with the slug {0} already exists.").format(self.slug), frappe.DuplicateEntryError
+            )
+
+
+def has_permission(doc, ptype: str | None = None, user: str | None = None, debug: bool = False) -> bool:
+    """A System Manager may act on any page; anyone else only on their own personal page.
+
+    A System Manager reads someone else's personal page as a record, with its code as text, never
+    rendered: get_page serves a personal page only to its owner.
+    """
+    user = user or frappe.session.user
+    if is_system_manager(user):
+        return True
+    return _is_desk_user(user) and doc.owner == user and doc.visibility == PERSONAL
+
+
+def get_permission_query_conditions(user: str | None = None) -> str:
+    """List views show a non-System-Manager their own personal pages only."""
+    user = user or frappe.session.user
+    if is_system_manager(user):
+        return ""
+    return f"(`tabFAC Page`.`owner` = {frappe.db.escape(user)} and `tabFAC Page`.`visibility` = '{PERSONAL}')"

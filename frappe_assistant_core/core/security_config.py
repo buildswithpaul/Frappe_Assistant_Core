@@ -291,7 +291,7 @@ WRITE_PROTECTED_DOCTYPES = [
     "Server Script",
     "Client Script",
     "Custom Script",
-    "FAC Page",
+    "FAC Page",  # anyone may write their own personal page; see is_doctype_accessible
     # Schema and customization
     "DocType",
     "DocField",
@@ -546,6 +546,12 @@ def is_doctype_accessible(doctype: str, user_role: str, perm_type: str = "read")
 
     if perm_type not in WRITE_PERM_TYPES:
         return True  # Reads and anything non-mutating defer entirely to Frappe
+
+    # Anyone at the Desk may build a FAC Page only they can open. FAC Page's has_permission hook
+    # and validate refuse the rest (sharing, publishing, roles, someone else's page) for every
+    # write path, so this layer hands the decision to them.
+    if doctype == "FAC Page":
+        return True
 
     return doctype not in WRITE_PROTECTED_DOCTYPES
 

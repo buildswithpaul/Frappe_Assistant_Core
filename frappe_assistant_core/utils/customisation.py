@@ -24,12 +24,14 @@ while server scripts are off, links to a record and to the form a customisation 
 ``check_plan_changes`` which checks a build plan against the site before it is shown.
 """
 
-from typing import Any, Dict, Iterable, Optional
+from typing import Any, Callable, Dict, Iterable, Optional
 
 import frappe
 from frappe import _
 from frappe.model.meta import Meta
 from frappe.utils import cint, get_url, get_url_to_form
+
+from frappe_assistant_core.assistant_core.doctype.fac_page.fac_page import PERSONAL, SHARED
 
 CUSTOMISATION_DOCTYPES = frozenset(
     {
@@ -268,12 +270,35 @@ def _targets_are_plain(creating: bool, before: Any, after: Any, field: str) -> b
     return _is_plain_name(after(field)) and (creating or _is_plain_name(before(field)))
 
 
+def _personal_page_impact(
+    creating: bool, data: Dict[str, Any], before: Callable[[str], Any], after: Callable[[str], Any]
+) -> Optional[Dict[str, Any]]:
+    """The impact of a write that touches a personal FAC Page, or None for a shared one throughout.
+
+    A personal page opens, published or not, for its owner only. So a write is dormant when the
+    page is personal before and after it and belongs to the session user, and live otherwise:
+    someone else's page changes for them, and sharing a page opens it to other people.
+    """
+    default = frappe.get_meta("FAC Page").get_field("visibility").default
+    visibility = (data.get("visibility") or default) if creating else after("visibility")
+    was_personal = not creating and before("visibility") != SHARED
+    if visibility == SHARED and not was_personal:
+        return None
+    user = frappe.session.user
+    # A new page's owner is always the session user; Frappe overwrites any supplied owner.
+    owned = creating or (before("owner") == user and after("owner") == user)
+    if owned and visibility == PERSONAL and (creating or before("visibility") == PERSONAL):
+        return {"dormant": True, "reason": _("only you can open this page")}
+    return {"dormant": False, "reason": "FAC Page opens for other people"}
+
+
 def customisation_impact(tool_name: str, tool_input: Any) -> Dict[str, Any]:
     """Whether a customisation write changes nothing anyone but its builder can feel yet.
 
-    Dormant: a switched-off script or notification, an unpublished FAC Page, or anything that
-    only touches a custom DocType that nobody outside the system roles can reach, that holds no
-    records and that is not a child table or used by another form. A write is dormant only when
+    Dormant: a switched-off script or notification, an unpublished shared FAC Page, a personal FAC
+    Page its owner changes and keeps personal, or anything that only touches a custom DocType that
+    nobody outside the system roles can reach, that holds no records and that is not a child table
+    or used by another form. A write is dormant only when
     the stored state and the state after the write both are, so switching a script on, publishing
     a page or moving a field onto a live DocType is live, and any doubt counts as live.
     Never writes. The reason is plain words for logs and never repeats stored values.
@@ -304,6 +329,11 @@ def customisation_impact(tool_name: str, tool_input: Any) -> Dict[str, Any]:
 
     def after(field: str) -> Any:
         return data[field] if field in data else stored.get(field)
+
+    if doctype == "FAC Page":
+        personal = _personal_page_impact(creating, data, before, after)
+        if personal:
+            return personal
 
     if doctype in _SWITCH_FIELDS:
         field, off = _SWITCH_FIELDS[doctype]
@@ -413,9 +443,9 @@ def desk_url(doctype: str, name: str) -> str:
     return get_url_to_form(doctype, name)
 
 
-def fac_page_url(slug: str) -> str:
-    """Where a published FAC Page opens in Desk."""
-    return get_url(f"/app/fac-pages/{slug}")
+def fac_page_url(name: str) -> str:
+    """Where a FAC Page opens in Desk, by record name (a personal page's name is not its slug)."""
+    return get_url(f"/app/fac-pages/{name}")
 
 
 def applies_to(doctype: str, values: Any) -> Optional[Dict[str, str]]:
