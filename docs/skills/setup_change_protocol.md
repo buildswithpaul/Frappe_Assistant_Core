@@ -41,8 +41,8 @@ Every other setup skill (`add-custom-field`, `server-script`, `client-script`, `
 
 When you have the `propose_build_plan` tool, call it before creating or changing two or more setup records.
 List every change, mark the ones that go live, and wait for the approval. Writes the plan lists
-then run without a card each, except publishing a FAC Page or switching a rule on; anything else
-still asks. The plan card then stands in for the confirmation in step 5. Give each entry the `name` Frappe will give the record (a Report's
+then run without a card each, except publishing a FAC Page, switching a rule on or changing live code
+(the code or audience of a published page, or the code of a rule that is on); anything else still asks. The plan card then stands in for the confirmation in step 5. Give each entry the `name` Frappe will give the record (a Report's
 `report_name`, a Workflow's `workflow_name`, a Role's `role_name`, a FAC Page's `slug`, the name you
 set for a script),
 or for a Custom Field, Property Setter or Custom DocPerm its `identity` fields. A record Frappe

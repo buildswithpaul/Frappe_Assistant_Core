@@ -153,7 +153,6 @@ class TestSystemSkillManifest(BaseAssistantTest):
 
     def test_switch_on_skills_ask_before_switching_on_and_test_only_after(self):
         steps = {
-            "server_script.md": "7. **Create it",
             "client_script.md": "6. **Create it",
             "notification.md": "6. **Show the plan",
             "custom_report.md": "7. **Create it",
@@ -181,6 +180,23 @@ class TestSystemSkillManifest(BaseAssistantTest):
             self.assertIn("so the user sees it coming", text, name)
             for phrase in stale:
                 self.assertNotIn(phrase, text, name)
+
+    def test_server_script_switch_on_card_is_the_go_ahead(self):
+        # Switching a script on always shows the card, so a chat question first asks twice.
+        step = self._read_skill("server_script.md").split("7. **Create it")[1].split("\n")[0]
+        self.assertNotIn("whether to go ahead", step)
+        self.assertIn("the card is the user's go-ahead", step)
+        self.assertLess(step.index("the card is the user's go-ahead"), step.index("straight away"))
+        self.assertIn("switch it off again", step)
+
+    def test_skills_say_editing_live_code_asks_even_on_the_plan(self):
+        for name in (
+            "setup_change_protocol.md",
+            "frappe_app_pages.md",
+            "client_script.md",
+            "server_script.md",
+        ):
+            self.assertIn("live code", self._read_skill(name), name)
 
     def test_report_builder_example_uses_fields_and_notification_warns_about_blocked_saves(self):
         report = self._read_skill("custom_report.md")
