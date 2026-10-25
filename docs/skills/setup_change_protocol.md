@@ -33,7 +33,7 @@ Every other setup skill (`add-custom-field`, `server-script`, `client-script`, `
    - An activated **Workflow** immediately stamps a state on every existing document of that type and changes who can edit them.
    - Deleting a **Custom Field** removes it from the form but keeps its database column and values, so a later field with the same name picks the old values up.
 5. **Confirm once, then wait.** `ask_user` with `confirm`, stating the count and scope: "Create these 4 records and change 1 setting?" Wait for the answer before any write, including a dry run. No answer is not a yes. The per-write approval cards still appear after that, and for a customisation (field, script, workflow, report, print format, notification) "Don't ask again" never applies, so expect a card for every write that has an effect unless it is on an approved build plan. Edits to a script that is switched off need no card; switching it on, or changing a live one, asks. This confirmation is for the plan as a whole; a build plan card replaces it (see below).
-6. **Dry-run each create.** Call `create_document` with `validate_only: true`. **It only runs the doctype's own `validate()`.** It does *not* check mandatory fields, whether linked records exist, or duplicate names, so the real insert can still fail. Check links yourself beforehand (`search_documents` with `purpose: "link_value"`). `update_document` has no dry run at all.
+6. **Dry-run each create.** Call `create_document` with `validate_only: true`. It runs what a save runs before writing (link checks, the doctype's own `validate()` and any Before Insert, Before Validate or Before Save rule), then undoes it and saves nothing. It does *not* check mandatory fields or duplicate names, so the real insert can still fail. `update_document` has no dry run at all.
 7. **Execute in order, one write at a time.** Stop at the first failure. Don't improvise a workaround write that isn't in the plan — report what failed and what's still pending, and re-plan with the user.
 8. **Close with the change log**: the same table, now with a Result column and a link to every record. This is the user's undo list, so keep it accurate.
 
@@ -53,6 +53,8 @@ List each change the way Frappe saves it:
 - **A new doctype** is a `DocType` create named after it, not an entry for the new doctype itself.
 - **A role assignment** is an update of each `User` by name. `Has Role` is a child table, and a child
   row is always saved through its parent, so list the parent record.
+- **Switching a rule on** (a script or Notification built switched off) is its own update entry marked
+  `goes_live`, so the approved plan covers it. Switching it on later without one asks again.
 - **Mark `goes_live` honestly.** Mark a new Role, DocType, Custom Field, permission and anything else
   without an on/off switch as going live. A plan entry carries no field values, so FAC cannot prove such
   a record is dormant and shows it under Goes live to be safe. Only a Server Script, Client Script,
@@ -66,7 +68,7 @@ the reason: fix the entry and propose again. A dormant claim FAC cannot prove is
 
 1. **Look it up first.** Read how the thing works (`sandbox_reference` for script code, `get_doctype_info` for fields) instead of guessing or creating a throwaway record to find out.
 2. **Build it switched off.** A script that is switched off changes nothing, and a switched-off Server Script needs no approval card.
-3. **Switch it on with one card**, then trigger it or open the page it changes. For a form or page, look with `browser_take_screenshot` / `browser_capture_diagnostics`.
+3. **Switch it on with one card** (or its plan entry), then trigger it or open the page it changes. For a form or page, look with `browser_take_screenshot` / `browser_capture_diagnostics`. Trigger a rule with `create_document` and `validate_only: true`, never by creating real records and deleting them, and never as another user.
 4. **If it fails, read `recent_errors`**, filtered by the record's name, then fix and trigger again.
 5. **Check who can use it** with `test_as_user`.
 
@@ -76,6 +78,7 @@ the reason: fix the entry and propose again. A dormant claim FAC cannot prove is
 - **Single doctypes** (Stock Settings, Selling Settings, Accounts Settings…) are updated with `name` equal to the doctype name.
 - **A setting change applies to future transactions only.** Turning off negative stock doesn't fix existing negative stock. Say so, so the user doesn't expect it to.
 - **Check as you build.** Use the loop under "Building and checking without probe scripts" above; don't test on a copy or create a throwaway record to find out how something works.
+- **"Publish it" means publish.** Anything else still waiting, such as a rule still switched off or a test, goes on the plan or is raised before publishing, not done unasked.
 - **One plan, one purpose.** Don't fold an unrelated "while I'm here" fix into someone's plan. Offer it separately afterwards.
 
 ## Anti-patterns

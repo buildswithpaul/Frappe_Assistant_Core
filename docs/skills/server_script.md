@@ -26,21 +26,22 @@ Adds a rule that runs on the server when a document is saved, submitted, cancell
 4. **Check scripts are allowed.** Call `get_doctype_info` on `Server Script` and read `server_scripts_enabled`. If it is false, tell the user in plain words that server scripts are switched off on this site. An active rule on a document type would make every save of that document fail, so the write is refused. An administrator with server access can switch them on (on Frappe Cloud this needs a private bench). **Ask the user before** doing anything else: offer to save the rule switched off (`disabled: 1`) so it is ready, say clearly that it will not run until an administrator switches scripts on, or offer a Client Script or another approach. Do not create the switched-off copy until they say yes.
 5. **List what already exists** on the same doctype and event: `list_documents` on `Server Script` with `reference_doctype` and `doctype_event`. Two scripts on one event run in an undefined order. If one overlaps, offer to change it instead of adding another.
 6. **Show the full code** in a fenced block, then explain in plain words what it does and when it runs. The user must be able to approve it without reading Python.
-7. **Create it with `disabled: 1`**, which does nothing yet. Show what it will do and ask the user whether to go ahead. Only after they say yes, update it with `disabled: 0`. Then straight away ask them to test it on a draft or test document (say exactly what to do, for example "save a draft invoice below cost"), and offer to switch it off again if it misbehaves.
+7. **Create it with `disabled: 1`**, which does nothing yet. Show what it will do and ask the user whether to go ahead. Only after they say yes, update it with `disabled: 0`. On a build plan, switching it on is its own update entry marked as going live, so the approved plan is that yes. Then straight away ask them to test it on a draft or test document (say exactly what to do, for example "save a draft invoice below cost"), and offer to switch it off again if it misbehaves.
 8. **Link the result**: the new record and the form where the change shows. A create result carries `url` for the record and `applies_to.url` for the form. Give both as links, and say the user may need to reload the form.
 
 ## Building and checking without probe scripts
 
 1. **Look up the sandbox before writing code.** Call `sandbox_reference` (with a `prefix` such as `frappe.db` to keep it short) and use only names it lists. Do not guess what the sandbox allows.
 2. **Build the script switched off** (`disabled: 1`). While it is off it cannot run, so there is no approval card.
-3. **Switch it on once, when it is ready.** That is the one approval card. Then trigger it to match its type:
-   - DocType Event: save a draft of that document type.
+3. **Switch it on once, when it is ready.** That is the one approval card, or the plan entry for switching it on. Then trigger it to match its type:
+   - DocType Event on a new record: call `create_document` with `validate_only: true`. It runs the Before Insert, Before Validate and Before Save rules and the doctype's own checks, then saves nothing. It runs as you. `update_document` has no such dry run, so for a rule on editing, submitting or deleting a record, or one that treats users differently, tell the user what to try themselves.
    - API: call the endpoint.
    - Scheduler Event: wait for the job or run it.
    - Permission Query: open the list as an affected user.
 4. **If it fails, read `recent_errors`** with `contains` set to the script's name, fix the script, and trigger it again.
 5. **Never create a throwaway "probe" script** to find out what the sandbox allows. That is what `sandbox_reference` is for.
-6. **Check who can read, write or submit the target document type or record** with `test_as_user`. It checks permissions only; it does not show what a validation script blocks.
+6. **Never test a rule with real records.** Do not create records to trigger a rule and then delete them, and never act as another user. Real test rows are left behind when the new rule blocks deleting them.
+7. **Check who can read, write or submit the target document type or record** with `test_as_user`. It checks permissions only; it does not show what a validation script blocks.
 
 ## Reference
 
