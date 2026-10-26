@@ -6,7 +6,7 @@ import { defineComponent, h } from "vue";
 const getMyCreditStatus = vi.fn();
 vi.mock("@/api/client", () => ({ api: { users: { getMyCreditStatus: (...a) => getMyCreditStatus(...a) } } }));
 
-import { usePersonalLimitGate } from "./usePersonalLimitGate.js";
+import { usePersonalLimitGate } from "./usePersonalLimitGate";
 
 enableAutoUnmount(afterEach);
 

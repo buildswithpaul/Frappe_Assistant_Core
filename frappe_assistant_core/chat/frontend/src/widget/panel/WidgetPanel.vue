@@ -135,7 +135,7 @@ import WidgetWelcome from "./WidgetWelcome.vue";
 import BrowserToolConfirm from "./BrowserToolConfirm.vue";
 import OverageNotice from "./OverageNotice.vue";
 import PersonalLimitBanner from "@/components/chat/PersonalLimitBanner.vue";
-import { usePersonalLimitGate } from "./usePersonalLimitGate.js";
+import { usePersonalLimitGate } from "@/composables/usePersonalLimitGate";
 import WidgetPlanStrip from "./WidgetPlanStrip.vue";
 import { bridge } from "../bridge.js";
 import { getHost } from "../host/index.js";

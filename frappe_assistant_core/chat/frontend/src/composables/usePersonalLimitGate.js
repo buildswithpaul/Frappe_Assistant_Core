@@ -3,12 +3,12 @@ import { useUserStore } from "@/stores/userStore";
 import { personalLimitBlock } from "@/utils/personalLimit";
 
 /**
- * The user's own monthly limit, as the widget's composer must honour it.
+ * The user's own monthly limit, as the composer must honour it in the Desk widget and FAC Chat.
  *
  * AR refuses a member at their limit before it looks at the team's credits, so a send would only
- * come back as user_limit_reached. The widget boots without FAC Chat's initialize, so it reads the
- * status itself, and again whenever Desk regains focus: the "Change limit" link opens Settings in
- * another tab, and the hold lifts once the user comes back with a new limit.
+ * come back as user_limit_reached. The status is read on mount (FAC Chat remounts the chat after a
+ * visit to Settings, Users), and again whenever the window regains focus: from Desk the "Change
+ * limit" link opens Settings in another tab, and the hold lifts once the user comes back.
  */
 export function usePersonalLimitGate(win = window) {
 	const userStore = useUserStore();

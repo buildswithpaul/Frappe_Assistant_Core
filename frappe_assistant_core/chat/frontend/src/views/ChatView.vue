@@ -101,6 +101,7 @@
 						@unqueue="handleUnqueue"
 					>
 						<template #composer>
+							<PersonalLimitBanner v-if="composerInHero && limitBlock" v-bind="limitBannerProps" />
 							<InputArea v-if="composerInHero" v-bind="composerBindings" />
 						</template>
 					</ChatStagePicker>
@@ -125,6 +126,7 @@
 				</button>
 
 				<!-- Input Area - bottom dock once a conversation exists -->
+				<PersonalLimitBanner v-if="!composerInHero && limitBlock" v-bind="limitBannerProps" />
 				<InputArea
 					v-if="
 						registrationStatus === 'ready' &&
@@ -267,6 +269,7 @@ import { useConversationsStore } from "@/stores/conversationsStore";
 import { useProjectsStore } from "@/stores/projectsStore";
 import InputArea from "@/components/chat/InputArea.vue";
 import ConnectionBanners from "@/components/chat/ConnectionBanners.vue";
+import PersonalLimitBanner from "@/components/chat/PersonalLimitBanner.vue";
 import ChatStagePicker from "@/components/chat/ChatStagePicker.vue";
 import SupportModal from "@/components/support/SupportModal.vue";
 
@@ -289,6 +292,7 @@ import { useRobotMoodWiring } from "@/composables/useRobotMoodWiring";
 import { useContextRail } from "@/composables/useContextRail";
 import { useSheetDismiss } from "@/composables/useSheetDismiss";
 import { useComposerFocus } from "@/composables/useComposerFocus";
+import { useComposerLimitHold } from "@/composables/useComposerLimitHold";
 import { deriveArtifacts } from "@/utils/contextArtifacts";
 import { isPausedTurn, isStoppedTurn } from "@/utils/turnState";
 import ContextRail from "@/components/chat/ContextRail.vue";
@@ -563,7 +567,7 @@ useChatViewInit(
 	{ chatStore, userStore, modelStore, suggestionStore },
 	{ route, router },
 	{ registrationStatus, isUserSetupComplete },
-	{ onFirstMessage: (text) => handleSendMessage({ message: text, files: [] }) }
+	{ onFirstMessage: (text) => sendOrKeep(text) }
 );
 
 // Auto-scroll to bottom on new messages / streaming chunks
@@ -644,14 +648,28 @@ const composerInHero = computed(
 		privacyConsentComplete.value
 );
 
+// At the personal monthly limit AR refuses every stream, so the composer holds the text and the
+// banner above it says what lifts the hold, as the Desk widget does.
+const limitHold = useComposerLimitHold({
+	send: handleSendMessage,
+	continueTurn: (messageId) => chatStore.continueMessage(messageId),
+});
+const limitBlock = limitHold.block;
+const limitBannerProps = computed(() => ({
+	isAdmin: isAdmin.value,
+	used: limitBlock.value?.used || 0,
+	limit: limitBlock.value?.limit || 0,
+}));
+
 // Shared bindings so hero and dock are guaranteed identical. camelCase on*
 // keys are treated as listeners by v-bind.
 const composerBindings = computed(() => ({
+	holdSend: limitHold.held.value,
 	isStreaming: isStreaming.value,
 	interactionMode: chatStore.pendingInteractionBlock?.regime || null,
 	context: currentContext.value,
 	initialMessage: pendingPrompt.value,
-	onSend: handleSendMessage,
+	onSend: limitHold.send,
 	onFileUpload: handleFileUpload,
 	onAbort: handleAbortStream,
 	onPickTemplate: useTemplate,
@@ -693,7 +711,7 @@ function handleAbortStream() {
 }
 
 function handleSuggestion(suggestion) {
-	handleSendMessage({ message: suggestion, files: [] });
+	sendOrKeep(suggestion);
 }
 
 function handleToggleBlock(messageIndex, blockId) {
@@ -718,8 +736,13 @@ async function handleApprovalResponse(blockId, responses) {
 	});
 }
 
+// Text that never sat in the composer (a suggestion, a project's first message) waits there when held.
+function sendOrKeep(text) {
+	if (limitHold.send({ message: text, files: [] }) === false) prefillComposer(text);
+}
+
 function handleContinueResponse(messageId) {
-	chatStore.continueMessage(messageId);
+	limitHold.continueTurn(messageId);
 }
 
 function handleUnqueue(queueId) {
