@@ -29,6 +29,19 @@ Adds a rule that runs on the server when a document is saved, submitted, cancell
 7. **Create it with `disabled: 1`**, which does nothing yet. Show what it will do and ask the user whether to go ahead. Only after they say yes, update it with `disabled: 0`. Then straight away ask them to test it on a draft or test document (say exactly what to do, for example "save a draft invoice below cost"), and offer to switch it off again if it misbehaves.
 8. **Link the result**: the new record and the form where the change shows. A create result carries `url` for the record and `applies_to.url` for the form. Give both as links, and say the user may need to reload the form.
 
+## Building and checking without probe scripts
+
+1. **Look up the sandbox before writing code.** Call `sandbox_reference` (with a `prefix` such as `frappe.db` to keep it short) and use only names it lists. Do not guess what the sandbox allows.
+2. **Build the script switched off** (`disabled: 1`). While it is off it cannot run, so there is no approval card.
+3. **Switch it on once, when it is ready.** That is the one approval card. Then trigger it to match its type:
+   - DocType Event: save a draft of that document type.
+   - API: call the endpoint.
+   - Scheduler Event: wait for the job or run it.
+   - Permission Query: open the list as an affected user.
+4. **If it fails, read `recent_errors`** with `contains` set to the script's name, fix the script, and trigger it again.
+5. **Never create a throwaway "probe" script** to find out what the sandbox allows. That is what `sandbox_reference` is for.
+6. **Check who can read, write or submit the target document type or record** with `test_as_user`. It checks permissions only; it does not show what a validation script blocks.
+
 ## Reference
 
 ```json
@@ -56,7 +69,7 @@ Adds a rule that runs on the server when a document is saved, submitted, cancell
 - **A script that fails breaks saving for everyone** on that doctype. That is why it starts switched off, is switched on only with the user's go-ahead, and is tested straight away.
 - **Submitted documents.** A `Before Save` script does not run when a submitted document is updated after submit. Use `Before Submit` for "must hold at submit".
 - **An update that flips `disabled` from 1 to 0 is refused when scripts are off**, the same as a create. Do not retry.
-- The approval card appears for every customisation write, and "Don't ask again" never applies to one. That is intended; do not tell the user to switch it off.
+- The approval card appears for every customisation write except one that leaves the script switched off, and "Don't ask again" never applies to one. That is intended; do not tell the user to switch it off.
 
 ## Anti-patterns
 

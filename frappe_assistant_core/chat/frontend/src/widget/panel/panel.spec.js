@@ -622,6 +622,16 @@ describe("browser tool confirmation card", () => {
 		expect(w.emitted("decide").map((e) => e[0])).toEqual(["deny", "approve", "trust"]);
 	});
 
+	it("offers allowing the tool on this page in this chat, translated through Desk's __()", async () => {
+		window.__ = vi.fn((s) => `[tr] ${s}`);
+		onTestFinished(() => delete window.__);
+		const w = mount(BrowserToolConfirm, { props: { request: { tool_name: "take_screenshot", params: {}, description: "" } } });
+		const button = w.find('[data-test="confirm-trust-page"]');
+		expect(button.text()).toBe("[tr] Allow on this page in this chat");
+		await button.trigger("click");
+		expect(w.emitted("decide").map((e) => e[0])).toEqual(["trust_page"]);
+	});
+
 	it("falls back to a generic line for an unknown tool, escaping nothing by hand", () => {
 		const w = mount(BrowserToolConfirm, { props: { request: { tool_name: "<b>x</b>", params: {}, description: "" } } });
 		expect(w.find("b").exists()).toBe(false);
