@@ -9,7 +9,9 @@ The `delete_document` tool permanently removes a Frappe document. This action is
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
 | `doctype` | string | **Yes** | — | Exact DocType name |
-| `name` | string | **Yes** | — | Document name/ID |
+| `name` | string | One of `name`/`names` | — | Document name/ID |
+| `names` | array | One of `name`/`names` | — | Several documents to delete |
+| `mode` | string | No | `all_or_nothing` | For `names`: `all_or_nothing` or `continue` |
 | `force` | boolean | No | `false` | Force deletion even with dependencies |
 
 ## Response Format
@@ -25,6 +27,17 @@ The `delete_document` tool permanently removes a Frappe document. This action is
   }
 }
 ```
+
+## Deleting many records
+
+```json
+{"doctype": "ToDo", "names": ["abc123", "def456"]}
+```
+
+Each record goes through the single-delete path. With `all_or_nothing`, a record that cannot be deleted (for example, one another record links to) restores the ones already deleted in that call.
+- At most 100 records per call; split a larger job into several calls.
+- `mode: "all_or_nothing"` (the default) saves nothing if any record fails, and `failed_record` names the record and its error. `mode: "continue"` saves the records that pass and lists each record's outcome in `results`.
+- Customisation DocTypes (Custom Field, Property Setter, Server Script, Client Script, DocType, Workflow, Report, Print Format, Notification and similar) are refused in a batch: write them one at a time so each one is previewed.
 
 ## Best Practices
 

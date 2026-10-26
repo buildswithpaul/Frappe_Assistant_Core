@@ -37,6 +37,7 @@ from frappe_assistant_core.utils.savepoint import (
     rollback_to_savepoint,
 )
 
+from .batch import MODE_SCHEMA, batch_refusal, run_batch, run_validation
 from .child_tables import ChildRowError, child_table_fields, normalize_child_rows, restricted_row_keys
 
 # The submit after a create runs inside this savepoint, so a refused submit leaves the draft.
@@ -102,7 +103,7 @@ class DocumentCreate(BaseTool):
     def __init__(self):
         super().__init__()
         self.name = "create_document"
-        self.description = "Create new Frappe documents with proper validation and child table support. Supports all DocTypes including those with child tables. WORKFLOW: First use get_doctype_info to understand the DocType structure, identify required fields and child tables, then create the document with proper field values. Child tables must be provided as arrays of objects; a Table MultiSelect field also accepts an array of its link values (e.g. ['user@example.com']). Referenced records (customers, items, warehouses, etc.) must already exist in the system. Use exact field names as shown in DocType metadata. Error responses include specific guidance for resolution. Common use cases: creating Sales Orders with line items, Purchase Orders with items and taxes, customer records, inventory transactions."
+        self.description = "Create new Frappe documents with proper validation and child table support. Supports all DocTypes including those with child tables. WORKFLOW: First use get_doctype_info to understand the DocType structure, identify required fields and child tables, then create the document with proper field values. Child tables must be provided as arrays of objects; a Table MultiSelect field also accepts an array of its link values (e.g. ['user@example.com']). Referenced records (customers, items, warehouses, etc.) must already exist in the system. Use exact field names as shown in DocType metadata. Error responses include specific guidance for resolution. Common use cases: creating Sales Orders with line items, Purchase Orders with items and taxes, customer records, inventory transactions. To create many records of one DocType, pass 'records' (a list of field dicts, at most 100) instead of 'data'."
         self.requires_permission = None  # Permission checked dynamically per DocType
 
         self.inputSchema = {
@@ -116,6 +117,12 @@ class DocumentCreate(BaseTool):
                     "type": "object",
                     "description": "Document field data as key-value pairs. Include all required fields for the doctype. Example: {'customer_name': 'ABC Corp', 'customer_type': 'Company'}",
                 },
+                "records": {
+                    "type": "array",
+                    "items": {"type": "object"},
+                    "description": "Instead of 'data': several records to create, each a field dict like 'data'. Each is checked as a single create would be.",
+                },
+                "mode": MODE_SCHEMA,
                 "submit": {
                     "type": "boolean",
                     "default": False,
@@ -127,16 +134,60 @@ class DocumentCreate(BaseTool):
                     "description": "Run the document's validation without saving. Checks permissions and validation rules; it does not check mandatory fields.",
                 },
             },
-            "required": ["doctype", "data"],
+            "required": ["doctype"],
         }
 
     def execute(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
-        """Create a new document"""
+        """Create one document from ``data``, or several from ``records``"""
         doctype = arguments.get("doctype")
-        data = arguments.get("data", {})
         submit = arguments.get("submit", False)
         validate_only = arguments.get("validate_only", False)
 
+        if "records" not in arguments:
+            if "data" not in arguments:
+                return {
+                    "success": False,
+                    "error": _("Pass 'data' for one record or 'records' for several."),
+                    "doctype": doctype,
+                }
+            return self._create_one(doctype, arguments["data"], submit, validate_only)
+        if "data" in arguments:
+            return {
+                "success": False,
+                "error": _("Pass either 'data' or 'records', not both."),
+                "doctype": doctype,
+            }
+
+        records = arguments["records"]
+        refusal = batch_refusal(doctype, records, "records", arguments.get("mode", "all_or_nothing"))
+        if refusal:
+            return refusal
+        if not all(isinstance(record, dict) for record in records):
+            return {
+                "success": False,
+                "error": _("Each item in 'records' must be a field dict."),
+                "doctype": doctype,
+            }
+
+        def label(index: int, record: Dict[str, Any]) -> str:
+            return _("Record {0}").format(index + 1)
+
+        if validate_only:
+            return run_validation(
+                doctype, records, lambda record: self._create_one(doctype, record, False, True), label
+            )
+        return run_batch(
+            doctype,
+            records,
+            lambda record: self._create_one(doctype, record, submit, False),
+            label,
+            arguments.get("mode", "all_or_nothing"),
+        )
+
+    def _create_one(
+        self, doctype: str, data: Dict[str, Any], submit: bool, validate_only: bool
+    ) -> Dict[str, Any]:
+        """Create a new document"""
         # Import security validation
         from frappe_assistant_core.core.security_config import (
             filter_sensitive_fields,
