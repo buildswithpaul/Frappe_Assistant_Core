@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import BuildPlanCard from "./BuildPlanCard.vue";
 import { PLAN_ID, planBlock } from "./buildPlan.testdata";
 
-const buttonsOf = (wrapper) => wrapper.findAll(".plan-actions button");
+const buttonsOf = (wrapper) => wrapper.findAll(".ix-actions button");
 
 describe("BuildPlanCard", () => {
 	it("shows the summary", () => {

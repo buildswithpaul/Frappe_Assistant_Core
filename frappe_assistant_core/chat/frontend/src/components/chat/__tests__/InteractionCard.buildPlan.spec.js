@@ -30,14 +30,14 @@ describe("InteractionCard with a build plan", () => {
 	it("passes the plan approval up unchanged", async () => {
 		const block = planBlock();
 		wrapper = mount(InteractionCard, { props: { block } });
-		await wrapper.find(".plan-actions .ql-btn-approve").trigger("click");
+		await wrapper.find(".ix-actions .ql-btn-approve").trigger("click");
 		const [, responses] = wrapper.emitted("approve")[0];
 		expect(responses[0].response).toEqual({ decision: "approve", plan_id: block.interrupts[0].reason.plan_id });
 	});
 
 	it("Ask for changes puts the cursor in the composer", async () => {
 		wrapper = mount(Page, { props: { block: planBlock() }, attachTo: document.body });
-		await wrapper.find(".plan-actions .ql-btn-reject").trigger("click");
+		await wrapper.find(".ix-actions .ql-btn-reject").trigger("click");
 		await wrapper.vm.$nextTick();
 		expect(document.activeElement).toBe(wrapper.find("textarea.input-textarea").element);
 	});

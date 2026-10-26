@@ -49,7 +49,7 @@ describe("ApprovalCard for a message tool", () => {
 		expect(wrapper.findComponent({ name: "EmailPreview" }).exists()).toBe(true);
 		expect(wrapper.find(".approval-table").exists()).toBe(false);
 		expect(buttons(wrapper)).toEqual(["Send email", "Reject"]);
-		expect(wrapper.find(".trust-choice").text()).toBe("Don't ask again for this tool");
+		expect(wrapper.find(".trust-choice").text()).toBe("Don't ask again for Send Email");
 		await wrapper.find(".ql-btn-approve").trigger("click");
 		expect(wrapper.emitted("approve")[0]).toEqual(["t1", [{ interruptId: "i1", response: "approve" }]]);
 	});
@@ -151,7 +151,7 @@ describe("ApprovalCard for a CRM email", () => {
 
 describe("ApprovalCard for other tools", () => {
 	it("keeps the field table and never fetches a preview", () => {
-		const block = { id: "t4", tool_name: "create_document", input: { doctype: "ToDo", description: "x" }, interrupts };
+		const block = { id: "t4", tool_name: "create_document", input: { doctype: "ToDo", description: "x", priority: "High" }, interrupts };
 		const wrapper = mount(ApprovalCard, { props: { block } });
 		expect(messagePreview).not.toHaveBeenCalled();
 		expect(wrapper.find(".approval-table").exists()).toBe(true);
@@ -310,11 +310,13 @@ describe("ApprovalCard switching code on", () => {
 		return wrapper;
 	};
 	const audience = (wrapper) => wrapper.find('[data-test="goes-live-audience"]');
+	const roles = (wrapper) => audience(wrapper).findAll(".role-chip").map((chip) => chip.text());
 	const everyone = (wrapper) => wrapper.find('[data-test="goes-live-everyone"]');
 
 	it("FAC Page published: says which roles it goes live to", async () => {
 		const wrapper = await publish(["Sales User", "Report Manager"]);
-		expect(audience(wrapper).text()).toBe("Goes live to: Sales User, Report Manager");
+		expect(audience(wrapper).find(".goes-live-label").text()).toBe("Goes live to");
+		expect(roles(wrapper)).toEqual(["Sales User", "Report Manager"]);
 		expect(everyone(wrapper).exists()).toBe(false);
 	});
 
@@ -325,17 +327,17 @@ describe("ApprovalCard switching code on", () => {
 		await flushPromises();
 		expect(empty.find('[data-test="goes-live-empty"]').text()).toBe("(empty)");
 		expect(empty.find('[data-test="goes-live-missing"]').exists()).toBe(false);
-		expect(audience(empty).text()).toBe("Goes live to: System Managers only");
+		expect(roles(empty)).toEqual(["System Managers only"]);
 	});
 
 	it("FAC Page published with no roles: says System Managers only", async () => {
 		const wrapper = await publish([]);
-		expect(audience(wrapper).text()).toBe("Goes live to: System Managers only");
+		expect(roles(wrapper)).toEqual(["System Managers only"]);
 	});
 
 	it.each([["All"], ["Guest"]])("FAC Page published to %s: names it and warns it reaches every user", async (role) => {
 		const wrapper = await publish(["Sales User", role]);
-		expect(audience(wrapper).text()).toBe(`Goes live to: Sales User, ${role}`);
+		expect(roles(wrapper)).toEqual(["Sales User", role]);
 		expect(everyone(wrapper).text()).toBe("All and Guest include every user who can log in.");
 	});
 
@@ -519,8 +521,9 @@ describe("ApprovalCard plain-language copy and trust", () => {
 	it("rename update card flags the rename and does not list it as a change", () => {
 		const input = { doctype: "Server Script", name: "Old Script", data: { name: "New Script", script: "pass" } };
 		const wrapper = mount(ApprovalCard, { props: { block: { id: "c6", tool_name: "update_document", input, interrupts } } });
-		const rows = wrapper.findAll(".field-key").map((k) => k.text());
-		expect(rows).toEqual(["Doctype", "Name"]);
+		// The title names the record ("Update Server Script Old Script"), so no rows repeat it.
+		expect(wrapper.find(".approval-title").text()).toBe("Update Server Script Old Script");
+		expect(wrapper.findAll(".field-key").map((k) => k.text())).toEqual([]);
 		expect(wrapper.text()).not.toContain("New Script");
 		expect(wrapper.find("[data-test='rename-notice']").text()).toBe(
 			"Renaming isn't possible here. Only the other changes will be saved.",
@@ -534,7 +537,7 @@ describe("ApprovalCard plain-language copy and trust", () => {
 	])("flags a rename sent as %s on a prefixed update tool", (_label, input) => {
 		const wrapper = mount(ApprovalCard, { props: { block: { id: "c7", tool_name: "erp_update_document", input, interrupts } } });
 		expect(wrapper.find("[data-test='rename-notice']").exists()).toBe(true);
-		expect(wrapper.findAll(".field-key").map((k) => k.text())).toEqual(["Doctype", "Name", "Desk Access"]);
+		expect(wrapper.findAll(".field-key").map((k) => k.text())).toEqual(["Desk Access"]);
 	});
 
 	it("shows no rename notice when the update restates the same name or does not rename", () => {
@@ -554,7 +557,7 @@ describe("ApprovalCard plain-language copy and trust", () => {
 	it("trust checkbox shown otherwise", () => {
 		const block = { id: "c3", tool_name: "create_document", input: { doctype: "ToDo", data: {} }, interrupts: [{ id: "i1", reason: { risk: "other" } }] };
 		const wrapper = mount(ApprovalCard, { props: { block } });
-		expect(wrapper.find(".trust-choice").text()).toBe("Don't ask again for this tool");
+		expect(wrapper.find(".trust-choice").text()).toBe("Don't ask again when FACO creates records");
 	});
 });
 
@@ -666,5 +669,45 @@ describe("ApprovalCard field conditions", () => {
 		await flushPromises();
 		expect(wrapper.find('[data-test="condition-notice"]').exists()).toBe(false);
 		expect(wrapper.find(".condition-toggle").exists()).toBe(false);
+	});
+});
+
+describe("ApprovalCard heading and progress", () => {
+	const todo = { id: "h1", tool_name: "create_document", input: { doctype: "ToDo", data: { description: "Call Blue Harbor", priority: "High" } }, interrupts };
+
+	it("leads with what FACO wants to do, from the arguments", () => {
+		const wrapper = mount(ApprovalCard, { props: { block: todo } });
+		expect(wrapper.find(".approval-title").text()).toBe("Create ToDo “Call Blue Harbor”");
+		expect(wrapper.find('[data-test="ix-waiting"]').exists()).toBe(true);
+	});
+
+	it("shows Approving… on the button that was clicked while the decision is sent", async () => {
+		const wrapper = mount(ApprovalCard, { props: { block: todo } });
+		await wrapper.find(".ql-btn-approve").trigger("click");
+		// The parent sets submitting once it starts sending the decision.
+		await wrapper.setProps({ submitting: true });
+		const approve = wrapper.find(".ql-btn-approve");
+		expect(approve.text()).toBe("Approving…");
+		expect(approve.attributes("aria-busy")).toBe("true");
+		expect(wrapper.find(".ql-btn-reject").attributes("aria-busy")).toBeUndefined();
+	});
+
+	it("drops the waiting signal once decided", () => {
+		const wrapper = mount(ApprovalCard, { props: { block: { ...todo, decision: { resolution: "approved" } } } });
+		expect(wrapper.find('[data-test="ix-waiting"]').exists()).toBe(false);
+		expect(wrapper.find(".decided-label").text()).toBe("Approved");
+	});
+});
+
+describe("ApprovalCard blank values", () => {
+	it("leaves out a blank field on an action, but keeps one an update clears", () => {
+		const action = mount(ApprovalCard, {
+			props: { block: { id: "b1", tool_name: "document_action", input: { doctype: "Sales Order", name: "SO-1", action: "submit", reason: "" }, interrupts } },
+		});
+		expect(action.findAll(".field-key").map((k) => k.text())).toEqual([]);
+		const update = mount(ApprovalCard, {
+			props: { block: { id: "b2", tool_name: "update_document", input: { doctype: "ToDo", name: "TD-1", data: { description: "" } }, interrupts } },
+		});
+		expect(update.findAll(".field-key").map((k) => k.text())).toEqual(["Description"]);
 	});
 });

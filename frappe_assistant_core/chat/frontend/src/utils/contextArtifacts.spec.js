@@ -28,9 +28,8 @@ describe("deriveArtifacts", () => {
 		]);
 		expect(r.approval).not.toBe(null);
 		expect(r.approval.id).toBe("i1");
-		expect(r.approval.title).toBe("Create Document");
-		expect(r.approval.subtitle).toContain("Promantia");
-		expect(r.approval.subtitle).toContain("₹47,000.00");
+		expect(r.approval.title).toBe("Create Sales Order “Promantia”");
+		expect(r.approval.subtitle).toBe("₹47,000.00");
 		expect(r.hasArtifacts).toBe(true);
 	});
 
