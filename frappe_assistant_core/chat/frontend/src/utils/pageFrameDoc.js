@@ -38,7 +38,10 @@ export function pageFrameCsp(origin, nonce) {
 		`img-src ${site("/files/")} ${site("/assets/")} data: blob:`,
 		`font-src ${site("/assets/")} data:`,
 		"connect-src 'none'",
+		// No child realm can exist, whatever the JavaScript hardening misses.
 		"frame-src 'none'",
+		"child-src 'none'",
+		"object-src 'none'",
 		"form-action 'none'",
 		"base-uri 'none'",
 	].join("; ");

@@ -24,8 +24,19 @@ describe("removeWebRtc", () => {
 	});
 });
 
+// A route nothing wraps, kept from before the guard, for the last net's test.
+const unwrappedAppend = Node.prototype.appendChild;
+// jsdom has no XSLT; Chrome does, and the guard must take it away.
+window.XSLTProcessor = class XSLTProcessor {};
 // The guard changes this test file's own window, as the runtime changes the page's frame.
 guardLoadingElements(window);
+
+// A template parses inertly, so its content still holds whatever the markup named.
+function templateContent(html) {
+	const template = document.createElement("template");
+	template.innerHTML = html;
+	return template.content;
+}
 
 describe("guardLoadingElements", () => {
 	it("refuses to create elements that load, embed or connect", () => {
@@ -55,10 +66,45 @@ describe("guardLoadingElements", () => {
 		expect(parsed.querySelector("iframe")).toBeNull();
 	});
 
-	it("gives a frame that got in no window to reach into, and refuses document.write", () => {
+	it("gives a frame that got in no window to reach into, and refuses write and open on every document", () => {
 		expect(Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype, "contentWindow").get()).toBe(null);
 		expect(Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype, "contentDocument").get()).toBe(null);
 		expect(() => document.write("<iframe></iframe>")).toThrow(/cannot create/);
+		expect(() => document.open()).toThrow(/cannot create/);
+		const other = document.implementation.createHTMLDocument("x");
+		expect(() => other.writeln("<link>")).toThrow(/cannot create/);
+	});
+
+	it("strips nodes built elsewhere as they are inserted, imported, adopted or cloned", () => {
+		const box = document.createElement("div");
+		document.body.append(box);
+		const markup = '<p>kept</p><link rel="preconnect" href="https://evil.example"><iframe></iframe>';
+		box.append(templateContent(markup));
+		box.appendChild(templateContent(markup));
+		box.insertBefore(templateContent(markup), box.firstChild);
+		box.firstChild.replaceWith(templateContent(markup));
+		box.prepend(document.importNode(templateContent(markup), true));
+		box.append(templateContent(markup).cloneNode(true));
+		const other = document.implementation.createHTMLDocument("x");
+		const holder = other.createElement("template");
+		holder.innerHTML = markup;
+		box.append(document.adoptNode(holder.content));
+		const range = document.createRange();
+		range.setStart(box, 0);
+		range.insertNode(templateContent(markup));
+		expect(box.querySelector("link, iframe")).toBeNull();
+		expect(box.querySelectorAll("p").length).toBeGreaterThan(5);
+		box.remove();
+	});
+
+	it("strips a node as it is imported or cloned, before it is inserted anywhere", () => {
+		const markup = '<p>kept</p><link rel="preconnect" href="https://evil.example">';
+		expect(document.importNode(templateContent(markup), true).querySelector("link")).toBeNull();
+		expect(templateContent(markup).cloneNode(true).querySelector("link")).toBeNull();
+	});
+
+	it("leaves the page no XSLT to build elements with", () => {
+		expect(window.XSLTProcessor).toBeUndefined();
 	});
 });
 
@@ -66,10 +112,8 @@ describe("removeLoadingElements", () => {
 	it("removes loading elements that reach the document by another way", async () => {
 		const observer = removeLoadingElements(document);
 		try {
-			// A template parses inertly and is left alone; appending its content is the way past.
-			const template = document.createElement("template");
-			template.innerHTML = '<embed src="x">';
-			document.body.append(template.content.cloneNode(true));
+			// A route the guard does not wrap still lands the element; the observer takes it out.
+			unwrappedAppend.call(document.body, templateContent('<embed src="x">'));
 			await Promise.resolve();
 			expect(document.querySelector("embed")).toBeNull();
 		} finally {

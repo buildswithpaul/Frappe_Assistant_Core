@@ -2,15 +2,15 @@
  * Narrows what a personal page's script can reach beyond its frame's policy, before it runs.
  *
  * - WebRTC is removed: CSP does not govern it, so a peer connection to a server the script names
- *   could carry data out. A child frame would be a fresh realm with WebRTC in it, but a child of
- *   this opaque-origin frame is cross-origin to it, so its window throws on access; child frames
- *   are refused here as well.
+ *   could carry data out. A child frame would be a fresh realm, but the frame's policy forbids
+ *   child frames and objects (frame-src, child-src, object-src 'none'), a child of this
+ *   opaque-origin frame would be cross-origin to it anyway, and frame elements are refused here.
  * - Elements that load, embed or start a connection (link, meta, base, frames, object, embed) are
- *   refused when created and stripped from parsed markup before it reaches the document, so a
- *   preconnect never starts. A MutationObserver is the last net for anything that slips past.
- *
- * None of this closes DNS or timing side channels: a deliberately malicious script can still leak
- * small amounts that way.
+ *   refused when created, and stripped from markup and from nodes on the insertion routes wrapped
+ *   below, on the prototypes. Browsers keep adding ways to build nodes, so a route not wrapped
+ *   here could still connect a <link rel="preconnect"> for a moment; a MutationObserver removes it
+ *   right after. That falls within what remains: a deliberately malicious script can leak small
+ *   amounts through DNS lookups, preconnects or timing, which no browser policy closes.
  */
 
 const WEBRTC = [
@@ -122,9 +122,73 @@ export function guardLoadingElements(win) {
 		stripLoading(parsed);
 		return parsed;
 	};
-	doc.write = doc.writeln = () => {
-		throw refused("document.write");
+	for (const name of ["write", "writeln", "open"]) {
+		proto[name] = () => {
+			throw refused(`document.${name}`);
+		};
+	}
+
+	// setHTMLUnsafe parses like innerHTML; parseHTMLUnsafe builds a whole document from markup.
+	for (const target of [win.Element?.prototype, win.ShadowRoot?.prototype]) {
+		if (!target?.setHTMLUnsafe) continue;
+		target.setHTMLUnsafe = function (html) {
+			this.replaceChildren(parseClean(doc, html));
+		};
+	}
+	if (win.Document.parseHTMLUnsafe) {
+		const parseHTMLUnsafe = win.Document.parseHTMLUnsafe;
+		win.Document.parseHTMLUnsafe = (html, options) => {
+			const parsed = parseHTMLUnsafe.call(win.Document, html, options);
+			stripLoading(parsed);
+			return parsed;
+		};
+	}
+	// XSLT can build any element from a stylesheet; a page has no use for it.
+	try {
+		delete win.XSLTProcessor;
+	} catch {
+		// shadowed below
+	}
+	if (win.XSLTProcessor) Object.defineProperty(win, "XSLTProcessor", { value: undefined });
+
+	// Nodes built elsewhere (a template's content, another document, a clone) are stripped as they
+	// are inserted, imported, adopted or cloned.
+	const cleanNodes = (nodes) =>
+		nodes.map((node) => {
+			if (node?.nodeType === 1 && LOADING_TAGS.has(node.localName)) throw refused(node.localName);
+			if (node?.nodeType) stripLoading(node);
+			return node;
+		});
+	const wrapInsert = (target, name) => {
+		const original = target?.[name];
+		if (typeof original !== "function") return;
+		target[name] = function (...nodes) {
+			return original.apply(this, cleanNodes(nodes));
+		};
 	};
+	for (const name of ["appendChild", "insertBefore", "replaceChild"]) wrapInsert(win.Node.prototype, name);
+	for (const target of [win.Element.prototype, win.DocumentFragment.prototype, win.Document.prototype]) {
+		for (const name of ["append", "prepend", "replaceChildren"]) wrapInsert(target, name);
+	}
+	for (const target of [win.Element.prototype, win.CharacterData.prototype, win.DocumentType?.prototype]) {
+		for (const name of ["before", "after", "replaceWith"]) wrapInsert(target, name);
+	}
+	const wrapResult = (target, name) => {
+		const original = target?.[name];
+		if (typeof original !== "function") return;
+		target[name] = function (...args) {
+			const result = original.apply(this, args);
+			if (result?.nodeType === 1 && LOADING_TAGS.has(result.localName)) throw refused(result.localName);
+			if (result?.nodeType) stripLoading(result);
+			return result;
+		};
+	};
+	wrapInsert(win.Element.prototype, "insertAdjacentElement");
+	wrapInsert(win.Range.prototype, "insertNode");
+	wrapInsert(win.Range.prototype, "surroundContents");
+	wrapResult(win.Node.prototype, "cloneNode");
+	wrapResult(win.Document.prototype, "importNode");
+	wrapResult(win.Document.prototype, "adoptNode");
 
 	// A frame that got in anyway gives no window or document to reach into.
 	for (const name of ["HTMLIFrameElement", "HTMLFrameElement", "HTMLObjectElement", "HTMLEmbedElement"]) {

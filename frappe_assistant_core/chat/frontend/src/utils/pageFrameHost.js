@@ -20,6 +20,7 @@ import {
 	fitsCurrentDoc,
 	isMethodName,
 	isPlainObject,
+	asFieldUpdate,
 	mayTrustForPage,
 	mergeWithCurrent,
 	normalisePayload,
@@ -246,7 +247,8 @@ export function createPageFrame({
 		}
 	}
 
-	// Resolves with the exact payload to send once the user allows it.
+	// Resolves with the exact call to send once the user allows it: {method, payload}, or {done}
+	// when there is nothing to send.
 	async function approve(method, payload) {
 		if (state.denied.has(method) || state.denials >= MAX_DENIALS) throw denied();
 		if (waitingAsks >= MAX_WAITING_ASKS) {
@@ -258,14 +260,18 @@ export function createPageFrame({
 			await earlier?.catch(() => {});
 			if (state.denied.has(method) || state.denials >= MAX_DENIALS) throw denied();
 			let current = null;
-			let toSend = payload;
+			let call = { method, payload };
 			if (DOC_REPLACING_WRITES.has(method)) {
 				current = await currentDoc(payload.doc);
 				if (!fitsCurrentDoc(method, payload.doc, current)) throw refusal();
-				toSend = mergeWithCurrent(payload, current);
+				const merged = mergeWithCurrent(payload, current);
+				// A save of top-level fields only writes exactly those fields, nothing else on the record.
+				const update = method === "frappe.client.save" ? asFieldUpdate(merged, current) : null;
+				if (update && !Object.keys(update.fieldname).length) return { done: current };
+				call = update ? { method: "frappe.client.set_value", payload: update } : { method, payload: merged };
 			}
-			if (state.trusted.has(method)) return toSend;
-			const request = describePageRequest(method, toSend, current, await siteAllowsTrust(method));
+			if (state.trusted.has(method)) return call;
+			const request = describePageRequest(call.method, call.payload, current, await siteAllowsTrust(method));
 			const answer = await askUser(request);
 			if (!answer) {
 				state.denied.add(method);
@@ -273,7 +279,7 @@ export function createPageFrame({
 				throw denied();
 			}
 			if (answer === "page" && request.trustable) state.trusted.add(method);
-			return toSend;
+			return call;
 		})();
 		asking.set(method, turn);
 		try {
@@ -309,7 +315,10 @@ export function createPageFrame({
 		if (PAGE_READ_METHODS.has(method)) return read(method, copy);
 		const normalised = normalisePayload(method, copy);
 		if (!normalised) throw refusal();
-		const payload = await approve(method, normalised);
+		const call = await approve(method, normalised);
+		if (call.done) return call.done;
+		if (call.method !== method) return transport.post(call.method, call.payload);
+		const { payload } = call;
 		if (RECORD_WRITES.has(method) || type === "POST") return transport.post(method, payload);
 		if (type === "GET") return transport.get(method, payload);
 		try {

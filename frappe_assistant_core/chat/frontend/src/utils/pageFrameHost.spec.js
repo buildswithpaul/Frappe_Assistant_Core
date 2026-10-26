@@ -263,16 +263,42 @@ describe("createPageFrame", () => {
 		expect(transport.get).toHaveBeenCalledTimes(9);
 	});
 
-	it("reads the record before a save, sends it merged with the page's changes, and shows what changes", async () => {
+	it("sends a save of top-level fields as set_value of exactly those fields, shown before and after", async () => {
 		const current = { doctype: "ToDo", name: "TD-1", docstatus: 0, owner: "a@x.com", status: "Open", priority: "High" };
 		transport.get.mockResolvedValueOnce(current);
 		mountFrame();
-		fromPage({ op: "call", id: 1, method: "frappe.client.save", args: { doc: { doctype: "ToDo", name: "TD-1", status: "Closed" } } });
+		fromPage({ op: "call", id: 1, method: "frappe.client.save", args: { doc: { doctype: "ToDo", name: "TD-1", status: "Closed", priority: "High" } } });
 		await settle();
 		expect(transport.get).toHaveBeenCalledWith("frappe.client.get", { doctype: "ToDo", name: "TD-1" });
-		expect(askUser.mock.calls[0][0].fields).toEqual([{ name: "status", value: "Closed", before: "Open", status: "changed" }]);
-		// Every field the page left out goes back as it is, so owner and priority keep their values.
-		expect(transport.post).toHaveBeenCalledWith("frappe.client.save", { doc: { ...current, status: "Closed" } });
+		const request = askUser.mock.calls[0][0];
+		expect(request.message).toBe("This page wants to change these fields on ToDo TD-1.");
+		expect(request.fields).toEqual([{ name: "status", value: "Closed", before: "Open", status: "changed" }]);
+		// Nothing else on the record is written: not owner, not priority, not fields the user can't read.
+		expect(transport.post).toHaveBeenCalledWith("frappe.client.set_value", {
+			doctype: "ToDo",
+			name: "TD-1",
+			fieldname: { status: "Closed" },
+		});
+	});
+
+	it("keeps a whole-record save for a change to a child table, merged with the record as it is", async () => {
+		const current = { doctype: "ToDo", name: "TD-1", docstatus: 0, owner: "a@x.com", status: "Open", items: [{ qty: 1 }] };
+		transport.get.mockResolvedValueOnce(current);
+		mountFrame();
+		fromPage({ op: "call", id: 1, method: "frappe.client.save", args: { doc: { doctype: "ToDo", name: "TD-1", items: [{ qty: 2 }] } } });
+		await settle();
+		expect(transport.post).toHaveBeenCalledWith("frappe.client.save", { doc: { ...current, items: [{ qty: 2 }] } });
+	});
+
+	it("sends nothing for a save that changes nothing, and answers with the record", async () => {
+		const current = { doctype: "ToDo", name: "TD-1", docstatus: 0, status: "Open" };
+		transport.get.mockResolvedValueOnce(current);
+		mountFrame();
+		fromPage({ op: "call", id: 1, method: "frappe.client.save", args: { doc: { doctype: "ToDo", name: "TD-1", status: "Open" } } });
+		await settle();
+		expect(askUser).not.toHaveBeenCalled();
+		expect(transport.post).not.toHaveBeenCalled();
+		expect(reply(1)).toMatchObject({ ok: true, message: current });
 	});
 
 	it("refuses a save when it cannot read the record first", async () => {

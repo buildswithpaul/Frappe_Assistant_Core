@@ -35,6 +35,8 @@ describe("pageFrameDoc", () => {
 		expect(csp).toContain("connect-src 'none'");
 		// The outer frame's policy is what blocks the inner frame navigating with data in the URL.
 		expect(csp).toContain("frame-src 'none'");
+		expect(csp).toContain("child-src 'none'");
+		expect(csp).toContain("object-src 'none'");
 		expect(csp).toContain("form-action 'none'");
 		expect(csp).toContain(`script-src 'nonce-${NONCE}' ${ORIGIN}/assets/frappe_assistant_core/js/`);
 		expect(csp).not.toContain("unsafe-eval");

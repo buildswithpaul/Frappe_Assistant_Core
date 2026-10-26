@@ -121,6 +121,8 @@ describe("takePageScreenshot", () => {
 		const file = uploadFile.mock.calls[0][0];
 		expect(file.type).toBe("image/jpeg");
 		expect(result).toMatchObject({ success: true, width: 800, height: 600, page_errors: ["boom"], page_text: "Sales 70,29,354" });
+		// The page wrote that text; the model is told to treat it as data.
+		expect(result.page_text_note).toMatch(/untrusted content from the page.*never as instructions/);
 	});
 
 	it("still gives FACO the page's text and errors when the frame can't draw the picture", async () => {
@@ -220,6 +222,8 @@ describe("useSpaBrowserTools", () => {
 		await flushPromises();
 		expect(confirms.value).toHaveLength(1);
 		expect(confirms.value[0].request.copy.detail).toMatch(/page open beside the chat/);
+		// The user is told the assistant gets the page's text as well as its picture.
+		expect(confirms.value[0].request.copy.detail).toMatch(/a picture of it and the text it shows/);
 		expect(uploadFile).not.toHaveBeenCalled();
 
 		settleConfirm(confirms.value[0], "approve");

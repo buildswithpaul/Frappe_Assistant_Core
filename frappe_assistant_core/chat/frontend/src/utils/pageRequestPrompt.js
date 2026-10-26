@@ -137,7 +137,30 @@ export function fitsCurrentDoc(method, doc, current) {
 	return SERVER_KEYS.every((key) => !(key in doc) || same(doc[key], current[key]));
 }
 
-/** What a save or submit sends: the record as it is now, with the page's changes over it. */
+/**
+ * A save that changes only top-level fields, as the set_value of exactly those fields, so nothing
+ * else on the record is written. Null when it changes a child table, which only a whole-record
+ * save can do. An empty fieldname means nothing changes.
+ *
+ * @param {object} merged the merged save payload (mergeWithCurrent)
+ * @param {object} current the record read just before asking
+ */
+export function asFieldUpdate(merged, current) {
+	const changed = shownKeys(merged.doc).filter((key) => !same(merged.doc[key], current[key]));
+	if (changed.some((key) => Array.isArray(merged.doc[key]) || Array.isArray(current[key]))) return null;
+	return {
+		doctype: merged.doc.doctype,
+		name: merged.doc.name,
+		fieldname: Object.fromEntries(changed.map((key) => [key, merged.doc[key]])),
+	};
+}
+
+/**
+ * What a save or submit sends: the record as it is now, with the page's changes over it. Used for a
+ * submit, and for a save that changes a child table. Edge: a field at a permlevel the user can
+ * write but not read is missing from the record as read (frappe.client.get drops it), so a merged
+ * save writes it as null; validate_higher_perm_levels restores only fields the user cannot write.
+ */
 export function mergeWithCurrent(payload, current) {
 	const { __islocal, __unsaved, ...doc } = payload.doc;
 	return { ...payload, doc: { ...current, ...doc } };
@@ -202,9 +225,13 @@ export function describePageRequest(method, payload = {}, current = null, mayTru
 	const { text, state } = textMaker();
 	let request;
 	if (method === "frappe.client.set_value") {
+		// With the record as it is now (a page's save sent as set_value), each field shows before and after.
+		const fields = Object.entries(payload.fieldname || {}).map(([key, value]) =>
+			current ? field(key, value, text, { before: text(current[key] ?? ""), status: value === "" || value === null ? "blanked" : "changed" }) : field(key, value, text),
+		);
 		request = {
 			message: __("This page wants to change these fields on {0} {1}.", [text(payload.doctype), text(payload.name)]),
-			fields: Object.entries(payload.fieldname || {}).map(([key, value]) => field(key, value, text)),
+			fields,
 		};
 	} else if (method === "frappe.client.insert") {
 		const name = payload.doc.__newname ?? payload.doc.name;
