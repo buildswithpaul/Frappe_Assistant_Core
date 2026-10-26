@@ -262,6 +262,22 @@ class TestSystemSkillManifest(BaseAssistantTest):
         self.assertNotIn("Point to the chip", text)
         self.assertIn("opens beside the chat as soon as your create saves", text)
 
+    def test_page_data_is_explored_with_read_tools_that_dont_ask(self):
+        # run_database_query asks on every call (raw SQL skips user permissions); three such cards
+        # came before the page in the Ep.19 take. The permission-checked read tools don't ask.
+        text = self._read_skill("pages_in_chat.md")
+        self.assertIn("**look at the data with the read tools that don't ask**", text)
+        self.assertIn("`group_by` and `aggregate`", text)
+        self.assertIn("Don't use `run_database_query`", text)
+        self.assertIn("Totals per month or week belong in the page's script", text)
+
+    def test_shared_pages_are_checked_for_errors_and_their_api_limits(self):
+        # #34516: a published page broke its own API's 62-day limit, and only the user found out.
+        text = self._read_skill("fac_page.md")
+        self.assertIn("`browser_capture_diagnostics`", text)
+        self.assertIn("Fix any script error before you say the page is done", text)
+        self.assertIn("within the limits of that API", text)
+
     def test_retired_export_template_is_removed(self):
         self.assertNotIn(
             RETIRED_TEMPLATE,
