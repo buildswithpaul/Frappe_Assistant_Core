@@ -295,8 +295,8 @@ def _personal_page_impact(
     alone, whose browser holds code FACO changed until they click Run new version. Sharing a page
     switches it on when it is published after the write, since that opens it to its roles.
     """
-    default = frappe.get_meta("FAC Page").get_field("visibility").default
-    visibility = (data.get("visibility") or default) if creating else after("visibility")
+    # PERSONAL is the schema default; reading it from the meta raises on a site not yet migrated.
+    visibility = (data.get("visibility") or PERSONAL) if creating else after("visibility")
     was_personal = not creating and before("visibility") != SHARED
     user = frappe.session.user
     if visibility == SHARED and not was_personal:

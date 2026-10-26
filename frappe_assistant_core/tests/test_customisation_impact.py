@@ -19,6 +19,7 @@
 from unittest.mock import patch
 
 import frappe
+from frappe.model.meta import Meta
 
 from frappe_assistant_core.tests.base_test import BaseAssistantTest
 from frappe_assistant_core.utils.customisation import SYSTEM_ROLES, _stored_doctype, customisation_impact
@@ -134,6 +135,20 @@ class TestCustomisationImpact(BaseAssistantTest):
         self.assertTrue(
             _impact("create_document", "FAC Page", {"slug": "mine-too", "published": 1})["dormant"]
         )
+
+    def test_a_page_created_before_migrate_reads_as_personal(self):
+        original = Meta.get_field
+
+        def without_visibility(meta, fieldname):
+            # A site that pulled this code but has not migrated has no visibility field on FAC Page.
+            if (meta.name, fieldname) == ("FAC Page", "visibility"):
+                return None
+            return original(meta, fieldname)
+
+        with patch.object(Meta, "get_field", autospec=True, side_effect=without_visibility):
+            result = _impact("create_document", "FAC Page", {"slug": "before-migrate"})
+
+        self.assertTrue(result["dormant"])
 
     def test_a_system_manager_changing_someone_elses_personal_page_is_live(self):
         name, _owner = self._personal_page()
