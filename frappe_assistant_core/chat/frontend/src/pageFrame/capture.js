@@ -36,19 +36,92 @@ function defaultStyle(element) {
 // What the page inherits from its document, which the picture has none of: given to its root.
 const INHERITED = ["font-family", "font-size", "font-weight", "font-style", "line-height", "color", "letter-spacing"];
 
-function inlineStyle(element, isRoot = false) {
+// A box's computed size is the size it took on the live page. Written into the picture, it would
+// freeze every box at that size while the text inside reflows a little differently, so a card cut
+// off its last rows and a grid pushed its last tile off the edge. Only a size the page itself wrote
+// is kept, as written, and the rest of the layout sizes itself as it did on the page.
+const SIZES = new Set([
+	"width",
+	"height",
+	"min-width",
+	"min-height",
+	"max-width",
+	"max-height",
+	"inline-size",
+	"block-size",
+	"min-inline-size",
+	"min-block-size",
+	"max-inline-size",
+	"max-block-size",
+]);
+// Media keep their drawn size: without it an image or a chart's canvas has no box at all.
+const REPLACED = new Set(["img", "svg", "canvas", "video", "picture", "input", "select", "textarea", "button"]);
+
+// The size declarations in the page's own style sheets, read once per picture.
+function sizeRules(doc) {
+	const rules = [];
+	const visit = (list) => {
+		for (const rule of list || []) {
+			if (rule.cssRules && !rule.selectorText) visit(rule.cssRules);
+			if (!rule.selectorText || !rule.style) continue;
+			const sizes = [];
+			for (const property of SIZES) {
+				const value = rule.style.getPropertyValue(property);
+				if (value) sizes.push([property, value]);
+			}
+			if (sizes.length) rules.push({ selector: rule.selectorText, sizes });
+		}
+	};
+	for (const sheet of doc.styleSheets) {
+		try {
+			visit(sheet.cssRules);
+		} catch {
+			// A sheet the frame can't read adds nothing.
+		}
+	}
+	return rules;
+}
+
+// The sizes the page wrote for this element: its style sheets in order, then its own style attribute.
+function authoredSizes(element, rules) {
+	const sizes = new Map();
+	for (const { selector, sizes: declared } of rules) {
+		let matches = false;
+		try {
+			matches = element.matches(selector);
+		} catch {
+			// A selector this element can't be tested against, such as ::before, sets nothing.
+		}
+		if (matches) for (const [property, value] of declared) sizes.set(property, value);
+	}
+	for (const property of SIZES) {
+		const value = element.style.getPropertyValue(property);
+		if (value) sizes.set(property, value);
+	}
+	return sizes;
+}
+
+function inlineStyle(element, rules, isRoot = false) {
 	const computed = getComputedStyle(element);
 	const base = defaultStyle(element);
+	const keepsComputedSize = REPLACED.has(element.localName);
 	const parts = isRoot ? INHERITED.map((property) => `${property}:${computed.getPropertyValue(property)}`) : [];
 	for (let i = 0; i < computed.length; i++) {
 		const property = computed[i];
+		if (SIZES.has(property) && !keepsComputedSize) continue;
 		const value = computed.getPropertyValue(property);
 		if (value !== base[property] && !(isRoot && INHERITED.includes(property))) parts.push(`${property}:${value}`);
 	}
+	if (!keepsComputedSize) {
+		for (const [property, value] of authoredSizes(element, rules)) parts.push(`${property}:${value}`);
+	}
+	// The picture's root is as wide as the live page, so its content wraps where the page's did.
+	if (isRoot) parts.push(`width:${element.getBoundingClientRect().width}px`);
 	return parts.join(";");
 }
 
 export function copyWithStyles(root) {
+	const rules = sizeRules(root.ownerDocument);
 	let count = 0;
 	const walk = (node) => {
 		if (node.nodeType === Node.TEXT_NODE) return node.cloneNode(false);
@@ -57,7 +130,7 @@ export function copyWithStyles(root) {
 		const copy = node.cloneNode(false);
 		// SVG keeps its drawing attributes; only its outer box needs the page's layout.
 		const isSvgChild = node instanceof SVGElement && node.localName !== "svg";
-		if (!isSvgChild) copy.setAttribute("style", inlineStyle(node, node === root));
+		if (!isSvgChild) copy.setAttribute("style", inlineStyle(node, rules, node === root));
 		if (node.localName === "input") copy.setAttribute("value", node.value);
 		if (node.localName === "textarea") copy.textContent = node.value;
 		if (node.localName !== "textarea") {
