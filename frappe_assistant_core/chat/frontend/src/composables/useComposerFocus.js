@@ -1,6 +1,21 @@
-import { onBeforeUnmount, onMounted } from "vue";
+import { onBeforeUnmount, onMounted, ref, watch } from "vue";
 
 export const COMPOSER_FOCUSED_CLASS = "ql-composer-focused";
+
+const focusRequests = ref(0);
+
+/**
+ * Ask the composer to take focus, from a card far down the message tree. The SPA and the
+ * Desk widget are separate bundles, so each has its own counter and its own composer.
+ */
+export function requestComposerFocus() {
+	focusRequests.value++;
+}
+
+/** Run `focus` whenever a card asks for the composer. Call from the composer's setup. */
+export function onComposerFocusRequest(focus) {
+	watch(focusRequests, () => focus());
+}
 
 const isComposer = (el) => Boolean(el?.classList?.contains("input-textarea"));
 

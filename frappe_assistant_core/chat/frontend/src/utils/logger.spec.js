@@ -22,6 +22,9 @@ const SKIP_DIRS = new Set([
 	"__pycache__",
 ]);
 
+// Third Vite build output (ECharts), gitignored; paths are relative to APP_ROOT.
+const SKIP_FILES = new Set(["public/js/fac_page_charts.js"]);
+
 // The logger is the one place console.* belongs. widget_loader.js and widget_embed.js (its
 // counterpart for standalone Frappe apps) are the exceptions: plain scripts that run before any
 // bundle is loaded, whose warning is the only signal that the widget failed to start.
@@ -38,7 +41,7 @@ function collect(dir, found = []) {
 		}
 		if (!/\.(js|vue)$/.test(entry)) continue;
 		if (entry.endsWith(".spec.js") || entry.endsWith(".min.js")) continue;
-		if (ALLOWED_FILES.has(basename(entry))) continue;
+		if (ALLOWED_FILES.has(basename(entry)) || SKIP_FILES.has(relative(APP_ROOT, full))) continue;
 		found.push(full);
 	}
 	return found;

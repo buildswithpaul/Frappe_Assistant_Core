@@ -158,6 +158,7 @@ class BrowserNavigateTo(BaseBrowserTool):
                 tool_name=self.tool_name,
                 params=params,
                 session_id=getattr(frappe.local, "ar_session_id", None),
+                client_type=getattr(frappe.local, "ar_client_type", None),
             )
         except Exception:
             pass  # Widget notification is best-effort

@@ -291,6 +291,7 @@ WRITE_PROTECTED_DOCTYPES = [
     "Server Script",
     "Client Script",
     "Custom Script",
+    "FAC Page",  # anyone may write their own personal page; see is_doctype_accessible
     # Schema and customization
     "DocType",
     "DocField",
@@ -504,12 +505,25 @@ def child_table_doctype_error(doctype: str, perm_type: str, user: str) -> Dict[s
             "Work through the parent document instead. To add or change rows, call "
             "update_document on the parent with the table field. Rows without a 'name' "
             "replace the whole table, so include the 'name' of existing rows you want to "
-            "keep. Use get_document on the parent to read them."
+            "keep. Use get_document on the parent to read them. " + _child_filter_hint(doctype, parents)
         ),
     }
 
 
-def is_doctype_accessible(doctype: str, user_role: str, perm_type: str = "read") -> bool:
+def _child_filter_hint(doctype: str, parents: List[Dict[str, str]]) -> str:
+    """How to find parent records by a value in this child table, with one ready example."""
+    names = [p["doctype"] for p in parents]
+    parent = "User" if "User" in names else (names[0] if names else "<parent doctype>")
+    return (
+        "To find the parent records that have a value in this table (for example which users "
+        f'hold a role), call list_documents on "{parent}" with filters '
+        f'{{"{doctype}.<field>": "<value>"}}.'
+    )
+
+
+def is_doctype_accessible(
+    doctype: str, user_role: str, perm_type: str = "read", user: Optional[str] = None
+) -> bool:
     """
     Check whether a role may perform ``perm_type`` on ``doctype`` at the FAC layer.
 
@@ -525,6 +539,7 @@ def is_doctype_accessible(doctype: str, user_role: str, perm_type: str = "read")
         doctype: DocType name
         user_role: User role name
         perm_type: Permission being requested (read, write, create, delete, ...)
+        user: The user asking, the session user when omitted
 
     Returns:
         bool: True if FAC allows the operation to proceed to the Frappe permission check
@@ -534,6 +549,14 @@ def is_doctype_accessible(doctype: str, user_role: str, perm_type: str = "read")
 
     if perm_type not in WRITE_PERM_TYPES:
         return True  # Reads and anything non-mutating defer entirely to Frappe
+
+    # A Desk user may build a FAC Page only they can open. FAC Page's has_permission hook and
+    # validate refuse the rest (sharing, publishing, roles, someone else's page) on every write
+    # path, so for Desk users this layer hands the decision to them.
+    if doctype == "FAC Page":
+        from frappe_assistant_core.assistant_core.doctype.fac_page.fac_page import is_desk_user
+
+        return is_desk_user(user or frappe.session.user)
 
     return doctype not in WRITE_PROTECTED_DOCTYPES
 
@@ -579,7 +602,7 @@ def validate_document_access(
 
         # FAC-level guard: blocks writes to code-execution / schema DocTypes only.
         # Reads fall straight through to the Frappe permission check below.
-        if not is_doctype_accessible(doctype, primary_role, perm_type):
+        if not is_doctype_accessible(doctype, primary_role, perm_type, user):
             return {
                 "success": False,
                 "error": _write_protected_message(doctype),

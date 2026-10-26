@@ -23,16 +23,16 @@ describe("CodePreview", () => {
 		expect(text).toContain("line_0 = 0");
 		expect(text).toContain("line_399 = 399");
 		expect(text).not.toContain("…");
-		expect(wrapper.find(".code-scroll").attributes("style")).toContain("max-height: 320px");
+		expect(wrapper.find(".code-scroll").attributes("style")).toContain("max-height: 260px");
 	});
 
 	it("code block expands and collapses", async () => {
 		const wrapper = mount(CodePreview, { props: { code: script(50), language: "python", maxHeight: 200 } });
 		const toggle = wrapper.find(".code-toggle");
-		expect(toggle.text()).toBe("Expand");
+		expect(toggle.text()).toBe("Show all 50 lines");
 		expect(wrapper.find(".code-scroll").attributes("style")).toContain("max-height: 200px");
 		await toggle.trigger("click");
-		expect(toggle.text()).toBe("Collapse");
+		expect(toggle.text()).toBe("Show less");
 		expect(wrapper.find(".code-scroll").attributes("style") || "").not.toContain("max-height");
 		await toggle.trigger("click");
 		expect(wrapper.find(".code-scroll").attributes("style")).toContain("max-height: 200px");
@@ -61,7 +61,9 @@ describe("CodePreview", () => {
 	});
 
 	it("highlights each diff line once, not on every render", async () => {
-		const wrapper = mount(CodePreview, { props: { code: "a\nnew\nc", previous: "a\nold\nc", language: "python" } });
+		const wrapper = mount(CodePreview, {
+			props: { code: `${script(20)}\nnew`, previous: `${script(20)}\nold`, language: "python" },
+		});
 		await new Promise((r) => setTimeout(r, 0));
 		highlightCode.mockClear();
 		await wrapper.find(".code-toggle").trigger("click");
@@ -75,5 +77,29 @@ describe("CodePreview", () => {
 		mount(CodePreview, { props: { code: "a\nnew", previous: "a\nold", language: "python" } });
 		await flushPromises();
 		expect(lineDiff).toHaveBeenCalledTimes(1);
+	});
+
+	it("shows short code whole, with no toggle, and says how many lines it has", () => {
+		const wrapper = mount(CodePreview, { props: { code: script(3), language: "python", label: "Script" } });
+		expect(wrapper.find(".code-toggle").exists()).toBe(false);
+		expect(wrapper.find(".code-scroll").attributes("style")).toBeUndefined();
+		expect(wrapper.find(".code-label").text()).toBe("Script 3 lines");
+	});
+
+	it("says how many lines a change touches", () => {
+		const wrapper = mount(CodePreview, { props: { code: "a\nnew\nc", previous: "a\nold\nc", label: "Script" } });
+		expect(wrapper.find(".code-meta").text()).toBe("2 lines changed");
+	});
+});
+
+describe("CodePreview with minified code", () => {
+	it("folds one very long line too, since it wraps into many", async () => {
+		const css = ".a{color:red}".repeat(200);
+		const wrapper = mount(CodePreview, { props: { code: css, language: "css", label: "Style" } });
+		const toggle = wrapper.find(".code-toggle");
+		expect(toggle.text()).toBe("Show all");
+		expect(wrapper.find(".code-scroll").attributes("style")).toContain("max-height");
+		await toggle.trigger("click");
+		expect(wrapper.find(".code-scroll").attributes("style") || "").not.toContain("max-height");
 	});
 });

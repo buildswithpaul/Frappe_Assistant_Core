@@ -113,11 +113,14 @@ const ctx = {
 		}
 
 		if (route && window.frappe.pages && window.frappe.pages[route[0]]) {
-			return {
+			const context = {
 				type: "Custom Page",
 				page_name: route[0],
 				url: window.location.href,
 			};
+			// The fac-pages host shows one FAC Page, addressed by its record name.
+			if (route[0] === "fac-pages" && route[1]) context.fac_page = route[1];
+			return context;
 		}
 
 		if (window.cur_page && window.cur_page.page) {

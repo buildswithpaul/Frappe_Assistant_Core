@@ -16,6 +16,7 @@ Use `generate_document` when the user:
 - Requests a deliverable distinct from the chat reply itself
 
 **Don't** use it for:
+- A report or PDF of the site's own figures, such as "a PDF of how my sales did this month". Build a personal page instead (`get_skill("pages-in-chat")`): it reads the figures live, opens beside the chat and downloads as a PDF.
 - Quick answers — reply in chat
 - Live dashboards — those are the chat surface's job
 - Anything under ~one screenful of content — a markdown reply is friendlier

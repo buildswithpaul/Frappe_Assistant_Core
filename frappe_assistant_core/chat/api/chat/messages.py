@@ -80,6 +80,18 @@ def _effective_model_id(model_id: str | None) -> str | None:
     return (model_id or "").strip() or usable_saved_model() or None
 
 
+# The clients that send turns. FAC Cloud picks each one's tools by this name, so a turn's own
+# claim is kept only when it is one of these.
+KNOWN_CLIENT_TYPES = frozenset({"widget", "spa", "mobile", "api", "raven"})
+
+
+def _effective_client_type(client_type: str | None) -> str:
+    """The client a turn is filtered for. The widget, the chat app, the mobile app and Raven name
+    themselves; an omitted or unknown value is "api", which FAC Cloud offers no browser tools (the
+    chat app is offered the page screenshot now, so it is no longer a safe default)."""
+    return client_type if isinstance(client_type, str) and client_type in KNOWN_CLIENT_TYPES else "api"
+
+
 def _flag(value) -> bool:
     """Coerce a composer toggle to a real bool.
 
@@ -278,6 +290,11 @@ def start_turn(
     # names this request (cancel.clear).
     clear_cancel(session_id, keep_turn=client_turn_id)
 
+    # A new turn names its own client; the chat app's claim on the last one ends here.
+    from frappe_assistant_core.plugins.faco.tools.browser_bridge import release_session_claim
+
+    release_session_claim(session_id)
+
     # FACO-M15: respect GDPR Article 18 processing restriction. When set,
     # skip message persistence entirely — the chat still runs (AR handles
     # the turn in-memory), but no content survives in FACO Message.
@@ -319,8 +336,7 @@ def start_turn(
     if page_addendum:
         system_prompt_addendum = (system_prompt_addendum or "") + page_addendum
 
-    # Default to "spa" if client_type not specified (fail-safe: blocks browser tools)
-    effective_client_type = client_type or "spa"
+    effective_client_type = _effective_client_type(client_type)
 
     # Zero-retention: load the client-held session blob to round-trip to AR.
     # Skipped for restricted users — we never load or store their state.
@@ -545,7 +561,7 @@ def resume_interrupt(
             session_id: Conversation session ID (same session that was interrupted)
             interrupt_response: JSON array of responses.
                     Each: {"interruptId": str, "response": "approve"|"rejected"|"trust"|"session"}
-            client_type: Optional client type (widget/spa/mobile/api)
+            client_type: Optional client type (widget/spa/mobile/api); omitted is "api"
             model_id: Model the interrupted turn was sent with, carried so the
                     resume finishes on it. Sent only for an explicit user choice —
                     in auto mode it is omitted, never the literal "auto", because
@@ -586,7 +602,7 @@ def resume_interrupt(
         # names this request (cancel.clear).
         clear_cancel(session_id, keep_turn=client_turn_id)
 
-        effective_client_type = client_type or "spa"
+        effective_client_type = _effective_client_type(client_type)
 
         # Zero-retention: load the client-held session blob to round-trip on
         # resume. Skipped for GDPR-restricted users (FACO-M15) — same rule as
@@ -675,7 +691,7 @@ def continue_response(
     Args:
             session_id: Conversation session ID (same session that was truncated)
             message_id: The AR message ID of the truncated assistant turn to continue
-            client_type: Optional client type (widget/spa/mobile/api)
+            client_type: Optional client type (widget/spa/mobile/api); omitted is "api"
             web_search: Composer toggle for the conversation being continued. Same
                     None-vs-explicit semantics and ``_flag`` coercion as send_message.
             thinking_enabled: Composer toggle for AR extended thinking, same rules.
@@ -705,7 +721,7 @@ def continue_response(
         # names this request (cancel.clear).
         clear_cancel(session_id, keep_turn=client_turn_id)
 
-        effective_client_type = client_type or "spa"
+        effective_client_type = _effective_client_type(client_type)
 
         # Zero-retention: load the client-held session blob to round-trip on
         # continue. Skipped for GDPR-restricted users (FACO-M15) — same rule

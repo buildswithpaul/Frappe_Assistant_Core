@@ -51,6 +51,7 @@ import frappe
 
 from frappe_assistant_core.plugins.core.tools.create_document import DocumentCreate
 from frappe_assistant_core.plugins.core.tools.get_doctype_info import GetDoctypeInfo
+from frappe_assistant_core.plugins.core.tools.list_documents import DocumentList
 from frappe_assistant_core.plugins.core.tools.update_document import DocumentUpdate
 from frappe_assistant_core.tests.base_test import BaseAssistantTest
 
@@ -237,6 +238,44 @@ class TestChildDoctypeAccess(BaseAssistantTest):
         self.assertFalse(result.get("success"), result)
         self.assertEqual(result.get("error_type"), "child_table_doctype")
         self.assertEqual(members(name), ["Administrator"])
+
+    def test_a_read_refusal_shows_how_to_filter_the_parent_by_the_child(self):
+        # FACO asks list_documents for Has Role to confirm who holds a role, then falls back to
+        # SQL (a card per call) unless the refusal names the filter that answers it. FACO acts as a
+        # named System Manager, never Administrator, who is exempt from the refusal.
+        user = self.make_throwaway_user("fac34508-sysmgr", roles=("System Manager",))
+        frappe.set_user(user)
+        try:
+            result = DocumentList().execute({"doctype": "Has Role", "filters": {"role": "System Manager"}})
+        finally:
+            frappe.set_user("Administrator")
+
+        self.assertFalse(result.get("success"), result)
+        self.assertEqual(result.get("error_type"), "child_table_doctype")
+        self.assertIn('list_documents on "User"', result["suggestion"])
+        self.assertIn('{"Has Role.<field>": "<value>"}', result["suggestion"])
+
+    def test_a_child_table_key_filters_the_parent(self):
+        # The hint above sends FACO here: list_documents on User with {"Has Role.role": ...}. The
+        # filters schema is an object, so the call must pass argument validation in that form.
+        user = self.make_throwaway_user("fac34508-holder", roles=("System Manager",))
+        frappe.set_user(user)
+        try:
+            tool = DocumentList()
+            for key in ("Has Role.role", "roles.role"):
+                arguments = {
+                    "doctype": "User",
+                    "filters": {key: "System Manager"},
+                    "fields": ["name"],
+                    "limit": 500,
+                }
+                tool.validate_arguments(arguments)
+                result = tool.execute(arguments)
+                self.assertTrue(result.get("success"), result)
+                self.assertIn(user, [row["name"] for row in result["data"]], key)
+                self.assertNotIn("Guest", [row["name"] for row in result["data"]], key)
+        finally:
+            frappe.set_user("Administrator")
 
     def test_non_admin_is_told_which_parent_to_use(self):
         user = self.make_throwaway_user("fac291-sysmgr", roles=("System Manager",))

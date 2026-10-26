@@ -224,3 +224,25 @@ def get_live_turn(session_id: str) -> dict | None:
     if entry and entry.get("user") != frappe.session.user and "System Manager" not in frappe.get_roles():
         frappe.throw(_("You can only view your own conversation"), frappe.PermissionError)
     return entry
+
+
+@frappe.whitelist(methods=["POST"])
+def claim_live_turn(session_id: str) -> dict:
+    """Hand a running turn's browser calls to the chat app.
+
+    Open Full Assistant moves a conversation from the Desk widget to the chat app mid-turn. The turn
+    still asks for the widget's browser tools, and the widget is gone, so its calls would time out.
+    From now until the next message, this conversation's browser calls go to the chat app.
+    """
+    if not session_id:
+        frappe.throw(_("session_id is required"), frappe.ValidationError)
+    from frappe_assistant_core.chat.api.chat.messages import _assert_session_owner
+    from frappe_assistant_core.plugins.faco.tools.browser_bridge import claim_session_for_spa
+
+    _assert_session_owner(session_id)
+    entry = get(session_id)
+    # Only a turn that is running, and the caller's own.
+    if not entry or entry.get("user") != frappe.session.user:
+        return {"claimed": False}
+    claim_session_for_spa(session_id)
+    return {"claimed": True}

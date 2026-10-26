@@ -19,6 +19,7 @@ import { capabilities } from "./domains/capabilities";
 import { chat } from "./domains/chat";
 import { connections } from "./domains/connections";
 import { documents } from "./domains/documents";
+import { facPage } from "./domains/facPage";
 import { files } from "./domains/files";
 import { init } from "./domains/init";
 import { memories } from "./domains/memories";
@@ -53,6 +54,7 @@ export const api = {
 	capabilities,
 	connections,
 	documents,
+	facPage,
 	memories,
 	profile,
 	projects,

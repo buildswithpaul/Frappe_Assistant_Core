@@ -223,7 +223,7 @@
   {
     "skill_id": "document-authoring",
     "title": "How to Author PDF Documents with generate_document",
-    "description": "Producing styled, downloadable PDFs with generate_document — structure, rich blocks (charts, callouts, metric cards, cover pages, page breaks), and common mistakes",
+    "description": "Producing styled, downloadable PDFs with generate_document — structure, rich blocks (charts, callouts, metric cards, cover pages, page breaks), and common mistakes. Not for a report or PDF of the site's own figures: that is a personal page (pages-in-chat)",
     "skill_type": "Tool Usage",
     "linked_tool": "generate_document",
     "status": "Published",
@@ -481,5 +481,62 @@
     "status": "Published",
     "visibility": "Public",
     "content_file": "notification.md"
+  },
+  {
+    "skill_id": "mockup-kit",
+    "title": "Mockup Kit",
+    "description": "Use when writing the mockup HTML for a build plan: the available mk- classes, the sandbox limits and one example.",
+    "skill_type": "Workflow",
+    "status": "Published",
+    "visibility": "Public",
+    "content_file": "mockup_kit.md"
+  },
+  {
+    "skill_id": "fac-page",
+    "title": "Building a FAC Page",
+    "description": "Use when asked for a full screen of its own, such as a planner, board or tracker, that a Workspace's cards, shortcuts and charts can't give.",
+    "skill_type": "Workflow",
+    "status": "Published",
+    "visibility": "Public",
+    "content_file": "fac_page.md"
+  },
+  {
+    "skill_id": "pages-in-chat",
+    "title": "Pages in Chat",
+    "description": "Use when the user asks for a report, a summary, a chart or a PDF of their own data, such as how their sales did this month: build it as a personal page beside the chat instead of generate_document, test it before saying it is done, and fix it with them.",
+    "skill_type": "Workflow",
+    "status": "Published",
+    "visibility": "Public",
+    "content_file": "pages_in_chat.md"
+  },
+  {
+    "skill_id": "test-as-user-usage",
+    "title": "How to Use test_as_user",
+    "description": "Checking what another user may read, write, create or submit after changing roles, user permissions or sharing",
+    "skill_type": "Tool Usage",
+    "linked_tool": "test_as_user",
+    "status": "Published",
+    "visibility": "Public",
+    "content_file": "test_as_user.md"
+  },
+  {
+    "skill_id": "sandbox-reference-usage",
+    "title": "How to Use sandbox_reference",
+    "description": "Looking up the names and rules of the Server Script sandbox before writing a script",
+    "skill_type": "Tool Usage",
+    "linked_tool": "sandbox_reference",
+    "status": "Published",
+    "visibility": "Public",
+    "content_file": "sandbox_reference.md"
+  },
+  {
+    "skill_id": "recent-errors-usage",
+    "title": "How to Use recent_errors",
+    "description": "Reading the Error Log and failed scheduled jobs to see what a script or hook caused",
+    "skill_type": "Tool Usage",
+    "linked_tool": "recent_errors",
+    "status": "Published",
+    "visibility": "Public",
+    "content_file": "recent_errors.md"
   }
 ]

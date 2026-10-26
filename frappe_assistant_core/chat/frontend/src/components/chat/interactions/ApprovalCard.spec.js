@@ -15,6 +15,7 @@ vi.mock("@/api/client", () => ({
 }));
 
 import ApprovalCard from "@/components/chat/interactions/ApprovalCard.vue";
+import CodePreview from "@/components/chat/interactions/CodePreview.vue";
 
 const interrupts = [{ id: "i1", reason: { type: "approval" } }];
 
@@ -48,7 +49,7 @@ describe("ApprovalCard for a message tool", () => {
 		expect(wrapper.findComponent({ name: "EmailPreview" }).exists()).toBe(true);
 		expect(wrapper.find(".approval-table").exists()).toBe(false);
 		expect(buttons(wrapper)).toEqual(["Send email", "Reject"]);
-		expect(wrapper.find(".trust-choice").text()).toBe("Don't ask again for this tool");
+		expect(wrapper.find(".trust-choice").text()).toBe("Don't ask again for Send Email");
 		await wrapper.find(".ql-btn-approve").trigger("click");
 		expect(wrapper.emitted("approve")[0]).toEqual(["t1", [{ interruptId: "i1", response: "approve" }]]);
 	});
@@ -150,7 +151,7 @@ describe("ApprovalCard for a CRM email", () => {
 
 describe("ApprovalCard for other tools", () => {
 	it("keeps the field table and never fetches a preview", () => {
-		const block = { id: "t4", tool_name: "create_document", input: { doctype: "ToDo", description: "x" }, interrupts };
+		const block = { id: "t4", tool_name: "create_document", input: { doctype: "ToDo", description: "x", priority: "High" }, interrupts };
 		const wrapper = mount(ApprovalCard, { props: { block } });
 		expect(messagePreview).not.toHaveBeenCalled();
 		expect(wrapper.find(".approval-table").exists()).toBe(true);
@@ -286,6 +287,108 @@ describe("ApprovalCard switching code on", () => {
 		expect(text).toContain("Hi {{ doc.name }}");
 	});
 
+	it("FAC Page published: shows its stored html, script and style as going live", async () => {
+		currentCode.mockReset();
+		currentCode.mockResolvedValue({ html: "<div id='planner'></div>", script: "renderPlanner()", style: ".planner { gap: 8px; }" });
+		const wrapper = mount(ApprovalCard, { props: { block: switchBlock("FAC Page", { published: 1 }, "team-planner") } });
+		await flushPromises();
+		expect(currentCode).toHaveBeenCalledWith("FAC Page", "team-planner", ["html", "script", "style", "roles"]);
+		expect(goesLive(wrapper).text()).toBe("This goes live");
+		const text = wrapper.findAll(".code-preview pre").map((p) => p.text()).join("\n");
+		expect(text).toContain("<div id='planner'></div>");
+		expect(text).toContain("renderPlanner()");
+		expect(text).toContain(".planner { gap: 8px; }");
+	});
+
+	const preview = (wrapper, label) => wrapper.findAllComponents(CodePreview).find((c) => c.props("label") === label);
+
+	const publish = async (roles) => {
+		currentCode.mockReset();
+		currentCode.mockResolvedValue({ html: "<p>x</p>", script: "", style: "", roles });
+		const wrapper = mount(ApprovalCard, { props: { block: switchBlock("FAC Page", { published: 1 }, "team-planner") } });
+		await flushPromises();
+		return wrapper;
+	};
+	const audience = (wrapper) => wrapper.find('[data-test="goes-live-audience"]');
+	const roles = (wrapper) => audience(wrapper).findAll(".role-chip").map((chip) => chip.text());
+	const everyone = (wrapper) => wrapper.find('[data-test="goes-live-everyone"]');
+
+	it("FAC Page published: says which roles it goes live to", async () => {
+		const wrapper = await publish(["Sales User", "Report Manager"]);
+		expect(audience(wrapper).find(".goes-live-label").text()).toBe("Goes live to");
+		expect(roles(wrapper)).toEqual(["Sales User", "Report Manager"]);
+		expect(everyone(wrapper).exists()).toBe(false);
+	});
+
+	it("FAC Page published with no code and no roles: says (empty) and raises no load error", async () => {
+		currentCode.mockReset();
+		currentCode.mockResolvedValue({ html: "", script: "", style: "", roles: [] });
+		const empty = mount(ApprovalCard, { props: { block: switchBlock("FAC Page", { published: 1 }, "team-planner") } });
+		await flushPromises();
+		expect(empty.find('[data-test="goes-live-empty"]').text()).toBe("(empty)");
+		expect(empty.find('[data-test="goes-live-missing"]').exists()).toBe(false);
+		expect(roles(empty)).toEqual(["System Managers only"]);
+	});
+
+	it("FAC Page published with no roles: says System Managers only", async () => {
+		const wrapper = await publish([]);
+		expect(roles(wrapper)).toEqual(["System Managers only"]);
+	});
+
+	it.each([["All"], ["Guest"]])("FAC Page published to %s: names it and warns it reaches every user", async (role) => {
+		const wrapper = await publish(["Sales User", role]);
+		expect(roles(wrapper)).toEqual(["Sales User", role]);
+		expect(everyone(wrapper).text()).toBe("All and Guest include every user who can log in.");
+	});
+
+	it("an update that also sets the roles shows them as the change, not the stored ones", async () => {
+		currentCode.mockReset();
+		currentCode.mockResolvedValue({ html: "", script: "", style: "", roles: [] });
+		const wrapper = mount(ApprovalCard, {
+			props: { block: switchBlock("FAC Page", { published: 1, roles: [{ role: "Sales User" }] }, "team-planner") },
+		});
+		await flushPromises();
+		expect(audience(wrapper).exists()).toBe(false);
+		expect(wrapper.text()).toContain("Sales User");
+	});
+
+	it("FAC Page style change: shows style as a diffed CSS code block, not a plain field", async () => {
+		currentCode.mockReset();
+		currentCode.mockResolvedValue({ style: ".a {}\n.old {}" });
+		const wrapper = mount(ApprovalCard, {
+			props: { block: switchBlock("FAC Page", { style: ".a {}\n.new {}" }, "team-planner") },
+		});
+		await flushPromises();
+		expect(currentCode).toHaveBeenCalledWith("FAC Page", "team-planner", ["style"]);
+		expect(preview(wrapper, "Style").props("language")).toBe("css");
+		expect(wrapper.find(".diff-del").text()).toContain(".old {}");
+		expect(wrapper.find(".diff-add").text()).toContain(".new {}");
+		expect(wrapper.findAll(".field-key").map((k) => k.text())).not.toContain("Style");
+	});
+
+	it("FAC Page published with a style change: diffs the style and shows the stored html and script", async () => {
+		currentCode.mockReset();
+		currentCode.mockResolvedValue({ style: ".old {}", html: "<div id='planner'></div>", script: "renderPlanner()" });
+		const wrapper = mount(ApprovalCard, {
+			props: { block: switchBlock("FAC Page", { published: 1, style: ".new {}" }, "team-planner") },
+		});
+		await flushPromises();
+		expect(currentCode).toHaveBeenCalledWith("FAC Page", "team-planner", ["style", "html", "script", "roles"]);
+		expect(goesLive(wrapper).text()).toBe("This goes live");
+		expect(wrapper.find(".diff-del").text()).toContain(".old {}");
+		expect(wrapper.find(".diff-add").text()).toContain(".new {}");
+		const text = wrapper.findAll(".code-preview pre").map((p) => p.text()).join("\n");
+		expect(text).toContain("<div id='planner'></div>");
+		expect(text).toContain("renderPlanner()");
+	});
+
+	it("style on any other doctype stays a plain field", async () => {
+		const wrapper = mount(ApprovalCard, { props: { block: switchBlock("Web Page", { style: ".x {}" }) } });
+		await flushPromises();
+		expect(preview(wrapper, "Style")).toBeUndefined();
+		expect(currentCode).not.toHaveBeenCalled();
+	});
+
 	it("switch on that also changes the code keeps the diff and still says it goes live", async () => {
 		currentCode.mockReset();
 		currentCode.mockResolvedValue({ script: "a\nold\nc" });
@@ -379,6 +482,8 @@ describe("ApprovalCard switching code on", () => {
 			switchBlock("Server Script", { disabled: "1" }),
 			switchBlock("Server Script", { disabled: true }),
 			switchBlock("Client Script", { enabled: false }),
+			switchBlock("FAC Page", { published: 0 }),
+			switchBlock("FAC Page", { title: "Planner" }),
 			switchBlock("Server Script", { script_type: "API" }),
 			switchBlock("Client Script", { dt: "Lead" }),
 			switchBlock("ToDo", { enabled: 1 }),
@@ -416,8 +521,9 @@ describe("ApprovalCard plain-language copy and trust", () => {
 	it("rename update card flags the rename and does not list it as a change", () => {
 		const input = { doctype: "Server Script", name: "Old Script", data: { name: "New Script", script: "pass" } };
 		const wrapper = mount(ApprovalCard, { props: { block: { id: "c6", tool_name: "update_document", input, interrupts } } });
-		const rows = wrapper.findAll(".field-key").map((k) => k.text());
-		expect(rows).toEqual(["Doctype", "Name"]);
+		// The title names the record ("Update Server Script Old Script"), so no rows repeat it.
+		expect(wrapper.find(".approval-title").text()).toBe("Update Server Script Old Script");
+		expect(wrapper.findAll(".field-key").map((k) => k.text())).toEqual([]);
 		expect(wrapper.text()).not.toContain("New Script");
 		expect(wrapper.find("[data-test='rename-notice']").text()).toBe(
 			"Renaming isn't possible here. Only the other changes will be saved.",
@@ -431,7 +537,7 @@ describe("ApprovalCard plain-language copy and trust", () => {
 	])("flags a rename sent as %s on a prefixed update tool", (_label, input) => {
 		const wrapper = mount(ApprovalCard, { props: { block: { id: "c7", tool_name: "erp_update_document", input, interrupts } } });
 		expect(wrapper.find("[data-test='rename-notice']").exists()).toBe(true);
-		expect(wrapper.findAll(".field-key").map((k) => k.text())).toEqual(["Doctype", "Name", "Desk Access"]);
+		expect(wrapper.findAll(".field-key").map((k) => k.text())).toEqual(["Desk Access"]);
 	});
 
 	it("shows no rename notice when the update restates the same name or does not rename", () => {
@@ -451,7 +557,7 @@ describe("ApprovalCard plain-language copy and trust", () => {
 	it("trust checkbox shown otherwise", () => {
 		const block = { id: "c3", tool_name: "create_document", input: { doctype: "ToDo", data: {} }, interrupts: [{ id: "i1", reason: { risk: "other" } }] };
 		const wrapper = mount(ApprovalCard, { props: { block } });
-		expect(wrapper.find(".trust-choice").text()).toBe("Don't ask again for this tool");
+		expect(wrapper.find(".trust-choice").text()).toBe("Don't ask again when FACO creates records");
 	});
 });
 
@@ -563,5 +669,45 @@ describe("ApprovalCard field conditions", () => {
 		await flushPromises();
 		expect(wrapper.find('[data-test="condition-notice"]').exists()).toBe(false);
 		expect(wrapper.find(".condition-toggle").exists()).toBe(false);
+	});
+});
+
+describe("ApprovalCard heading and progress", () => {
+	const todo = { id: "h1", tool_name: "create_document", input: { doctype: "ToDo", data: { description: "Call Blue Harbor", priority: "High" } }, interrupts };
+
+	it("leads with what FACO wants to do, from the arguments", () => {
+		const wrapper = mount(ApprovalCard, { props: { block: todo } });
+		expect(wrapper.find(".approval-title").text()).toBe("Create ToDo “Call Blue Harbor”");
+		expect(wrapper.find('[data-test="ix-waiting"]').exists()).toBe(true);
+	});
+
+	it("shows Approving… on the button that was clicked while the decision is sent", async () => {
+		const wrapper = mount(ApprovalCard, { props: { block: todo } });
+		await wrapper.find(".ql-btn-approve").trigger("click");
+		// The parent sets submitting once it starts sending the decision.
+		await wrapper.setProps({ submitting: true });
+		const approve = wrapper.find(".ql-btn-approve");
+		expect(approve.text()).toBe("Approving…");
+		expect(approve.attributes("aria-busy")).toBe("true");
+		expect(wrapper.find(".ql-btn-reject").attributes("aria-busy")).toBeUndefined();
+	});
+
+	it("drops the waiting signal once decided", () => {
+		const wrapper = mount(ApprovalCard, { props: { block: { ...todo, decision: { resolution: "approved" } } } });
+		expect(wrapper.find('[data-test="ix-waiting"]').exists()).toBe(false);
+		expect(wrapper.find(".decided-label").text()).toBe("Approved");
+	});
+});
+
+describe("ApprovalCard blank values", () => {
+	it("leaves out a blank field on an action, but keeps one an update clears", () => {
+		const action = mount(ApprovalCard, {
+			props: { block: { id: "b1", tool_name: "document_action", input: { doctype: "Sales Order", name: "SO-1", action: "submit", reason: "" }, interrupts } },
+		});
+		expect(action.findAll(".field-key").map((k) => k.text())).toEqual([]);
+		const update = mount(ApprovalCard, {
+			props: { block: { id: "b2", tool_name: "update_document", input: { doctype: "ToDo", name: "TD-1", data: { description: "" } }, interrupts } },
+		});
+		expect(update.findAll(".field-key").map((k) => k.text())).toEqual(["Description"]);
 	});
 });

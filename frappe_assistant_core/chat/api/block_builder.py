@@ -24,7 +24,7 @@ from typing import Any
 
 # Tools whose execution is internal plumbing — rendered as slim indicators,
 # not full expandable cards. `delegate` is one: the plan rail shows the
-# delegated work. Must match the frontend's INTERNAL_TOOLS
+# delegated work; `propose_build_plan` is another: its card shows the plan. Must match the frontend's INTERNAL_TOOLS
 # (chat/frontend/src/utils/internalTools.js; the test pins it).
 INTERNAL_TOOLS = frozenset(
     {
@@ -35,6 +35,7 @@ INTERNAL_TOOLS = frozenset(
         "workspace_delete_file",
         "ask_user",
         "delegate",
+        "propose_build_plan",
     }
 )
 
@@ -410,6 +411,7 @@ class BlockBuilder:
 
         Called with the user's interrupt_response array. Each response has:
         {"interruptId": str, "response": "approve"|"rejected"|"trust"|<user_answer>}
+        A build plan card approves with {"decision": "approve", "plan_id": str}.
         """
         if not interrupt_responses:
             return
@@ -437,6 +439,8 @@ class BlockBuilder:
                             block["status"] = "approved"
                         else:
                             block["status"] = "rejected"
+                    elif interaction_type == "build_plan" and _is_plan_approval(user_response):
+                        block["status"] = "approved"
                     else:
                         # Question types — store the user's answer
                         block["status"] = "answered"
@@ -470,6 +474,11 @@ class BlockBuilder:
         """Close any active thinking block."""
         if self._active_thinking_id:
             self.complete_thinking()
+
+
+def _is_plan_approval(response: Any) -> bool:
+    """The build plan card approves with an object; typed feedback is a plain answer."""
+    return isinstance(response, dict) and response.get("decision") == "approve"
 
 
 def _extract_text_result(result: Any) -> str | None:

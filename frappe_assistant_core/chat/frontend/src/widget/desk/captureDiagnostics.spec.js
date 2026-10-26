@@ -26,7 +26,8 @@ describe("capture_diagnostics handler", () => {
 	});
 
 	it("has approval-card copy so the user is told what is collected", () => {
-		const copy = src().match(/TOOL_CONFIRMATION_COPY = \{([\s\S]*?)\n\};/);
+		const copySrc = readFileSync(resolve(process.cwd(), "src/widget/desk/toolConfirmationCopy.js"), "utf8");
+		const copy = copySrc.match(/TOOL_CONFIRMATION_COPY = \{([\s\S]*?)\n\};/);
 		expect(copy).not.toBeNull();
 		expect(withoutLineComments(copy[1])).toContain("capture_diagnostics");
 	});

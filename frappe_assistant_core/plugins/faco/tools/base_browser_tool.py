@@ -102,6 +102,7 @@ class BaseBrowserTool(BaseTool):
             tool_name=self.tool_name,
             params=params,
             session_id=getattr(frappe.local, "ar_session_id", None),
+            client_type=getattr(frappe.local, "ar_client_type", None),
         )
 
         # Wait for response from browser

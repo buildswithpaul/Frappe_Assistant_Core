@@ -13,6 +13,13 @@
 			@approve="(blockId, responses) => emit('approve', blockId, responses)"
 			@reject="(blockId, responses) => emit('reject', blockId, responses)"
 		/>
+		<BuildPlanCard
+			v-else-if="isBuildPlan"
+			:block="block"
+			:submitting="isSubmittingInterrupts"
+			@approve="(blockId, responses) => emit('approve', blockId, responses)"
+			@ask-for-changes="requestComposerFocus"
+		/>
 		<QuestionCard
 			v-else
 			:block="block"
@@ -26,9 +33,11 @@
 <script setup>
 import { computed } from "vue";
 import { useChatStore } from "@/stores/chatStore";
-import { isApprovalInteraction } from "@/stores/chat/interactionRegime";
+import { requestComposerFocus } from "@/composables/useComposerFocus";
+import { isApprovalInteraction, isBuildPlanInteraction } from "@/stores/chat/interactionRegime";
 import { findActiveMessage } from "@/stores/chat/utils";
 import ApprovalCard from "./interactions/ApprovalCard.vue";
+import BuildPlanCard from "./interactions/BuildPlanCard.vue";
 import QuestionCard from "./interactions/QuestionCard.vue";
 import { responsesFor } from "./interactions/questionGroup";
 import ResolvedIndicator from "./interactions/ResolvedIndicator.vue";
@@ -43,6 +52,8 @@ const chatStore = useChatStore();
 
 const interactionType = computed(() => props.block.interactionType || "approval");
 const isApproval = computed(() => isApprovalInteraction(props.block.interactionType));
+// Feedback on a plan is typed in the composer, which answers the card as not approved.
+const isBuildPlan = computed(() => isBuildPlanInteraction(props.block.interactionType));
 
 // Any non-pending status hides the live action buttons. `aborted` is added
 // by the Stop flow when cancellation lands while the agent is paused on

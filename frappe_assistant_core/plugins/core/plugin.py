@@ -68,6 +68,11 @@ class CorePlugin(BasePlugin):
             "get_pending_approvals",
             # Email
             "send_email",
+            # Permission checks
+            "test_as_user",
+            # Builder checks
+            "sandbox_reference",
+            "recent_errors",
         ]
 
     def validate_environment(self):

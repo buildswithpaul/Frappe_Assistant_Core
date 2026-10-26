@@ -33,14 +33,14 @@ describe("resolveRailMode", () => {
 });
 
 // Mount helper: runs the composable inside a real component so onMounted fires.
-function mountRail(hasArtifacts, width) {
+function mountRail(hasArtifacts, width, options) {
 	if (width != null) {
 		window.innerWidth = width;
 	}
 	let api;
 	const Comp = defineComponent({
 		setup() {
-			api = useContextRail(hasArtifacts);
+			api = useContextRail(hasArtifacts, options);
 			return () => h("div");
 		},
 	});
@@ -133,6 +133,26 @@ describe("useContextRail", () => {
 		await nextTick();
 		expect(api.mode.value).toBe("rail");
 		expect(api.isOpen.value).toBe(false);
+		expect(api.isVisible.value).toBe(true);
+	});
+
+	it("keeps the docked rail collapsed while a page is open, when a new turn brings artifacts", async () => {
+		const has = ref(true);
+		const pageOpen = ref(true);
+		const { api } = mountRail(has, 1280, { holdCollapsed: pageOpen });
+		api.collapseDock();
+		await nextTick();
+
+		has.value = false;
+		await nextTick();
+		has.value = true;
+		await nextTick();
+		expect(api.isVisible.value).toBe(false);
+		expect(api.showDockReopen.value).toBe(true);
+
+		// The reopen tab still works: the user may want both.
+		api.expandDock();
+		await nextTick();
 		expect(api.isVisible.value).toBe(true);
 	});
 });

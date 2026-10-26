@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build --base=/assets/frappe_assistant_core/frontend/ && vite build -c vite.widget.config.js",
+    "build": "vite build --base=/assets/frappe_assistant_core/frontend/ && vite build -c vite.widget.config.js && vite build -c vite.pagecharts.config.js && vite build -c vite.pageframe.config.js && vite build -c vite.pageframehost.config.js",
     "build:widget": "vite build -c vite.widget.config.js",
     "preview": "vite preview",
     "test": "vitest run",

@@ -19,6 +19,7 @@
 from unittest.mock import patch
 
 import frappe
+from frappe.model.meta import Meta
 
 from frappe_assistant_core.tests.base_test import BaseAssistantTest
 from frappe_assistant_core.utils.customisation import SYSTEM_ROLES, _stored_doctype, customisation_impact
@@ -46,6 +47,11 @@ class TestCustomisationImpact(BaseAssistantTest):
         # Rolled back with the class-level transaction.
         cls.off_script = cls._insert_script("FAC Impact Off Script", disabled=1)
         cls.on_script = cls._insert_script("FAC Impact On Script", disabled=0)
+        # Production reaches these when a builder saves a FAC Page as a draft or publishes it.
+        cls.draft_page = cls._insert_page("fac-impact-draft", published=0)
+        cls.live_page = cls._insert_page("fac-impact-live", published=1)
+        # Production reaches this when a builder publishes a page for one role.
+        cls.shared_page = cls._insert_page("fac-impact-shared", published=1, roles=["System Manager"])
 
     @staticmethod
     def _insert_script(name: str, disabled: int) -> str:
@@ -61,6 +67,164 @@ class TestCustomisationImpact(BaseAssistantTest):
         )
         doc.insert(ignore_permissions=True)
         return doc.name
+
+    @staticmethod
+    def _insert_page(slug: str, published: int, roles: list | None = None) -> str:
+        doc = frappe.get_doc(
+            {
+                "doctype": "FAC Page",
+                "title": slug,
+                "slug": slug,
+                "visibility": "Shared",
+                "published": published,
+                "html": "<p>x</p>",
+                "roles": [{"role": role} for role in roles or []],
+            }
+        )
+        doc.insert(ignore_permissions=True)
+        return doc.name
+
+    def test_unpublished_fac_page_create_and_update_are_dormant(self):
+        shared = {"slug": "team-planner", "visibility": "Shared"}
+        self.assertTrue(_impact("create_document", "FAC Page", shared)["dormant"])
+        self.assertTrue(_impact("create_document", "FAC Page", {**shared, "published": 0})["dormant"])
+        self.assertTrue(
+            _impact("update_document", "FAC Page", {"html": "<p>y</p>"}, self.draft_page)["dormant"]
+        )
+
+    def test_publishing_a_fac_page_is_live(self):
+        self.assertFalse(
+            _impact(
+                "create_document",
+                "FAC Page",
+                {"slug": "team-planner", "visibility": "Shared", "published": 1},
+            )["dormant"]
+        )
+        self.assertFalse(_impact("update_document", "FAC Page", {"published": 1}, self.draft_page)["dormant"])
+        publish_with_edit = {"published": 1, "html": "<p>y</p>"}
+        self.assertFalse(
+            _impact("update_document", "FAC Page", publish_with_edit, self.draft_page)["dormant"]
+        )
+        self.assertFalse(
+            _impact("update_document", "FAC Page", {"html": "<p>y</p>"}, self.live_page)["dormant"]
+        )
+
+    def test_delete_of_an_unpublished_fac_page_is_dormant(self):
+        self.assertTrue(_impact("delete_document", "FAC Page", name=self.draft_page)["dormant"])
+        self.assertFalse(_impact("delete_document", "FAC Page", name=self.live_page)["dormant"])
+
+    def _personal_page(self, published: int = 0) -> tuple[str, str]:
+        """A personal page and its owner, built by that owner as FACO's create_document does."""
+        owner = self.make_throwaway_user("fac-impact-owner", roles=("Report Manager",))
+        # nosemgrep: frappe-setuser — the owner builds the page inside the test transaction
+        frappe.set_user(owner)
+        doc = frappe.get_doc({"doctype": "FAC Page", "title": "Mine", "slug": "mine", "html": "<p>x</p>"})
+        doc.insert()
+        if published:
+            # Production: a System Manager may tick Published on it; it still opens only for its owner.
+            frappe.db.set_value("FAC Page", doc.name, "published", 1)
+        return doc.name, owner
+
+    def test_the_owner_changing_their_personal_page_is_dormant(self):
+        name, _owner = self._personal_page(published=1)
+
+        result = _impact("update_document", "FAC Page", {"html": "<p>y</p>"}, name)
+
+        self.assertTrue(result["dormant"])
+        self.assertEqual(result["reason"], "only you can open this page")
+        self.assertTrue(
+            _impact("create_document", "FAC Page", {"slug": "mine-too", "published": 1})["dormant"]
+        )
+
+    def test_a_page_created_before_migrate_reads_as_personal(self):
+        original = Meta.get_field
+
+        def without_visibility(meta, fieldname):
+            # A site that pulled this code but has not migrated has no visibility field on FAC Page.
+            if (meta.name, fieldname) == ("FAC Page", "visibility"):
+                return None
+            return original(meta, fieldname)
+
+        with patch.object(Meta, "get_field", autospec=True, side_effect=without_visibility):
+            result = _impact("create_document", "FAC Page", {"slug": "before-migrate"})
+
+        self.assertTrue(result["dormant"])
+
+    def test_a_system_manager_changing_someone_elses_personal_page_is_live(self):
+        name, _owner = self._personal_page()
+        sysman = self.make_throwaway_user("fac-impact-sysman", roles=("System Manager",))
+        # nosemgrep: frappe-setuser — a System Manager edits the page inside the test transaction
+        frappe.set_user(sysman)
+
+        # Unpublished, yet the owner sees the change: a personal page opens for them unpublished.
+        self.assertFalse(_impact("update_document", "FAC Page", {"html": "<p>y</p>"}, name)["dormant"])
+
+    def test_a_non_system_manager_creating_a_shared_page_is_live(self):
+        # Frappe refuses this write; the card must not call it dormant either.
+        user = self.make_throwaway_user("fac-impact-builder", roles=("Report Manager",))
+        # nosemgrep: frappe-setuser — a Desk user asks for the write inside the test transaction
+        frappe.set_user(user)
+
+        self.assertFalse(
+            _impact("create_document", "FAC Page", {"slug": "x", "visibility": "Shared"})["dormant"]
+        )
+
+    def test_switching_a_personal_page_to_shared_is_live(self):
+        name, _owner = self._personal_page()
+
+        self.assertFalse(_impact("update_document", "FAC Page", {"visibility": "Shared"}, name)["dormant"])
+
+    def test_publishing_a_personal_page_does_not_switch_it_on(self):
+        name, _owner = self._personal_page()
+        own = _impact("update_document", "FAC Page", {"published": 1}, name)
+        created = _impact("create_document", "FAC Page", {"slug": "mine-too", "published": 1})
+        # nosemgrep: frappe-setuser — a System Manager ticks Published inside the test transaction
+        frappe.set_user("Administrator")
+        by_sysman = _impact("update_document", "FAC Page", {"published": 1}, name)
+
+        # Published or not, a personal page opens for its owner alone, so it reaches nobody new.
+        for result in (own, created, by_sysman):
+            self.assertIs(result["switches_on"], False, result["reason"])
+        self.assertFalse(by_sysman["dormant"])
+
+    def test_sharing_a_published_personal_page_switches_it_on(self):
+        name, _owner = self._personal_page(published=1)
+        # nosemgrep: frappe-setuser — only a System Manager may share a page
+        frappe.set_user("Administrator")
+
+        shared = _impact("update_document", "FAC Page", {"visibility": "Shared"}, name)
+
+        self.assertFalse(shared["dormant"])
+        self.assertTrue(shared["switches_on"])
+
+    def test_sharing_a_personal_page_switches_it_on_only_when_published_after(self):
+        name, _owner = self._personal_page()
+        # nosemgrep: frappe-setuser — only a System Manager may share a page
+        frappe.set_user("Administrator")
+
+        unpublished = _impact("update_document", "FAC Page", {"visibility": "Shared"}, name)
+        published = _impact("update_document", "FAC Page", {"visibility": "Shared", "published": 1}, name)
+
+        self.assertIs(unpublished["switches_on"], False)
+        self.assertTrue(published["switches_on"])
+
+    def test_a_shared_pages_script_edit_changes_live_code(self):
+        r = _impact("update_document", "FAC Page", {"script": "console.log(1)"}, self.live_page)
+
+        self.assertTrue(r["changes_live_code"])
+        self.assertIs(r["switches_on"], False)
+
+    def test_a_personal_pages_script_edit_does_not_change_live_code(self):
+        name, _owner = self._personal_page(published=1)
+        own = _impact("update_document", "FAC Page", {"script": "console.log(1)"}, name)
+        # nosemgrep: frappe-setuser — a System Manager edits someone else's page in the transaction
+        frappe.set_user("Administrator")
+        by_sysman = _impact("update_document", "FAC Page", {"script": "console.log(1)"}, name)
+
+        # The owner's page runs in a frame that reads only what they may and asks before any change.
+        for result in (own, by_sysman):
+            self.assertIs(result["changes_live_code"], False, result["reason"])
+            self.assertIs(result["switches_on"], False, result["reason"])
 
     def test_server_script_created_switched_off_is_dormant(self):
         r = _impact("create_document", "Server Script", {"name": "x", "disabled": 1})
@@ -93,6 +257,174 @@ class TestCustomisationImpact(BaseAssistantTest):
         for doctype in ("Client Script", "Notification"):
             self.assertTrue(_impact("create_document", doctype, {"enabled": 0})["dormant"], doctype)
             self.assertFalse(_impact("create_document", doctype, {"enabled": 1})["dormant"], doctype)
+
+    def test_publishing_a_draft_fac_page_switches_it_on(self):
+        for data in ({"published": 1}, {"published": 1, "html": "<p>y</p>"}):
+            self.assertTrue(
+                _impact("update_document", "FAC Page", data, self.draft_page)["switches_on"], data
+            )
+        created = _impact(
+            "create_document", "FAC Page", {"slug": "team-planner", "visibility": "Shared", "published": 1}
+        )
+        self.assertTrue(created["switches_on"])
+
+    def test_editing_a_switched_off_record_does_not_switch_it_on(self):
+        page = _impact("update_document", "FAC Page", {"html": "<p>y</p>"}, self.draft_page)
+        script = _impact("update_document", "Server Script", {"script": "pass"}, self.off_script)
+        created_off = _impact("create_document", "Server Script", {"disabled": 1})
+        for result in (page, script, created_off):
+            self.assertIs(result["switches_on"], False)
+
+    def test_un_disabling_a_server_script_switches_it_on(self):
+        r = _impact("update_document", "Server Script", {"disabled": 0}, self.off_script)
+        self.assertTrue(r["switches_on"])
+
+    def test_creating_a_server_script_with_disabled_0_switches_it_on(self):
+        self.assertTrue(_impact("create_document", "Server Script", {"disabled": 0})["switches_on"])
+        self.assertTrue(_impact("create_document", "Server Script")["switches_on"])
+
+    def test_client_script_and_notification_switch_on_with_enabled(self):
+        for doctype in ("Client Script", "Notification"):
+            self.assertTrue(_impact("create_document", doctype, {"enabled": 1})["switches_on"], doctype)
+            self.assertFalse(_impact("create_document", doctype, {"enabled": 0})["switches_on"], doctype)
+
+    def test_records_already_on_and_their_deletes_do_not_switch_on(self):
+        edit = _impact("update_document", "FAC Page", {"html": "<p>y</p>"}, self.live_page)
+        unpublish = _impact("update_document", "FAC Page", {"published": 0}, self.live_page)
+        delete = _impact("delete_document", "Server Script", name=self.on_script)
+        for result in (edit, unpublish, delete):
+            self.assertFalse(result["dormant"])
+            self.assertIs(result["switches_on"], False)
+
+    def test_every_result_says_whether_it_switches_on(self):
+        for result in (
+            _impact("create_document", "Custom Field", {"dt": "Sales Invoice", "fieldname": "x"}),
+            _impact("update_document", "Server Script", {}, "FAC Impact Missing"),
+            customisation_impact("send_email", {}),
+            customisation_impact("create_document", {"doctype": "ToDo"}),
+        ):
+            self.assertIs(result["switches_on"], False)
+            self.assertIs(result["changes_live_code"], False)
+            self.assertIn("dormant", result)
+            self.assertIn("reason", result)
+
+    def test_editing_a_published_pages_code_changes_live_code(self):
+        for field in ("html", "script", "style"):
+            r = _impact("update_document", "FAC Page", {field: "/* new */"}, self.live_page)
+            self.assertTrue(r["changes_live_code"], field)
+            self.assertIs(r["switches_on"], False, field)
+
+    def test_editing_an_enabled_server_scripts_code_changes_live_code(self):
+        r = _impact("update_document", "Server Script", {"script": "x = 1"}, self.on_script)
+        self.assertTrue(r["changes_live_code"])
+
+    def test_writes_that_leave_live_code_alone_do_not_change_live_code(self):
+        for result in (
+            # The stored script is "pass", so sending it again changes nothing.
+            _impact("update_document", "Server Script", {"script": "pass"}, self.on_script),
+            _impact("update_document", "FAC Page", {"title": "Renamed"}, self.live_page),
+            _impact("update_document", "Server Script", {"script": "x = 1"}, self.off_script),
+            _impact("update_document", "FAC Page", {"published": 1, "html": "<p>y</p>"}, self.draft_page),
+            # Unpublished in the same write, so the new markup never runs.
+            _impact("update_document", "FAC Page", {"published": 0, "html": "<p>y</p>"}, self.live_page),
+            _impact("create_document", "Server Script", {"disabled": 0, "script": "x = 1"}),
+            _impact("create_document", "Custom Field", {"dt": "Sales Invoice", "fieldname": "x"}),
+            _impact("delete_document", "Server Script", name=self.on_script),
+        ):
+            self.assertIs(result["changes_live_code"], False, result["reason"])
+
+    def test_changing_a_published_pages_roles_is_a_live_change(self):
+        for roles in ([{"role": "System Manager"}, {"role": "Guest"}], [], [{"role": "Guest"}], "Guest"):
+            r = _impact("update_document", "FAC Page", {"roles": roles}, self.shared_page)
+            self.assertTrue(r["changes_live_code"], roles)
+
+    def test_the_same_role_set_or_a_draft_pages_roles_are_not_a_live_change(self):
+        same = _impact(
+            "update_document", "FAC Page", {"roles": [{"role": "System Manager"}]}, self.shared_page
+        )
+        as_names = _impact("update_document", "FAC Page", {"roles": ["System Manager"]}, self.shared_page)
+        draft = _impact("update_document", "FAC Page", {"roles": [{"role": "Guest"}]}, self.draft_page)
+        for result in (same, as_names, draft):
+            self.assertIs(result["changes_live_code"], False)
+
+    def test_creating_an_always_live_record_with_code_changes_live_code(self):
+        for doctype, data in (
+            (
+                "Report",
+                {"report_name": "Margins", "report_type": "Script Report", "report_script": "data = []"},
+            ),
+            ("Report", {"report_name": "Margins", "report_type": "Query Report", "query": "select 1"}),
+            (
+                "Print Format",
+                {"name": "Invoice", "doc_type": "Sales Invoice", "html": "<p>{{ doc.name }}</p>"},
+            ),
+            ("Print Format", {"name": "Label", "raw_printing": 1, "raw_commands": "^XA^FD{{ doc.name }}^XZ"}),
+            (
+                "Print Format",
+                {"name": "Designed", "format_data": '[{"fieldtype": "Custom HTML", "options": "{{ x }}"}]'},
+            ),
+            (
+                "Report",
+                {"report_name": "Open tasks", "report_type": "Report Builder", "roles": [{"role": "Guest"}]},
+            ),
+        ):
+            r = _impact("create_document", doctype, data)
+            self.assertTrue(r["changes_live_code"], data)
+            self.assertIs(r["switches_on"], False, data)
+
+    def test_creating_an_always_live_record_without_code_does_not_change_live_code(self):
+        for doctype, data in (
+            ("Report", {"report_name": "Open tasks", "report_type": "Report Builder", "ref_doctype": "ToDo"}),
+            ("Report", {"report_name": "Margins", "report_script": "", "query": "   ", "roles": []}),
+            (
+                "Print Format",
+                {"name": "Plain", "doc_type": "Sales Invoice", "raw_commands": "", "format_data": ""},
+            ),
+            ("Role", {"role_name": "Planner"}),
+            ("Workflow State", {"workflow_state_name": "Checked", "style": "Success"}),
+        ):
+            self.assertIs(_impact("create_document", doctype, data)["changes_live_code"], False, data)
+
+    def test_changing_a_reports_roles_is_a_live_change(self):
+        # Production reaches this when a builder saves a Report Builder report for one role.
+        report = frappe.get_doc(
+            {
+                "doctype": "Report",
+                "report_name": "FAC Impact Open Tasks",
+                "ref_doctype": "ToDo",
+                "report_type": "Report Builder",
+                "is_standard": "No",
+                "roles": [{"role": "System Manager"}],
+            }
+        ).insert(ignore_permissions=True)
+        widened = _impact("update_document", "Report", {"roles": [{"role": "Guest"}]}, report.name)
+        same = _impact("update_document", "Report", {"roles": [{"role": "System Manager"}]}, report.name)
+        self.assertTrue(widened["changes_live_code"])
+        self.assertIs(same["changes_live_code"], False)
+
+    def test_a_print_formats_templates_are_live_code_on_update(self):
+        stored = {"name": "Label", "raw_commands": "old", "format_data": "[]", "html": ""}
+        with patch(STORED_RECORD, autospec=True, return_value=stored):
+            for field in ("raw_commands", "format_data"):
+                r = _impact("update_document", "Print Format", {field: "{{ doc.name }}"}, "Label")
+                self.assertTrue(r["changes_live_code"], field)
+
+    def test_code_of_an_always_live_doctype_changes_live_code(self):
+        stored = {"name": "Margins", "report_type": "Script Report", "report_script": "old", "query": ""}
+        with patch(STORED_RECORD, autospec=True, return_value=stored):
+            changed = _impact("update_document", "Report", {"report_script": "new"}, "Margins")
+            same = _impact("update_document", "Report", {"report_script": "old"}, "Margins")
+            other = _impact("update_document", "Report", {"disabled": 1}, "Margins")
+        self.assertTrue(changed["changes_live_code"])
+        self.assertIs(same["changes_live_code"], False)
+        self.assertIs(other["changes_live_code"], False)
+
+    def test_a_notifications_templates_are_live_code(self):
+        stored = {"name": "Low stock", "enabled": 1, "subject": "a", "message": "b", "condition": ""}
+        with patch(STORED_RECORD, autospec=True, return_value=stored):
+            for field in ("subject", "message", "condition"):
+                r = _impact("update_document", "Notification", {field: "{{ doc.name }}"}, "Low stock")
+                self.assertTrue(r["changes_live_code"], field)
 
     def test_new_doctype_visible_only_to_system_manager_is_dormant(self):
         data = {"custom": 1, "permissions": [{"role": "System Manager"}, {"role": "Administrator"}]}
@@ -334,6 +666,19 @@ class TestCustomisationImpactTool(BaseAssistantTest):
         self.assertTrue(result["success"])
         self.assertTrue(result["dormant"])
         self.assertTrue(result["reason"])
+        self.assertIs(result["switches_on"], False)
+
+    def test_passes_switches_on_through(self):
+        result = self._tool().execute(
+            {
+                "tool_name": "create_document",
+                "tool_input": {"doctype": "Server Script", "data": {"disabled": 0}},
+            }
+        )
+        self.assertTrue(result["success"])
+        self.assertFalse(result["dormant"])
+        self.assertTrue(result["switches_on"])
+        self.assertIs(result["changes_live_code"], False)
 
     def test_live_write_is_not_dormant(self):
         result = self._tool().execute({"tool_name": "send_email", "tool_input": {}})

@@ -20,3 +20,21 @@ describe("detectContext on a form", () => {
 		expect(context).not.toHaveProperty("name");
 	});
 });
+
+describe("detectContext on a custom page", () => {
+	afterEach(() => delete window.frappe);
+
+	const onPage = (route) => (window.frappe = { get_route: () => route, pages: { "fac-pages": {}, "fac-admin": {} } });
+
+	it("names the FAC Page the user is on", () => {
+		onPage(["fac-pages", "team-planner"]);
+		expect(detectContext()).toMatchObject({ type: "Custom Page", page_name: "fac-pages", fac_page: "team-planner" });
+	});
+
+	it("adds no FAC Page on the bare host page or on another custom page", () => {
+		onPage(["fac-pages"]);
+		expect(detectContext()).not.toHaveProperty("fac_page");
+		onPage(["fac-admin", "x"]);
+		expect(detectContext()).not.toHaveProperty("fac_page");
+	});
+});

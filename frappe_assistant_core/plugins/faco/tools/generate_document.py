@@ -63,6 +63,8 @@ class GenerateDocument(BaseTool):
         self.description = (
             "Generate a downloadable PDF from markdown content (headings, tables, lists, code blocks). "
             "Write complete, well-structured markdown — it becomes the whole document. "
+            "For a report or PDF of the site's own figures (sales this month, overdue invoices), "
+            "build a personal page instead: get_skill('pages-in-chat'). "
             "RICH BLOCKS: embed ```chart```, ```callout```, ```metric```, ```cover```, ```pagebreak``` "
             "fences for inline SVG charts, call-outs, KPI cards, cover pages, and page breaks; chart "
             "schema matches the chat-side dialect. See the 'document_authoring' skill for a full guide. "

@@ -101,6 +101,8 @@ class FacoPlugin(BasePlugin):
             "add_crm_activity",
             # FAC Cloud's approval hook asks whether a customisation write is dormant. Never shown to the model.
             "customisation_impact",
+            # FAC Cloud checks a build plan against the site before showing it. Never shown to the model.
+            "check_build_plan",
         ]
 
     def is_fac_cloud_only(self) -> bool:

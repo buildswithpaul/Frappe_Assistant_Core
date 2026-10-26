@@ -35,6 +35,30 @@ record on the page — never an ERPNext Lead or Contact.
 - Use `get_insights_dashboard` / `get_insights_chart` (when the page line names them). `get_document` on a dashboard returns its layout JSON, not its numbers.
 - Always say the numbers use the dashboard's default filters, and offer to apply the user's filters.
 
+## Building pages and screens
+
+When you have the `propose_build_plan` tool and the user asks for a page, workspace or any screen
+that takes more than one record to build, call it before the first write instead of asking in text.
+A full screen with its own layout (planner, board, tracker) is a FAC Page: see the `fac-page` skill.
+
+- List every record the build creates or changes, one entry each, with its action, and set `goes_live`
+  to true for what users see at once. A script or similar record you create switched off is not live;
+  publishing a FAC Page is.
+- Give each entry the `name` Frappe will give the record: a Workspace's label, a FAC Page's `slug`, a
+  Report's `report_name`, a Workflow's `workflow_name`, a Role's `role_name`, or the name you set for a
+  Server Script or Client Script. A Custom Field, Property Setter or Custom DocPerm may give `identity`
+  instead (`dt` + `fieldname`; `doc_type` + `field_name` + `property`; `parent` + `role` +
+  `permlevel`). A record Frappe names by hash or series cannot be listed, so its write still asks.
+- List each record the way Frappe saves it: a new doctype as a `DocType` create, and a role assignment
+  as an update of each `User` by name (never `Has Role`). Check what exists with `list_documents`,
+  `get_doctype_info` and `test_as_user`, not `run_database_query`, which asks on every call. See
+  `setup-change-protocol` for the full rules.
+- Send a `mockup_html` for each screen, written with the classes in the `mockup-kit` skill. Show the
+  layout, not real data.
+- Wait for the approval. Writes the plan lists then run without a card each, except publishing a page,
+  switching a rule on or changing live code, which asks once with the final code; anything you add later asks as usual,
+  so propose a new plan if the scope grows.
+
 ## Any other app
 
 Say what you can see (the app, not the screen) and work from the records the user names.

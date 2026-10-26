@@ -1,7 +1,7 @@
 import { ref } from "vue";
 import { api } from "@/api/client";
 import { goesLiveFields } from "./customisation";
-import { flattenInput, isCodeKey } from "./helpers";
+import { flattenInput, isCodeField } from "./helpers";
 
 /**
  * Current stored values of the code fields an update_document call is about to change, so the
@@ -23,7 +23,7 @@ export function useCurrentCode(getBlock) {
 		const flat = flattenInput(block.input);
 		const { doctype, name } = flat;
 		if (typeof doctype !== "string" || typeof name !== "string") return;
-		const changed = Object.keys(flat).filter((k) => isCodeKey(k) && typeof flat[k] === "string");
+		const changed = Object.keys(flat).filter((k) => isCodeField(k, doctype) && typeof flat[k] === "string");
 		const fields = [...new Set([...changed, ...live])];
 		if (!fields.length) return;
 		loading.value = live.length > 0;
