@@ -222,7 +222,7 @@ class TestSystemSkillManifest(BaseAssistantTest):
             self.assertIn("Changing a value never needs a rename.", text, name)
 
     def test_personal_pages_are_built_without_a_plan(self):
-        # Run new version is the owner's check on a personal page; a plan card would ask twice.
+        # A personal page reads only what its owner may and asks before any change; a plan card adds nothing.
         self.assertIn("Don't call `propose_build_plan` or `ask_user`", self._read_skill("pages_in_chat.md"))
         for name in ("fac_page.md", "setup_change_protocol.md"):
             text = self._read_skill(name)
@@ -234,6 +234,26 @@ class TestSystemSkillManifest(BaseAssistantTest):
         self.assertIn("pages-in-chat", GenerateDocument().description)
         entry = next(e for e in _load_manifest("system_skills.json") if e["skill_id"] == "pages-in-chat")
         self.assertIn("instead of generate_document", entry["description"])
+
+    def test_faco_tests_a_page_before_calling_it_done(self):
+        # The user judges a page by its figures and never sees its code, so FACO checks them first.
+        text = self._read_skill("pages_in_chat.md")
+        self.assertIn("**Test it before you say it's done.**", text)
+        self.assertIn("`page_errors`", text)
+        self.assertIn("run the page's queries yourself", text)
+        self.assertIn(
+            "Never call a page done while it shows errors or empty figures you can't explain.", text
+        )
+        entry = next(e for e in _load_manifest("system_skills.json") if e["skill_id"] == "pages-in-chat")
+        self.assertIn("test it before saying it is done", entry["description"])
+
+    def test_personal_pages_have_no_run_step(self):
+        # A personal page runs on its own in its read-only frame; no skill may send the user to run it.
+        for name in ("pages_in_chat.md", "fac_page.md"):
+            text = self._read_skill(name)
+            for step in ("Run new version", "View code", "View changes"):
+                self.assertNotIn(step, text, f"{name}: {step}")
+        self.assertIn("Every change asks the user first", self._read_skill("pages_in_chat.md"))
 
     def test_pages_in_chat_says_the_page_opens_by_itself(self):
         text = self._read_skill("pages_in_chat.md")

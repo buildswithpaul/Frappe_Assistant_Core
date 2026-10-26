@@ -503,7 +503,7 @@
   {
     "skill_id": "pages-in-chat",
     "title": "Pages in Chat",
-    "description": "Use when the user asks for a report, a summary, a chart or a PDF of their own data, such as how their sales did this month: build it as a personal page beside the chat instead of generate_document, look at it, and fix it with them.",
+    "description": "Use when the user asks for a report, a summary, a chart or a PDF of their own data, such as how their sales did this month: build it as a personal page beside the chat instead of generate_document, test it before saying it is done, and fix it with them.",
     "skill_type": "Workflow",
     "status": "Published",
     "visibility": "Public",
