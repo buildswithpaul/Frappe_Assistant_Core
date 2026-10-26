@@ -89,6 +89,14 @@ describe("failureReason", () => {
 		expect(reason.endsWith("…")).toBe(true);
 	});
 
+	it("reads Frappe's HTML in an error as plain text", () => {
+		// Frappe's PermissionError carries markup, e.g. "Insufficient Permission for <strong>DocField</strong>"
+		expect(failureReason(failed({ error: "Error fetching data: Insufficient Permission for <strong>DocField</strong>" }))).toBe(
+			"Error fetching data: Insufficient Permission for DocField",
+		);
+		expect(failureReason(failed({ message: "Row 2:<br>Value &amp; type &lt;missing&gt;" }))).toBe("Row 2: Value & type <missing>");
+	});
+
 	it("never shows a traceback and says nothing for a successful step", () => {
 		expect(failureReason(failed({ error: "Traceback (most recent call last):\n  File x" }))).toBe("");
 		expect(failureReason({ status: "success", result: { message: "Done" } })).toBe("");

@@ -271,6 +271,13 @@ class TestSystemSkillManifest(BaseAssistantTest):
         self.assertIn("Don't use `run_database_query`", text)
         self.assertIn("Totals per month or week belong in the page's script", text)
 
+    def test_a_doctypes_fields_come_from_get_doctype_info_not_python(self):
+        # #34574: in the Ep.19 take FACO ran run_python_code (it always asks) to read DocField, which a
+        # user can't read, and the call failed.
+        for name in ("pages_in_chat.md", "fac_page.md"):
+            text = self._read_skill(name)
+            self.assertIn("never `run_python_code` or a read of `DocField`", text, name)
+
     def test_shared_pages_are_checked_for_errors_and_their_api_limits(self):
         # #34516: a published page broke its own API's 62-day limit, and only the user found out.
         text = self._read_skill("fac_page.md")
