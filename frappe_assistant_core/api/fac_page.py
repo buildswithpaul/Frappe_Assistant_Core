@@ -16,6 +16,8 @@
 
 """Read endpoint for FAC Page records, shown by the ``fac-pages`` Desk page."""
 
+import re
+
 import frappe
 from bs4 import BeautifulSoup
 from frappe import _
@@ -62,6 +64,25 @@ PERSONAL_DISALLOWED_TAGS = [
     "set",
 ]
 
+# A personal page's stylesheet restyles its own page but reaches no other server: an @import or a
+# remote url() could load a stylesheet or leak what the page shows, and image-set() and the like
+# fetch without url(). The rest are old ways to run code from CSS. Only /files/ and /assets/ urls
+# stay, which load from this site.
+_STYLE_URL = re.compile(r"""url\(\s*(?:"([^"]*)"|'([^']*)'|([^)]*?))\s*\)""", re.IGNORECASE)
+_STYLE_REWRITES = (
+    (re.compile(r"@import\b[^;]*;?", re.IGNORECASE), ""),
+    (
+        re.compile(r"(?<![\w-])(?:-webkit-)?(?:image-set|image|cross-fade|element|src)\(", re.IGNORECASE),
+        "blocked(",
+    ),
+    (re.compile(r"expression\s*\(", re.IGNORECASE), "blocked("),
+    (re.compile(r"-moz-binding", re.IGNORECASE), "-blocked-binding"),
+    (re.compile(r"(?<![\w-])behavior\s*:", re.IGNORECASE), "blocked:"),
+)
+_SAME_ORIGIN_URL = re.compile(r"^/(?:files|assets)/")
+_CSS_HEX_ESCAPE = re.compile(r"\\([0-9a-fA-F]{1,6})\s?")
+_CSS_ESCAPE = re.compile(r"\\(.)", re.DOTALL)
+
 
 @frappe.whitelist(methods=["GET"])
 def get_page(slug: str) -> dict:
@@ -93,7 +114,7 @@ def get_page(slug: str) -> dict:
         "title": page.title,
         "html": _served_html(page.html, draft, page.visibility),
         "script": "" if draft else page.script,
-        "style": page.style,
+        "style": _personal_style(page.style) if page.visibility != SHARED else page.style,
         "draft": draft,
         "visibility": page.visibility,
         "owner_is_me": page.owner == user,
@@ -178,3 +199,37 @@ def _draft_html(html: str | None) -> str | None:
         for attr in ("href", "xlink:href", "target", "ping"):
             link.attrs.pop(attr, None)
     return str(soup)
+
+
+def _personal_style(style: str | None) -> str | None:
+    """A personal page's stylesheet without @import, remote urls or code.
+
+    Its style is never held behind Run new version, so it must not be able to load or send
+    anything. A stylesheet that still holds any of these once its CSS escapes are decoded hides
+    them in escapes (``u\\72l(``), and is dropped whole rather than guessed at.
+    """
+    if not style:
+        return style
+    cleaned = _strip_style(style)
+    decoded = _decode_css_escapes(cleaned)
+    return cleaned if _strip_style(decoded) == decoded else ""
+
+
+def _strip_style(style: str) -> str:
+    style = _STYLE_URL.sub(_same_origin_url_or_none, style)
+    for pattern, replacement in _STYLE_REWRITES:
+        style = pattern.sub(replacement, style)
+    return style
+
+
+def _same_origin_url_or_none(match: re.Match) -> str:
+    url = next((group for group in match.groups() if group is not None), "").strip()
+    return match.group(0) if _SAME_ORIGIN_URL.match(url) else "none"
+
+
+def _decode_css_escapes(style: str) -> str:
+    def hex_char(match: re.Match) -> str:
+        code = int(match.group(1), 16)
+        return chr(code) if 0 < code <= 0x10FFFF else "\ufffd"
+
+    return _CSS_ESCAPE.sub(r"\1", _CSS_HEX_ESCAPE.sub(hex_char, style))

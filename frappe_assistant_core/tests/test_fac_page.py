@@ -203,6 +203,14 @@ class TestFACPage(BaseAssistantTest):
 
         self.assertEqual(get_page(slug)["html"], html)
 
+    def test_a_published_page_style_is_served_unchanged(self):
+        # A shared page's style was approved on its publish card, so it is served as approved.
+        style = '@import url("https://fonts.example/x.css"); .mk-card { background: url(https://cdn.example/a.png); }'
+        slug = self._make_page(published=1, style=style)
+        self._act_as("fac-page-published-style", roles=("System Manager",))
+
+        self.assertEqual(get_page(slug)["style"], style)
+
     def test_a_published_page_is_served_with_its_script(self):
         slug = self._make_page(published=1)
         self._act_as("fac-page-published-sysman", roles=("System Manager",))
@@ -395,6 +403,48 @@ class TestPersonalFACPage(BaseAssistantTest):
             "<svg",
         ):
             self.assertIn(kept, served)
+
+    def test_a_personal_pages_style_reaches_no_other_server(self):
+        # A personal page's style shows at once, never held behind Run new version, so it must not
+        # load or send anything.
+        user = self._desk_user("fac-page-style")
+        style = (
+            '@import url("https://evil.example/x.css");\n'
+            ".mk-a { background: url(https://evil.example/?v=1); }\n"
+            ".mk-b { background: url(//evil.example/x.png); }\n"
+            '.mk-c { background: image-set("https://evil.example/x.png" 1x); }\n'
+            ".mk-d { width: expression(alert(1)); -moz-binding: url(x.xml#b); behavior: url(x.htc); }\n"
+            '.mk-logo { background: url("/files/logo.png"); }\n'
+            ".mk-icon { background: url(/assets/frappe/images/x.svg); scroll-behavior: smooth; }\n"
+            ".mk-card { position: relative; color: teal; }"
+        )
+        name = self._build(user, style=style)
+
+        served = get_page(name)["style"]
+
+        for unsafe in (
+            "@import",
+            "url(https:",
+            "url(//",
+            "image-set(",
+            "expression(",
+            "-moz-binding",
+            "; behavior:",
+        ):
+            self.assertNotIn(unsafe, served)
+        for kept in (
+            'url("/files/logo.png")',
+            "url(/assets/frappe/images/x.svg)",
+            "scroll-behavior: smooth",
+            ".mk-card { position: relative; color: teal; }",
+        ):
+            self.assertIn(kept, served)
+
+    def test_a_personal_page_style_that_hides_a_url_in_escapes_is_dropped(self):
+        user = self._desk_user("fac-page-style-escape")
+        name = self._build(user, style=".mk-card { background: u\\72l(https://evil.example/?v=1); }")
+
+        self.assertEqual(get_page(name)["style"], "")
 
     def test_a_personal_page_does_not_exist_for_anyone_else(self):
         name = self._build(self._desk_user("fac-page-private"))
