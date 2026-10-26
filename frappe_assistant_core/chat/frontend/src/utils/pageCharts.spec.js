@@ -1,5 +1,7 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
+import { getInstanceByDom } from "echarts/core";
+
 import { QL_VIZ_SEQUENCE } from "@/composables/dataVizPalette";
 
 import { chart } from "./pageCharts";
@@ -57,6 +59,16 @@ describe("chart", () => {
 		mountChart({ ...option, color: ["#123456"] });
 		const fills = [...el.querySelectorAll("path")].map((p) => p.getAttribute("fill"));
 		expect(fills).toContain("#123456");
+	});
+
+	it("keeps axis labels inside the chart, unless the page lays out the grid itself", () => {
+		// Six-figure totals ran past ECharts' default left margin and lost their leading digits.
+		mountChart();
+		expect(getInstanceByDom(el).getOption().grid[0].containLabel).toBe(true);
+		handle.dispose();
+		el.remove();
+		mountChart({ ...option, grid: { left: 40, containLabel: false } });
+		expect(getInstanceByDom(el).getOption().grid[0]).toMatchObject({ left: 40, containLabel: false });
 	});
 
 	it("updates the chart in place", () => {

@@ -23,6 +23,8 @@ use([
 
 // The kit sizes and print-protects this class; pages render on the kit's light surface.
 const CHART_CLASS = "mk-chart";
+// Room for the axis labels inside the chart's box: ECharts' default margins cut long values off.
+const DEFAULT_GRID = { left: 8, right: 16, top: 24, bottom: 8, containLabel: true };
 // The series types registered above; ECharts would skip any other silently.
 const SERIES_TYPES = ["bar", "line", "pie"];
 
@@ -45,7 +47,7 @@ export function chart(el, option = {}) {
 	checkSeries(option);
 	el.classList.add(CHART_CLASS);
 	const instance = init(el, null, { renderer: "svg" });
-	instance.setOption({ color: QL_VIZ_SEQUENCE, ...option });
+	instance.setOption({ color: QL_VIZ_SEQUENCE, grid: DEFAULT_GRID, ...option });
 
 	// The panel and Desk both resize with the window and the chat beside them.
 	const observer = typeof ResizeObserver === "function" ? new ResizeObserver(() => instance.resize()) : null;
