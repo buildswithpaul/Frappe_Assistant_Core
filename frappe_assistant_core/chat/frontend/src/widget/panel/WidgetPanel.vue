@@ -97,7 +97,14 @@
 			:credit-balance="Number(userStore.quotaInfo?.credit_balance) || 0"
 			@dismiss="dismissOverage"
 		/>
+		<PersonalLimitBanner
+			v-if="limitBlock"
+			:is-admin="isAdmin"
+			:used="limitBlock.used"
+			:limit="limitBlock.limit"
+		/>
 		<InputArea
+			:hold-send="Boolean(limitBlock)"
 			:is-streaming="chatStore.isStreaming"
 			:interaction-mode="chatStore.pendingInteractionBlock?.regime || null"
 			:placeholder="composerPlaceholder"
@@ -127,6 +134,8 @@ import CreditMeter from "@/components/chat/CreditMeter.vue";
 import WidgetWelcome from "./WidgetWelcome.vue";
 import BrowserToolConfirm from "./BrowserToolConfirm.vue";
 import OverageNotice from "./OverageNotice.vue";
+import PersonalLimitBanner from "@/components/chat/PersonalLimitBanner.vue";
+import { usePersonalLimitGate } from "./usePersonalLimitGate.js";
 import WidgetPlanStrip from "./WidgetPlanStrip.vue";
 import { bridge } from "../bridge.js";
 import { getHost } from "../host/index.js";
@@ -187,8 +196,15 @@ function dismissOverage() {
 	overageDismissed.value = true;
 }
 
+// The widget boots without loadUser, so the quota status is what says whether this user is an admin.
+const isAdmin = computed(() => userStore.isAdmin || Boolean(userStore.quotaInfo?.is_admin));
+const { block: limitBlock } = usePersonalLimitGate();
+
 // Same routing as ChatView.handleSendMessage: answer a pending question, abandon a card, or send.
 async function onSend({ message, files = [] }) {
+	// At their personal limit AR refuses before it looks at the team's credits, so buying credits or
+	// the quota Spotlight would point the wrong way. The banner above the composer says what to do.
+	if (limitBlock.value) return;
 	// Only an admin gets the Spotlight that explains a block; a member who is refused would just lose
 	// their text, so theirs goes through and the server's own error shows inline.
 	if (isBlocked(userStore.quotaInfo) && userStore.quotaInfo.is_admin) {

@@ -23,6 +23,7 @@ import { getSurface, surfaceClientSignals } from "./chat/surface";
 import { useComposerModesStore } from "./composerModesStore";
 import { useModelStore } from "./modelStore";
 import { useSpotlightStore } from "./spotlightStore";
+import { useUserStore } from "./userStore";
 
 export const SESSIONS_PAGE_SIZE = 30;
 
@@ -1006,6 +1007,10 @@ export const useChatStore = defineStore("chat", () => {
 		}
 		if (errorCode === "quota_exhausted") {
 			useSpotlightStore().onQuotaExhausted();
+		}
+		// The member's own limit refused the turn: re-read it so the widget holds the next send.
+		if (errorCode === "user_limit_reached") {
+			useUserStore().loadMyCreditStatus();
 		}
 
 		// INTERRUPT_ALREADY_RESOLVED: a stale approval card was clicked

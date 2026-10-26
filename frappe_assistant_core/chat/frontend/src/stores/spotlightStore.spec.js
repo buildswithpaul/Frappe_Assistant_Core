@@ -178,6 +178,14 @@ describe("spotlightStore", () => {
 		expect(s.current).toBeNull();
 	});
 
+	it("quota_exhausted leads with the admin's own limit when that is reached too", async () => {
+		// Buying credits would not let them chat: AR refuses at the personal limit first.
+		const s = setup({ quota: { credits_exhausted: true, billing_cycle_start: "2026-10-15" } });
+		useUserStore().myCreditStatus = { has_individual_limit: true, monthly_credit_limit: 10000, credits_used_this_month: 11234 };
+		await s.onQuotaExhausted();
+		expect(s.current.primary).toEqual({ label: "Change limit", route: "/settings/users" });
+	});
+
 	it("quota_exhausted is ignored for non-admins", async () => {
 		const s = setup({ admin: false, quota: { credits_exhausted: true } });
 		await s.onQuotaExhausted();

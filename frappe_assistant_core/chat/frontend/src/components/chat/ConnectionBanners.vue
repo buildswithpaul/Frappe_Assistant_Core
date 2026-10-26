@@ -24,8 +24,18 @@
 		</div>
 	</Transition>
 
+	<!-- A refused turn at the member's own limit: say what lifts it, not the raw refusal. -->
+	<div v-if="error && isUserLimit" class="limit-banner" data-test="user-limit-error">
+		<PersonalLimitBanner :is-admin="isAdmin" />
+		<button @click="$emit('dismiss-error')" class="dismiss-btn" aria-label="Dismiss error">
+			<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+				<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+			</svg>
+		</button>
+	</div>
+
 	<!-- Error Banner -->
-	<div v-if="error" class="error-banner">
+	<div v-else-if="error" class="error-banner">
 		<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 			<path
 				stroke-linecap="round"
@@ -73,6 +83,7 @@
 <script setup>
 import { computed } from "vue";
 import { PLANS_ROUTE, CREDITS_ROUTE } from "@/components/spotlight/spotlightRules";
+import PersonalLimitBanner from "./PersonalLimitBanner.vue";
 
 const props = defineProps({
 	connectionVisible: { type: Boolean, default: false },
@@ -87,11 +98,31 @@ const props = defineProps({
 defineEmits(["retry", "dismiss-error", "reconnect"]);
 
 const isQuota = computed(() => props.errorCode === "quota_exhausted");
+const isUserLimit = computed(() => props.errorCode === "user_limit_reached");
 const memberQuotaText =
 	"Your workspace has used all of this month's credits. Ask your workspace admin to upgrade or buy credits.";
 </script>
 
 <style scoped>
+.limit-banner {
+	position: relative;
+	display: flex;
+	align-items: flex-start;
+	margin: 8px 0 0;
+}
+
+.limit-banner > :first-child {
+	flex: 1;
+	padding-right: 36px;
+}
+
+.limit-banner .dismiss-btn {
+	position: absolute;
+	top: 6px;
+	right: 18px;
+	color: var(--ql-text-muted);
+}
+
 /* Subtle connection dot — shows after 3s of sustained disconnect */
 .connection-dot {
 	position: absolute;

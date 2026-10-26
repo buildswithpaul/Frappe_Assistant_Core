@@ -28,3 +28,27 @@ describe("ConnectionBanners quota CTA", () => {
 		expect(w.emitted("dismiss-error")).toBeTruthy();
 	});
 });
+
+describe("ConnectionBanners personal limit refusal", () => {
+	const REFUSAL = "Your individual credit limit has been reached. Contact your team admin.";
+
+	it("tells an admin they can change their own limit, with the link to Users", () => {
+		const w = mk({ error: REFUSAL, errorCode: "user_limit_reached", isAdmin: true });
+		expect(w.find('[data-test="user-limit-error"]').exists()).toBe(true);
+		expect(w.text()).toContain("You can change it in Settings → Users");
+		expect(w.text()).not.toContain(REFUSAL);
+		expect(w.findComponent(RouterLinkStub).props("to")).toEqual({ name: "settings-users" });
+	});
+
+	it("tells a member to ask their team admin, with no link", () => {
+		const w = mk({ error: REFUSAL, errorCode: "user_limit_reached", isAdmin: false });
+		expect(w.text()).toContain("Ask your team admin to raise it");
+		expect(w.findAllComponents(RouterLinkStub)).toHaveLength(0);
+	});
+
+	it("can still be dismissed", () => {
+		const w = mk({ error: REFUSAL, errorCode: "user_limit_reached", isAdmin: true });
+		w.find('[data-test="user-limit-error"] .dismiss-btn').trigger("click");
+		expect(w.emitted("dismiss-error")).toBeTruthy();
+	});
+});

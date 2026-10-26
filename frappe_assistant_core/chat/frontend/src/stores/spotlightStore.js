@@ -7,6 +7,7 @@ import { useNotificationStore } from "@/stores/notificationStore";
 import { useUserStore } from "@/stores/userStore";
 import { useTourStore } from "@/stores/tourStore";
 import { getSurface } from "@/stores/chat/surface";
+import { personalLimitBlock } from "@/utils/personalLimit";
 import {
 	DAILY_KEY,
 	QUOTA_KEY,
@@ -54,7 +55,7 @@ export const useSpotlightStore = defineStore("spotlight", () => {
 			quotaStatus = status;
 			const threshold = quotaThreshold(quotaStatus);
 			if (threshold && !storage.get(QUOTA_KEY(who, cycleStart(quotaStatus), threshold))) {
-				current.value = quotaContent(quotaStatus);
+				current.value = quotaContent(quotaStatus, personalLimitBlock(useUserStore().myCreditStatus));
 				shownThisLoad = true;
 				return;
 			}
@@ -77,7 +78,7 @@ export const useSpotlightStore = defineStore("spotlight", () => {
 			is_fallback: false,
 			is_unlimited: false,
 		};
-		current.value = quotaContent(quotaStatus);
+		current.value = quotaContent(quotaStatus, personalLimitBlock(useUserStore().myCreditStatus));
 		shownThisLoad = true;
 	}
 
