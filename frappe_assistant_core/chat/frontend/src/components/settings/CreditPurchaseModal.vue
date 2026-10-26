@@ -25,6 +25,13 @@
 						<template v-if="validityNote">{{ validityNote }}</template>
 					</p>
 
+					<PersonalLimitNotice
+						v-if="limitBlock"
+						:used="limitBlock.used"
+						:limit="limitBlock.limit"
+						@open-users="openUsers"
+					/>
+
 					<CreditAmountPicker
 						v-model:credit-amount="creditAmount"
 						v-model:selected-gateway="selectedGateway"
@@ -68,7 +75,11 @@ import { ref, computed, watch } from "vue";
 import CreditAmountPicker from "./billing/CreditAmountPicker.vue";
 import CreditPriceSummary from "./billing/CreditPriceSummary.vue";
 import HostedCheckoutNotice from "./billing/HostedCheckoutNotice.vue";
+import PersonalLimitNotice from "./billing/PersonalLimitNotice.vue";
+import { useRouter } from "vue-router";
 import { useTeleportTarget } from "@/composables/useTeleportTarget";
+import { useUserStore } from "@/stores/userStore";
+import { personalLimitBlock } from "@/utils/personalLimit";
 
 const teleportTarget = useTeleportTarget();
 
@@ -88,6 +99,25 @@ const props = defineProps({
 });
 
 const emit = defineEmits(["close", "purchase"]);
+
+const router = useRouter();
+const userStore = useUserStore();
+
+// A buyer blocked by their own monthly limit stays blocked after paying (#34571), so say so first.
+// Refreshed on open: the status loaded at boot may predate a limit change or this month's usage.
+const limitBlock = computed(() => personalLimitBlock(userStore.myCreditStatus));
+watch(
+	() => props.isOpen,
+	(open) => {
+		if (open) userStore.loadMyCreditStatus();
+	},
+	{ immediate: true },
+);
+
+function openUsers() {
+	emit("close");
+	router.push({ name: "settings-users" });
+}
 
 const minimumPurchase = 1000;
 const presets = [2000, 10000, 50000, 200000];

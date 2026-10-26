@@ -65,6 +65,7 @@
 			<span v-if="creditLimit > 0" class="limit-value">
 				{{ formatCreditsShort(creditLimit) }}
 			</span>
+			<span v-if="atLimit" class="limit-blocked" data-test="at-limit">{{ __("At limit") }}</span>
 			<span v-else class="limit-none">Shared</span>
 		</td>
 		<td class="actions-cell" @click.stop>
@@ -151,6 +152,8 @@ import { computed } from "vue";
 import RoleBadge from "./RoleBadge.vue";
 import { isIdle } from "./memberHelpers";
 import { formatRelativeTime } from "@/composables/useFormatters";
+import { __ } from "@/utils/i18n";
+import { personalLimitBlock } from "@/utils/personalLimit";
 
 const props = defineProps({
 	user: { type: Object, required: true },
@@ -173,6 +176,9 @@ defineEmits([
 ]);
 
 const creditLimit = computed(() => toFloat(props.user.monthly_credit_limit || 0));
+
+// AR refuses this member's chats until the month rolls over or an admin raises the limit.
+const atLimit = computed(() => Boolean(personalLimitBlock(props.user)));
 
 const creditPercent = computed(() => {
 	if (creditLimit.value <= 0) return 0;
@@ -405,6 +411,18 @@ tr.expanded {
 	color: var(--ql-text-muted);
 	text-transform: uppercase;
 	letter-spacing: 0.03em;
+}
+
+.limit-blocked {
+	display: inline-block;
+	margin-left: 0.375rem;
+	padding: 0.0625rem 0.375rem;
+	border-radius: 999px;
+	font-size: 0.6875rem;
+	font-weight: 600;
+	color: var(--ql-danger);
+	background: color-mix(in srgb, var(--ql-danger) 10%, transparent);
+	white-space: nowrap;
 }
 
 .limit-input-row {
