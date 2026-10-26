@@ -22,6 +22,7 @@ Reads the Error Log and failed scheduled jobs so a builder can see what a script
 from typing import Any, Dict, List
 
 import frappe
+from frappe.query_builder import Order
 from frappe.utils import add_to_date, now_datetime
 
 from frappe_assistant_core.core.base_tool import BaseTool
@@ -34,7 +35,10 @@ MAX_TEXT = 4000
 
 
 def _like(text: str) -> str:
-    """A LIKE pattern matching ``text`` literally anywhere."""
+    """A LIKE pattern matching ``text`` literally anywhere.
+
+    Only for the query builder: on Frappe v15, get_all doubles the backslashes in a like value.
+    """
     escaped = text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
     return f"%{escaped}%"
 
@@ -90,16 +94,17 @@ class RecentErrors(BaseTool):
         }
 
     def _errors(self, since, contains: str, limit: int) -> List[Dict[str, Any]]:
-        filters = [["creation", ">=", since]]
-        if contains:
-            filters.append(["error", "like", _like(contains)])
-        rows = frappe.get_all(
-            "Error Log",
-            filters=filters,
-            fields=["creation", "method", "error", "reference_doctype", "reference_name"],
-            order_by="creation desc",
-            limit_page_length=limit,
+        log = frappe.qb.DocType("Error Log")
+        query = (
+            frappe.qb.from_(log)
+            .select(log.creation, log.method, log.error, log.reference_doctype, log.reference_name)
+            .where(log.creation >= since)
+            .orderby(log.creation, order=Order.desc)
+            .limit(limit)
         )
+        if contains:
+            query = query.where(log.error.like(_like(contains)))
+        rows = query.run(as_dict=True)
         return [
             {
                 "when": str(row.creation),
@@ -112,19 +117,18 @@ class RecentErrors(BaseTool):
         ]
 
     def _failed_jobs(self, since, contains: str, limit: int) -> List[Dict[str, Any]]:
-        filters = [["creation", ">=", since], ["status", "=", "Failed"]]
-        or_filters = None
+        job = frappe.qb.DocType("Scheduled Job Log")
+        query = (
+            frappe.qb.from_(job)
+            .select(job.creation, job.scheduled_job_type, job.details)
+            .where((job.creation >= since) & (job.status == "Failed"))
+            .orderby(job.creation, order=Order.desc)
+            .limit(limit)
+        )
         if contains:
             pattern = _like(contains)
-            or_filters = [["scheduled_job_type", "like", pattern], ["details", "like", pattern]]
-        rows = frappe.get_all(
-            "Scheduled Job Log",
-            filters=filters,
-            or_filters=or_filters,
-            fields=["creation", "scheduled_job_type", "details"],
-            order_by="creation desc",
-            limit_page_length=limit,
-        )
+            query = query.where(job.scheduled_job_type.like(pattern) | job.details.like(pattern))
+        rows = query.run(as_dict=True)
         return [
             {"when": str(row.creation), "job": row.scheduled_job_type, "details": _tail(row.details)}
             for row in rows
