@@ -404,6 +404,22 @@ class TestPersonalFACPage(BaseAssistantTest):
         ):
             self.assertIn(kept, served)
 
+    def test_a_personal_pages_inline_styles_reach_no_other_server(self):
+        user = self._desk_user("fac-page-inline-style")
+        html = (
+            '<div class="mk-a" style="background: url(https://evil.example/x); color: red">a</div>'
+            '<div class="mk-b" style="background-image: image-set(&quot;https://evil.example/y&quot; 1x)">b</div>'
+            '<div class="mk-c" style="background: url(/files/logo.png)">c</div>'
+        )
+        name = self._build(user, html=html)
+
+        served = get_page(name)["html"]
+
+        self.assertNotIn("evil.example", served)
+        self.assertIn('class="mk-a" style="color: red;"', served)
+        self.assertIn('<div class="mk-b">b</div>', served)
+        self.assertIn('style="background: url(/files/logo.png);"', served)
+
     def _served_style(self, user: str, style: str) -> str:
         # Production: the owner's page is edited through FACO's update_document, which saves the doc.
         name = getattr(self, "_style_page", None) or self._build(user, slug="styled")

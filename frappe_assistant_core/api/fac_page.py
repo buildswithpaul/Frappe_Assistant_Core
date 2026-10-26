@@ -179,7 +179,18 @@ def _personal_html(html: str | None) -> str | None:
     The page's code may only live in ``script``, which the host pages run once the owner has seen
     it and clicked Run new version. An inline handler in the html would run without that.
     """
-    return sanitize_html(html, always_sanitize=True, disallowed_tags=PERSONAL_DISALLOWED_TAGS)
+    html = sanitize_html(html, always_sanitize=True, disallowed_tags=PERSONAL_DISALLOWED_TAGS)
+    if not html or "style=" not in html:
+        return html
+    # An inline style shows at once too, so it gets the stylesheet's rules: nothing off this site.
+    soup = BeautifulSoup(html, "html.parser")
+    for element in soup.find_all(style=True):
+        cleaned = _inline_style(element["style"])
+        if cleaned:
+            element["style"] = cleaned
+        else:
+            del element["style"]
+    return str(soup)
 
 
 def _draft_html(html: str | None) -> str | None:
@@ -243,15 +254,32 @@ def _clean_block(content) -> str:
     """A rule's body: its declarations that fetch nothing, and its nested rules, cleaned."""
     parts = []
     for node in tinycss2.parse_blocks_contents(content, skip_comments=True, skip_whitespace=True):
-        if node.type == "declaration":
-            if node.lower_name not in _CODE_PROPERTIES and _tokens_safe(node.value):
-                important = " !important" if node.important else ""
-                # The name is decoded, so it is escaped again: "x\\7d" must not close the rule.
-                name = serialize_identifier(node.name)
-                parts.append(f"{name}: {tinycss2.serialize(node.value).strip()}{important};")
-        else:
-            parts.append(_clean_node(node))
+        parts.append(_clean_declaration(node) if node.type == "declaration" else _clean_node(node))
     return "".join(parts)
+
+
+def _clean_declaration(node) -> str:
+    """A declaration that fetches nothing and runs no code, serialised, or ""."""
+    if node.lower_name in _CODE_PROPERTIES or not _tokens_safe(node.value):
+        return ""
+    important = " !important" if node.important else ""
+    # The name is decoded, so it is escaped again: "x\\7d" must not close the rule.
+    name = serialize_identifier(node.name)
+    return f"{name}: {tinycss2.serialize(node.value).strip()}{important};"
+
+
+def _inline_style(value: str) -> str:
+    """An inline style attribute's declarations that fetch nothing, or "" if it does not parse."""
+    try:
+        parts = []
+        for node in tinycss2.parse_blocks_contents(value, skip_comments=True, skip_whitespace=True):
+            if node.type == "error":
+                return ""
+            if node.type == "declaration":
+                parts.append(_clean_declaration(node))
+        return "".join(parts)
+    except Exception:
+        return ""
 
 
 def _tokens_safe(tokens, strings_are_urls: bool = False) -> bool:
