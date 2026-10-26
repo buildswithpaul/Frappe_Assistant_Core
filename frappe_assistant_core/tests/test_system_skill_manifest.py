@@ -253,7 +253,9 @@ class TestSystemSkillManifest(BaseAssistantTest):
             text = self._read_skill(name)
             for step in ("Run new version", "View code", "View changes"):
                 self.assertNotIn(step, text, f"{name}: {step}")
-        self.assertIn("Every change asks the user first", self._read_skill("pages_in_chat.md"))
+        text = self._read_skill("pages_in_chat.md")
+        self.assertIn("**Everything else asks the user first**", text)
+        self.assertIn("**Allow for this page**", text)
 
     def test_pages_in_chat_says_the_page_opens_by_itself(self):
         text = self._read_skill("pages_in_chat.md")

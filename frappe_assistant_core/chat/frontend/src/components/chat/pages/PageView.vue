@@ -17,7 +17,8 @@
 			:page="page"
 			:user="user"
 			:kit-css="kitCss"
-			:ask-write="askWrite"
+			:page-name="pageName"
+			:ask-user="askUser"
 			@unsupported="emit('unsupported', $event)"
 			@error="onError"
 		/>
@@ -46,8 +47,10 @@ const props = defineProps({
 	// get_page's response: {title, html, script, style, draft, visibility}.
 	page: { type: Object, required: true },
 	user: { type: String, default: "" },
-	// Asks the user to allow a change a personal page wants to make.
-	askWrite: { type: Function, default: () => Promise.resolve(false) },
+	// The FAC Page record name, which a personal page's "Allow for this page" is scoped to.
+	pageName: { type: String, default: "" },
+	// Asks the user to allow a call a personal page wants to make; resolves "once", "page" or false.
+	askUser: { type: Function, default: () => Promise.resolve(false) },
 });
 
 const emit = defineEmits(["unsupported", "error"]);

@@ -37,7 +37,11 @@ When a user asks for a report, a summary or "a PDF of …" about their own data,
   - `frappe.utils.escape_html`, the same as in Desk;
   - `frappe.format`.
 
-  The script runs as the user, so it reads only what they may. **Reads run at once:** `get_list`, `get_value`, `get_doc` and a `frappe.call` with `type: "GET"`. **Every change asks the user first**, in plain words in the panel: `insert`, `set_value`, `delete_doc` and a `frappe.call` with `type: "POST"`. A `frappe.call` that names no type is tried as a read, and asks only if its method refuses GET. So a page that only shows data never asks: read with `type: "GET"`, and give any API the page reads `methods=["GET"]`.
+  The script runs as the user, so it reads only what they may. **Frappe's own reads run at once:** `frappe.db.get_list`, `get_value` and `get_doc`, and a `frappe.call` to `frappe.client.get_count`, `frappe.client.get_single_value`, `frappe.desk.reportview.get` or `frappe.desk.query_report.run`. **Everything else asks the user first**, in plain words in the panel:
+  - **Every change asks each time**, listing the fields it sets: `insert`, `set_value`, `delete_doc`.
+  - **Any other method**, an API you wrote included, asks with **Allow once** or **Allow for this page**, whatever its HTTP method.
+
+  So a page that only shows data should read with `frappe.db` or a report through `frappe.desk.query_report.run`, and then it never asks.
 
   Any other member, such as the rest of `frappe.utils`, `frappe.ui`, `frappe.realtime` or `frappe.set_route`, makes the panel say the page needs Desk and offer **Open in Desk**. Write your own small helpers for anything else.
 - **A sealed frame.** The script can't fetch anything itself, open a window, submit a form, navigate or reach the chat around it. Its data comes only through `frappe`. Images and fonts load only from this site's `/files/` and `/assets/`.
@@ -67,7 +71,7 @@ frappe.db.get_list("Sales Invoice", {
 
 - Replying "done" without looking at the page.
 - Calling a page done while `page_errors` lists errors or its figures are empty.
-- Reading with `type: "POST"` calls, so the user is asked to allow a change every time the page opens.
+- Calling your own API for figures a `frappe.db` read or a report can fetch, so the user is asked to allow it.
 - Pasting numbers into the html instead of fetching them.
 - A slug like `report` or `page-2` that the user can't find again in **My pages**.
 - Inline `onclick` or `onerror` handlers in the html. They are stripped, so the button does nothing.

@@ -22,7 +22,7 @@
 			<a class="page-panel-open-desk" :href="deskUrl" target="_blank" rel="noopener">{{ __("Open in Desk") }}</a>
 		</p>
 
-		<PageWritePrompt v-if="writeAsk" :description="writeAsk.description" @decide="decideWrite" />
+		<PageWritePrompt v-if="writeAsk" :request="writeAsk.request" @decide="decideWrite" />
 
 		<div class="page-panel-body">
 			<p v-if="loadFailed" class="page-panel-message">{{ __("This page could not be shown.") }}</p>
@@ -33,7 +33,8 @@
 				:key="renderKey"
 				:page="page"
 				:user="user"
-				:ask-write="askWrite"
+				:page-name="name"
+				:ask-user="askUser"
 				@unsupported="unsupported = $event"
 				@error="onScriptError"
 			/>
@@ -76,7 +77,7 @@ const scriptFailed = ref(false);
 const shareNote = ref("");
 const renderKey = ref(0);
 const view = ref(null);
-// Changes a personal page asked to make, one shown at a time: {description, resolve}.
+// Calls a personal page asked to make, one shown at a time: {request, resolve}.
 const writeQueue = ref([]);
 const writeAsk = computed(() => writeQueue.value[0] || null);
 let request = 0;
@@ -131,13 +132,14 @@ function onScriptError(error) {
 	scriptFailed.value = true;
 }
 
-function askWrite(description) {
-	return new Promise((resolve) => writeQueue.value.push({ description, resolve }));
+function askUser(request) {
+	return new Promise((resolve) => writeQueue.value.push({ request, resolve }));
 }
 
-function decideWrite(allowed) {
+// "once", "page" or false.
+function decideWrite(answer) {
 	const ask = writeQueue.value.shift();
-	ask?.resolve(allowed);
+	ask?.resolve(answer);
 }
 
 async function downloadPdf() {

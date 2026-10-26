@@ -103,25 +103,32 @@ describe("fac-pages Desk page and a personal page", () => {
 		expect(window.fac_page_frame_host.createPageFrame).not.toHaveBeenCalled();
 	});
 
-	it("asks before each change one at a time, and answers with the user's choice", async () => {
+	it("asks before each call one at a time, listing its fields, and answers with the user's choice", async () => {
 		const handle = await showPersonal();
-		const first = handle.options.askWrite("This page wants to delete ToDo TD-1.");
-		const second = handle.options.askWrite("This page wants to create a new ToDo.");
+		expect(handle.options.pageName).toBe("sales-a1b2c3");
+		const first = handle.options.askUser({
+			message: "This page wants to update ToDo TD-1.",
+			fields: [["status", "Closed"]],
+			trustable: false,
+		});
+		const second = handle.options.askUser({ message: "This page wants to run my_app.api.feed.", fields: [], trustable: true });
 		await vi.waitFor(() => expect(main.querySelectorAll(".fac-page-write-prompt")).toHaveLength(1));
-		expect(main.querySelector(".fac-page-write-message").textContent).toBe("This page wants to delete ToDo TD-1.");
+		expect(main.querySelector(".fac-page-write-message").textContent).toBe("This page wants to update ToDo TD-1.");
+		expect(main.querySelector(".fac-page-write-fields").textContent).toBe("statusClosed");
+		expect(main.querySelector(".fac-page-write-trust")).toBeNull();
 		main.querySelector(".fac-page-write-allow").click();
-		expect(await first).toBe(true);
+		expect(await first).toBe("once");
 		await vi.waitFor(() =>
-			expect(main.querySelector(".fac-page-write-message")?.textContent).toBe("This page wants to create a new ToDo."),
+			expect(main.querySelector(".fac-page-write-message")?.textContent).toBe("This page wants to run my_app.api.feed."),
 		);
-		main.querySelector(".fac-page-write-deny").click();
-		expect(await second).toBe(false);
+		main.querySelector(".fac-page-write-trust").click();
+		expect(await second).toBe("page");
 		expect(main.querySelector(".fac-page-write-prompt")).toBeNull();
 	});
 
 	it("refuses waiting changes and disposes the frame when the user moves on", async () => {
 		const handle = await showPersonal();
-		const pending = handle.options.askWrite("This page wants to delete ToDo TD-1.");
+		const pending = handle.options.askUser({ message: "This page wants to delete ToDo TD-1.", fields: [], trustable: false });
 		await vi.waitFor(() => expect(main.querySelector(".fac-page-write-prompt")).not.toBeNull());
 		show();
 		expect(await pending).toBe(false);

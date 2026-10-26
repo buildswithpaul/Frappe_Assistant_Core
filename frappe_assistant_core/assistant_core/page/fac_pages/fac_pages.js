@@ -70,7 +70,7 @@
 		page.main.empty();
 		// Only a page that says it is Shared runs in Desk itself; any other runs in the frame.
 		if (data.visibility === "Shared") render_shared(page, data, is_latest);
-		else render_personal(page, data, is_latest);
+		else render_personal(page, name, data, is_latest);
 	}
 
 	// A Shared page, published through the go-live card that showed its code.
@@ -99,7 +99,7 @@
 	}
 
 	// A personal page runs at once, in a frame with no login of its own: see pageFrameHost.js.
-	function render_personal(page, data, is_latest) {
+	function render_personal(page, name, data, is_latest) {
 		Promise.all([load_script(FRAME_HOST_URL, "frame host"), load_kit()]).then(([, kit_css]) => {
 			if (!is_latest()) return;
 			const host = window.fac_page_frame_host;
@@ -117,8 +117,9 @@
 				kitCss: kit_css,
 				user: frappe.session.user,
 				version: window._version_number || "",
+				pageName: name,
 				transport: host.fetchTransport(() => frappe.csrf_token),
-				askWrite: (description) => ask_write(prompts, description),
+				askUser: (request) => ask_user(prompts, request),
 				onHeight: (height) => (shown_frame.element.style.height = `${Math.max(height, 200)}px`),
 			});
 			shown_frame.element.style.cssText = "display:block;width:100%;height:480px;border:0;";
@@ -127,36 +128,59 @@
 		});
 	}
 
-	// One change at a time, in plain words; the description quotes the page, so it is text only.
-	// Changes still waiting when the user moves on are refused.
+	// One call at a time, in plain words; everything shown quotes the page, so it is text only.
+	// Calls still waiting when the user moves on are refused. Resolves "once", "page" or false.
 	let prompt_chain = Promise.resolve();
 	let open_prompts = [];
-	function ask_write(prompts, description) {
-		const answer = prompt_chain.then(() => show_prompt(prompts, description));
+	function ask_user(prompts, request) {
+		const answer = prompt_chain.then(() => show_prompt(prompts, request));
 		prompt_chain = answer.catch(() => {});
 		return answer;
 	}
 
-	function show_prompt(prompts, description) {
+	function show_prompt(prompts, request) {
 		return new Promise((resolve) => {
 			if (!prompts.isConnected) return resolve(false);
 			const bar = document.createElement("div");
 			bar.className = "fac-page-write-prompt alert alert-warning";
 			bar.setAttribute("role", "alertdialog");
-			const message = document.createElement("span");
+			const message = document.createElement("div");
 			message.className = "fac-page-write-message";
-			message.textContent = description;
+			message.textContent = request.message;
+			const fields = document.createElement("dl");
+			fields.className = "fac-page-write-fields small";
+			fields.style.cssText = "display:grid;grid-template-columns:max-content 1fr;gap:2px 12px;margin:6px 0 8px;";
+			for (const [field, value] of request.fields) {
+				const term = document.createElement("dt");
+				term.style.fontWeight = "normal";
+				term.textContent = field;
+				const detail = document.createElement("dd");
+				detail.style.cssText = "margin:0;overflow-wrap:anywhere;";
+				detail.textContent = value;
+				fields.append(term, detail);
+			}
 			const deny = make_button(__("Don't allow"), "btn btn-default btn-xs fac-page-write-deny");
-			const allow = make_button(__("Allow"), "btn btn-primary btn-xs fac-page-write-allow");
-			const decide = (allowed) => {
+			const allow = make_button(
+				request.trustable ? __("Allow once") : __("Allow"),
+				"btn btn-primary btn-xs fac-page-write-allow"
+			);
+			const decide = (answer) => {
 				bar.remove();
 				open_prompts = open_prompts.filter((open) => open !== decide);
-				resolve(allowed);
+				resolve(answer);
 			};
 			open_prompts.push(decide);
 			deny.addEventListener("click", () => decide(false));
-			allow.addEventListener("click", () => decide(true));
-			bar.append(message, " ", deny, " ", allow);
+			allow.addEventListener("click", () => decide("once"));
+			const buttons = [deny, " "];
+			if (request.trustable) {
+				const trust = make_button(__("Allow for this page"), "btn btn-default btn-xs fac-page-write-trust");
+				trust.addEventListener("click", () => decide("page"));
+				buttons.push(trust, " ");
+			}
+			bar.append(message);
+			if (request.fields.length) bar.append(fields);
+			bar.append(...buttons, allow);
 			prompts.append(bar);
 			// A long page may be scrolled past the prompt; bring it into view.
 			bar.scrollIntoView({ block: "nearest" });

@@ -205,39 +205,55 @@ describe("PagePanel: a personal page runs on its own and asks before a change", 
 		expect(w.text()).not.toContain("Run new version");
 	});
 
-	it("asks before a change the page wants to make, and answers with the user's choice", async () => {
+	const change = (message) => ({ message, fields: [["status", "Closed"]], trustable: false });
+	const method = (message) => ({ message, fields: [], trustable: true });
+
+	it("asks before a change the page wants to make, listing its fields, and answers with the choice", async () => {
 		const w = await mountPanel();
-		const ask = w.findComponent(PageView).props("askWrite");
-		const allowed = ask("This page wants to delete ToDo TD-1.");
+		const ask = w.findComponent(PageView).props("askUser");
+		const allowed = ask(change("This page wants to update ToDo TD-1."));
 		await flushPromises();
-		expect(w.find(".page-write-prompt").text()).toContain("This page wants to delete ToDo TD-1.");
+		expect(w.find(".page-write-prompt-message").text()).toBe("This page wants to update ToDo TD-1.");
+		expect(w.find(".page-write-prompt-fields").text()).toContain("status");
+		expect(w.find(".page-write-prompt-fields").text()).toContain("Closed");
+		// A record write is allowed once at a time, never for the whole page.
+		expect(w.find("[data-test=page-write-trust]").exists()).toBe(false);
 		await w.find("[data-test=page-write-allow]").trigger("click");
-		expect(await allowed).toBe(true);
+		expect(await allowed).toBe("once");
 		expect(w.find(".page-write-prompt").exists()).toBe(false);
 
-		const denied = ask("This page wants to create a new ToDo.");
+		const denied = ask(change("This page wants to create a new ToDo."));
 		await flushPromises();
 		await w.find("[data-test=page-write-deny]").trigger("click");
 		expect(await denied).toBe(false);
 	});
 
-	it("asks one change at a time, in order", async () => {
+	it("offers Allow for this page for a method call", async () => {
 		const w = await mountPanel();
-		const ask = w.findComponent(PageView).props("askWrite");
-		const first = ask("first");
-		const second = ask("second");
+		const answer = w.findComponent(PageView).props("askUser")(method("This page wants to run my_app.api.feed."));
+		await flushPromises();
+		expect(w.find("[data-test=page-write-allow]").text()).toBe("Allow once");
+		await w.find("[data-test=page-write-trust]").trigger("click");
+		expect(await answer).toBe("page");
+	});
+
+	it("asks one call at a time, in order", async () => {
+		const w = await mountPanel();
+		const ask = w.findComponent(PageView).props("askUser");
+		const first = ask(method("first"));
+		const second = ask(method("second"));
 		await flushPromises();
 		expect(w.find(".page-write-prompt-message").text()).toBe("first");
 		await w.find("[data-test=page-write-allow]").trigger("click");
-		expect(await first).toBe(true);
+		expect(await first).toBe("once");
 		expect(w.find(".page-write-prompt-message").text()).toBe("second");
 		await w.find("[data-test=page-write-deny]").trigger("click");
 		expect(await second).toBe(false);
 	});
 
-	it("refuses a change the old version asked about once a new version loads", async () => {
+	it("refuses a call the old version asked about once a new version loads", async () => {
 		const w = await mountPanel();
-		const pendingAsk = w.findComponent(PageView).props("askWrite")("old version's change");
+		const pendingAsk = w.findComponent(PageView).props("askUser")(method("old version's call"));
 		await w.setProps({ refreshKey: 1 });
 		await flushPromises();
 		expect(await pendingAsk).toBe(false);

@@ -14,8 +14,10 @@ const props = defineProps({
 	page: { type: Object, required: true },
 	user: { type: String, default: "" },
 	kitCss: { type: String, default: "" },
-	// Asks the user to allow a change the page wants to make; resolves true when they do.
-	askWrite: { type: Function, required: true },
+	// The FAC Page record name, which "Allow for this page" is scoped to.
+	pageName: { type: String, default: "" },
+	// Asks the user to allow a call; resolves "once", "page" or false.
+	askUser: { type: Function, required: true },
 });
 
 const emit = defineEmits(["unsupported", "error", "ready"]);
@@ -32,11 +34,12 @@ onMounted(() => {
 		kitCss: props.kitCss,
 		user: props.user,
 		version: BUILD_ID,
+		pageName: props.pageName,
 		transport: {
 			get: (method, args) => getCall(method, queryArgs(args)),
 			post: (method, args) => baseCall(method, args),
 		},
-		askWrite: (description) => props.askWrite(description),
+		askUser: (request) => props.askUser(request),
 		onError: (message) => emit("error", new Error(message)),
 		onUnsupported: (name) => emit("unsupported", name),
 		onReady: () => emit("ready"),
