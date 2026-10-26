@@ -1,5 +1,15 @@
 import { mount } from "@vue/test-utils";
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { createPinia, setActivePinia } from "pinia";
+import { useUserStore } from "@/stores/userStore";
+
+vi.mock("vue-router", () => ({ useRouter: () => ({ push: vi.fn() }) }));
+
+// The modal refreshes the buyer's own credit status on open; these tests are about the copy.
+beforeEach(() => {
+	setActivePinia(createPinia());
+	vi.spyOn(useUserStore(), "loadMyCreditStatus").mockResolvedValue();
+});
 
 /**
  * The screen that takes the money has to be right about what the money buys.

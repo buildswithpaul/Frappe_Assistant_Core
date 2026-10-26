@@ -131,6 +131,8 @@ const modelStore = useModelStore();
 
 const props = defineProps({
 	disabled: { type: Boolean, default: false },
+	// Sending is refused for now (a personal limit is reached): the text stays and stays editable.
+	holdSend: { type: Boolean, default: false },
 	isStreaming: { type: Boolean, default: false },
 	context: { type: Object, default: null },
 	initialMessage: { type: String, default: "" },
@@ -221,7 +223,7 @@ const slashOpen = computed(() => slashMatch.value !== null);
 const slashQuery = computed(() => slashMatch.value || "");
 
 const canSend = computed(
-	() => !props.disabled && (message.value.trim() || attachedFiles.value.length > 0)
+	() => !props.disabled && !props.holdSend && (message.value.trim() || attachedFiles.value.length > 0)
 );
 
 // A pending interaction card overrides the generic streaming placeholder —

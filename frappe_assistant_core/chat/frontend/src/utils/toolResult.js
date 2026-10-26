@@ -69,12 +69,22 @@ export function isDryRun(block) {
 	return block?.input?.validate_only === true || toolResult(block).validation_passed === true;
 }
 
+/**
+ * Frappe's messages carry markup (<strong>, <br>); a reason is shown as text, so keep only the text.
+ * DOMParser builds an inert document (no script runs, nothing loads) and textContent decodes entities
+ * without ever turning them back into markup.
+ */
+function plainText(text) {
+	const doc = new DOMParser().parseFromString(text.replace(/<br\s*\/?>/gi, " "), "text/html");
+	return (doc.body.textContent || "").replace(/ /g, " ").replace(/[ \t]+/g, " ");
+}
+
 /** One short sentence saying why a step failed, or "" when there is nothing safe to show. */
 export function failureReason(block, maxLength = REASON_MAX) {
 	if (!toolFailed(block)) return "";
 	const result = toolResult(block);
 	const raw = [result.error, result.message].find((v) => typeof v === "string" && v.trim());
 	if (!raw || /Traceback \(most recent call last\)/i.test(raw)) return "";
-	const sentence = raw.trim().split(/\n|(?<=[.!?])\s/)[0].trim();
+	const sentence = plainText(raw).trim().split(/\n|(?<=[.!?])\s/)[0].trim();
 	return sentence.length > maxLength ? `${sentence.slice(0, maxLength - 1)}…` : sentence;
 }

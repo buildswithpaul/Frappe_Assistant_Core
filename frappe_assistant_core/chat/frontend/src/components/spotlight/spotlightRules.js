@@ -7,6 +7,7 @@ export const DAILY_KEY = (user, surface) => `fac_spotlight_last_shown:${user}:${
 export const QUOTA_KEY = (user, cycle, threshold) => `fac_quota_moment:${user}:${cycle}:${threshold}`;
 export const PLANS_ROUTE = "/settings/billing?tab=plans";
 export const CREDITS_ROUTE = "/settings/billing?tab=credits";
+export const USERS_ROUTE = "/settings/users";
 
 const pad = (n) => String(n).padStart(2, "0");
 
@@ -46,7 +47,12 @@ export function pickAnnouncement(notifications) {
 
 const fmt = (n) => Math.max(0, Math.round(Number(n) || 0)).toLocaleString();
 
-export function quotaContent(status) {
+/**
+ * The quota Spotlight. `personalLimit` (`{used, limit}` from personalLimitBlock) is set when the
+ * user has also reached their own monthly limit: AR checks that first, so buying credits would not
+ * let them chat, and the limit leads the explanation.
+ */
+export function quotaContent(status, personalLimit = null) {
 	const threshold = quotaThreshold(status);
 	const hasUpgradeKey = Object.prototype.hasOwnProperty.call(status || {}, "upgrade");
 	const upgrade = hasUpgradeKey ? status.upgrade : undefined;
@@ -61,6 +67,24 @@ export function quotaContent(status) {
 		: `${fmt(status?.quota_remaining)} credits left on ${status?.plan || "your plan"}.${resetLine}`;
 
 	const topPlan = hasUpgradeKey && upgrade === null;
+	if (personalLimit && threshold === 100) {
+		return {
+			kind: "quota",
+			id: "quota-100-limit",
+			threshold,
+			eyebrow: "Your personal limit",
+			title: "Your personal limit is reached, and so are the team's credits",
+			body:
+				`You've used ${fmt(personalLimit.used)} of your ${fmt(personalLimit.limit)} monthly credits. ` +
+				"Buying credits won't raise a personal limit, so change it in Settings → Users first " +
+				`(0 means no personal limit). The workspace is paused too.${resetLine} ` +
+				"Upgrade or buy credits to keep the team going.",
+			highlights: [],
+			media: { art: "quota" },
+			primary: { label: "Change limit", route: USERS_ROUTE },
+			secondary: { label: "Buy credits", route: CREDITS_ROUTE },
+		};
+	}
 	return {
 		kind: "quota",
 		id: `quota-${threshold}`,

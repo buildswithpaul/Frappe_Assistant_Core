@@ -33,11 +33,9 @@ describe("BillingSettings wiring", () => {
 	});
 
 	it("renders the usage chart in the Credits tab", () => {
-		const creditsPanel = billingSettings().match(
-			/<UsageChart[\s\S]{0,200}?\/>|<UsageChart[^>]*>/
-		);
-		expect(creditsPanel).not.toBeNull();
-		expect(billingSettings()).toMatch(/activeTab === 'credits'[\s\S]*?<UsageChart/);
+		// The Credits tab is its own component, which carries the chart.
+		expect(billingSettings()).toMatch(/<CreditsTab\s+v-if="activeTab === 'credits'"/);
+		expect(readFileSync(join(BILLING_DIR, "CreditsTab.vue"), "utf8")).toMatch(/<UsageChart\s*\/>/);
 	});
 
 	it("leaves no billing component orphaned", () => {

@@ -148,3 +148,26 @@ describe("DAILY_KEY", () => {
 		expect(DAILY_KEY("u@acme.com", "spa")).not.toBe(DAILY_KEY("u@acme.com", "widget"));
 	});
 });
+
+describe("quotaContent with the user's personal limit reached", () => {
+	const exhausted = { credits_exhausted: true, plan: "Team Basic", billing_cycle_start: "2026-10-15" };
+
+	it("leads with the personal limit and offers Change limit before Buy credits", () => {
+		const c = quotaContent(exhausted, { used: 11234, limit: 10000 });
+		expect(c.title).toMatch(/personal limit/i);
+		expect(c.body).toContain("Buying credits won't raise a personal limit");
+		expect(c.body.indexOf("personal limit")).toBeLessThan(c.body.indexOf("workspace is paused"));
+		expect(c.primary).toEqual({ label: "Change limit", route: "/settings/users" });
+		expect(c.secondary).toEqual({ label: "Buy credits", route: CREDITS_ROUTE });
+	});
+
+	it("is unchanged when the user is under their own limit", () => {
+		expect(quotaContent(exhausted, null)).toEqual(quotaContent(exhausted));
+		expect(quotaContent(exhausted).primary.label).not.toBe("Change limit");
+	});
+
+	it("leaves the 80% warning alone, since the user can still chat", () => {
+		const c = quotaContent({ percentage_used: 85 }, { used: 10, limit: 10 });
+		expect(c.primary.label).not.toBe("Change limit");
+	});
+});

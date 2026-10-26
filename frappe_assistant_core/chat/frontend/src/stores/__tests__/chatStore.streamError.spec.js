@@ -1,7 +1,8 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { setActivePinia, createPinia } from "pinia";
 import { useChatStore } from "../chatStore";
 import { useModelStore } from "../modelStore";
+import { useUserStore } from "../userStore";
 
 describe("chatStore.handleStreamError", () => {
 	beforeEach(() => {
@@ -13,6 +14,15 @@ describe("chatStore.handleStreamError", () => {
 		const modelStore = useModelStore();
 		chatStore.handleStreamError("Model X couldn't answer right now. Choose another model and send again.", code, {});
 		expect(modelStore.pickerOpen).toBe(true);
+	});
+
+	it("re-reads the personal limit when the member's own limit refused the turn", () => {
+		// The Desk widget then holds the next send instead of firing another refused turn.
+		const chatStore = useChatStore();
+		const load = vi.spyOn(useUserStore(), "loadMyCreditStatus").mockResolvedValue();
+		chatStore.handleStreamError("Your individual credit limit has been reached.", "user_limit_reached", {});
+		expect(load).toHaveBeenCalledTimes(1);
+		expect(chatStore.errorCode).toBe("user_limit_reached");
 	});
 
 	it("leaves the picker closed for other errors", () => {

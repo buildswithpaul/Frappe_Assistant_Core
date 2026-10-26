@@ -121,15 +121,13 @@
 				@manage-subscription="activeTab = 'settings'"
 			/>
 
-			<template v-if="activeTab === 'credits'">
-				<PrepaidCreditsCard
-					:credit-balance="creditBalance"
-					:transactions="creditTransactions"
-					:next-expiry="creditNextExpiry"
-					@buy-credits="openCreditPurchase"
-				/>
-				<UsageChart />
-			</template>
+			<CreditsTab
+				v-if="activeTab === 'credits'"
+				:credit-balance="creditBalance"
+				:transactions="creditTransactions"
+				:next-expiry="creditNextExpiry"
+				@buy-credits="openCreditPurchase"
+			/>
 
 			<BillingDetailsForm
 				v-if="activeTab === 'details'"
@@ -239,9 +237,8 @@ import { usePaymentMethod } from "@/composables/usePaymentMethod";
 import { useBillingAutoRefresh } from "@/composables/useBillingAutoRefresh";
 import GatewaySelectionModal from "./GatewaySelectionModal.vue";
 import CreditPurchaseModal from "./CreditPurchaseModal.vue";
-import PrepaidCreditsCard from "./billing/PrepaidCreditsCard.vue";
+import CreditsTab from "./billing/CreditsTab.vue";
 import ExpiringCreditsBanner from "./billing/ExpiringCreditsBanner.vue";
-import UsageChart from "./billing/UsageChart.vue";
 import BillingBanners from "./billing/BillingBanners.vue";
 import BillingHero from "./billing/BillingHero.vue";
 import BillingTabs from "./billing/BillingTabs.vue";
