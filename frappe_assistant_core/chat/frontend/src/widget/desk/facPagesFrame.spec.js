@@ -35,7 +35,9 @@ function loadDeskPage(data) {
 		call: ({ callback }) => callback({ message: data }),
 		create_shadow_element: vi.fn(),
 	};
-	new Function("frappe", "__", "$", SOURCE)(frappe, (s) => s, vi.fn());
+	// Desk's __ fills {0}-style arguments.
+	const translate = (text, args) => (args ? text.replace(/\{(\d+)\}/g, (match, i) => args[i] ?? match) : text);
+	new Function("frappe", "__", "$", SOURCE)(frappe, translate, vi.fn());
 	wrapper = {};
 	frappe.pages["fac-pages"].on_page_load(wrapper);
 }
@@ -103,32 +105,56 @@ describe("fac-pages Desk page and a personal page", () => {
 		expect(window.fac_page_frame_host.createPageFrame).not.toHaveBeenCalled();
 	});
 
+	// The allow buttons stay off for 700 ms after a prompt appears.
+	const armed = () => new Promise((resolve) => setTimeout(resolve, 720));
+	const prompt = (message, extra = {}) => ({ message, note: "", fields: [], trustable: false, hiddenChars: false, ...extra });
+
 	it("asks before each call one at a time, listing its fields, and answers with the user's choice", async () => {
 		const handle = await showPersonal();
 		expect(handle.options.pageName).toBe("sales-a1b2c3");
-		const first = handle.options.askUser({
-			message: "This page wants to update ToDo TD-1.",
-			fields: [["status", "Closed"]],
-			trustable: false,
-		});
-		const second = handle.options.askUser({ message: "This page wants to run my_app.api.feed.", fields: [], trustable: true });
+		const first = handle.options.askUser(
+			prompt("This page wants to save ToDo TD-1.", {
+				fields: [
+					{ name: "status", value: "Closed", before: "Open", status: "changed" },
+					{ name: "priority", value: "", before: "High", status: "blanked" },
+				],
+			}),
+		);
+		const second = handle.options.askUser(
+			prompt("This page wants to run sales_feed with these values.", {
+				trustable: true,
+				note: "Allow for this page lets this version of the page run sales_feed again without asking.",
+			}),
+		);
 		await vi.waitFor(() => expect(main.querySelectorAll(".fac-page-write-prompt")).toHaveLength(1));
-		expect(main.querySelector(".fac-page-write-message").textContent).toBe("This page wants to update ToDo TD-1.");
-		expect(main.querySelector(".fac-page-write-fields").textContent).toBe("statusClosed");
+		expect(main.querySelector(".fac-page-write-message").textContent).toBe("This page wants to save ToDo TD-1.");
+		expect(main.querySelector(".fac-page-write-count").textContent).toBe("1 of 2");
+		const fields = main.querySelector(".fac-page-write-fields").textContent;
+		expect(fields).toContain("Open → Closed");
+		expect(fields).toContain("will be cleared");
 		expect(main.querySelector(".fac-page-write-trust")).toBeNull();
+		// Allow stays off at first, so a click aimed at the page can't land on it.
+		expect(main.querySelector(".fac-page-write-allow").disabled).toBe(true);
+		await armed();
 		main.querySelector(".fac-page-write-allow").click();
 		expect(await first).toBe("once");
 		await vi.waitFor(() =>
-			expect(main.querySelector(".fac-page-write-message")?.textContent).toBe("This page wants to run my_app.api.feed."),
+			expect(main.querySelector(".fac-page-write-message")?.textContent).toBe(
+				"This page wants to run sales_feed with these values.",
+			),
 		);
+		expect(main.textContent).toContain("lets this version of the page run sales_feed again");
+		await armed();
 		main.querySelector(".fac-page-write-trust").click();
 		expect(await second).toBe("page");
 		expect(main.querySelector(".fac-page-write-prompt")).toBeNull();
+		// The prompt is pinned over the page; the page is never scrolled to it.
+		expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled();
 	});
 
 	it("refuses waiting changes and disposes the frame when the user moves on", async () => {
 		const handle = await showPersonal();
-		const pending = handle.options.askUser({ message: "This page wants to delete ToDo TD-1.", fields: [], trustable: false });
+		const pending = handle.options.askUser({ message: "This page wants to delete ToDo TD-1.", note: "", fields: [], trustable: false, hiddenChars: false });
 		await vi.waitFor(() => expect(main.querySelector(".fac-page-write-prompt")).not.toBeNull());
 		show();
 		expect(await pending).toBe(false);

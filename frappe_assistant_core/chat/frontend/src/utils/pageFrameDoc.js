@@ -1,13 +1,18 @@
 /**
  * The document a personal page ("Only me") runs in: its own html, style and script, with no way to
- * act as the user or reach another server.
+ * act as the user and no ordinary way to reach another server.
  *
  * Two frames, both `sandbox="allow-scripts"` and nothing else, so each has an opaque origin: no
  * cookies, no CSRF token, no access to the chat or Desk around it, no forms, popups or top
  * navigation. The outer frame runs nothing; its policy's `frame-src 'none'` stops the inner frame
  * navigating itself to another server with data in the URL, which a single sandboxed frame may do.
  * The inner frame holds the page. Its script reads data only through the host's bridge
- * (pageFrameHost.js), which serves reads as the user and asks the user before any change.
+ * (pageFrameHost.js), which serves Frappe's own reads as the user and asks the user before
+ * anything else.
+ *
+ * What is still possible: a deliberately malicious script can leak small amounts through DNS
+ * lookups or timing side channels, which no browser policy closes. The runtime removes WebRTC and
+ * DNS prefetching is off, which narrows this; it does not seal it.
  */
 
 /** The only sandbox flag either frame gets. */
@@ -46,6 +51,9 @@ export function makeNonce() {
 	return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
+// No hint in the page's markup starts a DNS lookup of a name it chose.
+const NO_DNS_PREFETCH = '<meta http-equiv="x-dns-prefetch-control" content="off">';
+
 const attr = (text) => String(text).replace(/&/g, "&amp;").replace(/"/g, "&quot;");
 // Text inside <style> or <script>: a closing tag in it would end the element early.
 const inStyle = (css) => String(css || "").replace(/<\/style/gi, "<\\/style");
@@ -76,6 +84,7 @@ export function pageFrameSrcdoc({ html, style, script, kitCss, user, origin, non
 	const inner = [
 		"<!doctype html><html><head>",
 		csp,
+		NO_DNS_PREFETCH,
 		'<meta charset="utf-8">',
 		`<style>${inStyle(kitCss)}\n${inStyle(style)}\nhtml,body{margin:0;background:#fff}</style>`,
 		`<script type="application/json" id="fac-page-config">${config}</script>`,
@@ -92,6 +101,7 @@ export function pageFrameSrcdoc({ html, style, script, kitCss, user, origin, non
 	return [
 		"<!doctype html><html><head>",
 		csp,
+		NO_DNS_PREFETCH,
 		'<meta charset="utf-8">',
 		"<style>html,body{margin:0;height:100%;overflow:hidden}iframe{display:block;width:100%;height:100%;border:0}</style>",
 		"</head><body>",

@@ -132,39 +132,110 @@
 	// Calls still waiting when the user moves on are refused. Resolves "once", "page" or false.
 	let prompt_chain = Promise.resolve();
 	let open_prompts = [];
+	let waiting_prompts = 0;
+	// How long the allow buttons stay off after a prompt appears, so a click aimed at the page
+	// cannot land on one.
+	const ARM_DELAY_MS = 700;
+	const PREVIEW = 160;
+
 	function ask_user(prompts, request) {
+		waiting_prompts++;
 		const answer = prompt_chain.then(() => show_prompt(prompts, request));
 		prompt_chain = answer.catch(() => {});
-		return answer;
+		return answer.finally(() => waiting_prompts--);
+	}
+
+	function text_node(tag, text, css) {
+		const el = document.createElement(tag);
+		el.textContent = text;
+		if (css) el.style.cssText = css;
+		return el;
+	}
+
+	// A value in full on request, never cut silently.
+	function long_text(text) {
+		const span = text_node("span", text.length > PREVIEW ? `${text.slice(0, PREVIEW)}…` : text);
+		if (text.length <= PREVIEW) return span;
+		const toggle = make_button(__("Show all"), "btn btn-link btn-xs fac-page-write-more");
+		toggle.addEventListener("click", () => {
+			const open = toggle.textContent === __("Show all");
+			span.textContent = open ? text : `${text.slice(0, PREVIEW)}…`;
+			toggle.textContent = open ? __("Show less") : __("Show all");
+		});
+		const wrap = document.createElement("span");
+		wrap.append(span, toggle);
+		return wrap;
+	}
+
+	function field_value(field) {
+		const value = document.createElement("dd");
+		value.style.cssText = "margin:0;overflow-wrap:anywhere;white-space:pre-wrap;";
+		const flag = "font-weight:600;color:var(--red-600);";
+		if (field.status === "blanked") {
+			value.append(text_node("span", __("will be cleared"), flag));
+			if (field.before) value.append(" (", __("now"), " ", long_text(field.before), ")");
+		} else if (field.status === "emptied") {
+			value.append(text_node("span", __("all {0} rows will be removed", [field.beforeRows]), flag));
+		} else if (field.rows) {
+			if (field.beforeRows !== undefined) value.append(__("{0} rows now", [field.beforeRows]), " → ");
+			const list = document.createElement("ol");
+			list.style.cssText = "margin:0;padding-left:18px;";
+			for (const row of field.rows) {
+				list.append(text_node("li", row.map((cell) => `${cell.name}: ${cell.value}`).join("  ·  ")));
+			}
+			value.append(field.rows.length ? list : __("no rows"));
+		} else {
+			if (field.status === "changed" && field.before !== undefined) value.append(long_text(field.before), " → ");
+			value.append(long_text(field.value));
+		}
+		return value;
 	}
 
 	function show_prompt(prompts, request) {
 		return new Promise((resolve) => {
 			if (!prompts.isConnected) return resolve(false);
+			// Pinned over the page, so the page under it never moves and is never scrolled.
 			const bar = document.createElement("div");
-			bar.className = "fac-page-write-prompt alert alert-warning";
+			bar.className = "fac-page-write-prompt";
 			bar.setAttribute("role", "alertdialog");
-			const message = document.createElement("div");
+			bar.style.cssText =
+				"position:fixed;top:72px;left:50%;transform:translateX(-50%);z-index:1050;width:min(720px,calc(100vw - 32px));" +
+				"max-height:70vh;display:flex;flex-direction:column;gap:8px;padding:12px 14px;border-radius:var(--border-radius-lg);" +
+				"background:var(--card-bg);border:1px solid var(--yellow-300);box-shadow:var(--shadow-lg);";
+			const head = text_node("div", "", "display:flex;gap:10px;align-items:flex-start;");
+			const message = text_node("div", request.message, "flex:1;");
 			message.className = "fac-page-write-message";
-			message.textContent = request.message;
-			const fields = document.createElement("dl");
-			fields.className = "fac-page-write-fields small";
-			fields.style.cssText = "display:grid;grid-template-columns:max-content 1fr;gap:2px 12px;margin:6px 0 8px;";
-			for (const [field, value] of request.fields) {
-				const term = document.createElement("dt");
-				term.style.fontWeight = "normal";
-				term.textContent = field;
-				const detail = document.createElement("dd");
-				detail.style.cssText = "margin:0;overflow-wrap:anywhere;";
-				detail.textContent = value;
-				fields.append(term, detail);
+			head.append(message);
+			if (waiting_prompts > 1) {
+				const count = text_node("span", __("{0} of {1}", [1, waiting_prompts]), "flex:none;");
+				count.className = "text-muted small fac-page-write-count";
+				head.append(count);
 			}
+			bar.append(head);
+			if (request.hiddenChars) {
+				const warning = text_node("div", __("This request contained hidden characters, which are left out below."));
+				warning.className = "text-danger small fac-page-write-hidden";
+				bar.append(warning);
+			}
+			if (request.fields.length) {
+				const fields = document.createElement("dl");
+				fields.className = "fac-page-write-fields small";
+				fields.style.cssText =
+					"display:grid;grid-template-columns:max-content 1fr;gap:3px 12px;margin:0;padding:8px 10px;" +
+					"overflow:auto;min-height:0;background:var(--subtle-fg);border-radius:var(--border-radius-md);";
+				for (const field of request.fields) {
+					fields.append(text_node("dt", field.name, "font-weight:normal;color:var(--text-muted);"), field_value(field));
+				}
+				bar.append(fields);
+			}
+			if (request.note) bar.append(text_node("div", request.note, "font-size:12px;color:var(--text-muted);"));
 			const deny = make_button(__("Don't allow"), "btn btn-default btn-xs fac-page-write-deny");
 			const allow = make_button(
 				request.trustable ? __("Allow once") : __("Allow"),
 				"btn btn-primary btn-xs fac-page-write-allow"
 			);
 			const decide = (answer) => {
+				clearTimeout(arm);
 				bar.remove();
 				open_prompts = open_prompts.filter((open) => open !== decide);
 				resolve(answer);
@@ -172,18 +243,20 @@
 			open_prompts.push(decide);
 			deny.addEventListener("click", () => decide(false));
 			allow.addEventListener("click", () => decide("once"));
-			const buttons = [deny, " "];
+			const buttons = text_node("div", "", "display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;");
+			buttons.append(deny);
+			const allowing = [allow];
 			if (request.trustable) {
 				const trust = make_button(__("Allow for this page"), "btn btn-default btn-xs fac-page-write-trust");
 				trust.addEventListener("click", () => decide("page"));
-				buttons.push(trust, " ");
+				buttons.append(trust);
+				allowing.push(trust);
 			}
-			bar.append(message);
-			if (request.fields.length) bar.append(fields);
-			bar.append(...buttons, allow);
+			buttons.append(allow);
+			allowing.forEach((button) => (button.disabled = true));
+			const arm = setTimeout(() => allowing.forEach((button) => (button.disabled = false)), ARM_DELAY_MS);
+			bar.append(buttons);
 			prompts.append(bar);
-			// A long page may be scrolled past the prompt; bring it into view.
-			bar.scrollIntoView({ block: "nearest" });
 		});
 	}
 

@@ -50,6 +50,13 @@ describe("pageFrameDoc", () => {
 		}
 	});
 
+	it("turns DNS prefetching off in both frames", () => {
+		const { outer, inner } = innerDoc(pageFrameSrcdoc(parts()));
+		for (const doc of [outer, inner]) {
+			expect(doc.querySelector('meta[http-equiv="x-dns-prefetch-control"]').getAttribute("content")).toBe("off");
+		}
+	});
+
 	it("loads the runtime, then runs the script with this render's nonce, with no click", () => {
 		const { inner } = innerDoc(pageFrameSrcdoc(parts()));
 		const scripts = [...inner.querySelectorAll("script:not([type])")];

@@ -75,6 +75,10 @@ describe("printPage", () => {
 		expect(csp).toContain("default-src 'none'");
 		expect(csp).toContain(`img-src ${window.location.origin}/files/ ${window.location.origin}/assets/ data: blob:`);
 		expect(csp).not.toContain("evil.example");
+		expect(csp).toContain("base-uri 'none'");
+		expect(csp).toContain("form-action 'none'");
+		const doc = new DOMParser().parseFromString(frame().getAttribute("srcdoc"), "text/html");
+		expect(doc.querySelector('meta[http-equiv="x-dns-prefetch-control"]').getAttribute("content")).toBe("off");
 	});
 
 	it("prints a published page without the draft CSP", () => {

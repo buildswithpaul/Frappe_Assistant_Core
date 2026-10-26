@@ -187,6 +187,31 @@ describe("PageView", () => {
 		expect(mountView(unmarked).find("iframe.fac-page-sandbox").exists()).toBe(true);
 	});
 
+	it("prints a personal page's markup only after taking every off-site URL out of it", async () => {
+		// The frame's markup is what the page's script left there; a stub frame hands some back.
+		const PageFrame = {
+			setup(_, { expose }) {
+				expose({
+					snapshot: async () => ({
+						html: '<div class="fac-page-root"><p>₹70,29,354</p><img src="https://evil.example/c?d=1"></div>',
+						wide: false,
+					}),
+					errors: () => [],
+				});
+				return () => null;
+			},
+		};
+		wrapper = mount(PageView, {
+			props: { page: personal, user: "avery@example.com" },
+			global: { stubs: { PageFrame } },
+			attachTo: document.body,
+		});
+		const snap = await wrapper.vm.printSnapshot();
+		expect(snap.personal).toBe(true);
+		expect(snap.html).toContain("₹70,29,354");
+		expect(snap.html).not.toContain("evil.example");
+	});
+
 	it("offers FACO's screenshot the personal page's frame capture", () => {
 		mountView(personal);
 		const view = usePagePanel().pageView.value;

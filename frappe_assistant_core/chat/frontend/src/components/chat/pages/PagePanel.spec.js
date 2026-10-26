@@ -192,7 +192,7 @@ describe("PagePanel: a personal page runs on its own and asks before a change", 
 		expect(frame.attributes("srcdoc")).toContain("ran");
 		expect(w.text()).not.toContain("Run new version");
 		expect(w.text()).not.toContain("View code");
-		expect(w.find(".page-write-prompt").exists()).toBe(false);
+		expect(w.find(".pwp").exists()).toBe(false);
 	});
 
 	it("redraws a new version at once when a write to the page lands", async () => {
@@ -205,8 +205,10 @@ describe("PagePanel: a personal page runs on its own and asks before a change", 
 		expect(w.text()).not.toContain("Run new version");
 	});
 
-	const change = (message) => ({ message, fields: [["status", "Closed"]], trustable: false });
-	const method = (message) => ({ message, fields: [], trustable: true });
+	const change = (message) => ({ message, note: "", fields: [{ name: "status", value: "Closed" }], trustable: false, hiddenChars: false });
+	const method = (message) => ({ message, note: "", fields: [], trustable: true, hiddenChars: false });
+	// The allow buttons stay off for 700 ms after a prompt appears (PageWritePrompt).
+	const armed = () => new Promise((resolve) => setTimeout(resolve, 720));
 
 	it("asks before a change the page wants to make, listing its fields, and answers with the choice", async () => {
 		const w = await mountPanel();
@@ -218,9 +220,10 @@ describe("PagePanel: a personal page runs on its own and asks before a change", 
 		expect(w.find(".page-write-prompt-fields").text()).toContain("Closed");
 		// A record write is allowed once at a time, never for the whole page.
 		expect(w.find("[data-test=page-write-trust]").exists()).toBe(false);
+		await armed();
 		await w.find("[data-test=page-write-allow]").trigger("click");
 		expect(await allowed).toBe("once");
-		expect(w.find(".page-write-prompt").exists()).toBe(false);
+		expect(w.find(".pwp").exists()).toBe(false);
 
 		const denied = ask(change("This page wants to create a new ToDo."));
 		await flushPromises();
@@ -233,6 +236,7 @@ describe("PagePanel: a personal page runs on its own and asks before a change", 
 		const answer = w.findComponent(PageView).props("askUser")(method("This page wants to run my_app.api.feed."));
 		await flushPromises();
 		expect(w.find("[data-test=page-write-allow]").text()).toBe("Allow once");
+		await armed();
 		await w.find("[data-test=page-write-trust]").trigger("click");
 		expect(await answer).toBe("page");
 	});
@@ -244,6 +248,8 @@ describe("PagePanel: a personal page runs on its own and asks before a change", 
 		const second = ask(method("second"));
 		await flushPromises();
 		expect(w.find(".page-write-prompt-message").text()).toBe("first");
+		expect(w.find("[data-test=page-write-count]").text()).toBe("1 of 2");
+		await armed();
 		await w.find("[data-test=page-write-allow]").trigger("click");
 		expect(await first).toBe("once");
 		expect(w.find(".page-write-prompt-message").text()).toBe("second");
@@ -257,6 +263,6 @@ describe("PagePanel: a personal page runs on its own and asks before a change", 
 		await w.setProps({ refreshKey: 1 });
 		await flushPromises();
 		expect(await pendingAsk).toBe(false);
-		expect(w.find(".page-write-prompt").exists()).toBe(false);
+		expect(w.find(".pwp").exists()).toBe(false);
 	});
 });

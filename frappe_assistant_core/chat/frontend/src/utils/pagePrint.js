@@ -26,7 +26,8 @@ const safeStyle = (css) => String(css || "").replace(/<\/style/gi, "<\\/style");
 
 /**
  * What a personal page's printed markup may load: its images and fonts from the site's public
- * paths. The markup came out of a frame that runs code FACO wrote, so it reaches no other server.
+ * paths. The markup came out of a frame that runs code FACO wrote; it is also cleaned of every
+ * off-site URL before it is printed (pageSnapshotSanitise.js).
  */
 export function personalPrintCsp(origin = window.location.origin) {
 	return [
@@ -34,8 +35,13 @@ export function personalPrintCsp(origin = window.location.origin) {
 		"style-src 'unsafe-inline'",
 		`img-src ${origin}/files/ ${origin}/assets/ data: blob:`,
 		`font-src ${origin}/assets/ data:`,
+		"base-uri 'none'",
+		"form-action 'none'",
 	].join("; ");
 }
+
+// No hint in a page's markup starts a DNS lookup of a name it chose.
+const NO_DNS_PREFETCH = '<meta http-equiv="x-dns-prefetch-control" content="off">';
 
 /** The document a snapshot prints from, or is drawn in for FACO's picture (pageSnapshotImage.js). */
 export function snapshotSrcdoc({ name, kitCss, style, html, wide, draft, personal }) {
@@ -46,7 +52,7 @@ export function snapshotSrcdoc({ name, kitCss, style, html, wide, draft, persona
 	const csp = policy ? `<meta http-equiv="Content-Security-Policy" content="${escapeHtml(policy)}">` : "";
 	return [
 		"<!doctype html>",
-		`<html><head>${csp}<meta charset="utf-8">`,
+		`<html><head>${csp}${NO_DNS_PREFETCH}<meta charset="utf-8">`,
 		`<title>${escapeHtml(name)}</title>`,
 		`<style>${safeStyle(kitCss)}\n${safeStyle(style)}\n${page}</style>`,
 		`</head><body>${html || ""}</body></html>`,

@@ -10,6 +10,11 @@ import { __ } from "@/utils/i18n";
 import { snapshotHtml } from "@/utils/pagePrint";
 import { makeFrappeStandIn } from "@/utils/pageRuntime";
 
+import { removeLoadingElements, removeWebRtc } from "./hardening";
+
+// Before anything of the page's runs: this script loads in the head, ahead of the page's own.
+removeWebRtc(window);
+
 // A page wider than this prints on a landscape sheet, as in the chat panel.
 const WIDE_PAGE_PX = 900;
 
@@ -89,6 +94,7 @@ new ResizeObserver(() => {
 
 window.__fac_page = {
 	run(fn) {
+		removeLoadingElements(document);
 		// Elsewhere root_element is a shadow root; here it is the page's own element, given the one
 		// lookup a shadow root has and an element lacks.
 		const element = root();

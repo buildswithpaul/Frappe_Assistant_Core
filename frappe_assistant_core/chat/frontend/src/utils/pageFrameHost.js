@@ -13,9 +13,23 @@
 import { __ } from "@/utils/i18n";
 
 import { PAGE_FRAME_SANDBOX, makeNonce, pageFrameSrcdoc } from "./pageFrameDoc";
+import {
+	DOC_REPLACING_WRITES,
+	RECORD_WRITES,
+	describePageRequest,
+	fitsCurrentDoc,
+	isPlainObject,
+	normalisePayload,
+	refusal,
+} from "./pageRequestPrompt";
+
+export { describePageRequest } from "./pageRequestPrompt";
+export { fetchTransport, queryArgs } from "./pageFetchTransport";
 
 // The reads a page runs without asking: Frappe's own read endpoints, which check the user's
-// permission and change nothing. The chat's stand-in frappe uses get_list, get_value and get.
+// permission. The chat's stand-in frappe uses get_list, get_value and get. query_report.run runs a
+// report's own code and getdoc a controller's onload; both are what the user can already run from
+// Desk, and GET rolls back any database write they make.
 export const PAGE_READ_METHODS = new Set([
 	"frappe.client.get",
 	"frappe.client.get_list",
@@ -28,19 +42,22 @@ export const PAGE_READ_METHODS = new Set([
 	"frappe.desk.form.load.getdoc",
 ]);
 
-// Frappe's record writes: described field by field and allowed one at a time, never trusted for
-// the page, since the next call may change other records or fields.
-const RECORD_WRITES = new Set([
-	"frappe.client.set_value",
-	"frappe.client.insert",
-	"frappe.client.save",
-	"frappe.client.submit",
-	"frappe.client.cancel",
-	"frappe.client.delete",
-]);
+// Per page, in memory only: the content the answers below were given for, the methods the user
+// allowed for it, and the methods they refused. A new version of the page starts afresh.
+const pageStates = new Map();
 
-// Methods the user allowed for a page this session, as "page name\0method".
-const pageTrust = new Set();
+function pageState(pageName, content) {
+	const state = pageStates.get(pageName);
+	if (state && state.content === content) return state;
+	const fresh = { content, trusted: new Set(), denied: new Set() };
+	if (pageName) pageStates.set(pageName, fresh);
+	return fresh;
+}
+
+// At most this many calls wait for the user at once; the rest are refused, so a page cannot bury
+// one change in a run of harmless questions. Reads run this many at a time.
+const MAX_WAITING_ASKS = 5;
+const MAX_READS_AT_ONCE = 8;
 
 const METHOD_RE = /^[A-Za-z0-9_][A-Za-z0-9_.]{0,139}$/;
 const MAX_ARGS_BYTES = 1024 * 1024;
@@ -52,68 +69,6 @@ const RESULT_TIMEOUT_MS = 15000;
 // then this long with nothing in flight, so the figures it fetched are drawn.
 const IDLE_TIMEOUT_MS = 8000;
 const IDLE_QUIET_MS = 300;
-
-/** Args for a GET query string: Frappe parses JSON-encoded values back on the server. */
-export const queryArgs = (args = {}) =>
-	Object.fromEntries(
-		Object.entries(args)
-			.filter(([, value]) => value !== null && value !== undefined)
-			.map(([key, value]) => [key, typeof value === "object" ? JSON.stringify(value) : value]),
-	);
-
-// The first message Frappe sent with an error, as plain text.
-function serverMessage(data) {
-	try {
-		const first = JSON.parse(JSON.parse(data._server_messages)[0]);
-		return String(first.message || first).replace(/<[^>]*>/g, "");
-	} catch {
-		return typeof data?.exception === "string" ? data.exception.split("\n").pop() : "";
-	}
-}
-
-/**
- * Sends the frame's calls with fetch, as the user: for the fac-pages Desk page, where frappe.call
- * would open Desk's error dialog over the page for each failed call.
- *
- * @param {() => string} getCsrfToken the session's CSRF token, for a change sent as POST
- */
-export function fetchTransport(getCsrfToken) {
-	async function send(url, init) {
-		const response = await fetch(url, { credentials: "same-origin", ...init });
-		let data = null;
-		try {
-			data = await response.json();
-		} catch {
-			data = null;
-		}
-		if (!response.ok || data?.exc) {
-			const error = new Error((data && serverMessage(data)) || response.statusText || __("The request failed"));
-			error.status = response.status;
-			throw error;
-		}
-		return data?.message;
-	}
-	return {
-		get: (method, args) =>
-			send(`/api/method/${method}?${new URLSearchParams(queryArgs(args))}`, {
-				method: "GET",
-				headers: { Accept: "application/json" },
-			}),
-		post: (method, args) =>
-			send(`/api/method/${method}`, {
-				method: "POST",
-				headers: {
-					Accept: "application/json",
-					"Content-Type": "application/json",
-					"X-Frappe-CSRF-Token": getCsrfToken(),
-				},
-				body: JSON.stringify(args || {}),
-			}),
-	};
-}
-
-const isPlainObject = (value) =>
-	value !== null && typeof value === "object" && Object.getPrototypeOf(value) === Object.prototype;
 
 /** A call message from the frame as {id, method, args, type}, or null when it is malformed. */
 export function readCall(data) {
@@ -130,83 +85,6 @@ export function readCall(data) {
 	if (size > MAX_ARGS_BYTES) return null;
 	if (data.type !== undefined && data.type !== "GET" && data.type !== "POST") return null;
 	return { id: data.id, method: data.method, args, type: data.type };
-}
-
-const MAX_FIELDS = 8;
-
-const short = (value) => {
-	if (Array.isArray(value)) return value.length === 1 ? __("1 row") : __("{0} rows", [value.length]);
-	const text = value !== null && typeof value === "object" ? JSON.stringify(value) : String(value ?? "");
-	return text.length > 80 ? `${text.slice(0, 77)}…` : text;
-};
-
-// The document a write carries, which may come as a JSON string.
-function parseDoc(doc) {
-	if (isPlainObject(doc)) return doc;
-	if (typeof doc !== "string") return null;
-	try {
-		const parsed = JSON.parse(doc);
-		return isPlainObject(parsed) ? parsed : null;
-	} catch {
-		return null;
-	}
-}
-
-// Keys every document carries that say nothing about what changes.
-const DOC_KEYS = new Set(["doctype", "name", "__islocal", "__unsaved", "owner", "creation", "modified", "modified_by"]);
-
-function fieldList(entries) {
-	const fields = entries.map(([field, value]) => [short(field), short(value)]);
-	if (fields.length <= MAX_FIELDS) return fields;
-	return [...fields.slice(0, MAX_FIELDS), [__("and {0} more", [fields.length - MAX_FIELDS]), ""]];
-}
-
-const refuse = () => Object.assign(new Error(__("This request is not allowed.")), { status: 0, refused: true });
-
-/**
- * What the user is asked to allow, read from the exact payload that will be sent:
- * {message, fields: [[name, value]], trustable}. Throws when a write names a record two ways.
- */
-export function describePageRequest(method, payload = {}) {
-	if (["frappe.client.insert", "frappe.client.save", "frappe.client.submit"].includes(method)) {
-		const doc = parseDoc(payload.doc);
-		// The record is the one in doc; a top-level doctype or name that says otherwise is refused.
-		if (!doc || typeof doc.doctype !== "string" || !doc.doctype) throw refuse();
-		if (payload.doctype !== undefined && payload.doctype !== doc.doctype) throw refuse();
-		if (payload.name !== undefined && payload.name !== doc.name) throw refuse();
-		const fields = fieldList(Object.entries(doc).filter(([key]) => !DOC_KEYS.has(key)));
-		const doctype = short(doc.doctype);
-		const name = short(doc.name);
-		const message = {
-			"frappe.client.insert": __("This page wants to create a new {0}.", [doctype]),
-			"frappe.client.save": __("This page wants to save {0} {1}.", [doctype, name]),
-			"frappe.client.submit": __("This page wants to submit {0} {1}.", [doctype, name]),
-		}[method];
-		return { message, fields: method === "frappe.client.submit" ? [] : fields, trustable: false };
-	}
-	if (method === "frappe.client.set_value") {
-		const entries = isPlainObject(payload.fieldname)
-			? Object.entries(payload.fieldname)
-			: [[payload.fieldname, payload.value]];
-		return {
-			message: __("This page wants to update {0} {1}.", [short(payload.doctype), short(payload.name)]),
-			fields: fieldList(entries),
-			trustable: false,
-		};
-	}
-	if (method === "frappe.client.cancel" || method === "frappe.client.delete") {
-		const verb = method === "frappe.client.cancel" ? __("cancel") : __("delete");
-		return {
-			message: __("This page wants to {0} {1} {2}.", [verb, short(payload.doctype), short(payload.name)]),
-			fields: [],
-			trustable: false,
-		};
-	}
-	return {
-		message: __("This page wants to run {0}.", [short(method)]),
-		fields: fieldList(Object.entries(payload)),
-		trustable: true,
-	};
 }
 
 // A method that refuses GET answers 403 (frappe.handler.is_valid_http_method) or 405.
@@ -229,8 +107,8 @@ const errorReply = (error) => ({
  * @param {{get: (method: string, args: object) => Promise, post: (method: string, args: object) => Promise}} options.transport
  *   sends a call as the user and resolves with its message
  * @param {string} options.pageName the FAC Page record name, which "Allow for this page" is scoped to
- * @param {(request: {message: string, fields: Array, trustable: boolean}) => Promise<"once"|"page"|false>} options.askUser
- *   asks the user to allow a call; "page" allows that method for this page for the session
+ * @param {(request: object) => Promise<"once"|"page"|false>} options.askUser asks the user to allow
+ *   a call (describePageRequest's request); "page" allows that method for this version of the page
  * @param {(message: string) => void} [options.onError] a script error or a failed call
  * @param {(name: string) => void} [options.onUnsupported] a Desk member the script reached for
  * @param {(height: number) => void} [options.onHeight] the page's height, as it changes
@@ -318,34 +196,76 @@ export function createPageFrame({
 		onError?.(text);
 	}
 
-	const trustKey = (method) => `${pageName}\u0000${method}`;
+	const state = pageState(pageName, JSON.stringify([page.html || "", page.style || "", page.script || ""]));
+	let waitingAsks = 0;
 
-	// One question per method at a time, so a second call waits for the first answer, which may
-	// have allowed the method for this page.
+	// One question per method at a time, so a second call waits for the first answer.
 	const asking = new Map();
 
+	const denied = () => Object.assign(new Error(__("The user did not allow this.")), { status: 403 });
+
+	// The document as it is now, read as the user, so a save or submit can show what it changes. A
+	// failed read refuses the write.
+	async function currentDoc(doc) {
+		try {
+			const current = await transport.get("frappe.client.get", { doctype: doc.doctype, name: doc.name });
+			if (isPlainObject(current)) return current;
+		} catch {
+			// refused below
+		}
+		throw refusal();
+	}
+
 	async function approve(method, payload) {
-		const request = describePageRequest(method, payload);
+		if (state.denied.has(method)) throw denied();
+		if (waitingAsks >= MAX_WAITING_ASKS) {
+			throw Object.assign(new Error(__("Too many requests are waiting for the user.")), { status: 429 });
+		}
+		waitingAsks++;
 		const earlier = asking.get(method);
 		const turn = (async () => {
 			await earlier?.catch(() => {});
-			if (request.trustable && pageName && pageTrust.has(trustKey(method))) return;
+			if (state.denied.has(method)) throw denied();
+			if (state.trusted.has(method)) return;
+			const current = DOC_REPLACING_WRITES.has(method) ? await currentDoc(payload.doc) : null;
+			if (current && !fitsCurrentDoc(method, payload, current)) throw refusal();
+			const request = describePageRequest(method, payload, current);
 			const answer = await askUser(request);
-			if (!answer) throw Object.assign(new Error(__("The user did not allow this.")), { status: 403 });
-			if (answer === "page" && request.trustable && pageName) pageTrust.add(trustKey(method));
+			if (!answer) {
+				state.denied.add(method);
+				throw denied();
+			}
+			if (answer === "page" && request.trustable) state.trusted.add(method);
 		})();
 		asking.set(method, turn);
 		try {
 			await turn;
 		} finally {
+			waitingAsks--;
 			if (asking.get(method) === turn) asking.delete(method);
 		}
 	}
 
+	let readsRunning = 0;
+	const readQueue = [];
+	async function read(method, payload) {
+		if (readsRunning >= MAX_READS_AT_ONCE) await new Promise((resolve) => readQueue.push(resolve));
+		readsRunning++;
+		try {
+			return await transport.get(method, payload);
+		} finally {
+			readsRunning--;
+			readQueue.shift()?.();
+		}
+	}
+
 	async function serve({ method, args, type }) {
-		// A private copy: the payload the user is shown is the payload sent, whatever the page does.
-		const payload = JSON.parse(JSON.stringify(args));
-		if (PAGE_READ_METHODS.has(method)) return transport.get(method, payload);
+		// A private copy, read the way Frappe will read it: the payload the user is shown is the
+		// payload sent, whatever the page does next.
+		const copy = JSON.parse(JSON.stringify(args));
+		if (PAGE_READ_METHODS.has(method)) return read(method, copy);
+		const payload = normalisePayload(method, copy);
+		if (!payload) throw refusal();
 		await approve(method, payload);
 		if (RECORD_WRITES.has(method) || type === "POST") return transport.post(method, payload);
 		if (type === "GET") return transport.get(method, payload);

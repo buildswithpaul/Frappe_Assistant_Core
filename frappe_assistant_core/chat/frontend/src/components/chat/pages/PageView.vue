@@ -37,6 +37,7 @@ import { fac_page_draft_srcdoc } from "@/utils/facPageDraft";
 import { chart } from "@/utils/pageCharts";
 import { snapshotHtml } from "@/utils/pagePrint";
 import { snapshotToJpeg } from "@/utils/pageSnapshotImage";
+import { cleanSnapshot } from "@/utils/pageSnapshotSanitise";
 import { makeFrappeStandIn, runPageScript } from "@/utils/pageRuntime";
 // The one copy of the kit, also served to the fac-pages Desk page from /assets.
 import kitCss from "../../../../../../public/css/mockup_kit.css?raw";
@@ -142,7 +143,11 @@ async function printSnapshot() {
 		const html = `<div class="fac-page-root">${props.page.html || ""}</div>`;
 		return { ...base, html, wide: (draftFrame.value?.offsetWidth || 0) > WIDE_PAGE_PX };
 	}
-	if (personal.value) return { ...base, ...(await personalFrame.value.snapshot()) };
+	if (personal.value) {
+		// The page's script wrote this markup: off-site URLs go before this window draws it.
+		const { html, wide } = await personalFrame.value.snapshot();
+		return { ...base, html: cleanSnapshot(html), wide };
+	}
 	const root = host.value.shadowRoot.querySelector(".fac-page-root");
 	return { ...base, html: snapshotHtml(root), wide: root.scrollWidth > WIDE_PAGE_PX };
 }

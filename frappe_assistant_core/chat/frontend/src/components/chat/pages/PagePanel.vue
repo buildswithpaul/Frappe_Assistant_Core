@@ -22,9 +22,13 @@
 			<a class="page-panel-open-desk" :href="deskUrl" target="_blank" rel="noopener">{{ __("Open in Desk") }}</a>
 		</p>
 
-		<PageWritePrompt v-if="writeAsk" :request="writeAsk.request" @decide="decideWrite" />
-
 		<div class="page-panel-body">
+			<PageWritePrompt
+				v-if="writeAsk"
+				:request="writeAsk.request"
+				:total="writeQueue.length"
+				@decide="decideWrite"
+			/>
 			<p v-if="loadFailed" class="page-panel-message">{{ __("This page could not be shown.") }}</p>
 			<p v-else-if="!page" class="page-panel-message">{{ __("Loading…") }}</p>
 			<PageView
@@ -183,6 +187,7 @@ function share() {
 }
 /* The page sits on the chat's background as a sheet, the way it prints. */
 .page-panel-body {
+	position: relative;
 	display: flex;
 	flex-direction: column;
 	flex: 1;

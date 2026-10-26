@@ -8,7 +8,7 @@
 import { __ } from "@/utils/i18n";
 
 // A GET query string carries text only; Frappe parses JSON-encoded args back on the server.
-export const toQuery = (args = {}) =>
+const toQuery = (args = {}) =>
 	Object.fromEntries(
 		Object.entries(args).map(([key, value]) => [
 			key,

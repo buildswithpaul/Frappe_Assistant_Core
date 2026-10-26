@@ -1,14 +1,34 @@
 /**
  * FACO's picture of a personal page. The page's frame has an opaque origin, which html2canvas
  * cannot clone into, so the frame sends its rendered markup and the picture is drawn from that
- * here: in a hidden frame that is this site's origin, so html2canvas can read it, but runs no
- * script and, under personalPrintCsp, loads nothing from another server.
+ * here, in a hidden frame on this site's origin that runs no script.
+ *
+ * html2canvas runs in this window and loads images itself, so the hidden frame's policy does not
+ * bind it. The markup is cleaned of every off-site URL first (pageSnapshotSanitise.js), and
+ * html2canvas is told to fetch nothing cross-origin and to skip anything that embeds, as a second net.
  */
 import { snapshotSrcdoc } from "@/utils/pagePrint";
+import { cleanSnapshot, isSiteUrl } from "@/utils/pageSnapshotSanitise";
 
 const loadHtml2canvas = () => import("html2canvas-pro").then((m) => m.default || m);
 
 const IMAGE_TIMEOUT_MS = 3000;
+const IGNORED_TAGS = new Set(["iframe", "frame", "object", "embed", "link", "script", "video", "audio", "portal"]);
+
+/** html2canvas's options: no cross-origin fetch, no proxy, nothing that embeds. */
+export function canvasOptions({ origin = window.location.origin, scale = 1 } = {}) {
+	return {
+		useCORS: false,
+		allowTaint: false,
+		proxy: undefined,
+		customIsSameOrigin: (src) => isSiteUrl(src, origin),
+		ignoreElements: (element) => IGNORED_TAGS.has(element.localName),
+		backgroundColor: "#ffffff",
+		scale,
+		imageTimeout: IMAGE_TIMEOUT_MS,
+		logging: false,
+	};
+}
 
 /**
  * @param {object} snapshot
@@ -35,7 +55,10 @@ export async function snapshotToJpeg({ html, kitCss, style, width, scale = 1, qu
 		height: "800px",
 		border: "0",
 	});
-	frame.setAttribute("srcdoc", snapshotSrcdoc({ name: "", kitCss, style, html, wide: false, personal: true }));
+	frame.setAttribute(
+		"srcdoc",
+		snapshotSrcdoc({ name: "", kitCss, style, html: cleanSnapshot(html), wide: false, personal: true }),
+	);
 	const loaded = new Promise((resolve) => frame.addEventListener("load", resolve, { once: true }));
 	document.body.append(frame);
 	try {
@@ -43,14 +66,7 @@ export async function snapshotToJpeg({ html, kitCss, style, width, scale = 1, qu
 		const doc = frame.contentDocument;
 		const target = doc.querySelector(".fac-page-root") || doc.body;
 		const html2canvas = await loadHtml2canvas();
-		const canvas = await html2canvas(target, {
-			useCORS: true,
-			allowTaint: false,
-			backgroundColor: "#ffffff",
-			scale,
-			imageTimeout: IMAGE_TIMEOUT_MS,
-			logging: false,
-		});
+		const canvas = await html2canvas(target, canvasOptions({ scale }));
 		const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", quality / 100));
 		return { blob, width: canvas.width, height: canvas.height };
 	} finally {

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { createPageFrame, describePageRequest, fetchTransport, readCall } from "./pageFrameHost";
+import { createPageFrame, fetchTransport, readCall } from "./pageFrameHost";
 
 const PAGE = { title: "Sales", html: "<p>Sales</p>", style: "", script: "" };
 
@@ -92,13 +92,15 @@ describe("createPageFrame", () => {
 		// GET rollback stops database writes, not a queued job, an email or an outbound request.
 		askUser.mockResolvedValue(false);
 		mountFrame();
-		fromPage({ op: "call", id: 1, method: "my_app.api.sales_feed", args: { months: 6 }, type: "GET" });
+		fromPage({ op: "call", id: 1, method: "sales_feed", args: { months: 6 }, type: "GET" });
 		await settle();
-		expect(askUser).toHaveBeenCalledWith({
-			message: "This page wants to run my_app.api.sales_feed.",
-			fields: [["months", "6"]],
-			trustable: true,
-		});
+		expect(askUser).toHaveBeenCalledWith(
+			expect.objectContaining({
+				message: "This page wants to run sales_feed with these values.",
+				fields: [{ name: "months", value: "6" }],
+				trustable: true,
+			}),
+		);
 		expect(transport.get).not.toHaveBeenCalled();
 		expect(transport.post).not.toHaveBeenCalled();
 		expect(reply(1)).toMatchObject({ ok: false, error: { message: "The user did not allow this." } });
@@ -130,25 +132,130 @@ describe("createPageFrame", () => {
 		expect(transport.post).toHaveBeenCalledWith("my_app.api.close_invoice", { name: "X" });
 	});
 
-	it("remembers Allow for this page for that method and that page only", async () => {
+	it("remembers Allow for this page for that method, on this version of the page only", async () => {
 		askUser.mockResolvedValue("page");
 		mountFrame({ pageName: "sales-trust" });
-		fromPage({ op: "call", id: 1, method: "my_app.api.sales_feed", args: {} });
-		fromPage({ op: "call", id: 2, method: "my_app.api.sales_feed", args: {} });
+		fromPage({ op: "call", id: 1, method: "sales_feed", args: {} });
+		fromPage({ op: "call", id: 2, method: "sales_feed", args: {} });
 		await settle();
 		await settle();
 		expect(askUser).toHaveBeenCalledOnce();
 		expect(transport.get).toHaveBeenCalledTimes(2);
 
-		// Another method on the same page still asks, and so does the same method on another page.
-		fromPage({ op: "call", id: 3, method: "my_app.api.other", args: {} });
+		// Another method on the same page still asks.
+		fromPage({ op: "call", id: 3, method: "other_feed", args: {} });
 		await settle();
 		expect(askUser).toHaveBeenCalledTimes(2);
+
+		// A new version of the same page starts afresh: its code has not earned the trust.
 		frame.dispose();
-		mountFrame({ pageName: "costs-trust" });
-		fromPage({ op: "call", id: 4, method: "my_app.api.sales_feed", args: {} });
+		mountFrame({ pageName: "sales-trust", page: { ...PAGE, script: "root_element.textContent = 'v2';" } });
+		fromPage({ op: "call", id: 4, method: "sales_feed", args: {} });
 		await settle();
 		expect(askUser).toHaveBeenCalledTimes(3);
+
+		// And so does another page.
+		frame.dispose();
+		mountFrame({ pageName: "costs-trust" });
+		fromPage({ op: "call", id: 5, method: "sales_feed", args: {} });
+		await settle();
+		expect(askUser).toHaveBeenCalledTimes(4);
+	});
+
+	it("never trusts a dotted method for the page, even when told to", async () => {
+		askUser.mockResolvedValue("page");
+		mountFrame({ pageName: "sales-dotted" });
+		for (const id of [1, 2]) {
+			fromPage({ op: "call", id, method: "frappe.desk.form.save.savedocs", args: { doc: "{}", action: "Save" } });
+			await settle();
+		}
+		expect(askUser).toHaveBeenCalledTimes(2);
+		expect(askUser.mock.calls[0][0].trustable).toBe(false);
+	});
+
+	it("refuses a method the user said no to, without asking again, for this version of the page", async () => {
+		askUser.mockResolvedValue(false);
+		mountFrame({ pageName: "sales-denied" });
+		fromPage({ op: "call", id: 1, method: "sales_feed", args: {} });
+		await settle();
+		fromPage({ op: "call", id: 2, method: "sales_feed", args: {} });
+		await settle();
+		expect(askUser).toHaveBeenCalledOnce();
+		expect(reply(2)).toMatchObject({ ok: false, error: { message: "The user did not allow this." } });
+		frame.dispose();
+		mountFrame({ pageName: "sales-denied", page: { ...PAGE, script: "// v2" } });
+		fromPage({ op: "call", id: 3, method: "sales_feed", args: {} });
+		await settle();
+		expect(askUser).toHaveBeenCalledTimes(2);
+	});
+
+	it("lets at most five calls wait for the user, and refuses the rest", async () => {
+		askUser.mockReturnValue(new Promise(() => {}));
+		mountFrame();
+		for (let id = 1; id <= 7; id++) fromPage({ op: "call", id, method: `feed_${id}`, args: {} });
+		await settle();
+		expect(askUser).toHaveBeenCalledTimes(5);
+		expect(reply(6)).toMatchObject({ ok: false, error: { message: "Too many requests are waiting for the user." } });
+		expect(reply(7).ok).toBe(false);
+	});
+
+	it("runs at most eight reads at once", async () => {
+		const finishers = [];
+		transport.get.mockImplementation(() => new Promise((resolve) => finishers.push(resolve)));
+		mountFrame();
+		for (let id = 1; id <= 10; id++) fromPage({ op: "call", id, method: "frappe.client.get_count", args: {}, type: "GET" });
+		await settle();
+		expect(transport.get).toHaveBeenCalledTimes(8);
+		finishers[0](1);
+		await settle();
+		expect(transport.get).toHaveBeenCalledTimes(9);
+	});
+
+	it("reads the record before a save, shows the diff, and refuses when it can't read it", async () => {
+		transport.get.mockResolvedValueOnce({ doctype: "ToDo", name: "TD-1", docstatus: 0, status: "Open", priority: "High" });
+		mountFrame();
+		fromPage({ op: "call", id: 1, method: "frappe.client.save", args: { doc: { doctype: "ToDo", name: "TD-1", status: "Closed" } } });
+		await settle();
+		expect(transport.get).toHaveBeenCalledWith("frappe.client.get", { doctype: "ToDo", name: "TD-1" });
+		expect(askUser.mock.calls[0][0].fields).toEqual([
+			{ name: "status", value: "Closed", before: "Open", status: "changed" },
+			{ name: "priority", value: "", before: "High", beforeRows: undefined, status: "blanked" },
+		]);
+
+		transport.get.mockRejectedValueOnce(new Error("No permission"));
+		fromPage({ op: "call", id: 2, method: "frappe.client.save", args: { doc: { doctype: "ToDo", name: "TD-2" } } });
+		await settle();
+		expect(askUser).toHaveBeenCalledOnce();
+		expect(reply(2)).toMatchObject({ ok: false, error: { message: "This request is not allowed." } });
+	});
+
+	it("refuses a save that would change the record's docstatus, asking nothing", async () => {
+		transport.get.mockResolvedValueOnce({ doctype: "ToDo", name: "TD-1", docstatus: 1 });
+		mountFrame();
+		fromPage({ op: "call", id: 1, method: "frappe.client.save", args: { doc: { doctype: "ToDo", name: "TD-1" } } });
+		await settle();
+		expect(askUser).not.toHaveBeenCalled();
+		expect(transport.post).not.toHaveBeenCalled();
+	});
+
+	it("sends set_value the fieldname object it described, not the string the page sent", async () => {
+		mountFrame();
+		fromPage({
+			op: "call",
+			id: 1,
+			method: "frappe.client.set_value",
+			args: { doctype: "ToDo", name: "T1", fieldname: '{"description":"x","allocated_to":"a@x.com"}' },
+		});
+		await settle();
+		expect(askUser.mock.calls[0][0].fields).toEqual([
+			{ name: "description", value: "x" },
+			{ name: "allocated_to", value: "a@x.com" },
+		]);
+		expect(transport.post).toHaveBeenCalledWith("frappe.client.set_value", {
+			doctype: "ToDo",
+			name: "T1",
+			fieldname: { description: "x", allocated_to: "a@x.com" },
+		});
 	});
 
 	it("never trusts a record write for the page, even when the user says so", async () => {
@@ -169,15 +276,13 @@ describe("createPageFrame", () => {
 		fromPage({ op: "call", id: 1, method: "frappe.client.insert", args: { doc } });
 		await settle();
 		const request = askUser.mock.calls[0][0];
-		expect(request).toEqual({
-			message: "This page wants to create a new ToDo.",
-			fields: [
-				["description", "Call Blue Harbor"],
-				["priority", "High"],
-				["allocated_to", "a@x.com"],
-			],
-			trustable: false,
-		});
+		expect(request.message).toBe("This page wants to create a new ToDo with these fields.");
+		expect(request.fields).toEqual([
+			{ name: "description", value: "Call Blue Harbor" },
+			{ name: "priority", value: "High" },
+			{ name: "allocated_to", value: "a@x.com" },
+		]);
+		expect(request.trustable).toBe(false);
 		expect(transport.post).toHaveBeenCalledWith("frappe.client.insert", { doc });
 	});
 
@@ -192,12 +297,11 @@ describe("createPageFrame", () => {
 		args.value = "Cancelled";
 		decide("once");
 		await settle();
-		expect(askUser.mock.calls[0][0].fields).toEqual([["status", "Closed"]]);
+		expect(askUser.mock.calls[0][0].fields).toEqual([{ name: "status", value: "Closed" }]);
 		expect(transport.post).toHaveBeenCalledWith("frappe.client.set_value", {
 			doctype: "ToDo",
 			name: "TD-1",
-			fieldname: "status",
-			value: "Closed",
+			fieldname: { status: "Closed" },
 		});
 	});
 
@@ -324,36 +428,6 @@ describe("readCall", () => {
 		expect(readCall({ id: 1, method: "a/b" })).toBe(null);
 		expect(readCall({ id: 1, method: "a.b", args: new Date() })).toBe(null);
 		expect(readCall({ id: 1, method: "a.b", args: { big: "x".repeat(1024 * 1024 + 1) } })).toBe(null);
-	});
-});
-
-describe("describePageRequest", () => {
-	it("says what a change does and lists its fields, with long values cut short", () => {
-		expect(describePageRequest("frappe.client.insert", { doc: JSON.stringify({ doctype: "ToDo", description: "x" }) })).toEqual({
-			message: "This page wants to create a new ToDo.",
-			fields: [["description", "x"]],
-			trustable: false,
-		});
-		const update = describePageRequest("frappe.client.set_value", {
-			doctype: "Sales Invoice",
-			name: "SINV-1",
-			fieldname: { status: "Paid", remarks: "y".repeat(200) },
-		});
-		expect(update.message).toBe("This page wants to update Sales Invoice SINV-1.");
-		expect(update.fields[0]).toEqual(["status", "Paid"]);
-		expect(update.fields[1][1]).toHaveLength(78);
-		expect(describePageRequest("frappe.client.submit", { doc: { doctype: "Sales Order", name: "SO-1" } }).message).toBe(
-			"This page wants to submit Sales Order SO-1.",
-		);
-	});
-
-	it("names a child table by its row count and folds a long field list", () => {
-		const doc = { doctype: "Sales Order", items: [{}, {}] };
-		for (let i = 0; i < 10; i++) doc[`f${i}`] = i;
-		const { fields } = describePageRequest("frappe.client.insert", { doc });
-		expect(fields[0]).toEqual(["items", "2 rows"]);
-		expect(fields).toHaveLength(9);
-		expect(fields.at(-1)).toEqual(["and 3 more", ""]);
 	});
 });
 

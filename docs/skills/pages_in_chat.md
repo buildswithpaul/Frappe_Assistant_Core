@@ -9,7 +9,7 @@ When a user asks for a report, a summary or "a PDF of …" about their own data,
 - "Give me a report of …", "summarise … on one page", "make me a PDF of …", "show me … as a chart".
 - "Create a PDF of how my sales did this month" is a page, not `generate_document`: the page reads the figures live and downloads as a PDF. Use `generate_document` only for a written document such as a proposal or a letter, or to print an existing document.
 
-**No build plan and no confirmation.** A personal page is not a site change: only its owner opens it, and its script runs in a sealed frame that reads only what they may and asks them before any change. Don't call `propose_build_plan` or `ask_user` before creating or changing one. Just build it.
+**No build plan and no confirmation.** A personal page is not a site change: only its owner opens it, and its script runs in a walled-off frame that reads only what they may and asks them before anything else. Don't call `propose_build_plan` or `ask_user` before creating or changing one. Just build it.
 
 **Not for** a page other people should open. That is a shared page, which only a System Manager can set up (`get_skill("fac-page")`).
 
@@ -38,13 +38,14 @@ When a user asks for a report, a summary or "a PDF of …" about their own data,
   - `frappe.format`.
 
   The script runs as the user, so it reads only what they may. **Frappe's own reads run at once:** `frappe.db.get_list`, `get_value` and `get_doc`, and a `frappe.call` to `frappe.client.get_count`, `frappe.client.get_single_value`, `frappe.desk.reportview.get` or `frappe.desk.query_report.run`. **Everything else asks the user first**, in plain words in the panel:
-  - **Every change asks each time**, listing the fields it sets: `insert`, `set_value`, `delete_doc`.
-  - **Any other method**, an API you wrote included, asks with **Allow once** or **Allow for this page**, whatever its HTTP method.
+  - **Every change asks each time**, listing every field it sets: `insert`, `set_value`, `delete_doc`. A save or submit shows each field before and after, and what it would clear.
+  - **Any other method** asks too. Only a Server Script API method, a name with no dot (the kind you write), offers **Allow for this page**, which lets this version of the page call it again without asking. Any dotted method asks every time.
+  - If the user says no, that method is refused for the rest of this version of the page. At most five questions wait at once; further calls fail.
 
-  So a page that only shows data should read with `frappe.db` or a report through `frappe.desk.query_report.run`, and then it never asks.
+  So a page that only shows data should read with `frappe.db` or a report through `frappe.desk.query_report.run`, and then it never asks. Give a page one read API of your own at most.
 
   Any other member, such as the rest of `frappe.utils`, `frappe.ui`, `frappe.realtime` or `frappe.set_route`, makes the panel say the page needs Desk and offer **Open in Desk**. Write your own small helpers for anything else.
-- **A sealed frame.** The script can't fetch anything itself, open a window, submit a form, navigate or reach the chat around it. Its data comes only through `frappe`. Images and fonts load only from this site's `/files/` and `/assets/`.
+- **A walled-off frame, not a sealed one.** The script can't make requests itself, open a window, submit a form, navigate or reach the chat around it, and WebRTC is removed. Its data comes only through `frappe`. Images and fonts load only from this site's `/files/` and `/assets/`. A deliberately malicious script could still leak small amounts through DNS lookups or timing, which no browser closes, so never put code in a page that you did not write for it.
 
 ```js
 const esc = frappe.utils.escape_html;
