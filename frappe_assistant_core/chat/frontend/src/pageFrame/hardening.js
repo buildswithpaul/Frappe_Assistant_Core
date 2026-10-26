@@ -9,7 +9,8 @@
  *   refused when created, and stripped from markup and from nodes on the insertion routes wrapped
  *   below, on the prototypes. Browsers keep adding ways to build nodes, so a route not wrapped
  *   here could still connect a <link rel="preconnect"> for a moment; a MutationObserver removes it
- *   right after. That falls within what remains: a deliberately malicious script can leak small
+ *   right after. Template content and shadow roots, closed ones included, are walked too, and
+ *   markup parsed here attaches no declarative shadow roots. That falls within what remains: a deliberately malicious script can leak small
  *   amounts through DNS lookups, preconnects or timing, which no browser policy closes.
  */
 
@@ -52,9 +53,21 @@ const LOADING_SELECTOR = [...LOADING_TAGS].join(",");
 
 const refused = (tag) => new DOMException(`A page cannot create <${tag}> elements.`, "NotSupportedError");
 
+// Every shadow root a page attaches, closed ones included: a closed root is otherwise unreachable.
+const attachedRoots = new WeakMap();
+// Per window, what to do with each new shadow root (removeLoadingElements watches it).
+const shadowRootHooks = new WeakMap();
+
 function stripLoading(root) {
 	if (root.nodeType === 1 && LOADING_TAGS.has(root.localName)) return null;
 	root.querySelectorAll?.(LOADING_SELECTOR).forEach((el) => el.remove());
+	// querySelectorAll stops at a template's content and at shadow roots: walk into both.
+	const elements = [...(root.nodeType === 1 ? [root] : []), ...(root.querySelectorAll?.("*") || [])];
+	for (const el of elements) {
+		if (el.localName === "template" && el.content) stripLoading(el.content);
+		const shadow = el.shadowRoot || attachedRoots.get(el);
+		if (shadow) stripLoading(shadow);
+	}
 	return root;
 }
 
@@ -128,19 +141,27 @@ export function guardLoadingElements(win) {
 		};
 	}
 
-	// setHTMLUnsafe parses like innerHTML; parseHTMLUnsafe builds a whole document from markup.
+	// setHTMLUnsafe parses like innerHTML, through an inert template that attaches no declarative
+	// shadow roots; parseHTMLUnsafe builds a whole document from markup.
 	for (const target of [win.Element?.prototype, win.ShadowRoot?.prototype]) {
 		if (!target?.setHTMLUnsafe) continue;
 		target.setHTMLUnsafe = function (html) {
 			this.replaceChildren(parseClean(doc, html));
 		};
 	}
+	// Through DOMParser, which attaches no declarative shadow roots: a <template shadowrootmode>
+	// stays an inert template whose content is stripped, instead of a closed root no one can reach.
 	if (win.Document.parseHTMLUnsafe) {
-		const parseHTMLUnsafe = win.Document.parseHTMLUnsafe;
-		win.Document.parseHTMLUnsafe = (html, options) => {
-			const parsed = parseHTMLUnsafe.call(win.Document, html, options);
-			stripLoading(parsed);
-			return parsed;
+		win.Document.parseHTMLUnsafe = (html) => new win.DOMParser().parseFromString(String(html), "text/html");
+	}
+	// Each shadow root is remembered and handed to the last net, which then watches it too.
+	const attachShadow = win.Element.prototype.attachShadow;
+	if (attachShadow) {
+		win.Element.prototype.attachShadow = function (init) {
+			const root = attachShadow.call(this, init);
+			attachedRoots.set(this, root);
+			shadowRootHooks.get(win)?.forEach((hook) => hook(root));
+			return root;
 		};
 	}
 	// XSLT can build any element from a stylesheet; a page has no use for it.
@@ -204,15 +225,27 @@ export function guardLoadingElements(win) {
 
 /** The last net: removes loading elements that reach the document anyway, as they appear. */
 export function removeLoadingElements(doc) {
+	const win = doc.defaultView;
 	const sweep = (node) => {
 		if (node.nodeType !== 1) return;
 		if (LOADING_TAGS.has(node.localName)) node.remove();
-		else node.querySelectorAll?.(LOADING_SELECTOR).forEach((el) => el.remove());
+		else stripLoading(node);
 	};
-	const observer = new doc.defaultView.MutationObserver((records) => {
+	const observer = new win.MutationObserver((records) => {
 		for (const record of records) record.addedNodes.forEach(sweep);
 	});
-	// The whole document, head included.
+	const watch = (root) => {
+		observer.observe(root, { childList: true, subtree: true });
+		stripLoading(root);
+	};
+	// The whole document, head included, and every shadow root the page attaches from now on.
 	observer.observe(doc.documentElement, { childList: true, subtree: true });
+	if (!shadowRootHooks.has(win)) shadowRootHooks.set(win, new Set());
+	shadowRootHooks.get(win).add(watch);
+	const disconnect = observer.disconnect.bind(observer);
+	observer.disconnect = () => {
+		shadowRootHooks.get(win)?.delete(watch);
+		disconnect();
+	};
 	return observer;
 }

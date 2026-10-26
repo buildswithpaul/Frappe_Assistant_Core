@@ -13,7 +13,10 @@
  *   npm run build                                  # builds public/js/fac_page_frame*.js
  *   npx vite build -c scripts/page-frame-leak-check/vite.config.mjs
  *   npm i --no-save playwright-core@1.56.1
- *   CHROME=/path/to/chrome node scripts/page-frame-leak-check/run.mjs
+ *   CHROME=/path/to/chrome-headless-shell node scripts/page-frame-leak-check/run.mjs
+ *
+ * Use chrome-headless-shell: Playwright does not list the page's inner frame under the full
+ * "Chrome for Testing" build, and the insertion-route checks then fail to find it.
  */
 import { createServer } from "node:http";
 import { readFileSync, writeFileSync } from "node:fs";
@@ -106,13 +109,35 @@ const guardRoutes = await pageFrame.evaluate(() => {
 			box.append(document.adoptNode(t.content));
 		},
 		shadowSetHTMLUnsafe: () => box.attachShadow({ mode: "open" }).setHTMLUnsafe?.(markup),
+		// Each judged on its own element, since a closed root and a template's content hide from landed().
+		closedShadowRoot: () => {
+			const root = document.body.appendChild(document.createElement("div")).attachShadow({ mode: "closed" });
+			root.append(content());
+			return root.querySelector("link") ? "LANDED" : "stripped";
+		},
+		nestedTemplate: () => {
+			const t = document.createElement("template");
+			t.innerHTML = `<template>${markup}</template>`;
+			const host = document.body.appendChild(document.createElement("div"));
+			host.append(t.content);
+			return host.querySelector("template")?.content.querySelector("link") ? "LANDED" : "stripped";
+		},
+		declarativeShadowRoot: () => {
+			const host = document.body.appendChild(document.createElement("div"));
+			if (!host.setHTMLUnsafe) return "stripped";
+			host.setHTMLUnsafe(`<div><template shadowrootmode="closed">${markup}</template></div>`);
+			// Attached as a shadow root, the template would be gone; inert, its content is stripped.
+			const t = host.querySelector("template");
+			return !t || t.content.querySelector("link") ? "LANDED" : "stripped";
+		},
 		xslt: () => typeof XSLTProcessor !== "undefined" && "present",
 	};
 	const out = {};
 	for (const [name, run] of Object.entries(routes)) {
 		try {
 			const value = run();
-			out[name] = value === "present" ? "XSLT present" : landed() ? "LANDED" : "stripped";
+			out[name] =
+				value === "present" ? "XSLT present" : value === "LANDED" || value === "stripped" ? value : landed() ? "LANDED" : "stripped";
 		} catch (error) {
 			out[name] = `refused: ${String(error.message).slice(0, 40)}`;
 		}

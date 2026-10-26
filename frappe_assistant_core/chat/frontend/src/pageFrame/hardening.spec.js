@@ -28,6 +28,13 @@ describe("removeWebRtc", () => {
 const unwrappedAppend = Node.prototype.appendChild;
 // jsdom has no XSLT; Chrome does, and the guard must take it away.
 window.XSLTProcessor = class XSLTProcessor {};
+// jsdom has neither; Chrome does, and both can attach declarative shadow roots, closed ones too.
+const unguarded = () => {
+	throw new Error("the guard left this route alone");
+};
+Element.prototype.setHTMLUnsafe = unguarded;
+ShadowRoot.prototype.setHTMLUnsafe = unguarded;
+Document.parseHTMLUnsafe = unguarded;
 // The guard changes this test file's own window, as the runtime changes the page's frame.
 guardLoadingElements(window);
 
@@ -103,12 +110,59 @@ describe("guardLoadingElements", () => {
 		expect(templateContent(markup).cloneNode(true).querySelector("link")).toBeNull();
 	});
 
+	it("walks into template content and shadow roots, closed ones included, as nodes are inserted", () => {
+		const host = document.createElement("div");
+		const root = host.attachShadow({ mode: "closed" });
+		// Filled by a route nothing wraps, so only the walk can find the link.
+		unwrappedAppend.call(root, templateContent('<p>kept</p><link rel="preconnect" href="https://evil.example">'));
+		const holder = document.createElement("div");
+		unwrappedAppend.call(holder, templateContent('<template><link rel="preconnect" href="https://evil.example"></template>'));
+		const box = document.createElement("div");
+		document.body.append(box);
+		box.append(host, holder);
+		expect(root.querySelector("link")).toBeNull();
+		expect(root.querySelector("p")).not.toBeNull();
+		expect(holder.querySelector("template").content.querySelector("link")).toBeNull();
+		box.remove();
+	});
+
+	it("parses markup into inert templates, never declarative shadow roots", () => {
+		const markup = '<div><template shadowrootmode="closed"><link rel="preconnect" href="https://evil.example"><b>x</b></template></div>';
+		const box = document.createElement("div");
+		box.setHTMLUnsafe(markup);
+		const parsed = Document.parseHTMLUnsafe(markup);
+		for (const scope of [box, parsed]) {
+			const template = scope.querySelector("template");
+			expect(template).not.toBeNull();
+			expect(template.content.querySelector("link")).toBeNull();
+			expect(template.content.querySelector("b")).not.toBeNull();
+		}
+		const shadow = document.createElement("div").attachShadow({ mode: "open" });
+		shadow.setHTMLUnsafe('<p>y</p><iframe src="https://evil.example"></iframe>');
+		expect(shadow.innerHTML).toBe("<p>y</p>");
+	});
+
 	it("leaves the page no XSLT to build elements with", () => {
 		expect(window.XSLTProcessor).toBeUndefined();
 	});
 });
 
 describe("removeLoadingElements", () => {
+	it("watches each shadow root the page attaches, closed ones included", async () => {
+		const observer = removeLoadingElements(document);
+		// Off the document, so only the shadow root's own watch can see what lands in it.
+		const host = document.createElement("div");
+		try {
+			const root = host.attachShadow({ mode: "closed" });
+			unwrappedAppend.call(root, templateContent('<p>kept</p><embed src="x">'));
+			await Promise.resolve();
+			expect(root.querySelector("embed")).toBeNull();
+			expect(root.querySelector("p")).not.toBeNull();
+		} finally {
+			observer.disconnect();
+		}
+	});
+
 	it("removes loading elements that reach the document by another way", async () => {
 		const observer = removeLoadingElements(document);
 		try {
