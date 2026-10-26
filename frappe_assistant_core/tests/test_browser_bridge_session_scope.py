@@ -21,6 +21,7 @@ from frappe_assistant_core.plugins.faco.tools.browser_bridge import (
     _pending_calls_key,
     send_browser_tool_call,
 )
+from frappe_assistant_core.tests.base_test import BaseAssistantTest
 
 _MOD = "frappe_assistant_core.plugins.faco.tools.browser_bridge"
 
@@ -95,12 +96,16 @@ class TestOwnershipStillEnforced(unittest.TestCase):
             self.assertTrue(any(k.endswith("call-1") for k in keys))
 
 
-class TestClientTypeIsCarried(unittest.TestCase):
+class TestClientTypeIsCarried(BaseAssistantTest):
     """The widget and the chat app can hold the same conversation and both sit in its room, so a
     call must say which client's turn asked; each answers only its own."""
 
     def _send(self, client_type):
-        with patch(f"{_MOD}.frappe.publish_realtime") as publish, patch(f"{_MOD}.frappe.cache") as cache:
+        # Only the queue push and the owner record are replaced, on the real cache object, so
+        # frappe.cache itself stays the site's cache for anything else in the test.
+        with patch(f"{_MOD}.frappe.publish_realtime", autospec=True) as publish, patch.object(
+            frappe.cache, "lpush", autospec=True
+        ) as lpush, patch.object(frappe.cache, "set_value", autospec=True):
             send_browser_tool_call(
                 user="owner@example.com",
                 call_id="call-1",
@@ -109,14 +114,14 @@ class TestClientTypeIsCarried(unittest.TestCase):
                 session_id="sess-abc",
                 client_type=client_type,
             )
-        return publish, cache
+        return publish, lpush
 
     def test_socket_and_queue_payloads_carry_the_client_type(self):
         import json
 
-        publish, cache = self._send("spa")
+        publish, lpush = self._send("spa")
         self.assertEqual(publish.call_args.kwargs["message"]["client_type"], "spa")
-        self.assertEqual(json.loads(cache.lpush.call_args.args[1])["client_type"], "spa")
+        self.assertEqual(json.loads(lpush.call_args.args[1])["client_type"], "spa")
 
     def test_an_older_ar_sends_none(self):
         publish, _ = self._send(None)
