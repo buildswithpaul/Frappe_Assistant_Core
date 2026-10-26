@@ -268,8 +268,10 @@ const EVERYONE_ROLES = ["All", "Guest"];
 export function goesLiveAudience(roles) {
 	if (!Array.isArray(roles)) return null;
 	const names = roles.filter((role) => typeof role === "string" && role);
+	const shown = names.length ? names : [__("System Managers only")];
 	return {
-		text: names.length ? names.join(", ") : __("System Managers only"),
+		text: shown.join(", "),
+		roles: shown,
 		everyone: names.some((role) => EVERYONE_ROLES.includes(role)),
 	};
 }

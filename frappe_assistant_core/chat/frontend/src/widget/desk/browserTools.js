@@ -99,15 +99,15 @@ const SCREENSHOT_HIDDEN_SELECTORS = [
 export const TOOL_CONFIRMATION_COPY = {
 	take_screenshot: {
 		action: "Capture screenshot",
-		detail: "The AI wants to capture what you're looking at and send it to the assistant. The screenshot may contain any PII visible on screen.",
+		detail: "FACO wants to capture what you're looking at. The screenshot shows anything visible on screen, including personal details.",
 	},
 	get_form_data: {
 		action: "Read form data",
-		detail: "The AI wants to read every field on the open record (including child tables) and send it to the assistant.",
+		detail: "FACO wants to read every field on the open record, including its tables.",
 	},
 	capture_diagnostics: {
 		action: "Collect page diagnostics",
-		detail: "The AI wants to collect this page's recent console errors, failed network requests and a screenshot, and send them to the assistant. These may contain any PII visible on screen or named in an error.",
+		detail: "FACO wants to collect this page's recent errors, failed requests and a screenshot. They can include personal details shown on screen or named in an error.",
 	},
 };
 

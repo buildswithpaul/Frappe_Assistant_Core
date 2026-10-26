@@ -6,6 +6,7 @@
  * surfaces to the user during approval — not general-purpose formatters.
  */
 
+import { __ } from "@/utils/i18n";
 import { titleWord } from "@/utils/toolLabel";
 
 const MAX_VALUE_LEN = 120;
@@ -182,4 +183,31 @@ export function splitDetailFields(flat, primaryCount = 4) {
 	const primary = entries.slice(0, primaryCount);
 	const overflow = entries.slice(primaryCount);
 	return { primary, overflow, overflowCount: overflow.length };
+}
+
+// Check fields arrive as 1/0; a person reads Yes/No. Matched on the field name, since the card
+// has no doctype meta to ask.
+const CHECK_KEY_RE =
+	/^(is_|has_|allow_|enable|disable|published|active|reqd|mandatory|hidden|read_only|bold|in_list_view|in_standard_filter)/i;
+const CHECK_VALUES = { 1: true, true: true, 0: false, false: false };
+const PLAIN_DATE_RE = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2}))?/;
+
+function readableDate(value) {
+	const m = PLAIN_DATE_RE.exec(value.trim());
+	if (!m) return null;
+	const [, y, mo, d, h, mi] = m;
+	// Built from the parts so a date never shifts a day across time zones.
+	const date = new Date(Number(y), Number(mo) - 1, Number(d), Number(h || 0), Number(mi || 0));
+	if (Number.isNaN(date.getTime())) return null;
+	const day = date.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+	return h === undefined ? day : `${day}, ${date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}`;
+}
+
+/** A field value as the approval table shows it: Yes/No for checks, dates in words, else formatValue. */
+export function displayValue(key, value) {
+	if (CHECK_KEY_RE.test(String(key)) && String(value) in CHECK_VALUES && typeof value !== "object") {
+		return CHECK_VALUES[String(value)] ? __("Yes") : __("No");
+	}
+	if (typeof value === "string" && isDateValue(value)) return readableDate(value) ?? formatValue(value);
+	return formatValue(value);
 }

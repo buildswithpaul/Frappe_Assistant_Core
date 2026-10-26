@@ -5,14 +5,15 @@
  * interaction, text.
  */
 
-import { formatToolName, flattenInput } from "@/components/chat/interactions/helpers.js";
+import { approvalHeadline } from "@/components/chat/interactions/approvalHeadline.js";
+import { flattenInput } from "@/components/chat/interactions/helpers.js";
 import { buildTimelineRows } from "@/composables/useActivityTimeline.js";
 import { planOf } from "@/components/chat/interactions/buildPlan.js";
 import { isApprovalInteraction, isBuildPlanInteraction } from "@/stores/chat/interactionRegime";
 import { appliesTo, isDryRun, safeUrl, toolFailed, toolResult } from "@/utils/toolResult";
 import { __ } from "@/utils/i18n";
-// formatToolName is still used for the approval card title (an interaction, not
-// a record); record chips deliberately do NOT fall back to a tool name.
+// The approval title is the card's own headline; record chips deliberately do NOT fall back to
+// a tool name.
 
 const QUESTION_TITLE_MAX = 60;
 
@@ -77,7 +78,7 @@ function cardKind(block) {
 function cardTitle(block, kind) {
 	if (kind === "build_plan") return planOf(block).summary || __("Build plan");
 	if (kind === "question") return plainText(block.question).slice(0, QUESTION_TITLE_MAX) || __("Question");
-	return formatToolName(block.tool_name);
+	return approvalHeadline(block);
 }
 
 /**
@@ -102,11 +103,8 @@ export function deriveArtifacts(blocks) {
 				// Cards of this kind waiting together, e.g. questions FACO asked at once.
 				count: waiting.filter((w) => cardKind(w) === kind).length,
 				title: cardTitle(b, kind),
-				subtitle: kind === "approval"
-					? [flat.name || flat.docname || flat.title, flat.grand_total || flat.amount || flat.total]
-						.filter(Boolean)
-						.join(" · ")
-					: "",
+				// The title already names the record; the rail adds the amount when there is one.
+				subtitle: kind === "approval" ? String(flat.grand_total || flat.amount || flat.total || "") : "",
 			};
 			break; // one approval shown at a time
 		}
