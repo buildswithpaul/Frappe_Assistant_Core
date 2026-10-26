@@ -404,47 +404,67 @@ class TestPersonalFACPage(BaseAssistantTest):
         ):
             self.assertIn(kept, served)
 
+    def _served_style(self, user: str, style: str) -> str:
+        # Production: the owner's page is edited through FACO's update_document, which saves the doc.
+        name = getattr(self, "_style_page", None) or self._build(user, slug="styled")
+        self._style_page = name
+        doc = frappe.get_doc("FAC Page", name)
+        doc.style = style
+        doc.save()
+        return get_page(name)["style"]
+
     def test_a_personal_pages_style_reaches_no_other_server(self):
         # A personal page's style shows at once, never held behind Run new version, so it must not
-        # load or send anything.
+        # load or send anything, however the url is spelled.
         user = self._desk_user("fac-page-style")
-        style = (
-            '@import url("https://evil.example/x.css");\n'
-            ".mk-a { background: url(https://evil.example/?v=1); }\n"
-            ".mk-b { background: url(//evil.example/x.png); }\n"
-            '.mk-c { background: image-set("https://evil.example/x.png" 1x); }\n'
-            ".mk-d { width: expression(alert(1)); -moz-binding: url(x.xml#b); behavior: url(x.htc); }\n"
-            '.mk-logo { background: url("/files/logo.png"); }\n'
-            ".mk-icon { background: url(/assets/frappe/images/x.svg); scroll-behavior: smooth; }\n"
-            ".mk-card { position: relative; color: teal; }"
-        )
-        name = self._build(user, style=style)
+        red = ".mk-a {color: red;}"
+        # Each case: the style FACO saves, and what the page is served. A url the parser cannot
+        # read cleanly drops the whole sheet; otherwise only the declaration or rule that fetches.
+        remote = {
+            "comment-split url": (".mk-a { color: red; background: url(/* */https://evil.example/x) }", ""),
+            "hex-escaped url": (".mk-a { color: red; background: \\75 rl(https://evil.example/x) }", red),
+            "escaped r in url": (".mk-a { color: red; background: u\\72l(https://evil.example/x) }", red),
+            "unquoted url": (".mk-a { color: red; background: url(https://evil.example/?v=1) }", red),
+            "quoted url with )": ('.mk-a { color: red; background: url("https://evil.example/a)b") }', red),
+            "unterminated url": (".mk-a { color: red; background: url(https://evil.example/x", red),
+            "upper-case URL": (".mk-a { color: red; background: URL(https://evil.example/x) }", red),
+            "protocol-relative": (".mk-a { color: red; background: url(//evil.example/x) }", red),
+            "image-set string": (
+                '.mk-a { color: red; background: image-set("https://evil.example/x" 1x) }',
+                red,
+            ),
+            "image-set var": (
+                '.mk-a { color: red; --u: "/x"; background: image-set(var(--u) 1x) }',
+                '.mk-a {color: red;--u: "/x";}',
+            ),
+            "@import string": ('@import "https://evil.example/x.css"; .mk-a { color: red }', f" {red}"),
+            "@import url": ("@import url(https://evil.example/x.css); .mk-a { color: red }", f" {red}"),
+            "@font-face src": (
+                "@font-face { font-family: F; src: url(https://evil.example/f.woff2) }",
+                "@font-face {font-family: F;}",
+            ),
+            "escaped brace in a property name": (
+                ".mk-a { x\\7d\\2e mk-b\\7b y: 1; color: red }",
+                ".mk-a {x\\}\\.mk-b\\{y: 1;color: red;}",
+            ),
+            "dot-dot path": (".mk-a { color: red; background: url(/files/../evil) }", red),
+            "expression": (".mk-a { color: red; width: expression(alert(1)) }", red),
+            "behavior": (".mk-a { color: red; behavior: url(/files/x.htc); -moz-binding: none }", red),
+        }
+        for case, (style, expected) in remote.items():
+            with self.subTest(case):
+                self.assertEqual(self._served_style(user, style), expected)
 
-        served = get_page(name)["style"]
-
-        for unsafe in (
-            "@import",
-            "url(https:",
-            "url(//",
-            "image-set(",
-            "expression(",
-            "-moz-binding",
-            "; behavior:",
-        ):
-            self.assertNotIn(unsafe, served)
-        for kept in (
-            'url("/files/logo.png")',
-            "url(/assets/frappe/images/x.svg)",
-            "scroll-behavior: smooth",
-            ".mk-card { position: relative; color: teal; }",
-        ):
-            self.assertIn(kept, served)
-
-    def test_a_personal_page_style_that_hides_a_url_in_escapes_is_dropped(self):
-        user = self._desk_user("fac-page-style-escape")
-        name = self._build(user, style=".mk-card { background: u\\72l(https://evil.example/?v=1); }")
-
-        self.assertEqual(get_page(name)["style"], "")
+        kept = {
+            '.mk-logo { background: url("/files/logo.png") }': 'url("/files/logo.png")',
+            ".mk-icon { background: url(/assets/frappe/x.css) }": "url(/assets/frappe/x.css)",
+            "@font-face { font-family: F; src: url(/assets/f.woff2) }": "src: url(/assets/f.woff2);",
+            "@media (max-width: 600px) { .mk-card { position: fixed; color: teal } }": "position: fixed;",
+            ".mk-card { scroll-behavior: smooth }": "scroll-behavior: smooth;",
+        }
+        for style, fragment in kept.items():
+            with self.subTest(style):
+                self.assertIn(fragment, self._served_style(user, style))
 
     def test_a_personal_page_does_not_exist_for_anyone_else(self):
         name = self._build(self._desk_user("fac-page-private"))

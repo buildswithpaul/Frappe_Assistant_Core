@@ -19,9 +19,11 @@
 import re
 
 import frappe
+import tinycss2
 from bs4 import BeautifulSoup
 from frappe import _
 from frappe.utils.html_utils import sanitize_html
+from tinycss2.serializer import serialize_identifier
 
 from frappe_assistant_core.assistant_core.doctype.fac_page.fac_page import SHARED, SYSTEM_MANAGER
 
@@ -66,22 +68,18 @@ PERSONAL_DISALLOWED_TAGS = [
 
 # A personal page's stylesheet restyles its own page but reaches no other server: an @import or a
 # remote url() could load a stylesheet or leak what the page shows, and image-set() and the like
-# fetch without url(). The rest are old ways to run code from CSS. Only /files/ and /assets/ urls
-# stay, which load from this site.
-_STYLE_URL = re.compile(r"""url\(\s*(?:"([^"]*)"|'([^']*)'|([^)]*?))\s*\)""", re.IGNORECASE)
-_STYLE_REWRITES = (
-    (re.compile(r"@import\b[^;]*;?", re.IGNORECASE), ""),
-    (
-        re.compile(r"(?<![\w-])(?:-webkit-)?(?:image-set|image|cross-fade|element|src)\(", re.IGNORECASE),
-        "blocked(",
-    ),
-    (re.compile(r"expression\s*\(", re.IGNORECASE), "blocked("),
-    (re.compile(r"-moz-binding", re.IGNORECASE), "-blocked-binding"),
-    (re.compile(r"(?<![\w-])behavior\s*:", re.IGNORECASE), "blocked:"),
-)
+# fetch a plain string. Only /files/ and /assets/ urls stay, which load from this site.
+_ALLOWED_AT_RULES = {"media", "supports", "keyframes", "font-face"}
+# Functions that fetch their string arguments as urls.
+_FETCHING_FUNCTIONS = {"image-set", "-webkit-image-set", "src", "image", "cross-fade", "element"}
+# Old ways to run code from CSS.
+_CODE_PROPERTIES = {"behavior", "-moz-binding"}
+_CODE_FUNCTIONS = {"expression"}
 _SAME_ORIGIN_URL = re.compile(r"^/(?:files|assets)/")
-_CSS_HEX_ESCAPE = re.compile(r"\\([0-9a-fA-F]{1,6})\s?")
-_CSS_ESCAPE = re.compile(r"\\(.)", re.DOTALL)
+
+
+class _UnsafeStyle(Exception):
+    """The stylesheet could not be read as a browser reads it, so none of it is served."""
 
 
 @frappe.whitelist(methods=["GET"])
@@ -205,31 +203,87 @@ def _personal_style(style: str | None) -> str | None:
     """A personal page's stylesheet without @import, remote urls or code.
 
     Its style is never held behind Run new version, so it must not be able to load or send
-    anything. A stylesheet that still holds any of these once its CSS escapes are decoded hides
-    them in escapes (``u\\72l(``), and is dropped whole rather than guessed at.
+    anything. It is parsed as a browser parses it (escapes decoded, unterminated urls closed) and
+    re-serialised from what survives, so the browser receives only what was checked. A stylesheet
+    that does not parse cleanly is served empty.
     """
     if not style:
         return style
-    cleaned = _strip_style(style)
-    decoded = _decode_css_escapes(cleaned)
-    return cleaned if _strip_style(decoded) == decoded else ""
+    try:
+        nodes = tinycss2.parse_stylesheet(style, skip_comments=True, skip_whitespace=False)
+        return "".join(_clean_node(node) for node in nodes)
+    except _UnsafeStyle:
+        return ""
+    except Exception:
+        frappe.log_error(title="FAC Page style could not be parsed")
+        return ""
 
 
-def _strip_style(style: str) -> str:
-    style = _STYLE_URL.sub(_same_origin_url_or_none, style)
-    for pattern, replacement in _STYLE_REWRITES:
-        style = pattern.sub(replacement, style)
-    return style
+def _clean_node(node) -> str:
+    """One rule or whitespace node, serialised, or "" for a rule that is dropped."""
+    if node.type == "error":
+        raise _UnsafeStyle(node.message)
+    if node.type == "whitespace":
+        return node.serialize()
+    if node.type == "qualified-rule":
+        if not _tokens_safe(node.prelude):
+            return ""
+        return f"{tinycss2.serialize(node.prelude)}{{{_clean_block(node.content)}}}"
+    if node.type == "at-rule":
+        if node.lower_at_keyword not in _ALLOWED_AT_RULES or node.content is None:
+            return ""
+        if not _tokens_safe(node.prelude):
+            return ""
+        prelude = tinycss2.serialize(node.prelude)
+        return f"@{serialize_identifier(node.at_keyword)}{prelude}{{{_clean_block(node.content)}}}"
+    return ""
 
 
-def _same_origin_url_or_none(match: re.Match) -> str:
-    url = next((group for group in match.groups() if group is not None), "").strip()
-    return match.group(0) if _SAME_ORIGIN_URL.match(url) else "none"
+def _clean_block(content) -> str:
+    """A rule's body: its declarations that fetch nothing, and its nested rules, cleaned."""
+    parts = []
+    for node in tinycss2.parse_blocks_contents(content, skip_comments=True, skip_whitespace=True):
+        if node.type == "declaration":
+            if node.lower_name not in _CODE_PROPERTIES and _tokens_safe(node.value):
+                important = " !important" if node.important else ""
+                # The name is decoded, so it is escaped again: "x\\7d" must not close the rule.
+                name = serialize_identifier(node.name)
+                parts.append(f"{name}: {tinycss2.serialize(node.value).strip()}{important};")
+        else:
+            parts.append(_clean_node(node))
+    return "".join(parts)
 
 
-def _decode_css_escapes(style: str) -> str:
-    def hex_char(match: re.Match) -> str:
-        code = int(match.group(1), 16)
-        return chr(code) if 0 < code <= 0x10FFFF else "\ufffd"
+def _tokens_safe(tokens, strings_are_urls: bool = False) -> bool:
+    """Whether these tokens fetch nothing from another server and run no code."""
+    for token in tokens:
+        if token.type == "error":
+            raise _UnsafeStyle(token.message)
+        if token.type == "url" and not _is_same_origin(token.value):
+            return False
+        if token.type == "string" and strings_are_urls and not _is_same_origin(token.value):
+            return False
+        if token.type == "function":
+            name = token.lower_name
+            if name in _CODE_FUNCTIONS:
+                return False
+            if name == "url":
+                args = [arg for arg in token.arguments if arg.type != "whitespace"]
+                if len(args) != 1 or args[0].type != "string" or not _is_same_origin(args[0].value):
+                    return False
+                continue
+            # var() or attr() would hand a fetching function a url from somewhere unchecked.
+            if strings_are_urls and name not in _FETCHING_FUNCTIONS and name != "type":
+                return False
+            fetches = strings_are_urls or name in _FETCHING_FUNCTIONS
+            if not _tokens_safe(token.arguments, strings_are_urls=fetches):
+                return False
+        elif token.type in ("() block", "[] block", "{} block"):
+            if not _tokens_safe(token.content, strings_are_urls):
+                return False
+    return True
 
-    return _CSS_ESCAPE.sub(r"\1", _CSS_HEX_ESCAPE.sub(hex_char, style))
+
+def _is_same_origin(url: str) -> bool:
+    url = url.strip()
+    return bool(_SAME_ORIGIN_URL.match(url)) and ".." not in url and "\\" not in url
