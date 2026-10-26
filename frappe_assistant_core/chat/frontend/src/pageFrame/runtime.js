@@ -24,6 +24,8 @@ const WIDE_PAGE_PX = 900;
 // The chat or Desk page: this frame sits inside the outer frame, which sits in the host.
 const host = window.parent.parent;
 const post = (message) => host.postMessage({ fac_page: 1, ...message }, "*");
+// First, before the page's markup has finished loading: the host knows this frame has a runtime.
+post({ op: "hello" });
 
 const pending = new Map();
 let nextId = 0;

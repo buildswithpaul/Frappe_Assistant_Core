@@ -328,6 +328,34 @@ describe("createPageFrame", () => {
 		expect(transport.post).not.toHaveBeenCalled();
 	});
 
+	it("says the page could not start when its runtime never loaded, and answers at once after", async () => {
+		// The frame runtime is a separate /assets file; a 404 or a dropped request leaves the page's
+		// own markup on screen with nothing to run it.
+		vi.useFakeTimers();
+		const onError = vi.fn();
+		mountFrame({ onError });
+		frame.element.dispatchEvent(new Event("load"));
+		await vi.advanceTimersByTimeAsync(5000);
+		expect(onError).toHaveBeenCalledWith(expect.stringContaining("could not start"));
+		const started = Date.now();
+		await expect(frame.capture()).rejects.toThrow(/could not start/);
+		await expect(frame.snapshot()).rejects.toThrow(/could not start/);
+		expect(Date.now() - started).toBeLessThan(1000);
+		expect(replies.find((r) => r.op === "capture")).toBeUndefined();
+		vi.useRealTimers();
+	});
+
+	it("reports nothing when the runtime says hello before the frame finishes loading", async () => {
+		vi.useFakeTimers();
+		const onError = vi.fn();
+		mountFrame({ onError });
+		fromPage({ op: "hello" });
+		frame.element.dispatchEvent(new Event("load"));
+		await vi.advanceTimersByTimeAsync(5000);
+		expect(onError).not.toHaveBeenCalled();
+		vi.useRealTimers();
+	});
+
 	it("draws the picture in the frame and takes back only a JPEG, with the page's text", async () => {
 		mountFrame();
 		fromPage({ op: "ready" });

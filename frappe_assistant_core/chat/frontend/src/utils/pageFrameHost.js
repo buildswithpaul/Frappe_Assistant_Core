@@ -80,6 +80,9 @@ const RESULT_TIMEOUT_MS = 15000;
 // then this long with nothing in flight, so the figures it fetched are drawn.
 const IDLE_TIMEOUT_MS = 8000;
 const IDLE_QUIET_MS = 300;
+// The frame runtime says hello as it loads, ahead of the page's own load; a frame that has loaded
+// and still not said it this long after has no runtime, and nothing on it will ever answer.
+const START_GRACE_MS = 1500;
 
 /** A call message from the frame as {id, method, args, type}, or null when it is malformed. */
 export function readCall(data) {
@@ -171,6 +174,11 @@ export function createPageFrame({
 	let nextId = 0;
 	let disposed = false;
 	let ready = false;
+	// The runtime is a separate /assets file: a 404 or a dropped request leaves the page's markup on
+	// screen with nothing running it. Then a picture or a print says so at once instead of timing out.
+	let started = false;
+	let startFailure = null;
+	let startTimer = null;
 	let inFlight = 0;
 	const idleWaiters = new Set();
 
@@ -182,6 +190,7 @@ export function createPageFrame({
 	/** Resolves once the script has run and no call has been in flight for a moment, or on timeout. */
 	function whenIdle() {
 		return new Promise((resolve) => {
+			if (startFailure) return resolve();
 			let quiet = null;
 			const waiter = {
 				arm() {
@@ -377,7 +386,13 @@ export function createPageFrame({
 			case "height":
 				if (Number.isFinite(data.height) && data.height >= 0) onHeight?.(Math.min(data.height, 100000));
 				return;
+			case "hello":
+				started = true;
+				startFailure = null;
+				clearTimeout(startTimer);
+				return;
 			case "ready":
+				started = true;
 				ready = true;
 				checkIdle();
 				onReady?.();
@@ -413,6 +428,7 @@ export function createPageFrame({
 	}
 
 	function request(op, extra = {}) {
+		if (startFailure) return Promise.reject(startFailure);
 		const id = ++nextId;
 		return new Promise((resolve, reject) => {
 			const timer = setTimeout(() => {
@@ -425,6 +441,15 @@ export function createPageFrame({
 	}
 
 	window.addEventListener("message", onMessage);
+	element.addEventListener("load", () => {
+		if (started || disposed) return;
+		clearTimeout(startTimer);
+		startTimer = setTimeout(() => {
+			if (started || disposed) return;
+			startFailure = new Error(__("This page could not start: its script did not load. Reopen it, or open it in Desk."));
+			noteError(startFailure.message);
+		}, START_GRACE_MS);
+	});
 
 	return {
 		element,
@@ -444,6 +469,7 @@ export function createPageFrame({
 		},
 		dispose() {
 			disposed = true;
+			clearTimeout(startTimer);
 			window.removeEventListener("message", onMessage);
 			for (const id of [...results.keys()]) settle(id, new Error(__("The page was closed.")));
 		},
