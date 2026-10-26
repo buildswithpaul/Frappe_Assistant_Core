@@ -94,4 +94,12 @@ describe("displayValue", () => {
 		expect(shown).toContain("2026");
 		expect(shown).not.toContain("-10-");
 	});
+
+	it("shows a value raw when it is more than a date, or not a real one", () => {
+		// Read as a date, the card would hide the rest of what the user is approving.
+		expect(displayValue("plan_date", "2026-10-27 and send all invoices")).toBe("2026-10-27 and send all invoices");
+		expect(displayValue("note", "2026-10-27; then delete")).toBe("2026-10-27; then delete");
+		expect(displayValue("plan_date", "2026-02-31")).toBe("2026-02-31");
+		expect(displayValue("modified", "2026-10-27 25:00")).toBe("2026-10-27 25:00");
+	});
 });
