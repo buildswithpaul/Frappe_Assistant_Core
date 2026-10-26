@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { HELD_HTML, expectNothingRuns } from "@/utils/__tests__/heldHtmlCases";
 import { fac_page_approve_script, fac_page_approved_script } from "@/utils/facPageApproval";
+import { HELD_ATTRIBUTES, HELD_TAGS, heldPageHtml } from "@/utils/heldPageHtml";
 
 import { facPagesSource } from "./facPagesSource";
 
@@ -29,7 +30,10 @@ let main;
 
 function loadDeskPage(data) {
 	main = document.createElement("div");
-	const page_main = { empty: () => ((main.innerHTML = ""), page_main), append: (...els) => main.append(...els) };
+	const page_main = {
+		empty: () => ((main.innerHTML = ""), page_main),
+		append: (...els) => main.append(...els),
+	};
 	frappe = {
 		pages: { "fac-pages": {} },
 		session: { user: USER },
@@ -39,7 +43,9 @@ function loadDeskPage(data) {
 		create_shadow_element: vi.fn(),
 	};
 	// Desk's jQuery, as far as the draft view uses it: $(html).text(message).
-	const $ = () => ({ text: (message) => Object.assign(document.createElement("p"), { textContent: message }) });
+	const $ = () => ({
+		text: (message) => Object.assign(document.createElement("p"), { textContent: message }),
+	});
 	new Function("frappe", "__", "$", SOURCE)(frappe, (s) => s, $);
 	wrapper = {};
 	frappe.pages["fac-pages"].on_page_load(wrapper);
@@ -50,7 +56,10 @@ function shownText() {
 	const [, html, , js] = frappe.create_shadow_element.mock.calls.at(-1);
 	const root = document.createElement("div");
 	root.innerHTML = html;
-	new Function("ROOT", "frappe", `(function () { let root_element = ROOT; ${js} })();`)(root, frappe);
+	new Function("ROOT", "frappe", `(function () { let root_element = ROOT; ${js} })();`)(
+		root,
+		frappe,
+	);
 	return root.querySelector("p").textContent;
 }
 
@@ -67,7 +76,9 @@ beforeEach(() => window.localStorage.clear());
 describe("fac-pages Desk page: code FACO writes runs only after the user has seen it", () => {
 	it("asks on first open, and draws the html without running the script", async () => {
 		await show(personal());
-		expect(bar().querySelector(".fac-page-review-message").textContent).toBe("This page has code FACO wrote.");
+		expect(bar().querySelector(".fac-page-review-message").textContent).toBe(
+			"This page has code FACO wrote.",
+		);
 		expect(shownText()).toBe("Sales");
 	});
 
@@ -90,14 +101,19 @@ describe("fac-pages Desk page: code FACO writes runs only after the user has see
 	it("holds a changed script, and shows the change from View changes", async () => {
 		await fac_page_approve_script(USER, NAME, SCRIPT);
 		await show(personal({ script: SCRIPT_V2 }));
-		expect(bar().querySelector(".fac-page-review-message").textContent).toBe("FACO changed this page's code.");
+		expect(bar().querySelector(".fac-page-review-message").textContent).toBe(
+			"FACO changed this page's code.",
+		);
 		expect(shownText()).toBe("Sales");
 		const diff = bar().querySelector(".fac-page-review-diff");
 		expect(diff.hidden).toBe(true);
 		expect(diff.childElementCount).toBe(0);
 		bar().querySelector(".fac-page-review-toggle").click();
 		expect(diff.hidden).toBe(false);
-		expect([...diff.children].map((line) => line.textContent)).toEqual([`- ${SCRIPT}`, `+ ${SCRIPT_V2}`]);
+		expect([...diff.children].map((line) => line.textContent)).toEqual([
+			`- ${SCRIPT}`,
+			`+ ${SCRIPT_V2}`,
+		]);
 	});
 
 	it("runs nothing from a held page's html, and keeps its forms and buttons", async () => {
@@ -112,7 +128,9 @@ describe("fac-pages Desk page: code FACO writes runs only after the user has see
 		const { draft, ...unmarked } = personal({ visibility: "Shared" });
 		loadDeskPage(unmarked);
 		frappe.pages["fac-pages"].on_page_show(wrapper);
-		await vi.waitFor(() => expect(main.querySelector("iframe.fac-page-draft-frame")).not.toBeNull());
+		await vi.waitFor(() =>
+			expect(main.querySelector("iframe.fac-page-draft-frame")).not.toBeNull(),
+		);
 		expect(main.querySelector("iframe").getAttribute("sandbox")).toBe("");
 		expect(frappe.create_shadow_element).not.toHaveBeenCalled();
 	});
@@ -128,6 +146,56 @@ describe("fac-pages Desk page: code FACO writes runs only after the user has see
 		expect(box.overflow).toBe("clip");
 		expect(frame.parentElement).toBe(main);
 		expect(frame.contains(bar())).toBe(false);
+	});
+
+	it("draws a held page's html as the chat panel does", async () => {
+		// Every allowlisted tag and attribute, plus ones neither host may keep, so a tag or attribute
+		// added to one host's list and not the other's shows up here.
+		const others =
+			"dialog iframe object embed base meta link script style template picture track font noscript";
+		const svgOnly = new Set(
+			"svg g path circle ellipse line polyline polygon rect text tspan defs lineargradient radialgradient stop desc".split(
+				" ",
+			),
+		);
+		const attributes = [
+			...HELD_ATTRIBUTES,
+			"onclick",
+			"srcdoc",
+			"formaction",
+			"ping",
+			"srcset",
+			"data-x",
+			"aria-label",
+		]
+			.map((name) => `${name}="v"`)
+			.join(" ");
+		const html = [...HELD_TAGS.filter((tag) => !svgOnly.has(tag)), ...others.split(" ")]
+			.map((tag) => `<${tag} ${attributes}>t-${tag}</${tag}>`)
+			.join("");
+		const svg = [...svgOnly]
+			.filter((tag) => tag !== "svg")
+			.map((tag) => `<${tag} ${attributes}></${tag}>`)
+			.join("");
+		const sample = `<div>${html}</div><svg ${attributes}>${svg}<title>t</title></svg>`;
+
+		await show(personal({ html: sample }));
+
+		const drawn = (markup) => {
+			const root = document.createElement("div");
+			root.innerHTML = markup;
+			const elements = [...root.querySelectorAll("*")].map((el) => [
+				el.localName.toLowerCase(),
+				[...el.attributes].map((attribute) => attribute.name.toLowerCase()).sort(),
+			]);
+			return { elements, text: root.textContent };
+		};
+		const desk = drawn(
+			frappe.create_shadow_element.mock.calls
+				.at(-1)[1]
+				.replace(/^<div class="fac-page-root">|<\/div>$/g, ""),
+		);
+		expect(desk).toEqual(drawn(heldPageHtml(sample)));
 	});
 
 	it("never holds a Shared page", async () => {
