@@ -64,6 +64,19 @@ describe("printPage", () => {
 		);
 	});
 
+	it("prints a personal page's markup under a policy that reaches only the site's public paths", () => {
+		// The markup came out of the frame that runs FACO's code; printed here, it must load nothing else.
+		printPage({ ...snapshot, html: '<img src="https://evil.example/x.png">', personal: true });
+		const meta = new DOMParser()
+			.parseFromString(frame().getAttribute("srcdoc"), "text/html")
+			.head.firstElementChild;
+		expect(meta.getAttribute("http-equiv")).toBe("Content-Security-Policy");
+		const csp = meta.getAttribute("content");
+		expect(csp).toContain("default-src 'none'");
+		expect(csp).toContain(`img-src ${window.location.origin}/files/ ${window.location.origin}/assets/ data: blob:`);
+		expect(csp).not.toContain("evil.example");
+	});
+
 	it("prints a published page without the draft CSP", () => {
 		printPage(snapshot);
 		expect(frame().getAttribute("srcdoc")).not.toContain("Content-Security-Policy");

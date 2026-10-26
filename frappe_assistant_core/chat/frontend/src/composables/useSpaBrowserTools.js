@@ -23,7 +23,7 @@ const SPA_CLIENT_TYPE = "spa";
 /** Why the open page cannot be captured, or null when it can. */
 function pageProblem() {
 	const view = usePagePanel().pageView.value;
-	if (!view?.element) {
+	if (!view?.element && !view?.capture) {
 		// A phone never opens a saved page by itself (usePagePanel), so the user has to tap it.
 		return isNarrow()
 			? __("No page is open: on a phone a page opens only when the user taps it in the reply.")
@@ -57,17 +57,7 @@ export async function takePageScreenshot(params = {}, askedAbout = undefined) {
 	}
 	const view = panel.pageView.value;
 	try {
-		const html2canvas = await loadHtml2canvas();
-		const canvas = await html2canvas(view.element, {
-			useCORS: true,
-			// allowTaint lets cross-origin pixels in, and toBlob then throws on the tainted canvas.
-			allowTaint: false,
-			scale: Math.min(window.devicePixelRatio || 1, MAX_SCREENSHOT_SCALE),
-			imageTimeout: SCREENSHOT_IMAGE_TIMEOUT_MS,
-			logging: false,
-		});
-		const size = { width: canvas.width, height: canvas.height };
-		const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", (params.quality || 80) / 100));
+		const { blob, ...size } = view.capture ? await captureFrame(view, params) : await captureElement(view, params);
 		// A canvas past the browser's maximum size encodes to null.
 		if (!blob) return { error: __("Screenshot too large to encode."), ...size };
 
@@ -80,17 +70,34 @@ export async function takePageScreenshot(params = {}, askedAbout = undefined) {
 			file_name: uploaded.file_name,
 			...size,
 			mime_type: "image/jpeg",
-			...(view.codeWaiting && {
-				note: __(
-					"The page's new code has not run: the user has not clicked Run new version yet, so this picture shows the page without it.",
-				),
-			}),
+			// What went wrong while the page ran: FACO checks this before it calls the page done.
+			page_errors: [...(view.errors?.() || [])],
 		};
 	} catch (error) {
 		logger.error("Page screenshot failed:", error);
 		return { error: __("Screenshot failed: {0}", [error.message]) };
 	}
 }
+
+const scale = () => Math.min(window.devicePixelRatio || 1, MAX_SCREENSHOT_SCALE);
+
+// A Shared page or a draft is drawn in this document, so html2canvas reads it here.
+async function captureElement(view, params) {
+	const html2canvas = await loadHtml2canvas();
+	const canvas = await html2canvas(view.element, {
+		useCORS: true,
+		// allowTaint lets cross-origin pixels in, and toBlob then throws on the tainted canvas.
+		allowTaint: false,
+		scale: scale(),
+		imageTimeout: SCREENSHOT_IMAGE_TIMEOUT_MS,
+		logging: false,
+	});
+	const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", (params.quality || 80) / 100));
+	return { blob, width: canvas.width, height: canvas.height };
+}
+
+// A personal page's frame is another origin: the picture is drawn from the markup it sends.
+const captureFrame = (view, params) => view.capture({ scale: scale(), quality: params.quality || 80 });
 
 const pageCopy = () => ({
 	action: __("Look at the page"),

@@ -176,8 +176,8 @@ def _served_html(html: str | None, draft: bool, visibility: str) -> str | None:
 def _personal_html(html: str | None) -> str | None:
     """A personal page's html without inline handlers, javascript: URLs or code-bearing tags.
 
-    The page's code may only live in ``script``, which the host pages run once the owner has seen
-    it and clicked Run new version. An inline handler in the html would run without that.
+    The page's code may only live in ``script``. Its frame runs no inline handler either (its
+    policy allows only scripts carrying that render's nonce); this keeps the html inert anywhere else.
     """
     html = sanitize_html(
         _without_tags(html, PERSONAL_DISALLOWED_TAGS),
@@ -238,10 +238,10 @@ def _without_tags(html: str | None, tags: list[str]) -> str | None:
 def _personal_style(style: str | None) -> str | None:
     """A personal page's stylesheet without @import, remote urls or code.
 
-    Its style is never held behind Run new version, so it must not be able to load or send
-    anything. It is parsed as a browser parses it (escapes decoded, unterminated urls closed) and
-    re-serialised from what survives, so the browser receives only what was checked. A stylesheet
-    that does not parse cleanly is served empty.
+    It must not be able to load or send anything, wherever it is drawn. It is parsed as a browser
+    parses it (escapes decoded, unterminated urls closed) and re-serialised from what survives, so
+    the browser receives only what was checked. A stylesheet that does not parse cleanly is served
+    empty.
     """
     if not style:
         return style

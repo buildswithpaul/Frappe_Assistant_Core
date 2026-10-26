@@ -14,14 +14,9 @@ vi.mock("@/utils/pagePrint", async (importOriginal) => ({
 }));
 
 import { usePagePanel } from "@/composables/usePagePanel";
-import { fac_page_approval_key, fac_page_approve_script } from "@/utils/facPageApproval";
 import PagePanel from "./PagePanel.vue";
+import PageView from "./PageView.vue";
 
-const USER = "avery@example.com";
-const NAME = "sales-a1b2c3";
-// The user clicked Run new version for this script on an earlier open.
-const approve = (script) => fac_page_approve_script(USER, NAME, script);
-// crypto.subtle hashes off the main thread, so a load that checks an approval outlasts flushPromises.
 const until = (assertion) => vi.waitFor(assertion);
 
 const page = (extra = {}) => ({
@@ -46,7 +41,6 @@ async function mountPanel(props = {}) {
 }
 
 beforeEach(() => {
-	window.localStorage.clear();
 	getPage.mockReset().mockResolvedValue(page());
 	printPage.mockReset();
 	listMine.mockReset().mockResolvedValue([]);
@@ -66,9 +60,9 @@ describe("PagePanel", () => {
 	});
 
 	it("offers Open in Desk when the script needs Desk features the chat can't run", async () => {
+		// A Shared page's script runs in the chat itself, where the panel sees what it reached for.
 		const script = "frappe.ui.form.on('Sales Invoice', {});";
-		await approve(script);
-		getPage.mockResolvedValue(page({ script }));
+		getPage.mockResolvedValue(page({ script, visibility: "Shared" }));
 		const w = await mountPanel();
 		await until(() => expect(w.text()).toContain("This page uses parts of Desk the chat can't run."));
 		const link = w.find("a.page-panel-open-desk");
@@ -134,8 +128,7 @@ describe("PagePanel", () => {
 
 	it("offers Open in Desk when the script throws", async () => {
 		const script = "throw new Error('x');";
-		await approve(script);
-		getPage.mockResolvedValue(page({ script }));
+		getPage.mockResolvedValue(page({ script, visibility: "Shared" }));
 		const w = await mountPanel();
 		await until(() => expect(w.text()).toContain("Part of this page didn't load."));
 		expect(w.find("a.page-panel-open-desk").attributes("href")).toBe("/app/fac-pages/sales-a1b2c3");
@@ -167,10 +160,12 @@ describe("PagePanel", () => {
 	});
 
 	it("prints the rendered page under its title from Download PDF", async () => {
+		getPage.mockResolvedValue(page({ visibility: "Shared" }));
 		const w = await mountPanel();
 		const button = w.find("button.page-panel-pdf");
 		expect(button.attributes("disabled")).toBeUndefined();
 		await button.trigger("click");
+		await flushPromises();
 		expect(printPage).toHaveBeenCalledOnce();
 		const args = printPage.mock.calls[0][0];
 		expect(args.title).toBe("Sales this month");
@@ -186,123 +181,66 @@ describe("PagePanel", () => {
 	});
 });
 
-describe("PagePanel: code FACO writes runs only after the user has seen it", () => {
-	const SCRIPT = "root_element.querySelector('.mk-card').textContent = 'ran v1';";
-	const SCRIPT_V2 = "root_element.querySelector('.mk-card').textContent = 'ran v2';";
-	const shownText = (w) => w.find(".page-view-host").element.shadowRoot.querySelector(".mk-card").textContent;
+describe("PagePanel: a personal page runs on its own and asks before a change", () => {
+	const SCRIPT = "root_element.querySelector('.mk-card').textContent = 'ran';";
 
-	async function refresh(w, next) {
-		getPage.mockResolvedValue(next);
-		await w.setProps({ refreshKey: w.props("refreshKey") + 1 });
+	it("draws a personal page in its sandboxed frame at once, with no step to run its code", async () => {
+		getPage.mockResolvedValue(page({ script: SCRIPT }));
+		const w = await mountPanel();
+		const frame = w.find("iframe.fac-page-sandbox");
+		expect(frame.attributes("sandbox")).toBe("allow-scripts");
+		expect(frame.attributes("srcdoc")).toContain("ran");
+		expect(w.text()).not.toContain("Run new version");
+		expect(w.text()).not.toContain("View code");
+		expect(w.find(".page-write-prompt").exists()).toBe(false);
+	});
+
+	it("redraws a new version at once when a write to the page lands", async () => {
+		getPage.mockResolvedValue(page({ script: SCRIPT }));
+		const w = await mountPanel();
+		getPage.mockResolvedValue(page({ script: "root_element.textContent = 'v2';" }));
+		await w.setProps({ refreshKey: 1 });
 		await flushPromises();
-	}
+		expect(w.find("iframe.fac-page-sandbox").attributes("srcdoc")).toContain("v2");
+		expect(w.text()).not.toContain("Run new version");
+	});
 
-	it("asks on first open, and draws the html without running the script", async () => {
-		getPage.mockResolvedValue(page({ script: SCRIPT }));
+	it("asks before a change the page wants to make, and answers with the user's choice", async () => {
 		const w = await mountPanel();
-		expect(w.find(".page-code-review").text()).toContain("This page runs code FACO wrote.");
-		expect(shownText(w)).toBe("Sales");
-		expect(w.find(".page-panel-held-note").exists()).toBe(true);
-		expect(usePagePanel().pageView.value.codeWaiting).toBe(true);
+		const ask = w.findComponent(PageView).props("askWrite");
+		const allowed = ask("This page wants to delete ToDo TD-1.");
+		await flushPromises();
+		expect(w.find(".page-write-prompt").text()).toContain("This page wants to delete ToDo TD-1.");
+		await w.find("[data-test=page-write-allow]").trigger("click");
+		expect(await allowed).toBe(true);
+		expect(w.find(".page-write-prompt").exists()).toBe(false);
+
+		const denied = ask("This page wants to create a new ToDo.");
+		await flushPromises();
+		await w.find("[data-test=page-write-deny]").trigger("click");
+		expect(await denied).toBe(false);
 	});
 
-	it("runs a changed script only once Run new version is clicked, and remembers it", async () => {
-		await approve(SCRIPT);
-		getPage.mockResolvedValue(page({ script: SCRIPT }));
+	it("asks one change at a time, in order", async () => {
 		const w = await mountPanel();
-		await until(() => expect(shownText(w)).toBe("ran v1"));
-
-		// The version the user ran stays on screen, running, while the new one waits.
-		await refresh(w, page({ script: SCRIPT_V2, html: '<div class="mk-card">New</div>' }));
-		await until(() => expect(w.find(".page-code-review").text()).toContain("FACO updated this page's code."));
-		expect(w.find(".page-code-review").text()).toContain("You're seeing the version you last ran.");
-		expect(shownText(w)).toBe("ran v1");
-		expect(w.find(".page-panel-held-note").exists()).toBe(false);
-		expect(usePagePanel().pageView.value.codeWaiting).toBe(true);
-
-		await w.find("button.page-code-review-run").trigger("click");
-		await until(() => expect(shownText(w)).toBe("ran v2"));
-		expect(w.find(".page-code-review").exists()).toBe(false);
-		expect(usePagePanel().pageView.value.codeWaiting).toBe(false);
-		expect(JSON.parse(window.localStorage.getItem(fac_page_approval_key(USER, NAME))).script).toBe(SCRIPT_V2);
+		const ask = w.findComponent(PageView).props("askWrite");
+		const first = ask("first");
+		const second = ask("second");
+		await flushPromises();
+		expect(w.find(".page-write-prompt-message").text()).toBe("first");
+		await w.find("[data-test=page-write-allow]").trigger("click");
+		expect(await first).toBe(true);
+		expect(w.find(".page-write-prompt-message").text()).toBe("second");
+		await w.find("[data-test=page-write-deny]").trigger("click");
+		expect(await second).toBe(false);
 	});
 
-	it("redraws an html-only change at once, running the approved script", async () => {
-		await approve(SCRIPT);
-		getPage.mockResolvedValue(page({ script: SCRIPT }));
+	it("refuses a change the old version asked about once a new version loads", async () => {
 		const w = await mountPanel();
-		await refresh(w, page({ script: SCRIPT, html: '<div class="mk-card">New</div><p class="added">x</p>' }));
-		const added = () => w.find(".page-view-host").element.shadowRoot.querySelector(".added");
-		await until(() => expect(added()).not.toBeNull());
-		expect(w.find(".page-code-review").exists()).toBe(false);
-		expect(shownText(w)).toBe("ran v1");
-	});
-
-	it("shows a line diff of the approved script against the new one from View changes", async () => {
-		await approve(SCRIPT);
-		getPage.mockResolvedValue(page({ script: SCRIPT_V2 }));
-		const w = await mountPanel();
-		await until(() => expect(w.find(".page-code-review").exists()).toBe(true));
-		expect(w.find(".page-code-review-diff").exists()).toBe(false);
-		await w.find("button.page-code-review-toggle").trigger("click");
-		const lines = w.findAll(".page-code-review-line");
-		expect(
-			lines.map((l) => [l.classes().find((c) => c.startsWith("is-")), l.find(".page-code-diff-text").text()]),
-		).toEqual([
-			["is-removed", SCRIPT],
-			["is-added", SCRIPT_V2],
-		]);
-		expect(w.find(".page-code-diff-summary").text()).toBe("1 line added, 1 line removed");
-	});
-
-	it("shows the whole new script from View changes on first open", async () => {
-		getPage.mockResolvedValue(page({ script: "const a = 1;\nconst b = 2;" }));
-		const w = await mountPanel();
-		await w.find("button.page-code-review-toggle").trigger("click");
-		// A first look is the code itself, not a wall of additions.
-		expect(w.findAll(".page-code-review-line.is-added")).toHaveLength(0);
-		expect(w.findAll(".page-code-diff-text").map((l) => l.text())).toEqual(["const a = 1;", "const b = 2;"]);
-		expect(w.find("button.page-code-review-toggle").text()).toBe("Hide code");
-	});
-
-	it("asks every time when storage throws, keeping the version the user ran on screen", async () => {
-		// A private window or blocked site data makes localStorage throw on every access.
-		const denied = () => {
-			throw new Error("denied");
-		};
-		const get = vi.spyOn(Storage.prototype, "getItem").mockImplementation(denied);
-		const set = vi.spyOn(Storage.prototype, "setItem").mockImplementation(denied);
-		try {
-			getPage.mockResolvedValue(page({ script: SCRIPT }));
-			const w = await mountPanel();
-			await w.find("button.page-code-review-run").trigger("click");
-			await until(() => expect(shownText(w)).toBe("ran v1"));
-			await refresh(w, page({ script: SCRIPT }));
-			await until(() => expect(w.find(".page-code-review").text()).toContain("This page runs code FACO wrote."));
-			// Nothing remembered the approval, so the banner asks again; what runs is what was run.
-			expect(shownText(w)).toBe("ran v1");
-		} finally {
-			get.mockRestore();
-			set.mockRestore();
-		}
-	});
-
-	it("never holds a Shared page", async () => {
-		getPage.mockResolvedValue(page({ script: SCRIPT, visibility: "Shared" }));
-		const w = await mountPanel();
-		expect(w.find(".page-code-review").exists()).toBe(false);
-		expect(shownText(w)).toBe("ran v1");
-	});
-
-	it("holds a page whose visibility is missing or blank", async () => {
-		// get_page always sends visibility; a response without it must fail closed, not run code.
-		const { visibility, ...noVisibility } = page({ script: SCRIPT });
-		for (const response of [noVisibility, page({ script: SCRIPT, visibility: "" })]) {
-			getPage.mockResolvedValue(response);
-			const w = await mountPanel();
-			expect(w.find(".page-code-review").exists()).toBe(true);
-			expect(shownText(w)).toBe("Sales");
-			w.unmount();
-		}
+		const pendingAsk = w.findComponent(PageView).props("askWrite")("old version's change");
+		await w.setProps({ refreshKey: 1 });
+		await flushPromises();
+		expect(await pendingAsk).toBe(false);
+		expect(w.find(".page-write-prompt").exists()).toBe(false);
 	});
 });

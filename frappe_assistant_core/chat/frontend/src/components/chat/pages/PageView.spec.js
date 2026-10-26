@@ -5,7 +5,6 @@ const baseCall = vi.fn();
 vi.mock("@/api/_core", () => ({ baseCall: (...a) => baseCall(...a), getCall: vi.fn() }));
 
 import { usePagePanel } from "@/composables/usePagePanel";
-import { HELD_HTML, expectNothingRuns } from "@/utils/__tests__/heldHtmlCases";
 import PageView from "./PageView.vue";
 
 let wrapper;
@@ -26,7 +25,12 @@ const published = {
 	script: "",
 	style: ".mk-card { color: teal; }",
 	draft: false,
+	// Published through the go-live card, so it runs in the chat as in Desk.
+	visibility: "Shared",
 };
+
+// A personal page, as get_page sends an "Only me" page to its owner.
+const personal = { ...published, visibility: "Only me", owner_is_me: true };
 
 function mountView(page) {
 	wrapper = mount(PageView, { props: { page, user: "avery@example.com" }, attachTo: document.body });
@@ -124,13 +128,13 @@ describe("PageView", () => {
 		expect(el.querySelector("svg")).toBeNull();
 	});
 
-	it("snapshots the rendered page for print, after the script and its charts ran", () => {
+	it("snapshots the rendered page for print, after the script and its charts ran", async () => {
 		const page = {
 			...published,
 			html: '<div class="chart"></div>',
 			script: "fac.chart(root_element.querySelector('.chart'), {series: [{type: 'pie', data: [1, 2]}]});",
 		};
-		const snap = mountView(page).vm.printSnapshot();
+		const snap = await mountView(page).vm.printSnapshot();
 		expect(snap.html).toMatch(/^<div class="fac-page-root">/);
 		expect(snap.html).toContain("<svg");
 		expect(snap.html).not.toContain("--mk-radius");
@@ -138,18 +142,19 @@ describe("PageView", () => {
 		expect(snap.style).toBe(".mk-card { color: teal; }");
 		expect(snap.wide).toBe(false);
 		expect(snap.draft).toBe(false);
+		expect(snap.personal).toBe(false);
 	});
 
-	it("calls a page wider than 900px wide", () => {
+	it("calls a page wider than 900px wide", async () => {
 		const w = mountView(published);
 		const root = w.find(".page-view-host").element.shadowRoot.querySelector(".fac-page-root");
 		// jsdom lays nothing out; a browser reports the page's rendered width here.
 		Object.defineProperty(root, "scrollWidth", { value: 901 });
-		expect(w.vm.printSnapshot().wide).toBe(true);
+		expect((await w.vm.printSnapshot()).wide).toBe(true);
 	});
 
-	it("snapshots a draft from its sanitised html", () => {
-		const snap = mountView({ ...published, draft: true }).vm.printSnapshot();
+	it("snapshots a draft from its sanitised html", async () => {
+		const snap = await mountView({ ...published, draft: true }).vm.printSnapshot();
 		expect(snap.draft).toBe(true);
 		expect(snap.html).toBe('<div class="fac-page-root"><div class="mk-card">Sales this month</div></div>');
 	});
@@ -165,11 +170,29 @@ describe("PageView", () => {
 		expect(usePagePanel().pageView.value).toBe(null);
 	});
 
-	it("runs nothing from a held page's html, and keeps its forms and buttons", () => {
-		// get_page serves a personal page's html through an allowlist; this is the host's own second line.
-		const page = { ...published, html: HELD_HTML, script: "window.__heldRan = 'script';" };
-		wrapper = mount(PageView, { props: { page, user: "avery@example.com", holdScript: true }, attachTo: document.body });
-		expectNothingRuns(wrapper.find(".page-view-host").element.shadowRoot);
+	it("runs a personal page at once in a sandboxed frame, never in this document", () => {
+		const page = { ...personal, script: "window.__personalRan = true;" };
+		const w = mountView(page);
+		const frame = w.find("iframe.fac-page-sandbox");
+		expect(frame.exists()).toBe(true);
+		expect(frame.attributes("sandbox")).toBe("allow-scripts");
+		// The script is in the frame's document, waiting for no click, and never ran here.
+		expect(frame.attributes("srcdoc")).toContain("window.__personalRan = true;");
+		expect(w.find(".page-view-host").exists()).toBe(false);
+		expect(window.__personalRan).toBeUndefined();
+	});
+
+	it("treats a published page that does not say it is Shared as personal", () => {
+		const { visibility, ...unmarked } = published;
+		expect(mountView(unmarked).find("iframe.fac-page-sandbox").exists()).toBe(true);
+	});
+
+	it("offers FACO's screenshot the personal page's frame capture", () => {
+		mountView(personal);
+		const view = usePagePanel().pageView.value;
+		expect(view.element).toBe(null);
+		expect(typeof view.capture).toBe("function");
+		expect(view.errors()).toEqual([]);
 	});
 
 	it("marks a draft's frame, which cannot be captured", () => {

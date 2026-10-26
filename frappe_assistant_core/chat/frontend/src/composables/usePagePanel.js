@@ -30,13 +30,14 @@ function registerDock() {
 	};
 }
 
-// The page the panel shows, for FACO's screenshot: its element, whether it is a draft's frame,
-// whether its script waits for the user's Run new version, and the refreshKey it was drawn for.
+// The page the panel shows, for FACO's screenshot: its element, or for a personal page the call
+// that has its frame draw it; whether it is a draft's frame; what went wrong while it ran; and the
+// refreshKey it was drawn for.
 const pageView = shallowRef(null);
 
 /** Called by a mounted PageView; returns the call that withdraws it. */
-function showPageView({ element, draft, codeWaiting = false }) {
-	const view = { element, draft, codeWaiting, refreshKey: refreshKey.value };
+function showPageView({ element = null, draft = false, capture = null, errors = () => [] }) {
+	const view = { element, draft, capture, errors, refreshKey: refreshKey.value };
 	pageView.value = view;
 	return () => {
 		if (pageView.value === view) pageView.value = null;

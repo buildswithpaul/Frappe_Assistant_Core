@@ -8,7 +8,7 @@
 import { __ } from "@/utils/i18n";
 
 // A GET query string carries text only; Frappe parses JSON-encoded args back on the server.
-const toQuery = (args = {}) =>
+export const toQuery = (args = {}) =>
 	Object.fromEntries(
 		Object.entries(args).map(([key, value]) => [
 			key,
@@ -90,10 +90,15 @@ export function makeFrappeStandIn(api, { onUnsupported, onError } = {}) {
 
 	function call(opts, args, callback) {
 		const o = typeof opts === "string" ? { method: opts, args, callback } : opts || {};
-		const request =
-			String(o.type || "POST").toUpperCase() === "GET"
-				? api.getCall(o.method, toQuery(o.args))
-				: api.baseCall(o.method, o.args || {});
+		// A personal page's frame hands every call to its host, which decides how to send it, so it
+		// passes the type the script asked for, or none.
+		let request;
+		if (api.call) request = api.call(o.method, o.args || {}, o.type ? String(o.type).toUpperCase() : undefined);
+		else
+			request =
+				String(o.type || "POST").toUpperCase() === "GET"
+					? api.getCall(o.method, toQuery(o.args))
+					: api.baseCall(o.method, o.args || {});
 		const promise = request.then(
 			(message) => {
 				const r = { message };

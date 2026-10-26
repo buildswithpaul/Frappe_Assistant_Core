@@ -221,7 +221,7 @@ class TestCustomisationImpact(BaseAssistantTest):
         frappe.set_user("Administrator")
         by_sysman = _impact("update_document", "FAC Page", {"script": "console.log(1)"}, name)
 
-        # The owner's browser holds code FACO changed until they click Run new version.
+        # The owner's page runs in a frame that reads only what they may and asks before any change.
         for result in (own, by_sysman):
             self.assertIs(result["changes_live_code"], False, result["reason"])
             self.assertIs(result["switches_on"], False, result["reason"])

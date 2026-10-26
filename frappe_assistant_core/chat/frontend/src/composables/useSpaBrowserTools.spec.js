@@ -42,10 +42,17 @@ let wrapper;
 let pageElement;
 let session = "s1";
 
-function showPage({ draft = false, codeWaiting = false } = {}) {
+function showPage({ draft = false, errors = [] } = {}) {
 	hide();
 	pageElement = document.createElement(draft ? "iframe" : "div");
-	hide = usePagePanel().showPageView({ element: pageElement, draft, codeWaiting });
+	hide = usePagePanel().showPageView({ element: pageElement, draft, errors: () => errors });
+}
+
+// A personal page: its frame draws itself and sends the picture back.
+function showPersonalPage({ capture, errors = [] }) {
+	hide();
+	pageElement = null;
+	hide = usePagePanel().showPageView({ capture, errors: () => errors });
 }
 
 beforeEach(() => {
@@ -92,11 +99,28 @@ describe("takePageScreenshot", () => {
 		});
 	});
 
-	it("tells FACO the picture lacks the page's new code while it waits for Run new version", async () => {
-		showPage({ codeWaiting: true });
-		expect((await takePageScreenshot({})).note).toMatch(/has not clicked Run new version/);
+	it("tells FACO what went wrong while the page ran", async () => {
+		showPage({ errors: ["frappe.client.get_list failed: Not permitted"] });
+		expect((await takePageScreenshot({})).page_errors).toEqual(["frappe.client.get_list failed: Not permitted"]);
 		showPage();
-		expect((await takePageScreenshot({})).note).toBeUndefined();
+		expect((await takePageScreenshot({})).page_errors).toEqual([]);
+	});
+
+	it("draws a personal page's picture through its view, and uploads it", async () => {
+		const capture = vi.fn(async () => ({ blob: new Blob(["jpeg"], { type: "image/jpeg" }), width: 800, height: 600 }));
+		showPersonalPage({ capture, errors: ["boom"] });
+		const result = await takePageScreenshot({ quality: 70 });
+		expect(capture).toHaveBeenCalledWith(expect.objectContaining({ quality: 70 }));
+		// The page lives in another origin: html2canvas never reads this document's copy of it.
+		expect(h2c.calls).toEqual([]);
+		const file = uploadFile.mock.calls[0][0];
+		expect(file.type).toBe("image/jpeg");
+		expect(result).toMatchObject({ success: true, width: 800, height: 600, page_errors: ["boom"] });
+	});
+
+	it("reports a personal page's frame that could not draw itself", async () => {
+		showPersonalPage({ capture: vi.fn(async () => Promise.reject(new Error("The page did not answer."))) });
+		expect((await takePageScreenshot({})).error).toMatch(/did not answer/);
 	});
 
 	it("says a draft's preview cannot be captured", async () => {

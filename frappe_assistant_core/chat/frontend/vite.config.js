@@ -56,6 +56,9 @@ export default defineConfig({
 			devOptions: { enabled: false },
 		}),
 	],
+	// A personal page's frame loads public/js/fac_page_frame.js by URL; this build's id busts the
+	// browser's copy, since the same `npm run build` rebuilds it.
+	define: { __FAC_BUILD_ID__: JSON.stringify(Date.now().toString(36)) },
 	resolve: {
 		alias: {
 			"@": resolve(import.meta.dirname, "src"),

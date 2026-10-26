@@ -292,7 +292,8 @@ def _personal_page_impact(
     someone else's page changes for them, and sharing a page opens it to other people.
 
     A personal page never ``switches_on`` and never ``changes_live_code``: it reaches its owner
-    alone, whose browser holds code FACO changed until they click Run new version. Sharing a page
+    alone, and its script runs in a frame that reads only what they may and asks them before any
+    change. Sharing a page
     switches it on when it is published after the write, since that opens it to its roles.
     """
     # PERSONAL is the schema default; reading it from the meta raises on a site not yet migrated.

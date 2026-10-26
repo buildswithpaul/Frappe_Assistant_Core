@@ -24,11 +24,26 @@ const escapeHtml = (text) =>
 // Style text sits inside <style>; a closing tag in it would end the element early.
 const safeStyle = (css) => String(css || "").replace(/<\/style/gi, "<\\/style");
 
-function srcdoc({ name, kitCss, style, html, wide, draft }) {
+/**
+ * What a personal page's printed markup may load: its images and fonts from the site's public
+ * paths. The markup came out of a frame that runs code FACO wrote, so it reaches no other server.
+ */
+export function personalPrintCsp(origin = window.location.origin) {
+	return [
+		"default-src 'none'",
+		"style-src 'unsafe-inline'",
+		`img-src ${origin}/files/ ${origin}/assets/ data: blob:`,
+		`font-src ${origin}/assets/ data:`,
+	].join("; ");
+}
+
+/** The document a snapshot prints from, or is drawn in for FACO's picture (pageSnapshotImage.js). */
+export function snapshotSrcdoc({ name, kitCss, style, html, wide, draft, personal }) {
 	const page = `@page { size: A4 ${wide ? "landscape" : "portrait"}; margin: 12mm }`;
-	// A draft stays offline when printed, as in its preview; the policy must come before anything
-	// it governs.
-	const csp = draft ? `<meta http-equiv="Content-Security-Policy" content="${FAC_PAGE_DRAFT_CSP}">` : "";
+	// A draft stays offline when printed, as in its preview, and a personal page keeps to the site;
+	// the policy must come before anything it governs.
+	const policy = draft ? FAC_PAGE_DRAFT_CSP : personal ? personalPrintCsp() : "";
+	const csp = policy ? `<meta http-equiv="Content-Security-Policy" content="${escapeHtml(policy)}">` : "";
 	return [
 		"<!doctype html>",
 		`<html><head>${csp}<meta charset="utf-8">`,
@@ -65,8 +80,9 @@ export function snapshotHtml(element) {
  * @param {string} snapshot.html the rendered page after its script and charts ran
  * @param {boolean} snapshot.wide prints A4 landscape
  * @param {boolean} [snapshot.draft] prints under the draft preview's Content-Security-Policy
+ * @param {boolean} [snapshot.personal] prints under personalPrintCsp
  */
-export function printPage({ title, kitCss, style, html, wide, draft = false }) {
+export function printPage({ title, kitCss, style, html, wide, draft = false, personal = false }) {
 	// A frame whose print never reported back must not pile up, nor keep the chat's title.
 	document.querySelectorAll(`iframe.${FRAME_CLASS}`).forEach((el) => el.remove());
 	restoreChatTitle();
@@ -80,7 +96,7 @@ export function printPage({ title, kitCss, style, html, wide, draft = false }) {
 	frame.tabIndex = -1;
 	// Not display or visibility: some browsers then print a blank page.
 	Object.assign(frame.style, { position: "fixed", right: "0", bottom: "0", width: "0", height: "0", border: "0" });
-	frame.setAttribute("srcdoc", srcdoc({ name, kitCss, style, html, wide, draft }));
+	frame.setAttribute("srcdoc", snapshotSrcdoc({ name, kitCss, style, html, wide, draft, personal }));
 
 	frame.addEventListener(
 		"load",

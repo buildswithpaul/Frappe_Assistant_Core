@@ -357,8 +357,8 @@ class TestPersonalFACPage(BaseAssistantTest):
         self.assertEqual(get_page(doc.name)["html"], "<p>Edited</p>")
 
     def test_a_personal_page_is_served_without_inline_code(self):
-        # A personal page's script waits for the owner's Run new version; inline code in its html
-        # would run without it.
+        # A personal page's code lives only in its script; inline code in its html must stay inert
+        # wherever the html is drawn.
         user = self._desk_user("fac-page-inline-code")
         html = (
             '<div class="mk-card"><img src="x" onerror="alert(1)">'
@@ -439,8 +439,8 @@ class TestPersonalFACPage(BaseAssistantTest):
         return get_page(name)["style"]
 
     def test_a_personal_pages_style_reaches_no_other_server(self):
-        # A personal page's style shows at once, never held behind Run new version, so it must not
-        # load or send anything, however the url is spelled.
+        # A personal page's style must not load or send anything, wherever it is drawn, however the
+        # url is spelled.
         user = self._desk_user("fac-page-style")
         red = ".mk-a {color: red;}"
         # Each case: the style FACO saves, and what the page is served. A url the parser cannot

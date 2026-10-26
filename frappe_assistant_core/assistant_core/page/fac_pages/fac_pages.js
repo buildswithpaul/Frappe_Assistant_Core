@@ -1,25 +1,27 @@
-// Shows a FAC Page record at /app/fac-pages/<name>: a published page inside a shadow root with
-// the mockup kit, a draft inside a sandboxed iframe that runs no code.
+// Shows a FAC Page record at /app/fac-pages/<name>: a Shared page inside a shadow root with the
+// mockup kit, a personal page ("Only me") inside a sandboxed frame that reads as the user and asks
+// before a change, and a draft inside a sandboxed iframe that runs no code.
 (function () {
 	// Desk's build version (v15 and v16 set it in the page template), so a rebuilt kit is refetched.
 	const KIT_CSS_URL = `/assets/frappe_assistant_core/css/mockup_kit.css?v=${window._version_number || ""}`;
 	// fac.chart, built from the chat's pageCharts module (vite.pagecharts.config.js).
 	const CHARTS_URL = `/assets/frappe_assistant_core/js/fac_page_charts.js?v=${window._version_number || ""}`;
-	let charts_loaded = null;
+	// A personal page's frame and bridge, built from the chat's pageFrameHost module
+	// (vite.pageframehost.config.js).
+	const FRAME_HOST_URL = `/assets/frappe_assistant_core/js/fac_page_frame_host.js?v=${window._version_number || ""}`;
 	// The page's box: its style and its script's elements paint inside it and nowhere else, so a
-	// fixed element cannot cover the review bar or Desk. Paint containment makes the box the
+	// fixed element cannot cover Desk. Paint containment makes the box the
 	// containing block of fixed elements and clips them. It is set on a wrapper, outside the shadow
 	// host, where the page's own :host rules cannot undo it. Desk already clips a page sideways at
 	// its scroller, and clip, unlike auto, keeps the page's sticky headers sticking to it.
 	const PAGE_FRAME_STYLE = "contain: layout paint; isolation: isolate; overflow: clip;";
 	// The fac handed to the shown page's script, and how to dispose the charts it drew.
 	let shown = null;
+	// The personal page's frame shown, disposed when the user moves on.
+	let shown_frame = null;
 
 	// fac_page_draft_srcdoc and fac_page_draft_frame, inlined by render_include on page load.
 	// {% include "frappe_assistant_core/assistant_core/page/fac_pages/fac_page_draft.js" %}
-
-	// fac_page_script_review, fac_page_approve_script and fac_page_line_diff, inlined the same way.
-	// {% include "frappe_assistant_core/assistant_core/page/fac_pages/fac_page_approval.js" %}
 
 	frappe.pages["fac-pages"].on_page_load = function (wrapper) {
 		const page = frappe.ui.make_app_page({
@@ -58,7 +60,7 @@
 	};
 
 	function render(page, name, data, is_latest) {
-		dispose_shown_charts();
+		dispose_shown();
 		page.set_title(data.title);
 		// Only a page that says it is not a draft runs, so a response missing the flag fails closed.
 		if (data.draft !== false) {
@@ -66,32 +68,16 @@
 			return;
 		}
 		page.main.empty();
-		// A personal page's script runs once the user has seen it: see fac_page_approval.js.
-		if (!fac_page_needs_review(data)) {
-			render_published(page, data, is_latest, { run_script: true });
-			return;
-		}
-		fac_page_script_review(frappe.session.user, name, data).then((review) => {
-			if (!is_latest()) return;
-			const run = () =>
-				fac_page_approve_script(frappe.session.user, name, data.script).then(() => {
-					if (!is_latest()) return;
-					dispose_shown_charts();
-					render_published(page, data, is_latest, { run_script: true });
-				});
-			render_published(page, data, is_latest, {
-				run_script: !review,
-				review_bar: review && make_review_bar(review, data.script, run),
-			});
-		});
+		// Only a page that says it is Shared runs in Desk itself; any other runs in the frame.
+		if (data.visibility === "Shared") render_shared(page, data, is_latest);
+		else render_personal(page, data, is_latest);
 	}
 
-	// The page as get_page sent it; without run_script, its html and style only, under review_bar.
-	function render_published(page, data, is_latest, { run_script, review_bar }) {
-		const script = run_script ? data.script || "" : "";
-		const html = run_script ? data.html || "" : strip_inline_code(data.html || "");
+	// A Shared page, published through the go-live card that showed its code.
+	function render_shared(page, data, is_latest) {
+		const script = data.script || "";
 		// Only a script that names fac can draw a chart, so only such a page pays for the bundle.
-		const ready = /\bfac\b/.test(script) ? load_charts() : Promise.resolve();
+		const ready = /\bfac\b/.test(script) ? load_script(CHARTS_URL, "charts") : Promise.resolve();
 		ready.then(() => {
 			if (!is_latest()) return;
 			shown = make_fac();
@@ -100,102 +86,115 @@
 			frame.style.cssText = PAGE_FRAME_STYLE;
 			const host = document.createElement("div");
 			frame.append(host);
-			page.main.empty();
-			if (review_bar) {
-				// The held page shows its layout only, stepped back so its empty figures read as waiting.
-				frame.style.opacity = "0.45";
-				frame.style.pointerEvents = "none";
-				const note = document.createElement("p");
-				note.className = "text-muted small fac-page-held-note";
-				note.textContent = __("The page fills in once you run its code.");
-				page.main.append(review_bar, note);
-			}
-			page.main.append(frame);
+			page.main.empty().append(frame);
 			// @import must lead the stylesheet; the page's own style follows so it can override the kit.
 			const css = `@import url("${KIT_CSS_URL}");\n${data.style || ""}`;
 			frappe.create_shadow_element(
 				host,
-				`<div class="fac-page-root">${html}</div>`,
+				`<div class="fac-page-root">${data.html || ""}</div>`,
 				css,
 				with_fac(script)
 			);
 		});
 	}
 
-	// get_page already serves a personal page's html through an allowlist; while its script is held,
-	// this keeps only allowlisted tags and attributes here as well, so nothing in the html runs
-	// before Run new version. Forms and buttons stay, because the page's script may wire them.
-	// The chat panel's heldPageHtml.js keeps the same lists; facPagesGate.spec.js fails when
-	// the two hosts draw a held page differently.
-	const HELD_TAGS = new Set(
-		(
-			"a abbr acronym address area article aside audio b big blockquote br button canvas caption center " +
-			"cite code col colgroup dd del details dfn div dl dt em fieldset figcaption figure footer form " +
-			"h1 h2 h3 h4 h5 h6 header hr i img input ins kbd label legend li main map mark menu meter nav ol " +
-			"optgroup option output p pre progress q s samp section select small source span strike strong " +
-			"sub summary sup table tbody td textarea tfoot th thead time tr tt u ul var video " +
-			"svg g path circle ellipse line polyline polygon rect text tspan defs lineargradient " +
-			"radialgradient stop title desc"
-		).split(" ")
-	);
-	const HELD_ATTRIBUTES = new Set(
-		(
-			"class id style title role name type value placeholder for colspan rowspan href src alt width " +
-			"height checked disabled selected readonly required multiple min max step rows cols maxlength " +
-			"open datetime target rel action method controls poster loop muted preload usemap shape coords " +
-			"lang dir align start reversed scope headers label list high low optimum size hidden tabindex " +
-			"viewbox xmlns d cx cy r rx ry x y x1 y1 x2 y2 points fill stroke stroke-width " +
-			"stroke-linecap stroke-linejoin transform opacity fill-opacity offset stop-color " +
-			"text-anchor font-size font-weight dominant-baseline gradientunits"
-		).split(" ")
-	);
-	const URL_ATTRIBUTES = new Set(["href", "src", "action", "poster"]);
-	// javascript: runs code, and data: can carry a document that does.
-	const CODE_SCHEMES = /^(?:javascript|vbscript|data):/;
-
-	function strip_inline_code(html) {
-		const template = document.createElement("template");
-		template.innerHTML = html;
-		for (const el of template.content.querySelectorAll("*")) {
-			const tag = el.localName.toLowerCase();
-			if (!HELD_TAGS.has(tag)) {
-				el.remove();
-				continue;
+	// A personal page runs at once, in a frame with no login of its own: see pageFrameHost.js.
+	function render_personal(page, data, is_latest) {
+		Promise.all([load_script(FRAME_HOST_URL, "frame host"), load_kit()]).then(([, kit_css]) => {
+			if (!is_latest()) return;
+			const host = window.fac_page_frame_host;
+			if (!host) {
+				show_message(page, __("This page could not be shown."));
+				return;
 			}
-			for (const { name, value } of [...el.attributes]) {
-				const attribute = name.toLowerCase();
-				// for links a label or output to a control; DOMPurify drops it anywhere else too.
-				const linksControl = attribute !== "for" || tag === "label" || tag === "output";
-				const allowed =
-					linksControl &&
-					(HELD_ATTRIBUTES.has(attribute) || /^(?:data|aria)-[\w-]+$/.test(attribute));
-				// A browser ignores tabs, newlines and other control characters in a URL's scheme.
-				const scheme = value.replace(/[\u0000-\u0020]/g, "").toLowerCase();
-				if (!allowed || (URL_ATTRIBUTES.has(attribute) && CODE_SCHEMES.test(scheme))) {
-					el.removeAttribute(name);
-				}
-			}
-		}
-		return template.innerHTML;
+			const prompts = document.createElement("div");
+			prompts.className = "fac-page-write-prompts";
+			const box = document.createElement("div");
+			box.className = "fac-page-frame";
+			box.style.cssText = PAGE_FRAME_STYLE;
+			shown_frame = host.createPageFrame({
+				page: data,
+				kitCss: kit_css,
+				user: frappe.session.user,
+				version: window._version_number || "",
+				transport: host.fetchTransport(() => frappe.csrf_token),
+				askWrite: (description) => ask_write(prompts, description),
+				onHeight: (height) => (shown_frame.element.style.height = `${Math.max(height, 200)}px`),
+			});
+			shown_frame.element.style.cssText = "display:block;width:100%;height:480px;border:0;";
+			box.append(shown_frame.element);
+			page.main.empty().append(prompts, box);
+		});
 	}
 
-	// Once per Desk session. frappe.require cannot take the ?v= URL (it reads the extension after
-	// the "?"), so a plain script tag loads it. A failed load is retried on the next show; the page
-	// still renders, and a script that calls fac.chart fails as it would in the chat panel.
-	function load_charts() {
-		if (!charts_loaded) {
-			charts_loaded = new Promise((resolve) => {
+	// One change at a time, in plain words; the description quotes the page, so it is text only.
+	// Changes still waiting when the user moves on are refused.
+	let prompt_chain = Promise.resolve();
+	let open_prompts = [];
+	function ask_write(prompts, description) {
+		const answer = prompt_chain.then(() => show_prompt(prompts, description));
+		prompt_chain = answer.catch(() => {});
+		return answer;
+	}
+
+	function show_prompt(prompts, description) {
+		return new Promise((resolve) => {
+			if (!prompts.isConnected) return resolve(false);
+			const bar = document.createElement("div");
+			bar.className = "fac-page-write-prompt alert alert-warning";
+			bar.setAttribute("role", "alertdialog");
+			const message = document.createElement("span");
+			message.className = "fac-page-write-message";
+			message.textContent = description;
+			const deny = make_button(__("Don't allow"), "btn btn-default btn-xs fac-page-write-deny");
+			const allow = make_button(__("Allow"), "btn btn-primary btn-xs fac-page-write-allow");
+			const decide = (allowed) => {
+				bar.remove();
+				open_prompts = open_prompts.filter((open) => open !== decide);
+				resolve(allowed);
+			};
+			open_prompts.push(decide);
+			deny.addEventListener("click", () => decide(false));
+			allow.addEventListener("click", () => decide(true));
+			bar.append(message, " ", deny, " ", allow);
+			prompts.append(bar);
+			// A long page may be scrolled past the prompt; bring it into view.
+			bar.scrollIntoView({ block: "nearest" });
+		});
+	}
+
+	function dispose_shown() {
+		dispose_shown_charts();
+		open_prompts.forEach((decide) => decide(false));
+		prompt_chain = Promise.resolve();
+		if (shown_frame) shown_frame.dispose();
+		shown_frame = null;
+	}
+
+	function load_kit() {
+		return fetch(KIT_CSS_URL)
+			.then((r) => (r.ok ? r.text() : ""))
+			.catch(() => "");
+	}
+
+	// Once per Desk session each. frappe.require cannot take the ?v= URL (it reads the extension
+	// after the "?"), so a plain script tag loads it. A failed load is retried on the next show; the
+	// page still renders, and a script that calls fac.chart fails as it would in the chat panel.
+	const loaded = {};
+	function load_script(url, key) {
+		if (!loaded[key]) {
+			loaded[key] = new Promise((resolve) => {
 				const script = document.createElement("script");
-				script.src = CHARTS_URL;
+				script.src = url;
 				script.onload = resolve;
 				script.onerror = () => {
-					charts_loaded = null;
+					loaded[key] = null;
 					resolve();
 				};
 				document.head.appendChild(script);
 			});
 		}
-		return charts_loaded;
+		return loaded[key];
 	}
 
 	// fac.chart as the chat panel offers it, recording each chart so the next render disposes it.
@@ -234,116 +233,15 @@
 	function render_draft(page, data, is_latest) {
 		// Clear now, so the previous page does not stay on screen while the kit loads.
 		page.main.empty();
-		fetch(KIT_CSS_URL)
-			.then((r) => (r.ok ? r.text() : ""))
-			.catch(() => "")
-			.then((kit_css) => {
-				if (!is_latest()) return;
-				page.main
-					.empty()
-					.append(
-						$('<p class="text-muted"></p>').text(__("Draft. Scripts run once the page is published.")),
-						fac_page_draft_frame({ html: data.html, style: data.style, kit_css })
-					);
-			});
-	}
-
-	// What the chat panel's PageCodeReview and PageCodeDiff show: why the script waits, its code or
-	// changes, and Run new version.
-	function make_review_bar(review, script, run) {
-		const first = review.state === "first";
-		const bar = document.createElement("div");
-		bar.className = "fac-page-review alert alert-info";
-		bar.title = __("Until you run it, Download PDF and FACO's screenshots show the page without this code.");
-		const message = document.createElement("span");
-		message.className = "fac-page-review-message";
-		message.textContent = first
-			? __("This page runs code FACO wrote. Check it, then run it.")
-			: __("FACO updated this page's code. Check the change, then run the new version.");
-		const labels = first
-			? [__("View code"), __("Hide code")]
-			: [__("View changes"), __("Hide changes")];
-		const toggle = make_button(labels[0], "btn btn-default btn-xs fac-page-review-toggle");
-		const run_button = make_button(__("Run new version"), "btn btn-primary btn-xs fac-page-review-run");
-		const diff = document.createElement("div");
-		diff.className = "fac-page-review-diff";
-		diff.hidden = true;
-		diff.style.cssText =
-			"margin:8px 0 0;border:1px solid var(--border-color);border-radius:var(--border-radius-md);" +
-			"background:var(--fg-color);overflow:hidden;";
-		toggle.addEventListener("click", () => {
-			// Built on first look: most opens are a Run new version without one.
-			if (!diff.childElementCount) fill_diff(diff, review.approved, script, first);
-			diff.hidden = !diff.hidden;
-			toggle.textContent = labels[diff.hidden ? 0 : 1];
+		load_kit().then((kit_css) => {
+			if (!is_latest()) return;
+			page.main
+				.empty()
+				.append(
+					$('<p class="text-muted"></p>').text(__("Draft. Scripts run once the page is published.")),
+					fac_page_draft_frame({ html: data.html, style: data.style, kit_css })
+				);
 		});
-		run_button.addEventListener("click", () => {
-			run_button.disabled = true;
-			run();
-		});
-		bar.append(message, " ", toggle, " ", run_button, diff);
-		return bar;
-	}
-
-	// Unchanged lines kept on each side of a change; a longer unchanged run folds away.
-	const DIFF_CONTEXT = 3;
-
-	function fill_diff(diff, approved, script, first) {
-		const lines = fac_page_line_diff(approved, script);
-		const count = (type) => lines.filter((line) => line.type === type).length;
-		const summary = document.createElement("div");
-		summary.className = "fac-page-review-summary text-muted small";
-		summary.style.cssText = "padding:4px 10px;border-bottom:1px solid var(--border-color);";
-		const line_count = (n) => (n === 1 ? __("1 line") : __("{0} lines", [n]));
-		summary.textContent = first
-			? __("{0} of code", [line_count(lines.length)])
-			: __("{0} added, {1} removed", [line_count(count("added")), line_count(count("removed"))]);
-		const body = document.createElement("div");
-		body.style.cssText =
-			"max-height:min(45vh,420px);overflow-y:auto;padding:4px 0;font-family:var(--font-family-monospace," +
-			"monospace);font-size:12px;line-height:1.55;";
-		const changed = lines.map((line, i) => (line.type === "same" ? -1 : i)).filter((i) => i >= 0);
-		const near = (i) => first || changed.some((at) => Math.abs(at - i) <= DIFF_CONTEXT);
-		let run = [];
-		const flush = () => {
-			if (run.length > 1) {
-				const rows = run;
-				const fold = make_button(__("Show {0} unchanged lines", [rows.length]), "fac-page-review-fold");
-				fold.style.cssText =
-					"display:block;width:100%;border:0;padding:2px 10px 2px 24px;text-align:left;" +
-					"background:var(--subtle-fg);color:var(--text-muted);font-size:12px;";
-				fold.addEventListener("click", () => fold.replaceWith(...rows.map((line) => diff_row(line, first))));
-				body.append(fold);
-			} else body.append(...run.map((line) => diff_row(line, first)));
-			run = [];
-		};
-		lines.forEach((line, i) => {
-			if (line.type === "same" && !near(i)) return run.push(line);
-			if (run.length) flush();
-			body.append(diff_row(line, first));
-		});
-		if (run.length) flush();
-		diff.append(summary, body);
-	}
-
-	function diff_row(line, first) {
-		const marks = { same: "", removed: "\u2212", added: "+" };
-		const tints = {
-			same: "",
-			removed: "background:color-mix(in srgb,var(--red-500) 10%,transparent);",
-			added: "background:color-mix(in srgb,var(--green-500) 12%,transparent);",
-		};
-		const row = document.createElement("div");
-		row.className = `fac-page-review-line is-${line.type}`;
-		row.style.cssText = `display:grid;grid-template-columns:24px 1fr;padding-right:10px;${first ? "" : tints[line.type]}`;
-		const mark = document.createElement("span");
-		mark.style.cssText = "text-align:center;color:var(--text-muted);user-select:none;";
-		mark.textContent = first ? "" : marks[line.type];
-		const text = document.createElement("span");
-		text.style.cssText = "white-space:pre-wrap;overflow-wrap:anywhere;min-width:0;";
-		text.textContent = line.text || " ";
-		row.append(mark, text);
-		return row;
 	}
 
 	function make_button(label, class_name) {
