@@ -69,15 +69,14 @@ export function isDryRun(block) {
 	return block?.input?.validate_only === true || toolResult(block).validation_passed === true;
 }
 
-const ENTITIES = { amp: "&", lt: "<", gt: ">", quot: '"', "#39": "'", apos: "'", nbsp: " " };
-
-/** Frappe's messages carry markup (<strong>, <br>); a reason is shown as text, so drop it. */
+/**
+ * Frappe's messages carry markup (<strong>, <br>); a reason is shown as text, so keep only the text.
+ * DOMParser builds an inert document (no script runs, nothing loads) and textContent decodes entities
+ * without ever turning them back into markup.
+ */
 function plainText(text) {
-	return text
-		.replace(/<br\s*\/?>/gi, " ")
-		.replace(/<[^>]*>/g, "")
-		.replace(/&(amp|lt|gt|quot|#39|apos|nbsp);/g, (_, name) => ENTITIES[name])
-		.replace(/[ \t]+/g, " ");
+	const doc = new DOMParser().parseFromString(text.replace(/<br\s*\/?>/gi, " "), "text/html");
+	return (doc.body.textContent || "").replace(/ /g, " ").replace(/[ \t]+/g, " ");
 }
 
 /** One short sentence saying why a step failed, or "" when there is nothing safe to show. */

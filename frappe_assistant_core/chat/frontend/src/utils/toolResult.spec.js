@@ -97,6 +97,12 @@ describe("failureReason", () => {
 		expect(failureReason(failed({ message: "Row 2:<br>Value &amp; type &lt;missing&gt;" }))).toBe("Row 2: Value & type <missing>");
 	});
 
+	it("drops nested and split tags, and never turns an escaped tag back into markup", () => {
+		// "<scr<script>ipt>" defeats a single tag-stripping pass; an escaped tag must stay text, never an element.
+		expect(failureReason(failed({ error: "Bad <scr<script>ipt>alert(1)</script> value" }))).toBe("Bad ipt>alert(1) value");
+		expect(failureReason(failed({ error: "Shown &lt;script&gt;x&lt;/script&gt; as text" }))).toBe("Shown <script>x</script> as text");
+	});
+
 	it("never shows a traceback and says nothing for a successful step", () => {
 		expect(failureReason(failed({ error: "Traceback (most recent call last):\n  File x" }))).toBe("");
 		expect(failureReason({ status: "success", result: { message: "Done" } })).toBe("");
