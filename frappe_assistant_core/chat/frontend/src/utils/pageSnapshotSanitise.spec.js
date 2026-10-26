@@ -1,7 +1,7 @@
 import { CSSStyleSheet as ParsedSheet, parse } from "rrweb-cssom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { cleanSnapshot, isSiteCss, isSiteUrl } from "./pageSnapshotSanitise";
+import { cleanRules, cleanSnapshot, finalCss, isSiteCss, isSiteUrl } from "./pageSnapshotSanitise";
 
 const ORIGIN = "https://erp.example.com";
 const EVIL = "evil.example";
@@ -97,3 +97,61 @@ describe("isSiteUrl and isSiteCss", () => {
 		expect(isSiteCss("\\75 rl(x)", ORIGIN)).toBe(false);
 	});
 });
+
+// Rule objects named as the browser names them, holding the declarations CSSOM would give back.
+const declarations = (values) => {
+	const style = Object.assign(Object.keys(values), {
+		getPropertyValue: (property) => values[property] ?? "",
+		removeProperty: (property) => {
+			delete values[property];
+			style.splice(style.indexOf(property), 1);
+		},
+	});
+	return style;
+};
+const ruleList = (rules) => ({ cssRules: rules, deleteRule: (i) => rules.splice(i, 1) });
+const rule = (name, props = {}) => Object.assign(Object.create({ constructor: { name } }), props);
+
+describe("cleanRules", () => {
+	it("walks nested rules inside a style rule, as CSS nesting keeps them", () => {
+		const nested = rule("CSSStyleRule", { style: declarations({ background: 'url("https://evil.example/n")', color: "red" }) });
+		const parent = rule("CSSStyleRule", { style: declarations({ color: "blue" }), ...ruleList([nested]) });
+		const sheet = ruleList([parent]);
+		cleanRules(sheet, ORIGIN);
+		expect(nested.style.getPropertyValue("background")).toBe("");
+		expect(nested.style.getPropertyValue("color")).toBe("red");
+	});
+
+	it("deletes every rule type it does not know", () => {
+		const sheet = ruleList([
+			rule("CSSFontFaceRule", { style: declarations({}) }),
+			rule("CSSImportRule"),
+			rule("CSSScopeRule", ruleList([])),
+			rule("CSSSomethingNewRule"),
+			rule("CSSMediaRule", ruleList([])),
+		]);
+		cleanRules(sheet, ORIGIN);
+		expect(sheet.cssRules.map((r) => r.constructor.name)).toEqual(["CSSMediaRule"]);
+	});
+});
+
+describe("finalCss", () => {
+	it("escapes a < so the style text cannot end its own element on a re-parse", () => {
+		const out = finalCss('.a { content: "</style><img src=https://evil.example/x>"; }', ORIGIN);
+		expect(out).not.toContain("<");
+		expect(out).toContain("\\3c ");
+	});
+
+	it("drops the whole text when an off-site url() is still in it", () => {
+		expect(finalCss('.a { & .b { background: url("https://evil.example/n"); } }', ORIGIN)).toBe("");
+		expect(finalCss(".a { background: url(/files/x.png); }", ORIGIN)).toContain("/files/x.png");
+	});
+});
+
+describe("cleanSnapshot is stable", () => {
+	it("returns markup that cleaning again leaves unchanged", () => {
+		const once = cleanSnapshot(HOSTILE, ORIGIN);
+		expect(cleanSnapshot(once, ORIGIN)).toBe(once);
+	});
+});
+

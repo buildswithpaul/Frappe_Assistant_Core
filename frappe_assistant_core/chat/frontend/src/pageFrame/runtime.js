@@ -4,16 +4,19 @@
  *
  * The frame has an opaque origin, so this is the page's only way to data: each call goes to the
  * host page by postMessage, and the host serves it as the user (pageFrameHost.js). The host also
- * asks here for the page's rendered markup, for Download PDF and for FACO's picture of the page.
+ * asks here for the page's rendered markup, for Download PDF, and for FACO's picture of the page,
+ * which is drawn here and leaves the frame as image bytes only (capture.js).
  */
 import { __ } from "@/utils/i18n";
 import { snapshotHtml } from "@/utils/pagePrint";
 import { makeFrappeStandIn } from "@/utils/pageRuntime";
 
-import { removeLoadingElements, removeWebRtc } from "./hardening";
+import { capturePage, pageText } from "./capture";
+import { guardLoadingElements, removeLoadingElements, removeWebRtc } from "./hardening";
 
 // Before anything of the page's runs: this script loads in the head, ahead of the page's own.
 removeWebRtc(window);
+guardLoadingElements(window);
 
 // A page wider than this prints on a landscape sheet, as in the chat panel.
 const WIDE_PAGE_PX = 900;
@@ -60,6 +63,19 @@ const fac = {
 
 const root = () => document.querySelector(".fac-page-root") || document.body;
 
+// The picture as image bytes, and the page's visible text with it, so FACO can check the page even
+// when it can't read images or the picture fails. No fallback draws the page anywhere else.
+async function capture({ id, scale, quality }) {
+	const el = root();
+	const text = pageText(el);
+	try {
+		const shot = await capturePage(el, { scale, quality });
+		host.postMessage({ fac_page: 1, op: "capture_result", id, text, type: "image/jpeg", ...shot }, "*", [shot.buffer]);
+	} catch (error) {
+		post({ op: "capture_result", id, text, error: String(error?.message || error) });
+	}
+}
+
 function snapshot({ id }) {
 	const el = root();
 	post({ op: "snapshot_result", id, html: snapshotHtml(el), wide: el.scrollWidth > WIDE_PAGE_PX });
@@ -80,6 +96,7 @@ window.addEventListener("message", (event) => {
 			call.reject(error);
 		}
 	} else if (data.op === "snapshot") snapshot(data);
+	else if (data.op === "capture") capture(data);
 });
 
 window.addEventListener("error", (event) => reportError(event.error || event.message));

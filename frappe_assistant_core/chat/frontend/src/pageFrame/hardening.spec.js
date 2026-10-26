@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { removeLoadingElements, removeWebRtc } from "./hardening";
+import { guardLoadingElements, removeLoadingElements, removeWebRtc } from "./hardening";
 
 describe("removeWebRtc", () => {
 	it("removes each WebRTC constructor and the way back to it from its prototype", () => {
@@ -24,21 +24,54 @@ describe("removeWebRtc", () => {
 	});
 });
 
+// The guard changes this test file's own window, as the runtime changes the page's frame.
+guardLoadingElements(window);
+
+describe("guardLoadingElements", () => {
+	it("refuses to create elements that load, embed or connect", () => {
+		for (const tag of ["iframe", "IFRAME", "link", "meta", "object", "embed", "frame", "base"]) {
+			expect(() => document.createElement(tag), tag).toThrow(/cannot create/);
+		}
+		expect(() => document.createElementNS("http://www.w3.org/1999/xhtml", "iframe")).toThrow(/cannot create/);
+		expect(document.createElement("div").localName).toBe("div");
+	});
+
+	it("strips them from markup set on an element, before the document sees them", () => {
+		const box = document.createElement("div");
+		document.body.append(box);
+		box.innerHTML = '<p>kept</p><link rel="preconnect" href="https://evil.example"><iframe srcdoc="x"></iframe>';
+		expect(box.innerHTML).toBe("<p>kept</p>");
+		box.insertAdjacentHTML("beforeend", '<span>more</span><object data="x"></object>');
+		expect(box.innerHTML).toBe("<p>kept</p><span>more</span>");
+		box.firstChild.outerHTML = '<b>swapped</b><meta http-equiv="refresh" content="0">';
+		expect(box.innerHTML).toBe("<b>swapped</b><span>more</span>");
+		box.remove();
+	});
+
+	it("strips them from fragments and parsed documents too", () => {
+		const fragment = document.createRange().createContextualFragment('<i>x</i><link rel="preload" href="https://evil.example/a">');
+		expect(fragment.querySelector("link")).toBeNull();
+		const parsed = new DOMParser().parseFromString('<p>y</p><iframe src="https://evil.example"></iframe>', "text/html");
+		expect(parsed.querySelector("iframe")).toBeNull();
+	});
+
+	it("gives a frame that got in no window to reach into, and refuses document.write", () => {
+		expect(Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype, "contentWindow").get()).toBe(null);
+		expect(Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype, "contentDocument").get()).toBe(null);
+		expect(() => document.write("<iframe></iframe>")).toThrow(/cannot create/);
+	});
+});
+
 describe("removeLoadingElements", () => {
-	it("removes elements that load or embed something as the script inserts them", async () => {
+	it("removes loading elements that reach the document by another way", async () => {
 		const observer = removeLoadingElements(document);
 		try {
-			const box = document.createElement("div");
-			box.innerHTML = '<p>kept</p><iframe srcdoc="x"></iframe><span><object data="x"></object></span>';
-			document.body.append(box);
-			const link = document.createElement("link");
-			link.rel = "preconnect";
-			link.href = "https://evil.example";
-			document.head.append(link);
+			// A template parses inertly and is left alone; appending its content is the way past.
+			const template = document.createElement("template");
+			template.innerHTML = '<embed src="x">';
+			document.body.append(template.content.cloneNode(true));
 			await Promise.resolve();
-			expect(document.querySelector("iframe, object, link[rel=preconnect]")).toBeNull();
-			expect(box.querySelector("p").textContent).toBe("kept");
-			box.remove();
+			expect(document.querySelector("embed")).toBeNull();
 		} finally {
 			observer.disconnect();
 		}

@@ -119,6 +119,29 @@ def get_page(slug: str) -> dict:
     }
 
 
+_SERVER_SCRIPT_API_NAME = re.compile(r"[A-Za-z0-9_]+")
+
+
+@frappe.whitelist(methods=["GET"])
+def is_page_api_method(method: str) -> bool:
+    """Whether ``method`` is a Server Script API method that a call by that name reaches.
+
+    A personal page may be allowed to call such a method again without asking. Frappe resolves a
+    call through ``override_whitelisted_methods`` before it looks for a Server Script
+    (frappe/handler.py execute_cmd), so a remapped name is not one. Logged-in users only: the
+    answer names nothing a user could not already call.
+    """
+    if frappe.session.user == "Guest":
+        frappe.throw(_("Log in to view this page."), frappe.PermissionError)
+    if not isinstance(method, str) or not _SERVER_SCRIPT_API_NAME.fullmatch(method):
+        return False
+    if frappe.get_hooks("override_whitelisted_methods", {}).get(method):
+        return False
+    from frappe.core.doctype.server_script.server_script_utils import get_server_script_map
+
+    return method in get_server_script_map().get("_api", {})
+
+
 def can_open_page(name: str, user: str) -> bool:
     """Whether ``user`` may open the FAC Page ``name``, decided as ``get_page`` decides it."""
     return _page_access(name, user) == _OPEN

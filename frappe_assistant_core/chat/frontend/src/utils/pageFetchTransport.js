@@ -45,12 +45,12 @@ export function fetchTransport(getCsrfToken) {
 	}
 	return {
 		get: (method, args) =>
-			send(`/api/method/${method}?${new URLSearchParams(queryArgs(args))}`, {
+			send(`/api/method/${encodeURIComponent(method)}?${new URLSearchParams(queryArgs(args))}`, {
 				method: "GET",
 				headers: { Accept: "application/json" },
 			}),
 		post: (method, args) =>
-			send(`/api/method/${method}`, {
+			send(`/api/method/${encodeURIComponent(method)}`, {
 				method: "POST",
 				headers: {
 					Accept: "application/json",

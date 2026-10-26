@@ -56,10 +56,13 @@ export async function takePageScreenshot(params = {}, askedAbout = undefined) {
 		return { error: __("Another page was opened before this one could be captured. Ask again.") };
 	}
 	const view = panel.pageView.value;
+	// The page's visible text and errors go with every answer, picture or not, so FACO can check the
+	// page when it can't read images or the picture fails.
+	const check = (text) => ({ page_text: text || "", page_errors: [...(view.errors?.() || [])] });
 	try {
-		const { blob, ...size } = view.capture ? await captureFrame(view, params) : await captureElement(view, params);
+		const { blob, text, ...size } = view.capture ? await captureFrame(view, params) : await captureElement(view, params);
 		// A canvas past the browser's maximum size encodes to null.
-		if (!blob) return { error: __("Screenshot too large to encode."), ...size };
+		if (!blob) return { error: __("Screenshot too large to encode."), ...size, ...check(text) };
 
 		const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
 		const file = new File([blob], `page_screenshot_${timestamp}.jpg`, { type: "image/jpeg" });
@@ -70,12 +73,11 @@ export async function takePageScreenshot(params = {}, askedAbout = undefined) {
 			file_name: uploaded.file_name,
 			...size,
 			mime_type: "image/jpeg",
-			// What went wrong while the page ran: FACO checks this before it calls the page done.
-			page_errors: [...(view.errors?.() || [])],
+			...check(text),
 		};
 	} catch (error) {
-		logger.error("Page screenshot failed:", error);
-		return { error: __("Screenshot failed: {0}", [error.message]) };
+		logger.error("Page screenshot failed:", error?.detail || error);
+		return { error: __("Screenshot failed: {0}", [error.message]), ...check(error?.text) };
 	}
 }
 
@@ -93,11 +95,18 @@ async function captureElement(view, params) {
 		logging: false,
 	});
 	const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", (params.quality || 80) / 100));
-	return { blob, width: canvas.width, height: canvas.height };
+	const root = view.element.shadowRoot?.querySelector(".fac-page-root") || view.element;
+	return { blob, width: canvas.width, height: canvas.height, text: visibleText(root) };
 }
 
-// A personal page's frame is another origin: the picture is drawn from the markup it sends.
+// A personal page's frame is another origin: it draws the picture itself and sends the bytes.
 const captureFrame = (view, params) => view.capture({ scale: scale(), quality: params.quality || 80 });
+
+const MAX_PAGE_TEXT = 6000;
+function visibleText(root) {
+	const text = (root.innerText ?? root.textContent ?? "").replace(/\n{3,}/g, "\n\n").trim();
+	return text.length > MAX_PAGE_TEXT ? `${text.slice(0, MAX_PAGE_TEXT)}…` : text;
+}
 
 const pageCopy = () => ({
 	action: __("Look at the page"),

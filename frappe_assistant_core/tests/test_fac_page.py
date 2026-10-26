@@ -20,12 +20,18 @@ import glob
 import hashlib
 import json
 import os
+from unittest.mock import patch
 
 import frappe
 from frappe.client import delete, set_value
 from frappe.share import add as share_with
 
-from frappe_assistant_core.api.fac_page import PERSONAL_DISALLOWED_TAGS, _without_tags, get_page
+from frappe_assistant_core.api.fac_page import (
+    PERSONAL_DISALLOWED_TAGS,
+    _without_tags,
+    get_page,
+    is_page_api_method,
+)
 from frappe_assistant_core.plugins.core.tools.create_document import DocumentCreate
 from frappe_assistant_core.plugins.core.tools.get_document import DocumentGet
 from frappe_assistant_core.plugins.core.tools.list_documents import DocumentList
@@ -704,3 +710,37 @@ class TestPersonalFACPage(BaseAssistantTest):
 
         self.assertTrue(result.get("success"), result)
         self.assertEqual(result["name"], f"tool-page-{_owner_tag(user)}")
+
+
+class TestIsPageApiMethod(BaseAssistantTest):
+    """A personal page may be allowed to call a method again only when this says it is a page API."""
+
+    # Frappe builds this map from Server Scripts of type API (server_script_utils); a site reaches it
+    # by saving one. The map is stood in for so the test does not depend on server scripts being on.
+    # Its keys are whatever the scripts were named, so a name that is not a plain one is listed too:
+    # the endpoint must refuse it by its shape, not by its absence.
+    SCRIPT_MAP = {"_api": {"fac_page_feed": "Fac Page Feed", "a/b": "Odd", "frappe.client.insert": "Shadow"}}
+
+    def _check(self, method, hooks=None):
+        script_map = patch(
+            "frappe.core.doctype.server_script.server_script_utils.get_server_script_map",
+            autospec=True,
+            return_value=self.SCRIPT_MAP,
+        )
+        with script_map, patch.object(frappe, "get_hooks", autospec=True, return_value=hooks or {}):
+            return is_page_api_method(method)
+
+    def test_a_server_script_api_method_is_one(self):
+        self.assertIs(self._check("fac_page_feed"), True)
+
+    def test_a_name_with_no_server_script_is_not(self):
+        self.assertIs(self._check("sales_feed"), False)
+
+    def test_a_remapped_name_is_not(self):
+        # override_whitelisted_methods runs before the Server Script lookup (frappe/handler.py).
+        hooks = {"fac_page_feed": ["some_app.api.feed"]}
+        self.assertIs(self._check("fac_page_feed", hooks), False)
+
+    def test_anything_but_a_plain_name_is_not(self):
+        for method in ("frappe.client.insert", "x%2e..%2fsavedocs", "a/b", "a?cmd=x", "../x", ""):
+            self.assertIs(self._check(method), False, method)

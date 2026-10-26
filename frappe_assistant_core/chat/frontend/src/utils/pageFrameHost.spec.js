@@ -9,6 +9,9 @@ let pageWindow;
 let other;
 let transport;
 let askUser;
+const PAGE_API_CHECK = "frappe_assistant_core.api.fac_page.is_page_api_method";
+// The calls sent for the page, leaving out the host's own check on page trust.
+const sentGets = () => transport.get.mock.calls.filter(([method]) => method !== PAGE_API_CHECK);
 let pageCount = 0;
 let replies;
 
@@ -42,7 +45,11 @@ beforeEach(() => {
 	[pageWindow, other] = holders.map((el) => el.contentWindow);
 	replies = [];
 	vi.spyOn(pageWindow, "postMessage").mockImplementation((message) => replies.push(message));
-	transport = { get: vi.fn(async () => [{ name: "SINV-1" }]), post: vi.fn(async () => ({ ok: 1 })) };
+	// The site says sales_feed is a Server Script API method; every other read answers with rows.
+	transport = {
+		get: vi.fn(async (method, args) => (method === PAGE_API_CHECK ? args.method === "sales_feed" : [{ name: "SINV-1" }])),
+		post: vi.fn(async () => ({ ok: 1 })),
+	};
 	askUser = vi.fn(async () => "once");
 });
 
@@ -101,9 +108,54 @@ describe("createPageFrame", () => {
 				trustable: true,
 			}),
 		);
-		expect(transport.get).not.toHaveBeenCalled();
+		expect(sentGets()).toEqual([]);
 		expect(transport.post).not.toHaveBeenCalled();
 		expect(reply(1)).toMatchObject({ ok: false, error: { message: "The user did not allow this." } });
+	});
+
+	it("offers Allow for this page only when the site says the name is a Server Script API method", async () => {
+		askUser.mockResolvedValue(false);
+		mountFrame();
+		fromPage({ op: "call", id: 1, method: "other_feed", args: {} });
+		await settle();
+		expect(transport.get).toHaveBeenCalledWith(PAGE_API_CHECK, { method: "other_feed" });
+		expect(askUser.mock.calls[0][0].trustable).toBe(false);
+	});
+
+	it("refuses a method name that is not a plain dotted path, asking and sending nothing", async () => {
+		mountFrame();
+		["x%2e..%2fsavedocs", "a/b", "a?cmd=x", "../x"].forEach((method, i) =>
+			fromPage({ op: "call", id: i + 1, method, args: {} }),
+		);
+		await settle();
+		expect(askUser).not.toHaveBeenCalled();
+		expect(transport.get).not.toHaveBeenCalled();
+		expect(transport.post).not.toHaveBeenCalled();
+		for (const id of [1, 2, 3, 4]) expect(reply(id).ok).toBe(false);
+	});
+
+	it("lets a page that was refused three times only read", async () => {
+		askUser.mockResolvedValue(false);
+		mountFrame({ pageName: "sales-three" });
+		for (let id = 1; id <= 3; id++) {
+			fromPage({ op: "call", id, method: `feed_${id}`, args: {} });
+			await settle();
+		}
+		fromPage({ op: "call", id: 4, method: "feed_4", args: {} });
+		fromPage({ op: "call", id: 5, method: "frappe.client.get_count", args: {}, type: "GET" });
+		await settle();
+		expect(askUser).toHaveBeenCalledTimes(3);
+		expect(reply(4)).toMatchObject({ ok: false, error: { message: "The user did not allow this." } });
+		expect(reply(5).ok).toBe(true);
+	});
+
+	it("refuses reads past two hundred waiting", async () => {
+		transport.get.mockImplementation(() => new Promise(() => {}));
+		mountFrame();
+		for (let id = 1; id <= 209; id++) fromPage({ op: "call", id, method: "frappe.client.get_count", args: {}, type: "GET" });
+		await settle();
+		expect(reply(209)).toMatchObject({ ok: false, error: { message: "Too many reads are waiting." } });
+		expect(reply(208)).toBeUndefined();
 	});
 
 	it("asks before an aliased write, whatever its name or type", async () => {
@@ -140,7 +192,7 @@ describe("createPageFrame", () => {
 		await settle();
 		await settle();
 		expect(askUser).toHaveBeenCalledOnce();
-		expect(transport.get).toHaveBeenCalledTimes(2);
+		expect(sentGets()).toHaveLength(2);
 
 		// Another method on the same page still asks.
 		fromPage({ op: "call", id: 3, method: "other_feed", args: {} });
@@ -211,31 +263,72 @@ describe("createPageFrame", () => {
 		expect(transport.get).toHaveBeenCalledTimes(9);
 	});
 
-	it("reads the record before a save, shows the diff, and refuses when it can't read it", async () => {
-		transport.get.mockResolvedValueOnce({ doctype: "ToDo", name: "TD-1", docstatus: 0, status: "Open", priority: "High" });
+	it("reads the record before a save, sends it merged with the page's changes, and shows what changes", async () => {
+		const current = { doctype: "ToDo", name: "TD-1", docstatus: 0, owner: "a@x.com", status: "Open", priority: "High" };
+		transport.get.mockResolvedValueOnce(current);
 		mountFrame();
 		fromPage({ op: "call", id: 1, method: "frappe.client.save", args: { doc: { doctype: "ToDo", name: "TD-1", status: "Closed" } } });
 		await settle();
 		expect(transport.get).toHaveBeenCalledWith("frappe.client.get", { doctype: "ToDo", name: "TD-1" });
-		expect(askUser.mock.calls[0][0].fields).toEqual([
-			{ name: "status", value: "Closed", before: "Open", status: "changed" },
-			{ name: "priority", value: "", before: "High", beforeRows: undefined, status: "blanked" },
-		]);
+		expect(askUser.mock.calls[0][0].fields).toEqual([{ name: "status", value: "Closed", before: "Open", status: "changed" }]);
+		// Every field the page left out goes back as it is, so owner and priority keep their values.
+		expect(transport.post).toHaveBeenCalledWith("frappe.client.save", { doc: { ...current, status: "Closed" } });
+	});
 
+	it("refuses a save when it cannot read the record first", async () => {
 		transport.get.mockRejectedValueOnce(new Error("No permission"));
-		fromPage({ op: "call", id: 2, method: "frappe.client.save", args: { doc: { doctype: "ToDo", name: "TD-2" } } });
+		mountFrame();
+		fromPage({ op: "call", id: 1, method: "frappe.client.save", args: { doc: { doctype: "ToDo", name: "TD-2" } } });
 		await settle();
-		expect(askUser).toHaveBeenCalledOnce();
-		expect(reply(2)).toMatchObject({ ok: false, error: { message: "This request is not allowed." } });
+		expect(askUser).not.toHaveBeenCalled();
+		expect(reply(1)).toMatchObject({ ok: false, error: { message: "This request is not allowed." } });
+	});
+
+	it("refuses a save that sends an owner other than the record's", async () => {
+		transport.get.mockResolvedValueOnce({ doctype: "ToDo", name: "TD-1", docstatus: 0, owner: "a@x.com" });
+		mountFrame();
+		fromPage({ op: "call", id: 1, method: "frappe.client.save", args: { doc: { doctype: "ToDo", name: "TD-1", owner: "b@x.com" } } });
+		await settle();
+		expect(askUser).not.toHaveBeenCalled();
+		expect(transport.post).not.toHaveBeenCalled();
 	});
 
 	it("refuses a save that would change the record's docstatus, asking nothing", async () => {
 		transport.get.mockResolvedValueOnce({ doctype: "ToDo", name: "TD-1", docstatus: 1 });
 		mountFrame();
-		fromPage({ op: "call", id: 1, method: "frappe.client.save", args: { doc: { doctype: "ToDo", name: "TD-1" } } });
+		fromPage({ op: "call", id: 1, method: "frappe.client.save", args: { doc: { doctype: "ToDo", name: "TD-1", docstatus: 0 } } });
 		await settle();
 		expect(askUser).not.toHaveBeenCalled();
 		expect(transport.post).not.toHaveBeenCalled();
+	});
+
+	it("draws the picture in the frame and takes back only a JPEG, with the page's text", async () => {
+		mountFrame();
+		fromPage({ op: "ready" });
+		const shot = frame.capture({ scale: 1, quality: 80 });
+		await vi.waitFor(() => expect(replies.find((r) => r.op === "capture")).toBeDefined());
+		const { id } = replies.find((r) => r.op === "capture");
+		const buffer = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 1, 2]).buffer;
+		fromPage({ op: "capture_result", id, buffer, type: "image/jpeg", width: 10, height: 20, text: "Sales 70,29,354" });
+		const result = await shot;
+		expect(result.blob.type).toBe("image/jpeg");
+		expect(result).toMatchObject({ width: 10, height: 20, text: "Sales 70,29,354" });
+	});
+
+	it("refuses anything from the frame that is not a JPEG, and keeps the page's text when it can't draw", async () => {
+		mountFrame();
+		fromPage({ op: "ready" });
+		const first = frame.capture();
+		await vi.waitFor(() => expect(replies.filter((r) => r.op === "capture")).toHaveLength(1));
+		const ask1 = replies.filter((r) => r.op === "capture")[0];
+		fromPage({ op: "capture_result", id: ask1.id, buffer: new Uint8Array([0x3c, 0x73, 0x76, 0x67, 0x3e]).buffer, type: "image/jpeg", text: "x" });
+		await expect(first).rejects.toThrow(/no picture/);
+
+		const second = frame.capture();
+		await vi.waitFor(() => expect(replies.filter((r) => r.op === "capture")).toHaveLength(2));
+		const ask2 = replies.filter((r) => r.op === "capture")[1];
+		fromPage({ op: "capture_result", id: ask2.id, error: "tainted", text: "Sales 70,29,354" });
+		await expect(second).rejects.toMatchObject({ message: "This browser can't capture the page.", text: "Sales 70,29,354" });
 	});
 
 	it("sends set_value the fieldname object it described, not the string the page sent", async () => {
@@ -447,6 +540,13 @@ describe("fetchTransport", () => {
 			method: "POST",
 			headers: expect.objectContaining({ "X-Frappe-CSRF-Token": "csrf-1" }),
 		});
+	});
+
+	it("keeps the method name one path segment", async () => {
+		const fetchMock = vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ message: 1 }) }));
+		vi.stubGlobal("fetch", fetchMock);
+		await fetchTransport(() => "").post("a/../b?cmd=x", {});
+		expect(fetchMock.mock.calls[0][0]).toBe("/api/method/a%2F..%2Fb%3Fcmd%3Dx");
 	});
 
 	it("rejects with Frappe's message and the HTTP status", async () => {

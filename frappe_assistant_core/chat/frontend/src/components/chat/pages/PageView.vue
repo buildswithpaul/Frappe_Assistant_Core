@@ -36,7 +36,6 @@ import { usePagePanel } from "@/composables/usePagePanel";
 import { fac_page_draft_srcdoc } from "@/utils/facPageDraft";
 import { chart } from "@/utils/pageCharts";
 import { snapshotHtml } from "@/utils/pagePrint";
-import { snapshotToJpeg } from "@/utils/pageSnapshotImage";
 import { cleanSnapshot } from "@/utils/pageSnapshotSanitise";
 import { makeFrappeStandIn, runPageScript } from "@/utils/pageRuntime";
 // The one copy of the kit, also served to the fac-pages Desk page from /assets.
@@ -113,12 +112,8 @@ function renderShared() {
 // FACO's screenshot captures the page shown here; a draft's frame cannot be read.
 let hidePageView = () => {};
 
-// A personal page's picture is drawn from the markup its frame rendered, at the panel's width.
-async function capturePersonal({ scale, quality }) {
-	const { html } = await personalFrame.value.snapshot();
-	const width = personalFrame.value.$el?.clientWidth || 0;
-	return snapshotToJpeg({ html, kitCss, style: props.page.style || "", width, scale, quality });
-}
+// A personal page's picture is drawn inside its own frame; only the image bytes come back.
+const capturePersonal = (options) => personalFrame.value.capture(options);
 
 onMounted(() => {
 	if (published.value && !personal.value) renderShared();

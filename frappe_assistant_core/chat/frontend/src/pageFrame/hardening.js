@@ -1,8 +1,16 @@
 /**
- * Narrows what a personal page's script can reach beyond its frame's policy. CSP does not govern
- * WebRTC, so a peer connection to a server the script names could carry data out; the runtime
- * removes it before the page's script runs. Elements the script inserts that load or embed
- * something are removed as they appear. Neither closes DNS or timing side channels.
+ * Narrows what a personal page's script can reach beyond its frame's policy, before it runs.
+ *
+ * - WebRTC is removed: CSP does not govern it, so a peer connection to a server the script names
+ *   could carry data out. A child frame would be a fresh realm with WebRTC in it, but a child of
+ *   this opaque-origin frame is cross-origin to it, so its window throws on access; child frames
+ *   are refused here as well.
+ * - Elements that load, embed or start a connection (link, meta, base, frames, object, embed) are
+ *   refused when created and stripped from parsed markup before it reaches the document, so a
+ *   preconnect never starts. A MutationObserver is the last net for anything that slips past.
+ *
+ * None of this closes DNS or timing side channels: a deliberately malicious script can still leak
+ * small amounts that way.
  */
 
 const WEBRTC = [
@@ -39,19 +47,108 @@ export function removeWebRtc(win) {
 	}
 }
 
-const LOADING_TAGS = new Set(["link", "meta", "base", "iframe", "frame", "object", "embed", "portal"]);
+export const LOADING_TAGS = new Set(["link", "meta", "base", "iframe", "frame", "frameset", "object", "embed", "portal"]);
+const LOADING_SELECTOR = [...LOADING_TAGS].join(",");
 
-/** Removes elements that load or embed something as soon as the script inserts them. */
+const refused = (tag) => new DOMException(`A page cannot create <${tag}> elements.`, "NotSupportedError");
+
+function stripLoading(root) {
+	if (root.nodeType === 1 && LOADING_TAGS.has(root.localName)) return null;
+	root.querySelectorAll?.(LOADING_SELECTOR).forEach((el) => el.remove());
+	return root;
+}
+
+// Markup parsed in an inert template, stripped, then inserted as nodes: nothing it names starts loading.
+function parseClean(doc, html) {
+	const template = doc.createElement("template");
+	template.innerHTML = String(html);
+	stripLoading(template.content);
+	return template.content;
+}
+
+function wrapSetter(proto, property, wrap) {
+	const descriptor = Object.getOwnPropertyDescriptor(proto, property);
+	if (!descriptor?.set) return;
+	Object.defineProperty(proto, property, { ...descriptor, set: wrap(descriptor.set) });
+}
+
+/**
+ * Refuses elements that load or embed something, synchronously: at creation, when markup is set
+ * or parsed, and as a frame's window. Call before the page's script runs.
+ */
+export function guardLoadingElements(win) {
+	const { document: doc } = win;
+	const proto = win.Document.prototype;
+	const createElement = proto.createElement;
+	proto.createElement = function (tag, options) {
+		if (LOADING_TAGS.has(String(tag).toLowerCase())) throw refused(tag);
+		return createElement.call(this, tag, options);
+	};
+	const createElementNS = proto.createElementNS;
+	proto.createElementNS = function (ns, tag, options) {
+		const local = String(tag).split(":").pop().toLowerCase();
+		if (LOADING_TAGS.has(local)) throw refused(local);
+		return createElementNS.call(this, ns, tag, options);
+	};
+
+	// Template parsing is inert, so the template's own innerHTML is left alone.
+	const markupSetter = (set) =>
+		function (html) {
+			if (this.localName === "template") return set.call(this, html);
+			this.replaceChildren(parseClean(doc, html));
+		};
+	wrapSetter(win.Element.prototype, "innerHTML", markupSetter);
+	if (win.ShadowRoot) wrapSetter(win.ShadowRoot.prototype, "innerHTML", markupSetter);
+	wrapSetter(win.Element.prototype, "outerHTML", () =>
+		function (html) {
+			this.replaceWith(parseClean(doc, html));
+		},
+	);
+	const insertAdjacentHTML = win.Element.prototype.insertAdjacentHTML;
+	win.Element.prototype.insertAdjacentHTML = function (position, html) {
+		const where = { beforebegin: "before", afterbegin: "prepend", beforeend: "append", afterend: "after" }[
+			String(position).toLowerCase()
+		];
+		if (!where) return insertAdjacentHTML.call(this, position, "");
+		this[where](parseClean(doc, html));
+	};
+	const createContextualFragment = win.Range.prototype.createContextualFragment;
+	win.Range.prototype.createContextualFragment = function (html) {
+		return stripLoading(createContextualFragment.call(this, html));
+	};
+	const parseFromString = win.DOMParser.prototype.parseFromString;
+	win.DOMParser.prototype.parseFromString = function (text, type) {
+		const parsed = parseFromString.call(this, text, type);
+		stripLoading(parsed);
+		return parsed;
+	};
+	doc.write = doc.writeln = () => {
+		throw refused("document.write");
+	};
+
+	// A frame that got in anyway gives no window or document to reach into.
+	for (const name of ["HTMLIFrameElement", "HTMLFrameElement", "HTMLObjectElement", "HTMLEmbedElement"]) {
+		const element = win[name];
+		if (!element) continue;
+		for (const property of ["contentWindow", "contentDocument", "getSVGDocument"]) {
+			if (property in element.prototype) {
+				Object.defineProperty(element.prototype, property, { get: () => null, configurable: false });
+			}
+		}
+	}
+}
+
+/** The last net: removes loading elements that reach the document anyway, as they appear. */
 export function removeLoadingElements(doc) {
 	const sweep = (node) => {
 		if (node.nodeType !== 1) return;
 		if (LOADING_TAGS.has(node.localName)) node.remove();
-		else node.querySelectorAll?.([...LOADING_TAGS].join(",")).forEach((el) => el.remove());
+		else node.querySelectorAll?.(LOADING_SELECTOR).forEach((el) => el.remove());
 	};
 	const observer = new doc.defaultView.MutationObserver((records) => {
 		for (const record of records) record.addedNodes.forEach(sweep);
 	});
-	// The whole document, head included, where a script could add a preconnect link.
+	// The whole document, head included.
 	observer.observe(doc.documentElement, { childList: true, subtree: true });
 	return observer;
 }

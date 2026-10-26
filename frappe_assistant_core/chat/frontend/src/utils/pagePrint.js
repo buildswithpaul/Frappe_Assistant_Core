@@ -43,7 +43,7 @@ export function personalPrintCsp(origin = window.location.origin) {
 // No hint in a page's markup starts a DNS lookup of a name it chose.
 const NO_DNS_PREFETCH = '<meta http-equiv="x-dns-prefetch-control" content="off">';
 
-/** The document a snapshot prints from, or is drawn in for FACO's picture (pageSnapshotImage.js). */
+/** The document a snapshot prints from. */
 export function snapshotSrcdoc({ name, kitCss, style, html, wide, draft, personal }) {
 	const page = `@page { size: A4 ${wide ? "landscape" : "portrait"}; margin: 12mm }`;
 	// A draft stays offline when printed, as in its preview, and a personal page keeps to the site;

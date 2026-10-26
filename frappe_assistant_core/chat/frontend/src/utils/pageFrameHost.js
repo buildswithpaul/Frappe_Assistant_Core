@@ -18,7 +18,10 @@ import {
 	RECORD_WRITES,
 	describePageRequest,
 	fitsCurrentDoc,
+	isMethodName,
 	isPlainObject,
+	mayTrustForPage,
+	mergeWithCurrent,
 	normalisePayload,
 	refusal,
 } from "./pageRequestPrompt";
@@ -49,7 +52,7 @@ const pageStates = new Map();
 function pageState(pageName, content) {
 	const state = pageStates.get(pageName);
 	if (state && state.content === content) return state;
-	const fresh = { content, trusted: new Set(), denied: new Set() };
+	const fresh = { content, trusted: new Set(), denied: new Set(), denials: 0 };
 	if (pageName) pageStates.set(pageName, fresh);
 	return fresh;
 }
@@ -58,12 +61,19 @@ function pageState(pageName, content) {
 // one change in a run of harmless questions. Reads run this many at a time.
 const MAX_WAITING_ASKS = 5;
 const MAX_READS_AT_ONCE = 8;
+const MAX_QUEUED_READS = 200;
+// After this many refusals on one version of a page, it may only read.
+const MAX_DENIALS = 3;
+// Answers whether a dotless name is a Server Script API method the site has not remapped.
+const PAGE_API_CHECK = "frappe_assistant_core.api.fac_page.is_page_api_method";
 
-const METHOD_RE = /^[A-Za-z0-9_][A-Za-z0-9_.]{0,139}$/;
 const MAX_ARGS_BYTES = 1024 * 1024;
 const MAX_ERRORS = 20;
 const MAX_TEXT = 500;
 const MAX_SNAPSHOT_BYTES = 5 * 1024 * 1024;
+const MAX_IMAGE_BYTES = 15 * 1024 * 1024;
+const MAX_PAGE_TEXT = 8000;
+const MAX_DIMENSION = 20000;
 const RESULT_TIMEOUT_MS = 15000;
 // A print or a picture waits for the script to run and its calls to come back, this long at most,
 // then this long with nothing in flight, so the figures it fetched are drawn.
@@ -73,7 +83,8 @@ const IDLE_QUIET_MS = 300;
 /** A call message from the frame as {id, method, args, type}, or null when it is malformed. */
 export function readCall(data) {
 	if (!Number.isInteger(data.id) || data.id < 1) return null;
-	if (typeof data.method !== "string" || !METHOD_RE.test(data.method)) return null;
+	// A plain dotted path only: no "/", "?", "%" or "..", which could reach another endpoint.
+	if (!isMethodName(data.method)) return null;
 	const args = data.args === undefined ? {} : data.args;
 	if (!isPlainObject(args)) return null;
 	let size;
@@ -86,6 +97,15 @@ export function readCall(data) {
 	if (data.type !== undefined && data.type !== "GET" && data.type !== "POST") return null;
 	return { id: data.id, method: data.method, args, type: data.type };
 }
+
+// A JPEG from the frame: an ArrayBuffer of a sensible size that starts as a JPEG does.
+function isJpeg(buffer) {
+	if (!(buffer instanceof ArrayBuffer) || buffer.byteLength < 4 || buffer.byteLength > MAX_IMAGE_BYTES) return false;
+	const head = new Uint8Array(buffer, 0, 3);
+	return head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff;
+}
+
+const dimension = (value) => Math.min(Math.max(Math.round(Number(value) || 0), 0), MAX_DIMENSION);
 
 // A method that refuses GET answers 403 (frappe.handler.is_valid_http_method) or 405.
 const refusedGet = (error) => error?.status === 403 || error?.status === 405;
@@ -216,8 +236,19 @@ export function createPageFrame({
 		throw refusal();
 	}
 
+	// Whether the site says this name is a Server Script API method; anything else is never trusted.
+	async function siteAllowsTrust(method) {
+		if (!mayTrustForPage(method)) return false;
+		try {
+			return (await transport.get(PAGE_API_CHECK, { method })) === true;
+		} catch {
+			return false;
+		}
+	}
+
+	// Resolves with the exact payload to send once the user allows it.
 	async function approve(method, payload) {
-		if (state.denied.has(method)) throw denied();
+		if (state.denied.has(method) || state.denials >= MAX_DENIALS) throw denied();
 		if (waitingAsks >= MAX_WAITING_ASKS) {
 			throw Object.assign(new Error(__("Too many requests are waiting for the user.")), { status: 429 });
 		}
@@ -225,21 +256,28 @@ export function createPageFrame({
 		const earlier = asking.get(method);
 		const turn = (async () => {
 			await earlier?.catch(() => {});
-			if (state.denied.has(method)) throw denied();
-			if (state.trusted.has(method)) return;
-			const current = DOC_REPLACING_WRITES.has(method) ? await currentDoc(payload.doc) : null;
-			if (current && !fitsCurrentDoc(method, payload, current)) throw refusal();
-			const request = describePageRequest(method, payload, current);
+			if (state.denied.has(method) || state.denials >= MAX_DENIALS) throw denied();
+			let current = null;
+			let toSend = payload;
+			if (DOC_REPLACING_WRITES.has(method)) {
+				current = await currentDoc(payload.doc);
+				if (!fitsCurrentDoc(method, payload.doc, current)) throw refusal();
+				toSend = mergeWithCurrent(payload, current);
+			}
+			if (state.trusted.has(method)) return toSend;
+			const request = describePageRequest(method, toSend, current, await siteAllowsTrust(method));
 			const answer = await askUser(request);
 			if (!answer) {
 				state.denied.add(method);
+				state.denials++;
 				throw denied();
 			}
 			if (answer === "page" && request.trustable) state.trusted.add(method);
+			return toSend;
 		})();
 		asking.set(method, turn);
 		try {
-			await turn;
+			return await turn;
 		} finally {
 			waitingAsks--;
 			if (asking.get(method) === turn) asking.delete(method);
@@ -249,7 +287,12 @@ export function createPageFrame({
 	let readsRunning = 0;
 	const readQueue = [];
 	async function read(method, payload) {
-		if (readsRunning >= MAX_READS_AT_ONCE) await new Promise((resolve) => readQueue.push(resolve));
+		if (readsRunning >= MAX_READS_AT_ONCE) {
+			if (readQueue.length >= MAX_QUEUED_READS) {
+				throw Object.assign(new Error(__("Too many reads are waiting.")), { status: 429 });
+			}
+			await new Promise((resolve) => readQueue.push(resolve));
+		}
 		readsRunning++;
 		try {
 			return await transport.get(method, payload);
@@ -264,9 +307,9 @@ export function createPageFrame({
 		// payload sent, whatever the page does next.
 		const copy = JSON.parse(JSON.stringify(args));
 		if (PAGE_READ_METHODS.has(method)) return read(method, copy);
-		const payload = normalisePayload(method, copy);
-		if (!payload) throw refusal();
-		await approve(method, payload);
+		const normalised = normalisePayload(method, copy);
+		if (!normalised) throw refusal();
+		const payload = await approve(method, normalised);
 		if (RECORD_WRITES.has(method) || type === "POST") return transport.post(method, payload);
 		if (type === "GET") return transport.get(method, payload);
 		try {
@@ -330,6 +373,27 @@ export function createPageFrame({
 				checkIdle();
 				onReady?.();
 				return;
+			case "capture_result": {
+				const text = typeof data.text === "string" ? data.text.slice(0, MAX_PAGE_TEXT) : "";
+				if (typeof data.error === "string") {
+					return settle(
+						data.id,
+						Object.assign(new Error(__("This browser can't capture the page.")), {
+							text,
+							detail: data.error.slice(0, MAX_TEXT),
+						}),
+					);
+				}
+				if (!isJpeg(data.buffer) || data.type !== "image/jpeg") {
+					return settle(data.id, Object.assign(new Error(__("The page sent no picture.")), { text }));
+				}
+				return settle(data.id, {
+					blob: new Blob([data.buffer], { type: "image/jpeg" }),
+					width: dimension(data.width),
+					height: dimension(data.height),
+					text,
+				});
+			}
 			case "snapshot_result": {
 				const ok = typeof data.html === "string" && data.html.length <= MAX_SNAPSHOT_BYTES;
 				if (!ok) return settle(data.id, new Error(__("The page sent nothing to print.")));
@@ -356,7 +420,15 @@ export function createPageFrame({
 	return {
 		element,
 		errors,
-		/** The page's rendered markup, for Download PDF and FACO's picture: {html, wide}. */
+		/**
+		 * FACO's picture, drawn inside the frame: {blob, width, height, text}. Rejects with an error
+		 * carrying `text`, the page's visible text, when the frame cannot draw it.
+		 */
+		capture: async ({ scale = 1, quality = 80 } = {}) => {
+			await whenIdle();
+			return request("capture", { scale, quality });
+		},
+		/** The page's rendered markup, for Download PDF: {html, wide}. */
 		snapshot: async () => {
 			await whenIdle();
 			return request("snapshot");

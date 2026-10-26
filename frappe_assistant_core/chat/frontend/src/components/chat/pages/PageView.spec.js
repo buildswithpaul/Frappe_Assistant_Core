@@ -212,6 +212,24 @@ describe("PageView", () => {
 		expect(snap.html).not.toContain("evil.example");
 	});
 
+	it("takes a personal page's picture from its own frame, never drawing it here", async () => {
+		const shot = { blob: new Blob(["jpeg"], { type: "image/jpeg" }), width: 4, height: 4, text: "x" };
+		const capture = vi.fn(async () => shot);
+		const PageFrame = {
+			setup(_, { expose }) {
+				expose({ capture, snapshot: vi.fn(), errors: () => [] });
+				return () => null;
+			},
+		};
+		wrapper = mount(PageView, {
+			props: { page: personal, user: "avery@example.com" },
+			global: { stubs: { PageFrame } },
+			attachTo: document.body,
+		});
+		expect(await usePagePanel().pageView.value.capture({ scale: 1, quality: 80 })).toBe(shot);
+		expect(capture).toHaveBeenCalledWith({ scale: 1, quality: 80 });
+	});
+
 	it("offers FACO's screenshot the personal page's frame capture", () => {
 		mountView(personal);
 		const view = usePagePanel().pageView.value;

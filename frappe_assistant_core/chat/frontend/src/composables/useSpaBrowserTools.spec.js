@@ -107,7 +107,12 @@ describe("takePageScreenshot", () => {
 	});
 
 	it("draws a personal page's picture through its view, and uploads it", async () => {
-		const capture = vi.fn(async () => ({ blob: new Blob(["jpeg"], { type: "image/jpeg" }), width: 800, height: 600 }));
+		const capture = vi.fn(async () => ({
+			blob: new Blob(["jpeg"], { type: "image/jpeg" }),
+			width: 800,
+			height: 600,
+			text: "Sales 70,29,354",
+		}));
 		showPersonalPage({ capture, errors: ["boom"] });
 		const result = await takePageScreenshot({ quality: 70 });
 		expect(capture).toHaveBeenCalledWith(expect.objectContaining({ quality: 70 }));
@@ -115,12 +120,22 @@ describe("takePageScreenshot", () => {
 		expect(h2c.calls).toEqual([]);
 		const file = uploadFile.mock.calls[0][0];
 		expect(file.type).toBe("image/jpeg");
-		expect(result).toMatchObject({ success: true, width: 800, height: 600, page_errors: ["boom"] });
+		expect(result).toMatchObject({ success: true, width: 800, height: 600, page_errors: ["boom"], page_text: "Sales 70,29,354" });
 	});
 
-	it("reports a personal page's frame that could not draw itself", async () => {
-		showPersonalPage({ capture: vi.fn(async () => Promise.reject(new Error("The page did not answer."))) });
-		expect((await takePageScreenshot({})).error).toMatch(/did not answer/);
+	it("still gives FACO the page's text and errors when the frame can't draw the picture", async () => {
+		const failed = Object.assign(new Error("This browser can't capture the page."), { text: "Sales 70,29,354" });
+		showPersonalPage({ capture: vi.fn(async () => Promise.reject(failed)), errors: ["boom"] });
+		const result = await takePageScreenshot({});
+		expect(result.error).toMatch(/can't capture the page/);
+		expect(result).toMatchObject({ page_text: "Sales 70,29,354", page_errors: ["boom"] });
+		expect(uploadFile).not.toHaveBeenCalled();
+	});
+
+	it("gives the visible text of a Shared page with its picture", async () => {
+		showPage();
+		pageElement.textContent = "Team planner 12 people";
+		expect((await takePageScreenshot({})).page_text).toBe("Team planner 12 people");
 	});
 
 	it("says a draft's preview cannot be captured", async () => {

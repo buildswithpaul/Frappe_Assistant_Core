@@ -58,7 +58,7 @@ const URL_LIST_ATTRS = new Set(["srcset", "imagesrcset"]);
 const CSS_RISKY = /image-set\(|image\(|cross-fade\(|element\(|\\|@import|expression\(/i;
 const CSS_URL = /url\(\s*(?:"((?:[^"\\]|\\.)*)"|'((?:[^'\\]|\\.)*)'|([^)"'\s]*))\s*\)/gi;
 // A browser ignores whitespace and control characters at the start of a URL and in its scheme.
-const strip = (value) => String(value).replace(/[\u0000- ]/g, "");
+const strip = (value) => String(value).replace(/[\u0000-\u0020]/g, "");
 
 /** Whether a URL stays on this site's public paths, inside the document, or is a data: image. */
 export function isSiteUrl(value, origin) {
@@ -92,17 +92,40 @@ function cleanDeclarations(style, origin) {
 	}
 }
 
-// Style rules and keyframes keep only declarations that pass; @media, @supports, @keyframes and
-// the like are walked into; anything else (@import, @font-face, @namespace, @page) goes.
-function cleanRules(list, origin) {
+// The rule types kept: their declarations are checked and their nested rules walked. Anything else
+// (@import, @font-face, @namespace, @page, @scope, @property and whatever comes next) is deleted.
+const KEPT_RULES = new Set([
+	"CSSStyleRule",
+	"CSSNestedDeclarations",
+	"CSSMediaRule",
+	"CSSSupportsRule",
+	"CSSKeyframesRule",
+	"CSSKeyframeRule",
+	"CSSLayerBlockRule",
+	"CSSContainerRule",
+]);
+
+export function cleanRules(list, origin) {
 	for (let i = list.cssRules.length - 1; i >= 0; i--) {
 		const rule = list.cssRules[i];
-		if (typeof rule.selectorText === "string" || typeof rule.keyText === "string") {
-			cleanDeclarations(rule.style, origin);
-		} else if (rule.cssRules && (rule.media || rule.conditionText !== undefined || typeof rule.name === "string")) {
-			cleanRules(rule, origin);
-		} else list.deleteRule(i);
+		if (!KEPT_RULES.has(rule.constructor?.name)) {
+			list.deleteRule(i);
+			continue;
+		}
+		if (rule.style) cleanDeclarations(rule.style, origin);
+		// A style rule holds nested rules too (CSS nesting); they are checked the same way.
+		if (rule.cssRules?.length) cleanRules(rule, origin);
 	}
+}
+
+// The last net over the text a style element ends with: no "<", which could end the element when
+// the markup is parsed again, and no url() that is not the site's.
+export function finalCss(text, origin) {
+	const safe = text.replace(/</g, "\\3c ");
+	for (const match of safe.matchAll(CSS_URL)) {
+		if (!isSiteUrl(match[1] ?? match[2] ?? match[3] ?? "", origin)) return "";
+	}
+	return /image-set\(|@import|@font-face/i.test(safe) ? "" : safe;
 }
 
 // The style element's text parsed as the browser parses it: a constructable sheet (which drops
@@ -122,7 +145,7 @@ function cleanStyleElement(element, origin) {
 	// Nothing parsed means nothing checkable: drop the element.
 	if (!sheet) return element.remove();
 	cleanRules(sheet, origin);
-	element.textContent = Array.from(sheet.cssRules, (rule) => rule.cssText).join("\n");
+	element.textContent = finalCss(Array.from(sheet.cssRules, (rule) => rule.cssText).join("\n"), origin);
 }
 
 function cleanAttributes(element, origin) {
@@ -147,15 +170,7 @@ function cleanAttributes(element, origin) {
 	}
 }
 
-/**
- * The markup with every off-site URL removed. Parsed with DOMParser, whose document runs nothing
- * and loads nothing.
- *
- * @param {string} html the page's rendered markup
- * @param {string} [origin] this site's origin
- * @returns {string} the body's markup, cleaned
- */
-export function cleanSnapshot(html, origin = window.location.origin) {
+function cleanOnce(html, origin) {
 	const doc = new DOMParser().parseFromString(`<!doctype html><html><head></head><body>${html || ""}</body></html>`, "text/html");
 	for (const element of Array.from(doc.body.querySelectorAll("*"))) {
 		if (!element.isConnected) continue;
@@ -164,4 +179,26 @@ export function cleanSnapshot(html, origin = window.location.origin) {
 	for (const element of Array.from(doc.body.querySelectorAll("style"))) cleanStyleElement(element, origin);
 	for (const element of Array.from(doc.body.querySelectorAll("*"))) cleanAttributes(element, origin);
 	return doc.body.innerHTML;
+}
+
+// Cleaning its own output must change nothing; markup that keeps changing on a re-parse is
+// relying on a parse difference, and is dropped.
+const MAX_PASSES = 3;
+
+/**
+ * The markup with every off-site URL removed. Parsed with DOMParser, whose document runs nothing
+ * and loads nothing, and cleaned until a pass changes nothing.
+ *
+ * @param {string} html the page's rendered markup
+ * @param {string} [origin] this site's origin
+ * @returns {string} the body's markup, cleaned
+ */
+export function cleanSnapshot(html, origin = window.location.origin) {
+	let out = cleanOnce(html, origin);
+	for (let pass = 1; pass < MAX_PASSES; pass++) {
+		const again = cleanOnce(out, origin);
+		if (again === out) return out;
+		out = again;
+	}
+	return "";
 }

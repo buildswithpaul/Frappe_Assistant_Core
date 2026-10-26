@@ -35,9 +35,10 @@ onMounted(() => {
 		user: props.user,
 		version: BUILD_ID,
 		pageName: props.pageName,
+		// The host has checked the name is a plain dotted path; encoding it keeps it one path segment.
 		transport: {
-			get: (method, args) => getCall(method, queryArgs(args)),
-			post: (method, args) => baseCall(method, args),
+			get: (method, args) => getCall(encodeURIComponent(method), queryArgs(args)),
+			post: (method, args) => baseCall(encodeURIComponent(method), args),
 		},
 		askUser: (request) => props.askUser(request),
 		onError: (message) => emit("error", new Error(message)),
@@ -50,6 +51,7 @@ onMounted(() => {
 onBeforeUnmount(() => frame?.dispose());
 
 defineExpose({
+	capture: (options) => frame.capture(options),
 	snapshot: () => frame.snapshot(),
 	errors: () => frame?.errors || [],
 });
