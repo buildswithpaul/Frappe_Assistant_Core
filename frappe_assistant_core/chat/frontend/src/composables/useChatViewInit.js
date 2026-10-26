@@ -55,6 +55,9 @@ export function useChatViewInit(stores, routing, state, hooks = {}) {
 			);
 			if (activeSessionFromWidget && !route.params.sessionId) {
 				sessionStorage.removeItem("faco_active_session");
+				// A turn the widget was running when it handed over asks for the widget's
+				// browser tools; take it over so its calls come here (no live turn: no-op).
+				chatStore.claimLiveTurn(activeSessionFromWidget);
 				router.push(`/chat/${activeSessionFromWidget}`);
 				return;
 			}

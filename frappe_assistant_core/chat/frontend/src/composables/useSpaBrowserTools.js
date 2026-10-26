@@ -1,4 +1,5 @@
-import { onBeforeUnmount, onMounted } from "vue";
+import { getActivePinia } from "pinia";
+import { onBeforeUnmount, onMounted, watch } from "vue";
 
 import { baseCall } from "@/api/_core";
 import { chat } from "@/api/domains/chat";
@@ -141,10 +142,18 @@ export function useSpaBrowserTools({ getSessionId }) {
 	const dispatcher = createDispatcher({
 		transport: { on: onSpaSocketEvent, call: baseCall },
 		handlers: { take_screenshot: (params) => takePageScreenshot(params, askedAbout.get(params)) },
-		// The chat app's turns only; an older AR names no client and never offers the chat app a tool.
-		ownsCall: (call) => call?.client_type === SPA_CLIENT_TYPE && useChatStore().isOwnLiveTurn(call.session_id),
-		// The widget's other tools may reach this room; they are the widget's to answer.
-		ignoreUnknownTools: true,
+		// The chat app's turns only, or a widget's turn this tab took over (the server retypes those
+		// calls); an older AR names no client and never offers the chat app a tool.
+		ownsCall: (call) =>
+			call?.client_type === SPA_CLIENT_TYPE &&
+			(useChatStore().isOwnLiveTurn(call.session_id) || useChatStore().isClaimedLiveTurn(call.session_id)),
+		// The widget's other tools may reach this room; they are the widget's to answer. On a turn
+		// taken over from the widget nobody else will answer, so say why at once instead.
+		ignoreUnknownTools: (call) => !useChatStore().isClaimedLiveTurn(call?.session_id),
+		unknownToolError: () =>
+			__(
+				"This tool needs the Desk page, and the conversation moved to the full chat app. Ask the user to open the record in Desk if it is still needed."
+			),
 		confirmTools: new Set(["take_screenshot"]),
 		trustKey: pageKey,
 		pageTrustKey: (toolName) => (getSessionId() ? pageKey(toolName) : null),
@@ -156,7 +165,17 @@ export function useSpaBrowserTools({ getSessionId }) {
 	});
 
 	// No drain of the pending queue: the socket is in the room before this tab sends a turn, and
-	// draining would take calls queued for a Desk widget.
+	// draining would take calls queued for a Desk widget. A turn taken over from the widget is the
+	// exception: the server retyped its queued calls for this tab, so pick those up once.
 	onMounted(() => dispatcher.start());
+	watch(
+		() => {
+			// Read only once the app has its store; the store is what tracks a taken-over turn.
+			if (!getActivePinia()) return null;
+			const claimed = useChatStore().claimedTurnSession;
+			return claimed && claimed === getSessionId() ? claimed : null;
+		},
+		(claimed) => claimed && dispatcher.drainPending()
+	);
 	onBeforeUnmount(() => dispatcher.stop());
 }

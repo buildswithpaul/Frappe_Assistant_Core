@@ -1,6 +1,7 @@
 import { flushPromises, mount } from "@vue/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { defineComponent, h } from "vue";
+import { createPinia, setActivePinia } from "pinia";
 
 const h2c = vi.hoisted(() => ({ calls: [] }));
 vi.mock("html2canvas-pro", () => ({
@@ -25,12 +26,25 @@ vi.mock("@/composables/useStreaming", () => ({
 }));
 
 // chatStore.isOwnLiveTurn has its own spec; here it says whether this tab sent the live turn.
+// claim.session is the conversation this tab took over from the widget (stores/chat/turnClaim).
 const store = vi.hoisted(() => ({ ownsTurn: true }));
-vi.mock("@/stores/chatStore", () => ({
-	useChatStore: () => ({ isOwnLiveTurn: () => store.ownsTurn }),
-}));
+vi.mock("@/stores/chatStore", async () => {
+	const { reactive } = await import("vue");
+	const claim = reactive({ session: null });
+	return {
+		claim,
+		useChatStore: () => ({
+			isOwnLiveTurn: () => store.ownsTurn,
+			isClaimedLiveTurn: (id) => Boolean(id) && claim.session === id,
+			get claimedTurnSession() {
+				return claim.session;
+			},
+		}),
+	};
+});
 
-import { RESULT_METHOD } from "@/utils/browserToolDispatch";
+import { claim } from "@/stores/chatStore";
+import { PENDING_METHOD, RESULT_METHOD } from "@/utils/browserToolDispatch";
 import { confirms, resetConfirms, settleConfirm } from "@/widget/panel/confirmQueue";
 import { usePagePanel } from "./usePagePanel";
 import { takePageScreenshot, useSpaBrowserTools } from "./useSpaBrowserTools";
@@ -56,9 +70,12 @@ function showPersonalPage({ capture, errors = [] }) {
 }
 
 beforeEach(() => {
+	// The app always has its store; chatStore itself is mocked above.
+	setActivePinia(createPinia());
 	h2c.calls = [];
 	baseCall.mockClear();
 	store.ownsTurn = true;
+	claim.session = null;
 	session = "s1";
 	usePagePanel().open("sales-a1b2c3");
 	uploadFile.mockReset().mockResolvedValue({ file_url: "/private/files/shot.jpg", file_name: "shot.jpg" });
@@ -213,6 +230,45 @@ describe("useSpaBrowserTools", () => {
 		await call("c7");
 		expect(baseCall).not.toHaveBeenCalled();
 		expect(confirms.value).toEqual([]);
+	});
+
+	it("answers a turn taken over from the widget, and says at once that a Desk tool can't run here", async () => {
+		showPage();
+		wrapper = mount(Host);
+		// Not this tab's turn: the widget started it, and the server retyped its calls for this tab.
+		store.ownsTurn = false;
+		claim.session = "s1";
+		await call("c20", { tool_name: "get_form_data" });
+		expect(results()).toEqual([{ call_id: "c20", error: expect.stringMatching(/Desk page/) }]);
+		call("c21");
+		await flushPromises();
+		expect(confirms.value).toHaveLength(1);
+	});
+
+	it("leaves another conversation's calls alone while it holds a taken-over turn", async () => {
+		showPage();
+		wrapper = mount(Host);
+		store.ownsTurn = false;
+		claim.session = "s-other";
+		await call("c22", { tool_name: "get_form_data" });
+		await call("c23");
+		expect(results()).toEqual([]);
+		expect(confirms.value).toEqual([]);
+	});
+
+	it("picks up the calls queued for this tab once, when it takes over the open conversation", async () => {
+		wrapper = mount(Host);
+		claim.session = "s1";
+		await flushPromises();
+		const drains = baseCall.mock.calls.filter(([method]) => method === PENDING_METHOD);
+		expect(drains).toEqual([[PENDING_METHOD, { session_id: "s1" }]]);
+	});
+
+	it("drains nothing when the taken-over conversation isn't the one open", async () => {
+		wrapper = mount(Host);
+		claim.session = "s-other";
+		await flushPromises();
+		expect(baseCall.mock.calls.filter(([method]) => method === PENDING_METHOD)).toEqual([]);
 	});
 
 	it("asks first, in its own words, then captures the open page once the user approves", async () => {

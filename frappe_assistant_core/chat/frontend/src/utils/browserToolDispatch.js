@@ -48,8 +48,11 @@ const DEDUPE_WINDOW_MS = 60000;
  * @param {(call: object) => boolean} [options.ownsCall] whether this client asked for the call. The widget
  *   and the chat app can hold the same conversation and share its room; a call this client does not
  *   own is left alone, with no ack and no result, for the client that does.
- * @param {boolean} [options.ignoreUnknownTools] leave a call for a tool with no handler unanswered,
- *   rather than answer it with an error; for a client that runs only some of the tools.
+ * @param {boolean|((call: object) => boolean)} [options.ignoreUnknownTools] leave a call for a tool with
+ *   no handler unanswered, rather than answer it with an error; for a client that runs only some of the
+ *   tools. A function decides per call.
+ * @param {(toolName: string) => string} [options.unknownToolError] the error a call for a tool with no
+ *   handler is answered with, when it is answered.
  * @param {(toolName: string, params: object) => string} [options.trustKey] what "Always Allow" covers;
  *   the tool by default.
  * @param {(toolName: string, params: object) => string|null} [options.pageTrustKey] what "Allow on this
@@ -66,6 +69,7 @@ export function createDispatcher({
 	preflight = () => null,
 	ownsCall = () => true,
 	ignoreUnknownTools = false,
+	unknownToolError = (toolName) => `Unknown browser tool: ${toolName}`,
 	trustKey = (toolName) => toolName,
 	pageTrustKey = () => null,
 	retries = 3,
@@ -140,7 +144,8 @@ export function createDispatcher({
 		const sid = getSessionId();
 		if (data?.session_id && sid && data.session_id !== sid) return;
 		if (!ownsCall(data)) return;
-		if (ignoreUnknownTools && !handlers[tool_name]) return;
+		const ignoreUnknown = typeof ignoreUnknownTools === "function" ? ignoreUnknownTools(data) : ignoreUnknownTools;
+		if (ignoreUnknown && !handlers[tool_name]) return;
 
 		if (processed.has(call_id)) return;
 		processed.add(call_id);
@@ -152,7 +157,7 @@ export function createDispatcher({
 		try {
 			const handler = handlers[tool_name];
 			if (!handler) {
-				await submit(call_id, null, `Unknown browser tool: ${tool_name}`);
+				await submit(call_id, null, unknownToolError(tool_name));
 				return;
 			}
 			const blocked = preflight(tool_name, params);

@@ -17,6 +17,7 @@ import { createStreamManager } from "./chat/streamManager";
 import { createBlockHandlers } from "./chat/blockHandlers";
 import { createSendQueue } from "./chat/sendQueue";
 import { applyLiveSnapshot, createLiveTurnSync } from "./chat/liveTurnSync";
+import { createTurnClaim } from "./chat/turnClaim";
 import { isApprovalInteraction } from "./chat/interactionRegime";
 import { getSurface, surfaceClientSignals } from "./chat/surface";
 import { useComposerModesStore } from "./composerModesStore";
@@ -238,6 +239,8 @@ export const useChatStore = defineStore("chat", () => {
 	});
 	// sync: a join started right after the switch must not be reset by it.
 	watch(currentSessionId, () => liveSync.reset(), { flush: "sync" });
+
+	const turnClaim = createTurnClaim({ claim: (id) => api.chat.claimLiveTurn(id), currentSessionId });
 
 	function admitStreamEvent(event) {
 		return liveSync.admit(event);
@@ -574,6 +577,7 @@ export const useChatStore = defineStore("chat", () => {
 			isStreaming.value = true;
 			streamingMessage.value = "";
 			streamRequestId.value = crypto.randomUUID();
+			turnClaim.releaseClaim();
 
 			stream.startStreamTimeout();
 
@@ -1193,6 +1197,9 @@ export const useChatStore = defineStore("chat", () => {
 		admitStreamEvent,
 		recoverLiveTurn,
 		isOwnLiveTurn,
+		claimedTurnSession: turnClaim.claimedSession,
+		claimLiveTurn: turnClaim.claimLiveTurn,
+		isClaimedLiveTurn: turnClaim.isClaimedLiveTurn,
 		clearSocketError: stream.clearSocketError,
 		// Block-based message actions (delegated)
 		handlePlanEvent: blocks.handlePlanEvent,

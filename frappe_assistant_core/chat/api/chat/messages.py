@@ -290,6 +290,11 @@ def start_turn(
     # names this request (cancel.clear).
     clear_cancel(session_id, keep_turn=client_turn_id)
 
+    # A new turn names its own client; the chat app's claim on the last one ends here.
+    from frappe_assistant_core.plugins.faco.tools.browser_bridge import release_session_claim
+
+    release_session_claim(session_id)
+
     # FACO-M15: respect GDPR Article 18 processing restriction. When set,
     # skip message persistence entirely — the chat still runs (AR handles
     # the turn in-memory), but no content survives in FACO Message.

@@ -23,8 +23,10 @@ vi.mock("@/composables/useStreaming", () => ({
 		return () => delete spa.listeners[event];
 	},
 }));
-// This tab sent the live turn: chatStore.isOwnLiveTurn has its own spec.
-vi.mock("@/stores/chatStore", () => ({ useChatStore: () => ({ isOwnLiveTurn: () => true }) }));
+// This tab sent the live turn: chatStore.isOwnLiveTurn has its own spec. No turn was taken over.
+vi.mock("@/stores/chatStore", () => ({
+	useChatStore: () => ({ isOwnLiveTurn: () => true, isClaimedLiveTurn: () => false, claimedTurnSession: null }),
+}));
 
 import widgetTools, { startBrowserTools, stopBrowserTools } from "@/widget/desk/browserTools";
 import { confirms, resetConfirms, settleConfirm } from "@/widget/panel/confirmQueue";
