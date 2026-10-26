@@ -46,6 +46,22 @@ export function derivePageChips(blocks) {
 	return [...chips.values()];
 }
 
+/**
+ * Every FAC Page write call, in order: `{id, inFlight, name}`. `name` is set only once the write
+ * ran and saved, which for a create is when its result arrives.
+ */
+export function pageWriteCalls(blocks) {
+	const calls = [];
+	for (const block of blocks || []) {
+		if (block?.type !== "tool_call" || !PAGE_WRITES.has(baseToolName(block.tool_name))) continue;
+		if ((block.input?.doctype || toolResult(block).doctype) !== PAGE_DOCTYPE) continue;
+		const inFlight = IN_FLIGHT.has(block.status);
+		const saved = block.status === "success" && !toolFailed(block) && !isDryRun(block);
+		calls.push({ id: block.id, inFlight, name: saved ? pageWrite(block)?.name || null : null });
+	}
+	return calls;
+}
+
 /** The pages one message wrote, carrying the conversation's version, title and pending state. */
 export function chipsForMessage(blocks, conversationChips = []) {
 	return derivePageChips(blocks).map(

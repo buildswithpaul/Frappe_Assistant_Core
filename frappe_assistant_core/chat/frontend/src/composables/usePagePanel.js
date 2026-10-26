@@ -1,6 +1,6 @@
 import { computed, ref, shallowRef, watch } from "vue";
 
-import { derivePageChips } from "@/utils/pageChips";
+import { derivePageChips, pageWriteCalls } from "@/utils/pageChips";
 
 /** The page dock takes half the chat shell, and never less than this. */
 export const PAGE_DOCK_MIN_WIDTH = 420;
@@ -68,10 +68,24 @@ function close() {
 }
 
 function trackPageWrites(messages) {
-	const conversationChips = computed(() =>
-		derivePageChips((messages.value || []).flatMap((message) => message?.blocks || [])),
-	);
+	const blocks = computed(() => (messages.value || []).flatMap((message) => message?.blocks || []));
+	const conversationChips = computed(() => derivePageChips(blocks.value));
 	watch(conversationChips, (value) => (chips.value = value), { immediate: true });
+
+	// A page FACO saves during this turn opens beside the chat, so FACO can look at it at once. Only
+	// a write seen running here counts: a reload's history never opens the panel, and a page the
+	// user has open stays open.
+	const seenRunning = new Set();
+	watch(
+		() => pageWriteCalls(blocks.value),
+		(calls) => {
+			for (const call of calls) {
+				if (call.inFlight) seenRunning.add(call.id);
+				else if (seenRunning.delete(call.id) && call.name && !openName.value) openName.value = call.name;
+			}
+		},
+		{ immediate: true },
+	);
 
 	const openVersion = computed(
 		() => conversationChips.value.find((chip) => chip.name === openName.value)?.version ?? 0,

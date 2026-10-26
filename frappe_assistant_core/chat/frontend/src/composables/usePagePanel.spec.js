@@ -13,6 +13,21 @@ const pageWrite = (name, id) => ({
 	result: { success: true, name, doctype: "FAC Page" },
 });
 
+// A create as it streams in: running with no record name, which arrives with its result.
+const runningCreate = (id) => ({
+	type: "tool_call",
+	id,
+	tool_name: "create_document",
+	status: "running",
+	input: { doctype: "FAC Page", data: { title: "Sales", visibility: "Only me" } },
+	result: null,
+});
+
+function land(block, name) {
+	block.status = "success";
+	block.result = { success: true, name, doctype: "FAC Page" };
+}
+
 // The dock calls usePagePanel with the conversation; a component gives the watcher a scope.
 function track(messages) {
 	let panel;
@@ -66,5 +81,48 @@ describe("usePagePanel", () => {
 		const panel = track(messages);
 		await nextTick();
 		expect(panel.chips.value).toEqual([{ name: "sales-a1b2c3", title: "sales-a1b2c3", version: 2, pending: false }]);
+	});
+
+	it("opens a page FACO creates during the turn, once its save lands", async () => {
+		const messages = ref([{ role: "assistant", blocks: [runningCreate("t1")] }]);
+		const panel = track(messages);
+		await nextTick();
+		expect(panel.openName.value).toBe(null);
+
+		land(messages.value[0].blocks[0], "sales-59f062");
+		await nextTick();
+
+		expect(panel.openName.value).toBe("sales-59f062");
+	});
+
+	it("does not open a page from the conversation's history", async () => {
+		const panel = track(ref([{ role: "assistant", blocks: [pageWrite("sales-a1b2c3", "t1")] }]));
+		await nextTick();
+		expect(panel.openName.value).toBe(null);
+	});
+
+	it("keeps the page the user has open when FACO saves another", async () => {
+		const messages = ref([{ role: "assistant", blocks: [runningCreate("t1")] }]);
+		const panel = track(messages);
+		panel.open("costs-a1b2c3");
+		await nextTick();
+
+		land(messages.value[0].blocks[0], "sales-59f062");
+		await nextTick();
+
+		expect(panel.openName.value).toBe("costs-a1b2c3");
+	});
+
+	it("does not open a page whose write failed", async () => {
+		const messages = ref([{ role: "assistant", blocks: [runningCreate("t1")] }]);
+		const panel = track(messages);
+		await nextTick();
+
+		const block = messages.value[0].blocks[0];
+		block.status = "error";
+		block.result = { success: false, error: "x" };
+		await nextTick();
+
+		expect(panel.openName.value).toBe(null);
 	});
 });
