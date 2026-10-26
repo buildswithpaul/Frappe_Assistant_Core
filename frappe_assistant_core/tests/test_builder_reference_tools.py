@@ -107,7 +107,9 @@ class TestRecentErrors(BaseAssistantTest):
         self._log(f"axb {self.marker}")
         self.assertEqual(self.tool.execute({"contains": f"a_b {self.marker}"})["errors"], [])
         self.assertEqual(len(self.tool.execute({"contains": f"axb {self.marker}"})["errors"]), 1)
-        self.assertEqual(self.tool.execute({"contains": "%"})["errors"], [])
+        # Scoped to the marker: Error Log rows from other tests survive rollback and may hold a "%"
+        self.assertEqual(self.tool.execute({"contains": f"%{self.marker}"})["errors"], [])
+        self.assertEqual(self.tool.execute({"contains": f"a%b {self.marker}"})["errors"], [])
 
     def test_excludes_rows_older_than_minutes(self):
         self._log(f"old {self.marker}")
