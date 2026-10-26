@@ -77,7 +77,7 @@ describe("fac-pages Desk page: code FACO writes runs only after the user has see
 	it("asks on first open, and draws the html without running the script", async () => {
 		await show(personal());
 		expect(bar().querySelector(".fac-page-review-message").textContent).toBe(
-			"This page has code FACO wrote.",
+			"This page runs code FACO wrote. Check it, then run it.",
 		);
 		expect(shownText()).toBe("Sales");
 	});
@@ -102,7 +102,7 @@ describe("fac-pages Desk page: code FACO writes runs only after the user has see
 		await fac_page_approve_script(USER, NAME, SCRIPT);
 		await show(personal({ script: SCRIPT_V2 }));
 		expect(bar().querySelector(".fac-page-review-message").textContent).toBe(
-			"FACO changed this page's code.",
+			"FACO updated this page's code. Check the change, then run the new version.",
 		);
 		expect(shownText()).toBe("Sales");
 		const diff = bar().querySelector(".fac-page-review-diff");
@@ -110,9 +110,10 @@ describe("fac-pages Desk page: code FACO writes runs only after the user has see
 		expect(diff.childElementCount).toBe(0);
 		bar().querySelector(".fac-page-review-toggle").click();
 		expect(diff.hidden).toBe(false);
-		expect([...diff.children].map((line) => line.textContent)).toEqual([
-			`- ${SCRIPT}`,
-			`+ ${SCRIPT_V2}`,
+		const lines = [...diff.querySelectorAll(".fac-page-review-line")];
+		expect(lines.map((line) => [line.className, line.textContent])).toEqual([
+			["fac-page-review-line is-removed", `\u2212${SCRIPT}`],
+			["fac-page-review-line is-added", `+${SCRIPT_V2}`],
 		]);
 	});
 

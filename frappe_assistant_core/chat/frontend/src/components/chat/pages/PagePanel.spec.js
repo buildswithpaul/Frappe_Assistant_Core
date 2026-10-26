@@ -200,8 +200,9 @@ describe("PagePanel: code FACO writes runs only after the user has seen it", () 
 	it("asks on first open, and draws the html without running the script", async () => {
 		getPage.mockResolvedValue(page({ script: SCRIPT }));
 		const w = await mountPanel();
-		expect(w.find(".page-code-review").text()).toContain("This page has code FACO wrote.");
+		expect(w.find(".page-code-review").text()).toContain("This page runs code FACO wrote.");
 		expect(shownText(w)).toBe("Sales");
+		expect(w.find(".page-panel-held-note").exists()).toBe(true);
 		expect(usePagePanel().pageView.value.codeWaiting).toBe(true);
 	});
 
@@ -211,9 +212,13 @@ describe("PagePanel: code FACO writes runs only after the user has seen it", () 
 		const w = await mountPanel();
 		await until(() => expect(shownText(w)).toBe("ran v1"));
 
-		await refresh(w, page({ script: SCRIPT_V2 }));
-		await until(() => expect(w.find(".page-code-review").text()).toContain("FACO changed this page's code."));
-		expect(shownText(w)).toBe("Sales");
+		// The version the user ran stays on screen, running, while the new one waits.
+		await refresh(w, page({ script: SCRIPT_V2, html: '<div class="mk-card">New</div>' }));
+		await until(() => expect(w.find(".page-code-review").text()).toContain("FACO updated this page's code."));
+		expect(w.find(".page-code-review").text()).toContain("You're seeing the version you last ran.");
+		expect(shownText(w)).toBe("ran v1");
+		expect(w.find(".page-panel-held-note").exists()).toBe(false);
+		expect(usePagePanel().pageView.value.codeWaiting).toBe(true);
 
 		await w.find("button.page-code-review-run").trigger("click");
 		await until(() => expect(shownText(w)).toBe("ran v2"));
@@ -241,23 +246,26 @@ describe("PagePanel: code FACO writes runs only after the user has seen it", () 
 		expect(w.find(".page-code-review-diff").exists()).toBe(false);
 		await w.find("button.page-code-review-toggle").trigger("click");
 		const lines = w.findAll(".page-code-review-line");
-		expect(lines.map((l) => [l.classes().find((c) => c.startsWith("is-")), l.text()])).toEqual([
-			["is-removed", `- ${SCRIPT}`],
-			["is-added", `+ ${SCRIPT_V2}`],
+		expect(
+			lines.map((l) => [l.classes().find((c) => c.startsWith("is-")), l.find(".page-code-diff-text").text()]),
+		).toEqual([
+			["is-removed", SCRIPT],
+			["is-added", SCRIPT_V2],
 		]);
+		expect(w.find(".page-code-diff-summary").text()).toBe("1 line added, 1 line removed");
 	});
 
 	it("shows the whole new script from View changes on first open", async () => {
 		getPage.mockResolvedValue(page({ script: "const a = 1;\nconst b = 2;" }));
 		const w = await mountPanel();
 		await w.find("button.page-code-review-toggle").trigger("click");
-		expect(w.findAll(".page-code-review-line.is-added").map((l) => l.text())).toEqual([
-			"+ const a = 1;",
-			"+ const b = 2;",
-		]);
+		// A first look is the code itself, not a wall of additions.
+		expect(w.findAll(".page-code-review-line.is-added")).toHaveLength(0);
+		expect(w.findAll(".page-code-diff-text").map((l) => l.text())).toEqual(["const a = 1;", "const b = 2;"]);
+		expect(w.find("button.page-code-review-toggle").text()).toBe("Hide code");
 	});
 
-	it("asks every time when storage throws, and still runs the version the user approved", async () => {
+	it("asks every time when storage throws, keeping the version the user ran on screen", async () => {
 		// A private window or blocked site data makes localStorage throw on every access.
 		const denied = () => {
 			throw new Error("denied");
@@ -270,8 +278,9 @@ describe("PagePanel: code FACO writes runs only after the user has seen it", () 
 			await w.find("button.page-code-review-run").trigger("click");
 			await until(() => expect(shownText(w)).toBe("ran v1"));
 			await refresh(w, page({ script: SCRIPT }));
-			await until(() => expect(w.find(".page-code-review").text()).toContain("This page has code FACO wrote."));
-			expect(shownText(w)).toBe("Sales");
+			await until(() => expect(w.find(".page-code-review").text()).toContain("This page runs code FACO wrote."));
+			// Nothing remembered the approval, so the banner asks again; what runs is what was run.
+			expect(shownText(w)).toBe("ran v1");
 		} finally {
 			get.mockRestore();
 			set.mockRestore();

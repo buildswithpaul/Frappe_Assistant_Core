@@ -3,7 +3,7 @@ import { onBeforeUnmount, onMounted } from "vue";
 import { baseCall } from "@/api/_core";
 import { chat } from "@/api/domains/chat";
 import { onSpaSocketEvent } from "@/composables/useStreaming";
-import { usePagePanel } from "@/composables/usePagePanel";
+import { isNarrow, usePagePanel } from "@/composables/usePagePanel";
 import { useChatStore } from "@/stores/chatStore";
 import { createDispatcher } from "@/utils/browserToolDispatch";
 import { __ } from "@/utils/i18n";
@@ -23,7 +23,12 @@ const SPA_CLIENT_TYPE = "spa";
 /** Why the open page cannot be captured, or null when it can. */
 function pageProblem() {
 	const view = usePagePanel().pageView.value;
-	if (!view?.element) return __("No page is open in the panel.");
+	if (!view?.element) {
+		// A phone never opens a saved page by itself (usePagePanel), so the user has to tap it.
+		return isNarrow()
+			? __("No page is open: on a phone a page opens only when the user taps it in the reply.")
+			: __("No page is open in the panel.");
+	}
 	if (view.draft) return __("A draft's preview can't be captured. Publish the page to look at it.");
 	return null;
 }

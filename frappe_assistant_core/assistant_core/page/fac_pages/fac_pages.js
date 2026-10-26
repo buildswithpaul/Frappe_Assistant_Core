@@ -101,7 +101,15 @@
 			const host = document.createElement("div");
 			frame.append(host);
 			page.main.empty();
-			if (review_bar) page.main.append(review_bar);
+			if (review_bar) {
+				// The held page shows its layout only, stepped back so its empty figures read as waiting.
+				frame.style.opacity = "0.45";
+				frame.style.pointerEvents = "none";
+				const note = document.createElement("p");
+				note.className = "text-muted small fac-page-held-note";
+				note.textContent = __("The page fills in once you run its code.");
+				page.main.append(review_bar, note);
+			}
 			page.main.append(frame);
 			// @import must lead the stylesheet; the page's own style follows so it can override the kit.
 			const css = `@import url("${KIT_CSS_URL}");\n${data.style || ""}`;
@@ -240,26 +248,34 @@
 			});
 	}
 
-	// What the chat panel's PageCodeReview shows: why the script waits, View changes and Run new version.
+	// What the chat panel's PageCodeReview and PageCodeDiff show: why the script waits, its code or
+	// changes, and Run new version.
 	function make_review_bar(review, script, run) {
+		const first = review.state === "first";
 		const bar = document.createElement("div");
-		bar.className = "fac-page-review alert alert-warning";
+		bar.className = "fac-page-review alert alert-info";
 		bar.title = __("Until you run it, Download PDF and FACO's screenshots show the page without this code.");
 		const message = document.createElement("span");
 		message.className = "fac-page-review-message";
-		message.textContent =
-			review.state === "first" ? __("This page has code FACO wrote.") : __("FACO changed this page's code.");
-		const toggle = make_button(__("View changes"), "btn btn-default btn-xs fac-page-review-toggle");
+		message.textContent = first
+			? __("This page runs code FACO wrote. Check it, then run it.")
+			: __("FACO updated this page's code. Check the change, then run the new version.");
+		const labels = first
+			? [__("View code"), __("Hide code")]
+			: [__("View changes"), __("Hide changes")];
+		const toggle = make_button(labels[0], "btn btn-default btn-xs fac-page-review-toggle");
 		const run_button = make_button(__("Run new version"), "btn btn-primary btn-xs fac-page-review-run");
-		const diff = document.createElement("pre");
+		const diff = document.createElement("div");
 		diff.className = "fac-page-review-diff";
 		diff.hidden = true;
-		diff.style.cssText = "max-height:40vh;overflow:auto;margin:8px 0 0;";
+		diff.style.cssText =
+			"margin:8px 0 0;border:1px solid var(--border-color);border-radius:var(--border-radius-md);" +
+			"background:var(--fg-color);overflow:hidden;";
 		toggle.addEventListener("click", () => {
 			// Built on first look: most opens are a Run new version without one.
-			if (!diff.childElementCount) fill_diff(diff, review.approved, script);
+			if (!diff.childElementCount) fill_diff(diff, review.approved, script, first);
 			diff.hidden = !diff.hidden;
-			toggle.textContent = diff.hidden ? __("View changes") : __("Hide changes");
+			toggle.textContent = labels[diff.hidden ? 0 : 1];
 		});
 		run_button.addEventListener("click", () => {
 			run_button.disabled = true;
@@ -269,16 +285,65 @@
 		return bar;
 	}
 
-	function fill_diff(diff, approved, script) {
-		const marks = { same: " ", removed: "-", added: "+" };
-		const colours = { same: "", removed: "var(--red-600)", added: "var(--green-600)" };
-		for (const line of fac_page_line_diff(approved, script)) {
-			const row = document.createElement("span");
-			row.className = `fac-page-review-line is-${line.type}`;
-			row.style.cssText = `display:block;white-space:pre;color:${colours[line.type]};`;
-			row.textContent = `${marks[line.type]} ${line.text}`;
-			diff.append(row);
-		}
+	// Unchanged lines kept on each side of a change; a longer unchanged run folds away.
+	const DIFF_CONTEXT = 3;
+
+	function fill_diff(diff, approved, script, first) {
+		const lines = fac_page_line_diff(approved, script);
+		const count = (type) => lines.filter((line) => line.type === type).length;
+		const summary = document.createElement("div");
+		summary.className = "fac-page-review-summary text-muted small";
+		summary.style.cssText = "padding:4px 10px;border-bottom:1px solid var(--border-color);";
+		const line_count = (n) => (n === 1 ? __("1 line") : __("{0} lines", [n]));
+		summary.textContent = first
+			? __("{0} of code", [line_count(lines.length)])
+			: __("{0} added, {1} removed", [line_count(count("added")), line_count(count("removed"))]);
+		const body = document.createElement("div");
+		body.style.cssText =
+			"max-height:min(45vh,420px);overflow-y:auto;padding:4px 0;font-family:var(--font-family-monospace," +
+			"monospace);font-size:12px;line-height:1.55;";
+		const changed = lines.map((line, i) => (line.type === "same" ? -1 : i)).filter((i) => i >= 0);
+		const near = (i) => first || changed.some((at) => Math.abs(at - i) <= DIFF_CONTEXT);
+		let run = [];
+		const flush = () => {
+			if (run.length > 1) {
+				const rows = run;
+				const fold = make_button(__("Show {0} unchanged lines", [rows.length]), "fac-page-review-fold");
+				fold.style.cssText =
+					"display:block;width:100%;border:0;padding:2px 10px 2px 24px;text-align:left;" +
+					"background:var(--subtle-fg);color:var(--text-muted);font-size:12px;";
+				fold.addEventListener("click", () => fold.replaceWith(...rows.map((line) => diff_row(line, first))));
+				body.append(fold);
+			} else body.append(...run.map((line) => diff_row(line, first)));
+			run = [];
+		};
+		lines.forEach((line, i) => {
+			if (line.type === "same" && !near(i)) return run.push(line);
+			if (run.length) flush();
+			body.append(diff_row(line, first));
+		});
+		if (run.length) flush();
+		diff.append(summary, body);
+	}
+
+	function diff_row(line, first) {
+		const marks = { same: "", removed: "\u2212", added: "+" };
+		const tints = {
+			same: "",
+			removed: "background:color-mix(in srgb,var(--red-500) 10%,transparent);",
+			added: "background:color-mix(in srgb,var(--green-500) 12%,transparent);",
+		};
+		const row = document.createElement("div");
+		row.className = `fac-page-review-line is-${line.type}`;
+		row.style.cssText = `display:grid;grid-template-columns:24px 1fr;padding-right:10px;${first ? "" : tints[line.type]}`;
+		const mark = document.createElement("span");
+		mark.style.cssText = "text-align:center;color:var(--text-muted);user-select:none;";
+		mark.textContent = first ? "" : marks[line.type];
+		const text = document.createElement("span");
+		text.style.cssText = "white-space:pre-wrap;overflow-wrap:anywhere;min-width:0;";
+		text.textContent = line.text || " ";
+		row.append(mark, text);
+		return row;
 	}
 
 	function make_button(label, class_name) {

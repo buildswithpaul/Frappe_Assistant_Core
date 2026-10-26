@@ -113,6 +113,24 @@ describe("usePagePanel", () => {
 		expect(panel.openName.value).toBe("costs-a1b2c3");
 	});
 
+	it("leaves a saved page behind its chip on a phone, where the panel would cover the reply", async () => {
+		const matchMedia = window.matchMedia;
+		window.matchMedia = (query) => ({ matches: query === "(max-width: 767px)" });
+		try {
+			const messages = ref([{ role: "assistant", blocks: [runningCreate("t1")] }]);
+			const panel = track(messages);
+			await nextTick();
+
+			land(messages.value[0].blocks[0], "sales-59f062");
+			await nextTick();
+
+			expect(panel.openName.value).toBe(null);
+			expect(panel.chips.value.map((chip) => chip.name)).toEqual(["sales-59f062"]);
+		} finally {
+			window.matchMedia = matchMedia;
+		}
+	});
+
 	it("does not open a page whose write failed", async () => {
 		const messages = ref([{ role: "assistant", blocks: [runningCreate("t1")] }]);
 		const panel = track(messages);

@@ -15,7 +15,7 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 
 import { baseCall, getCall } from "@/api/_core";
 import { usePagePanel } from "@/composables/usePagePanel";
@@ -33,6 +33,8 @@ const props = defineProps({
 	user: { type: String, default: "" },
 	// The script waits for the user's Run new version: the page shows its html and style only.
 	holdScript: { type: Boolean, default: false },
+	// Non-zero while a newer version waits behind this one, which stays on screen until it runs.
+	waitingFor: { type: Number, default: 0 },
 });
 
 const emit = defineEmits(["unsupported", "error"]);
@@ -86,15 +88,23 @@ function render() {
 // FACO's screenshot captures the page shown here; a draft's frame cannot be read.
 let hidePageView = () => {};
 
+// Offered again whenever a newer version starts waiting, so a capture taken then is not held
+// back as if the page were still redrawing, and says the new code has not run.
+function offerPageView() {
+	hidePageView();
+	hidePageView = usePagePanel().showPageView({
+		element: published.value ? host.value : draftFrame.value,
+		draft: !published.value,
+		codeWaiting: published.value && ((props.holdScript && Boolean(props.page.script)) || props.waitingFor > 0),
+	});
+}
+
 onMounted(() => {
 	if (published.value) render();
-	const element = published.value ? host.value : draftFrame.value;
-	hidePageView = usePagePanel().showPageView({
-		element,
-		draft: !published.value,
-		codeWaiting: published.value && props.holdScript && Boolean(props.page.script),
-	});
+	offerPageView();
 });
+
+watch(() => props.waitingFor, offerPageView);
 
 onBeforeUnmount(() => {
 	hidePageView();
@@ -120,12 +130,17 @@ defineExpose({ printSnapshot });
 /* The page's box: its style and its script's elements paint inside it and nowhere else, so a fixed
    element cannot cover Run new version or the chat. Paint containment makes the box the containing
    block of fixed elements and clips them. It is set here, outside the shadow host, where the page's
-   own :host rules cannot undo it. The box scrolls the page, so a wide page still scrolls sideways. */
+   own :host rules cannot undo it. The box scrolls the page, so a wide page still scrolls sideways.
+   The page is a light document in either theme, on the kit's white, as it prints. */
 .page-view-frame {
 	height: 100%;
 	overflow: auto;
 	contain: layout paint;
 	isolation: isolate;
+	border: 1px solid var(--ql-border);
+	border-radius: var(--ql-radius-lg);
+	background: #fff;
+	transition: opacity 0.2s ease, filter 0.2s ease;
 }
 .page-view-host {
 	display: block;

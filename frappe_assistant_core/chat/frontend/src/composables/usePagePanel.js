@@ -7,6 +7,11 @@ export const PAGE_DOCK_MIN_WIDTH = 420;
 
 export const pageDockWidth = (shellWidth) => Math.max(PAGE_DOCK_MIN_WIDTH, shellWidth / 2);
 
+/** Below this the dock covers the whole chat (PageDock's media query). */
+export const NARROW_QUERY = "(max-width: 767px)";
+
+export const isNarrow = () => Boolean(window.matchMedia?.(NARROW_QUERY).matches);
+
 // One panel per SPA: a chip deep in the message tree and the dock beside the chat share it.
 const openName = ref(null);
 const refreshKey = ref(0);
@@ -74,14 +79,17 @@ function trackPageWrites(messages) {
 
 	// A page FACO saves during this turn opens beside the chat, so FACO can look at it at once. Only
 	// a write seen running here counts: a reload's history never opens the panel, and a page the
-	// user has open stays open.
+	// user has open stays open. On a phone the panel would cover the reply as it streams, so the
+	// page waits behind its chip there.
 	const seenRunning = new Set();
 	watch(
 		() => pageWriteCalls(blocks.value),
 		(calls) => {
 			for (const call of calls) {
 				if (call.inFlight) seenRunning.add(call.id);
-				else if (seenRunning.delete(call.id) && call.name && !openName.value) openName.value = call.name;
+				else if (seenRunning.delete(call.id) && call.name && !openName.value && !isNarrow()) {
+					openName.value = call.name;
+				}
 			}
 		},
 		{ immediate: true },

@@ -1,13 +1,18 @@
 <template>
-	<div class="page-list-menu">
+	<div ref="root" class="page-list-menu" @keydown.esc="isOpen = false">
 		<button
 			type="button"
 			class="page-panel-mine"
 			aria-haspopup="menu"
 			:aria-expanded="isOpen"
+			:aria-label="__('My pages')"
+			:title="__('My pages')"
 			@click="toggle"
 		>
-			{{ __("My pages") }} ▾
+			<svg viewBox="0 0 24 24" aria-hidden="true">
+				<path d="M8 4h9a2 2 0 012 2v11M5 8h9a1 1 0 011 1v10a1 1 0 01-1 1H5a1 1 0 01-1-1V9a1 1 0 011-1z" />
+			</svg>
+			<svg class="page-panel-mine-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10l5 5 5-5" /></svg>
 		</button>
 		<div v-if="isOpen" class="page-list-menu-popover" role="menu">
 			<p v-if="loading" class="page-list-menu-message">{{ __("Loading…") }}</p>
@@ -29,7 +34,7 @@
 </template>
 
 <script setup>
-import { ref } from "vue";
+import { onBeforeUnmount, ref } from "vue";
 
 import { facPage } from "@/api/domains/facPage";
 import { usePagePanel } from "@/composables/usePagePanel";
@@ -42,6 +47,14 @@ const isOpen = ref(false);
 const loading = ref(false);
 const failed = ref(false);
 const pages = ref([]);
+const root = ref(null);
+
+// A press anywhere else closes the menu, as the app's other menus do.
+function onOutside(event) {
+	if (isOpen.value && !root.value?.contains(event.target)) isOpen.value = false;
+}
+document.addEventListener("pointerdown", onOutside);
+onBeforeUnmount(() => document.removeEventListener("pointerdown", onOutside));
 
 // Listed on each open, so a page FACO just made is there.
 async function toggle() {
@@ -70,17 +83,38 @@ function choose(name) {
 	position: relative;
 }
 .page-panel-mine {
-	padding: 5px 9px;
+	display: inline-flex;
+	align-items: center;
+	height: 32px;
+	padding: 0 4px 0 7px;
 	border: none;
-	border-radius: 6px;
+	border-radius: var(--ql-radius-sm);
 	background: none;
 	color: var(--ql-text-secondary);
-	font-size: 13px;
 	cursor: pointer;
+	transition: background-color 0.15s ease, color 0.15s ease;
 }
-.page-panel-mine:hover {
+.page-panel-mine:hover,
+.page-panel-mine[aria-expanded="true"] {
 	background: var(--ql-subtle);
 	color: var(--ql-text);
+}
+.page-panel-mine:focus-visible {
+	outline: 2px solid var(--ql-accent);
+	outline-offset: 1px;
+}
+.page-panel-mine svg {
+	width: 18px;
+	height: 18px;
+	fill: none;
+	stroke: currentColor;
+	stroke-width: 1.75;
+	stroke-linecap: round;
+	stroke-linejoin: round;
+}
+.page-panel-mine .page-panel-mine-chevron {
+	width: 14px;
+	height: 14px;
 }
 .page-list-menu-popover {
 	position: absolute;

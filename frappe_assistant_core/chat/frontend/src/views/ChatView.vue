@@ -160,7 +160,7 @@
 			</aside>
 			<!-- Slim reopen tab once the docked rail is collapsed -->
 			<button
-				v-if="railShowDockReopen"
+				v-if="railShowDockReopen && !pageOpen"
 				class="rail-tab"
 				aria-label="Show context"
 				@click="expandRailDock"
@@ -171,7 +171,7 @@
 
 			<!-- Slim tab (768–1279px) — slides the rail open as an overlay -->
 			<button
-				v-if="railShowTab && railMode === 'tab' && !railVisible"
+				v-if="railShowTab && railMode === 'tab' && !railVisible && !pageOpen"
 				class="rail-tab"
 				@click="openRail"
 			>
@@ -458,6 +458,19 @@ const railHasArtifacts = computed(() => activeArtifacts.value.hasArtifacts);
 // Each page write is a rail artifact; an open page keeps the docked rail folded to its tab.
 const { openName: openPageName } = usePagePanel();
 const pageOpen = computed(() => Boolean(openPageName.value));
+// The Context tab sits on the shell's right edge, where an open page now is; it comes back on close.
+// The sidebar folds while a page is open on a desktop, so the chat keeps a readable column, and
+// unfolds on close only if the page folded it.
+let pageFoldedSidebar = false;
+watch(pageOpen, (open) => {
+	if (open && !sidebarCollapsed.value && window.matchMedia?.("(min-width: 1024px)").matches) {
+		sidebarCollapsed.value = true;
+		pageFoldedSidebar = true;
+	} else if (!open && pageFoldedSidebar) {
+		sidebarCollapsed.value = false;
+		pageFoldedSidebar = false;
+	}
+});
 const {
 	mode: railMode,
 	isVisible: railVisible,

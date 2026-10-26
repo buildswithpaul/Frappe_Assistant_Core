@@ -23,7 +23,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, toRef, watch } from "vue";
 
-import { usePagePanel } from "@/composables/usePagePanel";
+import { isNarrow, usePagePanel } from "@/composables/usePagePanel";
 import { useSpaBrowserTools } from "@/composables/useSpaBrowserTools";
 import BrowserToolConfirm from "@/widget/panel/BrowserToolConfirm.vue";
 import { confirms, settleConfirm } from "@/widget/panel/confirmQueue";
@@ -73,7 +73,7 @@ watch(
 
 // The overlay covers the composer on a phone, so it steps aside for the text to send.
 function onShare(text) {
-	if (window.matchMedia?.("(max-width: 767px)").matches) close();
+	if (isNarrow()) close();
 	emit("share", text);
 }
 </script>
