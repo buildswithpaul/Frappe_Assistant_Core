@@ -25,7 +25,7 @@ import frappe
 from frappe.client import delete, set_value
 from frappe.share import add as share_with
 
-from frappe_assistant_core.api.fac_page import get_page
+from frappe_assistant_core.api.fac_page import PERSONAL_DISALLOWED_TAGS, _without_tags, get_page
 from frappe_assistant_core.plugins.core.tools.create_document import DocumentCreate
 from frappe_assistant_core.plugins.core.tools.get_document import DocumentGet
 from frappe_assistant_core.plugins.core.tools.list_documents import DocumentList
@@ -403,6 +403,15 @@ class TestPersonalFACPage(BaseAssistantTest):
             "<svg",
         ):
             self.assertIn(kept, served)
+
+    def test_blocked_tags_leave_no_text_behind(self):
+        # Frappe v15's sanitize_html escapes a blocked tag into text the page shows; v16 removes it
+        html = (
+            '<svg><animate attributeName="href" to="javascript:alert(1)"></animate></svg>'
+            "<script>alert(2)</script><body><b>kept</b></body>"
+        )
+
+        self.assertEqual(_without_tags(html, PERSONAL_DISALLOWED_TAGS), "<svg></svg><b>kept</b>")
 
     def test_a_personal_pages_inline_styles_reach_no_other_server(self):
         user = self._desk_user("fac-page-inline-style")

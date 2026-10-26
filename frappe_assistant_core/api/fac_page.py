@@ -179,7 +179,11 @@ def _personal_html(html: str | None) -> str | None:
     The page's code may only live in ``script``, which the host pages run once the owner has seen
     it and clicked Run new version. An inline handler in the html would run without that.
     """
-    html = sanitize_html(html, always_sanitize=True, disallowed_tags=PERSONAL_DISALLOWED_TAGS)
+    html = sanitize_html(
+        _without_tags(html, PERSONAL_DISALLOWED_TAGS),
+        always_sanitize=True,
+        disallowed_tags=PERSONAL_DISALLOWED_TAGS,
+    )
     if not html or "style=" not in html:
         return html
     # An inline style shows at once too, so it gets the stylesheet's rules: nothing off this site.
@@ -200,13 +204,34 @@ def _draft_html(html: str | None) -> str | None:
     iframe, where none of these could run or submit. A link could still navigate that frame to a
     remote page, so anchors and image-map areas lose their href.
     """
-    html = sanitize_html(html, always_sanitize=True, disallowed_tags=DRAFT_DISALLOWED_TAGS)
+    html = sanitize_html(
+        _without_tags(html, DRAFT_DISALLOWED_TAGS),
+        always_sanitize=True,
+        disallowed_tags=DRAFT_DISALLOWED_TAGS,
+    )
     if not html:
         return html
     soup = BeautifulSoup(html, "html.parser")
     for link in soup.find_all(["a", "area"]):
         for attr in ("href", "xlink:href", "target", "ping"):
             link.attrs.pop(attr, None)
+    return str(soup)
+
+
+def _without_tags(html: str | None, tags: list[str]) -> str | None:
+    """``html`` with these tags taken out, keeping their text, and scripts and styles dropped whole.
+
+    sanitize_html stays the boundary. This makes Frappe v15 match v16: v15's bleach escapes a
+    disallowed tag into text the page shows, where v16's nh3 removes it.
+    """
+    if not html:
+        return html
+    soup = BeautifulSoup(html, "html.parser")
+    for element in soup.find_all({tag.lower() for tag in tags}):
+        if element.name in ("script", "style"):
+            element.decompose()
+        else:
+            element.unwrap()
     return str(soup)
 
 
