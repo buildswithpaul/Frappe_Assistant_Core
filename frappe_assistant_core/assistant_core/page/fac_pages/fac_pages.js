@@ -6,6 +6,12 @@
 	// fac.chart, built from the chat's pageCharts module (vite.pagecharts.config.js).
 	const CHARTS_URL = `/assets/frappe_assistant_core/js/fac_page_charts.js?v=${window._version_number || ""}`;
 	let charts_loaded = null;
+	// The page's box: its style and its script's elements paint inside it and nowhere else, so a
+	// fixed element cannot cover the review bar or Desk. Paint containment makes the box the
+	// containing block of fixed elements and clips them. It is set on a wrapper, outside the shadow
+	// host, where the page's own :host rules cannot undo it. Desk already clips a page sideways at
+	// its scroller, and clip, unlike auto, keeps the page's sticky headers sticking to it.
+	const PAGE_FRAME_STYLE = "contain: layout paint; isolation: isolate; overflow: clip;";
 	// The fac handed to the shown page's script, and how to dispose the charts it drew.
 	let shown = null;
 
@@ -89,10 +95,14 @@
 		ready.then(() => {
 			if (!is_latest()) return;
 			shown = make_fac();
+			const frame = document.createElement("div");
+			frame.className = "fac-page-frame";
+			frame.style.cssText = PAGE_FRAME_STYLE;
 			const host = document.createElement("div");
+			frame.append(host);
 			page.main.empty();
 			if (review_bar) page.main.append(review_bar);
-			page.main.append(host);
+			page.main.append(frame);
 			// @import must lead the stylesheet; the page's own style follows so it can override the kit.
 			const css = `@import url("${KIT_CSS_URL}");\n${data.style || ""}`;
 			frappe.create_shadow_element(

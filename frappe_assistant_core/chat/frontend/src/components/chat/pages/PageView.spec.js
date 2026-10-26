@@ -43,6 +43,19 @@ describe("PageView", () => {
 		expect(shadow.querySelector(".fac-page-root > .mk-card").textContent).toBe("Sales this month");
 	});
 
+	it("contains the page in a box outside its shadow host, so fixed elements stay inside it", () => {
+		const view = mountView(published);
+		const frame = view.find(".page-view-frame").element;
+		const host = view.find(".page-view-host").element;
+		const box = getComputedStyle(frame);
+		expect(box.contain).toMatch(/\blayout\b/);
+		expect(box.contain).toMatch(/\bpaint\b/);
+		expect(box.isolation).toBe("isolate");
+		expect(box.overflow).toBe("auto");
+		// The page's own :host rules reach the shadow host, never its parent.
+		expect(host.parentElement).toBe(frame);
+	});
+
 	it("runs a published page's script against the shadow root", () => {
 		const page = { ...published, script: "root_element.querySelector('.mk-card').textContent = 'ran';" };
 		const shadow = mountView(page).find(".page-view-host").element.shadowRoot;

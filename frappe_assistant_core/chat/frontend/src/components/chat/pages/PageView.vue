@@ -9,7 +9,9 @@
 		:title="page.title"
 		:srcdoc="draftSrcdoc"
 	/>
-	<div v-else ref="host" class="page-view-host" />
+	<div v-else class="page-view-frame">
+		<div ref="host" class="page-view-host" />
+	</div>
 </template>
 
 <script setup>
@@ -115,6 +117,16 @@ defineExpose({ printSnapshot });
 </script>
 
 <style scoped>
+/* The page's box: its style and its script's elements paint inside it and nowhere else, so a fixed
+   element cannot cover Run new version or the chat. Paint containment makes the box the containing
+   block of fixed elements and clips them. It is set here, outside the shadow host, where the page's
+   own :host rules cannot undo it. The box scrolls the page, so a wide page still scrolls sideways. */
+.page-view-frame {
+	height: 100%;
+	overflow: auto;
+	contain: layout paint;
+	isolation: isolate;
+}
 .page-view-host {
 	display: block;
 	min-height: 100%;

@@ -117,6 +117,19 @@ describe("fac-pages Desk page: code FACO writes runs only after the user has see
 		expect(frappe.create_shadow_element).not.toHaveBeenCalled();
 	});
 
+	it("contains the page in a box outside its shadow host, below the review bar", async () => {
+		await show(personal());
+		const host = frappe.create_shadow_element.mock.calls.at(-1)[0];
+		const frame = host.parentElement;
+		const box = getComputedStyle(frame);
+		expect(box.contain).toMatch(/\blayout\b/);
+		expect(box.contain).toMatch(/\bpaint\b/);
+		expect(box.isolation).toBe("isolate");
+		expect(box.overflow).toBe("clip");
+		expect(frame.parentElement).toBe(main);
+		expect(frame.contains(bar())).toBe(false);
+	});
+
 	it("never holds a Shared page", async () => {
 		await show(personal({ visibility: "Shared" }));
 		expect(bar()).toBeNull();
