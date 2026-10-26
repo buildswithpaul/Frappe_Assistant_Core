@@ -6,7 +6,12 @@
 
 import frappe
 
-from frappe_assistant_core.chat.api.current_code import CODE_KEYS, GO_LIVE_KEYS, get_current_code
+from frappe_assistant_core.chat.api.current_code import (
+    CODE_KEYS,
+    GO_LIVE_KEYS,
+    GO_LIVE_KEYS_BY_DOCTYPE,
+    get_current_code,
+)
 from frappe_assistant_core.tests.base_test import BaseAssistantTest
 
 READER = "current-code-reader@example.com"
@@ -157,7 +162,33 @@ class TestGetCurrentCodeGoesLive(BaseAssistantTest):
         with self.assertRaises(frappe.PermissionError):
             get_current_code("FAC Page", listed.name, ["roles"])
 
+    def test_returns_the_roles_a_report_reaches(self):
+        # Production reaches this when a builder saves a Report Builder report for some roles.
+        report = frappe.get_doc(
+            {
+                "doctype": "Report",
+                "report_name": "Current code report",
+                "ref_doctype": "ToDo",
+                "report_type": "Report Builder",
+                "is_standard": "No",
+                "roles": [{"role": "System Manager"}, {"role": "Report Manager"}],
+            }
+        ).insert(ignore_permissions=True)
+        out = get_current_code("Report", report.name, ["roles"])
+        self.assertEqual(sorted(out["roles"]), ["Report Manager", "System Manager"])
+
     def test_go_live_keys_stay_out_of_the_code_keys(self):
         self.assertEqual(GO_LIVE_KEYS, ("subject", "style", "roles"))
+        self.assertEqual(GO_LIVE_KEYS_BY_DOCTYPE["Report"], ("roles",))
+
+    def test_every_card_code_key_is_code_on_some_doctype(self):
+        from frappe_assistant_core.chat.api.current_code import CODE_KEYS_BY_DOCTYPE
+
+        registered = {key for keys in CODE_KEYS_BY_DOCTYPE.values() for key in keys}
+        self.assertLessEqual(set(CODE_KEYS), registered)
+        for doctype, keys in CODE_KEYS_BY_DOCTYPE.items():
+            meta = frappe.get_meta(doctype)
+            for key in keys:
+                self.assertIsNotNone(meta.get_field(key), (doctype, key))
         for key in GO_LIVE_KEYS:
             self.assertNotIn(key, CODE_KEYS)

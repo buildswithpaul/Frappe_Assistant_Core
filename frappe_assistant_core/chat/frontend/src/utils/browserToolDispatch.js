@@ -39,7 +39,7 @@ const DEDUPE_WINDOW_MS = 60000;
  *   `on` subscribes and may return an unsubscribe; `call` posts and resolves with the response's message.
  * @param {Record<string, Function>} options.handlers tool name → async handler(params); looked up per call.
  * @param {(request: {tool_name: string, params: object, description: string}) => Promise<string>} options.confirm
- *   resolves "approve", "trust" or "deny"; anything else, or a throw, is a refusal.
+ *   resolves "approve", "trust", "trust_page" or "deny"; anything else, or a throw, is a refusal.
  * @param {() => string|null} options.getSessionId the conversation this tab holds.
  * @param {Set<string>} [options.confirmTools] tools that need the user's approval before they run.
  * @param {(toolName: string, params: object) => string} [options.describe] a short summary for the card.
@@ -52,6 +52,9 @@ const DEDUPE_WINDOW_MS = 60000;
  *   rather than answer it with an error; for a client that runs only some of the tools.
  * @param {(toolName: string, params: object) => string} [options.trustKey] what "Always Allow" covers;
  *   the tool by default.
+ * @param {(toolName: string, params: object) => string|null} [options.pageTrustKey] what "Allow on this
+ *   page in this chat" covers. Null when there is no page or chat to key, and then that answer is a
+ *   one-off approval, as it is when the key has changed by the time the user answers.
  */
 export function createDispatcher({
 	transport,
@@ -64,12 +67,14 @@ export function createDispatcher({
 	ownsCall = () => true,
 	ignoreUnknownTools = false,
 	trustKey = (toolName) => toolName,
+	pageTrustKey = () => null,
 	retries = 3,
 	retryDelayMs = 500,
 }) {
 	const processed = new Set();
 	// "Always Allow" lasts as long as this dispatcher: a reload forgets it.
 	const trusted = new Set();
+	const trustedPages = new Set();
 	// Settles each confirmation still open when the dispatcher stops.
 	const openAsks = new Set();
 	let listening = false;
@@ -102,7 +107,7 @@ export function createDispatcher({
 		}
 	}
 
-	async function askUser(tool_name, params, key) {
+	async function askUser(tool_name, params, key, pageKey) {
 		let decision;
 		let settleOnStop;
 		const stopped = new Promise((resolve) => (settleOnStop = () => resolve("deny")));
@@ -117,8 +122,12 @@ export function createDispatcher({
 		} finally {
 			openAsks.delete(settleOnStop);
 		}
-		if (decision !== "approve" && decision !== "trust") return "deny";
+		if (!["approve", "trust", "trust_page"].includes(decision)) return "deny";
 		if (decision === "trust") trusted.add(key);
+		// Another page or chat by now: the user answered about the one the card showed.
+		else if (decision === "trust_page" && pageKey && pageKey === pageTrustKey(tool_name, params)) {
+			trustedPages.add(pageKey);
+		}
 		return decision;
 	}
 
@@ -152,10 +161,12 @@ export function createDispatcher({
 				return;
 			}
 			const key = trustKey(tool_name, params);
-			if (confirmTools.has(tool_name) && !trusted.has(key)) {
+			const pageKey = pageTrustKey(tool_name, params);
+			const isTrusted = trusted.has(key) || Boolean(pageKey && trustedPages.has(pageKey));
+			if (confirmTools.has(tool_name) && !isTrusted) {
 				// The server suspends its short delivery deadline while a human decides.
 				reportProgress(call_id, "awaiting_user");
-				if ((await askUser(tool_name, params, key)) === "deny") {
+				if ((await askUser(tool_name, params, key, pageKey)) === "deny") {
 					await submit(call_id, null, DECLINED_ERROR);
 					return;
 				}

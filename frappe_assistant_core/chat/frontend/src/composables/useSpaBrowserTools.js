@@ -96,8 +96,8 @@ const pageCopy = () => ({
 
 /**
  * Let FACO look at the page open in the side panel. Calls arrive on the SPA socket, which sits in
- * the conversation's task_progress room; each screenshot asks the user first, and "Always Allow"
- * covers that page in that conversation only.
+ * the conversation's task_progress room; each screenshot asks the user first, and "Allow on this
+ * page in this chat" covers that page in that conversation only. The card offers no wider trust.
  *
  * @param {{getSessionId: () => string|null}} options
  */
@@ -105,6 +105,7 @@ export function useSpaBrowserTools({ getSessionId }) {
 	// The page each call was about when it was accepted, keyed by the call's params object, which
 	// the dispatcher hands unchanged to preflight and then to the handler.
 	const askedAbout = new WeakMap();
+	const pageKey = (toolName) => `${getSessionId()}|${usePagePanel().openName.value}|${toolName}`;
 	function preflight(toolName, params) {
 		const problem = pageProblem();
 		if (!problem) askedAbout.set(params, usePagePanel().openName.value);
@@ -119,11 +120,12 @@ export function useSpaBrowserTools({ getSessionId }) {
 		// The widget's other tools may reach this room; they are the widget's to answer.
 		ignoreUnknownTools: true,
 		confirmTools: new Set(["take_screenshot"]),
-		trustKey: (toolName) => `${getSessionId()}|${usePagePanel().openName.value}|${toolName}`,
+		trustKey: pageKey,
+		pageTrustKey: (toolName) => (getSessionId() ? pageKey(toolName) : null),
 		describe: () => __("The page open beside the chat"),
 		// With nothing to capture, answer at once rather than ask the user to approve nothing.
 		preflight,
-		confirm: (request) => askConfirm({ ...request, copy: pageCopy() }),
+		confirm: (request) => askConfirm({ ...request, copy: pageCopy(), alwaysAllow: false }),
 		getSessionId,
 	});
 

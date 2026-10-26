@@ -703,6 +703,13 @@ const dispatcher = createDispatcher({
 	// AR names no client, and its calls are the widget's, as before.
 	ownsCall: (call) => !call?.client_type || call.client_type === WIDGET_CLIENT_TYPE,
 	confirmTools: TOOLS_REQUIRING_CONFIRMATION,
+	// "Allow on this page in this chat": this chat, the current Desk route, this tool. Without a chat
+	// id there is nothing to key, since that trust must never outlive or cross a chat.
+	pageTrustKey: (tool_name) => {
+		const sid = deps.getSessionId();
+		if (!sid) return null;
+		return JSON.stringify([sid, window.frappe?.get_route?.() || [], tool_name]);
+	},
 	describe: (tool_name, params) => FACOBrowserTools._describeParams(tool_name, params),
 	// The host prompts and opens the panel if it is closed: a silent prompt defeats the purpose.
 	confirm: (request) => deps.confirm(request),

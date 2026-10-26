@@ -17,7 +17,21 @@
 			>
 				{{ t("Approve") }}
 			</button>
-			<button type="button" class="btc-btn" data-test="confirm-trust" @click="$emit('decide', 'trust')">
+			<button
+				type="button"
+				class="btc-btn"
+				data-test="confirm-trust-page"
+				@click="$emit('decide', 'trust_page')"
+			>
+				{{ t("Allow on this page in this chat") }}
+			</button>
+			<button
+				v-if="request.alwaysAllow !== false"
+				type="button"
+				class="btc-btn"
+				data-test="confirm-trust"
+				@click="$emit('decide', 'trust')"
+			>
 				{{ t("Always Allow") }}
 			</button>
 		</div>
@@ -34,6 +48,7 @@ const props = defineProps({
 });
 defineEmits(["decide"]);
 
+// A host whose trust never reaches past one page in one chat (the chat app) sets alwaysAllow false.
 // The tool name and params come from the model: rendered as text only, never as HTML. A host
 // whose tool does something narrower (the chat app's page screenshot) brings its own copy.
 const copy = computed(
@@ -66,6 +81,7 @@ const copy = computed(
 }
 .btc-actions {
 	display: flex;
+	flex-wrap: wrap;
 	gap: 8px;
 	margin-top: 10px;
 }

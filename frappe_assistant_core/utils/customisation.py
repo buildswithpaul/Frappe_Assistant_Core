@@ -36,6 +36,11 @@ from frappe_assistant_core.assistant_core.doctype.fac_page.fac_page import (
     SHARED,
     is_system_manager,
 )
+from frappe_assistant_core.chat.api.current_code import (
+    CODE_KEYS_BY_DOCTYPE,
+    GO_LIVE_KEYS_BY_DOCTYPE,
+    TABLE_COLUMNS,
+)
 
 CUSTOMISATION_DOCTYPES = frozenset(
     {
@@ -285,6 +290,10 @@ def _personal_page_impact(
     A personal page opens, published or not, for its owner only. So a write is dormant when the
     page is personal before and after it and belongs to the session user, and live otherwise:
     someone else's page changes for them, and sharing a page opens it to other people.
+
+    A personal page never ``switches_on`` and never ``changes_live_code``: it reaches its owner
+    alone, whose browser holds code FACO changed until they click Run new version. Sharing a page
+    switches it on when it is published after the write, since that opens it to its roles.
     """
     default = frappe.get_meta("FAC Page").get_field("visibility").default
     visibility = (data.get("visibility") or default) if creating else after("visibility")
@@ -297,7 +306,7 @@ def _personal_page_impact(
     owned = creating or (before("owner") == user and after("owner") == user)
     if owned and visibility == PERSONAL and (creating or before("visibility") == PERSONAL):
         return {"dormant": True, "reason": _("only you can open this page")}
-    return dict(_LIVE_PAGE)
+    return {**_LIVE_PAGE, "switches_on": visibility == SHARED and bool(cint(after("published")))}
 
 
 def customisation_impact(tool_name: str, tool_input: Any) -> Dict[str, Any]:
@@ -309,8 +318,67 @@ def customisation_impact(tool_name: str, tool_input: Any) -> Dict[str, Any]:
     or used by another form. A write is dormant only when
     the stored state and the state after the write both are, so switching a script on, publishing
     a page or moving a field onto a live DocType is live, and any doubt counts as live.
+    ``switches_on`` is true when the write turns a ``_SWITCH_FIELDS`` record from off to on,
+    including a create saved switched on, and when it shares a personal FAC Page that is published
+    after the write (``_personal_page_impact``). ``changes_live_code`` is true when an update changes a
+    live field (``_live_fields``: code, templates and audience, such as a Report's roles, compared
+    as a set) of a record that is live before and after the write, and when a create of a doctype
+    without a switch (a Report, a Print Format) sets any live field. FAC Cloud shows its card for
+    either even when an approved build plan lists the write, so the user sees the final code.
     Never writes. The reason is plain words for logs and never repeats stored values.
     """
+    result = _dormancy(tool_name, tool_input)
+    result.setdefault("switches_on", False)
+    result.setdefault("changes_live_code", False)
+    return result
+
+
+def _row_values(rows: Any, column: str) -> Optional[frozenset]:
+    """The set of ``column`` values in sent child rows (dicts or bare values); None if not a list."""
+    if not isinstance(rows, list):
+        return None
+    return frozenset(row.get(column) if isinstance(row, dict) else row for row in rows)
+
+
+def _live_fields(doctype: str) -> tuple:
+    """The fields of ``doctype`` whose value runs or reaches people: code, templates and audience."""
+    return CODE_KEYS_BY_DOCTYPE.get(doctype, ()) + GO_LIVE_KEYS_BY_DOCTYPE.get(doctype, ())
+
+
+def _non_empty(value: Any) -> bool:
+    """Whether a sent value says something: text that is not blank, a child table with a row."""
+    return bool(value.strip()) if isinstance(value, str) else bool(value)
+
+
+def _carries_live_fields(doctype: str, data: Dict[str, Any]) -> bool:
+    """Whether a create sets any live field of ``doctype``."""
+    return any(_non_empty(data.get(field)) for field in _live_fields(doctype))
+
+
+def _changes_live_fields(doctype: str, data: Dict[str, Any], stored: Dict[str, Any]) -> bool:
+    """Whether ``data`` gives a code or go-live field of ``doctype`` a value other than the stored one.
+
+    A child table is compared as the set of its rows' values, so reordering rows is no change and
+    rows that cannot be read count as one.
+    """
+    for field in _live_fields(doctype):
+        if field not in data:
+            continue
+        if field in TABLE_COLUMNS:
+            column = TABLE_COLUMNS[field]
+            current = frappe.get_all(
+                frappe.get_meta(doctype).get_field(field).options,
+                filters={"parent": stored.get("name"), "parenttype": doctype, "parentfield": field},
+                pluck=column,
+            )
+            if _row_values(data[field], column) != frozenset(current):
+                return True
+        elif (data[field] or "") != (stored.get(field) or ""):
+            return True
+    return False
+
+
+def _dormancy(tool_name: str, tool_input: Any) -> Dict[str, Any]:
     if tool_name not in _WRITE_TOOLS or not isinstance(tool_input, dict):
         return {"dormant": False, "reason": "Not a customisation write"}
     doctype = tool_input.get("doctype")
@@ -349,7 +417,13 @@ def customisation_impact(tool_name: str, tool_input: Any) -> Dict[str, Any]:
         stored_off = creating or cint(before(field)) == off
         if stored_off and cint(value) == off:
             return {"dormant": True, "reason": f"{doctype} is switched off"}
-        return {"dormant": False, "reason": f"{doctype} is switched on"}
+        stays_on = not stored_off and cint(value) != off
+        return {
+            "dormant": False,
+            "reason": f"{doctype} is switched on",
+            "switches_on": stored_off,
+            "changes_live_code": stays_on and _changes_live_fields(doctype, data, stored),
+        }
 
     if doctype == "DocType":
         stored_facts = None if creating else _stored_doctype(name)
@@ -376,7 +450,13 @@ def customisation_impact(tool_name: str, tool_input: Any) -> Dict[str, Any]:
             return {"dormant": True, "reason": "Permission only covers system roles on a dormant DocType"}
         return {"dormant": False, "reason": "Permission may open a DocType to other people"}
 
-    return {"dormant": False, "reason": f"{doctype} changes always count"}
+    return {
+        "dormant": False,
+        "reason": f"{doctype} changes always count",
+        "changes_live_code": (
+            _carries_live_fields(doctype, data) if creating else _changes_live_fields(doctype, data, stored)
+        ),
+    }
 
 
 _PLAN_ACTION_TOOLS = {"update": "update_document", "delete": "delete_document"}

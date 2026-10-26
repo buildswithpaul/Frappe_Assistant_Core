@@ -237,6 +237,100 @@ describe("the confirmation gate fails closed", () => {
 		expect(run).toHaveBeenCalledTimes(2);
 	});
 
+	describe("trust_page", () => {
+		const setRoute = (route) => {
+			globalThis.frappe.get_route = () => route;
+		};
+		// Rest args, not a default: a default would turn an undefined session id into "s1".
+		const startAs = async (confirm, ...sid) => {
+			const id = sid.length ? sid[0] : "s1";
+			(await import("./browserTools.js")).startBrowserTools({ getSessionId: () => id, confirm });
+		};
+
+		it("is not asked again for the same tool, route and chat", async () => {
+			const confirm = vi.fn(async () => "trust_page");
+			setRoute(["Form", "Task", "T-1"]);
+			await startAs(confirm);
+			await call("g1");
+			await call("g2");
+			expect(confirm).toHaveBeenCalledTimes(1);
+			expect(run).toHaveBeenCalledTimes(2);
+		});
+
+		it("asks again on another route", async () => {
+			const confirm = vi.fn(async () => "trust_page");
+			setRoute(["Form", "Task", "T-1"]);
+			await startAs(confirm);
+			await call("r1");
+			setRoute(["Form", "Task", "T-2"]);
+			await call("r2");
+			expect(confirm).toHaveBeenCalledTimes(2);
+		});
+
+		it("asks again in another chat", async () => {
+			const confirm = vi.fn(async () => "trust_page");
+			setRoute(["List", "Task"]);
+			await startAs(confirm, "s1");
+			await call("c1");
+			await startAs(confirm, "s2");
+			await call("c2");
+			expect(confirm).toHaveBeenCalledTimes(2);
+		});
+
+		it("covers only the tool that was trusted", async () => {
+			const confirm = vi.fn(async () => "trust_page");
+			setRoute(["List", "Task"]);
+			await startAs(confirm);
+			await call("d1");
+			vi.spyOn(tools.handlers, "get_form_data").mockResolvedValue({ success: true });
+			await tools._handleToolCall({ call_id: "d2", tool_name: "get_form_data", params: {} });
+			expect(confirm).toHaveBeenCalledTimes(2);
+		});
+
+		it.each([null, "", undefined])("never stores trust without a session id (%j)", async (sid) => {
+			const confirm = vi.fn(async () => "trust_page");
+			setRoute(["List", "Task"]);
+			await startAs(confirm, sid);
+			await call("n1");
+			await call("n2");
+			expect(confirm).toHaveBeenCalledTimes(2);
+			expect(run).toHaveBeenCalledTimes(2);
+		});
+
+		it("stores nothing when the route changes while the card is open", async () => {
+			setRoute(["Form", "Task", "T-1"]);
+			const confirm = vi.fn(async () => {
+				setRoute(["Form", "Task", "T-2"]);
+				return "trust_page";
+			});
+			await startAs(confirm);
+			await call("m1");
+			expect(run).toHaveBeenCalledTimes(1);
+			await call("m2");
+			expect(confirm).toHaveBeenCalledTimes(2);
+		});
+
+		it("does not let a route segment containing a slash stand in for two segments", async () => {
+			const confirm = vi.fn(async () => "trust_page");
+			setRoute(["Form", "Task", "a/b"]);
+			await startAs(confirm);
+			await call("k1");
+			setRoute(["Form", "Task", "a", "b"]);
+			await call("k2");
+			expect(confirm).toHaveBeenCalledTimes(2);
+		});
+
+		it("does not make the tool trusted everywhere", async () => {
+			const confirm = vi.fn(async () => "trust_page");
+			setRoute(["List", "Task"]);
+			await startAs(confirm);
+			await call("e1");
+			setRoute(["List", "ToDo"]);
+			await call("e2");
+			expect(confirm).toHaveBeenCalledTimes(2);
+		});
+	});
+
 	it("ignores a call addressed to another session: no ack, no prompt, no result", async () => {
 		const confirm = vi.fn(async () => "approve");
 		await start(confirm);

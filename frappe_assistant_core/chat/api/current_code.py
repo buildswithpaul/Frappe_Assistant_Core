@@ -28,9 +28,29 @@ CODE_KEYS = (
 
 # Not code on every card, but run once an update switches the record on, so the card shows the
 # stored value: a Notification's subject is a Jinja template rendered into the email it sends,
-# and a FAC Page's style is applied to the page once it is published. A FAC Page's roles say who
-# it goes live to. Mirrored in customisation.js (SWITCHED_CODE).
-GO_LIVE_KEYS = ("subject", "style", "roles")
+# and a FAC Page's style is applied to the page once it is published. A FAC Page's or a Report's
+# roles say who it reaches. Keyed by the doctype each belongs to, since another doctype's field of
+# the same name may be no code at all (a Workflow State's style is a colour); utils/customisation.py
+# reads the same map. Mirrored in customisation.js (SWITCHED_CODE) for the doctypes with a switch.
+GO_LIVE_KEYS_BY_DOCTYPE = {
+    "Notification": ("subject",),
+    "FAC Page": ("style", "roles"),
+    "Report": ("roles",),
+}
+GO_LIVE_KEYS = tuple(dict.fromkeys(key for keys in GO_LIVE_KEYS_BY_DOCTYPE.values() for key in keys))
+
+# Every field each doctype runs as code or renders as a template, which utils/customisation.py
+# reads to judge whether a write runs code the user has not seen. Wider than CODE_KEYS, the fields
+# the card shows as code: a raw print's commands and a print designer layout (which can hold
+# Jinja in custom HTML) render too.
+CODE_KEYS_BY_DOCTYPE = {
+    "Server Script": ("script",),
+    "Client Script": ("script",),
+    "Notification": ("condition", "message"),
+    "FAC Page": ("html", "script"),
+    "Report": ("report_script", "query", "javascript"),
+    "Print Format": ("html", "css", "raw_commands", "format_data"),
+}
 
 # Child tables among GO_LIVE_KEYS, and the column each returns, one value per row.
 TABLE_COLUMNS = {"roles": "role"}

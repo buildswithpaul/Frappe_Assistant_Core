@@ -55,8 +55,9 @@ A full screen with its own layout (planner, board, tracker) is a FAC Page: see t
   `setup-change-protocol` for the full rules.
 - Send a `mockup_html` for each screen, written with the classes in the `mockup-kit` skill. Show the
   layout, not real data.
-- Wait for the approval. Writes the plan lists then run without a card each; anything you add later
-  asks as usual, so propose a new plan if the scope grows.
+- Wait for the approval. Writes the plan lists then run without a card each, except publishing a page,
+  switching a rule on or changing live code, which asks once with the final code; anything you add later asks as usual,
+  so propose a new plan if the scope grows.
 
 ## Any other app
 

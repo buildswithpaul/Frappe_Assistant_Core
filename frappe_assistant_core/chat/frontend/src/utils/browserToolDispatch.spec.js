@@ -207,6 +207,51 @@ describe("createDispatcher", () => {
 		expect(t.sequence().filter((s) => s === "awaiting_user")).toHaveLength(2);
 	});
 
+	describe("trust_page", () => {
+		const asked = (t) => t.sequence().filter((s) => s === "awaiting_user").length;
+
+		it("covers the page key it was given and nothing else", async () => {
+			let page = "a";
+			const t = setup({ confirm: async () => "trust_page", pageTrustKey: (tool) => `${page}|${tool}` });
+			await t.dispatcher.handle(shot("g1"));
+			await t.dispatcher.handle(shot("g2"));
+			page = "b";
+			await t.dispatcher.handle(shot("g3"));
+			expect(asked(t)).toBe(2);
+			expect(t.handlers.take_screenshot).toHaveBeenCalledTimes(3);
+		});
+
+		it("is a one-off approval without a page key", async () => {
+			const t = setup({ confirm: async () => "trust_page" });
+			await t.dispatcher.handle(shot("n1"));
+			await t.dispatcher.handle(shot("n2"));
+			expect(asked(t)).toBe(2);
+			expect(t.handlers.take_screenshot).toHaveBeenCalledTimes(2);
+		});
+
+		it("is a one-off approval when the page changed while the card was open", async () => {
+			let page = "a";
+			const confirm = async () => {
+				page = "b";
+				return "trust_page";
+			};
+			const t = setup({ confirm, pageTrustKey: (tool) => `${page}|${tool}` });
+			await t.dispatcher.handle(shot("m1"));
+			page = "a";
+			await t.dispatcher.handle(shot("m2"));
+			expect(asked(t)).toBe(2);
+		});
+
+		it("does not trust the tool everywhere", async () => {
+			let page = "a";
+			const t = setup({ confirm: async () => "trust_page", pageTrustKey: (tool) => `${page}|${tool}` });
+			await t.dispatcher.handle(shot("e1"));
+			page = "b";
+			await t.dispatcher.handle(shot("e2"));
+			expect(asked(t)).toBe(2);
+		});
+	});
+
 	it("denies a confirmation still open when it stops", async () => {
 		const t = setup({ confirm: () => new Promise(() => {}) });
 		const pending = t.dispatcher.handle(shot("s1"));

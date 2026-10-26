@@ -202,13 +202,13 @@ describe("useSpaBrowserTools", () => {
 		expect(results()[0].error).toMatch(/Another page was opened/);
 	});
 
-	it("keeps Always Allow to that page in that conversation", async () => {
+	it.each(["trust", "trust_page"])("keeps %s to that page in that conversation", async (decision) => {
 		showPage();
 		wrapper = mount(Host);
 		const trustOnce = async (id) => {
 			const pending = call(id);
 			await flushPromises();
-			if (confirms.value.length) settleConfirm(confirms.value[0], "trust");
+			if (confirms.value.length) settleConfirm(confirms.value[0], decision);
 			await pending;
 		};
 		const asked = () => baseCall.mock.calls.filter(([, args]) => args?.state === "awaiting_user").length;
@@ -224,6 +224,16 @@ describe("useSpaBrowserTools", () => {
 		session = "s2";
 		await trustOnce("t4");
 		expect(asked()).toBe(3);
+	});
+
+	it("offers the card no Always Allow wider than the page", async () => {
+		showPage();
+		wrapper = mount(Host);
+		const pending = call("w1");
+		await flushPromises();
+		expect(confirms.value[0].request.alwaysAllow).toBe(false);
+		settleConfirm(confirms.value[0], "deny");
+		await pending;
 	});
 
 	it("denies a card still open when its host unmounts, and stops listening", async () => {

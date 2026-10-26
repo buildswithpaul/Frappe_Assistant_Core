@@ -23,6 +23,8 @@ from frappe.utils.html_utils import sanitize_html
 
 from frappe_assistant_core.assistant_core.doctype.fac_page.fac_page import SHARED, SYSTEM_MANAGER
 
+_OPEN, _NOT_FOUND, _NOT_ALLOWED = "open", "not found", "not allowed"
+
 # Tags that act on the whole document (a refresh, a stylesheet), or that could draw a fake
 # prompt posting to another server, rather than showing the page.
 DRAFT_DISALLOWED_TAGS = [
@@ -77,20 +79,16 @@ def get_page(slug: str) -> dict:
     if user == "Guest":
         frappe.throw(_("Log in to view this page."), frappe.PermissionError)
 
-    record = frappe.db.get_value("FAC Page", slug, ["published", "visibility", "owner"], as_dict=True)
-    if record is None:
-        _not_found()
-    if record.visibility == SHARED:
-        _check_shared_access(slug, record.published)
-        draft = not record.published
-    elif record.owner == user:
-        draft = False
-    else:
-        # A personal page reads as missing, so the response does not reveal that it exists.
-        _not_found()
+    access = _page_access(slug, user)
+    # A page the user may not see at all reads as missing, so the response does not reveal it.
+    if access == _NOT_FOUND:
+        frappe.throw(_("This page does not exist."), frappe.DoesNotExistError)
+    if access == _NOT_ALLOWED:
+        frappe.throw(_("You are not allowed to view this page."), frappe.PermissionError)
 
     # Access was decided above; a shared page's reader cannot read the DocType itself.
     page = frappe.get_doc("FAC Page", slug)
+    draft = page.visibility == SHARED and not page.published
     return {
         "title": page.title,
         "html": _served_html(page.html, draft, page.visibility),
@@ -102,23 +100,48 @@ def get_page(slug: str) -> dict:
     }
 
 
-def _not_found():
-    frappe.throw(_("This page does not exist."), frappe.DoesNotExistError)
+def can_open_page(name: str, user: str) -> bool:
+    """Whether ``user`` may open the FAC Page ``name``, decided as ``get_page`` decides it."""
+    return _page_access(name, user) == _OPEN
 
 
-def _check_shared_access(name: str, published: int) -> None:
-    """Refuse a shared page the session user may not open; empty roles mean System Managers only."""
-    user_roles = set(frappe.get_roles())
-    if SYSTEM_MANAGER in user_roles:
-        return
-    # An unpublished page reads as missing, so the response does not reveal that it exists.
-    if not published:
-        _not_found()
-    allowed_roles = frappe.get_all(
-        "FAC Page Role", filters={"parenttype": "FAC Page", "parent": name}, pluck="role"
-    )
-    if not user_roles.intersection(allowed_roles):
-        frappe.throw(_("You are not allowed to view this page."), frappe.PermissionError)
+def roles_that_open_page(name: str) -> list[str]:
+    """Roles that open the page: none for a personal page, which opens for its owner alone; for a
+    shared page its listed roles while published, and always System Manager."""
+    record = frappe.db.get_value("FAC Page", name, ["published", "visibility"], as_dict=True)
+    if record is None or record.visibility != SHARED:
+        return []
+    roles = _listed_roles(name) if record.published else []
+    return list(dict.fromkeys([*roles, SYSTEM_MANAGER]))
+
+
+def _page_access(name: str, user: str) -> str:
+    """``_OPEN``, ``_NOT_FOUND`` or ``_NOT_ALLOWED`` for ``user`` and the FAC Page ``name``.
+
+    A personal page opens for its owner only, and is not found for anyone else, System Managers
+    included. A published shared page opens for a System Manager or a holder of one of its roles,
+    so a shared page with no roles is System Manager only. An unpublished shared page opens for a
+    System Manager only, and is not found for anyone else.
+    """
+    if user == "Guest":
+        return _NOT_ALLOWED
+    record = frappe.db.get_value("FAC Page", name, ["published", "visibility", "owner"], as_dict=True)
+    if record is None:
+        return _NOT_FOUND
+    if record.visibility != SHARED:
+        return _OPEN if record.owner == user else _NOT_FOUND
+    user_roles = set(frappe.get_roles(user))
+    is_system_manager = SYSTEM_MANAGER in user_roles
+    if not record.published and not is_system_manager:
+        return _NOT_FOUND
+    if is_system_manager or user_roles.intersection(_listed_roles(name)):
+        return _OPEN
+    return _NOT_ALLOWED
+
+
+def _listed_roles(name: str) -> list[str]:
+    """The roles in the page's FAC Page Role rows."""
+    return frappe.get_all("FAC Page Role", filters={"parenttype": "FAC Page", "parent": name}, pluck="role")
 
 
 def _served_html(html: str | None, draft: bool, visibility: str) -> str | None:
