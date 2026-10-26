@@ -125,12 +125,64 @@ def _pending_calls_key(user: str, session_id: str | None) -> str:
     return f"{PENDING_CALLS_PREFIX}session:{session_id}" if session_id else f"{PENDING_CALLS_PREFIX}{user}"
 
 
+# Which client answers a conversation's browser calls for the rest of its running turn, set when the
+# chat app takes a turn over from the Desk widget (Open Full Assistant). The widget's turn keeps
+# asking for the widget's tools, and the widget is gone; the claim retypes those calls for the chat
+# app. Server-side, so a widget open on the same conversation in another Desk tab cannot race it.
+TURN_CLAIM_PREFIX = "faco_browser_turn_client:"
+# Outlives any turn; the next message from any surface clears it first.
+TURN_CLAIM_TTL = 30 * 60
+SPA_CLIENT = "spa"
+WIDGET_CLIENT = "widget"
+
+
+def claim_session_for_spa(session_id: str) -> None:
+    """Send this conversation's browser calls to the chat app, including those already queued."""
+    frappe.cache.set_value(f"{TURN_CLAIM_PREFIX}{session_id}", SPA_CLIENT, expires_in_sec=TURN_CLAIM_TTL)
+    _retype_queued_calls(session_id)
+
+
+def release_session_claim(session_id: str) -> None:
+    """A new turn names its own client: forget the hand-over."""
+    frappe.cache.delete_value(f"{TURN_CLAIM_PREFIX}{session_id}")
+
+
+def _claimed_client(session_id: str | None) -> str | None:
+    if not session_id:
+        return None
+    client = frappe.cache.get_value(f"{TURN_CLAIM_PREFIX}{session_id}", expires=True)
+    return client.decode("utf-8") if isinstance(client, bytes) else client
+
+
+def _retype_queued_calls(session_id: str) -> None:
+    """Retype the widget's calls already parked on the conversation's queue, keeping their order."""
+    key = _pending_calls_key("", session_id)
+    calls = []
+    while (raw := frappe.cache.rpop(key)) is not None:
+        try:
+            call = json.loads(raw.decode("utf-8") if isinstance(raw, bytes) else raw)
+        except (json.JSONDecodeError, TypeError, AttributeError):
+            continue
+        if call.get("client_type") in (None, WIDGET_CLIENT):
+            call["client_type"] = SPA_CLIENT
+        calls.append(call)
+    # rpop gave oldest first; pushing them back in that order restores the queue.
+    for call in calls:
+        frappe.cache.lpush(key, json.dumps(call))
+    if calls:
+        try:
+            frappe.cache.expire_key(key, 60)
+        except AttributeError:
+            frappe.cache.expire(frappe.cache.make_key(key), 60)
+
+
 def send_browser_tool_call(
     user: str,
     call_id: str,
     tool_name: str,
     params: dict[str, Any],
     session_id: str | None = None,
+    client_type: str | None = None,
 ) -> None:
     """
     Send a browser tool call request to the FACO widget.
@@ -147,9 +199,15 @@ def send_browser_tool_call(
         session_id: Conversation the call belongs to. Absent (older AR that does
             not send the session header) delivery falls back to the user room,
             which every tab of that user receives.
+        client_type: The client whose turn asked (widget, spa). The widget and the chat app can
+            hold the same conversation, so each answers only its own. None from an older AR.
     """
     # Record ownership first so submit_browser_tool_result can enforce it.
     _remember_call_owner(call_id, user)
+
+    # The chat app took this turn over from the widget: it answers the widget's calls now.
+    if client_type in (None, WIDGET_CLIENT) and _claimed_client(session_id) == SPA_CLIENT:
+        client_type = SPA_CLIENT
 
     # 1. Store in Redis pending queue (durable, survives page navigation)
     call_data = json.dumps(
@@ -158,6 +216,7 @@ def send_browser_tool_call(
             "tool_name": tool_name,
             "params": params,
             "session_id": session_id,
+            "client_type": client_type,
             "created_at": time.time(),
         }
     )
@@ -176,6 +235,7 @@ def send_browser_tool_call(
         "tool_name": tool_name,
         "params": params,
         "session_id": session_id,
+        "client_type": client_type,
     }
     if session_id:
         frappe.publish_realtime(

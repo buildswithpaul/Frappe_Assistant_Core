@@ -1,8 +1,12 @@
-import { isApprovalInteraction } from "@/stores/chat/interactionRegime";
+import { isApprovalInteraction, isBuildPlanInteraction } from "@/stores/chat/interactionRegime";
 import { __ } from "@/utils/i18n";
 
 function isQuestion(block) {
-	return block.type === "interaction" && !isApprovalInteraction(block.interactionType);
+	return (
+		block.type === "interaction" &&
+		!isApprovalInteraction(block.interactionType) &&
+		!isBuildPlanInteraction(block.interactionType)
+	);
 }
 
 /**

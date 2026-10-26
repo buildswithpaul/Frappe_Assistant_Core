@@ -1,0 +1,19 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [
+      "src/utils/pageSnapshotSanitise.spec.js"
+    ],
+    "ignoreValues": [
+      {
+        "rule": "broken-image",
+        "value": "*",
+        "files": [
+          "frappe_assistant_core/chat/frontend/src/utils/pageSnapshotSanitise.spec.js"
+        ],
+        "createdAt": "2026-10-26T10:12:34.937Z",
+        "reason": "agent: hostile img fixtures the sanitiser must strip; inputs, not UI; coordinator asked to commit this ignore"
+      }
+    ]
+  }
+}

@@ -17,6 +17,7 @@ import { createStreamManager } from "./chat/streamManager";
 import { createBlockHandlers } from "./chat/blockHandlers";
 import { createSendQueue } from "./chat/sendQueue";
 import { applyLiveSnapshot, createLiveTurnSync } from "./chat/liveTurnSync";
+import { createTurnClaim } from "./chat/turnClaim";
 import { isApprovalInteraction } from "./chat/interactionRegime";
 import { getSurface, surfaceClientSignals } from "./chat/surface";
 import { useComposerModesStore } from "./composerModesStore";
@@ -238,6 +239,8 @@ export const useChatStore = defineStore("chat", () => {
 	});
 	// sync: a join started right after the switch must not be reset by it.
 	watch(currentSessionId, () => liveSync.reset(), { flush: "sync" });
+
+	const turnClaim = createTurnClaim({ claim: (id) => api.chat.claimLiveTurn(id), currentSessionId });
 
 	function admitStreamEvent(event) {
 		return liveSync.admit(event);
@@ -574,6 +577,7 @@ export const useChatStore = defineStore("chat", () => {
 			isStreaming.value = true;
 			streamingMessage.value = "";
 			streamRequestId.value = crypto.randomUUID();
+			turnClaim.releaseClaim();
 
 			stream.startStreamTimeout();
 
@@ -1109,6 +1113,22 @@ export const useChatStore = defineStore("chat", () => {
 		streamingMessage.value = "";
 	}
 
+	/**
+	 * Whether this tab sent the live turn of `sessionId`. Another tab, or the Desk widget, can hold
+	 * the same conversation and see its stream; a request it makes back is only this tab's to answer
+	 * when this tab asked.
+	 */
+	function isOwnLiveTurn(sessionId) {
+		const last = messages.value[messages.value.length - 1];
+		return (
+			currentSessionId.value === sessionId &&
+			last?.role === "assistant" &&
+			Boolean(last.isStreaming) &&
+			Boolean(streamRequestId.value) &&
+			last._requestId === streamRequestId.value
+		);
+	}
+
 	return {
 		// State
 		sessions,
@@ -1176,6 +1196,10 @@ export const useChatStore = defineStore("chat", () => {
 		setStreamDispatcher,
 		admitStreamEvent,
 		recoverLiveTurn,
+		isOwnLiveTurn,
+		claimedTurnSession: turnClaim.claimedSession,
+		claimLiveTurn: turnClaim.claimLiveTurn,
+		isClaimedLiveTurn: turnClaim.isClaimedLiveTurn,
 		clearSocketError: stream.clearSocketError,
 		// Block-based message actions (delegated)
 		handlePlanEvent: blocks.handlePlanEvent,

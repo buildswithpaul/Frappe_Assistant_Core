@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { defineComponent } from "vue";
 import { mount } from "@vue/test-utils";
 import { createPinia } from "pinia";
-import { createSpaConnectHandler, createVisibilityHandler, useStreaming } from "./useStreaming";
+import { createSpaConnectHandler, createVisibilityHandler, onSpaSocketEvent, useStreaming } from "./useStreaming";
 import { useChatStore } from "@/stores/chatStore";
 
 vi.mock("@/api/client", () => ({
@@ -177,7 +177,13 @@ describe("SPA socket wiring", () => {
 				return () => null;
 			},
 		});
+		// A listener added before the socket exists is attached when it is made.
+		const early = vi.fn();
+		const offEarly = onSpaSocketEvent("faco_browser_tool_call", early);
 		mount(Dummy, { global: { plugins: [pinia] } });
+		expect(fake.on).toHaveBeenCalledWith("faco_browser_tool_call", early);
+		offEarly();
+		expect(fake.off).toHaveBeenCalledWith("faco_browser_tool_call", early);
 
 		// Recovery must NOT hang off the Socket's "reconnect" (dead in v4).
 		const socketEvents = fake.on.mock.calls.map((c) => c[0]);

@@ -103,6 +103,11 @@ export const chat = {
 
 	// The running turn's snapshot, or null — what a surface opening the
 	// conversation mid-turn needs to show it and keep streaming.
+	claimLiveTurn: (sessionId) =>
+		baseCall("frappe_assistant_core.chat.api.chat.claim_live_turn", {
+			session_id: sessionId,
+		}),
+
 	getLiveTurn: (sessionId) =>
 		getCall("frappe_assistant_core.chat.api.chat.get_live_turn", {
 			session_id: sessionId,

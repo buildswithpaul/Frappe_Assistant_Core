@@ -224,3 +224,72 @@ class TestTestAsUser(BaseAssistantTest):
         )
         self.assertEqual(counts, {dt: frappe.db.count(dt) for dt in counts})
         self.assertEqual(frappe.db.get_value("ToDo", self.own_todo, "description"), "own")
+
+    def _make_fac_page(self, published: int, roles: tuple = ()) -> str:
+        # Production reaches these when FACO builds a page and publish_fac_page approves it.
+        page = frappe.get_doc(
+            {
+                "doctype": "FAC Page",
+                "title": "Team Planner",
+                "slug": f"test-page-{frappe.generate_hash(length=8).lower()}",
+                "visibility": "Shared",
+                "published": published,
+                "roles": [{"role": role} for role in roles],
+                "html": "<div>Plan</div>",
+            }
+        )
+        page.insert(ignore_permissions=True)
+        return page.name
+
+    def _read_page(self, user: str, page: str) -> dict:
+        return self._run([{"ptype": "read", "doctype": "FAC Page", "name": page}], user=user)["results"][0]
+
+    def test_a_published_page_opens_for_a_listed_role(self):
+        page = self._make_fac_page(published=1, roles=("Report Manager",))
+        reader = self.make_throwaway_user("page-reader", roles=("Report Manager",))
+        row = self._read_page(reader, page)
+        self.assertEqual(row["outcome"], "allowed")
+        self.assertIsNone(row["reason"])
+        self.assertEqual(row["roles_that_allow"], ["Report Manager", "System Manager"])
+
+    def test_a_published_page_is_refused_without_a_listed_role(self):
+        page = self._make_fac_page(published=1, roles=("Report Manager",))
+        other = self.make_throwaway_user("page-other", roles=("Website Manager",))
+        row = self._read_page(other, page)
+        self.assertEqual(row["outcome"], "refused")
+        self.assertEqual(row["reason"], f"{other} may not read this FAC Page.")
+
+    def test_an_unpublished_page_is_refused_for_a_listed_role(self):
+        page = self._make_fac_page(published=0, roles=("Report Manager",))
+        reader = self.make_throwaway_user("page-draft", roles=("Report Manager",))
+        row = self._read_page(reader, page)
+        self.assertEqual(row["outcome"], "refused")
+        self.assertEqual(row["roles_that_allow"], ["System Manager"])
+
+    def _make_personal_page(self, owner: str) -> str:
+        # Production reaches this when a Desk user builds a page in chat, which FACO saves as them.
+        # nosemgrep: frappe-setuser — the owner builds the page inside the test transaction
+        frappe.set_user(owner)
+        try:
+            page = frappe.get_doc(
+                {"doctype": "FAC Page", "title": "Mine", "slug": "mine", "html": "<div>Mine</div>"}
+            )
+            page.insert()
+        finally:
+            # nosemgrep: frappe-setuser — back to the System Manager who runs the tool
+            frappe.set_user("Administrator")
+        return page.name
+
+    def test_a_personal_page_opens_for_its_owner_only(self):
+        owner = self.make_throwaway_user("page-owner", roles=("Report Manager",))
+        page = self._make_personal_page(owner)
+        sysman = self.make_throwaway_user("page-sysman", roles=("System Manager",))
+        colleague = self.make_throwaway_user("page-colleague", roles=("Report Manager",))
+
+        mine = self._read_page(owner, page)
+        self.assertEqual(mine["outcome"], "allowed")
+        self.assertEqual(mine["roles_that_allow"], [])
+        for user in (sysman, colleague):
+            row = self._read_page(user, page)
+            self.assertEqual(row["outcome"], "refused", user)
+            self.assertEqual(row["roles_that_allow"], [], user)

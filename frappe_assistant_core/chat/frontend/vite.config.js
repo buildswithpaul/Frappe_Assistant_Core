@@ -4,6 +4,7 @@ import { readFileSync } from "fs";
 import { resolve } from "path";
 import frappeui from "frappe-ui/vite";
 import { VitePWA } from "vite-plugin-pwa";
+import { fsAllow } from "./build/fsAllow.js";
 import { keepFirstScreen } from "./build/pwaPrecache.js";
 
 const OUT_DIR = resolve(import.meta.dirname, "../../public/chat/spa");
@@ -55,11 +56,15 @@ export default defineConfig({
 			devOptions: { enabled: false },
 		}),
 	],
+	// A personal page's frame loads public/js/fac_page_frame.js by URL; this build's id busts the
+	// browser's copy, since the same `npm run build` rebuilds it.
+	define: { __FAC_BUILD_ID__: JSON.stringify(Date.now().toString(36)) },
 	resolve: {
 		alias: {
 			"@": resolve(import.meta.dirname, "src"),
 		},
 	},
+	server: { fs: { allow: fsAllow } },
 	build: {
 		rolldownOptions: {
 			// frappe-ui internally imports ~icons/lucide/* (unplugin-icons) in some

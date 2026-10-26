@@ -58,7 +58,8 @@ class TestServerScriptGuard(BaseAssistantTest):
 
     def test_customisation_doctypes_include_server_script(self):
         self.assertIn("Server Script", CUSTOMISATION_DOCTYPES)
-        self.assertEqual(len(CUSTOMISATION_DOCTYPES), 13)
+        self.assertIn("FAC Page", CUSTOMISATION_DOCTYPES)
+        self.assertEqual(len(CUSTOMISATION_DOCTYPES), 14)
 
     def test_create_enabled_server_script_refused_when_disabled(self):
         with patch(SCRIPTS_ENABLED, return_value=False):
@@ -234,6 +235,8 @@ class TestWriteResultLinks(BaseAssistantTest):
         frappe.flags.in_create_custom_fields = False
         if frappe.db.exists("Custom Field", TEST_FIELD_NAME):
             frappe.delete_doc("Custom Field", TEST_FIELD_NAME, force=True, ignore_permissions=True)
+        if frappe.db.exists("FAC Page", "fac-link-probe-page"):
+            frappe.delete_doc("FAC Page", "fac-link-probe-page", force=True, ignore_permissions=True)
         for name in frappe.get_all("ToDo", filters={"description": "FAC link probe"}, pluck="name"):
             frappe.delete_doc("ToDo", name, force=True, ignore_permissions=True)
         super().tearDown()
@@ -262,6 +265,19 @@ class TestWriteResultLinks(BaseAssistantTest):
         self.assertTrue(result["success"], result)
         self.assertEqual(result["applies_to"]["doctype"], "ToDo")
         self.assertTrue(result["applies_to"]["url"].endswith("/todo/new"))
+
+    def test_fac_page_result_links_to_the_page_and_keeps_the_form_link(self):
+        result = DocumentCreate().execute(
+            {
+                "doctype": "FAC Page",
+                "data": {"title": "Team Planner", "slug": "fac-link-probe-page", "visibility": "Shared"},
+            }
+        )
+
+        self.assertTrue(result["success"], result)
+        self.assertTrue(result["page_url"].endswith("/app/fac-pages/fac-link-probe-page"))
+        self.assertTrue(result["url"].endswith("/fac-page/fac-link-probe-page"))
+        self.assertNotIn("applies_to", result)
 
     def test_update_result_has_url(self):
         name = self._create_todo()["name"]

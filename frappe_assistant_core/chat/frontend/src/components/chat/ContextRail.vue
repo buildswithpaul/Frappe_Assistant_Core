@@ -44,7 +44,7 @@
 					{{ artifacts.approval.subtitle }}
 				</div>
 				<button class="rail-approval-btn" @click="$emit('review-approval', artifacts.approval.id)">
-					{{ artifacts.approval.kind === "question" ? __("Answer") : __("Review & approve") }}
+					{{ reviewLabel }}
 				</button>
 			</div>
 		</div>
@@ -149,10 +149,17 @@ defineEmits(["review-approval", "collapse"]);
 
 const waitingLabel = computed(() => {
 	const { kind, count = 1 } = props.artifacts.approval || {};
+	if (kind === "build_plan") return __("Plan waiting");
 	if (kind === "question") {
 		return count > 1 ? __("{0} questions waiting", [count]) : __("1 question waiting");
 	}
 	return count > 1 ? __("{0} approvals waiting", [count]) : __("1 approval waiting");
+});
+
+const reviewLabel = computed(() => {
+	const kind = props.artifacts.approval?.kind;
+	if (kind === "build_plan") return __("Review plan");
+	return kind === "question" ? __("Answer") : __("Review & approve");
 });
 </script>
 

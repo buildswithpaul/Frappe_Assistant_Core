@@ -49,6 +49,8 @@ class BrowserTakeScreenshot(BaseBrowserTool):
             "Capture a screenshot of the current browser page. "
             "Returns the image, which you can see and analyse directly. "
             "Use for visual questions such as verifying a chart or a layout. "
+            "In the chat app it captures the page open beside the chat, after the user approves; "
+            "selector and full_page do not apply there. "
             "If the user is reporting an ERROR or something not working, use "
             "browser_capture_diagnostics instead — it returns the console and "
             "network errors a screenshot cannot show."

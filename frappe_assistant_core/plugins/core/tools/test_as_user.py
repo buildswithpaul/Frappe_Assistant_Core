@@ -25,6 +25,7 @@ from typing import Any, Dict, List
 import frappe
 from frappe import _
 
+from frappe_assistant_core.api.fac_page import can_open_page, roles_that_open_page
 from frappe_assistant_core.core.base_tool import BaseTool
 
 PERMISSION_TYPES = [
@@ -96,8 +97,15 @@ def _check_one(user: str, check: Dict[str, Any]) -> Dict[str, Any]:
         result["reason"] = _("{0} {1} does not exist.").format(doctype, name)
         return result
 
-    allowed = frappe.has_permission(doctype, ptype, doc=name, user=user, parent_doctype=parent_doctype)
-    result["roles_that_allow"] = _roles_that_allow(_permission_doctype(doctype, parent_doctype, name), ptype)
+    if doctype == "FAC Page" and name and ptype == "read":
+        # get_page decides who opens a page: its owner if personal, else its roles and published flag.
+        allowed = can_open_page(name, user)
+        result["roles_that_allow"] = roles_that_open_page(name)
+    else:
+        allowed = frappe.has_permission(doctype, ptype, doc=name, user=user, parent_doctype=parent_doctype)
+        result["roles_that_allow"] = _roles_that_allow(
+            _permission_doctype(doctype, parent_doctype, name), ptype
+        )
     result["outcome"] = "allowed" if allowed else "refused"
     if not allowed:
         if name:
@@ -150,6 +158,8 @@ class TestAsUser(BaseTool):
             "right people can read, write, create, submit or print and the wrong people cannot. "
             "Each check is allowed, refused or error; every check lists roles_that_allow, "
             "the roles that grant that permission on the DocType at permission level 0. "
+            "Reading a named FAC Page answers whether the user can open that page, and lists "
+            "the roles that open it; a personal page opens for its owner only, with no roles. "
             "Never returns field values."
         )
         self.category = "Builder checks"

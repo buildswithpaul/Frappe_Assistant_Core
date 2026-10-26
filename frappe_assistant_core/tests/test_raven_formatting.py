@@ -56,6 +56,14 @@ class TestRavenFormatting(BaseAssistantTest):
         self.assertIn("This is permanent.", html)
         self.assertIn("Answer in FAC Chat", html)
 
+    def test_a_build_plan_hands_off_with_its_change_count(self):
+        # Raven cannot draw the plan card, so it says what is waiting and links FAC Chat.
+        changes = [{"doctype": "Custom Field"}, {"doctype": "Workspace"}, {"doctype": "Client Script"}]
+        html = formatting.handoff_html("propose_build_plan", {"summary": "x", "changes": changes}, URL)
+        self.assertIn("FACO has a build plan for you to review (3 changes)", html)
+        self.assertIn("in FAC Chat", html)
+        self.assertIn(URL, html)
+
     def test_out_of_credits_reads_like_the_widget(self):
         self.assertIn(
             "used all of this month's credits", formatting.error_text({"error_code": "quota_exhausted"})

@@ -19,16 +19,28 @@
 Covers which doctypes count (``CUSTOMISATION_DOCTYPES``, the canonical list, mirrored by the
 Chat SPA and by AR), the Server Script safety guard, the warning for a Script Report saved
 while server scripts are off, links to a record and to the form a customisation changes
-(``applies_to``), where a new Custom Field shows on its form (``location``), and
-``customisation_result`` which puts those into a create or update tool result.
+(``applies_to``), where a new Custom Field shows on its form (``location``),
+``customisation_result`` which puts those into a create or update tool result, and
+``check_plan_changes`` which checks a build plan against the site before it is shown.
 """
 
-from typing import Any, Dict, Iterable, Optional
+from typing import Any, Callable, Dict, Iterable, Optional
 
 import frappe
 from frappe import _
 from frappe.model.meta import Meta
-from frappe.utils import cint, get_url_to_form
+from frappe.utils import cint, get_url, get_url_to_form
+
+from frappe_assistant_core.assistant_core.doctype.fac_page.fac_page import (
+    PERSONAL,
+    SHARED,
+    is_system_manager,
+)
+from frappe_assistant_core.chat.api.current_code import (
+    CODE_KEYS_BY_DOCTYPE,
+    GO_LIVE_KEYS_BY_DOCTYPE,
+    TABLE_COLUMNS,
+)
 
 CUSTOMISATION_DOCTYPES = frozenset(
     {
@@ -45,6 +57,7 @@ CUSTOMISATION_DOCTYPES = frozenset(
         "Report",
         "Print Format",
         "Notification",
+        "FAC Page",
     }
 )
 
@@ -56,6 +69,7 @@ _SWITCH_FIELDS = {
     "Server Script": ("disabled", 1),
     "Client Script": ("enabled", 0),
     "Notification": ("enabled", 0),
+    "FAC Page": ("published", 0),
 }
 
 _WRITE_TOOLS = frozenset({"create_document", "update_document", "delete_document"})
@@ -265,16 +279,107 @@ def _targets_are_plain(creating: bool, before: Any, after: Any, field: str) -> b
     return _is_plain_name(after(field)) and (creating or _is_plain_name(before(field)))
 
 
+_LIVE_PAGE = {"dormant": False, "reason": "FAC Page opens for other people"}
+
+
+def _personal_page_impact(
+    creating: bool, data: Dict[str, Any], before: Callable[[str], Any], after: Callable[[str], Any]
+) -> Optional[Dict[str, Any]]:
+    """The impact of a write that touches a personal FAC Page, or None for a shared one throughout.
+
+    A personal page opens, published or not, for its owner only. So a write is dormant when the
+    page is personal before and after it and belongs to the session user, and live otherwise:
+    someone else's page changes for them, and sharing a page opens it to other people.
+
+    A personal page never ``switches_on`` and never ``changes_live_code``: it reaches its owner
+    alone, and its script runs in a frame that reads only what they may and asks them before any
+    change. Sharing a page
+    switches it on when it is published after the write, since that opens it to its roles.
+    """
+    # PERSONAL is the schema default; reading it from the meta raises on a site not yet migrated.
+    visibility = (data.get("visibility") or PERSONAL) if creating else after("visibility")
+    was_personal = not creating and before("visibility") != SHARED
+    user = frappe.session.user
+    if visibility == SHARED and not was_personal:
+        # Frappe refuses anyone else's shared-page write, so it cannot be dormant.
+        return None if is_system_manager(user) else dict(_LIVE_PAGE)
+    # A new page's owner is always the session user; Frappe overwrites any supplied owner.
+    owned = creating or (before("owner") == user and after("owner") == user)
+    if owned and visibility == PERSONAL and (creating or before("visibility") == PERSONAL):
+        return {"dormant": True, "reason": _("only you can open this page")}
+    return {**_LIVE_PAGE, "switches_on": visibility == SHARED and bool(cint(after("published")))}
+
+
 def customisation_impact(tool_name: str, tool_input: Any) -> Dict[str, Any]:
     """Whether a customisation write changes nothing anyone but its builder can feel yet.
 
-    Dormant: a switched-off script or notification, or anything that only touches a custom
-    DocType that nobody outside the system roles can reach, that holds no records and that is
-    not a child table or used by another form. A write
-    is dormant only when the stored state and the state after the write both are, so switching
-    a script on or moving a field onto a live DocType is live, and any doubt counts as live.
+    Dormant: a switched-off script or notification, an unpublished shared FAC Page, a personal FAC
+    Page its owner changes and keeps personal, or anything that only touches a custom DocType that
+    nobody outside the system roles can reach, that holds no records and that is not a child table
+    or used by another form. A write is dormant only when
+    the stored state and the state after the write both are, so switching a script on, publishing
+    a page or moving a field onto a live DocType is live, and any doubt counts as live.
+    ``switches_on`` is true when the write turns a ``_SWITCH_FIELDS`` record from off to on,
+    including a create saved switched on, and when it shares a personal FAC Page that is published
+    after the write (``_personal_page_impact``). ``changes_live_code`` is true when an update changes a
+    live field (``_live_fields``: code, templates and audience, such as a Report's roles, compared
+    as a set) of a record that is live before and after the write, and when a create of a doctype
+    without a switch (a Report, a Print Format) sets any live field. FAC Cloud shows its card for
+    either even when an approved build plan lists the write, so the user sees the final code.
     Never writes. The reason is plain words for logs and never repeats stored values.
     """
+    result = _dormancy(tool_name, tool_input)
+    result.setdefault("switches_on", False)
+    result.setdefault("changes_live_code", False)
+    return result
+
+
+def _row_values(rows: Any, column: str) -> Optional[frozenset]:
+    """The set of ``column`` values in sent child rows (dicts or bare values); None if not a list."""
+    if not isinstance(rows, list):
+        return None
+    return frozenset(row.get(column) if isinstance(row, dict) else row for row in rows)
+
+
+def _live_fields(doctype: str) -> tuple:
+    """The fields of ``doctype`` whose value runs or reaches people: code, templates and audience."""
+    return CODE_KEYS_BY_DOCTYPE.get(doctype, ()) + GO_LIVE_KEYS_BY_DOCTYPE.get(doctype, ())
+
+
+def _non_empty(value: Any) -> bool:
+    """Whether a sent value says something: text that is not blank, a child table with a row."""
+    return bool(value.strip()) if isinstance(value, str) else bool(value)
+
+
+def _carries_live_fields(doctype: str, data: Dict[str, Any]) -> bool:
+    """Whether a create sets any live field of ``doctype``."""
+    return any(_non_empty(data.get(field)) for field in _live_fields(doctype))
+
+
+def _changes_live_fields(doctype: str, data: Dict[str, Any], stored: Dict[str, Any]) -> bool:
+    """Whether ``data`` gives a code or go-live field of ``doctype`` a value other than the stored one.
+
+    A child table is compared as the set of its rows' values, so reordering rows is no change and
+    rows that cannot be read count as one.
+    """
+    for field in _live_fields(doctype):
+        if field not in data:
+            continue
+        if field in TABLE_COLUMNS:
+            column = TABLE_COLUMNS[field]
+            current = frappe.get_all(
+                frappe.get_meta(doctype).get_field(field).options,
+                filters={"parent": stored.get("name"), "parenttype": doctype, "parentfield": field},
+                pluck=column,
+            )
+            if _row_values(data[field], column) != frozenset(current):
+                return True
+        elif (data[field] or "") != (stored.get(field) or ""):
+            return True
+    return False
+
+
+def _dormancy(tool_name: str, tool_input: Any) -> Dict[str, Any]:
     if tool_name not in _WRITE_TOOLS or not isinstance(tool_input, dict):
         return {"dormant": False, "reason": "Not a customisation write"}
     doctype = tool_input.get("doctype")
@@ -302,13 +407,24 @@ def customisation_impact(tool_name: str, tool_input: Any) -> Dict[str, Any]:
     def after(field: str) -> Any:
         return data[field] if field in data else stored.get(field)
 
+    if doctype == "FAC Page":
+        personal = _personal_page_impact(creating, data, before, after)
+        if personal:
+            return personal
+
     if doctype in _SWITCH_FIELDS:
         field, off = _SWITCH_FIELDS[doctype]
         value = _schema_default(doctype, field) if creating and data.get(field) is None else after(field)
         stored_off = creating or cint(before(field)) == off
         if stored_off and cint(value) == off:
             return {"dormant": True, "reason": f"{doctype} is switched off"}
-        return {"dormant": False, "reason": f"{doctype} is switched on"}
+        stays_on = not stored_off and cint(value) != off
+        return {
+            "dormant": False,
+            "reason": f"{doctype} is switched on",
+            "switches_on": stored_off,
+            "changes_live_code": stays_on and _changes_live_fields(doctype, data, stored),
+        }
 
     if doctype == "DocType":
         stored_facts = None if creating else _stored_doctype(name)
@@ -335,12 +451,99 @@ def customisation_impact(tool_name: str, tool_input: Any) -> Dict[str, Any]:
             return {"dormant": True, "reason": "Permission only covers system roles on a dormant DocType"}
         return {"dormant": False, "reason": "Permission may open a DocType to other people"}
 
-    return {"dormant": False, "reason": f"{doctype} changes always count"}
+    return {
+        "dormant": False,
+        "reason": f"{doctype} changes always count",
+        "changes_live_code": (
+            _carries_live_fields(doctype, data) if creating else _changes_live_fields(doctype, data, stored)
+        ),
+    }
+
+
+_PLAN_ACTION_TOOLS = {"update": "update_document", "delete": "delete_document"}
+
+
+def _plan_change_problem(doctype: Any, planned_doctypes: set) -> Optional[str]:
+    """Why a plan entry cannot be written as listed: an unknown doctype or a child table."""
+    if _is_plain_name(doctype) and doctype in planned_doctypes:
+        return None
+    kind = frappe.db.get_value("DocType", doctype, "istable") if _is_plain_name(doctype) else None
+    if kind is None:
+        return _(
+            '{0} is not a doctype on this site. To create a new doctype, list it with doctype "DocType" and name "{0}".'
+        ).format(doctype)
+    if not cint(kind):
+        return None
+    problem = _(
+        "{0} is a child table and is saved through its parent record; list the parent record instead."
+    ).format(doctype)
+    if doctype == "Has Role":
+        problem += " " + _("For a role assignment, list an update of each User by name.")
+    return problem
+
+
+def _plan_entry_shares(change: Dict[str, Any]) -> bool:
+    """Whether a plan entry says it sets the page to Shared, on the entry or in its data."""
+    data = change.get("data") if isinstance(change.get("data"), dict) else {}
+    return SHARED in (change.get("visibility"), data.get("visibility"))
+
+
+def _plan_change_goes_live(change: Dict[str, Any]) -> bool:
+    """Whether a plan entry goes live, correcting a dormant claim the stored state contradicts.
+
+    A customisation doctype without a switch can never be dormant. An update or delete of a stored
+    switchable record goes live unless that record is switched off now, and a FAC Page update that
+    shares the page goes live. Anything else keeps the flag as sent, and a true flag is never turned
+    false.
+    """
+    goes_live = bool(change.get("goes_live"))
+    doctype = change.get("doctype")
+    if goes_live or not _is_plain_name(doctype) or doctype not in CUSTOMISATION_DOCTYPES:
+        return goes_live
+    if doctype == "FAC Page" and change.get("action") == "update" and _plan_entry_shares(change):
+        return True
+    if doctype not in _SWITCH_FIELDS:
+        return True
+    action = change.get("action")
+    tool_name = _PLAN_ACTION_TOOLS.get(action) if isinstance(action, str) else None
+    name = change.get("name")
+    if tool_name and _is_plain_name(name) and frappe.db.exists(doctype, name):
+        return not customisation_impact(tool_name, {"doctype": doctype, "name": name, "data": {}})["dormant"]
+    return goes_live
+
+
+def check_plan_changes(changes: list[dict]) -> list[dict]:
+    """Check each entry of a build plan against the site before the plan is shown.
+
+    One result per change, numbered from 1 as FAC Cloud numbers them: ``problem`` is why the entry
+    cannot be written as listed (None when it can) and ``goes_live`` is the entry's flag, corrected when the site shows a
+    dormant claim cannot hold. Never writes.
+    """
+    planned_doctypes = {
+        change.get("name")
+        for change in changes
+        if change.get("doctype") == "DocType"
+        and change.get("action") == "create"
+        and _is_plain_name(change.get("name"))
+    }
+    return [
+        {
+            "index": index,
+            "problem": _plan_change_problem(change.get("doctype"), planned_doctypes),
+            "goes_live": _plan_change_goes_live(change),
+        }
+        for index, change in enumerate(changes, start=1)
+    ]
 
 
 def desk_url(doctype: str, name: str) -> str:
     """Link to a record's form in Desk."""
     return get_url_to_form(doctype, name)
+
+
+def fac_page_url(name: str) -> str:
+    """Where a FAC Page opens in Desk, by record name (a personal page's name is not its slug)."""
+    return get_url(f"/app/fac-pages/{name}")
 
 
 def applies_to(doctype: str, values: Any) -> Optional[Dict[str, str]]:
@@ -356,12 +559,14 @@ def customisation_result(doctype: str, doc: Any, warning: Optional[str] = None) 
     """The customisation details a create or update result adds.
 
     applies_to, location and warning, plus placement_warning when a Custom Field landed
-    collapsed or off the first tab.
+    collapsed or off the first tab, and page_url for a FAC Page (``url`` stays its form).
     """
     details: Dict[str, Any] = {}
     customised = applies_to(doctype, doc)
     if customised:
         details["applies_to"] = customised
+    if doctype == "FAC Page":
+        details["page_url"] = fac_page_url(doc.name)
     if doctype == "Custom Field":
         location = custom_field_location(doc)
         if location:

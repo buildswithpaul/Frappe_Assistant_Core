@@ -6,7 +6,12 @@
 
 import frappe
 
-from frappe_assistant_core.chat.api.current_code import CODE_KEYS, GO_LIVE_KEYS, get_current_code
+from frappe_assistant_core.chat.api.current_code import (
+    CODE_KEYS,
+    GO_LIVE_KEYS,
+    GO_LIVE_KEYS_BY_DOCTYPE,
+    get_current_code,
+)
 from frappe_assistant_core.tests.base_test import BaseAssistantTest
 
 READER = "current-code-reader@example.com"
@@ -110,6 +115,80 @@ class TestGetCurrentCodeGoesLive(BaseAssistantTest):
             },
         )
 
+    def test_returns_a_fac_page_html_script_and_style(self):
+        # Production reaches this draft when a builder saves a FAC Page before publishing it.
+        page = frappe.get_doc(
+            {
+                "doctype": "FAC Page",
+                "title": "Current code page",
+                "slug": "current-code-page",
+                "html": "<div id='app'></div>",
+                "script": "render()",
+                "style": ".x { color: red; }",
+            }
+        ).insert()
+        out = get_current_code("FAC Page", page.name, ["html", "script", "style"])
+        self.assertEqual(
+            out, {"html": "<div id='app'></div>", "script": "render()", "style": ".x { color: red; }"}
+        )
+
+    def test_returns_the_roles_a_fac_page_goes_live_to(self):
+        # Production reaches these drafts when a builder saves a FAC Page before publishing it;
+        # the card switching it on must say who will see it.
+        listed = frappe.get_doc(
+            {
+                "doctype": "FAC Page",
+                "title": "Roles page",
+                "slug": "current-code-roles",
+                "roles": [{"role": "All"}, {"role": "Report Manager"}],
+            }
+        ).insert()
+        unlisted = frappe.get_doc(
+            {"doctype": "FAC Page", "title": "No roles page", "slug": "current-code-no-roles"}
+        ).insert()
+        _make_user(READER, ["System Manager"])
+        self.addCleanup(frappe.delete_doc, "User", READER, force=True, ignore_permissions=True)
+        frappe.set_user(READER)
+
+        self.assertEqual(
+            get_current_code("FAC Page", listed.name, ["html", "roles"]),
+            {"html": "", "roles": ["All", "Report Manager"]},
+        )
+        self.assertEqual(get_current_code("FAC Page", unlisted.name, ["roles"]), {"roles": []})
+
+        _make_user(OUTSIDER, [])
+        self.addCleanup(frappe.delete_doc, "User", OUTSIDER, force=True, ignore_permissions=True)
+        frappe.set_user(OUTSIDER)
+        with self.assertRaises(frappe.PermissionError):
+            get_current_code("FAC Page", listed.name, ["roles"])
+
+    def test_returns_the_roles_a_report_reaches(self):
+        # Production reaches this when a builder saves a Report Builder report for some roles.
+        report = frappe.get_doc(
+            {
+                "doctype": "Report",
+                "report_name": "Current code report",
+                "ref_doctype": "ToDo",
+                "report_type": "Report Builder",
+                "is_standard": "No",
+                "roles": [{"role": "System Manager"}, {"role": "Report Manager"}],
+            }
+        ).insert(ignore_permissions=True)
+        out = get_current_code("Report", report.name, ["roles"])
+        self.assertEqual(sorted(out["roles"]), ["Report Manager", "System Manager"])
+
     def test_go_live_keys_stay_out_of_the_code_keys(self):
-        self.assertEqual(GO_LIVE_KEYS, ("subject",))
-        self.assertNotIn("subject", CODE_KEYS)
+        self.assertEqual(GO_LIVE_KEYS, ("subject", "style", "roles"))
+        self.assertEqual(GO_LIVE_KEYS_BY_DOCTYPE["Report"], ("roles",))
+
+    def test_every_card_code_key_is_code_on_some_doctype(self):
+        from frappe_assistant_core.chat.api.current_code import CODE_KEYS_BY_DOCTYPE
+
+        registered = {key for keys in CODE_KEYS_BY_DOCTYPE.values() for key in keys}
+        self.assertLessEqual(set(CODE_KEYS), registered)
+        for doctype, keys in CODE_KEYS_BY_DOCTYPE.items():
+            meta = frappe.get_meta(doctype)
+            for key in keys:
+                self.assertIsNotNone(meta.get_field(key), (doctype, key))
+        for key in GO_LIVE_KEYS:
+            self.assertNotIn(key, CODE_KEYS)

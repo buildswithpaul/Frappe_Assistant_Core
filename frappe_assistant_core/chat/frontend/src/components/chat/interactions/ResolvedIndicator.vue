@@ -18,12 +18,18 @@
 				/>
 			</svg>
 		</div>
-		<span class="resolved-label">{{ resolvedLabel }}</span>
+		<span class="resolved-label">
+			<span class="resolved-verb">{{ label.verb }}</span>
+			<template v-if="label.subject">{{ " " }}<span class="resolved-subject">{{ label.subject }}</span></template>
+		</span>
 	</div>
 </template>
 
 <script setup>
 import { computed } from "vue";
+import { isBuildPlanInteraction } from "@/stores/chat/interactionRegime";
+import { __ } from "@/utils/i18n";
+import { approvalHeadline } from "./approvalHeadline";
 import { formatToolName } from "./helpers";
 
 const props = defineProps({
@@ -37,34 +43,34 @@ const isPositive = computed(() =>
 	["approved", "trusted", "answered", "resolved"].includes(props.block.status),
 );
 
-const resolvedLabel = computed(() => {
+// What was decided: the verb in the outcome's colour, the action in plain text after it.
+const label = computed(() => {
 	const status = props.block.status;
 	const isApproval = props.interactionType === "approval";
+	const action = () => (props.block.input ? approvalHeadline(props.block) : props.block.action || formatToolName(props.block.tool_name));
 
 	if (status === "expired") {
-		return isApproval ? "Approval expired — resend to continue" : "Expired";
+		return isApproval ? { verb: __("Approval expired"), subject: __("send again to continue") } : { verb: __("Expired") };
 	}
-	if (status === "resolved_elsewhere") {
-		return "Resolved in another tab";
-	}
-
+	if (status === "resolved_elsewhere") return { verb: __("Resolved in another tab") };
 	if (status === "aborted") {
-		const action = props.block.action || formatToolName(props.block.tool_name);
-		return isApproval ? `Stopped before: ${action}` : "Stopped by user";
+		return isApproval ? { verb: __("Stopped before:"), subject: action() } : { verb: __("Stopped by user") };
+	}
+	if (isBuildPlanInteraction(props.interactionType)) {
+		if (status === "approved") return { verb: __("Plan approved") };
+		if (props.block.userResponse) return { verb: __("Changes requested") };
 	}
 	if (isApproval) {
-		const action = props.block.action || formatToolName(props.block.tool_name);
-		if (status === "approved" || status === "trusted" || status === "resolved")
-			return `Approved: ${action}`;
-		return `Rejected: ${action}`;
+		if (status === "approved" || status === "trusted" || status === "resolved") return { verb: __("Approved:"), subject: action() };
+		return { verb: __("Rejected:"), subject: action() };
 	}
 	const answer = props.block.userResponse;
 	if (answer) {
 		const display = Array.isArray(answer) ? answer.join(", ") : String(answer);
-		return `Answered: ${display}`;
+		return { verb: __("Answered:"), subject: display };
 	}
-	if (status === "resolved") return "Completed";
-	return "Skipped";
+	if (status === "resolved") return { verb: __("Completed") };
+	return { verb: __("Skipped") };
 });
 </script>
 
@@ -89,9 +95,20 @@ const resolvedLabel = computed(() => {
 }
 
 .resolved-label {
-	font-size: 0.75rem;
+	font-size: 12.5px;
+	line-height: 1.4;
 	color: var(--ql-text-secondary);
-	font-style: italic;
+	min-width: 0;
+	overflow-wrap: anywhere;
+}
+
+.resolved-verb {
+	font-weight: 500;
+}
+
+/* The action reads as plain text; only the verb carries the outcome's colour. */
+.resolved-subject {
+	color: var(--ql-text-secondary);
 }
 
 /* Positive resolutions — teal check + label */
@@ -102,16 +119,16 @@ const resolvedLabel = computed(() => {
 	color: var(--ql-accent);
 }
 
-.resolved-approved .resolved-label,
-.resolved-trusted .resolved-label,
-.resolved-answered .resolved-label,
-.resolved-resolved .resolved-label {
+.resolved-approved .resolved-verb,
+.resolved-trusted .resolved-verb,
+.resolved-answered .resolved-verb,
+.resolved-resolved .resolved-verb {
 	color: var(--ql-accent);
 }
 
 /* Rejected — danger treatment */
 .resolved-rejected .resolved-icon,
-.resolved-rejected .resolved-label {
+.resolved-rejected .resolved-verb {
 	color: var(--ql-danger);
 }
 
@@ -124,6 +141,5 @@ const resolvedLabel = computed(() => {
 .resolved-expired .resolved-label,
 .resolved-resolved_elsewhere .resolved-label {
 	color: var(--ql-text-muted);
-	font-style: normal;
 }
 </style>

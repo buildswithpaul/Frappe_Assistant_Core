@@ -632,6 +632,13 @@ describe("browser tool confirmation card", () => {
 		expect(w.emitted("decide").map((e) => e[0])).toEqual(["trust_page"]);
 	});
 
+	it("offers no Always Allow to a host whose trust stays on one page in one chat", () => {
+		const request = { tool_name: "take_screenshot", params: {}, description: "", alwaysAllow: false };
+		const w = mount(BrowserToolConfirm, { props: { request } });
+		expect(w.find('[data-test="confirm-trust"]').exists()).toBe(false);
+		expect(w.find('[data-test="confirm-trust-page"]').exists()).toBe(true);
+	});
+
 	it("falls back to a generic line for an unknown tool, escaping nothing by hand", () => {
 		const w = mount(BrowserToolConfirm, { props: { request: { tool_name: "<b>x</b>", params: {}, description: "" } } });
 		expect(w.find("b").exists()).toBe(false);

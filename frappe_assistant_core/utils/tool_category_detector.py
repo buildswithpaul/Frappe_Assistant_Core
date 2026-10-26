@@ -84,6 +84,7 @@ READ_ONLY_TOOLS = {
     "test_as_user",  # Asks the permission rules; never saves or switches user
     "sandbox_reference",  # Lists sandbox names; calls nothing
     "recent_errors",  # Reads Error Log and Scheduled Job Log rows; never logs
+    "check_build_plan",  # Checks a build plan against the site; never writes
     # Approval tools
     "get_pending_approvals",  # Reads the workflow approval queue, no mutation
     # Browser tools (read the page or move the user's view; no data mutation)

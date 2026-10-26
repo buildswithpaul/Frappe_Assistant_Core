@@ -1,5 +1,6 @@
 import { ref, computed, onMounted, onUnmounted } from "vue";
 import { deriveIndexEntries, completedExchangeCount } from "@/utils/indexEntries.js";
+import { pageDockWidth, usePagePanel } from "@/composables/usePagePanel";
 
 export const INDEX_FULL_WIDTH = 240;
 export const INDEX_SPINE_WIDTH = 28;
@@ -10,10 +11,18 @@ const COLLAPSE_KEY = "faco_index_collapsed";
 const FLASH_MS = 1500;
 const SPY_THROTTLE_MS = 200;
 
-export function resolveIndexMode({ viewportWidth, shellWidth, railDockWidth, columnWidth, completedExchanges, collapsed }) {
+export function resolveIndexMode({
+	viewportWidth,
+	shellWidth,
+	railDockWidth,
+	pageDockWidth = 0,
+	columnWidth,
+	completedExchanges,
+	collapsed,
+}) {
 	if (viewportWidth < INDEX_MIN_VIEWPORT) return "hidden";
 	if (completedExchanges < INDEX_MIN_EXCHANGES) return "hidden";
-	const leftover = shellWidth - railDockWidth - columnWidth - INDEX_COL_PAD;
+	const leftover = shellWidth - railDockWidth - pageDockWidth - columnWidth - INDEX_COL_PAD;
 	if (leftover >= INDEX_FULL_WIDTH) return collapsed ? "spine" : "full";
 	if (leftover >= INDEX_SPINE_WIDTH) return "spine";
 	return "hidden";
@@ -28,6 +37,8 @@ function loadCollapsed() {
 }
 
 export function useLedgerIndex({ messages, chatShellRef, railDocked, columnWidth }) {
+	// The page dock sits in the same shell, so an open page takes its share of the room.
+	const { openName: openPage } = usePagePanel();
 	const viewportWidth = ref(typeof window !== "undefined" ? window.innerWidth : 1280);
 	const shellWidth = ref(0);
 	const collapsed = ref(loadCollapsed());
@@ -39,6 +50,7 @@ export function useLedgerIndex({ messages, chatShellRef, railDocked, columnWidth
 			viewportWidth: viewportWidth.value,
 			shellWidth: shellWidth.value,
 			railDockWidth: railDocked.value ? 300 : 0,
+			pageDockWidth: openPage.value ? pageDockWidth(shellWidth.value) : 0,
 			columnWidth: columnWidth.value,
 			completedExchanges: completedExchangeCount(entries.value),
 			collapsed: collapsed.value,
