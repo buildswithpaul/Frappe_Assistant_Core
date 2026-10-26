@@ -40,6 +40,8 @@ Every other setup skill (`add-custom-field`, `server-script`, `client-script`, `
 ## Plan before a multi-record setup
 
 When you have the `propose_build_plan` tool, call it before creating or changing two or more setup records.
+A personal page (a FAC Page left at "Only me") is not a setup change: build it without a plan or a
+confirmation, as `get_skill("pages-in-chat")` says.
 List every change, mark the ones that go live, and wait for the approval. Writes the plan lists
 then run without a card each, except publishing a FAC Page, switching a rule on or changing live code
 (the code or audience of a published page, or the code of a rule that is on); anything else still asks. The plan card then stands in for the confirmation in step 5. Give each entry the `name` Frappe will give the record (a Report's

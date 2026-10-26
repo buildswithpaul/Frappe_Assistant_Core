@@ -21,6 +21,7 @@ import re
 
 import frappe
 
+from frappe_assistant_core.plugins.faco.tools.generate_document import GenerateDocument
 from frappe_assistant_core.tests.base_test import BaseAssistantTest
 from frappe_assistant_core.utils.migration_hooks import (
     _install_system_prompt_templates,
@@ -219,6 +220,25 @@ class TestSystemSkillManifest(BaseAssistantTest):
                 "'Discount limit on Sales Invoice submit', not 'Block discount above 15%'", text, name
             )
             self.assertIn("Changing a value never needs a rename.", text, name)
+
+    def test_personal_pages_are_built_without_a_plan(self):
+        # Run new version is the owner's check on a personal page; a plan card would ask twice.
+        self.assertIn("Don't call `propose_build_plan` or `ask_user`", self._read_skill("pages_in_chat.md"))
+        for name in ("fac_page.md", "setup_change_protocol.md"):
+            text = self._read_skill(name)
+            self.assertIn('get_skill("pages-in-chat")', text, name)
+            self.assertRegex(text, r"needs no plan|without a plan", name)
+
+    def test_a_pdf_of_the_sites_figures_is_a_page_not_generate_document(self):
+        self.assertIn('get_skill("pages-in-chat")', self._read_skill("document_authoring.md"))
+        self.assertIn("pages-in-chat", GenerateDocument().description)
+        entry = next(e for e in _load_manifest("system_skills.json") if e["skill_id"] == "pages-in-chat")
+        self.assertIn("instead of generate_document", entry["description"])
+
+    def test_pages_in_chat_says_the_page_opens_by_itself(self):
+        text = self._read_skill("pages_in_chat.md")
+        self.assertNotIn("Point to the chip", text)
+        self.assertIn("opens beside the chat as soon as your create saves", text)
 
     def test_retired_export_template_is_removed(self):
         self.assertNotIn(
