@@ -55,25 +55,30 @@ def _app_records(kind: str) -> set:
     return names
 
 
+def _insert_shared_page(published: int = 1, roles: tuple = (), **overrides) -> str:
+    """Insert a Shared FAC Page, as a System Manager's share-and-publish leaves it."""
+    slug = overrides.pop("slug", f"test-page-{frappe.generate_hash(length=8).lower()}")
+    doc = frappe.get_doc(
+        {
+            "doctype": "FAC Page",
+            "title": "Team Planner",
+            "slug": slug,
+            "visibility": "Shared",
+            "published": published,
+            "roles": [{"role": role} for role in roles],
+            "html": '<div class="mk-card">Plan</div>',
+            "script": "root_element.querySelector('.mk-card').dataset.ready = '1';",
+            "style": ".mk-card { color: red; }",
+            **overrides,
+        }
+    )
+    doc.insert(ignore_permissions=True)
+    return doc.name
+
+
 class TestFACPage(BaseAssistantTest):
     def _make_page(self, published: int = 1, roles: tuple = (), **overrides) -> str:
-        slug = overrides.pop("slug", f"test-page-{frappe.generate_hash(length=8).lower()}")
-        doc = frappe.get_doc(
-            {
-                "doctype": "FAC Page",
-                "title": "Team Planner",
-                "slug": slug,
-                "visibility": "Shared",
-                "published": published,
-                "roles": [{"role": role} for role in roles],
-                "html": '<div class="mk-card">Plan</div>',
-                "script": "root_element.querySelector('.mk-card').dataset.ready = '1';",
-                "style": ".mk-card { color: red; }",
-                **overrides,
-            }
-        )
-        doc.insert(ignore_permissions=True)
-        return doc.name
+        return _insert_shared_page(published, roles, **overrides)
 
     def _act_as(self, prefix: str, roles: tuple = ()) -> None:
         # Production reaches get_page as the logged-in Desk user; these are such users with exactly
@@ -751,6 +756,11 @@ class TestIsPageApiMethod(BaseAssistantTest):
 class TestListPages(BaseAssistantTest):
     """The Pages menu lists exactly the pages the session user may open."""
 
+    def tearDown(self):
+        # nosemgrep: frappe-setuser — restores the session the tests above switched away from
+        frappe.set_user("Administrator")
+        super().tearDown()
+
     def _desk_user(self, prefix: str, roles: tuple = ("Report Manager",)) -> str:
         return self.make_throwaway_user(prefix, roles=roles)
 
@@ -770,19 +780,10 @@ class TestListPages(BaseAssistantTest):
     def _build_shared(self, slug: str, published: int = 1, roles: tuple = ()) -> str:
         # Production: a System Manager shares a page and publishes it through an approval card.
         self._act_as("Administrator")
-        doc = frappe.get_doc(
-            {
-                "doctype": "FAC Page",
-                "title": f"Team {slug}",
-                "slug": slug,
-                "visibility": "Shared",
-                "published": published,
-                "roles": [{"role": role} for role in roles],
-                "html": "<p>x</p>",
-            }
-        )
-        doc.insert()
-        return doc.name
+        return _insert_shared_page(published, roles, slug=slug, title=f"Team {slug}", script="", style="")
+
+    def _slug(self, base: str) -> str:
+        return f"{base}-{frappe.generate_hash(length=6).lower()}"
 
     def _names(self, user: str) -> list[str]:
         self._act_as(user)
@@ -791,8 +792,8 @@ class TestListPages(BaseAssistantTest):
     def test_lists_own_personal_pages_not_others(self):
         user_a = self._desk_user("fac-list-a")
         user_b = self._desk_user("fac-list-b")
-        a_page = self._build_personal(user_a, "a-page")
-        b_page = self._build_personal(user_b, "b-page")
+        a_page = self._build_personal(user_a, self._slug("a-page"))
+        b_page = self._build_personal(user_b, self._slug("b-page"))
 
         names = self._names(user_a)
 
@@ -800,7 +801,7 @@ class TestListPages(BaseAssistantTest):
         self.assertNotIn(b_page, names)
 
     def test_lists_shared_pages_by_role(self):
-        shared = self._build_shared("role-page", roles=("Report Manager",))
+        shared = self._build_shared(self._slug("role-page"), roles=("Report Manager",))
         with_role = self._desk_user("fac-list-role", roles=("Report Manager",))
         without_role = self._desk_user("fac-list-norole", roles=("Workspace Manager",))
 
@@ -808,7 +809,7 @@ class TestListPages(BaseAssistantTest):
         self.assertNotIn(shared, self._names(without_role))
 
     def test_drafts_only_for_system_manager(self):
-        draft = self._build_shared("draft-page", published=0, roles=("Report Manager",))
+        draft = self._build_shared(self._slug("draft-page"), published=0, roles=("Report Manager",))
         member = self._desk_user("fac-list-draft-member", roles=("Report Manager",))
 
         self.assertNotIn(draft, self._names(member))
@@ -823,11 +824,11 @@ class TestListPages(BaseAssistantTest):
     def test_never_returns_a_page_get_page_refuses(self):
         user = self._desk_user("fac-list-consistent", roles=("Report Manager",))
         other = self._desk_user("fac-list-consistent-other", roles=("Report Manager",))
-        self._build_personal(user, "mine")
-        self._build_personal(other, "theirs")
-        self._build_shared("open-shared", roles=("Report Manager",))
-        self._build_shared("closed-shared", roles=("Workspace Manager",))
-        self._build_shared("draft-shared", published=0, roles=("Report Manager",))
+        self._build_personal(user, self._slug("mine"))
+        self._build_personal(other, self._slug("theirs"))
+        self._build_shared(self._slug("open-shared"), roles=("Report Manager",))
+        self._build_shared(self._slug("closed-shared"), roles=("Workspace Manager",))
+        self._build_shared(self._slug("draft-shared"), published=0, roles=("Report Manager",))
 
         for viewer in (user, other, "Administrator"):
             for name in self._names(viewer):
@@ -835,10 +836,10 @@ class TestListPages(BaseAssistantTest):
 
     def test_own_personal_first_then_shared_newest_first(self):
         user = self._desk_user("fac-list-order")
-        p_old = self._build_personal(user, "p-old")
-        p_new = self._build_personal(user, "p-new")
-        s_old = self._build_shared("s-old", roles=("Report Manager",))
-        s_new = self._build_shared("s-new", roles=("Report Manager",))
+        p_old = self._build_personal(user, self._slug("p-old"))
+        p_new = self._build_personal(user, self._slug("p-new"))
+        s_old = self._build_shared(self._slug("s-old"), roles=("Report Manager",))
+        s_new = self._build_shared(self._slug("s-new"), roles=("Report Manager",))
         # Production reaches distinct `modified` values by editing pages at different times.
         for name, stamp in (
             (p_old, "2026-01-01 10:00:00"),
