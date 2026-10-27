@@ -83,7 +83,7 @@
 					<!-- Summary Cards -->
 					<SummaryCards
 						:summary="summary"
-						:quota="quotaInfo"
+						:days="selectedRange"
 						mode="admin"
 						:conversation-count="conversationsSummary.total_conversations"
 						:credits-trend="creditsTrend"
