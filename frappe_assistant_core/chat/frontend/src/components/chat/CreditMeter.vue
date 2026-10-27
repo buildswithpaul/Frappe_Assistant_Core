@@ -5,7 +5,7 @@
 		class="credit-meter"
 		:class="toneClass"
 		:title="tooltip"
-		:aria-label="tooltip"
+		:aria-label="accessibleName"
 		@click="openMyUsage"
 	>
 		<div class="meter-track" aria-hidden="true">
@@ -21,6 +21,7 @@ import { useRouter } from "vue-router";
 import { useUserStore } from "@/stores/userStore";
 import { useCreditScope } from "@/composables/useCreditScope";
 import { percentOf } from "@/utils/creditPercent";
+import { __ } from "@/utils/i18n";
 
 const userStore = useUserStore();
 const router = useRouter();
@@ -36,7 +37,10 @@ const hasQuota = computed(() => scope.value.total > 0);
 
 const clampedPercent = computed(() => percentOf(scope.value.used, scope.value.total));
 
-const label = computed(() => `${clampedPercent.value}% used`);
+const label = computed(() => __("{0}% used", [clampedPercent.value]));
+
+// The name starts with the visible label (WCAG 2.5.3); the tooltip's figures stay in `title`.
+const accessibleName = computed(() => __("{0}% used. Open my usage", [clampedPercent.value]));
 
 // Amber and red mirror the widget's quota thresholds so the two surfaces
 // warn at the same points.
@@ -84,6 +88,10 @@ function formatCredits(value) {
 	border: 0;
 	font: inherit;
 	color: inherit;
+}
+
+.credit-meter:hover {
+	background: var(--ql-subtle);
 }
 
 .credit-meter:focus-visible {
