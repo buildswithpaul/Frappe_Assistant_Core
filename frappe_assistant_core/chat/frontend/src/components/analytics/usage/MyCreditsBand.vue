@@ -10,6 +10,10 @@
 		</p>
 		<p v-if="workspaceOut" class="notice" role="status" data-test="workspace-out">
 			{{ workspaceOutText }}
+			<router-link v-if="isAdmin" class="notice-link" to="/analytics?buy=1" data-test="buy-more">
+				{{ __("Buy more credits.") }}
+			</router-link>
+			<template v-else>{{ __("Ask a workspace admin to add more.") }}</template>
 		</p>
 	</div>
 </template>
@@ -59,10 +63,8 @@ const workspaceOut = computed(() => {
 
 const workspaceOutText = computed(() =>
 	resetDate.value
-		? __("Your workspace has used this month's credits. They reset on {0}. Ask a workspace admin to add more.", [
-				resetDate.value,
-			])
-		: __("Your workspace has used this month's credits. Ask a workspace admin to add more."),
+		? __("Your workspace has used this month's credits. They reset on {0}.", [resetDate.value])
+		: __("Your workspace has used this month's credits."),
 );
 </script>
 

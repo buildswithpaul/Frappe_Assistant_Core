@@ -111,6 +111,14 @@ describe("MyCreditsBand", () => {
 			expect(text).toContain("Ask a workspace admin to add more.");
 		});
 
+		it("offers an admin the purchase instead of telling them to ask an admin", () => {
+			seed({ quota: { ...spent, credit_balance: 0 }, isAdmin: true });
+			const w = mount(MyCreditsBand, withRouter());
+			const notice = w.get('[data-test="workspace-out"]');
+			expect(notice.text()).not.toContain("Ask a workspace admin");
+			expect(w.get('[data-test="buy-more"]').attributes("href")).toContain("/analytics?buy=1");
+		});
+
 		it("stays quiet while extra credits remain", () => {
 			seed({ quota: { ...spent, credit_balance: 500 } });
 			expect(mount(MyCreditsBand, withRouter()).find('[data-test="workspace-out"]').exists()).toBe(false);
