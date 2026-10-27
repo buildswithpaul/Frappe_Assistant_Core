@@ -31,6 +31,26 @@ def _require_admin() -> None:
         frappe.throw(_("Only administrators can view usage analytics."), frappe.PermissionError)
 
 
+def _with_full_names(rows: list[dict]) -> list[dict]:
+    """Add ``full_name`` to each usage row, matching ``user_id`` to a User's email.
+
+    AR reports the user's email as ``user_id``. Match on the ``email`` field,
+    not ``name``: the two differ for Administrator. Unknown users get None.
+    """
+    emails = [row["user_id"] for row in rows if row.get("user_id")]
+    names = {}
+    if emails:
+        names = {
+            user["email"]: user["full_name"]
+            for user in frappe.get_all(
+                "User", filters={"email": ["in", emails]}, fields=["email", "full_name"]
+            )
+        }
+    for row in rows:
+        row["full_name"] = names.get(row.get("user_id")) or None
+    return rows
+
+
 @frappe.whitelist(methods=["GET"])
 def get_analytics_data(days: int = 30):
     """
@@ -40,7 +60,7 @@ def get_analytics_data(days: int = 30):
         days: Time range in days (7, 30, or 90)
 
     Returns:
-        dict with period, summary, daily, by_user, by_model, by_source, is_admin
+        dict with period, summary, daily, by_user (each with full_name), by_model, by_source, is_admin
     """
     _require_admin()
 
@@ -50,6 +70,7 @@ def get_analytics_data(days: int = 30):
             return {"error": _not_registered_error()}
 
         result = client.get_token_analytics(days=int(days), user_id=None)
+        result["by_user"] = _with_full_names(result.get("by_user") or [])
         result["is_admin"] = True
         return result
 
