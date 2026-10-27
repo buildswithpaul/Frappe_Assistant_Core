@@ -1,6 +1,7 @@
 import { mount } from "@vue/test-utils";
 import { describe, it, expect, beforeEach } from "vitest";
 import { nextTick } from "vue";
+import { createRouter, createMemoryHistory } from "vue-router";
 import { setActivePinia, createPinia } from "pinia";
 import CreditMeter from "../CreditMeter.vue";
 import { useUserStore } from "@/stores/userStore";
@@ -188,5 +189,39 @@ describe("CreditMeter live updates", () => {
 		await wrapper.vm.$nextTick();
 
 		expect(wrapper.find(".meter-label").text()).toBe("62% used");
+	});
+});
+
+describe("CreditMeter opens My usage", () => {
+	async function mountWithRouter() {
+		setActivePinia(createPinia());
+		const store = useUserStore();
+		store.quotaInfo = { ...TEAM_POOL, plan: "Pro", quota_total: 10000, quota_used: 2500 };
+		store.myCreditStatus = pooled();
+		const Blank = { render: () => null };
+		const router = createRouter({
+			history: createMemoryHistory(),
+			routes: [{ path: "/:rest(.*)*", component: Blank }],
+		});
+		router.push("/chat");
+		await router.isReady();
+		const wrapper = mount(CreditMeter, { global: { plugins: [router] } });
+		return { wrapper, router };
+	}
+
+	it("is a button carrying the tooltip as its accessible name", async () => {
+		const { wrapper } = await mountWithRouter();
+		const tip = "Pro plan — 2.5k of 10.0k credits used this month. Credits scale with reply length and model tier.";
+		expect(wrapper.element.tagName).toBe("BUTTON");
+		expect(wrapper.attributes("type")).toBe("button");
+		expect(wrapper.attributes("title")).toBe(tip);
+		expect(wrapper.attributes("aria-label")).toBe(tip);
+	});
+
+	it("routes to the member's own usage on click", async () => {
+		const { wrapper, router } = await mountWithRouter();
+		await wrapper.trigger("click");
+		await new Promise((r) => setTimeout(r));
+		expect(router.currentRoute.value.fullPath).toBe("/analytics?view=me");
 	});
 });
