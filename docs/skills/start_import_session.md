@@ -122,6 +122,14 @@ first call; tell the user which ones are current. Cell values in the reply (`sam
 - Each session's `session_id` is what `set_opening_*`, `set_column_mapping` and `dry_run_import`
   take as `session`.
 
+### The old system's IDs
+
+A preset that knows which column holds the old system's own ID for a row (a Zoho `Customer ID`, a
+Tally ledger's name) marks it on each session it opens, and the result's `old_ids` for that
+session names the column and the system. The column is kept for later files that refer to the
+records by it and is not imported (unless it is also a field, like an Item code). The export may
+have no such column or leave it empty: then nothing is marked, and the session has no `old_ids`.
+
 ## Tally XML
 
 A Tally XML masters export (Alt+E > Masters, format XML) is read directly, with no need to

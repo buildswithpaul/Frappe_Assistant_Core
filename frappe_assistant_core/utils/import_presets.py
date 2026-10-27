@@ -303,6 +303,10 @@ def validate_preset(preset: Any) -> Optional[str]:
     ):
         return "header.search_rows must be a positive integer"
 
+    if preset.get("source_system") is not None and not (
+        isinstance(preset["source_system"], str) and preset["source_system"].strip()
+    ):
+        return "source_system must be the system's short name, e.g. 'tally'"
     columns = preset.get("columns")
     if not isinstance(columns, dict) or not columns:
         return "columns must be a non-empty object"
@@ -378,6 +382,11 @@ def validate_preset(preset: Any) -> Optional[str]:
         if name in names:
             return f"target '{name}' appears twice"
         names.add(name)
+        source_key = target.get("source_key")
+        if source_key is not None and (not target.get("doctype") or source_key not in columns):
+            return (
+                f"target '{name}': source_key must be one of the preset's columns, on a target with a doctype"
+            )
         if bool(target.get("doctype")) == bool(target.get("engine")):
             return f"target '{name}' needs exactly one of doctype or engine"
         when = target.get("when")

@@ -2,6 +2,7 @@
   {
     "id": "tally_prime.ledgers",
     "system": "Tally Prime",
+    "source_system": "tally",
     "export": "Ledgers (masters export or List of Accounts)",
     "how_to_export": "Alt+E > Masters > Configure: Type of Master Ledgers, Format Excel (.xlsx), then E. Or Display More Reports > List of Accounts > Alt+E > Current > Excel.",
     "verified": false,
@@ -26,13 +27,13 @@
       "Opening Balance": {"from": ["Ledger – Opening Balance", "Opening Balance"], "parse": "amount"}
     },
     "targets": [
-      {"name": "Customers", "when": {"column": "Group", "in": ["Sundry Debtors"]}, "doctype": "Customer",
+      {"name": "Customers", "source_key": "Name", "when": {"column": "Group", "in": ["Sundry Debtors"]}, "doctype": "Customer",
        "mapping": {"Name": "customer_name", "GSTIN": ["gstin", "tax_id"], "Email": "email_id", "Mobile": "mobile_no", "PAN": ["pan"]},
        "constants": [{"column": "Customer Type", "field": "customer_type", "value": "Company"}]},
-      {"name": "Suppliers", "when": {"column": "Group", "in": ["Sundry Creditors"]}, "doctype": "Supplier",
+      {"name": "Suppliers", "source_key": "Name", "when": {"column": "Group", "in": ["Sundry Creditors"]}, "doctype": "Supplier",
        "mapping": {"Name": "supplier_name", "GSTIN": ["gstin", "tax_id"], "Email": "email_id", "Mobile": "mobile_no", "PAN": ["pan"]},
        "constants": [{"column": "Supplier Type", "field": "supplier_type", "value": "Company"}]},
-      {"name": "Accounts", "when": {"column": "Group", "not_in": ["Sundry Debtors", "Sundry Creditors"]}, "doctype": "Account",
+      {"name": "Accounts", "source_key": "Name", "when": {"column": "Group", "not_in": ["Sundry Debtors", "Sundry Creditors"]}, "doctype": "Account",
        "mapping": {"Name": "account_name", "Group": "parent_account"},
        "inputs": [{"name": "company", "column": "Company", "field": "company", "ask": "Which company do these ledger accounts belong to?"}]}
     ]
@@ -40,6 +41,7 @@
   {
     "id": "tally_prime.stock_items",
     "system": "Tally Prime",
+    "source_system": "tally",
     "export": "Stock items (masters export)",
     "how_to_export": "Alt+E > Masters > Configure: Type of Master Stock Items, Format Excel (.xlsx), then E.",
     "verified": false,
@@ -61,7 +63,7 @@
       "Opening Rate": {"from": ["Opening Balance – Rate", "Opening Rate"], "parse": "rate"}
     },
     "targets": [
-      {"name": "Items", "doctype": "Item",
+      {"name": "Items", "source_key": "Name", "doctype": "Item",
        "mapping": {"Name": "item_code", "Group": "item_group", "Units": "stock_uom", "Description": "description", "HSN": ["gst_hsn_code"]}}
     ]
   },

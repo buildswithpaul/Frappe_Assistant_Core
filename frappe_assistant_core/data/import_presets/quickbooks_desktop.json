@@ -2,6 +2,7 @@
   {
     "id": "quickbooks_desktop.customer_list",
     "system": "QuickBooks Desktop",
+    "source_system": "quickbooks",
     "export": "Customer list",
     "how_to_export": "Customers > Customer Center > Excel > Export Customer List.",
     "verified": false,
@@ -19,13 +20,14 @@
       "Disabled": {"from": ["Active Status"], "parse": "map", "default": "0", "values": {"Active": "0", "Inactive": "1"}}
     },
     "targets": [
-      {"name": "Customers", "doctype": "Customer", "mapping": {"Customer": "customer_name", "Email": "email_id", "Disabled": "disabled"},
+      {"name": "Customers", "source_key": "Customer", "doctype": "Customer", "mapping": {"Customer": "customer_name", "Email": "email_id", "Disabled": "disabled"},
        "constants": [{"column": "Customer Type", "field": "customer_type", "value": "Company"}]}
     ]
   },
   {
     "id": "quickbooks_desktop.vendor_list",
     "system": "QuickBooks Desktop",
+    "source_system": "quickbooks",
     "export": "Vendor list",
     "how_to_export": "Vendors > Vendor Center > Excel > Export Vendor List.",
     "verified": false,
@@ -43,13 +45,14 @@
       "Disabled": {"from": ["Active Status"], "parse": "map", "default": "0", "values": {"Active": "0", "Inactive": "1"}}
     },
     "targets": [
-      {"name": "Suppliers", "doctype": "Supplier", "mapping": {"Vendor": "supplier_name", "Email": "email_id", "Disabled": "disabled"},
+      {"name": "Suppliers", "source_key": "Vendor", "doctype": "Supplier", "mapping": {"Vendor": "supplier_name", "Email": "email_id", "Disabled": "disabled"},
        "constants": [{"column": "Supplier Type", "field": "supplier_type", "value": "Company"}]}
     ]
   },
   {
     "id": "quickbooks_desktop.item_list",
     "system": "QuickBooks Desktop",
+    "source_system": "quickbooks",
     "export": "Item list",
     "how_to_export": "Lists > Item List > Excel > Export all items.",
     "verified": false,
@@ -69,7 +72,7 @@
       "UOM": {"from": ["U/M"], "default": "Nos"}
     },
     "targets": [
-      {"name": "Items", "doctype": "Item",
+      {"name": "Items", "source_key": "Item", "doctype": "Item",
        "when": {"column": "Type", "not_in": ["Subtotal", "Group", "Discount", "Payment", "Sales Tax Item", "Sales Tax Group", "Other Charge"]},
        "mapping": {"Item": "item_code", "Description": "description", "Stock Item": "is_stock_item", "Price": "standard_rate",
                    "Cost": "valuation_rate", "UOM": "stock_uom"},
@@ -79,6 +82,7 @@
   {
     "id": "quickbooks_desktop.account_listing",
     "system": "QuickBooks Desktop",
+    "source_system": "quickbooks",
     "export": "Account Listing (chart of accounts)",
     "how_to_export": "Reports > List > Account Listing > Excel > Create New Worksheet.",
     "verified": false,
@@ -104,7 +108,7 @@
     },
     "group_flag": {"column": "Is Group", "name": "Account", "parent": "Parent"},
     "targets": [
-      {"name": "Accounts", "doctype": "Account", "when": {"column": "Type", "not_in": ["Non-Posting"]},
+      {"name": "Accounts", "source_key": "Number", "doctype": "Account", "when": {"column": "Type", "not_in": ["Non-Posting"]},
        "mapping": {"Account": "account_name", "Parent": "parent_account", "Account Type": "account_type", "Number": "account_number", "Is Group": "is_group"},
        "inputs": [{"name": "company", "column": "Company", "field": "company", "ask": "Which company do these accounts belong to?"}]}
     ]

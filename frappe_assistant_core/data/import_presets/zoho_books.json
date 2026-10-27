@@ -2,6 +2,7 @@
   {
     "id": "zoho_books.customers",
     "system": "Zoho Books",
+    "source_system": "zoho",
     "export": "Customers (contacts export)",
     "how_to_export": "Sales > Customers > ⋯ > Export Customers (CSV or XLSX).",
     "verified": false,
@@ -12,6 +13,7 @@
     },
     "columns": {
       "Display Name": {"from": ["Display Name"]},
+      "Customer ID": {"from": ["Customer ID", "Contact ID"]},
       "Company Name": {"from": ["Company Name"]},
       "Email": {"from": ["EmailID", "Email"]},
       "Phone": {"from": ["Phone"]},
@@ -27,7 +29,7 @@
       "Disabled": {"from": ["Status"], "parse": "map", "default": "0", "values": {"Active": "0", "Inactive": "1"}}
     },
     "targets": [
-      {"name": "Customers", "doctype": "Customer",
+      {"name": "Customers", "source_key": "Customer ID", "doctype": "Customer",
        "mapping": {"Display Name": "customer_name", "Email": "email_id", "Mobile": "mobile_no", "GSTIN": ["gstin", "tax_id"],
                    "GST Treatment": ["gst_category"], "PAN": ["pan"], "Currency": "default_currency", "Disabled": "disabled"},
        "constants": [{"column": "Customer Type", "field": "customer_type", "value": "Company"}]}
@@ -36,6 +38,7 @@
   {
     "id": "zoho_books.vendors",
     "system": "Zoho Books",
+    "source_system": "zoho",
     "export": "Vendors (contacts export)",
     "how_to_export": "Purchases > Vendors > ⋯ > Export Vendors (CSV or XLSX).",
     "verified": false,
@@ -46,6 +49,7 @@
     },
     "columns": {
       "Display Name": {"from": ["Display Name"]},
+      "Vendor ID": {"from": ["Vendor ID", "Contact ID"]},
       "Company Name": {"from": ["Company Name"]},
       "Email": {"from": ["EmailID", "Email"]},
       "Phone": {"from": ["Phone"]},
@@ -61,7 +65,7 @@
       "Disabled": {"from": ["Status"], "parse": "map", "default": "0", "values": {"Active": "0", "Inactive": "1"}}
     },
     "targets": [
-      {"name": "Suppliers", "doctype": "Supplier",
+      {"name": "Suppliers", "source_key": "Vendor ID", "doctype": "Supplier",
        "mapping": {"Display Name": "supplier_name", "Email": "email_id", "Mobile": "mobile_no", "GSTIN": ["gstin", "tax_id"],
                    "GST Treatment": ["gst_category"], "PAN": ["pan"], "Currency": "default_currency", "Disabled": "disabled"},
        "constants": [{"column": "Supplier Type", "field": "supplier_type", "value": "Company"}]}
@@ -70,6 +74,7 @@
   {
     "id": "zoho_books.items",
     "system": "Zoho Books",
+    "source_system": "zoho",
     "export": "Items",
     "how_to_export": "Items > ⋯ > Export Items (CSV or XLSX).",
     "verified": false,
@@ -80,6 +85,7 @@
     },
     "columns": {
       "Item": {"from": ["Item Name"]},
+      "Item ID": {"from": ["Item ID"]},
       "SKU": {"from": ["SKU"]},
       "Description": {"from": ["Description"]},
       "HSN": {"from": ["HSN/SAC"]},
@@ -89,7 +95,7 @@
       "Disabled": {"from": ["Status"], "parse": "map", "default": "0", "values": {"Active": "0", "Inactive": "1"}}
     },
     "targets": [
-      {"name": "Items", "doctype": "Item",
+      {"name": "Items", "source_key": "Item ID", "doctype": "Item",
        "mapping": {"Item": "item_code", "Description": "description", "HSN": ["gst_hsn_code"], "Unit": "stock_uom", "Rate": "standard_rate",
                    "Stock Item": "is_stock_item", "Disabled": "disabled"},
        "constants": [{"column": "Item Group", "field": "item_group", "value": "All Item Groups"}]}
@@ -98,6 +104,7 @@
   {
     "id": "zoho_books.chart_of_accounts",
     "system": "Zoho Books",
+    "source_system": "zoho",
     "export": "Chart of Accounts",
     "how_to_export": "Accountant > Chart of Accounts > ⋯ > Export Chart of Accounts.",
     "verified": false,
@@ -108,6 +115,7 @@
     },
     "columns": {
       "Account": {"from": ["Account Name"]},
+      "Account ID": {"from": ["Account ID"]},
       "Code": {"from": ["Account Code"]},
       "Type": {"from": ["Account Type"]},
       "Account Type": {"from": ["Account Type"], "parse": "map", "default": "",
@@ -124,7 +132,7 @@
     },
     "group_flag": {"column": "Is Group", "name": "Account", "parent": "Parent"},
     "targets": [
-      {"name": "Accounts", "doctype": "Account",
+      {"name": "Accounts", "source_key": "Account ID", "doctype": "Account",
        "mapping": {"Account": "account_name", "Code": "account_number", "Account Type": "account_type", "Parent": "parent_account", "Disabled": "disabled", "Is Group": "is_group"},
        "inputs": [{"name": "company", "column": "Company", "field": "company", "ask": "Which company do these accounts belong to?"}]}
     ]

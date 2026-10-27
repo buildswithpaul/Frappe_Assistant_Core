@@ -35,6 +35,7 @@ from frappe.utils import cint
 
 from frappe_assistant_core.assistant_core.doctype.fac_import_session.fac_import_session import engine_write
 from frappe_assistant_core.core.base_tool import BaseTool
+from frappe_assistant_core.utils import import_keys
 from frappe_assistant_core.utils import import_presets as presets
 from frappe_assistant_core.utils import import_tally_xml as tally_xml
 from frappe_assistant_core.utils.import_mapping import (
@@ -803,9 +804,13 @@ class StartImportSession(BaseTool):
         mapping = presets.target_mapping(target)
         if target.get("doctype"):
             out["doctype"] = target["doctype"]
-            out.update(
-                self._map_target(session, target["doctype"], rows.header, mapping, not_on_site, already)
-            )
+            old_ids = self._source_key(session, match.preset, target, rows)
+            out.update(self._map_target(session, target["doctype"], rows.header, mapping, not_on_site, already))
+            if old_ids:
+                out["old_ids"] = old_ids
+                mapped = out.get("mapping")
+                if isinstance(mapped, dict):  # kept on purpose, not a column the preset couldn't place
+                    mapped["not_imported"] = [c for c in mapped["not_imported"] if c != old_ids["column"]]
             # A mapping that could not be saved is not dry-run material: the model fixes it first.
             out["next"] = "set_column_mapping" if "mapping_problems" in out else "dry_run_import"
         else:
@@ -815,6 +820,20 @@ class StartImportSession(BaseTool):
                 out["invoice_type"] = target["invoice_type"]
             out["next"] = presets.ENGINES[target["engine"]]
         return out
+
+    @staticmethod
+    def _source_key(session, preset, target, rows):
+        """Mark the column of the export that holds the old system's ID (#34244), when the preset names
+        one and the export has values in it. The session is saved with its mapping."""
+        column = target.get("source_key")
+        if not column or column not in rows.header:
+            return None
+        position = rows.header.index(column)
+        if not any(position < len(row) and str(row[position]).strip() for row in rows.rows):
+            return None
+        system = import_keys.system_name(preset.get("source_system") or preset["system"])
+        import_keys.set_source_key(session, position, system)
+        return {"column": column, "system": system}
 
     def _map_target(self, session, doctype, header, mapping, not_on_site, already) -> Dict[str, Any]:
         schema = build_import_schema(doctype)

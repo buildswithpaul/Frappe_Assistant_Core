@@ -2,6 +2,7 @@
   {
     "id": "marg.ledgers",
     "system": "Marg ERP",
+    "source_system": "marg",
     "export": "All Ledgers (parties)",
     "how_to_export": "Books > All Ledgers > Excel icon, Formatted No, Balance only Yes, Format-2.",
     "verified": false,
@@ -19,10 +20,10 @@
       "Station": {"from": ["Station"]}
     },
     "targets": [
-      {"name": "Customers", "when": {"column": "Group", "in": ["Sundry Debtors"]}, "doctype": "Customer",
+      {"name": "Customers", "source_key": "Name", "when": {"column": "Group", "in": ["Sundry Debtors"]}, "doctype": "Customer",
        "mapping": {"Name": "customer_name", "GSTIN": ["gstin", "tax_id"], "Mobile": "mobile_no"},
        "constants": [{"column": "Customer Type", "field": "customer_type", "value": "Company"}]},
-      {"name": "Suppliers", "when": {"column": "Group", "in": ["Sundry Creditors"]}, "doctype": "Supplier",
+      {"name": "Suppliers", "source_key": "Name", "when": {"column": "Group", "in": ["Sundry Creditors"]}, "doctype": "Supplier",
        "mapping": {"Name": "supplier_name", "GSTIN": ["gstin", "tax_id"], "Mobile": "mobile_no"},
        "constants": [{"column": "Supplier Type", "field": "supplier_type", "value": "Company"}]}
     ]
@@ -30,6 +31,7 @@
   {
     "id": "marg.items",
     "system": "Marg ERP",
+    "source_system": "marg",
     "export": "Product list",
     "how_to_export": "Masters > Inventory > Product list > Alt+P > Excel.",
     "verified": false,
@@ -49,7 +51,7 @@
       "Manufacturer": {"from": ["Company"]}
     },
     "targets": [
-      {"name": "Items", "doctype": "Item",
+      {"name": "Items", "source_key": "Item", "doctype": "Item",
        "mapping": {"Item": "item_code", "Unit": "stock_uom", "HSN": ["gst_hsn_code"], "Rate": "standard_rate"},
        "constants": [{"column": "Item Group", "field": "item_group", "value": "All Item Groups"}]}
     ]

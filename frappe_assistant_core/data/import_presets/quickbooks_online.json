@@ -2,6 +2,7 @@
   {
     "id": "quickbooks_online.account_list",
     "system": "QuickBooks Online",
+    "source_system": "quickbooks",
     "export": "Account List (chart of accounts)",
     "how_to_export": "Reports > Standard reports > Account List > Export > Export to Excel (or CSV).",
     "verified": true,
@@ -25,7 +26,7 @@
     },
     "group_flag": {"column": "Is Group", "name": "Account", "parent": "Parent"},
     "targets": [
-      {"name": "Accounts", "doctype": "Account",
+      {"name": "Accounts", "source_key": "Number", "doctype": "Account",
        "mapping": {"Account": "account_name", "Parent": "parent_account", "Account Type": "account_type", "Number": "account_number", "Is Group": "is_group"},
        "inputs": [{"name": "company", "column": "Company", "field": "company", "ask": "Which company do these accounts belong to?"}]}
     ]
@@ -102,6 +103,7 @@
   {
     "id": "quickbooks_online.customer_contact_list",
     "system": "QuickBooks Online",
+    "source_system": "quickbooks",
     "export": "Customer Contact List",
     "how_to_export": "Reports > Customer Contact List > Export to Excel.",
     "verified": false,
@@ -119,13 +121,14 @@
       "Billing Address": {"from": ["Bill Address", "Billing Address"]}
     },
     "targets": [
-      {"name": "Customers", "doctype": "Customer", "mapping": {"Customer": "customer_name", "Email": "email_id"},
+      {"name": "Customers", "source_key": "Customer", "doctype": "Customer", "mapping": {"Customer": "customer_name", "Email": "email_id"},
        "constants": [{"column": "Customer Type", "field": "customer_type", "value": "Company"}]}
     ]
   },
   {
     "id": "quickbooks_online.vendor_contact_list",
     "system": "QuickBooks Online",
+    "source_system": "quickbooks",
     "export": "Vendor Contact List",
     "how_to_export": "Reports > Vendor Contact List > Export to Excel.",
     "verified": false,
@@ -143,13 +146,14 @@
       "Address": {"from": ["Address"]}
     },
     "targets": [
-      {"name": "Suppliers", "doctype": "Supplier", "mapping": {"Vendor": "supplier_name", "Email": "email_id"},
+      {"name": "Suppliers", "source_key": "Vendor", "doctype": "Supplier", "mapping": {"Vendor": "supplier_name", "Email": "email_id"},
        "constants": [{"column": "Supplier Type", "field": "supplier_type", "value": "Company"}]}
     ]
   },
   {
     "id": "quickbooks_online.products_services",
     "system": "QuickBooks Online",
+    "source_system": "quickbooks",
     "export": "Products and Services list",
     "how_to_export": "Sales > Products & services > Run report (or the export icon) > Export to Excel.",
     "verified": false,
@@ -168,7 +172,7 @@
       "SKU": {"from": ["SKU"]}
     },
     "targets": [
-      {"name": "Items", "doctype": "Item",
+      {"name": "Items", "source_key": "Item", "doctype": "Item",
        "mapping": {"Item": "item_code", "Description": "description", "Stock Item": "is_stock_item", "Price": "standard_rate", "Cost": "valuation_rate"},
        "constants": [{"column": "UOM", "field": "stock_uom", "value": "Nos"},
                      {"column": "Item Group", "field": "item_group", "value": "All Item Groups"}]}

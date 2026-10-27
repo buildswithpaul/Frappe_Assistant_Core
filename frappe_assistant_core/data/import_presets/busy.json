@@ -2,6 +2,7 @@
   {
     "id": "busy.accounts",
     "system": "Busy",
+    "source_system": "busy",
     "export": "Account list (parties)",
     "how_to_export": "Administration > Masters > Account > List > Configurable (select Group, Op. Bal., GSTIN, Mobile, Email) > Alt+E > Microsoft Excel.",
     "verified": false,
@@ -21,10 +22,10 @@
       "PAN": {"from": ["PAN", "PAN No."]}
     },
     "targets": [
-      {"name": "Customers", "when": {"column": "Group", "in": ["Sundry Debtors"]}, "doctype": "Customer",
+      {"name": "Customers", "source_key": "Name", "when": {"column": "Group", "in": ["Sundry Debtors"]}, "doctype": "Customer",
        "mapping": {"Name": "customer_name", "GSTIN": ["gstin", "tax_id"], "Mobile": "mobile_no", "Email": "email_id", "PAN": ["pan"]},
        "constants": [{"column": "Customer Type", "field": "customer_type", "value": "Company"}]},
-      {"name": "Suppliers", "when": {"column": "Group", "in": ["Sundry Creditors"]}, "doctype": "Supplier",
+      {"name": "Suppliers", "source_key": "Name", "when": {"column": "Group", "in": ["Sundry Creditors"]}, "doctype": "Supplier",
        "mapping": {"Name": "supplier_name", "GSTIN": ["gstin", "tax_id"], "Mobile": "mobile_no", "Email": "email_id", "PAN": ["pan"]},
        "constants": [{"column": "Supplier Type", "field": "supplier_type", "value": "Company"}]}
     ]
@@ -32,6 +33,7 @@
   {
     "id": "busy.items",
     "system": "Busy",
+    "source_system": "busy",
     "export": "Item list",
     "how_to_export": "Administration > Masters > Item > List > Configurable Alphabetical > Select Fields (Group, Main Unit, HSN Code, Tax Category, Sale Price) > Alt+E.",
     "verified": false,
@@ -50,7 +52,7 @@
       "Sale Price": {"from": ["Sale Price"], "parse": "amount"}
     },
     "targets": [
-      {"name": "Items", "doctype": "Item",
+      {"name": "Items", "source_key": "Item", "doctype": "Item",
        "mapping": {"Item": "item_code", "Group": "item_group", "Unit": "stock_uom", "HSN": ["gst_hsn_code"], "Sale Price": "standard_rate"}}
     ]
   },
