@@ -48,7 +48,7 @@ export function formatResetDate(iso) {
 export function quotaThreshold(status) {
 	if (!status || status.is_unlimited || status.is_fallback) return 0;
 	if (status.credits_exhausted === true) return 100;
-	if (!status.in_overage && Number(status.percentage_used) >= 80) return 80;
+	if (!status.in_overage && percentUsed(status) >= 80) return 80;
 	return 0;
 }
 

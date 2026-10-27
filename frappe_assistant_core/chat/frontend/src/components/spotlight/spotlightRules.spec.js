@@ -212,3 +212,13 @@ describe("quotaContent with the user's personal limit reached", () => {
 		expect(c.primary.label).not.toBe("Change limit");
 	});
 });
+
+describe("quotaThreshold uses the same rounding as the title", () => {
+	it("does not fire at a server-rounded 80% when used/total is still under 80%", () => {
+		expect(quotaThreshold({ quota_used: 7999.6, quota_total: 10000, percentage_used: 80.0, in_overage: false })).toBe(0);
+	});
+
+	it("fires once used/total reaches 80%", () => {
+		expect(quotaThreshold({ quota_used: 8000, quota_total: 10000, percentage_used: 80.0, in_overage: false })).toBe(80);
+	});
+});
