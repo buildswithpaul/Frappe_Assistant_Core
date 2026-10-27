@@ -89,6 +89,8 @@ class SetColumnMapping(BaseTool):
             "problems",
             "columns",
             "old_ids",
+            "old_id_columns",
+            "old_id_suggestions",
             "error",
         )
 
@@ -112,6 +114,18 @@ class SetColumnMapping(BaseTool):
                     "type": "string",
                     "enum": ["Insert New Records", "Update Existing Records"],
                     "description": "Change the session's import type. Default: keep it.",
+                },
+                "old_id_columns": {
+                    "type": "object",
+                    "description": (
+                        "Columns that hold the OLD system's ID of a record this file points at (an invoice's "
+                        "partner_id 42, meaning customer 42 of the old system), by column: "
+                        '{"Partner ID": {"doctype": "Customer", "source_system": "odoo"}}. The values are '
+                        "then translated to the records' names before the check, in the record's fields "
+                        "and its child tables. source_system can be left out when the site keeps the IDs of "
+                        "only one system for that DocType. The result's old_id_suggestions lists the "
+                        "columns that look like this."
+                    ),
                 },
                 "source_key_column": {
                     "type": "string",
@@ -144,7 +158,9 @@ class SetColumnMapping(BaseTool):
         try:
             key_column = arguments.get("source_key_column")
             has_key = key_column is not None and cstr(key_column).strip() != ""
-            if not isinstance(mapping, dict) or (not mapping and not has_key):
+            old_id_columns = arguments.get("old_id_columns")
+            has_translations = isinstance(old_id_columns, dict) and bool(old_id_columns)
+            if not isinstance(mapping, dict) or (not mapping and not has_key and not has_translations):
                 return {"success": False, "error": _("mapping must be an object of column → field.")}
 
             try:
@@ -196,6 +212,8 @@ class SetColumnMapping(BaseTool):
                         DONT_IMPORT  # an old ID is kept, not imported, unless it is mapped too
                     )
                 key_system = import_keys.system_name(arguments.get("source_system"))
+            translations, translation_problems = _translations(doc, target, headers, merged, old_id_columns)
+            problems += translation_problems
             match_key = ""
             if import_type == import_update.UPDATE:
                 match_on, update_problems = import_update.mapping_problems(
@@ -220,6 +238,7 @@ class SetColumnMapping(BaseTool):
                 import_keys.set_source_key(doc, int(key_position), key_system or _kept_system(doc))
             elif target != current_target:
                 import_keys.clear_source_key(doc)  # another DocType: the old column isn't this file's key
+            import_keys.set_key_maps(doc, translations)
             save_mapping(doc, target, merged, described["summary"])
             result = {
                 "success": True,
@@ -241,6 +260,7 @@ class SetColumnMapping(BaseTool):
                         "creates; before the dry run, ask where to keep them (choose_old_id_storage)."
                     ).format(header),
                 }
+            result.update(_old_id_notes(doc, key_position, translations))
             if described["not_imported"]:
                 # A column the model couldn't place went to Don't Import unasked, and the customers got
                 # the default territory. Names no column: they are the file's, fenced in not_imported.
@@ -257,6 +277,84 @@ class SetColumnMapping(BaseTool):
                 title=_("Set Column Mapping Error"), message=f"Error saving column mapping: {e!s}"
             )
             return {"success": False, "error": str(e)}
+
+
+def _translations(doc, target, headers, merged, given):
+    """``(entries, problems)``: the session's old ID translations after this call. The ones it had stay
+    while their column still links to the same DocType; ``given`` adds or changes some."""
+    links = import_keys.link_targets(target, merged)
+    entries = {
+        position: spec
+        for position, spec in import_keys.key_maps(doc).items()
+        if links.get(position) == spec["doctype"]
+    }
+    problems = []
+    for column, spec in (given if isinstance(given, dict) else {}).items():
+        position, problem = _column_position(column, headers)
+        if problem:
+            problems.append(problem)
+            continue
+        position = int(position)
+        spec = spec if isinstance(spec, dict) else {}
+        doctype = spec.get("doctype")
+        if not doctype or links.get(position) != doctype:
+            problems.append(
+                _(
+                    "Column '{0}' isn't mapped to a field that links to {1}, so its IDs can't be translated."
+                ).format(headers[position], _(doctype or "?"))
+            )
+            continue
+        system = import_keys.system_name(spec.get("source_system"))
+        known = import_keys.systems_for(doctype)
+        if not system:
+            if len(known) == 1:
+                system = known[0]
+            else:
+                problems.append(
+                    _("Column '{0}': say which system its IDs come from (source_system){1}.").format(
+                        headers[position],
+                        _(": the site keeps IDs of {0}").format(", ".join(known)) if known else "",
+                    )
+                )
+                continue
+        if system not in known:
+            problems.append(
+                _(
+                    "No old IDs of {0} for {1} are kept on this site, so column '{2}' can't be translated."
+                ).format(system, _(doctype), headers[position])
+            )
+            continue
+        entries[position] = {"doctype": doctype, "system": system}
+    return entries, problems
+
+
+def _old_id_notes(doc, key_position, translations):
+    """What the result adds about old IDs: suggestions for columns that look like them, a repeated key,
+    and the columns being translated."""
+    notes = {}
+    links = import_keys.link_targets(doc.target_doctype, session_mapping(doc))
+    if not (
+        translations
+        or key_position is not None
+        or any(import_keys.systems_for(d) for d in set(links.values()))
+    ):
+        return notes  # nothing to say about old IDs: the file isn't read again
+    try:
+        rows = read_sheet_rows(readable_session_file(doc), doc.sheet or None)
+    except FileProblem:
+        rows = []
+    if translations:
+        notes["old_id_columns"] = {
+            str(rows[0][p]) if rows and p < len(rows[0]) else str(p): spec for p, spec in translations.items()
+        }
+    suggestions = import_keys.suggest(doc, rows)
+    if suggestions:
+        notes["old_id_suggestions"] = suggestions
+    if key_position is not None and rows:
+        repeated = import_keys.duplicates(rows, int(key_position))
+        if repeated:
+            notes.setdefault("old_ids", {})["duplicates"] = repeated
+    return notes
 
 
 def _source_key(doc, headers, column, arguments):

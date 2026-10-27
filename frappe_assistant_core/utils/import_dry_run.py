@@ -632,6 +632,8 @@ class _Checker:
         # it, and the same for the files imported after this one (import_plan).
         self.coming: Dict[str, Dict[str, str]] = coming or {}
         self.later: Dict[str, Dict[str, str]] = later or {}
+        # Fields an old ID column is mapped to (#34244): a value left in them is an ID not imported yet
+        self.translated = import_keys.translated_fields(session)
         self.preview = {"records_changing": 0, "fields_changing": 0, "by_field": {}, "samples": []}
         if matches is not None:
             from frappe_assistant_core.utils import import_update
@@ -805,6 +807,12 @@ class _Checker:
                 "{0} '{1}' comes from {2}, which is imported after this file. Move that file first "
                 "(plan_migration's order)."
             ).format(_(field.options), value, later)
+        elif field.fieldtype == "Link" and (field.parent, field.fieldname) in self.translated:
+            cause = CAUSE_MISSING_LINK
+            message = _(
+                "{0} '{1}' isn't imported yet. Import the file that creates it first, map it to an "
+                "existing record, or leave these rows out."
+            ).format(_(field.options), value)
         elif field.fieldtype == "Link":
             cause = CAUSE_MISSING_LINK
             message = _("{0} '{1}' doesn't exist.").format(_(field.options), value)

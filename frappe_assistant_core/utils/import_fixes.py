@@ -149,7 +149,9 @@ def _range(start: int, end: int) -> str:
 
 
 def apply_value_maps(session, rows: List[List[str]]) -> List[List[str]]:
-    """The file's rows (header first) with every value map applied to its columns."""
+    """The file's rows (header first) with each old ID column translated (#34244) and every value map
+    applied to its columns. Every reader of the file's rows comes through here."""
+    rows = import_keys.translate(session, rows)
     maps = value_maps(session)
     if not maps or not rows:
         return rows

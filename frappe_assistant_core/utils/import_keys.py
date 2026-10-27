@@ -150,6 +150,156 @@ def storage_problem(session) -> Optional[str]:
     ).format(column)
 
 
+def key_maps(session) -> Dict[int, Dict[str, str]]:
+    """The columns of the session's file whose values are old IDs of another DocType's records, to be
+    translated to the record names: ``{position: {"doctype": "Customer", "system": "odoo"}}``."""
+    found = _rules(session).get(KEY_MAPS)
+    out: Dict[int, Dict[str, str]] = {}
+    for position, spec in (found or {}).items() if isinstance(found, dict) else []:
+        if str(position).isdigit() and isinstance(spec, dict) and spec.get("doctype") and spec.get("system"):
+            out[int(position)] = {"doctype": spec["doctype"], "system": system_name(spec["system"])}
+    return out
+
+
+def set_key_maps(session, entries: Dict[int, Dict[str, str]]) -> None:
+    """Keep ``entries`` as the session's old ID translations (those not in it are dropped). The session is
+    saved by the caller."""
+    rules = _rules(session)
+    if entries:
+        rules[KEY_MAPS] = {
+            str(position): {"doctype": spec["doctype"], "system": system_name(spec["system"])}
+            for position, spec in entries.items()
+        }
+    else:
+        rules.pop(KEY_MAPS, None)
+    session.transformation_rules = frappe.as_json(rules) if rules else None
+
+
+def link_targets(target_doctype: str, column_map: Dict[str, str]) -> Dict[int, str]:
+    """``{position: DocType}`` for each mapped column whose field links to a DocType: a field of the
+    record, or of one of its child tables (``items.item_code``)."""
+    meta = frappe.get_meta(target_doctype)
+    out: Dict[int, str] = {}
+    for position, key in column_map.items():
+        if not str(position).isdigit() or not key or key == "Don't Import":
+            continue
+        if "." in key:
+            table_field, fieldname = key.split(".", 1)
+            table = meta.get_field(table_field)
+            df = frappe.get_meta(table.options).get_field(fieldname) if table and table.options else None
+        else:
+            df = meta.get_field(key)
+        if df and df.fieldtype == "Link" and df.options:
+            out[int(position)] = df.options
+    return out
+
+
+def systems_for(doctype: str) -> List[str]:
+    """The source systems whose old IDs of ``doctype`` the site keeps somewhere."""
+    prefix = _CHOICE_KEY.format(doctype=doctype, system="")
+    rows = frappe.get_all(
+        "DefaultValue", filters={"parent": "__default", "defkey": ["like", f"{prefix}%"]}, fields=["defkey"]
+    )
+    return sorted(row["defkey"][len(prefix) :] for row in rows)
+
+
+def translate(session, rows: List[List[Any]]) -> List[List[Any]]:
+    """The file's rows (header first) with each old ID column's values replaced by the names of the
+    records they stand for. An ID that is not kept stays as it is, so the check reports it. Nothing is
+    written back: the rule is the session's, the names are looked up each time the rows are read."""
+    maps = key_maps(session)
+    if not maps or not rows:
+        return rows
+    user = frappe.session.user
+    found = {
+        position: resolve(
+            spec["doctype"],
+            spec["system"],
+            [row[position] for row in rows[1:] if position < len(row)],
+            user=user,
+        )
+        for position, spec in maps.items()
+    }
+    out = [rows[0]]
+    for row in rows[1:]:
+        row = list(row)
+        for position, names in found.items():
+            if position < len(row):
+                name = names.get(normalise(row[position]))
+                if name:
+                    row[position] = name
+        out.append(row)
+    return out
+
+
+def translated_fields(session) -> set:
+    """``(DocType, fieldname)`` of each field an old ID column is mapped to: where the check says an
+    ID "isn't imported yet" instead of that a record doesn't exist."""
+    from frappe_assistant_core.utils.import_dry_run import column_to_field_map
+
+    maps = key_maps(session)
+    if not maps or not session.target_doctype:
+        return set()
+    meta = frappe.get_meta(session.target_doctype)
+    fields = set()
+    for position, key in column_to_field_map(session).items():
+        if not str(position).isdigit() or int(position) not in maps or not key:
+            continue
+        if "." in key:
+            table_field, fieldname = key.split(".", 1)
+            table = meta.get_field(table_field)
+            if table:
+                fields.add((table.options, fieldname))
+        else:
+            fields.add((session.target_doctype, key))
+    return fields
+
+
+def suggest(session, rows: List[List[Any]], limit: int = 2000) -> List[Dict[str, Any]]:
+    """The mapped columns that hold old IDs the site keeps: for each column that links to a DocType with
+    kept IDs and isn't translated yet, the source system in which at least 90 % of its (distinct)
+    values resolve. ``rows`` is the file with its header; only its first ``limit`` rows are read."""
+    from frappe_assistant_core.utils.import_dry_run import column_to_field_map
+
+    if not rows or not session.target_doctype:
+        return []
+    kept = key_maps(session)
+    headers = rows[0]
+    found = []
+    for position, doctype in link_targets(session.target_doctype, column_to_field_map(session)).items():
+        if position in kept or position >= len(headers):
+            continue
+        values = distinct_keys(row[position] for row in rows[1 : limit + 1] if position < len(row))
+        if not values:
+            continue
+        best = None
+        for system in systems_for(doctype):
+            resolved = sum(1 for name in resolve(doctype, system, values).values() if name)
+            if resolved / len(values) >= CUSTOM_FIELD_SHARE and (not best or resolved > best["resolved"]):
+                best = {
+                    "column": str(headers[position]),
+                    "position": position,
+                    "doctype": doctype,
+                    "system": system,
+                    "resolved": resolved,
+                    "total": len(values),
+                }
+        if best:
+            found.append(best)
+    return found
+
+
+def duplicates(rows: List[List[Any]], position: int, shown: int = 10) -> List[Dict[str, Any]]:
+    """The old IDs that more than one row of the file has: ``{"key", "rows"}`` (file row numbers, the
+    header being row 1), at most ``shown`` of them."""
+    seen: Dict[str, List[int]] = {}
+    for number, row in enumerate(rows[1:], start=2):
+        key = normalise(row[position]) if position < len(row) else ""
+        if key:
+            seen.setdefault(key, []).append(number)
+    return [{"key": key, "rows": numbers} for key, numbers in seen.items() if len(numbers) > 1][:shown]
+
+
 # -- where a DocType keeps its old IDs ----------------------------------------------------------
 
 
