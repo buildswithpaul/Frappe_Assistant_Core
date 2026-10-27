@@ -1,7 +1,12 @@
 import { ref, computed } from "vue";
 import { api } from "@/api/client";
 
-export function useAnalyticsData() {
+/**
+ * @param {{ scope?: "workspace" | "me" }} options  "me" reads only the session user's own usage
+ *   and leaves the workspace-only conversation calls inert.
+ */
+export function useAnalyticsData({ scope = "workspace" } = {}) {
+	const isOwnScope = scope === "me";
 	// --- Aggregate analytics state ---
 	const loading = ref(true);
 	const error = ref(null);
@@ -88,12 +93,14 @@ export function useAnalyticsData() {
 		loading.value = true;
 		error.value = null;
 		try {
-			const result = await api.analytics.getData(range);
+			const result = await (isOwnScope
+				? api.analytics.getMyUsage(range)
+				: api.analytics.getData(range));
 			if (result?.error) {
 				error.value = result.error;
 			} else {
 				data.value = result;
-				isAdmin.value = !!result.is_admin;
+				if (!isOwnScope) isAdmin.value = !!result.is_admin;
 			}
 		} catch (e) {
 			error.value = e.message || "Failed to load analytics data";
@@ -119,6 +126,7 @@ export function useAnalyticsData() {
 	const conversationsLoading = ref(false);
 
 	async function loadConversations(days = null, limit = 50, offset = 0) {
+		if (isOwnScope) return;
 		const range = days ?? selectedRange.value;
 		conversationsLoading.value = true;
 		try {
@@ -142,6 +150,7 @@ export function useAnalyticsData() {
 	}
 
 	function loadMoreConversations() {
+		if (isOwnScope) return;
 		const p = conversationsPagination.value;
 		if (p.has_more) {
 			loadConversations(selectedRange.value, p.limit, p.offset + p.limit);
@@ -154,6 +163,7 @@ export function useAnalyticsData() {
 	const messagesLoading = ref(false);
 
 	async function loadMessageCredits(conversationId) {
+		if (isOwnScope) return;
 		messagesLoading.value = true;
 		try {
 			const result = await api.analytics.getMessageCredits(conversationId);

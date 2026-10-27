@@ -4,6 +4,9 @@ import { nextTick } from "vue";
 import { setActivePinia, createPinia } from "pinia";
 import CreditMeter from "../CreditMeter.vue";
 import { useUserStore } from "@/stores/userStore";
+import { testRouter } from "@/test-utils/router";
+
+const mountMeter = () => mount(CreditMeter, { global: { plugins: [testRouter()] } });
 
 const TEAM_POOL = {
 	plan: "Team",
@@ -46,7 +49,7 @@ describe("CreditMeter scoping", () => {
 		store.quotaInfo = { ...TEAM_POOL };
 		store.myCreditStatus = capped();
 
-		const wrapper = mount(CreditMeter);
+		const wrapper = mountMeter();
 
 		// 12400 / 20000 — the member's own cap, not the team's 51%.
 		expect(wrapper.find(".meter-label").text()).toBe("62% used");
@@ -56,7 +59,7 @@ describe("CreditMeter scoping", () => {
 		store.quotaInfo = { ...TEAM_POOL };
 		store.myCreditStatus = pooled();
 
-		const wrapper = mount(CreditMeter);
+		const wrapper = mountMeter();
 
 		expect(wrapper.find(".meter-label").text()).toBe("51% used");
 	});
@@ -65,7 +68,7 @@ describe("CreditMeter scoping", () => {
 		store.quotaInfo = { ...TEAM_POOL };
 		store.myCreditStatus = null;
 
-		const wrapper = mount(CreditMeter);
+		const wrapper = mountMeter();
 
 		expect(wrapper.find(".meter-label").text()).toBe("51% used");
 	});
@@ -74,7 +77,7 @@ describe("CreditMeter scoping", () => {
 		store.quotaInfo = { ...TEAM_POOL, quota_total: -1, is_unlimited: true, percentage_used: 0 };
 		store.myCreditStatus = capped({ limit: 20000, used: 5000 });
 
-		const wrapper = mount(CreditMeter);
+		const wrapper = mountMeter();
 
 		expect(wrapper.find(".credit-meter").exists()).toBe(true);
 		expect(wrapper.find(".meter-label").text()).toBe("25% used");
@@ -83,7 +86,7 @@ describe("CreditMeter scoping", () => {
 	it("rounds down and holds 99 until the allowance is spent", async () => {
 		store.quotaInfo = { ...TEAM_POOL, quota_total: 10000, quota_used: 8760 };
 		store.myCreditStatus = pooled();
-		const wrapper = mount(CreditMeter);
+		const wrapper = mountMeter();
 		expect(wrapper.find(".meter-label").text()).toBe("87% used");
 
 		store.quotaInfo = { ...TEAM_POOL, quota_total: 10000, quota_used: 9960 };
@@ -101,7 +104,7 @@ describe("CreditMeter scoping", () => {
 		store.quotaInfo = { ...TEAM_POOL, quota_total: 0, percentage_used: 0 };
 		store.myCreditStatus = pooled();
 
-		const wrapper = mount(CreditMeter);
+		const wrapper = mountMeter();
 
 		expect(wrapper.find(".credit-meter").exists()).toBe(false);
 	});
@@ -110,12 +113,12 @@ describe("CreditMeter scoping", () => {
 		store.quotaInfo = { ...TEAM_POOL };
 		store.myCreditStatus = capped();
 
-		const personal = mount(CreditMeter);
+		const personal = mountMeter();
 		expect(personal.find(".credit-meter").attributes("title")).toContain("Your limit");
 		expect(personal.find(".credit-meter").attributes("title")).toContain("12.4k of 20.0k");
 
 		store.myCreditStatus = pooled();
-		const team = mount(CreditMeter);
+		const team = mountMeter();
 		expect(team.find(".credit-meter").attributes("title")).toContain("Team plan");
 		expect(team.find(".credit-meter").attributes("title")).toContain("180.0k of 350.0k");
 	});
@@ -133,7 +136,7 @@ describe("CreditMeter live updates", () => {
 		store.quotaInfo = { ...TEAM_POOL };
 		store.myCreditStatus = capped();
 
-		const wrapper = mount(CreditMeter);
+		const wrapper = mountMeter();
 		store.applyQuotaFromStream({
 			quota_used: 200000,
 			quota_total: 350000,
@@ -151,7 +154,7 @@ describe("CreditMeter live updates", () => {
 		store.quotaInfo = { ...TEAM_POOL };
 		store.myCreditStatus = pooled();
 
-		const wrapper = mount(CreditMeter);
+		const wrapper = mountMeter();
 		store.applyQuotaFromStream({
 			quota_used: 315000,
 			quota_total: 350000,
@@ -167,7 +170,7 @@ describe("CreditMeter live updates", () => {
 		store.quotaInfo = { ...TEAM_POOL };
 		store.myCreditStatus = capped({ limit: 20000, used: 17800 });
 
-		const wrapper = mount(CreditMeter);
+		const wrapper = mountMeter();
 		store.applyQuotaFromStream({
 			quota_used: 181000,
 			quota_total: 350000,
@@ -183,10 +186,40 @@ describe("CreditMeter live updates", () => {
 		store.quotaInfo = { ...TEAM_POOL };
 		store.myCreditStatus = capped();
 
-		const wrapper = mount(CreditMeter);
+		const wrapper = mountMeter();
 		store.applyQuotaFromStream({ quota_used: 180000, quota_total: 350000 });
 		await wrapper.vm.$nextTick();
 
 		expect(wrapper.find(".meter-label").text()).toBe("62% used");
+	});
+});
+
+describe("CreditMeter opens My usage", () => {
+	async function mountWithRouter() {
+		setActivePinia(createPinia());
+		const store = useUserStore();
+		store.quotaInfo = { ...TEAM_POOL, plan: "Pro", quota_total: 10000, quota_used: 2500 };
+		store.myCreditStatus = pooled();
+		const router = testRouter();
+		router.push("/chat");
+		await router.isReady();
+		const wrapper = mount(CreditMeter, { global: { plugins: [router] } });
+		return { wrapper, router };
+	}
+
+	it("is a button whose name starts with the visible label and keeps the tooltip as its title", async () => {
+		const { wrapper } = await mountWithRouter();
+		const tip = "Pro plan — 2.5k of 10.0k credits used this month. Credits scale with reply length and model tier.";
+		expect(wrapper.element.tagName).toBe("BUTTON");
+		expect(wrapper.attributes("type")).toBe("button");
+		expect(wrapper.attributes("title")).toBe(tip);
+		expect(wrapper.attributes("aria-label")).toBe("25% used. Open my usage");
+	});
+
+	it("routes to the member's own usage on click", async () => {
+		const { wrapper, router } = await mountWithRouter();
+		await wrapper.trigger("click");
+		await new Promise((r) => setTimeout(r));
+		expect(router.currentRoute.value.fullPath).toBe("/analytics?view=me");
 	});
 });

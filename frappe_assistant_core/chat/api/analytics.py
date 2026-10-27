@@ -12,6 +12,9 @@ from ._helpers import (
     _safe_error,
 )
 
+# Allowlist: only these AR keys reach a member; anything team-wide stays out.
+MY_USAGE_KEYS = ("period", "summary", "daily", "by_model", "by_source")
+
 
 def _get_client():
     """Get AR client, returning None if not registered."""
@@ -83,6 +86,47 @@ def get_analytics_data(days: int = 30):
 
     except Exception as e:
         frappe.log_error(title="FACO Analytics Error", message=f"Error fetching analytics: {e!s}")
+        return {"error": _safe_error(e, "FACO Analytics Error")}
+
+
+@frappe.whitelist(methods=["GET"])
+def get_my_usage(days: int | None = 30) -> dict:
+    """
+    Get the session user's own token usage. Open to any logged-in member.
+
+    The scope is set here from the session, never from a request parameter, so a
+    member cannot read anyone else's usage. ``by_user`` is dropped: it only holds
+    team-wide rows.
+
+    Args:
+        days: Time range in days (7, 30, or 90; anything else becomes 30)
+
+    Returns:
+        dict with period, summary, daily, by_model, by_source
+    """
+    from .auth import _ar_user_id
+
+    user_id = _ar_user_id(frappe.session.user) if frappe.session.user != "Guest" else None
+    if not user_id:
+        frappe.throw(_("Log in to view your usage."), frappe.PermissionError)
+
+    try:
+        days = int(days)
+    except (TypeError, ValueError):
+        days = 30
+    if days not in (7, 30, 90):
+        days = 30
+
+    try:
+        client = _get_client()
+        if not client:
+            return {"error": _not_registered_error()}
+
+        result = client.get_token_analytics(days=days, user_id=user_id)
+        return {key: (result or {}).get(key) for key in MY_USAGE_KEYS}
+
+    except Exception as e:
+        frappe.log_error(title="FACO Analytics Error", message=f"Error fetching my usage: {e!s}")
         return {"error": _safe_error(e, "FACO Analytics Error")}
 
 

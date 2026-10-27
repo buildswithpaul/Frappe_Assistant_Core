@@ -1,19 +1,30 @@
 <template>
-	<div v-if="hasQuota" class="credit-meter" :class="toneClass" :title="tooltip">
+	<button
+		v-if="hasQuota"
+		type="button"
+		class="credit-meter"
+		:class="toneClass"
+		:title="tooltip"
+		:aria-label="accessibleName"
+		@click="openMyUsage"
+	>
 		<div class="meter-track" aria-hidden="true">
 			<div class="meter-fill" :style="{ width: `${clampedPercent}%` }"></div>
 		</div>
 		<span class="meter-label">{{ label }}</span>
-	</div>
+	</button>
 </template>
 
 <script setup>
 import { computed } from "vue";
+import { useRouter } from "vue-router";
 import { useUserStore } from "@/stores/userStore";
 import { useCreditScope } from "@/composables/useCreditScope";
 import { percentOf } from "@/utils/creditPercent";
+import { __ } from "@/utils/i18n";
 
 const userStore = useUserStore();
+const router = useRouter();
 
 const quota = computed(() => userStore.quotaInfo);
 
@@ -26,7 +37,10 @@ const hasQuota = computed(() => scope.value.total > 0);
 
 const clampedPercent = computed(() => percentOf(scope.value.used, scope.value.total));
 
-const label = computed(() => `${clampedPercent.value}% used`);
+const label = computed(() => __("{0}% used", [clampedPercent.value]));
+
+// The name starts with the visible label (WCAG 2.5.3); the tooltip's figures stay in `title`.
+const accessibleName = computed(() => __("{0}% used. Open my usage", [clampedPercent.value]));
 
 // Amber and red mirror the widget's quota thresholds so the two surfaces
 // warn at the same points.
@@ -50,6 +64,11 @@ const tooltip = computed(() => {
 	return `${prefix}${used} of ${total} credits used this month. Credits scale with reply length and model tier.`;
 });
 
+// In the Desk widget the router shim turns this push into opening FAC Chat.
+function openMyUsage() {
+	router.push({ path: "/analytics", query: { view: "me" } });
+}
+
 function formatCredits(value) {
 	if (value >= 1000000) return `${(value / 1000000).toFixed(1)}M`;
 	if (value >= 1000) return `${(value / 1000).toFixed(1)}k`;
@@ -64,7 +83,20 @@ function formatCredits(value) {
 	gap: 0.5rem;
 	padding: 0.25rem 0.5rem;
 	border-radius: 0.375rem;
-	cursor: default;
+	cursor: pointer;
+	background: none;
+	border: 0;
+	font: inherit;
+	color: inherit;
+}
+
+.credit-meter:hover {
+	background: var(--ql-subtle);
+}
+
+.credit-meter:focus-visible {
+	outline: 2px solid var(--ql-accent);
+	outline-offset: 2px;
 }
 
 .meter-track {

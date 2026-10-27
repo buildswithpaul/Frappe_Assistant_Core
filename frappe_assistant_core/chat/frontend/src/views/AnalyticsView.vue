@@ -32,6 +32,7 @@
 						<div class="page-title">Usage</div>
 					</div>
 					<div class="top-bar-actions" v-if="!drilling">
+						<UsageViewSwitch v-if="userStore.isAdmin" :model-value="view" @update:model-value="setView" />
 						<div class="range-selector">
 							<button
 								v-for="r in ranges"
@@ -47,27 +48,47 @@
 				</div>
 			</header>
 
-			<!-- Content -->
+			<!-- Members reach this route too; resolveUsageView never gives them the workspace view. -->
 			<div class="analytics-content">
-				<WorkspaceUsage :range="range" @drilling="drilling = $event" />
+				<WorkspaceUsage v-if="view === 'workspace'" :range="range" @drilling="drilling = $event" />
+				<MyUsage v-else :range="range" />
 			</div>
 		</main>
 	</div>
 </template>
 
 <script setup>
-import { ref } from "vue";
-import { useRouter } from "vue-router";
+import { computed, ref, watch } from "vue";
+import { useRoute, useRouter } from "vue-router";
 import NavigationSidebar from "@/components/layout/NavigationSidebar.vue";
 import WorkspaceUsage from "@/components/analytics/usage/WorkspaceUsage.vue";
+import MyUsage from "@/components/analytics/usage/MyUsage.vue";
+import UsageViewSwitch from "@/components/analytics/usage/UsageViewSwitch.vue";
+import { resolveUsageView } from "@/components/analytics/usage/usageView";
+import { useUserStore } from "@/stores/userStore";
 import { useNavToggle } from "@/composables/useNavToggle";
 
+const route = useRoute();
 const router = useRouter();
+const userStore = useUserStore();
 const { isDrawerWidth, onHamburger } = useNavToggle();
 
 const ranges = [7, 30, 90];
 const range = ref(30);
 const drilling = ref(false);
+
+const view = computed(() => resolveUsageView(userStore.isAdmin, route.query));
+
+function setView(next) {
+	// A purchase link belongs to the workspace view; carrying it across would open the modal there.
+	const { buy, ...rest } = route.query;
+	router.replace({ query: { ...rest, view: next === "me" ? "me" : undefined } });
+}
+
+// The drill-down only exists in the workspace view; leaving it must not strand the range picker.
+watch(view, () => {
+	drilling.value = false;
+});
 </script>
 
 <style scoped>
