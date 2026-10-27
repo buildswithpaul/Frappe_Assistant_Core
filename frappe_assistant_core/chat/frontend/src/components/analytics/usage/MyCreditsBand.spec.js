@@ -8,8 +8,9 @@ import MyCreditsBand from "./MyCreditsBand.vue";
 
 const POOL = { quota_used: 2500, quota_total: 10000, billing_cycle_start: "2026-10-05" };
 
-function seed({ quota = POOL, mine = null } = {}) {
+function seed({ quota = POOL, mine = null, isAdmin = false } = {}) {
 	const store = useUserStore();
+	store.isAdmin = isAdmin;
 	store.quotaInfo = quota;
 	store.myCreditStatus = mine;
 }
@@ -79,5 +80,55 @@ describe("MyCreditsBand", () => {
 		const band = mount(MyCreditsBand, withRouter());
 		expect(meter.text()).toContain("25% used");
 		expect(band.text()).toContain("25% used");
+	});
+
+	it("tells a member to ask an admin at their own limit", () => {
+		seed({ mine: personal(2000) });
+		const wrapper = mount(MyCreditsBand, withRouter());
+		expect(wrapper.get('[data-test="at-limit"]').text()).toContain("Ask a workspace admin to raise it.");
+		expect(wrapper.find('[data-test="change-limit"]').exists()).toBe(false);
+	});
+
+	it("points an admin at the Users settings at their own limit", () => {
+		seed({ mine: personal(2000), isAdmin: true });
+		const wrapper = mount(MyCreditsBand, withRouter());
+		const notice = wrapper.get('[data-test="at-limit"]');
+		expect(notice.text()).toContain("resets on Nov 5, 2026");
+		expect(notice.text()).not.toContain("Ask a workspace admin");
+		const link = wrapper.get('[data-test="change-limit"]');
+		expect(link.text()).toBe("You can change it under Settings, Users.");
+		expect(link.attributes("href")).toBe("/settings/users");
+	});
+
+	describe("workspace out of credits", () => {
+		const spent = { ...POOL, quota_used: 10000 };
+
+		it("says so when the shared pool is spent and no extra credits remain", () => {
+			seed({ quota: { ...spent, credit_balance: 0 } });
+			const text = mount(MyCreditsBand, withRouter()).get('[data-test="workspace-out"]').text();
+			expect(text).toContain("Your workspace has used this month's credits.");
+			expect(text).toContain("They reset on Nov 5, 2026.");
+			expect(text).toContain("Ask a workspace admin to add more.");
+		});
+
+		it("stays quiet while extra credits remain", () => {
+			seed({ quota: { ...spent, credit_balance: 500 } });
+			expect(mount(MyCreditsBand, withRouter()).find('[data-test="workspace-out"]').exists()).toBe(false);
+		});
+
+		it("stays quiet under the pool limit", () => {
+			seed({ quota: { ...POOL, credit_balance: 0 } });
+			expect(mount(MyCreditsBand, withRouter()).find('[data-test="workspace-out"]').exists()).toBe(false);
+		});
+
+		it("is not shown for a member on their own limit", () => {
+			seed({ quota: { ...spent, credit_balance: 0 }, mine: personal(100) });
+			expect(mount(MyCreditsBand, withRouter()).find('[data-test="workspace-out"]').exists()).toBe(false);
+		});
+
+		it("is not shown on an unlimited plan", () => {
+			seed({ quota: { ...spent, quota_total: -1, is_unlimited: true, credit_balance: 0 } });
+			expect(mount(MyCreditsBand, withRouter()).find('[data-test="workspace-out"]').exists()).toBe(false);
+		});
 	});
 });

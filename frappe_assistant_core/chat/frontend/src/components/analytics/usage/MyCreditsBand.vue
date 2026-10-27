@@ -1,8 +1,15 @@
 <template>
 	<div class="my-credits-band">
 		<AllowanceCard v-bind="allowance" :label="label" :note="scope.isPersonal ? '' : __('Shared by your workspace')" />
-		<p v-if="block" class="at-limit" role="status" data-test="at-limit">
-			{{ atLimitText }}
+		<p v-if="block" class="notice" role="status" data-test="at-limit">
+			{{ atLimitIntro }}
+			<router-link v-if="isAdmin" class="notice-link" to="/settings/users" data-test="change-limit">
+				{{ __("You can change it under Settings, Users.") }}
+			</router-link>
+			<template v-else>{{ __("Ask a workspace admin to raise it.") }}</template>
+		</p>
+		<p v-if="workspaceOut" class="notice" role="status" data-test="workspace-out">
+			{{ workspaceOutText }}
 		</p>
 	</div>
 </template>
@@ -18,7 +25,7 @@ import { percentOf } from "@/utils/creditPercent";
 import { personalLimitBlock } from "@/utils/personalLimit";
 import { __ } from "@/utils/i18n";
 
-const { quotaInfo, myCreditStatus } = storeToRefs(useUserStore());
+const { quotaInfo, myCreditStatus, isAdmin } = storeToRefs(useUserStore());
 
 // The same allowance the top-bar meter measures: a personal cap when one is set, else the pool.
 const scope = useCreditScope();
@@ -37,10 +44,25 @@ const allowance = computed(() => {
 
 const block = computed(() => personalLimitBlock(myCreditStatus.value));
 
-const atLimitText = computed(() =>
+const atLimitIntro = computed(() =>
 	resetDate.value
-		? __("You've used your monthly limit. It resets on {0}. Ask a workspace admin to raise it.", [resetDate.value])
-		: __("You've used your monthly limit. Ask a workspace admin to raise it."),
+		? __("You've used your monthly limit. It resets on {0}.", [resetDate.value])
+		: __("You've used your monthly limit."),
+);
+
+// A member on the shared pool is stopped when the workspace's credits and any bought extras are gone.
+const workspaceOut = computed(() => {
+	const { unlimited, unknown, percent } = allowance.value;
+	if (scope.value.isPersonal || unlimited || unknown || percent < 100) return false;
+	return !(quotaInfo.value?.credit_balance > 0);
+});
+
+const workspaceOutText = computed(() =>
+	resetDate.value
+		? __("Your workspace has used this month's credits. They reset on {0}. Ask a workspace admin to add more.", [
+				resetDate.value,
+			])
+		: __("Your workspace has used this month's credits. Ask a workspace admin to add more."),
 );
 </script>
 
@@ -48,11 +70,10 @@ const atLimitText = computed(() =>
 .my-credits-band {
 	display: grid;
 	gap: 0.75rem;
-	max-width: 480px;
 	margin-bottom: 1.5rem;
 }
 
-.at-limit {
+.notice {
 	margin: 0;
 	padding: 0.75rem 1rem;
 	font-size: 0.8rem;
@@ -60,5 +81,10 @@ const atLimitText = computed(() =>
 	background: var(--ql-surface);
 	border: 1px solid var(--ql-danger);
 	border-radius: 0.75rem;
+}
+
+.notice-link {
+	color: var(--ql-accent);
+	font-weight: 500;
 }
 </style>
