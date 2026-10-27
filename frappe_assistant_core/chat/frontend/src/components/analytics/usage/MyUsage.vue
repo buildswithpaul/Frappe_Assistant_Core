@@ -13,7 +13,13 @@
 		</div>
 
 		<template v-else>
-			<SummaryCards :summary="summary" mode="user" :days="range" />
+			<SummaryCards
+				:summary="summary"
+				mode="user"
+				:days="range"
+				:credits-trend="creditsTrend"
+				:requests-trend="requestsTrend"
+			/>
 
 			<div class="section">
 				<h3 class="section-title">{{ __("Daily Usage Trend") }}</h3>
@@ -51,9 +57,8 @@ const props = defineProps({
 
 const userStore = useUserStore();
 
-const { loading, error, selectedRange, summary, daily, byModel, bySource, loadData } = useAnalyticsData({
-	scope: "me",
-});
+const { loading, error, selectedRange, summary, daily, byModel, bySource, creditsTrend, requestsTrend, loadData } =
+	useAnalyticsData({ scope: "me" });
 
 watch(
 	() => props.range,
