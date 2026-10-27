@@ -821,6 +821,19 @@ class TestListPages(BaseAssistantTest):
         self.assertIs(row["owner_is_me"], True)
         self.assertIsInstance(row["modified"], str)
 
+    def test_shared_row_carries_its_roles_sorted_and_personal_row_has_none(self):
+        shared = self._build_shared(self._slug("roles-row"), roles=("Report Manager", "Desk User"))
+        user = self._desk_user("fac-list-roles", roles=("Report Manager",))
+        personal = self._build_personal(user, self._slug("roles-mine"))
+
+        rows = {page["name"]: page for page in list_pages()}
+
+        self.assertEqual(rows[shared]["roles"], ["Desk User", "Report Manager"])
+        self.assertEqual(rows[personal]["roles"], [])
+        for row in rows.values():
+            self.assertNotIn("html", row)
+            self.assertNotIn("script", row)
+
     def test_never_returns_a_page_get_page_refuses(self):
         user = self._desk_user("fac-list-consistent", roles=("Report Manager",))
         other = self._desk_user("fac-list-consistent-other", roles=("Report Manager",))

@@ -119,13 +119,29 @@ def get_page(slug: str) -> dict:
     }
 
 
+def _roles_by_page(names: list[str]) -> dict[str, list[str]]:
+    """The role names each shared page is shared with, sorted, read in one query."""
+    if not names:
+        return {}
+    rows = frappe.get_all(
+        "FAC Page Role",
+        filters={"parent": ["in", names], "parenttype": "FAC Page"},
+        fields=["parent", "role"],
+    )
+    roles: dict[str, list[str]] = {}
+    for row in rows:
+        roles.setdefault(row.parent, []).append(row.role)
+    return {name: sorted(page_roles) for name, page_roles in roles.items()}
+
+
 @frappe.whitelist(methods=["GET"])
 def list_pages() -> list[dict]:
     """The FAC Pages the session user may open, for the Pages menu.
 
     The user's own personal pages come first, then shared pages, each newest first. Every page is
     kept only if ``_page_access`` opens it, the rule ``get_page`` applies, so the menu never lists
-    a page that would then refuse to open. A shared draft is listed for System Managers only.
+    a page that would then refuse to open. A shared draft is listed for System Managers only. A
+    shared page also carries the ``roles`` it is shared with, sorted; a personal page has none.
     """
     user = frappe.session.user
     if user == "Guest":
@@ -138,6 +154,8 @@ def list_pages() -> list[dict]:
         fields=["name", "title", "visibility", "published", "owner", "modified"],
         order_by="modified desc",
     )
+    opened = [record for record in records if _page_access(record.name, user) == _OPEN]
+    roles_by_page = _roles_by_page([record.name for record in opened if record.visibility == SHARED])
     pages = [
         {
             "name": record.name,
@@ -146,9 +164,9 @@ def list_pages() -> list[dict]:
             "draft": record.visibility == SHARED and not record.published,
             "owner_is_me": record.owner == user,
             "modified": str(record.modified),
+            "roles": roles_by_page.get(record.name, []),
         }
-        for record in records
-        if _page_access(record.name, user) == _OPEN
+        for record in opened
     ]
     # Stable sort keeps each group newest first.
     return sorted(pages, key=lambda page: page["visibility"] == SHARED)
