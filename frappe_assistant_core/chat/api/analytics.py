@@ -87,6 +87,44 @@ def get_analytics_data(days: int = 30):
 
 
 @frappe.whitelist(methods=["GET"])
+def get_my_usage(days: int = 30):
+    """
+    Get the session user's own token usage. Open to any logged-in member.
+
+    The scope is set here from the session, never from a request parameter, so a
+    member cannot read anyone else's usage. ``by_user`` is dropped: it only holds
+    team-wide rows.
+
+    Args:
+        days: Time range in days (7, 30, or 90; anything else becomes 30)
+
+    Returns:
+        dict with period, summary, daily, by_model, by_source
+    """
+    if frappe.session.user == "Guest":
+        frappe.throw(_("Log in to view your usage."), frappe.PermissionError)
+
+    try:
+        from .auth import _ar_user_id
+
+        client = _get_client()
+        if not client:
+            return {"error": _not_registered_error()}
+
+        days = int(days)
+        if days not in (7, 30, 90):
+            days = 30
+
+        result = client.get_token_analytics(days=days, user_id=_ar_user_id(frappe.session.user))
+        result.pop("by_user", None)
+        return result
+
+    except Exception as e:
+        frappe.log_error(title="FACO Analytics Error", message=f"Error fetching my usage: {e!s}")
+        return {"error": _safe_error(e, "FACO Analytics Error")}
+
+
+@frappe.whitelist(methods=["GET"])
 def get_conversation_analytics(days: int = 30, limit: int = 50, offset: int = 0):
     """
     Get team-wide per-conversation credit breakdown.
