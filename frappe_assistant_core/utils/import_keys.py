@@ -414,6 +414,38 @@ def _write_map(session_name, doctype: str, system: str, pairs, out) -> None:
         out["written"].append(key)
 
 
+def record(session, data_import: str) -> Dict[str, Any]:
+    """After a Data Import of ``session`` ended: keep the old ID of every record it created, from the
+    key column of the file it imported. Rows that failed or were left out have no record, so get
+    nothing; a record spread over several rows takes the first non-empty key. Run again for the same
+    Data Import (a retry, each level of a tree file), it adds nothing twice. Returns what
+    ``record_pairs`` does, ``{}`` when the file has no old ID column, nobody has chosen where to
+    keep them, or the session updates records instead of creating them."""
+    kept = source_key(session)
+    if not kept or (session.import_type or "Insert New Records") != "Insert New Records":
+        return {}
+    if not session.target_doctype or not storage_for(session.target_doctype, kept["system"]):
+        return {}
+    from frappe_assistant_core.utils import import_failures
+
+    rows = import_failures._import_file_rows(data_import)
+    position = int(kept["position"])
+    pairs: List[Tuple[str, str]] = []
+    for log in frappe.get_all(
+        "Data Import Log",
+        filters={"data_import": data_import, "success": 1},
+        fields=["docname", "row_indexes"],
+        order_by="log_index",
+    ):
+        for number in sorted(frappe.parse_json(log.row_indexes or "[]")):
+            row = rows[number - 1] if 2 <= number <= len(rows) else []
+            key = normalise(row[position]) if position < len(row) else ""
+            if key:
+                pairs.append((key, log.docname))
+                break
+    return record_pairs(session.name, session.target_doctype, kept["system"], pairs)
+
+
 def remove_for_session(session_name: str) -> int:
     """Undo: delete the key-map rows an import session wrote. Field values go with their records."""
     names = frappe.get_all(KEY_MAP, filters={"import_session": session_name}, pluck="name")

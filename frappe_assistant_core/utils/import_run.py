@@ -37,7 +37,7 @@ from frappe.utils.scheduler import is_scheduler_inactive
 
 from frappe_assistant_core.assistant_core.doctype.fac_import_session.fac_import_session import engine_session
 from frappe_assistant_core.utils import import_dry_run as dry_run
-from frappe_assistant_core.utils import import_failures, import_fixes, import_update
+from frappe_assistant_core.utils import import_failures, import_fixes, import_keys, import_update
 from frappe_assistant_core.utils.import_session import (
     import_target_problem,
     read_sheet_rows,
@@ -548,6 +548,13 @@ def record_result(session_name: str, data_import: str) -> Dict[str, Any]:
     Data Import row, and the step log. Returns the result, as FACO reports it."""
     session = engine_session(session_name)
     result = result_of(session, data_import)
+    kept = import_keys.record(session, data_import)  # the old IDs of the records it created
+    if kept.get("conflicts"):
+        result["message"] += " " + _(
+            "{0} old ID(s) already belong to another record, so they were not kept for these: {1}."
+        ).format(len(kept["conflicts"]), ", ".join(kept["conflicts"][:5]))
+    if kept:
+        result["old_ids"] = kept
     link = next((d for d in reversed(session.data_imports) if d.data_import == data_import), None)
     if link:
         link.status, link.success_count, link.failed_count = (
