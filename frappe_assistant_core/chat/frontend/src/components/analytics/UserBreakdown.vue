@@ -3,15 +3,16 @@
 		<table class="user-table">
 			<thead>
 				<tr>
-					<th class="col-user">User</th>
-					<th class="col-num">Credits</th>
+					<th class="col-user">{{ __("User") }}</th>
+					<th class="col-num">{{ __("Credits") }}</th>
 					<th class="col-num" :title="__('Every agent run: one per chat message, one per approval round, and one per background call (classifier, memory, suggestions, workflows). A run can include several model calls.')">{{ __("Agent runs") }}</th>
 				</tr>
 			</thead>
 			<tbody>
 				<tr v-for="user in users" :key="user.user_id">
 					<td class="col-user">
-						<span class="user-id">{{ user.user_id }}</span>
+						<span class="user-name">{{ user.full_name || user.user_id }}</span>
+						<span v-if="user.full_name" class="user-email">{{ user.user_id }}</span>
 					</td>
 					<td class="col-num">
 						<div class="percent-bar-wrapper">
@@ -60,7 +61,7 @@ function getPercent(user) {
 	background: var(--ql-surface);
 	border: 1px solid var(--ql-border);
 	border-radius: 0.75rem;
-	overflow: hidden;
+	overflow-x: auto;
 }
 
 .user-table {
@@ -107,9 +108,16 @@ function getPercent(user) {
 	white-space: nowrap;
 }
 
-.user-id {
+.user-name {
+	display: block;
 	font-weight: 500;
 	color: var(--ql-text);
+}
+
+.user-email {
+	display: block;
+	font-size: 0.75rem;
+	color: var(--ql-text-muted);
 }
 
 .percent-bar-wrapper {

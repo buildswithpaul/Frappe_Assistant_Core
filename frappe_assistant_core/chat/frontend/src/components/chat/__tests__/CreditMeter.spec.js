@@ -1,5 +1,6 @@
 import { mount } from "@vue/test-utils";
 import { describe, it, expect, beforeEach } from "vitest";
+import { nextTick } from "vue";
 import { setActivePinia, createPinia } from "pinia";
 import CreditMeter from "../CreditMeter.vue";
 import { useUserStore } from "@/stores/userStore";
@@ -77,6 +78,23 @@ describe("CreditMeter scoping", () => {
 
 		expect(wrapper.find(".credit-meter").exists()).toBe(true);
 		expect(wrapper.find(".meter-label").text()).toBe("25% used");
+	});
+
+	it("rounds down and holds 99 until the allowance is spent", async () => {
+		store.quotaInfo = { ...TEAM_POOL, quota_total: 10000, quota_used: 8760 };
+		store.myCreditStatus = pooled();
+		const wrapper = mount(CreditMeter);
+		expect(wrapper.find(".meter-label").text()).toBe("87% used");
+
+		store.quotaInfo = { ...TEAM_POOL, quota_total: 10000, quota_used: 9960 };
+		await nextTick();
+		expect(wrapper.find(".meter-label").text()).toBe("99% used");
+		expect(wrapper.find(".credit-meter").classes()).not.toContain("is-exhausted");
+
+		store.quotaInfo = { ...TEAM_POOL, quota_total: 10000, quota_used: 10000 };
+		await nextTick();
+		expect(wrapper.find(".meter-label").text()).toBe("100% used");
+		expect(wrapper.find(".credit-meter").classes()).toContain("is-exhausted");
 	});
 
 	it("hides entirely when neither a personal cap nor a team quota exists", () => {

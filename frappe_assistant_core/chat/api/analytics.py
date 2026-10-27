@@ -31,6 +31,33 @@ def _require_admin() -> None:
         frappe.throw(_("Only administrators can view usage analytics."), frappe.PermissionError)
 
 
+def _with_full_names(rows: list[dict]) -> list[dict]:
+    """Add ``full_name`` to each usage row, matching ``user_id`` the way AR keys a user.
+
+    AR keys a user by the User docname when it contains "@", else by User.email (see
+    ``auth._ar_user_id``). So a user whose email changed after they were seated is still
+    reported under the old docname. Match both, docname first, case-insensitively.
+    Unknown users get None.
+    """
+    ids = [row["user_id"] for row in rows if row.get("user_id")]
+    names: dict[str, str] = {}
+    if ids:
+        users = frappe.get_all(
+            "User",
+            or_filters={"name": ["in", ids], "email": ["in", ids]},
+            fields=["name", "email", "full_name"],
+        )
+        for user in users:
+            if "@" in (user.get("name") or ""):
+                names[user["name"].lower()] = user["full_name"]
+        for user in users:
+            if user.get("email"):
+                names.setdefault(user["email"].lower(), user["full_name"])
+    for row in rows:
+        row["full_name"] = names.get(str(row.get("user_id") or "").lower()) or None
+    return rows
+
+
 @frappe.whitelist(methods=["GET"])
 def get_analytics_data(days: int = 30):
     """
@@ -40,7 +67,7 @@ def get_analytics_data(days: int = 30):
         days: Time range in days (7, 30, or 90)
 
     Returns:
-        dict with period, summary, daily, by_user, by_model, by_source, is_admin
+        dict with period, summary, daily, by_user (each with full_name), by_model, by_source, is_admin
     """
     _require_admin()
 
@@ -50,6 +77,7 @@ def get_analytics_data(days: int = 30):
             return {"error": _not_registered_error()}
 
         result = client.get_token_analytics(days=int(days), user_id=None)
+        result["by_user"] = _with_full_names(result.get("by_user") or [])
         result["is_admin"] = True
         return result
 

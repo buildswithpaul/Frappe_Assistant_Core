@@ -11,6 +11,7 @@
 import { computed } from "vue";
 import { useUserStore } from "@/stores/userStore";
 import { useCreditScope } from "@/composables/useCreditScope";
+import { percentOf } from "@/utils/creditPercent";
 
 const userStore = useUserStore();
 
@@ -23,13 +24,9 @@ const scope = useCreditScope();
 // An unlimited pool reports -1 and has nothing to meter.
 const hasQuota = computed(() => scope.value.total > 0);
 
-const clampedPercent = computed(() => {
-	const { total, used } = scope.value;
-	if (total <= 0) return 0;
-	return Math.min(100, Math.max(0, (used / total) * 100));
-});
+const clampedPercent = computed(() => percentOf(scope.value.used, scope.value.total));
 
-const label = computed(() => `${Math.round(clampedPercent.value)}% used`);
+const label = computed(() => `${clampedPercent.value}% used`);
 
 // Amber and red mirror the widget's quota thresholds so the two surfaces
 // warn at the same points.
