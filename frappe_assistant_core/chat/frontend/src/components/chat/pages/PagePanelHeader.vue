@@ -5,7 +5,7 @@
 		</button>
 		<div class="page-panel-heading">
 			<h2 class="page-panel-title" :title="title">{{ title }}</h2>
-			<span class="page-panel-version">v{{ version }}</span>
+			<span v-if="version" class="page-panel-version">v{{ version }}</span>
 			<span v-if="pending" class="page-panel-updating" role="status">{{ __("Updating…") }}</span>
 		</div>
 		<div class="page-panel-actions">

@@ -52,6 +52,14 @@ describe("PageDock", () => {
 		expect(usePagePanel().openName.value).toBe(null);
 	});
 
+	it("closes the dock when the panel asks", async () => {
+		const w = mountDock();
+		usePagePanel().open("sales-a1b2c3");
+		await flushPromises();
+		await w.find(".page-panel-close").trigger("click");
+		expect(usePagePanel().openName.value).toBe(null);
+	});
+
 	it("passes Share… on, keeping the page open beside the chat", async () => {
 		const w = mountDock();
 		usePagePanel().open("sales-a1b2c3");

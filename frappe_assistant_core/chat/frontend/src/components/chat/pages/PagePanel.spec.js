@@ -154,11 +154,19 @@ describe("PagePanel", () => {
 		expect(w.text()).not.toContain("No pages yet.");
 	});
 
-	it("closes from its close control", async () => {
+	it("asks its host to close from its close control, and leaves the dock state alone", async () => {
 		usePagePanel().open("sales-a1b2c3");
 		const w = await mountPanel();
 		await w.find("button.page-panel-close").trigger("click");
-		expect(usePagePanel().openName.value).toBe(null);
+		expect(w.emitted("close")).toHaveLength(1);
+		expect(usePagePanel().openName.value).toBe("sales-a1b2c3");
+	});
+
+	it("hides the version chip until the page has a version", async () => {
+		const w = await mountPanel({ version: 0 });
+		expect(w.find(".page-panel-version").exists()).toBe(false);
+		await w.setProps({ version: 3 });
+		expect(w.find(".page-panel-version").text()).toBe("v3");
 	});
 
 	it("says so when the page can't be shown", async () => {

@@ -7,7 +7,7 @@
 			:shareable="shareable"
 			:desk-url="deskUrl"
 			:pdf-disabled="!page"
-			@close="close"
+			@close="emit('close')"
 			@share="share"
 			@pdf="downloadPdf"
 		/>
@@ -50,7 +50,6 @@
 import { computed, ref, watch } from "vue";
 
 import { facPage } from "@/api/domains/facPage";
-import { usePagePanel } from "@/composables/usePagePanel";
 import { __ } from "@/utils/i18n";
 import { logger } from "@/utils/logger";
 import { printPage } from "@/utils/pagePrint";
@@ -70,9 +69,7 @@ const props = defineProps({
 	refreshKey: { type: Number, default: 0 },
 });
 
-const emit = defineEmits(["share"]);
-
-const { close } = usePagePanel();
+const emit = defineEmits(["share", "close"]);
 
 const page = ref(null);
 const loadFailed = ref(false);
