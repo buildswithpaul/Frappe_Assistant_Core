@@ -50,7 +50,7 @@ beforeEach(async () => {
 		history: createMemoryHistory(),
 		routes: [
 			{ path: "/", component: { template: "<div />" } },
-			{ path: "/pages/:name", component: { template: "<div />" } },
+			{ path: "/pages/:name", name: "page", component: { template: "<div />" } },
 		],
 	});
 	await router.push("/");

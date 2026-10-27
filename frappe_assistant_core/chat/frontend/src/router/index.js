@@ -64,6 +64,17 @@ const routes = [
 		beforeEnter: requireAdmin,
 	},
 	{
+		path: "/pages",
+		name: "pages",
+		component: () => import("@/views/PagesView.vue"),
+	},
+	{
+		path: "/pages/:name",
+		name: "page",
+		component: () => import("@/views/PagesView.vue"),
+		props: true,
+	},
+	{
 		path: "/settings",
 		component: () => import("@/views/SettingsView.vue"),
 		// No hard redirect: on phones /settings is a full-screen menu (SettingsView

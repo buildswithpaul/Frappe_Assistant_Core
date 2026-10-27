@@ -71,7 +71,7 @@ function choose(name) {
 	isOpen.value = false;
 	// Off the chat there is no dock to show it in, so the page opens full screen.
 	if (dockMounted.value) open(name);
-	else router.push(`/pages/${encodeURIComponent(name)}`);
+	else router.push({ name: "page", params: { name } });
 }
 </script>
 
