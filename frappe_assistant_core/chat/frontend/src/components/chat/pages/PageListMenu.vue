@@ -15,7 +15,8 @@
 			<svg class="page-panel-mine-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10l5 5 5-5" /></svg>
 		</button>
 		<div v-if="isOpen" class="page-list-menu-popover" role="menu">
-			<p v-if="loading" class="page-list-menu-message">{{ __("Loading…") }}</p>
+			<p v-if="loading && !pages.length" class="page-list-menu-message">{{ __("Loading…") }}</p>
+			<p v-else-if="error && !pages.length" class="page-list-menu-message">{{ __("Your pages could not be listed.") }}</p>
 			<p v-else-if="!pages.length" class="page-list-menu-message">{{ __("No pages yet.") }}</p>
 			<button
 				v-for="item in pages"
@@ -44,7 +45,7 @@ import { __ } from "@/utils/i18n";
 const { open, dockMounted } = usePagePanel();
 const router = useRouter();
 const pagesStore = usePagesStore();
-const { pages } = storeToRefs(pagesStore);
+const { pages, error } = storeToRefs(pagesStore);
 
 const isOpen = ref(false);
 const loading = ref(false);

@@ -139,10 +139,19 @@ describe("PagePanel", () => {
 	});
 
 	it("routes to /pages/:name when no dock is mounted", async () => {
-		// The Desk widget and /pages/:name mount no PageDock, so dockMounted is false there.
+		// The full-page /pages/:name view mounts no PageDock, so dockMounted is false there.
 		await chooseFirstFromMenu();
 		expect(router.currentRoute.value.path).toBe("/pages/costs-a1b2c3");
 		expect(usePagePanel().openName.value).toBe(null);
+	});
+
+	it("says the list failed, not that there are no pages, when list_pages rejects", async () => {
+		listPages.mockRejectedValue(new Error("down"));
+		const w = await mountPanel();
+		await w.find("button.page-panel-mine").trigger("click");
+		await flushPromises();
+		expect(w.text()).toContain("Your pages could not be listed.");
+		expect(w.text()).not.toContain("No pages yet.");
 	});
 
 	it("closes from its close control", async () => {

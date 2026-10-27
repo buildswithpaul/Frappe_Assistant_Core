@@ -8,16 +8,23 @@ import { logger } from "@/utils/logger";
 export const usePagesStore = defineStore("pages", () => {
 	const pages = ref([]);
 	const loaded = ref(false);
+	const error = ref(false);
 	const hasPages = computed(() => pages.value.length > 0);
 
+	// Only the newest request may write, so a slow older response cannot overwrite a newer list.
+	let latestRequest = 0;
 	async function load() {
+		const request = ++latestRequest;
 		try {
-			pages.value = (await facPage.listPages()) || [];
-		} catch (error) {
-			logger.error("FAC Pages could not be listed", error);
-			pages.value = [];
-		} finally {
+			const result = (await facPage.listPages()) || [];
+			if (request !== latestRequest) return;
+			pages.value = result;
+			error.value = false;
 			loaded.value = true;
+		} catch (err) {
+			logger.error("FAC Pages could not be listed", err);
+			// The earlier list stays, and `loaded` stays as it was so ensureLoaded tries again.
+			if (request === latestRequest) error.value = true;
 		}
 	}
 
@@ -35,5 +42,5 @@ export const usePagesStore = defineStore("pages", () => {
 		if (loaded.value) load();
 	});
 
-	return { pages, loaded, hasPages, load, ensureLoaded };
+	return { pages, loaded, error, hasPages, load, ensureLoaded };
 });

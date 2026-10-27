@@ -33,12 +33,45 @@ describe("pagesStore", () => {
 		expect(store.loaded).toBe(true);
 	});
 
-	it("fails soft to an empty list", async () => {
+	it("fails soft: no pages, an error, and not loaded", async () => {
 		listPages.mockRejectedValue(new Error("down"));
 		const store = usePagesStore();
 		await store.load();
 		expect(store.pages).toEqual([]);
 		expect(store.hasPages).toBe(false);
+		expect(store.error).toBe(true);
+		expect(store.loaded).toBe(false);
+	});
+
+	it("keeps the earlier list when a reload fails", async () => {
+		const store = usePagesStore();
+		await store.load();
+		listPages.mockRejectedValue(new Error("down"));
+		await store.load();
+		expect(store.pages).toEqual([{ name: "a", title: "A" }]);
+		expect(store.error).toBe(true);
+	});
+
+	it("ensureLoaded tries again after a failure, and clears the error on success", async () => {
+		listPages.mockRejectedValueOnce(new Error("down"));
+		const store = usePagesStore();
+		await store.ensureLoaded();
+		await store.ensureLoaded();
+		expect(listPages).toHaveBeenCalledTimes(2);
+		expect(store.error).toBe(false);
+		expect(store.loaded).toBe(true);
+	});
+
+	it("ignores an older response that arrives after a newer one", async () => {
+		let resolveOld;
+		listPages.mockReturnValueOnce(new Promise((resolve) => (resolveOld = resolve)));
+		const store = usePagesStore();
+		const old = store.load();
+		listPages.mockResolvedValueOnce([{ name: "new", title: "New" }]);
+		await store.load();
+		resolveOld([{ name: "old", title: "Old" }]);
+		await old;
+		expect(store.pages).toEqual([{ name: "new", title: "New" }]);
 	});
 
 	it("reloads when a page write lands in chat after the first load", async () => {
