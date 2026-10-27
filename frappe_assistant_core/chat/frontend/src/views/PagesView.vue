@@ -10,8 +10,9 @@
 			/>
 		</div>
 		<div v-else class="pages-view-list">
-			<p v-if="error" class="pages-view-error">{{ __("Your pages could not be listed.") }}</p>
-			<PageList :pages="pages" @open="openPage" />
+			<p v-if="error" class="pages-view-note">{{ __("Your pages could not be listed.") }}</p>
+			<PageList v-else-if="loaded" :pages="pages" @open="openPage" />
+			<p v-else class="pages-view-note">{{ __("Loading…") }}</p>
 		</div>
 	</FullPageShell>
 </template>
@@ -24,7 +25,7 @@ import { useRouter } from "vue-router";
 import FullPageShell from "@/components/layout/FullPageShell.vue";
 import PagePanel from "@/components/chat/pages/PagePanel.vue";
 import PageList from "@/components/pages/PageList.vue";
-import { usePagePanel } from "@/composables/usePagePanel";
+import { isNarrow, usePagePanel } from "@/composables/usePagePanel";
 import { usePagesStore } from "@/stores/pagesStore";
 import { useUserStore } from "@/stores/userStore";
 import { __ } from "@/utils/i18n";
@@ -36,10 +37,11 @@ const props = defineProps({
 const router = useRouter();
 const userStore = useUserStore();
 const pagesStore = usePagesStore();
-const { pages, error } = storeToRefs(pagesStore);
+const { pages, error, loaded } = storeToRefs(pagesStore);
 const { open } = usePagePanel();
 
-onMounted(() => pagesStore.load());
+// The list refreshes each time it is opened; a deep link to one page only needs it for the title.
+onMounted(() => (props.name ? pagesStore.ensureLoaded() : pagesStore.load()));
 
 function openPage(name) {
 	router.push({ name: "page", params: { name } });
@@ -47,9 +49,10 @@ function openPage(name) {
 
 // Sharing needs FACO's approval card, which lives in a chat. The dock opens on the page because
 // the open page persists across the navigation, and the request waits in a new chat's composer.
+// On a phone the dock would cover that composer, so the page is left closed there.
 function share() {
 	const title = pages.value.find((p) => p.name === props.name)?.title || props.name;
-	open(props.name);
+	if (!isNarrow()) open(props.name);
 	router.push({
 		path: "/chat",
 		query: { prompt: __("Share my page “{0}” ({1}) with my team", [title, props.name]) },
@@ -74,7 +77,13 @@ function share() {
 	padding: 1.5rem;
 }
 
-.pages-view-error {
+@media (max-width: 767px) {
+	.pages-view-list {
+		padding: 1rem;
+	}
+}
+
+.pages-view-note {
 	margin-bottom: 1rem;
 	color: var(--ql-text-muted);
 	font-size: 0.875rem;

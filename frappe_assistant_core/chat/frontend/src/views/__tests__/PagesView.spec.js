@@ -79,6 +79,18 @@ describe("PagesView", () => {
 		listPages.mockRejectedValue(new Error("down"));
 		const w = await mountAt("/pages");
 		expect(w.text()).toContain("Your pages could not be listed.");
+		expect(w.text()).not.toContain("No pages yet");
+	});
+
+	it("shows Loading… rather than an empty list until the pages arrive", async () => {
+		let release;
+		listPages.mockReturnValue(new Promise((resolve) => (release = resolve)));
+		const w = await mountAt("/pages");
+		expect(w.text()).toContain("Loading…");
+		expect(w.text()).not.toContain("No pages yet");
+		release(summaries);
+		await flushPromises();
+		expect(w.findAll(".page-list-row")).toHaveLength(2);
 	});
 
 	it("mounts the full PagePanel at /pages/:name", async () => {
@@ -106,7 +118,24 @@ describe("PagesView", () => {
 		w.findComponent(PagePanel).vm.$emit("share", "Share this page with my team");
 		await flushPromises();
 		expect(router.currentRoute.value.path).toBe("/chat");
-		expect(router.currentRoute.value.query.prompt).toContain("costs-a1b2c3");
+		expect(router.currentRoute.value.query.prompt).toBe(
+			"Share my page “Costs” (costs-a1b2c3) with my team",
+		);
 		expect(usePagePanel().openName.value).toBe("costs-a1b2c3");
+	});
+
+	it("leaves the dock closed when sharing on a phone", async () => {
+		// isNarrow() reads matchMedia; a phone matches the narrow query.
+		window.matchMedia = vi.fn().mockReturnValue({ matches: true });
+		try {
+			const w = await mountAt("/pages/costs-a1b2c3");
+			w.findComponent(PagePanel).vm.$emit("share", "x");
+			await flushPromises();
+			expect(usePagePanel().openName.value).toBe(null);
+			expect(router.currentRoute.value.path).toBe("/chat");
+			expect(router.currentRoute.value.query.prompt).toContain("costs-a1b2c3");
+		} finally {
+			delete window.matchMedia;
+		}
 	});
 });
