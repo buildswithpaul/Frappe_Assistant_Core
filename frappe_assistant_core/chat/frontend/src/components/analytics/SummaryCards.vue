@@ -19,16 +19,16 @@
 		</div>
 
 		<div class="summary-card" v-if="mode === 'admin'">
-			<div class="card-label">Active Users</div>
+			<div class="card-label">{{ __("Active Users") }}</div>
 			<div class="card-value">{{ summary.active_users }}</div>
-			<div class="card-sub">in this period</div>
+			<div class="card-sub">{{ __("in this period") }}</div>
 		</div>
 
-				<div class="summary-card" v-if="mode === 'admin'">
-			<div class="card-label">Avg per Chat</div>
+		<div class="summary-card" v-if="mode === 'admin'">
+			<div class="card-label">{{ __("Avg per Chat") }}</div>
 			<div class="card-value" v-if="avgDenominator > 0">{{ formatNumber(avgPerChat) }}</div>
 			<div class="card-value" v-else>&mdash;</div>
-			<div class="card-sub">credits per conversation (all sources)</div>
+			<div class="card-sub">{{ __("credits per conversation (all sources)") }}</div>
 		</div>
 	</div>
 </template>

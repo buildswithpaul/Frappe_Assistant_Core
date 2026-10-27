@@ -61,7 +61,7 @@ function getPercent(user) {
 	background: var(--ql-surface);
 	border: 1px solid var(--ql-border);
 	border-radius: 0.75rem;
-	overflow: hidden;
+	overflow-x: auto;
 }
 
 .user-table {
