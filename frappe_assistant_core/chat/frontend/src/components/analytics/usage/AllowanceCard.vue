@@ -1,19 +1,23 @@
 <template>
 	<div class="allowance-card">
 		<div class="card-label">{{ label || __("This month") }}</div>
-		<template v-if="unlimited">
+		<template v-if="unknown">
+			<div class="card-value">&mdash;</div>
+			<div class="card-sub card-note">{{ __("Couldn't load this month's figures.") }}</div>
+		</template>
+		<template v-else-if="unlimited">
 			<div class="card-value">{{ __("Unlimited plan") }}</div>
 		</template>
 		<template v-else>
 			<div class="card-value">
-				{{ formatNumber(used) }}
-				<span class="card-total">/ {{ formatNumber(total) }}</span>
+				{{ formatCredits(used) }}
+				<span class="card-total">/ {{ formatCredits(total) }}</span>
 			</div>
 			<div class="allowance-bar" :class="toneClass" aria-hidden="true">
 				<div class="allowance-fill" :style="{ width: `${percent}%` }"></div>
 			</div>
 			<div class="card-foot">
-				<span class="card-sub">{{ percent }}%</span>
+				<span class="card-sub">{{ __("{0}% used", [percent]) }}</span>
 				<span v-if="resetDate" class="card-sub">{{ __("Resets on {0}", [resetDate]) }}</span>
 			</div>
 		</template>
@@ -24,12 +28,14 @@
 <script setup>
 import { computed } from "vue";
 import { __ } from "@/utils/i18n";
+import { formatCredits } from "./usageHelpers";
 
 const props = defineProps({
 	used: { type: Number, default: 0 },
 	total: { type: Number, default: 0 },
 	percent: { type: Number, default: 0 },
 	unlimited: { type: Boolean, default: false },
+	unknown: { type: Boolean, default: false },
 	resetDate: { type: String, default: null },
 	label: { type: String, default: "" },
 	note: { type: String, default: "" },
@@ -42,10 +48,6 @@ const toneClass = computed(() => {
 	if (props.percent >= 80) return "is-warning";
 	return "";
 });
-
-function formatNumber(val) {
-	return Number(val || 0).toLocaleString("en-US");
-}
 </script>
 
 <style scoped>

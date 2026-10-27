@@ -59,7 +59,7 @@
 						/>
 					</svg>
 					<div class="ring-label">
-						<span class="ring-percent">{{ Math.round(creditsPercentage) }}%</span>
+						<span class="ring-percent">{{ percent }}%</span>
 					</div>
 				</div>
 				<div class="usage-details">
@@ -68,10 +68,10 @@
 						{{ formatCredits(creditsUsed) }} / {{ formatCredits(creditsTotal) }}
 					</span>
 					<span class="usage-reset" v-if="resetDate">
-						Resets {{ resetDate }}
+						{{ __("Resets {0}", [resetDate]) }}
 					</span>
 					<router-link class="see-usage" data-test="see-usage" to="/analytics">
-						See usage
+						{{ __("See usage") }}
 					</router-link>
 				</div>
 			</div>
@@ -117,6 +117,8 @@
 <script setup>
 import { computed } from "vue";
 import { formatPlanName } from "@/composables/useFormatters";
+import { __ } from "@/utils/i18n";
+import { percentUsed } from "@/utils/creditPercent";
 import { monthAllowance } from "@/components/analytics/usage/usageHelpers";
 
 const props = defineProps({
@@ -189,9 +191,12 @@ const creditsTotal = computed(() => {
 	return props.quota?.credit_quota || props.quota?.quota_total || 0;
 });
 
+// The same whole-percent rule as the Usage page and the chat meter; the prop covers a missing quota.
+const percent = computed(() => (props.quota ? percentUsed(props.quota) : props.creditsPercentage));
+
 const ringCircumference = 2 * Math.PI * 34; // r = 34
 const ringOffset = computed(() => {
-	const pct = Math.min(props.creditsPercentage, 100) / 100;
+	const pct = percent.value / 100;
 	return ringCircumference * (1 - pct);
 });
 

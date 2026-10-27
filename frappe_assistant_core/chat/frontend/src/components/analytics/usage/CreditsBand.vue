@@ -1,7 +1,7 @@
 <template>
 	<div class="credits-band">
 		<AllowanceCard v-bind="allowance" />
-		<ExtraCreditsCard :balance="quota.credit_balance || 0" @buy-credits="emit('buy-credits')" />
+		<ExtraCreditsCard :balance="quota.credit_balance" @buy-credits="emit('buy-credits')" />
 		<div v-if="showLimits" class="limit-card" data-test="members-at-limit">
 			<div class="card-label">{{ __("Member limits") }}</div>
 			<div class="card-value">{{ limitText }}</div>

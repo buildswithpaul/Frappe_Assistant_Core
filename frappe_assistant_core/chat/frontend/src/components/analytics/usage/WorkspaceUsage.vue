@@ -1,9 +1,21 @@
 <template>
 	<div class="workspace-usage">
+		<!-- Credits are the one thing here that does not depend on the analytics call, so the band
+		     stays put while the rest loads, fails or reloads for a new range. -->
+		<template v-if="!selectedConversation">
+			<CreditsBand
+				v-if="quotaInfo"
+				:quota="quotaInfo"
+				:members-at-limit="membersAtLimit"
+				@buy-credits="openCreditPurchase"
+			/>
+			<p v-if="verificationMessage" class="purchase-message" role="alert">{{ verificationMessage }}</p>
+		</template>
+
 		<!-- Loading State -->
 		<div v-if="loading" class="analytics-state">
 			<div class="loading-spinner"></div>
-			<p>Loading usage data...</p>
+			<p>{{ __("Loading usage data...") }}</p>
 		</div>
 
 		<!-- Error State -->
@@ -17,7 +29,7 @@
 				/>
 			</svg>
 			<p>{{ error }}</p>
-			<button class="retry-btn" @click="loadData(range)">Retry</button>
+			<button class="retry-btn" @click="loadData(range)">{{ __("Retry") }}</button>
 		</div>
 
 		<!-- Drill-Down View -->
@@ -31,15 +43,6 @@
 
 		<!-- Dashboard Content -->
 		<template v-else>
-			<!-- This month, extra credits and members at their limit -->
-			<CreditsBand
-				v-if="quotaInfo"
-				:quota="quotaInfo"
-				:members-at-limit="membersAtLimit"
-				@buy-credits="openCreditPurchase"
-			/>
-			<p v-if="verificationMessage" class="purchase-message" role="alert">{{ verificationMessage }}</p>
-
 			<!-- Summary Cards -->
 			<SummaryCards
 				:summary="summary"
@@ -52,17 +55,17 @@
 
 			<!-- Daily Trend Chart -->
 			<div class="section">
-				<h3 class="section-title">Daily Usage Trend</h3>
+				<h3 class="section-title">{{ __("Daily Usage Trend") }}</h3>
 				<DailyTrendChart :daily="daily" :by-source="bySource" />
 			</div>
 
 			<div class="breakdown-grid">
 				<div class="section">
-					<h3 class="section-title">Usage by Source</h3>
+					<h3 class="section-title">{{ __("Usage by Source") }}</h3>
 					<SourceBreakdown :sources="bySource" />
 				</div>
 				<div class="section">
-					<h3 class="section-title">Usage by User</h3>
+					<h3 class="section-title">{{ __("Usage by User") }}</h3>
 					<UserBreakdown
 						:users="byUser"
 						:total-credits="summary.credits_consumed"
@@ -74,7 +77,7 @@
 			     below the source/user grid so the 1-row bar chart gets the
 			     full horizontal width it needs for long model IDs. -->
 			<div v-if="byModel.length" class="section">
-				<h3 class="section-title">Usage by Model</h3>
+				<h3 class="section-title">{{ __("Usage by Model") }}</h3>
 				<ModelBreakdown
 					:models="byModel"
 					:total-credits="summary.credits_consumed"
@@ -83,7 +86,7 @@
 
 			<!-- Conversation List -->
 			<div class="section">
-				<h3 class="section-title">Conversations</h3>
+				<h3 class="section-title">{{ __("Conversations") }}</h3>
 				<ConversationList
 					:conversations="conversations"
 					:is-admin="true"
@@ -121,10 +124,11 @@ import ConversationList from "@/components/analytics/ConversationList.vue";
 import ConversationDrillDown from "@/components/analytics/ConversationDrillDown.vue";
 import CreditPurchaseModal from "@/components/settings/CreditPurchaseModal.vue";
 import CreditsBand from "./CreditsBand.vue";
-import { countMembersAtLimit } from "./usageHelpers";
+import { membersAtLimitLabel } from "./usageHelpers";
 import { useAnalyticsData } from "@/composables/useAnalyticsData";
 import { useBillingData } from "@/composables/useBillingData";
 import { logger } from "@/utils/logger";
+import { __ } from "@/utils/i18n";
 
 const props = defineProps({
 	range: { type: Number, default: 30 },
@@ -132,7 +136,7 @@ const props = defineProps({
 
 const emit = defineEmits(["drilling"]);
 
-// One page of members is enough to count who is at their limit.
+// AR clamps a page of members to 100, so one page gives a count or a lower bound ("3+").
 const MEMBER_PAGE_SIZE = 100;
 
 const route = useRoute();
@@ -195,9 +199,7 @@ watch(selectedConversation, (conversation) => emit("drilling", Boolean(conversat
 async function loadMembersAtLimit() {
 	try {
 		const result = await api.users.list("Active", MEMBER_PAGE_SIZE, 0);
-		membersAtLimit.value = result?.pagination?.has_more
-			? `${MEMBER_PAGE_SIZE}+`
-			: countMembersAtLimit(result?.users);
+		membersAtLimit.value = membersAtLimitLabel(result);
 	} catch (err) {
 		logger.error("Failed to load members at limit:", err);
 		membersAtLimit.value = null;
@@ -235,9 +237,14 @@ onMounted(() => {
 
 .breakdown-grid {
 	display: grid;
-	grid-template-columns: 1fr 1fr;
+	grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr));
 	gap: 1.5rem;
 	margin-bottom: 1.5rem;
+}
+
+/* A grid child sizes to its content by default, so a wide row would push the page sideways. */
+.breakdown-grid > .section {
+	min-width: 0;
 }
 
 /* States */
@@ -297,13 +304,6 @@ onMounted(() => {
 .purchase-message {
 	margin: -0.75rem 0 1.5rem;
 	font-size: 0.8rem;
-	color: var(--ql-danger, #ef4444);
-}
-
-/* Responsive */
-@media (max-width: 768px) {
-	.breakdown-grid {
-		grid-template-columns: 1fr;
-	}
+	color: var(--ql-danger);
 }
 </style>

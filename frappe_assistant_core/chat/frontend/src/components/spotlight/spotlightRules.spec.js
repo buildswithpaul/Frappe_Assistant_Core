@@ -1,10 +1,17 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
 	cycleStart, quotaThreshold, pickAnnouncement, quotaContent, announcementContent,
 	formatResetDate, nextResetDate, localDate, storage, PLANS_ROUTE, USAGE_BUY_ROUTE, DAILY_KEY,
 } from "./spotlightRules";
 
 const NOW = new Date(2026, 9, 3, 12, 0, 0); // 3 Oct 2026 local
+
+// Reset dates roll forward with the clock, so every test in this file runs on NOW.
+beforeEach(() => {
+	vi.useFakeTimers();
+	vi.setSystemTime(NOW);
+});
+afterEach(() => vi.useRealTimers());
 
 describe("quotaThreshold", () => {
 	it("is 0 for missing, unlimited or fallback status", () => {
@@ -32,9 +39,27 @@ describe("cycleStart / nextResetDate", () => {
 		expect(nextResetDate({})).toBeNull();
 	});
 	it("clamps month-end overflow", () => {
-		expect(nextResetDate({ billing_cycle_start: "2026-01-31" })).toBe("2026-02-28");
-		expect(nextResetDate({ billing_cycle_start: "2025-12-31" })).toBe("2026-01-31");
-		expect(nextResetDate({ billing_cycle_start: "2026-03-31" })).toBe("2026-04-30");
+		const at = (y, m, d) => new Date(y, m, d, 12);
+		expect(nextResetDate({ billing_cycle_start: "2026-01-31" }, at(2026, 0, 31))).toBe("2026-02-28");
+		expect(nextResetDate({ billing_cycle_start: "2025-12-31" }, at(2025, 11, 31))).toBe("2026-01-31");
+		expect(nextResetDate({ billing_cycle_start: "2026-03-31" }, at(2026, 2, 31))).toBe("2026-04-30");
+	});
+	describe("when the cycle has not rolled yet", () => {
+		beforeEach(() => {
+			vi.useFakeTimers();
+			vi.setSystemTime(new Date(2026, 9, 27, 12));
+		});
+		afterEach(() => vi.useRealTimers());
+
+		it("returns the first date strictly after today", () => {
+			expect(nextResetDate({ billing_cycle_start: "2026-09-26" })).toBe("2026-11-26");
+			expect(nextResetDate({ billing_cycle_start: "2026-10-05" })).toBe("2026-11-05");
+			expect(nextResetDate({ billing_cycle_start: "2026-09-27" })).toBe("2026-11-27");
+		});
+		it("keeps clamping short months while rolling forward", () => {
+			expect(nextResetDate({ billing_cycle_start: "2026-01-31" })).toBe("2026-10-31");
+			expect(nextResetDate({ billing_cycle_start: "2026-01-31" }, new Date(2026, 10, 15))).toBe("2026-11-30");
+		});
 	});
 	it("formats the reset date for the body copy", () => {
 		expect(formatResetDate("2026-10-26")).toBe("Oct 26, 2026");
@@ -57,6 +82,13 @@ describe("pickAnnouncement", () => {
 		expect(pickAnnouncement(list).id).toBe("c");
 		expect(pickAnnouncement([])).toBeNull();
 		expect(pickAnnouncement(undefined)).toBeNull();
+	});
+});
+
+describe("quotaContent percentage", () => {
+	it("floors the title the same way as the band and the meter", () => {
+		expect(quotaContent({ quota_used: 8760, quota_total: 10000, percentage_used: 87.6 }).title).toContain("87%");
+		expect(quotaContent({ percentage_used: 87.6 }).title).toContain("87%");
 	});
 });
 

@@ -40,6 +40,9 @@ const stubs = {
 	SummaryCards: true,
 };
 
+// The router of the page being mounted, for mocks that need to look at it mid-mount.
+let currentRouter = null;
+
 async function mountUsage(path = "/analytics") {
 	const router = createRouter({
 		history: createMemoryHistory(),
@@ -48,6 +51,7 @@ async function mountUsage(path = "/analytics") {
 			{ path: "/settings/users", component: { template: "<div />" } },
 		],
 	});
+	currentRouter = router;
 	router.push(path);
 	await router.isReady();
 	const wrapper = mount(WorkspaceUsage, {
@@ -94,8 +98,14 @@ describe("WorkspaceUsage", () => {
 		expect(router.currentRoute.value.path).toBe("/analytics");
 	});
 
-	it("strips buy before opening", async () => {
+	it("strips buy before the purchase modal opens", async () => {
+		let buyWhenOpening = "unset";
+		api.billing.getAvailableGateways.mockImplementation(async () => {
+			buyWhenOpening = currentRouter.currentRoute.value.query.buy;
+			return { gateways: [{ name: "stripe", is_recommended: true }] };
+		});
 		const { wrapper, router } = await mountUsage("/analytics?buy=1");
+		expect(buyWhenOpening).toBeUndefined();
 		expect(router.currentRoute.value.query.buy).toBeUndefined();
 		expect(wrapper.findComponent(CreditPurchaseModal).props("isOpen")).toBe(true);
 	});
@@ -105,5 +115,56 @@ describe("WorkspaceUsage", () => {
 		expect(api.users.list).toHaveBeenCalledTimes(1);
 		expect(api.users.list).toHaveBeenCalledWith("Active", 100, 0);
 		expect(wrapper.text()).toContain("1 member at their limit");
+	});
+
+	it("shows a lower bound when more members exist than one page holds", async () => {
+		const atLimit = { monthly_credit_limit: 5, credits_used_this_month: 5 };
+		api.users.list.mockResolvedValue({
+			users: [atLimit, atLimit, atLimit, { monthly_credit_limit: 0 }],
+			pagination: { has_more: true },
+		});
+		const { wrapper } = await mountUsage();
+		expect(wrapper.text()).toContain("3+ members at their limit");
+	});
+
+	it("hides the tile when the page has more behind it and none are at their limit", async () => {
+		api.users.list.mockResolvedValue({ users: [{ monthly_credit_limit: 0 }], pagination: { has_more: true } });
+		const { wrapper } = await mountUsage();
+		expect(wrapper.find('[data-test="members-at-limit"]').exists()).toBe(false);
+	});
+
+	it("leaves the tile out when the members call fails", async () => {
+		api.users.list.mockRejectedValue(new Error("boom"));
+		const { wrapper } = await mountUsage();
+		expect(wrapper.find('[data-test="members-at-limit"]').exists()).toBe(false);
+		expect(wrapper.find(".credits-band").exists()).toBe(true);
+	});
+
+	it("keeps the band, with Buy credits, when analytics fails", async () => {
+		api.analytics.getData.mockResolvedValue({ error: "Analytics are down" });
+		const { wrapper } = await mountUsage();
+		expect(wrapper.text()).toContain("Analytics are down");
+		expect(wrapper.find(".credits-band").exists()).toBe(true);
+		expect(wrapper.find('[data-test="buy-credits"]').exists()).toBe(true);
+	});
+
+	it("does not unmount the band while a new range loads", async () => {
+		const { wrapper } = await mountUsage();
+		const band = wrapper.find(".credits-band").element;
+		api.analytics.getData.mockReturnValue(new Promise(() => {}));
+		await wrapper.setProps({ range: 7 });
+		await flushPromises();
+		expect(wrapper.find(".analytics-state").exists()).toBe(true);
+		expect(wrapper.find(".credits-band").element).toBe(band);
+	});
+
+	it("shows an unknown extra-credit balance, not 0, when the refresh fails on boot data", async () => {
+		// Boot seeds quotaInfo without credit_balance or billing_cycle_start.
+		const { credit_balance, billing_cycle_start, ...boot } = QUOTA;
+		useUserStore().quotaInfo = boot;
+		api.billing.getQuotaStatus.mockRejectedValue(new Error("offline"));
+		const { wrapper } = await mountUsage();
+		expect(wrapper.get(".extra-card .card-value").text()).toBe("\u2014");
+		expect(wrapper.text()).not.toContain("Resets on");
 	});
 });

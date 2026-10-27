@@ -1,7 +1,7 @@
 <template>
 	<div class="extra-card">
 		<div class="card-label">{{ __("Extra credits") }}</div>
-		<div class="card-value">{{ Number(balance || 0).toLocaleString("en-US") }}</div>
+		<div class="card-value">{{ hasBalance ? formatCredits(balance) : "\u2014" }}</div>
 		<div class="card-sub">{{ __("Used automatically once the monthly allowance runs out. They carry over.") }}</div>
 		<button type="button" class="buy-btn" data-test="buy-credits" @click="emit('buy-credits')">
 			{{ __("Buy credits") }}
@@ -10,11 +10,16 @@
 </template>
 
 <script setup>
+import { computed } from "vue";
 import { __ } from "@/utils/i18n";
+import { formatCredits } from "./usageHelpers";
 
-defineProps({
-	balance: { type: Number, default: 0 },
+const props = defineProps({
+	// Boot data carries no balance; an unknown balance reads "—", never "0".
+	balance: { type: Number, default: null },
 });
+
+const hasBalance = computed(() => props.balance !== null && props.balance !== undefined);
 
 const emit = defineEmits(["buy-credits"]);
 </script>

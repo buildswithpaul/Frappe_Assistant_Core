@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import { mount } from "@vue/test-utils";
 
 import BillingHero from "./BillingHero.vue";
@@ -23,6 +23,20 @@ function mountHero(props = {}) {
 }
 
 describe("BillingHero", () => {
+	// The reset date rolls forward with the clock, so pin it.
+	beforeEach(() => {
+		vi.useFakeTimers();
+		vi.setSystemTime(new Date(2026, 9, 27, 12));
+	});
+	afterEach(() => vi.useRealTimers());
+
+	it("states the share used rounded down, 99 until the allowance is spent", () => {
+		const label = (q) => mountHero({ quota: { ...quota, ...q } }).find(".ring-percent").text();
+		expect(label({ quota_used: 876, percentage_used: 87.6 })).toBe("87%");
+		expect(label({ quota_used: 996, percentage_used: 99.6 })).toBe("99%");
+		expect(label({ quota_used: 1000, percentage_used: 100 })).toBe("100%");
+	});
+
 	it("links quietly to the usage page", () => {
 		const link = mountHero().find('a[data-test="see-usage"]');
 		expect(link.exists()).toBe(true);
