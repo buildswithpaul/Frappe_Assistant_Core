@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
 	cycleStart, quotaThreshold, pickAnnouncement, quotaContent, announcementContent,
-	formatResetDate, nextResetDate, localDate, storage, PLANS_ROUTE, CREDITS_ROUTE, DAILY_KEY,
+	formatResetDate, nextResetDate, localDate, storage, PLANS_ROUTE, USAGE_BUY_ROUTE, DAILY_KEY,
 } from "./spotlightRules";
 
 const NOW = new Date(2026, 9, 3, 12, 0, 0); // 3 Oct 2026 local
@@ -69,12 +69,21 @@ describe("quotaContent", () => {
 		expect(c.eyebrow).toBe("With Basic you get");
 		expect(c.highlights).toEqual(["10,000 credits a month"]);
 		expect(c.primary).toEqual({ label: "See plans", route: PLANS_ROUTE });
-		expect(c.secondary).toEqual({ label: "Buy credits", route: CREDITS_ROUTE });
+		expect(c.secondary).toEqual({ label: "Buy credits", route: USAGE_BUY_ROUTE });
 		expect(c.body).toMatch(/180 credits left on Free/);
+	});
+	it("states the real percentage, keeping the threshold as the key", () => {
+		const c = quotaContent({ ...base, percentage_used: 87.6, in_overage: false, quota_remaining: 1240, plan: "Pro" });
+		expect(c.title).toBe("You've used 87% of this month's credits");
+		expect(c.threshold).toBe(80);
+		expect(c.id).toBe("quota-80");
+	});
+	it("never rounds a near-full month up to 100%", () => {
+		expect(quotaContent({ ...base, percentage_used: 99.6 }).title).toContain("99%");
 	});
 	it("top plan offers credits only", () => {
 		const c = quotaContent({ ...base, upgrade: null });
-		expect(c.primary).toEqual({ label: "Buy credits", route: CREDITS_ROUTE });
+		expect(c.primary).toEqual({ label: "Buy credits", route: USAGE_BUY_ROUTE });
 		expect(c.secondary).toBeNull();
 		expect(c.highlights).toEqual([]);
 	});
@@ -158,7 +167,7 @@ describe("quotaContent with the user's personal limit reached", () => {
 		expect(c.body).toContain("Buying credits won't raise a personal limit");
 		expect(c.body.indexOf("personal limit")).toBeLessThan(c.body.indexOf("workspace is paused"));
 		expect(c.primary).toEqual({ label: "Change limit", route: "/settings/users" });
-		expect(c.secondary).toEqual({ label: "Buy credits", route: CREDITS_ROUTE });
+		expect(c.secondary).toEqual({ label: "Buy credits", route: USAGE_BUY_ROUTE });
 	});
 
 	it("is unchanged when the user is under their own limit", () => {

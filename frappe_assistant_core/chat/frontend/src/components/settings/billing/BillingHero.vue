@@ -67,9 +67,12 @@
 					<span class="usage-numbers">
 						{{ formatCredits(creditsUsed) }} / {{ formatCredits(creditsTotal) }}
 					</span>
-					<span class="usage-reset" v-if="usageResetDate"
-						>Resets {{ usageResetDate }}</span
-					>
+					<span class="usage-reset" v-if="resetDate">
+						Resets {{ resetDate }}
+					</span>
+					<router-link class="see-usage" data-test="see-usage" to="/analytics">
+						See usage
+					</router-link>
 				</div>
 			</div>
 			<div class="hero-usage" v-else>
@@ -114,6 +117,7 @@
 <script setup>
 import { computed } from "vue";
 import { formatPlanName } from "@/composables/useFormatters";
+import { monthAllowance } from "@/components/analytics/usage/usageHelpers";
 
 const props = defineProps({
 	currentPlan: { type: String, required: true },
@@ -127,6 +131,12 @@ const props = defineProps({
 });
 
 defineEmits(["change-plan", "buy-credits"]);
+
+// Same date the Usage page shows; the dashboard's own date is the fallback for an unknown cycle.
+const resetDate = computed(() => {
+	const fromCycle = props.quota ? monthAllowance(props.quota).resetDate : null;
+	return fromCycle || props.usageResetDate;
+});
 
 const CURRENCY_SYMBOLS = { INR: "₹", USD: "$", EUR: "€", GBP: "£" };
 
@@ -353,6 +363,16 @@ function formatCredits(val) {
 .usage-reset {
 	font-size: 0.75rem;
 	color: var(--ql-text-muted);
+}
+
+.see-usage {
+	font-size: 0.75rem;
+	color: var(--ql-text-muted);
+	text-decoration: none;
+}
+
+.see-usage:hover {
+	color: var(--ql-accent);
 }
 
 .unlimited-badge {

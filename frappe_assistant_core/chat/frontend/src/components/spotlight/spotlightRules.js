@@ -7,6 +7,7 @@ export const DAILY_KEY = (user, surface) => `fac_spotlight_last_shown:${user}:${
 export const QUOTA_KEY = (user, cycle, threshold) => `fac_quota_moment:${user}:${cycle}:${threshold}`;
 export const PLANS_ROUTE = "/settings/billing?tab=plans";
 export const CREDITS_ROUTE = "/settings/billing?tab=credits";
+export const USAGE_BUY_ROUTE = "/analytics?buy=1";
 export const USERS_ROUTE = "/settings/users";
 
 const pad = (n) => String(n).padStart(2, "0");
@@ -61,7 +62,7 @@ export function quotaContent(status, personalLimit = null) {
 
 	const title = threshold === 100
 		? "You've used all of this month's credits"
-		: `You've used ${threshold}% of this month's credits`;
+		: `You've used ${Math.floor(Number(status.percentage_used))}% of this month's credits`;
 	const body = threshold === 100
 		? `FAC Chat is paused for your workspace.${resetLine} Upgrade or buy credits to keep going now.`
 		: `${fmt(status?.quota_remaining)} credits left on ${status?.plan || "your plan"}.${resetLine}`;
@@ -82,7 +83,7 @@ export function quotaContent(status, personalLimit = null) {
 			highlights: [],
 			media: { art: "quota" },
 			primary: { label: "Change limit", route: USERS_ROUTE },
-			secondary: { label: "Buy credits", route: CREDITS_ROUTE },
+			secondary: { label: "Buy credits", route: USAGE_BUY_ROUTE },
 		};
 	}
 	return {
@@ -95,9 +96,9 @@ export function quotaContent(status, personalLimit = null) {
 		highlights: Array.isArray(upgrade?.benefits) ? [...upgrade.benefits] : [],
 		media: { art: "quota" },
 		primary: topPlan
-			? { label: "Buy credits", route: CREDITS_ROUTE }
+			? { label: "Buy credits", route: USAGE_BUY_ROUTE }
 			: { label: "See plans", route: PLANS_ROUTE },
-		secondary: topPlan ? null : { label: "Buy credits", route: CREDITS_ROUTE },
+		secondary: topPlan ? null : { label: "Buy credits", route: USAGE_BUY_ROUTE },
 	};
 }
 
