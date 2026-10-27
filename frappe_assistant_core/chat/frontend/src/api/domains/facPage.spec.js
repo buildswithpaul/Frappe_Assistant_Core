@@ -13,13 +13,12 @@ describe("facPage", () => {
 		expect(getCall).toHaveBeenCalledWith("frappe_assistant_core.api.fac_page.get_page", { slug: "sales-a1b2c3" });
 	});
 
-	it("lists the user's pages newest first, twenty at most", async () => {
-		await facPage.listMine();
-		expect(getCall).toHaveBeenCalledWith("frappe.client.get_list", {
-			doctype: "FAC Page",
-			fields: '["name","title"]',
-			order_by: "modified desc",
-			limit_page_length: 20,
-		});
+	it("lists every page the user can open over GET", async () => {
+		await facPage.listPages();
+		expect(getCall).toHaveBeenCalledWith("frappe_assistant_core.api.fac_page.list_pages");
+	});
+
+	it("no longer lists pages with a raw get_list", () => {
+		expect(facPage.listMine).toBeUndefined();
 	});
 });

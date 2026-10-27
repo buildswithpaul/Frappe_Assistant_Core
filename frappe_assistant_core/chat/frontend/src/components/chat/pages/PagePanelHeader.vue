@@ -1,11 +1,11 @@
 <template>
 	<header class="page-panel-header">
-		<button type="button" class="page-panel-icon page-panel-back" :aria-label="__('Back to chat')" @click="emit('close')">
+		<button type="button" class="page-panel-icon page-panel-back" :aria-label="backLabel" @click="emit('close')">
 			<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 19l-7-7 7-7" /></svg>
 		</button>
 		<div class="page-panel-heading">
 			<h2 class="page-panel-title" :title="title">{{ title }}</h2>
-			<span class="page-panel-version">v{{ version }}</span>
+			<span v-if="version" class="page-panel-version">v{{ version }}</span>
 			<span v-if="pending" class="page-panel-updating" role="status">{{ __("Updating…") }}</span>
 		</div>
 		<div class="page-panel-actions">
@@ -59,6 +59,7 @@ defineProps({
 	shareable: { type: Boolean, default: false },
 	deskUrl: { type: String, required: true },
 	pdfDisabled: { type: Boolean, default: false },
+	backLabel: { type: String, default: () => __("Back to chat") },
 });
 
 const emit = defineEmits(["close", "share", "pdf"]);

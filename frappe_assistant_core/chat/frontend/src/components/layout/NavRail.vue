@@ -60,6 +60,23 @@
 			</router-link>
 
 			<router-link
+				v-if="pagesStore.hasPages"
+				to="/pages"
+				class="rail-item"
+				:class="{ active: route.path.startsWith('/pages') }"
+				data-test="rail-pages"
+				:aria-label="__('Pages')"
+				:title="__('Pages')"
+			>
+				<svg class="rail-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+					<rect x="3" y="3" width="7" height="7" rx="1.5" stroke-width="2" />
+					<rect x="14" y="3" width="7" height="7" rx="1.5" stroke-width="2" />
+					<rect x="3" y="14" width="7" height="7" rx="1.5" stroke-width="2" />
+					<rect x="14" y="14" width="7" height="7" rx="1.5" stroke-width="2" />
+				</svg>
+			</router-link>
+
+			<router-link
 				to="/analytics"
 				class="rail-item"
 				:class="{ active: route.path.startsWith('/analytics') }"
@@ -102,9 +119,10 @@
 </template>
 
 <script setup>
-import { computed } from "vue";
+import { computed, onMounted } from "vue";
 import { storeToRefs } from "pinia";
 import { useRoute } from "vue-router";
+import { usePagesStore } from "@/stores/pagesStore";
 import { useUserStore } from "@/stores/userStore";
 import { __ } from "@/utils/i18n";
 import FacoRobot from "@/components/common/FacoRobot.vue";
@@ -118,6 +136,9 @@ const emit = defineEmits(["return-to-desk", "open-settings", "toggle-sidebar"]);
 
 const route = useRoute();
 const { memoryEnabled, workflowsEnabled } = storeToRefs(useUserStore());
+const pagesStore = usePagesStore();
+
+onMounted(() => pagesStore.ensureLoaded());
 
 const isChatRoute = computed(() => route.path.startsWith("/chat") || route.path === "/");
 

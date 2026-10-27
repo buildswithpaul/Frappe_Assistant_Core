@@ -1,9 +1,15 @@
-import { describe, it, expect, beforeAll, beforeEach } from "vitest";
+import { describe, it, expect, beforeAll, beforeEach, vi } from "vitest";
 import { mount, flushPromises } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
 import { createRouter, createMemoryHistory } from "vue-router";
 import NavRail from "@/components/layout/NavRail.vue";
+import { usePagesStore } from "@/stores/pagesStore";
 import { useUserStore } from "@/stores/userStore";
+
+vi.mock("@/api/domains/facPage", () => ({
+	facPage: { listPages: vi.fn().mockResolvedValue([]), getPage: vi.fn() },
+}));
+vi.mock("@/api/_core", () => ({ baseCall: vi.fn(), getCall: vi.fn() }));
 
 beforeAll(() => {
 	window.__ = (s) => s;
@@ -11,13 +17,15 @@ beforeAll(() => {
 
 const Blank = { template: "<div />" };
 
-async function mountRail({ path = "/chat", props = {}, user = {} } = {}) {
+async function mountRail({ path = "/chat", props = {}, user = {}, pages = [] } = {}) {
 	const pinia = createPinia();
 	setActivePinia(pinia);
 	Object.assign(useUserStore(), { memoryEnabled: true, workflowsEnabled: true, isAdmin: true, ...user });
+	// The list is loaded after boot (NavRail asks the store); seeded here as that load's result.
+	Object.assign(usePagesStore(), { pages, loaded: true });
 	const router = createRouter({
 		history: createMemoryHistory(),
-		routes: ["/", "/chat", "/chat/:id", "/chat/project/:projectId", "/knowledge", "/agents", "/analytics", "/settings"].map((p) => ({
+		routes: ["/", "/chat", "/chat/:id", "/chat/project/:projectId", "/knowledge", "/agents", "/pages", "/pages/:name", "/analytics", "/settings"].map((p) => ({
 			path: p,
 			component: Blank,
 		})),
@@ -99,9 +107,28 @@ describe("NavRail", () => {
 		expect(w.emitted("toggle-sidebar")).toBeUndefined();
 	});
 
+	it("shows Pages only when the user can open a page, right after Agents", async () => {
+		expect(item(await mountRail({ pages: [] }), "pages").exists()).toBe(false);
+		const w = await mountRail({ pages: [{ name: "costs-a1b2c3" }] });
+		expect(item(w, "pages").attributes("href")).toBe("/pages");
+		const order = w.findAll(".rail-item").map((i) => i.attributes("data-test"));
+		expect(order.indexOf("rail-pages")).toBe(order.indexOf("rail-agents") + 1);
+	});
+
+	it("shows Pages when Agents is hidden, after the last item before it", async () => {
+		const w = await mountRail({ user: { workflowsEnabled: false }, pages: [{ name: "x" }] });
+		const order = w.findAll(".rail-item").map((i) => i.attributes("data-test"));
+		expect(order.indexOf("rail-pages")).toBe(order.indexOf("rail-knowledge") + 1);
+	});
+
+	it("marks Pages active on a page route", async () => {
+		const w = await mountRail({ path: "/pages/x", pages: [{ name: "x" }] });
+		expect(item(w, "pages").classes()).toContain("active");
+	});
+
 	it("gives every item an aria-label and a title", async () => {
-		const w = await mountRail();
-		for (const name of ["chat", "knowledge", "agents", "usage", "desk"]) {
+		const w = await mountRail({ pages: [{ name: "x" }] });
+		for (const name of ["chat", "knowledge", "agents", "pages", "usage", "desk"]) {
 			expect(item(w, name).attributes("aria-label"), name).toBeTruthy();
 			expect(item(w, name).attributes("title"), name).toBeTruthy();
 		}

@@ -1,10 +1,12 @@
 import { flushPromises, mount } from "@vue/test-utils";
+import { createPinia, setActivePinia } from "pinia";
+import { createMemoryHistory, createRouter } from "vue-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const getPage = vi.fn();
-const listMine = vi.fn();
+const listPages = vi.fn();
 vi.mock("@/api/domains/facPage", () => ({
-	facPage: { getPage: (...a) => getPage(...a), listMine: (...a) => listMine(...a) },
+	facPage: { getPage: (...a) => getPage(...a), listPages: (...a) => listPages(...a) },
 }));
 vi.mock("@/api/_core", () => ({ baseCall: vi.fn(), getCall: vi.fn() }));
 const printPage = vi.fn();
@@ -31,8 +33,10 @@ const page = (extra = {}) => ({
 });
 
 let wrapper;
+let router;
 async function mountPanel(props = {}) {
 	wrapper = mount(PagePanel, {
+		global: { plugins: [router] },
 		props: { name: "sales-a1b2c3", version: 2, pending: false, canShare: false, user: "avery@example.com", ...props },
 		attachTo: document.body,
 	});
@@ -40,10 +44,19 @@ async function mountPanel(props = {}) {
 	return wrapper;
 }
 
-beforeEach(() => {
+beforeEach(async () => {
+	setActivePinia(createPinia());
+	router = createRouter({
+		history: createMemoryHistory(),
+		routes: [
+			{ path: "/", component: { template: "<div />" } },
+			{ path: "/pages/:name", name: "page", component: { template: "<div />" } },
+		],
+	});
+	await router.push("/");
 	getPage.mockReset().mockResolvedValue(page());
 	printPage.mockReset();
-	listMine.mockReset().mockResolvedValue([]);
+	listPages.mockReset().mockResolvedValue([]);
 });
 afterEach(() => {
 	wrapper?.unmount();
@@ -100,25 +113,60 @@ describe("PagePanel", () => {
 		expect(w.text()).toContain("A System Manager can share this page.");
 	});
 
-	it("lists My pages from the API and opens the chosen one", async () => {
-		listMine.mockResolvedValue([
-			{ name: "costs-a1b2c3", title: "Costs" },
-			{ name: "sales-a1b2c3", title: "Sales this month" },
-		]);
+	const PAGES = [
+		{ name: "costs-a1b2c3", title: "Costs" },
+		{ name: "sales-a1b2c3", title: "Sales this month" },
+	];
+
+	async function chooseFirstFromMenu() {
+		listPages.mockResolvedValue(PAGES);
 		const w = await mountPanel();
 		await w.find("button.page-panel-mine").trigger("click");
 		await flushPromises();
 		const items = w.findAll(".page-panel-mine-item");
 		expect(items.map((i) => i.text())).toEqual(["Costs", "Sales this month"]);
 		await items[0].trigger("click");
+		await flushPromises();
+	}
+
+	it("lists pages from list_pages and opens the chosen one in the dock", async () => {
+		// The SPA's PageDock registers itself on mount; that is what puts the chat in dock mode.
+		const unregister = usePagePanel().registerDock();
+		await chooseFirstFromMenu();
+		unregister();
 		expect(usePagePanel().openName.value).toBe("costs-a1b2c3");
+		expect(router.currentRoute.value.path).toBe("/");
 	});
 
-	it("closes from its close control", async () => {
+	it("routes to /pages/:name when no dock is mounted", async () => {
+		// The full-page /pages/:name view mounts no PageDock, so dockMounted is false there.
+		await chooseFirstFromMenu();
+		expect(router.currentRoute.value.path).toBe("/pages/costs-a1b2c3");
+		expect(usePagePanel().openName.value).toBe(null);
+	});
+
+	it("says the list failed, not that there are no pages, when list_pages rejects", async () => {
+		listPages.mockRejectedValue(new Error("down"));
+		const w = await mountPanel();
+		await w.find("button.page-panel-mine").trigger("click");
+		await flushPromises();
+		expect(w.text()).toContain("Your pages could not be listed.");
+		expect(w.text()).not.toContain("No pages yet.");
+	});
+
+	it("asks its host to close from its close control, and leaves the dock state alone", async () => {
 		usePagePanel().open("sales-a1b2c3");
 		const w = await mountPanel();
 		await w.find("button.page-panel-close").trigger("click");
-		expect(usePagePanel().openName.value).toBe(null);
+		expect(w.emitted("close")).toHaveLength(1);
+		expect(usePagePanel().openName.value).toBe("sales-a1b2c3");
+	});
+
+	it("hides the version chip until the page has a version", async () => {
+		const w = await mountPanel({ version: 0 });
+		expect(w.find(".page-panel-version").exists()).toBe(false);
+		await w.setProps({ version: 3 });
+		expect(w.find(".page-panel-version").text()).toBe("v3");
 	});
 
 	it("says so when the page can't be shown", async () => {
