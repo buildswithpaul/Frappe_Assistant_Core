@@ -5,10 +5,11 @@
 		</span>
 		<span class="page-card-body">
 			<span class="page-card-title">{{ page.title || page.name }}</span>
-			<span class="page-card-meta-row">
+			<span class="page-card-context-row">
 				<span v-if="kind === 'draft'" class="page-card-chip">{{ __("Draft") }}</span>
-				<span class="page-card-meta">{{ meta }}</span>
+				<span class="page-card-context">{{ context }}</span>
 			</span>
+			<span class="page-card-updated">{{ updatedAgo }}</span>
 		</span>
 	</button>
 </template>
@@ -57,10 +58,10 @@ const rolesText = computed(() => {
 	return more > 0 ? `${shown} +${more}` : shown;
 });
 
-const meta = computed(() => {
+const context = computed(() => {
 	if (kind.value === "draft") return __("Not published yet · only admins see it");
-	if (kind.value === "shared" && rolesText.value) return `${rolesText.value} · ${updatedAgo.value}`;
-	return updatedAgo.value;
+	if (kind.value === "personal") return __("Only you");
+	return rolesText.value ? __("Shared with {0}", [rolesText.value]) : __("Shared");
 });
 </script>
 
@@ -84,12 +85,13 @@ const meta = computed(() => {
 
 .page-card:hover {
 	border-color: var(--ql-border-hover);
-	box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08);
+	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
 .page-card:focus-visible {
-	outline: 2px solid var(--ql-accent);
-	outline-offset: 2px;
+	outline: none;
+	border-color: var(--ql-accent);
+	box-shadow: 0 0 0 3px var(--ql-accent-soft);
 }
 
 .page-card-preview {
@@ -137,14 +139,15 @@ const meta = computed(() => {
 	overflow: hidden;
 }
 
-.page-card-meta-row {
+.page-card-context-row {
 	display: flex;
 	align-items: center;
 	gap: 0.5rem;
 	min-width: 0;
 }
 
-.page-card-meta {
+.page-card-context,
+.page-card-updated {
 	font-size: 0.75rem;
 	color: var(--ql-text-muted);
 	overflow: hidden;

@@ -64,8 +64,14 @@ const emit = defineEmits(["update:modelValue"]);
 }
 
 .page-search-input:focus-visible {
-	outline: 2px solid var(--ql-accent);
-	outline-offset: 1px;
+	outline: none;
+	border-color: var(--ql-accent);
+	box-shadow: 0 0 0 3px var(--ql-accent-soft);
+}
+
+.page-search-input::-webkit-search-cancel-button {
+	appearance: none;
+	display: none;
 }
 
 @media (max-width: 640px) {

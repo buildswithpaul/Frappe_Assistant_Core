@@ -13,9 +13,10 @@ describe("PageFilters", () => {
 		expect(w.findAll("button").map((b) => b.text())).toEqual(["All 4", "Only you 2", "Shared 2", "Drafts 1"]);
 	});
 
-	it("hides the Drafts pill when there are none", () => {
-		const w = mountFilters({ all: 2, mine: 1, shared: 1, drafts: 0 });
-		expect(w.findAll("button").map((b) => b.text())).toEqual(["All 2", "Only you 1", "Shared 1"]);
+	it("hides every pill with no pages except All", () => {
+		const w = mountFilters({ all: 2, mine: 0, shared: 2, drafts: 0 });
+		expect(w.findAll("button").map((b) => b.text())).toEqual(["All 2", "Shared 2"]);
+		expect(mountFilters({ all: 0, mine: 0, shared: 0, drafts: 0 }).findAll("button")).toHaveLength(1);
 	});
 
 	it("marks the selected pill with aria-pressed", () => {

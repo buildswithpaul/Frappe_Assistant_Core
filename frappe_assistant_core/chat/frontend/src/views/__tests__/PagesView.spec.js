@@ -120,10 +120,17 @@ describe("PagesView", () => {
 		expect(cardTitles(w)).toEqual(["Hiring plan"]);
 		expect(w.findAll(".page-filter-pill").map((b) => b.text())).toEqual([
 			"All 1",
-			"Only you 0",
 			"Shared 1",
 			"Drafts 1",
 		]);
+	});
+
+	it("shows no Only you pill and no dead end for a user with only shared pages", async () => {
+		listPages.mockResolvedValue([summaries[1]]);
+		const w = await mountAt("/pages");
+		expect(pill(w, "Only you")).toBeUndefined();
+		expect(cardTitles(w)).toEqual(["Sales"]);
+		expect(w.text()).not.toContain("No pages match");
 	});
 
 	it("says nothing matches and clears the search", async () => {

@@ -22,7 +22,7 @@
 			</div>
 			<template v-else>
 				<PageFilters :model-value="activeFilter" :counts="counts" @update:model-value="filter = $event" />
-				<div v-if="!visible.length" class="pages-view-empty">
+				<div v-if="!visible.length && query.trim()" class="pages-view-empty">
 					<p>{{ __("No pages match “{0}”.", [query.trim()]) }}</p>
 					<button type="button" class="pages-view-clear" @click="query = ''">
 						{{ __("Clear search") }}
@@ -77,8 +77,8 @@ const filter = ref("all");
 
 const searched = computed(() => searchPages(pages.value, query.value));
 const counts = computed(() => countPages(searched.value));
-// The Drafts pill disappears when a search leaves no drafts, so the list falls back to All.
-const activeFilter = computed(() => (filter.value === "drafts" && !counts.value.drafts ? "all" : filter.value));
+// A pill with no pages is hidden, so a selection that lost its pages falls back to All.
+const activeFilter = computed(() => (counts.value[filter.value] ? filter.value : "all"));
 const visible = computed(() => searched.value.filter((page) => matchesFilter(page, activeFilter.value)));
 const sections = computed(() => {
 	const { mine, shared } = groupPages(visible.value);

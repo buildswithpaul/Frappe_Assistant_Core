@@ -33,7 +33,7 @@ const visiblePills = computed(() => {
 		{ key: "shared", label: __("Shared {0}", [props.counts.shared]) },
 		{ key: "drafts", label: __("Drafts {0}", [props.counts.drafts]) },
 	];
-	return pills.filter((pill) => pill.key !== "drafts" || props.counts.drafts > 0);
+	return pills.filter((pill) => pill.key === "all" || props.counts[pill.key] > 0);
 });
 </script>
 
@@ -61,13 +61,14 @@ const visiblePills = computed(() => {
 }
 
 .page-filter-pill:focus-visible {
-	outline: 2px solid var(--ql-accent);
-	outline-offset: 2px;
+	outline: none;
+	border-color: var(--ql-accent);
+	box-shadow: 0 0 0 3px var(--ql-accent-soft);
 }
 
 .page-filter-pill--active {
 	background: var(--ql-accent);
 	border-color: var(--ql-accent);
-	color: #fff;
+	color: var(--ql-on-accent, #fff);
 }
 </style>

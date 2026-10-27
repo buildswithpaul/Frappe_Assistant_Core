@@ -18,36 +18,43 @@ const mountCard = (page) => mount(PageCard, { props: { page } });
 const heights = (w) => w.findAll(".page-card-bar").map((b) => b.attributes("style"));
 
 describe("PageCard", () => {
-	it("shows a personal page's title and when it was updated", () => {
+	it("shows a personal page's title, who sees it and when it was updated", () => {
 		const w = mountCard(personal);
 		expect(w.find(".page-card-title").text()).toBe("Costs");
-		expect(w.find(".page-card-meta").text()).toMatch(/^Updated /);
+		expect(w.find(".page-card-context").text()).toBe("Only you");
+		expect(w.find(".page-card-updated").text()).toMatch(/^Updated /);
 		expect(w.find(".page-card-chip").exists()).toBe(false);
 	});
 
 	it("writes a fresh update as 'Updated just now'", () => {
 		const w = mountCard({ ...personal, modified: new Date().toISOString() });
-		expect(w.find(".page-card-meta").text()).toBe("Updated just now");
+		expect(w.find(".page-card-updated").text()).toBe("Updated just now");
 	});
 
 	it("falls back to the name when untitled", () => {
 		expect(mountCard({ ...personal, title: "" }).find(".page-card-title").text()).toBe("costs-a1b2c3");
 	});
 
-	it("lists a shared page's roles before the time", () => {
-		const text = mountCard(shared).find(".page-card-meta").text();
-		expect(text).toMatch(/^Sales Manager, Accounts User · Updated /);
+	it("names the roles a shared page is shared with, on its own line", () => {
+		const w = mountCard(shared);
+		expect(w.find(".page-card-context").text()).toBe("Shared with Sales Manager, Accounts User");
+		expect(w.find(".page-card-updated").text()).toMatch(/^Updated /);
 	});
 
 	it("shows the first two roles and +N for the rest", () => {
 		const w = mountCard({ ...shared, roles: ["A", "B", "C", "D"] });
-		expect(w.find(".page-card-meta").text()).toMatch(/^A, B \+2 · Updated /);
+		expect(w.find(".page-card-context").text()).toBe("Shared with A, B +2");
 	});
 
-	it("shows a Draft chip and who can see it", () => {
+	it("says just Shared when a shared page lists no roles", () => {
+		expect(mountCard({ ...shared, roles: [] }).find(".page-card-context").text()).toBe("Shared");
+	});
+
+	it("shows a Draft chip and who can see it, with the update time below", () => {
 		const w = mountCard(draft);
 		expect(w.find(".page-card-chip").text()).toBe("Draft");
-		expect(w.find(".page-card-meta").text()).toBe("Not published yet · only admins see it");
+		expect(w.find(".page-card-context").text()).toBe("Not published yet · only admins see it");
+		expect(w.find(".page-card-updated").text()).toMatch(/^Updated /);
 	});
 
 	it("tints the preview by kind", () => {
