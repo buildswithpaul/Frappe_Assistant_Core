@@ -123,7 +123,7 @@ def get_my_usage(days: int | None = 30) -> dict:
             return {"error": _not_registered_error()}
 
         result = client.get_token_analytics(days=days, user_id=user_id)
-        return {key: result.get(key) for key in MY_USAGE_KEYS}
+        return {key: (result or {}).get(key) for key in MY_USAGE_KEYS}
 
     except Exception as e:
         frappe.log_error(title="FACO Analytics Error", message=f"Error fetching my usage: {e!s}")

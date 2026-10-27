@@ -56,6 +56,12 @@ class TestMyUsage(BaseAssistantTest):
         self.assertNotIn("by_user", res)
         self.assertEqual(set(res), {"period", "summary", "daily", "by_model", "by_source"})
 
+    def test_a_missing_reply_gives_an_empty_page(self):
+        self._as_member()
+        self.client.get_token_analytics.return_value = None
+        res = self._call()
+        self.assertEqual(res, dict.fromkeys(("period", "summary", "daily", "by_model", "by_source")))
+
     def test_days_are_clamped(self):
         self._as_member()
         self._call(days=45)
