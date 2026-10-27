@@ -25,6 +25,7 @@ class TestMyUsage(BaseAssistantTest):
             "daily": [],
             "by_model": [],
             "by_source": [],
+            "by_team": [{"team": "x", "credits": 1}],
             "by_user": [{"user_id": "someone-else@example.com", "credits": 99}],
         }
 
@@ -61,11 +62,21 @@ class TestMyUsage(BaseAssistantTest):
         self.assertEqual(self.client.get_token_analytics.call_args.kwargs["days"], 30)
         self._call(days="90")
         self.assertEqual(self.client.get_token_analytics.call_args.kwargs["days"], 90)
+        for bad in (None, -7):
+            self._call(days=bad)
+            self.assertEqual(self.client.get_token_analytics.call_args.kwargs["days"], 30)
 
     def test_administrator_is_queried_by_email(self):
         self._call()
         expected = frappe.db.get_value("User", "Administrator", "email")
         self.assertEqual(self.client.get_token_analytics.call_args.kwargs["user_id"], expected)
+
+    def test_empty_ar_user_id_is_refused(self):
+        self._as_member()
+        with patch("frappe_assistant_core.chat.api.auth._ar_user_id", return_value=""):
+            with self.assertRaises(frappe.PermissionError):
+                self._call()
+        self.client.get_token_analytics.assert_not_called()
 
     def test_guest_is_refused(self):
         frappe.set_user("Guest")  # nosemgrep: frappe-setuser — an anonymous request runs as Guest
