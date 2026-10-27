@@ -80,7 +80,9 @@ const drilling = ref(false);
 const view = computed(() => resolveUsageView(userStore.isAdmin, route.query));
 
 function setView(next) {
-	router.replace({ query: { ...route.query, view: next === "me" ? "me" : undefined } });
+	// A purchase link belongs to the workspace view; carrying it across would open the modal there.
+	const { buy, ...rest } = route.query;
+	router.replace({ query: { ...rest, view: next === "me" ? "me" : undefined } });
 }
 
 // The drill-down only exists in the workspace view; leaving it must not strand the range picker.

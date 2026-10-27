@@ -18,6 +18,7 @@ vi.mock("@/api/client", () => ({
 
 import { api } from "@/api/client";
 import { useUserStore } from "@/stores/userStore";
+import CreditPurchaseModal from "@/components/settings/CreditPurchaseModal.vue";
 import AnalyticsView from "../AnalyticsView.vue";
 
 const EMPTY = { summary: {}, daily: [], by_source: [], by_model: [], by_user: [] };
@@ -88,5 +89,14 @@ describe("AnalyticsView", () => {
 		expect(router.currentRoute.value.query.view).toBeUndefined();
 		expect(api.analytics.getData).toHaveBeenCalled();
 		expect(wrapper.find(".workspace-usage").exists()).toBe(true);
+	});
+
+	it("does not carry a purchase link into the workspace view", async () => {
+		const { wrapper, router } = await mountAt("/analytics?view=me&buy=1", { isAdmin: true });
+		const workspace = wrapper.findAll(".usage-view-switch button").find((b) => b.text() === "Workspace");
+		await workspace.trigger("click");
+		await flushPromises();
+		expect(router.currentRoute.value.query.buy).toBeUndefined();
+		expect(wrapper.findComponent(CreditPurchaseModal).props("isOpen")).toBe(false);
 	});
 });
