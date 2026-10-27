@@ -27,6 +27,12 @@ describe("PageList", () => {
 		expect(rows[0].text()).toContain("Costs");
 	});
 
+	it("writes a fresh update as 'Updated just now'", async () => {
+		const modified = new Date().toISOString();
+		const w = await mountList({ pages: [{ ...pages[0], modified }] });
+		expect(w.find(".page-list-updated").text()).toBe("Updated just now");
+	});
+
 	it("says there are no pages and links back to chat", async () => {
 		const w = await mountList({ pages: [] });
 		expect(w.text()).toContain("No pages yet");

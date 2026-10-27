@@ -5,6 +5,7 @@
 				:name="name"
 				:user="userStore.user || ''"
 				:can-share="userStore.isAdmin"
+				:back-label="__('Back to pages')"
 				@close="router.push('/pages')"
 				@share="share"
 			/>
@@ -19,7 +20,7 @@
 
 <script setup>
 import { storeToRefs } from "pinia";
-import { onMounted } from "vue";
+import { onMounted, watch } from "vue";
 import { useRouter } from "vue-router";
 
 import FullPageShell from "@/components/layout/FullPageShell.vue";
@@ -40,8 +41,16 @@ const pagesStore = usePagesStore();
 const { pages, error, loaded } = storeToRefs(pagesStore);
 const { open } = usePagePanel();
 
-// The list refreshes each time it is opened; a deep link to one page only needs it for the title.
+// A deep link to one page only needs the list for its title; the list itself is refreshed on open.
 onMounted(() => (props.name ? pagesStore.ensureLoaded() : pagesStore.load()));
+
+// Going back from a page reuses this component, so onMounted does not run again.
+watch(
+	() => props.name,
+	(name, previous) => {
+		if (!name && previous) pagesStore.load();
+	},
+);
 
 function openPage(name) {
 	router.push({ name: "page", params: { name } });

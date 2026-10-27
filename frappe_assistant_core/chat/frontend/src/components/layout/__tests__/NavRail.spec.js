@@ -115,6 +115,12 @@ describe("NavRail", () => {
 		expect(order.indexOf("rail-pages")).toBe(order.indexOf("rail-agents") + 1);
 	});
 
+	it("shows Pages when Agents is hidden, after the last item before it", async () => {
+		const w = await mountRail({ user: { workflowsEnabled: false }, pages: [{ name: "x" }] });
+		const order = w.findAll(".rail-item").map((i) => i.attributes("data-test"));
+		expect(order.indexOf("rail-pages")).toBe(order.indexOf("rail-knowledge") + 1);
+	});
+
 	it("marks Pages active on a page route", async () => {
 		const w = await mountRail({ path: "/pages/x", pages: [{ name: "x" }] });
 		expect(item(w, "pages").classes()).toContain("active");

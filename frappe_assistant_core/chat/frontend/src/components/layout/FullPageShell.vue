@@ -10,7 +10,7 @@
 							v-if="isDrawerWidth"
 							type="button"
 							class="sidebar-toggle-btn"
-							aria-label="Toggle navigation"
+							:aria-label="__('Toggle navigation')"
 							@click="onHamburger()"
 						>
 							<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -38,6 +38,7 @@ import { useRouter } from "vue-router";
 
 import NavigationSidebar from "@/components/layout/NavigationSidebar.vue";
 import { useNavToggle } from "@/composables/useNavToggle";
+import { __ } from "@/utils/i18n";
 
 defineProps({
 	title: { type: String, default: "" },

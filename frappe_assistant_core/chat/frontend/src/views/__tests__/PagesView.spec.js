@@ -93,6 +93,19 @@ describe("PagesView", () => {
 		expect(w.findAll(".page-list-row")).toHaveLength(2);
 	});
 
+	it("reloads the list when going back from a page to /pages", async () => {
+		const w = await mountAt("/pages/costs-a1b2c3");
+		listPages.mockClear();
+		await w.setProps({ name: undefined });
+		await flushPromises();
+		expect(listPages).toHaveBeenCalledTimes(1);
+	});
+
+	it("labels the back button as going to the pages", async () => {
+		const w = await mountAt("/pages/costs-a1b2c3");
+		expect(w.find(".page-panel-back").attributes("aria-label")).toBe("Back to pages");
+	});
+
 	it("mounts the full PagePanel at /pages/:name", async () => {
 		const w = await mountAt("/pages/costs-a1b2c3");
 		expect(w.findComponent(PagePanel).props("name")).toBe("costs-a1b2c3");

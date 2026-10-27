@@ -7,6 +7,7 @@
 			:shareable="shareable"
 			:desk-url="deskUrl"
 			:pdf-disabled="!page"
+			:back-label="backLabel"
 			@close="emit('close')"
 			@share="share"
 			@pdf="downloadPdf"
@@ -67,6 +68,8 @@ const props = defineProps({
 	canShare: { type: Boolean, default: false },
 	user: { type: String, default: "" },
 	refreshKey: { type: Number, default: 0 },
+	// What the back button is called: where it goes depends on where the panel is shown.
+	backLabel: { type: String, default: undefined },
 });
 
 const emit = defineEmits(["share", "close"]);

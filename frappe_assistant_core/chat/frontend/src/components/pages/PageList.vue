@@ -11,7 +11,7 @@
 					<span class="page-list-chip">{{ page.visibility === "Shared" ? __("Shared") : __("Only you") }}</span>
 					<span v-if="page.draft" class="page-list-chip">{{ __("Draft") }}</span>
 					<span class="page-list-updated">
-						{{ __("Updated {0}", [formatRelativeTime(page.modified)]) }}
+						{{ __("Updated {0}", [updatedAgo(page.modified)]) }}
 					</span>
 				</button>
 			</li>
@@ -28,6 +28,12 @@ defineProps({
 });
 
 const emit = defineEmits(["open"]);
+
+// The helper opens with a capital ("Just now"), which reads wrong after "Updated".
+const updatedAgo = (modified) => {
+	const text = formatRelativeTime(modified);
+	return text.charAt(0).toLowerCase() + text.slice(1);
+};
 </script>
 
 <style scoped>

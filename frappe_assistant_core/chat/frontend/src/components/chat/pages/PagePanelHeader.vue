@@ -1,6 +1,6 @@
 <template>
 	<header class="page-panel-header">
-		<button type="button" class="page-panel-icon page-panel-back" :aria-label="__('Back to chat')" @click="emit('close')">
+		<button type="button" class="page-panel-icon page-panel-back" :aria-label="backLabel" @click="emit('close')">
 			<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 19l-7-7 7-7" /></svg>
 		</button>
 		<div class="page-panel-heading">
@@ -59,6 +59,7 @@ defineProps({
 	shareable: { type: Boolean, default: false },
 	deskUrl: { type: String, required: true },
 	pdfDisabled: { type: Boolean, default: false },
+	backLabel: { type: String, default: () => __("Back to chat") },
 });
 
 const emit = defineEmits(["close", "share", "pdf"]);
