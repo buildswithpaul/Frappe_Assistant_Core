@@ -55,7 +55,7 @@ const options = [
 }
 
 .switch-btn.active {
-	color: white;
+	color: var(--ql-on-accent, #fff);
 	background: var(--ql-accent);
 }
 </style>

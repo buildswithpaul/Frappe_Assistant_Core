@@ -31,9 +31,8 @@ describe("MyCreditsBand", () => {
 	it("shows the personal limit when the admin set one", () => {
 		seed({ mine: personal(1200) });
 		const text = mount(MyCreditsBand).text();
-		for (const part of ["1,200", "2,000", "Your monthly limit", "Shared by your workspace"]) {
-			expect(text).toContain(part);
-		}
+		for (const part of ["1,200", "2,000", "Your monthly limit"]) expect(text).toContain(part);
+		expect(text).not.toContain("Shared by your workspace");
 	});
 
 	it("falls back to the shared pool when there is no personal limit", () => {
@@ -69,5 +68,13 @@ describe("MyCreditsBand", () => {
 		expect(band.text()).toContain("2,000");
 		expect(meter.text()).toContain("60% used");
 		expect(band.text()).toContain("60% used");
+	});
+
+	it("agrees with the meter on the shared pool too", () => {
+		seed();
+		const meter = mount(CreditMeter);
+		const band = mount(MyCreditsBand);
+		expect(meter.text()).toContain("25% used");
+		expect(band.text()).toContain("25% used");
 	});
 });

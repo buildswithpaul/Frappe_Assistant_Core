@@ -72,13 +72,21 @@ describe("AnalyticsView", () => {
 		expect(api.analytics.getMyUsage).not.toHaveBeenCalled();
 
 		const button = (name) => wrapper.findAll(".usage-view-switch button").find((b) => b.text() === name);
+		expect(button("Workspace").attributes("aria-pressed")).toBe("true");
+		expect(button("Mine").attributes("aria-pressed")).toBe("false");
 		await button("Mine").trigger("click");
 		await flushPromises();
 		expect(router.currentRoute.value.query.view).toBe("me");
 		expect(api.analytics.getMyUsage).toHaveBeenCalled();
+		expect(button("Mine").attributes("aria-pressed")).toBe("true");
+		expect(button("Workspace").attributes("aria-pressed")).toBe("false");
+		expect(wrapper.find(".workspace-usage").exists()).toBe(false);
+		api.analytics.getData.mockClear();
 
 		await button("Workspace").trigger("click");
 		await flushPromises();
 		expect(router.currentRoute.value.query.view).toBeUndefined();
+		expect(api.analytics.getData).toHaveBeenCalled();
+		expect(wrapper.find(".workspace-usage").exists()).toBe(true);
 	});
 });

@@ -1,6 +1,6 @@
 <template>
 	<div class="my-credits-band">
-		<AllowanceCard v-bind="allowance" :label="label" :note="__('Shared by your workspace')" />
+		<AllowanceCard v-bind="allowance" :label="label" :note="scope.isPersonal ? '' : __('Shared by your workspace')" />
 		<p v-if="block" class="at-limit" role="status" data-test="at-limit">
 			{{ atLimitText }}
 		</p>
