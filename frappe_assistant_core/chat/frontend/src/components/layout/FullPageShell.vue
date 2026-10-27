@@ -115,6 +115,23 @@ const { isDrawerWidth, onHamburger } = useNavToggle();
 	gap: 0.5rem;
 }
 
+@media (max-width: 640px) {
+	.top-bar {
+		height: auto;
+		min-height: var(--ql-topbar-height, 56px);
+		padding: 0.5rem 1rem;
+	}
+
+	.top-bar-content {
+		flex-wrap: wrap;
+		gap: 0.5rem;
+	}
+
+	.top-bar-actions {
+		flex: 1 1 100%;
+	}
+}
+
 .shell-content {
 	flex: 1;
 	min-height: 0;

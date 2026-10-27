@@ -16,9 +16,16 @@ import { useUserStore } from "@/stores/userStore";
 import PagesView from "../PagesView.vue";
 
 const summaries = [
-	{ name: "costs-a1b2c3", title: "Costs", visibility: "Only me", draft: false, modified: "2026-10-01 10:00:00" },
-	{ name: "sales-d4e5f6", title: "Sales", visibility: "Shared", draft: false, modified: "2026-10-02 10:00:00" },
+	{ name: "costs-a1b2c3", title: "Costs", visibility: "Only me", draft: false, roles: [], modified: "2026-10-01 10:00:00" },
+	{ name: "sales-d4e5f6", title: "Sales", visibility: "Shared", draft: false, roles: ["Sales Manager"], modified: "2026-10-02 10:00:00" },
 ];
+const withDraft = [
+	...summaries,
+	{ name: "hiring-aa11bb", title: "Hiring plan", visibility: "Shared", draft: true, roles: ["HR Manager"], modified: "2026-10-03 10:00:00" },
+];
+const headings = (w) => w.findAll(".pages-view-heading").map((h) => h.text());
+const cardTitles = (w) => w.findAll(".page-card-title").map((t) => t.text());
+const pill = (w, text) => w.findAll(".page-filter-pill").find((b) => b.text().startsWith(text));
 const fullPage = {
 	title: "Costs",
 	html: '<div class="mk-card">Costs</div>',
@@ -70,9 +77,71 @@ afterEach(() => {
 describe("PagesView", () => {
 	it("lists pages at /pages and opens one", async () => {
 		const w = await mountAt("/pages");
-		await w.find(".page-list-row").trigger("click");
+		await w.find(".page-card").trigger("click");
 		await flushPromises();
 		expect(router.currentRoute.value.path).toBe("/pages/costs-a1b2c3");
+	});
+
+	it("groups pages into Your pages and Shared with you, drafts under shared, with counts", async () => {
+		listPages.mockResolvedValue(withDraft);
+		const w = await mountAt("/pages");
+		expect(headings(w)).toEqual(["Your pages 1", "Shared with you 2"]);
+		const sections = w.findAll(".pages-view-section");
+		expect(sections[0].findAll(".page-card-title").map((t) => t.text())).toEqual(["Costs"]);
+		expect(sections[1].findAll(".page-card-title").map((t) => t.text())).toEqual(["Sales", "Hiring plan"]);
+	});
+
+	it("filters by pill and hides a section left empty", async () => {
+		listPages.mockResolvedValue(withDraft);
+		const w = await mountAt("/pages");
+		expect(w.findAll(".page-filter-pill").map((b) => b.text())).toEqual([
+			"All 3",
+			"Only you 1",
+			"Shared 2",
+			"Drafts 1",
+		]);
+		await pill(w, "Drafts").trigger("click");
+		expect(cardTitles(w)).toEqual(["Hiring plan"]);
+		expect(headings(w)).toEqual(["Shared with you 1"]);
+		expect(pill(w, "Drafts").attributes("aria-pressed")).toBe("true");
+		await pill(w, "Only you").trigger("click");
+		expect(headings(w)).toEqual(["Your pages 1"]);
+	});
+
+	it("hides the Drafts pill when no page is a draft", async () => {
+		const w = await mountAt("/pages");
+		expect(pill(w, "Drafts")).toBeUndefined();
+	});
+
+	it("searches titles case-insensitively and the counts follow", async () => {
+		listPages.mockResolvedValue(withDraft);
+		const w = await mountAt("/pages");
+		await w.find("input[type=search]").setValue("HIRING");
+		expect(cardTitles(w)).toEqual(["Hiring plan"]);
+		expect(w.findAll(".page-filter-pill").map((b) => b.text())).toEqual([
+			"All 1",
+			"Only you 0",
+			"Shared 1",
+			"Drafts 1",
+		]);
+	});
+
+	it("says nothing matches and clears the search", async () => {
+		const w = await mountAt("/pages");
+		await w.find("input[type=search]").setValue("zzz");
+		expect(w.text()).toContain("No pages match “zzz”.");
+		expect(w.findAll(".page-card")).toHaveLength(0);
+		await w.find(".pages-view-clear").trigger("click");
+		expect(w.findAll(".page-card")).toHaveLength(2);
+		expect(w.text()).not.toContain("No pages match");
+	});
+
+	it("says there are no pages and links back to chat", async () => {
+		listPages.mockResolvedValue([]);
+		const w = await mountAt("/pages");
+		expect(w.text()).toContain("No pages yet");
+		expect(w.find("input[type=search]").exists()).toBe(false);
+		expect(w.find('a[href="/chat"]').exists()).toBe(true);
 	});
 
 	it("says so when the list fails", async () => {
@@ -90,7 +159,7 @@ describe("PagesView", () => {
 		expect(w.text()).not.toContain("No pages yet");
 		release(summaries);
 		await flushPromises();
-		expect(w.findAll(".page-list-row")).toHaveLength(2);
+		expect(w.findAll(".page-card")).toHaveLength(2);
 	});
 
 	it("reloads the list when going back from a page to /pages", async () => {
