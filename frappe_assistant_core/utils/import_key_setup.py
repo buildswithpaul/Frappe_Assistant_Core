@@ -69,6 +69,22 @@ def key_values(session) -> List[str]:
     return import_keys.distinct_keys(row[position] for row in rows[1:] if position < len(row))
 
 
+def keys_by_row(session) -> Dict[int, str]:
+    """``{file row number: old ID}`` for the session's file (the header is row 1), empty cells left out.
+    Empty when the session has no old ID column or its file can't be read."""
+    try:
+        position = key_column(session)["position"]
+        rows = read_sheet_rows(readable_session_file(session), session.sheet or None)
+    except Exception:
+        return {}
+    found = {}
+    for number, row in enumerate(rows[1:], start=2):
+        key = import_keys.normalise(row[position]) if position < len(row) else ""
+        if key:
+            found[number] = key
+    return found
+
+
 def first_section_end(doctype: str) -> Optional[str]:
     """The last field of the form's first section: where a field FAC adds sits, in view. None when
     the form has no field to put it after."""

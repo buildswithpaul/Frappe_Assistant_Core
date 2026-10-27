@@ -255,6 +255,21 @@ def _created_names(session) -> List[str]:
     ]
 
 
+def _created_old_ids(session) -> List[str]:
+    """The old IDs of the records the session's last check creates (#34244): a later file of the plan
+    refers to them by those IDs before the records, and so their names, exist."""
+    from frappe_assistant_core.utils import import_key_setup, import_run
+
+    keys = import_key_setup.keys_by_row(session)
+    if not keys:
+        return []
+    return [
+        keys[row["row"]]
+        for row in import_run._checked_rows(session)
+        if row.get("status") in ("ready", "failed") and row.get("row") in keys
+    ]
+
+
 def masters(plan) -> List[Dict[str, Any]]:
     """The records the plan creates before any file is imported."""
     return frappe.parse_json(plan.masters or "[]") or []
@@ -315,7 +330,7 @@ def _names(sessions: List[Any], plan=None) -> Dict[str, Dict[str, str]]:
     for session in sessions:
         if session.status in IMPORTED:  # its records are in ERPNext now, or genuinely missing
             continue
-        for name in _created_names(session):
+        for name in _created_names(session) + _created_old_ids(session):
             names.setdefault(session.target_doctype, {}).setdefault(
                 name.strip().casefold(), session.file_name
             )

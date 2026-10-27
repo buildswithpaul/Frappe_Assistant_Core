@@ -33,6 +33,15 @@ TALLY_LEDGERS = [
 
 
 class TestPresetSourceKeys(PresetToolCase):
+    def setUp(self):
+        super().setUp()
+        # where the IDs of these systems are kept is a site default: start each test with none chosen
+        for doctype in ("Customer", "Supplier", "Item", "Account"):
+            for system in ("zoho", "tally"):
+                frappe.defaults.clear_default(
+                    key=import_keys._CHOICE_KEY.format(doctype=doctype, system=system)
+                )
+
     def _applied(self, rows, file_name):
         presets.clear_cache()
         file_doc = self._upload(f"{file_name}-{self.tag}.xlsx", xlsx(self._rows(rows)))
@@ -57,6 +66,23 @@ class TestPresetSourceKeys(PresetToolCase):
             import_keys.source_key(session), {"position": header.index("Customer ID"), "system": "zoho"}
         )
         self.assertEqual(entry["old_ids"], {"column": "Customer ID", "system": "zoho"})
+
+    def test_a_preset_keeps_its_ids_in_the_key_map_without_asking(self):
+        result = self._zoho()
+
+        entry, session = self._session(result, "Customers")
+        self.assertEqual(import_keys.storage_for("Customer", "zoho"), {"kind": "key_map"})
+        self.assertIsNone(import_keys.storage_problem(session))  # the dry run is not held for an answer
+        self.assertEqual(entry["next"], "dry_run_import")
+
+    def test_a_choice_already_made_for_the_system_is_not_changed_by_a_preset(self):
+        import_keys.set_choice("Customer", "zoho", "field:tax_id")
+
+        self._zoho()
+
+        self.assertEqual(
+            import_keys.storage_for("Customer", "zoho"), {"kind": "field", "fieldname": "tax_id"}
+        )
 
     def test_the_id_column_is_kept_not_imported_and_not_reported_as_dropped(self):
         result = self._zoho()
