@@ -11,7 +11,8 @@
 			<tbody>
 				<tr v-for="user in users" :key="user.user_id">
 					<td class="col-user">
-						<span class="user-id">{{ user.user_id }}</span>
+						<span class="user-name">{{ user.full_name || user.user_id }}</span>
+						<span v-if="user.full_name" class="user-email">{{ user.user_id }}</span>
 					</td>
 					<td class="col-num">
 						<div class="percent-bar-wrapper">
@@ -107,9 +108,16 @@ function getPercent(user) {
 	white-space: nowrap;
 }
 
-.user-id {
+.user-name {
+	display: block;
 	font-weight: 500;
 	color: var(--ql-text);
+}
+
+.user-email {
+	display: block;
+	font-size: 0.75rem;
+	color: var(--ql-text-muted);
 }
 
 .percent-bar-wrapper {
