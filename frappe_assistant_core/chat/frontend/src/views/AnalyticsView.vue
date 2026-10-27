@@ -47,9 +47,10 @@
 				</div>
 			</header>
 
-			<!-- Content -->
+			<!-- Content. Members reach this route too; until MyUsage lands they get nothing, never the
+			     workspace view. -->
 			<div class="analytics-content">
-				<WorkspaceUsage :range="range" @drilling="drilling = $event" />
+				<WorkspaceUsage v-if="userStore.isAdmin" :range="range" @drilling="drilling = $event" />
 			</div>
 		</main>
 	</div>
@@ -60,9 +61,11 @@ import { ref } from "vue";
 import { useRouter } from "vue-router";
 import NavigationSidebar from "@/components/layout/NavigationSidebar.vue";
 import WorkspaceUsage from "@/components/analytics/usage/WorkspaceUsage.vue";
+import { useUserStore } from "@/stores/userStore";
 import { useNavToggle } from "@/composables/useNavToggle";
 
 const router = useRouter();
+const userStore = useUserStore();
 const { isDrawerWidth, onHamburger } = useNavToggle();
 
 const ranges = [7, 30, 90];
