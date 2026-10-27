@@ -121,4 +121,51 @@ class TestAnalyticsAdminOnly(BaseAssistantTest):
         res = self._analytics_with_rows([{"user_id": admin_email, "credits_consumed": 2}])
 
         self.assertTrue(admin_name)
-        self.assertEqual(res["by_user"][0]["full_name"], admin_name)
+        # AR keys by docname when it holds an "@", so another User whose docname IS the
+        # Administrator's email (possible on a real site) outranks the email match by design.
+        docname_owner = frappe.db.get_value("User", admin_email, "full_name")
+        self.assertEqual(res["by_user"][0]["full_name"], docname_owner or admin_name)
+
+    def test_row_keyed_by_old_docname_resolves_after_an_email_change(self):
+        # AR keys a user by the docname when it has an "@". A user seated as old@ whose email was
+        # later changed keeps reporting under old@, so the lookup must match the docname too.
+        old, new = "analytics_old@example.com", "analytics_new@example.com"
+        frappe.get_doc(
+            {
+                "doctype": "User",
+                "email": old,
+                "first_name": "Morgan",
+                "last_name": "Hale",
+                "enabled": 1,
+                "send_welcome_email": 0,
+            }
+        ).insert(ignore_permissions=True)
+        # Production reaches this by editing the email on an existing User; the docname stays put.
+        frappe.db.set_value("User", old, "email", new)
+
+        res = self._analytics_with_rows(
+            [
+                {"user_id": old, "credits_consumed": 3},
+                {"user_id": new, "credits_consumed": 1},
+            ]
+        )
+
+        self.assertEqual(res["by_user"][0]["full_name"], "Morgan Hale")
+        self.assertEqual(res["by_user"][1]["full_name"], "Morgan Hale")
+
+    def test_user_id_matches_case_insensitively(self):
+        email = "analytics_case@example.com"
+        frappe.get_doc(
+            {
+                "doctype": "User",
+                "email": email,
+                "first_name": "Avery",
+                "last_name": "Case",
+                "enabled": 1,
+                "send_welcome_email": 0,
+            }
+        ).insert(ignore_permissions=True)
+
+        res = self._analytics_with_rows([{"user_id": email.upper(), "credits_consumed": 1}])
+
+        self.assertEqual(res["by_user"][0]["full_name"], "Avery Case")

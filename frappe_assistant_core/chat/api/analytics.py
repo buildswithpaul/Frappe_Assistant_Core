@@ -32,22 +32,29 @@ def _require_admin() -> None:
 
 
 def _with_full_names(rows: list[dict]) -> list[dict]:
-    """Add ``full_name`` to each usage row, matching ``user_id`` to a User's email.
+    """Add ``full_name`` to each usage row, matching ``user_id`` the way AR keys a user.
 
-    AR reports the user's email as ``user_id``. Match on the ``email`` field,
-    not ``name``: the two differ for Administrator. Unknown users get None.
+    AR keys a user by the User docname when it contains "@", else by User.email (see
+    ``auth._ar_user_id``). So a user whose email changed after they were seated is still
+    reported under the old docname. Match both, docname first, case-insensitively.
+    Unknown users get None.
     """
-    emails = [row["user_id"] for row in rows if row.get("user_id")]
-    names = {}
-    if emails:
-        names = {
-            user["email"]: user["full_name"]
-            for user in frappe.get_all(
-                "User", filters={"email": ["in", emails]}, fields=["email", "full_name"]
-            )
-        }
+    ids = [row["user_id"] for row in rows if row.get("user_id")]
+    names: dict[str, str] = {}
+    if ids:
+        users = frappe.get_all(
+            "User",
+            or_filters={"name": ["in", ids], "email": ["in", ids]},
+            fields=["name", "email", "full_name"],
+        )
+        for user in users:
+            if "@" in (user.get("name") or ""):
+                names[user["name"].lower()] = user["full_name"]
+        for user in users:
+            if user.get("email"):
+                names.setdefault(user["email"].lower(), user["full_name"])
     for row in rows:
-        row["full_name"] = names.get(row.get("user_id")) or None
+        row["full_name"] = names.get(str(row.get("user_id") or "").lower()) or None
     return rows
 
 
