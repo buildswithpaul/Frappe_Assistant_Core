@@ -3,8 +3,8 @@
 		<table class="user-table">
 			<thead>
 				<tr>
-					<th class="col-user">User</th>
-					<th class="col-num">Credits</th>
+					<th class="col-user">{{ __("User") }}</th>
+					<th class="col-num">{{ __("Credits") }}</th>
 					<th class="col-num" :title="__('Every agent run: one per chat message, one per approval round, and one per background call (classifier, memory, suggestions, workflows). A run can include several model calls.')">{{ __("Agent runs") }}</th>
 				</tr>
 			</thead>

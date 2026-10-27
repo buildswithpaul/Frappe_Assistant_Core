@@ -11,9 +11,9 @@ const MODELS = [
 	{ model_id: "global.anthropic.claude-haiku-4-5-20251001-v1:0", credits_consumed: 10 },
 ];
 
-function chartOption() {
+function chartOption(models = MODELS) {
 	const wrapper = mount(ModelBreakdown, {
-		props: { models: MODELS, totalCredits: 100 },
+		props: { models, totalCredits: 100 },
 	});
 	return wrapper.findComponent({ name: "VChart" }).props("option");
 }
@@ -31,5 +31,13 @@ describe("ModelBreakdown", () => {
 
 	it("fits the axis to the data instead of fixing it at 100", () => {
 		expect(chartOption().xAxis.max).not.toBe(100);
+	});
+
+	it("escapes hostile model ids in the tooltip", () => {
+		const option = chartOption([{ model_id: '<img src=x onerror=alert(1)>"', credits_consumed: 5 }]);
+		const html = option.tooltip.formatter([{ dataIndex: 0, value: 5 }]);
+		expect(html).not.toContain("<img");
+		expect(html).not.toContain('"<');
+		expect(html.replace(/<(strong|\/strong|br\/|span style="[^"]*"|\/span)>/g, "")).not.toMatch(/[<>"]/);
 	});
 });

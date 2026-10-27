@@ -3,7 +3,9 @@ import { __ } from "@/utils/i18n";
 const REGION_PREFIX = /^(?:global|us|eu|apac)\./;
 const PROVIDER_PREFIX = /^(?:anthropic|openai|meta|amazon|google|mistral)[./]/;
 // A vendor prefix the list above does not know ("zai.glm-5"); a dot before a digit is a version.
-const UNKNOWN_PROVIDER_PREFIX = /^[a-z][a-z0-9]*\.(?=[a-z])/;
+// It is only dropped when a real word remains, so "deepseek.r1" does not collapse to "R1".
+const UNKNOWN_PROVIDER_PREFIX = /^[a-z][a-z0-9-]*[./](?=[a-z])/;
+const HAS_WORD = /[a-z]{3,}/;
 const VERSION_SUFFIX = /-v\d+(?::\d+)?$/;
 const DATE_SUFFIX = /-\d{8}$/;
 const SINGLE_DIGIT = /^\d$/;
@@ -31,13 +33,14 @@ function joinDigitRuns(tokens) {
 
 export function formatModelId(id) {
 	if (!id) return __("Unknown model");
-	const stripped = id
+	const known = id
 		.toLowerCase()
 		.replace(REGION_PREFIX, "")
 		.replace(PROVIDER_PREFIX, "")
-		.replace(UNKNOWN_PROVIDER_PREFIX, "")
 		.replace(VERSION_SUFFIX, "")
 		.replace(DATE_SUFFIX, "");
+	const withoutVendor = known.replace(UNKNOWN_PROVIDER_PREFIX, "");
+	const stripped = HAS_WORD.test(withoutVendor) ? withoutVendor : known.replace(/[./](?=[a-z])/g, "-");
 	const tokens = joinDigitRuns(stripped.split("-").filter(Boolean));
 
 	const words = [];

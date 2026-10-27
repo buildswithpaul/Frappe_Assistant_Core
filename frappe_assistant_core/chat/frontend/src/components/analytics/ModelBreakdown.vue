@@ -50,9 +50,8 @@ const chartOption = computed(() => {
 			formatter: (params) => {
 				const p = params[0];
 				const model = props.models[p.dataIndex];
-				return `<strong>${formatModelId(model.model_id)}</strong><br/>${__(
-					"{0}% of usage",
-					[p.value],
+				return `<strong>${escapeHtml(formatModelId(model.model_id))}</strong><br/>${escapeHtml(
+					__("{0}% of usage", [p.value]),
 				)}<br/><span style="color:${colors.value.muted}">${escapeHtml(model.model_id || "")}</span>`;
 			},
 		},
