@@ -96,12 +96,12 @@ function formatNumber(val) {
 }
 
 .is-warning .allowance-fill {
-	background: #f59e0b;
+	background: var(--ql-warning);
 }
 
 .is-critical .allowance-fill,
 .is-exhausted .allowance-fill {
-	background: #dc2626;
+	background: var(--ql-danger);
 }
 
 .card-foot {

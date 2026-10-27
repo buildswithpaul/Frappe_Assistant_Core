@@ -12,6 +12,10 @@ describe("monthAllowance", () => {
 		expect(monthAllowance({ quota_used: 5, quota_total: -1, percentage_used: 0 }).unlimited).toBe(true);
 	});
 
+	it("treats a missing percentage as 0, never NaN", () => {
+		expect(monthAllowance({ quota_used: 0, quota_total: 100 }).percent).toBe(0);
+	});
+
 	it("caps the percentage at 100", () => {
 		expect(monthAllowance({ quota_used: 12000, quota_total: 10000, percentage_used: 120 }).percent).toBe(100);
 	});

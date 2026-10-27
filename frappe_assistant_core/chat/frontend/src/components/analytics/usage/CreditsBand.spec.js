@@ -40,6 +40,22 @@ describe("CreditsBand", () => {
 		expect(wrapper.find(".allowance-bar").exists()).toBe(false);
 	});
 
+	it("uses the singular for one member and plural for a capped count", async () => {
+		expect((await mountBand({ membersAtLimit: 1 })).text()).toContain("1 member at their limit");
+		expect((await mountBand({ membersAtLimit: "100+" })).text()).toContain("100+ members at their limit");
+	});
+
+	it.each([
+		[79, ""],
+		[80, "is-warning"],
+		[90, "is-critical"],
+		[100, "is-exhausted"],
+	])("tones the bar at %i%%", async (percent, tone) => {
+		const wrapper = await mountBand({ quota: { ...QUOTA, percentage_used: percent } });
+		const bar = wrapper.get(".allowance-bar");
+		expect(bar.classes().filter((c) => c.startsWith("is-"))).toEqual(tone ? [tone] : []);
+	});
+
 	it("links members at their limit to Users", async () => {
 		const wrapper = await mountBand({ membersAtLimit: 2 });
 		expect(wrapper.text()).toContain("2 members at their limit");
