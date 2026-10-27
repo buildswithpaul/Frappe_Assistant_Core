@@ -93,12 +93,14 @@ export function useAnalyticsData({ scope = "workspace" } = {}) {
 		loading.value = true;
 		error.value = null;
 		try {
-			const result = await (isOwnScope ? api.analytics.getMyUsage(range) : api.analytics.getData(range));
+			const result = await (isOwnScope
+				? api.analytics.getMyUsage(range)
+				: api.analytics.getData(range));
 			if (result?.error) {
 				error.value = result.error;
 			} else {
 				data.value = result;
-				isAdmin.value = !!result.is_admin;
+				if (!isOwnScope) isAdmin.value = !!result.is_admin;
 			}
 		} catch (e) {
 			error.value = e.message || "Failed to load analytics data";
