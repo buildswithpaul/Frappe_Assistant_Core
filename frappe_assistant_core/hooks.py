@@ -201,6 +201,10 @@ page_renderer = [
 
 # ignore_links_on_delete = ["Communication", "ToDo"]
 
+# A record an import made (a customer, an item) can be deleted although the import key map
+# still names it: the map never blocks that, and a row whose record is gone stops resolving (#34244).
+ignore_links_on_delete = ["FAC Import Key Map"]
+
 
 # User Data Protection
 # --------------------
@@ -439,21 +443,20 @@ scheduler_events["cron"].setdefault("*/5 * * * *", []).append(
 permission_query_conditions.update(
     {
         "FAC Chat Message": (
-            "frappe_assistant_core.chat.utils.permissions" ".get_faco_message_permission_query_conditions"
+            "frappe_assistant_core.chat.utils.permissions.get_faco_message_permission_query_conditions"
         ),
         "FAC Chat Usage Log": (
-            "frappe_assistant_core.chat.utils.permissions" ".get_faco_usage_log_permission_query_conditions"
+            "frappe_assistant_core.chat.utils.permissions.get_faco_usage_log_permission_query_conditions"
         ),
         "FAC Chat User Preferences": (
             "frappe_assistant_core.chat.utils.permissions"
             ".get_faco_user_preferences_permission_query_conditions"
         ),
         "FAC Chat Conversation": (
-            "frappe_assistant_core.chat.utils.permissions"
-            ".get_faco_conversation_permission_query_conditions"
+            "frappe_assistant_core.chat.utils.permissions.get_faco_conversation_permission_query_conditions"
         ),
         "FAC Chat Project": (
-            "frappe_assistant_core.chat.utils.permissions" ".get_faco_project_permission_query_conditions"
+            "frappe_assistant_core.chat.utils.permissions.get_faco_project_permission_query_conditions"
         ),
         # Zero-retention session blob: scoped to owner only (no System Manager
         # role exemption — only literal Administrator) to close the All-role IDOR.
@@ -480,7 +483,7 @@ has_permission = {
     ),
     "FAC Chat Project": ("frappe_assistant_core.chat.utils.permissions.has_faco_project_permission"),
     "FAC Chat Session State": (
-        "frappe_assistant_core.chat.doctype.fac_chat_session_state" ".fac_chat_session_state.has_permission"
+        "frappe_assistant_core.chat.doctype.fac_chat_session_state.fac_chat_session_state.has_permission"
     ),
     "FAC Import Session": (
         "frappe_assistant_core.assistant_core.doctype.fac_import_session.fac_import_session.has_permission"
