@@ -222,7 +222,8 @@ function expiryLabel(txn) {
 }
 
 .buy-credits-btn:hover {
-	background: #ede9fe;
+	color: var(--ql-accent-hover);
+	border-color: var(--ql-accent);
 }
 
 /* Transaction History */
