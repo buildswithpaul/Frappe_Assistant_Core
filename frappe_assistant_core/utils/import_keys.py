@@ -32,6 +32,7 @@ import re
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import frappe
+from frappe import _
 from frappe.utils import cstr
 
 KEY_MAP = "FAC Import Key Map"
@@ -129,6 +130,24 @@ def clear_source_key(session) -> None:
     rules = _rules(session)
     if rules.pop(SOURCE_KEY, None) is not None:
         session.transformation_rules = frappe.as_json(rules) if rules else None
+
+
+def storage_problem(session) -> Optional[str]:
+    """Why the session can't be checked yet because nobody has said where its old IDs are kept, or None.
+    A file with an old ID column is asked about before its dry run, so the answer is there when the
+    records are created."""
+    kept = source_key(session)
+    if not kept or not session.target_doctype or storage_for(session.target_doctype, kept["system"]):
+        return None
+    from frappe_assistant_core.utils.import_mapping import session_headers
+
+    headers = session_headers(session)
+    position = int(kept["position"])
+    column = headers[position] if position < len(headers) else str(position)
+    return _(
+        "Column '{0}' holds the old system's IDs. Ask the user where to keep them, with "
+        "choose_old_id_storage, before the check."
+    ).format(column)
 
 
 # -- where a DocType keeps its old IDs ----------------------------------------------------------

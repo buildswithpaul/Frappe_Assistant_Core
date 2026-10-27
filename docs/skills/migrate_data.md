@@ -220,3 +220,11 @@ migration plan names it in `migration_plan`: the plan's id, the session of its f
   together, still grouped: one list, so the user answers once.
 - Say what each step will do before an approval card, and what it did afterwards, with the counts.
 - After each file, say what's next in the order above.
+
+## When the file has the old system's IDs
+
+If a file carries the old system's own ID for each row (an Odoo id, a Zoho Customer ID, a Tally
+ledger's name), mark it when you map (`set_column_mapping`, with source_key_column and
+source_system; a preset does it itself), and before the dry run ask where to keep the IDs
+(`choose_old_id_storage`). Later files that refer to the records by those IDs can then be translated
+instead of corrected by hand.

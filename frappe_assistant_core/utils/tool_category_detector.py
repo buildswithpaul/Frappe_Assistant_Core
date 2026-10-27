@@ -102,6 +102,9 @@ READ_ONLY_TOOLS = {
     "start_import_session",
     # Writes only the session's mapping; as a write tool every correction would raise a card.
     "set_column_mapping",
+    # Records where a session's old IDs are kept, after checking the answer against the site:
+    # it adds no field (create_document does, on its own card) and writes no business data.
+    "choose_old_id_storage",
     # Writes only the session's settings and mapping, as set_column_mapping does.
     "set_opening_stock",
     "set_opening_invoices",

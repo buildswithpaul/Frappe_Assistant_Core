@@ -46,6 +46,7 @@ from frappe.utils import cint, cstr, now_datetime, strip_html
 from rq import Queue
 
 from frappe_assistant_core.assistant_core.doctype.fac_import_session.fac_import_session import engine_session
+from frappe_assistant_core.utils import import_keys
 from frappe_assistant_core.utils.import_session import (
     FileProblem,
     attach_session_copy,
@@ -158,6 +159,9 @@ def check_can_run(session) -> None:
     check_status(session)
     if not column_to_field_map(session):
         raise DryRunProblem(_("Map the columns first, with set_column_mapping."))
+    problem = import_keys.storage_problem(session)
+    if problem:
+        raise DryRunProblem(problem)
     problem = import_target_problem(session.target_doctype, session.import_type or INSERT)
     if problem:
         raise DryRunProblem(problem)
