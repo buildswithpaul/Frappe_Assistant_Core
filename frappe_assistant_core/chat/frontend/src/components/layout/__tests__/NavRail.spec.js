@@ -53,9 +53,9 @@ describe("NavRail", () => {
 		expect(item(w, "chat").exists()).toBe(true);
 	});
 
-	it("hides Usage from non-admins", async () => {
+	it("shows Usage to every member", async () => {
 		const w = await mountRail({ user: { isAdmin: false } });
-		expect(item(w, "usage").exists()).toBe(false);
+		expect(item(w, "usage").exists()).toBe(true);
 	});
 
 	it("marks only the item for the current route active", async () => {

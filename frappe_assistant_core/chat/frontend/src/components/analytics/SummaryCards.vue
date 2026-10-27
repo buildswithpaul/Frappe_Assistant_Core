@@ -1,29 +1,12 @@
 <template>
 	<div class="summary-grid">
 		<div class="summary-card">
-			<div class="card-label">
-				{{ mode === "user" ? "My Credits Used" : "Credits Used" }}
-			</div>
-			<div class="card-value credit-display" v-if="quotaTotal > 0">
-				{{ formatNumber(creditsUsed) }}
-				<span class="credit-total">/ {{ formatNumber(quotaTotal) }}</span>
-			</div>
-			<div class="card-value" v-else>{{ formatNumber(creditsUsed) }}</div>
+			<div class="card-label">{{ __("Credits in the last {0} days", [days]) }}</div>
+			<div class="card-value">{{ formatNumber(creditsUsed) }}</div>
 			<div class="card-foot">
-				<span class="card-sub" v-if="quotaTotal > 0"
-					>{{ usagePercent }}% of monthly quota</span
-				>
-				<span class="card-sub" v-else>credits consumed</span>
+				<span class="card-sub">{{ __("credits consumed") }}</span>
 				<TrendBadge v-if="creditsTrend" :trend="creditsTrend" tone="cost" />
 			</div>
-		</div>
-
-		<div class="summary-card">
-			<div class="card-label">Remaining</div>
-			<div class="card-value" v-if="quotaTotal > 0">{{ formatNumber(remaining) }}</div>
-			<div class="card-value" v-else-if="isUnlimited">&infin;</div>
-			<div class="card-value" v-else>&mdash;</div>
-			<div class="card-sub">credits remaining</div>
 		</div>
 
 		<div class="summary-card">
@@ -36,22 +19,16 @@
 		</div>
 
 		<div class="summary-card" v-if="mode === 'admin'">
-			<div class="card-label">Active Users</div>
+			<div class="card-label">{{ __("Active Users") }}</div>
 			<div class="card-value">{{ summary.active_users }}</div>
-			<div class="card-sub">in this period</div>
+			<div class="card-sub">{{ __("in this period") }}</div>
 		</div>
 
-		<div class="summary-card" v-if="mode === 'user'">
-			<div class="card-label">My Conversations</div>
-			<div class="card-value">{{ formatNumber(conversationCount) }}</div>
-			<div class="card-sub">in this period</div>
-		</div>
-
-		<div class="summary-card">
-			<div class="card-label">Avg per Chat</div>
+		<div class="summary-card" v-if="mode === 'admin'">
+			<div class="card-label">{{ __("Avg per Chat") }}</div>
 			<div class="card-value" v-if="avgDenominator > 0">{{ formatNumber(avgPerChat) }}</div>
 			<div class="card-value" v-else>&mdash;</div>
-			<div class="card-sub">credits per conversation (all sources)</div>
+			<div class="card-sub">{{ __("credits per conversation (all sources)") }}</div>
 		</div>
 	</div>
 </template>
@@ -63,29 +40,16 @@ import { __ } from "@/utils/i18n";
 
 const props = defineProps({
 	summary: { type: Object, required: true },
-	quota: { type: Object, default: null },
 	mode: { type: String, default: "admin" }, // 'admin' or 'user'
+	days: { type: Number, default: 30 },
 	conversationCount: { type: Number, default: 0 },
 	// { recent, prior, percent, direction } — see useAnalyticsData.js#trendSplit
 	creditsTrend: { type: Object, default: null },
 	requestsTrend: { type: Object, default: null },
 });
 
-const quotaTotal = computed(() => {
-	const total = props.quota?.quota_total || 0;
-	return total > 0 ? total : 0;
-});
-
-const isUnlimited = computed(() => {
-	return props.quota?.quota_total === -1 || props.quota?.unlimited === true;
-});
-
 const creditsUsed = computed(() => {
 	return Math.round(props.summary.credits_consumed || 0);
-});
-
-const remaining = computed(() => {
-	return Math.max(0, quotaTotal.value - creditsUsed.value);
 });
 
 const requestCount = computed(() => {
@@ -103,11 +67,6 @@ const avgDenominator = computed(() => props.conversationCount);
 const avgPerChat = computed(() => {
 	if (!avgDenominator.value) return 0;
 	return Math.round(creditsUsed.value / avgDenominator.value);
-});
-
-const usagePercent = computed(() => {
-	if (!quotaTotal.value) return 0;
-	return Math.round((creditsUsed.value / quotaTotal.value) * 100);
 });
 
 function formatNumber(val) {
@@ -145,18 +104,6 @@ function formatNumber(val) {
 	font-weight: 700;
 	color: var(--ql-text);
 	line-height: 1.2;
-	font-family: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
-	font-variant-numeric: tabular-nums;
-}
-
-.card-value.credit-display {
-	font-size: 1.25rem;
-}
-
-.credit-total {
-	font-size: 0.875rem;
-	font-weight: 400;
-	color: var(--ql-text-muted);
 	font-family: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
 	font-variant-numeric: tabular-nums;
 }

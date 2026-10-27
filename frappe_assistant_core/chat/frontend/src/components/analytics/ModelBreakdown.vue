@@ -13,6 +13,8 @@ import { BarChart } from "echarts/charts";
 import { GridComponent, TooltipComponent } from "echarts/components";
 import { CanvasRenderer } from "echarts/renderers";
 import { useChartTheme } from "@/composables/useChartTheme";
+import { formatModelId } from "@/utils/modelLabel";
+import { __ } from "@/utils/i18n";
 import { vizColor } from "@/composables/dataVizPalette";
 
 use([CanvasRenderer, BarChart, GridComponent, TooltipComponent]);
@@ -24,9 +26,8 @@ const props = defineProps({
 	totalCredits: { type: Number, default: 0 },
 });
 
-function shortenModelId(id) {
-	if (!id) return "unknown";
-	return id.replace(/-\d{8}$/, "");
+function escapeHtml(text) {
+	return text.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 }
 
 function getModelPercent(model) {
@@ -39,7 +40,7 @@ function getModelPercent(model) {
 const chartOption = computed(() => {
 	if (!props.models.length) return {};
 
-	const names = props.models.map((m) => shortenModelId(m.model_id));
+	const names = props.models.map((m) => formatModelId(m.model_id));
 	const percentages = props.models.map((m) => getModelPercent(m));
 
 	return {
@@ -49,9 +50,9 @@ const chartOption = computed(() => {
 			formatter: (params) => {
 				const p = params[0];
 				const model = props.models[p.dataIndex];
-				return `<strong>${shortenModelId(model.model_id)}</strong><br/>${
-					p.value
-				}% of usage`;
+				return `<strong>${escapeHtml(formatModelId(model.model_id))}</strong><br/>${escapeHtml(
+					__("{0}% of usage", [p.value]),
+				)}<br/><span style="color:${colors.value.muted}">${escapeHtml(model.model_id || "")}</span>`;
 			},
 		},
 		grid: {
@@ -63,7 +64,6 @@ const chartOption = computed(() => {
 		},
 		xAxis: {
 			type: "value",
-			max: 100,
 			axisLabel: {
 				fontSize: 11,
 				color: colors.value.muted,

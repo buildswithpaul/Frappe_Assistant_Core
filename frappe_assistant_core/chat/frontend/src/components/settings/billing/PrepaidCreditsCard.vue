@@ -181,7 +181,7 @@ function expiryLabel(txn) {
 .credit-balance-value {
 	font-size: 0.875rem;
 	font-weight: 600;
-	color: #7c3aed;
+	color: var(--ql-text);
 	font-family: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
 	font-variant-numeric: tabular-nums;
 }
@@ -213,16 +213,17 @@ function expiryLabel(txn) {
 	padding: 0.375rem 0.75rem;
 	font-size: 0.75rem;
 	font-weight: 500;
-	color: #7c3aed;
-	background: #f5f3ff;
-	border: 1px solid #ddd6fe;
+	color: var(--ql-accent);
+	background: var(--ql-accent-soft);
+	border: 1px solid var(--ql-border);
 	border-radius: 0.375rem;
 	cursor: pointer;
 	transition: background 0.15s;
 }
 
 .buy-credits-btn:hover {
-	background: #ede9fe;
+	color: var(--ql-accent-hover);
+	border-color: var(--ql-accent);
 }
 
 /* Transaction History */

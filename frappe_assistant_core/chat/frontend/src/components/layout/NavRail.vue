@@ -77,7 +77,6 @@
 			</router-link>
 
 			<router-link
-				v-if="isAdmin"
 				to="/analytics"
 				class="rail-item"
 				:class="{ active: route.path.startsWith('/analytics') }"
@@ -136,7 +135,7 @@ const props = defineProps({
 const emit = defineEmits(["return-to-desk", "open-settings", "toggle-sidebar"]);
 
 const route = useRoute();
-const { memoryEnabled, workflowsEnabled, isAdmin } = storeToRefs(useUserStore());
+const { memoryEnabled, workflowsEnabled } = storeToRefs(useUserStore());
 const pagesStore = usePagesStore();
 
 onMounted(() => pagesStore.ensureLoaded());

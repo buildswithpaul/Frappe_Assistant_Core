@@ -61,7 +61,6 @@ const routes = [
 		path: "/analytics",
 		name: "analytics",
 		component: () => import("@/views/AnalyticsView.vue"),
-		beforeEnter: requireAdmin,
 	},
 	{
 		path: "/pages",

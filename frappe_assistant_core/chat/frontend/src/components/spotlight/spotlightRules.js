@@ -3,10 +3,13 @@
  * The Desk widget's panel shares this module (surface "widget"), so there is one copy of the rules.
  */
 
+import { percentUsed } from "@/utils/creditPercent";
+
 export const DAILY_KEY = (user, surface) => `fac_spotlight_last_shown:${user}:${surface}`;
 export const QUOTA_KEY = (user, cycle, threshold) => `fac_quota_moment:${user}:${cycle}:${threshold}`;
 export const PLANS_ROUTE = "/settings/billing?tab=plans";
 export const CREDITS_ROUTE = "/settings/billing?tab=credits";
+export const USAGE_BUY_ROUTE = "/analytics?buy=1";
 export const USERS_ROUTE = "/settings/users";
 
 const pad = (n) => String(n).padStart(2, "0");
@@ -21,12 +24,20 @@ export function cycleStart(status, now = new Date()) {
 	return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-01`;
 }
 
-export function nextResetDate(status) {
+/**
+ * The first cycle date strictly after today. AR only moves `billing_cycle_start` when the cycle
+ * rolls, so a stale start is walked forward month by month (clamping to short months).
+ */
+export function nextResetDate(status, now = new Date()) {
 	const raw = status?.billing_cycle_start;
 	if (!raw) return null;
 	const [y, m, d] = String(raw).slice(0, 10).split("-").map(Number);
-	const last = new Date(y, m + 1, 0).getDate();
-	return localDate(new Date(y, m, Math.min(d, last)));
+	const today = localDate(now);
+	for (let step = 1; ; step++) {
+		const last = new Date(y, m - 1 + step + 1, 0).getDate();
+		const candidate = localDate(new Date(y, m - 1 + step, Math.min(d, last)));
+		if (candidate > today) return candidate;
+	}
 }
 
 export function formatResetDate(iso) {
@@ -37,7 +48,7 @@ export function formatResetDate(iso) {
 export function quotaThreshold(status) {
 	if (!status || status.is_unlimited || status.is_fallback) return 0;
 	if (status.credits_exhausted === true) return 100;
-	if (!status.in_overage && Number(status.percentage_used) >= 80) return 80;
+	if (!status.in_overage && percentUsed(status) >= 80) return 80;
 	return 0;
 }
 
@@ -61,7 +72,7 @@ export function quotaContent(status, personalLimit = null) {
 
 	const title = threshold === 100
 		? "You've used all of this month's credits"
-		: `You've used ${threshold}% of this month's credits`;
+		: `You've used ${percentUsed(status)}% of this month's credits`;
 	const body = threshold === 100
 		? `FAC Chat is paused for your workspace.${resetLine} Upgrade or buy credits to keep going now.`
 		: `${fmt(status?.quota_remaining)} credits left on ${status?.plan || "your plan"}.${resetLine}`;
@@ -82,7 +93,7 @@ export function quotaContent(status, personalLimit = null) {
 			highlights: [],
 			media: { art: "quota" },
 			primary: { label: "Change limit", route: USERS_ROUTE },
-			secondary: { label: "Buy credits", route: CREDITS_ROUTE },
+			secondary: { label: "Buy credits", route: USAGE_BUY_ROUTE },
 		};
 	}
 	return {
@@ -95,9 +106,9 @@ export function quotaContent(status, personalLimit = null) {
 		highlights: Array.isArray(upgrade?.benefits) ? [...upgrade.benefits] : [],
 		media: { art: "quota" },
 		primary: topPlan
-			? { label: "Buy credits", route: CREDITS_ROUTE }
+			? { label: "Buy credits", route: USAGE_BUY_ROUTE }
 			: { label: "See plans", route: PLANS_ROUTE },
-		secondary: topPlan ? null : { label: "Buy credits", route: CREDITS_ROUTE },
+		secondary: topPlan ? null : { label: "Buy credits", route: USAGE_BUY_ROUTE },
 	};
 }
 
