@@ -90,7 +90,7 @@ def get_analytics_data(days: int = 30):
 
 
 @frappe.whitelist(methods=["GET"])
-def get_my_usage(days: int = 30) -> dict:
+def get_my_usage(days: int | None = 30) -> dict:
     """
     Get the session user's own token usage. Open to any logged-in member.
 
