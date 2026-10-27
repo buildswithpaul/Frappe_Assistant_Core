@@ -97,6 +97,40 @@ def _chunks(items: List[Any], size: int = CHUNK):
         yield items[start : start + size]
 
 
+# -- the column of a file that holds the old ID ------------------------------------------------
+
+#: The keys of a session's ``transformation_rules`` that belong to old IDs: other code that rewrites
+#: the rules (the fixes) keeps them.
+SOURCE_KEY = "source_key"
+KEY_MAPS = "key_maps"
+RULE_KEYS = (SOURCE_KEY, KEY_MAPS)
+
+
+def _rules(session) -> Dict[str, Any]:
+    return frappe.parse_json(session.transformation_rules or "{}") or {}
+
+
+def source_key(session) -> Optional[Dict[str, Any]]:
+    """The column of the session's file that holds each row's old ID: ``{"position": 0, "system":
+    "odoo"}``, or None when the file has none."""
+    found = _rules(session).get(SOURCE_KEY)
+    return found if isinstance(found, dict) and "position" in found and found.get("system") else None
+
+
+def set_source_key(session, position: int, system: str) -> None:
+    """Mark the column at ``position`` as the old ID of ``system``. The session is saved by the caller."""
+    rules = _rules(session)
+    rules[SOURCE_KEY] = {"position": int(position), "system": system_name(system)}
+    session.transformation_rules = frappe.as_json(rules)
+
+
+def clear_source_key(session) -> None:
+    """The file has no old ID column (any more). The session is saved by the caller."""
+    rules = _rules(session)
+    if rules.pop(SOURCE_KEY, None) is not None:
+        session.transformation_rules = frappe.as_json(rules) if rules else None
+
+
 # -- where a DocType keeps its old IDs ----------------------------------------------------------
 
 

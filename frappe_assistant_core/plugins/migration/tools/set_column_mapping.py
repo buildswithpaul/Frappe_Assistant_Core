@@ -23,12 +23,14 @@ from typing import Any, Dict
 
 import frappe
 from frappe import _
+from frappe.utils import cstr
 
 from frappe_assistant_core.core.base_tool import BaseTool, exception_message, permission_error_result
-from frappe_assistant_core.utils import import_update
+from frappe_assistant_core.utils import import_keys, import_update
 from frappe_assistant_core.utils.import_mapping import (
     DONT_IMPORT,
     SESSION_DOCTYPE,
+    _column_position,
     build_import_schema,
     describe_mapping,
     duplicate_targets,
@@ -70,7 +72,11 @@ class SetColumnMapping(BaseTool):
             "agrees the mapping: dry_run_import to "
             "check every row. For a session in a migration plan, don't ask the user here: map what "
             "you are sure of, and dry_run_import with the plan asks the rest with the plan's other "
-            "questions."
+            "questions. "
+            "When the file has a column holding the old system's own ID for each row (an Odoo id or "
+            "External ID, a Zoho Customer ID, a ledger's name), pass it as source_key_column with "
+            "source_system: the IDs are then kept, so later files that refer to them can be translated. "
+            "The key column is not imported unless you also map it to a field."
         )
         self.requires_permission = None  # Checked on the session and the target DocType
         # what the user's file says reaches the model fenced (#34003)
@@ -82,6 +88,7 @@ class SetColumnMapping(BaseTool):
             "summary",
             "problems",
             "columns",
+            "old_ids",
             "error",
         )
 
@@ -106,6 +113,20 @@ class SetColumnMapping(BaseTool):
                     "enum": ["Insert New Records", "Update Existing Records"],
                     "description": "Change the session's import type. Default: keep it.",
                 },
+                "source_key_column": {
+                    "type": "string",
+                    "description": (
+                        "The column that holds the old system's ID for each row (its header, or its "
+                        "0-based position). Set it when the file has one; pass it again to change it."
+                    ),
+                },
+                "source_system": {
+                    "type": "string",
+                    "description": (
+                        "The system the file comes from, for example 'odoo', 'zoho' or 'tally': the "
+                        "old IDs of one system are kept apart from another's. Needed with source_key_column."
+                    ),
+                },
                 "match_on": {
                     "type": "array",
                     "items": {"type": "string"},
@@ -121,7 +142,9 @@ class SetColumnMapping(BaseTool):
         session_name = arguments.get("session")
         mapping = arguments.get("mapping")
         try:
-            if not isinstance(mapping, dict) or not mapping:
+            key_column = arguments.get("source_key_column")
+            has_key = key_column is not None and cstr(key_column).strip() != ""
+            if not isinstance(mapping, dict) or (not mapping and not has_key):
                 return {"success": False, "error": _("mapping must be an object of column → field.")}
 
             try:
@@ -164,6 +187,15 @@ class SetColumnMapping(BaseTool):
             resolved, problems = resolve_mapping(target, schema, headers, mapping)
             merged = {**existing, **resolved}
             problems += duplicate_targets(merged, headers)
+            key_position, key_system = None, ""
+            if has_key:
+                key_position, key_problems = _source_key(doc, headers, key_column, arguments)
+                problems += key_problems
+                if key_position is not None and key_position not in merged:
+                    merged[key_position] = (
+                        DONT_IMPORT  # an old ID is kept, not imported, unless it is mapped too
+                    )
+                key_system = import_keys.system_name(arguments.get("source_system"))
             match_key = ""
             if import_type == import_update.UPDATE:
                 match_on, update_problems = import_update.mapping_problems(
@@ -184,6 +216,10 @@ class SetColumnMapping(BaseTool):
             )
             doc.import_type = import_type
             doc.match_key = match_key
+            if key_position is not None:
+                import_keys.set_source_key(doc, int(key_position), key_system or _kept_system(doc))
+            elif target != current_target:
+                import_keys.clear_source_key(doc)  # another DocType: the old column isn't this file's key
             save_mapping(doc, target, merged, described["summary"])
             result = {
                 "success": True,
@@ -192,6 +228,19 @@ class SetColumnMapping(BaseTool):
                 "status": doc.status,
                 **described,
             }
+            if key_position is not None:
+                header = headers[int(key_position)]
+                # the key column is not imported on purpose: not a column the model couldn't place
+                described["not_imported"] = [h for h in described["not_imported"] if h != header]
+                result["not_imported"] = described["not_imported"]
+                result["old_ids"] = {
+                    "column": header,
+                    "system": import_keys.source_key(doc)["system"],
+                    "message": _(
+                        "Column '{0}' holds the old system's IDs. They are kept for each record the import "
+                        "creates; before the dry run, ask where to keep them (choose_old_id_storage)."
+                    ).format(header),
+                }
             if described["not_imported"]:
                 # A column the model couldn't place went to Don't Import unasked, and the customers got
                 # the default territory. Names no column: they are the file's, fenced in not_imported.
@@ -208,6 +257,28 @@ class SetColumnMapping(BaseTool):
                 title=_("Set Column Mapping Error"), message=f"Error saving column mapping: {e!s}"
             )
             return {"success": False, "error": str(e)}
+
+
+def _source_key(doc, headers, column, arguments):
+    """``(position, problems)`` for the column that holds the old IDs, and the system they are from:
+    passed now, or the one the session already has."""
+    position, problem = _column_position(column, headers)
+    if problem:
+        return None, [problem]
+    if not import_keys.system_name(arguments.get("source_system")) and not _kept_system(doc):
+        return None, [
+            _(
+                "Say which system the old IDs come from (source_system), for example 'odoo' or "
+                "'zoho': the IDs of one system are kept apart from another's."
+            )
+        ]
+    return position, []
+
+
+def _kept_system(doc) -> str:
+    """The source system the session already has, or ''."""
+    kept = import_keys.source_key(doc)
+    return kept["system"] if kept else ""
 
 
 def _samples(doc) -> list:

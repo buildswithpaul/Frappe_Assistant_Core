@@ -57,6 +57,25 @@ the field(s) that find each row's record, mapped from the file's key column(s): 
 (`name`) is the match on its own. The key columns are only used to find records; they are never
 written. Child-table columns can't be updated from a file: map them to "Don't Import".
 
+## The old system's ID column
+
+Many exports carry the old system's own ID for each row: an Odoo `id` or `External ID`, a Zoho
+`Customer ID`, a Tally ledger's name. Later files (orders, invoices, payments) refer to records by
+that ID, and ERPNext names the record differently, so the ID has to be kept when the record is
+created. When the file has such a column, pass it as `source_key_column` (its header or position)
+with `source_system` (`odoo`, `zoho`, `tally`, `quickbooks`... the system's short name, in lower
+case; ask the user when you can't tell). The call marks it; the result's `old_ids` says so.
+
+- The key column is **not imported** unless you also map it to a field (an Item code is both).
+- Pass `{}` as `mapping` to set only the key column on a session that is already mapped. Pass the
+  column again to change it; the system is kept when you leave it out.
+- Don't guess a column from a name like `ref`: ask the user, and never mark one when no column
+  holds an ID.
+- Changing the target DocType drops the key column, like the rest of the mapping.
+- A preset (`apply_import_preset`) marks its own key column: nothing to do.
+- Where the IDs are kept (a field on the record, or FAC's key map) is a separate choice the user
+  makes before the dry run.
+
 ## When the mapping can't change
 
 While the session's import is running (**Importing**) the mapping is kept: wait for the import to finish, or continue it with `start_import`. A session that was cancelled keeps its mapping too: start a new session for the file.
