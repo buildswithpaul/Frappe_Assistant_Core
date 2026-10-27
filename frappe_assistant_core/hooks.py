@@ -150,7 +150,11 @@ doc_events = {
 
 scheduler_events = {
     "cron": {
-        "0 0 * * *": ["frappe_assistant_core.assistant_core.server.cleanup_old_logs"],
+        "0 0 * * *": [
+            "frappe_assistant_core.assistant_core.server.cleanup_old_logs",
+            # old-ID rows whose record was deleted by hand since (#34244)
+            "frappe_assistant_core.utils.import_keys.sweep_orphans",
+        ],
         "*/30 * * * *": ["frappe_assistant_core.utils.cache.warm_cache"],
         # a migration plan whose worker died is Running for ever: end it (#34431)
         "*/10 * * * *": ["frappe_assistant_core.utils.import_plan.sweep_dead_plans"],

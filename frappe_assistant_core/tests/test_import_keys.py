@@ -14,6 +14,7 @@ import unittest
 import frappe
 
 from frappe_assistant_core.tests.base_test import BaseAssistantTest
+from frappe_assistant_core.utils import import_keys as keys
 
 KEY_MAP = "FAC Import Key Map"
 
@@ -113,3 +114,52 @@ class TestKeyMapDocType(BaseAssistantTest):
         self.assertEqual(meta.get_field("import_session").fieldtype, "Data")
         row = self._row(import_session="IMP-2026-99999")
         self.assertTrue(frappe.db.exists(KEY_MAP, row.name))
+
+
+@unittest.skipUnless("erpnext" in frappe.get_installed_apps(), "needs ERPNext's Customer")
+class TestKeysOutliveChatRetention(BaseAssistantTest):
+    """P1.8: nothing that keeps an old ID is deleted with a chat or an import session (K-12, K-13)."""
+
+    def setUp(self):
+        super().setUp()
+        frappe.set_user("Administrator")
+        self.tag = frappe.generate_hash(length=6)
+        self.system = f"odoo{self.tag}"
+        self.name_customers_by("Customer Name")
+        keys.set_choice("Customer", self.system, "key_map")
+        self.customer = frappe.get_doc(
+            {
+                "doctype": "Customer",
+                "customer_name": f"Retained {self.tag}",
+                "customer_group": _leaf_customer_group(),
+            }
+        ).insert()
+        self.session = f"IMP-RET-{self.tag}"
+        keys.record_pairs(self.session, "Customer", self.system, [("100", self.customer.name)])
+
+    def test_the_daily_retention_clean_up_leaves_the_rows(self):
+        from frappe_assistant_core.utils import import_retention
+
+        import_retention.purge_old_sessions()
+        import_retention.purge([self.session], "Its files were deleted.")
+
+        self.assertEqual(keys.resolve("Customer", self.system, ["100"]), {"100": self.customer.name})
+
+    def test_a_deleted_chat_session_record_does_not_reach_the_rows(self):
+        # the rows name the session as text, so no delete of the session can cascade to them
+        self.assertEqual(
+            frappe.get_all(KEY_MAP, filters={"import_session": self.session}, pluck="target_name"),
+            [self.customer.name],
+        )
+
+    def test_the_orphan_sweep_runs_daily(self):
+        scheduled = frappe.get_hooks("scheduler_events")["cron"]
+        self.assertIn(
+            "frappe_assistant_core.utils.import_keys.sweep_orphans",
+            [method for methods in scheduled.values() for method in methods],
+        )
+
+    def test_the_sweep_leaves_a_row_whose_record_is_still_there(self):
+        keys.sweep_orphans()
+
+        self.assertEqual(keys.resolve("Customer", self.system, ["100"]), {"100": self.customer.name})
