@@ -1,9 +1,11 @@
 import { flushPromises, mount } from "@vue/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createPinia } from "pinia";
 import { nextTick } from "vue";
+import { createMemoryHistory, createRouter } from "vue-router";
 
 vi.mock("@/api/domains/facPage", () => ({
-	facPage: { getPage: vi.fn().mockResolvedValue(null), listMine: vi.fn().mockResolvedValue([]) },
+	facPage: { getPage: vi.fn().mockResolvedValue(null), listPages: vi.fn().mockResolvedValue([]) },
 }));
 vi.mock("@/api/_core", () => ({ baseCall: vi.fn().mockResolvedValue([]), getCall: vi.fn() }));
 
@@ -15,7 +17,10 @@ import PagePanel from "./PagePanel.vue";
 
 let wrapper;
 const mountDock = (props = {}) =>
-	(wrapper = mount(PageDock, { props: { messages: [], sessionId: "s1", canShare: true, ...props } }));
+	(wrapper = mount(PageDock, {
+		props: { messages: [], sessionId: "s1", canShare: true, ...props },
+		global: { plugins: [createPinia(), createRouter({ history: createMemoryHistory(), routes: [] })] },
+	}));
 
 function setPhone(phone) {
 	window.matchMedia = vi.fn().mockReturnValue({ matches: phone });
