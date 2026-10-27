@@ -29,8 +29,10 @@ from frappe.share import add as share_with
 from frappe_assistant_core.api.fac_page import (
     PERSONAL_DISALLOWED_TAGS,
     _without_tags,
+    can_open_page,
     get_page,
     is_page_api_method,
+    list_pages,
 )
 from frappe_assistant_core.plugins.core.tools.create_document import DocumentCreate
 from frappe_assistant_core.plugins.core.tools.get_document import DocumentGet
@@ -744,3 +746,113 @@ class TestIsPageApiMethod(BaseAssistantTest):
     def test_anything_but_a_plain_name_is_not(self):
         for method in ("frappe.client.insert", "x%2e..%2fsavedocs", "a/b", "a?cmd=x", "../x", ""):
             self.assertIs(self._check(method), False, method)
+
+
+class TestListPages(BaseAssistantTest):
+    """The Pages menu lists exactly the pages the session user may open."""
+
+    def _desk_user(self, prefix: str, roles: tuple = ("Report Manager",)) -> str:
+        return self.make_throwaway_user(prefix, roles=roles)
+
+    def _act_as(self, user: str) -> None:
+        # nosemgrep: frappe-setuser — test acts as a non-Administrator inside the test transaction
+        frappe.set_user(user)
+
+    def _build_personal(self, user: str, slug: str) -> str:
+        # Production: FACO's create_document inserts a personal page as the session user.
+        self._act_as(user)
+        doc = frappe.get_doc(
+            {"doctype": "FAC Page", "title": f"Mine {slug}", "slug": slug, "html": "<p>x</p>"}
+        )
+        doc.insert()
+        return doc.name
+
+    def _build_shared(self, slug: str, published: int = 1, roles: tuple = ()) -> str:
+        # Production: a System Manager shares a page and publishes it through an approval card.
+        self._act_as("Administrator")
+        doc = frappe.get_doc(
+            {
+                "doctype": "FAC Page",
+                "title": f"Team {slug}",
+                "slug": slug,
+                "visibility": "Shared",
+                "published": published,
+                "roles": [{"role": role} for role in roles],
+                "html": "<p>x</p>",
+            }
+        )
+        doc.insert()
+        return doc.name
+
+    def _names(self, user: str) -> list[str]:
+        self._act_as(user)
+        return [page["name"] for page in list_pages()]
+
+    def test_lists_own_personal_pages_not_others(self):
+        user_a = self._desk_user("fac-list-a")
+        user_b = self._desk_user("fac-list-b")
+        a_page = self._build_personal(user_a, "a-page")
+        b_page = self._build_personal(user_b, "b-page")
+
+        names = self._names(user_a)
+
+        self.assertIn(a_page, names)
+        self.assertNotIn(b_page, names)
+
+    def test_lists_shared_pages_by_role(self):
+        shared = self._build_shared("role-page", roles=("Report Manager",))
+        with_role = self._desk_user("fac-list-role", roles=("Report Manager",))
+        without_role = self._desk_user("fac-list-norole", roles=("Workspace Manager",))
+
+        self.assertIn(shared, self._names(with_role))
+        self.assertNotIn(shared, self._names(without_role))
+
+    def test_drafts_only_for_system_manager(self):
+        draft = self._build_shared("draft-page", published=0, roles=("Report Manager",))
+        member = self._desk_user("fac-list-draft-member", roles=("Report Manager",))
+
+        self.assertNotIn(draft, self._names(member))
+
+        self._act_as("Administrator")
+        row = next(page for page in list_pages() if page["name"] == draft)
+        self.assertIs(row["draft"], True)
+        self.assertEqual(row["visibility"], "Shared")
+        self.assertIs(row["owner_is_me"], True)
+        self.assertIsInstance(row["modified"], str)
+
+    def test_never_returns_a_page_get_page_refuses(self):
+        user = self._desk_user("fac-list-consistent", roles=("Report Manager",))
+        other = self._desk_user("fac-list-consistent-other", roles=("Report Manager",))
+        self._build_personal(user, "mine")
+        self._build_personal(other, "theirs")
+        self._build_shared("open-shared", roles=("Report Manager",))
+        self._build_shared("closed-shared", roles=("Workspace Manager",))
+        self._build_shared("draft-shared", published=0, roles=("Report Manager",))
+
+        for viewer in (user, other, "Administrator"):
+            for name in self._names(viewer):
+                self.assertTrue(can_open_page(name, viewer), f"{viewer} cannot open {name}")
+
+    def test_own_personal_first_then_shared_newest_first(self):
+        user = self._desk_user("fac-list-order")
+        p_old = self._build_personal(user, "p-old")
+        p_new = self._build_personal(user, "p-new")
+        s_old = self._build_shared("s-old", roles=("Report Manager",))
+        s_new = self._build_shared("s-new", roles=("Report Manager",))
+        # Production reaches distinct `modified` values by editing pages at different times.
+        for name, stamp in (
+            (p_old, "2026-01-01 10:00:00"),
+            (p_new, "2026-01-02 10:00:00"),
+            (s_old, "2026-01-03 10:00:00"),
+            (s_new, "2026-01-04 10:00:00"),
+        ):
+            frappe.db.set_value("FAC Page", name, "modified", stamp, update_modified=False)
+
+        built = [p_new, p_old, s_new, s_old]
+        # The dev site may hold other shared pages; only the order of these four is under test.
+        self.assertEqual([name for name in self._names(user) if name in built], built)
+
+    def test_guest_is_refused(self):
+        self._act_as("Guest")
+        with self.assertRaises(frappe.PermissionError):
+            list_pages()
