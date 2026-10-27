@@ -22,6 +22,8 @@
 
 	// fac_page_draft_srcdoc and fac_page_draft_frame, inlined by render_include on page load.
 	// {% include "frappe_assistant_core/assistant_core/page/fac_pages/fac_page_draft.js" %}
+	// fac_page_index, inlined the same way.
+	// {% include "frappe_assistant_core/assistant_core/page/fac_pages/fac_page_index.js" %}
 
 	frappe.pages["fac-pages"].on_page_load = function (wrapper) {
 		const page = frappe.ui.make_app_page({
@@ -38,14 +40,14 @@
 		const request = ++state.request;
 		const slug = frappe.get_route()[1];
 
+		// A later show may start another request; only the latest one may draw.
+		const is_latest = () => request === state.request;
+
 		if (!slug) {
-			state.page.set_title(__("FAC Page"));
-			show_message(state.page, __("Pick a page to show."));
+			show_index(state.page, is_latest);
 			return;
 		}
 
-		// A later show may start another request; only the latest one may draw.
-		const is_latest = () => request === state.request;
 		frappe.call({
 			method: "frappe_assistant_core.api.fac_page.get_page",
 			type: "GET",
@@ -58,6 +60,34 @@
 			},
 		});
 	};
+
+	// The pages the user can open, for anyone a page is shared with, whether or not they can use
+	// FAC Chat. The chat link shows only to those who can.
+	function show_index(page, is_latest) {
+		dispose_shown();
+		page.set_title(__("Pages"));
+		show_message(page, __("Loading…"));
+		const pages = frappe.xcall("frappe_assistant_core.api.fac_page.list_pages", {}, "GET");
+		const chat = frappe
+			.xcall("frappe_assistant_core.chat.api.settings.access.can_use_faco", {}, "GET")
+			.then((access) => Boolean(access && access.can_use))
+			.catch(() => false);
+		Promise.all([pages, chat])
+			.then(([list, can_chat]) => {
+				if (!is_latest()) return;
+				page.main.empty().append(
+					fac_page_index({
+						pages: list,
+						href: (name) => frappe.router.make_url(["fac-pages", name]),
+						updated: (modified) => frappe.datetime.prettyDate(modified),
+						chat_url: can_chat ? "/copilot/pages" : "",
+					})
+				);
+			})
+			.catch(() => {
+				if (is_latest()) show_message(page, __("Your pages could not be listed."));
+			});
+	}
 
 	function render(page, name, data, is_latest) {
 		dispose_shown();

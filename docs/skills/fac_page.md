@@ -7,7 +7,7 @@ A `FAC Page` is a full screen with its own layout, such as a planner, a board or
 **Personal or shared.** `visibility` is `"Only me"` (the default) or `"Shared"`.
 
 - **Personal** ("Only me"): any Desk user can build one. It opens only for its owner, not even for System Managers, and it loads and runs as soon as it is saved, inside a walled-off frame: its script reads only what its owner may and asks them before anything else. So the owner's own creates and changes need no approval card. A shared page's script runs in Desk itself, because it was approved on the publish card. Its record name is the slug plus a six-character tag for the owner (`sales-summary-3fa9c1`), so use the `name` and `page_url` from the create result, never the slug alone. For a report or summary built in chat, follow `get_skill("pages-in-chat")`.
-- **Shared**: opens for the roles you list, once published. Its name is the slug. Only a System Manager can share a page, publish it, give it roles or change a shared page. If the user is not a System Manager, say so and offer a personal page instead.
+- **Shared**: opens for the roles you list, once published. Its name is the slug. Only a System Manager can share a page, publish it, give it roles or change a shared page. If the user is not a System Manager, say so and offer a personal page instead. People with those roles find it under **FAC Pages** in the Desk sidebar (`/app/fac-pages`), which lists every page they can open, even without FAC Chat; tell the user that when the page goes live.
 
 Website users cannot build pages, and a page cannot be shared with Frappe's Share button.
 
