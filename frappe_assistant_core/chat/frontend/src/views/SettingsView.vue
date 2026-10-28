@@ -153,10 +153,9 @@ watch(isMobile, forwardIfWide);
 	touch-action: pan-y;
 	background-color: var(--ql-bg);
 }
-/* The inner wrapper carries the content cap — fills the width up to a comfortable
-   reading limit, anchored to the sub-nav (not centered), with side padding. */
+/* The inner wrapper fills the full content width, anchored to the sub-nav, with
+   side padding. Pages must not cap their own root width; only form fields do. */
 .settings-inner {
-	max-width: 1160px;
 	padding: 32px 40px;
 }
 /* cap individual form fields so text inputs never stretch edge-to-edge */
