@@ -392,7 +392,6 @@ onMounted(async () => {
 	flex-direction: column;
 	gap: var(--ql-space-6);
 	width: 100%;
-	max-width: 1100px;
 	padding: var(--ql-space-6);
 }
 

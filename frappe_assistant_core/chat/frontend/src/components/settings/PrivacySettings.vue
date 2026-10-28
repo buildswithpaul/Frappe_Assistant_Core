@@ -272,7 +272,6 @@ async function toggleMemoryConsent() {
 <style scoped>
 .privacy-settings {
 	width: 100%;
-	max-width: 1100px;
 }
 
 .section-title {

@@ -204,7 +204,6 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKeydown));
 <style scoped>
 .profile-settings {
 	width: 100%;
-	max-width: 1100px;
 }
 
 /* Loading */

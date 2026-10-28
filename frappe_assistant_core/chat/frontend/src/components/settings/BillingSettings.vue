@@ -450,7 +450,6 @@ useBillingAutoRefresh(loadData);
 <style scoped>
 .billing-settings {
 	width: 100%;
-	max-width: 1100px;
 }
 
 /* Billing Unavailable */
