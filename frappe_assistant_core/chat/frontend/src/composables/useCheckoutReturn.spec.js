@@ -99,7 +99,10 @@ describe("parseCheckoutReturn", () => {
 	});
 
 	it("maps the legacy markers", () => {
-		expect(parseCheckoutReturn({ success: "true" })).toEqual({ session: null, result: "success" });
+		expect(parseCheckoutReturn({ success: "true" })).toEqual({
+			session: null,
+			result: "success",
+		});
 		expect(parseCheckoutReturn({ success: "false" }).result).toBe("cancelled");
 		expect(parseCheckoutReturn({ checkout: "success", session_id: "cs_1" }).result).toBe(
 			"success",
@@ -161,7 +164,7 @@ describe("useCheckoutReturn", () => {
 		expect(channel.posted).toEqual([{ type: "billing-updated" }]);
 	});
 
-	it("stops polling after the time limit and says the plan will follow", async () => {
+	it("stops polling after the time limit and says the payment is still being confirmed", async () => {
 		api.billing.verifyCheckoutReturn.mockResolvedValue({ done: false, outcome: "processing" });
 		const { checkout, userStore, current } = harness({
 			fac_checkout: "CHK-1",
@@ -176,7 +179,7 @@ describe("useCheckoutReturn", () => {
 		expect(api.billing.verifyCheckoutReturn).toHaveBeenCalledTimes(16);
 		expect(checkout.state.value).toBe("processing");
 		expect(toast.showToast).toHaveBeenCalledWith(
-			"Payment received — your plan will update shortly.",
+			"We're still confirming your payment. Billing will update once it's confirmed — check back in a few minutes.",
 			"info",
 			expect.any(Number),
 		);
@@ -285,7 +288,10 @@ describe("useCheckoutReturn", () => {
 			outcome: "unknown",
 			found: false,
 		});
-		const { checkout, userStore, current } = harness({ fac_checkout: "forged", result: "success" });
+		const { checkout, userStore, current } = harness({
+			fac_checkout: "forged",
+			result: "success",
+		});
 
 		await checkout.run();
 
@@ -293,7 +299,7 @@ describe("useCheckoutReturn", () => {
 		expect(checkout.state.value).toBe("not_found");
 		expect(toast.showSuccess).not.toHaveBeenCalled();
 		expect(toast.showToast).not.toHaveBeenCalledWith(
-			"Payment received — your plan will update shortly.",
+			"We're still confirming your payment. Billing will update once it's confirmed — check back in a few minutes.",
 			expect.anything(),
 			expect.anything(),
 		);
