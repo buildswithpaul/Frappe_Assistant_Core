@@ -85,31 +85,34 @@ class BaseBrowserTool(BaseTool):
             Result from the browser widget
         """
         from frappe_assistant_core.plugins.faco.tools.browser_bridge import (
+            release_browser_call,
             send_browser_tool_call,
             wait_for_browser_response,
         )
 
         user = frappe.session.user
         call_id = str(uuid.uuid4())
+        session_id = getattr(frappe.local, "ar_session_id", None)
 
         # Get tool-specific parameters
         params = self.get_tool_params(arguments)
 
-        # Send tool call to browser
-        send_browser_tool_call(
-            user=user,
-            call_id=call_id,
-            tool_name=self.tool_name,
-            params=params,
-            session_id=getattr(frappe.local, "ar_session_id", None),
-            client_type=getattr(frappe.local, "ar_client_type", None),
-        )
-
-        # Wait for response from browser
-        result, last_state = wait_for_browser_response(
-            call_id=call_id,
-            timeout=self._timeout,
-        )
+        try:
+            send_browser_tool_call(
+                user=user,
+                call_id=call_id,
+                tool_name=self.tool_name,
+                params=params,
+                session_id=session_id,
+                client_type=getattr(frappe.local, "ar_client_type", None),
+            )
+            result, last_state = wait_for_browser_response(
+                call_id=call_id,
+                timeout=self._timeout,
+            )
+        finally:
+            # Nothing waits on the call any more: a hand-over to the chat app must leave it alone.
+            release_browser_call(session_id, call_id)
 
         if result is None:
             return {
