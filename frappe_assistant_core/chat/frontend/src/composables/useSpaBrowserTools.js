@@ -20,6 +20,11 @@ const SCREENSHOT_IMAGE_TIMEOUT_MS = 3000;
 const PAGE_SETTLE_TIMEOUT_MS = 10000;
 // The client_type the chat app sends with its turns (api/domains/chat.js).
 const SPA_CLIENT_TYPE = "spa";
+// The same words as DESK_ONLY_IN_CHAT_APP in plugins/faco/tools/browser_bridge.py.
+const DESK_ONLY_TOOL_ERROR = () =>
+	__(
+		"This browser tool works only in the Desk widget, and the user is in the full chat app. Use browser_take_screenshot instead: it captures the page open beside the chat and returns its page_errors and page_text."
+	);
 
 /** Why the open page cannot be captured, or null when it can. */
 function pageProblem() {
@@ -147,13 +152,9 @@ export function useSpaBrowserTools({ getSessionId }) {
 		ownsCall: (call) =>
 			call?.client_type === SPA_CLIENT_TYPE &&
 			(useChatStore().isOwnLiveTurn(call.session_id) || useChatStore().isClaimedLiveTurn(call.session_id)),
-		// The widget's other tools may reach this room; they are the widget's to answer. On a turn
-		// taken over from the widget nobody else will answer, so say why at once instead.
-		ignoreUnknownTools: (call) => !useChatStore().isClaimedLiveTurn(call?.session_id),
-		unknownToolError: () =>
-			__(
-				"This tool needs the Desk page, and the conversation moved to the full chat app. Ask the user to open the record in Desk if it is still needed."
-			),
+		// A call typed for the chat app is no other client's to answer, so a Desk-only tool is
+		// answered at once: left alone, FACO would wait on nobody (#34515).
+		unknownToolError: () => DESK_ONLY_TOOL_ERROR(),
 		confirmTools: new Set(["take_screenshot"]),
 		trustKey: pageKey,
 		pageTrustKey: (toolName) => (getSessionId() ? pageKey(toolName) : null),
