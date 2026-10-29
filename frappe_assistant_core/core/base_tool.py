@@ -122,6 +122,7 @@ class BaseTool(ABC):
         source_app: App that provides this tool
         dependencies: List of required dependencies
         default_config: Default configuration values
+        audit_executions: Whether each call writes an Assistant Audit Log row
     """
 
     def __init__(self):
@@ -137,6 +138,9 @@ class BaseTool(ABC):
         self.source_app: str = "frappe_assistant_core"
         self.dependencies: List[str] = []
         self.default_config: Dict[str, Any] = {}
+        # Opt out only for a hidden check that never writes: its row would repeat the input of
+        # the write it checks, which that write's own row already records.
+        self.audit_executions: bool = True
         self.logger = frappe.logger(self.__class__.__module__)
         self._config_cache: Optional[Dict[str, Any]] = None
 
@@ -471,6 +475,8 @@ class BaseTool(ABC):
                 "Timeout", "Permission Denied". Must match the DocType Select.
             traceback_str: Full Python traceback on exception paths. None otherwise.
         """
+        if not self.audit_executions:
+            return
         try:
             from frappe_assistant_core.utils.audit_trail import log_tool_execution
 
