@@ -46,6 +46,7 @@ from frappe_assistant_core.chat.api.current_code import (
     TABLE_COLUMNS,
 )
 from frappe_assistant_core.utils.field_code import (
+    code_on_doctype,
     field_code,
     property_setter_code,
     resulting_rows,
@@ -306,8 +307,11 @@ def _doctype_write_is_dormant(creating: bool, data: Dict[str, Any], stored: Opti
 
     custom and the record count come from the stored DocType only, so data cannot turn a standard
     DocType custom. Supplied permissions replace the standard rows, but stored Custom DocPerm
-    rows still apply.
+    rows still apply. A write that makes it a child table is live, as a stored child table is
+    (``_stored_doctype``): any form can then embed it, and its fields render there.
     """
+    if cint(data.get("istable")):
+        return False
     if creating:
         roles = [row.get("role") for row in data.get("permissions") or [] if isinstance(row, dict)]
         return _doctype_is_dormant(cint(data.get("custom")), roles, 0)
@@ -383,8 +387,11 @@ def customisation_impact(tool_name: str, tool_input: Any) -> Dict[str, Any]:
     on a live DocType it is true when the write changes an ``eval:`` display condition or an HTML
     field's options, which the form renders (``_changes_condition_code``), and for a DocType that is
     not dormant when the write leaves its own field rows with such code that did not run before
-    (``_doctype_changes_field_code``). FAC Cloud shows its card for either even when an approved
-    build plan lists the write, so the user sees the final code.
+    (``_doctype_changes_field_code``). A write that opens a dormant DocType to other people, a
+    DocType update or a Custom DocPerm write, sets it when any code lives on it, in its own fields,
+    its Custom Fields or its Property Setters (``code_on_doctype``), as does making it a child
+    table. FAC Cloud shows its card for either even when an approved build plan lists the write,
+    so the user sees the final code.
     Never writes. The reason is plain words for logs and never repeats stored values.
     """
     result = _dormancy(tool_name, tool_input)
@@ -583,7 +590,8 @@ def _doctype_changes_field_code(
     applied ``fields`` (``resulting_rows``: whole replacement or named rows), so code that is added,
     edited, removed or moved to another field counts, and reordering rows does not. A create, or an
     update that makes a dormant DocType reachable, counts any code its fields carry, since none of
-    it ran for anyone before. Rows that cannot be read count.
+    it ran for anyone before; an update that opens it counts the code its Custom Fields and Property
+    Setters carry as well (``code_on_doctype``). Rows that cannot be read count.
     """
     stored_rows = [] if creating else _stored_rows("DocField", "DocType", name, "fields", _FIELD_ROW_COLUMNS)
     was_live = not creating and not _stored_facts_are_dormant(stored_facts)
@@ -592,7 +600,24 @@ def _doctype_changes_field_code(
     after_rows = resulting_rows(data["fields"], stored_rows) if "fields" in data else stored_rows
     after = rows_field_code(after_rows) if after_rows is not None else None
     before = rows_field_code(stored_rows) if was_live else {}
-    return after is None or before is None or after != before
+    if after is None or before is None or after != before:
+        return True
+    return not creating and not was_live and bool(code_on_doctype(name))
+
+
+def code_going_live(doctype: Any) -> list:
+    """The code on a DocType that is dormant now, which a write opening it would put live.
+
+    ``code_on_doctype``: its own fields', its Custom Fields' and its Property Setters' ``eval:``
+    conditions and HTML markup, which ran for nobody while it was dormant. [] for a DocType that is
+    already reachable, which showed its code when it went live.
+    """
+    return code_on_doctype(doctype) if _stored_doctype_is_dormant(doctype) else []
+
+
+def _permission_opens_code(doctype: Any, role: Any) -> bool:
+    """Whether a Custom DocPerm write opens a dormant DocType that carries code to another role."""
+    return role not in SYSTEM_ROLES and bool(code_going_live(doctype))
 
 
 def _dormancy(tool_name: str, tool_input: Any) -> Dict[str, Any]:
@@ -674,7 +699,11 @@ def _dormancy(tool_name: str, tool_input: Any) -> Dict[str, Any]:
         )
         if stored_ok and after("role") in SYSTEM_ROLES and _stored_doctype_is_dormant(after("parent")):
             return {"dormant": True, "reason": "Permission only covers system roles on a dormant DocType"}
-        return {"dormant": False, "reason": "Permission may open a DocType to other people"}
+        return {
+            "dormant": False,
+            "reason": "Permission may open a DocType to other people",
+            "changes_live_code": _permission_opens_code(after("parent"), after("role")),
+        }
 
     return {
         "dormant": False,

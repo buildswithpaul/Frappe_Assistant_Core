@@ -35,6 +35,14 @@ export const tools = {
 			{ doctype, name, fields: JSON.stringify(fields) }
 		),
 
+	// The code on a dormant DocType that a write opening it puts live, for its approval card. Pass
+	// the DocType's name, or a Custom DocPerm whose DocType it is.
+	codeGoingLive: ({ target, customDocperm }) =>
+		getCall(
+			"frappe_assistant_core.chat.api.doctype_code.get_code_going_live",
+			customDocperm ? { custom_docperm: customDocperm } : { target }
+		),
+
 	// Where a Custom Field will land on its form (tab, section, collapsed), for its approval card.
 	fieldPlacement: (doctype, insertAfter, fieldtype) =>
 		getCall(

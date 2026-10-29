@@ -47,7 +47,9 @@ then run without a card each, except publishing a FAC Page, switching a rule on 
 (the code or audience of a published page, the code of a rule that is on, a report's or print format's
 code, a workflow transition's condition, a notification recipient's condition, cc or bcc, or a field's
 `eval:` condition or an HTML field's content on a form other people use, whether the field is a Custom
-Field, a Property Setter or a row of the doctype's own fields); anything else still asks. The plan card then stands in for the confirmation in step 5. Give each entry the `name` Frappe will give the record (a Report's
+Field, a Property Setter or a row of the doctype's own fields, and opening a doctype built while
+nobody else could reach it, by giving another role permission or making it a child table, when such
+code lives on it); anything else still asks. The plan card then stands in for the confirmation in step 5. Give each entry the `name` Frappe will give the record (a Report's
 `report_name`, a Workflow's `workflow_name`, a Role's `role_name`, a FAC Page's `slug`, the name you
 set for a script),
 or for a Custom Field, Property Setter or Custom DocPerm its `identity` fields. A record Frappe
