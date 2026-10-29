@@ -81,6 +81,12 @@ class TestBrowserCallHandover(BaseAssistantTest):
         raw_calls = frappe.cache.lrange(_pending_calls_key("", self.session_id), 0, -1)
         return [json.loads(raw)["call_id"] for raw in reversed(raw_calls)]
 
+    @staticmethod
+    def _end_request():
+        # The widget's answer, the claim and the wait each run in their own request. On v15 a read
+        # with expires=True still consults the request-local cache, which the submit filled with None.
+        frappe.local.cache.clear()
+
     def _widget_drains(self):
         # The widget drains the queue 500 ms after it loads (widget/desk/browserTools.js initialize).
         return get_pending_browser_tool_calls(session_id=self.session_id)
@@ -142,6 +148,7 @@ class TestBrowserCallHandover(BaseAssistantTest):
         call_id = self._send("take_screenshot")
         submit_browser_tool_ack(call_id, ACK_AWAITING_USER)
         submit_browser_tool_result(call_id, result={"file_url": "/files/shot.jpg"})
+        self._end_request()
         wait_for_browser_response(call_id, timeout=1, ack_timeout=1, max_total=5)
         # BaseBrowserTool.execute releases the call as its wait ends.
         release_browser_call(self.session_id, call_id)
@@ -155,6 +162,7 @@ class TestBrowserCallHandover(BaseAssistantTest):
         submit_browser_tool_ack(call_id, ACK_AWAITING_USER)
         # The user approved in the widget just before expanding; the waiter has not read it yet.
         submit_browser_tool_result(call_id, result={"file_url": "/files/shot.jpg"})
+        self._end_request()
 
         claim_live_turn(self.session_id)
 
