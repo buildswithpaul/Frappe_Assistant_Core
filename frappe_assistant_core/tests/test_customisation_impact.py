@@ -22,7 +22,12 @@ import frappe
 from frappe.model.meta import Meta
 
 from frappe_assistant_core.tests.base_test import BaseAssistantTest
-from frappe_assistant_core.utils.customisation import SYSTEM_ROLES, _stored_doctype, customisation_impact
+from frappe_assistant_core.utils.customisation import (
+    _DOCTYPE_REFERENCE_FIELDS,
+    SYSTEM_ROLES,
+    _stored_doctype,
+    customisation_impact,
+)
 
 STORED_DOCTYPE = "frappe_assistant_core.utils.customisation._stored_doctype"
 STORED_RECORD = "frappe_assistant_core.utils.customisation._stored_record"
@@ -653,11 +658,8 @@ class TestDocTypeReferences(BaseAssistantTest):
     """A custom DocType that a record other people open points at is in use, so never dormant."""
 
     def test_a_record_others_open_that_points_at_the_doctype_makes_it_live(self):
-        # Console Log stands in for a custom DocType with only System Manager rows that nothing
-        # points at yet. Production reaches each reference when a builder adds a Connections link
-        # on another form, or saves a Web Form, Report, Workspace link or shortcut, Dashboard Chart
-        # or Notification on the DocType. db_insert writes the row without its hooks and each one is
-        # rolled back to the savepoint before the next.
+        # Production reaches each reference when a builder adds a Connections link on another form,
+        # or saves one of these records on the DocType.
         references = {
             "DocType Link": {
                 "parent": "ToDo",
@@ -689,11 +691,29 @@ class TestDocTypeReferences(BaseAssistantTest):
             },
             "Dashboard Chart": {"chart_name": "fac probe", "document_type": "Console Log"},
             "Notification": {"subject": "fac probe", "document_type": "Console Log"},
+            "Number Card": {"label": "fac probe", "document_type": "Console Log"},
+            "Workflow": {"workflow_name": "fac probe", "document_type": "Console Log"},
+            "Server Script": {"script_type": "DocType Event", "reference_doctype": "Console Log"},
+            "Print Format": {"doc_type": "Console Log"},
+            "Kanban Board": {"kanban_board_name": "fac probe", "reference_doctype": "Console Log"},
+            "Webhook": {"webhook_doctype": "Console Log"},
         }
+        self._assert_each_makes_it_live(references.items())
+
+    def test_every_listed_reference_field_makes_the_doctype_live(self):
+        # The same, for every (doctype, fieldname) the check lists: a misspelt fieldname raises here.
+        self._assert_each_makes_it_live(
+            (doctype, {fieldname: "Console Log"}) for doctype, fieldname in _DOCTYPE_REFERENCE_FIELDS
+        )
+
+    def _assert_each_makes_it_live(self, references):
+        # Console Log stands in for a custom DocType with only System Manager rows that nothing
+        # points at yet. db_insert writes each row without its hooks, and each is rolled back to the
+        # savepoint before the next.
         with patch(IS_CUSTOM, autospec=True, return_value=1), patch(DB_COUNT, autospec=True, return_value=0):
             self.assertTrue(_impact("delete_document", "DocType", name="Console Log")["dormant"])
-            for doctype, fields in references.items():
-                with self.subTest(reference=doctype):
+            for doctype, fields in references:
+                with self.subTest(reference=doctype, fields=sorted(fields)):
                     frappe.db.savepoint("fac_reference_probe")
                     frappe.get_doc({"doctype": doctype, "name": "fac-reference-probe", **fields}).db_insert()
                     r = _impact("delete_document", "DocType", name="Console Log")

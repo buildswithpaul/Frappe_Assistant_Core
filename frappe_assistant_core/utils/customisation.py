@@ -180,25 +180,59 @@ def _is_custom(name: str) -> int:
     return cint(frappe.db.get_value("DocType", name, "custom"))
 
 
+# (doctype, fieldname) of each Frappe record that names a DocType it acts on, shows or reports on.
+# An explicit list, not one read from the meta: a site has about 200 Link-to-DocType fields, many on
+# large ledger tables with no index on that column, and probing them all took about 3 s on a dev site,
+# inside the 5 s budget FAC Cloud gives the whole check. Every kind listed counts as in use, even when
+# the record pointing at the DocType is itself dormant, so the check fails toward asking.
+_DOCTYPE_REFERENCE_FIELDS = (
+    ("Web Form", "doc_type"),
+    ("Report", "ref_doctype"),
+    ("Workspace Quick List", "document_type"),
+    ("Dashboard Chart", "document_type"),
+    ("Dashboard Chart", "parent_document_type"),
+    ("Number Card", "document_type"),
+    ("Number Card", "parent_document_type"),
+    ("Notification", "document_type"),
+    ("Kanban Board", "reference_doctype"),
+    ("Calendar View", "reference_doctype"),
+    ("Print Format", "doc_type"),
+    ("Webhook", "webhook_doctype"),
+    ("Server Script", "reference_doctype"),
+    ("Client Script", "dt"),
+    ("Workflow", "document_type"),
+    ("Assignment Rule", "document_type"),
+    ("Auto Repeat", "reference_doctype"),
+    ("Document Naming Rule", "document_type"),
+    ("DocType Layout", "document_type"),
+    ("User Permission", "allow"),
+    ("User Permission", "applicable_for"),
+    ("Form Tour", "reference_doctype"),
+    ("Onboarding Step", "reference_document"),
+    ("Success Action", "ref_doctype"),
+    ("Portal Menu Item", "reference_doctype"),
+    ("Global Search DocType", "document_type"),
+    ("List Filter", "reference_doctype"),
+)
+
+
 def _references_to(name: str) -> tuple:
     """(doctype, filters) for each kind of record that can point at the DocType ``name``.
 
     Fields: any field whose options name it, whatever its type, because a Property Setter can turn
     the field into a Link or Table, and a Property Setter that points a field's options at it.
-    Records other people open: a Connections link on another form, a Web Form, a Report, a
-    Workspace link or shortcut, a Dashboard Chart and a Notification.
+    Connections links and Workspace links and shortcuts from elsewhere, and every record kind in
+    ``_DOCTYPE_REFERENCE_FIELDS``. Only the DocType's own fields, Property Setters and Connections
+    links to itself are left out.
     """
     return (
         ("DocField", {"options": name, "parent": ["!=", name]}),
         ("Custom Field", {"options": name, "dt": ["!=", name]}),
         ("Property Setter", {"property": "options", "value": name, "doc_type": ["!=", name]}),
         ("DocType Link", {"link_doctype": name, "parent": ["!=", name]}),
-        ("Web Form", {"doc_type": name}),
-        ("Report", {"ref_doctype": name}),
         ("Workspace Link", {"link_type": "DocType", "link_to": name}),
         ("Workspace Shortcut", {"type": "DocType", "link_to": name}),
-        ("Dashboard Chart", {"document_type": name}),
-        ("Notification", {"document_type": name}),
+        *((doctype, {fieldname: name}) for doctype, fieldname in _DOCTYPE_REFERENCE_FIELDS),
     )
 
 
