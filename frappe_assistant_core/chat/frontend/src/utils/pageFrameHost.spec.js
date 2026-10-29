@@ -369,6 +369,17 @@ describe("createPageFrame", () => {
 		expect(result).toMatchObject({ width: 10, height: 20, text: "Sales 70,29,354" });
 	});
 
+	it("passes on the page's own size beside a scaled picture's, bounded", async () => {
+		mountFrame();
+		fromPage({ op: "ready" });
+		const shot = frame.capture({ scale: 1.5, quality: 80 });
+		await vi.waitFor(() => expect(replies.find((r) => r.op === "capture")).toBeDefined());
+		const { id } = replies.find((r) => r.op === "capture");
+		const buffer = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 1, 2]).buffer;
+		fromPage({ op: "capture_result", id, buffer, type: "image/jpeg", width: 983, height: 7680, page_width: 1280, page_height: 1e12 });
+		expect(await shot).toMatchObject({ width: 983, height: 7680, page_width: 1280, page_height: 1000000 });
+	});
+
 	it("refuses anything from the frame that is not a JPEG, and keeps the page's text when it can't draw", async () => {
 		mountFrame();
 		fromPage({ op: "ready" });

@@ -8,6 +8,7 @@ import { isNarrow, usePagePanel } from "@/composables/usePagePanel";
 import { useChatStore } from "@/stores/chatStore";
 import { createDispatcher } from "@/utils/browserToolDispatch";
 import { __ } from "@/utils/i18n";
+import { describeScreenshotFit, fitScreenshot } from "@/utils/screenshotFit";
 import { logger } from "@/utils/logger";
 import { askConfirm } from "@/widget/panel/confirmQueue";
 
@@ -71,9 +72,12 @@ export async function takePageScreenshot(params = {}, askedAbout = undefined) {
 		page_errors: [...(view.errors?.() || [])],
 	});
 	try {
-		const { blob, text, ...size } = view.capture ? await captureFrame(view, params) : await captureElement(view, params);
+		const shot = view.capture ? await captureFrame(view, params) : await captureElement(view, params);
+		const { blob, text, page_width: pageWidth, page_height: pageHeight, ...size } = shot;
 		// A canvas past the browser's maximum size encodes to null.
 		if (!blob) return { error: __("Screenshot too large to encode."), ...size, ...check(text) };
+		// Said in the result, so FACO knows when the bottom of the page is not in the picture.
+		const fit = describeScreenshotFit({ pageWidth, pageHeight, ...size, scale: scale() });
 
 		const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
 		const file = new File([blob], `page_screenshot_${timestamp}.jpg`, { type: "image/jpeg" });
@@ -83,6 +87,7 @@ export async function takePageScreenshot(params = {}, askedAbout = undefined) {
 			file_url: uploaded.file_url,
 			file_name: uploaded.file_name,
 			...size,
+			...fit,
 			mime_type: "image/jpeg",
 			...check(text),
 		};
@@ -97,17 +102,30 @@ const scale = () => Math.min(window.devicePixelRatio || 1, MAX_SCREENSHOT_SCALE)
 // A Shared page or a draft is drawn in this document, so html2canvas reads it here.
 async function captureElement(view, params) {
 	const html2canvas = await loadHtml2canvas();
+	// html2canvas draws the element's own box, so that is the size to fit.
+	const box = view.element.getBoundingClientRect();
+	const page = { width: Math.ceil(box.width), height: Math.ceil(box.height) };
+	const fit = fitScreenshot({ ...page, scale: scale() });
 	const canvas = await html2canvas(view.element, {
 		useCORS: true,
 		// allowTaint lets cross-origin pixels in, and toBlob then throws on the tainted canvas.
 		allowTaint: false,
-		scale: scale(),
+		scale: fit.scale,
+		// Cuts off the bottom of a page too tall to fit even at the smallest readable scale.
+		...(fit.height < page.height ? { height: fit.height } : {}),
 		imageTimeout: SCREENSHOT_IMAGE_TIMEOUT_MS,
 		logging: false,
 	});
 	const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", (params.quality || 80) / 100));
 	const root = view.element.shadowRoot?.querySelector(".fac-page-root") || view.element;
-	return { blob, width: canvas.width, height: canvas.height, text: visibleText(root) };
+	return {
+		blob,
+		width: canvas.width,
+		height: canvas.height,
+		page_width: page.width,
+		page_height: page.height,
+		text: visibleText(root),
+	};
 }
 
 // A personal page's frame is another origin: it draws the picture itself and sends the bytes.

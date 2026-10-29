@@ -7,7 +7,12 @@ const h2c = vi.hoisted(() => ({ calls: [] }));
 vi.mock("html2canvas-pro", () => ({
 	default: async (el, options) => {
 		h2c.calls.push({ el, options });
-		return { width: 640, height: 480, toBlob: (cb, type) => cb(new Blob(["jpeg"], { type })) };
+		// Drawn as html2canvas sizes its canvas: the element's box, cut to options.height, times the scale.
+		const box = el.getBoundingClientRect();
+		const size = box.width
+			? { width: Math.ceil(box.width * options.scale), height: Math.ceil((options.height ?? box.height) * options.scale) }
+			: { width: 640, height: 480 };
+		return { ...size, toBlob: (cb, type) => cb(new Blob(["jpeg"], { type })) };
 	},
 }));
 
@@ -114,6 +119,49 @@ describe("takePageScreenshot", () => {
 			height: 480,
 			mime_type: "image/jpeg",
 		});
+	});
+
+	it("scales a 10,000 px tall page to fit the model's limit, and says so", async () => {
+		showPage();
+		// jsdom lays nothing out: this is the box a tall Shared page has in the panel.
+		pageElement.getBoundingClientRect = () => ({ width: 1280, height: 10000 });
+		window.devicePixelRatio = 1.5;
+		try {
+			const result = await takePageScreenshot({});
+
+			expect(Math.max(result.width, result.height)).toBeLessThanOrEqual(8000);
+			expect(h2c.calls[0].options.height).toBeUndefined();
+			expect(result).toMatchObject({ success: true, scaled: true, cropped: false, original_size: { width: 1280, height: 10000 } });
+			expect(result.size_note).toMatch(/shows all of it, scaled to/);
+		} finally {
+			window.devicePixelRatio = 1;
+		}
+	});
+
+	it("keeps the top of a page too tall to scale readably, and says how much", async () => {
+		showPage();
+		pageElement.getBoundingClientRect = () => ({ width: 1280, height: 30000 });
+		const result = await takePageScreenshot({});
+
+		expect(Math.max(result.width, result.height)).toBeLessThanOrEqual(8000);
+		expect(result).toMatchObject({ scaled: true, cropped: true, kept_height: 15360, original_size: { height: 30000 } });
+		expect(result.size_note).toMatch(/only the top 15360 px/);
+	});
+
+	it("says a personal page's picture was scaled, from the size its frame reports", async () => {
+		const capture = vi.fn(async () => ({
+			blob: new Blob(["jpeg"], { type: "image/jpeg" }),
+			width: 983,
+			height: 7680,
+			page_width: 1280,
+			page_height: 10000,
+			text: "Collections Desk",
+		}));
+		showPersonalPage({ capture });
+		const result = await takePageScreenshot({});
+		expect(result).toMatchObject({ width: 983, height: 7680, scaled: true, original_size: { width: 1280, height: 10000 } });
+		// The page's size is said once, in original_size, not as loose fields.
+		expect(result.page_width).toBeUndefined();
 	});
 
 	it("tells FACO what went wrong while the page ran", async () => {

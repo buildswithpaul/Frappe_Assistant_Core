@@ -38,7 +38,8 @@ describe("capture library", () => {
 describe("screenshot capture bounds", () => {
 	it("caps devicePixelRatio scaling", () => {
 		const body = src();
-		expect(body).toMatch(/scale: Math\.min\(window\.devicePixelRatio \|\| 1, MAX_SCREENSHOT_SCALE\)/);
+		expect(body).toMatch(/const wantedScale = Math\.min\(window\.devicePixelRatio \|\| 1, MAX_SCREENSHOT_SCALE\)/);
+		expect(body).toMatch(/fitScreenshot\(\{ \.\.\.page, scale: wantedScale \}\)/);
 		expect(body).toMatch(/const MAX_SCREENSHOT_SCALE = 1\.5/);
 	});
 
@@ -135,6 +136,44 @@ describe("get_page_context honours the DOM-extraction privacy switch", () => {
 		const result = await tools.default.handlers.get_page_context();
 		expect(spy).toHaveBeenCalledWith(expect.anything(), settings);
 		expect(result.dom_content).toBe("EXTRACTED");
+	});
+});
+
+describe("take_screenshot fits a tall Desk page to the model's size limit", () => {
+	function tallDocument(height) {
+		// jsdom lays nothing out: the size a long Desk report has.
+		const restore = [];
+		for (const el of [document.body, document.documentElement]) {
+			for (const [key, value] of [["scrollWidth", 1280], ["scrollHeight", height]]) {
+				Object.defineProperty(el, key, { value, configurable: true });
+				restore.push(() => delete el[key]);
+			}
+		}
+		return () => restore.forEach((undo) => undo());
+	}
+
+	it("draws a 10,000 px tall page at a scale that keeps it under 8000 px", async () => {
+		const { default: tools } = await import("./browserTools.js");
+		const restore = tallDocument(10000);
+		try {
+			await tools.handlers.take_screenshot({ full_page: true });
+		} finally {
+			restore();
+		}
+		expect(10000 * h2c.options.scale).toBeLessThanOrEqual(8000);
+		expect(h2c.options.height).toBeUndefined();
+	});
+
+	it("cuts a 30,000 px page at the smallest readable scale", async () => {
+		const { default: tools } = await import("./browserTools.js");
+		const restore = tallDocument(30000);
+		try {
+			await tools.handlers.take_screenshot({ full_page: true });
+		} finally {
+			restore();
+		}
+		expect(h2c.options.scale).toBe(0.5);
+		expect(h2c.options.height * h2c.options.scale).toBeLessThanOrEqual(8000);
 	});
 });
 
