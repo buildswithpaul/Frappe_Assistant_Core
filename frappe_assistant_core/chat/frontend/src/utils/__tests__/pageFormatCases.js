@@ -57,6 +57,11 @@ add("Currency with each currency's own format", site({ use_number_format_from_cu
 	fieldtype: "Currency",
 	options: "currency",
 }, null, { currency: "EUR" });
+// A symbol that unescapes to a tag is not plain text, so Desk's output stands, in both hosts.
+add("Currency with a symbol that unescapes to a tag", site({ currencies: { ...CURRENCIES, XSS: { symbol: "&lt;b&gt;" } } }), 5, {
+	fieldtype: "Currency",
+	options: "currency",
+}, null, { currency: "XSS" });
 add("Currency with the symbol hidden", site({ hide_currency_symbol: "Yes" }), 79360, { fieldtype: "Currency" });
 add("Currency with the symbol hidden by 1", site({ hide_currency_symbol: "1" }), 79360, { fieldtype: "Currency" });
 add("Currency with the symbol shown by No", site({ hide_currency_symbol: "No" }), 79360, { fieldtype: "Currency" });
@@ -76,6 +81,8 @@ add("Currency null", site(), null, { fieldtype: "Currency" });
 add("Currency empty", site(), "", { fieldtype: "Currency" });
 add("Float naming a currency field", site(), 1234.5, { fieldtype: "Float", options: "currency" }, null, { currency: "USD" });
 add("Float with the field's precision", site(), 1234.5, { fieldtype: "Float", precision: 1 });
+add("Currency with only_value", site(), 79360, { fieldtype: "Currency" }, { only_value: 1 });
+add("Float inline", site(), 1234.5, { fieldtype: "Float" }, { inline: 1 });
 add("Float always showing decimals", site(), 7, { fieldtype: "Float" }, { always_show_decimals: 1 });
 add("Float with no site precision", site({ float_precision: "" }), 1234.56789, { fieldtype: "Float" });
 add("Percent with no site precision", site({ float_precision: "" }), 12.3456, { fieldtype: "Percent" });
@@ -97,6 +104,28 @@ for (const dateFormat of ["dd-mm-yyyy", "dd/mm/yyyy", "dd.mm.yyyy", "mm/dd/yyyy"
 add("Date that does not exist", site(), "2026-02-30", { fieldtype: "Date" });
 add("Date empty", site(), "", { fieldtype: "Date" });
 add("Date with no site format", site({ date_format: null }), "2026-10-29", { fieldtype: "Date" });
+for (const value of ["2026-03-07 13:05:09", "2026-10-29", "2026-02-30 10:00:00"]) {
+	add(`Datetime ${value}`, site(), value, { fieldtype: "Datetime" });
+	add(`Datetime ${value} in mm/dd/yyyy HH:mm`, site({ date_format: "mm/dd/yyyy", time_format: "HH:mm" }), value, {
+		fieldtype: "Datetime",
+	});
+}
+for (const value of ["13:05:09", "9:5", "13:05:09.123456", "25:00:00", ""]) {
+	add(`Time ${JSON.stringify(value)}`, site(), value, { fieldtype: "Time" });
+	add(`Time ${JSON.stringify(value)} in HH:mm`, site({ time_format: "HH:mm" }), value, { fieldtype: "Time" });
+}
+for (const value of [0, 59, 3600, 93784, 93784.6, -93784, "3600", null]) {
+	add(`Duration ${JSON.stringify(value)}`, site(), value, { fieldtype: "Duration" });
+	add(`Duration ${JSON.stringify(value)} hiding days and seconds`, site(), value, {
+		fieldtype: "Duration",
+		hide_days: 1,
+		hide_seconds: 1,
+	});
+}
+// Text a record holds comes back as Desk's text formatters leave it: never unescaped.
+add("Data with an img", site(), "<img src=x onerror=alert(1)>", { fieldtype: "Data" });
+add("Data saved escaped", site(), "&lt;img src=x onerror=alert(1)&gt;", { fieldtype: "Data" });
+add("Select", site(), "Open & Overdue", { fieldtype: "Select" });
 add("Data with an ampersand", site(), "A & B Traders", { fieldtype: "Data" });
 add("Data with markup", site(), "<b>Bold</b> & co", { fieldtype: "Data" });
 add("Data number", site(), 42, { fieldtype: "Data" });

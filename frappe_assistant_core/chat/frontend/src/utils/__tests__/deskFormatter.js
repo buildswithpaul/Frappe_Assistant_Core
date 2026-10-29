@@ -19,6 +19,7 @@ export function findFrappeJs(from = import.meta.dirname) {
 const SCRIPTS = [
 	"utils/datatype.js",
 	"utils/common.js",
+	"utils/utils.js",
 	"utils/number_format.js",
 	"sys_defaults.js",
 	"utils/datetime.js",
@@ -52,8 +53,7 @@ export function loadDeskFormatter(frappeJs) {
 		frappe: {
 			provide,
 			ui: {},
-			// frappe/public/js/frappe/utils/utils.js, for the Text formatter
-			utils: { replace_newlines: (t) => (t ? t.replace(/\n/g, "<br>") : "") },
+			utils: {},
 			dom: { remove_script_and_style: (html) => html },
 			model: {
 				get_value: (doctype, name, field) =>

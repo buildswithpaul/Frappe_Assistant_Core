@@ -1,11 +1,13 @@
 /**
  * `frappe.format` for a page script outside Desk: the text Desk's own `frappe.format` shows.
  *
- * Desk's formatter returns html (`<div style='text-align: right'>₹ 79,360.00</div>`); a page in Desk
- * gets its text content (fac_page_frappe.js), and so does a page here. The functions below are
- * ports of Frappe's frappe/public/js/frappe/form/formatters.js, utils/number_format.js,
- * utils/datatype.js and the date part of utils/datetime.js, line for line where the result
- * depends on it. They read the site's settings from `settings` (get_page's `format_settings`)
+ * For a number, an amount, a date or a duration, Desk's formatter returns html
+ * (`<div style='text-align: right'>₹ 79,360.00</div>`); a page in Desk gets its text content
+ * (fac_page_frappe.js), and so does a page here. Any other fieldtype comes back as Desk's own
+ * formatter leaves a record's text, unchanged and never unescaped. The functions below are ports
+ * of Frappe's frappe/public/js/frappe/form/formatters.js, utils/number_format.js,
+ * utils/datatype.js, and the date and duration parts of utils/datetime.js and utils/utils.js, line
+ * for line where the result depends on it. They read the site's settings from `settings` (get_page's `format_settings`)
  * where Desk reads `frappe.boot.sysdefaults` and the `:Currency` docs it boots with.
  * pageFormat.parity.spec.js checks them against Frappe's own code.
  */
@@ -221,6 +223,7 @@ function fieldPrecision(settings, df, doc) {
 }
 
 const DATE = /^(\d{4})-(\d{1,2})-(\d{1,2})(?:[ T](\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/;
+const TIME = /^(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?/;
 const pad = (n, width = 2) => String(n).padStart(width, "0");
 
 function dateParts(value) {
@@ -267,25 +270,61 @@ function render(parts, momentFormat) {
 	});
 }
 
+const dateFormat = (settings) => (settings.date_format || "yyyy-mm-dd").toUpperCase();
+const timeFormat = (settings) => settings.time_format || "HH:mm:ss";
+
 /**
- * Desk's frappe.datetime.str_to_user: a date in the site's date format, and a datetime with the
- * site's time format after it. Desk also moves a datetime into the user's time zone; this
- * leaves it in the site's, which is the same unless the user set their own.
+ * Desk's frappe.datetime.str_to_user: a date in the site's date format, a datetime with the site's
+ * time format after it, and with `onlyTime` a time. Desk also moves a datetime into the user's time
+ * zone; this leaves it in the site's, which is the same unless the user set their own.
  */
-export function strToUser(settings, value, onlyDate = false) {
+export function strToUser(settings, value, onlyDate = false, onlyTime = false) {
 	if (!value) return "";
+	if (onlyTime) {
+		const match = TIME.exec(String(value));
+		if (!match) return "Invalid date";
+		const [hour, minute, second] = match.slice(1).map((n) => Number(n || 0));
+		if (hour > 23 || minute > 59 || second > 59) return "Invalid date";
+		return render({ hour, minute, second }, timeFormat(settings));
+	}
 	const parts = dateParts(value);
 	if (!parts) return "Invalid date";
-	const dateFormat = (settings.date_format || "yyyy-mm-dd").toUpperCase();
-	if (onlyDate || (typeof value === "string" && value.indexOf(" ") === -1)) return render(parts, dateFormat);
-	return render(parts, `${dateFormat} ${settings.time_format || "HH:mm:ss"}`);
+	if (onlyDate || (typeof value === "string" && value.indexOf(" ") === -1)) return render(parts, dateFormat(settings));
+	return render(parts, `${dateFormat(settings)} ${timeFormat(settings)}`);
 }
 
-// Each returns what Desk's formatter of that fieldtype returns, less its html wrapper.
+// frappe.utils.seconds_to_duration and get_formatted_duration. Desk translates the unit letters.
+function formattedDuration(value, df) {
+	const floor = value > 0 ? Math.floor : Math.ceil;
+	const total = {
+		days: floor(value / 86400),
+		hours: floor((value % 86400) / 3600),
+		minutes: floor((value % 3600) / 60),
+		seconds: floor(value % 60),
+	};
+	if (df.hide_days) {
+		total.hours = floor(value / 3600);
+		total.days = 0;
+	}
+	if (df.hide_seconds) {
+		total.minutes += Math.round(total.seconds / 60);
+		total.seconds = 0;
+	}
+	const parts = [];
+	if (total.days && df.hide_days !== 1) parts.push(`${total.days}d`);
+	if (total.hours) parts.push(`${total.hours}h`);
+	if (total.minutes) parts.push(`${total.minutes}m`);
+	if (total.seconds && df.hide_seconds !== 1) parts.push(`${total.seconds}s`);
+	return parts.join(" ");
+}
+
+// frappe.form.formatters._right
+const right = (value, options) =>
+	options && (options.inline || options.only_value) ? value : "<div style='text-align: right'>" + value + "</div>";
+
+// Each returns what Desk's formatter of that fieldtype returns: the formatters whose output holds
+// no text from the record (fac_page_frappe.js has the same list).
 const FORMATTERS = {
-	Data(settings, value) {
-		return value == null ? "" : value;
-	},
 	Float(settings, value, df, options, doc) {
 		if (value === null) return "";
 		let precision = df.precision || cint(settings.float_precision) || null;
@@ -298,18 +337,18 @@ const FORMATTERS = {
 			precision = 0;
 		}
 		value = value == null || value === "" ? "" : value;
-		return formatNumber(settings, value, null, precision);
+		return right(formatNumber(settings, value, null, precision), options);
 	},
-	Int(settings, value) {
+	Int(settings, value, df, options) {
 		if (value === null) return "";
-		return value == null ? "" : cint(value);
+		return right(value == null ? "" : cint(value), options);
 	},
-	Percent(settings, value, df) {
+	Percent(settings, value, df, options) {
 		if (value === null) return "";
 		const [mantissa, exponent] = cstr(value).toLowerCase().split("e");
 		const valuePrecision = Math.max((mantissa.split(".")[1]?.length || 0) - cint(exponent), 0);
 		const precision = df.precision || cint(settings.float_precision) || 2;
-		return formatNumber(settings, value, null, Math.min(precision, valuePrecision)) + "%";
+		return right(formatNumber(settings, value, null, Math.min(precision, valuePrecision)) + "%", options);
 	},
 	Currency(settings, value, df, options, doc) {
 		if (value === null) return "";
@@ -327,7 +366,8 @@ const FORMATTERS = {
 			}
 		}
 		value = value == null || value === "" ? "" : value;
-		return formatCurrency(settings, value, currency, precision);
+		value = formatCurrency(settings, value, currency, precision);
+		return options && options.only_value ? value : right(value, options);
 	},
 	Date(settings, value) {
 		if (value) {
@@ -336,11 +376,22 @@ const FORMATTERS = {
 		}
 		return value || "";
 	},
+	Datetime(settings, value) {
+		if (!value) return "";
+		const parts = dateParts(value);
+		return parts ? render(parts, `${dateFormat(settings)} ${timeFormat(settings)}`) : "Invalid date";
+	},
+	Time(settings, value) {
+		return value ? strToUser(settings, value, false, true) : "";
+	},
+	Duration(settings, value, df) {
+		return (value && formattedDuration(value, df)) || "0s";
+	},
 };
 
 /**
  * The text content of formatted html, parsed in a detached document that is never shown: no
- * script in it runs and nothing in it loads. Desk's page frappe does the same (fac_page_frappe.js).
+ * script in it runs and nothing in it loads.
  */
 export function htmlText(html) {
 	if (html == null) return "";
@@ -348,15 +399,21 @@ export function htmlText(html) {
 }
 
 /**
- * The text Desk's frappe.format(value, df, options, doc) shows, for Currency, Float, Int, Percent,
- * Date, and any other fieldtype as Data. As in Desk, a Currency's `options` names the field of
- * `doc` that holds its currency, such as "currency", not a currency code.
+ * What a page's frappe.format(value, df, options, doc) gives in Desk (fac_page_frappe.js).
+ *
+ * Currency, Float, Int, Percent, Date, Datetime, Time and Duration give the text Desk shows. Any
+ * other fieldtype gives the value as Desk's text formatters return it: as it is, never unescaped,
+ * so a page escapes it like any record value. As in Desk, a Currency's `options` names the field
+ * of `doc` that holds its currency, such as "currency", not a currency code.
  *
  * @param {FormatSettings} settings
  */
 export function formatValue(settings, value, df, options, doc) {
 	if (!df) df = { fieldtype: "Data" };
-	const fieldtype = String(df.fieldtype || "Data").replace(/ /g, "");
-	const formatter = FORMATTERS[fieldtype] || FORMATTERS.Data;
-	return htmlText(formatter(settings || {}, value, df, options, doc));
+	const formatter = FORMATTERS[String(df.fieldtype || "Data").replace(/ /g, "")];
+	if (!formatter) return value == null ? "" : value;
+	const formatted = formatter(settings || {}, value, df, options, doc);
+	const text = htmlText(formatted);
+	// A figure never holds "<"; text that does is left as it was, as in Desk.
+	return text.includes("<") ? formatted : text;
 }

@@ -114,17 +114,50 @@ describe("fac_page_frappe, the frappe a Shared page gets in Desk", () => {
 		expect(frappe.format).toHaveBeenCalledWith(79360, { fieldtype: "Currency" }, { inline: 1 }, doc);
 	});
 
-	it("returns text for what Desk's format returns that is not html", () => {
+	it("returns plain text for each fieldtype that shows only a figure, a date or a duration", () => {
 		const frappe = desk();
 		const page = fac_page_frappe(frappe);
-		frappe.format.mockReturnValueOnce(42).mockReturnValueOnce(null).mockReturnValueOnce("A &amp; B");
-		expect([page.format(42), page.format(null), page.format("A & B")]).toEqual(["42", "", "A & B"]);
+		for (const fieldtype of ["Currency", "Float", "Int", "Percent", "Date", "Datetime", "Time", "Duration"]) {
+			frappe.format.mockReturnValueOnce("<div style='text-align: right'>1 &amp; 2</div>");
+			expect(page.format(1, { fieldtype })).toBe("1 & 2");
+		}
+	});
+
+	it("gives a record's text exactly as Desk escaped it, never as live markup", () => {
+		// Frappe saves a record's text html-escaped (BaseDocument._sanitize_content), and Desk's
+		// Data formatter returns it as stored; its text content would be a live <img> again.
+		const frappe = desk();
+		const escaped = "&lt;img src=x onerror=alert(1)&gt;";
+		frappe.format.mockReturnValue(escaped);
+		const page = fac_page_frappe(frappe);
+		for (const df of [{ fieldtype: "Data" }, { fieldtype: "Small Text" }, { fieldtype: "Select" }, undefined]) {
+			const shown = page.format("<img src=x onerror=alert(1)>", df);
+			expect(shown).toBe(escaped);
+			expect(shown).not.toContain("<img");
+		}
+	});
+
+	it("leaves every other fieldtype's output as Desk gave it", () => {
+		const frappe = desk();
+		const link = '<a href="/app/customer/A%20%26%20B">A &amp; B</a>';
+		frappe.format.mockReturnValueOnce(link).mockReturnValueOnce(42);
+		const page = fac_page_frappe(frappe);
+		expect(page.format("A & B", { fieldtype: "Link", options: "Customer" })).toBe(link);
+		expect(page.format(42, { fieldtype: "Data" })).toBe(42);
+	});
+
+	it("falls back to Desk's output when a figure's text holds a tag", () => {
+		// A custom formatter on the field (frappe.meta docfield formatter) can return any html.
+		const frappe = desk();
+		const html = "<div>&lt;img src=x onerror=alert(1)&gt; 5</div>";
+		frappe.format.mockReturnValue(html);
+		expect(fac_page_frappe(frappe).format(5, { fieldtype: "Currency" })).toBe(html);
 	});
 
 	it("never runs or loads what the formatted html holds", () => {
 		const frappe = desk();
-		frappe.format = () => '<img src="x" onerror="window.__ran = 1"><script>window.__ran = 2</script>ok';
-		expect(fac_page_frappe(frappe).format("x")).toBe("window.__ran = 2ok");
+		frappe.format = () => '<img src="x" onerror="window.__ran = 1"><script>window.__ran = 2</script>5';
+		expect(fac_page_frappe(frappe).format(5, { fieldtype: "Int" })).toBe("window.__ran = 25");
 		expect(window.__ran).toBeUndefined();
 	});
 

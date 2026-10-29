@@ -135,6 +135,10 @@ describe("makeFrappeStandIn", () => {
 		expect(frappe.format(1234.4, { fieldtype: "Int" })).toBe("1234");
 		expect(frappe.format("2026-10-29", { fieldtype: "Date" })).toBe("29-10-2026");
 		expect(frappe.format("plain", { fieldtype: "Data" })).toBe("plain");
+		// A record's text is never unescaped: Frappe saved it escaped, and Desk returns it so.
+		expect(frappe.format("&lt;img src=x onerror=alert(1)&gt;", { fieldtype: "Data" })).toBe(
+			"&lt;img src=x onerror=alert(1)&gt;",
+		);
 		expect(frappe.format(null, { fieldtype: "Data" })).toBe("");
 		expect(frappe.datetime.str_to_user("2026-10-29")).toBe("29-10-2026");
 	});
