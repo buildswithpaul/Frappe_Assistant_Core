@@ -149,6 +149,13 @@ if result['success']:
         print(f['fieldname'], f['fieldtype'])
 ```
 
+### MCP tool names on `tools` ✅
+
+The MCP tool names work too, with the same arguments and results as the tool:
+`tools.list_documents(doctype, filters, fields, limit, offset, order_by, group_by, aggregate)`,
+`tools.report_list(query, limit, module, report_type)`, `tools.report_requirements(report_name)`
+and `tools.search_documents(query, doctype, purpose, filters, limit)`.
+
 ### tools.search() ✅
 
 ```python
