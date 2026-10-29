@@ -245,3 +245,111 @@ class TestGetCurrentCodeCardKeys(BaseAssistantTest):
                 child = frappe.get_meta(frappe.get_meta(doctype).get_field(table).options)
                 for column in columns:
                     self.assertIsNotNone(child.get_field(column), (doctype, table, column))
+
+
+class TestGetCurrentCodeRows(BaseAssistantTest):
+    """A card diffs each child row's code against the stored row it stands for (#34690)."""
+
+    def test_returns_each_transitions_identity_and_condition(self):
+        for doctype, field, names in (
+            ("Workflow State", "workflow_state_name", ("Pending", "Approved")),
+            ("Workflow Action Master", "workflow_action_name", ("Approve",)),
+        ):
+            for name in names:
+                if not frappe.db.exists(doctype, name):
+                    frappe.get_doc({"doctype": doctype, field: name}).insert(ignore_permissions=True)
+        # Production reaches this when a builder saves a Workflow whose approve move has a condition.
+        # db_insert skips on_update, which would add a workflow_state column to ToDo (DDL commits).
+        workflow = frappe.get_doc(
+            {
+                "doctype": "Workflow",
+                "name": "Current code flow",
+                "workflow_name": "Current code flow",
+                "document_type": "ToDo",
+                "workflow_state_field": "workflow_state",
+                "transitions": [
+                    {
+                        "state": "Pending",
+                        "action": "Approve",
+                        "next_state": "Approved",
+                        "allowed": "System Manager",
+                        "condition": "doc.priority == 'High'",
+                    }
+                ],
+            }
+        )
+        workflow.set_parent_in_children()
+        workflow.db_insert()
+        workflow.transitions[0].db_insert()
+        out = get_current_code("Workflow", workflow.name, ["transitions"])
+        self.assertEqual(
+            out,
+            {
+                "transitions": [
+                    {
+                        "name": workflow.transitions[0].name,
+                        "state": "Pending",
+                        "action": "Approve",
+                        "next_state": "Approved",
+                        "condition": "doc.priority == 'High'",
+                    }
+                ]
+            },
+        )
+
+    def test_returns_a_doctypes_field_conditions_and_markup_by_fieldname(self):
+        # Production reaches this when a builder saves a custom DocType with a conditional field
+        # and a banner; db_insert skips the table it would create (DDL commits).
+        doctype = frappe.get_doc(
+            {
+                "doctype": "DocType",
+                "name": "Current Code Fields",
+                "module": "Custom",
+                "custom": 1,
+                "fields": [
+                    {"fieldname": "notes", "fieldtype": "Data", "depends_on": "eval:doc.x"},
+                    {"fieldname": "banner", "fieldtype": "HTML", "options": "<b>hi</b>"},
+                ],
+            }
+        )
+        doctype.set_parent_in_children()
+        doctype.db_insert()
+        for row in doctype.fields:
+            row.db_insert()
+        out = get_current_code("DocType", doctype.name, ["fields", "permissions"])
+        blank = {"depends_on": "", "mandatory_depends_on": "", "read_only_depends_on": "", "options": ""}
+        self.assertEqual(
+            out,
+            {
+                "fields": [
+                    {
+                        **blank,
+                        "name": doctype.fields[0].name,
+                        "fieldname": "notes",
+                        "fieldtype": "Data",
+                        "depends_on": "eval:doc.x",
+                    },
+                    {
+                        **blank,
+                        "name": doctype.fields[1].name,
+                        "fieldname": "banner",
+                        "fieldtype": "HTML",
+                        "options": "<b>hi</b>",
+                    },
+                ]
+            },
+        )
+
+    def test_row_key_columns_exist_on_their_child_doctypes(self):
+        from frappe_assistant_core.chat.api.current_code import (
+            ROW_KEY_COLUMNS_BY_DOCTYPE,
+            ROW_KIND_COLUMNS_BY_DOCTYPE,
+        )
+
+        self.assertEqual(set(ROW_KEY_COLUMNS_BY_DOCTYPE), set(ROW_CODE_COLUMNS_BY_DOCTYPE))
+        for mapping in (ROW_KEY_COLUMNS_BY_DOCTYPE, ROW_KIND_COLUMNS_BY_DOCTYPE):
+            for doctype, tables in mapping.items():
+                for table, columns in tables.items():
+                    child = frappe.get_meta(frappe.get_meta(doctype).get_field(table).options)
+                    for column in columns:
+                        self.assertIsNotNone(child.get_field(column), (doctype, table, column))

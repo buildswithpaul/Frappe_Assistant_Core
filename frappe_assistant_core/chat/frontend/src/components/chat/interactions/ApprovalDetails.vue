@@ -44,7 +44,7 @@
 				:key="key"
 				:label="codeLabel(key, value)"
 				:code="value"
-				:language="codeLanguage(key, doctype)"
+				:language="codeLanguage(key, doctype, flat)"
 				:previous="previousCode(key)"
 			/>
 			<CodePreview
@@ -52,7 +52,7 @@
 				:key="`live-${key}`"
 				:label="formatKey(key)"
 				:code="value"
-				:language="codeLanguage(key, doctype)"
+				:language="codeLanguage(key, doctype, flat)"
 			/>
 		</div>
 		<ChildTable
@@ -60,7 +60,6 @@
 			:key="key"
 			:label="key"
 			:rows="rows"
-			:hidden-columns="rowCodeColumns(doctype, key)"
 		/>
 		<div v-if="rowCode.length" class="code-stack">
 			<CodePreview
@@ -69,6 +68,7 @@
 				:label="cell.label"
 				:code="cell.code"
 				:language="cell.language"
+				:previous="cell.previous"
 			/>
 		</div>
 		<ApprovalNotes :block="block" />
@@ -97,10 +97,9 @@ import {
 	isChildTable,
 	isEvalExpression,
 	codeLanguage,
-	rowCodeCells,
-	rowCodeColumns,
 	splitDetailFields,
 } from "./helpers";
+import { rowCodeCells, rowsWithoutCode } from "./rowCode";
 
 const props = defineProps({
 	block: { type: Object, required: true },
@@ -133,9 +132,14 @@ const codeRows = computed(() =>
 		([k, v]) => isCodeField(k, doctype.value, flat.value) && typeof v === "string" && v !== "",
 	),
 );
-const tableRows = computed(() => Object.entries(flat.value).filter(([, v]) => isChildTable(v)));
-// Code in child rows (a transition's condition, a recipient's cc) shows in full below its table.
-const rowCode = computed(() => rowCodeCells(doctype.value, flat.value));
+// Code in child rows (a transition's condition, a field's eval: condition) shows in full below its
+// table, diffed against the stored row on an update, and not in the table.
+const rowCode = computed(() => rowCodeCells(doctype.value, flat.value, currentCode.value));
+const tableRows = computed(() =>
+	Object.entries(flat.value)
+		.filter(([, v]) => isChildTable(v))
+		.map(([key, rows]) => [key, rowsWithoutCode(doctype.value, key, rows, rowCode.value)]),
+);
 
 // An eval: condition keeps its plain reading beside the field name, above the code itself.
 function codeLabel(key, value) {

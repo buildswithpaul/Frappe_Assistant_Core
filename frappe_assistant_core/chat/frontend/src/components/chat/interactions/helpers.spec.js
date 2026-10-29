@@ -10,7 +10,6 @@ import {
 	isCodeField,
 	codeLanguage,
 	isChildTable,
-	rowCodeCells,
 } from "./helpers";
 
 describe("isMoneyKey", () => {
@@ -185,17 +184,5 @@ describe("isChildTable", () => {
 		expect(isChildTable([])).toBe(false);
 		expect(isChildTable(["a"])).toBe(false);
 		expect(isChildTable("x")).toBe(false);
-	});
-});
-
-describe("rowCodeCells", () => {
-	it("lists each non-blank code cell of the doctype's code tables", () => {
-		const fields = {
-			transitions: [{ state: "A", condition: "doc.x" }, { state: "B", condition: "  " }],
-			states: [{ state: "A", condition: "ignored" }],
-		};
-		expect(rowCodeCells("Workflow", fields).map((c) => [c.key, c.code])).toEqual([["transitions.0.condition", "doc.x"]]);
-		expect(rowCodeCells("Web Form", fields)).toEqual([]);
-		expect(rowCodeCells("Workflow", { transitions: "x" })).toEqual([]);
 	});
 });
