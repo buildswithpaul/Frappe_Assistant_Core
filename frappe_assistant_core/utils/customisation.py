@@ -24,10 +24,12 @@ while server scripts are off, links to a record and to the form a customisation 
 ``check_plan_changes`` which checks a build plan against the site before it is shown.
 """
 
+from itertools import zip_longest
 from typing import Any, Callable, Dict, Iterable, Optional
 
 import frappe
 from frappe import _
+from frappe.model import data_fieldtypes, table_fields
 from frappe.model.meta import Meta
 from frappe.utils import cint, get_url, get_url_to_form
 
@@ -380,28 +382,61 @@ def _carries_live_fields(doctype: str, data: Dict[str, Any]) -> bool:
     )
 
 
-def _stored_rows(doctype: str, parent: Any, field: str, columns: tuple) -> list:
+def _row_context(child_doctype: str, columns: tuple) -> tuple:
+    """The child doctype's other value columns, which say where its code applies.
+
+    A Workflow Transition's state, action, next_state and allowed role decide which move its condition
+    gates, and a Notification Recipient's receiver decides whose email its cc rides on.
+    """
+    return tuple(
+        df.fieldname
+        for df in frappe.get_meta(child_doctype).fields
+        if df.fieldtype in data_fieldtypes
+        and df.fieldtype not in table_fields
+        and df.fieldname not in columns
+    )
+
+
+def _stored_rows(child_doctype: str, doctype: str, parent: Any, field: str, columns: tuple) -> list:
     """The stored rows of a child table, in the order the form shows them."""
     return frappe.get_all(
-        frappe.get_meta(doctype).get_field(field).options,
+        child_doctype,
         filters={"parent": parent, "parenttype": doctype, "parentfield": field},
         fields=["name", *columns],
         order_by="idx asc",
     )
 
 
-def _rows_change_code(rows: Any, stored_rows: list, columns: tuple) -> bool:
-    """Whether sent child rows, applied as update_document applies them, change a code column.
+def _code_row_changed(
+    row: Dict[str, Any], stored_row: Dict[str, Any], columns: tuple, context: tuple
+) -> bool:
+    """Whether a sent named row changes a row that holds code, before or after: its code or where it applies."""
+    if not (_row_has_code(row, columns) or _row_has_code(stored_row, columns)):
+        return False
+    return any(key in row and (row[key] or "") != (stored_row.get(key) or "") for key in (*columns, *context))
 
-    With any named row (patch mode) a named row is compared with the stored row of that name, a row
-    without one is appended and counts when it carries code, and a deleted row runs nothing. With
-    none (replace mode) the table is refilled, so the rows are compared in order with the stored
-    ones and moving a condition to another transition counts. Rows that cannot be read count.
+
+def _rows_change_code(rows: Any, stored_rows: list, columns: tuple, context: tuple) -> bool:
+    """Whether sent child rows, applied as update_document applies them, change code or where it applies.
+
+    A row that holds code before or after the write counts when its code or any of its ``context``
+    columns changes, so moving an unchanged condition to another transition counts. With any named
+    row (patch mode) a named row is compared with the stored row of that name, a row without one is
+    appended and counts when it carries code, and a deleted row runs nothing. With none (replace
+    mode) the table is refilled, so the rows are compared in order with the stored ones, and a row
+    left out of the sent values counts as cleared. Rows that cannot be read count.
     """
     if not isinstance(rows, list) or not all(isinstance(row, dict) for row in rows):
         return True
+    every = (*columns, *context)
     if not any(row.get("name") for row in rows):
-        return [_row_code(row, columns) for row in rows] != [_row_code(row, columns) for row in stored_rows]
+        for row, stored_row in zip_longest(rows, stored_rows):
+            sent, kept = row or {}, stored_row or {}
+            if (_row_has_code(sent, columns) or _row_has_code(kept, columns)) and _row_code(
+                sent, every
+            ) != _row_code(kept, every):
+                return True
+        return False
     by_name = {row.name: row for row in stored_rows}
     for row in rows:
         if row.get("_delete"):
@@ -410,9 +445,7 @@ def _rows_change_code(rows: Any, stored_rows: list, columns: tuple) -> bool:
         if stored_row is None:
             if _row_has_code(row, columns):
                 return True
-        elif any(
-            column in row and (row[column] or "") != (stored_row.get(column) or "") for column in columns
-        ):
+        elif _code_row_changed(row, stored_row, columns, context):
             return True
     return False
 
@@ -423,12 +456,15 @@ def _changes_live_fields(doctype: str, data: Dict[str, Any], stored: Dict[str, A
     An audience table (``TABLE_COLUMNS``) is compared as the set of its rows' values, so reordering
     rows is no change and rows that cannot be read count as one. A table whose rows hold code
     (``ROW_CODE_COLUMNS_BY_DOCTYPE``) is compared row by row (``_rows_change_code``), so an edited
-    condition on one Workflow transition counts.
+    condition on one Workflow transition, or an unchanged one moved to another, counts.
     """
     for field, columns in ROW_CODE_COLUMNS_BY_DOCTYPE.get(doctype, {}).items():
-        if field in data and _rows_change_code(
-            data[field], _stored_rows(doctype, stored.get("name"), field, columns), columns
-        ):
+        if field not in data:
+            continue
+        child_doctype = frappe.get_meta(doctype).get_field(field).options
+        context = _row_context(child_doctype, columns)
+        stored_rows = _stored_rows(child_doctype, doctype, stored.get("name"), field, (*columns, *context))
+        if _rows_change_code(data[field], stored_rows, columns, context):
             return True
     for field in _live_fields(doctype):
         if field not in data:

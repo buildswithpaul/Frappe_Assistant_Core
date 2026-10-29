@@ -173,21 +173,38 @@ class TestLiveCodeInChildRowsAndConditions(BaseAssistantTest):
             r = _impact("update_document", "Workflow", {"transitions": rows}, WORKFLOW)
             self.assertIs(r["changes_live_code"], True, rows)
 
-    def test_transitions_that_keep_their_conditions_do_not_change_live_code(self):
-        same_named = [{"name": self._transition(0), "condition": "doc.priority == 'High'", "allowed": "All"}]
-        same_replaced = [
-            {
-                "state": "Pending",
-                "action": "Approve",
-                "next_state": "Approved",
-                "condition": "doc.priority == 'High'",
-            },
-            {"state": "Approved", "action": "Reject", "next_state": "Pending", "allowed": "All"},
+    def _stored_transitions(self) -> list[dict]:
+        """The stored transition rows as replace-mode input: every value column, no row names."""
+        rows = frappe.get_all(
+            "Workflow Transition", filters={"parent": WORKFLOW}, fields=["*"], order_by="idx asc"
+        )
+        meta = frappe.get_meta("Workflow Transition")
+        return [
+            {df.fieldname: row.get(df.fieldname) for df in meta.fields if df.fieldname in row} for row in rows
         ]
+
+    def test_transitions_that_keep_their_conditions_do_not_change_live_code(self):
+        same_named = [
+            {"name": self._transition(0), "condition": "doc.priority == 'High'", "allowed": "System Manager"}
+        ]
+        # The second transition holds no code, so its audience is not code either.
+        other_row = [{"name": self._transition(1), "allowed": "All"}]
         deleted = [{"name": self._transition(0), "_delete": True}]
-        for rows in (same_named, same_replaced, deleted):
+        for rows in (same_named, other_row, deleted, self._stored_transitions()):
             r = _impact("update_document", "Workflow", {"transitions": rows}, WORKFLOW)
             self.assertIs(r["changes_live_code"], False, rows)
+
+    def test_moving_an_unchanged_condition_to_another_transition_changes_live_code(self):
+        # The condition text is unchanged, but it now gates a different move.
+        moved = self._stored_transitions()
+        moved[0]["condition"], moved[1]["condition"] = moved[1]["condition"], moved[0]["condition"]
+        repointed = self._stored_transitions()
+        repointed[0]["next_state"] = "Pending"
+        named = [{"name": self._transition(0), "action": "Reject"}]
+        widened = [{"name": self._transition(0), "allowed": "All"}]
+        for rows in (moved, repointed, named, widened):
+            r = _impact("update_document", "Workflow", {"transitions": rows}, WORKFLOW)
+            self.assertIs(r["changes_live_code"], True, rows)
 
     def test_creating_a_workflow_with_a_transition_condition_changes_live_code(self):
         data = {"workflow_name": "New flow", "document_type": "ToDo"}
@@ -259,9 +276,24 @@ class TestLiveCodeInChildRowsAndConditions(BaseAssistantTest):
 
     def test_recipients_that_keep_their_code_do_not_change_live_code(self):
         row = self.notification.recipients[0].name
-        same = [{"name": row, "cc": "manager@example.com", "receiver_by_role": "Administrator"}]
+        same = [{"name": row, "cc": "manager@example.com", "receiver_by_role": "System Manager"}]
         r = _impact("update_document", "Notification", {"recipients": same}, NOTIFICATION)
         self.assertIs(r["changes_live_code"], False)
+
+    def test_moving_a_recipients_cc_to_another_receiver_changes_live_code(self):
+        # The cc is unchanged, but it now rides on emails to a different receiver.
+        row = self.notification.recipients[0].name
+        patched = [{"name": row, "receiver_by_role": "Administrator"}]
+        replaced = [
+            {
+                "receiver_by_role": "Administrator",
+                "condition": "doc.priority == 'High'",
+                "cc": "manager@example.com",
+            }
+        ]
+        for rows in (patched, replaced):
+            r = _impact("update_document", "Notification", {"recipients": rows}, NOTIFICATION)
+            self.assertIs(r["changes_live_code"], True, rows)
 
     # Script Report edits after a covered create (case 4)
 
