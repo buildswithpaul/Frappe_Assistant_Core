@@ -5,7 +5,7 @@
 
 import { __ } from "@/utils/i18n";
 import { baseToolName } from "@/utils/toolNames";
-import { goesLiveFields, isValidateOnlyCreate } from "./customisation";
+import { goesLiveFields, isValidateOnly } from "./customisation";
 import { flattenInput, formatToolName } from "./helpers";
 
 // Fields that name a new record, in the order a person would recognise it by.
@@ -69,12 +69,15 @@ export function approvalHeadline(block) {
 
 	if (tool === "create_document") {
 		const label = newRecordLabel(fields);
-		if (isValidateOnlyCreate(tool, input)) {
+		if (isValidateOnly(tool, input)) {
 			return label ? __("Check {0} “{1}”", [doctype, label]) : __("Check {0}", [doctype]);
 		}
 		return label ? __("Create {0} “{1}”", [doctype, label]) : __("Create {0}", [doctype]);
 	}
 	if (tool === "update_document") {
+		if (isValidateOnly(tool, input)) {
+			return name ? __("Check changes to {0} {1}", [doctype, name]) : __("Check changes to {0}", [doctype]);
+		}
 		if (goesLiveFields(tool, input).length) return goLiveHeadline(doctype, name);
 		return name ? __("Update {0} {1}", [doctype, name]) : __("Update {0}", [doctype]);
 	}

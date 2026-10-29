@@ -30,6 +30,7 @@ screenshots failed while their approval card was still on screen.
 """
 
 import json
+import pickle
 import re
 import time
 import uuid
@@ -137,9 +138,9 @@ WIDGET_CLIENT = "widget"
 
 
 def claim_session_for_spa(session_id: str) -> None:
-    """Send this conversation's browser calls to the chat app, including those already queued."""
+    """Send this conversation's browser calls to the chat app, including those still in flight."""
     frappe.cache.set_value(f"{TURN_CLAIM_PREFIX}{session_id}", SPA_CLIENT, expires_in_sec=TURN_CLAIM_TTL)
-    _retype_queued_calls(session_id)
+    _hand_over_widget_calls(session_id)
 
 
 def release_session_claim(session_id: str) -> None:
@@ -174,26 +175,89 @@ def desk_only_in_chat_app_error() -> str:
     )
 
 
-def _retype_queued_calls(session_id: str) -> None:
-    """Retype the widget's calls already parked on the conversation's queue, keeping their order."""
-    key = _pending_calls_key("", session_id)
+def handed_over_error(tool_name: str) -> str:
+    """What FACO is told about a call the widget held when the user moved to the full chat app."""
+    if tool_name == "take_screenshot":
+        return _(
+            "The user moved this conversation to the full chat app before the Desk widget answered. "
+            "Call browser_take_screenshot again: the full chat app now captures the page open beside "
+            "the chat."
+        )
+    return _("The user moved this conversation to the full chat app before the Desk widget answered.") + (
+        " " + desk_only_in_chat_app_error()
+    )
+
+
+# Every browser call of a conversation that a server worker is still waiting on, call_id -> call.
+# The queue cannot tell the claim this: a widget drains it on load, and a call delivered over the
+# socket stays on it after it has been answered (#34689).
+SESSION_CALLS_PREFIX = "faco_browser_session_calls:"
+
+
+def _session_calls_key(session_id: str) -> str:
+    return f"{SESSION_CALLS_PREFIX}{session_id}"
+
+
+def _register_call(session_id: str, call: dict[str, Any]) -> None:
+    key = _session_calls_key(session_id)
+    frappe.cache.hset(key, call["call_id"], call)
+    _expire(key, CALL_OWNER_TTL)
+
+
+def release_browser_call(session_id: str | None, call_id: str) -> None:
+    """The server has stopped waiting on this call: a hand-over has nothing left to do for it."""
+    if session_id:
+        frappe.cache.hdel(_session_calls_key(session_id), call_id)
+
+
+def _hand_over_widget_calls(session_id: str) -> None:
+    """Give every widget call still being waited on to the chat app, or answer it, so none is orphaned.
+
+    Open Full Assistant navigates the Desk tab away, which destroys the widget and any card it showed.
+    A call nobody has taken yet is queued again for the chat app. A call the widget has taken
+    (acknowledged) is answered at once: the widget will never answer it, and asking the user a second
+    time inside the time already spent would leave them a fraction of the approval budget. A widget
+    call no longer waited on is dropped from the queue, so the chat app never asks about it again.
+    """
+    queue_key = _pending_calls_key("", session_id)
+    kept = [call for call in _drain_queue(queue_key) if call.get("client_type") not in (None, WIDGET_CLIENT)]
+
+    for call in frappe.cache.hgetall(_session_calls_key(session_id)).values():
+        if call.get("client_type") not in (None, WIDGET_CLIENT):
+            continue
+        call_id = call["call_id"]
+        # Answered, and the waiter has yet to read it (a widget too old to report progress included).
+        if frappe.cache.get_value(f"{BROWSER_TOOL_RESPONSE_PREFIX}{call_id}", expires=True) is not None:
+            continue
+        if read_call_progress(call_id) is None:
+            kept.append({**call, "client_type": SPA_CLIENT})
+        else:
+            _store_response_once(call_id, {"error": handed_over_error(call.get("tool_name"))})
+
+    # lpush onto an rpop queue: oldest first restores the order the calls were made in.
+    for call in sorted(kept, key=lambda c: c.get("created_at", 0)):
+        frappe.cache.lpush(queue_key, json.dumps(call))
+    if kept:
+        _expire(queue_key, 60)
+
+
+def _drain_queue(key: str) -> list[dict[str, Any]]:
+    """Pop every call off a pending queue, oldest first, skipping any that cannot be read."""
     calls = []
     while (raw := frappe.cache.rpop(key)) is not None:
         try:
-            call = json.loads(raw.decode("utf-8") if isinstance(raw, bytes) else raw)
+            calls.append(json.loads(raw.decode("utf-8") if isinstance(raw, bytes) else raw))
         except (json.JSONDecodeError, TypeError, AttributeError):
             continue
-        if call.get("client_type") in (None, WIDGET_CLIENT):
-            call["client_type"] = SPA_CLIENT
-        calls.append(call)
-    # rpop gave oldest first; pushing them back in that order restores the queue.
-    for call in calls:
-        frappe.cache.lpush(key, json.dumps(call))
-    if calls:
-        try:
-            frappe.cache.expire_key(key, 60)
-        except AttributeError:
-            frappe.cache.expire(frappe.cache.make_key(key), 60)
+    return calls
+
+
+def _expire(key: str, seconds: int) -> None:
+    try:
+        frappe.cache.expire_key(key, seconds)
+    except AttributeError:
+        # Frappe v15 and older have no expire_key.
+        frappe.cache.expire(frappe.cache.make_key(key), seconds)
 
 
 def send_browser_tool_call(
@@ -203,6 +267,7 @@ def send_browser_tool_call(
     params: dict[str, Any],
     session_id: str | None = None,
     client_type: str | None = None,
+    awaited: bool = True,
 ) -> None:
     """
     Send a browser tool call request to the FACO widget.
@@ -221,6 +286,8 @@ def send_browser_tool_call(
             which every tab of that user receives.
         client_type: The client whose turn asked (widget, spa). The widget and the chat app can
             hold the same conversation, so each answers only its own. None from an older AR.
+        awaited: Whether the caller waits for the answer. A waited-on call is registered against
+            its conversation until release_browser_call, so a hand-over can reach it.
     """
     # Record ownership first so submit_browser_tool_result can enforce it.
     _remember_call_owner(call_id, user)
@@ -229,24 +296,20 @@ def send_browser_tool_call(
     client_type = resolve_call_client(session_id, client_type)
 
     # 1. Store in Redis pending queue (durable, survives page navigation)
-    call_data = json.dumps(
-        {
-            "call_id": call_id,
-            "tool_name": tool_name,
-            "params": params,
-            "session_id": session_id,
-            "client_type": client_type,
-            "created_at": time.time(),
-        }
-    )
+    call = {
+        "call_id": call_id,
+        "tool_name": tool_name,
+        "params": params,
+        "session_id": session_id,
+        "client_type": client_type,
+        "created_at": time.time(),
+    }
+    if awaited and session_id:
+        _register_call(session_id, call)
     pending_key = _pending_calls_key(user, session_id)
-    frappe.cache.lpush(pending_key, call_data)
+    frappe.cache.lpush(pending_key, json.dumps(call))
     # Auto-expire the list after 60 seconds (cleanup if widget never picks up)
-    try:
-        frappe.cache.expire_key(pending_key, 60)
-    except AttributeError:
-        # Fallback for Frappe v15 and older without expire_key
-        frappe.cache.expire(frappe.cache.make_key(pending_key), 60)
+    _expire(pending_key, 60)
 
     # 2. Also send Socket.IO (fast-path if widget is already listening)
     message = {
@@ -291,10 +354,7 @@ def _notify_waiter(call_id: str) -> None:
     """Wake whoever is blocked on this call."""
     key = _notify_key(call_id)
     frappe.cache.lpush(key, "1")
-    try:
-        frappe.cache.expire_key(key, CALL_OWNER_TTL)
-    except AttributeError:
-        frappe.cache.expire(frappe.cache.make_key(key), CALL_OWNER_TTL)
+    _expire(key, CALL_OWNER_TTL)
 
 
 def _await_notification(call_id: str, block_seconds: int) -> bool:
@@ -339,6 +399,18 @@ def store_browser_tool_response(call_id: str, response: dict[str, Any]) -> None:
         f"{BROWSER_TOOL_RESPONSE_PREFIX}{call_id}", response, expires_in_sec=CALL_OWNER_TTL
     )
     _notify_waiter(call_id)
+
+
+def _store_response_once(call_id: str, response: dict[str, Any]) -> None:
+    """Store a response unless one has landed already, and wake the waiter.
+
+    SET NX, so an answer the widget submitted a moment earlier is never overwritten. set_value has
+    no NX, so the raw command takes a key namespaced by make_key, as set_value would.
+    """
+    key = frappe.cache.make_key(f"{BROWSER_TOOL_RESPONSE_PREFIX}{call_id}")
+    # nosemgrep: frappe-cache-breaks-multitenancy — the key is namespaced by make_key above
+    if frappe.cache.set(key, pickle.dumps(response), ex=CALL_OWNER_TTL, nx=True):
+        _notify_waiter(call_id)
 
 
 def _clear_call_state(call_id: str) -> None:

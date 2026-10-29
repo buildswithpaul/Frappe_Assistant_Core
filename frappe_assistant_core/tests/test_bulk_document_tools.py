@@ -207,6 +207,36 @@ class TestBulkUpdate(BaseAssistantTest):
         self.assertEqual((result["succeeded"], result["failed"]), (2, 1))
         self.assertEqual((self.status(first), self.status(second)), ("Closed", "Closed"))
 
+    def test_validate_only_names_checks_every_record_and_saves_nothing(self):
+        names = make_todos(2)
+        result = DocumentUpdate().execute(
+            {"doctype": "ToDo", "names": names, "data": {"status": "Closed"}, "validate_only": True}
+        )
+
+        self.assertTrue(result["validation_passed"], result)
+        self.assertEqual([entry["record"] for entry in result["results"]], names)
+        self.assertEqual([self.status(name) for name in names], ["Open", "Open"])
+
+    def test_validate_only_records_reports_every_bad_record_and_saves_nothing(self):
+        first, second = make_todos(2)
+        result = DocumentUpdate().execute(
+            {
+                "doctype": "ToDo",
+                "validate_only": True,
+                # A dry run checks links but not Select values, so the bad record names no user.
+                "records": [
+                    {"name": first, "data": {"status": "Closed"}},
+                    {"name": second, "data": {"allocated_to": "fac-nobody@example.com"}},
+                    {"name": "FAC-missing-todo", "data": {"status": "Closed"}},
+                ],
+            }
+        )
+
+        self.assertFalse(result["validation_passed"], result)
+        self.assertEqual([entry["success"] for entry in result["results"]], [True, False, False])
+        self.assertEqual((self.status(first), self.status(second)), ("Open", "Open"))
+        self.assertEqual(frappe.db.get_value("ToDo", second, "allocated_to"), "Administrator")
+
     def test_refuses_name_and_names_together(self):
         (name,) = make_todos(1)
         result = DocumentUpdate().execute(

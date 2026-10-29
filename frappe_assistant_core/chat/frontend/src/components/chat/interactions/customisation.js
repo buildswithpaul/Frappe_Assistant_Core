@@ -135,17 +135,23 @@ const batchSize = (input, ...keys) => {
 	return list ? list.length : 0;
 };
 
-/** True for a create_document call that only runs validation and saves nothing. */
-export function isValidateOnlyCreate(toolName, input) {
-	return baseToolName(toolName) === "create_document" && input?.validate_only === true;
-}
-
 // The rules that run before save (server scripts, validate hooks) still run, and their outside
 // effects are not undone by the rollback, so a dry run is still worth a look.
-const dryRunCreateConsequence = (input) =>
-	batchSize(input, "records") > 1
-		? __("Checks these records against your rules without saving them. Rules that run before save still run.")
-		: __("Checks this record against your rules without saving it. Rules that run before save still run.");
+const DRY_RUN_CONSEQUENCES = {
+	create_document: (input) =>
+		batchSize(input, "records") > 1
+			? __("Checks these records against your rules without saving them. Rules that run before save still run.")
+			: __("Checks this record against your rules without saving it. Rules that run before save still run."),
+	update_document: (input) =>
+		batchSize(input, "names", "records") > 1
+			? __("Checks these changes against your rules without saving them. Rules that run before save still run.")
+			: __("Checks this change against your rules without saving it. Rules that run before save still run."),
+};
+
+/** True for a create_document or update_document call that only runs validation and saves nothing. */
+export function isValidateOnly(toolName, input) {
+	return baseToolName(toolName) in DRY_RUN_CONSEQUENCES && input?.validate_only === true;
+}
 
 const WRITE_CONSEQUENCES = {
 	create_document: (input) => {
@@ -175,7 +181,7 @@ function documentActionConsequence(input) {
 }
 
 export function writeConsequence(toolName, input) {
-	if (isValidateOnlyCreate(toolName, input)) return dryRunCreateConsequence(input);
+	if (isValidateOnly(toolName, input)) return DRY_RUN_CONSEQUENCES[baseToolName(toolName)](input);
 	const customisation = customisationConsequence(toolName, input);
 	if (customisation) return customisation;
 	const tool = baseToolName(toolName);
