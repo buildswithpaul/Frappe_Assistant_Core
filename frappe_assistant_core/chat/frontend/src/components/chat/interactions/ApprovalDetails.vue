@@ -71,6 +71,7 @@
 				:previous="cell.previous"
 			/>
 		</div>
+		<OpeningCode :block="block" @blocking="openingLoading = $event" />
 		<ApprovalNotes :block="block" />
 	</div>
 </template>
@@ -80,6 +81,7 @@ import { computed, ref, watch } from "vue";
 import { __ } from "@/utils/i18n";
 import ApprovalNotes from "./ApprovalNotes.vue";
 import ChildTable from "./ChildTable.vue";
+import OpeningCode from "./OpeningCode.vue";
 import ConditionValue from "./ConditionValue.vue";
 import CodePreview from "./CodePreview.vue";
 import { baseToolName } from "@/utils/toolNames";
@@ -113,7 +115,9 @@ const {
 	failed: currentCodeFailed,
 	loading: codeLoading,
 } = useCurrentCode(() => props.block);
-watch(codeLoading, (loading) => emit("blocking", loading), { immediate: true });
+// Code a write puts live by opening a dormant DocType (OpeningCode) blocks the same way.
+const openingLoading = ref(false);
+watch(() => codeLoading.value || openingLoading.value, (loading) => emit("blocking", loading), { immediate: true });
 
 // A rename the tool will not make is a notice (ApprovalNotes), never a changed field.
 const flat = computed(() => {

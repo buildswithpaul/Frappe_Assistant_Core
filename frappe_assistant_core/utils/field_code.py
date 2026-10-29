@@ -128,3 +128,65 @@ def resulting_rows(sent: Any, stored_rows: list) -> Optional[list]:
         else:
             by_name[name].update({key: value for key, value in row.items() if key not in ("name", "_delete")})
     return [row for row in by_name.values() if row is not None] + appended
+
+
+# The field properties that can carry code, and the columns read to judge them.
+_CODE_PROPERTIES = (*DEPENDS_ON_KEYS, "options")
+_FIELD_COLUMNS = ("name", "fieldname", "fieldtype", "options", *DEPENDS_ON_KEYS)
+
+
+def code_on_doctype(name: str) -> list:
+    """Every piece of code on a DocType's form, as its form would run it, one entry per value.
+
+    The DocType's own field rows, its Custom Fields, and its Property Setters on a field's
+    conditions, options or fieldtype, applied over the field they change as Frappe's meta applies
+    them. Each entry is ``{"source", "name", "field", "key", "code"}``: the record that sets the
+    value (``DocType``, ``Custom Field`` or ``Property Setter``), that record's name, the field and
+    property, and the code (``field_code``: an ``eval:`` condition or an HTML field's options).
+    """
+    fields: Dict[str, Dict[str, Any]] = {}
+    for source, rows in (
+        ("DocType", _rows("DocField", {"parent": name, "parenttype": "DocType", "parentfield": "fields"})),
+        ("Custom Field", _rows("Custom Field", {"dt": name})),
+    ):
+        for row in rows:
+            values = {key: row.get(key) for key in _FIELD_COLUMNS}
+            origin = {key: (source, row.name) for key in (*_CODE_PROPERTIES, "fieldtype")}
+            fields[row.fieldname or row.name] = {"values": values, "origin": origin}
+    setters = frappe.get_all(
+        "Property Setter",
+        filters={
+            "doc_type": name,
+            "doctype_or_field": "DocField",
+            "property": ["in", (*_CODE_PROPERTIES, "fieldtype")],
+        },
+        fields=["name", "field_name", "property", "value"],
+        order_by="creation asc",
+    )
+    for setter in setters:
+        # A field found nowhere else counts as an HTML field, as in property_setter_code: any doubt
+        # shows the code.
+        field = fields.setdefault(
+            setter.field_name,
+            {"values": {"fieldname": setter.field_name, "fieldtype": "HTML"}, "origin": {}},
+        )
+        field["values"][setter.property] = setter.value
+        field["origin"][setter.property] = ("Property Setter", setter.name)
+    entries = []
+    for fieldname, field in fields.items():
+        code = field_code(field["values"].get)
+        for key, value in zip(_CODE_PROPERTIES, code):
+            if not value:
+                continue
+            origin = field["origin"].get(key, ("Property Setter", ""))
+            # Options a Property Setter turned into an HTML field's markup is code because of it.
+            if key == "options" and field["origin"].get("fieldtype", ("",))[0] == "Property Setter":
+                origin = field["origin"]["fieldtype"]
+            entries.append(
+                {"source": origin[0], "name": origin[1], "field": fieldname, "key": key, "code": value}
+            )
+    return entries
+
+
+def _rows(doctype: str, filters: Dict[str, Any]) -> list:
+    return frappe.get_all(doctype, filters=filters, fields=list(_FIELD_COLUMNS), order_by="idx asc")

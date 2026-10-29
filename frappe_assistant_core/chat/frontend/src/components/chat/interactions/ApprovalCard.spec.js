@@ -4,12 +4,14 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const messagePreview = vi.fn();
 const currentCode = vi.fn();
 const fieldPlacement = vi.fn();
+const codeGoingLive = vi.fn();
 vi.mock("@/api/client", () => ({
 	api: {
 		tools: {
 			messagePreview: (...a) => messagePreview(...a),
 			currentCode: (...a) => currentCode(...a),
 			fieldPlacement: (...a) => fieldPlacement(...a),
+			codeGoingLive: (...a) => codeGoingLive(...a),
 		},
 	},
 }));
@@ -38,6 +40,8 @@ beforeEach(() => {
 	currentCode.mockRejectedValue(new Error("not fetched"));
 	fieldPlacement.mockReset();
 	fieldPlacement.mockRejectedValue(new Error("not fetched"));
+	codeGoingLive.mockReset();
+	codeGoingLive.mockResolvedValue([]);
 });
 
 describe("ApprovalCard for a message tool", () => {
@@ -829,5 +833,56 @@ describe("ApprovalCard code in child rows and HTML fields", () => {
 		expect(select.find(".code-preview").exists()).toBe(false);
 		expect(link.find(".code-preview").exists()).toBe(false);
 		expect(markup.findComponent(CodePreview).props("language")).toBe("xml");
+	});
+});
+
+describe("ApprovalCard opening a dormant DocType", () => {
+	const card = (tool, input) =>
+		mount(ApprovalCard, { props: { block: { id: "o1", tool_name: tool, input, interrupts } } });
+	const entries = [
+		{ source: "Custom Field", name: "Site Visit-region", field: "region", key: "depends_on", code: "eval:doc.status == 'Open'" },
+		{ source: "Custom Field", name: "Site Visit-banner", field: "banner", key: "options", code: "<div>{{ doc.status }}</div>" },
+	];
+
+	it("lists each Custom Field's code when a permission opens the DocType", async () => {
+		codeGoingLive.mockResolvedValue(entries);
+		const wrapper = card("create_document", { doctype: "Custom DocPerm", data: { parent: "Site Visit", role: "Employee" } });
+		await flushPromises();
+		expect(codeGoingLive).toHaveBeenCalledWith({ target: "Site Visit" });
+		const section = wrapper.find('[data-test="opening-code"]');
+		expect(section.exists()).toBe(true);
+		const code = section.findAllComponents(CodePreview).map((c) => [c.props("label"), c.props("code")]);
+		expect(code).toEqual([
+			["Custom Field region: Depends On", "eval:doc.status == 'Open'"],
+			["Custom Field banner: Options", "<div>{{ doc.status }}</div>"],
+		]);
+	});
+
+	it("asks about a DocType role change, and blocks approval until the code loads", async () => {
+		let resolve;
+		codeGoingLive.mockReturnValue(new Promise((r) => (resolve = r)));
+		const wrapper = card("update_document", { doctype: "DocType", name: "Site Visit", data: { permissions: [{ role: "Employee" }] } });
+		await flushPromises();
+		expect(codeGoingLive).toHaveBeenCalledWith({ target: "Site Visit" });
+		expect(wrapper.find('[data-test="opening-code-loading"]').exists()).toBe(true);
+		const approve = wrapper.findAll("button").find((b) => b.text().includes("Approve"));
+		expect(approve.attributes("disabled")).toBeDefined();
+		resolve(entries);
+		await flushPromises();
+		expect(wrapper.find('[data-test="opening-code-loading"]').exists()).toBe(false);
+		expect(wrapper.find('[data-test="opening-code"]').findAllComponents(CodePreview)).toHaveLength(2);
+	});
+
+	it("warns when the code cannot be loaded, and shows nothing for a DocType with no code going live", async () => {
+		codeGoingLive.mockRejectedValue(new Error("denied"));
+		const failed = card("update_document", { doctype: "Custom DocPerm", name: "p1", data: { role: "Employee" } });
+		await flushPromises();
+		expect(codeGoingLive).toHaveBeenCalledWith({ customDocperm: "p1" });
+		expect(failed.find('[data-test="opening-code-missing"]').exists()).toBe(true);
+		codeGoingLive.mockReset();
+		codeGoingLive.mockResolvedValue([]);
+		const empty = card("create_document", { doctype: "Custom DocPerm", data: { parent: "Plain", role: "Employee" } });
+		await flushPromises();
+		expect(empty.find('[data-test="opening-code"]').exists()).toBe(false);
 	});
 });
