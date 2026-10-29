@@ -33,9 +33,53 @@ from frappe_assistant_core.utils.customisation import (
     script_report_warning,
     server_script_guard,
 )
+from frappe_assistant_core.utils.savepoint import open_savepoint, rollback_to_savepoint
 
-from .batch import MODE_SCHEMA, batch_refusal, run_batch
+from .batch import MODE_SCHEMA, batch_refusal, run_batch, run_validation
 from .child_tables import ChildRowError, child_table_fields, normalize_child_rows
+
+# A validate_only dry run is rolled back to this savepoint.
+_VALIDATE_SAVEPOINT = "fac_update_document_validate"
+
+# The rules Document.save runs before it writes, by the action check_if_latest settles on:
+# what Before Validate, Before Save and Before Save (Submitted Document) scripts hook. A dry
+# run leaves out before_save and before_submit, as create_document's does; cancel runs none.
+_RULES_BEFORE_WRITE = {
+    "save": ("before_validate", "validate"),
+    "submit": ("before_validate", "validate"),
+    "update_after_submit": ("before_update_after_submit",),
+}
+
+
+def _check_update(doc: Any) -> None:
+    """Run what ``Document.save`` runs on an existing record before it writes, without the write.
+
+    The steps follow ``Document._save`` in its order, on Frappe v15 and v16: the lock, write
+    and permlevel checks, the docstatus transition (a submitted record may change only its
+    allow-on-submit fields), link validation and the rules above. Frappe's own field checks
+    (mandatory, Select options, length) are left out, as in create_document's dry run, except
+    set-only-once, which only an update can break. The caller rolls back.
+    """
+    doc.check_if_locked()
+    doc._set_defaults()
+    # Frappe v16 puts back masked values before the permission check; v15 has no masking.
+    restore_masked = getattr(doc, "_restore_masked_fields_from_db", None)
+    if restore_masked:
+        restore_masked()
+    doc.check_permission("write", "save")
+    doc.set_user_and_timestamp()
+    doc.set_docstatus()
+    doc.check_if_latest()
+    doc.set_parent_in_children()
+    doc.set_name_in_children()
+    doc.validate_higher_perm_levels()
+    doc._validate_links()
+    for method in _RULES_BEFORE_WRITE.get(doc._action, ()):
+        doc.run_method(method)
+    if doc._action != "cancel":
+        doc.validate_set_only_once()
+    if doc._action == "update_after_submit":
+        doc.validate_update_after_submit()
 
 
 def _apply_child_table_update(
@@ -209,7 +253,8 @@ class DocumentUpdate(BaseTool):
             "totals stale. Always call it on the parent doctype (e.g. 'Sales Order') and pass the "
             "child row updates under the table fieldname (e.g. 'items'). "
             "To update many records of one DocType, pass 'names' with one 'data' for all of them, "
-            "or 'records' ([{'name': ..., 'data': {...}}], at most 100) for different changes."
+            "or 'records' ([{'name': ..., 'data': {...}}], at most 100) for different changes. "
+            "To test a rule that runs when a record is edited, pass validate_only: true; nothing is saved."
         )
         self.requires_permission = None  # Permission checked dynamically per DocType
 
@@ -248,6 +293,16 @@ class DocumentUpdate(BaseTool):
                     "description": "Instead of 'name' and 'data': several records, each {'name': ..., 'data': {...}}.",
                 },
                 "mode": MODE_SCHEMA,
+                "validate_only": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": (
+                        "Check the change without saving it. Applies it to the stored record and runs "
+                        "the permission checks, the submitted-record rules and the validation rules "
+                        "(Before Save server scripts and validate hooks), then undoes everything. It "
+                        "does not check mandatory fields."
+                    ),
+                },
             },
             "required": ["doctype"],
         }
@@ -255,6 +310,7 @@ class DocumentUpdate(BaseTool):
     def execute(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
         """Update one document, or several from ``names`` or ``records``"""
         doctype = arguments.get("doctype")
+        validate_only = arguments.get("validate_only", False)
         forms = [key for key in ("name", "names", "records") if key in arguments]
         if len(forms) != 1:
             return {
@@ -266,7 +322,7 @@ class DocumentUpdate(BaseTool):
         if forms == ["name"]:
             if "data" not in arguments:
                 return {"success": False, "error": _("Pass the changes in 'data'."), "doctype": doctype}
-            return self._update_one(doctype, arguments["name"], arguments["data"], arguments)
+            return self._update_one(doctype, arguments["name"], arguments["data"], arguments, validate_only)
 
         mode = arguments.get("mode", "all_or_nothing")
         if forms == ["names"]:
@@ -300,20 +356,27 @@ class DocumentUpdate(BaseTool):
                 "doctype": doctype,
             }
 
-        return run_batch(
-            doctype,
-            items,
-            # A copy per record: doc.append writes into the child-row dicts it is given, and
-            # with 'names' every record shares one 'data'.
-            lambda item: self._update_one(doctype, item["name"], copy.deepcopy(item["data"]), {}),
-            lambda index, item: str(item["name"]),
-            mode,
-        )
+        # A copy per record: doc.append writes into the child-row dicts it is given, and
+        # with 'names' every record shares one 'data'.
+        def update_item(item: Dict[str, Any]) -> Dict[str, Any]:
+            return self._update_one(doctype, item["name"], copy.deepcopy(item["data"]), {}, validate_only)
+
+        def label(index: int, item: Dict[str, Any]) -> str:
+            return str(item["name"])
+
+        if validate_only:
+            return run_validation(doctype, items, update_item, label)
+        return run_batch(doctype, items, update_item, label, mode)
 
     def _update_one(
-        self, doctype: str, name: str, data: Dict[str, Any], arguments: Dict[str, Any]
+        self,
+        doctype: str,
+        name: str,
+        data: Dict[str, Any],
+        arguments: Dict[str, Any],
+        validate_only: bool = False,
     ) -> Dict[str, Any]:
-        """Update an existing document"""
+        """Update an existing document, or with ``validate_only`` check the update and undo it"""
         data, rename_requested = _split_rename(name, data, arguments)
         if rename_requested and not data:
             return {
@@ -448,11 +511,17 @@ class DocumentUpdate(BaseTool):
             # Read before the setattr loop below, which overwrites the stored values
             warning = script_report_warning(doctype, data, current=doc)
             if rename_requested:
-                skipped = _(
-                    "The rename was skipped: the update tool can't rename a record. The other "
-                    "changes were saved. To rename it, open the record in Desk and choose Rename "
-                    "from its menu."
-                )
+                if validate_only:
+                    skipped = _(
+                        "The rename was not checked: the update tool can't rename a record. To "
+                        "rename it, open the record in Desk and choose Rename from its menu."
+                    )
+                else:
+                    skipped = _(
+                        "The rename was skipped: the update tool can't rename a record. The other "
+                        "changes were saved. To rename it, open the record in Desk and choose Rename "
+                        "from its menu."
+                    )
                 warning = f"{warning} {skipped}" if warning else skipped
 
             # Apply updates: child tables go through helper, scalars use setattr.
@@ -469,6 +538,31 @@ class DocumentUpdate(BaseTool):
                         return err
                 else:
                     setattr(doc, field, value)
+
+            if validate_only:
+                # Validation can write (a Before Save script, an app hook), so the dry run is
+                # undone whatever the outcome, with the commit work it queued.
+                marks = open_savepoint(_VALIDATE_SAVEPOINT)
+                try:
+                    _check_update(doc)
+                finally:
+                    rollback_to_savepoint(_VALIDATE_SAVEPOINT, marks, doctype, name)
+
+                result = {
+                    "success": True,
+                    "validation_passed": True,
+                    "doctype": doctype,
+                    "name": name,
+                    "url": desk_url(doctype, name),
+                    "fields_validated": list(data.keys()),
+                    "message": _("The change to {0} '{1}' passed validation. Nothing was saved.").format(
+                        doctype, name
+                    ),
+                    "next_step": _("Call update_document without validate_only to save the change."),
+                }
+                if warning:
+                    result["warning"] = warning
+                return result
 
             # Save document
             doc.save()
@@ -530,16 +624,21 @@ class DocumentUpdate(BaseTool):
             error_msg = exception_message(
                 e, _("Insufficient permission to update {0} '{1}'").format(doctype, name)
             )
-            frappe.log_error(
-                title=_("Document Update Error"), message=f"Error updating {doctype} '{name}': {error_msg}"
-            )
+            if not validate_only:
+                frappe.log_error(
+                    title=_("Document Update Error"),
+                    message=f"Error updating {doctype} '{name}': {error_msg}",
+                )
 
             return permission_error_result(doctype, error_msg, name)
         except Exception as e:
             error_msg = exception_message(e)
-            frappe.log_error(
-                title=_("Document Update Error"), message=f"Error updating {doctype} '{name}': {error_msg}"
-            )
+            # A dry run refused by validation is the answer the caller asked for, not a fault.
+            if not (validate_only and isinstance(e, frappe.ValidationError)):
+                frappe.log_error(
+                    title=_("Document Update Error"),
+                    message=f"Error updating {doctype} '{name}': {error_msg}",
+                )
 
             result = {"success": False, "error": error_msg, "doctype": doctype, "name": name}
 

@@ -33,7 +33,7 @@ Every other setup skill (`add-custom-field`, `server-script`, `client-script`, `
    - An activated **Workflow** immediately stamps a state on every existing document of that type and changes who can edit them.
    - Deleting a **Custom Field** removes it from the form but keeps its database column and values, so a later field with the same name picks the old values up.
 5. **Confirm once, then wait.** `ask_user` with `confirm`, stating the count and scope: "Create these 4 records and change 1 setting?" Wait for the answer before any write, including a dry run. No answer is not a yes. The per-write approval cards still appear after that, and for a customisation (field, script, workflow, report, print format, notification) "Don't ask again" never applies, so expect a card for every write that has an effect unless it is on an approved build plan. Edits to a script that is switched off need no card; switching it on, or changing a live one, asks. This confirmation is for the plan as a whole; a build plan card replaces it (see below).
-6. **Dry-run each create.** Call `create_document` with `validate_only: true`. It runs what a save runs before writing (link checks, the doctype's own `validate()` and any Before Insert, Before Validate or Before Save rule), then undoes it and saves nothing. It does *not* check mandatory fields or duplicate names, so the real insert can still fail. `update_document` has no dry run at all.
+6. **Dry-run each create and edit.** Call `create_document` or `update_document` with `validate_only: true`. It runs what a save runs before writing (permission and link checks, the doctype's own `validate()` and any Before Insert, Before Validate or Before Save rule), then undoes it and saves nothing. It does *not* check mandatory fields or duplicate names, so the real save can still fail.
 7. **Execute in order, one write at a time.** Stop at the first failure. Don't improvise a workaround write that isn't in the plan — report what failed and what's still pending, and re-plan with the user.
 8. **Close with the change log**: the same table, now with a Result column and a link to every record. This is the user's undo list, so keep it accurate.
 
@@ -75,7 +75,7 @@ the reason: fix the entry and propose again. A dormant claim FAC cannot prove is
 
 1. **Look it up first.** Read how the thing works (`sandbox_reference` for script code, `get_doctype_info` for fields) instead of guessing or creating a throwaway record to find out.
 2. **Build it switched off.** A script that is switched off changes nothing, and a switched-off Server Script needs no approval card.
-3. **Switch it on with one card**, shown even when the plan lists it, then trigger it or open the page it changes. For a form or page, look with `browser_take_screenshot` / `browser_capture_diagnostics`. Trigger a rule with `create_document` and `validate_only: true`, never by creating real records and deleting them, and never as another user.
+3. **Switch it on with one card**, shown even when the plan lists it, then trigger it or open the page it changes. For a form or page, look with `browser_take_screenshot` / `browser_capture_diagnostics`. Trigger a rule with `validate_only: true`: on `create_document` for a rule on new records, on `update_document` (with the record's `name` and the change) for a rule on edits. Never trigger it by creating real records and deleting them, and never as another user.
 4. **If it fails, read `recent_errors`**, filtered by the record's name, then fix and trigger again.
 5. **Check who can use it** with `test_as_user`.
 
@@ -93,5 +93,5 @@ the reason: fix the entry and propose again. A dormant claim FAC cannot prove is
 - Writing first and explaining afterwards.
 - Pasting a raw condition (`eval:doc...`) into the plan or the change log instead of saying it in words.
 - A plan that says "configure GST" instead of listing the actual records.
-- Treating a passed `validate_only` as proof the insert will succeed.
+- Treating a passed `validate_only` as proof the save will succeed.
 - Updating a record without noting its old value, so it can't be undone.

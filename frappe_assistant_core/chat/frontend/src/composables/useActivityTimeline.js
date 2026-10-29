@@ -46,7 +46,9 @@ function donePhrasing(block) {
 		const verb = DOCUMENT_ACTION_VERBS[String(block.input?.action || "submit").trim().toLowerCase()];
 		return verb ? { verb: verb(), noun: doctype } : null;
 	}
-	if (tool === "create_document" && isDryRun(block)) return { verb: __("Checked"), noun: doctype };
+	if ((tool === "create_document" || tool === "update_document") && isDryRun(block)) {
+		return { verb: __("Checked"), noun: doctype };
+	}
 	const verb = DONE_VERBS[tool];
 	return verb ? { verb: verb(), noun: doctype } : null;
 }
