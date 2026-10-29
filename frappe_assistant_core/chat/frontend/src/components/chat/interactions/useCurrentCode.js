@@ -23,7 +23,7 @@ export function useCurrentCode(getBlock) {
 		const flat = flattenInput(block.input);
 		const { doctype, name } = flat;
 		if (typeof doctype !== "string" || typeof name !== "string") return;
-		const changed = Object.keys(flat).filter((k) => isCodeField(k, doctype) && typeof flat[k] === "string");
+		const changed = Object.keys(flat).filter((k) => isCodeField(k, doctype, flat) && typeof flat[k] === "string");
 		const fields = [...new Set([...changed, ...live])];
 		if (!fields.length) return;
 		loading.value = live.length > 0;

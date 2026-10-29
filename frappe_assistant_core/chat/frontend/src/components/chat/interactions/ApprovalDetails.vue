@@ -42,7 +42,7 @@
 			<CodePreview
 				v-for="[key, value] in codeRows"
 				:key="key"
-				:label="formatKey(key)"
+				:label="codeLabel(key, value)"
 				:code="value"
 				:language="codeLanguage(key, doctype)"
 				:previous="previousCode(key)"
@@ -55,7 +55,22 @@
 				:language="codeLanguage(key, doctype)"
 			/>
 		</div>
-		<ChildTable v-for="[key, rows] in tableRows" :key="key" :label="key" :rows="rows" />
+		<ChildTable
+			v-for="[key, rows] in tableRows"
+			:key="key"
+			:label="key"
+			:rows="rows"
+			:hidden-columns="rowCodeColumns(doctype, key)"
+		/>
+		<div v-if="rowCode.length" class="code-stack">
+			<CodePreview
+				v-for="cell in rowCode"
+				:key="cell.key"
+				:label="cell.label"
+				:code="cell.code"
+				:language="cell.language"
+			/>
+		</div>
 		<ApprovalNotes :block="block" />
 	</div>
 </template>
@@ -69,6 +84,7 @@ import ConditionValue from "./ConditionValue.vue";
 import CodePreview from "./CodePreview.vue";
 import { baseToolName } from "@/utils/toolNames";
 import { headlineKeys } from "./approvalHeadline";
+import { describeCondition } from "./conditions";
 import { goesLiveAudience, goesLiveFields, renameKeys, writesCondition } from "./customisation";
 import { useCurrentCode } from "./useCurrentCode";
 import {
@@ -79,7 +95,10 @@ import {
 	isMoneyKey,
 	isCodeField,
 	isChildTable,
+	isEvalExpression,
 	codeLanguage,
+	rowCodeCells,
+	rowCodeColumns,
 	splitDetailFields,
 } from "./helpers";
 
@@ -111,10 +130,17 @@ const doctype = computed(() => flat.value.doctype);
 // Code and child tables always show in full; only the plain fields fold behind "Show all fields".
 const codeRows = computed(() =>
 	Object.entries(flat.value).filter(
-		([k, v]) => isCodeField(k, doctype.value) && typeof v === "string" && v !== "",
+		([k, v]) => isCodeField(k, doctype.value, flat.value) && typeof v === "string" && v !== "",
 	),
 );
 const tableRows = computed(() => Object.entries(flat.value).filter(([, v]) => isChildTable(v)));
+// Code in child rows (a transition's condition, a recipient's cc) shows in full below its table.
+const rowCode = computed(() => rowCodeCells(doctype.value, flat.value));
+
+// An eval: condition keeps its plain reading beside the field name, above the code itself.
+function codeLabel(key, value) {
+	return isEvalExpression(value) ? `${formatKey(key)}: ${describeCondition(value)}` : formatKey(key);
+}
 // The title already names the record and its doctype, so the field list starts at what changes.
 const shownInTitle = computed(() => headlineKeys(props.block));
 // A blank value is a change only on an update (it clears the field); elsewhere it is noise.
