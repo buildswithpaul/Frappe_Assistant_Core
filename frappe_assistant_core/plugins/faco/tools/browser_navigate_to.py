@@ -168,6 +168,7 @@ class BrowserNavigateTo(BaseBrowserTool):
                 params=params,
                 session_id=session_id,
                 client_type=client_type,
+                awaited=False,
             )
         except Exception:
             pass  # Widget notification is best-effort
@@ -177,5 +178,5 @@ class BrowserNavigateTo(BaseBrowserTool):
             "success": True,
             "navigated": True,
             "target_url": target_url,
-            "message": f"Navigation initiated to {target_url}. " "The browser will navigate shortly.",
+            "message": f"Navigation initiated to {target_url}. The browser will navigate shortly.",
         }
