@@ -6,6 +6,15 @@ import { displayValue } from "./helpers";
 const block = (tool_name, input) => ({ tool_name, input });
 
 describe("approvalHeadline", () => {
+	it("leads a validate-only create with a check, not a create", () => {
+		const named = block("create_document", { doctype: "Customer", validate_only: true, data: { customer_name: "Trader" } });
+		expect(approvalHeadline(named)).toBe("Check Customer “Trader”");
+		expect(approvalHeadline(block("create_document", { doctype: "ToDo", validate_only: true, records: [{}, {}] }))).toBe(
+			"Check ToDo",
+		);
+		expect(approvalHeadline(block("create_document", { doctype: "ToDo", validate_only: false, data: {} }))).toBe("Create ToDo");
+	});
+
 	it("names a new record by its doctype and the field a person knows it by", () => {
 		expect(approvalHeadline(block("create_document", { doctype: "Customer", data: { customer_name: "MIGTEST Trader 01" } }))).toBe(
 			"Create Customer “MIGTEST Trader 01”",

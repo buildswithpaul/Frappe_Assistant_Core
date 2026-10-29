@@ -18,6 +18,27 @@ describe("writeConsequence", () => {
 		expect(writeConsequence("delete_document", {})).toBe("This will permanently delete a record from your ERP");
 	});
 
+	it("says a validate-only create saves nothing but still runs the save-time rules", () => {
+		expect(writeConsequence("create_document", { doctype: "Customer", validate_only: true })).toBe(
+			"Checks this record against your rules without saving it. Rules that run before save still run.",
+		);
+	});
+
+	it("says so in the plural for a validate-only batch create", () => {
+		expect(writeConsequence("create_document", { doctype: "Customer", records: [{}, {}], validate_only: true })).toBe(
+			"Checks these records against your rules without saving them. Rules that run before save still run.",
+		);
+	});
+
+	it("keeps the write copy for creates that are not validate-only", () => {
+		expect(writeConsequence("create_document", { doctype: "Customer", validate_only: false })).toBe(
+			"This will write a new record to your ERP",
+		);
+		expect(writeConsequence("update_document", { validate_only: true })).toBe(
+			"This will modify an existing record in your ERP",
+		);
+	});
+
 	it("counts the records of a bulk write", () => {
 		expect(writeConsequence("create_document", { records: [{}, {}, {}] })).toBe(
 			"This will write 3 new records to your ERP",
