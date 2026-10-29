@@ -7,9 +7,11 @@
 import frappe
 
 from frappe_assistant_core.chat.api.current_code import (
+    CARD_CODE_KEYS_BY_DOCTYPE,
     CODE_KEYS,
     GO_LIVE_KEYS,
     GO_LIVE_KEYS_BY_DOCTYPE,
+    ROW_CODE_COLUMNS_BY_DOCTYPE,
     get_current_code,
 )
 from frappe_assistant_core.tests.base_test import BaseAssistantTest
@@ -65,6 +67,10 @@ class TestGetCurrentCode(BaseAssistantTest):
 
     def test_ignores_fields_that_are_not_code(self):
         out = get_current_code("Client Script", self.script.name, ["script", "dt", "enabled"])
+        self.assertEqual(out, {"script": STORED})
+
+    def test_ignores_another_doctypes_card_code_keys(self):
+        out = get_current_code("Client Script", self.script.name, ["script", "depends_on", "raw_commands"])
         self.assertEqual(out, {"script": STORED})
 
     def test_accepts_a_json_encoded_field_list(self):
@@ -192,3 +198,50 @@ class TestGetCurrentCodeGoesLive(BaseAssistantTest):
                 self.assertIsNotNone(meta.get_field(key), (doctype, key))
         for key in GO_LIVE_KEYS:
             self.assertNotIn(key, CODE_KEYS)
+
+
+class TestGetCurrentCodeCardKeys(BaseAssistantTest):
+    """A card diffs a print's raw commands and a field's eval: condition against what is stored."""
+
+    def test_returns_a_print_formats_raw_commands_and_layout(self):
+        # Production reaches this when a builder saves a raw (label printer) print format.
+        print_format = frappe.get_doc(
+            {
+                "doctype": "Print Format",
+                "name": "Current code label",
+                "doc_type": "ToDo",
+                "raw_printing": 1,
+                "raw_commands": "^XA^FD{{ doc.name }}^XZ",
+                "format_data": "[]",
+            }
+        ).insert(ignore_permissions=True)
+        out = get_current_code("Print Format", print_format.name, ["raw_commands", "format_data"])
+        self.assertEqual(out, {"raw_commands": "^XA^FD{{ doc.name }}^XZ", "format_data": "[]"})
+
+    def test_returns_a_custom_fields_conditions_but_not_another_doctypes(self):
+        # Production reaches this when a builder adds a field shown only for open ToDos;
+        # db_insert skips the column it would add (DDL commits, escaping the rollback).
+        field = frappe.get_doc(
+            {
+                "doctype": "Custom Field",
+                "name": "ToDo-current_code_note",
+                "dt": "ToDo",
+                "fieldname": "current_code_note",
+                "fieldtype": "Data",
+                "depends_on": "eval:doc.status == 'Open'",
+            }
+        )
+        field.db_insert()
+        out = get_current_code("Custom Field", field.name, ["depends_on", "read_only_depends_on", "label"])
+        self.assertEqual(out, {"depends_on": "eval:doc.status == 'Open'", "read_only_depends_on": ""})
+
+    def test_card_and_row_code_fields_exist_on_their_doctypes(self):
+        for doctype, keys in CARD_CODE_KEYS_BY_DOCTYPE.items():
+            meta = frappe.get_meta(doctype)
+            for key in keys:
+                self.assertIsNotNone(meta.get_field(key), (doctype, key))
+        for doctype, tables in ROW_CODE_COLUMNS_BY_DOCTYPE.items():
+            for table, columns in tables.items():
+                child = frappe.get_meta(frappe.get_meta(doctype).get_field(table).options)
+                for column in columns:
+                    self.assertIsNotNone(child.get_field(column), (doctype, table, column))

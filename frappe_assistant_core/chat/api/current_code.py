@@ -55,11 +55,34 @@ CODE_KEYS_BY_DOCTYPE = {
 # Child tables among GO_LIVE_KEYS, and the column each returns, one value per row.
 TABLE_COLUMNS = {"roles": "role"}
 
+# A field's display conditions. Frappe's form runs a value that starts with "eval:" as JavaScript.
+DEPENDS_ON_KEYS = ("depends_on", "mandatory_depends_on", "read_only_depends_on")
 
-def _requested_fields(fields: list | str) -> list[str]:
+# Fields the card shows as code on one doctype only, besides CODE_KEYS, since another doctype's
+# field of the same name may be no code at all. A Property Setter's value is code when it sets one of
+# DEPENDS_ON_KEYS. Mirrored in chat/frontend/src/components/chat/interactions/helpers.js
+# (DOCTYPE_CODE_KEYS).
+CARD_CODE_KEYS_BY_DOCTYPE = {
+    "Print Format": ("raw_commands", "format_data"),
+    "Custom Field": DEPENDS_ON_KEYS,
+    "Property Setter": ("value",),
+}
+
+# Child tables whose rows hold code, and each row's code columns: a Workflow Transition's condition
+# and a Notification Recipient's condition are Python, and a recipient's cc and bcc are Jinja
+# templates. utils/customisation.py compares them row by row. Mirrored in helpers.js
+# (ROW_CODE_COLUMNS).
+ROW_CODE_COLUMNS_BY_DOCTYPE = {
+    "Workflow": {"transitions": ("condition",)},
+    "Notification": {"recipients": ("condition", "cc", "bcc")},
+}
+
+
+def _requested_fields(doctype: str, fields: list | str) -> list[str]:
     if isinstance(fields, str):
         fields = frappe.parse_json(fields)
-    return [f for f in fields if isinstance(f, str) and (f in CODE_KEYS or f in GO_LIVE_KEYS)]
+    allowed = (*CODE_KEYS, *GO_LIVE_KEYS, *CARD_CODE_KEYS_BY_DOCTYPE.get(doctype, ()))
+    return [f for f in fields if isinstance(f, str) and f in allowed]
 
 
 @frappe.whitelist(methods=["GET"])
@@ -67,8 +90,9 @@ def get_current_code(doctype: str, name: str, fields: list | str) -> dict:
     """Return the stored values of the requested code fields of one record.
 
     Args:
-            fields: Field names, as a list or a JSON-encoded list. Names outside CODE_KEYS and
-                    GO_LIVE_KEYS, unknown to the doctype, or above the caller's permission level are ignored.
+            fields: Field names, as a list or a JSON-encoded list. Names outside CODE_KEYS, GO_LIVE_KEYS
+                    and the doctype's CARD_CODE_KEYS_BY_DOCTYPE, unknown to the doctype, or above the
+                    caller's permission level are ignored.
 
     Returns:
             {fieldname: stored value or ""}; a child table in TABLE_COLUMNS gives a list of values.
@@ -78,7 +102,7 @@ def get_current_code(doctype: str, name: str, fields: list | str) -> dict:
             _("You do not have permission to read {0} {1}").format(doctype, name), frappe.PermissionError
         )
 
-    requested = _requested_fields(fields)
+    requested = _requested_fields(doctype, fields)
     permitted = get_permitted_fields(doctype)
     columns = [f for f in requested if f in permitted]
     # get_permitted_fields leaves child tables out, so their permission level is checked here.

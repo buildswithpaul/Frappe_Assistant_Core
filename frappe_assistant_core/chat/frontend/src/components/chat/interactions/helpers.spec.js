@@ -10,6 +10,7 @@ import {
 	isCodeField,
 	codeLanguage,
 	isChildTable,
+	rowCodeCells,
 } from "./helpers";
 
 describe("isMoneyKey", () => {
@@ -147,6 +148,29 @@ describe("code keys", () => {
 		expect(codeLanguage("style", "FAC Page")).toBe("css");
 	});
 
+	it("reads conditions, print commands and recipient templates in their own languages", () => {
+		expect(codeLanguage("depends_on", "Custom Field")).toBe("javascript");
+		expect(codeLanguage("value", "Property Setter")).toBe("javascript");
+		expect(codeLanguage("raw_commands", "Print Format")).toBe("django");
+		expect(codeLanguage("format_data", "Print Format")).toBe("json");
+		expect(codeLanguage("cc", "Notification")).toBe("django");
+	});
+
+	it("treats only an eval: condition as code", () => {
+		expect(isCodeField("depends_on", "Custom Field", { depends_on: "eval:doc.qty" })).toBe(true);
+		expect(isCodeField("depends_on", "Custom Field", { depends_on: "qty" })).toBe(false);
+		expect(isCodeField("depends_on", "Web Form", { depends_on: "eval:doc.qty" })).toBe(false);
+		expect(isCodeField("value", "Property Setter", { property: "depends_on", value: "eval:1" })).toBe(true);
+		expect(isCodeField("value", "Property Setter", { value: "eval:1" })).toBe(true);
+		expect(isCodeField("value", "Property Setter", { property: "label", value: "eval:1" })).toBe(false);
+	});
+
+	it("treats a print format's raw commands and layout as code only there", () => {
+		expect(isCodeField("raw_commands", "Print Format")).toBe(true);
+		expect(isCodeField("format_data", "Print Format")).toBe(true);
+		expect(isCodeField("format_data", "Web Page")).toBe(false);
+	});
+
 	it("treats a FAC Page's style as code and leaves style alone elsewhere", () => {
 		expect(isCodeField("style", "FAC Page")).toBe(true);
 		expect(isCodeField("script", "FAC Page")).toBe(true);
@@ -161,5 +185,17 @@ describe("isChildTable", () => {
 		expect(isChildTable([])).toBe(false);
 		expect(isChildTable(["a"])).toBe(false);
 		expect(isChildTable("x")).toBe(false);
+	});
+});
+
+describe("rowCodeCells", () => {
+	it("lists each non-blank code cell of the doctype's code tables", () => {
+		const fields = {
+			transitions: [{ state: "A", condition: "doc.x" }, { state: "B", condition: "  " }],
+			states: [{ state: "A", condition: "ignored" }],
+		};
+		expect(rowCodeCells("Workflow", fields).map((c) => [c.key, c.code])).toEqual([["transitions.0.condition", "doc.x"]]);
+		expect(rowCodeCells("Web Form", fields)).toEqual([]);
+		expect(rowCodeCells("Workflow", { transitions: "x" })).toEqual([]);
 	});
 });

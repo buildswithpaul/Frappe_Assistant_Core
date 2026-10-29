@@ -42,22 +42,48 @@ export function isCodeKey(key) {
 }
 
 // Code keys a single doctype adds, so other doctypes' fields of the same name stay plain.
-// The server returns these through GO_LIVE_KEYS in chat/api/current_code.py.
-const DOCTYPE_CODE_KEYS = { "FAC Page": ["style"] };
+// The server returns these through GO_LIVE_KEYS and CARD_CODE_KEYS_BY_DOCTYPE in
+// chat/api/current_code.py.
+const DOCTYPE_CODE_KEYS = { "FAC Page": ["style"], "Print Format": ["raw_commands", "format_data"] };
 
-/** True when `key` holds code on a `doctype` record: a CODE_KEYS field or one that doctype adds. */
-export function isCodeField(key, doctype) {
-	return isCodeKey(key) || Boolean(DOCTYPE_CODE_KEYS[doctype]?.includes(key));
+// A field's display conditions. Frappe's form runs a value that starts with "eval:" as JavaScript;
+// a bare fieldname only reads that field. Mirrored in chat/api/current_code.py (DEPENDS_ON_KEYS).
+export const CONDITION_KEYS = ["depends_on", "mandatory_depends_on", "read_only_depends_on"];
+
+export function isEvalExpression(value) {
+	return typeof value === "string" && value.trimStart().startsWith("eval:");
+}
+
+// An eval: condition a Custom Field sets, or a Property Setter sets as its value. An update that
+// leaves the property out is judged by the value alone, so the card shows any eval: as code.
+function isConditionCode(key, doctype, fields) {
+	if (doctype === "Custom Field") return CONDITION_KEYS.includes(key) && isEvalExpression(fields[key]);
+	if (doctype !== "Property Setter" || key !== "value" || !isEvalExpression(fields.value)) return false;
+	return fields.property === undefined || CONDITION_KEYS.includes(fields.property);
+}
+
+/**
+ * True when `key` holds code on a `doctype` record: a CODE_KEYS field, one that doctype adds, or an
+ * eval: condition. `fields` is the flattened write, which an eval: condition is read from.
+ */
+export function isCodeField(key, doctype, fields = {}) {
+	return (
+		isCodeKey(key) || Boolean(DOCTYPE_CODE_KEYS[doctype]?.includes(key)) || isConditionCode(key, doctype, fields)
+	);
 }
 
 const PYTHON_KEYS = new Set(["script", "report_script", "condition"]);
+const JINJA_KEYS = new Set(["raw_commands", "cc", "bcc"]);
 
 export function codeLanguage(key, doctype) {
 	if (key === "script" && doctype === "FAC Page") return "javascript";
 	if (key === "style" && doctype === "FAC Page") return "css";
 	if (PYTHON_KEYS.has(key)) return "python";
-	if (key === "javascript") return "javascript";
+	if (key === "javascript" || CONDITION_KEYS.includes(key)) return "javascript";
+	if (key === "value" && doctype === "Property Setter") return "javascript";
 	if (key === "query") return "sql";
+	if (key === "format_data") return "json";
+	if (JINJA_KEYS.has(key)) return "django";
 	if (key === "html" && doctype === "Print Format") return "django";
 	return "xml";
 }
@@ -65,6 +91,40 @@ export function codeLanguage(key, doctype) {
 /** True for a non-empty array of plain objects, i.e. the rows of a child table. */
 export function isChildTable(value) {
 	return Array.isArray(value) && value.length > 0 && value.every(isPlainObject);
+}
+
+// Child-table columns that hold code: a Workflow Transition's condition and a Notification
+// Recipient's condition are Python, a recipient's cc and bcc are Jinja templates. Mirrored in
+// chat/api/current_code.py (ROW_CODE_COLUMNS_BY_DOCTYPE).
+const ROW_CODE_COLUMNS = {
+	Workflow: { transitions: ["condition"] },
+	Notification: { recipients: ["condition", "cc", "bcc"] },
+};
+
+/** The code columns of a `doctype` record's child `table`, which the card shows as code instead. */
+export function rowCodeColumns(doctype, table) {
+	return ROW_CODE_COLUMNS[doctype]?.[table] ?? [];
+}
+
+/** The code a write sets in child rows, one entry per non-blank cell, so the card shows it in full. */
+export function rowCodeCells(doctype, fields) {
+	const cells = [];
+	for (const [table, columns] of Object.entries(ROW_CODE_COLUMNS[doctype] ?? {})) {
+		const rows = isChildTable(fields[table]) ? fields[table] : [];
+		rows.forEach((row, index) => {
+			for (const column of columns) {
+				const code = row[column];
+				if (typeof code !== "string" || code.trim() === "") continue;
+				cells.push({
+					key: `${table}.${index}.${column}`,
+					label: __("{0}, row {1}: {2}", [formatKey(table), index + 1, formatKey(column)]),
+					code,
+					language: codeLanguage(column, doctype),
+				});
+			}
+		});
+	}
+	return cells;
 }
 
 /**

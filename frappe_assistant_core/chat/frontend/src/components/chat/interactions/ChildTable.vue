@@ -27,6 +27,8 @@ import { formatKey, formatValue } from "./helpers";
 const props = defineProps({
 	label: { type: String, required: true },
 	rows: { type: Array, required: true },
+	// Columns the card shows elsewhere, such as code shown in full below the table.
+	hiddenColumns: { type: Array, default: () => [] },
 });
 
 const MAX_ROWS = 10;
@@ -38,7 +40,8 @@ const columns = computed(() => {
 	const seen = new Set();
 	for (const row of shownRows.value) {
 		for (const [key, value] of Object.entries(row)) {
-			if (!SKIPPED_COLUMNS.has(key) && (value === null || typeof value !== "object")) seen.add(key);
+			if (SKIPPED_COLUMNS.has(key) || props.hiddenColumns.includes(key)) continue;
+			if (value === null || typeof value !== "object") seen.add(key);
 		}
 	}
 	return [...seen];

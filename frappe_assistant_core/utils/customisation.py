@@ -38,7 +38,9 @@ from frappe_assistant_core.assistant_core.doctype.fac_page.fac_page import (
 )
 from frappe_assistant_core.chat.api.current_code import (
     CODE_KEYS_BY_DOCTYPE,
+    DEPENDS_ON_KEYS,
     GO_LIVE_KEYS_BY_DOCTYPE,
+    ROW_CODE_COLUMNS_BY_DOCTYPE,
     TABLE_COLUMNS,
 )
 
@@ -323,9 +325,12 @@ def customisation_impact(tool_name: str, tool_input: Any) -> Dict[str, Any]:
     including a create saved switched on, and when it shares a personal FAC Page that is published
     after the write (``_personal_page_impact``). ``changes_live_code`` is true when an update changes a
     live field (``_live_fields``: code, templates and audience, such as a Report's roles, compared
-    as a set) of a record that is live before and after the write, and when a create of a doctype
-    without a switch (a Report, a Print Format) sets any live field. FAC Cloud shows its card for
-    either even when an approved build plan lists the write, so the user sees the final code.
+    as a set; and code in child rows, ``ROW_CODE_COLUMNS_BY_DOCTYPE``, compared row by row) of a
+    record that is live before and after the write, and when a create of a doctype without a switch
+    (a Report, a Print Format, a Workflow) sets any live field. For a Custom Field or Property Setter
+    on a live DocType it is true when the write changes an ``eval:`` display condition
+    (``_changes_condition_code``). FAC Cloud shows its card for either even when an approved build
+    plan lists the write, so the user sees the final code.
     Never writes. The reason is plain words for logs and never repeats stored values.
     """
     result = _dormancy(tool_name, tool_input)
@@ -351,17 +356,80 @@ def _non_empty(value: Any) -> bool:
     return bool(value.strip()) if isinstance(value, str) else bool(value)
 
 
+def _row_code(row: Dict[str, Any], columns: tuple) -> tuple:
+    return tuple(row.get(column) or "" for column in columns)
+
+
+def _row_has_code(row: Dict[str, Any], columns: tuple) -> bool:
+    return any(_non_empty(value) for value in _row_code(row, columns))
+
+
+def _rows_carry_code(rows: Any, columns: tuple) -> bool:
+    """Whether sent child rows set any code column; anything but a list of rows counts if it says anything."""
+    if not isinstance(rows, list):
+        return _non_empty(rows)
+    return any(not isinstance(row, dict) or _row_has_code(row, columns) for row in rows)
+
+
 def _carries_live_fields(doctype: str, data: Dict[str, Any]) -> bool:
-    """Whether a create sets any live field of ``doctype``."""
-    return any(_non_empty(data.get(field)) for field in _live_fields(doctype))
+    """Whether a create sets any live field of ``doctype``, or code in any of its child rows."""
+    return any(_non_empty(data.get(field)) for field in _live_fields(doctype)) or any(
+        _rows_carry_code(data.get(field), columns)
+        for field, columns in ROW_CODE_COLUMNS_BY_DOCTYPE.get(doctype, {}).items()
+        if field in data
+    )
+
+
+def _stored_rows(doctype: str, parent: Any, field: str, columns: tuple) -> list:
+    """The stored rows of a child table, in the order the form shows them."""
+    return frappe.get_all(
+        frappe.get_meta(doctype).get_field(field).options,
+        filters={"parent": parent, "parenttype": doctype, "parentfield": field},
+        fields=["name", *columns],
+        order_by="idx asc",
+    )
+
+
+def _rows_change_code(rows: Any, stored_rows: list, columns: tuple) -> bool:
+    """Whether sent child rows, applied as update_document applies them, change a code column.
+
+    With any named row (patch mode) a named row is compared with the stored row of that name, a row
+    without one is appended and counts when it carries code, and a deleted row runs nothing. With
+    none (replace mode) the table is refilled, so the rows are compared in order with the stored
+    ones and moving a condition to another transition counts. Rows that cannot be read count.
+    """
+    if not isinstance(rows, list) or not all(isinstance(row, dict) for row in rows):
+        return True
+    if not any(row.get("name") for row in rows):
+        return [_row_code(row, columns) for row in rows] != [_row_code(row, columns) for row in stored_rows]
+    by_name = {row.name: row for row in stored_rows}
+    for row in rows:
+        if row.get("_delete"):
+            continue
+        stored_row = by_name.get(row.get("name"))
+        if stored_row is None:
+            if _row_has_code(row, columns):
+                return True
+        elif any(
+            column in row and (row[column] or "") != (stored_row.get(column) or "") for column in columns
+        ):
+            return True
+    return False
 
 
 def _changes_live_fields(doctype: str, data: Dict[str, Any], stored: Dict[str, Any]) -> bool:
     """Whether ``data`` gives a code or go-live field of ``doctype`` a value other than the stored one.
 
-    A child table is compared as the set of its rows' values, so reordering rows is no change and
-    rows that cannot be read count as one.
+    An audience table (``TABLE_COLUMNS``) is compared as the set of its rows' values, so reordering
+    rows is no change and rows that cannot be read count as one. A table whose rows hold code
+    (``ROW_CODE_COLUMNS_BY_DOCTYPE``) is compared row by row (``_rows_change_code``), so an edited
+    condition on one Workflow transition counts.
     """
+    for field, columns in ROW_CODE_COLUMNS_BY_DOCTYPE.get(doctype, {}).items():
+        if field in data and _rows_change_code(
+            data[field], _stored_rows(doctype, stored.get("name"), field, columns), columns
+        ):
+            return True
     for field in _live_fields(doctype):
         if field not in data:
             continue
@@ -377,6 +445,41 @@ def _changes_live_fields(doctype: str, data: Dict[str, Any], stored: Dict[str, A
         elif (data[field] or "") != (stored.get(field) or ""):
             return True
     return False
+
+
+def _is_eval(value: Any) -> bool:
+    return isinstance(value, str) and value.lstrip().startswith("eval:")
+
+
+def _condition_code(doctype: str, values: Callable[[str], Any]) -> tuple:
+    """The ``eval:`` display conditions a Custom Field or Property Setter sets, with the field each runs on.
+
+    Empty when it sets none.
+    """
+    if doctype == "Custom Field":
+        code = tuple(values(key) if _is_eval(values(key)) else "" for key in DEPENDS_ON_KEYS)
+        return (values("dt"), values("fieldname"), code) if any(code) else ()
+    prop, value = values("property"), values("value")
+    if prop in DEPENDS_ON_KEYS and _is_eval(value):
+        return (values("doc_type"), values("field_name"), prop, value)
+    return ()
+
+
+def _changes_condition_code(
+    doctype: str, creating: bool, before: Callable[[str], Any], after: Callable[[str], Any]
+) -> bool:
+    """Whether a Custom Field or Property Setter write adds, edits, moves or removes an ``eval:`` condition.
+
+    Only an ``eval:`` value is code. Frappe's form (``evaluate_depends_on_value`` in layout.js)
+    runs the text after ``eval:`` as JavaScript for every user who opens the form, while a bare
+    fieldname only reads that field's value and ``fn:`` calls a method the form's own scripts
+    already define, so neither runs anything the write wrote. Changing one fieldname to another is
+    therefore no code change, while any change on a side that holds an ``eval:`` expression is,
+    as a cleared script is for the other code fields. Leading whitespace counts as ``eval:`` too:
+    any doubt shows the card.
+    """
+    stored_code = () if creating else _condition_code(doctype, before)
+    return _condition_code(doctype, after) != stored_code
 
 
 def _dormancy(tool_name: str, tool_input: Any) -> Dict[str, Any]:
@@ -434,12 +537,17 @@ def _dormancy(tool_name: str, tool_input: Any) -> Dict[str, Any]:
 
     if doctype in ("Custom Field", "Property Setter"):
         target_field = "dt" if doctype == "Custom Field" else "doc_type"
+        code = _changes_condition_code(doctype, creating, before, after)
         if not _targets_are_plain(creating, before, after, target_field):
-            return {"dormant": False, "reason": _NOT_PLAIN_DOCTYPE}
+            return {"dormant": False, "reason": _NOT_PLAIN_DOCTYPE, "changes_live_code": code}
         stored_ok = creating or _stored_doctype_is_dormant(before(target_field))
         if stored_ok and _stored_doctype_is_dormant(after(target_field)):
             return {"dormant": True, "reason": f"{doctype} changes a DocType nobody else can reach yet"}
-        return {"dormant": False, "reason": f"{doctype} changes a DocType other people can reach"}
+        return {
+            "dormant": False,
+            "reason": f"{doctype} changes a DocType other people can reach",
+            "changes_live_code": code,
+        }
 
     if doctype == "Custom DocPerm":
         if not _targets_are_plain(creating, before, after, "parent"):
