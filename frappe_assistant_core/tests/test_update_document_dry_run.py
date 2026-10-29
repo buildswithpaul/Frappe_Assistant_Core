@@ -161,9 +161,15 @@ class TestUpdateDryRunWithBeforeSaveScript(BaseAssistantTest):
             }
         ).insert()
         # The class rollback removes the script row but not the cached script map, which would
-        # then send every later ToDo save to a script that no longer exists.
-        self.addCleanup(frappe.client_cache.delete_value, "server_script_map")
-        self.addCleanup(frappe.db.delete, "Server Script", {"name": f"FAC Dry Update {self.tag}"})
+        # then send every later ToDo save to a script that no longer exists. Deleting the script
+        # clears that map through its own on_trash, on v15 and v16 alike.
+        self.addCleanup(
+            frappe.delete_doc,
+            "Server Script",
+            f"FAC Dry Update {self.tag}",
+            force=True,
+            ignore_permissions=True,
+        )
         # Production reaches this on a bench whose common_site_config sets server_script_enabled,
         # which FACO's rule building needs; the CI bench need not set it.
         enabled = patch("frappe.utils.safe_exec.is_safe_exec_enabled", return_value=True)
