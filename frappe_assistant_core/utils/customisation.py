@@ -180,23 +180,33 @@ def _is_custom(name: str) -> int:
     return cint(frappe.db.get_value("DocType", name, "custom"))
 
 
-def _referenced_elsewhere(name: str) -> bool:
-    """Whether a field on another DocType may link to or embed this one.
+def _references_to(name: str) -> tuple:
+    """(doctype, filters) for each kind of record that can point at the DocType ``name``.
 
-    Any field whose options name it counts, whatever its type, because a Property Setter can turn
-    the field into a Link or Table; so does a Property Setter that points a field's options at it.
+    Fields: any field whose options name it, whatever its type, because a Property Setter can turn
+    the field into a Link or Table, and a Property Setter that points a field's options at it.
+    Records other people open: a Connections link on another form, a Web Form, a Report, a
+    Workspace link or shortcut, a Dashboard Chart and a Notification.
     """
-    return bool(
-        frappe.get_all("DocField", filters={"options": name, "parent": ["!=", name]}, pluck="name", limit=1)
-        or frappe.get_all(
-            "Custom Field", filters={"options": name, "dt": ["!=", name]}, pluck="name", limit=1
-        )
-        or frappe.get_all(
-            "Property Setter",
-            filters={"property": "options", "value": name, "doc_type": ["!=", name]},
-            pluck="name",
-            limit=1,
-        )
+    return (
+        ("DocField", {"options": name, "parent": ["!=", name]}),
+        ("Custom Field", {"options": name, "dt": ["!=", name]}),
+        ("Property Setter", {"property": "options", "value": name, "doc_type": ["!=", name]}),
+        ("DocType Link", {"link_doctype": name, "parent": ["!=", name]}),
+        ("Web Form", {"doc_type": name}),
+        ("Report", {"ref_doctype": name}),
+        ("Workspace Link", {"link_type": "DocType", "link_to": name}),
+        ("Workspace Shortcut", {"type": "DocType", "link_to": name}),
+        ("Dashboard Chart", {"document_type": name}),
+        ("Notification", {"document_type": name}),
+    )
+
+
+def _referenced_elsewhere(name: str) -> bool:
+    """Whether another form or a record other people open links to, embeds or reports on this DocType."""
+    return any(
+        frappe.get_all(doctype, filters=filters, pluck="name", limit=1)
+        for doctype, filters in _references_to(name)
     )
 
 
@@ -206,8 +216,8 @@ def _stored_doctype(name: str) -> Optional[Dict[str, Any]]:
     A Single or virtual DocType has no table to count, so it is never reported custom (never
     dormant). `custom_roles` are the Custom DocPerm roles, which override the standard ones.
     `in_use` is true for a child table (it has no DocPerm rows and no records until a parent
-    saves, yet shows inside its parent's form) and for a DocType another form links to or embeds:
-    deleting it reaches those forms.
+    saves, yet shows inside its parent's form) and for a DocType that another form, or a record
+    other people open, points at (see ``_references_to``): deleting it reaches them.
     """
     kind = (
         frappe.db.get_value("DocType", name, ["issingle", "is_virtual", "istable"], as_dict=True)

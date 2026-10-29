@@ -649,6 +649,78 @@ class TestCustomisationImpact(BaseAssistantTest):
         )
 
 
+class TestDocTypeReferences(BaseAssistantTest):
+    """A custom DocType that a record other people open points at is in use, so never dormant."""
+
+    def test_a_record_others_open_that_points_at_the_doctype_makes_it_live(self):
+        # Console Log stands in for a custom DocType with only System Manager rows that nothing
+        # points at yet. Production reaches each reference when a builder adds a Connections link
+        # on another form, or saves a Web Form, Report, Workspace link or shortcut, Dashboard Chart
+        # or Notification on the DocType. db_insert writes the row without its hooks and each one is
+        # rolled back to the savepoint before the next.
+        references = {
+            "DocType Link": {
+                "parent": "ToDo",
+                "parenttype": "DocType",
+                "parentfield": "links",
+                "link_doctype": "Console Log",
+                "link_fieldname": "reference_name",
+            },
+            "Web Form": {"title": "fac probe", "doc_type": "Console Log"},
+            "Report": {
+                "report_name": "fac probe",
+                "ref_doctype": "Console Log",
+                "report_type": "Report Builder",
+            },
+            "Workspace Link": {
+                "parent": "Users",
+                "parenttype": "Workspace",
+                "parentfield": "links",
+                "type": "Link",
+                "link_type": "DocType",
+                "link_to": "Console Log",
+            },
+            "Workspace Shortcut": {
+                "parent": "Users",
+                "parenttype": "Workspace",
+                "parentfield": "shortcuts",
+                "type": "DocType",
+                "link_to": "Console Log",
+            },
+            "Dashboard Chart": {"chart_name": "fac probe", "document_type": "Console Log"},
+            "Notification": {"subject": "fac probe", "document_type": "Console Log"},
+        }
+        with patch(IS_CUSTOM, autospec=True, return_value=1), patch(DB_COUNT, autospec=True, return_value=0):
+            self.assertTrue(_impact("delete_document", "DocType", name="Console Log")["dormant"])
+            for doctype, fields in references.items():
+                with self.subTest(reference=doctype):
+                    frappe.db.savepoint("fac_reference_probe")
+                    frappe.get_doc({"doctype": doctype, "name": "fac-reference-probe", **fields}).db_insert()
+                    r = _impact("delete_document", "DocType", name="Console Log")
+                    frappe.db.rollback(save_point="fac_reference_probe")
+                    self.assertFalse(r["dormant"])
+
+    def test_a_connections_link_to_itself_keeps_the_doctype_dormant(self):
+        # A builder can add a Connections link from a DocType to itself; nobody else sees it. Rolled
+        # back to the savepoint so the row cannot leak into the next test of this class.
+        with patch(IS_CUSTOM, autospec=True, return_value=1), patch(DB_COUNT, autospec=True, return_value=0):
+            frappe.db.savepoint("fac_self_link_probe")
+            frappe.get_doc(
+                {
+                    "doctype": "DocType Link",
+                    "name": "fac-self-link-probe",
+                    "parent": "Console Log",
+                    "parenttype": "DocType",
+                    "parentfield": "links",
+                    "link_doctype": "Console Log",
+                    "link_fieldname": "reference_name",
+                }
+            ).db_insert()
+            r = _impact("delete_document", "DocType", name="Console Log")
+            frappe.db.rollback(save_point="fac_self_link_probe")
+        self.assertTrue(r["dormant"])
+
+
 class TestCustomisationImpactTool(BaseAssistantTest):
     @staticmethod
     def _tool():

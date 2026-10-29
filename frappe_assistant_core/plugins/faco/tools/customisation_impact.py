@@ -35,6 +35,8 @@ class CustomisationImpact(BaseTool):
             "customisation write ask for approval again."
         )
         self.requires_permission = None
+        # Hidden from the model and read-only; the write it checks is audited when it runs.
+        self.audit_executions = False
         self.inputSchema = {
             "type": "object",
             "properties": {
