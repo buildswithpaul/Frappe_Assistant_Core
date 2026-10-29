@@ -255,6 +255,23 @@ def _referenced_elsewhere(name: str) -> bool:
     )
 
 
+# DocType properties that decide what kind of DocType it is. A DocType-level Property Setter can set
+# them, and Frappe's meta applies it over the DocType row.
+_KIND_PROPERTIES = frozenset({"istable", "issingle", "is_virtual"})
+
+
+def _kind_is_overridden(name: str) -> bool:
+    """Whether a Property Setter changes whether the DocType is a child table, Single or virtual."""
+    return bool(
+        frappe.get_all(
+            "Property Setter",
+            filters={"doc_type": name, "property": ["in", tuple(_KIND_PROPERTIES)]},
+            pluck="name",
+            limit=1,
+        )
+    )
+
+
 def _stored_doctype(name: str) -> Optional[Dict[str, Any]]:
     """What decides whether a stored DocType is dormant, or None when it does not exist.
 
@@ -262,7 +279,9 @@ def _stored_doctype(name: str) -> Optional[Dict[str, Any]]:
     dormant). `custom_roles` are the Custom DocPerm roles, which override the standard ones.
     `in_use` is true for a child table (it has no DocPerm rows and no records until a parent
     saves, yet shows inside its parent's form) and for a DocType that another form, or a record
-    other people open, points at (see ``_references_to``): deleting it reaches them.
+    other people open, points at (see ``_references_to``): deleting it reaches them. The kind is
+    read from the DocType row, so a Property Setter that changes it (``_KIND_PROPERTIES``) makes
+    the DocType count as in use, whatever it sets: any doubt counts as live.
     """
     kind = (
         frappe.db.get_value("DocType", name, ["issingle", "is_virtual", "istable"], as_dict=True)
@@ -272,6 +291,8 @@ def _stored_doctype(name: str) -> Optional[Dict[str, Any]]:
     if not kind:
         return None
     facts: Dict[str, Any] = {"custom": 0, "roles": [], "custom_roles": [], "records": 0, "in_use": False}
+    if _kind_is_overridden(name):
+        return {**facts, "in_use": True}
     if cint(kind.issingle) or cint(kind.is_virtual):
         return facts
     facts["custom"] = _is_custom(name)
@@ -682,6 +703,14 @@ def _dormancy(tool_name: str, tool_input: Any) -> Dict[str, Any]:
         code = _changes_condition_code(doctype, creating, before, after)
         if not _targets_are_plain(creating, before, after, target_field):
             return {"dormant": False, "reason": _NOT_PLAIN_DOCTYPE, "changes_live_code": code}
+        if doctype == "Property Setter" and _KIND_PROPERTIES & {before("property"), after("property")}:
+            # A child table can be embedded in any form; a Single or virtual DocType has no records
+            # to count. Either way it may reach people now, with all the code on it.
+            return {
+                "dormant": False,
+                "reason": "Property Setter changes what kind of DocType it is",
+                "changes_live_code": code or bool(code_going_live(after(target_field))),
+            }
         stored_ok = creating or _stored_doctype_is_dormant(before(target_field))
         if stored_ok and _stored_doctype_is_dormant(after(target_field)):
             return {"dormant": True, "reason": f"{doctype} changes a DocType nobody else can reach yet"}

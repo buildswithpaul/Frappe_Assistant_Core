@@ -9,11 +9,14 @@ import { baseToolName } from "@/utils/toolNames";
 import { codeLanguage, formatKey } from "./helpers";
 
 const isName = (value) => typeof value === "string" && value !== "";
+// DocType properties a Property Setter can change to make it a child table, Single or virtual.
+const KIND_PROPERTIES = ["istable", "issingle", "is_virtual"];
 
 /**
  * What to ask the server about, or null for a write that cannot open a DocType: a DocType update
- * that sets its permissions or makes it a child table ({ target }), or a Custom DocPerm write
- * ({ target } from its parent, or { customDocperm } for an update that leaves the parent out).
+ * that sets its permissions or makes it a child table ({ target }), a Property Setter that changes
+ * its kind ({ target }), or a Custom DocPerm write ({ target } from its parent, or { customDocperm }
+ * for an update that leaves the parent out).
  */
 export function openingTarget(toolName, input) {
 	const tool = baseToolName(toolName);
@@ -21,7 +24,11 @@ export function openingTarget(toolName, input) {
 	if (input?.doctype === "DocType" && tool === "update_document" && isName(input.name)) {
 		return "permissions" in data || "istable" in data ? { target: input.name } : null;
 	}
-	if (input?.doctype !== "Custom DocPerm" || !["create_document", "update_document"].includes(tool)) return null;
+	if (!["create_document", "update_document"].includes(tool)) return null;
+	if (input?.doctype === "Property Setter") {
+		return KIND_PROPERTIES.includes(data.property) && isName(data.doc_type) ? { target: data.doc_type } : null;
+	}
+	if (input?.doctype !== "Custom DocPerm") return null;
 	if (isName(data.parent)) return { target: data.parent };
 	return tool === "update_document" && isName(input.name) ? { customDocperm: input.name } : null;
 }

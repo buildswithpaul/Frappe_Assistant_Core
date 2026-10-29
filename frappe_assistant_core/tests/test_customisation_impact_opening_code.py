@@ -33,6 +33,7 @@ from frappe_assistant_core.utils.field_code import code_on_doctype
 WITH_CODE = "FAC Opening With Code"
 WITH_SETTER = "FAC Opening With Setter"
 PLAIN = "FAC Opening Plain"
+KIND_SET = "FAC Opening Kind Set"
 LIVE = "FAC Opening Live"
 OPEN = "eval:doc.status == 'Open'"
 BANNER = "<div>{{ doc.status }}</div>"
@@ -106,7 +107,7 @@ class TestOpeningADormantDocTypeShowsItsCode(BaseAssistantTest):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        for name in (WITH_CODE, WITH_SETTER, PLAIN):
+        for name in (WITH_CODE, WITH_SETTER, PLAIN, KIND_SET):
             _doctype(name)
         _doctype(LIVE, role="Employee")
         cls.region = _custom_field(WITH_CODE, "region", fieldtype="Data", depends_on=OPEN)
@@ -116,6 +117,19 @@ class TestOpeningADormantDocTypeShowsItsCode(BaseAssistantTest):
         _custom_field(PLAIN, "region", fieldtype="Data", depends_on="status", options="Email")
         cls.condition_setter = _property_setter(WITH_SETTER, "status", "read_only_depends_on", OPEN)
         cls.html_setter = _property_setter(WITH_SETTER, "notes", "fieldtype", "HTML")
+        # Production reaches this when Customize Form, or a Property Setter FACO writes, makes the
+        # DocType a child table; the meta applies it over the DocType row.
+        _db_insert(
+            {
+                "doctype": "Property Setter",
+                "name": f"{KIND_SET}-main-istable",
+                "doc_type": KIND_SET,
+                "doctype_or_field": "DocType",
+                "property": "istable",
+                "property_type": "Check",
+                "value": "1",
+            }
+        )
         # Production reaches this when a builder gives the dormant DocType a System Manager rule.
         cls.perm = _db_insert(
             {"doctype": "Custom DocPerm", "parent": WITH_CODE, "role": "System Manager", "read": 1}
@@ -206,3 +220,26 @@ class TestOpeningADormantDocTypeShowsItsCode(BaseAssistantTest):
         self.assertEqual({e["field"] for e in get_code_going_live(custom_docperm=self.perm)}, fields)
         self.assertEqual(get_code_going_live(target=LIVE), [])
         self.assertEqual(get_code_going_live(target=PLAIN), [])
+
+    def test_a_property_setter_that_changes_the_doctypes_kind_makes_it_live(self):
+        # The DocType row still says it is no child table; the stored Property Setter says it is.
+        self.assertFalse(_impact("update_document", "DocType", {"description": "x"}, KIND_SET)["dormant"])
+        field = _impact(
+            "create_document", "Custom Field", {"dt": KIND_SET, "fieldname": "x", "depends_on": OPEN}
+        )
+        self.assertIs(field["dormant"], False)
+        self.assertIs(field["changes_live_code"], True)
+
+    def test_writing_a_kind_property_setter_is_never_dormant_and_puts_the_code_live(self):
+        base = {"doctype_or_field": "DocType", "value": "1"}
+        for prop in ("istable", "issingle", "is_virtual"):
+            r = _impact(
+                "create_document", "Property Setter", {**base, "doc_type": WITH_CODE, "property": prop}
+            )
+            self.assertIs(r["dormant"], False, prop)
+            self.assertIs(r["changes_live_code"], True, prop)
+            plain = _impact(
+                "create_document", "Property Setter", {**base, "doc_type": PLAIN, "property": prop}
+            )
+            self.assertIs(plain["dormant"], False, prop)
+            self.assertIs(plain["changes_live_code"], False, prop)

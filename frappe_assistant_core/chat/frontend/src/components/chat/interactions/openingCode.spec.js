@@ -19,6 +19,12 @@ describe("openingTarget", () => {
 		expect(openingTarget("delete_document", { doctype: "Custom DocPerm", name: "p1" })).toBeNull();
 		expect(openingTarget("update_document", { doctype: "Custom Field", name: "x", data: {} })).toBeNull();
 	});
+
+	it("asks about a Property Setter that makes the DocType a child table, Single or virtual", () => {
+		const setter = { doctype: "Property Setter", data: { doc_type: "Site Visit", doctype_or_field: "DocType", property: "istable", value: "1" } };
+		expect(openingTarget("create_document", setter)).toEqual({ target: "Site Visit" });
+		expect(openingTarget("create_document", { ...setter, data: { ...setter.data, property: "label" } })).toBeNull();
+	});
 });
 
 describe("openingCodeBlocks", () => {
