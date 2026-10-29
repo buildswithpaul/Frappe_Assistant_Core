@@ -116,7 +116,47 @@ def get_page(slug: str) -> dict:
         "draft": draft,
         "visibility": page.visibility,
         "owner_is_me": page.owner == user,
+        "format_settings": page_format_settings(),
     }
+
+
+# The site defaults Desk's frappe.format reads from frappe.boot.sysdefaults to show a number, an
+# amount or a date (frappe/public/js/frappe/form/formatters.js and utils/number_format.js).
+_FORMAT_DEFAULTS = (
+    "number_format",
+    "currency",
+    "currency_precision",
+    "float_precision",
+    "date_format",
+    "time_format",
+    "hide_currency_symbol",
+    "rounding_method",
+    "use_number_format_from_currency",
+)
+# The fields of each enabled Currency that Desk boots as ":Currency" docs (frappe/boot.py
+# load_currency_docs) and the formatter reads.
+_CURRENCY_FIELDS = ("symbol", "symbol_on_right", "number_format", "fraction_units")
+
+
+def page_format_settings() -> dict:
+    """The site's settings for showing numbers, amounts and dates, for a page's ``frappe.format``.
+
+    Outside Desk a page's script gets a stand-in ``frappe`` whose ``format`` shows what Desk's
+    shows, from these. Only the site's own defaults are read, never a user's: Desk merges a user's
+    defaults over the site's, which a page leaves out. Every Desk user boots with the enabled
+    currencies, so they are read without a permission check, as Desk reads them.
+    """
+    defaults = frappe.defaults.get_defaults_for()
+    settings = {}
+    for key in _FORMAT_DEFAULTS:
+        value = defaults.get(key)
+        # A key set more than once reads as a list; Desk takes the first.
+        settings[key] = value[0] if isinstance(value, list | tuple) else value
+    currencies = frappe.get_all("Currency", filters={"enabled": 1}, fields=["name", *_CURRENCY_FIELDS])
+    settings["currencies"] = {
+        currency.name: {field: currency.get(field) for field in _CURRENCY_FIELDS} for currency in currencies
+    }
+    return settings
 
 
 def _roles_by_page(names: list[str]) -> dict[str, list[str]]:

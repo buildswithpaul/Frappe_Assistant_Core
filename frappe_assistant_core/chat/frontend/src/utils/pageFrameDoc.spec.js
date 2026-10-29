@@ -89,7 +89,17 @@ describe("pageFrameDoc", () => {
 
 	it("passes the user as JSON no tag can close", () => {
 		const { inner } = innerDoc(pageFrameSrcdoc(parts({ user: "</script><b>x" })));
-		expect(JSON.parse(inner.getElementById("fac-page-config").textContent)).toEqual({ user: "</script><b>x" });
+		expect(JSON.parse(inner.getElementById("fac-page-config").textContent)).toEqual({
+			user: "</script><b>x",
+			format_settings: {},
+		});
+		expect(inner.querySelector("b")).toBeNull();
+	});
+
+	it("passes the site's format settings for frappe.format, as JSON no tag can close", () => {
+		const formatSettings = { number_format: "#,##,###.##", currencies: { XYZ: { symbol: "</script><b>x" } } };
+		const { inner } = innerDoc(pageFrameSrcdoc(parts({ formatSettings })));
+		expect(JSON.parse(inner.getElementById("fac-page-config").textContent).format_settings).toEqual(formatSettings);
 		expect(inner.querySelector("b")).toBeNull();
 	});
 

@@ -35,7 +35,9 @@ When a user asks for a report, a summary or "a PDF of …" about their own data,
   - `frappe.session.user`;
   - `frappe.datetime.get_today` and `str_to_user`;
   - `frappe.utils.escape_html`, the same as in Desk;
-  - `frappe.format`.
+  - `frappe.format(value, df, options, doc)`.
+
+  `frappe.format` returns plain text, never html, in the chat panel, on a personal page and on a shared page in Desk, and shows the same text in each: the site's number format, currency symbol and precision, and date format. Escape it like any other value. Give `df` the `fieldtype` (`Currency`, `Float`, `Int`, `Percent`, `Date`; anything else shows as text). For an amount in the record's own currency, set `options` to the name of the record's currency field, such as `"currency"` or `"party_account_currency"`, and pass the record as `doc`. `options` names a field, not a currency code: `options: "USD"` is ignored and the amount shows in the site's currency.
 
   The script runs as the user, so it reads only what they may. **Frappe's own reads run at once:** `frappe.db.get_list`, `get_value` and `get_doc`, and a `frappe.call` to `frappe.client.get_count`, `frappe.client.get_single_value`, `frappe.desk.reportview.get` or `frappe.desk.query_report.run`. **Everything else asks the user first**, in plain words in the panel:
   - **Every change asks each time**, listing every field it sets: `insert`, `set_value`, `delete_doc`. A save or submit shows each field before and after, and what it would clear.
@@ -50,12 +52,12 @@ When a user asks for a report, a summary or "a PDF of …" about their own data,
 ```js
 const esc = frappe.utils.escape_html;
 frappe.db.get_list("Sales Invoice", {
-  fields: ["name", "customer", "outstanding_amount"],
+  fields: ["name", "customer", "outstanding_amount", "party_account_currency"],
   filters: { docstatus: 1, outstanding_amount: [">", 0] },
   limit: 50,
 }).then((rows) => {
   root_element.querySelector("#rows").innerHTML = rows
-    .map((r) => `<tr><td>${esc(r.name)}</td><td>${esc(r.customer)}</td><td>${esc(frappe.format(r.outstanding_amount, { fieldtype: "Currency" }))}</td></tr>`)
+    .map((r) => `<tr><td>${esc(r.name)}</td><td>${esc(r.customer)}</td><td>${esc(frappe.format(r.outstanding_amount, { fieldtype: "Currency", options: "party_account_currency" }, null, r))}</td></tr>`)
     .join("");
 });
 ```

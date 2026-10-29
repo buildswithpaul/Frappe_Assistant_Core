@@ -123,7 +123,8 @@ const errorReply = (error) => ({
  * Build a personal page's frame and serve its bridge.
  *
  * @param {object} options
- * @param {{title?: string, html?: string, style?: string, script?: string}} options.page get_page's response
+ * @param {{title?: string, html?: string, style?: string, script?: string, format_settings?: object}} options.page
+ *   get_page's response
  * @param {string} options.kitCss the mockup kit
  * @param {string} options.user the session user
  * @param {string} [options.origin] the site origin; the window's own by default
@@ -164,6 +165,7 @@ export function createPageFrame({
 		script: page.script,
 		kitCss,
 		user,
+		formatSettings: page.format_settings,
 		origin,
 		nonce: makeNonce(),
 		version,

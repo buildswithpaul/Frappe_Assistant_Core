@@ -67,6 +67,14 @@ describe("createPageFrame", () => {
 		expect(element.srcdoc).toContain("fac_page_frame.js");
 	});
 
+	it("hands the frame the site's format settings get_page served with the page", () => {
+		const format_settings = { number_format: "#.###,##", currency: "EUR", currencies: {} };
+		const { element } = mountFrame({ page: { ...PAGE, format_settings } });
+		const outer = new DOMParser().parseFromString(element.srcdoc, "text/html");
+		const inner = new DOMParser().parseFromString(outer.querySelector("iframe").getAttribute("srcdoc"), "text/html");
+		expect(JSON.parse(inner.getElementById("fac-page-config").textContent).format_settings).toEqual(format_settings);
+	});
+
 	it("ignores a message from any window but the page's own frame", async () => {
 		mountFrame();
 		fromPage({ op: "call", id: 1, method: "frappe.client.get_list", args: {}, type: "GET" }, other);

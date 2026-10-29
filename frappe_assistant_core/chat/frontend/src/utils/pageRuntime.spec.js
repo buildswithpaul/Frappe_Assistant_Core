@@ -121,13 +121,22 @@ describe("makeFrappeStandIn", () => {
 		expect(api.getCall.mock.calls.map((c) => c[0])).toEqual(["frappe.client.get_value", "frappe.client.get"]);
 	});
 
-	it("formats the supported fieldtypes", () => {
-		const { format } = makeFrappeStandIn(api);
-		expect(format(1234.5, { fieldtype: "Float" })).toMatch(/1,234\.50/);
-		expect(format(1234.4, { fieldtype: "Int" })).toMatch(/1,234/);
-		expect(format(1234.5, { fieldtype: "Currency" })).toMatch(/1,234\.50/);
-		expect(format("plain", { fieldtype: "Data" })).toBe("plain");
-		expect(format(null, { fieldtype: "Data" })).toBe("");
+	it("formats as Desk does with the site's settings (pageFormat.parity.spec.js has the rest)", () => {
+		const formatSettings = {
+			number_format: "#,##,###.##",
+			currency: "INR",
+			float_precision: "3",
+			date_format: "dd-mm-yyyy",
+			currencies: { INR: { symbol: "₹", number_format: "#,##,###.##", fraction_units: 100 } },
+		};
+		const frappe = makeFrappeStandIn(api, { formatSettings });
+		expect(frappe.format(123456.5, { fieldtype: "Currency" })).toBe("₹ 1,23,456.50");
+		expect(frappe.format(1234.5, { fieldtype: "Float" })).toBe("1,234.500");
+		expect(frappe.format(1234.4, { fieldtype: "Int" })).toBe("1234");
+		expect(frappe.format("2026-10-29", { fieldtype: "Date" })).toBe("29-10-2026");
+		expect(frappe.format("plain", { fieldtype: "Data" })).toBe("plain");
+		expect(frappe.format(null, { fieldtype: "Data" })).toBe("");
+		expect(frappe.datetime.str_to_user("2026-10-29")).toBe("29-10-2026");
 	});
 
 	it("gives today's date as YYYY-MM-DD", () => {
