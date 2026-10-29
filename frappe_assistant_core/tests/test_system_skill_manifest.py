@@ -285,6 +285,12 @@ class TestSystemSkillManifest(BaseAssistantTest):
         self.assertIn("Fix any script error before you say the page is done", text)
         self.assertIn("within the limits of that API", text)
 
+    def test_a_page_is_checked_in_the_chat_app_with_the_screenshot_alone(self):
+        # #34515: the Desk-only steps came first, so FACO in the chat app reached for tools it can't run there.
+        step = self._read_skill("fac_page.md").split("4. **Check it**")[1].split("\n5. ")[0]
+        self.assertIn("work only in the Desk widget", step)
+        self.assertLess(step.index("`page_errors`"), step.index("`browser_navigate_to`"))
+
     def test_retired_export_template_is_removed(self):
         self.assertNotIn(
             RETIRED_TEMPLATE,

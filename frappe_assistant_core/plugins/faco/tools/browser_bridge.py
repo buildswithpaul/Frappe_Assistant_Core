@@ -154,6 +154,26 @@ def _claimed_client(session_id: str | None) -> str | None:
     return client.decode("utf-8") if isinstance(client, bytes) else client
 
 
+def resolve_call_client(session_id: str | None, client_type: str | None) -> str | None:
+    """The client that answers a browser call: the chat app once it has taken the turn over."""
+    if client_type in (None, WIDGET_CLIENT) and _claimed_client(session_id) == SPA_CLIENT:
+        return SPA_CLIENT
+    return client_type
+
+
+def desk_only_in_chat_app_error() -> str:
+    """What FACO is told when a Desk-only browser tool is called on a turn the chat app holds.
+
+    The chat app answers the tools that wait for the browser with the same words
+    (chat/frontend/src/composables/useSpaBrowserTools.js).
+    """
+    return _(
+        "This browser tool works only in the Desk widget, and the user is in the full chat app. "
+        "Use browser_take_screenshot instead: it captures the page open beside the chat and returns "
+        "its page_errors and page_text."
+    )
+
+
 def _retype_queued_calls(session_id: str) -> None:
     """Retype the widget's calls already parked on the conversation's queue, keeping their order."""
     key = _pending_calls_key("", session_id)
@@ -206,8 +226,7 @@ def send_browser_tool_call(
     _remember_call_owner(call_id, user)
 
     # The chat app took this turn over from the widget: it answers the widget's calls now.
-    if client_type in (None, WIDGET_CLIENT) and _claimed_client(session_id) == SPA_CLIENT:
-        client_type = SPA_CLIENT
+    client_type = resolve_call_client(session_id, client_type)
 
     # 1. Store in Redis pending queue (durable, survives page navigation)
     call_data = json.dumps(

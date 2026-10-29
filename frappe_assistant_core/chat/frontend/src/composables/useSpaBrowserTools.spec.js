@@ -220,17 +220,31 @@ describe("useSpaBrowserTools", () => {
 		expect(results()[0].error).toMatch(/draft/i);
 	});
 
-	it("leaves the widget's calls, another tab's turn and tools it lacks alone, and drains nothing", async () => {
+	it("leaves the widget's calls and another tab's turn alone, and drains nothing", async () => {
 		showPage();
 		wrapper = mount(Host);
 		await call("c4", { client_type: "widget" });
 		await call("c5", { client_type: undefined });
-		await call("c6", { tool_name: "get_page_context" });
 		store.ownsTurn = false;
+		await call("c6", { tool_name: "capture_diagnostics" });
 		await call("c7");
 		expect(baseCall).not.toHaveBeenCalled();
 		expect(confirms.value).toEqual([]);
 	});
+
+	// #34515: a call typed for the chat app is no other client's to answer, so leaving it alone
+	// left FACO waiting on nobody.
+	it.each(["capture_diagnostics", "get_form_data", "get_page_context", "navigate_to", "wait_for_page"])(
+		"answers %s on its own turn at once, without asking, and points FACO to the page screenshot",
+		async (tool_name) => {
+			showPage();
+			wrapper = mount(Host);
+			await call("c8", { tool_name });
+			expect(confirms.value).toEqual([]);
+			expect(results()).toEqual([{ call_id: "c8", error: expect.stringMatching(/browser_take_screenshot/) }]);
+			expect(results()[0].error).toMatch(/page_errors/);
+		}
+	);
 
 	it("answers a turn taken over from the widget, and says at once that a Desk tool can't run here", async () => {
 		showPage();
@@ -239,7 +253,7 @@ describe("useSpaBrowserTools", () => {
 		store.ownsTurn = false;
 		claim.session = "s1";
 		await call("c20", { tool_name: "get_form_data" });
-		expect(results()).toEqual([{ call_id: "c20", error: expect.stringMatching(/Desk page/) }]);
+		expect(results()).toEqual([{ call_id: "c20", error: expect.stringMatching(/browser_take_screenshot/) }]);
 		call("c21");
 		await flushPromises();
 		expect(confirms.value).toHaveLength(1);

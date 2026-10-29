@@ -191,10 +191,10 @@ describe("createDispatcher", () => {
 		expect(t.handlers.take_screenshot).toHaveBeenCalledTimes(1);
 	});
 
-	it("can leave a tool it has no handler for unanswered", async () => {
-		const t = setup({ ignoreUnknownTools: true });
+	it("answers a call it owns for a tool it has no handler for at once", async () => {
+		const t = setup({ unknownToolError: (tool) => `no ${tool} here` });
 		await t.dispatcher.handle({ call_id: "u1", tool_name: "get_form_data", params: {} });
-		expect(t.calls).toEqual([]);
+		expect(t.submits()).toEqual([{ name: "submit_browser_tool_result", args: { call_id: "u1", error: "no get_form_data here" } }]);
 	});
 
 	it("scopes Always Allow by its trust key", async () => {

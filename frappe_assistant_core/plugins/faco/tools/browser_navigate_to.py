@@ -115,13 +115,16 @@ class BrowserNavigateTo(BaseBrowserTool):
     def execute(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """
         Navigate is fire-and-forget: return success immediately and send the
-        Socket.IO event for the widget to pick up. The SPA handles navigation
-        from the SSE tool_call_start event (which includes the URL in `input`).
+        Socket.IO event for the widget to pick up. On a turn the chat app holds
+        it fails at once instead: the chat app never leaves for Desk.
 
         No need to wait for browser confirmation — navigation destroys the
         JS context anyway, so the widget can't reliably respond.
         """
         from frappe_assistant_core.plugins.faco.tools.browser_bridge import (
+            SPA_CLIENT,
+            desk_only_in_chat_app_error,
+            resolve_call_client,
             send_browser_tool_call,
         )
 
@@ -146,6 +149,12 @@ class BrowserNavigateTo(BaseBrowserTool):
                 "error": _("Only same-site http(s) navigation allowed"),
             }
 
+        session_id = getattr(frappe.local, "ar_session_id", None)
+        client_type = resolve_call_client(session_id, getattr(frappe.local, "ar_client_type", None))
+        # Nothing waits for this call, so the chat app cannot answer it: say so here (#34515).
+        if client_type == SPA_CLIENT:
+            return {"success": False, "error": desk_only_in_chat_app_error()}
+
         # Fire Socket.IO event for the widget (best-effort, widget may or may not be active)
         user = frappe.session.user
         call_id = str(uuid.uuid4())
@@ -157,8 +166,8 @@ class BrowserNavigateTo(BaseBrowserTool):
                 call_id=call_id,
                 tool_name=self.tool_name,
                 params=params,
-                session_id=getattr(frappe.local, "ar_session_id", None),
-                client_type=getattr(frappe.local, "ar_client_type", None),
+                session_id=session_id,
+                client_type=client_type,
             )
         except Exception:
             pass  # Widget notification is best-effort

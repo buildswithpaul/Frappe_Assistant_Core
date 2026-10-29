@@ -14,8 +14,6 @@ import { onMounted, onUnmounted, ref, watch } from "vue";
 import { useChatStore } from "@/stores/chatStore";
 import { useUserStore } from "@/stores/userStore";
 import { logger } from "@/utils/logger";
-import { writeHandoff } from "@/utils/sessionHandoff";
-import { getSurface } from "@/stores/chat/surface";
 import { findActiveMessage } from "@/stores/chat/utils";
 import { io } from "socket.io-client";
 
@@ -29,25 +27,6 @@ const spaSocketListeners = new Set();
 function getCookieValue(name) {
 	const match = document.cookie.match(new RegExp("(?:^|; )" + name + "=([^;]*)"));
 	return match ? decodeURIComponent(match[1]) : null;
-}
-
-/**
- * Same-origin navigation guard. Matches the server-side check in
- * browser_tools/navigate_to.py and the widget's desk/browserTools.js.
- * Rejects javascript:/data:/protocol-relative/cross-origin URLs.
- */
-function isSafeUrl(url) {
-	if (!url) return false;
-	if (url.startsWith("/") && !url.startsWith("//")) return true;
-	try {
-		const parsed = new URL(url, window.location.origin);
-		return (
-			(parsed.protocol === "http:" || parsed.protocol === "https:") &&
-			parsed.origin === window.location.origin
-		);
-	} catch {
-		return false;
-	}
 }
 
 function initializeSpaSocket(chatStore) {
@@ -417,49 +396,6 @@ export function useStreaming() {
 				chatStore.resetActivityTimeout();
 				chatStore.handleToolCallStart(data);
 
-				// Handle browser navigation from SPA — server returns success
-				// immediately (fire-and-forget), SPA does the actual navigation.
-				// The Desk widget skips this: its launcher's browser tools already
-				// routed in place, and a hard reload would kill the turn.
-				if (data.tool_name === "browser_navigate_to" && getSurface().clientType === "spa") {
-					// Store session for widget to pick up on the target page.
-					// Same-tab navigation only — sessionStorage scopes the hand-off
-					// to this tab so other tabs don't inherit the session id, and
-					// the stamped owner keeps it out of a different login.
-					writeHandoff(
-						"faco_widget_session",
-						chatStore.currentSessionId,
-						userStore.user
-					);
-
-					const url = data.input?.url;
-					if (url) {
-						setTimeout(() => {
-							let targetUrl = url;
-							if (url.startsWith("/")) {
-								targetUrl = url;
-							} else if (
-								url.startsWith("app/") ||
-								url.startsWith("Form/") ||
-								url.startsWith("List/")
-							) {
-								targetUrl = "/" + url;
-							} else if (!url.startsWith("http")) {
-								targetUrl = "/app/" + url.toLowerCase().replace(/ /g, "-");
-							}
-							// SECURITY: Defense in depth — refuse non-same-origin targets
-							// even if the server dispatched them.
-							if (!isSafeUrl(targetUrl)) {
-								logger.warn(
-									"Streaming: refusing unsafe navigation target:",
-									targetUrl
-								);
-								return;
-							}
-							window.location.href = targetUrl;
-						}, 500);
-					}
-				}
 				break;
 			case "tool_call_result":
 				chatStore.resetActivityTimeout();
