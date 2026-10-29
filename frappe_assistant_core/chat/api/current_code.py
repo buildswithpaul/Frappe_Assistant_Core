@@ -13,6 +13,7 @@ may read, so this is no general way to read a document.
 import frappe
 from frappe import _
 from frappe.model import get_permitted_fields
+from frappe.utils import cint
 
 # Mirrored in chat/frontend/src/components/chat/interactions/helpers.js (CODE_KEYS).
 CODE_KEYS = (
@@ -60,29 +61,70 @@ DEPENDS_ON_KEYS = ("depends_on", "mandatory_depends_on", "read_only_depends_on")
 
 # Fields the card shows as code on one doctype only, besides CODE_KEYS, since another doctype's
 # field of the same name may be no code at all. A Property Setter's value is code when it sets one of
-# DEPENDS_ON_KEYS. Mirrored in chat/frontend/src/components/chat/interactions/helpers.js
+# DEPENDS_ON_KEYS or an HTML field's options, and a Custom Field's options when it is an HTML field
+# (utils/field_code.py). Mirrored in chat/frontend/src/components/chat/interactions/helpers.js
 # (DOCTYPE_CODE_KEYS).
 CARD_CODE_KEYS_BY_DOCTYPE = {
     "Print Format": ("raw_commands", "format_data"),
-    "Custom Field": DEPENDS_ON_KEYS,
+    "Custom Field": (*DEPENDS_ON_KEYS, "options"),
     "Property Setter": ("value",),
 }
 
 # Child tables whose rows hold code, and each row's code columns: a Workflow Transition's condition
 # and a Notification Recipient's condition are Python, and a recipient's cc and bcc are Jinja
-# templates. utils/customisation.py compares them row by row. Mirrored in helpers.js
+# templates. utils/customisation.py compares them row by row. A DocType's own field rows hold code
+# as a Custom Field does, an eval: condition or an HTML field's options, compared by fieldname
+# (utils/field_code.py). Mirrored in chat/frontend/src/components/chat/interactions/rowCode.js
 # (ROW_CODE_COLUMNS).
 ROW_CODE_COLUMNS_BY_DOCTYPE = {
     "Workflow": {"transitions": ("condition",)},
     "Notification": {"recipients": ("condition", "cc", "bcc")},
+    "DocType": {"fields": (*DEPENDS_ON_KEYS, "options")},
 }
+
+# The columns that tell a stored code row apart when a write sends rows without a name (replace
+# mode), so the card diffs each sent row against the stored row it stands for: the move a
+# transition gates, the receiver a recipient's email goes to, a field's fieldname. Mirrored in
+# rowCode.js (ROW_KEY_COLUMNS).
+ROW_KEY_COLUMNS_BY_DOCTYPE = {
+    "Workflow": {"transitions": ("state", "action", "next_state")},
+    "Notification": {"recipients": ("receiver_by_document_field", "receiver_by_role")},
+    "DocType": {"fields": ("fieldname",)},
+}
+
+# Other columns the card reads to tell whether a row's value is code: a field's options is code only
+# on an HTML field.
+ROW_KIND_COLUMNS_BY_DOCTYPE = {"DocType": {"fields": ("fieldtype",)}}
 
 
 def _requested_fields(doctype: str, fields: list | str) -> list[str]:
     if isinstance(fields, str):
         fields = frappe.parse_json(fields)
-    allowed = (*CODE_KEYS, *GO_LIVE_KEYS, *CARD_CODE_KEYS_BY_DOCTYPE.get(doctype, ()))
+    allowed = (
+        *CODE_KEYS,
+        *GO_LIVE_KEYS,
+        *CARD_CODE_KEYS_BY_DOCTYPE.get(doctype, ()),
+        *ROW_CODE_COLUMNS_BY_DOCTYPE.get(doctype, {}),
+    )
     return [f for f in fields if isinstance(f, str) and f in allowed]
+
+
+def _code_rows(doctype: str, doc, table: str) -> list[dict]:
+    """The stored rows of a code table: each row's name, key, kind and code columns the caller may read."""
+    child_doctype = frappe.get_meta(doctype).get_field(table).options
+    permitted = get_permitted_fields(child_doctype, parenttype=doctype)
+    columns = [
+        column
+        for column in (
+            *ROW_KEY_COLUMNS_BY_DOCTYPE[doctype][table],
+            *ROW_KIND_COLUMNS_BY_DOCTYPE.get(doctype, {}).get(table, ()),
+            *ROW_CODE_COLUMNS_BY_DOCTYPE[doctype][table],
+        )
+        if column in permitted
+    ]
+    return [
+        {"name": row.name, **{column: row.get(column) or "" for column in columns}} for row in doc.get(table)
+    ]
 
 
 @frappe.whitelist(methods=["GET"])
@@ -90,12 +132,14 @@ def get_current_code(doctype: str, name: str, fields: list | str) -> dict:
     """Return the stored values of the requested code fields of one record.
 
     Args:
-            fields: Field names, as a list or a JSON-encoded list. Names outside CODE_KEYS, GO_LIVE_KEYS
-                    and the doctype's CARD_CODE_KEYS_BY_DOCTYPE, unknown to the doctype, or above the
+            fields: Field names, as a list or a JSON-encoded list. Names outside CODE_KEYS, GO_LIVE_KEYS,
+                    and the doctype's CARD_CODE_KEYS_BY_DOCTYPE and code tables, unknown to the doctype, or above the
                     caller's permission level are ignored.
 
     Returns:
-            {fieldname: stored value or ""}; a child table in TABLE_COLUMNS gives a list of values.
+            {fieldname: stored value or ""}; a child table in TABLE_COLUMNS gives a list of values, and
+            one in ROW_CODE_COLUMNS_BY_DOCTYPE a list of its rows, each its name, its
+            ROW_KEY_COLUMNS_BY_DOCTYPE columns and its code columns, so the card diffs each row.
     """
     if not frappe.has_permission(doctype, "read", doc=name):
         frappe.throw(
@@ -108,10 +152,14 @@ def get_current_code(doctype: str, name: str, fields: list | str) -> dict:
     # get_permitted_fields leaves child tables out, so their permission level is checked here.
     meta = frappe.get_meta(doctype)
     levels = meta.get_permlevel_access("read")
+    row_code = ROW_CODE_COLUMNS_BY_DOCTYPE.get(doctype, {})
     tables = [
         df.fieldname
         for df in meta.get_table_fields()
-        if df.fieldname in requested and df.fieldname in TABLE_COLUMNS and df.permlevel in levels
+        if df.fieldname in requested
+        and (df.fieldname in TABLE_COLUMNS or df.fieldname in row_code)
+        # The DocType doctype's own table fields carry no permlevel (DOCTYPE_TABLE_FIELDS).
+        and cint(df.permlevel) in levels
     ]
     out = {}
     if columns:
@@ -120,5 +168,9 @@ def get_current_code(doctype: str, name: str, fields: list | str) -> dict:
     if tables:
         # Read was checked above; child rows come from the record itself.
         doc = frappe.get_doc(doctype, name)
-        out.update({f: [row.get(TABLE_COLUMNS[f]) for row in doc.get(f)] for f in tables})
+        for f in tables:
+            if f in row_code:
+                out[f] = _code_rows(doctype, doc, f)
+            else:
+                out[f] = [row.get(TABLE_COLUMNS[f]) for row in doc.get(f)]
     return out

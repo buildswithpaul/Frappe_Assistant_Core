@@ -770,3 +770,64 @@ describe("ApprovalCard blank values", () => {
 		expect(update.findAll(".field-key").map((k) => k.text())).toEqual(["Description"]);
 	});
 });
+
+describe("ApprovalCard code in child rows and HTML fields", () => {
+	const OPEN = "eval:doc.status == 'Open'";
+	const update = (doctype, name, data) =>
+		mount(ApprovalCard, { props: { block: { id: "r1", tool_name: "update_document", input: { doctype, name, data }, interrupts } } });
+
+	it("diffs a transition's condition against the stored row", async () => {
+		currentCode.mockReset();
+		currentCode.mockResolvedValue({
+			transitions: [{ name: "t1", state: "Pending", action: "Approve", next_state: "Approved", condition: "doc.total < 1000" }],
+		});
+		const wrapper = update("Workflow", "PO", { transitions: [{ name: "t1", condition: "doc.total < 5000" }] });
+		await flushPromises();
+		expect(currentCode).toHaveBeenCalledWith("Workflow", "PO", ["transitions"]);
+		const code = wrapper.findComponent(CodePreview);
+		expect(code.props("previous")).toBe("doc.total < 1000");
+		expect(wrapper.find(".diff-del").text()).toContain("doc.total < 1000");
+		expect(wrapper.find(".diff-add").text()).toContain("doc.total < 5000");
+	});
+
+	it("diffs a DocType field's eval: condition by fieldname, and keeps a bare one in the table", async () => {
+		currentCode.mockReset();
+		currentCode.mockResolvedValue({
+			fields: [{ name: "f1", fieldname: "notes", fieldtype: "Data", depends_on: OPEN, mandatory_depends_on: "", read_only_depends_on: "", options: "" }],
+		});
+		const fields = [
+			{ fieldname: "notes", fieldtype: "Data", depends_on: "eval:doc.status == 'Closed'" },
+			{ fieldname: "summary", fieldtype: "Data", depends_on: "status" },
+		];
+		const wrapper = update("DocType", "Visit", { fields });
+		await flushPromises();
+		expect(currentCode).toHaveBeenCalledWith("DocType", "Visit", ["fields"]);
+		const code = wrapper.findAllComponents(CodePreview);
+		expect(code.map((c) => c.props("label"))).toEqual(["Fields, row 1: Depends On"]);
+		expect(wrapper.find(".diff-del").text()).toContain("'Open'");
+		expect(wrapper.find(".diff-add").text()).toContain("'Closed'");
+		const table = wrapper.find("table.child-table").text();
+		expect(table).toContain("status");
+		expect(table).not.toContain("eval:");
+	});
+
+	it("diffs a Custom Field's HTML markup against the stored one", async () => {
+		currentCode.mockReset();
+		currentCode.mockResolvedValue({ options: "<b>old</b>" });
+		const wrapper = update("Custom Field", "ToDo-banner", { options: "<b>new</b>" });
+		await flushPromises();
+		expect(currentCode).toHaveBeenCalledWith("Custom Field", "ToDo-banner", ["options"]);
+		expect(wrapper.find(".diff-del").text()).toContain("old");
+		expect(wrapper.find(".diff-add").text()).toContain("new");
+	});
+
+	it("keeps a Custom Field's or Property Setter's plain options out of the code", async () => {
+		const select = update("Custom Field", "ToDo-kind", { options: "Open\nClosed" });
+		const link = update("Property Setter", "ToDo-ref-options", { property: "options", value: "Customer" });
+		const markup = update("Property Setter", "File-preview_html-options", { property: "options", value: "<i>{{ doc.name }}</i>" });
+		await flushPromises();
+		expect(select.find(".code-preview").exists()).toBe(false);
+		expect(link.find(".code-preview").exists()).toBe(false);
+		expect(markup.findComponent(CodePreview).props("language")).toBe("xml");
+	});
+});

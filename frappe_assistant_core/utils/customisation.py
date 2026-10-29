@@ -45,6 +45,12 @@ from frappe_assistant_core.chat.api.current_code import (
     ROW_CODE_COLUMNS_BY_DOCTYPE,
     TABLE_COLUMNS,
 )
+from frappe_assistant_core.utils.field_code import (
+    field_code,
+    property_setter_code,
+    resulting_rows,
+    rows_field_code,
+)
 
 CUSTOMISATION_DOCTYPES = frozenset(
     {
@@ -374,9 +380,11 @@ def customisation_impact(tool_name: str, tool_input: Any) -> Dict[str, Any]:
     as a set; and code in child rows, ``ROW_CODE_COLUMNS_BY_DOCTYPE``, compared row by row) of a
     record that is live before and after the write, and when a create of a doctype without a switch
     (a Report, a Print Format, a Workflow) sets any live field. For a Custom Field or Property Setter
-    on a live DocType it is true when the write changes an ``eval:`` display condition
-    (``_changes_condition_code``). FAC Cloud shows its card for either even when an approved build
-    plan lists the write, so the user sees the final code.
+    on a live DocType it is true when the write changes an ``eval:`` display condition or an HTML
+    field's options, which the form renders (``_changes_condition_code``), and for a DocType that is
+    not dormant when the write leaves its own field rows with such code that did not run before
+    (``_doctype_changes_field_code``). FAC Cloud shows its card for either even when an approved
+    build plan lists the write, so the user sees the final code.
     Never writes. The reason is plain words for logs and never repeats stored values.
     """
     result = _dormancy(tool_name, tool_input)
@@ -527,31 +535,30 @@ def _changes_live_fields(doctype: str, data: Dict[str, Any], stored: Dict[str, A
     return False
 
 
-def _is_eval(value: Any) -> bool:
-    return isinstance(value, str) and value.lstrip().startswith("eval:")
-
-
 def _condition_code(doctype: str, values: Callable[[str], Any]) -> tuple:
-    """The ``eval:`` display conditions a Custom Field or Property Setter sets, with the field each runs on.
+    """The code a Custom Field or Property Setter sets, with the field it runs on; empty when none.
 
-    Empty when it sets none.
+    A Custom Field's ``eval:`` conditions and, for an HTML field, its options (``field_code``); a
+    Property Setter's value when it is code (``property_setter_code``).
     """
     if doctype == "Custom Field":
-        code = tuple(values(key) if _is_eval(values(key)) else "" for key in DEPENDS_ON_KEYS)
+        code = field_code(values)
         return (values("dt"), values("fieldname"), code) if any(code) else ()
-    prop, value = values("property"), values("value")
-    if prop in DEPENDS_ON_KEYS and _is_eval(value):
-        return (values("doc_type"), values("field_name"), prop, value)
+    if property_setter_code(values):
+        return (values("doc_type"), values("field_name"), values("property"), values("value"))
     return ()
 
 
 def _changes_condition_code(
     doctype: str, creating: bool, before: Callable[[str], Any], after: Callable[[str], Any]
 ) -> bool:
-    """Whether a Custom Field or Property Setter write adds, edits, moves or removes an ``eval:`` condition.
+    """Whether a Custom Field or Property Setter write adds, edits, moves or removes code in a field.
 
-    Only an ``eval:`` value is code. Frappe's form (``evaluate_depends_on_value`` in layout.js)
-    runs the text after ``eval:`` as JavaScript for every user who opens the form, while a bare
+    That is an ``eval:`` condition or an HTML field's options (``field_code``). An HTML field's
+    options is markup the form renders and runs (``HTML_FIELDTYPES`` cites the Frappe source), so
+    any change to it counts, and so does turning a field with options into an HTML field. For a
+    condition, only an ``eval:`` value is code. Frappe's form (``evaluate_depends_on_value`` in
+    layout.js) runs the text after ``eval:`` as JavaScript for every user who opens the form, while a bare
     fieldname only reads that field's value and ``fn:`` calls a method the form's own scripts
     already define, so neither runs anything the write wrote. Changing one fieldname to another is
     therefore no code change, while any change on a side that holds an ``eval:`` expression is,
@@ -560,6 +567,32 @@ def _changes_condition_code(
     """
     stored_code = () if creating else _condition_code(doctype, before)
     return _condition_code(doctype, after) != stored_code
+
+
+# A DocType's field rows, with every column field_code reads.
+_FIELD_ROW_COLUMNS = ("fieldname", "fieldtype", "options", *DEPENDS_ON_KEYS)
+
+
+def _doctype_changes_field_code(
+    creating: bool, data: Dict[str, Any], name: Any, stored_facts: Optional[Dict[str, Any]]
+) -> bool:
+    """Whether a DocType write that is not dormant leaves its fields with code nobody has seen live.
+
+    Code is what ``field_code`` reads: ``eval:`` conditions and an HTML field's options, the same as
+    on a Custom Field. Rows are compared by fieldname as the table stands once update_document has
+    applied ``fields`` (``resulting_rows``: whole replacement or named rows), so code that is added,
+    edited, removed or moved to another field counts, and reordering rows does not. A create, or an
+    update that makes a dormant DocType reachable, counts any code its fields carry, since none of
+    it ran for anyone before. Rows that cannot be read count.
+    """
+    stored_rows = [] if creating else _stored_rows("DocField", "DocType", name, "fields", _FIELD_ROW_COLUMNS)
+    was_live = not creating and not _stored_facts_are_dormant(stored_facts)
+    if was_live and "fields" not in data:
+        return False
+    after_rows = resulting_rows(data["fields"], stored_rows) if "fields" in data else stored_rows
+    after = rows_field_code(after_rows) if after_rows is not None else None
+    before = rows_field_code(stored_rows) if was_live else {}
+    return after is None or before is None or after != before
 
 
 def _dormancy(tool_name: str, tool_input: Any) -> Dict[str, Any]:
@@ -613,7 +646,11 @@ def _dormancy(tool_name: str, tool_input: Any) -> Dict[str, Any]:
         stored_facts = None if creating else _stored_doctype(name)
         if _doctype_write_is_dormant(creating, data, stored_facts):
             return {"dormant": True, "reason": "DocType is not reachable by anyone else yet"}
-        return {"dormant": False, "reason": "DocType may be reachable by other people"}
+        return {
+            "dormant": False,
+            "reason": "DocType may be reachable by other people",
+            "changes_live_code": _doctype_changes_field_code(creating, data, name, stored_facts),
+        }
 
     if doctype in ("Custom Field", "Property Setter"):
         target_field = "dt" if doctype == "Custom Field" else "doc_type"
