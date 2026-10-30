@@ -8,6 +8,8 @@
  * sandbox block anything else. The site's own images may come out blank, which is accepted.
  */
 
+import { fitScreenshot } from "@/utils/screenshotFit";
+
 // More elements than this makes a picture too large to draw.
 const MAX_ELEMENTS = 5000;
 // What the page's text check keeps: the start of the visible text, figures and table cells included.
@@ -160,14 +162,19 @@ export function pageText(root) {
 }
 
 /**
- * Draw `root` as a JPEG inside this frame.
+ * Draw `root` as a JPEG inside this frame, scaled or cut to fit a model's size limit
+ * (utils/screenshotFit).
  *
- * @returns {Promise<{buffer: ArrayBuffer, width: number, height: number}>}
+ * @returns {Promise<{buffer: ArrayBuffer, width: number, height: number, page_width: number,
+ *   page_height: number}>} the picture, its size and the page's own CSS size
  * @throws when the browser taints the canvas or cannot draw the page
  */
 export async function capturePage(root, { scale = 1, quality = 80 } = {}) {
 	const width = Math.max(1, Math.ceil(root.scrollWidth));
-	const height = Math.max(1, Math.ceil(root.scrollHeight));
+	const pageHeight = Math.max(1, Math.ceil(root.scrollHeight));
+	const fit = fitScreenshot({ width, height: pageHeight, scale: Math.min(Math.max(Number(scale) || 1, 0.5), 2) });
+	// The picture's own height: the SVG shows only this much of the page, from the top.
+	const height = fit.height;
 	const markup = new XMLSerializer().serializeToString(copyWithStyles(root));
 	const svg =
 		`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">` +
@@ -177,7 +184,7 @@ export async function capturePage(root, { scale = 1, quality = 80 } = {}) {
 	const url = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 	const image = await loadImage(url);
 	const canvas = document.createElement("canvas");
-	const ratio = Math.min(Math.max(Number(scale) || 1, 0.5), 2);
+	const ratio = fit.scale;
 	canvas.width = Math.round(width * ratio);
 	canvas.height = Math.round(height * ratio);
 	const context = canvas.getContext("2d");
@@ -195,5 +202,11 @@ export async function capturePage(root, { scale = 1, quality = 80 } = {}) {
 		}
 	});
 	if (!blob) throw new Error("The page is too large to capture.");
-	return { buffer: await blob.arrayBuffer(), width: canvas.width, height: canvas.height };
+	return {
+		buffer: await blob.arrayBuffer(),
+		width: canvas.width,
+		height: canvas.height,
+		page_width: width,
+		page_height: pageHeight,
+	};
 }
