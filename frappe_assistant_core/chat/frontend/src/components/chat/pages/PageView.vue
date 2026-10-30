@@ -44,7 +44,7 @@ import kitCss from "../../../../../../public/css/mockup_kit.css?raw";
 import PageFrame from "./PageFrame.vue";
 
 const props = defineProps({
-	// get_page's response: {title, html, script, style, draft, visibility}.
+	// get_page's response: {title, html, script, style, draft, visibility, format_settings}.
 	page: { type: Object, required: true },
 	user: { type: String, default: "" },
 	// The FAC Page record name, which a personal page's "Allow for this page" is scoped to.
@@ -96,7 +96,7 @@ function renderShared() {
 
 	const standIn = makeFrappeStandIn(
 		{ baseCall, getCall, user: props.user },
-		{ onUnsupported: (name) => emit("unsupported", name), onError },
+		{ onUnsupported: (name) => emit("unsupported", name), onError, formatSettings: props.page.format_settings },
 	);
 	const fac = {
 		chart(el, option) {

@@ -24,6 +24,8 @@
 	// {% include "frappe_assistant_core/assistant_core/page/fac_pages/fac_page_draft.js" %}
 	// fac_page_index, inlined the same way.
 	// {% include "frappe_assistant_core/assistant_core/page/fac_pages/fac_page_index.js" %}
+	// fac_page_frappe, the frappe a Shared page's script gets, inlined the same way.
+	// {% include "frappe_assistant_core/assistant_core/page/fac_pages/fac_page_frappe.js" %}
 
 	frappe.pages["fac-pages"].on_page_load = function (wrapper) {
 		const page = frappe.ui.make_app_page({
@@ -123,7 +125,7 @@
 				host,
 				`<div class="fac-page-root">${data.html || ""}</div>`,
 				css,
-				with_fac(script)
+				with_page_globals(script)
 			);
 		});
 	}
@@ -348,12 +350,18 @@
 	}
 
 	// create_shadow_element runs the script as a global <script>, which sees no variable of ours,
-	// so the fac it gets is read from this Desk page's frappe.pages entry when it starts. The chat
-	// panel runs it as new Function("root_element", "frappe", "__", "fac", script), so here it runs
-	// as a function of fac as well: the same scoping, and no global named fac.
-	function with_fac(script) {
-		frappe.pages["fac-pages"].fac = shown.fac;
-		return `(function (fac) {\n${script}\n})(frappe.pages["fac-pages"].fac);`;
+	// so the fac and frappe it gets are read from this Desk page's frappe.pages entry when it
+	// starts. The chat panel runs it as new Function("root_element", "frappe", "__", "fac", script),
+	// so here it runs as a function of fac and frappe as well: the same scoping, no global named
+	// fac, and a frappe.format that returns text as the panel's does (fac_page_frappe.js).
+	function with_page_globals(script) {
+		const entry = frappe.pages["fac-pages"];
+		entry.fac = shown.fac;
+		entry.page_frappe = entry.page_frappe || fac_page_frappe(frappe);
+		return (
+			`(function (fac, frappe) {\n${script}\n})` +
+			`(frappe.pages["fac-pages"].fac, frappe.pages["fac-pages"].page_frappe);`
+		);
 	}
 
 	// The sandboxed frame cannot load the kit itself (its CSP allows no fetches), so it is inlined.

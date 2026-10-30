@@ -33,6 +33,7 @@ from frappe_assistant_core.api.fac_page import (
     get_page,
     is_page_api_method,
     list_pages,
+    page_format_settings,
 )
 from frappe_assistant_core.plugins.core.tools.create_document import DocumentCreate
 from frappe_assistant_core.plugins.core.tools.get_document import DocumentGet
@@ -207,7 +208,16 @@ class TestFACPage(BaseAssistantTest):
 
         self.assertIn("/assets/frappe_assistant_core/js/fac_page_charts.js?v=", page.script)
         self.assertIn("const bundle = window.fac_page_charts;", page.script)
-        self.assertIn("with_fac(script)", page.script)
+        self.assertIn("with_page_globals(script)", page.script)
+
+    def test_the_host_page_gives_page_scripts_a_frappe_whose_format_returns_text(self):
+        # Desk's frappe.format returns html; a Shared page's script gets the wrapper that returns
+        # its text, inlined into the host page as Desk serves it.
+        page = frappe.get_doc("Page", HOST_PAGE)
+        page.load_assets()
+
+        self.assertIn("function fac_page_frappe(desk_frappe)", page.script)
+        self.assertIn('frappe.pages["fac-pages"].page_frappe', page.script)
 
     def test_a_published_page_html_is_served_unchanged(self):
         html = '<div class="mk-card" onclick="go()"><img src="x" onerror="track()"></div>'
@@ -717,6 +727,100 @@ class TestPersonalFACPage(BaseAssistantTest):
 
         self.assertTrue(result.get("success"), result)
         self.assertEqual(result["name"], f"tool-page-{_owner_tag(user)}")
+
+
+class TestPageFormatSettings(BaseAssistantTest):
+    """get_page serves the site's settings for a page's frappe.format, and nothing of the user's."""
+
+    KEYS = {
+        "number_format",
+        "currency",
+        "currency_precision",
+        "float_precision",
+        "date_format",
+        "time_format",
+        "hide_currency_symbol",
+        "rounding_method",
+        "use_number_format_from_currency",
+        "currencies",
+    }
+
+    def tearDown(self):
+        # nosemgrep: frappe-setuser — restores the session the tests below switched away from
+        frappe.set_user("Administrator")
+        super().tearDown()
+
+    def _open_as_reader(self) -> dict:
+        slug = _insert_shared_page(published=1, roles=("Report Manager",))
+        user = self.make_throwaway_user("fac-page-format", roles=("Report Manager",))
+        # nosemgrep: frappe-setuser — test acts as a non-Administrator inside the test transaction
+        frappe.set_user(user)
+        return get_page(slug)
+
+    def _currency(self, code: str, enabled: int, **fields) -> None:
+        # Production: a System Manager adds a currency, or enables one, in the Currency list.
+        if frappe.db.exists("Currency", code):
+            frappe.db.set_value("Currency", code, {"enabled": enabled, **fields})
+        else:
+            frappe.get_doc(
+                {"doctype": "Currency", "currency_name": code, "enabled": enabled, **fields}
+            ).insert(ignore_permissions=True)
+
+    def test_get_page_serves_the_sites_format_settings(self):
+        # Production: saving System Settings writes each field as a site default
+        # (SystemSettings.set_defaults), and Global Defaults writes the default currency.
+        frappe.db.set_default("number_format", "#.###,##")
+        frappe.db.set_default("date_format", "mm/dd/yyyy")
+        frappe.db.set_default("currency", "ZZA")
+
+        settings = self._open_as_reader()["format_settings"]
+
+        self.assertEqual(set(settings), self.KEYS)
+        self.assertEqual(settings["number_format"], "#.###,##")
+        self.assertEqual(settings["date_format"], "mm/dd/yyyy")
+        self.assertEqual(settings["currency"], "ZZA")
+
+    def test_a_users_own_defaults_are_left_out(self):
+        frappe.db.set_default("number_format", "#,###.##")
+        frappe.db.set_default("currency", "ZZA")
+        slug = _insert_shared_page(published=1, roles=("Report Manager",))
+        user = self.make_throwaway_user("fac-page-format-own", roles=("Report Manager",))
+        # Production: a user's own defaults (Session Defaults, User Permissions) are kept under
+        # the user in the same DefaultValue table, and Desk merges them over the site's.
+        frappe.defaults.set_user_default("number_format", "#'###.##", user)
+        frappe.defaults.set_user_default("currency", "ZZB", user)
+        # nosemgrep: frappe-setuser — test acts as a non-Administrator inside the test transaction
+        frappe.set_user(user)
+
+        settings = get_page(slug)["format_settings"]
+
+        self.assertEqual(settings["number_format"], "#,###.##")
+        self.assertEqual(settings["currency"], "ZZA")
+
+    def test_only_enabled_currencies_with_what_the_formatter_reads(self):
+        self._currency(
+            "ZZA", 1, symbol="Z$", symbol_on_right=1, number_format="#.###,##", fraction_units=1000
+        )
+        self._currency("ZZB", 0, symbol="ZB")
+
+        currencies = self._open_as_reader()["format_settings"]["currencies"]
+
+        self.assertEqual(
+            currencies["ZZA"],
+            {"symbol": "Z$", "symbol_on_right": 1, "number_format": "#.###,##", "fraction_units": 1000},
+        )
+        self.assertNotIn("ZZB", currencies)
+
+    def test_the_settings_are_the_same_for_every_user(self):
+        slug = _insert_shared_page(published=1, roles=("Report Manager",))
+        served = []
+        for prefix in ("fac-page-format-a", "fac-page-format-b"):
+            # nosemgrep: frappe-setuser — test acts as each reader inside the test transaction
+            frappe.set_user(self.make_throwaway_user(prefix, roles=("Report Manager",)))
+            served.append(get_page(slug)["format_settings"])
+
+        self.assertEqual(served[0], served[1])
+        self.assertEqual(served[0], page_format_settings())
 
 
 class TestIsPageApiMethod(BaseAssistantTest):
