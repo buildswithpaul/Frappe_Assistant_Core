@@ -95,6 +95,10 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends mariadb-client
+          # The runner's mariadb client now requires TLS by default and the mariadb service
+          # container offers none (ERROR 2026), so every client call, Frappe's included,
+          # connects without it.
+          printf '[client]\nskip-ssl\n' > ~/.my.cnf
 
       - name: Setup
         run: |
@@ -169,6 +173,10 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends mariadb-client
+          # The runner's mariadb client now requires TLS by default and the mariadb service
+          # container offers none (ERROR 2026), so every client call, Frappe's included,
+          # connects without it.
+          printf '[client]\nskip-ssl\n' > ~/.my.cnf
 
       - name: Setup
         run: |
