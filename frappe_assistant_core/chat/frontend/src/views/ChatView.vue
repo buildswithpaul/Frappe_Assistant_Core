@@ -303,6 +303,7 @@ import { useSheetDismiss } from "@/composables/useSheetDismiss";
 import { useComposerFocus } from "@/composables/useComposerFocus";
 import { useComposerLimitHold } from "@/composables/useComposerLimitHold";
 import { deriveArtifacts } from "@/utils/contextArtifacts";
+import { conversationImportSessions } from "@/utils/importSessions";
 import { isPausedTurn, isStoppedTurn } from "@/utils/turnState";
 import ContextRail from "@/components/chat/ContextRail.vue";
 import PageDock from "@/components/chat/pages/PageDock.vue";
@@ -469,7 +470,9 @@ const activeTurnPaused = computed(
 	() => isPausedTurn(activeAssistantMessage.value?.blocks) || chatStore.isSubmittingInterrupts
 );
 
-const railHasArtifacts = computed(() => activeArtifacts.value.hasArtifacts);
+// A conversation that worked on an import keeps its Import card on the rail (#34416)
+const conversationImports = computed(() => conversationImportSessions(chatStore.messages));
+const railHasArtifacts = computed(() => activeArtifacts.value.hasArtifacts || conversationImports.value.length > 0);
 // Each page write is a rail artifact; an open page keeps the docked rail folded to its tab.
 const { openName: openPageName } = usePagePanel();
 const pageOpen = computed(() => Boolean(openPageName.value));

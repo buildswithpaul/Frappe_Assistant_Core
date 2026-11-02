@@ -88,6 +88,12 @@
 				:block="segment"
 			/>
 
+			<!-- An import this turn started: its progress, live while it runs (#34416) -->
+			<ImportProgressBlock
+				v-else-if="segment.type === 'import_progress'"
+				:session="segment.session"
+			/>
+
 			<!-- FAC Pages this turn wrote; a chip opens one in the page panel. -->
 			<div v-else-if="segment.type === 'page_chips'" class="page-chips">
 				<FacPageChip v-for="chip in segment.chips" :key="chip.name" :chip="chip" />
@@ -116,6 +122,8 @@ import { findQuestionGroups } from "./interactions/questionGroup";
 import SourcesBlock from "./SourcesBlock.vue";
 import GeneratedDocumentsBlock from "./GeneratedDocumentsBlock.vue";
 import WorkflowCreatedBlock from "./WorkflowCreatedBlock.vue";
+import ImportProgressBlock from "./ImportProgressBlock.vue";
+import { startedImports } from "@/utils/importSessions";
 import FacPageChip from "./pages/FacPageChip.vue";
 import { usePagePanel } from "@/composables/usePagePanel";
 import { chipsForMessage } from "@/utils/pageChips";
@@ -274,7 +282,10 @@ const groupedContent = computed(() => {
 		}
 	}
 
-	// Derived from the tool_call blocks at render time, so a reloaded conversation keeps its chips.
+	// Derived from the tool_call blocks at render time, so a reloaded conversation keeps them.
+	for (const session of startedImports(props.blocks)) {
+		segments.push({ type: "import_progress", id: `import_progress:${session}`, session });
+	}
 	const chips = chipsForMessage(props.blocks, conversationPageChips.value);
 	if (chips.length) segments.push({ type: "page_chips", id: "page_chips", chips });
 

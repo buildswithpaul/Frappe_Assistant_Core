@@ -26,7 +26,7 @@ The approval card shows `doctype`, `rows`, `import_type`, `validated_fingerprint
 
 1. **Say what will happen:** "Import 250 Customer rows as new records? 2 rows are left out." Then call the tool; the user approves the card.
 2. **Follow it.** The reply has `data_import` and `state`:
-   - `started` (or `continued`): running in the background. On a site that imports in the background, the reply's `total` is the rows passed, until the Data Import has counted them. Check it every minute or so with `list_documents` on **Data Import Log** with filters `{"data_import": "<name>", "success": 1}`: its `total_count` is how many are in, out of the reply's `total`. Tell the user "120 of 250 imported…".
+   - `started` (or `continued`): running in the background. **Don't poll it.** In FAC Chat the progress shows by itself, live, under your message and on the side panel's Import card (rows done of the total, created, failed), with no call of yours. Say once that it is running and that you'll report when it ends or when asked: "Importing 250 Customer rows; the progress shows below." When the user asks how far it is, read it once: `list_documents` on **Data Import Log** with filters `{"data_import": "<name>", "success": 1}` gives in its `total_count` how many are in, out of the reply's `total`.
    - `finished`: done (on sites that import at once, the reply is the result).
 3. **Report the end** once the session has left **Importing**: read it with `get_document` (doctype `FAC Import Session`). The Data Import's own `status` is no guide: it says *Partial Success* from the first record on. The session's `status` is Completed, Partially Completed or Failed, and its last step's message has the counts, for example:
 
