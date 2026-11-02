@@ -460,6 +460,17 @@ def _field_key(
         table_df = meta.get_field(table_part)
         meta = frappe.get_meta(table_df.options) if table_df and table_df.fieldtype in table_fields else None
     df = meta.get_field(fieldname) if meta else None
+    contact_table = f"contacts.{fieldname}"
+    if df and df.hidden and not table_part and contact_table in targets:
+        # ERPNext 16 hides a party's phone and email: they are its primary Contact's, which its import
+        # makes from the same row's contacts table (#34414)
+        return (
+            None,
+            _(
+                "'{0}' on a {1} is its primary Contact's: map the column to {2}, and the Contact is made "
+                "with the {1} from the same row."
+            ).format(value, _(meta.name), contact_table),
+        )
     if df and (df.hidden or df.read_only):
         return (
             None,

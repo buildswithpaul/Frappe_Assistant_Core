@@ -287,6 +287,122 @@ class TestImportRun(ImportRunCase):
         contact = frappe.get_doc("Contact", customer.customer_primary_contact)
         self.assertEqual((contact.mobile_no, contact.email_id), ("9845012345", email))
 
+    # -- #34414: one customer sheet into Customer, Contact and Address together ------------------
+
+    def _linked_tables(self):
+        schema = self._run("get_import_schema", {"doctype": "Customer"})["result"]
+        return {t["fieldname"] for t in schema.get("child_tables", [])}
+
+    def _party_session(self, header, rows, extra):
+        """A customer sheet's session, mapped where this ERPNext takes a contact's columns."""
+        prefix = "contacts." if "contacts" in self._linked_tables() else ""
+        lines = [",".join([*MAPPING, *header]), *rows]
+        file_doc = self._file("customers.csv", ("\n".join(lines) + "\n").encode())
+        session = self._run("start_import_session", {"file_url": file_doc.file_url})["result"]["session_id"]
+        mapping = {
+            **MAPPING,
+            **{
+                column: f"{prefix}{field}" if field in ("mobile_no", "email_id") else field
+                for column, field in extra.items()
+            },
+        }
+        mapped = self._run(
+            "set_column_mapping", {"session": session, "mapping": mapping, "doctype": "Customer"}
+        )
+        self.assertTrue(mapped["success"], mapped)
+        return session
+
+    def test_a_row_whose_contact_fails_fails_as_a_whole(self):
+        name = f"Bad Mail {self.tag}"
+        session = self._party_session(
+            ["Email"], [f"{name},{self.group},Company,not an email"], {"Email": "email_id"}
+        )
+
+        checked = self._run("dry_run_import", {"session": session})["result"]
+
+        self.assertEqual((checked["ready"], checked["failed"]), (0, 1), checked)
+        self.assertFalse(frappe.db.exists("Customer", {"customer_name": name}))
+
+    def test_a_row_without_phone_or_email_makes_no_contact(self):
+        name = f"No Contact {self.tag}"
+        session = self._party_session(
+            ["Mobile", "Email"],
+            [f"{name},{self.group},Company,,"],
+            {"Mobile": "mobile_no", "Email": "email_id"},
+        )
+        checked = self._run("dry_run_import", {"session": session})["result"]
+        self.assertEqual(checked["status"], "Ready to Import", checked)
+
+        self.assertTrue(self._import(session, checked)["success"])
+
+        customer = frappe.get_doc("Customer", {"customer_name": name})
+        self.assertFalse(customer.customer_primary_contact)
+        self.assertFalse(
+            frappe.get_all(
+                "Dynamic Link",
+                {"link_doctype": "Customer", "link_name": customer.name, "parenttype": "Contact"},
+            )
+        )
+
+    def test_deleting_an_imported_customer_deletes_its_contact(self):
+        # what an undo does: the customer goes, and ERPNext takes the contact made with it
+        name = f"Undo Me {self.tag}"
+        session = self._party_session(
+            ["Mobile"], [f"{name},{self.group},Company,9845012399"], {"Mobile": "mobile_no"}
+        )
+        checked = self._run("dry_run_import", {"session": session})["result"]
+        self.assertTrue(self._import(session, checked)["success"])
+        customer = frappe.get_doc("Customer", {"customer_name": name})
+        contact = customer.customer_primary_contact
+        self.assertTrue(contact)
+
+        frappe.delete_doc("Customer", customer.name)
+
+        self.assertFalse(frappe.db.exists("Contact", contact))
+
+    def test_the_address_comes_with_the_party_where_erpnext_takes_it(self):
+        if "addresses" not in self._linked_tables():
+            self.skipTest("Frappe 15: a party has no address fields; addresses are their own import")
+        name = f"With Address {self.tag}"
+        session = self._party_session(
+            # India Compliance refuses an Indian address without its state, failing the whole row
+            ["Street", "City", "State", "Country"],
+            [f"{name},{self.group},Company,12 MG Road,Bengaluru,Karnataka,India"],
+            {
+                "Street": "addresses.address_line1",
+                "City": "addresses.city",
+                "State": "addresses.state",
+                "Country": "addresses.country",
+            },
+        )
+        checked = self._run("dry_run_import", {"session": session})["result"]
+        self.assertEqual(checked["status"], "Ready to Import", checked)
+
+        self.assertTrue(self._import(session, checked)["success"])
+
+        customer = frappe.get_doc("Customer", {"customer_name": name})
+        links = frappe.get_all(
+            "Dynamic Link",
+            {"link_doctype": "Customer", "link_name": customer.name, "parenttype": "Address"},
+            pluck="parent",
+        )
+        self.assertEqual(len(links), 1)
+        self.assertEqual(frappe.db.get_value("Address", links[0], "city"), "Bengaluru")
+
+    def test_a_phone_mapped_to_the_hidden_party_field_is_pointed_at_the_contact(self):
+        if "contacts" not in self._linked_tables():
+            self.skipTest("Frappe 15: the party's phone and email are importable on it")
+        lines = [",".join([*MAPPING, "Email"]), f"Hint {self.tag},{self.group},Company,a@example.com"]
+        file_doc = self._file("customers.csv", ("\n".join(lines) + "\n").encode())
+        session = self._run("start_import_session", {"file_url": file_doc.file_url})["result"]["session_id"]
+
+        mapped = self._run(
+            "set_column_mapping",
+            {"session": session, "mapping": {**MAPPING, "Email": "email_id"}, "doctype": "Customer"},
+        )
+
+        self.assertIn("contacts.email_id", frappe.as_json(mapped))
+
     def test_the_data_import_is_like_any_other_in_desk(self):
         session, checked = self._ready_session()
 
