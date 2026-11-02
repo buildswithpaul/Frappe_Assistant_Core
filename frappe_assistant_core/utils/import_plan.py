@@ -1180,13 +1180,7 @@ def alive(plan) -> bool:
     current = _progress(plan).get("current")
     if not current or frappe.db.get_value(dry_run.SESSION_DOCTYPE, current, "status") != "Importing":
         return False
-    session = frappe.get_doc(dry_run.SESSION_DOCTYPE, current)
-    engine = dry_run.special_engine(session)
-    if engine and getattr(engine, "JOB", None):
-        return is_job_enqueued(engine.JOB.format(current))
-    return bool(session.data_imports) and is_job_enqueued(
-        import_run._job_id(session.data_imports[-1].data_import)
-    )
+    return import_run.job_running(frappe.get_doc(dry_run.SESSION_DOCTYPE, current))
 
 
 #: A plan whose file's job ended less than this ago is between that job and its continue job.

@@ -260,6 +260,19 @@ def _new_import(
     return data_import.name
 
 
+def job_running(session) -> bool:
+    """Whether a background job is importing the session now: its opening engine's, or the job
+    of its last Data Import. A session Importing with no such job is stuck (#34542)."""
+    from frappe.utils.background_jobs import is_job_enqueued
+
+    from frappe_assistant_core.utils.import_dry_run import special_engine
+
+    engine = special_engine(session)
+    if engine and getattr(engine, "JOB", None):
+        return is_job_enqueued(engine.JOB.format(session.name))
+    return bool(session.data_imports) and is_job_enqueued(_job_id(session.data_imports[-1].data_import))
+
+
 def resume(session) -> Tuple[str, str]:
     """Continue the session's Data Import: "running" if it still is; "finished" if it had
     ended (its result is recorded); else it is started again ("continued"), skipping the

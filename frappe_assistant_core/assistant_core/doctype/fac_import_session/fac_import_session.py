@@ -86,6 +86,15 @@ class SessionRow(Document):
 
 
 class FACImportSession(Document):
+    @frappe.whitelist(methods=["POST"])
+    def release(self, reason: str):
+        """Release a session stuck importing, or a plan nothing runs (#34542): System Manager only,
+        through the engine's own copy, with who and why in the step log. Frappe checks only read
+        before a document method; the role is checked in release."""
+        from frappe_assistant_core.utils import import_housekeeping
+
+        return import_housekeeping.release(self.name, reason)
+
     def validate(self):
         # Every field is the engine's state: the dry run's verdict, the mapping, the file, the
         # Data Imports and the created-records list (#34400). Only the engine writes them, for everyone
