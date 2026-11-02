@@ -36,7 +36,8 @@ only reports `status` (`Running`, `Completed`, `Partially Completed`, `Stopped`,
 file's `status`, `created` and `left_out`.
 
 When it ends, report what came in, and offer the sign-off report for the plan's sessions
-(`get_skill("migration-sign-off")`, `import_session` = the plan's sessions).
+(`get_skill("migration-sign-off")`, with `migration_plan` = the plan: its files only, so earlier
+test runs of the same files stay out).
 
 ## Stopping
 

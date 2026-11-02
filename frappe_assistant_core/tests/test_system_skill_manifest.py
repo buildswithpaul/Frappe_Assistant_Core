@@ -313,6 +313,14 @@ class TestSystemSkillManifest(BaseAssistantTest):
         self.assertLess(tool.find("`dry_run_import`"), tool.find("then"), row)
         self.assertLess(tool.find("then"), tool.find("`fixes`"), row)
 
+    def test_a_plans_sign_off_is_asked_for_by_the_plan(self):
+        # The sign-off covers a plan's files with migration_plan (#34549); the plan page still said
+        # import_session = the plan's sessions, which takes in no earlier test run but isn't the scope
+        # the report states
+        content = _one_line(_skill_content("run_migration_plan.md"))
+        self.assertIn("`migration_plan` = the plan", content)
+        self.assertNotIn("`import_session` = the plan's sessions", content)
+
     def test_migrate_data_names_only_tools_and_skills_that_exist(self):
         # The page is the model's guide to the tools: a renamed or removed tool left in it
         # sends FACO to a tool that isn't there.
