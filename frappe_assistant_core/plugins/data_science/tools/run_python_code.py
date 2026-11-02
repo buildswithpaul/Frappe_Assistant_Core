@@ -568,6 +568,9 @@ PRE-LOADED: pd, np, frappe, math, datetime, json, re, statistics, random"""
         if re.search(slice_pattern, code):
             # Only apply if it looks like a DataFrame slice (not dict or list access)
             def add_copy(match):
+                # a rewritten import (`pd = _preloaded_modules["pandas"]`) is a module, never a slice
+                if match.group(2) == "_preloaded_modules":
+                    return match.group(0)
                 if "pd.DataFrame" in code or "data" in match.group(2):
                     return f"{match.group(1)} = {match.group(2)}[{match.group(3)}].copy()"
                 return match.group(0)
