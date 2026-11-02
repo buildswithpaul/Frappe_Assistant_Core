@@ -375,6 +375,42 @@ _NUMPY_BLOCKED = frozenset(
 )
 
 
+_DATAFRAME_STANDINS = {}
+
+
+def _frappe_rows_dataframe(real):
+    """pd.DataFrame that takes rows from frappe.get_all / frappe.db.sql (GitHub #379).
+
+    frappe._dict answers any attribute with None, so pandas reads ``ndim`` off a row and takes the
+    list for an array ("invalid __array_struct__"). Rows are passed as plain dicts; everything else
+    is pandas' own: isinstance and issubclass checks, class attributes such as from_dict, and the
+    frames it returns. The rows keep their type, as user code reads them as ``row.field``.
+    """
+    if real in _DATAFRAME_STANDINS:
+        return _DATAFRAME_STANDINS[real]
+
+    class _Meta(type):
+        def __call__(cls, data=None, *args, **kwargs):
+            if isinstance(data, (list, tuple)) and any(
+                type(row) is not dict and isinstance(row, dict) for row in data
+            ):
+                data = [dict(row) if isinstance(row, dict) else row for row in data]
+            return real(data, *args, **kwargs)
+
+        def __instancecheck__(cls, obj):
+            return isinstance(obj, real)
+
+        def __subclasscheck__(cls, sub):
+            return issubclass(sub, real)
+
+        def __getattr__(cls, name):
+            return getattr(real, name)
+
+    standin = _Meta("DataFrame", (), {})
+    _DATAFRAME_STANDINS[real] = standin
+    return standin
+
+
 class _FilteredModule:
     """Expose a library module unchanged except for a denylist of I/O sinks.
 
@@ -395,6 +431,8 @@ class _FilteredModule:
     def __getattr__(self, name):
         if name.startswith("_") or name in self._blocked or name.startswith("read_"):
             raise AttributeError(f"{self._label}.{name} is not available in run_python_code")
+        if self._label == "pandas" and name == "DataFrame":
+            return _frappe_rows_dataframe(self._mod.DataFrame)
         return getattr(self._mod, name)
 
     def __setattr__(self, name, value):

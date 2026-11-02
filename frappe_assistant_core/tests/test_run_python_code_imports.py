@@ -141,6 +141,16 @@ class TestPreloadedImportsRun(BaseAssistantTest):
         self.assertIn('pd = _preloaded_modules["pandas"]\n', fixed)
         self.assertIn("sub = df[df.a > 0].copy()", fixed)
 
+    def test_dataframe_from_frappe_rows(self):
+        # GitHub #379: frappe._dict answers any attribute with None, so pandas took the rows for an array
+        self.assertPrints(
+            "rows = frappe.get_all('User', fields=['name', 'enabled'], limit=2)\n"
+            "df = pd.DataFrame(rows)\n"
+            "print(list(df.columns), len(df) > 0, isinstance(df, pd.DataFrame),"
+            " isinstance(df.head(1), pd.DataFrame), isinstance(pd.DataFrame.from_dict({'a': [1]}), pd.DataFrame))",
+            "['name', 'enabled'] True True True True",
+        )
+
     def test_unavailable_module_is_reported_not_silently_dropped(self):
         result = _run("import operator\nprint(operator.add(1, 2))")
         self.assertFalse(result.get("success"))

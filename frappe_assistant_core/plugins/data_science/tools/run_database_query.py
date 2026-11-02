@@ -342,7 +342,8 @@ class QueryAndAnalyse(BaseTool):
             return {"message": "No data returned from query"}
 
         try:
-            df = pd.DataFrame(data)
+            # frappe._dict answers any attribute with None, so pandas would take the rows for an array
+            df = pd.DataFrame([dict(row) if isinstance(row, dict) else row for row in data])
 
             analysis = {
                 "basic_info": {
