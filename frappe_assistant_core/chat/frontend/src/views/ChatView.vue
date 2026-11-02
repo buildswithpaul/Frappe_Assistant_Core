@@ -285,6 +285,8 @@ import { useStreaming, reconnectSocket } from "@/composables/useStreaming";
 import { useAutoScroll } from "@/composables/useAutoScroll";
 import { useTemplateExecution } from "@/composables/useTemplateExecution";
 import { usePromptFromRoute } from "@/composables/usePromptFromRoute";
+import { useSupportFromRoute } from "@/composables/useSupportFromRoute";
+import { useSupportStore } from "@/stores/supportStore";
 import { useChatViewInit } from "@/composables/useChatViewInit";
 import { useMessageFileUpload } from "@/composables/useMessageFileUpload";
 import { useChatSessionActions } from "@/composables/useChatSessionActions";
@@ -392,6 +394,8 @@ usePromptFromRoute({
 	pendingPrompt,
 	isNewChat: () => !route.params.sessionId && messages.value.length === 0,
 });
+
+useSupportFromRoute({ route, router, supportStore: useSupportStore() });
 
 // File pre-upload flow (matches widget — upload on select, attach on send)
 const { handleFileUpload, consumeUploadedFiles, discardUploads } = useMessageFileUpload();
