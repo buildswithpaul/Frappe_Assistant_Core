@@ -70,11 +70,15 @@ class TestImportFailures(ImportRunCase):
         return response["result"]
 
     def _failed_rows(self, session):
+        """The failed-rows file's rows as text, read the way a spreadsheet opens it (#34417)."""
         out = self._check(session, failed_rows_file=True)
         file_doc = frappe.get_doc("File", {"file_url": out["file_url"]})
         content = file_doc.get_content()
-        text = content.decode("utf-8") if isinstance(content, bytes) else content
-        return out, file_doc, list(csv.reader(io.StringIO(text)))
+        book = openpyxl.load_workbook(io.BytesIO(content if isinstance(content, bytes) else content.encode()))
+        rows = [
+            ["" if cell is None else cell for cell in row] for row in book.active.iter_rows(values_only=True)
+        ]
+        return out, file_doc, rows
 
     def _csv(self, name, rows):
         buffer = io.StringIO()
@@ -239,10 +243,43 @@ class TestImportFailures(ImportRunCase):
 
         attached = frappe.get_all(
             "File",
-            {"attached_to_name": session, "file_name": f"{session}-failed-rows.csv"},
+            {"attached_to_name": session, "file_name": f"{session}-failed-rows.xlsx"},
             pluck="file_url",
         )
         self.assertEqual(attached, [out["file_url"]])
+
+    # -- #34417: the file is Excel, every cell text, with FACO's fix -----------------------------
+
+    def test_a_likely_misspelling_comes_with_its_fix(self):
+        from frappe_assistant_core.utils.import_failures import FIX_COLUMN
+
+        n = self._names()
+        misspelt = f"Imprted {self.tag}"  # the test's group is "Imported <tag>"
+        lines = [",".join(MAPPING), f"{n['alpha']},{misspelt},Company"]
+        file_doc = self._file("customers.csv", ("\n".join(lines) + "\n").encode())
+        session = self._run("start_import_session", {"file_url": file_doc.file_url})["result"]["session_id"]
+        self._run("set_column_mapping", {"session": session, "mapping": MAPPING, "doctype": "Customer"})
+        self.assertEqual(self._check(session)["status"], "Dry Run Failed")
+
+        out, file_doc, rows = self._failed_rows(session)
+
+        self.assertTrue(file_doc.file_name.endswith(".xlsx"), file_doc.file_name)
+        self.assertEqual(rows[0], [*MAPPING, ROW_COLUMN, REASON_COLUMN, FIX_COLUMN])
+        self.assertEqual(rows[1][-1], f"Use '{self.group}'")
+        self.assertIn(FIX_COLUMN, out["message"])
+
+    def test_every_cell_of_the_file_is_text(self):
+        # Excel dropped leading zeros (00123 became 123) and ran a cell that starts with "=" (#34417)
+        from frappe_assistant_core.utils.import_failures import _xlsx
+
+        book = openpyxl.load_workbook(
+            io.BytesIO(_xlsx([["Code", "Name"], ["00123", "=HYPERLINK(1)"], ["5", "+3"]]))
+        )
+        cells = [cell for row in book.active.iter_rows() for cell in row]
+
+        self.assertEqual([c.value for c in cells], ["Code", "Name", "00123", "=HYPERLINK(1)", "5", "+3"])
+        self.assertEqual({c.data_type for c in cells}, {"s"})
+        self.assertEqual({c.number_format for c in cells}, {"@"})
 
     def test_before_any_import_the_file_has_the_rows_the_check_failed(self):
         n = self._names()
@@ -566,7 +603,7 @@ class TestImportFailures(ImportRunCase):
         _out, _file_doc, rows = self._failed_rows(session)
         rows[1][1] = self.group
         book = openpyxl.Workbook()
-        book.active.title = f"{session}-failed-rows"  # Excel's name for it, opened from the CSV
+        book.active.title = f"{session}-failed-rows"  # a name Excel gives a sheet saved again
         for row in rows:
             book.active.append(row)
         buffer = io.BytesIO()

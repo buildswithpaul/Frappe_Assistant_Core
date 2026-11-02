@@ -21,7 +21,6 @@ the dry run's duplicate check.
 Every Data Import stays linked to the session, so the report covers every run.
 """
 
-import csv
 import io
 import json
 from collections import Counter
@@ -43,8 +42,12 @@ from frappe_assistant_core.utils.import_session import (
 #: The columns the failed-rows file adds after the user's own. A file sent back with them is
 #: the same file: they are not imported.
 ROW_COLUMN = "FACO Original Row"
-REASON_COLUMN = "FACO Failure Reason"
-ADDED_COLUMNS = (ROW_COLUMN, REASON_COLUMN)
+REASON_COLUMN = "FACO Error"
+#: FACO's suggestion for the row, when it has one (#34417)
+FIX_COLUMN = "FACO Fix"
+#: The reason's column in the CSV files FACO gave before #34417: such a file can still come back
+OLD_REASON_COLUMN = "FACO Failure Reason"
+ADDED_COLUMNS = (ROW_COLUMN, REASON_COLUMN, FIX_COLUMN, OLD_REASON_COLUMN)
 
 #: Statuses whose failures come from the last Data Import, and from the last check.
 AFTER_IMPORT = ("Partially Completed", "Failed")
@@ -279,13 +282,33 @@ def csv_cell(value) -> str:
     return text
 
 
+def _xlsx(rows: List[List[str]]) -> bytes:
+    """``rows`` as an Excel sheet where every cell is text (#34417): a code keeps its leading zeros
+    (00123), and a cell that starts like a formula (=, +, -, @) is shown, never run."""
+    from openpyxl import Workbook
+
+    book = Workbook()
+    sheet = book.active
+    sheet.title = "Rows not imported"
+    for r, row in enumerate(rows, start=1):
+        for c, value in enumerate(row, start=1):
+            cell = sheet.cell(row=r, column=c)
+            cell.value = cstr(value)
+            cell.data_type = "s"  # openpyxl would take "=..." for a formula
+            cell.number_format = "@"
+    buffer = io.BytesIO()
+    book.save(buffer)
+    return buffer.getvalue()
+
+
 def failed_rows_file(session) -> Dict[str, Any]:
     """The rows still not imported, failed or left out, with the user's columns (the value
-    maps applied), their row number and the reason, as a private CSV on the session."""
+    maps applied), their row number, the error and FACO's fix when it has one, as a private
+    Excel file on the session: every cell text."""
     if session.status == "Importing":
         raise FailuresProblem(_("The import is still running. Ask for the rows once it has ended."))
-    reasons = _reasons(session)
-    if not reasons:
+    problems = _problems(session)
+    if not problems:
         raise FailuresProblem(
             _("No row of this file is failing or left out, so there is nothing to download.")
         )
@@ -293,20 +316,23 @@ def failed_rows_file(session) -> Dict[str, Any]:
     source = readable_session_file(session)
     rows = import_fixes.apply_value_maps(session, read_sheet_rows(source, session.sheet or None))
     width = len(own_columns(rows[0]))
-    out = [rows[0][:width] + list(ADDED_COLUMNS)]
-    for number in sorted(reasons):
+    with_fix = any(problem["fix"] for problem in problems.values())
+    added = [ROW_COLUMN, REASON_COLUMN] + ([FIX_COLUMN] if with_fix else [])
+    out = [rows[0][:width] + added]
+    for number in sorted(problems):
         if 1 <= number - 1 < len(rows):
-            out.append((rows[number - 1] + [""] * width)[:width] + [str(number), reasons[number]])
+            problem = problems[number]
+            extra = [str(number), problem["reason"]] + ([problem["fix"] or ""] if with_fix else [])
+            out.append((rows[number - 1] + [""] * width)[:width] + extra)
 
-    buffer = io.StringIO()
-    csv.writer(buffer, lineterminator="\n").writerows([[csv_cell(value) for value in row] for row in out])
-    file_name = f"{session.name}-failed-rows.csv"
+    file_name = f"{session.name}-failed-rows.xlsx"
     for old in frappe.get_all(
         "File",
         filters={
             "attached_to_doctype": dry_run.SESSION_DOCTYPE,
             "attached_to_name": session.name,
-            "file_name": file_name,
+            # the CSV FACO gave before #34417 goes too: one file of failed rows per session
+            "file_name": ["in", [file_name, f"{session.name}-failed-rows.csv"]],
         },
         pluck="name",
     ):
@@ -315,7 +341,7 @@ def failed_rows_file(session) -> Dict[str, Any]:
         {
             "doctype": "File",
             "file_name": file_name,
-            "content": buffer.getvalue().encode("utf-8"),
+            "content": _xlsx(out),
             "is_private": 1,
             "attached_to_doctype": dry_run.SESSION_DOCTYPE,
             "attached_to_name": session.name,
@@ -331,33 +357,59 @@ def failed_rows_file(session) -> Dict[str, Any]:
         ),
     )
     session.save()
+    message = _(
+        "{0} rows in an Excel file, with the user's columns, then '{1}' (the row's number in the file) "
+        "and '{2}'"
+    ).format(count, ROW_COLUMN, REASON_COLUMN)
+    if with_fix:
+        message += _(", and '{0}' where FACO has a fix").format(FIX_COLUMN)
+    message += ". " + _(
+        "Every cell is text, so codes keep their leading zeros. Once corrected, the file can come back "
+        "as it is: once uploaded, pass it to dry_run_import as file_id, and only these rows are checked "
+        "and imported, into this session."
+    )
     return {
         "session": session.name,
         "rows": count,
         "file_url": file_doc.file_url,
         "download_url": get_url(file_doc.file_url),
-        "message": _(
-            "{0} rows, with the user's columns, then '{1}' (the row's number in the file) and "
-            "'{2}'. Once corrected, the file can come back as it is: once uploaded, pass it to "
-            "dry_run_import as file_id, and it is checked before anything is imported."
-        ).format(count, ROW_COLUMN, REASON_COLUMN),
+        "message": message,
     }
 
 
-def _reasons(session) -> Dict[int, str]:
-    """Each row still not imported, failed or left out, with why: from the last Data Import
-    once the import ended, from the last check before (or after a check of what is left)."""
-    reasons: Dict[int, str] = {}
+def _fix_of(session, group: Dict[str, Any]) -> Optional[str]:
+    """FACO's fix for a failed group, in a few words: the likely name it meant, or what a known
+    refusal needs. None when FACO has none."""
+    if group.get("cause") == dry_run.CAUSE_MISSING_LINK:
+        # advise works out the linked DocType from the group's field, as the check stored it
+        advice = import_fixes.advise(session, {**group, "count": 1})
+        likely = next((f.get("likely") for f in advice["fixes"] if f.get("likely")), None)
+        return _("Use '{0}'").format(likely) if likely else None
+    return import_fixes.known_refusal(group.get("message"), _("This row"))
+
+
+def _problems(session) -> Dict[int, Dict[str, Optional[str]]]:
+    """Each row still not imported, failed or left out: {"reason", "fix"}. From the last Data
+    Import once the import ended, from the last check before (or after a check of what is left)."""
+    problems: Dict[int, Dict[str, Optional[str]]] = {}
+
+    def add(row: int, reason: str, fix: Optional[str] = None) -> None:
+        problems[row] = {"reason": reason, "fix": fix}
+
     engine = dry_run.special_engine(session)
     if engine:
         # Opening stock and opening invoices keep no Data Import Logs: they say themselves
         # where each row of the file stands.
         for outcome in engine.outcomes(session):
             if outcome["status"] == "excluded":
-                reasons[outcome["row"]] = _("Left out: {0}").format(outcome["reason"])
+                add(outcome["row"], _("Left out: {0}").format(outcome["reason"]))
             elif outcome["status"] == "failed":
-                reasons[outcome["row"]] = outcome["reason"]
-        return reasons
+                add(
+                    outcome["row"],
+                    outcome["reason"],
+                    import_fixes.known_refusal(outcome["reason"], _("This row")),
+                )
+        return problems
     if session.status in AFTER_IMPORT:
         names = imports_of_this_file(session)
         if names:
@@ -367,22 +419,29 @@ def _reasons(session) -> Dict[int, str]:
                 fields=["row_indexes", "messages"],
                 order_by="log_index",
             ):
+                reason = log_reason(log.messages)
                 for row in json.loads(log.row_indexes or "[]"):
-                    reasons[row] = log_reason(log.messages)
+                    add(row, reason, import_fixes.known_refusal(reason, _("This row")))
     elif session.status in AFTER_CHECK:
         results = dry_run._results_file(session)
         content = frappe.parse_json(results.get_content()) if results else {}
-        messages = {
-            group["id"]: group.get("message") or group["cause"] for group in content.get("groups") or []
-        }
+        groups = {group["id"]: group for group in content.get("groups") or []}
+        fixes: Dict[Any, Optional[str]] = {}
         for row in content.get("rows") or []:
-            if row.get("status") == "failed":
-                reasons[row["row"]] = "; ".join(messages.get(g, "") for g in row.get("groups") or [])
+            if row.get("status") != "failed":
+                continue
+            ids = [g for g in row.get("groups") or [] if g in groups]
+            for g in ids:
+                if g not in fixes:
+                    fixes[g] = _fix_of(session, groups[g])
+            reason = "; ".join(groups[g].get("message") or groups[g]["cause"] for g in ids)
+            add(row["row"], reason, "; ".join(fixes[g] for g in ids if fixes[g]) or None)
     for entry in import_fixes.left_out(session):
-        reasons.setdefault(entry["row"], _("Left out: {0}").format(entry["reason"] or _("by the user")))
+        if entry["row"] not in problems:
+            add(entry["row"], _("Left out: {0}").format(entry["reason"] or _("by the user")))
     for row in imported_rows(session):
-        reasons.pop(row, None)
-    return reasons
+        problems.pop(row, None)
+    return problems
 
 
 def own_columns(columns: List[str]) -> List[str]:

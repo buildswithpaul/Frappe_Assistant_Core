@@ -173,6 +173,22 @@ class TestDryRunImport(BaseAssistantTest):
         self.assertNotIn("NoneType", message)
         logger.return_value.error.assert_called_once()
 
+    def test_an_internal_error_reaches_the_error_log_once(self):
+        # #34417: the server log alone is out of an administrator's sight; the Error Log is written
+        # once the check is done, outside the rows' savepoints, and only once per error
+        title = import_dry_run.INTERNAL_ERROR_TITLE
+        frappe.local.fac_logged_errors = {}  # this request's errors so far: another test's are not this one's
+        before = frappe.db.count("Error Log", {"method": title})
+        for _row in range(2):
+            try:
+                {}["no such key"]
+            except KeyError as e:
+                import_dry_run.refusal(e)
+        import_dry_run.log_internal_errors()
+        import_dry_run.log_internal_errors()
+
+        self.assertEqual(frappe.db.count("Error Log", {"method": title}), before + 1)
+
     def test_a_check_adds_nothing_to_global_search(self):
         # Saving a Customer queues its search entry in Redis, which no rollback undoes.
         session = self._session([[f"Alpha {self.tag}", GROUP, "Company", ""]])

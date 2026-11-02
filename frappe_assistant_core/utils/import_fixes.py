@@ -341,6 +341,55 @@ def _words(text: str) -> List[str]:
 # -- explaining a group ----------------------------------------------------------------
 
 
+def known_refusals() -> Tuple[Tuple[str, str], ...]:
+    """ERPNext's and India Compliance's refusals that come as a plain "Rejected by ERPNext", with what
+    they mean in the user's words (#34417): (pattern of the message, explanation; {0} is "3 rows").
+    Built per call, so the explanations are translated into the request's language."""
+    return (
+        (
+            r"HSN.{0,3}SAC|HSN code",
+            _(
+                "{0}: India Compliance needs an HSN/SAC code on each item. Map the column that has it, "
+                "or give the items their code first."
+            ),
+        ),
+        (
+            r"GSTIN",
+            _(
+                "{0}: the GSTIN isn't one India Compliance accepts. A GSTIN has 15 characters and starts "
+                "with the state's two-digit code: correct it in the file."
+            ),
+        ),
+        (
+            r"not in any active Fiscal Year|Fiscal Year .{0,60}(not found|does not exist|doesn't exist)",
+            _(
+                "{0}: the date isn't in a fiscal year ERPNext has. Create that fiscal year first, or correct the date."
+            ),
+        ),
+        (
+            r"negative stock|insufficient stock|(not|isn't) available in (the )?warehouse",
+            _(
+                "{0}: there isn't enough stock in the warehouse for this. Bring in the opening stock "
+                "first, or import the receipts before."
+            ),
+        ),
+        (
+            r"\bis disabled\b",
+            _(
+                "{0}: a record these rows point to is disabled in ERPNext. Enable it, or point the rows at another one."
+            ),
+        ),
+    )
+
+
+def known_refusal(message: Optional[str], rows: str) -> Optional[str]:
+    """The user's words for a refusal ERPNext only said in its own, or None."""
+    for pattern, explanation in known_refusals():
+        if re.search(pattern, cstr(message), re.IGNORECASE):
+            return explanation.format(rows)
+    return None
+
+
 def advise(session, group: Dict[str, Any]) -> Dict[str, Any]:
     """A plain explanation of ``group`` and the fixes that fit it, with the closest names."""
     group = _with_target(session, group)
@@ -458,6 +507,9 @@ def advise(session, group: Dict[str, Any]) -> Dict[str, Any]:
     }
     template = explanations.get(cause, _("{0} would fail. {2}"))
     explanation = template.format(rows, label, group.get("message") or "").strip()
+    if cause == dry_run.CAUSE_REJECTED:
+        # in business words when FACO knows the message; ERPNext's own stays in the group's message
+        explanation = known_refusal(group.get("message"), rows) or explanation
     if group.get("values"):
         # The values a refusal's message quoted, "…" in it (#34407)
         explanation += " " + _("Values: {0}.").format(_listed(group["values"]))

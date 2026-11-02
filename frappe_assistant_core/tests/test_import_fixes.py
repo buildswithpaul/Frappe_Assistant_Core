@@ -805,3 +805,29 @@ class TestSwitchedOffRecords(BaseAssistantTest):
         self.assertEqual(
             import_fixes._map(frappe._dict(template_options="{}"), group, {"to": on}, [])[0]["to"], on
         )
+
+
+class TestKnownRefusals(BaseAssistantTest):
+    """#34417: a refusal ERPNext or India Compliance says in its own words, explained in the user's."""
+
+    def _explained(self, message):
+        group = {"cause": import_dry_run.CAUSE_REJECTED, "message": message, "count": 3}
+        return import_fixes.advise(frappe._dict(target_doctype="Item"), group)["explanation"]
+
+    def test_known_refusals_are_said_in_business_words(self):
+        cases = {
+            "HSN/SAC Code is mandatory for item ABC": "HSN/SAC code",
+            "Invalid GSTIN: 29ABCDE1234": "GSTIN isn't one India Compliance accepts",
+            "Date 2025-01-01 is not in any active Fiscal Year": "isn't in a fiscal year",
+            "1 units of Item X needed in Warehouse Y: Insufficient Stock": "isn't enough stock",
+            "Customer Acme is disabled": "is disabled in ERPNext",
+        }
+        for message, words in cases.items():
+            with self.subTest(message=message):
+                explanation = self._explained(message)
+                self.assertTrue(explanation.startswith("3 rows"), explanation)
+                self.assertIn(words, explanation)
+
+    def test_an_unknown_refusal_keeps_erpnexts_message(self):
+        explanation = self._explained("Something only ERPNext knows about")
+        self.assertIn("Something only ERPNext knows about", explanation)

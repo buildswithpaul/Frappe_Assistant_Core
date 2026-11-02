@@ -107,10 +107,10 @@ CAUSE_ALREADY_EXISTS = "Already in ERPNext"
 CAUSE_SHARED_VALUE = "Shared value"  # a warning, never a group: the rows stay ready
 CAUSE_REJECTED = "Rejected by ERPNext"
 CAUSE_REQUIRED_MISSING = "Required value missing"  # a new record's required or naming field blank
-#: What a row refused with an internal error rather than a message is told (#34537): never Python's.
-UNEXPLAINED = (
-    "ERPNext refused these rows with an internal error, not a message. The server log has it in full."
-)
+#: What a row refused with an internal error rather than a message is told (#34537): never Python's
+#: class or text. The full error goes to the Error Log (#34417); the group's rows are the example.
+UNEXPLAINED = "ERPNext refused these rows for a reason I couldn't read. The full error is in the Error Log."
+INTERNAL_ERROR_TITLE = "FAC import check: internal error"
 # An update (#34005): the row's record isn't found, is found more than once, or another row has it.
 CAUSE_NO_MATCH = "No match"
 CAUSE_MANY_MATCHES = "More than one match"
@@ -1236,19 +1236,31 @@ def _required_fields(session, header) -> List[Tuple[Any, int]]:
 
 def refusal(e: Exception) -> Tuple[str, str]:
     """(kind, message) of a row ERPNext refused: its message, or for an internal error (a Python
-    exception, not a message for the user) a plain sentence, the error going to the server log in
-    full (#34537). The Error Log can't take it: the row's savepoint is rolled back after."""
+    exception, not a message for the user) a plain sentence (#34537). The full error goes to the server log now, and to the Error Log once the check has
+    stored its result (log_internal_errors): the row's savepoint is rolled back after, with
+    anything written inside it."""
     if message_texts(frappe.local.message_log) or isinstance(e, frappe.ValidationError):
         return type(e).__name__, _message_of(e)
     logged = getattr(frappe.local, "fac_logged_errors", None)
     if logged is None:
-        logged = frappe.local.fac_logged_errors = set()
-    if (type(e).__name__, str(e)) not in logged:
-        logged.add((type(e).__name__, str(e)))
+        logged = frappe.local.fac_logged_errors = {}
+    key = (type(e).__name__, str(e))
+    if key not in logged:
+        logged[key] = frappe.get_traceback()
         frappe.logger("frappe_assistant_core.import", allow_site=True).error(
-            "A row of an import check failed with an internal error:\n" + frappe.get_traceback()
+            "A row of an import check failed with an internal error:\n" + logged[key]
         )
     return "InternalError", _(UNEXPLAINED)
+
+
+def log_internal_errors() -> None:
+    """Each internal error the check met, once, in the Error Log: outside the rows' savepoints, so
+    it stays. The same error is logged again only in a later request."""
+    logged = getattr(frappe.local, "fac_logged_errors", None) or {}
+    for key, traceback in list(logged.items()):
+        if traceback:
+            frappe.log_error(title=INTERNAL_ERROR_TITLE, message=traceback)
+            logged[key] = None
 
 
 def _with_links(doc, needs) -> Dict[str, Any]:
@@ -1581,6 +1593,7 @@ def _store(session_name: str, file_doc, checker: _Checker, total_payloads: int) 
         session,
         {"session": session.name, "summary": summary, "groups": groups, "rows": checker.rows},
     )
+    log_internal_errors()
     session.validation_summary = frappe.as_json(summary)
     session.validated_fingerprint = _checking().pop(session_name, None) or fingerprint(session, file_doc)
     session.status = "Dry Run Failed" if counts["failed"] else "Ready to Import"

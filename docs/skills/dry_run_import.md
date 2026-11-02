@@ -20,7 +20,7 @@ For several files in a migration plan, pass `plan` instead of `session`: every f
 | `file_id` (or `file_url`) | string | No | When the session's file is just in the chat (Claude, ChatGPT): the same file on this site, uploaded in File Manager or attached in FAC Chat. Pass its **File ID** (its name in File Manager), or its URL; not both. The user must be allowed to read it. Or the user's **corrected file** of failed rows (see **After an import**). Its columns must match the session's. The mapping is kept. A **different** file puts back the rows left out before (`notice` says so). Never send it with `fixes`. |
 | `google_sheets_url` | string | No | For a session that came from a Google Sheet: the link again, when the user says they **fixed the sheet**. A fresh copy is checked; its columns must match, and the mapping is kept. Not with `file_id`, `file_url` or `fixes`. If the sheet didn't change, the session keeps its copy. |
 | `fixes` | array | No | The user's fixes for the last check's groups: `{group, action, to?, reason?}`. See **Fixing the groups**. |
-| `failed_rows_file` | boolean | No | `true` to get the rows still not imported (failed, or left out), with the reason for each, as a CSV to download. Nothing is checked. Send it on its own. |
+| `failed_rows_file` | boolean | No | `true` to get the rows still not imported (failed, or left out), with the error for each and FACO's fix when it has one, as an Excel file to download. Nothing is checked. Send it on its own. |
 
 ## Response Format
 
@@ -186,13 +186,13 @@ When some rows can't be fixed in chat, or the user would rather fix them in Exce
   "success": true,
   "session": "IMP-2026-00012",
   "rows": 3,
-  "file_url": "/private/files/IMP-2026-00012-failed-rows.csv",
-  "download_url": "https://erp.example.com/private/files/IMP-2026-00012-failed-rows.csv",
-  "message": "3 rows, with the user's columns, then 'FACO Original Row' ... and 'FACO Failure Reason'. ..."
+  "file_url": "/private/files/IMP-2026-00012-failed-rows.xlsx",
+  "download_url": "https://erp.example.com/private/files/IMP-2026-00012-failed-rows.xlsx",
+  "message": "3 rows in an Excel file, with the user's columns, then 'FACO Original Row' ... and 'FACO Error' ..."
 }
 ```
 
-Give the user the `download_url`. The file has the user's own columns (with the fixes made in chat), then **FACO Original Row** (the row's number in their file) and **FACO Failure Reason**. Rows left out say "Left out: <reason>", so a **Completed** import's left-out rows can be corrected and imported too. It works before an import as well: then it holds the rows the last check failed.
+Give the user the `download_url`. The file has the user's own columns (with the fixes made in chat), then **FACO Original Row** (the row's number in their file), **FACO Error** and, when FACO has one for any row, **FACO Fix** ("Use 'Distributors'"). Every cell is text, so codes keep their leading zeros and nothing runs as a formula. Rows left out say "Left out: <reason>", so a **Completed** import's left-out rows can be corrected and imported too. It works before an import as well: then it holds the rows the last check failed.
 
 ### The corrected file
 
