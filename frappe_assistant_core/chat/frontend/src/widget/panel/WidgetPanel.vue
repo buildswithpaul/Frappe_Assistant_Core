@@ -164,7 +164,7 @@ const chatStore = useChatStore();
 const modelStore = useModelStore();
 const userStore = useUserStore();
 const spotlight = useSpotlightStore();
-const { handleFileUpload, consumeUploadedFiles, discardUploads } = useMessageFileUpload();
+const { handleFileUpload, consumeUploadedFiles } = useMessageFileUpload();
 // Files dragged anywhere on the chat go to the composer (reactive: the template reads isDragging).
 const fileDrop = reactive(useFileDrop());
 const scroller = ref(null);
@@ -226,9 +226,9 @@ async function onSend({ message, files = [] }) {
 	const route = resolveComposerRoute({
 		isStreaming: chatStore.isStreaming,
 		pendingInteraction: chatStore.pendingInteractionBlock,
+		hasFiles: files.length > 0,
 	});
 	if (route === "answer") {
-		discardUploads(files);
 		await chatStore.answerPendingQuestion(message);
 		return;
 	}

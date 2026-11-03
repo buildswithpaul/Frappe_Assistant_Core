@@ -406,7 +406,7 @@ usePromptFromRoute({
 });
 
 // File pre-upload flow (matches widget — upload on select, attach on send)
-const { handleFileUpload, consumeUploadedFiles, discardUploads } = useMessageFileUpload();
+const { handleFileUpload, consumeUploadedFiles } = useMessageFileUpload();
 
 // True during onboarding screens (registration, user setup, feature tour) — hides sidebar & topbar
 const isOnboarding = computed(() => {
@@ -695,15 +695,9 @@ async function handleSendMessage({ message, files = [] }) {
 	const route = resolveComposerRoute({
 		isStreaming: isStreaming.value,
 		pendingInteraction: chatStore.pendingInteractionBlock,
+		hasFiles: files.length > 0,
 	});
 	if (route === "answer") {
-		// The resume wire format has no attachment slot — staged files can't
-		// ride along with a card answer, so drop them and say so rather than
-		// silently losing what the user just uploaded.
-		discardUploads(files);
-		if (files.length) {
-			showError("Attachments can't be sent with a card answer — they were removed.");
-		}
 		await chatStore.answerPendingQuestion(message);
 		return;
 	}
