@@ -2,6 +2,7 @@ import { ref, computed } from "vue";
 import { useUserStore } from "@/stores/userStore";
 import { api } from "@/api/client";
 import { logger } from "@/utils/logger";
+import { percentUsed } from "@/utils/creditPercent";
 import { formatDate } from "@/composables/useFormatters";
 
 import { startHostedCheckout } from "./_billing/hostedCheckout";
@@ -188,7 +189,7 @@ export function useBillingData() {
 
 	const creditsPercentage = computed(() => {
 		if (!quota.value || quota.value.is_unlimited) return 0;
-		return Math.min(100, quota.value.percentage_used || 0);
+		return percentUsed(quota.value);
 	});
 
 	const usageBarColor = computed(() => {

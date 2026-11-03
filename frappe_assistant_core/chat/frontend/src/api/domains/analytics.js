@@ -6,6 +6,11 @@ export const analytics = {
 			days,
 		}),
 
+	getMyUsage: (days = 30) =>
+		getCall("frappe_assistant_core.chat.api.get_my_usage", {
+			days,
+		}),
+
 	getConversations: (days = 30, limit = 50, offset = 0) =>
 		getCall(
 			"frappe_assistant_core.chat.api.get_conversation_analytics",

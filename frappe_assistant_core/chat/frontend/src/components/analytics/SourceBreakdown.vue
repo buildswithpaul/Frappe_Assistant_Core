@@ -98,8 +98,8 @@ function formatNumber(val) {
 	display: flex;
 	align-items: center;
 	gap: 0.5rem;
-	min-width: 140px;
-	flex-shrink: 0;
+	flex: 0 1 140px;
+	min-width: 0;
 }
 
 .source-dot {
@@ -114,10 +114,13 @@ function formatNumber(val) {
 	font-weight: 500;
 	color: var(--ql-text);
 	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
 }
 
 .source-bar-wrapper {
 	flex: 1;
+	min-width: 0;
 	height: 8px;
 	background: var(--ql-bg);
 	border-radius: 4px;
@@ -158,10 +161,6 @@ function formatNumber(val) {
 }
 
 @media (max-width: 500px) {
-	.source-info {
-		min-width: 100px;
-	}
-
 	.source-stats {
 		min-width: 80px;
 	}

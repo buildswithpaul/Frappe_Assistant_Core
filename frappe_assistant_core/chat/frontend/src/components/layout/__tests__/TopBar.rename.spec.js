@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, vi } from "vitest";
 import { mount } from "@vue/test-utils";
 import { createPinia } from "pinia";
 import TopBar from "@/components/layout/TopBar.vue";
+import { testRouter } from "@/test-utils/router";
 
 beforeAll(() => {
 	window.__ = (s) => s;
@@ -14,7 +15,7 @@ const mountBar = (props = {}) =>
 		props: { title: "Overdue invoices", showActions: false, ...props },
 		attachTo: document.body,
 		global: {
-			plugins: [createPinia()],
+			plugins: [createPinia(), testRouter()],
 			stubs: { RouterLink: { template: "<a><slot/></a>" } },
 		},
 	});

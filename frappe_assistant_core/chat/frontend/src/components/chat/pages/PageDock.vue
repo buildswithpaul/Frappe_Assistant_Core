@@ -16,6 +16,7 @@
 			:user="user"
 			:refresh-key="refreshKey"
 			@share="onShare"
+			@close="close"
 		/>
 	</aside>
 </template>

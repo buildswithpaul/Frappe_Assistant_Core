@@ -12,6 +12,9 @@ from ._helpers import (
     _safe_error,
 )
 
+# Allowlist: only these AR keys reach a member; anything team-wide stays out.
+MY_USAGE_KEYS = ("period", "summary", "daily", "by_model", "by_source")
+
 
 def _get_client():
     """Get AR client, returning None if not registered."""
@@ -31,6 +34,33 @@ def _require_admin() -> None:
         frappe.throw(_("Only administrators can view usage analytics."), frappe.PermissionError)
 
 
+def _with_full_names(rows: list[dict]) -> list[dict]:
+    """Add ``full_name`` to each usage row, matching ``user_id`` the way AR keys a user.
+
+    AR keys a user by the User docname when it contains "@", else by User.email (see
+    ``auth._ar_user_id``). So a user whose email changed after they were seated is still
+    reported under the old docname. Match both, docname first, case-insensitively.
+    Unknown users get None.
+    """
+    ids = [row["user_id"] for row in rows if row.get("user_id")]
+    names: dict[str, str] = {}
+    if ids:
+        users = frappe.get_all(
+            "User",
+            or_filters={"name": ["in", ids], "email": ["in", ids]},
+            fields=["name", "email", "full_name"],
+        )
+        for user in users:
+            if "@" in (user.get("name") or ""):
+                names[user["name"].lower()] = user["full_name"]
+        for user in users:
+            if user.get("email"):
+                names.setdefault(user["email"].lower(), user["full_name"])
+    for row in rows:
+        row["full_name"] = names.get(str(row.get("user_id") or "").lower()) or None
+    return rows
+
+
 @frappe.whitelist(methods=["GET"])
 def get_analytics_data(days: int = 30):
     """
@@ -40,7 +70,7 @@ def get_analytics_data(days: int = 30):
         days: Time range in days (7, 30, or 90)
 
     Returns:
-        dict with period, summary, daily, by_user, by_model, by_source, is_admin
+        dict with period, summary, daily, by_user (each with full_name), by_model, by_source, is_admin
     """
     _require_admin()
 
@@ -50,11 +80,53 @@ def get_analytics_data(days: int = 30):
             return {"error": _not_registered_error()}
 
         result = client.get_token_analytics(days=int(days), user_id=None)
+        result["by_user"] = _with_full_names(result.get("by_user") or [])
         result["is_admin"] = True
         return result
 
     except Exception as e:
         frappe.log_error(title="FACO Analytics Error", message=f"Error fetching analytics: {e!s}")
+        return {"error": _safe_error(e, "FACO Analytics Error")}
+
+
+@frappe.whitelist(methods=["GET"])
+def get_my_usage(days: int | None = 30) -> dict:
+    """
+    Get the session user's own token usage. Open to any logged-in member.
+
+    The scope is set here from the session, never from a request parameter, so a
+    member cannot read anyone else's usage. ``by_user`` is dropped: it only holds
+    team-wide rows.
+
+    Args:
+        days: Time range in days (7, 30, or 90; anything else becomes 30)
+
+    Returns:
+        dict with period, summary, daily, by_model, by_source
+    """
+    from .auth import _ar_user_id
+
+    user_id = _ar_user_id(frappe.session.user) if frappe.session.user != "Guest" else None
+    if not user_id:
+        frappe.throw(_("Log in to view your usage."), frappe.PermissionError)
+
+    try:
+        days = int(days)
+    except (TypeError, ValueError):
+        days = 30
+    if days not in (7, 30, 90):
+        days = 30
+
+    try:
+        client = _get_client()
+        if not client:
+            return {"error": _not_registered_error()}
+
+        result = client.get_token_analytics(days=days, user_id=user_id)
+        return {key: (result or {}).get(key) for key in MY_USAGE_KEYS}
+
+    except Exception as e:
+        frappe.log_error(title="FACO Analytics Error", message=f"Error fetching my usage: {e!s}")
         return {"error": _safe_error(e, "FACO Analytics Error")}
 
 

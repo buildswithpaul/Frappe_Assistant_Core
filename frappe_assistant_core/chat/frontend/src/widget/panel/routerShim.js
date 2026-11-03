@@ -10,6 +10,8 @@ const NAMED_ROUTES = [
 	["agents", "/agents"],
 	["agent-builder", "/agents/:id"],
 	["analytics", "/analytics"],
+	["pages", "/pages"],
+	["page", "/pages/:name"],
 	["settings-profile", "/settings/profile"],
 	["settings-appearance", "/settings/appearance"],
 	["settings-home", "/settings/home"],

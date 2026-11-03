@@ -59,7 +59,7 @@
 						/>
 					</svg>
 					<div class="ring-label">
-						<span class="ring-percent">{{ Math.round(creditsPercentage) }}%</span>
+						<span class="ring-percent">{{ percent }}%</span>
 					</div>
 				</div>
 				<div class="usage-details">
@@ -67,9 +67,12 @@
 					<span class="usage-numbers">
 						{{ formatCredits(creditsUsed) }} / {{ formatCredits(creditsTotal) }}
 					</span>
-					<span class="usage-reset" v-if="usageResetDate"
-						>Resets {{ usageResetDate }}</span
-					>
+					<span class="usage-reset" v-if="resetDate">
+						{{ __("Resets {0}", [resetDate]) }}
+					</span>
+					<router-link class="see-usage" data-test="see-usage" to="/analytics">
+						{{ __("See usage") }}
+					</router-link>
 				</div>
 			</div>
 			<div class="hero-usage" v-else>
@@ -114,6 +117,9 @@
 <script setup>
 import { computed } from "vue";
 import { formatPlanName } from "@/composables/useFormatters";
+import { __ } from "@/utils/i18n";
+import { percentUsed } from "@/utils/creditPercent";
+import { monthAllowance } from "@/components/analytics/usage/usageHelpers";
 
 const props = defineProps({
 	currentPlan: { type: String, required: true },
@@ -127,6 +133,12 @@ const props = defineProps({
 });
 
 defineEmits(["change-plan", "buy-credits"]);
+
+// Same date the Usage page shows; the dashboard's own date is the fallback for an unknown cycle.
+const resetDate = computed(() => {
+	const fromCycle = props.quota ? monthAllowance(props.quota).resetDate : null;
+	return fromCycle || props.usageResetDate;
+});
 
 const CURRENCY_SYMBOLS = { INR: "₹", USD: "$", EUR: "€", GBP: "£" };
 
@@ -179,9 +191,12 @@ const creditsTotal = computed(() => {
 	return props.quota?.credit_quota || props.quota?.quota_total || 0;
 });
 
+// The same whole-percent rule as the Usage page and the chat meter; the prop covers a missing quota.
+const percent = computed(() => (props.quota ? percentUsed(props.quota) : props.creditsPercentage));
+
 const ringCircumference = 2 * Math.PI * 34; // r = 34
 const ringOffset = computed(() => {
-	const pct = Math.min(props.creditsPercentage, 100) / 100;
+	const pct = percent.value / 100;
 	return ringCircumference * (1 - pct);
 });
 
@@ -353,6 +368,16 @@ function formatCredits(val) {
 .usage-reset {
 	font-size: 0.75rem;
 	color: var(--ql-text-muted);
+}
+
+.see-usage {
+	font-size: 0.75rem;
+	color: var(--ql-text-muted);
+	text-decoration: none;
+}
+
+.see-usage:hover {
+	color: var(--ql-accent);
 }
 
 .unlimited-badge {

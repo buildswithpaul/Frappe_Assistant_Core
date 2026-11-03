@@ -5,8 +5,8 @@
 			class="page-panel-mine"
 			aria-haspopup="menu"
 			:aria-expanded="isOpen"
-			:aria-label="__('My pages')"
-			:title="__('My pages')"
+			:aria-label="__('Pages')"
+			:title="__('Pages')"
 			@click="toggle"
 		>
 			<svg viewBox="0 0 24 24" aria-hidden="true">
@@ -15,8 +15,8 @@
 			<svg class="page-panel-mine-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10l5 5 5-5" /></svg>
 		</button>
 		<div v-if="isOpen" class="page-list-menu-popover" role="menu">
-			<p v-if="loading" class="page-list-menu-message">{{ __("Loading…") }}</p>
-			<p v-else-if="failed" class="page-list-menu-message">{{ __("Your pages could not be listed.") }}</p>
+			<p v-if="loading && !pages.length" class="page-list-menu-message">{{ __("Loading…") }}</p>
+			<p v-else-if="error && !pages.length" class="page-list-menu-message">{{ __("Your pages could not be listed.") }}</p>
 			<p v-else-if="!pages.length" class="page-list-menu-message">{{ __("No pages yet.") }}</p>
 			<button
 				v-for="item in pages"
@@ -34,19 +34,21 @@
 </template>
 
 <script setup>
+import { storeToRefs } from "pinia";
 import { onBeforeUnmount, ref } from "vue";
+import { useRouter } from "vue-router";
 
-import { facPage } from "@/api/domains/facPage";
 import { usePagePanel } from "@/composables/usePagePanel";
+import { usePagesStore } from "@/stores/pagesStore";
 import { __ } from "@/utils/i18n";
-import { logger } from "@/utils/logger";
 
-const { open } = usePagePanel();
+const { open, dockMounted } = usePagePanel();
+const router = useRouter();
+const pagesStore = usePagesStore();
+const { pages, error } = storeToRefs(pagesStore);
 
 const isOpen = ref(false);
 const loading = ref(false);
-const failed = ref(false);
-const pages = ref([]);
 const root = ref(null);
 
 // A press anywhere else closes the menu, as the app's other menus do.
@@ -61,20 +63,15 @@ async function toggle() {
 	isOpen.value = !isOpen.value;
 	if (!isOpen.value) return;
 	loading.value = true;
-	failed.value = false;
-	try {
-		pages.value = (await facPage.listMine()) || [];
-	} catch (error) {
-		logger.error("FAC Pages could not be listed", error);
-		failed.value = true;
-	} finally {
-		loading.value = false;
-	}
+	await pagesStore.load();
+	loading.value = false;
 }
 
 function choose(name) {
 	isOpen.value = false;
-	open(name);
+	// Off the chat there is no dock to show it in, so the page opens full screen.
+	if (dockMounted.value) open(name);
+	else router.push({ name: "page", params: { name } });
 }
 </script>
 

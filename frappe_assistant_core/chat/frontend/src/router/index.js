@@ -61,7 +61,17 @@ const routes = [
 		path: "/analytics",
 		name: "analytics",
 		component: () => import("@/views/AnalyticsView.vue"),
-		beforeEnter: requireAdmin,
+	},
+	{
+		path: "/pages",
+		name: "pages",
+		component: () => import("@/views/PagesView.vue"),
+	},
+	{
+		path: "/pages/:name",
+		name: "page",
+		component: () => import("@/views/PagesView.vue"),
+		props: true,
 	},
 	{
 		path: "/settings",

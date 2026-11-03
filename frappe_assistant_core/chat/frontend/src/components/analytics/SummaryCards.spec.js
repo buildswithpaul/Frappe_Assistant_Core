@@ -31,9 +31,9 @@ describe("SummaryCards average per conversation", () => {
 		expect(card.text()).not.toContain("5 ");
 	});
 
-	it("averages over conversations in user mode too", () => {
-		const { card } = avgCard({ mode: "user", conversationCount: 4 });
-		expect(card.text()).toContain("13"); // 53 / 4
+	it("hides conversation cards in user mode", () => {
+		const { wrapper } = avgCard({ mode: "user", conversationCount: 4 });
+		expect(wrapper.text()).not.toMatch(/avg per chat|my conversations/i);
 	});
 
 	it("names which credits it is averaging", () => {
@@ -60,5 +60,29 @@ describe("SummaryCards average per conversation", () => {
 				"call (classifier, memory, suggestions, workflows). A run can include several model calls.",
 		);
 		expect(requests.find(".card-sub").text()).toBe("chat, approvals and background calls");
+	});
+});
+
+/**
+ * The first two cards used to show a 7/30/90-day sum as "N / quota" and
+ * "% of monthly quota", dividing the window by the monthly allowance.
+ */
+describe("SummaryCards window credits", () => {
+	function mountCards(props = {}) {
+		return mount(SummaryCards, {
+			props: { summary: SUMMARY, mode: "admin", conversationCount: 1, ...props },
+			global: { stubs: { TrendBadge: true } },
+		});
+	}
+
+	it("labels the window figure by its days", () => {
+		const text = mountCards({ days: 7 }).text();
+		expect(text).toContain("Credits in the last 7 days");
+		expect(text).toContain("53");
+	});
+
+	it("never mentions the monthly quota", () => {
+		const text = mountCards({ days: 30 }).text();
+		expect(text).not.toMatch(/monthly quota|remaining|%/i);
 	});
 });
