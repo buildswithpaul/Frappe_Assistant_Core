@@ -88,6 +88,12 @@
 				:block="segment"
 			/>
 
+			<!-- A mapping this turn saved: the user can review and change it here (#34415) -->
+			<MappingReviewBlock
+				v-else-if="segment.type === 'mapping_review'"
+				:session="segment.session"
+			/>
+
 			<!-- An import this turn started: its progress, live while it runs (#34416) -->
 			<ImportProgressBlock
 				v-else-if="segment.type === 'import_progress'"
@@ -123,7 +129,8 @@ import SourcesBlock from "./SourcesBlock.vue";
 import GeneratedDocumentsBlock from "./GeneratedDocumentsBlock.vue";
 import WorkflowCreatedBlock from "./WorkflowCreatedBlock.vue";
 import ImportProgressBlock from "./ImportProgressBlock.vue";
-import { startedImports } from "@/utils/importSessions";
+import MappingReviewBlock from "./MappingReviewBlock.vue";
+import { mappedSessions, startedImports } from "@/utils/importSessions";
 import FacPageChip from "./pages/FacPageChip.vue";
 import { usePagePanel } from "@/composables/usePagePanel";
 import { chipsForMessage } from "@/utils/pageChips";
@@ -283,7 +290,12 @@ const groupedContent = computed(() => {
 	}
 
 	// Derived from the tool_call blocks at render time, so a reloaded conversation keeps them.
-	for (const session of startedImports(props.blocks)) {
+	const importing = startedImports(props.blocks);
+	// a session this turn also imported shows its progress, not a mapping that can't change now
+	for (const session of mappedSessions(props.blocks).filter((name) => !importing.includes(name))) {
+		segments.push({ type: "mapping_review", id: `mapping_review:${session}`, session });
+	}
+	for (const session of importing) {
 		segments.push({ type: "import_progress", id: `import_progress:${session}`, session });
 	}
 	const chips = chipsForMessage(props.blocks, conversationPageChips.value);

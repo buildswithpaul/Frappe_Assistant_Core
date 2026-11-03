@@ -92,3 +92,146 @@ def import_progress(sessions: Union[str, List[str], None] = None) -> Dict[str, A
         out.append(progress(frappe.get_doc(SESSION, name)))
     labels = {"read": _("Read"), "mapped": _("Mapped"), "checked": _("Checked"), "imported": _("Imported")}
     return {"sessions": out, "steps": [{"key": key, "label": labels[key]} for key in STEPS]}
+
+
+# -- the mapping review card and the import approval card (#34415) -----------------------------
+
+#: How many of a column's first values the review card shows
+SAMPLES_SHOWN = 3
+
+
+def _review(doc) -> Dict[str, Any]:
+    """The session's mapping as the review card shows it: each column with its first values, its
+    field and a status, the fields it can choose from and the required fields with no column."""
+    from frappe_assistant_core.plugins.core.tools.set_column_mapping import _mapping_refused, _samples
+    from frappe_assistant_core.utils.import_mapping import (
+        DONT_IMPORT,
+        _mapping_targets,
+        _table_title,
+        build_import_schema,
+        describe_mapping,
+        session_headers,
+        session_mapping,
+    )
+
+    if not doc.target_doctype:
+        return {"session": doc.name, "ready": False, "message": _("The file has no ERPNext type yet.")}
+    headers = session_headers(doc)
+    schema = build_import_schema(doc.target_doctype)
+    targets = _mapping_targets(schema)
+    mapping = session_mapping(doc)
+    samples = _samples(doc)
+    described = describe_mapping(
+        schema, headers, mapping, update=doc.import_type == "Update Existing Records", samples=samples
+    )
+    columns = []
+    for position, header in enumerate(headers):
+        field = mapping.get(str(position))
+        if field == DONT_IMPORT:
+            status = "not_imported"
+        elif field and field in targets:
+            status = "mapped"
+        else:
+            status, field = "unmapped", None
+        values = [row[position] for row in samples if position < len(row) and str(row[position]).strip()]
+        columns.append(
+            {
+                "position": position,
+                "column": header,
+                "samples": values[:SAMPLES_SHOWN],
+                "field": field,
+                "label": targets[field]["label"] if field in targets else None,
+                "status": status,
+            }
+        )
+    options = [{"value": DONT_IMPORT, "label": _("Don't import")}]
+    for field, target in targets.items():
+        table = target.get("table")
+        label = f"{_table_title(table)}: {target['label']}" if table else target["label"]
+        options.append({"value": field, "label": label, "required": bool(target.get("required"))})
+    refused = _mapping_refused(doc.status)
+    return {
+        "session": doc.name,
+        "ready": True,
+        "file_name": doc.file_name,
+        "doctype": doc.target_doctype,
+        "status": doc.status,
+        "editable": not refused,
+        "refused": refused,
+        "columns": columns,
+        "options": options,
+        "missing_required": described["missing_required"],
+        "summary": described["summary"],
+    }
+
+
+def _load(session: str):
+    from frappe_assistant_core.utils.import_mapping import load_session
+
+    return load_session(session)  # the session's own permission: its user, or a System Manager
+
+
+@frappe.whitelist(methods=["GET"])
+def mapping_review(session: str) -> Dict[str, Any]:
+    """The mapping review card's data for a session the user may read."""
+    return _review(_load(session))
+
+
+@frappe.whitelist(methods=["POST"])
+def set_mapping_column(session: str, position: int, field: str) -> Dict[str, Any]:
+    """A dropdown changed on the review card: that one column remapped through set_column_mapping
+    itself, so its checks, permission and audit are the model's, and the card refreshed. No chat
+    message: the user changed it by hand."""
+    from frappe_assistant_core.core.tool_registry import get_tool_registry
+
+    doc = _load(session)
+    reply = (
+        get_tool_registry()
+        .get_tool("set_column_mapping")
+        ._safe_execute({"session": doc.name, "mapping": {str(int(position)): field}})
+    )
+    result = reply.get("result") if isinstance(reply, dict) and "result" in reply else reply
+    ok = bool(reply.get("success")) and bool((result or {}).get("success", True))
+    out = {"success": ok, "review": _review(_load(session))}
+    if not ok:
+        out["error"] = (result or {}).get("error") or reply.get("error")
+        out["problems"] = (result or {}).get("problems") or []
+    return out
+
+
+@frappe.whitelist(methods=["GET"])
+def import_card(session: str) -> Dict[str, Any]:
+    """What the import approval card says besides the tool's own figures: the file, new records or
+    updates, the rows left out, whether they are submitted and the mapping in one line."""
+    from frappe_assistant_core.utils import import_fixes
+    from frappe_assistant_core.utils.import_mapping import (
+        _mapping_targets,
+        build_import_schema,
+        session_headers,
+        session_mapping,
+    )
+
+    doc = _load(session)
+    try:
+        summary = json.loads(doc.validation_summary or "{}") or {}
+    except (TypeError, ValueError):
+        summary = {}
+    headers = session_headers(doc) if doc.target_doctype else []
+    targets = _mapping_targets(build_import_schema(doc.target_doctype)) if doc.target_doctype else {}
+    pairs = []
+    for position, field in session_mapping(doc).items():
+        if field in targets and int(position) < len(headers):
+            pairs.append(f"{headers[int(position)]} → {targets[field]['label']}")
+    shown = ", ".join(pairs[:4])
+    if len(pairs) > 4:
+        shown += " " + _("and {0} more").format(len(pairs) - 4)
+    return {
+        "session": doc.name,
+        "file_name": doc.file_name,
+        "doctype": doc.target_doctype,
+        "update": doc.import_type == "Update Existing Records",
+        "rows": summary.get("ready"),
+        "left_out": len(import_fixes.left_out(doc)),
+        "submit": bool(doc.get("submit_after_import")),
+        "mapping": shown,
+    }

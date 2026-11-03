@@ -17,6 +17,9 @@
 
 		<div v-else-if="toolDescription" class="approval-description">{{ toolDescription }}</div>
 
+		<!-- An import: its file, new or updated records, rows left out, submitting, the mapping (#34415) -->
+		<ImportApprovalSummary v-if="isImport && block.input" :input="block.input" />
+
 		<!-- Several records in one call: each one, so the user sees what they approve -->
 		<RecordTables v-if="recordCount" :input="block.input" :tool-name="block.tool_name" />
 
@@ -70,6 +73,7 @@ import { __ } from "@/utils/i18n";
 import { baseToolName, isCustomisationRisk } from "@/utils/toolNames";
 import ApprovalDetails from "./ApprovalDetails.vue";
 import EmailPreview from "./EmailPreview.vue";
+import ImportApprovalSummary from "./ImportApprovalSummary.vue";
 import InteractionShell from "./InteractionShell.vue";
 import RecordTables from "./RecordTables.vue";
 import { approvalHeadline, trustLabel } from "./approvalHeadline";
@@ -115,6 +119,7 @@ const icon = computed(() => {
 });
 
 const trustText = computed(() => trustLabel(props.block.tool_name));
+const isImport = computed(() => baseToolName(props.block.tool_name) === "start_import");
 
 const approveLabel = computed(() => {
 	if (clicked.value === "approve" && props.submitting) return __("Approving…");

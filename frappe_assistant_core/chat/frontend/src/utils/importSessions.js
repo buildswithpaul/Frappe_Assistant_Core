@@ -39,3 +39,18 @@ export function conversationImportSessions(messages) {
 	}
 	return names;
 }
+
+/** The sessions this message mapped (a set_column_mapping that saved), the latest call per session. */
+export function mappedSessions(blocks) {
+	const names = [];
+	for (const block of blocks || []) {
+		if (block?.type !== "tool_call" || baseToolName(block.tool_name) !== "set_column_mapping") continue;
+		if (block.status !== "success" || toolFailed(block)) continue;
+		const name = sessionOf(block);
+		if (!name) continue;
+		const at = names.indexOf(name);
+		if (at !== -1) names.splice(at, 1);
+		names.push(name);
+	}
+	return names;
+}

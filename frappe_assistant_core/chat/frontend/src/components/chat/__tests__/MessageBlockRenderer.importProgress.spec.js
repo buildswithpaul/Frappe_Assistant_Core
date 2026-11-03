@@ -62,3 +62,19 @@ describe("an import's progress under the message that started it (#34416)", () =
 		expect(api.imports.progress).not.toHaveBeenCalled();
 	});
 });
+
+describe("a mapping's review card under the message that saved it (#34415)", () => {
+	it("shows the review for a saved mapping, but not once that turn also started the import", async () => {
+		api.imports.mappingReview = vi.fn().mockResolvedValue({ ready: false });
+		const mapped = { id: "m1", type: "tool_call", tool_name: "set_column_mapping", status: "success", input: { session: "IMP-9" }, result: { success: true } };
+		const w = mountRenderer([mapped]);
+		await flushPromises();
+		expect(api.imports.mappingReview).toHaveBeenCalledWith("IMP-9");
+
+		api.imports.mappingReview.mockClear();
+		mountRenderer([mapped, { ...started, input: { session: "IMP-9" }, result: { success: true, session: "IMP-9" } }]);
+		await flushPromises();
+		expect(api.imports.mappingReview).not.toHaveBeenCalled();
+		expect(api.imports.progress).toHaveBeenCalledWith(["IMP-9"]);
+	});
+});
