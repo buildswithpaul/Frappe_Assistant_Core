@@ -72,6 +72,9 @@ describe("the mapping review card (#34415)", () => {
 		const w = mount(MappingReviewBlock, { props: { session: "IMP-1" } });
 		await flushPromises();
 		expect(w.find(".mr-missing").text()).toContain("Customer Group");
+		// a field with a default is never listed, and no tool fills a column in: the file needs it
+		expect(w.find(".mr-hint").text()).toContain("add the column to your file");
+		expect(w.find(".mr-hint").text()).not.toContain("default");
 	});
 
 	it("can't be changed while the session is importing", async () => {

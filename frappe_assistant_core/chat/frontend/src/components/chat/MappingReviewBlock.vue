@@ -10,7 +10,7 @@
 			<span v-for="field in review.missing_required" :key="field.field" class="mr-missing-field">
 				{{ field.table ? field.table + ": " + field.label : field.label }}
 			</span>
-			<div class="mr-hint">{{ __("Pick a column for each below, or ask FACO to set a default.") }}</div>
+			<div class="mr-hint">{{ __("Pick a column for each below, or add the column to your file and send it again.") }}</div>
 		</div>
 		<div v-if="!review.editable && review.refused" class="mr-locked">{{ review.refused }}</div>
 		<div v-if="error" class="mr-error" role="alert">{{ error }}</div>
