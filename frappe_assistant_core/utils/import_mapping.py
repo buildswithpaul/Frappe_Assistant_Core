@@ -467,8 +467,8 @@ def _field_key(
         return (
             None,
             _(
-                "'{0}' on a {1} is its primary Contact's: map the column to {2}, and the Contact is made "
-                "with the {1} from the same row."
+                "'{0}' is hidden on {1}: it is its primary Contact's. Map the column to {2}, and the "
+                "Contact is made with the {1} from the same row."
             ).format(value, _(meta.name), contact_table),
         )
     if df and (df.hidden or df.read_only):

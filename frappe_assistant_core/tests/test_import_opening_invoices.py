@@ -5,10 +5,12 @@ opening Sales or Purchase Invoices, built by ERPNext's Opening Invoice Creation 
 checked first; nothing is written until the user approves; totals are compared with the file's after.
 """
 
+import io
 import unittest
 from unittest.mock import patch
 
 import frappe
+import openpyxl
 from frappe import _
 from frappe.utils import add_days, nowdate
 
@@ -1452,7 +1454,11 @@ class TestSignoffReviewFixes(OpeningInvoicesCase):
         self.assertTrue(reply["success"], reply)
         self.assertEqual(reply["result"]["rows"], 1)
         content = frappe.get_doc("File", {"file_url": reply["result"]["file_url"]}).get_content()
-        text = content.decode() if isinstance(content, bytes) else content
+        # an Excel file of text cells since #34417
+        book = openpyxl.load_workbook(io.BytesIO(content))
+        text = "\n".join(
+            ",".join(cell or "" for cell in row) for row in book.active.iter_rows(values_only=True)
+        )
         self.assertIn(self._number(2), text)
         self.assertIn("Refused for the test", text)
         self.assertNotIn(self._number(1), text)
