@@ -37,9 +37,12 @@
 							:class="{ 'value-mono': key in row && isMonoValue(key, row[key]) }"
 						>
 							<template v-if="key in row">
+								<span v-if="tableReplacement(toolName, row[key])" class="table-replaced">
+									{{ tableReplacement(toolName, row[key]) }}
+								</span>
 								<RowsToggle v-if="isChildTable(row[key])" :rows="row[key]" />
 								<LongValue v-else-if="isLongValue(row[key])" :value="row[key]" :code="isCodeKey(key)" />
-								<template v-else>{{ cellText(row[key]) }}</template>
+								<template v-else-if="!tableReplacement(toolName, row[key])">{{ cellText(row[key]) }}</template>
 							</template>
 						</td>
 					</tr>
@@ -62,6 +65,7 @@ import {
 	documentTables,
 	documentsHeading,
 	isChildTable,
+	tableReplacement,
 	isCodeKey,
 	isLongValue,
 	isMonoValue,
@@ -80,6 +84,12 @@ const heading = computed(() => documentsHeading(props.toolName, props.input));
 </script>
 
 <style scoped>
+.table-replaced {
+	display: block;
+	color: var(--ql-danger);
+	font-weight: 600;
+}
+
 .approval-records {
 	padding: 10px 14px 0;
 	font-size: 11.5px;

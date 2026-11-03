@@ -1056,6 +1056,45 @@ describe("ApprovalCard heading and progress", () => {
 	});
 });
 
+describe("ApprovalCard on an update that empties or replaces a child table", () => {
+	// #34540: update_document given items [] deletes every row, and rows without a name replace
+	// them all, while the card showed "—" or a plain table, like a field not sent or rows added
+	const update = (items) =>
+		mount(ApprovalCard, {
+			props: {
+				block: { id: "c1", tool_name: "update_document", input: { doctype: "Sales Order", name: "SO-1", data: { items } }, interrupts },
+			},
+		});
+
+	it("says an empty list removes all its rows, in sight", () => {
+		const wrapper = update([]);
+		expect(wrapper.find(".table-replaced").text()).toBe("Items: Removes all its rows");
+		expect(wrapper.find(".approval-table").exists()).toBe(false);
+	});
+
+	it("says rows without a name replace all its rows, above the rows", () => {
+		const wrapper = update([{ item_code: "SRV-001", qty: 1 }]);
+		expect(wrapper.find(".table-replaced").text()).toBe("Items: Replaces all its rows with 1");
+		expect(wrapper.text()).toContain("SRV-001");
+	});
+
+	it("says nothing when the rows are named, as the update patches them", () => {
+		expect(update([{ name: "row-1", qty: 2 }]).find(".table-replaced").exists()).toBe(false);
+	});
+
+	it("says so for each record of a batch update", () => {
+		const documents = [
+			{ doctype: "Sales Order", name: "SO-1", data: { items: [] } },
+			{ doctype: "Sales Order", name: "SO-2", data: { items: [{ item_code: "SRV-001", qty: 1 }] } },
+		];
+		const wrapper = recordsCard({ documents }, "update_document", interrupts);
+		expect(wrapper.findAll(".table-replaced").map((p) => p.text())).toEqual([
+			"Removes all its rows",
+			"Replaces all its rows with 1",
+		]);
+	});
+});
+
 describe("ApprovalCard blank values", () => {
 	it("leaves out a blank field on an action, but keeps one an update clears", () => {
 		const action = mount(ApprovalCard, {

@@ -13,6 +13,7 @@ import {
 	isCodeField,
 	codeLanguage,
 	isChildTable,
+	tableReplacement,
 } from "./helpers";
 
 describe("isMoneyKey", () => {
@@ -51,6 +52,26 @@ describe("isMonoValue", () => {
 	it("is false for plain text fields", () => {
 		expect(isMonoValue("customer", "Promantia")).toBe(false);
 		expect(isMonoValue("currency", "INR")).toBe(false);
+	});
+});
+
+describe("tableReplacement on an update's child table", () => {
+	// update_document clears a table given [] and replaces every row when no row has a name: the
+	// card says so, where an empty cell read like a field not sent (#34540)
+	it("says an empty list removes every row", () => {
+		expect(tableReplacement("update_document", [])).toBe("Removes all its rows");
+	});
+
+	it("says rows without a name replace every row", () => {
+		expect(tableReplacement("update_document", [{ item_code: "A" }, { item_code: "B" }])).toBe(
+			"Replaces all its rows with 2",
+		);
+	});
+
+	it("says nothing for rows it patches by name, a value that isn't a table, or a create", () => {
+		expect(tableReplacement("update_document", [{ name: "r1", qty: 2 }])).toBeNull();
+		expect(tableReplacement("update_document", "text")).toBeNull();
+		expect(tableReplacement("create_document", [])).toBeNull();
 	});
 });
 

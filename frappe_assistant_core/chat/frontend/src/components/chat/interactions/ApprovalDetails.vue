@@ -67,7 +67,15 @@
 				<li v-for="(line, i) in lines" :key="i">{{ line }}</li>
 			</ul>
 		</div>
-		<ChildTable v-for="[key, rows] in tableRows" :key="key" :label="key" :rows="rows" />
+		<p v-for="[key] in clearedTables" :key="`cleared-${key}`" class="table-replaced">
+			{{ formatKey(key) }}: {{ tableReplacement(block.tool_name, []) }}
+		</p>
+		<template v-for="[key, rows] in tableRows" :key="key">
+			<p v-if="tableReplacement(block.tool_name, rows)" class="table-replaced">
+				{{ formatKey(key) }}: {{ tableReplacement(block.tool_name, rows) }}
+			</p>
+			<ChildTable :label="key" :rows="rows" />
+		</template>
 		<ApprovalNotes :block="block" />
 	</div>
 </template>
@@ -93,6 +101,7 @@ import {
 	isCodeField,
 	isChildTable,
 	isTextList,
+	tableReplacement,
 	isLongValue,
 	codeLanguage,
 	splitDetailFields,
@@ -132,6 +141,10 @@ const codeRows = computed(() =>
 const tableRows = computed(() => Object.entries(flat.value).filter(([, v]) => isChildTable(v)));
 // Every line of a list in sight, not "2 items" behind "+ more": the user approves them (#34547)
 const listRows = computed(() => Object.entries(flat.value).filter(([, v]) => isTextList(v)));
+// An update given [] deletes every row of that table: said in red, always in sight, not "—" (#34540)
+const clearedTables = computed(() =>
+	Object.entries(flat.value).filter(([, v]) => Array.isArray(v) && v.length === 0 && tableReplacement(props.block.tool_name, v)),
+);
 // The title already names the record and its doctype, so the field list starts at what changes.
 const shownInTitle = computed(() => headlineKeys(props.block));
 // A blank value is a change only on an update (it clears the field); elsewhere it is noise.
@@ -144,6 +157,7 @@ const plainFields = computed(() =>
 				!codeRows.value.some(([ck]) => ck === k) &&
 				!isChildTable(v) &&
 				!isTextList(v) &&
+				!clearedTables.value.some(([ck]) => ck === k) &&
 				!shownInTitle.value.includes(k) &&
 				(keepsBlanks.value || !isBlank(v)),
 		),
@@ -248,6 +262,12 @@ function previousCode(key) {
 .goes-live-missing {
 	margin: 0;
 	color: var(--ql-danger);
+}
+
+.table-replaced {
+	margin: 6px 0 0;
+	color: var(--ql-danger);
+	font-weight: 600;
 }
 
 .value-list {

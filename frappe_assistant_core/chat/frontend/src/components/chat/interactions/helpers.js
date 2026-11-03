@@ -75,6 +75,20 @@ export function isTextList(value) {
 }
 
 /**
+ * What an update does to a child table it is given, when it isn't only the rows it names:
+ * update_document clears the table given [], and replaces every row when no row has a `name`
+ * (#34540). Null otherwise, and for any other tool.
+ */
+export function tableReplacement(toolName, value) {
+	if (baseToolName(toolName) !== "update_document" || !Array.isArray(value)) return null;
+	if (value.length === 0) return __("Removes all its rows");
+	if (value.every(isPlainObject) && !value.some((row) => row.name)) {
+		return __("Replaces all its rows with {0}", [value.length]);
+	}
+	return null;
+}
+
+/**
  * Flatten a tool input dict for human display.
  *
  * MCP tools commonly nest the actual fields one level deep under a key like
