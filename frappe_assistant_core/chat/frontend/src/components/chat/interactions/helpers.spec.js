@@ -68,6 +68,14 @@ describe("tableReplacement on an update's child table", () => {
 		);
 	});
 
+	it("says bare values replace every row, as a Table MultiSelect takes them", () => {
+		// normalize_child_rows makes {link_field: value} of each, with no name: replace mode
+		expect(tableReplacement("update_document", ["Retail", "Export"])).toBe("Replaces all its rows with 2");
+		expect(tableReplacement("update_document", ["Retail", { customer_group: "Export" }])).toBe(
+			"Replaces all its rows with 2",
+		);
+	});
+
 	it("says nothing for rows it patches by name, a value that isn't a table, or a create", () => {
 		expect(tableReplacement("update_document", [{ name: "r1", qty: 2 }])).toBeNull();
 		expect(tableReplacement("update_document", "text")).toBeNull();

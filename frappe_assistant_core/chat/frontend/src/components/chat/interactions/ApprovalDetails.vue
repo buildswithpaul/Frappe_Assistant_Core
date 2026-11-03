@@ -62,6 +62,9 @@
 			/>
 		</div>
 		<div v-for="[key, lines] in listRows" :key="key" class="value-list">
+			<p v-if="tableReplacement(block.tool_name, lines)" class="table-replaced">
+				{{ formatKey(key) }}: {{ tableReplacement(block.tool_name, lines) }}
+			</p>
 			<span class="field-key">{{ formatKey(key) }}</span>
 			<ul class="value-lines">
 				<li v-for="(line, i) in lines" :key="i">{{ line }}</li>

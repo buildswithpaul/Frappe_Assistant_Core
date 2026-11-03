@@ -42,7 +42,7 @@
 								</span>
 								<RowsToggle v-if="isChildTable(row[key])" :rows="row[key]" />
 								<LongValue v-else-if="isLongValue(row[key])" :value="row[key]" :code="isCodeKey(key)" />
-								<template v-else-if="!tableReplacement(toolName, row[key])">{{ cellText(row[key]) }}</template>
+								<template v-else-if="!isEmptyList(row[key])">{{ cellText(row[key]) }}</template>
 							</template>
 						</td>
 					</tr>
@@ -81,6 +81,8 @@ const expanded = ref(false);
 const scrollId = useId();
 const tables = computed(() => documentTables(props.input));
 const heading = computed(() => documentsHeading(props.toolName, props.input));
+// An emptied table's cell is its warning alone; any other value shows beside it.
+const isEmptyList = (value) => Array.isArray(value) && value.length === 0;
 </script>
 
 <style scoped>

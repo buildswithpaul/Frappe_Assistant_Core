@@ -1078,6 +1078,21 @@ describe("ApprovalCard on an update that empties or replaces a child table", () 
 		expect(wrapper.text()).toContain("SRV-001");
 	});
 
+	it("says bare values replace all its rows, above the values", () => {
+		const wrapper = mount(ApprovalCard, {
+			props: {
+				block: {
+					id: "c2",
+					tool_name: "update_document",
+					input: { doctype: "Pricing Rule", name: "PR-1", data: { customer_groups: ["Retail", "Export"] } },
+					interrupts,
+				},
+			},
+		});
+		expect(wrapper.find(".table-replaced").text()).toBe("Customer Groups: Replaces all its rows with 2");
+		expect(wrapper.findAll(".value-lines li").map((li) => li.text())).toEqual(["Retail", "Export"]);
+	});
+
 	it("says nothing when the rows are named, as the update patches them", () => {
 		expect(update([{ name: "row-1", qty: 2 }]).find(".table-replaced").exists()).toBe(false);
 	});
@@ -1092,6 +1107,14 @@ describe("ApprovalCard on an update that empties or replaces a child table", () 
 			"Removes all its rows",
 			"Replaces all its rows with 1",
 		]);
+	});
+
+	it("shows a batch record's bare values beside the warning", () => {
+		const documents = [{ doctype: "Pricing Rule", name: "PR-1", data: { customer_groups: ["Retail", "Export"] } }];
+		const [table] = recordTables(recordsCard({ documents }, "update_document", interrupts));
+		const cell = table.rows[0][table.columns.indexOf("Customer Groups")];
+		expect(cell).toContain("Replaces all its rows with 2");
+		expect(cell).toContain("Retail");
 	});
 });
 
