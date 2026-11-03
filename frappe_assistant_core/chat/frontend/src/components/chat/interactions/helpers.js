@@ -138,7 +138,15 @@ export function flattenInput(input) {
 	}
 
 	// "documents" (several records in one call) is shown record by record, by documentTables.
-	const skipKeys = new Set(["validate_only", "ignore_permissions", "ignore_mandatory", "documents"]);
+	// validated_fingerprint binds start_import to its check on the server: hex means nothing to the
+	// user, who approves the rows and the file it names (#34545).
+	const skipKeys = new Set([
+		"validate_only",
+		"ignore_permissions",
+		"ignore_mandatory",
+		"documents",
+		"validated_fingerprint",
+	]);
 	for (const [key, value] of Object.entries(input)) {
 		if (key in result || nestedKeys.includes(key) || skipKeys.has(key)) continue;
 		if (!isPlainObject(value)) result[key] = value;

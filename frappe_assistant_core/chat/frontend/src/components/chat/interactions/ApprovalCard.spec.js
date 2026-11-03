@@ -160,6 +160,26 @@ describe("ApprovalCard for other tools", () => {
 	});
 });
 
+describe("ApprovalCard for an import's start", () => {
+	// #34545: the card listed "Validated Fingerprint: b801d68f2bf0" among the fields (test.local)
+	it("shows no fingerprint, even with every field open", async () => {
+		const input = {
+			doctype: "Customer",
+			file_name: "UI_Test_Customers.csv",
+			import_type: "Insert New Records",
+			rows: 3,
+			submit_after_import: false,
+			validated_fingerprint: "b801d68f2bf0",
+		};
+		const wrapper = mount(ApprovalCard, { props: { block: { id: "s1", tool_name: "start_import", input, interrupts } } });
+		const toggle = wrapper.find(".field-toggle");
+		if (toggle.exists()) await toggle.trigger("click");
+
+		expect(wrapper.text()).not.toContain("Fingerprint");
+		expect(wrapper.text()).not.toContain("b801d68f2bf0");
+	});
+});
+
 describe("ApprovalCard for a migration plan's run", () => {
 	// #34547: the card read "Decisions: 2 items", behind "+ 2 more", though the user approves them
 	it("lists every decision as a line, in sight", () => {

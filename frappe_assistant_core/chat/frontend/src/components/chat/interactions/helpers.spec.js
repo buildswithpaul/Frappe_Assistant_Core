@@ -105,6 +105,16 @@ describe("flattenInput on a value the model passes back in its fence", () => {
 	});
 });
 
+describe("flattenInput on an import's start", () => {
+	// validated_fingerprint binds start_import to its check on the server; hex means nothing to the
+	// user, who approves the rows and the file (#34545)
+	it("leaves out the check's fingerprint", () => {
+		const flat = flattenInput({ session: "IMP-1", doctype: "Customer", rows: 3, validated_fingerprint: "b801d68f2bf0" });
+		expect(flat).not.toHaveProperty("validated_fingerprint");
+		expect(flat).toMatchObject({ session: "IMP-1", doctype: "Customer", rows: 3 });
+	});
+});
+
 describe("flattenInput on an update that renames", () => {
 	it("keeps a data key that collides with the record name as a new value", () => {
 		const flat = flattenInput({ doctype: "Server Script", name: "Old Script", data: { name: "New Script" } });
