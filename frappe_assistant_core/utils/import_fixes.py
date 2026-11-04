@@ -411,6 +411,9 @@ def advise(session, group: Dict[str, Any]) -> Dict[str, Any]:
             fixes[0]["likely"] = meant
             explanation += " " + _("It is most likely '{0}', misspelt.").format(meant)
         reason = _creating_problem(doctype, session)
+        if not reason and (group["parent"], group["field"]) in import_keys.translated_fields(session):
+            # An old ID (#34244): a record named by it would stay in ERPNext as a stand-in (DM52's IG-199)
+            reason = _("'{0}' is an ID of the old system, not a name").format(value)
         if not reason:
             create = {"action": CREATE, "doctype": doctype, "name": value, "parent": default_parent(doctype)}
             if not session.get("migration_plan"):  # in a plan, it is a fix: the plan creates it when it runs

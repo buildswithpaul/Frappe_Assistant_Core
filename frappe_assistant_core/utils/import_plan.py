@@ -270,6 +270,64 @@ def _created_old_ids(session) -> List[str]:
     ]
 
 
+#: How many of a link column's values must be an earlier file's old IDs for the plan to translate
+#: it: most of them. The rest are what its check then asks about (an ID no file brings).
+OLD_ID_SHARE = 0.5
+
+
+def _translate_earlier_old_ids(session) -> None:
+    """Translate the session's link columns that hold the old IDs of an earlier file of its plan
+    (#34244), when its mapping didn't say so (DM52: the items' Item Group held the groups' old codes).
+    The check counts those IDs as coming, but only a translated column is turned into the records'
+    names when its file is imported: every such row would be left out."""
+    from frappe_assistant_core.utils import import_key_setup, import_keys
+    from frappe_assistant_core.utils.import_session import FileProblem, read_sheet_rows, readable_session_file
+
+    if session.status not in JOINABLE or not session.target_doctype:
+        return
+    _plan, before, _after = _split(session)
+    ids: Dict[str, Dict[str, Set[str]]] = {}  # DocType → source system → old IDs
+    for earlier in before:
+        kept = import_keys.source_key(earlier)
+        if kept and earlier.target_doctype:
+            ids.setdefault(earlier.target_doctype, {}).setdefault(kept["system"], set()).update(
+                import_key_setup.keys_by_row(earlier).values()
+            )
+    kept_maps = import_keys.key_maps(session)
+    columns = {
+        position: doctype
+        for position, doctype in import_keys.link_targets(
+            session.target_doctype, dry_run.column_to_field_map(session)
+        ).items()
+        if position not in kept_maps and doctype in ids
+    }
+    if not columns:
+        return
+    try:
+        rows = read_sheet_rows(readable_session_file(session), session.sheet or None)
+    except FileProblem:
+        return  # a file that stayed in the chat: its check says what is wrong
+    added = {}
+    for position, doctype in columns.items():
+        values = import_keys.distinct_keys(row[position] for row in rows[1:] if position < len(row))
+        for system, known in ids[doctype].items():
+            if values and sum(1 for value in values if value in known) / len(values) >= OLD_ID_SHARE:
+                added[position] = {"doctype": doctype, "system": system}
+                break
+    if not added:
+        return
+    import_keys.set_key_maps(session, {**kept_maps, **added})
+    for position, spec in added.items():
+        session.log_step(
+            "Old IDs",
+            "Success",
+            _("Column '{0}' holds the old IDs of {1} from an earlier file of the plan: translated.").format(
+                rows[0][position], _(spec["doctype"])
+            ),
+        )
+    session.save()
+
+
 def masters(plan) -> List[Dict[str, Any]]:
     """The records the plan creates before any file is imported."""
     return frappe.parse_json(plan.masters or "[]") or []
@@ -559,6 +617,7 @@ def _file_questions(plan, session) -> List[Dict[str, Any]]:
     from frappe_assistant_core.utils.import_mapping import session_headers
 
     about = {"session": session.name, "file_name": session.file_name}
+    _translate_earlier_old_ids(session)
     waiting = _bring_up_to_date(plan, session)
     session.reload()
     if waiting:

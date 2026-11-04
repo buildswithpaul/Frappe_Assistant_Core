@@ -40,9 +40,10 @@ class TestPlanWithOldIds(ImportRunCase):
         self.assertTrue(mapped["success"], mapped)
         return session
 
-    def _files(self, item_group_id=None, item_code=None):
+    def _files(self, item_group_id=None, item_code=None, translated=True, more_items=()):
         """The Item Groups file (with the old system's ID of each group) and the Items file, which
-        points at its group by that ID."""
+        points at its group by that ID. ``translated=False`` maps the items' group column without
+        saying it holds old IDs, as FACO did in DM52; ``more_items`` adds ``(code, group ID)`` rows."""
         groups = self._mapped(
             "groups.csv",
             f"ID,Name,Parent,Is Group\n{self.id1},{self.g1},All Item Groups,1\n{self.id2},{self.g2},{self.g1},0\n".encode(),
@@ -53,9 +54,13 @@ class TestPlanWithOldIds(ImportRunCase):
         )
         self.code = item_code or f"PI-{self.tag}"
         hsn = "".join(f",{code}" for code in item_hsn_fields().values())
+        rows = [(self.code, item_group_id or self.id2), *more_items]
         items = self._mapped(
             "items.csv",
-            f"Code,Name,Group ID,UOM{',HSN' if hsn else ''}\n{self.code},{self.code},{item_group_id or self.id2},Nos{hsn}\n".encode(),
+            (
+                f"Code,Name,Group ID,UOM{',HSN' if hsn else ''}\n"
+                + "".join(f"{code},{code},{group},Nos{hsn}\n" for code, group in rows)
+            ).encode(),
             "Item",
             {
                 "Code": "item_code",
@@ -64,7 +69,11 @@ class TestPlanWithOldIds(ImportRunCase):
                 "UOM": "stock_uom",
                 **({"HSN": "gst_hsn_code"} if hsn else {}),
             },
-            old_id_columns={"Group ID": {"doctype": "Item Group", "source_system": self.system}},
+            **(
+                {"old_id_columns": {"Group ID": {"doctype": "Item Group", "source_system": self.system}}}
+                if translated
+                else {}
+            ),
         )
         return groups, items
 
@@ -132,3 +141,29 @@ class TestPlanWithOldIds(ImportRunCase):
         self.assertIn("isn't imported yet", text)
         self.assertIn(f"GO-{self.tag}-9", text)
         self.assertFalse(frappe.db.exists("Item", self.code))
+
+    def test_a_column_of_an_earlier_files_old_ids_is_translated_though_the_mapping_didnt_say(self):
+        # DM52: FACO marked the groups' old IDs, but mapped the items' group column as plain names
+        groups, items = self._files(translated=False)
+        plan, answered = self._plan(groups, items)
+
+        self.assertTrue(answered["ready"], answered)
+        self.assertEqual(
+            keys.key_maps(frappe.get_doc(SESSION, items)),
+            {2: {"doctype": "Item Group", "system": self.system}},
+        )
+        response = self._approve(plan)
+
+        self.assertTrue(response["success"], response)
+        self.assertEqual(frappe.db.get_value("Item", self.code, "item_group"), self.g2)
+
+    def test_an_old_id_no_file_brings_is_never_offered_as_a_new_record(self):
+        # DM52's IG-199: a group named by an old code would be a stand-in left in ERPNext
+        missing = f"GO-{self.tag}-9"
+        groups, items = self._files(translated=False, more_items=[(f"PJ-{self.tag}", missing)])
+
+        _plan, answered = self._plan(groups, items)
+
+        question = next(q for q in answered["questions"] if missing in frappe.as_json(q))
+        self.assertIn("isn't imported yet", frappe.as_json(question))
+        self.assertNotIn("create", [fix.get("action") for fix in frappe.parse_json(question["fixes"])])
