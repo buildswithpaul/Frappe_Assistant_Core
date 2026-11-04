@@ -77,4 +77,32 @@ describe("a mapping's review card under the message that saved it (#34415)", () 
 		expect(api.imports.mappingReview).not.toHaveBeenCalled();
 		expect(api.imports.progress).toHaveBeenCalledWith(["IMP-9"]);
 	});
+
+	it("sits with the mapping step, above what the turn said after it (DM53)", () => {
+		const mapped = (id, session) => ({ id, type: "tool_call", tool_name: "set_column_mapping", status: "success", input: { session }, result: { success: true } });
+		const w = mount(MessageBlockRenderer, {
+			props: {
+				blocks: [
+					mapped("m1", "IMP-1"),
+					mapped("m2", "IMP-2"),
+					{ id: "x1", type: "text", content: "Mapped both files." },
+					{ id: "d1", type: "tool_call", tool_name: "run_migration_plan", status: "success", input: {}, result: { success: true } },
+					{ id: "x2", type: "text", content: "The import is running." },
+				],
+				messageIndex: 0,
+			},
+			global: {
+				stubs: {
+					ProcessingCard: true,
+					ProcessingIndicator: true,
+					MappingReviewBlock: { props: ["session"], template: "<div class='mr-stub'>table {{ session }}</div>" },
+				},
+			},
+		});
+		const html = w.html();
+		const at = (text) => html.indexOf(text);
+		expect(at("Mapped both files.")).toBeLessThan(at("table IMP-1"));
+		expect(at("table IMP-1")).toBeLessThan(at("table IMP-2"));
+		expect(at("table IMP-2")).toBeLessThan(at("The import is running."));
+	});
 });
