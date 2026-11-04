@@ -67,6 +67,8 @@ with `source_system` (`odoo`, `zoho`, `tally`, `quickbooks`... the system's shor
 case; ask the user when you can't tell). The call marks it; the result's `old_ids` says so.
 
 - The key column is **not imported** unless you also map it to a field (an Item code is both).
+  Never map it to the ID (`name`): the records would be named by their old codes (an Item Group
+  `G01`), and the call refuses it for a DocType ERPNext names itself.
 - Pass `{}` as `mapping` to set only the key column on a session that is already mapped. Pass the
   column again to change it; the system is kept when you leave it out.
 - Don't guess a column from a name like `ref`: ask the user, and never mark one when no column

@@ -63,6 +63,23 @@ class TestSourceKeyColumn(ImportToolTestCase):
         self.assertEqual(self._stored_map(session)["0"], "first_name")
         self.assertEqual(import_keys.source_key(self._session_of(session))["position"], 0)
 
+    def test_a_key_column_is_not_the_records_id_when_erpnext_names_them(self):
+        # Item Group is named from its Item Group Name: an old code as its ID would name it G01
+        session = self._session("Old Group Code,Item Group Name\nG01,Hand Tools\n", "groups.csv")
+
+        result = self._map(
+            session,
+            {"Old Group Code": "name", "Item Group Name": "item_group_name"},
+            doctype="Item Group",
+            source_key_column="Old Group Code",
+            source_system="legacy",
+        )
+
+        self.assertFalse(result["success"])
+        self.assertTrue(any("Old Group Code" in problem for problem in result["problems"]), result)
+        self.assertIsNone(import_keys.source_key(self._session_of(session)))
+        self.assertEqual(self._stored_map(session), {})
+
     def test_the_system_is_needed(self):
         session = self._odoo()
 

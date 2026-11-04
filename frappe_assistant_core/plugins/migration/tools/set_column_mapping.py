@@ -76,7 +76,8 @@ class SetColumnMapping(BaseTool):
             "When the file has a column holding the old system's own ID for each row (an Odoo id or "
             "External ID, a Zoho Customer ID, a ledger's name), pass it as source_key_column with "
             "source_system: the IDs are then kept, so later files that refer to them can be translated. "
-            "The key column is not imported unless you also map it to a field. The IDs go in FAC's key "
+            "The key column is not imported unless you also map it to a field; never map it to the ID "
+            "(name), or the records are named by their old codes. The IDs go in FAC's key "
             "map: don't ask the user where to keep them; say so in one sentence (old_ids.message)."
         )
         self.requires_permission = None  # Checked on the session and the target DocType
@@ -225,6 +226,8 @@ class SetColumnMapping(BaseTool):
                     merged[key_position] = (
                         DONT_IMPORT  # an old ID is kept, not imported, unless it is mapped too
                     )
+                if key_position is not None and import_type != import_update.UPDATE:
+                    problems += _key_as_id(target, headers[int(key_position)], merged.get(key_position))
                 key_system = import_keys.system_name(arguments.get("source_system"))
             translations, translation_problems = _translations(doc, target, headers, merged, old_id_columns)
             problems += translation_problems
@@ -411,6 +414,19 @@ def _source_key(doc, headers, column, arguments):
         )
         return None, [problem]
     return position, []
+
+
+def _key_as_id(target: str, header: str, field) -> list:
+    """The old ID column mapped to the ID of a DocType ERPNext names itself: the import would name each
+    record by its old code (an Item Group 'G01', an Item 'T001' with another Item Code). Only a DocType
+    whose name is typed takes it; the key map links the old IDs without it."""
+    if field != "name" or cstr(frappe.get_meta(target).autoname).strip().lower() == "prompt":
+        return []
+    problem = _(
+        "Column '{0}' holds the old system's IDs: don't map it to ID (name). ERPNext names {1} "
+        "itself, and the old IDs are kept in the key map without it. Leave the column unmapped."
+    ).format(header, _(target))
+    return [problem]
 
 
 def _kept_system(doc) -> str:
