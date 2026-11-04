@@ -140,7 +140,8 @@ class TestKeysOutliveChatRetention(BaseAssistantTest):
     def test_the_daily_retention_clean_up_leaves_the_rows(self):
         from frappe_assistant_core.utils import import_retention
 
-        import_retention.purge_old_sessions()
+        # Only this test's session: the daily run on the whole site deletes real sessions' files (#34606)
+        self.run_retention_on(self.session)
         import_retention.purge([self.session], "Its files were deleted.")
 
         self.assertEqual(keys.resolve("Customer", self.system, ["100"]), {"100": self.customer.name})

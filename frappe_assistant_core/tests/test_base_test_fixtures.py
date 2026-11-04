@@ -184,3 +184,66 @@ class TestTheTestsLeaveOtherFiles(BaseAssistantTest):
                     frappe.db.rollback()
                     self._remove_elsewhere(name, path)
                     frappe.set_user("Administrator")
+
+
+# The tests that run chat retention's daily clean-up (#34606).
+RETENTION_TESTS = (
+    "test_import_file_intake.TestFileIntake.test_retention_deletes_an_ended_sessions_files_and_keeps_the_session",
+    "test_import_file_intake.TestFileIntake.test_retention_cancels_an_abandoned_failed_session",
+    "test_import_keys.TestKeysOutliveChatRetention.test_the_daily_retention_clean_up_leaves_the_rows",
+)
+
+
+class TestTheTestsLeaveOtherSessions(BaseAssistantTest):
+    """Retention deletes an ended session's files on disk, which no rollback brings back: a test
+    that runs it may purge only the sessions it made, never the site's real ones (#34606)."""
+
+    def _a_real_ended_session(self) -> str:
+        """A session someone ended long ago on this site: retention's daily run would pick it.
+        Written straight to the table, so it is no test's own."""
+        name, then = f"IMP-REAL-{frappe.generate_hash(length=8)}", frappe.utils.add_days(frappe.utils.now(), -400)
+        session = DocType("FAC Import Session")
+        frappe.qb.into(session).columns(
+            session.name, session.status, session.owner, session.modified_by, session.creation, session.modified
+        ).insert(name, "Completed", "Administrator", "Administrator", then, then).run()
+        return name
+
+    def test_no_retention_test_purges_the_sites_real_sessions(self):
+        from frappe_assistant_core.utils import import_retention
+
+        for test_path in RETENTION_TESTS:
+            module, class_name, test_name = test_path.rsplit(".", 2)
+            case_class = getattr(importlib.import_module(f"frappe_assistant_core.tests.{module}"), class_name)
+            if getattr(case_class, "__unittest_skip__", False):
+                continue
+            with self.subTest(test=test_path):
+                real = self._a_real_ended_session()
+                purged = []
+                # Notes what each purge is given and deletes nothing, so the check itself is safe.
+                spy = lambda names, *args, **kwargs: purged.extend(names) or 0  # noqa: E731
+                case = case_class(test_name)
+                try:
+                    with patch.object(import_retention, "purge", spy):
+                        case.setUp()
+                        getattr(case, test_name)()
+                except AssertionError:
+                    pass  # the test's own checks fail without a real purge: only what it purged matters
+                finally:
+                    case.doCleanups()
+                    frappe.db.rollback()
+                    frappe.set_user("Administrator")
+                self.assertNotIn(real, purged)
+
+    def test_no_test_module_runs_retention_on_the_whole_site(self):
+        # The guard above lists the retention tests it knows: a new one calling
+        # purge_old_sessions() itself, as test_import_keys did, would slip past it.
+        tests_dir = os.path.dirname(__file__)
+        offenders = []
+        for file_name in sorted(os.listdir(tests_dir)):
+            if not file_name.startswith("test_") or not file_name.endswith(".py"):
+                continue
+            with open(os.path.join(tests_dir, file_name)) as f:
+                for number, line in enumerate(f, 1):
+                    if "purge_old_sessions()" in line and "def " not in line and "#" not in line.split("purge_old_sessions()")[0]:
+                        offenders.append(f"{file_name}:{number}")
+        self.assertEqual(offenders, [], "use run_retention_on(...) so only the test's own sessions are purged")
