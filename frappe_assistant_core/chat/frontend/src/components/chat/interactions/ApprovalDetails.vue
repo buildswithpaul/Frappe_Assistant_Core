@@ -50,7 +50,7 @@
 				:key="key"
 				:label="formatKey(key)"
 				:code="value"
-				:language="codeLanguage(key, doctype)"
+				:language="rowLanguage(key)"
 				:previous="previousCode(key)"
 			/>
 			<CodePreview
@@ -107,6 +107,7 @@ import {
 	tableReplacement,
 	isLongValue,
 	codeLanguage,
+	toolCodeLanguage,
 	splitDetailFields,
 } from "./helpers";
 
@@ -138,9 +139,13 @@ const doctype = computed(() => flat.value.doctype);
 // Code and child tables always show in full; only the plain fields fold behind "Show all fields".
 const codeRows = computed(() =>
 	Object.entries(flat.value).filter(
-		([k, v]) => isCodeField(k, doctype.value) && typeof v === "string" && v !== "",
+		([k, v]) =>
+			(isCodeField(k, doctype.value) || toolCodeLanguage(props.block.tool_name, k)) &&
+			typeof v === "string" &&
+			v !== "",
 	),
 );
+const rowLanguage = (key) => toolCodeLanguage(props.block.tool_name, key) || codeLanguage(key, doctype.value);
 const tableRows = computed(() => Object.entries(flat.value).filter(([, v]) => isChildTable(v)));
 // Every line of a list in sight, not "2 items" behind "+ more": the user approves them (#34547)
 const listRows = computed(() => Object.entries(flat.value).filter(([, v]) => isTextList(v)));

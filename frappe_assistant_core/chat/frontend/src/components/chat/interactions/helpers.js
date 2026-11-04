@@ -52,6 +52,15 @@ export function isCodeField(key, doctype) {
 	return isCodeKey(key) || Boolean(DOCTYPE_CODE_KEYS[doctype]?.includes(key));
 }
 
+// Code keys a single tool takes, with their language, so a record's field of the same name stays
+// plain: run_python_code's code runs on the server, and the user approves it line by line.
+const TOOL_CODE_KEYS = { run_python_code: { code: "python" } };
+
+/** The language of `key` when `toolName` takes it as code, or null when it is a plain field. */
+export function toolCodeLanguage(toolName, key) {
+	return TOOL_CODE_KEYS[toolName]?.[key] ?? null;
+}
+
 const PYTHON_KEYS = new Set(["script", "report_script", "condition"]);
 
 export function codeLanguage(key, doctype) {

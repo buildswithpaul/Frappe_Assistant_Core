@@ -1150,3 +1150,42 @@ describe("ApprovalCard blank values", () => {
 		expect(update.findAll(".field-key").map((k) => k.text())).toEqual(["Description"]);
 	});
 });
+
+describe("ApprovalCard for run_python_code", () => {
+	// The user approves server code here: it reads line by line, not folded into one paragraph
+	const script = [
+		"# Count the customers in each group",
+		'groups = frappe.get_all("Customer Group", pluck="name")',
+		'counts = {g: frappe.db.count("Customer", {"customer_group": g}) for g in groups}',
+		"print(sorted(counts.items(), key=lambda kv: -kv[1])[:5])",
+	].join("\n");
+	const pythonBlock = (input) => ({ id: "py1", tool_name: "run_python_code", input, interrupts });
+
+	it("shows the code in the code box, every line, as Python", () => {
+		const wrapper = mount(ApprovalCard, { props: { block: pythonBlock({ code: script }) } });
+		const box = wrapper.findAllComponents(CodePreview).find((c) => c.props("label") === "Code");
+		expect(box).toBeTruthy();
+		expect(box.props("language")).toBe("python");
+		expect(box.find("pre").text()).toContain('groups = frappe.get_all("Customer Group", pluck="name")');
+		expect(box.find("pre").text().split("\n").length).toBeGreaterThanOrEqual(4);
+		expect(wrapper.findAll(".field-key").map((k) => k.text())).not.toContain("Code");
+	});
+
+	it("keeps its other inputs as plain fields", () => {
+		const wrapper = mount(ApprovalCard, {
+			props: { block: pythonBlock({ code: script, return_variables: ["counts"] }) },
+		});
+		expect(wrapper.text()).toContain("Return Variables");
+		expect(wrapper.text()).toContain("counts");
+	});
+
+	it("leaves a field named code plain on a record", () => {
+		const wrapper = mount(ApprovalCard, {
+			props: {
+				block: { id: "c1", tool_name: "create_document", input: { doctype: "Item Barcode", data: { code: "8901234" } }, interrupts },
+			},
+		});
+		expect(wrapper.findAllComponents(CodePreview).length).toBe(0);
+		expect(wrapper.findAll(".field-key").map((k) => k.text())).toContain("Code");
+	});
+});

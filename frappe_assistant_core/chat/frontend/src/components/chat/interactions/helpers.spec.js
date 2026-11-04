@@ -12,6 +12,7 @@ import {
 	isCodeKey,
 	isCodeField,
 	codeLanguage,
+	toolCodeLanguage,
 	isChildTable,
 	tableReplacement,
 } from "./helpers";
@@ -301,6 +302,12 @@ describe("code keys", () => {
 		expect(codeLanguage("css", "Print Format")).toBe("xml");
 		expect(codeLanguage("script", "FAC Page")).toBe("javascript");
 		expect(codeLanguage("style", "FAC Page")).toBe("css");
+	});
+
+	it("knows run_python_code's code as Python, and no other tool's field named code", () => {
+		expect(toolCodeLanguage("run_python_code", "code")).toBe("python");
+		expect(toolCodeLanguage("run_python_code", "timeout")).toBeNull();
+		expect(toolCodeLanguage("create_document", "code")).toBeNull();
 	});
 
 	it("treats a FAC Page's style as code and leaves style alone elsewhere", () => {
