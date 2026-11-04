@@ -288,13 +288,13 @@ class TestKeyResolver(BaseAssistantTest):
         self.assertEqual(result, {"written": ["100"], "conflicts": []})
         self.assertEqual(keys.resolve("Customer", self.system, ["100"]), {"100": b.name})
 
-    def test_nothing_is_recorded_before_a_choice(self):
+    def test_with_no_choice_the_ids_are_kept_in_the_key_map(self):
         a = self._customer()
 
         result = keys.record_pairs("IMP-1", "Customer", self.system, [("100", a.name)])
 
-        self.assertEqual(result, {"written": [], "conflicts": []})
-        self.assertFalse(frappe.db.exists(KEY_MAP, {"source_system": self.system}))
+        self.assertEqual(result, {"written": ["100"], "conflicts": []})
+        self.assertEqual(keys.resolve("Customer", self.system, ["100"]), {"100": a.name})
 
     def test_undo_removes_only_that_sessions_rows(self):
         a, b = self._customer(), self._customer()
