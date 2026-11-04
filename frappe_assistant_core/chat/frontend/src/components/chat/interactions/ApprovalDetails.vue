@@ -62,21 +62,21 @@
 			/>
 		</div>
 		<div v-for="[key, lines] in listRows" :key="key" class="value-list">
-			<p v-if="tableReplacement(block.tool_name, lines)" class="table-replaced">
+			<div v-if="tableReplacement(block.tool_name, lines)" class="table-replaced">
 				{{ formatKey(key) }}: {{ tableReplacement(block.tool_name, lines) }}
-			</p>
+			</div>
 			<span class="field-key">{{ formatKey(key) }}</span>
 			<ul class="value-lines">
 				<li v-for="(line, i) in lines" :key="i">{{ line }}</li>
 			</ul>
 		</div>
-		<p v-for="[key] in clearedTables" :key="`cleared-${key}`" class="table-replaced">
+		<div v-for="[key] in clearedTables" :key="`cleared-${key}`" class="table-replaced">
 			{{ formatKey(key) }}: {{ tableReplacement(block.tool_name, []) }}
-		</p>
+		</div>
 		<template v-for="[key, rows] in tableRows" :key="key">
-			<p v-if="tableReplacement(block.tool_name, rows)" class="table-replaced">
+			<div v-if="tableReplacement(block.tool_name, rows)" class="table-replaced">
 				{{ formatKey(key) }}: {{ tableReplacement(block.tool_name, rows) }}
-			</p>
+			</div>
 			<ChildTable :label="key" :rows="rows" />
 		</template>
 		<ApprovalNotes :block="block" />
