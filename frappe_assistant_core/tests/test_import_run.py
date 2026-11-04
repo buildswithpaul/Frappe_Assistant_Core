@@ -570,9 +570,9 @@ class TestImportRun(ImportRunCase):
         with patch.object(import_run, "enqueue", autospec=True):  # queued, not run yet
             self._import(session, checked)
 
-        with patch.object(import_run, "is_job_enqueued", autospec=True, return_value=True), patch.object(
-            import_run, "enqueue", autospec=True
-        ) as enqueue:
+        with patch(
+            "frappe.utils.background_jobs.is_job_enqueued", autospec=True, return_value=True
+        ), patch.object(import_run, "enqueue", autospec=True) as enqueue:
             response = self._import(session, checked)
 
         self.assertTrue(response["success"], response)
@@ -1107,6 +1107,58 @@ class TestWhileACheckRuns(ImportRunCase):
 
 
 @unittest.skipUnless("erpnext" in frappe.get_installed_apps(), "needs ERPNext's Customer")
+@unittest.skipUnless("erpnext" in frappe.get_installed_apps(), "needs ERPNext's Customer")
+class TestAWorkerKilledMidImport(ImportRunCase):
+    """#33993: a worker killed mid-import leaves its RQ job "started" until another worker's
+    clean-up finds it; the import goes on, and can be released, once the worker is gone."""
+
+    def _started_job(self, session, worker):
+        # What RQ holds for a job a worker took: the job's hash, "started", naming that worker
+        from frappe.utils.background_jobs import create_job_id, get_redis_conn
+        from rq.job import Job, JobStatus
+
+        data_import = self._doc(session).data_imports[-1].data_import
+        job = Job.create(
+            "frappe.ping", id=create_job_id(import_run._job_id(data_import)), connection=get_redis_conn()
+        )
+        job.worker_name = worker
+        job.save()
+        job.set_status(JobStatus.STARTED)
+        self.addCleanup(job.connection.delete, job.key)
+        return job
+
+    def _queued(self):
+        session, checked = self._ready_session()
+        with patch.object(import_run, "enqueue", autospec=True):  # queued, not run yet
+            self._import(session, checked)
+        return session, checked
+
+    def test_a_job_its_dead_worker_left_started_is_continued(self):
+        session, checked = self._queued()
+        self._started_job(session, f"fac-test-gone-{self.tag}")
+
+        self.assertFalse(import_run.job_running(self._doc(session)))
+        with self._each_row_commits():
+            response = self._import(session, checked)
+
+        self.assertTrue(response["success"], response)
+        self.assertNotEqual(response["result"]["state"], "running", response)
+        self.assertEqual(len(self._imported()), 3)
+
+    def test_a_job_its_live_worker_runs_is_left_running(self):
+        session, checked = self._queued()
+        job = self._started_job(session, f"fac-test-alive-{self.tag}")
+        worker_key = f"rq:worker:fac-test-alive-{self.tag}"
+        job.connection.set(worker_key, 1, ex=60)  # the worker's key, kept while it lives
+        self.addCleanup(job.connection.delete, worker_key)
+
+        with patch.object(import_run, "enqueue", autospec=True) as enqueue:
+            response = self._import(session, checked)
+
+        self.assertEqual(response["result"]["state"], "running", response)
+        enqueue.assert_not_called()
+
+
 class TestRemapAfterAnImport(ImportRunCase):
     def test_rows_imported_as_one_doctype_keep_the_session_to_it(self):
         session, checked = self._ready_session()

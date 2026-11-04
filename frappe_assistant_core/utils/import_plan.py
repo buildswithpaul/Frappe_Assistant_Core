@@ -1245,11 +1245,9 @@ def _enqueue(plan_name: str, method: str, deduplicate: bool = False, **kwargs) -
 
 def alive(plan) -> bool:
     """Whether a job of the plan, or of the file it is importing, is queued or running."""
-    from frappe.utils.background_jobs import is_job_enqueued
-
     from frappe_assistant_core.utils import import_run
 
-    if is_job_enqueued(PLAN_JOB.format(plan.name)):
+    if import_run.job_alive(PLAN_JOB.format(plan.name)):
         return True
     current = _progress(plan).get("current")
     if not current or frappe.db.get_value(dry_run.SESSION_DOCTYPE, current, "status") != "Importing":

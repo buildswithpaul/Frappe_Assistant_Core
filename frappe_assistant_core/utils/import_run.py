@@ -32,7 +32,7 @@ import frappe
 from frappe import _
 from frappe.core.doctype.data_import.importer import INSERT
 from frappe.utils import cstr, strip_html
-from frappe.utils.background_jobs import enqueue, is_job_enqueued
+from frappe.utils.background_jobs import enqueue
 from frappe.utils.scheduler import is_scheduler_inactive
 
 from frappe_assistant_core.assistant_core.doctype.fac_import_session.fac_import_session import engine_session
@@ -263,14 +263,33 @@ def _new_import(
 def job_running(session) -> bool:
     """Whether a background job is importing the session now: its opening engine's, or the job
     of its last Data Import. A session Importing with no such job is stuck (#34542)."""
-    from frappe.utils.background_jobs import is_job_enqueued
-
     from frappe_assistant_core.utils.import_dry_run import special_engine
 
     engine = special_engine(session)
     if engine and getattr(engine, "JOB", None):
-        return is_job_enqueued(engine.JOB.format(session.name))
-    return bool(session.data_imports) and is_job_enqueued(_job_id(session.data_imports[-1].data_import))
+        return job_alive(engine.JOB.format(session.name))
+    return bool(session.data_imports) and job_alive(_job_id(session.data_imports[-1].data_import))
+
+
+def job_alive(job_id: str) -> bool:
+    """Whether a background job is queued or running, as Frappe's is_job_enqueued says, except a
+    job "started" by a worker that is gone (#33993). A worker killed mid-job leaves its job
+    "started" until another worker's clean-up finds it, minutes later, or hours on a worker that
+    doesn't fork; till then the import could neither go on nor be released. A dead worker's key
+    expires within minutes, so such a job is deleted and can be started again under its id."""
+    from frappe.utils import background_jobs
+    from rq.job import JobStatus
+    from rq.worker import Worker
+
+    if not background_jobs.is_job_enqueued(job_id):
+        return False
+    job = background_jobs.get_job(job_id)
+    if not job or not job.worker_name or job.get_status() != JobStatus.STARTED:
+        return True
+    if job.connection.exists(Worker.redis_worker_namespace_prefix + job.worker_name):
+        return True
+    job.delete()
+    return False
 
 
 def resume(session) -> Tuple[str, str]:
@@ -283,7 +302,7 @@ def resume(session) -> Tuple[str, str]:
     if not import_failures.own_import(session, name, "write"):
         # A link written over the REST API: never start another user's Data Import.
         raise ImportProblem(_("This session has no import to continue."))
-    if is_job_enqueued(_job_id(name)):
+    if job_alive(_job_id(name)):
         return name, "running"
     di = frappe.get_doc("Data Import", name)
     ended = di.status in FINISHED_STATUS and _log_count(name) >= (di.payload_count or 0)

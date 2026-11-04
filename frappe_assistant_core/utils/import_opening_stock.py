@@ -1203,10 +1203,10 @@ def _stopped(session_name: str, reason: str) -> None:
 
 
 def _job_running(session) -> bool:
-    from frappe.utils.background_jobs import is_job_enqueued
+    from frappe_assistant_core.utils.import_run import job_alive
 
     try:
-        return bool(is_job_enqueued(JOB.format(session.name)))
+        return job_alive(JOB.format(session.name))
     except Exception:
         return True  # the queue can't be asked (Redis down, say): don't call the job stopped
 
