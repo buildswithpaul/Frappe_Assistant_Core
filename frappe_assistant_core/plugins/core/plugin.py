@@ -68,21 +68,7 @@ class CorePlugin(BasePlugin):
             "get_pending_approvals",
             # Email
             "send_email",
-            # Data import
-            "start_import_session",
-            "get_import_schema",
-            "set_column_mapping",
-            "set_opening_stock",
-            "dry_run_import",
-            "start_import",
-            "import_opening_stock",
-            "set_opening_invoices",
-            "import_opening_invoices",
-            "set_opening_balances",
-            "import_opening_balances",
-            "plan_migration",
-            "run_migration_plan",
-            "stop_migration_plan",
+            # Data import lives in the migration plugin
             # Permission checks
             "test_as_user",
             # Builder checks

@@ -980,7 +980,7 @@ class TestTheApprovalNamesTheCheck(ImportRunCase):
         with self._each_row_commits(), patch.object(
             import_run, "_record_start", side_effect=record
         ), patch.object(import_run, "_remove_from_disk", side_effect=remove), patch(
-            "frappe_assistant_core.plugins.core.tools.start_import.time.sleep"
+            "frappe_assistant_core.plugins.migration.tools.start_import.time.sleep"
         ):
             yield removed
 

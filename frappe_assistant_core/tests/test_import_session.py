@@ -107,10 +107,10 @@ class TestImportSession(BaseAssistantTest):
 
     # -- registration ------------------------------------------------------------
 
-    def test_tool_is_registered_in_core_plugin(self):
-        from frappe_assistant_core.plugins.core.plugin import CorePlugin
+    def test_tool_is_registered_in_migration_plugin(self):
+        from frappe_assistant_core.plugins.migration.plugin import MigrationPlugin
 
-        self.assertIn("start_import_session", CorePlugin().get_tools())
+        self.assertIn("start_import_session", MigrationPlugin().get_tools())
 
     def test_tool_is_classified_read_only(self):
         # It writes only the session, never business data, so it must not raise an approval

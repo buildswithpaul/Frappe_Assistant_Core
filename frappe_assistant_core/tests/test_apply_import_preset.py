@@ -16,7 +16,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment
 
 from frappe_assistant_core.core.tool_registry import get_tool_registry
-from frappe_assistant_core.plugins.core.tools import start_import_session as tool_module
+from frappe_assistant_core.plugins.migration.tools import start_import_session as tool_module
 from frappe_assistant_core.tests.base_test import BaseAssistantTest
 from frappe_assistant_core.tests.test_import_opening_balances import OpeningBalancesCase
 from frappe_assistant_core.tests.test_import_presets import LEDGERS, TB

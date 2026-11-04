@@ -169,10 +169,10 @@ class OpeningStockCase(BaseAssistantTest):
 
 class TestOpeningStockSetup(OpeningStockCase):
     def test_tool_is_registered_and_raises_no_approval_card(self):
-        from frappe_assistant_core.plugins.core.plugin import CorePlugin
+        from frappe_assistant_core.plugins.migration.plugin import MigrationPlugin
         from frappe_assistant_core.utils.tool_category_detector import detect_tool_category
 
-        self.assertIn("set_opening_stock", CorePlugin().get_tools())
+        self.assertIn("set_opening_stock", MigrationPlugin().get_tools())
         self.assertEqual(detect_tool_category(self.registry.get_tool("set_opening_stock")), "read_only")
 
     def test_setup_stores_the_settings_and_maps_the_columns(self):
@@ -685,10 +685,10 @@ class TestOpeningStockFixes(OpeningStockCase):
 
 class TestCreatingOpeningStock(OpeningStockCase):
     def test_tool_needs_approval(self):
-        from frappe_assistant_core.plugins.core.plugin import CorePlugin
+        from frappe_assistant_core.plugins.migration.plugin import MigrationPlugin
         from frappe_assistant_core.utils.tool_category_detector import detect_tool_category
 
-        self.assertIn("import_opening_stock", CorePlugin().get_tools())
+        self.assertIn("import_opening_stock", MigrationPlugin().get_tools())
         self.assertNotEqual(detect_tool_category(self.registry.get_tool("import_opening_stock")), "read_only")
 
     def test_an_approved_sheet_becomes_a_submitted_opening_stock_reconciliation(self):

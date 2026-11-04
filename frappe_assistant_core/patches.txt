@@ -89,3 +89,7 @@ frappe_assistant_core.patches.v3_2.remove_apply_import_preset_tool
 # Version 3.2.0 - plan_questions is dry_run_import with plan (#34351): delete its stored settings
 # (FAC Tool Configuration row); safe to run twice
 frappe_assistant_core.patches.v3_2.remove_plan_questions_tool
+
+# Version 3.2.0 - the data migration tools moved from core to the migration plugin: their stored
+# plugin and module path, and the plugin switched on so every site keeps them
+frappe_assistant_core.patches.v3_2.move_migration_tools_to_their_plugin

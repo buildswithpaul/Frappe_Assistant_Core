@@ -227,10 +227,10 @@ class TestDryRunImport(BaseAssistantTest):
     # -- registration ------------------------------------------------------------------
 
     def test_tool_is_registered_and_raises_no_approval_card(self):
-        from frappe_assistant_core.plugins.core.plugin import CorePlugin
+        from frappe_assistant_core.plugins.migration.plugin import MigrationPlugin
         from frappe_assistant_core.utils.tool_category_detector import detect_tool_category
 
-        self.assertIn("dry_run_import", CorePlugin().get_tools())
+        self.assertIn("dry_run_import", MigrationPlugin().get_tools())
         self.assertEqual(detect_tool_category(self.registry.get_tool("dry_run_import")), "read_only")
 
     # -- criterion 1 and 2: every row checked, grouped summary, nothing written ------------

@@ -1,4 +1,4 @@
-# frappe_assistant_core/plugins/core/tools/set_opening_invoices.py
+# frappe_assistant_core/plugins/migration/tools/set_opening_invoices.py
 # Frappe Assistant Core - AI Assistant integration for Frappe Framework
 # Copyright (C) 2025 Paul Clinton
 #

@@ -255,7 +255,7 @@ class TestStartFromGoogleSheet(BaseAssistantTest):
         self.assertEqual((self._new_sessions(), self.new_files()), (0, set()))
 
     def test_a_session_that_cant_be_saved_leaves_no_copy_behind(self):
-        from frappe_assistant_core.plugins.core.tools.start_import_session import StartImportSession
+        from frappe_assistant_core.plugins.migration.tools.start_import_session import StartImportSession
 
         with (
             _google(_reply(200, CSV_CONTENT)),

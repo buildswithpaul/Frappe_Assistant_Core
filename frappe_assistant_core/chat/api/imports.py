@@ -103,7 +103,7 @@ SAMPLES_SHOWN = 3
 def _review(doc) -> Dict[str, Any]:
     """The session's mapping as the review card shows it: each column with its first values, its
     field and a status, the fields it can choose from and the required fields with no column."""
-    from frappe_assistant_core.plugins.core.tools.set_column_mapping import _mapping_refused, _samples
+    from frappe_assistant_core.plugins.migration.tools.set_column_mapping import _mapping_refused, _samples
     from frappe_assistant_core.utils.import_mapping import (
         DONT_IMPORT,
         _mapping_targets,

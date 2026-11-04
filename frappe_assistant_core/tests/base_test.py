@@ -222,9 +222,10 @@ class BaseAssistantTest(IntegrationTestCase):
                 settings = frappe.get_single("Assistant Core Settings")
                 enabled_plugins = json.loads(settings.enabled_plugins_list or "[]")
 
-                # Enable core plugin if not already enabled
-                if "core" not in enabled_plugins:
-                    enabled_plugins.append("core")
+                # Enable core plugin, and migration's import tools, if not already enabled
+                missing = [p for p in ("core", "migration") if p not in enabled_plugins]
+                if missing:
+                    enabled_plugins += missing
                     settings.enabled_plugins_list = json.dumps(enabled_plugins)
                     settings.save(ignore_permissions=True)
             else:
@@ -233,7 +234,7 @@ class BaseAssistantTest(IntegrationTestCase):
                     {
                         "doctype": "Assistant Core Settings",
                         "server_enabled": 0,
-                        "enabled_plugins_list": json.dumps(["core"]),
+                        "enabled_plugins_list": json.dumps(["core", "migration"]),
                     }
                 )
                 doc.insert(ignore_permissions=True)

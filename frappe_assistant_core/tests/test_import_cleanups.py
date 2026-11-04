@@ -145,7 +145,7 @@ class TestUpdateMatchKeys(unittest.TestCase):
 class TestPlanAnswers(unittest.TestCase):
     def test_answers_applied_before_a_failure_are_reported_as_applied(self):
         # #34438: apply_answers released its savepoint, so they stay applied when the next step fails
-        from frappe_assistant_core.plugins.core.tools.dry_run_import import DryRunImport
+        from frappe_assistant_core.plugins.migration.tools.dry_run_import import DryRunImport
         from frappe_assistant_core.utils import import_plan
 
         plan = frappe._dict(name="PLAN-1", status=import_plan.OPEN[0], reload=lambda: None)
@@ -271,7 +271,7 @@ class TestPlanFencing(unittest.TestCase):
     def test_only_what_the_files_say_is_fenced_in_the_plans_questions(self):
         # #34438: FAC's own directions were fenced as file content. The decisions quote the files,
         # so each line is fenced on its own and the approval is still a list of lines.
-        from frappe_assistant_core.plugins.core.tools.dry_run_import import DryRunImport
+        from frappe_assistant_core.plugins.migration.tools.dry_run_import import DryRunImport
         from frappe_assistant_core.utils.untrusted_output import fence_fields, unfenced
 
         result = {

@@ -468,7 +468,7 @@ class TestFileIntake(BaseAssistantTest):
 
     def test_the_file_the_user_gave_counts_as_the_sessions_file(self):
         # Passed again to dry_run_import, it is no new file: nothing is linked or copied again.
-        from frappe_assistant_core.plugins.core.tools.dry_run_import import _is_sessions_file
+        from frappe_assistant_core.plugins.migration.tools.dry_run_import import _is_sessions_file
 
         original = self._upload("customers.xlsx", _xlsx(_tally_rows(3)), XLSX_MIME)
         other = self._upload("other.xlsx", _xlsx(_tally_rows(5)), XLSX_MIME)
