@@ -73,7 +73,7 @@ class TestPlanWithOldIds(ImportRunCase):
             "result"
         ]["plan"]
         answered = self._run(
-            "plan_questions", {"plan": plan, "answers": [{"id": "plan:failure_rule", "rule": "leave_out"}]}
+            "dry_run_import", {"plan": plan, "answers": [{"id": "plan:failure_rule", "rule": "leave_out"}]}
         )["result"]
         return plan, answered
 

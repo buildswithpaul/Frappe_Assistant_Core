@@ -18,7 +18,6 @@ import unittest
 import frappe
 
 from frappe_assistant_core.tests.base_test import BaseAssistantTest
-from frappe_assistant_core.utils import compat
 from frappe_assistant_core.utils import import_keys as keys
 
 KEY_MAP = "FAC Import Key Map"
@@ -121,7 +120,7 @@ class TestKeyResolver(BaseAssistantTest):
     def test_the_standard_fields_a_doctype_may_use_are_listed(self):
         names = {f[0] for f in keys._candidate_fields("Customer")}
         self.assertIn("tax_id", names)
-        self.assertEqual("gstin" in names, compat.has_india_compliance())
+        self.assertEqual("gstin" in names, "india_compliance" in frappe.get_installed_apps())
         self.assertIn("item_code", {f[0] for f in keys._candidate_fields("Item")})
         self.assertIn("account_number", {f[0] for f in keys._candidate_fields("Account")})
 
