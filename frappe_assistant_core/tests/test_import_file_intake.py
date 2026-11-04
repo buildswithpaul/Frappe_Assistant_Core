@@ -434,6 +434,26 @@ class TestFileIntake(BaseAssistantTest):
 
         self.assertFalse(self._files_of(session_id))
 
+    def test_a_real_personal_data_deletion_deletes_the_users_session_files(self):
+        # #34539: Frappe ends the request with db_set("status", "Deleted"), which runs on_change and
+        # not on_update, so a hook on on_update never saw it Deleted and the files stayed on disk.
+        # This one runs Frappe's own deletion, not the hook by hand.
+        session_id = self._ended_session()
+        on_disk = [frappe.get_doc("File", f.name).get_full_path() for f in self._files_of(session_id)]
+        self.assertTrue(on_disk)
+        frappe.set_user("Administrator")
+        # Its mails (verification on insert, notice when done): v16 sends at once, and a site
+        # without an outgoing Email Account refuses them.
+        with patch("frappe.sendmail"):
+            request = frappe.get_doc({"doctype": "Personal Data Deletion Request", "email": self.user})
+            request.insert(ignore_permissions=True)
+            request.db_set("status", "Pending Approval")
+            request.trigger_data_deletion()
+
+        self.assertEqual(frappe.db.get_value("Personal Data Deletion Request", request.name, "status"), "Deleted")
+        self.assertFalse(self._files_of(session_id))
+        self.assertFalse(any(os.path.exists(path) for path in on_disk))
+
     def test_a_corrected_file_is_read_on_the_sessions_header_row_when_the_guess_misses(self):
         # #34541: link_site_file guessed the headings again, and a corrected file whose title row
         # holds several values was read from that row ("columns don't match")
