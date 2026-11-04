@@ -124,6 +124,33 @@ class TestPreloadedImportsRun(BaseAssistantTest):
     def test_frappe_utils_from_import(self):
         self.assertPrints("from frappe.utils import flt\nprint(flt('2.50'))", "2.5")
 
+    def test_import_pandas_as_pd_with_a_dataframe(self):
+        # GitHub #378: the rewritten `pd = _preloaded_modules["pandas"]` looked like a DataFrame slice
+        # to the auto-fixer, which made it `..["pandas"].copy()` whenever the code said pd.DataFrame
+        self.assertPrints(
+            "import pandas as pd\nimport numpy as np\ndf = pd.DataFrame({'a': [1, 2]})\nprint(len(df), np.sum([1, 2]))",
+            "2 3",
+        )
+
+    def test_a_real_dataframe_slice_still_gets_copy(self):
+        from frappe_assistant_core.plugins.data_science.tools.run_python_code import ExecutePythonCode
+
+        fixed = ExecutePythonCode()._preprocess_code_for_common_errors(
+            'pd = _preloaded_modules["pandas"]\ndf = pd.DataFrame({"a": [1]})\nsub = df[df.a > 0]'
+        )["code"]
+        self.assertIn('pd = _preloaded_modules["pandas"]\n', fixed)
+        self.assertIn("sub = df[df.a > 0].copy()", fixed)
+
+    def test_dataframe_from_frappe_rows(self):
+        # GitHub #379: frappe._dict answers any attribute with None, so pandas took the rows for an array
+        self.assertPrints(
+            "rows = frappe.get_all('User', fields=['name', 'enabled'], limit=2)\n"
+            "df = pd.DataFrame(rows)\n"
+            "print(list(df.columns), len(df) > 0, isinstance(df, pd.DataFrame),"
+            " isinstance(df.head(1), pd.DataFrame), isinstance(pd.DataFrame.from_dict({'a': [1]}), pd.DataFrame))",
+            "['name', 'enabled'] True True True True",
+        )
+
     def test_unavailable_module_is_reported_not_silently_dropped(self):
         result = _run("import operator\nprint(operator.add(1, 2))")
         self.assertFalse(result.get("success"))
