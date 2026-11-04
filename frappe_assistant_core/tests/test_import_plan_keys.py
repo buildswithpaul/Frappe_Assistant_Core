@@ -51,8 +51,6 @@ class TestPlanWithOldIds(ImportRunCase):
             source_key_column="ID",
             source_system=self.system,
         )
-        # asked once, before the dry run
-        self.assertTrue(self._run("choose_old_id_storage", {"session": groups, "use": "key_map"})["success"])
         self.code = item_code or f"PI-{self.tag}"
         hsn = "".join(f",{code}" for code in item_hsn_fields().values())
         items = self._mapped(

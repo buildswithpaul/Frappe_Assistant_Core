@@ -159,9 +159,6 @@ def check_can_run(session) -> None:
     check_status(session)
     if not column_to_field_map(session):
         raise DryRunProblem(_("Map the columns first, with set_column_mapping."))
-    problem = import_keys.storage_problem(session)
-    if problem:
-        raise DryRunProblem(problem)
     problem = import_target_problem(session.target_doctype, session.import_type or INSERT)
     if problem:
         raise DryRunProblem(problem)

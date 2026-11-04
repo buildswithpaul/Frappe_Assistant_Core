@@ -26,7 +26,7 @@ from frappe import _
 from frappe.utils import cstr
 
 from frappe_assistant_core.core.base_tool import BaseTool, exception_message, permission_error_result
-from frappe_assistant_core.utils import import_keys, import_update
+from frappe_assistant_core.utils import import_key_setup, import_keys, import_update
 from frappe_assistant_core.utils.import_mapping import (
     DONT_IMPORT,
     SESSION_DOCTYPE,
@@ -76,7 +76,8 @@ class SetColumnMapping(BaseTool):
             "When the file has a column holding the old system's own ID for each row (an Odoo id or "
             "External ID, a Zoho Customer ID, a ledger's name), pass it as source_key_column with "
             "source_system: the IDs are then kept, so later files that refer to them can be translated. "
-            "The key column is not imported unless you also map it to a field."
+            "The key column is not imported unless you also map it to a field. The IDs go in FAC's key "
+            "map: don't ask the user where to keep them; say so in one sentence (old_ids.message)."
         )
         self.requires_permission = None  # Checked on the session and the target DocType
         # what the user's file says reaches the model fenced (#34003)
@@ -141,6 +142,16 @@ class SetColumnMapping(BaseTool):
                         "old IDs of one system are kept apart from another's. Needed with source_key_column."
                     ),
                 },
+                "old_id_field": {
+                    "type": "string",
+                    "description": (
+                        "Leave out: the old IDs are kept in FAC's key map, which adds nothing to the "
+                        "DocType and needs no question. Pass a fieldname only when a System Manager wants "
+                        "them in a field: one listed in the result's old_ids.existing_fields, or "
+                        "fac_old_system_id after adding it with the old_ids.new_field record (its own "
+                        "create_document card). 'key_map' moves them back from a field."
+                    ),
+                },
                 "match_on": {
                     "type": "array",
                     "items": {"type": "string"},
@@ -160,7 +171,10 @@ class SetColumnMapping(BaseTool):
             has_key = key_column is not None and cstr(key_column).strip() != ""
             old_id_columns = arguments.get("old_id_columns")
             has_translations = isinstance(old_id_columns, dict) and bool(old_id_columns)
-            if not isinstance(mapping, dict) or (not mapping and not has_key and not has_translations):
+            old_id_field = cstr(arguments.get("old_id_field")).strip()
+            if not isinstance(mapping, dict) or (
+                not mapping and not has_key and not has_translations and not old_id_field
+            ):
                 return {"success": False, "error": _("mapping must be an object of column → field.")}
 
             try:
@@ -239,6 +253,28 @@ class SetColumnMapping(BaseTool):
             elif target != current_target:
                 import_keys.clear_source_key(doc)  # another DocType: the old column isn't this file's key
             import_keys.set_key_maps(doc, translations)
+            # Where the old IDs are kept: FAC's key map, unless a System Manager names a field. Refused
+            # before anything is saved, so a wrong field leaves the mapping as it was.
+            doc.target_doctype = target
+            stored = None
+            if import_keys.source_key(doc):
+                try:
+                    if old_id_field == "key_map":
+                        stored = import_key_setup.use_key_map(doc)
+                    elif old_id_field:
+                        stored = import_key_setup.use_field(doc, old_id_field)
+                    else:
+                        import_key_setup.keep_in_key_map_unless_chosen(doc)
+                except import_key_setup.StorageProblem as e:
+                    return {"success": False, "error": str(e), "session": session_name}
+            elif old_id_field:
+                return {
+                    "success": False,
+                    "error": _(
+                        "old_id_field needs the column that holds the old IDs: pass source_key_column."
+                    ),
+                    "session": session_name,
+                }
             save_mapping(doc, target, merged, described["summary"])
             result = {
                 "success": True,
@@ -252,13 +288,18 @@ class SetColumnMapping(BaseTool):
                 # the key column is not imported on purpose: not a column the model couldn't place
                 described["not_imported"] = [h for h in described["not_imported"] if h != header]
                 result["not_imported"] = described["not_imported"]
+            kept = import_keys.source_key(doc)
+            if kept and (key_position is not None or old_id_field):
+                header = headers[int(kept["position"])]
+                where = stored or import_key_setup.report(doc)
                 result["old_ids"] = {
                     "column": header,
-                    "system": import_keys.source_key(doc)["system"],
+                    "system": kept["system"],
+                    "kept_in": where["kept_in"],
                     "message": _(
-                        "Column '{0}' holds the old system's IDs. They are kept for each record the import "
-                        "creates; before the dry run, ask where to keep them (choose_old_id_storage)."
-                    ).format(header),
+                        "Column '{0}' holds the old system's IDs, kept for each record the import creates. {1}"
+                    ).format(header, where["message"]),
+                    **{k: where[k] for k in ("existing_fields", "new_field") if where.get(k)},
                 }
             result.update(_old_id_notes(doc, key_position, translations))
             if described["not_imported"]:
@@ -364,12 +405,11 @@ def _source_key(doc, headers, column, arguments):
     if problem:
         return None, [problem]
     if not import_keys.system_name(arguments.get("source_system")) and not _kept_system(doc):
-        return None, [
-            _(
-                "Say which system the old IDs come from (source_system), for example 'odoo' or "
-                "'zoho': the IDs of one system are kept apart from another's."
-            )
-        ]
+        problem = _(
+            "Say which system the old IDs come from (source_system), for example 'odoo' or "
+            "'zoho': the IDs of one system are kept apart from another's."
+        )
+        return None, [problem]
     return position, []
 
 

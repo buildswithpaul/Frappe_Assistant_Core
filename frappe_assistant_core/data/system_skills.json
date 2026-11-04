@@ -120,16 +120,6 @@
     "content_file": "set_column_mapping.md"
   },
   {
-    "skill_id": "choose-old-id-storage-usage",
-    "title": "How to Use choose_old_id_storage",
-    "description": "Where to keep the old system's IDs of a migration file (a field that already holds them, a new Old System ID field, or FAC's key map) so later files can refer to the records by them",
-    "skill_type": "Tool Usage",
-    "linked_tool": "choose_old_id_storage",
-    "status": "Published",
-    "visibility": "Public",
-    "content_file": "choose_old_id_storage.md"
-  },
-  {
     "skill_id": "dry-run-import-usage",
     "title": "How to Use dry_run_import",
     "description": "Checking every row of a migration file before importing: the grouped failures explained in plain words, fixing them with the user, large files in the background, re-checking only the rows an import left, the failed rows as a file to correct; with a plan, every file of a migration plan checked and all its questions in one list, with the answers applied in one call",

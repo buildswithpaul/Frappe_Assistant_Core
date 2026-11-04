@@ -225,6 +225,5 @@ migration plan names it in `migration_plan`: the plan's id, the session of its f
 
 If a file carries the old system's own ID for each row (an Odoo id, a Zoho Customer ID, a Tally
 ledger's name), mark it when you map (`set_column_mapping`, with source_key_column and
-source_system; a preset does it itself), and before the dry run ask where to keep the IDs
-(`choose_old_id_storage`). Later files that refer to the records by those IDs can then be translated
-instead of corrected by hand.
+source_system; a preset does it itself). The IDs are kept in FAC's key map without asking. Later
+files that refer to the records by those IDs can then be translated instead of corrected by hand.

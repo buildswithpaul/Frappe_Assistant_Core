@@ -14,13 +14,13 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Where the old IDs of an import session are kept (#34244): the question put to the consultant
-before the dry run, and what answering it does.
+"""Where the old IDs of an import session are kept (#34244), through set_column_mapping.
 
-The order of the offer (R-D1): a field that already holds the file's IDs; else a new field, made by
-FACO with ``create_document`` (its own approval card and customisation warning, never a batch);
-else, when the consultant doesn't want a field, FAC's key map. Nothing here writes a customisation:
-this module only reports, verifies and records the choice.
+FAC's key map by default: it adds nothing to the DocType and nobody has to answer for it. A field
+instead, when a System Manager chooses one (``old_id_field``): one that already holds the file's IDs,
+or the Old System ID field FACO adds with ``create_document`` (its own approval card and
+customisation warning, never a batch) when the user wants to see the IDs on the form. Nothing here
+writes a customisation: this module only reports, verifies and records the choice.
 """
 
 from typing import Any, Dict, List, Optional
@@ -126,14 +126,14 @@ def report(session) -> Dict[str, Any]:
         "system": system,
         "column": column["header"],
     }
-    chosen = import_keys.choice(doctype, system)
-    if chosen:
-        out["storage"] = chosen
-        out["offer"] = None
-        out["message"] = _("The old IDs of {0} for {1} are already kept: {2}.").format(
-            system, _(doctype), _("in FAC's key map") if not chosen.startswith("field:") else chosen[6:]
+    storage = import_keys.storage_for(doctype, system)
+    if storage["kind"] == "field":
+        out["kept_in"] = storage["fieldname"]
+        out["message"] = _("The old IDs of {0} for {1} are kept in {1} > {2}.").format(
+            system, _(doctype), storage["fieldname"]
         )
         return out
+    out["kept_in"] = "key_map"
 
     values = key_values(session)
     out["ids"] = len(values)
@@ -155,17 +155,16 @@ def report(session) -> Dict[str, Any]:
     out["existing_fields"] = candidates
     if candidates:
         best = candidates[0]
-        out["offer"] = "existing_field"
-        out["question"] = _(
-            "These IDs are already kept in {0} > {1} ({2} of {3} match). Use this field?"
+        out["message"] = _(
+            "They are kept in FAC's key map, which adds nothing to the {0} form. They are also in "
+            "{0} > {1} ({2} of {3} match): a System Manager can keep them there instead."
         ).format(_(doctype), _(best["label"]), best["matched"], best["total"])
     else:
-        out["offer"] = "new_field"
+        out["message"] = _("They are kept in FAC's key map, which adds nothing to the {0} form.").format(
+            _(doctype)
+        )
+        # Only when the user asks to see the old IDs on the form: the field to add, on its own card.
         out["new_field"] = field_record(doctype)
-        out["question"] = _(
-            "Keep the old IDs in a new field {0} on {1}? If you'd rather not add a field, "
-            "I'll keep them in FAC's key map instead."
-        ).format(_(import_keys.FIELD_LABEL), _(doctype))
     return out
 
 
@@ -174,14 +173,15 @@ def use_field(session, fieldname: str) -> Dict[str, Any]:
     (as ``find_fields`` finds), or the one FAC adds, can be chosen: nothing is taken on trust."""
     column = key_column(session)
     doctype, system = session.target_doctype, column["system"]
+    _only_a_system_manager()
     allowed = {c["fieldname"] for c in import_keys.find_fields(doctype, key_values(session))}
     if frappe.get_meta(doctype).has_field(import_keys.FIELD_NAME):
         allowed.add(import_keys.FIELD_NAME)
     if fieldname not in allowed:
         raise StorageProblem(
             _(
-                "{0} doesn't hold this file's IDs, so it can't be used for them. Call "
-                "choose_old_id_storage without use to see the fields that can."
+                "{0} doesn't hold this file's IDs, so it can't be used for them. The mapping's "
+                "old_ids lists the fields that can."
             ).format(fieldname)
         )
     import_keys.set_choice(doctype, system, f"field:{fieldname}")
@@ -192,8 +192,30 @@ def use_key_map(session) -> Dict[str, Any]:
     """Keep the session's old IDs in FAC's key map: nothing is added to the DocType."""
     column = key_column(session)
     doctype, system = session.target_doctype, column["system"]
-    import_keys.set_choice(doctype, system, "refused_field")
+    if import_keys.storage_for(doctype, system)["kind"] == "field":
+        _only_a_system_manager()  # moving a System Manager's field choice back is theirs too
+    import_keys.set_choice(doctype, system, "key_map")
     return _recorded(session, doctype, system, _("in FAC's key map"))
+
+
+def keep_in_key_map_unless_chosen(session) -> None:
+    """The default for a session's old ID column: FAC's key map, recorded for its DocType and source
+    system so later files find the system, unless a choice is already kept. Overwrites nothing."""
+    column = key_column(session)
+    if not import_keys.choice(session.target_doctype, column["system"]):
+        import_keys.set_choice(session.target_doctype, column["system"], "key_map")
+
+
+def _only_a_system_manager() -> None:
+    """Where a DocType keeps old IDs is one setting for every import on the site, and a field choice
+    writes the IDs into that field of each record: a System Manager's call, not any importer's."""
+    if "System Manager" not in frappe.get_roles():
+        raise StorageProblem(
+            _(
+                "Only a System Manager can choose a field for the old IDs. They are kept in FAC's "
+                "key map, which works the same for the import."
+            )
+        )
 
 
 def _recorded(session, doctype: str, system: str, where: str) -> Dict[str, Any]:
@@ -203,6 +225,6 @@ def _recorded(session, doctype: str, system: str, where: str) -> Dict[str, Any]:
     return {
         "doctype": doctype,
         "system": system,
-        "storage": import_keys.choice(doctype, system),
+        "kept_in": import_keys.storage_for(doctype, system).get("fieldname", "key_map"),
         "message": message,
     }

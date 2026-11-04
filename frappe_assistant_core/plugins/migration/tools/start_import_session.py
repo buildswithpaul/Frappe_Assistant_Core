@@ -805,7 +805,9 @@ class StartImportSession(BaseTool):
         if target.get("doctype"):
             out["doctype"] = target["doctype"]
             old_ids = self._source_key(session, match.preset, target, rows)
-            out.update(self._map_target(session, target["doctype"], rows.header, mapping, not_on_site, already))
+            out.update(
+                self._map_target(session, target["doctype"], rows.header, mapping, not_on_site, already)
+            )
             if old_ids:
                 out["old_ids"] = old_ids
                 mapped = out.get("mapping")
@@ -836,7 +838,8 @@ class StartImportSession(BaseTool):
         doctype = target["doctype"]
         if not import_keys.choice(doctype, system):
             # A preset's export is a standard one: its IDs are kept in FAC's key map without asking,
-            # which adds nothing to the DocType. choose_old_id_storage can still move them to a field.
+            # which adds nothing to the DocType. A System Manager can still move them to a field
+            # (set_column_mapping old_id_field).
             import_keys.set_choice(doctype, system, "key_map")
         return {"column": column, "system": system}
 

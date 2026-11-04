@@ -72,9 +72,22 @@ case; ask the user when you can't tell). The call marks it; the result's `old_id
 - Don't guess a column from a name like `ref`: ask the user, and never mark one when no column
   holds an ID.
 - Changing the target DocType drops the key column, like the rest of the mapping.
-- A preset (`apply_import_preset`) marks its own key column: nothing to do.
-- Where the IDs are kept (a field on the record, or FAC's key map) is a separate choice the user
-  makes before the dry run.
+- A preset (`start_import_session` on a recognised export) marks its own key column: nothing to do.
+
+### Where the old IDs are kept
+
+In FAC's key map: it adds nothing to the record's form and works the same for the import. **Don't
+ask the user where to keep them.** Say `old_ids.message` in one sentence and go on to the dry run.
+
+- `old_ids.existing_fields` lists fields that already hold the file's IDs. Only when a **System
+  Manager** wants them there, call again with `old_id_field` set to that fieldname (and `{}` as
+  `mapping`). Anyone else gets a refusal, and the IDs stay in the key map.
+- `old_ids.new_field` is the field to add when the user asks to **see** the old IDs on the form:
+  create it with `create_document`, exactly that record, on its own (never in a list), then call
+  again with `old_id_field: "fac_old_system_id"`. Don't offer it unasked.
+- `old_id_field: "key_map"` moves them back from a field to the key map.
+- The choice is one setting per DocType and source system for the whole site, and later files use
+  it too.
 
 ## When the mapping can't change
 

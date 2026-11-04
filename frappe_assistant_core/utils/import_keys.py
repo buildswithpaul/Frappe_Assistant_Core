@@ -39,8 +39,9 @@ KEY_MAP = "FAC Import Key Map"
 FIELD_NAME = "fac_old_system_id"
 FIELD_LABEL = "Old System ID"
 
-#: The site's choice of where a DocType keeps one source system's old IDs (``field:<name>``,
-#: ``key_map`` or ``refused_field``), as global defaults, so no extra DocType is needed.
+#: The site's choice of where a DocType keeps one source system's old IDs (``field:<name>`` or
+#: ``key_map``; ``refused_field`` from before is the key map too), as global defaults, so no extra
+#: DocType is needed. Without a choice they are kept in the key map.
 _CHOICE_KEY = "fac_old_id::{doctype}::{system}"
 _SYSTEMS_KEY = "fac_old_id_systems::{doctype}::{fieldname}"
 
@@ -130,24 +131,6 @@ def clear_source_key(session) -> None:
     rules = _rules(session)
     if rules.pop(SOURCE_KEY, None) is not None:
         session.transformation_rules = frappe.as_json(rules) if rules else None
-
-
-def storage_problem(session) -> Optional[str]:
-    """Why the session can't be checked yet because nobody has said where its old IDs are kept, or None.
-    A file with an old ID column is asked about before its dry run, so the answer is there when the
-    records are created."""
-    kept = source_key(session)
-    if not kept or not session.target_doctype or storage_for(session.target_doctype, kept["system"]):
-        return None
-    from frappe_assistant_core.utils.import_mapping import session_headers
-
-    headers = session_headers(session)
-    position = int(kept["position"])
-    column = headers[position] if position < len(headers) else str(position)
-    return _(
-        "Column '{0}' holds the old system's IDs. Ask the user where to keep them, with "
-        "choose_old_id_storage, before the check."
-    ).format(column)
 
 
 def key_maps(session) -> Dict[int, Dict[str, str]]:
@@ -304,7 +287,7 @@ def duplicates(rows: List[List[Any]], position: int, shown: int = 10) -> List[Di
 
 
 def choice(doctype: str, system: str) -> Optional[str]:
-    """``field:<fieldname>``, ``key_map`` or ``refused_field``, or None when nobody has chosen."""
+    """``field:<fieldname>`` or ``key_map`` (``refused_field`` from before), or None: the key map."""
     return frappe.defaults.get_global_default(_CHOICE_KEY.format(doctype=doctype, system=system_name(system)))
 
 
@@ -329,13 +312,12 @@ def systems_of(doctype: str, fieldname: str) -> List[str]:
     return [s for s in cstr(value).split(",") if s]
 
 
-def storage_for(doctype: str, system: str) -> Optional[Dict[str, Any]]:
-    """Where ``doctype`` keeps ``system``'s old IDs: ``{"kind": "field", "fieldname": ...}`` or
-    ``{"kind": "key_map"}``; None while nobody has chosen. A refused field is the key map."""
+def storage_for(doctype: str, system: str) -> Dict[str, Any]:
+    """Where ``doctype`` keeps ``system``'s old IDs: ``{"kind": "field", "fieldname": ...}`` when a
+    System Manager chose a field (set_column_mapping old_id_field), else ``{"kind": "key_map"}``:
+    FAC's own table, which adds nothing to the DocType and needs nobody to choose it."""
     value = choice(doctype, system)
-    if not value:
-        return None
-    if value.startswith("field:"):
+    if value and value.startswith("field:"):
         return {"kind": "field", "fieldname": value.split(":", 1)[1]}
     return {"kind": "key_map"}
 
@@ -418,9 +400,16 @@ def find_fields(doctype: str, values: Iterable[Any]) -> List[Dict[str, Any]]:
 def _count_matches(doctype: str, fieldname: str, keys: List[str]) -> Tuple[int, bool]:
     """How many of ``keys`` ``doctype.fieldname`` holds, and whether one of them is on two records."""
     held: Dict[str, int] = {}
-    for chunk in _chunks(keys):
-        for stored in frappe.get_all(doctype, filters={fieldname: ["in", chunk]}, pluck=fieldname):
-            held[cstr(stored).casefold()] = held.get(cstr(stored).casefold(), 0) + 1
+    # Only the records the user can read count, as in _from_field: a count over the others would
+    # tell them which IDs exist on records they can't see.
+    try:
+        for chunk in _chunks(keys):
+            for stored in frappe.get_list(
+                doctype, filters={fieldname: ["in", chunk]}, pluck=fieldname, user=frappe.session.user
+            ):
+                held[cstr(stored).casefold()] = held.get(cstr(stored).casefold(), 0) + 1
+    except frappe.PermissionError:  # a user who can't read the DocType finds no field
+        return 0, False
     matched = sum(1 for key in keys if key.casefold() in held)
     return matched, any(count > 1 for count in held.values())
 

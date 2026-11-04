@@ -72,7 +72,6 @@ class TestPresetSourceKeys(PresetToolCase):
 
         entry, session = self._session(result, "Customers")
         self.assertEqual(import_keys.storage_for("Customer", "zoho"), {"kind": "key_map"})
-        self.assertIsNone(import_keys.storage_problem(session))  # the dry run is not held for an answer
         self.assertEqual(entry["next"], "dry_run_import")
 
     def test_a_choice_already_made_for_the_system_is_not_changed_by_a_preset(self):

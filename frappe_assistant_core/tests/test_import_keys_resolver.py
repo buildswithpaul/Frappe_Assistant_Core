@@ -71,8 +71,9 @@ class TestKeyResolver(BaseAssistantTest):
 
     # -- the choice ----------------------------------------------------------------------------
 
-    def test_nothing_is_chosen_until_someone_chooses(self):
-        self.assertIsNone(keys.storage_for("Customer", self.system))
+    def test_without_a_choice_the_ids_are_kept_in_the_key_map(self):
+        self.assertIsNone(keys.choice("Customer", self.system))
+        self.assertEqual(keys.storage_for("Customer", self.system), {"kind": "key_map"})
 
     def test_the_choice_is_kept_per_doctype_and_system(self):
         self._keep_in_field()
@@ -81,10 +82,11 @@ class TestKeyResolver(BaseAssistantTest):
         self.assertEqual(
             keys.storage_for("Customer", self.system.upper()), keys.storage_for("Customer", self.system)
         )
-        self.assertIsNone(keys.storage_for("Supplier", self.system))
-        self.assertIsNone(keys.storage_for("Customer", "zoho" + self.tag))
+        self.assertEqual(keys.storage_for("Supplier", self.system), {"kind": "key_map"})
+        self.assertEqual(keys.storage_for("Customer", "zoho" + self.tag), {"kind": "key_map"})
 
-    def test_a_refused_field_means_the_key_map(self):
+    def test_a_refused_field_from_before_means_the_key_map(self):
+        # the value sites stored before #34608 renamed it
         keys.set_choice("Customer", self.system, "refused_field")
 
         self.assertEqual(keys.storage_for("Customer", self.system), {"kind": "key_map"})
