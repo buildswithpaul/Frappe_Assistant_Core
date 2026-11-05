@@ -391,12 +391,15 @@ def run_job(data_import: str, session_name: str) -> None:
     """Background job: Data Import's own run, then its result recorded on the session."""
     from frappe.core.doctype.data_import.data_import import start_import
 
-    from frappe_assistant_core.utils import import_plan
+    from frappe_assistant_core.utils import import_notify, import_plan
 
     start_import(data_import)
     record_result(session_name, data_import)
     if not _next_level(session_name, data_import):
         import_plan.child_finished(session_name)  # in a migration plan, its next file
+        session = frappe.get_doc(dry_run.SESSION_DOCTYPE, session_name)
+        if not session.get("migration_plan") and session.status != IMPORTING:
+            import_notify.import_ended(session, data_import)  # a plan's file: the plan says when it ends
     frappe.db.commit()  # nosemgrep: frappe-manual-commit — a background job commits its own work
 
 

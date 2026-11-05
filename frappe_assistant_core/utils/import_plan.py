@@ -1523,8 +1523,11 @@ def _finish(plan_name: str) -> None:
 
 
 def _end(plan_name: str, status: str, message: str) -> None:
+    from frappe_assistant_core.utils import import_notify
+
     outcome = {"Completed": "Success", "Partially Completed": "Warning"}.get(status, "Failed")
     _update(plan_name, status=status, step=(outcome, message), current=None)
+    import_notify.plan_ended(get_plan(plan_name), status, message)
 
 
 def result(plan) -> Dict[str, Any]:

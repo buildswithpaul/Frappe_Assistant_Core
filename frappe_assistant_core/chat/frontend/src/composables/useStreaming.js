@@ -295,6 +295,12 @@ export function useStreaming() {
 		if (data.session_id !== chatStore.currentSessionId) {
 			return;
 		}
+		// A background check, import or plan ended and FACO posted its result (#34416): no turn
+		// streams it, so the conversation is read again, keeping any turn that streams now.
+		if (data.event === "message_posted") {
+			chatStore.reconcileFromServer(data.session_id);
+			return;
+		}
 		// Numbered events pass through the live-turn sync: held while this
 		// surface joins a running turn, dropped when already shown.
 		if (!admitted && !chatStore.admitStreamEvent(data)) return;

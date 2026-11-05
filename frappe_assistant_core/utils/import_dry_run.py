@@ -368,11 +368,13 @@ def enqueue(session) -> None:
 
 def run_job(session_name: str, user: str) -> None:
     """Background job: the dry run as the user who asked for it."""
+    from frappe_assistant_core.utils import import_notify
     from frappe_assistant_core.utils.import_fixes import check
 
     frappe.set_user(user)  # nosemgrep: frappe-setuser — the job runs as the user who asked for the check
     try:
         check(session_name, commit_progress=True)  # the run, explained for the model to read later
+        import_notify.check_ended(engine_session(session_name))
         frappe.db.commit()
     except Exception as e:
         frappe.db.rollback()
