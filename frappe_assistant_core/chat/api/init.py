@@ -149,7 +149,15 @@ def initialize_spa() -> dict:
         # None when nothing is owed, and for non-admins who could not act on it.
         "outstanding": ar_results.get("outstanding"),
         "system_timezone": get_system_timezone(),
+        # the largest chat attachment, so the composer can say so before uploading (#33987)
+        "upload_limit": _upload_limit(),
     }
+
+
+def _upload_limit() -> int:
+    from frappe_assistant_core.chat.api.settings.uploads import _chat_upload_limit
+
+    return _chat_upload_limit()
 
 
 # ============================================================================

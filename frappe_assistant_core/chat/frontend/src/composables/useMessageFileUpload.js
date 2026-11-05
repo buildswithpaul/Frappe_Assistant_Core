@@ -2,6 +2,7 @@ import { api } from "@/api/client";
 import { useToast } from "@/composables/useToast";
 import { __ } from "@/utils/i18n";
 import { logger } from "@/utils/logger";
+import { megabytes, uploadLimit } from "@/utils/uploadLimit";
 
 /**
  * Pre-upload files via FACO's upload_message_file endpoint (matches widget behavior —
@@ -17,6 +18,15 @@ export function useMessageFileUpload() {
 	// the chip for a file the server rejected.
 	function handleFileUpload(files, onFailed) {
 		for (const file of files) {
+			const limit = uploadLimit();
+			if (limit && file.size > limit) {
+				// Frappe would refuse it before FACO could say why (#33987)
+				showError(
+					`${file.name}: ${__("Larger than this site's {0} upload limit.", [megabytes(limit)])}`
+				);
+				onFailed?.(file);
+				continue;
+			}
 			const upload = api.chat.uploadFile(file).catch((err) => {
 				logger.error("File upload failed:", err);
 				showError(`${file.name}: ${err?.userMessage || err?.message || __("Upload failed")}`);

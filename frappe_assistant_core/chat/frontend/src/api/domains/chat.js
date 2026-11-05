@@ -7,6 +7,7 @@ import {
 	getCsrfToken,
 	networkError,
 } from "../_core";
+import { __ } from "@/utils/i18n";
 
 export const chat = {
 	send: (
@@ -62,6 +63,10 @@ export const chat = {
 			);
 		} catch (cause) {
 			throw networkError(cause);
+		}
+		if (response.status === 413) {
+			// Frappe's request limit, met before FACO's own check: an HTML page, not a message
+			throw buildError(__("The file is larger than this site's upload limit."), { status: 413 });
 		}
 		if (!response.ok) {
 			const body = await response.text();

@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { useMessageFileUpload } from "./useMessageFileUpload";
 import { friendlyError } from "@/api/_core";
 import { api } from "@/api/client";
+import { setUploadLimit } from "@/utils/uploadLimit";
 
 vi.mock("@/api/client", () => ({ api: { chat: { uploadFile: vi.fn() } } }));
 vi.mock("@/utils/logger", () => ({ logger: { error: vi.fn() } }));
@@ -33,7 +34,10 @@ const rejectionBody = JSON.stringify({
 });
 
 describe("useMessageFileUpload", () => {
-	beforeEach(() => vi.clearAllMocks());
+	beforeEach(() => {
+		vi.clearAllMocks();
+		setUploadLimit(null);
+	});
 
 	it("waits for an upload still in flight when the user sends", async () => {
 		// The composer uploads on selection, so Send can land before a slow upload has finished.
@@ -124,5 +128,21 @@ describe("useMessageFileUpload", () => {
 		expect(await consumeUploadedFiles([bad, good])).toEqual([uploaded(good)]);
 		expect(onFailed).toHaveBeenCalledTimes(1);
 		expect(onFailed.mock.calls[0][0]).toBe(bad);
+	});
+
+	it("refuses a file over the site's limit before uploading it, naming the limit (#33987)", async () => {
+		// Frappe answers a request over its limit with an HTML 413, before FACO can say why
+		setUploadLimit(25 * 1048576);
+		const big = new File(["x"], "ledger.xlsx");
+		Object.defineProperty(big, "size", { value: 30 * 1048576 });
+		const onFailed = vi.fn();
+		const { handleFileUpload, consumeUploadedFiles } = useMessageFileUpload();
+
+		handleFileUpload([big], onFailed);
+
+		expect(api.chat.uploadFile).not.toHaveBeenCalled();
+		expect(showError).toHaveBeenCalledWith("ledger.xlsx: Larger than this site's 25 MB upload limit.");
+		expect(onFailed.mock.calls[0][0]).toBe(big);
+		expect(await consumeUploadedFiles([big])).toEqual([]);
 	});
 });

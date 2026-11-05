@@ -19,6 +19,7 @@ import zipfile
 import frappe
 from frappe import _
 from frappe.core.api.file import get_max_file_size
+from frappe.utils import cint
 from werkzeug.utils import secure_filename
 
 from .._rate_limits import (
@@ -35,8 +36,11 @@ def _chat_upload_limit() -> int:
     The largest chat attachment this site accepts. Frappe's File rejects anything over
     System Settings → Max File Size (25 MB unless an administrator changed it), so
     checking against that here lets us say how to raise it instead of failing in save.
+    Frappe also refuses any request but its own upload_file over the site config's
+    max_file_size (25 MB unset) before this code runs (#33987), so that is a limit too.
     """
-    return min(CHAT_UPLOAD_MAX_BYTES, get_max_file_size())
+    request_limit = cint(frappe.conf.get("max_file_size")) or 25 * 1024 * 1024
+    return min(CHAT_UPLOAD_MAX_BYTES, get_max_file_size(), request_limit)
 
 
 # --- FACO-H11: upload validation allowlists ------------------------------------
@@ -224,7 +228,8 @@ def upload_message_file(
                 frappe.throw(
                     _(
                         "File is larger than this site's {0} MB upload limit. An administrator "
-                        "can raise it in System Settings → Max File Size (up to 50 MB)."
+                        "can raise it (up to 50 MB) in System Settings → Max File Size and the "
+                        "site config's max_file_size."
                     ).format(f"{max_size / 1048576:g}"),
                     frappe.ValidationError,
                 )
