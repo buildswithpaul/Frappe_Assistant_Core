@@ -19,6 +19,8 @@
 
 		<!-- An import: its file, new or updated records, rows left out, submitting, the mapping (#34415) -->
 		<ImportApprovalSummary v-if="isImport && block.input" :input="block.input" />
+		<!-- An opening entry: its totals and its balancing line (#34433) -->
+		<OpeningBalancesApprovalSummary v-else-if="isOpeningBalances && block.input" :input="block.input" />
 
 		<!-- Several records in one call: each one, so the user sees what they approve -->
 		<RecordTables v-if="recordCount" :input="block.input" :tool-name="block.tool_name" />
@@ -74,6 +76,7 @@ import { baseToolName, isCustomisationRisk } from "@/utils/toolNames";
 import ApprovalDetails from "./ApprovalDetails.vue";
 import EmailPreview from "./EmailPreview.vue";
 import ImportApprovalSummary from "./ImportApprovalSummary.vue";
+import OpeningBalancesApprovalSummary from "./OpeningBalancesApprovalSummary.vue";
 import InteractionShell from "./InteractionShell.vue";
 import RecordTables from "./RecordTables.vue";
 import { approvalHeadline, trustLabel } from "./approvalHeadline";
@@ -120,6 +123,7 @@ const icon = computed(() => {
 
 const trustText = computed(() => trustLabel(props.block.tool_name));
 const isImport = computed(() => baseToolName(props.block.tool_name) === "start_import");
+const isOpeningBalances = computed(() => baseToolName(props.block.tool_name) === "import_opening_balances");
 
 const approveLabel = computed(() => {
 	if (clicked.value === "approve" && props.submitting) return __("Approving…");

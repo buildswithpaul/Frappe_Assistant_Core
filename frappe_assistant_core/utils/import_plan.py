@@ -29,7 +29,17 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 
 import frappe
 from frappe import _
-from frappe.utils import add_months, cint, cstr, get_datetime, get_last_day, getdate, now_datetime, today
+from frappe.utils import (
+    add_months,
+    cint,
+    cstr,
+    fmt_money,
+    get_datetime,
+    get_last_day,
+    getdate,
+    now_datetime,
+    today,
+)
 
 from frappe_assistant_core.utils import import_dry_run as dry_run
 from frappe_assistant_core.utils.untrusted_output import unfenced
@@ -1102,6 +1112,32 @@ def card_figures(plan) -> Dict[str, Any]:
     }
 
 
+def _opening_entry(session) -> List[str]:
+    """An opening balances file's entry as its own card shows it (#34433): its totals and the line
+    to Temporary Opening that balances it, which the plan's card left out."""
+    from frappe_assistant_core.utils import import_opening_balances as opening_balances
+
+    if dry_run.special_engine(session) is not opening_balances:
+        return []
+    totals = (frappe.parse_json(session.validation_summary or "{}") or {}).get("opening_balances") or {}
+    if not totals:
+        return []
+    line = _("{0}: debits {1}, credits {2}.").format(
+        session.file_name,
+        fmt_money(totals.get("total_debit") or 0, 2),
+        fmt_money(totals.get("total_credit") or 0, 2),
+    )
+    balance = totals.get("balancing_amount") or 0
+    if balance:
+        side = _("a debit") if balance > 0 else _("a credit")
+        line += " " + _("Balanced by {0} of {1} to {2}.").format(
+            side,
+            fmt_money(abs(balance), 2),
+            opening_balances.settings(session).get("temporary_opening_account"),
+        )
+    return [line]
+
+
 def decisions(plan, files: List[Any], new: List[Dict[str, Any]]) -> List[str]:
     """Each decision of the plan, one plain line each: the records it creates, each file's fixes
     and left-out rows, a file name whose date isn't the cut-off, and the failure rule."""
@@ -1125,6 +1161,7 @@ def decisions(plan, files: List[Any], new: List[Dict[str, Any]]) -> List[str]:
                 )
             else:
                 lines.append(_("{0}: row {1} left out.").format(session.file_name, row["row"]))
+        lines += _opening_entry(session)
         rules = frappe.parse_json(session.transformation_rules or "{}") or {}
         for item in rules.get("zero_rate_items") or []:
             lines.append(_("{0}: {1} is valued at zero.").format(session.file_name, item))

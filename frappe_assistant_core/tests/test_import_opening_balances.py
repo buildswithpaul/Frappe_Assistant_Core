@@ -892,6 +892,23 @@ class TestCheck(OpeningBalancesCase):
             },
         )
 
+    def test_a_plans_card_shows_the_entrys_totals_and_balancing_line(self):
+        # #34433: the plan's approval card showed files, rows and decisions, not the entry
+        from frappe_assistant_core.utils import import_plan
+
+        session = self._session(
+            [f"{self.bank},100,,", f"{self.debtors},50,,", f"{self.retained},30,,", f"{self.capital},,180,"]
+        )
+        self.assertTrue(self._setup(session)["success"])
+        self._leave_out(session, 4)
+        self._check(session)
+
+        lines = import_plan._opening_entry(self._doc(session))
+
+        self.assertEqual(len(lines), 1, lines)
+        self.assertIn("debits 180.00, credits 180.00", lines[0])
+        self.assertIn(f"Balanced by a debit of 80.00 to {self._temporary_account()}", lines[0])
+
     def test_file_balance_ignores_totals_rows(self):
         session = self._session([f"{self.bank},100,,", f"{self.capital},,100,", "Total,100,100,"])
         self._setup(session)

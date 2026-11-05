@@ -1189,3 +1189,31 @@ describe("ApprovalCard for run_python_code", () => {
 		expect(wrapper.findAll(".field-key").map((k) => k.text())).toContain("Code");
 	});
 });
+
+describe("ApprovalCard for an opening entry (#34433)", () => {
+	it("shows its totals and the line to Temporary Opening that balances it", () => {
+		const input = {
+			session: "IMP-1",
+			company: "Acme",
+			cut_off: "2026-03-31",
+			rows: 12,
+			total_debit: 1500,
+			total_credit: 1200,
+			balancing_amount: -300,
+			covered_debit: 0,
+			covered_credit: 0,
+			excluded_debit: 50,
+			excluded_credit: 0,
+		};
+		const wrapper = mount(ApprovalCard, {
+			props: { block: { id: "o1", tool_name: "import_opening_balances", input, interrupts } },
+		});
+		const summary = wrapper.find(".opening-approval");
+		expect(summary.exists()).toBe(true);
+		expect(summary.text()).toContain("1,500.00");
+		expect(summary.text()).toContain("1,200.00");
+		expect(summary.text()).toContain("Credit 300.00 to Temporary Opening");
+		expect(summary.text()).toContain("Left out");
+		expect(summary.text()).not.toContain("Covered by other imports");
+	});
+});
