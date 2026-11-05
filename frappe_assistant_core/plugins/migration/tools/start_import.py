@@ -45,8 +45,8 @@ class StartImport(BaseTool):
             "ended only when the session's status "
             "(get_document) is no longer Importing: then its last step gives created, failed and "
             "left-out counts with row numbers. If it stopped (Data Import status Timed Out, or no "
-            "progress for minutes), call again with the same values to continue: records already "
-            "imported are skipped, never duplicated. If rows failed, the reply groups and explains "
+            "progress for minutes), call again to continue, with rows the rows still to import (the "
+            "refusal says how many): records already imported are skipped, never duplicated. If rows failed, the reply groups and explains "
             "them, with what to do next: once the user has fixed the causes and asks to try those "
             "again, check them with dry_run_import (it checks only the rows not imported yet), "
             "then call this with its counts: a new Data Import imports just those rows, with the "
@@ -62,7 +62,11 @@ class StartImport(BaseTool):
             "properties": {
                 "session": {"type": "string", "description": "The import session id"},
                 "doctype": {"type": "string", "description": "The DocType imported, as the last check said"},
-                "rows": {"type": "integer", "description": "Rows to import: the last check's 'ready'"},
+                "rows": {
+                    "type": "integer",
+                    "description": "Rows to import: the last check's 'ready'; continuing an "
+                    "interrupted import, the rows still to import",
+                },
                 "import_type": {
                     "type": "string",
                     "enum": ["Insert New Records", "Update Existing Records"],
@@ -121,15 +125,18 @@ class StartImport(BaseTool):
             }
 
         try:
-            import_run.check_card(
-                session,
-                arguments.get("doctype"),
-                arguments.get("rows"),
-                arguments.get("import_type"),
-                arguments.get("validated_fingerprint"),
-                arguments.get("file_name"),
-                arguments.get("submit_after_import"),
-            )
+            resuming = session.status == import_run.IMPORTING
+            if not resuming or import_run.continues(session):  # else it only reports: nothing starts
+                import_run.check_card(
+                    session,
+                    arguments.get("doctype"),
+                    arguments.get("rows"),
+                    arguments.get("import_type"),
+                    arguments.get("validated_fingerprint"),
+                    arguments.get("file_name"),
+                    arguments.get("submit_after_import"),
+                    left=import_run.rows_left(session) if resuming else None,
+                )
             problem = import_run.cannot_import(
                 session.target_doctype, session.import_type or "Insert New Records"
             )

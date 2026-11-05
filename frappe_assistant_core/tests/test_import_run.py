@@ -524,8 +524,12 @@ class TestImportRun(ImportRunCase):
         self.assertEqual(self._imported(), {n["alpha"]})
         self.assertEqual(self._doc(session).status, "Importing")
 
+        # The approval card of a continue shows the rows it still imports, not every row checked
+        stale = self._import(session, checked)
+        self.assertFalse(stale["success"], stale)
+        self.assertIn("2 of its 3", stale["result"]["error"])
         with self._each_row_commits():
-            second = self._import(session, checked)
+            second = self._import(session, checked, rows=2)
 
         self.assertTrue(second["success"], second)
         self.assertEqual(second["result"]["state"], "finished")
@@ -664,7 +668,7 @@ class TestImportRun(ImportRunCase):
         frappe.delete_doc("Customer Group", self.group, force=True)
 
         with self._each_row_commits():
-            response = self._import(session, checked)
+            response = self._import(session, checked, rows=2)
 
         result = response["result"]
         self.assertEqual(result["state"], "refused")

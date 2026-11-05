@@ -70,7 +70,7 @@ Row numbers are the user's own spreadsheet rows (row 1 is the header; when the h
 
 ## When it stops
 
-If the import was interrupted (the Data Import's status is **Timed Out**, or its count stops moving for minutes after a restart), the session stays **Importing**. When the user asks to continue, call `start_import` again **with the same values**. The same Data Import runs again and skips every record already imported, so nothing is duplicated. `state` is `continued` (or `running` if it was in fact still running: then just keep following it; or `finished` if it had ended, with its result).
+If the import was interrupted (the Data Import's status is **Timed Out**, or its count stops moving for minutes after a restart), the session stays **Importing**. When the user asks to continue, call `start_import` again with the same values except `rows`: pass the rows **still to import**, so the approval card shows what continuing imports (if you pass the check's count, the refusal says how many are left). The same Data Import runs again and skips every record already imported, so nothing is duplicated. `state` is `continued` (or `running` if it was in fact still running: then just keep following it; or `finished` if it had ended, with its result).
 
 If ERPNext now refuses some rows (`state` `refused`, a record they link to deleted since the check, say), the message says which. Nothing more is imported until that is fixed; then continue.
 

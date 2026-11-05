@@ -100,16 +100,26 @@ def check_card(
     fingerprint: Any = None,
     file_name: Any = None,
     submit: Any = None,
+    left: Optional[int] = None,
 ) -> None:
     """The approval card shows what FACO passed: refuse unless it is what the last check found.
 
     The check's fingerprint binds the approval to that check (#34402): a remap and a new check of
     the same row count, in another tab or a parallel call, is another check, so it isn't imported
-    under this approval. The file's name and whether records are submitted are on the card too."""
+    under this approval. The file's name and whether records are submitted are on the card too.
+    Continuing an interrupted import, ``left`` is the rows it still imports, and the card shows
+    those, not every row the check found (#33993)."""
     summary = frappe.parse_json(session.validation_summary or "{}") or {}
     checked = (session.target_doctype, summary.get("ready"), session.import_type or INSERT)
     asked = (cstr(doctype).strip(), _int(rows), cstr(import_type).strip())
-    if asked != checked:
+    if left is not None and asked != (checked[0], left, checked[2]):
+        raise ImportProblem(
+            _(
+                "The import stopped with {1} of its {2} {0} rows still to import as {3}. Pass rows "
+                "{1}, so the approval card shows what continuing it imports."
+            ).format(checked[0], left, checked[1], checked[2])
+        )
+    if left is None and asked != checked:
         raise ImportProblem(
             _(
                 "The last check found {1} {0} rows to import as {2}, not what was passed. Pass "
@@ -304,9 +314,7 @@ def resume(session) -> Tuple[str, str]:
         raise ImportProblem(_("This session has no import to continue."))
     if job_alive(_job_id(name)):
         return name, "running"
-    di = frappe.get_doc("Data Import", name)
-    ended = di.status in FINISHED_STATUS and _log_count(name) >= (di.payload_count or 0)
-    if di.status == "Success" or (ended and session.status == IMPORTING):
+    if _ran_to_end(session, name):
         # Run to its end from Desk, or its result never recorded: record it, don't run again.
         from frappe_assistant_core.utils import import_plan
 
@@ -317,6 +325,22 @@ def resume(session) -> Tuple[str, str]:
     _record_start(session, name, "Continue", session.data_imports[-1].source_file)
     _launch(session, name)
     return name, "continued"
+
+
+def continues(session) -> bool:
+    """Whether calling start_import for this Importing session runs its Data Import again, as
+    resume does: neither still running nor run to its end."""
+    if not session.data_imports:
+        return False
+    name = session.data_imports[-1].data_import
+    return not job_alive(_job_id(name)) and not _ran_to_end(session, name)
+
+
+def _ran_to_end(session, data_import: str) -> bool:
+    """Run to its end from Desk, or its result never recorded."""
+    di = frappe.get_doc("Data Import", data_import)
+    ended = di.status in FINISHED_STATUS and _log_count(data_import) >= (di.payload_count or 0)
+    return di.status == "Success" or (ended and session.status == IMPORTING)
 
 
 def _record_start(
@@ -483,6 +507,15 @@ def _warning_text(warning: Dict[str, Any]) -> str:
 # child row does to its parent row higher up the file. The dry run marks such a row with the rows
 # it needs ("after"). Those go in first, and each Data Import that ends starts the next one with
 # the rows whose parent rows it brought in.
+
+
+def rows_left(session) -> int:
+    """Of the rows the last check found ready, those no Data Import of the file brought in yet:
+    what continuing an interrupted import imports."""
+    imported = import_failures.imported_rows(session)
+    return sum(
+        1 for row in _checked_rows(session) if row.get("status") == "ready" and row["row"] not in imported
+    )
 
 
 def _checked_rows(session) -> List[Dict[str, Any]]:
