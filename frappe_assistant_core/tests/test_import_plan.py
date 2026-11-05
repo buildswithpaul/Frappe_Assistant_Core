@@ -405,9 +405,9 @@ class TestPlanMigration(ImportPlanCase):
 
 
 class TestRecordsEarlierFilesCreate(ImportPlanCase):
-    def _plan(self, item_group_value):
+    def _plan(self, item_group_value, group_name=None):
         t = self.tag
-        self.group_name = f"G {t}"
+        self.group_name = group_name or f"G {t}"
         group = self._session(
             "groups.csv",
             ["Name", "Parent", "Is Group"],
@@ -451,6 +451,24 @@ class TestRecordsEarlierFilesCreate(ImportPlanCase):
         group_ = result["groups"][0]
         self.assertEqual(group_["cause"], "Comes from a later file")
         self.assertIn("groups.csv", group_["message"])
+
+    def test_a_misspelt_name_of_an_earlier_files_record_is_mapped_to_it(self):
+        # #34244 AC5: the advice was to create the typo as a group of its own, and a map to the
+        # group the plan's groups file creates was refused: it isn't in ERPNext yet.
+        _plan, _group, item = self._plan(f"Hand Tols {self.tag}", group_name=f"Hand Tools {self.tag}")
+
+        group = self._check(item)["groups"][0]
+        mapped = self._run(
+            "dry_run_import",
+            {"session": item, "fixes": [{"group": group["id"], "action": "map", "to": self.group_name}]},
+        )
+
+        self.assertEqual(
+            next(f for f in group["fixes"] if f["action"] == "map").get("likely"), self.group_name
+        )
+        self.assertTrue(mapped["success"], mapped)
+        self.assertEqual((mapped["result"]["ready"], mapped["result"]["failed"]), (1, 0))
+        self.assertFalse(frappe.db.exists("Item Group", self.group_name))  # nothing was written
 
     def test_a_record_nothing_creates_is_still_missing(self):
         _plan, _group, item = self._plan(f"H {self.tag}")

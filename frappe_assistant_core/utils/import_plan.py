@@ -419,6 +419,22 @@ def planned_names(session) -> Dict[str, Dict[str, str]]:
     return _names(before, plan) if plan else {}
 
 
+def planned_titles(session, doctype: str) -> List[str]:
+    """The names of the ``doctype`` records that the files before the session in its plan, and
+    the plan itself, create, as they spell them: what a value of the session can be mapped to."""
+    plan, before, _after = _split(session)
+    if not plan:
+        return []
+    names = [
+        name
+        for earlier in before
+        if earlier.status not in IMPORTED and earlier.target_doctype == doctype
+        for name in _created_names(earlier)
+    ]
+    names += [entry["name"] for entry in masters(plan) if entry["doctype"] == doctype]
+    return list(dict.fromkeys(cstr(name).strip() for name in names if cstr(name).strip()))
+
+
 def later_names(session) -> Dict[str, Dict[str, str]]:
     """The same for the files imported after the session: a link to one is an order problem."""
     plan, _before, after = _split(session)

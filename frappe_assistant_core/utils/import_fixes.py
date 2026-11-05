@@ -272,6 +272,23 @@ def closest_names(doctype: str, value: str, limit: int = CLOSEST_LIMIT) -> List[
     return ranked
 
 
+def _planned(session, doctype: Optional[str]) -> List[str]:
+    """The ``doctype`` records the earlier files of the session's plan create (#34244 AC5)."""
+    if not doctype or not session.get("migration_plan"):
+        return []
+    from frappe_assistant_core.utils import import_plan
+
+    return import_plan.planned_titles(session, doctype)
+
+
+def _closest(session, doctype: str, value: str) -> List[str]:
+    """closest_names, and the records the plan's earlier files create that come close: a value
+    misspelling one of those is mapped to it, not created as a record of its own."""
+    closest = closest_names(doctype, value)
+    planned = rank(value, _planned(session, doctype))
+    return list(dict.fromkeys(planned + closest))[:CLOSEST_LIMIT] if planned else closest
+
+
 def _text_fields(meta) -> List[str]:
     """The DocType's title and search fields that hold text, which a user knows a record by."""
     names = [meta.title_field, *cstr(meta.search_fields).split(",")]
@@ -404,7 +421,7 @@ def advise(session, group: Dict[str, Any]) -> Dict[str, Any]:
     if cause == dry_run.CAUSE_MISSING_LINK and group.get("link_doctype"):
         doctype = group["link_doctype"]
         explanation = _("{0}: there is no {1} called '{2}' in ERPNext.").format(rows, _(doctype), value)
-        closest = closest_names(doctype, value)
+        closest = _closest(session, doctype, value)
         fixes = [{"action": MAP, "closest": closest}]
         meant = likely(value, closest)
         if meant:
@@ -694,24 +711,11 @@ def _map(session, group, fix, maps):
         raise FixProblem(_("Say which existing value to use, in 'to'."))
     if group["cause"] in (dry_run.CAUSE_MISSING_LINK, *other_records):
         doctype = group.get("link_doctype") or other_records.get(group["cause"])
-        if (
-            not doctype
-            or not frappe.db.exists(doctype, to)
-            or not frappe.has_permission(doctype, "read", doc=to)
-        ):
-            closest = closest_names(doctype, to) if doctype else []
-            raise FixProblem(
-                _("There is no {0} called '{1}'.").format(_(doctype or group["label"]), to)
-                + (" " + _("Closest: {0}.").format(", ".join(closest)) if closest else "")
-            )
-        if doctype == "Account" and opening_balances.is_opening_balances(session):
-            _check_account(session, to)
-        if not frappe.db.exists(doctype, {"name": to, **_switched_on(frappe.get_meta(doctype))}):
-            closest = closest_names(doctype, to)
-            raise FixProblem(
-                _("{0} '{1}' is switched off, so the rows can't use it.").format(_(doctype), to)
-                + (" " + _("Closest: {0}.").format(", ".join(closest)) if closest else "")
-            )
+        coming = {name.casefold(): name for name in _planned(session, doctype)}.get(to.casefold())
+        if coming and not frappe.db.exists(doctype, to):
+            to = coming  # an earlier file of the plan creates it before these rows are imported
+        else:
+            _check_existing(session, group, doctype, to)
     elif to not in _select_options(session, group):
         raise FixProblem(
             _("'{0}' isn't one of the choices for {1}: {2}.").format(
@@ -728,6 +732,26 @@ def _map(session, group, fix, maps):
     # A new choice for the same value replaces the earlier one.
     same = (rule["parent"], rule["field"], cstr(rule["from"]))
     return [m for m in maps if (m.get("parent"), m.get("field"), cstr(m.get("from"))) != same] + [rule]
+
+
+def _check_existing(session, group, doctype: Optional[str], to: str) -> None:
+    """A value mapped to must be a record in ERPNext the user can read and the rows can use."""
+    from frappe_assistant_core.utils import import_opening_balances as opening_balances
+
+    if not doctype or not frappe.db.exists(doctype, to) or not frappe.has_permission(doctype, "read", doc=to):
+        closest = _closest(session, doctype, to) if doctype else []
+        raise FixProblem(
+            _("There is no {0} called '{1}'.").format(_(doctype or group["label"]), to)
+            + (" " + _("Closest: {0}.").format(", ".join(closest)) if closest else "")
+        )
+    if doctype == "Account" and opening_balances.is_opening_balances(session):
+        _check_account(session, to)
+    if not frappe.db.exists(doctype, {"name": to, **_switched_on(frappe.get_meta(doctype))}):
+        closest = closest_names(doctype, to)
+        raise FixProblem(
+            _("{0} '{1}' is switched off, so the rows can't use it.").format(_(doctype), to)
+            + (" " + _("Closest: {0}.").format(", ".join(closest)) if closest else "")
+        )
 
 
 # -- creating the missing masters (#33992) -------------------------------------------------
