@@ -9,8 +9,8 @@
 """
 Tally XML exports (#34001): read a Tally masters export, count its parts, and turn ledgers and
 stock items into rows the #34000 Tally presets match, so start_import_session opens their sessions
-the same way it does for a spreadsheet. Groups are counted, not imported. This module writes
-nothing.
+the same way it does for a spreadsheet. Groups are counted, not imported: a ledger under Sundry
+Debtors or Sundry Creditors, at any depth, is a party. This module writes nothing.
 
 The file is streamed with lxml, entities and DTDs off and no network, so an export of any size
 is read one record at a time and nothing outside the file is ever read.
@@ -31,6 +31,8 @@ from frappe_assistant_core.utils.import_session import FileProblem, check_size
 
 PARTS = {"LEDGER": "ledgers", "STOCKITEM": "stock_items", "GROUP": "groups"}
 IMPORTABLE = {"ledgers": "tally_prime.ledgers", "stock_items": "tally_prime.stock_items"}
+# Tally's reserved groups whose ledgers, and the ledgers of the groups under them, are parties
+PARTY_GROUPS = ("Sundry Debtors", "Sundry Creditors")
 SAMPLE = 10
 MAX_LISTED = 50  # entries of a count table in the listing reply
 MAX_NAMED = 10  # tags named in the vouchers-only refusal
@@ -237,6 +239,7 @@ def read(file_doc, wanted: Iterable[str] = ()) -> Tuple[Survey, Dict[str, Any]]:
     other: Counter = Counter()
     rows = {part: [[column for column, _paths in COLUMNS[part]]] for part in wanted if part in COLUMNS}
     too_large: Dict[str, FileProblem] = {}
+    group_parents: Dict[str, str] = {}
     for tag, element in _walk(_content(file_doc), company):
         part = PARTS.get(tag)
         if not part:
@@ -249,6 +252,8 @@ def read(file_doc, wanted: Iterable[str] = ()) -> Tuple[Survey, Dict[str, Any]]:
             found.sample.append(name)
         if part in ("ledgers", "groups"):
             found.by_parent[_value(element, "PARENT")] += 1
+        if part == "groups" and name:
+            group_parents[name] = _value(element, "PARENT")
         if part not in rows or part in too_large:
             continue
         # The limit counts records, not the header: exactly MAX_PRESET_ROWS records are allowed and
@@ -269,11 +274,33 @@ def read(file_doc, wanted: Iterable[str] = ()) -> Tuple[Survey, Dict[str, Any]]:
                 held += " " + _("and {0} more").format(len(ranked) - MAX_NAMED)
             raise FileProblem(_(NO_MASTERS).format(held))
         raise FileProblem(_(NOT_TALLY))
+    if "ledgers" in rows:
+        _route_sub_groups(rows["ledgers"], group_parents)
     sheets = {
         part: too_large.get(part) or Sheet(f"{part} (Tally XML)", part_rows)
         for part, part_rows in rows.items()
     }
     return Survey(company[0] if company else None, parts, dict(other)), sheets
+
+
+def _route_sub_groups(rows: List[List[str]], group_parents: Dict[str, str]) -> None:
+    """A ledger in a group under Sundry Debtors or Sundry Creditors ("Local Debtors") is a party
+    too: its group column says the reserved group it is under, which the ledgers preset routes
+    by. The export lists every group with its parent, before or after the ledgers. Each group is
+    walked up once, so a long or looping chain costs no more than the groups in it."""
+    at = [column for column, _paths in COLUMNS["ledgers"]].index("Parent")
+    party: Dict[str, str] = {name: name for name in PARTY_GROUPS}  # group -> its reserved group, or ""
+    for row in rows[1:]:
+        group, chain, seen = row[at], [], set()
+        while group and group not in party and group not in seen:
+            chain.append(group)
+            seen.add(group)
+            group = group_parents.get(group, "")
+        found = party.get(group, "") if group else ""
+        for name in chain:
+            party[name] = found
+        if found:
+            row[at] = found
 
 
 def _row(part: str, element) -> List[str]:

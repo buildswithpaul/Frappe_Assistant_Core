@@ -467,3 +467,41 @@ class TestPartsProblem(XmlCase):
         self.assertIn("not imported", tally.parts_problem(["groups"], found))
         self.assertIn("ledgers, stock_items", tally.parts_problem(["vouchers"], found))
         self.assertEqual(tally.parts_problem(["stock_items"], found), "This export has no stock items.")
+
+
+class TestTallyGroups(XmlCase):
+    """A ledger's group under Sundry Debtors/Creditors makes it a party (#34000)."""
+
+    def _targets(self, doc, part):
+        presets.clear_cache()
+        preset = {p["id"]: p for p in presets.load_presets()}[tally.IMPORTABLE[part]]
+        sheet = tally.part_sheet(doc, part)
+        cleaned = presets.clean(sheet, presets.match_sheet(sheet.rows, [preset])[0])
+        return {t.target["name"]: t.rows for t in cleaned.targets}
+
+    def test_a_ledger_in_a_group_under_sundry_debtors_or_creditors_is_a_party(self):
+        doc = self._upload(
+            export(
+                ledger("Ravi Traders", "Local Debtors"),  # listed before its group, as an export may
+                ledger("Kumar Stores", "Bangalore Debtors"),  # two levels down
+                ledger("Mehta Supplies", "Local Creditors"),
+                ledger("HDFC Bank", "Bank Accounts"),
+                group("Local Debtors", "Sundry Debtors"),
+                group("Bangalore Debtors", "Local Debtors"),
+                group("Local Creditors", "Sundry Creditors"),
+                group("Bank Accounts"),
+            )
+        )
+
+        targets = self._targets(doc, "ledgers")
+
+        self.assertEqual([row[0] for row in targets["Customers"]], ["Ravi Traders", "Kumar Stores"])
+        self.assertEqual([row[0] for row in targets["Suppliers"]], ["Mehta Supplies"])
+        self.assertEqual([row[0] for row in targets["Accounts"]], ["HDFC Bank"])
+
+    def test_groups_that_loop_end_without_a_party(self):
+        doc = self._upload(
+            export(ledger("Odd", "Loop A"), group("Loop A", "Loop B"), group("Loop B", "Loop A"))
+        )
+
+        self.assertEqual(tally.part_sheet(doc, "ledgers").rows[1][1], "Loop A")

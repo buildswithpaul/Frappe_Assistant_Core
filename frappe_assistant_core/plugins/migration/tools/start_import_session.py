@@ -614,8 +614,9 @@ class StartImportSession(BaseTool):
             if part == "groups":
                 item["note"] = _(
                     "Groups are listed, not imported. A ledger's group decides where it goes: Sundry Debtors "
-                    "become Customers, Sundry Creditors become Suppliers, and every other group becomes an "
-                    "Account whose parent the dry run maps to an ERPNext group."
+                    "become Customers, Sundry Creditors become Suppliers (the ledgers of the groups under "
+                    "them too), and every other group becomes an Account whose parent the dry run maps to "
+                    "an ERPNext group."
                 )
             listed.append(item)
             counts.append(f"{entry.count} {tally_xml.LABELS[part]}")
