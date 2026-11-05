@@ -543,6 +543,63 @@ class TestImportRun(ImportRunCase):
         self.assertNotIn("runs", second["result"])
         self.assertNotIn("In all", second["result"]["message"])
 
+    def _killed_after_a_rows_log(self, session, checked):
+        """Import the session, its worker killed after the second record's success log is
+        written and before that record is committed. Frappe's Data Import Log is MyISAM, so
+        its log stays though the record is rolled back with the dead worker's transaction."""
+        from frappe.core.doctype.data_import import importer
+
+        real_log = importer.create_import_log
+        logged = []
+
+        def log_then_die(data_import, log_index, details):
+            real_log(data_import, log_index, details)
+            if details.get("success"):
+                logged.append(details["docname"])
+            if len(logged) == 2:
+                # The worker dies before frappe.db.commit(): its open transaction (the record) is
+                # lost, the MyISAM log row isn't. A test's commits are savepoints: roll back to it.
+                frappe.db.rollback(save_point="fac_test_row")
+                raise WorkerStopped
+            return None
+
+        with self._each_row_commits(), patch.object(importer, "create_import_log", side_effect=log_then_die):
+            with self.assertRaises(WorkerStopped):
+                self._import(session, checked)
+        return logged
+
+    def test_a_row_logged_but_not_saved_when_the_worker_died_is_imported_on_continue(self):
+        # QA 2026-11-04 #2: the Data Import Log said row 101 created "QW Bulk Customer 0100", but
+        # no such customer existed; resume skipped the row as imported, so it was lost for good.
+        session, checked = self._ready_session()
+        n = self._names()
+        logged = self._killed_after_a_rows_log(session, checked)
+
+        lost = logged[1]
+        self.assertFalse(frappe.db.exists("Customer", lost))  # logged as created, not in ERPNext
+        self.assertEqual(self._imported(), {n["alpha"]})
+
+        # The lost row is still to import: the card counts it, and the continue imports it.
+        self.assertEqual(import_run.rows_left(self._doc(session)), 2)
+        with self._each_row_commits():
+            second = self._import(session, checked, rows=2)
+
+        self.assertTrue(second["success"], second)
+        self.assertEqual(self._imported(), {n["alpha"], n["gamma"], n["delta"]})
+        self.assertEqual(frappe.db.count("Customer", {"customer_name": n["alpha"]}), 1)
+        self.assertEqual(self._doc(session).status, "Completed")
+
+    def test_a_row_deleted_after_a_finished_import_still_counts_as_imported(self):
+        # Only an import cut short can have a log without its record: a record deleted later from
+        # a finished import was imported, and isn't imported again.
+        session, checked = self._ready_session()
+        n = self._names()
+        with self._each_row_commits():
+            self._import(session, checked)
+        frappe.delete_doc("Customer", n["alpha"], force=True)
+
+        self.assertEqual(import_run.rows_left(self._doc(session)), 0)
+
     def test_an_import_whose_file_is_gone_still_records_its_result(self):
         # #34538: the Data Import's file can go from disk. Its counts are on the Data Import Log,
         # but record_result raised on the file each time resume() called it, so the session could

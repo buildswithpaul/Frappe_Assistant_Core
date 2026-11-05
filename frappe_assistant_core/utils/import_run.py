@@ -322,6 +322,8 @@ def resume(session) -> Tuple[str, str]:
         if not _next_level(session.name, name):
             import_plan.child_finished(session.name)
         return name, "finished"
+    # A record whose log was written when its worker died, but never committed: import it again.
+    import_failures.forget_lost_rows(name)
     _record_start(session, name, "Continue", session.data_imports[-1].source_file)
     _launch(session, name)
     return name, "continued"

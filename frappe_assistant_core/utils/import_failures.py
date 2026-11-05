@@ -91,14 +91,59 @@ def imports_of_this_file(session) -> List[str]:
 
 
 def _success_rows(names: List[str]) -> set:
+    lost = {log for name in names for log in lost_logs(name)}
     rows = set()
-    for indexes in frappe.get_all(
+    for log in frappe.get_all(
         "Data Import Log",
         filters={"data_import": ["in", names], "success": 1},
-        pluck="row_indexes",
+        fields=["name", "row_indexes"],
     ):
-        rows.update(json.loads(indexes or "[]"))
+        if log.name not in lost:
+            rows.update(json.loads(log.row_indexes or "[]"))
     return rows
+
+
+def lost_logs(data_import: str) -> List[str]:
+    """Success logs of an import cut short whose record isn't in ERPNext (QA 2026-11-04 #2).
+
+    Frappe's Data Import Log is a MyISAM table: a row's log is on disk as soon as it is written,
+    while its record waits in the transaction committed right after. A worker killed between the
+    two leaves a log saying "created" for a record that never was, and a continued import skips
+    that row as imported, losing it for good. Only an import that didn't end can have one: a
+    record deleted after an import ended was imported, and isn't brought in again. Its status
+    can't tell (v15 sets "Partial Success" at its first record); as for Frappe's importer, an
+    import ended once it has a log for each of its rows."""
+    di = frappe.db.get_value(
+        "Data Import",
+        data_import,
+        ["status", "import_type", "reference_doctype", "payload_count"],
+        as_dict=True,
+    )
+    if not di or di.status == "Success" or di.import_type != "Insert New Records":
+        return []
+    if frappe.db.count("Data Import Log", {"data_import": data_import}) >= (di.payload_count or 0):
+        return []
+    logs = frappe.get_all(
+        "Data Import Log",
+        filters={"data_import": data_import, "success": 1},
+        fields=["name", "docname"],
+    )
+    names = list({log.docname for log in logs if log.docname})
+    there = (
+        set(frappe.get_all(di.reference_doctype, filters={"name": ["in", names]}, pluck="name"))
+        if names
+        else set()
+    )
+    return [log.name for log in logs if log.docname and log.docname not in there]
+
+
+def forget_lost_rows(data_import: str) -> int:
+    """Delete the success logs lost_logs finds, so continuing the import brings their rows in
+    (Frappe's importer skips every row with a success log). Returns how many it deleted."""
+    lost = lost_logs(data_import)
+    for name in lost:
+        frappe.db.delete("Data Import Log", {"name": name})
+    return len(lost)
 
 
 def imported_rows(session) -> set:
