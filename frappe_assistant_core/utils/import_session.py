@@ -756,8 +756,27 @@ def import_target_problem(doctype: str, import_type: str = "Insert New Records")
     elif not frappe.has_permission(doctype, "create"):
         return _("You don't have permission to create {0} records, so you can't import them.").format(doctype)
     if not frappe.has_permission(doctype, "import"):
-        return _(
+        problem = _(
             "You can create {0} records but don't have Import permission on {0}. "
             "A System Manager can grant it in Role Permissions Manager."
         ).format(doctype)
+        opening = OPENING_TOOLS.get(doctype)
+        if opening and import_type != "Update Existing Records":
+            # No ERPNext role has Import on Sales Invoice by default (QA 2026-11-04 #3): opening
+            # records are made by their own engine, which needs no Import.
+            problem += " " + _(
+                "If these are opening {0} at the cut-off, set the file up with {1} instead: it "
+                "doesn't need Import permission."
+            ).format(_(opening[1]), opening[0])
+        return problem
     return None
+
+
+# DocType → (the tool that sets a file up as its opening records, what they are): the opening engines
+# create those records themselves, not through Data Import.
+OPENING_TOOLS = {
+    "Sales Invoice": ("set_opening_invoices", "invoices"),
+    "Purchase Invoice": ("set_opening_invoices", "invoices"),
+    "Stock Reconciliation": ("set_opening_stock", "stock"),
+    "Journal Entry": ("set_opening_balances", "balances"),
+}

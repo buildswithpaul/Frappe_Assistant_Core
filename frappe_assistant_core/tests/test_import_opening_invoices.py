@@ -1591,3 +1591,99 @@ def _strings(value):
     elif isinstance(value, list):
         for item in value:
             yield from _strings(item)
+
+
+class TestOldIdsOnOpeningSessions(OpeningInvoicesCase):
+    """QA 2026-11-04 #3: opening invoices whose party column holds the old system's IDs couldn't be
+    imported by an accountant on a stock site. Marking that column (#34244) went through
+    set_column_mapping, which asked for Import on Sales Invoice, which no ERPNext role has by
+    default. Opening invoices are created by this engine, not Data Import: create and submit is
+    what the user needs."""
+
+    HEADER = "Ledger ID,Invoice,Date,Due,Amount"
+    COLUMNS = {
+        "Ledger ID": "party",
+        "Invoice": "invoice_number",
+        "Date": "posting_date",
+        "Due": "due_date",
+        "Amount": "outstanding_amount",
+    }
+
+    def setUp(self):
+        super().setUp()
+        from frappe_assistant_core.utils import import_keys as keys
+
+        self.system = f"tally{self.tag}"
+        keys.set_choice("Customer", self.system, "key_map")
+        keys.record_pairs(f"IMP-OI-{self.tag}", "Customer", self.system, [("L001", self.customer)])
+        # An accountant on a stock site: can create and submit Sales Invoices, can't Import them
+        self.accountant = self.make_throwaway_user("oi-accounts", roles=("Accounts User",))
+        self.assert_cannot(self.accountant, "import", "Sales Invoice")
+        self.assertTrue(frappe.has_permission("Sales Invoice", "submit", user=self.accountant))
+
+    def _opening_session(self):
+        session = self._session([f"L001,{self._number(1)},{self.date},{self.date},100"], header=self.HEADER)
+        reply = self._setup(session, columns=dict(self.COLUMNS))
+        self.assertTrue(reply["success"], reply)
+        return session
+
+    def _mark_old_ids(self, session, **extra):
+        old_ids = {"Ledger ID": {"doctype": "Customer", "source_system": self.system}}
+        return self._run(
+            "set_column_mapping", {"session": session, "mapping": {}, "old_id_columns": old_ids, **extra}
+        )
+
+    def test_an_accountant_without_import_can_translate_the_old_party_ids(self):
+        frappe.set_user(self.accountant)
+        session = self._opening_session()
+
+        reply = self._mark_old_ids(session)
+
+        self.assertTrue(reply["success"], reply)
+        doc = self._doc(session)
+        self.assertEqual(opening_invoices.settings(doc)["invoice_type"], "Sales")  # still opening invoices
+        self.assertEqual(frappe.parse_json(doc.template_options)["column_to_field_map"]["0"], "customer")
+        result = self._check(session)
+        self.assertEqual(result["ready"], 1, result)
+
+        # ...and posts it, to the customer the old ID stands for
+        posted = self._run("import_opening_invoices", self._card(session, result))
+        self.assertTrue(posted["success"], posted)
+        invoice = frappe.get_doc("Sales Invoice", self._number(1))
+        self.assertEqual((invoice.docstatus, invoice.is_opening, invoice.customer), (1, "Yes", self.customer))
+
+    def test_a_new_column_mapping_on_an_opening_session_is_refused_and_keeps_its_setup(self):
+        # #21 of the 2026-11-04 QA: a generic mapping overwrote the opening setup
+        session = self._opening_session()
+        before = frappe.parse_json(self._doc(session).template_options)
+
+        for mapping in ({"Invoice": "remarks"}, {}):
+            extra = {"old_id_columns": {}} if not mapping else {}
+            reply = self._run("set_column_mapping", {"session": session, "mapping": mapping, **extra})
+            self.assertFalse(reply["success"], reply)
+        reply = self._mark_old_ids(session, mapping={"Invoice": "remarks"})
+
+        self.assertFalse(reply["success"], reply)
+        self.assertIn("set_opening_invoices", reply["error"])
+        self.assertEqual(frappe.parse_json(self._doc(session).template_options), before)
+
+    def test_only_the_old_ids_of_other_records_can_be_set_on_an_opening_session(self):
+        # Its own key column or a field for the old IDs would be kept by a Data Import, which an
+        # opening session never runs: refused, nothing changed
+        session = self._opening_session()
+        before = frappe.parse_json(self._doc(session).template_options)
+
+        for extra in ({"source_key_column": "Invoice"}, {"old_id_field": "key_map"}, {"doctype": "Customer"}):
+            reply = self._mark_old_ids(session, **extra)
+            self.assertFalse(reply["success"], (extra, reply))
+
+        self.assertEqual(frappe.parse_json(self._doc(session).template_options), before)
+
+    def test_an_ordinary_sales_invoice_import_still_needs_import_and_points_to_the_opening_tool(self):
+        frappe.set_user(self.accountant)
+
+        reply = self._run("get_import_schema", {"doctype": "Sales Invoice"})
+
+        self.assertFalse(reply["success"], reply)
+        self.assertIn("Import permission", reply["error"])
+        self.assertIn("set_opening_invoices", reply["error"])

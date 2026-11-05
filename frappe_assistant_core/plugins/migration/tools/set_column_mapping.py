@@ -189,9 +189,12 @@ class SetColumnMapping(BaseTool):
             # Mapping sets the session back to Mapped, for a check of the rows not imported yet: never
             # while its import runs (a second import would take rows the first hasn't reached yet),
             # nor once it was cancelled or undone.
-            refused = _mapping_refused(doc) or _check_running(doc) or _set_up_as_opening(doc)
+            refused = _mapping_refused(doc) or _check_running(doc) or _set_up_as_opening(doc, arguments)
             if refused:
                 return {"success": False, "error": refused, "session": session_name}
+            if _opening_engine(doc):
+                # Only its old ID columns get here: the rest of its setup is its engine's.
+                return _set_opening_old_ids(doc, old_id_columns)
 
             current_target = doc.target_doctype or None
             target = arguments.get("doctype") or current_target
@@ -450,6 +453,74 @@ def _samples(doc) -> list:
 set_column_mapping = SetColumnMapping
 
 
+def _opening_engine(doc):
+    """The opening engine (stock, invoices, balances) of ``doc``, or None: such a session is
+    imported by that engine, not by Data Import."""
+    from frappe_assistant_core.utils.import_dry_run import special_engine
+
+    return special_engine(doc)
+
+
+def _only_old_ids(doc, arguments) -> bool:
+    """Whether the call only says which columns hold old IDs of other records (old_id_columns,
+    mapping {}): all set_column_mapping may change on an opening session (QA 2026-11-04 #3)."""
+    old_ids = arguments.get("old_id_columns")
+    return (
+        arguments.get("mapping") == {}
+        and isinstance(old_ids, dict)
+        and bool(old_ids)
+        and not cstr(arguments.get("source_key_column")).strip()
+        and not cstr(arguments.get("old_id_field")).strip()
+        and arguments.get("doctype") in (None, "", doc.target_doctype)
+        and arguments.get("import_type") in (None, "", "Insert New Records")
+    )
+
+
+def _set_opening_old_ids(doc, old_id_columns) -> Dict[str, Any]:
+    """Translate the old ID columns of the opening session ``doc`` and nothing else: its column map
+    stays as its set_opening_* tool saved it. Its engine creates and submits its records itself,
+    not Data Import, so create and submit is what the user needs, not Import, which no ERPNext role
+    has on Sales Invoice by default (QA 2026-11-04 #3). The rows are read through the translation
+    (import_fixes.apply_value_maps) by every engine."""
+    doctype = doc.target_doctype
+    if not frappe.has_permission(doctype, "create") or not frappe.has_permission(doctype, "submit"):
+        return {
+            "success": False,
+            "error": _("This file creates and submits {0} records, and you can't do both.").format(
+                _(doctype)
+            ),
+            "session": doc.name,
+        }
+    headers = session_headers(doc)
+    if not headers:
+        return {"success": False, "error": _("The session has no column headers for its sheet.")}
+    translations, problems = _translations(doc, doctype, headers, session_mapping(doc), old_id_columns)
+    if problems:
+        return {
+            "success": False,
+            "error": _("The old IDs were not saved. Fix these and call again."),
+            "problems": problems,
+            "columns": headers,
+        }
+    import_keys.set_key_maps(doc, translations)
+    doc.status = "Mapped"  # checked again with the IDs translated
+    doc.log_step(
+        "Old IDs",
+        "Success",
+        _("Old IDs translated in: {0}.").format(
+            ", ".join(headers[int(position)] for position in sorted(translations, key=int)) or _("no column")
+        ),
+    )
+    doc.save()
+    return {
+        "success": True,
+        "session": doc.name,
+        "doctype": doctype,
+        "status": doc.status,
+        **_old_id_notes(doc, None, translations),
+    }
+
+
 def _imported_as(doc, target: str, import_type: str):
     """Rows a Data Import of the session brought in are known as imported by their row
     numbers, whatever the DocType: another target or import type would skip them for good."""
@@ -469,18 +540,20 @@ def _check_running(doc):
     return dry_run.check_running() if dry_run.is_running(doc) else None
 
 
-def _set_up_as_opening(doc):
+def _set_up_as_opening(doc, arguments):
     """A file set up as opening stock, invoices or balances: its engine reads its columns from its
-    own setup, so a mapping here would leave that setup reading the wrong columns (#33997)."""
+    own setup, so a mapping here would leave that setup reading the wrong columns (#33997). Only
+    which columns hold old IDs of other records can be said here (QA 2026-11-04 #3)."""
     from frappe_assistant_core.utils import import_dry_run as dry_run
 
     engine = dry_run.special_engine(doc)
-    if not engine:
+    if not engine or _only_old_ids(doc, arguments):
         return None
     kind = engine.__name__.rsplit(".", 1)[-1].replace("import_", "")  # opening_invoices
     return _(
         "This file is set up as {0}: change its columns with set_{1}, not here. To import it as "
-        "ordinary records instead, start a new import session."
+        "ordinary records instead, start a new import session. Only a column of another system's "
+        "IDs can be marked here: old_id_columns, with mapping {{}}."
     ).format(_(kind.replace("_", " ")), kind)
 
 

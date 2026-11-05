@@ -21,7 +21,7 @@ When unsure, ask the user which they prefer. A plan is the better default for tw
 |---|---|---|---|
 | 1 | **Sessions**: open one per file | `start_import_session`, once per file | Every file has a `session_id` |
 | 2 | **Plan**: group and order them | `plan_migration` with all the sessions | The user has seen the files in order, each with its reason; with opening files, the cut-off picked on one card from `opening_setup` |
-| 3 | **Map** every file | `get_import_schema`, `set_column_mapping` (opening files: `set_opening_stock`, `set_opening_invoices`, `set_opening_balances`) | Every file is mapped. Map yourself where you are sure; ask only where you aren't |
+| 3 | **Map** every file | `get_import_schema`, `set_column_mapping`. Opening files only with their own tool (`set_opening_stock`, `set_opening_invoices`, `set_opening_balances`), never `get_import_schema`: they need no Import permission. A column of an earlier file's old IDs in an opening file: `set_column_mapping` with only `old_id_columns` and `mapping` {} | Every file is mapped. Map yourself where you are sure; ask only where you aren't |
 | 4 | **Questions**: all of them at once | `dry_run_import` with `plan` | Show every question together, grouped by file, the suggested answer first; send all the answers in one call. Repeat until ready is true |
 | 5 | **Approve once** | `run_migration_plan` with the files, rows and masters it will do | The user approved |
 | 6 | **Follow it** | `run_migration_plan` again (it only reports) | The plan is Completed, Partially Completed, Stopped or Failed |
