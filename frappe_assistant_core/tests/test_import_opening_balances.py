@@ -37,11 +37,14 @@ class OpeningBalancesCase(BaseAssistantTest):
         frappe.set_user("Administrator")
         self.registry = get_tool_registry()
         self.tag = frappe.generate_hash(length=6)
-        self.company = frappe.get_all("Company", pluck="name", order_by="creation", limit=1)[0]
-        self.abbr = frappe.get_cached_value("Company", self.company, "abbr")
         self.date = nowdate()
-        if not opening_invoices.in_fiscal_year(self.date, self.company):
-            self.skipTest("today is in no fiscal year of the test company")
+        self.company = self._clean_company()
+        if not self.company:
+            self.skipTest(
+                "no company with perpetual inventory is in a fiscal year today without an opening "
+                "entry or a closed period"
+            )
+        self.abbr = frappe.get_cached_value("Company", self.company, "abbr")
         self.track_test_files()
         self.made_accounts, self.made_entries = [], []
         self.temporary = self._temporary_account()
@@ -67,6 +70,25 @@ class OpeningBalancesCase(BaseAssistantTest):
         super().tearDown()
 
     # -- fixtures ------------------------------------------------------------------------
+
+    def _clean_company(self):
+        """The oldest company the opening-entry guard lets through today (#26): a submitted opening
+        entry or Period Closing Voucher left by an earlier run or by hand would refuse every test.
+        The tests count stock rows as covered by opening stock, so it has perpetual inventory."""
+        import erpnext
+
+        for company in frappe.get_all("Company", pluck="name", order_by="creation"):
+            if not opening_invoices.in_fiscal_year(self.date, company):
+                continue
+            if not erpnext.is_perpetual_inventory_enabled(company):
+                continue
+            busy = {"company": company, "docstatus": 1}
+            if frappe.db.exists("Period Closing Voucher", busy):
+                continue
+            if frappe.db.exists("Journal Entry", {**busy, "is_opening": "Yes"}):
+                continue
+            return company
+        return None
 
     def _temporary_account(self):
         name = opening_invoices.temporary_account(self.company)

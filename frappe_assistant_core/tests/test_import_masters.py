@@ -158,6 +158,9 @@ class TestImportMasters(BaseAssistantTest):
 
         group = next(g for g in result["groups"] if g.get("value") == self.group)
 
+        # A "misspelt?" note is added when a like-named group already exists on the site (#26), so
+        # only the fields this test is about are compared.
+        fields = ("action", "use", "doctype", "name", "parent")
         self.assertIn(
             {
                 "action": "create",
@@ -166,7 +169,7 @@ class TestImportMasters(BaseAssistantTest):
                 "name": self.group,
                 "parent": "All Customer Groups",
             },
-            group["fixes"],
+            [{key: fix.get(key) for key in fields} for fix in group["fixes"]],
         )
 
     # -- criterion 3: a parent is shown and can be changed ---------------------------------------
