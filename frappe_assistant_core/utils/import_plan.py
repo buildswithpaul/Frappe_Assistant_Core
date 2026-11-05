@@ -1474,8 +1474,13 @@ def _import(child) -> bool:
     if child.status == "Completed":
         return False
     if not summary.get("ready"):
-        import_run.close_unchanged(child)  # an update with every row unchanged is done (#34436)
-        return False  # nothing left to import in it
+        # nothing left to import in it: an update with every row unchanged is done (#34436), and
+        # so is a file whose every row is left out, which stayed Ready to Import for good (#34351)
+        if not import_run.close_unchanged(child) and child.status == import_run.READY:
+            child.status = "Completed"
+            child.log_step("Import", "Warning", _("Every row is left out, so nothing was imported."))
+            child.save()
+        return False
     engine = dry_run.special_engine(child)
     if engine:
         engine.create(child)

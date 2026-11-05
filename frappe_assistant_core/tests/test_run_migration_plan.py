@@ -88,6 +88,27 @@ class TestRunMigrationPlan(ImportRunCase):
             [frappe.db.get_value(SESSION, s, "status") for s in (groups, items)], ["Completed"] * 2
         )
 
+    def test_a_file_whose_every_row_is_left_out_is_done_when_the_plan_ends(self):
+        # #34351, live: every item left out, the items file stayed Ready to Import for good
+        plan, groups, items = self._ready_plan()
+        frappe.db.set_value(  # what a leave_out fix of both rows stores (apply_fixes)
+            SESSION,
+            items,
+            {
+                "transformation_rules": json.dumps({"left_out": {"2": "Not wanted", "3": "Not wanted"}}),
+                "excluded_rows": json.dumps([2, 3]),
+            },
+        )
+        rule = [{"id": "plan:failure_rule", "rule": "leave_out"}]
+        self.assertTrue(self._run("dry_run_import", {"plan": plan, "answers": rule})["result"]["ready"])
+
+        response = self._approve(plan)
+
+        self.assertTrue(response["success"], response)
+        self.assertEqual(frappe.db.get_value(SESSION, items, "status"), "Completed")
+        self.assertFalse(frappe.db.exists("Item", self.items[0]))
+        self.assertEqual(frappe.db.get_value(SESSION, groups, "status"), "Completed")
+
     def test_the_decisions_are_taken_back_in_their_fence(self):
         # the plan check fences each decision line, as it quotes the files (#34438): passed back
         # as the model read them, they are still the approval
