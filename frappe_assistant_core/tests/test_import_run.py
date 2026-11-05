@@ -1164,6 +1164,38 @@ class TestAWorkerKilledMidImport(ImportRunCase):
 
 
 class TestRemapAfterAnImport(ImportRunCase):
+    def test_a_session_whose_every_row_is_in_is_neither_remapped_nor_checked_again(self):
+        # #34402: Completed with nothing left out, a remap set it back to Mapped for nothing
+        n = self._names()
+        lines = [",".join(MAPPING), f"{n['alpha']},{self.group},Company", f"{n['beta']},{self.group},Company"]
+        session, checked = self._ready_session(self._file("all_in.csv", ("\n".join(lines) + "\n").encode()))
+        with self._each_row_commits():
+            self.assertTrue(self._import(session, checked)["success"])
+        self.assertEqual(self._doc(session).status, "Completed")
+
+        remap = self._run(
+            "set_column_mapping", {"session": session, "mapping": MAPPING, "doctype": "Customer"}
+        )
+        check = self._run("dry_run_import", {"session": session})
+
+        for reply in (remap, check):
+            self.assertFalse(reply["success"], reply)
+            self.assertIn(
+                "Every row of this file is imported", reply.get("error") or reply["result"]["error"]
+            )
+        self.assertEqual(self._doc(session).status, "Completed")
+
+    def test_rows_left_out_of_a_completed_session_can_still_be_checked_again(self):
+        session, checked = self._ready_session()  # row 3 is left out
+        with self._each_row_commits():
+            self.assertTrue(self._import(session, checked)["success"])
+
+        remap = self._run(
+            "set_column_mapping", {"session": session, "mapping": MAPPING, "doctype": "Customer"}
+        )
+
+        self.assertTrue(remap["success"], remap)
+
     def test_rows_imported_as_one_doctype_keep_the_session_to_it(self):
         session, checked = self._ready_session()
         with self._each_row_commits():

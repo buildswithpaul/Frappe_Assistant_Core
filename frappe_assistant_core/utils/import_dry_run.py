@@ -132,6 +132,29 @@ def check_status(session) -> None:
         raise DryRunProblem(_("Map the columns first, with set_column_mapping."))
     if session.status not in RUNNABLE_STATUSES:
         raise DryRunProblem(_("This session is {0}, so it can't be checked again.").format(_(session.status)))
+    if nothing_left(session):
+        raise DryRunProblem(_(NOTHING_LEFT))
+
+
+NOTHING_LEFT = (
+    "Every row of this file is imported, so there is nothing to check or import again. To import "
+    "it again or as something else, start a new import session."
+)
+
+
+def nothing_left(session) -> bool:
+    """A Completed session whose every row is in ERPNext (#34402): rows left out of it, or that
+    failed, are still checked again on their own (#33994), but with none there is nothing to do."""
+    if session.status != "Completed":
+        return False
+    from frappe_assistant_core.utils import import_failures
+
+    file_doc = _results_file(session)
+    rows = ((frappe.parse_json(file_doc.get_content()) or {}) if file_doc else {}).get("rows") or []
+    if not rows:
+        return False
+    imported = import_failures.imported_rows(session)
+    return all(row.get("status") in ("imported", "unchanged") or row.get("row") in imported for row in rows)
 
 
 def special_engine(session):

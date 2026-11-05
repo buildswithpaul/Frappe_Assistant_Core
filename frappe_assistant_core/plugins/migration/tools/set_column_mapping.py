@@ -188,7 +188,7 @@ class SetColumnMapping(BaseTool):
             # Mapping sets the session back to Mapped, for a check of the rows not imported yet: never
             # while its import runs (a second import would take rows the first hasn't reached yet),
             # nor once it was cancelled or undone.
-            refused = _mapping_refused(doc.status) or _check_running(doc)
+            refused = _mapping_refused(doc) or _check_running(doc)
             if refused:
                 return {"success": False, "error": refused, "session": session_name}
 
@@ -466,10 +466,13 @@ def _check_running(doc):
     return dry_run.check_running() if dry_run.is_running(doc) else None
 
 
-def _mapping_refused(status: str):
-    """Why a session with ``status`` can't be remapped, or None."""
-    from frappe_assistant_core.utils.import_dry_run import RUNNABLE_STATUSES
+def _mapping_refused(doc):
+    """Why the session can't be remapped, or None."""
+    from frappe_assistant_core.utils.import_dry_run import NOTHING_LEFT, RUNNABLE_STATUSES, nothing_left
 
+    status = doc.status
+    if nothing_left(doc):
+        return _(NOTHING_LEFT)
     if status in ("File Read", *RUNNABLE_STATUSES):
         return None
     if status == "Importing":

@@ -149,7 +149,7 @@ def _review(doc) -> Dict[str, Any]:
         table = target.get("table")
         label = f"{_table_title(table)}: {target['label']}" if table else target["label"]
         options.append({"value": field, "label": label, "required": bool(target.get("required"))})
-    refused = _mapping_refused(doc.status)
+    refused = _mapping_refused(doc)
     return {
         "session": doc.name,
         "ready": True,
