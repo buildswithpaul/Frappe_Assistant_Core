@@ -501,6 +501,7 @@
             const isToggling = ns.state.toggleInProgress[`tool_${tool.name}`];
             const pluginDisabled = !tool.plugin_enabled;
             const isPanelOpen = ns.state.openConfigPanels[tool.name];
+            const userTagsHtml = (tool.user_access || []).map(u => ns.userTagHtml(tool.name, u.user)).join('');
             const roleTagsHtml = (tool.role_access || []).map(r =>
                 `<span class="fac-role-tag" data-role="${r.role}">
                     ${r.role}
@@ -555,7 +556,7 @@
                                 <label class="fac-config-label">Role Access Mode</label>
                                 <select class="fac-config-select fac-role-mode-select" data-tool="${tool.name}">
                                     <option value="Allow All" ${tool.role_access_mode === 'Allow All' ? 'selected' : ''}>Allow All Users</option>
-                                    <option value="Restrict to Listed Roles" ${tool.role_access_mode === 'Restrict to Listed Roles' ? 'selected' : ''}>Restrict to Listed Roles</option>
+                                    <option value="Restrict to Listed Roles" ${tool.role_access_mode === 'Restrict to Listed Roles' ? 'selected' : ''}>Restrict to Listed Roles and Users</option>
                                 </select>
                             </div>
                             <div class="fac-config-group">
@@ -575,6 +576,15 @@
                                     ${roleTagsHtml}
                                     <button type="button" class="fac-add-role-btn" data-tool="${tool.name}" aria-label="Add role to ${frappe.utils.escape_html(tool.display_name)}">
                                         ${ns.icon('plus')} Add Role
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="fac-config-group">
+                                <label class="fac-config-label">Allowed Users</label>
+                                <div class="fac-role-tags" id="user-tags-${tool.name}">
+                                    ${userTagsHtml}
+                                    <button type="button" class="fac-add-role-btn fac-add-user-btn" data-tool="${tool.name}" aria-label="Add user to ${frappe.utils.escape_html(tool.display_name)}">
+                                        ${ns.icon('plus')} Add User
                                     </button>
                                 </div>
                             </div>
@@ -634,9 +644,17 @@
         });
 
         // Add role button handlers
-        $('.fac-add-role-btn').off('click').on('click', function() {
+        $('.fac-add-role-btn').not('.fac-add-user-btn').off('click').on('click', function() {
             const toolName = $(this).data('tool');
             ns.showAddRoleDialog(toolName);
+        });
+
+        // Add / remove user handlers
+        $('.fac-add-user-btn').off('click').on('click', function() {
+            ns.showAddUserDialog($(this).data('tool'));
+        });
+        $('.remove-user').off('click').on('click', function() {
+            ns.removeUser($(this).data('tool'), String($(this).data('user')));
         });
 
         // Remove role handlers
@@ -762,6 +780,76 @@
         $(`#role-tags-${toolName} .fac-role-tag[data-role="${role}"]`).remove();
     };
 
+    // One user's tag on a tool's card, like a role's
+    ns.userTagHtml = function(toolName, user) {
+        const safe = frappe.utils.escape_html(user);
+        return `<span class="fac-role-tag" data-user="${safe}">
+            ${safe}
+            <button type="button" class="fac-role-remove-btn" aria-label="Remove user ${safe}" data-tool="${toolName}" data-user="${safe}">
+                ${ns.icon('x', { className: 'remove-user', attrs: `data-tool="${toolName}" data-user="${safe}"` })}
+            </button>
+        </span>`;
+    };
+
+    // Show add user dialog: any enabled desk user not listed yet
+    ns.showAddUserDialog = function(toolName) {
+        const tool = ns.toolsData.find(t => t.name === toolName);
+        const existingUsers = (tool?.user_access || []).map(u => u.user);
+        const dialog = new frappe.ui.Dialog({
+            title: 'Add User',
+            fields: [
+                {
+                    fieldname: 'user',
+                    fieldtype: 'Link',
+                    options: 'User',
+                    label: 'User',
+                    reqd: 1,
+                    get_query: () => ({
+                        filters: {
+                            enabled: 1,
+                            user_type: 'System User',
+                            name: ['not in', ['Administrator', 'Guest'].concat(existingUsers)]
+                        }
+                    })
+                }
+            ],
+            primary_action_label: 'Add',
+            primary_action: function(values) {
+                if (!existingUsers.includes(values.user)) {
+                    ns.addUser(toolName, values.user);
+                }
+                dialog.hide();
+            }
+        });
+        dialog.show();
+    };
+
+    // Add user to tool
+    ns.addUser = function(toolName, user) {
+        const tool = ns.toolsData.find(t => t.name === toolName);
+        if (!tool.user_access) {
+            tool.user_access = [];
+        }
+        tool.user_access.push({ user: user, allow_access: 1 });
+
+        const container = $(`#user-tags-${toolName}`);
+        container.find('.fac-add-user-btn').before(ns.userTagHtml(toolName, user));
+        container.find('.remove-user').last().off('click').on('click', function() {
+            ns.removeUser(toolName, user);
+        });
+    };
+
+    // Remove user from tool
+    ns.removeUser = function(toolName, user) {
+        const tool = ns.toolsData.find(t => t.name === toolName);
+        if (tool && tool.user_access) {
+            tool.user_access = tool.user_access.filter(u => u.user !== user);
+        }
+        $(`#user-tags-${toolName} .fac-role-tag`).filter(function() {
+            return $(this).attr('data-user') === user;
+        }).remove();
+    };
+
     // Save tool configuration
     ns.saveToolConfig = function(toolName) {
         const tool = ns.toolsData.find(t => t.name === toolName);
@@ -770,6 +858,7 @@
         const roleAccessMode = panel.find('.fac-role-mode-select').val();
         const category = panel.find('.fac-category-select').val();
         const roles = tool.role_access || [];
+        const users = tool.user_access || [];
 
         // Show saving state
         const saveBtn = panel.find('.fac-config-save');
@@ -781,7 +870,8 @@
             args: {
                 tool_name: toolName,
                 role_access_mode: roleAccessMode,
-                roles: roles
+                roles: roles,
+                users: users
             },
             callback: function(response) {
                 if (response.message && response.message.success) {
