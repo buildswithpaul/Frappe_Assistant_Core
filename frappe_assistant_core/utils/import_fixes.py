@@ -327,6 +327,34 @@ CURRENCY_WORDS = {
     "pounds": "GBP",
 }
 
+#: How files, Tally's above all, write a unit short, which no spelling match finds ("Mtr" is 0.75
+#: like "Meter"): the ERPNext UOM it means, offered when that UOM is switched on (#34001).
+UOM_WORDS = {
+    **dict.fromkeys(("mtr", "mtrs", "mt", "mts", "m", "metre", "metres", "meters"), "Meter"),
+    **dict.fromkeys(("kgs", "kg.", "kilo", "kilos", "kilogram", "kilograms"), "Kg"),
+    **dict.fromkeys(("ltr", "ltrs", "lt", "lts", "l", "liter", "liters", "litres"), "Litre"),
+    **dict.fromkeys(("gm", "gms", "g", "grm", "grms", "grams"), "Gram"),
+    **dict.fromkeys(("no", "no.", "nos.", "number", "numbers"), "Nos"),
+    **dict.fromkeys(("cm", "cms", "centimetre", "centimetres"), "Centimeter"),
+    **dict.fromkeys(("mm", "mms", "millimetre", "millimetres"), "Millimeter"),
+    **dict.fromkeys(("ft", "feet", "foot."), "Foot"),
+    **dict.fromkeys(("in", "inches", "inch."), "Inch"),
+    **dict.fromkeys(("sqm", "sq.m", "sq m", "sq.mtr", "sq mtr", "sqmtr"), "Square Meter"),
+    **dict.fromkeys(("sqft", "sq.ft", "sq ft", "sft"), "Square Foot"),
+    **dict.fromkeys(("cbm", "cu.m", "cum", "cu m"), "Cubic Meter"),
+    **dict.fromkeys(("ml", "mls", "millilitre", "milliliter"), "Millilitre"),
+    **dict.fromkeys(("prs", "pairs"), "Pair"),
+}
+WORDS = {"Currency": CURRENCY_WORDS, "UOM": UOM_WORDS}
+
+
+def word_for(doctype: str, value: str) -> Optional[str]:
+    """The record a file's word for it means (Rs: INR, Mtr: Meter), when it is switched on."""
+    meant = (WORDS.get(doctype) or {}).get(cstr(value).strip().casefold())
+    if meant and frappe.db.exists(doctype, {"name": meant, **_switched_on(frappe.get_meta(doctype))}):
+        return meant
+    return None
+
 
 def closest_names(doctype: str, value: str, limit: int = CLOSEST_LIMIT) -> List[str]:
     """Existing names of ``doctype`` closest to ``value``, best first, that the user can read.
@@ -362,8 +390,8 @@ def closest_names(doctype: str, value: str, limit: int = CLOSEST_LIMIT) -> List[
             if text:
                 name_of.setdefault(text, record.name)
     ranked = list(dict.fromkeys(name_of[text] for text in rank(value, list(name_of), len(name_of))))[:limit]
-    meant = CURRENCY_WORDS.get(cstr(value).strip().casefold()) if doctype == "Currency" else None
-    if meant and frappe.db.exists(doctype, {"name": meant, **filters}):
+    meant = word_for(doctype, value)
+    if meant:
         ranked = [meant] + [name for name in ranked if name != meant][: limit - 1]
     return ranked
 
@@ -519,10 +547,15 @@ def advise(session, group: Dict[str, Any]) -> Dict[str, Any]:
         explanation = _("{0}: there is no {1} called '{2}' in ERPNext.").format(rows, _(doctype), value)
         closest = _closest(session, doctype, value)
         fixes = [{"action": MAP, "closest": closest}]
-        meant = likely(value, closest)
+        spelt = likely(value, closest)
+        meant = spelt or word_for(doctype, value)  # Mtr is Meter, though not spelt alike
         if meant:
             fixes[0]["likely"] = meant
-            explanation += " " + _("It is most likely '{0}', misspelt.").format(meant)
+            explanation += " " + (
+                _("It is most likely '{0}', misspelt.")
+                if spelt
+                else _("It is most likely '{0}', written short.")
+            ).format(meant)
         reason = _creating_problem(doctype, session)
         if not reason and (group["parent"], group["field"]) in import_keys.translated_fields(session):
             # An old ID (#34244): a record named by it would stay in ERPNext as a stand-in (DM52's IG-199)

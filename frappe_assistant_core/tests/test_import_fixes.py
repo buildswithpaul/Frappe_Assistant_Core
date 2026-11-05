@@ -780,6 +780,34 @@ class TestCurrencyWords(BaseAssistantTest):
             self.assertEqual(import_fixes.closest_names("Currency", written)[:1], ["INR"], written)
 
 
+class TestUnitWords(BaseAssistantTest):
+    def test_a_unit_written_short_is_the_likely_one_not_a_new_unit(self):
+        # #34001, live: Tally's "Mtr" (0.75 like "Meter", under the 0.8 a likely spelling needs)
+        # was advised as a new UOM to create
+        if not frappe.db.get_value("UOM", "Meter", "enabled"):
+            self.skipTest("Meter is switched off on this site")
+        session = frappe._dict(
+            name="IMP-TEST", target_doctype="Item", template_options="{}", transformation_rules=None
+        )
+        group = {
+            "cause": import_dry_run.CAUSE_MISSING_LINK,
+            "link_doctype": "UOM",
+            "label": "Default Unit of Measure",
+            "parent": "Item",
+            "field": "stock_uom",
+            "value": "Mtr",
+            "count": 3,
+        }
+
+        advice = import_fixes.advise(session, group)
+
+        mapped = next(fix for fix in advice["fixes"] if fix["action"] == "map")
+        self.assertEqual((mapped["closest"][:1], mapped.get("likely")), (["Meter"], "Meter"))
+        self.assertIn("written short", advice["explanation"])
+        create = next((fix for fix in advice["fixes"] if fix["action"] == "create"), {})
+        self.assertIn("not a misspelt 'Meter'", create.get("note", "Only if"))
+
+
 class TestSwitchedOffRecords(BaseAssistantTest):
     def test_a_record_switched_off_by_its_enabled_field_is_never_offered_or_taken(self):
         # UOM and Currency are switched off by "enabled", not "disabled"
