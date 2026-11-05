@@ -188,7 +188,7 @@ class SetColumnMapping(BaseTool):
             # Mapping sets the session back to Mapped, for a check of the rows not imported yet: never
             # while its import runs (a second import would take rows the first hasn't reached yet),
             # nor once it was cancelled or undone.
-            refused = _mapping_refused(doc) or _check_running(doc)
+            refused = _mapping_refused(doc) or _check_running(doc) or _set_up_as_opening(doc)
             if refused:
                 return {"success": False, "error": refused, "session": session_name}
 
@@ -464,6 +464,21 @@ def _check_running(doc):
     from frappe_assistant_core.utils import import_dry_run as dry_run
 
     return dry_run.check_running() if dry_run.is_running(doc) else None
+
+
+def _set_up_as_opening(doc):
+    """A file set up as opening stock, invoices or balances: its engine reads its columns from its
+    own setup, so a mapping here would leave that setup reading the wrong columns (#33997)."""
+    from frappe_assistant_core.utils import import_dry_run as dry_run
+
+    engine = dry_run.special_engine(doc)
+    if not engine:
+        return None
+    kind = engine.__name__.rsplit(".", 1)[-1].replace("import_", "")  # opening_invoices
+    return _(
+        "This file is set up as {0}: change its columns with set_{1}, not here. To import it as "
+        "ordinary records instead, start a new import session."
+    ).format(_(kind.replace("_", " ")), kind)
 
 
 def _mapping_refused(doc):

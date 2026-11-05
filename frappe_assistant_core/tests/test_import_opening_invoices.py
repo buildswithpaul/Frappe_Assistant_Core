@@ -175,6 +175,24 @@ class TestSetup(OpeningInvoicesCase):
         self.assertEqual(mapping["1"], "invoice_number")
         self.assertEqual(dry_run.column_to_field_map(doc)["1"], "Don't Import")  # stored as before
 
+    def test_a_column_mapping_leaves_the_setup_alone(self):
+        # #33997, live: a mapping step remapped the party column, the setup still said opening
+        # invoices, and FACO had to set it up again
+        session = self._session([f"{self.customer},{self._number(1)},{self.date},{self.date},100"])
+        self.assertTrue(self._setup(session)["success"])
+        before = dry_run.column_to_field_map(self._doc(session))
+
+        reply = self._run(
+            "set_column_mapping",
+            {"session": session, "mapping": {"Customer": "customer_name"}, "doctype": "Customer"},
+        )
+
+        self.assertFalse(reply["success"], reply)
+        self.assertIn("set_opening_invoices", reply["error"])
+        doc = self._doc(session)
+        self.assertEqual((doc.target_doctype, dry_run.column_to_field_map(doc)), ("Sales Invoice", before))
+        self.assertTrue(opening_invoices.settings(doc))
+
     def test_purchase_maps_the_party_to_supplier(self):
         session = self._session([f"{self.supplier},B1,{self.date},{self.date},100"])
         reply = self._setup(session, invoice_type="Purchase")

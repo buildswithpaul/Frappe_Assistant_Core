@@ -93,7 +93,7 @@ ask the user where to keep them.** Say `old_ids.message` in one sentence and go 
 
 ## When the mapping can't change
 
-While the session's import is running (**Importing**) the mapping is kept: wait for the import to finish, or continue it with `start_import`. A session that was cancelled keeps its mapping too: start a new session for the file.
+While the session's import is running (**Importing**) the mapping is kept: wait for the import to finish, or continue it with `start_import`. A session that was cancelled keeps its mapping too: start a new session for the file. A file set up as opening stock, invoices or balances (`set_opening_stock`, `set_opening_invoices`, `set_opening_balances`) keeps its columns in that setup: change them with the same tool, never here, or the setup reads the wrong columns.
 
 ## Best Practices
 
