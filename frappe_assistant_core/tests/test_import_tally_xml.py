@@ -42,6 +42,13 @@ def group(name, parent="&#4; Primary"):
     )
 
 
+def stock_group(name, parent="&#4; Primary"):
+    return (
+        f'<TALLYMESSAGE xmlns:UDF="TallyUDF"><STOCKGROUP NAME="{name}" RESERVEDNAME="">'
+        f"<PARENT>{parent}</PARENT></STOCKGROUP></TALLYMESSAGE>"
+    )
+
+
 VOUCHER = (
     '<TALLYMESSAGE xmlns:UDF="TallyUDF"><VOUCHER VCHTYPE="Sales" ACTION="Create"><DATE>20240401</DATE>'
     "<VOUCHERNUMBER>1</VOUCHERNUMBER></VOUCHER></TALLYMESSAGE>"
@@ -427,7 +434,11 @@ class TestPartSheet(XmlCase):
     def test_the_tally_presets_match_the_sheets(self):
         presets.clear_cache()
         by_id = {p["id"]: p for p in presets.load_presets()}
-        doc = self._upload(export(ledger("A", "Sundry Debtors"), stock_item("B", "Raw Material")))
+        doc = self._upload(
+            export(
+                ledger("A", "Sundry Debtors"), stock_group("Raw Material"), stock_item("B", "Raw Material")
+            )
+        )
         for part, preset_id in tally.IMPORTABLE.items():
             sheet = tally.part_sheet(doc, part)
             found = presets.match_sheet(sheet.rows, [by_id[preset_id]])
@@ -470,7 +481,8 @@ class TestPartsProblem(XmlCase):
 
 
 class TestTallyGroups(XmlCase):
-    """A ledger's group under Sundry Debtors/Creditors makes it a party (#34000)."""
+    """A ledger's group under Sundry Debtors/Creditors makes it a party (#34000), and stock
+    groups become Item Groups under their parents (#34001)."""
 
     def _targets(self, doc, part):
         presets.clear_cache()
@@ -505,3 +517,17 @@ class TestTallyGroups(XmlCase):
         )
 
         self.assertEqual(tally.part_sheet(doc, "ledgers").rows[1][1], "Loop A")
+
+    def test_stock_groups_are_item_groups_each_under_its_parent(self):
+        doc = self._upload(
+            export(
+                stock_group("Hardware"),
+                stock_group("Fasteners", "Hardware"),
+                stock_item("Hex Bolt", "Fasteners"),
+            )
+        )
+
+        rows = self._targets(doc, "stock_groups")["Item Groups"]
+
+        self.assertEqual(rows, [["Hardware", "", "1"], ["Fasteners", "Hardware", "0"]])
+        self.assertEqual(tally.survey(doc).parts["stock_groups"].count, 2)

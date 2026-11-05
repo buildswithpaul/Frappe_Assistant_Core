@@ -34,7 +34,7 @@ Other parameters:
 | `preset` | string | No | A preset id, when the user says which system and export it is (e.g. `busy.accounts`). `none` opens the file the normal way, without a preset. |
 | `values` | object | No | Answers to a recognised export's `needs`, by name, e.g. `{"company": "Acme Ltd"}`. |
 | `targets` | array | No | Open only these targets of a recognised export, e.g. after answering `needs`. |
-| `parts` | array | No | Tally XML only: the parts to import, `ledgers` and/or `stock_items`. Leave it out to list the parts first. |
+| `parts` | array | No | Tally XML only: the parts to import, `ledgers`, `stock_groups` and/or `stock_items`. Leave it out to list the parts first. |
 
 Supported files: `.csv`, `.xlsx`, `.xls`, and a Tally XML masters export (`.xml`). One file holds one kind of record, e.g. customers, unless a preset splits it (a Tally ledger list gives Customers and Suppliers).
 
@@ -142,12 +142,14 @@ convert it to Excel.
    "(N more)" entry. `warnings` says the tag names were not checked against a real export: show
    it to the user. Nothing is written. Show the counts as a table and ask which parts
    to import.
-2. Call it again with `parts`, e.g. `["ledgers", "stock_items"]`. The reply has `results`, one
+2. Call it again with `parts`, e.g. `["ledgers", "stock_groups", "stock_items"]`. The reply has `results`, one
    per part, each with its `part` name. Each has the same keys as a spreadsheet's reply (`preset`,
    `sessions`, `needs`, `dropped`, `warnings`, ...), or `error` for a part that could not be read,
    or `skipped` when none of the requested `targets` is in that part. Ledgers open Customers
-   (Sundry Debtors) and Suppliers (Sundry Creditors); Accounts (every other group) needs the
-   company first. Stock items open Items.
+   (Sundry Debtors, and the groups under it) and Suppliers (Sundry Creditors, and the groups
+   under it); Accounts (every other group) needs the company first. Stock groups open Item
+   Groups, each under its parent; put them in the same migration plan as the stock items, which
+   open Items.
 3. To answer `needs`, call again with the same `parts`, `values` and `targets` set to those
    targets only.
 

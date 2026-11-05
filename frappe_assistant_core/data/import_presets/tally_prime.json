@@ -68,6 +68,29 @@
     ]
   },
   {
+    "id": "tally_prime.stock_groups",
+    "system": "Tally Prime",
+    "source_system": "tally",
+    "export": "Stock groups (XML masters export)",
+    "how_to_export": "Alt+E > Masters > Configure: Type of Master All Masters, Format XML (Data Interchange), then E.",
+    "verified": false,
+    "signature": {
+      "min_optional": 1,
+      "required": [["Stock Group Name"], ["Under Stock Group"]],
+      "optional": [["Quantities Added"]]
+    },
+    "columns": {
+      "Name": {"from": ["Stock Group Name"]},
+      "Parent": {"from": ["Under Stock Group"]},
+      "Is Group": {"from": []}
+    },
+    "group_flag": {"column": "Is Group", "name": "Name", "parent": "Parent"},
+    "targets": [
+      {"name": "Item Groups", "source_key": "Name", "doctype": "Item Group",
+       "mapping": {"Name": "item_group_name", "Parent": "parent_item_group", "Is Group": "is_group"}}
+    ]
+  },
+  {
     "id": "tally_prime.trial_balance",
     "system": "Tally Prime",
     "export": "Trial Balance (detailed, closing balances)",

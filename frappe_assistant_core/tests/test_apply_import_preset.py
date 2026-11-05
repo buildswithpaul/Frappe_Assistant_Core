@@ -538,6 +538,15 @@ SHIPPED = {
         ],
         {"Items": 2},
     ),
+    "tally_prime.stock_groups": (
+        # The sheet a Tally XML export's stock groups are read into (#34001)
+        [
+            ["Stock Group Name", "Under Stock Group", "Quantities Added"],
+            ["Hardware", "", "Yes"],
+            ["Fasteners", "Hardware", "Yes"],
+        ],
+        {"Item Groups": 2},
+    ),
     "tally_prime.trial_balance": (
         [
             ["Acme Pvt Ltd"],

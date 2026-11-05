@@ -344,7 +344,8 @@ class TestRefusals(TallyXmlToolCase):
     def test_no_parts_is_refused(self):
         doc = self._file()
         self._refused(
-            {"file_id": doc.name, "parts": []}, "Give at least one part to import: ledgers, stock_items."
+            {"file_id": doc.name, "parts": []},
+            "Give at least one part to import: ledgers, stock_items, stock_groups.",
         )
 
     def test_preset_and_sheet_are_refused_for_xml(self):

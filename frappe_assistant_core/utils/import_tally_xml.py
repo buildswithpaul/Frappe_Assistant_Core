@@ -9,8 +9,9 @@
 """
 Tally XML exports (#34001): read a Tally masters export, count its parts, and turn ledgers and
 stock items into rows the #34000 Tally presets match, so start_import_session opens their sessions
-the same way it does for a spreadsheet. Groups are counted, not imported: a ledger under Sundry
-Debtors or Sundry Creditors, at any depth, is a party. This module writes nothing.
+the same way it does for a spreadsheet. Ledger groups are counted, not imported: a ledger under
+Sundry Debtors or Sundry Creditors, at any depth, is a party. Stock groups are imported as Item
+Groups, each under its parent. This module writes nothing.
 
 The file is streamed with lxml, entities and DTDs off and no network, so an export of any size
 is read one record at a time and nothing outside the file is ever read.
@@ -29,10 +30,15 @@ from lxml import etree
 from frappe_assistant_core.utils.import_presets import MAX_PRESET_ROWS, Sheet, _number, _plain
 from frappe_assistant_core.utils.import_session import FileProblem, check_size
 
-PARTS = {"LEDGER": "ledgers", "STOCKITEM": "stock_items", "GROUP": "groups"}
-IMPORTABLE = {"ledgers": "tally_prime.ledgers", "stock_items": "tally_prime.stock_items"}
+PARTS = {"LEDGER": "ledgers", "STOCKITEM": "stock_items", "STOCKGROUP": "stock_groups", "GROUP": "groups"}
+IMPORTABLE = {
+    "ledgers": "tally_prime.ledgers",
+    "stock_items": "tally_prime.stock_items",
+    "stock_groups": "tally_prime.stock_groups",
+}
 # Tally's reserved groups whose ledgers, and the ledgers of the groups under them, are parties
 PARTY_GROUPS = ("Sundry Debtors", "Sundry Creditors")
+ROOT = "Primary"  # Tally's top of every tree, written "&#4; Primary"
 SAMPLE = 10
 MAX_LISTED = 50  # entries of a count table in the listing reply
 MAX_NAMED = 10  # tags named in the vouchers-only refusal
@@ -68,12 +74,22 @@ COLUMNS = {
         ("Opening Quantity", ["OPENINGBALANCE"]),
         ("Opening Rate", ["OPENINGRATE"]),
     ],
+    "stock_groups": [
+        ("Stock Group Name", ["@NAME", "LANGUAGENAME.LIST/NAME.LIST/NAME"]),
+        ("Under Stock Group", ["PARENT"]),
+        ("Quantities Added", ["ISADDABLE"]),
+    ],
 }
 FLIP_SIGN = {
     "Opening Balance"
 }  # Tally XML writes a debit balance as negative; the presets read Dr as positive
 TAGS = {part: tag for tag, part in PARTS.items()}
-LABELS = {"ledgers": "ledgers", "stock_items": "stock items", "groups": "groups"}
+LABELS = {
+    "ledgers": "ledgers",
+    "stock_items": "stock items",
+    "stock_groups": "stock groups",
+    "groups": "groups",
+}
 
 # every control character but tab, newline, return: C0, DEL and C1
 _CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]+")
@@ -276,6 +292,9 @@ def read(file_doc, wanted: Iterable[str] = ()) -> Tuple[Survey, Dict[str, Any]]:
         raise FileProblem(_(NOT_TALLY))
     if "ledgers" in rows:
         _route_sub_groups(rows["ledgers"], group_parents)
+    for row in rows.get("stock_groups", [])[1:]:
+        if row[1] == ROOT:
+            row[1] = ""  # a top stock group: ERPNext puts it under its own root
     sheets = {
         part: too_large.get(part) or Sheet(f"{part} (Tally XML)", part_rows)
         for part, part_rows in rows.items()

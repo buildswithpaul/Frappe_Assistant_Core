@@ -213,7 +213,7 @@ class StartImportSession(BaseTool):
                 "parts": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "Tally XML only: the parts to import, e.g. ['ledgers', 'stock_items']. "
+                    "description": "Tally XML only: the parts to import, e.g. ['ledgers', 'stock_groups', 'stock_items']. "
                     "Leave out to list the parts first.",
                 },
             },
@@ -597,7 +597,7 @@ class StartImportSession(BaseTool):
 
     def _tally_xml_parts(self, found, source) -> Dict[str, Any]:
         listed, counts = [], []
-        for part in ("ledgers", "stock_items", "groups"):
+        for part in ("ledgers", "stock_groups", "stock_items", "groups"):
             entry = found.parts.get(part)
             if not entry:
                 continue
@@ -617,6 +617,11 @@ class StartImportSession(BaseTool):
                     "become Customers, Sundry Creditors become Suppliers (the ledgers of the groups under "
                     "them too), and every other group becomes an Account whose parent the dry run maps to "
                     "an ERPNext group."
+                )
+            if part == "stock_groups":
+                item["note"] = _(
+                    "Stock groups become Item Groups, each under its parent: import them before the stock "
+                    "items, in the same migration plan."
                 )
             listed.append(item)
             counts.append(f"{entry.count} {tally_xml.LABELS[part]}")
