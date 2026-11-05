@@ -88,6 +88,9 @@
 				:block="segment"
 			/>
 
+			<!-- The user's answer to a question FACO asked, where they gave it (#34546) -->
+			<UserAnswer v-else-if="segment.type === 'user_answer'" :text="segment.text" />
+
 			<!-- A mapping this turn saved: the user can review and change it here (#34415) -->
 			<MappingReviewBlock
 				v-else-if="segment.type === 'mapping_review'"
@@ -130,6 +133,8 @@ import GeneratedDocumentsBlock from "./GeneratedDocumentsBlock.vue";
 import WorkflowCreatedBlock from "./WorkflowCreatedBlock.vue";
 import ImportProgressBlock from "./ImportProgressBlock.vue";
 import MappingReviewBlock from "./MappingReviewBlock.vue";
+import UserAnswer from "./interactions/UserAnswer.vue";
+import { userAnswer } from "./interactions/userAnswer";
 import { mappingSteps, startedImports } from "@/utils/importSessions";
 import FacPageChip from "./pages/FacPageChip.vue";
 import { usePagePanel } from "@/composables/usePagePanel";
@@ -255,6 +260,13 @@ const groupedContent = computed(() => {
 					sealedByApproval = true;
 				} else {
 					segments.push(block);
+				}
+				const answer = userAnswer(block);
+				if (answer) {
+					// The user's words show as theirs, where they said them; the steps after start below
+					segments.push({ type: "user_answer", id: `ua_${block.id}`, text: answer });
+					currentGroup = null;
+					sealedByApproval = false;
 				}
 			}
 		} else if (block.type === "thinking" || block.type === "tool_call") {
