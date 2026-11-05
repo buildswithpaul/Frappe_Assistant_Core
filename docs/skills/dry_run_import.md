@@ -109,6 +109,7 @@ Explain each group with its `explanation`, offer only its `fixes`, then call `dr
 |----------|-----|--------------|
 | `map` | Missing link, value that isn't an allowed option | Every row with the group's value gets `to` instead. Stored as a transformation rule on the session; the file isn't changed. |
 | `create` | Missing link, when the record is a simple master | **Not sent in `fixes`.** Create every missing master at once with `create_document`: `documents` from `masters_plan`, with `import_session` (one table, one approval), then call `dry_run_import` again without `fixes`: the rows that needed them now pass. A group without this fix has `cannot_create` saying why. |
+| `fill` | A required value the rows leave blank, or that no column of the file has | Every row that starts a record gets `value` for that field (one HSN code for every item, say), where it is blank. A field with no column gets one added to the file's rows; the file isn't changed. A link must be an existing record, or one an earlier file of the plan creates. Only offered when the group's `fixes` has it, with the field. |
 | `leave_out` | Any group | Its rows are skipped by the import and listed in its report, with the reason. |
 
 Any other problem (a bad date, a duplicate, a rule ERPNext enforces) is corrected in the file: tell the user which rows and what to change, then start again with the new file. The group says so with `"fix_in_file": true`.
@@ -118,8 +119,9 @@ Each fix:
 | Key | Description |
 |-----|-------------|
 | `group` | The group's id, e.g. `G3fa2c1`. A group keeps its id from check to check; once its rows pass, the id is gone. |
-| `action` | `map` or `leave_out` |
+| `action` | `map`, `fill` or `leave_out` |
 | `to` | For `map`: the existing value to use |
+| `value` | For `fill`: the value every row gets |
 | `reason` | For `leave_out`: why, in the user's words. It appears in the import report. |
 
 ### Closest matches come from the engine

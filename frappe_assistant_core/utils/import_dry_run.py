@@ -491,8 +491,13 @@ def _parse(session, file_doc, rows, column_map=None) -> ImportFile:
     options = frappe._dict(frappe.parse_json(session.template_options or "{}") or {})
     if column_map is not None:
         options.column_to_field_map = column_map
+    from frappe_assistant_core.utils.import_fixes import filled_columns
+
     options.column_to_field_map = frappe._dict(
-        only_mapped(options.get("column_to_field_map") or {}, len(rows[0]) if rows else 0)
+        {
+            **only_mapped(options.get("column_to_field_map") or {}, len(rows[0]) if rows else 0),
+            **filled_columns(session, rows[0] if rows else []),
+        }
     )
     try:
         return _SessionRows(session.target_doctype, file_doc.file_url, rows, options, session.import_type)

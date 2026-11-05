@@ -831,3 +831,111 @@ class TestKnownRefusals(BaseAssistantTest):
     def test_an_unknown_refusal_keeps_erpnexts_message(self):
         explanation = self._explained("Something only ERPNext knows about")
         self.assertIn("Something only ERPNext knows about", explanation)
+
+
+@unittest.skipUnless("erpnext" in frappe.get_installed_apps(), "needs ERPNext's Item")
+class TestOneValueForEveryRow(BaseAssistantTest):
+    """#34415: a required field the file leaves blank, or has no column for, gets one value for
+    every row (one Item Group for a file of items), not only leave the rows out."""
+
+    def setUp(self):
+        super().setUp()
+        frappe.set_user("Administrator")
+        self.registry = get_tool_registry()
+        self.track_test_files()
+        self.tag = frappe.generate_hash(length=6)
+        self.group = (
+            frappe.get_doc(
+                {
+                    "doctype": "Item Group",
+                    "item_group_name": f"Fasteners {self.tag}",
+                    "parent_item_group": "All Item Groups",
+                }
+            )
+            .insert()
+            .name
+        )
+
+    def tearDown(self):
+        frappe.set_user("Administrator")
+        self.delete_test_files()
+        super().tearDown()
+
+    def _run(self, tool_name, arguments):
+        return self.registry.get_tool(tool_name)._safe_execute(arguments)
+
+    def _session(self):
+        from frappe_assistant_core.tests.base_test import item_hsn_fields
+
+        hsn = list(item_hsn_fields().values())  # India Compliance refuses an Item without one
+        header = ["Code", "Name", "UOM"] + (["HSN"] if hsn else [])
+        lines = [",".join(header)] + [
+            ",".join([f"F{i} {self.tag}", f"Bolt {i}", "Nos", *hsn]) for i in (1, 2)
+        ]
+        file_doc = frappe.get_doc(
+            {
+                "doctype": "File",
+                "file_name": "items.csv",
+                "content": ("\n".join(lines) + "\n").encode(),
+                "is_private": 1,
+            }
+        ).insert()
+        session = self._run("start_import_session", {"file_url": file_doc.file_url})["result"]["session_id"]
+        mapping = {
+            "Code": "item_code",
+            "Name": "item_name",
+            "UOM": "stock_uom",
+            **({"HSN": "gst_hsn_code"} if hsn else {}),
+        }
+        self.assertTrue(
+            self._run("set_column_mapping", {"session": session, "doctype": "Item", "mapping": mapping})[
+                "success"
+            ]
+        )
+        return session
+
+    def test_a_field_the_file_has_no_column_for_is_filled_in_and_imported(self):
+        session = self._session()
+        checked = self._run("dry_run_import", {"session": session})["result"]
+        group = next(g for g in checked["groups"] if any(f["action"] == "fill" for f in g["fixes"]))
+        self.assertEqual(next(f for f in group["fixes"] if f["action"] == "fill")["field"], "item_group")
+
+        fixed = self._run(
+            "dry_run_import",
+            {"session": session, "fixes": [{"group": group["id"], "action": "fill", "value": self.group}]},
+        )
+        self.assertTrue(fixed["success"], fixed)
+        result = fixed["result"]
+        self.assertEqual((result["ready"], result["failed"]), (2, 0), result.get("groups"))
+
+        doc = engine_session(session)
+        imported = self._run(
+            "start_import",
+            {
+                "session": session,
+                "doctype": "Item",
+                "rows": 2,
+                "import_type": "Insert New Records",
+                "validated_fingerprint": result.get("validated_fingerprint"),
+                "file_name": doc.file_name,
+            },
+        )
+        self.assertTrue(imported["success"], imported)
+        groups = frappe.get_all("Item", filters={"item_code": ["like", f"% {self.tag}"]}, pluck="item_group")
+        self.assertEqual(groups, [self.group, self.group])
+
+    def test_a_value_that_isnt_a_record_is_refused(self):
+        session = self._session()
+        checked = self._run("dry_run_import", {"session": session})["result"]
+        group = next(g for g in checked["groups"] if any(f["action"] == "fill" for f in g["fixes"]))
+
+        fixed = self._run(
+            "dry_run_import",
+            {
+                "session": session,
+                "fixes": [{"group": group["id"], "action": "fill", "value": f"Nowhere {self.tag}"}],
+            },
+        )
+
+        self.assertFalse(fixed["success"], fixed)
+        self.assertIn("There is no Item Group", json.dumps(fixed))

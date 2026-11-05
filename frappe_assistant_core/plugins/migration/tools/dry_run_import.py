@@ -181,6 +181,11 @@ class DryRunImport(BaseTool):
                                 "type": "string",
                                 "description": "For 'leave_out': why, in the user's words.",
                             },
+                            "value": {
+                                "type": "string",
+                                "description": "For 'fill': the value every row gets for the "
+                                "required field it leaves blank (one HSN code for every item, say).",
+                            },
                         },
                         "required": ["group", "action"],
                     },

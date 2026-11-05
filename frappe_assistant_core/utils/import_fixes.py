@@ -45,12 +45,14 @@ CREATE = "create"
 LEAVE_OUT = "leave_out"
 ALLOW_ZERO_RATE = "allow_zero_rate"  # opening stock: bring an item in at zero value
 POST_AT_CUTOFF = "post_at_cutoff"  # opening invoices: post invoices dated in no fiscal year at the cut-off
+FILL = "fill"  # one value for a required field the rows leave blank, or the file has no column for
 ACTIONS = (
     MAP,
     LEAVE_OUT,
     ALLOW_ZERO_RATE,
     POST_AT_CUTOFF,
     CREATE,
+    FILL,
 )  # applied by dry_run_import; create only in a migration plan, else create_document does it
 
 CLOSEST_LIMIT = 5
@@ -91,6 +93,15 @@ def _rules(session) -> Dict[str, Any]:
 
 def value_maps(session) -> List[Dict[str, Any]]:
     return list(_rules(session).get("value_maps") or [])
+
+
+def fills(session) -> List[Dict[str, Any]]:
+    """The fills: ``{"field", "label", "value"}``, each a field of the target DocType that every
+    record the file starts gets this value for, when its row leaves it blank (#34415)."""
+    return list(_rules(session).get("fills") or [])
+
+
+FILLED_HEADER = "{0} (filled in)"  # the column a fill adds when no column of the file is mapped to it
 
 
 def left_out(session) -> List[Dict[str, Any]]:
@@ -151,7 +162,7 @@ def _range(start: int, end: int) -> str:
 def apply_value_maps(session, rows: List[List[str]]) -> List[List[str]]:
     """The file's rows (header first) with each old ID column translated (#34244) and every value map
     applied to its columns. Every reader of the file's rows comes through here."""
-    rows = import_keys.translate(session, rows)
+    rows = _with_fills(session, import_keys.translate(session, rows))
     maps = value_maps(session)
     if not maps or not rows:
         return rows
@@ -170,6 +181,91 @@ def apply_value_maps(session, rows: List[List[str]]) -> List[List[str]]:
                 row[position] = replace[cstr(row[position]).strip()]
         out.append(row)
     return out
+
+
+def _with_fills(session, rows: List[List[str]]) -> List[List[str]]:
+    """The rows with each fill's value in the rows that start a record and leave it blank: in
+    its column, or in a column added at the end for a field the file has none for."""
+    wanted = fills(session)
+    if not wanted or not rows:
+        return rows
+    targets = _column_targets(session)
+    own = [position for position, (parent, _field) in targets.items() if parent == session.target_doctype]
+    column = {
+        field: position for position, (parent, field) in targets.items() if parent == session.target_doctype
+    }
+    added = [fill for fill in wanted if fill["field"] not in column]
+    width = len(rows[0])
+    out = [list(rows[0]) + [FILLED_HEADER.format(fill["label"]) for fill in added]]
+    for row in rows[1:]:
+        row = list(row) + [""] * (width - len(row))
+        # A row that continues the record above (a child table's) has none of the record's own values
+        starts = any(cstr(row[position]).strip() for position in own if position < width)
+        for fill in wanted:
+            at = column.get(fill["field"])
+            if starts and at is not None and not cstr(row[at]).strip():
+                row[at] = fill["value"]
+        out.append(row + [fill["value"] if starts else "" for fill in added])
+    return out
+
+
+def filled_columns(session, header: List[str]) -> Dict[str, str]:
+    """Position → field for the columns the fills added to ``header``, for the import's column map."""
+    added = {FILLED_HEADER.format(fill["label"]): fill["field"] for fill in fills(session)}
+    return {str(i): added[cstr(name)] for i, name in enumerate(header) if cstr(name) in added}
+
+
+def _fill_field(session, group: Dict[str, Any]):
+    """The target DocType's field ``group``'s rows leave blank, or None: a required value missing,
+    or ERPNext's own "Value missing for <DocType>: <Label>" for a field no column is mapped to."""
+    meta = frappe.get_meta(session.target_doctype)
+    df = None
+    if group.get("cause") == dry_run.CAUSE_REQUIRED_MISSING:
+        if group.get("parent", session.target_doctype) == session.target_doctype:
+            df = meta.get_field(group.get("field"))
+    elif group.get("cause") == dry_run.CAUSE_REJECTED and group.get("error") == "MandatoryError":
+        found = re.search(r"Value missing for (.+?): (.+)$", cstr(group.get("message")).strip())
+        if found and found.group(1).strip() in (session.target_doctype, _(session.target_doctype)):
+            label = found.group(2).strip()
+            fields = [field for field in meta.fields if field.reqd and label in (field.label, _(field.label))]
+            df = fields[0] if len(fields) == 1 else None
+    # One value for every record can't be what names or titles each, nor one no two records share
+    if not df or df.unique or df.fieldname in (dry_run._name_field(session.target_doctype), meta.title_field):
+        return None
+    return df
+
+
+def _fill(session, group: Dict[str, Any], fix: Dict[str, Any], wanted: List[Dict[str, Any]]):
+    """The fills with ``fix``'s value for the field ``group``'s rows leave blank."""
+    if dry_run.special_engine(session) or (session.import_type or dry_run.INSERT) != dry_run.INSERT:
+        raise FixProblem(_("Only new records of a Data Import can have a value filled in."))
+    df = _fill_field(session, group)
+    if not df:
+        raise FixProblem(
+            _(
+                "Only a required value the rows leave blank can be filled in. Leave these rows out, or correct them in the file."
+            )
+        )
+    value = cstr(fix.get("value")).strip()
+    if not value:
+        raise FixProblem(_("Say which value every row gets, in 'value'."))
+    if df.fieldtype == "Link":
+        coming = {name.casefold(): name for name in _planned(session, df.options)}.get(value.casefold())
+        if coming and not frappe.db.exists(df.options, value):
+            value = coming  # an earlier file of the plan creates it before these rows are imported
+        else:
+            _check_existing(session, {"label": df.label}, df.options, value)
+    elif df.fieldtype == "Select":
+        choices = [c for c in cstr(df.options).split("\n") if c]
+        if value not in choices:
+            raise FixProblem(
+                _("'{0}' isn't one of the choices for {1}: {2}.").format(
+                    value, _(df.label), ", ".join(choices)
+                )
+            )
+    return [f for f in wanted if f["field"] != df.fieldname] + [
+        {"field": df.fieldname, "label": df.label, "value": value}
+    ]
 
 
 def _column_targets(session) -> Dict[int, Tuple[str, str]]:
@@ -519,7 +615,7 @@ def advise(session, group: Dict[str, Any]) -> Dict[str, Any]:
         dry_run.CAUSE_REJECTED: _("{0} rejected by ERPNext: {2}"),
         dry_run.CAUSE_REQUIRED_MISSING: _(
             "{0}: {1} is empty, and a new record can't be saved without it. Fill it in the file, "
-            "or leave the rows out."
+            "give every row one value (fill), or leave the rows out."
         ),
         dry_run.CAUSE_NO_MATCH: _("{0}: no record has this {1}, so there is nothing to update. {2}"),
         dry_run.CAUSE_MANY_MATCHES: _(
@@ -536,8 +632,13 @@ def advise(session, group: Dict[str, Any]) -> Dict[str, Any]:
     if group.get("values"):
         # The values a refusal's message quoted, "…" in it (#34407)
         explanation += " " + _("Values: {0}.").format(_listed(group["values"]))
+    fixes = [leave_out]
+    blank = _fill_field(session, group)
+    if blank:
+        # One value for every row: the HSN code of a file of items, say (#34415)
+        fixes.insert(0, {"action": FILL, "field": blank.fieldname, "label": _(blank.label)})
     # Anything else is corrected in the file, which is then checked again.
-    return {"explanation": explanation, "fixes": [leave_out], "fix_in_file": True}
+    return {"explanation": explanation, "fixes": fixes, "fix_in_file": True}
 
 
 def _listed(values: List[str], shown: int = 5) -> str:
@@ -566,6 +667,7 @@ def apply_fixes(session, groups: Dict[str, Dict[str, Any]], fixes: List[Dict[str
     from frappe_assistant_core.utils import import_opening_balances as opening_balances
 
     maps = value_maps(session)
+    filled = fills(session)
     reasons = {str(entry["row"]): entry["reason"] for entry in left_out(session)}
     zero_rate = list(_rules(session).get("zero_rate_items") or [])
     post_at_cutoff = bool(_rules(session).get("post_at_cutoff"))
@@ -618,6 +720,13 @@ def apply_fixes(session, groups: Dict[str, Dict[str, Any]], fixes: List[Dict[str
                     )
                 post_at_cutoff = True
                 done.append(_("{0} are posted at the cut-off date.").format(_rows(group["count"])))
+            elif action == FILL:
+                filled = _fill(session, group, fix, filled)
+                done.append(
+                    _("{0} is '{1}' in {2}.").format(
+                        _(filled[-1]["label"]), filled[-1]["value"], _rows(group["count"])
+                    )
+                )
             elif action == CREATE:
                 if not session.get("migration_plan"):
                     raise FixProblem(
@@ -648,6 +757,7 @@ def apply_fixes(session, groups: Dict[str, Dict[str, Any]], fixes: List[Dict[str
 
     rules = {
         "value_maps": maps,
+        "fills": filled,
         "left_out": reasons,
         "zero_rate_items": zero_rate,
         "post_at_cutoff": post_at_cutoff,

@@ -445,6 +445,7 @@ def _cleaned_file(session, earlier: List[str], only: Optional[set] = None, waiti
         ]
         rows, column_map = import_update.with_ids(session, rows, records)
     column_map = dry_run.only_mapped(column_map, len(rows[0]) if rows else 0)
+    column_map.update(import_fixes.filled_columns(session, rows[0] if rows else []))  # a fill's own column
     excluded = dry_run._excluded_rows(session)
     imported = import_failures.imported_rows(session)
     left_out = set()
