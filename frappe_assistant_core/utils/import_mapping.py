@@ -36,6 +36,33 @@ from frappe.model.base_document import get_controller
 from frappe.utils import cint, flt
 
 DONT_IMPORT = "Don't Import"
+# A column that only numbers the rows (S.No, Sr. No., #): never data, so never asked about (#34415)
+ROW_NUMBER_HEADERS = {
+    "#",
+    "sno",
+    "srno",
+    "slno",
+    "rowno",
+    "rownumber",
+    "lineno",
+}  # not "Serial No": a stock item's
+
+
+def row_number_column(header: str) -> bool:
+    return "".join(ch for ch in str(header or "").lower() if ch not in " ._-") in ROW_NUMBER_HEADERS
+
+
+def unplaced_columns(doc) -> List[Tuple[str, str]]:
+    """(position, header) of the session's columns no field was given, not even Don't Import, and
+    that hold data: what the user is asked about, all at once."""
+    mapped = session_mapping(doc)
+    return [
+        (str(i), header)
+        for i, header in enumerate(session_headers(doc))
+        if not mapped.get(str(i)) and str(header).strip() and not row_number_column(header)
+    ]
+
+
 MAX_SELECT_OPTIONS = 25
 SESSION_DOCTYPE = "FAC Import Session"
 

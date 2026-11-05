@@ -652,9 +652,9 @@ def _file_questions(plan, session) -> List[Dict[str, Any]]:
                 "columns": session_headers(session),
             }
         ]
+    questions = _columns_question(session, about)
     if session.status != "Dry Run Failed":
-        return []
-    questions = []
+        return questions
     for group in import_fixes.last_groups(session).values():
         advice = import_fixes.advise(session, group)
         questions.append(
@@ -669,6 +669,31 @@ def _file_questions(plan, session) -> List[Dict[str, Any]]:
             }
         )
     return questions
+
+
+def _columns_question(session, about: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """The file's columns no field was given, asked about in one question of the plan's list
+    (#34415): left to the model, each was a card of its own, before and after the plan's list."""
+    from frappe_assistant_core.utils.import_mapping import unplaced_columns
+
+    columns = [header for _position, header in unplaced_columns(session)]
+    if not columns:
+        return []
+    # FAC's own words name nothing of the file: its headers reach the model fenced, in columns
+    message = _(
+        "The file's columns in 'columns' have no field, so they won't be imported. Leave them out, "
+        "or map each to a field with set_column_mapping and check the plan again."
+    )
+    return [
+        {
+            "id": f"{session.name}:{COLUMNS_QUESTION}",
+            **about,
+            "kind": "columns",
+            "message": message,
+            "columns": columns,
+            "suggested": {"action": "leave_out"},
+        }
+    ]
 
 
 def open_questions(plan) -> Dict[str, Any]:
@@ -801,6 +826,8 @@ def _question_text(question: Dict[str, Any]) -> str:
         return _("The cut-off date of the opening files")
     if question["kind"] == "failure_rule":
         return _("Rows that still fail when their file comes up")
+    if question["kind"] == "columns":  # the table is fenced whole: it may name the file's columns
+        return _("Columns with no field: {0}").format(", ".join(question.get("columns") or []))
     return question.get("explanation") or question.get("message") or ""
 
 
@@ -813,6 +840,8 @@ def _answer_text(question: Dict[str, Any]) -> str:
         return ", ".join(dates) if dates else _("Ask the user")
     if kind == "failure_rule":
         return _("Leave them out") if question.get("suggested") == "leave_out" else _("Stop the plan")
+    if kind == "columns":
+        return _("Don't import them")
     suggested = question.get("suggested")
     if not suggested:
         return _("Ask the user") if kind == "fix" else ""
@@ -861,6 +890,7 @@ def _add_needed_by(questions: List[Dict[str, Any]], files: List[Any]) -> None:
 #: What a fix answer takes, as dry_run_import's fixes do; and what describes a suggested fix,
 #: which FACO may send back with it and which is let be (#34547).
 FIX_KEYS = ("action", "to", "reason", "data", "parent")
+COLUMNS_QUESTION = "columns"  # the id of a file's question about its unplaced columns: <session>:columns
 FIX_DESCRIPTION_KEYS = ("doctype", "name", "closest", "likely", "rows", "use", "note", "cause", "label")
 
 
@@ -883,6 +913,7 @@ def apply_answers(plan, answers: List[Dict[str, Any]]) -> List[str]:
 
     files = {session.name: session for session in children(plan)}
     fixes: Dict[str, List[Dict[str, Any]]] = {}
+    left_columns: List[str] = []
     rule = cut_off = None
     for answer in answers:
         if not isinstance(answer, dict):
@@ -900,6 +931,14 @@ def apply_answers(plan, answers: List[Dict[str, Any]]) -> List[str]:
                 raise PlanProblem(_("The failure rule is leave_out or stop."))
             continue
         session_name, _sep, group = question.rpartition(":")
+        if session_name in files and group == COLUMNS_QUESTION:
+            _check_keys(question, answer, ("action",))
+            if answer.get("action") != "leave_out":
+                raise PlanProblem(
+                    _("Columns are left out (action leave_out), or mapped with set_column_mapping first.")
+                )
+            left_columns.append(session_name)
+            continue
         if session_name not in files or not group.startswith("G"):
             raise PlanProblem(_("There is no question {0} in this plan.").format(question))
         _check_keys(question, answer, FIX_KEYS, FIX_DESCRIPTION_KEYS)
@@ -925,6 +964,8 @@ def apply_answers(plan, answers: List[Dict[str, Any]]) -> List[str]:
             session = files[session_name]
             done += import_fixes.apply_fixes(session, import_fixes.last_groups(session), session_fixes)
             session.save()
+        for session_name in left_columns:
+            done.append(_leave_columns_out(files[session_name]))
         plan.require_open()  # not after the plan started: its files' fixes roll back with the savepoint
         if rule or cut_off:
             plan.reload()
@@ -944,6 +985,24 @@ def apply_answers(plan, answers: List[Dict[str, Any]]) -> List[str]:
         frappe.db.rollback(save_point=ANSWERS_SAVEPOINT)
         raise
     return done
+
+
+def _leave_columns_out(session) -> str:
+    """The user's answer to a columns question: Don't Import, as they chose it, so it isn't asked again."""
+    from frappe_assistant_core.utils.import_mapping import (
+        DONT_IMPORT,
+        save_mapping,
+        session_mapping,
+        unplaced_columns,
+    )
+
+    columns = unplaced_columns(session)
+    mapping = {**session_mapping(session), **{position: DONT_IMPORT for position, _header in columns}}
+    left = ", ".join(header for _position, header in columns)
+    save_mapping(
+        session, session.target_doctype, mapping, _("Not imported, as the user chose: {0}.").format(left)
+    )
+    return _("{0}: these columns aren't imported: {1}.").format(session.file_name, left)
 
 
 def cut_offs(files: List[Any]) -> Dict[str, str]:

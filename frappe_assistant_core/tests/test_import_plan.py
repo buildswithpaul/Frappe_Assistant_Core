@@ -9,6 +9,7 @@
 """Migration plans (#33995): several import sessions ordered, checked and run as one."""
 
 import copy
+import json
 from unittest.mock import patch
 
 import frappe
@@ -402,6 +403,35 @@ class TestPlanMigration(ImportPlanCase):
 
         self.assertIsNotNone(self.registry.get_tool("plan_migration"))
         self.assertIn("plan_migration", READ_ONLY_TOOLS)
+
+
+class TestColumnsWithNoField(ImportPlanCase):
+    def test_a_files_unplaced_columns_are_one_question_of_the_plan(self):
+        # #34415: no question of the plan asked about them, so FACO asked on cards of its own,
+        # one per column, before and after the plan's list
+        t = self.tag
+        group = self._session(
+            "groups.csv",
+            ["S.No", "Name", "Region"],
+            [["1", f"G {t}", "South"]],
+            "Item Group",
+            {"Name": "item_group_name"},
+        )
+        plan = self._run("plan_migration", {"sessions": [group]})["result"]["plan"]
+
+        asked = self._run("dry_run_import", {"plan": plan})["result"]["questions"]
+        columns = [q for q in asked if q["kind"] == "columns"]
+        self.assertEqual([q["columns"] for q in columns], [["Region"]])  # S.No only numbers the rows
+        self.assertEqual(columns[0]["suggested"], {"action": "leave_out"})
+        self.assertNotIn("Region", columns[0]["message"])  # the file's headers reach the model fenced
+
+        answered = self._run(
+            "dry_run_import", {"plan": plan, "answers": [{"id": columns[0]["id"], "action": "leave_out"}]}
+        )
+        self.assertTrue(answered["success"], answered)
+        self.assertFalse([q for q in answered["result"]["questions"] if q["kind"] == "columns"])
+        mapping = json.loads(frappe.db.get_value(SESSION, group, "template_options"))["column_to_field_map"]
+        self.assertEqual(mapping["2"], "Don't Import")
 
 
 class TestRecordsEarlierFilesCreate(ImportPlanCase):

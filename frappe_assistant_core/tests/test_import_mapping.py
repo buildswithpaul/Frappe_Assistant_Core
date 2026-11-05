@@ -216,8 +216,16 @@ class TestSetColumnMapping(ImportToolTestCase):
 
         self.assertTrue(result["success"], result)
         self.assertEqual(result["not_imported"], ["Notes"])
-        self.assertIn("show them to the user and ask", result["note"])
+        self.assertIn("ask the user about them all in one question", result["note"])
         self.assertNotIn("Notes", result["note"])  # FAC's own text names nothing from the file
+
+    def test_a_column_that_only_numbers_the_rows_is_not_asked_about(self):
+        # #34415: the user was asked about S.No on a card of its own
+        session = self._session(csv_text="S.No,First Name\n1,Asha\n")
+        result = self._map(session, {"First Name": "first_name", "S.No": "Don't Import"}, doctype="Contact")
+
+        self.assertEqual(result["not_imported"], ["S.No"])  # still listed
+        self.assertNotIn("note", result)
 
     def test_a_mapping_that_drops_nothing_has_no_note(self):
         result = self._map(self._session(), {"First Name": "first_name"}, doctype="Contact")

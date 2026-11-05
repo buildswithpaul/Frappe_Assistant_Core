@@ -98,7 +98,7 @@ While the session's import is running (**Importing**) the mapping is kept: wait 
 ## Best Practices
 
 1. **Show the result as a table**: *Your column → ERPNext field*. Show each child table in its own table under its title. Below, mark the **unmapped columns** and the **required fields with no column** clearly. An unmapped column is not imported, like one mapped to "Don't Import".
-2. **Don't guess.** When you aren't confident about a column, leave it out of the call and ask the user with a choice card (`ask_user`), offering the likely fields and "Don't import". Then save their answer.
+2. **Don't guess.** When you aren't confident about a column, leave it out of the call and ask the user: about every such column of the file in **one** question, offering the likely fields and "Don't import" for each, not one card per column. A column that only numbers the rows (S.No, Sr. No., #) needs no question. Then save their answers.
 3. **Corrections are one call.** When the user says "that's the billing city, not the shipping city", send just that column with its new field. The other columns keep their mapping. Confirm the change in a sentence.
 4. **A required field with no column** needs a decision: map a column to it, rely on its default if it has one, or the user adds the column to the file. An update (Update Existing Records) lists none: it changes only the fields mapped. For a DocType named by the user, `name` (ID) is listed until a column maps to it.
 5. **`required_when`** lists fields with no column that a condition makes required (`when`), with `sample_rows`: how many of the file's first rows meet it, or `null` when that can't be worked out (a condition written for the browser). Tell the user: the import goes through without them, but Desk asks for them when the record is next saved.
@@ -111,4 +111,4 @@ Once the user agrees the mapping, call `dry_run_import(session)` to check every 
 ## In a migration plan
 
 When the session is in a migration plan (its `migration_plan` is set), don't ask the user here:
-`dry_run_import` with `plan` gathers every question of the plan into one list. Map the columns you are sure of; leave the unsure ones for that list.
+`dry_run_import` with `plan` gathers every question of the plan into one list, and a file's columns no field was given are one question there (`kind` `columns`). Map the columns you are sure of; leave the unsure ones for that list.

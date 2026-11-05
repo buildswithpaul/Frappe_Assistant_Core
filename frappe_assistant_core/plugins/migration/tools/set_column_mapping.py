@@ -36,6 +36,7 @@ from frappe_assistant_core.utils.import_mapping import (
     duplicate_targets,
     load_session,
     resolve_mapping,
+    row_number_column,
     save_mapping,
     session_headers,
     session_mapping,
@@ -305,14 +306,16 @@ class SetColumnMapping(BaseTool):
                     **{k: where[k] for k in ("existing_fields", "new_field") if where.get(k)},
                 }
             result.update(_old_id_notes(doc, key_position, translations))
-            if described["not_imported"]:
+            if any(not row_number_column(header) for header in described["not_imported"]):
                 # A column the model couldn't place went to Don't Import unasked, and the customers got
                 # the default territory. Names no column: they are the file's, fenced in not_imported.
+                # A column that only numbers the rows (S.No) isn't asked about (#34415).
                 result["note"] = _(
-                    "The columns in not_imported won't be imported. Unless the user chose that, show "
-                    "them to the user and ask: a column with no field of the same name may still belong "
-                    "in one (a state or region in Territory). In a migration plan, ask with the plan's "
-                    "questions."
+                    "The columns in not_imported won't be imported. Unless the user chose that, ask "
+                    "the user about them all in one question (not one card per column): a column with "
+                    "no field of the same name may still belong in one (a state or region in Territory). "
+                    "A column that only numbers the rows (S.No) needs no question. In a migration "
+                    "plan, don't ask here: the plan's questions ask about them."
                 )
             return result
 
