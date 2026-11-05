@@ -37,7 +37,7 @@ class TestTheResultIsPostedInTheChat(BaseAssistantTest):
         self.registry = get_tool_registry()
         self.track_test_files()
         self.tag = frappe.generate_hash(length=6)
-        self.chat = f"fac-test-chat-{self.tag}"
+        self.chat = self._conversation("Administrator")
         self.group = (
             frappe.get_doc(
                 {
@@ -58,6 +58,13 @@ class TestTheResultIsPostedInTheChat(BaseAssistantTest):
         frappe.set_user("Administrator")
         self.delete_test_files()
         super().tearDown()
+
+    def _conversation(self, user):
+        chat = f"fac-test-chat-{frappe.generate_hash(length=8)}"
+        frappe.get_doc({"doctype": "FAC Chat Conversation", "session_id": chat, "user": user}).insert(
+            ignore_permissions=True
+        )
+        return chat
 
     def _run(self, tool_name, arguments):
         return self.registry.get_tool(tool_name)._safe_execute(arguments)
@@ -143,3 +150,14 @@ class TestTheResultIsPostedInTheChat(BaseAssistantTest):
         self.assertEqual(len(posted), 1, posted)
         self.assertIn(f"Migration plan {plan} has ended: Completed", posted[0])
         self.assertIn("customers.csv (Customer)", posted[0])
+
+    def test_nothing_is_posted_in_another_users_conversation(self):
+        # the conversation id comes from the caller's X-AR-Session-Id header: it can name anyone's
+        self.chat = self._conversation("Guest")
+        session = self._session()
+        self._as_a_job()
+
+        import_dry_run.run_job(session, "Administrator")
+
+        self.assertEqual(self._posted(), [])
+        self.assertNotIn(self.chat, [str(c.kwargs.get("room")) for c in self.published.call_args_list])

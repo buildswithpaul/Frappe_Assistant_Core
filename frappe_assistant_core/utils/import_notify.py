@@ -24,6 +24,9 @@ def post(chat: str, text: str) -> None:
     """Post ``text`` in the FAC Chat conversation ``chat``, once the job commits."""
     if not chat or not text or not getattr(frappe.local, "job", None):
         return
+    # The id came from the caller's X-AR-Session-Id header: post only in a conversation of the job's user
+    if frappe.db.get_value("FAC Chat Conversation", chat, "user") != frappe.session.user:
+        return
     from frappe_assistant_core.chat.doctype.fac_chat_message.fac_chat_message import FACChatMessage
 
     try:
