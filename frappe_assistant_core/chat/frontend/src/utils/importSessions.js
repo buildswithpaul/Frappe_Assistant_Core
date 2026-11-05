@@ -26,6 +26,18 @@ export function startedImports(blocks) {
 	return names;
 }
 
+/** The migration plans this message ran (a run_migration_plan that started or reported), once each. */
+export function startedPlans(blocks) {
+	const names = [];
+	for (const block of blocks || []) {
+		if (block?.type !== "tool_call" || baseToolName(block.tool_name) !== "run_migration_plan") continue;
+		if (block.status !== "success" || toolFailed(block)) continue;
+		const name = block.input?.plan || toolResult(block).plan;
+		if (typeof name === "string" && name && !names.includes(name)) names.push(name);
+	}
+	return names;
+}
+
 /** Every session the conversation's messages worked on, in the order they first appear. */
 export function conversationImportSessions(messages) {
 	const names = [];

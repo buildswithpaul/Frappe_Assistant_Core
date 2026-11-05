@@ -94,6 +94,29 @@ def import_progress(sessions: Union[str, List[str], None] = None) -> Dict[str, A
     return {"sessions": out, "steps": [{"key": key, "label": labels[key]} for key in STEPS]}
 
 
+@frappe.whitelist(methods=["GET"])
+def plan_progress(plan: str) -> Dict[str, Any]:
+    """A migration plan as the chat shows it while it runs (#34351): its status and each file's
+    progress, in the plan's order. A plan the user may not read is not found."""
+    from frappe_assistant_core.utils import import_plan
+
+    if not frappe.db.exists(SESSION, plan) or not frappe.has_permission(SESSION, "read", doc=plan):
+        raise frappe.DoesNotExistError(_("Migration plan {0} not found.").format(plan))
+    found = import_plan.get_plan(plan)
+    files = [progress(child) for child in import_plan.children(found)]
+    return {
+        "plan": found.name,
+        "status": found.status,
+        "running": found.status == "Running",
+        "ended": found.status in PLAN_ENDED,
+        "files": files,
+        "url": frappe.utils.get_url_to_form(SESSION, found.name),
+    }
+
+
+PLAN_ENDED = ("Completed", "Partially Completed", "Failed", "Stopped")
+
+
 # -- the mapping review card and the import approval card (#34415) -----------------------------
 
 #: How many of a column's first values the review card shows

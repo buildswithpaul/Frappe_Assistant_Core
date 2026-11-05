@@ -103,6 +103,9 @@
 				:session="segment.session"
 			/>
 
+			<!-- A migration plan this turn ran: each file's status while it runs (#34351) -->
+			<PlanProgressBlock v-else-if="segment.type === 'plan_progress'" :plan="segment.plan" />
+
 			<!-- FAC Pages this turn wrote; a chip opens one in the page panel. -->
 			<div v-else-if="segment.type === 'page_chips'" class="page-chips">
 				<FacPageChip v-for="chip in segment.chips" :key="chip.name" :chip="chip" />
@@ -133,9 +136,10 @@ import GeneratedDocumentsBlock from "./GeneratedDocumentsBlock.vue";
 import WorkflowCreatedBlock from "./WorkflowCreatedBlock.vue";
 import ImportProgressBlock from "./ImportProgressBlock.vue";
 import MappingReviewBlock from "./MappingReviewBlock.vue";
+import PlanProgressBlock from "./PlanProgressBlock.vue";
 import UserAnswer from "./interactions/UserAnswer.vue";
 import { userAnswer } from "./interactions/userAnswer";
-import { mappingSteps, startedImports } from "@/utils/importSessions";
+import { mappingSteps, startedImports, startedPlans } from "@/utils/importSessions";
 import FacPageChip from "./pages/FacPageChip.vue";
 import { usePagePanel } from "@/composables/usePagePanel";
 import { chipsForMessage } from "@/utils/pageChips";
@@ -316,6 +320,9 @@ const groupedContent = computed(() => {
 	}
 	for (const session of importing) {
 		segments.push({ type: "import_progress", id: `import_progress:${session}`, session });
+	}
+	for (const plan of startedPlans(props.blocks)) {
+		segments.push({ type: "plan_progress", id: `plan_progress:${plan}`, plan });
 	}
 	const chips = chipsForMessage(props.blocks, conversationPageChips.value);
 	if (chips.length) segments.push({ type: "page_chips", id: "page_chips", chips });

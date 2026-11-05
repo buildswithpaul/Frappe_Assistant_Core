@@ -87,3 +87,73 @@ class TestImportProgressApi(BaseAssistantTest):
 
     def test_at_most_twenty_sessions_are_read(self):
         self.assertEqual(len(imports._names([f"IMP-{n}" for n in range(30)])), imports.MAX_SESSIONS)
+
+
+class TestPlanProgressApi(BaseAssistantTest):
+    """#34351: a migration plan ran with text only; the chat reads where each file stands."""
+
+    def setUp(self):
+        super().setUp()
+        frappe.set_user("Administrator")
+        self.track_test_files()
+        self.tag = frappe.generate_hash(length=6)
+
+    def tearDown(self):
+        frappe.set_user("Administrator")
+        self.delete_test_files()
+        super().tearDown()
+
+    def _mapped(self, file_name, content, doctype, mapping):
+        from frappe_assistant_core.core.tool_registry import get_tool_registry
+
+        registry = get_tool_registry()
+        file_doc = frappe.get_doc(
+            {"doctype": "File", "file_name": file_name, "content": content, "is_private": 1}
+        ).insert()
+        session = registry.get_tool("start_import_session")._safe_execute({"file_url": file_doc.file_url})
+        name = session["result"]["session_id"]
+        registry.get_tool("set_column_mapping")._safe_execute(
+            {"session": name, "mapping": mapping, "doctype": doctype}
+        )
+        return name
+
+    def test_a_plan_says_its_status_and_each_files_progress_in_order(self):
+        from frappe_assistant_core.core.tool_registry import get_tool_registry
+
+        groups = self._mapped(
+            "groups.csv", f"Name\nG {self.tag}\n".encode(), "Item Group", {"Name": "item_group_name"}
+        )
+        regions = self._mapped(
+            "regions.csv", f"Name\nT {self.tag}\n".encode(), "Territory", {"Name": "territory_name"}
+        )
+        planned = (
+            get_tool_registry().get_tool("plan_migration")._safe_execute({"sessions": [groups, regions]})
+        )
+        plan = planned["result"]["plan"]
+
+        reply = imports.plan_progress(plan)
+
+        self.assertEqual(reply["plan"], plan)
+        self.assertEqual(reply["status"], "Planning")
+        self.assertFalse(reply["ended"])
+        self.assertEqual({f["file_name"] for f in reply["files"]}, {"groups.csv", "regions.csv"})
+        self.assertTrue(all("created" in f and "status" in f for f in reply["files"]))
+
+    def test_another_users_plan_is_not_found(self):
+        viewer = self.make_throwaway_user("viewer", roles=("Desk User",))
+        theirs = self._mapped(
+            "groups.csv", f"Name\nG {self.tag}\n".encode(), "Item Group", {"Name": "item_group_name"}
+        )
+        from frappe_assistant_core.core.tool_registry import get_tool_registry
+
+        plan = (
+            get_tool_registry()
+            .get_tool("plan_migration")
+            ._safe_execute({"sessions": [theirs]})["result"]["plan"]
+        )
+        frappe.set_user(viewer)
+        try:
+            with self.assertRaises(frappe.DoesNotExistError):
+                imports.plan_progress(plan)
+        finally:
+            frappe.set_user("Administrator")
