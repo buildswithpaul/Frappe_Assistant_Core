@@ -34,7 +34,7 @@ Other parameters:
 | `preset` | string | No | A preset id, when the user says which system and export it is (e.g. `busy.accounts`). `none` opens the file the normal way, without a preset. |
 | `values` | object | No | Answers to a recognised export's `needs`, by name, e.g. `{"company": "Acme Ltd"}`. |
 | `targets` | array | No | Open only these targets of a recognised export, e.g. after answering `needs`. |
-| `parts` | array | No | Tally XML only: the parts to import, `ledgers`, `stock_groups` and/or `stock_items`. Leave it out to list the parts first. |
+| `parts` | array | No | Tally XML only: the parts to import, `ledgers`, `stock_groups`, `stock_items`, `ledger_openings` and/or `stock_openings`. Leave it out to list the parts first. |
 
 Supported files: `.csv`, `.xlsx`, `.xls`, and a Tally XML masters export (`.xml`). One file holds one kind of record, e.g. customers, unless a preset splits it (a Tally ledger list gives Customers and Suppliers).
 
@@ -149,7 +149,10 @@ convert it to Excel.
    (Sundry Debtors, and the groups under it) and Suppliers (Sundry Creditors, and the groups
    under it); Accounts (every other group) needs the company first. Stock groups open Item
    Groups, each under its parent; put them in the same migration plan as the stock items, which
-   open Items.
+   open Items. A masters export also carries openings: `ledger_openings` opens opening receivables
+   (Sundry Debtors), payables (Sundry Creditors) and the opening entry's account balances, and
+   `stock_openings` opens opening stock, which needs the warehouse. Set them up and import them
+   after the masters, in the same migration plan.
 3. To answer `needs`, call again with the same `parts`, `values` and `targets` set to those
    targets only.
 

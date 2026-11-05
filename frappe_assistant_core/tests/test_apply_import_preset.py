@@ -538,6 +538,21 @@ SHIPPED = {
         ],
         {"Items": 2},
     ),
+    "tally_prime.ledger_openings": (
+        # The sheet a Tally XML export's ledger openings are read into, Dr positive (#34001)
+        [
+            ["Ledger", "Group", "Opening Balance"],
+            ["Ravi Traders", "Sundry Debtors", "1500"],
+            ["Mehta Supplies", "Sundry Creditors", "-700"],
+            ["HDFC Bank", "Bank Accounts", "2000"],
+        ],
+        {"Opening receivables": 1, "Opening payables": 1, "Opening account balances": 1},
+    ),
+    "tally_prime.stock_openings": (
+        # The sheet a Tally XML export's opening stock is read into (#34001)
+        [["Item", "Opening Quantity", "Opening Rate"], ["Hex Bolt", "10 Nos", "50.00/Nos"]],
+        {},  # needs a warehouse first
+    ),
     "tally_prime.stock_groups": (
         # The sheet a Tally XML export's stock groups are read into (#34001)
         [

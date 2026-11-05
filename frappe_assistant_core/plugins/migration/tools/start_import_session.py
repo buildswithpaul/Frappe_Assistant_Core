@@ -597,7 +597,7 @@ class StartImportSession(BaseTool):
 
     def _tally_xml_parts(self, found, source) -> Dict[str, Any]:
         listed, counts = [], []
-        for part in ("ledgers", "stock_groups", "stock_items", "groups"):
+        for part in ("ledgers", "stock_groups", "stock_items", "ledger_openings", "stock_openings", "groups"):
             entry = found.parts.get(part)
             if not entry:
                 continue
@@ -617,6 +617,17 @@ class StartImportSession(BaseTool):
                     "become Customers, Sundry Creditors become Suppliers (the ledgers of the groups under "
                     "them too), and every other group becomes an Account whose parent the dry run maps to "
                     "an ERPNext group."
+                )
+            if part == "ledger_openings":
+                item["note"] = _(
+                    "The ledgers' opening balances: Sundry Debtors' become opening sales invoices, Sundry "
+                    "Creditors' opening purchase invoices, and every other ledger's a line of the opening "
+                    "entry. Import them after the ledgers, in the same migration plan."
+                )
+            if part == "stock_openings":
+                item["note"] = _(
+                    "The stock items' opening quantities and rates, as opening stock in one warehouse. "
+                    "Import them after the stock items, in the same migration plan."
                 )
             if part == "stock_groups":
                 item["note"] = _(

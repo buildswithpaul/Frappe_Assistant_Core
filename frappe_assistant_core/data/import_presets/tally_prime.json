@@ -68,6 +68,60 @@
     ]
   },
   {
+    "id": "tally_prime.ledger_openings",
+    "system": "Tally Prime",
+    "source_system": "tally",
+    "export": "Ledger opening balances (XML masters export)",
+    "how_to_export": "Alt+E > Masters > Configure: Type of Master All Masters, Format XML (Data Interchange), then E.",
+    "verified": false,
+    "signature": {
+      "min_optional": 1,
+      "required": [["Ledger"], ["Opening Balance"]],
+      "optional": [["Group"]]
+    },
+    "columns": {
+      "Ledger": {"from": ["Ledger"]},
+      "Group": {"from": ["Group"]},
+      "Debit": {"from": ["Opening Balance"], "parse": "debit"},
+      "Credit": {"from": ["Opening Balance"], "parse": "credit"}
+    },
+    "targets": [
+      {"name": "Opening receivables", "engine": "opening_invoices", "invoice_type": "Sales",
+       "when": {"column": "Group", "in": ["Sundry Debtors"]},
+       "columns": {"Ledger": "party", "Debit": "outstanding_amount"}},
+      {"name": "Opening payables", "engine": "opening_invoices", "invoice_type": "Purchase",
+       "when": {"column": "Group", "in": ["Sundry Creditors"]},
+       "columns": {"Ledger": "party", "Credit": "outstanding_amount"}},
+      {"name": "Opening account balances", "engine": "opening_balances",
+       "when": {"column": "Group", "not_in": ["Sundry Debtors", "Sundry Creditors"]},
+       "columns": {"Ledger": "account", "Debit": "debit", "Credit": "credit"}}
+    ]
+  },
+  {
+    "id": "tally_prime.stock_openings",
+    "system": "Tally Prime",
+    "source_system": "tally",
+    "export": "Opening stock of the stock items (XML masters export)",
+    "how_to_export": "Alt+E > Masters > Configure: Type of Master All Masters, Format XML (Data Interchange), then E.",
+    "verified": false,
+    "signature": {
+      "min_optional": 1,
+      "required": [["Item"], ["Opening Quantity"]],
+      "optional": [["Opening Rate"]]
+    },
+    "columns": {
+      "Item": {"from": ["Item"]},
+      "Quantity": {"from": ["Opening Quantity"], "parse": "quantity"},
+      "UOM": {"from": ["Opening Quantity"], "parse": "unit"},
+      "Rate": {"from": ["Opening Rate"], "parse": "rate"}
+    },
+    "targets": [
+      {"name": "Opening stock", "engine": "opening_stock",
+       "columns": {"Item": "item_code", "Quantity": "qty", "UOM": "uom", "Rate": "valuation_rate"},
+       "inputs": [{"name": "warehouse", "column": "Warehouse", "field": "warehouse", "ask": "Which warehouse is this stock in?"}]}
+    ]
+  },
+  {
     "id": "tally_prime.stock_groups",
     "system": "Tally Prime",
     "source_system": "tally",

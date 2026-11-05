@@ -11,7 +11,8 @@ Tally XML exports (#34001): read a Tally masters export, count its parts, and tu
 stock items into rows the #34000 Tally presets match, so start_import_session opens their sessions
 the same way it does for a spreadsheet. Ledger groups are counted, not imported: a ledger under
 Sundry Debtors or Sundry Creditors, at any depth, is a party. Stock groups are imported as Item
-Groups, each under its parent. This module writes nothing.
+Groups, each under its parent. The ledgers' opening balances and the items' opening stock are parts
+of their own, for the opening engines. This module writes nothing.
 
 The file is streamed with lxml, entities and DTDs off and no network, so an export of any size
 is read one record at a time and nothing outside the file is ever read.
@@ -35,6 +36,14 @@ IMPORTABLE = {
     "ledgers": "tally_prime.ledgers",
     "stock_items": "tally_prime.stock_items",
     "stock_groups": "tally_prime.stock_groups",
+    "ledger_openings": "tally_prime.ledger_openings",
+    "stock_openings": "tally_prime.stock_openings",
+}
+# Parts read from another part's records (#34001): those whose opening (this column) isn't zero.
+# A masters export carries each ledger's opening balance and each item's opening stock.
+OPENINGS = {
+    "ledger_openings": ("ledgers", "Opening Balance"),
+    "stock_openings": ("stock_items", "Opening Quantity"),
 }
 # Tally's reserved groups whose ledgers, and the ledgers of the groups under them, are parties
 PARTY_GROUPS = ("Sundry Debtors", "Sundry Creditors")
@@ -74,6 +83,16 @@ COLUMNS = {
         ("Opening Quantity", ["OPENINGBALANCE"]),
         ("Opening Rate", ["OPENINGRATE"]),
     ],
+    "ledger_openings": [
+        ("Ledger", ["@NAME", "LANGUAGENAME.LIST/NAME.LIST/NAME"]),
+        ("Group", ["PARENT"]),
+        ("Opening Balance", ["OPENINGBALANCE"]),
+    ],
+    "stock_openings": [
+        ("Item", ["@NAME", "LANGUAGENAME.LIST/NAME.LIST/NAME"]),
+        ("Opening Quantity", ["OPENINGBALANCE"]),
+        ("Opening Rate", ["OPENINGRATE"]),
+    ],
     "stock_groups": [
         ("Stock Group Name", ["@NAME", "LANGUAGENAME.LIST/NAME.LIST/NAME"]),
         ("Under Stock Group", ["PARENT"]),
@@ -88,6 +107,8 @@ LABELS = {
     "ledgers": "ledgers",
     "stock_items": "stock items",
     "stock_groups": "stock groups",
+    "ledger_openings": "ledger opening balances",
+    "stock_openings": "opening stock items",
     "groups": "groups",
 }
 
@@ -270,18 +291,18 @@ def read(file_doc, wanted: Iterable[str] = ()) -> Tuple[Survey, Dict[str, Any]]:
             found.by_parent[_value(element, "PARENT")] += 1
         if part == "groups" and name:
             group_parents[name] = _value(element, "PARENT")
-        if part not in rows or part in too_large:
-            continue
-        # The limit counts records, not the header: exactly MAX_PRESET_ROWS records are allowed and
-        # the next one is refused (rows holds the header plus the records read so far).
-        if len(rows[part]) > MAX_PRESET_ROWS:
-            too_large[part] = FileProblem(
-                _("This export has more than {0:,} {1}. Export them from Tally in parts.").format(
-                    MAX_PRESET_ROWS, LABELS[part]
-                )
-            )
-            continue
-        rows[part].append(_row(part, element))
+        _add_row(rows, too_large, part, element)
+        for opening, (source, column) in OPENINGS.items():
+            if source != part:
+                continue
+            row = _row(opening, element)
+            if not _NONZERO.search(row[_at(opening, column)]):
+                continue  # no opening: nothing for that part
+            counted = parts.setdefault(opening, Part(opening))
+            counted.count += 1
+            if name and len(counted.sample) < SAMPLE:
+                counted.sample.append(name)
+            _add_row(rows, too_large, opening, element, row)
     if not parts:
         if other:
             ranked = other.most_common()
@@ -290,8 +311,9 @@ def read(file_doc, wanted: Iterable[str] = ()) -> Tuple[Survey, Dict[str, Any]]:
                 held += " " + _("and {0} more").format(len(ranked) - MAX_NAMED)
             raise FileProblem(_(NO_MASTERS).format(held))
         raise FileProblem(_(NOT_TALLY))
-    if "ledgers" in rows:
-        _route_sub_groups(rows["ledgers"], group_parents)
+    for part, column in (("ledgers", "Parent"), ("ledger_openings", "Group")):
+        if part in rows:
+            _route_sub_groups(rows[part], group_parents, _at(part, column))
     for row in rows.get("stock_groups", [])[1:]:
         if row[1] == ROOT:
             row[1] = ""  # a top stock group: ERPNext puts it under its own root
@@ -302,12 +324,34 @@ def read(file_doc, wanted: Iterable[str] = ()) -> Tuple[Survey, Dict[str, Any]]:
     return Survey(company[0] if company else None, parts, dict(other)), sheets
 
 
-def _route_sub_groups(rows: List[List[str]], group_parents: Dict[str, str]) -> None:
+_NONZERO = re.compile(r"[1-9]")  # an opening of 0, 0.00 or blank has no digit but 0
+
+
+def _at(part: str, column: str) -> int:
+    return [name for name, _paths in COLUMNS[part]].index(column)
+
+
+def _add_row(rows, too_large, part: str, element, row: Optional[List[str]] = None) -> None:
+    """The record as a row of ``part``'s sheet, when that part is read and not too large."""
+    if part not in rows or part in too_large:
+        return
+    # The limit counts records, not the header: exactly MAX_PRESET_ROWS records are allowed and
+    # the next one is refused (rows holds the header plus the records read so far).
+    if len(rows[part]) > MAX_PRESET_ROWS:
+        too_large[part] = FileProblem(
+            _("This export has more than {0:,} {1}. Export them from Tally in parts.").format(
+                MAX_PRESET_ROWS, LABELS[part]
+            )
+        )
+        return
+    rows[part].append(row if row is not None else _row(part, element))
+
+
+def _route_sub_groups(rows: List[List[str]], group_parents: Dict[str, str], at: int) -> None:
     """A ledger in a group under Sundry Debtors or Sundry Creditors ("Local Debtors") is a party
     too: its group column says the reserved group it is under, which the ledgers preset routes
     by. The export lists every group with its parent, before or after the ledgers. Each group is
     walked up once, so a long or looping chain costs no more than the groups in it."""
-    at = [column for column, _paths in COLUMNS["ledgers"]].index("Parent")
     party: Dict[str, str] = {name: name for name in PARTY_GROUPS}  # group -> its reserved group, or ""
     for row in rows[1:]:
         group, chain, seen = row[at], [], set()

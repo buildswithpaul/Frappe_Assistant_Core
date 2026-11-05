@@ -436,7 +436,9 @@ class TestPartSheet(XmlCase):
         by_id = {p["id"]: p for p in presets.load_presets()}
         doc = self._upload(
             export(
-                ledger("A", "Sundry Debtors"), stock_group("Raw Material"), stock_item("B", "Raw Material")
+                ledger("A", "Sundry Debtors", OPENINGBALANCE="-100.00"),
+                stock_group("Raw Material"),
+                stock_item("B", "Raw Material", OPENINGBALANCE="5 Nos", OPENINGRATE="10.00/Nos"),
             )
         )
         for part, preset_id in tally.IMPORTABLE.items():
@@ -531,3 +533,37 @@ class TestTallyGroups(XmlCase):
 
         self.assertEqual(rows, [["Hardware", "", "1"], ["Fasteners", "Hardware", "0"]])
         self.assertEqual(tally.survey(doc).parts["stock_groups"].count, 2)
+
+    def test_a_masters_exports_openings_go_to_the_opening_engines(self):
+        # #34001, live: the ledgers' opening balances and the items' opening stock in a masters
+        # export were read but imported nowhere. Tally writes a debit balance negative.
+        doc = self._upload(
+            export(
+                group("Local Debtors", "Sundry Debtors"),
+                ledger("Ravi Traders", "Local Debtors", OPENINGBALANCE="-1500.00"),
+                ledger("Mehta Supplies", "Sundry Creditors", OPENINGBALANCE="700.00"),
+                ledger("HDFC Bank", "Bank Accounts", OPENINGBALANCE="-2000.00"),
+                ledger("Owner Capital", "Capital Account", OPENINGBALANCE="0.00"),  # no opening
+                stock_item("Hex Bolt", "Fasteners", OPENINGBALANCE="10 Nos", OPENINGRATE="50.00/Nos"),
+                stock_item("Nut", "Fasteners"),  # no opening stock
+            )
+        )
+
+        ledgers = self._targets(doc, "ledger_openings")
+        stock = self._targets(doc, "stock_openings")
+
+        self.assertEqual(
+            [row[:4] for row in ledgers["Opening receivables"]],
+            [["Ravi Traders", "Sundry Debtors", "1500", ""]],
+        )
+        self.assertEqual(
+            [row[:4] for row in ledgers["Opening payables"]],
+            [["Mehta Supplies", "Sundry Creditors", "", "700"]],
+        )
+        self.assertEqual(
+            [row[:4] for row in ledgers["Opening account balances"]],
+            [["HDFC Bank", "Bank Accounts", "2000", ""]],
+        )
+        self.assertEqual([row[:4] for row in stock["Opening stock"]], [["Hex Bolt", "10", "Nos", "50"]])
+        found = tally.survey(doc)
+        self.assertEqual((found.parts["ledger_openings"].count, found.parts["stock_openings"].count), (3, 1))
