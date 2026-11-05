@@ -889,7 +889,7 @@ def _add_needed_by(questions: List[Dict[str, Any]], files: List[Any]) -> None:
 
 #: What a fix answer takes, as dry_run_import's fixes do; and what describes a suggested fix,
 #: which FACO may send back with it and which is let be (#34547).
-FIX_KEYS = ("action", "to", "reason", "data", "parent")
+FIX_KEYS = ("action", "to", "reason", "data", "parent", "value")  # value: a fill's (#34415)
 COLUMNS_QUESTION = "columns"  # the id of a file's question about its unplaced columns: <session>:columns
 FIX_DESCRIPTION_KEYS = ("doctype", "name", "closest", "likely", "rows", "use", "note", "cause", "label")
 

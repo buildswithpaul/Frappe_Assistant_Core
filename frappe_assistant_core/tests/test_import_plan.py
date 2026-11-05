@@ -433,6 +433,32 @@ class TestColumnsWithNoField(ImportPlanCase):
         mapping = json.loads(frappe.db.get_value(SESSION, group, "template_options"))["column_to_field_map"]
         self.assertEqual(mapping["2"], "Don't Import")
 
+    def test_a_value_for_every_row_is_an_answer_too(self):
+        # #34415: a fill offered by the plan's check was refused as an answer: no key for its value
+        group = (
+            frappe.get_doc(
+                {
+                    "doctype": "Item Group",
+                    "item_group_name": f"Fill {self.tag}",
+                    "parent_item_group": "All Item Groups",
+                }
+            )
+            .insert()
+            .name
+        )
+        items = self._item_file(None)  # no Group column
+        plan = self._run("plan_migration", {"sessions": [items]})["result"]["plan"]
+        asked = self._run("dry_run_import", {"plan": plan})["result"]["questions"]
+        question = next(q for q in asked if any(f.get("action") == "fill" for f in q.get("fixes") or []))
+
+        answered = self._run(
+            "dry_run_import",
+            {"plan": plan, "answers": [{"id": question["id"], "action": "fill", "value": group}]},
+        )
+
+        self.assertTrue(answered["success"], answered)
+        self.assertFalse([q for q in answered["result"]["questions"] if q.get("kind") == "fix"])
+
 
 class TestRecordsEarlierFilesCreate(ImportPlanCase):
     def _plan(self, item_group_value, group_name=None):
