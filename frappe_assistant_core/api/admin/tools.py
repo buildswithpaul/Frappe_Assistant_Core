@@ -80,6 +80,16 @@ def get_tool_configurations() -> dict:
                 except Exception:
                     pass
 
+            # Users listed on the tool besides its roles
+            user_access = []
+            if config:
+                user_access = frappe.get_all(
+                    "FAC Tool User Access",
+                    filters={"parent": config.get("name")},
+                    fields=["user", "allow_access"],
+                    order_by="idx asc",
+                )
+
             # Get category display info
             category_info = get_category_info(category)
 
@@ -101,6 +111,7 @@ def get_tool_configurations() -> dict:
                     "category_override": bool(category_override),
                     "role_access_mode": role_access_mode,
                     "role_access": role_access,
+                    "user_access": user_access,
                     "has_config": bool(config),
                 }
             )
@@ -388,7 +399,9 @@ def update_tool_category(tool_name: str, category: str, override: bool = True):
 
 
 @frappe.whitelist(methods=["POST"])
-def update_tool_role_access(tool_name: str, role_access_mode: str, roles: list | str = None):
+def update_tool_role_access(
+    tool_name: str, role_access_mode: str, roles: list | str | None = None, users: list | str | None = None
+):
     """
     Update role access settings for a tool.
 
@@ -396,6 +409,7 @@ def update_tool_role_access(tool_name: str, role_access_mode: str, roles: list |
         tool_name: The name of the tool
         role_access_mode: "Allow All" or "Restrict to Listed Roles"
         roles: List of dicts with {role, allow_access} for restricted mode
+        users: List of dicts with {user, allow_access}: users who get the tool besides the roles
 
     Returns:
         Success status and message
@@ -410,9 +424,9 @@ def update_tool_role_access(tool_name: str, role_access_mode: str, roles: list |
         return {"success": False, "message": _(f"Invalid mode. Must be one of: {valid_modes}")}
 
     if isinstance(roles, str):
-        import json
-
-        roles = json.loads(roles)
+        roles = frappe.parse_json(roles)
+    if isinstance(users, str):
+        users = frappe.parse_json(users)
 
     try:
         # Validate tool exists
@@ -446,18 +460,31 @@ def update_tool_role_access(tool_name: str, role_access_mode: str, roles: list |
 
         config.role_access_mode = role_access_mode
 
-        # Update role access table if in restricted mode
-        if role_access_mode == "Restrict to Listed Roles" and roles:
-            # Clear existing role access
-            config.role_access = []
-
-            # Add new role access entries
-            for role_entry in roles:
-                if isinstance(role_entry, dict):
-                    config.append(
-                        "role_access",
-                        {"role": role_entry.get("role"), "allow_access": role_entry.get("allow_access", 1)},
-                    )
+        # Update the role and user lists if in restricted mode. A list that is sent replaces the old
+        # one, so removing every role sticks; a list left out keeps what was there.
+        if role_access_mode == "Restrict to Listed Roles":
+            if roles is not None:
+                config.role_access = []
+                for role_entry in roles:
+                    if isinstance(role_entry, dict):
+                        config.append(
+                            "role_access",
+                            {
+                                "role": role_entry.get("role"),
+                                "allow_access": role_entry.get("allow_access", 1),
+                            },
+                        )
+            if users is not None:
+                config.user_access = []
+                for user_entry in users:
+                    if isinstance(user_entry, dict):
+                        config.append(
+                            "user_access",
+                            {
+                                "user": user_entry.get("user"),
+                                "allow_access": user_entry.get("allow_access", 1),
+                            },
+                        )
 
         config.save(ignore_permissions=True)
         frappe.db.commit()

@@ -19,7 +19,8 @@
         "module_path",
         "section_break_role_access",
         "role_access_mode",
-        "role_access"
+        "role_access",
+        "user_access"
     ],
     "fields": [
         {
@@ -119,7 +120,7 @@
             "label": "Role Access Mode",
             "options": "Allow All\nRestrict to Listed Roles",
             "default": "Allow All",
-            "description": "Allow All: Everyone can use this tool. Restrict to Listed Roles: Only listed roles can access."
+            "description": "Allow All: Everyone can use this tool. Restrict to Listed Roles: only the roles and users listed below (and System Managers)."
         },
         {
             "fieldname": "role_access",
@@ -128,11 +129,19 @@
             "options": "FAC Tool Role Access",
             "depends_on": "eval:doc.role_access_mode == 'Restrict to Listed Roles'",
             "description": "Specify which roles can access this tool when in restricted mode"
+        },
+        {
+            "fieldname": "user_access",
+            "fieldtype": "Table",
+            "label": "User Access",
+            "options": "FAC Tool User Access",
+            "depends_on": "eval:doc.role_access_mode == 'Restrict to Listed Roles'",
+            "description": "Users who can use this tool in restricted mode, besides the listed roles"
         }
     ],
     "index_web_pages_for_search": 0,
     "links": [],
-    "modified": "2025-01-13 00:00:00.000000",
+    "modified": "2026-11-05 16:30:00.000000",
     "modified_by": "Administrator",
     "module": "Assistant Core",
     "name": "FAC Tool Configuration",

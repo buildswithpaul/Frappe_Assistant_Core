@@ -94,12 +94,24 @@ class ToolRegistry:
                 except Exception:
                     pass  # Table might not exist or no role access configured
 
+                # Users listed on the tool besides its roles
+                user_access = []
+                try:
+                    user_access = frappe.get_all(
+                        "FAC Tool User Access",
+                        filters={"parent": config.get("name"), "allow_access": 1},
+                        pluck="user",
+                    )
+                except Exception:
+                    pass  # Table doesn't exist until the next migrate
+
                 configs[tool_name] = {
                     "enabled": config.get("enabled", 1),
                     "plugin_name": config.get("plugin_name"),
                     "tool_category": config.get("tool_category", "read_write"),
                     "role_access_mode": config.get("role_access_mode", "Allow All"),
                     "role_access": role_access,
+                    "user_access": user_access,
                 }
 
             # Cache for 60 seconds
@@ -165,8 +177,8 @@ class ToolRegistry:
             if access.get("role") in user_roles and access.get("allow_access"):
                 return True
 
-        # No matching role found
-        return False
+        # Or the user is listed themselves
+        return user in config.get("user_access", [])
 
     def _is_tool_accessible(self, tool_name: str, user: str) -> bool:
         """

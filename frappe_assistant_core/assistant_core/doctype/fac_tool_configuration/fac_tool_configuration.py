@@ -47,8 +47,8 @@ class FACToolConfiguration(Document):
 
     def _validate_role_access(self):
         """Validate role access configuration."""
-        if self.role_access_mode == "Restrict to Listed Roles" and not self.role_access:
-            frappe.throw(_("Please add at least one role when using 'Restrict to Listed Roles' mode"))
+        if self.role_access_mode == "Restrict to Listed Roles" and not (self.role_access or self.user_access):
+            frappe.throw(_("Please add at least one role or user when using 'Restrict to Listed Roles' mode"))
 
     def on_update(self):
         """Clear caches when tool configuration changes."""
@@ -95,7 +95,8 @@ class FACToolConfiguration(Document):
             if role_access.role in user_roles and role_access.allow_access:
                 return True
 
-        return False
+        # Or the user is listed themselves
+        return any(row.user == user and row.allow_access for row in self.user_access)
 
 
 @frappe.whitelist(methods=["GET"])
