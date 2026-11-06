@@ -753,7 +753,17 @@ def _carried(
     Zoho customers file's Customer Group and Territory were dropped without a word, so every row
     took the default group, a group node, and failed."""
     read = {i for found in positions.values() for i in found}
-    taken = {normalise(column) for column in preset["columns"]}
+    # A header the preset knows is left out on purpose: an alias it didn't pick (a second amount
+    # column), or one its signature only matches the export by (Tally's Quantities Added)
+    signature = preset.get("signature") or {}
+    known = [*preset["columns"]]
+    known += [alias for spec in preset["columns"].values() for alias in spec.get("from") or []]
+    known += [
+        name
+        for group in (signature.get("required") or []) + (signature.get("optional") or [])
+        for name in group
+    ]
+    taken = {normalise(column) for column in known}
     carried: List[Tuple[int, str]] = []
     for i, header in enumerate(headers):
         name = str(header or "").strip()
@@ -927,13 +937,15 @@ def clean(sheet: Sheet, match: Match) -> Cleaned:
             values[flag["column"]] = "1" if name.strip() and normalise(name) in parents else "0"
 
     columns = list(preset["columns"]) + [header for _position, header in carried]
-    targets = [TargetRows(t, list(columns)) for t in preset["targets"]]
+    # Only a record's target takes them: an opening engine reads its own columns, no others
+    own = {id(t): list(columns) if t.get("doctype") else list(preset["columns"]) for t in preset["targets"]}
+    targets = [TargetRows(t, own[id(t)]) for t in preset["targets"]]
     split_on = list(dict.fromkeys(t["when"]["column"] for t in preset["targets"] if t.get("when")))
     no_target: Dict[str, List[str]] = {}
     for values in built:
         for target in targets:
             if _when(target.target.get("when"), values):
-                target.rows.append([values[c] for c in columns])
+                target.rows.append([values[c] for c in target.header])
                 break
         else:
             dropped["no_target"] += 1
@@ -946,7 +958,9 @@ def clean(sheet: Sheet, match: Match) -> Cleaned:
         dropped,
         no_target,
         rows_read=max(len(sheet.rows) - first_data, 0),
-        carried=[header for _position, header in carried],
+        carried=[header for _position, header in carried]
+        if any(t.get("doctype") for t in preset["targets"])
+        else [],
     )
 
 
@@ -959,8 +973,18 @@ def finish(rows: TargetRows, values: Dict[str, Any]) -> TargetRows:
     """The target's rows with its constant and input columns added."""
     extra: List[Tuple[str, str]] = [(c["column"], c["value"]) for c in rows.target.get("constants") or []]
     extra += [(i["column"], str(values[i["name"]]).strip()) for i in rows.target.get("inputs") or []]
+    # A column the file has itself (carried, as a Zoho file's Customer Type): its values win, the
+    # preset's fill only its blank cells. Added again, it was a second column of the same name.
+    own = {column: rows.header.index(column) for column, _value in extra if column in rows.header}
+    data = [list(row) for row in rows.rows]
+    for column, value in extra:
+        if column in own:
+            for row in data:
+                if not str(row[own[column]]).strip():
+                    row[own[column]] = value
+    added = [(column, value) for column, value in extra if column not in own]
     return TargetRows(
         rows.target,
-        rows.header + [column for column, _value in extra],
-        [row + [value for _column, value in extra] for row in rows.rows],
+        rows.header + [column for column, _value in added],
+        [row + [value for _column, value in added] for row in data],
     )

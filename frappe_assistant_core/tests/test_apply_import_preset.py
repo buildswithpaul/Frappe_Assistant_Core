@@ -1242,8 +1242,25 @@ class TestShippedPresets(PresetToolCase):
         )
 
         rows = [
-            ["Customer ID", "Display Name", "EmailID", "Customer Group", "Territory", "Remarks"],
-            [f"ZC-{self.tag}", f"Ravi {self.tag}", "", "Commercial", "India", "Old credit limit"],
+            [
+                "Customer ID",
+                "Display Name",
+                "EmailID",
+                "Customer Group",
+                "Territory",
+                "Remarks",
+                "Customer Type",
+            ],
+            [
+                f"ZC-{self.tag}",
+                f"Ravi {self.tag}",
+                "",
+                "Commercial",
+                "India",
+                "Old credit limit",
+                "Individual",
+            ],
+            [f"ZD-{self.tag}", f"Uma {self.tag}", "", "Commercial", "India", "", ""],
         ]
         file_doc = as_xlsx_file(self, f"zoho-contacts-{self.tag}.xlsx", rows)
         reply = self.registry.get_tool("start_import_session")._safe_execute(
@@ -1256,13 +1273,21 @@ class TestShippedPresets(PresetToolCase):
         headers = session_headers(doc)
         by_header = {headers[int(i)]: field for i, field in session_mapping(doc).items()}
 
-        self.assertEqual(result["carried_columns"], ["Customer Group", "Territory", "Remarks"])
+        self.assertEqual(
+            result["carried_columns"], ["Customer Group", "Territory", "Remarks", "Customer Type"]
+        )
         self.assertEqual(
             (by_header["Customer Group"], by_header["Territory"]), ("customer_group", "territory")
         )
         self.assertEqual([header for _i, header in unplaced_columns(doc)], ["Remarks"])
         sample = dict(zip(headers, result["sessions"][0]["sample_rows"][0]))
         self.assertEqual((sample["Customer Group"], sample["Remarks"]), ("Commercial", "Old credit limit"))
+        # The file's own Customer Type wins over the preset's "Company"; the preset fills a blank one
+        # (live: it was added as a second "Customer Type" column)
+        self.assertEqual(headers.count("Customer Type"), 1)
+        at = headers.index("Customer Type")
+        self.assertEqual([row[at] for row in result["sessions"][0]["sample_rows"]], ["Individual", "Company"])
+        self.assertEqual(by_header["Customer Type"], "customer_type")
 
     def test_a_named_preset_settles_the_zoho_contacts_tie(self):
         rows = [["Display Name", "EmailID", "Status"], ["Ravi Traders", "", "Active"]]
