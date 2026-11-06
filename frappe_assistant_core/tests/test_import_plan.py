@@ -547,8 +547,13 @@ class TestColumnsWithNoField(ImportPlanCase):
         )
         items = self._item_file(None)  # no Group column
         plan = self._run("plan_migration", {"sessions": [items]})["result"]["plan"]
-        asked = self._run("dry_run_import", {"plan": plan})["result"]["questions"]
+        checked = self._run("dry_run_import", {"plan": plan})["result"]
+        asked = checked["questions"]
         question = next(q for q in asked if any(f.get("action") == "fill" for f in q.get("fixes") or []))
+        # Final round, 2026-11-06: "Apply all suggested answers" left the rows out (an items file
+        # with no Item Group lost every item). Only the user can name the value: it's asked.
+        self.assertNotIn("suggested", question)
+        self.assertIn("Ask the user", checked["table"])
 
         answered = self._run(
             "dry_run_import",

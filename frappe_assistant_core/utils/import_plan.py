@@ -840,7 +840,9 @@ def open_questions(plan) -> Dict[str, Any]:
 def suggested_fix(question: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """The answer "Apply all suggested answers" gives a fix question: map to the name the value is
     most likely a misspelling of, else create the missing record, else leave the rows out. None
-    when no fix fits (an answer the user must give on a card of its own)."""
+    when no fix fits (an answer the user must give on a card of its own), and when the rows can
+    take one value for all (fill): only the user can name it, and leaving them out by default lost
+    every row of an items file with no Item Group."""
     from frappe_assistant_core.utils import import_fixes
 
     fixes = {fix.get("action"): fix for fix in question.get("fixes") or []}
@@ -850,6 +852,8 @@ def suggested_fix(question: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     if import_fixes.CREATE in fixes:
         parent = fixes[import_fixes.CREATE].get("parent")
         return {"action": import_fixes.CREATE, **({"parent": parent} if parent else {})}
+    if import_fixes.FILL in fixes:
+        return None
     if import_fixes.LEAVE_OUT in fixes:
         return {"action": import_fixes.LEAVE_OUT, "reason": question.get("cause") or _("Left out")}
     return None

@@ -357,7 +357,9 @@ this card. `next` in the result says which of the steps below comes now.
    the user sees it even when the message has no text. Add what `needed_by` says to that question's
    row: "leaving it out also leaves out <needed_by>"; prefer a fix that keeps it.
 1. The suggested answer of a fix question is its `suggested`: the name it is most likely a
-   misspelling of (`likely`), else creating the missing record, else leaving the rows out.
+   misspelling of (`likely`), else creating the missing record, else leaving the rows out. A
+   question whose rows can take one value for every row (a `fill` fix, such as an items file with
+   no Item Group) has no `suggested`: only the user can name the value, so ask it as in step 5.
 2. Then **one single-choice card** (`ask_user`, `single_select`, never `multi_select`), its
    question one short line ("Apply these answers?"), with two
    options: **"Apply all suggested answers and start (cut-off <date>)"** first, and **"Let me
