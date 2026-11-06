@@ -43,17 +43,23 @@ def post(chat: str, text: str) -> None:
 
 
 def check_ended(session) -> None:
+    from frappe_assistant_core.utils import import_plan
+
     summary = frappe.parse_json(session.validation_summary or "{}") or {}
     if summary.get("ready") is None:
         return
     text = _("The check of {0} has finished: {1} rows ready, {2} would fail.").format(
         session.file_name, summary.get("ready") or 0, summary.get("failed") or 0
     )
-    text += " " + (
-        _("Ask me to go through the rows that would fail.")
-        if summary.get("failed")
-        else _("Say when to import them.")
-    )
+    plan = session.get("migration_plan")
+    if plan and import_plan.plan_status(plan) in import_plan.OPEN:
+        # Live, 2026-11-06: "Say when to import them" for a plan's file, and the user's "import" was
+        # refused, as the plan imports it after its own approval
+        text += " " + _("It is in migration plan {0}: say go on, and I'll check the plan again.").format(plan)
+    elif summary.get("failed"):
+        text += " " + _("Ask me to go through the rows that would fail.")
+    else:
+        text += " " + _("Say when to import them.")
     post(session.get("chat_session_id"), text)
 
 

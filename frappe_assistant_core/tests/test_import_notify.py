@@ -109,6 +109,20 @@ class TestTheResultIsPostedInTheChat(BaseAssistantTest):
             (sent["room"], sent["message"]["event"]), (f"task_progress:{self.chat}", "message_posted")
         )
 
+    def test_a_plans_file_says_the_plan_goes_on_not_to_import_it(self):
+        # Live, 2026-11-06: "Say when to import them" for a file in a plan; the user's "import"
+        # was then refused, as the plan imports its files after its own approval.
+        session = self._session()
+        plan = self._run("plan_migration", {"sessions": [session]})["result"]["plan"]
+        self._as_a_job()
+
+        import_dry_run.run_job(session, "Administrator")
+
+        posted = self._posted()
+        self.assertEqual(len(posted), 1, posted)
+        self.assertIn(f"in migration plan {plan}", posted[0])
+        self.assertNotIn("Say when to import them", posted[0])
+
     def test_a_check_in_the_request_posts_nothing(self):
         # developer mode or a small file: the tool call's own reply carries the result
         session = self._session()
