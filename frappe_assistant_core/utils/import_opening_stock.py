@@ -547,8 +547,13 @@ def _line_problem(
         )
 
     qty, rate, amount = values["qty"] or 0, values["valuation_rate"], values["amount"]
-    uom = cells.get("uom", "")
-    if uom and uom != item.stock_uom and not item.brought_by:
+    uom = cstr(cells.get("uom", "")).strip()
+    if uom and uom.casefold() != cstr(item.stock_uom).casefold():
+        from frappe_assistant_core.utils.import_fixes import word_for
+
+        # Live, 2026-11-06: "Mtr" for an item kept in Meter found no conversion and was left out
+        uom = word_for("UOM", uom) or uom
+    if uom and uom.casefold() != cstr(item.stock_uom).casefold() and not item.brought_by:
         factor = _conversion(item.name, uom)
         if not factor:
             return _problem(

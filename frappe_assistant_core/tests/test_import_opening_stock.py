@@ -457,6 +457,22 @@ class TestOpeningStockCheck(OpeningStockCase):
         self.assertEqual(result["opening_stock"]["total_qty"], 20)  # 2 boxes of 10
         self.assertEqual(result["opening_stock"]["total_value"], 200)  # 100 a box is 10 a unit
 
+    def test_a_unit_written_short_is_the_stock_unit(self):
+        # Live, 2026-11-06: "Mtr" for an item kept in Meter found no conversion and was left out
+        stock_uom = frappe.db.get_value("Item", self.item, "stock_uom")
+        short = {"Nos": "No.", "Meter": "Mtr", "Kg": "Kgs", "Litre": "Ltr"}.get(stock_uom)
+        if not short or not frappe.db.get_value("UOM", stock_uom, "enabled"):
+            self.skipTest(f"no short form known for {stock_uom}")
+        session = self._session(
+            [f"{self.item},{self.stores},3,10,{short}"], header="Item,Warehouse,Qty,Rate,Unit"
+        )
+        columns = {"Item": "item_code", "Warehouse": "warehouse", "Qty": "qty", "Rate": "valuation_rate"}
+        self._setup(session, columns={**columns, "Unit": "uom"})
+
+        result = self._check(session)
+
+        self.assertEqual(result["opening_stock"]["total_qty"], 3, result)
+
     def test_stock_reconciliation_can_not_go_through_data_import(self):
         # Why opening stock has its own route: Allow Import is off for Stock Reconciliation.
         from frappe_assistant_core.utils.import_session import import_target_problem
