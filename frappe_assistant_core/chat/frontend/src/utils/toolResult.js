@@ -64,7 +64,7 @@ export function toolFailed(block) {
 	return block?.status === "error" || block?.result?.isError === true || toolResult(block).success === false;
 }
 
-/** A create that only ran validation: it saved nothing, so it must not read as a created record. */
+/** A create or update that only ran validation: it saved nothing, so it must not read as a saved record. */
 export function isDryRun(block) {
 	return block?.input?.validate_only === true || toolResult(block).validation_passed === true;
 }

@@ -6,9 +6,7 @@
  */
 
 import { __ } from "@/utils/i18n";
-import { formatKey } from "./helpers";
-
-const CONDITION_KEYS = ["depends_on", "mandatory_depends_on", "read_only_depends_on"];
+import { CONDITION_KEYS, formatKey } from "./helpers";
 
 export const isConditionKey = (key) => CONDITION_KEYS.includes(key);
 

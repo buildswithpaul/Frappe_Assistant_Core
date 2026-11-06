@@ -52,7 +52,11 @@ const config = (() => {
 
 const frappe = makeFrappeStandIn(
 	{ call: bridgeCall, user: config.user || "" },
-	{ onUnsupported: (name) => post({ op: "unsupported", name: String(name) }), onError: reportError },
+	{
+		onUnsupported: (name) => post({ op: "unsupported", name: String(name) }),
+		onError: reportError,
+		formatSettings: config.format_settings || {},
+	},
 );
 
 const fac = {

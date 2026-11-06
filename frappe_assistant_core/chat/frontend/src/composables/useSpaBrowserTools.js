@@ -8,6 +8,7 @@ import { isNarrow, usePagePanel } from "@/composables/usePagePanel";
 import { useChatStore } from "@/stores/chatStore";
 import { createDispatcher } from "@/utils/browserToolDispatch";
 import { __ } from "@/utils/i18n";
+import { describeScreenshotFit, fitScreenshot } from "@/utils/screenshotFit";
 import { logger } from "@/utils/logger";
 import { askConfirm } from "@/widget/panel/confirmQueue";
 
@@ -20,6 +21,11 @@ const SCREENSHOT_IMAGE_TIMEOUT_MS = 3000;
 const PAGE_SETTLE_TIMEOUT_MS = 10000;
 // The client_type the chat app sends with its turns (api/domains/chat.js).
 const SPA_CLIENT_TYPE = "spa";
+// The same words as DESK_ONLY_IN_CHAT_APP in plugins/faco/tools/browser_bridge.py.
+const DESK_ONLY_TOOL_ERROR = () =>
+	__(
+		"This browser tool works only in the Desk widget, and the user is in the full chat app. Use browser_take_screenshot instead: it captures the page open beside the chat and returns its page_errors and page_text."
+	);
 
 /** Why the open page cannot be captured, or null when it can. */
 function pageProblem() {
@@ -66,9 +72,12 @@ export async function takePageScreenshot(params = {}, askedAbout = undefined) {
 		page_errors: [...(view.errors?.() || [])],
 	});
 	try {
-		const { blob, text, ...size } = view.capture ? await captureFrame(view, params) : await captureElement(view, params);
+		const shot = view.capture ? await captureFrame(view, params) : await captureElement(view, params);
+		const { blob, text, page_width: pageWidth, page_height: pageHeight, ...size } = shot;
 		// A canvas past the browser's maximum size encodes to null.
 		if (!blob) return { error: __("Screenshot too large to encode."), ...size, ...check(text) };
+		// Said in the result, so FACO knows when the bottom of the page is not in the picture.
+		const fit = describeScreenshotFit({ pageWidth, pageHeight, ...size, scale: scale() });
 
 		const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
 		const file = new File([blob], `page_screenshot_${timestamp}.jpg`, { type: "image/jpeg" });
@@ -78,6 +87,7 @@ export async function takePageScreenshot(params = {}, askedAbout = undefined) {
 			file_url: uploaded.file_url,
 			file_name: uploaded.file_name,
 			...size,
+			...fit,
 			mime_type: "image/jpeg",
 			...check(text),
 		};
@@ -92,17 +102,30 @@ const scale = () => Math.min(window.devicePixelRatio || 1, MAX_SCREENSHOT_SCALE)
 // A Shared page or a draft is drawn in this document, so html2canvas reads it here.
 async function captureElement(view, params) {
 	const html2canvas = await loadHtml2canvas();
+	// html2canvas draws the element's own box, so that is the size to fit.
+	const box = view.element.getBoundingClientRect();
+	const page = { width: Math.ceil(box.width), height: Math.ceil(box.height) };
+	const fit = fitScreenshot({ ...page, scale: scale() });
 	const canvas = await html2canvas(view.element, {
 		useCORS: true,
 		// allowTaint lets cross-origin pixels in, and toBlob then throws on the tainted canvas.
 		allowTaint: false,
-		scale: scale(),
+		scale: fit.scale,
+		// Cuts off the bottom of a page too tall to fit even at the smallest readable scale.
+		...(fit.height < page.height ? { height: fit.height } : {}),
 		imageTimeout: SCREENSHOT_IMAGE_TIMEOUT_MS,
 		logging: false,
 	});
 	const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", (params.quality || 80) / 100));
 	const root = view.element.shadowRoot?.querySelector(".fac-page-root") || view.element;
-	return { blob, width: canvas.width, height: canvas.height, text: visibleText(root) };
+	return {
+		blob,
+		width: canvas.width,
+		height: canvas.height,
+		page_width: page.width,
+		page_height: page.height,
+		text: visibleText(root),
+	};
 }
 
 // A personal page's frame is another origin: it draws the picture itself and sends the bytes.
@@ -147,13 +170,9 @@ export function useSpaBrowserTools({ getSessionId }) {
 		ownsCall: (call) =>
 			call?.client_type === SPA_CLIENT_TYPE &&
 			(useChatStore().isOwnLiveTurn(call.session_id) || useChatStore().isClaimedLiveTurn(call.session_id)),
-		// The widget's other tools may reach this room; they are the widget's to answer. On a turn
-		// taken over from the widget nobody else will answer, so say why at once instead.
-		ignoreUnknownTools: (call) => !useChatStore().isClaimedLiveTurn(call?.session_id),
-		unknownToolError: () =>
-			__(
-				"This tool needs the Desk page, and the conversation moved to the full chat app. Ask the user to open the record in Desk if it is still needed."
-			),
+		// A call typed for the chat app is no other client's to answer, so a Desk-only tool is
+		// answered at once: left alone, FACO would wait on nobody (#34515).
+		unknownToolError: () => DESK_ONLY_TOOL_ERROR(),
 		confirmTools: new Set(["take_screenshot"]),
 		trustKey: pageKey,
 		pageTrustKey: (toolName) => (getSessionId() ? pageKey(toolName) : null),

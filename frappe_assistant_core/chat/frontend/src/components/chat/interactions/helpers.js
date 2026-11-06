@@ -44,12 +44,49 @@ export function isCodeKey(key) {
 }
 
 // Code keys a single doctype adds, so other doctypes' fields of the same name stay plain.
-// The server returns these through GO_LIVE_KEYS in chat/api/current_code.py.
-const DOCTYPE_CODE_KEYS = { "FAC Page": ["style"] };
+// The server returns these through GO_LIVE_KEYS and CARD_CODE_KEYS_BY_DOCTYPE in
+// chat/api/current_code.py.
+const DOCTYPE_CODE_KEYS = { "FAC Page": ["style"], "Print Format": ["raw_commands", "format_data"] };
 
-/** True when `key` holds code on a `doctype` record: a CODE_KEYS field or one that doctype adds. */
-export function isCodeField(key, doctype) {
-	return isCodeKey(key) || Boolean(DOCTYPE_CODE_KEYS[doctype]?.includes(key));
+// A field's display conditions. Frappe's form runs a value that starts with "eval:" as JavaScript;
+// a bare fieldname only reads that field. Mirrored in chat/api/current_code.py (DEPENDS_ON_KEYS).
+export const CONDITION_KEYS = ["depends_on", "mandatory_depends_on", "read_only_depends_on"];
+
+export function isEvalExpression(value) {
+	return typeof value === "string" && value.trimStart().startsWith("eval:");
+}
+
+// Markup or a template, as an HTML field's options holds; a Select's choices or a Link's DocType
+// holds neither.
+const looksLikeMarkup = (value) => typeof value === "string" && /[<{]/.test(value);
+
+// An HTML field's options: the form renders them as markup. A Custom Field write that leaves the
+// fieldtype out (an update) is judged by the value. Server side: utils/field_code.py.
+function isMarkupCode(key, doctype, fields) {
+	if (doctype === "Custom Field" && key === "options") {
+		return fields.fieldtype === "HTML" || (fields.fieldtype === undefined && looksLikeMarkup(fields.options));
+	}
+	return doctype === "Property Setter" && key === "value" && fields.property === "options" && looksLikeMarkup(fields.value);
+}
+
+// An eval: condition a Custom Field sets, or a Property Setter sets as its value, or an HTML field's
+// markup. An update that leaves the property out is judged by the value alone, so the card shows
+// any eval: as code.
+function isConditionCode(key, doctype, fields) {
+	if (isMarkupCode(key, doctype, fields)) return typeof fields[key] === "string";
+	if (doctype === "Custom Field") return CONDITION_KEYS.includes(key) && isEvalExpression(fields[key]);
+	if (doctype !== "Property Setter" || key !== "value" || !isEvalExpression(fields.value)) return false;
+	return fields.property === undefined || CONDITION_KEYS.includes(fields.property);
+}
+
+/**
+ * True when `key` holds code on a `doctype` record: a CODE_KEYS field, one that doctype adds, or an
+ * eval: condition. `fields` is the flattened write, which an eval: condition is read from.
+ */
+export function isCodeField(key, doctype, fields = {}) {
+	return (
+		isCodeKey(key) || Boolean(DOCTYPE_CODE_KEYS[doctype]?.includes(key)) || isConditionCode(key, doctype, fields)
+	);
 }
 
 // Code keys a single tool takes, with their language, so a record's field of the same name stays
@@ -62,13 +99,18 @@ export function toolCodeLanguage(toolName, key) {
 }
 
 const PYTHON_KEYS = new Set(["script", "report_script", "condition"]);
+const JINJA_KEYS = new Set(["raw_commands", "cc", "bcc"]);
 
-export function codeLanguage(key, doctype) {
+/** The highlight language of `key` on a `doctype` record; `fields` is the flattened write. */
+export function codeLanguage(key, doctype, fields = {}) {
 	if (key === "script" && doctype === "FAC Page") return "javascript";
 	if (key === "style" && doctype === "FAC Page") return "css";
 	if (PYTHON_KEYS.has(key)) return "python";
-	if (key === "javascript") return "javascript";
+	if (key === "javascript" || CONDITION_KEYS.includes(key)) return "javascript";
+	if (key === "value" && doctype === "Property Setter") return fields.property === "options" ? "xml" : "javascript";
 	if (key === "query") return "sql";
+	if (key === "format_data") return "json";
+	if (JINJA_KEYS.has(key)) return "django";
 	if (key === "html" && doctype === "Print Format") return "django";
 	return "xml";
 }

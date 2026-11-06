@@ -164,7 +164,6 @@ function saveTenantConfig() {
 <style scoped>
 .workspace-settings {
 	width: 100%;
-	max-width: 1100px;
 }
 
 .divider {

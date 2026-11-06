@@ -32,7 +32,8 @@ const MARKERS = ["fac_checkout", "result", "success", "checkout", "credit_purcha
 
 const MESSAGES = {
 	applied: "Payment confirmed — your account is up to date.",
-	processing: "Payment received — your plan will update shortly.",
+	processing:
+		"We're still confirming your payment. Billing will update once it's confirmed — check back in a few minutes.",
 	cancelled: "Checkout cancelled. No changes were made.",
 	failed: "The payment didn't go through. No changes were made to your plan.",
 };

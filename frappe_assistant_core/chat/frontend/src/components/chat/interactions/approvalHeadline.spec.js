@@ -6,6 +6,31 @@ import { displayValue } from "./helpers";
 const block = (tool_name, input) => ({ tool_name, input });
 
 describe("approvalHeadline", () => {
+	it("leads a validate-only create with a check, not a create", () => {
+		const named = block("create_document", { doctype: "Customer", validate_only: true, data: { customer_name: "Trader" } });
+		expect(approvalHeadline(named)).toBe("Check Customer “Trader”");
+		expect(approvalHeadline(block("create_document", { doctype: "ToDo", validate_only: true, records: [{}, {}] }))).toBe(
+			"Check ToDo",
+		);
+		expect(approvalHeadline(block("create_document", { doctype: "ToDo", validate_only: false, data: {} }))).toBe("Create ToDo");
+	});
+
+	it("leads a validate-only update with a check of the change, not an update", () => {
+		expect(approvalHeadline(block("update_document", { doctype: "ToDo", name: "TD-1", validate_only: true, data: {} }))).toBe(
+			"Check changes to ToDo TD-1",
+		);
+		expect(approvalHeadline(block("update_document", { doctype: "ToDo", names: ["a", "b"], validate_only: true, data: {} }))).toBe(
+			"Check changes to ToDo",
+		);
+		// A dry run that would switch a script on still only checks it.
+		expect(
+			approvalHeadline(block("update_document", { doctype: "Server Script", name: "Plan Rules", validate_only: true, data: { disabled: 0 } })),
+		).toBe("Check changes to Server Script Plan Rules");
+		expect(approvalHeadline(block("update_document", { doctype: "ToDo", name: "TD-1", validate_only: false, data: {} }))).toBe(
+			"Update ToDo TD-1",
+		);
+	});
+
 	it("names a new record by its doctype and the field a person knows it by", () => {
 		expect(approvalHeadline(block("create_document", { doctype: "Customer", data: { customer_name: "MIGTEST Trader 01" } }))).toBe(
 			"Create Customer “MIGTEST Trader 01”",

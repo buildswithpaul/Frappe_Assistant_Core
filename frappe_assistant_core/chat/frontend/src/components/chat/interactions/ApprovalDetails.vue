@@ -48,7 +48,7 @@
 			<CodePreview
 				v-for="[key, value] in codeRows"
 				:key="key"
-				:label="formatKey(key)"
+				:label="codeLabel(key, value)"
 				:code="value"
 				:language="rowLanguage(key)"
 				:previous="previousCode(key)"
@@ -58,7 +58,7 @@
 				:key="`live-${key}`"
 				:label="formatKey(key)"
 				:code="value"
-				:language="codeLanguage(key, doctype)"
+				:language="codeLanguage(key, doctype, flat)"
 			/>
 		</div>
 		<div v-for="[key, lines] in listRows" :key="key" class="value-list">
@@ -79,6 +79,17 @@
 			</div>
 			<ChildTable :label="key" :rows="rows" />
 		</template>
+		<div v-if="rowCode.length" class="code-stack">
+			<CodePreview
+				v-for="cell in rowCode"
+				:key="cell.key"
+				:label="cell.label"
+				:code="cell.code"
+				:language="cell.language"
+				:previous="cell.previous"
+			/>
+		</div>
+		<OpeningCode :block="block" @blocking="openingLoading = $event" />
 		<ApprovalNotes :block="block" />
 	</div>
 </template>
@@ -88,11 +99,13 @@ import { computed, ref, watch } from "vue";
 import { __ } from "@/utils/i18n";
 import ApprovalNotes from "./ApprovalNotes.vue";
 import ChildTable from "./ChildTable.vue";
+import OpeningCode from "./OpeningCode.vue";
 import ConditionValue from "./ConditionValue.vue";
 import CodePreview from "./CodePreview.vue";
 import LongValue from "./LongValue.vue";
 import { baseToolName } from "@/utils/toolNames";
 import { headlineKeys } from "./approvalHeadline";
+import { describeCondition } from "./conditions";
 import { goesLiveAudience, goesLiveFields, renameKeys, writesCondition } from "./customisation";
 import { useCurrentCode } from "./useCurrentCode";
 import {
@@ -106,10 +119,12 @@ import {
 	isTextList,
 	tableReplacement,
 	isLongValue,
+	isEvalExpression,
 	codeLanguage,
 	toolCodeLanguage,
 	splitDetailFields,
 } from "./helpers";
+import { rowCodeCells, rowsWithoutCode } from "./rowCode";
 
 const props = defineProps({
 	block: { type: Object, required: true },
@@ -123,7 +138,9 @@ const {
 	failed: currentCodeFailed,
 	loading: codeLoading,
 } = useCurrentCode(() => props.block);
-watch(codeLoading, (loading) => emit("blocking", loading), { immediate: true });
+// Code a write puts live by opening a dormant DocType (OpeningCode) blocks the same way.
+const openingLoading = ref(false);
+watch(() => codeLoading.value || openingLoading.value, (loading) => emit("blocking", loading), { immediate: true });
 
 // A rename the tool will not make is a notice (ApprovalNotes), never a changed field.
 const flat = computed(() => {
@@ -140,19 +157,32 @@ const doctype = computed(() => flat.value.doctype);
 const codeRows = computed(() =>
 	Object.entries(flat.value).filter(
 		([k, v]) =>
-			(isCodeField(k, doctype.value) || toolCodeLanguage(props.block.tool_name, k)) &&
+			(isCodeField(k, doctype.value, flat.value) || toolCodeLanguage(props.block.tool_name, k)) &&
 			typeof v === "string" &&
 			v !== "",
 	),
 );
-const rowLanguage = (key) => toolCodeLanguage(props.block.tool_name, key) || codeLanguage(key, doctype.value);
-const tableRows = computed(() => Object.entries(flat.value).filter(([, v]) => isChildTable(v)));
+const rowLanguage = (key) =>
+	toolCodeLanguage(props.block.tool_name, key) || codeLanguage(key, doctype.value, flat.value);
 // Every line of a list in sight, not "2 items" behind "+ more": the user approves them (#34547)
 const listRows = computed(() => Object.entries(flat.value).filter(([, v]) => isTextList(v)));
 // An update given [] deletes every row of that table: said in red, always in sight, not "—" (#34540)
 const clearedTables = computed(() =>
 	Object.entries(flat.value).filter(([, v]) => Array.isArray(v) && v.length === 0 && tableReplacement(props.block.tool_name, v)),
 );
+// Code in child rows (a transition's condition, a field's eval: condition) shows in full below its
+// table, diffed against the stored row on an update, and not in the table.
+const rowCode = computed(() => rowCodeCells(doctype.value, flat.value, currentCode.value));
+const tableRows = computed(() =>
+	Object.entries(flat.value)
+		.filter(([, v]) => isChildTable(v))
+		.map(([key, rows]) => [key, rowsWithoutCode(doctype.value, key, rows, rowCode.value)]),
+);
+
+// An eval: condition keeps its plain reading beside the field name, above the code itself.
+function codeLabel(key, value) {
+	return isEvalExpression(value) ? `${formatKey(key)}: ${describeCondition(value)}` : formatKey(key);
+}
 // The title already names the record and its doctype, so the field list starts at what changes.
 const shownInTitle = computed(() => headlineKeys(props.block));
 // A blank value is a change only on an update (it clears the field); elsewhere it is noise.

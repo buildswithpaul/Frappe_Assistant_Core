@@ -34,7 +34,8 @@ Adds a rule that runs on the server when a document is saved, submitted, cancell
 1. **Look up the sandbox before writing code.** Call `sandbox_reference` (with a `prefix` such as `frappe.db` to keep it short) and use only names it lists. Do not guess what the sandbox allows.
 2. **Build the script switched off** (`disabled: 1`). While it is off it cannot run, so there is no approval card.
 3. **Switch it on once, when it is ready.** That is the one approval card, shown even when the plan lists it. Then trigger it to match its type:
-   - DocType Event on a new record: call `create_document` with `validate_only: true`. It runs the Before Insert, Before Validate and Before Save rules and the doctype's own checks, then saves nothing. It runs as you. `update_document` has no such dry run, so for a rule on editing, submitting or deleting a record, or one that treats users differently, tell the user what to try themselves.
+   - DocType Event on a new record: call `create_document` with `validate_only: true`. It runs the Before Insert, Before Validate and Before Save rules and the doctype's own checks, then saves nothing. It runs as you.
+   - DocType Event on editing a record: call `update_document` with the record's `name`, the change and `validate_only: true`. It runs the Before Validate and Before Save rules (Before Save (Submitted Document) on a submitted record) against the stored record, then saves nothing. For a rule on submitting or deleting a record, or one that treats users differently, tell the user what to try themselves.
    - API: call the endpoint.
    - Scheduler Event: wait for the job or run it.
    - Permission Query: open the list as an affected user.

@@ -379,7 +379,112 @@ class FrappeAssistantAPI:
         except Exception as e:
             return {"success": False, "error": str(e)}
 
+    # ========== MCP TOOL-NAME ALIASES ==========
+    # The model sees the MCP tool names and calls them on `tools`. Each alias hands
+    # its arguments to the MCP tool itself, so names, defaults and results match it.
+
+    def list_documents(
+        self,
+        doctype: str,
+        filters: Optional[Dict[str, Any]] = None,
+        fields: Optional[List[str]] = None,
+        limit: Optional[int] = None,
+        offset: Optional[int] = None,
+        order_by: Optional[str] = None,
+        group_by: Optional[str] = None,
+        aggregate: Optional[List[Dict[str, Any]]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Same as the list_documents MCP tool (docstatus default, paging, group_by/aggregate).
+
+        Example:
+            result = tools.list_documents("Customer", filters={"territory": "USA"}, limit=50)
+        """
+        from frappe_assistant_core.plugins.core.tools.list_documents import DocumentList
+
+        return self._run_mcp_tool(
+            DocumentList,
+            doctype=doctype,
+            filters=filters,
+            fields=fields,
+            limit=limit,
+            offset=offset,
+            order_by=order_by,
+            group_by=group_by,
+            aggregate=aggregate,
+        )
+
+    def report_list(
+        self,
+        query: Optional[str] = None,
+        limit: Optional[int] = None,
+        module: Optional[str] = None,
+        report_type: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Same as the report_list MCP tool: find a report by `query`, or filter by module/type.
+
+        Example:
+            result = tools.report_list(query="receivables overdue")
+        """
+        from frappe_assistant_core.plugins.core.tools.report_list import ReportList
+
+        return self._run_mcp_tool(
+            ReportList, query=query, limit=limit, module=module, report_type=report_type
+        )
+
+    def report_requirements(
+        self,
+        report_name: str,
+        include_metadata: Optional[bool] = None,
+        include_columns: Optional[bool] = None,
+        include_filters: Optional[bool] = None,
+    ) -> Dict[str, Any]:
+        """
+        Same as the report_requirements MCP tool: filters and columns a report needs.
+
+        Example:
+            info = tools.report_requirements("Sales Analytics")
+        """
+        from frappe_assistant_core.plugins.core.tools.report_requirements import ReportRequirements
+
+        return self._run_mcp_tool(
+            ReportRequirements,
+            report_name=report_name,
+            include_metadata=include_metadata,
+            include_columns=include_columns,
+            include_filters=include_filters,
+        )
+
+    def search_documents(
+        self,
+        query: str,
+        doctype: Optional[str] = None,
+        purpose: Optional[str] = None,
+        filters: Optional[Dict[str, Any]] = None,
+        limit: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """
+        Same as the search_documents MCP tool.
+
+        Example:
+            result = tools.search_documents("john", doctype="Customer")
+        """
+        from frappe_assistant_core.plugins.core.tools.search_documents import SearchDocuments
+
+        return self._run_mcp_tool(
+            SearchDocuments, query=query, doctype=doctype, purpose=purpose, filters=filters, limit=limit
+        )
+
     # ========== INTERNAL HELPERS ==========
+
+    @staticmethod
+    def _run_mcp_tool(tool_class, **arguments) -> Dict[str, Any]:
+        """Run an MCP tool with only the arguments the caller passed (None = use the tool default)."""
+        try:
+            return tool_class().execute({k: v for k, v in arguments.items() if v is not None})
+        except Exception as e:
+            return {"success": False, "error": str(e)}
 
     def _ensure_report_tools(self):
         """Lazy-load ReportTools to avoid circular imports"""
@@ -398,13 +503,17 @@ Available methods:
   • list_reports(module=None, report_type=None)
   • get_report_info(report_name)
   • generate_report(report_name, filters={}, format="json")
+  • report_list(query=None, limit=None, module=None, report_type=None)
+  • report_requirements(report_name)
 
 📄 Document Operations:
   • get_document(doctype, name)
   • get_documents(doctype, filters={}, fields=["*"], limit=100)
+  • list_documents(doctype, filters, fields, limit, offset, order_by, group_by, aggregate)
 
 🔍 Search Operations:
   • search(query, doctype=None, limit=20)
+  • search_documents(query, doctype=None, purpose=None, filters=None, limit=None)
 
 📋 Metadata Operations:
   • get_doctype_info(doctype)

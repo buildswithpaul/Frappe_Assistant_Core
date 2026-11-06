@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { copyWithStyles, pageText } from "./capture";
+import { capturePage, copyWithStyles, pageText } from "./capture";
 
 // jsdom loads no images, so the drawing itself is checked in Chrome (task-8-report.md); this checks
 // what goes into the picture and the text that always comes with it.
@@ -99,5 +99,64 @@ describe("pageText", () => {
 		expect(pageText(root)).toBe("Sales 70,29,354\n\nIndia 74%");
 		root.textContent = "x".repeat(7000);
 		expect(pageText(root)).toHaveLength(6001);
+	});
+});
+
+describe("capturePage size", () => {
+	const drawn = {};
+	let restore = [];
+
+	// jsdom draws nothing: the image loads at once, and the canvas records the size it was given.
+	function stubDrawing() {
+		const OriginalImage = globalThis.Image;
+		globalThis.Image = class {
+			set src(url) {
+				drawn.svg = decodeURIComponent(url);
+				queueMicrotask(() => this.onload());
+			}
+		};
+		const getContext = vi
+			.spyOn(HTMLCanvasElement.prototype, "getContext")
+			.mockReturnValue({ fillRect() {}, scale() {}, drawImage() {}, set fillStyle(_) {} });
+		const toBlob = vi.spyOn(HTMLCanvasElement.prototype, "toBlob").mockImplementation(function (done) {
+			drawn.canvas = { width: this.width, height: this.height };
+			// jsdom's Blob has no arrayBuffer(); the frame only reads that from it.
+			done({ arrayBuffer: async () => new Uint8Array([0xff, 0xd8, 0xff]).buffer });
+		});
+		restore = [() => (globalThis.Image = OriginalImage), () => getContext.mockRestore(), () => toBlob.mockRestore()];
+	}
+	afterEach(() => restore.forEach((undo) => undo()));
+
+	function tallPage(height) {
+		const root = document.createElement("div");
+		root.textContent = "Collections Desk";
+		Object.defineProperty(root, "scrollWidth", { value: 1280 });
+		Object.defineProperty(root, "scrollHeight", { value: height });
+		document.body.append(root);
+		return root;
+	}
+
+	it("scales a 10,000 px tall page under the model's 8000 px limit and reports the page's size", async () => {
+		stubDrawing();
+		const root = tallPage(10000);
+		const shot = await capturePage(root, { scale: 1.5 });
+		root.remove();
+
+		expect(Math.max(shot.width, shot.height)).toBeLessThanOrEqual(8000);
+		expect(drawn.canvas).toEqual({ width: shot.width, height: shot.height });
+		// All of the page is drawn, scaled down.
+		expect(drawn.svg).toContain('height="10000"');
+		expect(shot).toMatchObject({ page_width: 1280, page_height: 10000 });
+	});
+
+	it("keeps only the top of a page too tall to scale readably", async () => {
+		stubDrawing();
+		const root = tallPage(30000);
+		const shot = await capturePage(root, { scale: 1.5 });
+		root.remove();
+
+		expect(Math.max(shot.width, shot.height)).toBeLessThanOrEqual(8000);
+		expect(drawn.svg).toContain('height="15360"');
+		expect(shot).toMatchObject({ page_height: 30000 });
 	});
 });

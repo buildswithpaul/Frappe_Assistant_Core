@@ -183,6 +183,8 @@ PREFER THIS over separate fetch tools; fetch inside the code:
   tools.list_reports(module=None, report_type=None) -> {success, reports, count}
   tools.search(query, doctype=None, limit=20)
   tools.get_doctype_info(doctype) -> {success, fields, links}
+  The MCP read tools also work here, with the same arguments and results:
+  tools.list_documents, tools.report_list, tools.report_requirements, tools.search_documents
 
 RULES: no imports; no file/network access; no plotting (use the dashboard tools).
 DATA: read-only, with the user's roles and User Permissions. frappe.get_list/get_all/get_doc and
@@ -568,6 +570,9 @@ PRE-LOADED: pd, np, frappe, math, datetime, json, re, statistics, random"""
         if re.search(slice_pattern, code):
             # Only apply if it looks like a DataFrame slice (not dict or list access)
             def add_copy(match):
+                # a rewritten import (`pd = _preloaded_modules["pandas"]`) is a module, never a slice
+                if match.group(2) == "_preloaded_modules":
+                    return match.group(0)
                 if "pd.DataFrame" in code or "data" in match.group(2):
                     return f"{match.group(1)} = {match.group(2)}[{match.group(3)}].copy()"
                 return match.group(0)

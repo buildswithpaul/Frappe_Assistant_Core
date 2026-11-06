@@ -22,6 +22,10 @@
 
 	// fac_page_draft_srcdoc and fac_page_draft_frame, inlined by render_include on page load.
 	// {% include "frappe_assistant_core/assistant_core/page/fac_pages/fac_page_draft.js" %}
+	// fac_page_index, inlined the same way.
+	// {% include "frappe_assistant_core/assistant_core/page/fac_pages/fac_page_index.js" %}
+	// fac_page_frappe, the frappe a Shared page's script gets, inlined the same way.
+	// {% include "frappe_assistant_core/assistant_core/page/fac_pages/fac_page_frappe.js" %}
 
 	frappe.pages["fac-pages"].on_page_load = function (wrapper) {
 		const page = frappe.ui.make_app_page({
@@ -38,14 +42,14 @@
 		const request = ++state.request;
 		const slug = frappe.get_route()[1];
 
+		// A later show may start another request; only the latest one may draw.
+		const is_latest = () => request === state.request;
+
 		if (!slug) {
-			state.page.set_title(__("FAC Page"));
-			show_message(state.page, __("Pick a page to show."));
+			show_index(state.page, is_latest);
 			return;
 		}
 
-		// A later show may start another request; only the latest one may draw.
-		const is_latest = () => request === state.request;
 		frappe.call({
 			method: "frappe_assistant_core.api.fac_page.get_page",
 			type: "GET",
@@ -58,6 +62,34 @@
 			},
 		});
 	};
+
+	// The pages the user can open, for anyone a page is shared with, whether or not they can use
+	// FAC Chat. The chat link shows only to those who can.
+	function show_index(page, is_latest) {
+		dispose_shown();
+		page.set_title(__("Pages"));
+		show_message(page, __("Loading…"));
+		const pages = frappe.xcall("frappe_assistant_core.api.fac_page.list_pages", {}, "GET");
+		const chat = frappe
+			.xcall("frappe_assistant_core.chat.api.settings.access.can_use_faco", {}, "GET")
+			.then((access) => Boolean(access && access.can_use))
+			.catch(() => false);
+		Promise.all([pages, chat])
+			.then(([list, can_chat]) => {
+				if (!is_latest()) return;
+				page.main.empty().append(
+					fac_page_index({
+						pages: list,
+						href: (name) => frappe.router.make_url(["fac-pages", name]),
+						updated: (modified) => frappe.datetime.prettyDate(modified),
+						chat_url: can_chat ? "/copilot/pages" : "",
+					})
+				);
+			})
+			.catch(() => {
+				if (is_latest()) show_message(page, __("Your pages could not be listed."));
+			});
+	}
 
 	function render(page, name, data, is_latest) {
 		dispose_shown();
@@ -93,7 +125,7 @@
 				host,
 				`<div class="fac-page-root">${data.html || ""}</div>`,
 				css,
-				with_fac(script)
+				with_page_globals(script)
 			);
 		});
 	}
@@ -318,12 +350,18 @@
 	}
 
 	// create_shadow_element runs the script as a global <script>, which sees no variable of ours,
-	// so the fac it gets is read from this Desk page's frappe.pages entry when it starts. The chat
-	// panel runs it as new Function("root_element", "frappe", "__", "fac", script), so here it runs
-	// as a function of fac as well: the same scoping, and no global named fac.
-	function with_fac(script) {
-		frappe.pages["fac-pages"].fac = shown.fac;
-		return `(function (fac) {\n${script}\n})(frappe.pages["fac-pages"].fac);`;
+	// so the fac and frappe it gets are read from this Desk page's frappe.pages entry when it
+	// starts. The chat panel runs it as new Function("root_element", "frappe", "__", "fac", script),
+	// so here it runs as a function of fac and frappe as well: the same scoping, no global named
+	// fac, and a frappe.format that returns text as the panel's does (fac_page_frappe.js).
+	function with_page_globals(script) {
+		const entry = frappe.pages["fac-pages"];
+		entry.fac = shown.fac;
+		entry.page_frappe = entry.page_frappe || fac_page_frappe(frappe);
+		return (
+			`(function (fac, frappe) {\n${script}\n})` +
+			`(frappe.pages["fac-pages"].fac, frappe.pages["fac-pages"].page_frappe);`
+		);
 	}
 
 	// The sandboxed frame cannot load the kit itself (its CSP allows no fetches), so it is inlined.

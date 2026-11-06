@@ -75,6 +75,8 @@ const MAX_SNAPSHOT_BYTES = 5 * 1024 * 1024;
 const MAX_IMAGE_BYTES = 15 * 1024 * 1024;
 const MAX_PAGE_TEXT = 8000;
 const MAX_DIMENSION = 20000;
+// The page's own size, which a picture of a tall page reports beside its smaller one.
+const MAX_PAGE_DIMENSION = 1000000;
 const RESULT_TIMEOUT_MS = 15000;
 // A print or a picture waits for the script to run and its calls to come back, this long at most,
 // then this long with nothing in flight, so the figures it fetched are drawn.
@@ -109,7 +111,7 @@ function isJpeg(buffer) {
 	return head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff;
 }
 
-const dimension = (value) => Math.min(Math.max(Math.round(Number(value) || 0), 0), MAX_DIMENSION);
+const dimension = (value, max = MAX_DIMENSION) => Math.min(Math.max(Math.round(Number(value) || 0), 0), max);
 
 // A method that refuses GET answers 403 (frappe.handler.is_valid_http_method) or 405.
 const refusedGet = (error) => error?.status === 403 || error?.status === 405;
@@ -123,7 +125,8 @@ const errorReply = (error) => ({
  * Build a personal page's frame and serve its bridge.
  *
  * @param {object} options
- * @param {{title?: string, html?: string, style?: string, script?: string}} options.page get_page's response
+ * @param {{title?: string, html?: string, style?: string, script?: string, format_settings?: object}} options.page
+ *   get_page's response
  * @param {string} options.kitCss the mockup kit
  * @param {string} options.user the session user
  * @param {string} [options.origin] the site origin; the window's own by default
@@ -164,6 +167,7 @@ export function createPageFrame({
 		script: page.script,
 		kitCss,
 		user,
+		formatSettings: page.format_settings,
 		origin,
 		nonce: makeNonce(),
 		version,
@@ -415,6 +419,8 @@ export function createPageFrame({
 					blob: new Blob([data.buffer], { type: "image/jpeg" }),
 					width: dimension(data.width),
 					height: dimension(data.height),
+					page_width: dimension(data.page_width, MAX_PAGE_DIMENSION),
+					page_height: dimension(data.page_height, MAX_PAGE_DIMENSION),
 					text,
 				});
 			}

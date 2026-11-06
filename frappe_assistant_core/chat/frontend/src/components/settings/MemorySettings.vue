@@ -235,7 +235,6 @@ onMounted(() => {
 <style scoped>
 .memory-settings {
 	width: 100%;
-	max-width: 1100px;
 }
 
 /* Loading */

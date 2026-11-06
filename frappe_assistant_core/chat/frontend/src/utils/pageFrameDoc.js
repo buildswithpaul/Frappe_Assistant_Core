@@ -73,17 +73,19 @@ const inJson = (value) => JSON.stringify(value).replace(/</g, "\\u003c");
  * @param {string} parts.script the page's script
  * @param {string} parts.kitCss the mockup kit
  * @param {string} parts.user the session user, for frappe.session.user
+ * @param {object} [parts.formatSettings] the site's number, currency and date settings, for
+ *   frappe.format (get_page's format_settings)
  * @param {string} parts.origin the site origin, e.g. https://erp.example.com
  * @param {string} parts.nonce from makeNonce()
  * @param {string} [parts.version] the build version, so a rebuilt bundle is refetched
  */
-export function pageFrameSrcdoc({ html, style, script, kitCss, user, origin, nonce, version = "" }) {
+export function pageFrameSrcdoc({ html, style, script, kitCss, user, formatSettings, origin, nonce, version = "" }) {
 	const csp = `<meta http-equiv="Content-Security-Policy" content="${attr(pageFrameCsp(origin, nonce))}">`;
 	// Only a script that names fac can draw a chart, so only such a page loads the bundle.
 	const charts = /\bfac\b/.test(script || "")
 		? `<script nonce="${nonce}" src="${attr(pageFrameChartsUrl(origin, version))}"></script>`
 		: "";
-	const config = inJson({ user: user || "" });
+	const config = inJson({ user: user || "", format_settings: formatSettings || {} });
 	const inner = [
 		"<!doctype html><html><head>",
 		csp,

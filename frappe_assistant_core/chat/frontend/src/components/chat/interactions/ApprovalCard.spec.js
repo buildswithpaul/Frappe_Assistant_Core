@@ -4,12 +4,14 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const messagePreview = vi.fn();
 const currentCode = vi.fn();
 const fieldPlacement = vi.fn();
+const codeGoingLive = vi.fn();
 vi.mock("@/api/client", () => ({
 	api: {
 		tools: {
 			messagePreview: (...a) => messagePreview(...a),
 			currentCode: (...a) => currentCode(...a),
 			fieldPlacement: (...a) => fieldPlacement(...a),
+			codeGoingLive: (...a) => codeGoingLive(...a),
 		},
 	},
 }));
@@ -38,6 +40,8 @@ beforeEach(() => {
 	currentCode.mockRejectedValue(new Error("not fetched"));
 	fieldPlacement.mockReset();
 	fieldPlacement.mockRejectedValue(new Error("not fetched"));
+	codeGoingLive.mockReset();
+	codeGoingLive.mockResolvedValue([]);
 });
 
 describe("ApprovalCard for a message tool", () => {
@@ -231,6 +235,45 @@ describe("ApprovalCard for customisations", () => {
 		for (const v of ["Draft", "Submit", "Pending", "Approve", "Approved"]) expect(text).toContain(v);
 		expect(table.findAll("tbody tr")).toHaveLength(2);
 		expect(text).not.toContain("x1");
+	});
+
+	it("shows a transition's condition as code below the table, not in it", () => {
+		const transitions = [
+			{ state: "Draft", action: "Submit", next_state: "Pending" },
+			{ state: "Pending", action: "Approve", next_state: "Approved", condition: "doc.grand_total < 1000" },
+		];
+		const block = { id: "t7", tool_name: "update_document", input: { doctype: "Workflow", name: "PO", data: { transitions } }, interrupts };
+		const wrapper = mount(ApprovalCard, { props: { block } });
+		const headers = wrapper.findAll("table.child-table th").map((th) => th.text());
+		expect(headers).not.toContain("Condition");
+		const code = wrapper.findAllComponents(CodePreview);
+		expect(code).toHaveLength(1);
+		expect(code[0].props("label")).toBe("Transitions, row 2: Condition");
+		expect(code[0].props("code")).toBe("doc.grand_total < 1000");
+		expect(code[0].props("language")).toBe("python");
+	});
+
+	it("shows a notification recipient's cc, bcc and condition as code", () => {
+		const recipients = [{ receiver_by_role: "Accounts Manager", cc: "{{ doc.owner }}", bcc: "", condition: "doc.priority == 'High'" }];
+		const block = { id: "t7", tool_name: "update_document", input: { doctype: "Notification", name: "N", data: { recipients } }, interrupts };
+		const wrapper = mount(ApprovalCard, { props: { block } });
+		const code = wrapper.findAllComponents(CodePreview).map((c) => [c.props("label"), c.props("language")]);
+		expect(code).toEqual([
+			["Recipients, row 1: Condition", "python"],
+			["Recipients, row 1: Cc", "django"],
+		]);
+		expect(wrapper.find("table.child-table").text()).toContain("Accounts Manager");
+	});
+
+	it("shows a print format's raw commands and layout as code", () => {
+		const data = { raw_printing: 1, raw_commands: "^XA^FD{{ doc.name }}^XZ", format_data: "[]" };
+		const block = { id: "t7", tool_name: "create_document", input: { doctype: "Print Format", data }, interrupts };
+		const wrapper = mount(ApprovalCard, { props: { block } });
+		const code = wrapper.findAllComponents(CodePreview).map((c) => [c.props("label"), c.props("language")]);
+		expect(code).toEqual([
+			["Raw Commands", "django"],
+			["Format Data", "json"],
+		]);
 	});
 
 	it("shows ten child rows and opens the rest on request", async () => {
@@ -665,29 +708,42 @@ describe("ApprovalCard field conditions", () => {
 		mount(ApprovalCard, { props: { block: { id: "d1", tool_name: tool, input, interrupts } } });
 	const conditionInput = { doctype: "Custom Field", data: { dt: "Sales Order", depends_on: "eval:doc.base_grand_total > 100000" } };
 
-	it("Custom Field create: sentence in the row, raw expression only under the toggle, and the notice", async () => {
+	it("Custom Field create: an eval: condition shows as code under its sentence, with the notice", async () => {
 		const wrapper = card(conditionInput);
 		await flushPromises();
-		expect(wrapper.text()).toContain("when Base Grand Total is over 100000");
+		const code = wrapper.findComponent(CodePreview);
+		expect(code.props("label")).toBe("Depends On: when Base Grand Total is over 100000");
+		expect(code.props("code")).toBe("eval:doc.base_grand_total > 100000");
+		expect(code.props("language")).toBe("javascript");
 		expect(wrapper.text()).toContain(NOTICE);
-		expect(wrapper.text()).not.toContain("eval:doc");
-		await wrapper.find(".condition-toggle").trigger("click");
-		expect(wrapper.find(".condition-code").text()).toBe("eval:doc.base_grand_total > 100000");
+		expect(wrapper.find(".condition-toggle").exists()).toBe(false);
 	});
 
-	it("shows a condition sentence in the normal font", async () => {
-		const wrapper = card(conditionInput);
+	it("shows a bare fieldname condition as a sentence in the normal font", async () => {
+		const wrapper = card({ doctype: "Custom Field", data: { dt: "Sales Order", depends_on: "customer" } });
 		await flushPromises();
+		expect(wrapper.find(".code-preview").exists()).toBe(false);
 		const value = wrapper.findAll(".field-value").find((v) => v.find(".condition-value").exists());
 		expect(value.classes()).not.toContain("value-mono");
 		expect(value.classes()).not.toContain("value-money");
 	});
 
-	it("falls back to 'Has a condition' for an expression it cannot read", async () => {
+	it("falls back to 'Has a condition' for an expression it cannot read, and still shows the code", async () => {
 		const wrapper = card({ doctype: "Custom Field", data: { dt: "Sales Order", depends_on: "eval:doc.a > 1 && doc.b" } });
 		await flushPromises();
-		expect(wrapper.find(".condition-value").text()).toContain("Has a condition");
-		expect(wrapper.text()).not.toContain("doc.a > 1");
+		const code = wrapper.findComponent(CodePreview);
+		expect(code.props("label")).toBe("Depends On: Has a condition");
+		expect(code.props("code")).toBe("eval:doc.a > 1 && doc.b");
+	});
+
+	it("Custom Field update diffs its eval: condition against the stored one", async () => {
+		currentCode.mockReset();
+		currentCode.mockResolvedValue({ depends_on: "eval:doc.qty > 1" });
+		const wrapper = card({ doctype: "Custom Field", name: "Sales Order-po", data: { depends_on: "eval:doc.qty > 5" } }, "update_document");
+		await flushPromises();
+		expect(currentCode).toHaveBeenCalledWith("Custom Field", "Sales Order-po", ["depends_on"]);
+		expect(wrapper.find(".diff-del").text()).toContain("doc.qty > 1");
+		expect(wrapper.find(".diff-add").text()).toContain("doc.qty > 5");
 	});
 
 	it("Custom Field update carries the notice", async () => {
@@ -697,12 +753,19 @@ describe("ApprovalCard field conditions", () => {
 		expect(wrapper.text()).toContain("when Qty is set");
 	});
 
-	it("Property Setter carries the notice and reads its value as a sentence", async () => {
+	it("Property Setter carries the notice and shows its eval: value as code under its sentence", async () => {
 		const wrapper = card({ doctype: "Property Setter", data: { doc_type: "Sales Order", property: "read_only_depends_on", value: "eval:doc.status == 'Closed'" } });
 		await flushPromises();
 		expect(wrapper.find('[data-test="condition-notice"]').text()).toBe(NOTICE);
-		expect(wrapper.text()).toContain("when Status is Closed");
-		expect(wrapper.text()).not.toContain("eval:doc");
+		const code = wrapper.findComponent(CodePreview);
+		expect(code.props("label")).toBe("Value: when Status is Closed");
+		expect(code.props("code")).toBe("eval:doc.status == 'Closed'");
+	});
+
+	it("Property Setter value for another property stays a plain field", async () => {
+		const wrapper = card({ doctype: "Property Setter", data: { doc_type: "Sales Order", property: "label", value: "eval:x" } });
+		await flushPromises();
+		expect(wrapper.find(".code-preview").exists()).toBe(false);
 	});
 
 	it("a write that sets no condition has no notice", async () => {
@@ -1215,5 +1278,117 @@ describe("ApprovalCard for an opening entry (#34433)", () => {
 		expect(summary.text()).toContain("Credit 300.00 to Temporary Opening");
 		expect(summary.text()).toContain("Left out");
 		expect(summary.text()).not.toContain("Covered by other imports");
+	});
+});
+
+describe("ApprovalCard code in child rows and HTML fields", () => {
+	const OPEN = "eval:doc.status == 'Open'";
+	const update = (doctype, name, data) =>
+		mount(ApprovalCard, { props: { block: { id: "r1", tool_name: "update_document", input: { doctype, name, data }, interrupts } } });
+
+	it("diffs a transition's condition against the stored row", async () => {
+		currentCode.mockReset();
+		currentCode.mockResolvedValue({
+			transitions: [{ name: "t1", state: "Pending", action: "Approve", next_state: "Approved", condition: "doc.total < 1000" }],
+		});
+		const wrapper = update("Workflow", "PO", { transitions: [{ name: "t1", condition: "doc.total < 5000" }] });
+		await flushPromises();
+		expect(currentCode).toHaveBeenCalledWith("Workflow", "PO", ["transitions"]);
+		const code = wrapper.findComponent(CodePreview);
+		expect(code.props("previous")).toBe("doc.total < 1000");
+		expect(wrapper.find(".diff-del").text()).toContain("doc.total < 1000");
+		expect(wrapper.find(".diff-add").text()).toContain("doc.total < 5000");
+	});
+
+	it("diffs a DocType field's eval: condition by fieldname, and keeps a bare one in the table", async () => {
+		currentCode.mockReset();
+		currentCode.mockResolvedValue({
+			fields: [{ name: "f1", fieldname: "notes", fieldtype: "Data", depends_on: OPEN, mandatory_depends_on: "", read_only_depends_on: "", options: "" }],
+		});
+		const fields = [
+			{ fieldname: "notes", fieldtype: "Data", depends_on: "eval:doc.status == 'Closed'" },
+			{ fieldname: "summary", fieldtype: "Data", depends_on: "status" },
+		];
+		const wrapper = update("DocType", "Visit", { fields });
+		await flushPromises();
+		expect(currentCode).toHaveBeenCalledWith("DocType", "Visit", ["fields"]);
+		const code = wrapper.findAllComponents(CodePreview);
+		expect(code.map((c) => c.props("label"))).toEqual(["Fields, row 1: Depends On"]);
+		expect(wrapper.find(".diff-del").text()).toContain("'Open'");
+		expect(wrapper.find(".diff-add").text()).toContain("'Closed'");
+		const table = wrapper.find("table.child-table").text();
+		expect(table).toContain("status");
+		expect(table).not.toContain("eval:");
+	});
+
+	it("diffs a Custom Field's HTML markup against the stored one", async () => {
+		currentCode.mockReset();
+		currentCode.mockResolvedValue({ options: "<b>old</b>" });
+		const wrapper = update("Custom Field", "ToDo-banner", { options: "<b>new</b>" });
+		await flushPromises();
+		expect(currentCode).toHaveBeenCalledWith("Custom Field", "ToDo-banner", ["options"]);
+		expect(wrapper.find(".diff-del").text()).toContain("old");
+		expect(wrapper.find(".diff-add").text()).toContain("new");
+	});
+
+	it("keeps a Custom Field's or Property Setter's plain options out of the code", async () => {
+		const select = update("Custom Field", "ToDo-kind", { options: "Open\nClosed" });
+		const link = update("Property Setter", "ToDo-ref-options", { property: "options", value: "Customer" });
+		const markup = update("Property Setter", "File-preview_html-options", { property: "options", value: "<i>{{ doc.name }}</i>" });
+		await flushPromises();
+		expect(select.find(".code-preview").exists()).toBe(false);
+		expect(link.find(".code-preview").exists()).toBe(false);
+		expect(markup.findComponent(CodePreview).props("language")).toBe("xml");
+	});
+});
+
+describe("ApprovalCard opening a dormant DocType", () => {
+	const card = (tool, input) =>
+		mount(ApprovalCard, { props: { block: { id: "o1", tool_name: tool, input, interrupts } } });
+	const entries = [
+		{ source: "Custom Field", name: "Site Visit-region", field: "region", key: "depends_on", code: "eval:doc.status == 'Open'" },
+		{ source: "Custom Field", name: "Site Visit-banner", field: "banner", key: "options", code: "<div>{{ doc.status }}</div>" },
+	];
+
+	it("lists each Custom Field's code when a permission opens the DocType", async () => {
+		codeGoingLive.mockResolvedValue(entries);
+		const wrapper = card("create_document", { doctype: "Custom DocPerm", data: { parent: "Site Visit", role: "Employee" } });
+		await flushPromises();
+		expect(codeGoingLive).toHaveBeenCalledWith({ target: "Site Visit" });
+		const section = wrapper.find('[data-test="opening-code"]');
+		expect(section.exists()).toBe(true);
+		const code = section.findAllComponents(CodePreview).map((c) => [c.props("label"), c.props("code")]);
+		expect(code).toEqual([
+			["Custom Field region: Depends On", "eval:doc.status == 'Open'"],
+			["Custom Field banner: Options", "<div>{{ doc.status }}</div>"],
+		]);
+	});
+
+	it("asks about a DocType role change, and blocks approval until the code loads", async () => {
+		let resolve;
+		codeGoingLive.mockReturnValue(new Promise((r) => (resolve = r)));
+		const wrapper = card("update_document", { doctype: "DocType", name: "Site Visit", data: { permissions: [{ role: "Employee" }] } });
+		await flushPromises();
+		expect(codeGoingLive).toHaveBeenCalledWith({ target: "Site Visit" });
+		expect(wrapper.find('[data-test="opening-code-loading"]').exists()).toBe(true);
+		const approve = wrapper.findAll("button").find((b) => b.text().includes("Approve"));
+		expect(approve.attributes("disabled")).toBeDefined();
+		resolve(entries);
+		await flushPromises();
+		expect(wrapper.find('[data-test="opening-code-loading"]').exists()).toBe(false);
+		expect(wrapper.find('[data-test="opening-code"]').findAllComponents(CodePreview)).toHaveLength(2);
+	});
+
+	it("warns when the code cannot be loaded, and shows nothing for a DocType with no code going live", async () => {
+		codeGoingLive.mockRejectedValue(new Error("denied"));
+		const failed = card("update_document", { doctype: "Custom DocPerm", name: "p1", data: { role: "Employee" } });
+		await flushPromises();
+		expect(codeGoingLive).toHaveBeenCalledWith({ customDocperm: "p1" });
+		expect(failed.find('[data-test="opening-code-missing"]').exists()).toBe(true);
+		codeGoingLive.mockReset();
+		codeGoingLive.mockResolvedValue([]);
+		const empty = card("create_document", { doctype: "Custom DocPerm", data: { parent: "Plain", role: "Employee" } });
+		await flushPromises();
+		expect(empty.find('[data-test="opening-code"]').exists()).toBe(false);
 	});
 });

@@ -217,7 +217,7 @@ describe("SPA socket wiring", () => {
 	});
 });
 
-describe("browser_navigate_to hand-off", () => {
+describe("browser_navigate_to in the stream", () => {
 	let handler;
 	let hrefSet;
 	let originalLocation;
@@ -285,10 +285,12 @@ describe("browser_navigate_to hand-off", () => {
 		vi.advanceTimersByTime(1000);
 	}
 
-	it("hard-navigates and stores the hand-off on the SPA", () => {
+	// #34515: following a widget turn's navigate_to took the user out of the chat app to Desk, where
+	// the widget then asked for that turn's next browser tool while the user was back in the chat.
+	it("never leaves the chat app for Desk", () => {
 		fireNavigate();
-		expect(hrefSet).toHaveBeenCalledWith("/app/todo");
-		expect(sessionStorage.getItem("faco_widget_session")).toContain("s-nav");
+		expect(hrefSet).not.toHaveBeenCalled();
+		expect(sessionStorage.getItem("faco_widget_session")).toBeNull();
 	});
 
 	it("leaves Desk alone in the widget: the launcher's navigate_to already routed", async () => {

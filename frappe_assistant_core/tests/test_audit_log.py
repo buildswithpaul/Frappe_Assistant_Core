@@ -221,6 +221,43 @@ class TestAuditLogFieldCapture(BaseAssistantTest):
         self.assertEqual(row["output_truncated"], 1)
 
 
+class TestAuditOptOut(BaseAssistantTest):
+    """A tool that opts out of auditing writes no row; every other tool still does."""
+
+    def setUp(self):
+        super().setUp()
+        _delete_test_rows(_TEST_TOOL_NAME)
+
+    def _rows(self, tool_name: str) -> int:
+        return frappe.db.count("Assistant Audit Log", {"tool_name": tool_name})
+
+    def test_a_tool_that_opts_out_writes_no_row(self):
+        tool = _ToolBase(executor=lambda arguments: {"ok": True})
+        tool.audit_executions = False
+        self.assertTrue(tool._safe_execute({})["success"])
+        self.assertEqual(self._rows(_TEST_TOOL_NAME), 0)
+
+    def test_the_hidden_customisation_checks_write_no_row(self):
+        from frappe_assistant_core.plugins.faco.tools.check_build_plan import CheckBuildPlan
+        from frappe_assistant_core.plugins.faco.tools.customisation_impact import CustomisationImpact
+
+        calls = (
+            (
+                CustomisationImpact(),
+                {
+                    "tool_name": "update_document",
+                    "tool_input": {"doctype": "Server Script", "name": "x", "data": {"script": "secret"}},
+                },
+            ),
+            (CheckBuildPlan(), {"changes": [{"doctype": "Server Script", "action": "create", "name": "x"}]}),
+        )
+        for tool, arguments in calls:
+            with self.subTest(tool=tool.name):
+                frappe.db.delete("Assistant Audit Log", {"tool_name": tool.name})
+                self.assertTrue(tool._safe_execute(arguments)["success"])
+                self.assertEqual(self._rows(tool.name), 0)
+
+
 class TestAuditSinkSanitization(BaseAssistantTest):
     """The sink defensively redacts sensitive keys even if the caller forgot."""
 

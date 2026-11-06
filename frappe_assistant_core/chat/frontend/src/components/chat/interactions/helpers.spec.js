@@ -310,6 +310,29 @@ describe("code keys", () => {
 		expect(toolCodeLanguage("create_document", "code")).toBeNull();
 	});
 
+	it("reads conditions, print commands and recipient templates in their own languages", () => {
+		expect(codeLanguage("depends_on", "Custom Field")).toBe("javascript");
+		expect(codeLanguage("value", "Property Setter")).toBe("javascript");
+		expect(codeLanguage("raw_commands", "Print Format")).toBe("django");
+		expect(codeLanguage("format_data", "Print Format")).toBe("json");
+		expect(codeLanguage("cc", "Notification")).toBe("django");
+	});
+
+	it("treats only an eval: condition as code", () => {
+		expect(isCodeField("depends_on", "Custom Field", { depends_on: "eval:doc.qty" })).toBe(true);
+		expect(isCodeField("depends_on", "Custom Field", { depends_on: "qty" })).toBe(false);
+		expect(isCodeField("depends_on", "Web Form", { depends_on: "eval:doc.qty" })).toBe(false);
+		expect(isCodeField("value", "Property Setter", { property: "depends_on", value: "eval:1" })).toBe(true);
+		expect(isCodeField("value", "Property Setter", { value: "eval:1" })).toBe(true);
+		expect(isCodeField("value", "Property Setter", { property: "label", value: "eval:1" })).toBe(false);
+	});
+
+	it("treats a print format's raw commands and layout as code only there", () => {
+		expect(isCodeField("raw_commands", "Print Format")).toBe(true);
+		expect(isCodeField("format_data", "Print Format")).toBe(true);
+		expect(isCodeField("format_data", "Web Page")).toBe(false);
+	});
+
 	it("treats a FAC Page's style as code and leaves style alone elsewhere", () => {
 		expect(isCodeField("style", "FAC Page")).toBe(true);
 		expect(isCodeField("script", "FAC Page")).toBe(true);

@@ -95,7 +95,6 @@ const rows = [
 <style scoped>
 .appearance-settings {
 	width: 100%;
-	max-width: 1100px;
 }
 
 .profile-section {

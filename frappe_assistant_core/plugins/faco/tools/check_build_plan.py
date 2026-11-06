@@ -38,6 +38,8 @@ class CheckBuildPlan(BaseTool):
         )
         self.requires_permission = None
         self.required_roles = ["System Manager"]
+        # Hidden from the model and read-only; each write the plan leads to is audited when it runs.
+        self.audit_executions = False
         self.inputSchema = {
             "type": "object",
             "properties": {

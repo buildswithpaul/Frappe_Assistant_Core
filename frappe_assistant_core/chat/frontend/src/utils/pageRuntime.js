@@ -7,6 +7,8 @@
  */
 import { __ } from "@/utils/i18n";
 
+import { formatValue, strToUser } from "./pageFormat";
+
 // A GET query string carries text only; Frappe parses JSON-encoded args back on the server.
 const toQuery = (args = {}) =>
 	Object.fromEntries(
@@ -35,33 +37,6 @@ function escapeHtml(text) {
 	return String(text).replace(/[&<>"'`=]/g, (char) => ESCAPE_HTML[char] || char);
 }
 
-function strToUser(value) {
-	if (!value) return "";
-	const date = new Date(String(value).length === 10 ? `${value}T00:00:00` : value);
-	return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleDateString();
-}
-
-const ISO_CURRENCY = /^[A-Z]{3}$/;
-
-function format(value, df = {}) {
-	if (value === null || value === undefined || value === "") return "";
-	const number = Number(value);
-	switch (df.fieldtype) {
-		case "Currency":
-			return ISO_CURRENCY.test(df.options || "")
-				? new Intl.NumberFormat("en-US", { style: "currency", currency: df.options }).format(number)
-				: new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(number);
-		case "Float":
-			return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(number);
-		case "Int":
-			return new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(Math.round(number));
-		case "Date":
-			return strToUser(value);
-		default:
-			return String(value);
-	}
-}
-
 // Reading a member the target lacks reports it by path and gives undefined, as Desk would not.
 function guard(target, path, report) {
 	return new Proxy(target, {
@@ -77,11 +52,13 @@ function guard(target, path, report) {
  * The `frappe` a page script sees in the panel.
  *
  * @param {{baseCall: Function, getCall: Function, user: string}} api the SPA transport and session user
- * @param {{onUnsupported?: (name: string) => void, onError?: (error: Error) => void}} options
+ * @param {{onUnsupported?: (name: string) => void, onError?: (error: Error) => void, formatSettings?: object}} options
  *   `onUnsupported` gets each unsupported member's path; `onError` gets a failed call the script
  *   passed no error callback for, which would otherwise leave part of the page silently empty.
+ *   `formatSettings` is get_page's `format_settings`, so `frappe.format` and
+ *   `frappe.datetime.str_to_user` show what Desk shows (pageFormat.js).
  */
-export function makeFrappeStandIn(api, { onUnsupported, onError } = {}) {
+export function makeFrappeStandIn(api, { onUnsupported, onError, formatSettings = {} } = {}) {
 	const unsupported = [];
 	const report = (name) => {
 		unsupported.push(name);
@@ -155,9 +132,13 @@ export function makeFrappeStandIn(api, { onUnsupported, onError } = {}) {
 			call,
 			db: guard(db, "db", report),
 			session: guard({ user: api.user }, "session", report),
-			datetime: guard({ get_today: today, str_to_user: strToUser }, "datetime", report),
+			datetime: guard(
+				{ get_today: today, str_to_user: (value) => strToUser(formatSettings, value) },
+				"datetime",
+				report,
+			),
 			utils: guard({ escape_html: escapeHtml }, "utils", report),
-			format,
+			format: (value, df, options, doc) => formatValue(formatSettings, value, df, options, doc),
 		},
 		"",
 		report,

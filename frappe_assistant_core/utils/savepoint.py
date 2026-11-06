@@ -26,8 +26,8 @@ full rollback resets those queues; ``rollback_to_savepoint`` puts back what the
 refused action added to them.
 
 Used by document_action (submit, cancel, amend), create_document (submit and its
-validate_only dry run, which undoes whatever validate() wrote) and the FACO CRM and
-Helpdesk tools.
+validate_only dry run, which undoes whatever validate() wrote), update_document's
+validate_only dry run and the FACO CRM and Helpdesk tools.
 """
 
 import copy

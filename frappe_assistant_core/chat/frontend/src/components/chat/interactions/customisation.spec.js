@@ -18,6 +18,60 @@ describe("writeConsequence", () => {
 		expect(writeConsequence("delete_document", {})).toBe("This will permanently delete a record from your ERP");
 	});
 
+	it("says a validate-only create saves nothing but still runs the save-time rules", () => {
+		expect(writeConsequence("create_document", { doctype: "Customer", validate_only: true })).toBe(
+			"Checks this record against your rules without saving it. Rules that run before save still run.",
+		);
+	});
+
+	it("says so in the plural for a validate-only batch create", () => {
+		expect(writeConsequence("create_document", { doctype: "Customer", records: [{}, {}], validate_only: true })).toBe(
+			"Checks these records against your rules without saving them. Rules that run before save still run.",
+		);
+	});
+
+	it("keeps the write copy for creates that are not validate-only", () => {
+		expect(writeConsequence("create_document", { doctype: "Customer", validate_only: false })).toBe(
+			"This will write a new record to your ERP",
+		);
+	});
+
+	it("says a validate-only update saves nothing but still runs the save-time rules", () => {
+		const copy = "Checks this change against your rules without saving it. Rules that run before save still run.";
+		expect(writeConsequence("update_document", { doctype: "ToDo", name: "TD-1", data: {}, validate_only: true })).toBe(copy);
+		// A customisation dry run leads with the dry run, not with what the change would do.
+		expect(
+			writeConsequence("update_document", { doctype: "Server Script", name: "Rules", data: { script: "pass" }, validate_only: true }),
+		).toBe(copy);
+		expect(writeConsequence("prod_update_document", { doctype: "ToDo", name: "TD-1", validate_only: true })).toBe(copy);
+	});
+
+	it("says so in the plural for a validate-only batch update", () => {
+		const copy = "Checks these changes against your rules without saving them. Rules that run before save still run.";
+		expect(writeConsequence("update_document", { doctype: "ToDo", names: ["a", "b"], data: {}, validate_only: true })).toBe(copy);
+		expect(
+			writeConsequence("update_document", {
+				doctype: "ToDo",
+				records: [
+					{ name: "a", data: {} },
+					{ name: "b", data: {} },
+				],
+				validate_only: true,
+			}),
+		).toBe(copy);
+	});
+
+	it("keeps the modify copy for updates that are not validate-only", () => {
+		for (const flag of [false, "true", undefined]) {
+			expect(writeConsequence("update_document", { doctype: "ToDo", name: "TD-1", validate_only: flag })).toBe(
+				"This will modify an existing record in your ERP",
+			);
+		}
+		expect(writeConsequence("update_document", { names: ["a", "b"], validate_only: false })).toBe(
+			"This will modify 2 existing records in your ERP",
+		);
+	});
+
 	it("counts the records of a bulk write", () => {
 		expect(writeConsequence("create_document", { records: [{}, {}, {}] })).toBe(
 			"This will write 3 new records to your ERP",

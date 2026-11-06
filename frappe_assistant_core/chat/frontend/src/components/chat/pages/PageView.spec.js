@@ -66,6 +66,17 @@ describe("PageView", () => {
 		expect(shadow.querySelector(".mk-card").textContent).toBe("ran");
 	});
 
+	it("formats a figure with the site's settings that get_page served with the page", () => {
+		const format_settings = {
+			number_format: "#,##,###.##",
+			currency: "INR",
+			currencies: { INR: { symbol: "₹", number_format: "#,##,###.##", fraction_units: 100 } },
+		};
+		const script = "root_element.querySelector('.mk-card').textContent = frappe.format(123456, {fieldtype: 'Currency'});";
+		const shadow = mountView({ ...published, script, format_settings }).find(".page-view-host").element.shadowRoot;
+		expect(shadow.querySelector(".mk-card").textContent).toBe("₹ 1,23,456.00");
+	});
+
 	it("drops script tags from the html, as Desk does", () => {
 		const page = { ...published, html: "<p>x</p><script>window.__ran = 1</script>" };
 		const shadow = mountView(page).find(".page-view-host").element.shadowRoot;

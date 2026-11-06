@@ -143,7 +143,7 @@ function toggleSignal(id, shown) {
 </script>
 
 <style scoped>
-.home-settings { width: 100%; max-width: 1100px; }
+.home-settings { width: 100%; }
 .profile-section {
 	background: var(--ql-surface);
 	border: 1px solid var(--ql-border);

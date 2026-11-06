@@ -31,6 +31,7 @@ import { logger } from "@/utils/logger";
 import pageContext from "./pageContext.js";
 import { getCsrfToken } from "@/api/_core.js";
 import { createDispatcher } from "@/utils/browserToolDispatch.js";
+import { describeScreenshotFit, fitScreenshot } from "@/utils/screenshotFit.js";
 
 const loadHtml2canvas = () => import("html2canvas-pro").then((m) => m.default || m);
 
@@ -89,9 +90,24 @@ const TOOLS_REQUIRING_CONFIRMATION = new Set([
 // widget", not "rasterize a Desk list view", and left alone they routinely take
 // longer than the server is willing to wait.
 const MAX_SCREENSHOT_SCALE = 1.5;
+// The page height html2canvas lays the copy out in for a full-page capture.
 const MAX_SCREENSHOT_HEIGHT_PX = 8000;
 const SCREENSHOT_IMAGE_TIMEOUT_MS = 3000;
 const SCREENSHOT_OVERLAY_ID = "fac-screenshot-overlay";
+
+/** The CSS size html2canvas draws for `element`: the whole document for <body>, else its box. */
+function captureSize(element) {
+	if (element === document.body || element === document.documentElement) {
+		const body = document.body;
+		const root = document.documentElement;
+		return {
+			width: Math.max(body.scrollWidth, root.scrollWidth, body.offsetWidth, root.offsetWidth, body.clientWidth, root.clientWidth),
+			height: Math.max(body.scrollHeight, root.scrollHeight, body.offsetHeight, root.offsetHeight, body.clientHeight, root.clientHeight),
+		};
+	}
+	const box = element.getBoundingClientRect();
+	return { width: Math.ceil(box.width), height: Math.ceil(box.height) };
+}
 // Keep the widget out of its own screenshot; .faco-widget is the legacy jQuery host.
 const SCREENSHOT_HIDDEN_SELECTORS = [
 	"#fac-widget-launcher",
@@ -320,6 +336,11 @@ const FACOBrowserTools = {
 					requestAnimationFrame(() => requestAnimationFrame(resolve))
 				);
 
+				// Scaled, or cut at the bottom, to fit a model's size limit (utils/screenshotFit).
+				const page = captureSize(element);
+				const wantedScale = Math.min(window.devicePixelRatio || 1, MAX_SCREENSHOT_SCALE);
+				const fit = fitScreenshot({ ...page, scale: wantedScale });
+
 				// Capture screenshot (hide widget in cloned DOM so it doesn't appear)
 				let canvas;
 				try {
@@ -333,7 +354,9 @@ const FACOBrowserTools = {
 						// HiDPI). A full-page Desk list at 2x is tens of
 						// megapixels — tens of seconds to rasterize, and past
 						// the browser's max canvas size toBlob returns null.
-						scale: Math.min(window.devicePixelRatio || 1, MAX_SCREENSHOT_SCALE),
+						// fitScreenshot lowers it further for a tall page.
+						scale: fit.scale,
+						...(fit.height < page.height ? { height: fit.height } : {}),
 						// Default is 15s PER IMAGE. One slow remote asset on the
 						// page was enough to blow the whole tool budget.
 						imageTimeout: SCREENSHOT_IMAGE_TIMEOUT_MS,
@@ -404,6 +427,14 @@ const FACOBrowserTools = {
 							file_name: fileData.file_name,
 							width: canvas.width,
 							height: canvas.height,
+							// Says when the picture was scaled or cut, so FACO knows the bottom may be missing.
+							...describeScreenshotFit({
+								pageWidth: page.width,
+								pageHeight: page.height,
+								width: canvas.width,
+								height: canvas.height,
+								scale: wantedScale,
+							}),
 							mime_type: "image/jpeg",
 						};
 					} else {

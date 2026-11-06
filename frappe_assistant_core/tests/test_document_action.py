@@ -19,9 +19,9 @@ Tests for document_action's submit / cancel / amend actions.
 
 Uses ERPNext's Telephony Call Type: it is submittable, has no controller logic and a
 single mandatory field, so it works on the CI site, which installs ERPNext without
-running the setup wizard (no Company to build accounting documents against). Its
-DocPerms give System Manager read/write/create/delete but no submit/cancel/amend, which
-makes a System Manager test user a real "can edit, cannot cancel or amend" user.
+running the setup wizard (no Company to build accounting documents against). For a
+"can edit, cannot cancel or amend" user the tests take submit, cancel and amend away from
+System Manager (``login_as_system_manager``), since ERPNext 16.53 grants them.
 """
 
 import json
@@ -31,6 +31,7 @@ from unittest.mock import patch
 import frappe
 from frappe.model.base_document import get_controller
 from frappe.model.document import Document
+from frappe.permissions import setup_custom_perms, update_permission_property
 
 from frappe_assistant_core.api.fac_endpoint import _build_tool_registry
 from frappe_assistant_core.core.tool_registry import ToolRegistry
@@ -75,13 +76,32 @@ class DocumentActionTestCase(BaseAssistantTest):
         )
 
     def login_as_system_manager(self):
-        """A real user whose only DocPerm on TEST_DOCTYPE lacks submit, cancel and amend."""
+        """A real user whose only DocPerm on TEST_DOCTYPE lacks submit, cancel and amend.
+
+        ERPNext 16.53 gives System Manager submit and cancel on TEST_DOCTYPE, so they are taken
+        away here, as an administrator does in Role Permissions Manager. Amend goes first:
+        Frappe refuses cancel without submit and amend without cancel.
+        """
+        setup_custom_perms(TEST_DOCTYPE)
+        for ptype in ("amend", "cancel", "submit"):
+            self.withhold_from_system_manager(ptype)
         user = self.create_test_user(
             email=f"fac-submit-{frappe.generate_hash(length=8)}@example.com", roles=["System Manager"]
         )
         # nosemgrep: frappe-setuser — test runs as a restricted user; cleanup restores Administrator
         frappe.set_user(user.name)
         self.addCleanup(frappe.set_user, "Administrator")
+
+    def withhold_from_system_manager(self, ptype):
+        """Take ``ptype`` on TEST_DOCTYPE away from System Manager until the test ends.
+
+        The class-level rollback undoes the Custom DocPerm rows but not the permission cache, so
+        the stored value is put back the same way.
+        """
+        role = {"parent": TEST_DOCTYPE, "role": "System Manager", "permlevel": 0}
+        stored = frappe.db.get_value("Custom DocPerm", role, ptype)
+        update_permission_property(TEST_DOCTYPE, "System Manager", 0, ptype, 0)
+        self.addCleanup(update_permission_property, TEST_DOCTYPE, "System Manager", 0, ptype, stored)
 
 
 class TestSubmitAction(DocumentActionTestCase):

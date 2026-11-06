@@ -717,6 +717,58 @@ class TestDocumentBatch(BaseAssistantTest):
         self.assertEqual(frappe.db.get_value("ToDo", first, "description"), f"New one {self.tag}")
         self.assertEqual(frappe.db.get_value("ToDo", second, "priority"), "High")
 
+    def test_validate_only_with_an_update_list_changes_nothing(self):
+        # The approval card words a validate_only call as a check, so the user approves a check:
+        # a list must be checked record by record, as one record is, and none saved.
+        first, second = self._make_todos("Old one", "Old two")
+
+        def refuses_high_priority(doc, *args, **kwargs):
+            if doc.priority == "High":
+                frappe.throw(frappe._("No high priority here"))
+
+        with patch.object(ToDo, "validate", refuses_high_priority):
+            response = self._run(
+                "update_document",
+                {
+                    "documents": [
+                        {"doctype": "ToDo", "name": first, "data": {"description": f"New one {self.tag}"}},
+                        {"doctype": "ToDo", "name": second, "data": {"priority": "High"}},
+                    ],
+                    "validate_only": True,
+                },
+            )
+
+        self.assertFalse(response["success"], response)
+        self.assertIn("No high priority here", response["result"]["documents"][1]["error"])
+        result = response["result"]
+        self.assertEqual(
+            [(d["document"], d["name"], d["validation_passed"]) for d in result["documents"]],
+            [(1, first, True), (2, second, False)],
+        )
+        self.assertIn("Nothing was changed", result["message"])
+        self.assertEqual(frappe.db.get_value("ToDo", first, "description"), f"Old one {self.tag}")
+        self.assertEqual(frappe.db.get_value("ToDo", second, "priority"), "Medium")
+
+    def test_validate_only_with_an_update_list_that_passes_saves_nothing(self):
+        first, second = self._make_todos("Old one", "Old two")
+
+        response = self._run(
+            "update_document",
+            {
+                "documents": [
+                    {"doctype": "ToDo", "name": first, "data": {"description": f"New one {self.tag}"}},
+                    {"doctype": "ToDo", "name": second, "data": {"priority": "High"}},
+                ],
+                "validate_only": True,
+            },
+        )
+
+        self.assertTrue(response["success"], response)
+        self.assertTrue(response["result"]["validation_passed"])
+        self.assertNotIn("updated", response["result"])
+        self.assertEqual(frappe.db.get_value("ToDo", first, "description"), f"Old one {self.tag}")
+        self.assertEqual(frappe.db.get_value("ToDo", second, "priority"), "Medium")
+
     def test_one_update_failing_changes_none(self):
         (first,) = self._make_todos("Keep me")
 

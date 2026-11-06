@@ -107,6 +107,14 @@ describe("buildTimelineRows for customisation writes", () => {
 		expect(row.hasTarget).toBe(false);
 	});
 
+	it("labels a validate_only update as Checked, not Updated", () => {
+		const input = { doctype: "Client Script", name: "CS-1", validate_only: true, data: {} };
+		const result = { success: true, validation_passed: true, name: "CS-1" };
+		const update = { type: "tool_call", id: "u", tool_name: "update_document", status: "success", input, result };
+		const [row] = buildTimelineRows([update]);
+		expect(row.label.startsWith("Checked Client Script")).toBe(true);
+	});
+
 	it("labels a validation result as Checked even when the input flag is missing", () => {
 		const [row] = buildTimelineRows([create({ status: "success", result: { success: true, validation_passed: true } })]);
 		expect(row.label).toBe("Checked Server Script");
