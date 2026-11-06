@@ -1604,6 +1604,9 @@ def _checking() -> Dict[str, str]:
 
 
 def _store(session_name: str, file_doc, checker: _Checker, total_payloads: int) -> Dict[str, Any]:
+    # Held until this check commits: a second check of the same file at once (live: FACO ran two
+    # in parallel) waits here, instead of failing with "Document has been modified".
+    frappe.db.get_value(SESSION_DOCTYPE, session_name, "name", for_update=True)
     session = engine_session(session_name)
     counts = {"ready": 0, "failed": 0, "excluded": 0, "imported": 0, "unchanged": 0}
     for row in checker.rows:
