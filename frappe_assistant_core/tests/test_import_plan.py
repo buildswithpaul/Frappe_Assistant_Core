@@ -405,6 +405,91 @@ class TestPlanMigration(ImportPlanCase):
         self.assertIn("plan_migration", READ_ONLY_TOOLS)
 
 
+class TestAFileLeftOutOfThePlan(ImportPlanCase):
+    """Live, 2026-11-06: an opening trial balance whose setup was refused (the company had its
+    opening entry) kept the plan from Ready to Run, so the files that were ready never got their
+    approval card. Nothing could take that one file out of the plan."""
+
+    def _files(self):
+        group = self._session(
+            "groups.csv", ["Name"], [[f"G {self.tag}"]], "Item Group", {"Name": "item_group_name"}
+        )
+        file_doc = frappe.get_doc(
+            {"doctype": "File", "file_name": "balances.csv", "content": b"A,B\n1,2\n", "is_private": 1}
+        ).insert()
+        # its setup refused, a file stays File Read: the plan's "structure" question never goes
+        stuck = self._run("start_import_session", {"file_url": file_doc.file_url})["result"]["session_id"]
+        return group, stuck
+
+    def _check(self, plan):
+        answers = [{"id": "plan:failure_rule", "rule": "leave_out"}]
+        return self._run("dry_run_import", {"plan": plan, "answers": answers})["result"]
+
+    def test_a_file_that_cant_be_ready_is_left_out_and_the_rest_runs(self):
+        group, stuck = self._files()
+        plan = self._run("plan_migration", {"sessions": [group, stuck]})["result"]["plan"]
+        held = self._check(plan)
+        self.assertFalse(held["ready"])
+        structure = next(q for q in held["questions"] if q["kind"] == "structure")
+        self.assertIn("leave_out", structure["message"])
+
+        response = self._run("plan_migration", {"sessions": [], "plan": plan, "leave_out": [stuck]})
+
+        self.assertTrue(response["success"], response)
+        self.assertEqual([f["session"] for f in response["result"]["files"]], [group])
+        self.assertIsNone(frappe.db.get_value(SESSION, stuck, "migration_plan"))
+        self.assertTrue(self._check(plan)["ready"])
+
+    def test_the_plans_first_file_leaves_and_the_plan_moves_to_the_next(self):
+        group, stuck = self._files()
+        plan = self._run("plan_migration", {"sessions": [stuck, group], "failure_rule": "stop"})["result"][
+            "plan"
+        ]
+        self.assertEqual(plan, stuck)
+
+        result = self._run("plan_migration", {"sessions": [], "plan": plan, "leave_out": [stuck]})["result"]
+
+        self.assertEqual(result["plan"], group)
+        moved = import_plan.get_plan(group)
+        self.assertEqual((moved.failure_rule, [f["session"] for f in result["files"]]), ("stop", [group]))
+        left = frappe.db.get_value(
+            SESSION, stuck, ["migration_plan", "plan_settings", "plan_status"], as_dict=True
+        )
+        self.assertEqual(dict(left), {"migration_plan": None, "plan_settings": None, "plan_status": None})
+        self.assertTrue(self._check(group)["ready"])
+        # the file is free: it can be planned again
+        self.assertTrue(self._run("plan_migration", {"sessions": [stuck]})["success"])
+
+    def test_the_masters_planned_for_a_file_that_leaves_go_with_it(self):
+        group, stuck = self._files()
+        plan = self._run("plan_migration", {"sessions": [group, stuck]})["result"]["plan"]
+        set_plan(
+            plan,
+            masters=json.dumps(
+                [
+                    {"session": stuck, "doctype": "UOM", "name": f"Box {self.tag}", "data": {}},
+                    {"session": group, "doctype": "UOM", "name": f"Kit {self.tag}", "data": {}},
+                ]
+            ),
+        )
+
+        self._run("plan_migration", {"sessions": [], "plan": plan, "leave_out": [stuck]})
+
+        self.assertEqual([m["session"] for m in import_plan.masters(import_plan.get_plan(plan))], [group])
+
+    def test_a_plan_cant_be_left_with_no_file_or_lose_one_it_hasnt(self):
+        group, stuck = self._files()
+        plan = self._run("plan_migration", {"sessions": [group]})["result"]["plan"]
+
+        emptied = self._run("plan_migration", {"sessions": [], "plan": plan, "leave_out": [group]})
+        unknown = self._run("plan_migration", {"sessions": [], "plan": plan, "leave_out": [stuck]})
+
+        self.assertFalse(emptied["success"], emptied)
+        self.assertIn("stop_migration_plan", emptied["result"]["error"])
+        self.assertFalse(unknown["success"], unknown)
+        self.assertEqual(frappe.db.get_value(SESSION, group, "migration_plan"), plan)
+
+
 class TestColumnsWithNoField(ImportPlanCase):
     def test_a_files_unplaced_columns_are_one_question_of_the_plan(self):
         # #34415: no question of the plan asked about them, so FACO asked on cards of its own,

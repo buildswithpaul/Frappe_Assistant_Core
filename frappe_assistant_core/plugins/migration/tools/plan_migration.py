@@ -42,7 +42,9 @@ class PlanMigration(BaseTool):
             "and balances: use its company without asking (companies: ask which); ask the cut-off "
             "once, now, on ONE ask_user single_select card of cut_off_choices (never as text to "
             "type, never a guessed year), set every opening file to it, and pass it here as cut_off "
-            "(plan, no sessions). Next: map each file, then dry_run_import with the plan."
+            "(plan, no sessions). A file that can't be made ready now (its setup refused): ask the "
+            "user, then pass it in leave_out (plan, no sessions) so the other files can run. Next: "
+            "map each file, then dry_run_import with the plan."
         )
         self.requires_permission = None  # checked on the plan and on each session
         # File names and reasons quote the user's files (#34003).
@@ -72,6 +74,14 @@ class PlanMigration(BaseTool):
                     "description": "The cut-off date the user picked, YYYY-MM-DD: the plan's check then "
                     "doesn't ask it again.",
                 },
+                "leave_out": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Session ids to take out of the plan (with plan), when the user "
+                    "agrees: a file that can't be made ready now no longer holds the others back. "
+                    "It is imported on its own later, or planned again. The reply's plan is the "
+                    "plan's id from then on (it changes when the plan's first file leaves).",
+                },
                 "failure_rule": {
                     "type": "string",
                     "enum": ["leave_out", "stop"],
@@ -86,8 +96,13 @@ class PlanMigration(BaseTool):
         names = arguments.get("sessions")
         plan_name = arguments.get("plan")
         fixed_order = arguments.get("order")
+        leaving = arguments.get("leave_out") or []
         if not isinstance(names, list) or not all(isinstance(n, str) for n in names):
             return {"success": False, "error": _("sessions must be a list of import session ids.")}
+        if not isinstance(leaving, list) or not all(isinstance(n, str) for n in leaving):
+            return {"success": False, "error": _("leave_out must be a list of import session ids.")}
+        if leaving and not plan_name:
+            return {"success": False, "error": _("Pass the plan to leave files out of.")}
         if fixed_order is not None and (
             not isinstance(fixed_order, list) or not all(isinstance(n, str) for n in fixed_order)
         ):
@@ -138,6 +153,8 @@ class PlanMigration(BaseTool):
                 progress = frappe.parse_json(plan.progress or "{}") or {}
                 plan.progress = frappe.as_json({**progress, "fixed_order": list(dict.fromkeys(fixed_order))})
             plan.require_open()  # before any file is linked: a plan that started meanwhile keeps its files
+            if leaving:
+                plan = import_plan.leave_out(plan, list(dict.fromkeys(leaving)))
             for session in sessions:
                 session.db_set("migration_plan", plan.name)
             plan.status = "Planning"  # a new file has questions of its own

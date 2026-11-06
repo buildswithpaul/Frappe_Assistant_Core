@@ -41,6 +41,7 @@ from frappe.utils import (
     today,
 )
 
+from frappe_assistant_core.assistant_core.doctype.fac_import_session.fac_import_session import PLAN_FIELDS
 from frappe_assistant_core.utils import import_dry_run as dry_run
 from frappe_assistant_core.utils.untrusted_output import unfenced
 
@@ -247,6 +248,45 @@ def join_problems(plan_name: str, sessions: List[Any]) -> List[str]:
                 _("{0} is {1}, so it can't join a plan.").format(session.file_name, _(session.status))
             )
     return problems
+
+
+def leave_out(plan, names: List[str]) -> Plan:
+    """Take the sessions ``names`` out of the plan, so a file that can't be imported now doesn't
+    hold the others back: each can then be imported on its own, or planned again. Their planned
+    masters go with them. Returns the plan, on the first file that stays when its own first file
+    left. The caller saves it."""
+    files = children(plan)
+    unknown = [name for name in names if name not in {s.name for s in files}]
+    if unknown:
+        raise PlanProblem(_("{0} isn't in plan {1}.").format(", ".join(unknown), plan.name))
+    staying = [s for s in files if s.name not in names]
+    if not staying:
+        raise PlanProblem(
+            _("That leaves plan {0} with no file: stop it instead (stop_migration_plan).").format(plan.name)
+        )
+    plan.require_open()
+    plan.masters = frappe.as_json([entry for entry in masters(plan) if entry["session"] not in names])
+    plan.log_step(
+        "Plan",
+        "Success",
+        _("Left out of the plan: {0}.").format(", ".join(s.file_name for s in files if s.name in names)),
+    )
+    cleared = {**dict.fromkeys(PLAN_FIELDS), "plan_position": 0, "plan_stop_requested": 0}
+    for name in names:
+        frappe.db.set_value(SESSION_DOCTYPE, name, cleared, update_modified=False)
+    if plan.name in names:
+        # The plan is kept on its first file's session: it moves to the first file that stays
+        moved = Plan(staying[0].name, {})
+        moved.title = ", ".join(s.file_name for s in staying[:3])
+        moved.status, moved.failure_rule = plan.status, plan.failure_rule
+        moved.masters, moved.progress, moved.steps = plan.masters, plan.progress, plan.steps
+        for session in staying:
+            frappe.db.set_value(
+                SESSION_DOCTYPE, session.name, "migration_plan", moved.name, update_modified=False
+            )
+        plan = moved
+    plan.status = "Planning"
+    return plan
 
 
 # -- what the plan's files create ----------------------------------------------------------------
@@ -624,7 +664,7 @@ def _bring_up_to_date(plan, session) -> Optional[Dict[str, Any]]:
     try:
         dry_run.check_can_run(session)
     except dry_run.DryRunProblem as e:
-        return {"kind": "blocked", "message": str(e)}
+        return {"kind": "blocked", "message": f"{e} {_(LEAVE_OUT_HINT)}"}
     digests[session.name] = digest
     plan.progress = frappe.as_json({**_progress(plan), "digests": digests})
     if dry_run.check_cost(session) > dry_run.BACKGROUND_ROWS:  # as dry_run_import decides (#34407)
@@ -633,6 +673,13 @@ def _bring_up_to_date(plan, session) -> Optional[Dict[str, Any]]:
     import_fixes.check(session.name)  # never commits: the plan's row stays locked (#34431)
     return None
 
+
+#: The way on when a file can't be made ready now: the plan's other files don't wait for it.
+LEAVE_OUT_HINT = (
+    "If it can't be done now (its setup was refused), ask the user to leave the file out of the "
+    "plan (plan_migration with leave_out): the other files can then run, and it is imported on "
+    "its own later."
+)
 
 #: A file with one of these questions isn't checked yet: the files after it wait for it.
 UNCHECKED = ("checking", "blocked", "structure")
@@ -653,6 +700,7 @@ def _file_questions(plan, session) -> List[Dict[str, Any]]:
             "Map this file (get_import_schema, set_column_mapping), or set it up as opening "
             "stock, invoices or balances."
         )
+        message = f"{message} {_(LEAVE_OUT_HINT)}"
         return [
             {
                 "id": f"{session.name}:structure",

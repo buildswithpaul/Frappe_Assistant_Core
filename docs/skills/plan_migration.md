@@ -18,6 +18,7 @@ For one file the user is happy to take step by step, the plain path (`start_impo
 | `sessions` | list of strings | Yes | The import session ids to add. Open every file's session first (`start_import_session`, once per file). |
 | `plan` | string | No | An existing plan to add them to: it orders all its files again. Left out, a new plan is made. |
 | `cut_off` | string | No | The cut-off date the user picked from `opening_setup`, `YYYY-MM-DD`. Pass it with `plan` (no new sessions) once they pick: the plan's check (`dry_run_import` with `plan`) then doesn't ask it again. |
+| `leave_out` | list of strings | No | Session ids to take out of the plan (with `plan`, and `sessions` `[]`), once the user agrees. See "A file that can't be ready now". |
 | `failure_rule` | `leave_out` or `stop` | No | What happens to rows that fail when their file comes up. `leave_out` (default) leaves them out with their reason; `stop` stops the plan before that file. The plan's check asks it if the user hasn't said. |
 
 ## Result
@@ -41,10 +42,24 @@ When any file is opening stock, invoices or balances, ask now, before mapping, n
   `set_opening_invoices`, `set_opening_balances`), and call `plan_migration` with `plan` and
   `cut_off`. Don't ask either again.
 
+## A file that can't be ready now
+
+The plan runs only when every file is ready. When one can't be made ready now (its opening setup
+was refused, say: the company already has its opening entry), it holds the others back. Tell the
+user which file and why, and ask whether to leave it out of the plan. On yes, call `plan_migration`
+with `plan`, `sessions` `[]` and `leave_out` [its session], then check the plan again
+(`dry_run_import` with `plan`). The file keeps its session: import it on its own once it can be,
+or plan it again.
+
+When the file left is the plan's first, the plan moves to the next file: use the reply's `plan`
+from then on.
+
 ## Refusals
 
 - A session already in another plan, or one already importing, imported or cancelled: nothing changes, `problems` says which.
 - A plan that is running or finished: its files can't change.
+- `leave_out` with every file of the plan (stop the plan instead, `stop_migration_plan`), or with a
+  session that isn't in it.
 
 ## Next
 
