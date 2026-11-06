@@ -1206,6 +1206,33 @@ class TestAWorkerKilledMidImport(ImportRunCase):
         self.assertNotEqual(response["result"]["state"], "running", response)
         self.assertEqual(len(self._imported()), 3)
 
+    def test_a_job_whose_dead_workers_execution_expired_is_continued(self):
+        # Final round, 2026-11-06, v16: a worker killed mid-import (kill -9, then a new worker) left
+        # its job "started" and its execution listed, but the execution's own record had expired
+        # with the worker's heartbeat. RQ 2's job.delete() raised "Execution ... not found in
+        # Redis" and continuing failed every time. This is what RQ 2 holds then.
+        from rq.job import Job
+
+        if not hasattr(Job, "execution_registry"):
+            self.skipTest("RQ 1 (Frappe v15) keeps no executions apart")
+        from rq.executions import Execution
+
+        session, checked = self._queued()
+        job = self._started_job(session, f"fac-test-gone-{self.tag}")
+        lost = Execution(id=f"lost{self.tag}", job_id=job.id, connection=job.connection)
+        job.connection.zadd(job.execution_registry.key, {lost.id: 9999999999})
+        job.connection.zadd(job.started_job_registry.key, {lost.composite_key: 9999999999})
+        self.addCleanup(job.connection.delete, job.execution_registry.key)
+        self.addCleanup(job.connection.zrem, job.started_job_registry.key, lost.composite_key)
+
+        with self._each_row_commits():
+            response = self._import(session, checked)
+
+        self.assertTrue(response["success"], response)
+        self.assertNotEqual(response["result"]["state"], "running", response)
+        self.assertEqual(len(self._imported()), 3)
+        self.assertIsNone(job.connection.zscore(job.started_job_registry.key, lost.composite_key))
+
     def test_a_job_its_live_worker_runs_is_left_running(self):
         session, checked = self._queued()
         job = self._started_job(session, f"fac-test-alive-{self.tag}")

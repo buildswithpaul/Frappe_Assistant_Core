@@ -298,8 +298,26 @@ def job_alive(job_id: str) -> bool:
         return True
     if job.connection.exists(Worker.redis_worker_namespace_prefix + job.worker_name):
         return True
+    _forget_lost_executions(job)
     job.delete()
     return False
+
+
+def _forget_lost_executions(job) -> None:
+    """RQ 2 (Frappe v16) keeps a job's executions apart from it. A killed worker's execution
+    expires with its heartbeat but stays listed, on the job and in the started registry, and
+    job.delete() then raises "Execution ... not found in Redis": the import could never be
+    continued (final round, 2026-11-06). Unlist the executions whose record is gone."""
+    if not hasattr(job, "execution_registry"):
+        # RQ 1 (Frappe v15) keeps no executions apart; its rq.executions doesn't even import
+        return
+    from rq.executions import Execution
+
+    for execution_id in job.execution_registry.get_execution_ids():
+        execution = Execution(id=execution_id, job_id=job.id, connection=job.connection)
+        if not job.connection.exists(execution.key):
+            job.started_job_registry.remove_execution(execution)
+            job.execution_registry.remove(execution, pipeline=job.connection)
 
 
 def resume(session) -> Tuple[str, str]:
