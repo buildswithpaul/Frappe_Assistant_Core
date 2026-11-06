@@ -779,7 +779,11 @@ def _positions(preset: Dict[str, Any], headers: List[str]) -> Dict[str, List[int
     names = [normalise(h) for h in headers]
     out: Dict[str, List[int]] = {}
     for column, spec in preset["columns"].items():
-        for alias in spec.get("from") or []:
+        # A file column named as the output column itself is read too, after the export's own
+        # names: _carried counts that name as the preset's, so it isn't carried, and a file whose
+        # "Mobile" or "GSTIN" was no alias lost every value without a word.
+        aliases = spec.get("from") or []
+        for alias in [*aliases, column] if aliases else []:
             if normalise(alias) in names:
                 out[column] = [names.index(normalise(alias))]
                 break

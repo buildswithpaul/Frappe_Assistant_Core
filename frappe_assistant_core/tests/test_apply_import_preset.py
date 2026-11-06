@@ -1289,6 +1289,33 @@ class TestShippedPresets(PresetToolCase):
         self.assertEqual([row[at] for row in result["sessions"][0]["sample_rows"]], ["Individual", "Company"])
         self.assertEqual(by_header["Customer Type"], "customer_type")
 
+    def test_a_column_named_as_the_presets_own_is_read(self):
+        # Final round, 2026-11-06: a Zoho customers file's "Mobile" (the preset reads Mobile Phone),
+        # and a Tally ledgers file's "GSTIN" and "Mobile", were neither read nor carried: every
+        # number was gone, and nothing said so.
+        zoho = self._cleaned_rows(
+            "zoho_books.customers",
+            [["Display Name", "Customer ID", "Mobile", "Status"], ["Ravi", "ZC-1", "98400 10000", "Active"]],
+        )
+        self.assertEqual(zoho[0]["Mobile"], "98400 10000")
+        tally = self._cleaned_rows(
+            "tally_prime.ledgers",
+            [
+                ["Name", "Under", "GSTIN", "Mobile", "Opening Balance"],
+                ["Ravi", "Sundry Debtors", "29ABCDE1234F1Z5", "98400 10000", "1000 Dr"],
+            ],
+        )
+        self.assertEqual((tally[0]["GSTIN"], tally[0]["Mobile"]), ("29ABCDE1234F1Z5", "98400 10000"))
+        # One of the preset's own names still wins over a column named as its output
+        both = self._cleaned_rows(
+            "zoho_books.customers",
+            [
+                ["Display Name", "Customer ID", "Mobile Phone", "Mobile", "Status"],
+                ["Ravi", "ZC-1", "98400 11111", "98400 22222", "Active"],
+            ],
+        )
+        self.assertEqual(both[0]["Mobile"], "98400 11111")
+
     def test_a_named_preset_settles_the_zoho_contacts_tie(self):
         rows = [["Display Name", "EmailID", "Status"], ["Ravi Traders", "", "Active"]]
         file_doc = as_xlsx_file(self, f"zoho-contacts-{self.tag}.xlsx", rows)
