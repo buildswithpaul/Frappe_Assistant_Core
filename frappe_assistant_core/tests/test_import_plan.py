@@ -477,6 +477,20 @@ class TestAFileLeftOutOfThePlan(ImportPlanCase):
 
         self.assertEqual([m["session"] for m in import_plan.masters(import_plan.get_plan(plan))], [group])
 
+    def test_a_plan_not_run_yet_can_be_stopped_and_its_files_go_free(self):
+        # Live, 2026-11-06: six plans never run stayed open; files uploaded again were taken back
+        # into one, and nothing could drop it (stop_migration_plan took only a running plan).
+        group, stuck = self._files()
+        plan = self._run("plan_migration", {"sessions": [group, stuck]})["result"]["plan"]
+
+        response = self._run("stop_migration_plan", {"plan": plan})
+
+        self.assertTrue(response["success"], response)
+        self.assertEqual(import_plan.plan_status(plan), "Stopped")
+        self.assertEqual(frappe.db.get_value(SESSION, group, "status"), "Mapped")
+        again = self._run("plan_migration", {"sessions": [stuck]})
+        self.assertTrue(again["success"], again)
+
     def test_a_plan_cant_be_left_with_no_file_or_lose_one_it_hasnt(self):
         group, stuck = self._files()
         plan = self._run("plan_migration", {"sessions": [group]})["result"]["plan"]

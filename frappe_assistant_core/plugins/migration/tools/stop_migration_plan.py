@@ -28,8 +28,9 @@ class StopMigrationPlan(BaseTool):
         super().__init__()
         self.name = "stop_migration_plan"
         self.description = (
-            "Stop a running migration plan when the user asks: the file importing now finishes, "
-            "the files after it aren't imported. What is already imported stays."
+            "Stop a migration plan when the user asks: a running one after the file importing now "
+            "(what is already imported stays); one not run yet at once, nothing imported, so its "
+            "files can be planned again or imported on their own (the user drops it, or starts over)."
         )
         self.requires_permission = None  # checked on the plan
         self.untrusted_fields = ("message", "error")
@@ -47,6 +48,24 @@ class StopMigrationPlan(BaseTool):
             return {"success": False, "error": _("Migration plan '{0}' not found.").format(plan_name)}
         except frappe.PermissionError as e:
             return permission_error_result(import_plan.SESSION_DOCTYPE, exception_message(e), name=plan_name)
+        if plan.status in import_plan.OPEN:
+            # Live, 2026-11-06: a plan never run stayed open for good, and the same files uploaded
+            # again were taken back into it: nothing could drop it.
+            try:
+                plan.require_open()
+            except import_plan.PlanProblem as e:
+                return {"success": False, "error": str(e)}
+            import_plan._end(plan.name, "Stopped", _("Stopped before it ran, as asked."))
+            plan.reload()
+            return {
+                "success": True,
+                "plan": plan.name,
+                "status": plan.status,
+                "message": _(
+                    "The plan is stopped before it ran: nothing was imported. Its files can be "
+                    "planned again or imported on their own."
+                ),
+            }
         if plan.status != "Running":
             return {
                 "success": False,

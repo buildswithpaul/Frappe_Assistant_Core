@@ -264,13 +264,17 @@ class TestRunMigrationPlan(ImportRunCase):
         self.assertTrue(frappe.db.exists("Item Group", self.g2))
         self.assertFalse(any(frappe.db.exists("Item", code) for code in self.items))
 
-    def test_a_plan_not_running_cant_be_stopped(self):
+    def test_a_plan_not_run_yet_stops_at_once_and_an_ended_one_cant_be(self):
+        # A plan never run is dropped at once (live, 2026-11-06: six stayed open for good)
         plan, _groups, _items = self._ready_plan()
 
-        response = self._run("stop_migration_plan", {"plan": plan})
+        stopped = self._run("stop_migration_plan", {"plan": plan})
+        again = self._run("stop_migration_plan", {"plan": plan})
 
-        self.assertFalse(response["success"], response)
-        self.assertIn("not running", response["result"]["error"])
+        self.assertTrue(stopped["success"], stopped)
+        self.assertEqual(import_plan.plan_status(plan), "Stopped")
+        self.assertFalse(again["success"], again)
+        self.assertIn("not running", again["result"]["error"])
 
     def test_the_run_is_privileged_and_stop_is_write(self):
         from frappe_assistant_core.utils.tool_category_detector import PRIVILEGED_TOOLS, WRITE_TOOLS
