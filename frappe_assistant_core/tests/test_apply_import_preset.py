@@ -1232,6 +1232,38 @@ class TestShippedPresets(PresetToolCase):
         self.assertEqual(result["preset"]["id"], "zoho_books.customers")
         self.assertIn("zoho_books.vendors", result["also_matched"])
 
+    def test_columns_the_preset_doesnt_read_are_kept_not_dropped(self):
+        # Live, 2026-11-06: a Zoho customers file's Customer Group and Territory were dropped
+        # without a word, so every row took the default group (a group node) and all 22 failed.
+        from frappe_assistant_core.utils.import_mapping import (
+            session_headers,
+            session_mapping,
+            unplaced_columns,
+        )
+
+        rows = [
+            ["Customer ID", "Display Name", "EmailID", "Customer Group", "Territory", "Remarks"],
+            [f"ZC-{self.tag}", f"Ravi {self.tag}", "", "Commercial", "India", "Old credit limit"],
+        ]
+        file_doc = as_xlsx_file(self, f"zoho-contacts-{self.tag}.xlsx", rows)
+        reply = self.registry.get_tool("start_import_session")._safe_execute(
+            {"file_id": file_doc.name, "preset": "zoho_books.customers"}
+        )
+        self.assertTrue(reply["success"], reply)
+        result = reply["result"]
+        self.assertIn("sessions", result, result)
+        doc = frappe.get_doc("FAC Import Session", result["sessions"][0]["session_id"])
+        headers = session_headers(doc)
+        by_header = {headers[int(i)]: field for i, field in session_mapping(doc).items()}
+
+        self.assertEqual(result["carried_columns"], ["Customer Group", "Territory", "Remarks"])
+        self.assertEqual(
+            (by_header["Customer Group"], by_header["Territory"]), ("customer_group", "territory")
+        )
+        self.assertEqual([header for _i, header in unplaced_columns(doc)], ["Remarks"])
+        sample = dict(zip(headers, result["sessions"][0]["sample_rows"][0]))
+        self.assertEqual((sample["Customer Group"], sample["Remarks"]), ("Commercial", "Old credit limit"))
+
     def test_a_named_preset_settles_the_zoho_contacts_tie(self):
         rows = [["Display Name", "EmailID", "Status"], ["Ravi Traders", "", "Active"]]
         file_doc = as_xlsx_file(self, f"zoho-contacts-{self.tag}.xlsx", rows)

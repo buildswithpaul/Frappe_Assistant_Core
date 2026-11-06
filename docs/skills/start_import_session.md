@@ -99,6 +99,7 @@ A recognised export's reply has `matched: true`, `preset` and `sessions`:
 | `no_target_values` | Rows that fit no target, by value. They are not imported. |
 | `not_on_this_site` | Columns whose field this site doesn't have (for example GSTIN fields, HSN, GST category or PAN without India Compliance). GSTIN goes to Tax ID instead. |
 | `already_mapped` | Columns left unmapped because an earlier column took the same field; the user can map them with set_column_mapping. |
+| `carried_columns` | The file's columns the preset doesn't read. They are kept in each session: mapped to the field their header names (Customer Group, Territory), else left unmapped. Tell the user, and map or leave out the unmapped ones (in a plan, its check asks once). |
 | `skipped_targets` | Targets the user may not import into, with the reason. |
 | `source` | The file, sheet and header row that were read, and how many rows. Mention it when the file had several sheets. |
 | `warnings` | Show them to the user as they stand (for example that the preset is unverified). |

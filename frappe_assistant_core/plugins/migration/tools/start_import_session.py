@@ -135,6 +135,7 @@ class StartImportSession(BaseTool):
             "skipped_targets",
             "not_on_this_site",
             "already_mapped",
+            "carried_columns",
             "file_name",
         )
         self.untrusted_fields = tuple(
@@ -736,6 +737,13 @@ class StartImportSession(BaseTool):
             result["not_on_this_site"] = list(dict.fromkeys(not_on_site))
         if already:
             result["already_mapped"] = list(dict.fromkeys(already))
+        if cleaned.carried:
+            # FAC's own words name nothing of the file: the headers reach the model fenced (#34003)
+            result["carried_columns"] = cleaned.carried
+            result["carried_note"] = _(
+                "The preset doesn't read the columns in carried_columns: they are kept, mapped to "
+                "the field their header names, else left for you to map or leave out. Tell the user."
+            )
         result["warnings"] = [] if preset.get("verified") else [_(UNVERIFIED).format(preset["system"])]
         return result
 
@@ -823,7 +831,9 @@ class StartImportSession(BaseTool):
             out["doctype"] = target["doctype"]
             old_ids = self._source_key(session, match.preset, target, rows)
             out.update(
-                self._map_target(session, target["doctype"], rows.header, mapping, not_on_site, already)
+                self._map_target(
+                    session, target["doctype"], rows.header, mapping, not_on_site, already, cleaned.carried
+                )
             )
             if old_ids:
                 out["old_ids"] = old_ids
@@ -860,7 +870,9 @@ class StartImportSession(BaseTool):
             import_keys.set_choice(doctype, system, "key_map")
         return {"column": column, "system": system}
 
-    def _map_target(self, session, doctype, header, mapping, not_on_site, already) -> Dict[str, Any]:
+    def _map_target(
+        self, session, doctype, header, mapping, not_on_site, already, carried=()
+    ) -> Dict[str, Any]:
         schema = build_import_schema(doctype)
         fields = {"name"} | {f["fieldname"] for f in schema["fields"]}
         fields |= {
@@ -876,6 +888,14 @@ class StartImportSession(BaseTool):
         chosen = {}
         taken = set()
         for column in header:
+            if column in carried and column not in mapping:
+                # A column the preset doesn't read: the field its header names, else left unplaced
+                named, problems = resolve_mapping(doctype, schema, header, {column: column})
+                named_field = named.get(str(header.index(column)))
+                if not problems and named_field and named_field not in taken:
+                    taken.add(named_field)
+                    chosen[column] = named_field
+                continue
             wanted = mapping.get(column, DONT_IMPORT)
             candidates = [
                 c if c in fields or c == DONT_IMPORT else linked.get(c, c)

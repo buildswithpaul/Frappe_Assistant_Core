@@ -742,6 +742,26 @@ class Cleaned:
     dropped: Dict[str, int]
     no_target_values: Dict[str, List[str]]
     rows_read: int
+    #: The file's columns the preset doesn't read, kept as they are at the end of each target
+    carried: List[str] = field(default_factory=list)
+
+
+def _carried(
+    preset: Dict[str, Any], headers: List[str], positions: Dict[str, List[int]]
+) -> List[Tuple[int, str]]:
+    """(position, header) of the file's columns the preset reads nothing from. Live, 2026-11-06: a
+    Zoho customers file's Customer Group and Territory were dropped without a word, so every row
+    took the default group, a group node, and failed."""
+    read = {i for found in positions.values() for i in found}
+    taken = {normalise(column) for column in preset["columns"]}
+    carried: List[Tuple[int, str]] = []
+    for i, header in enumerate(headers):
+        name = str(header or "").strip()
+        if i in read or not name or normalise(name) in taken:
+            continue
+        taken.add(normalise(name))
+        carried.append((i, name))
+    return carried
 
 
 def _positions(preset: Dict[str, Any], headers: List[str]) -> Dict[str, List[int]]:
@@ -832,6 +852,7 @@ def clean(sheet: Sheet, match: Match) -> Cleaned:
     depth = (preset.get("header") or {}).get("rows", 1)
     skip = preset.get("skip") or {}
     positions = _positions(preset, match.headers)
+    carried = _carried(preset, match.headers, positions)
     header_row = [normalise(c) for c in sheet.rows[match.header_row]]
     dropped = dict.fromkeys(DROP_REASONS, 0)
     dropped["title"] = match.header_row
@@ -876,6 +897,8 @@ def clean(sheet: Sheet, match: Match) -> Cleaned:
                 values[column] = current_group
             else:
                 values[column] = parse(_read(row, positions.get(column, [])), spec)
+        for position, header in carried:
+            values[header] = _cell(row, position).strip()
         for column, spec in preset["columns"].items():
             if spec.get("fallback") and not values[column]:
                 values[column] = values.get(spec["fallback"], "")
@@ -903,7 +926,7 @@ def clean(sheet: Sheet, match: Match) -> Cleaned:
             name = values[flag["name"]]
             values[flag["column"]] = "1" if name.strip() and normalise(name) in parents else "0"
 
-    columns = list(preset["columns"])
+    columns = list(preset["columns"]) + [header for _position, header in carried]
     targets = [TargetRows(t, list(columns)) for t in preset["targets"]]
     split_on = list(dict.fromkeys(t["when"]["column"] for t in preset["targets"] if t.get("when")))
     no_target: Dict[str, List[str]] = {}
@@ -918,7 +941,13 @@ def clean(sheet: Sheet, match: Match) -> Cleaned:
                 seen_values = no_target.setdefault(column, [])
                 if values[column] not in seen_values and len(seen_values) < 20:
                     seen_values.append(values[column])
-    return Cleaned(targets, dropped, no_target, rows_read=max(len(sheet.rows) - first_data, 0))
+    return Cleaned(
+        targets,
+        dropped,
+        no_target,
+        rows_read=max(len(sheet.rows) - first_data, 0),
+        carried=[header for _position, header in carried],
+    )
 
 
 def missing_inputs(target: Dict[str, Any], values: Dict[str, Any]) -> List[Dict[str, Any]]:
