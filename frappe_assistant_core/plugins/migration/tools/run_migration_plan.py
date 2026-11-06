@@ -36,9 +36,11 @@ class RunMigrationPlan(BaseTool):
             "checked again just before its import, rows that would fail then handled by the plan's "
             "failure rule. Nothing asks the user again. Pass the plan check's last `approval` "
             "exactly: files, rows, masters, cut_off and decisions, so the approval card shows the "
-            "user every decision before anything is imported; anything else is refused. Called "
-            "again for a plan that is running or done, it only reports: each file's status, "
-            "created and left-out counts. Stopping keeps what is imported (stop_migration_plan)."
+            "user every decision before anything is imported; anything else is refused. Call it "
+            "once: to follow the run, call dry_run_import with plan (no answers), which reports "
+            "each file's status, created and left-out counts and asks no approval; calling this "
+            "tool again would put a new approval card in front of the user. Stopping keeps what "
+            "is imported (stop_migration_plan)."
         )
         self.requires_permission = None  # checked on the plan; each file's import checks its own
         # File names and messages quote the user's files (#34003).

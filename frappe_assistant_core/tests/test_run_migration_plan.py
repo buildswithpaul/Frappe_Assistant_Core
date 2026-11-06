@@ -795,6 +795,59 @@ class TestAPlanThatIsStartedOrEnded(ImportRunCase):
         self.assertNotIn("Approved", result["message"])
         enqueue.assert_not_called()
 
+    # -- following a run without an approval card (#34415, QA 2026-11-04 #7) ---------------------
+    # run_migration_plan is privileged, so AR asks for approval on every call, even one that
+    # only reports: following a run with it left a live Approve/Reject card under every check.
+
+    def test_checking_a_running_plan_reports_where_it_stands(self):
+        plan, _groups, _items = self._ready_plan()
+        running = self._start(plan)
+
+        with patch.object(import_plan.frappe, "enqueue") as enqueue:
+            response = self._run("dry_run_import", {"plan": plan})
+
+        self.assertTrue(response["success"], response)
+        result = response["result"]
+        self.assertEqual((result["already"], result["status"]), ("Running", "Running"))
+        self.assertFalse(result["ready"])
+        self.assertEqual(len(result["files"]), 2)
+        self.assertIn("nothing to approve", result["message"])
+        enqueue.assert_not_called()
+        self.assertEqual(import_plan._settings(plan), running)
+
+    def test_checking_a_finished_plan_reports_what_came_in(self):
+        plan, _groups, _items = self._ready_plan()
+        first = self._approve(plan)
+        self.assertEqual(import_plan.get_plan(plan).status, "Completed", first)
+
+        response = self._run("dry_run_import", {"plan": plan})
+
+        self.assertTrue(response["success"], response)
+        result = response["result"]
+        self.assertEqual((result["already"], result["status"]), ("Completed", "Completed"))
+        self.assertTrue(all(f["status"] == "Completed" for f in result["files"]), result["files"])
+        self.assertTrue(all(f["created"] for f in result["files"]), result["files"])
+
+    def test_answers_to_a_running_plan_are_still_refused(self):
+        plan, _groups, _items = self._ready_plan()
+        running = self._start(plan)
+
+        response = self._run(
+            "dry_run_import", {"plan": plan, "answers": [{"id": "plan:failure_rule", "rule": "stop"}]}
+        )
+
+        self.assertFalse(response["success"], response)
+        self.assertIn("Running", str(response))
+        self.assertEqual(import_plan._settings(plan), running)
+
+    def test_the_tool_that_follows_a_run_asks_no_approval(self):
+        from frappe_assistant_core.utils.tool_category_detector import PRIVILEGED_TOOLS, READ_ONLY_TOOLS
+
+        self.assertIn("dry_run_import", READ_ONLY_TOOLS)
+        self.assertIn("run_migration_plan", PRIVILEGED_TOOLS)
+        follow = self.registry.get_tool("run_migration_plan").description
+        self.assertIn("dry_run_import", follow)
+
     def test_the_plan_job_is_enqueued_once(self):
         plan, _groups, _items = self._ready_plan()
 

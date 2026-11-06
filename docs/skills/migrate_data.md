@@ -24,7 +24,7 @@ When unsure, ask the user which they prefer. A plan is the better default for tw
 | 3 | **Map** every file | `get_import_schema`, `set_column_mapping`. Opening files only with their own tool (`set_opening_stock`, `set_opening_invoices`, `set_opening_balances`), never `get_import_schema`: they need no Import permission. A column of an earlier file's old IDs in an opening file: `set_column_mapping` with only `old_id_columns` and `mapping` {} | Every file is mapped. Map yourself where you are sure; ask only where you aren't |
 | 4 | **Questions**: all of them at once | `dry_run_import` with `plan` | Show every question together, grouped by file, the suggested answer first; send all the answers in one call. Repeat until ready is true |
 | 5 | **Approve once** | `run_migration_plan` with the files, rows and masters it will do | The user approved |
-| 6 | **Follow it** | `run_migration_plan` again (it only reports) | The plan is Completed, Partially Completed, Stopped or Failed |
+| 6 | **Follow it** | `dry_run_import` with `plan` alone (it only reports, no approval card; never `run_migration_plan` again) | The plan is Completed, Partially Completed, Stopped or Failed |
 | 7 | **Sign-off** | `get_skill("migration-sign-off")` with the plan's sessions | The user has the report |
 
 What the plan does for you:
@@ -210,8 +210,8 @@ The session keeps every step, so a migration can also continue in a later chat. 
 stands, read the user's sessions with `list_documents` on `FAC Import Session` (its `status`), and
 open one with `get_document`. Carry on from its status. Never start the file again. A file in a
 migration plan names it in `migration_plan`: the plan's id, the session of its first file, whose
-`plan_settings` hold the plan's status. `dry_run_import` with `plan` (while it's Planning) or
-`run_migration_plan` (once it runs) carries on from there.
+`plan_settings` hold the plan's status. `dry_run_import` with `plan` carries on from there: while
+it's Planning it lists the open questions, and once it runs or has ended it reports how far it got.
 
 ## Talking to the user
 

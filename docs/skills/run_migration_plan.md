@@ -31,9 +31,13 @@ do now, nothing runs and the reply's `approval` is what to pass.
 
 ## Following it
 
-Call `run_migration_plan` again with the plan (any figures, the same `approval`): while it runs or once it's done it
-only reports `status` (`Running`, `Completed`, `Partially Completed`, `Stopped`, `Failed`) and each
-file's `status`, `created` and `left_out`.
+Call `dry_run_import` with `plan` alone (no `answers`): while it runs or once it's done it only
+reports `status` (`Running`, `Completed`, `Partially Completed`, `Stopped`, `Failed`) and each
+file's `status`, `created` and `left_out`, and asks no approval.
+
+Don't call `run_migration_plan` again to follow it. It would start nothing, but every call of it
+puts a new Approve/Reject card in front of the user, which stays there as if the plan were
+waiting on them.
 
 When it ends, report what came in, and offer the sign-off report for the plan's sessions
 (`get_skill("migration-sign-off")`, with `migration_plan` = the plan: its files only, so earlier

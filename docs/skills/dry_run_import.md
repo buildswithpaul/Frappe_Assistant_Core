@@ -324,6 +324,12 @@ With `plan` (the plan id) instead of `session`, it checks every file of a **migr
 
 Call it after `plan_migration`, and after mapping the files you were sure of. Show the questions, collect the answers, call it again with `plan` and `answers`. Repeat until `ready` is true. With `plan`, only `answers` go with it: `fixes`, a file and `failed_rows_file` are a single session's.
 
+Once the plan runs, or has ended, `plan` alone (no `answers`) follows it: the reply has the plan's
+`status` (and `already`), each file's `status`, `created` and `left_out`, `ready: false` and
+`last_step`, and asks no approval. Follow a run this way, never by calling `run_migration_plan`
+again, which puts a new approval card in front of the user. Answers to a running or ended plan are
+refused.
+
 When a session is in a migration plan (its `migration_plan` is set), don't ask the user about that one file: the plan's check gathers every question of the plan into one list. The check counts the records the plan's earlier files will create, and a missing master is planned with the `create` fix (the plan creates it when it runs). A group `Comes from a later file` means the plan's order is wrong for that file.
 
 ### Questions

@@ -94,7 +94,8 @@ class DryRunImport(BaseTool):
             "create...; create plans a missing record that the plan creates when it runs), {id: "
             "'plan:cut_off', date}, or {id: 'plan:failure_rule', rule}. All answers apply or none. "
             "When ready is true, the plan is Ready to Run: next run_migration_plan, given approval "
-            "exactly."
+            "exactly. Once it runs, follow it with plan alone (no answers): it reports the plan's "
+            "status and each file's status, created and left_out, and asks no approval."
         )
         self.requires_permission = None  # checked on the session and the target DocType
         # What the user's file says reaches the model fenced (#34003). A plan's check fences what
@@ -127,6 +128,7 @@ class DryRunImport(BaseTool):
             "files[].reason",
             "approval.decisions[]",
             "table",
+            "last_step",
         )
 
         self.inputSchema = {
@@ -350,10 +352,14 @@ class DryRunImport(BaseTool):
         except frappe.PermissionError as e:
             return permission_error_result(import_plan.SESSION_DOCTYPE, exception_message(e), name=plan_name)
         if plan.status not in import_plan.OPEN:
-            return {
-                "success": False,
-                "error": _("Plan {0} is {1}: it has no questions left.").format(plan.name, _(plan.status)),
-            }
+            if answers:
+                return {
+                    "success": False,
+                    "error": _("Plan {0} is {1}: it has no questions left.").format(
+                        plan.name, _(plan.status)
+                    ),
+                }
+            return self._plan_report(plan)
         applied = []
         try:
             applied = import_plan.apply_answers(plan, answers) if answers else []
@@ -370,6 +376,26 @@ class DryRunImport(BaseTool):
             result["applied"] = applied
         result["next"] = _next(result, bool(answers))
         return {"success": True, **result}
+
+    @staticmethod
+    def _plan_report(plan) -> Dict[str, Any]:
+        """Where a running or ended plan stands (#34415, QA #7). The way to follow a run: this tool
+        asks no approval, while run_migration_plan, called again only to report, puts a new
+        Approve/Reject card under every check."""
+        report = import_plan.result(plan)
+        last_step = report.pop("message", "")  # quotes the files' names
+        if plan.status == "Running":
+            message = _("Plan {0} is running: this is where it stands, nothing to approve.")
+        else:
+            message = _("Plan {0} finished ({1}): this is what came in, nothing to approve.")
+        return {
+            "success": True,
+            **report,
+            "already": plan.status,
+            "ready": False,
+            "last_step": last_step,
+            "message": message.format(plan.name, _(plan.status)),
+        }
 
     @staticmethod
     def _running(session, applied=None, notice=None) -> Dict[str, Any]:
