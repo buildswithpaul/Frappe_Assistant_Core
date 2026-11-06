@@ -560,6 +560,9 @@ def advise(session, group: Dict[str, Any]) -> Dict[str, Any]:
         if not reason and (group["parent"], group["field"]) in import_keys.translated_fields(session):
             # An old ID (#34244): a record named by it would stay in ERPNext as a stand-in (DM52's IG-199)
             reason = _("'{0}' is an ID of the old system, not a name").format(value)
+        if not reason and meant and not spelt:
+            # Mtr is Meter written short, never a new UOM: offered, it was created (live, 2026-11-06)
+            reason = _("'{0}' is how '{1}' is written short").format(value, meant)
         if not reason:
             create = {"action": CREATE, "doctype": doctype, "name": value, "parent": default_parent(doctype)}
             if not session.get("migration_plan"):  # in a plan, it is a fix: the plan creates it when it runs

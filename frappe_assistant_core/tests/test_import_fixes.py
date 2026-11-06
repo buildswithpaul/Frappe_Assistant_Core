@@ -804,8 +804,9 @@ class TestUnitWords(BaseAssistantTest):
         mapped = next(fix for fix in advice["fixes"] if fix["action"] == "map")
         self.assertEqual((mapped["closest"][:1], mapped.get("likely")), (["Meter"], "Meter"))
         self.assertIn("written short", advice["explanation"])
-        create = next((fix for fix in advice["fixes"] if fix["action"] == "create"), {})
-        self.assertIn("not a misspelt 'Meter'", create.get("note", "Only if"))
+        # Offered with a note, it was still created (live, 2026-11-06): it isn't offered at all
+        self.assertNotIn("create", [fix["action"] for fix in advice["fixes"]])
+        self.assertIn("written short", advice["cannot_create"])
 
 
 class TestSwitchedOffRecords(BaseAssistantTest):
