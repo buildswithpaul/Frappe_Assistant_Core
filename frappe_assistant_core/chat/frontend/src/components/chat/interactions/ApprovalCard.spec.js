@@ -602,6 +602,24 @@ describe("ApprovalCard plain-language copy and trust", () => {
 		const wrapper = mount(ApprovalCard, { props: { block } });
 		expect(wrapper.find(".trust-choice").text()).toBe("Don't ask again when FACO creates records");
 	});
+
+	// AR's "always" never allows R3, so offering it would be a promise the server breaks.
+	it("an R3 card never offers don't-ask-again", async () => {
+		const interrupts = [{ id: "i1", reason: { type: "approval", level: "R3" } }];
+		const block = { id: "c4", tool_name: "delete_document", input: { doctype: "ToDo", name: "TD-1" }, interrupts };
+		const wrapper = mount(ApprovalCard, { props: { block } });
+		expect(wrapper.find(".trust-choice").exists()).toBe(false);
+		expect(wrapper.text()).not.toContain("Don't ask again");
+		await wrapper.find(".ql-btn-approve").trigger("click");
+		expect(wrapper.emitted("approve")[0]).toEqual(["c4", [{ interruptId: "i1", response: "approve" }]]);
+	});
+
+	it("an R2 card still offers don't-ask-again", () => {
+		const interrupts = [{ id: "i1", reason: { type: "approval", level: "R2" } }];
+		const block = { id: "c5", tool_name: "create_document", input: { doctype: "ToDo", data: {} }, interrupts };
+		const wrapper = mount(ApprovalCard, { props: { block } });
+		expect(wrapper.find(".trust-choice").exists()).toBe(true);
+	});
 });
 
 

@@ -22,6 +22,8 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
+import frappe
+
 # Tools whose execution is internal plumbing — rendered as slim indicators,
 # not full expandable cards. `delegate` is one: the plan rail shows the
 # delegated work; `propose_build_plan` is another: its card shows the plan. Must match the frontend's INTERNAL_TOOLS
@@ -338,6 +340,14 @@ class BlockBuilder:
             }
         )
 
+    def add_changes_made(self, changes: list[dict]) -> None:
+        """Join the records the agent created to this message's ``changes_made`` block.
+
+        Goes through the builder, not the row, so the stream-end snapshot keeps it;
+        a change already listed (seeded from the row) keeps its ``undone`` flag.
+        """
+        merge_changes_block(self.blocks, changes)
+
     def add_sources(self, sources: list[dict]) -> None:
         """Attach (or replace) the RAG citation sources block for this turn.
 
@@ -495,3 +505,105 @@ def _extract_text_result(result: Any) -> str | None:
                 texts.append(item["text"])
         return ", ".join(texts) if texts else str(result)
     return str(result)
+
+
+CHANGES_BLOCK = "changes_made"
+
+
+def _read_message_blocks(message: str) -> list[dict]:
+    raw = frappe.db.get_value("FAC Chat Message", message, "blocks")
+    try:
+        blocks = json.loads(raw) if raw else []
+    except (ValueError, TypeError):
+        return []
+    return blocks if isinstance(blocks, list) else []
+
+
+def _write_message_blocks(message: str, blocks: list[dict]) -> None:
+    frappe.db.set_value("FAC Chat Message", message, "blocks", json.dumps(blocks))
+
+
+def normalise_changes(changes: Any) -> list[dict]:
+    """The changes AR reported that are safe to list and to offer Undo for.
+
+    AR's payload is untrusted input to the block that gates ``undo_change``'s deletes. Only
+    entries with a non-empty string doctype and name survive, with the one action/undo pair
+    P1 produces (create/delete); an entry naming any other action or undo is dropped. Only
+    doctype, name, action and undo are kept (the block adds ``undone``).
+    """
+    if not isinstance(changes, list):
+        return []
+    clean = []
+    for change in changes:
+        if not isinstance(change, dict):
+            continue
+        doctype, name = change.get("doctype"), change.get("name")
+        if not (isinstance(doctype, str) and doctype and isinstance(name, str) and name):
+            continue
+        if change.get("action", "create") != "create" or change.get("undo", "delete") != "delete":
+            continue
+        clean.append(
+            {
+                "doctype": doctype,
+                "name": name,
+                "action": "create",
+                "undo": "delete",
+            }
+        )
+    return clean
+
+
+def merge_changes_block(blocks: list[dict], changes: Any) -> None:
+    """Join ``changes`` to the ``changes_made`` block in ``blocks`` (made if absent), in place.
+
+    Normalises first, then deduplicates on (doctype, name); a change already listed keeps its
+    ``undone`` flag. Adds no block when nothing valid remains.
+    """
+    changes = normalise_changes(changes)
+    block = next((b for b in blocks if b.get("type") == CHANGES_BLOCK), None)
+    if block is None:
+        if not changes:
+            return
+        block = {"type": CHANGES_BLOCK, "id": _generate_id(CHANGES_BLOCK), "changes": []}
+        blocks.append(block)
+    known = {(c.get("doctype"), c.get("name")) for c in block["changes"]}
+    for change in changes:
+        key = (change["doctype"], change["name"])
+        if key in known:
+            continue
+        known.add(key)
+        block["changes"].append({**change, "undone": False})
+
+
+def add_changes_made(message: str, changes: list[dict]) -> None:
+    """Record the records a chat turn created, so the SPA can offer Undo.
+
+    ``message`` is the FAC Chat Message row name. A message carries one
+    ``changes_made`` block: later changes join it, deduplicated on (doctype, name).
+    """
+    blocks = _read_message_blocks(message)
+    merge_changes_block(blocks, changes)
+    _write_message_blocks(message, blocks)
+
+
+def find_open_change(message: str, doctype: str, name: str) -> dict | None:
+    """The not-yet-undone change listed for (doctype, name) in the message's block, if any."""
+    for block in _read_message_blocks(message):
+        if block.get("type") != CHANGES_BLOCK:
+            continue
+        for change in block.get("changes", []):
+            if change.get("doctype") == doctype and change.get("name") == name and not change.get("undone"):
+                return change
+    return None
+
+
+def mark_change_undone(message: str, doctype: str, name: str) -> None:
+    """Flag the listed change as undone so a second Undo is refused."""
+    blocks = _read_message_blocks(message)
+    for block in blocks:
+        if block.get("type") != CHANGES_BLOCK:
+            continue
+        for change in block.get("changes", []):
+            if change.get("doctype") == doctype and change.get("name") == name:
+                change["undone"] = True
+    _write_message_blocks(message, blocks)
