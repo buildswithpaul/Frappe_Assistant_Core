@@ -79,6 +79,7 @@ class ReplySink:
     def __init__(self, writer: ReplyWriter, session_url: str, *, clock: Callable[[], float] = time.monotonic):
         self.writer, self.session_url, self.clock = writer, session_url, clock
         self.text, self.last_save, self.done = "", None, False
+        self.changes: list[dict] = []
 
     def __call__(self, event: dict) -> None:
         if self.done:
@@ -91,6 +92,8 @@ class ReplySink:
                 self._save(self.text)
         elif kind == "tool_call_start":
             self.writer.status(_describe_tool(event.get("input") or {}))
+        elif kind == "changes_made":
+            self.changes += [c for c in event.get("changes") or [] if isinstance(c, dict)]
         elif kind == "thinking":
             self.writer.status(_("FAC Bot is thinking…"))
         elif kind in TERMINAL:
@@ -102,17 +105,19 @@ class ReplySink:
         self.last_save = self.clock()
 
     def _finish(self, kind: str, event: dict) -> None:
+        changes = _changes_html(self.changes)
         if kind == "stream_complete":
-            self._save(event.get("full_response") or self.text, final=True)
+            self._save(event.get("full_response") or self.text, changes, final=True)
         elif kind == "approval_required":
             handoff = formatting.handoff_html(
                 event.get("tool_name") or "", event.get("input") or {}, self.session_url
             )
-            self._save(self.text, handoff, final=True)
+            self._save(self.text, changes + handoff, final=True)
         elif kind == "stream_aborted":
-            self._save(f"{event.get('partial_response') or self.text}\n\n_{formatting.STOPPED}_", final=True)
+            stopped = f"{event.get('partial_response') or self.text}\n\n_{formatting.STOPPED}_"
+            self._save(stopped, changes, final=True)
         else:
-            self.writer.update(f"<p>{escape_html(formatting.error_text(event))}</p>", final=True)
+            self.writer.update(f"<p>{escape_html(formatting.error_text(event))}</p>{changes}", final=True)
         self.writer.status(None)
         self.done = True
 
@@ -123,6 +128,19 @@ class ReplySink:
         self._save(f"{self.text}\n\n_{formatting.INTERRUPTED}_", final=True)
         self.writer.status(None)
         self.done = True
+
+
+def _changes_html(changes: list[dict]) -> str:
+    """One plain line naming the records the turn created unasked, or "" when there are none."""
+    listed = [
+        _("Created {0} · {1}").format(c.get("doctype"), c.get("name"))
+        for c in changes
+        if c.get("doctype") and c.get("name")
+    ]
+    if not listed:
+        return ""
+    line = _("Changes made: {0}. Undo them in FAC Chat.").format(", ".join(listed))
+    return f"<p>{escape_html(line)}</p>"
 
 
 def _describe_tool(tool_input: dict) -> str:

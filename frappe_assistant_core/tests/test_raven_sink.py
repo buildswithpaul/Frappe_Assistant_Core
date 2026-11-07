@@ -69,6 +69,26 @@ class TestReplySink(BaseAssistantTest):
         self.assertTrue(self.sink.done)
         self.assertIsNone(self.writer.statuses[-1])
 
+    def test_changes_made_are_named_in_the_final_reply(self):
+        self.chunk("Done", 0.0)
+        self.sink(
+            {
+                "event": "changes_made",
+                "message_id": "m1",
+                "changes": [
+                    {"doctype": "Site Visit", "name": "SV-<1>", "action": "create", "undo": "delete"}
+                ],
+            }
+        )
+        self.sink({"event": "stream_complete", "full_response": "Done"})
+        final = self.writer.saves[-1]
+        self.assertIn("Changes made: Created Site Visit · SV-&lt;1&gt;. Undo them in FAC Chat.", final)
+        self.assertLess(final.index("Done"), final.index("Changes made"))
+
+    def test_no_changes_means_no_changes_line(self):
+        self.sink({"event": "stream_complete", "full_response": "Done"})
+        self.assertNotIn("Changes made", self.writer.saves[-1])
+
     def test_a_tool_call_shows_in_the_status_strip(self):
         self.sink(
             {
