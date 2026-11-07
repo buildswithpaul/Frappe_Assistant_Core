@@ -340,6 +340,14 @@ class BlockBuilder:
             }
         )
 
+    def add_changes_made(self, changes: list[dict]) -> None:
+        """Join the records the agent created to this message's ``changes_made`` block.
+
+        Goes through the builder, not the row, so the stream-end snapshot keeps it;
+        a change already listed (seeded from the row) keeps its ``undone`` flag.
+        """
+        merge_changes_block(self.blocks, changes)
+
     def add_sources(self, sources: list[dict]) -> None:
         """Attach (or replace) the RAG citation sources block for this turn.
 
@@ -515,13 +523,11 @@ def _write_message_blocks(message: str, blocks: list[dict]) -> None:
     frappe.db.set_value("FAC Chat Message", message, "blocks", json.dumps(blocks))
 
 
-def add_changes_made(message: str, changes: list[dict]) -> None:
-    """Record the records a chat turn created, so the SPA can offer Undo.
+def merge_changes_block(blocks: list[dict], changes: list[dict]) -> None:
+    """Join ``changes`` to the ``changes_made`` block in ``blocks`` (made if absent), in place.
 
-    ``message`` is the FAC Chat Message row name. A message carries one
-    ``changes_made`` block: later changes join it, deduplicated on (doctype, name).
+    Deduplicates on (doctype, name); a change already listed keeps its ``undone`` flag.
     """
-    blocks = _read_message_blocks(message)
     block = next((b for b in blocks if b.get("type") == CHANGES_BLOCK), None)
     if block is None:
         block = {"type": CHANGES_BLOCK, "id": _generate_id(CHANGES_BLOCK), "changes": []}
@@ -541,6 +547,18 @@ def add_changes_made(message: str, changes: list[dict]) -> None:
                 "undone": False,
             }
         )
+    if not block["changes"]:
+        blocks.remove(block)
+
+
+def add_changes_made(message: str, changes: list[dict]) -> None:
+    """Record the records a chat turn created, so the SPA can offer Undo.
+
+    ``message`` is the FAC Chat Message row name. A message carries one
+    ``changes_made`` block: later changes join it, deduplicated on (doctype, name).
+    """
+    blocks = _read_message_blocks(message)
+    merge_changes_block(blocks, changes)
     _write_message_blocks(message, blocks)
 
 
