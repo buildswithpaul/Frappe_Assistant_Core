@@ -1,6 +1,7 @@
 """The Changes block and the Undo endpoint: undo deletes only what the chat itself created."""
 
 import json
+from unittest.mock import patch
 
 import frappe
 
@@ -18,7 +19,7 @@ class TestChangesUndo(BaseAssistantTest):
         self.sid = f"undo-{frappe.generate_hash(length=8)}"
         self.message_id = f"msg-{frappe.generate_hash(length=8)}"
         self.message = self._make_message(self.owner, self.sid, self.message_id)
-        self.created = self._make_style()
+        self.created = self._make_style(self.owner)
         # The relay calls add_changes_made when AR sends changes_made.
         add_changes_made(self.message, [self._change(self.created)])
 
@@ -43,8 +44,15 @@ class TestChangesUndo(BaseAssistantTest):
             .name
         )
 
-    def _make_style(self):
-        # Stands in for a record the chat's own create tool made.
+    def _make_style(self, user=None):
+        # Stands in for a record the chat's own create tool made, as the chat's user.
+        frappe.set_user(user or self.owner)
+        try:
+            return self._insert_style()
+        finally:
+            frappe.set_user("Administrator")
+
+    def _insert_style(self):
         return (
             frappe.get_doc({"doctype": DOCTYPE, "role_name": f"undo-{frappe.generate_hash(length=8)}"})
             .insert(ignore_permissions=True)
@@ -60,6 +68,12 @@ class TestChangesUndo(BaseAssistantTest):
             "action": "create",
             "undo": "delete",
         }
+
+    def _link_to_created(self):
+        # Something the user did after the create now points at the record.
+        frappe.get_doc(
+            {"doctype": "Custom DocPerm", "parent": "Note", "role": self.created, "permlevel": 0, "read": 1}
+        ).insert(ignore_permissions=True)
 
     def _block(self, message=None):
         raw = frappe.db.get_value("FAC Chat Message", message or self.message, "blocks")
@@ -115,10 +129,7 @@ class TestChangesUndo(BaseAssistantTest):
         self.assertFalse(self._block()[0]["changes"][0]["undone"])
 
     def test_linked_record_is_not_deleted(self):
-        # Something the user did after the create now points at the record.
-        frappe.get_doc(
-            {"doctype": "Custom DocPerm", "parent": "Note", "role": self.created, "permlevel": 0, "read": 1}
-        ).insert(ignore_permissions=True)
+        self._link_to_created()
         frappe.set_user(self.owner)
         result = self._undo()
         self.assertFalse(result["success"])
@@ -132,3 +143,44 @@ class TestChangesUndo(BaseAssistantTest):
         blocks = self._block()
         self.assertEqual(len(blocks), 1)
         self.assertEqual([c["name"] for c in blocks[0]["changes"]], [self.created, second])
+
+    def test_undo_refuses_a_system_manager_in_someone_elses_chat(self):
+        other_admin = self.make_throwaway_user("undo-admin", roles=("System Manager",))
+        frappe.set_user(other_admin)
+        with self.assertRaises(frappe.PermissionError):
+            self._undo()
+        self.assertTrue(frappe.db.exists(DOCTYPE, self.created))
+
+    def test_linked_record_rolls_back_what_on_trash_did(self):
+        self._link_to_created()
+        marker = f"marker-{frappe.generate_hash(length=6)}"
+
+        def on_trash_side_effect(doc, *args, **kwargs):
+            # Stands in for an app whose on_trash removes related rows (Customer deletes its Contacts).
+            frappe.db.set_value("FAC Chat Message", self.message, "content", marker)
+
+        frappe.set_user(self.owner)
+        with patch("frappe.core.doctype.role.role.Role.on_trash", on_trash_side_effect, create=True):
+            result = self._undo()
+        self.assertFalse(result["success"])
+        self.assertTrue(frappe.db.exists(DOCTYPE, self.created))
+        self.assertNotEqual(frappe.db.get_value("FAC Chat Message", self.message, "content"), marker)
+
+    def test_undo_refuses_a_record_recreated_by_someone_else(self):
+        # The user deleted the record by hand, then another user made one of the same name.
+        frappe.delete_doc(DOCTYPE, self.created, force=True)
+        other = self.make_throwaway_user("undo-other", roles=("System Manager",))
+        frappe.set_user(other)
+        frappe.get_doc({"doctype": DOCTYPE, "role_name": self.created}).insert(ignore_permissions=True)
+        frappe.set_user(self.owner)
+        result = self._undo()
+        self.assertEqual(
+            result, {"success": False, "reason": "This record has changed since the chat created it"}
+        )
+        self.assertTrue(frappe.db.exists(DOCTYPE, self.created))
+
+    def test_undo_of_a_record_already_gone_succeeds_and_marks_it(self):
+        frappe.delete_doc(DOCTYPE, self.created, force=True)
+        frappe.set_user(self.owner)
+        self.assertEqual(self._undo(), {"success": True})
+        self.assertTrue(self._block()[0]["changes"][0]["undone"])
