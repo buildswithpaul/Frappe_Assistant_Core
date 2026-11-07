@@ -227,6 +227,20 @@ class TestChangeFacts(BaseAssistantTest):
             facts = change_facts("update_document", {"doctype": "Note", "name": "x", "data": data})
             self.assertIs(facts["affects_others"], False, data)
 
+    def test_batch_records_that_go_live_affect_others(self):
+        create = {"doctype": "Note", "records": [{"title": "a"}, {"title": "b", "public": 1}]}
+        self.assertIs(change_facts("create_document", create)["affects_others"], True)
+        update = {"doctype": "Note", "records": [{"name": "a", "data": {"notify_on_login": 1}}]}
+        self.assertIs(change_facts("update_document", update)["affects_others"], True)
+        quiet = {"doctype": "Note", "records": [{"title": "a"}, {"name": "b", "data": {"title": "c"}}]}
+        self.assertIs(change_facts("create_document", quiet)["affects_others"], False)
+        for odd in ("x", ["x"], [{"name": "a", "data": "x"}]):
+            facts = change_facts("create_document", {"doctype": "Note", "records": odd})
+            self.assertIs(facts["affects_others"], True, odd)
+        self.assertIs(
+            change_facts("update_document", {"doctype": "Note", "data": "x"})["affects_others"], True
+        )
+
     def test_doctype_event_server_script_sends_messages(self):
         frappe.conf.server_script_enabled = 1
         self.addCleanup(frappe.conf.pop, "server_script_enabled", None)
