@@ -80,6 +80,34 @@ class TestRelayChangesMade(unittest.TestCase):
         _dispatch(builder, [{"doctype": "ToDo"}])
         self.assertEqual(_changes_blocks(builder), [])
 
+    def test_malformed_changes_are_dropped_not_raised(self):
+        # AR's payload is untrusted: only well-formed create/delete entries may reach the
+        # block that gates undo_change, or the socket.
+        changes = [
+            "x",
+            None,
+            {"doctype": {}, "name": "a"},
+            {"doctype": 5, "name": "a"},
+            {"doctype": "Note", "name": "N-1", "action": "delete", "undo": "delete"},
+            {"doctype": "Note", "name": "N-2", "action": "create", "undo": "delete"},
+        ]
+        builder = BlockBuilder()
+
+        handled, emit = _dispatch(builder, changes)
+
+        self.assertTrue(handled)
+        (block,) = _changes_blocks(builder)
+        self.assertEqual([c["name"] for c in block["changes"]], ["N-2"])
+        self.assertEqual([c["name"] for c in emit.call_args.args[1]["changes"]], ["N-2"])
+
+    def test_non_list_or_all_invalid_changes_emit_nothing(self):
+        for changes in ({"doctype": "Note"}, "Note", ["x"], None):
+            builder = BlockBuilder()
+            handled, emit = _dispatch(builder, changes)
+            self.assertTrue(handled)
+            emit.assert_not_called()
+            self.assertEqual(_changes_blocks(builder), [])
+
 
 if __name__ == "__main__":
     unittest.main()

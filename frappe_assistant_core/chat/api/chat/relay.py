@@ -194,7 +194,7 @@ def _update_faco_message_merged(
     return MergedWrite(False, None, None)
 
 
-from ..block_builder import truncate_result_for_emit  # noqa: E402
+from ..block_builder import normalise_changes, truncate_result_for_emit  # noqa: E402
 from ..chat.cancel import (  # noqa: E402
     ABORT_MARKER_TEXT,
     _abort_pending_interactions,
@@ -333,7 +333,9 @@ def _dispatch_relay_event(
         )
 
     elif event_type == "changes_made":
-        changes = data.get("changes") or []
+        changes = normalise_changes(data.get("changes"))
+        if not changes:
+            return True
         block_builder.add_changes_made(changes)
         _emit_socket_event(
             session_id,

@@ -523,32 +523,56 @@ def _write_message_blocks(message: str, blocks: list[dict]) -> None:
     frappe.db.set_value("FAC Chat Message", message, "blocks", json.dumps(blocks))
 
 
-def merge_changes_block(blocks: list[dict], changes: list[dict]) -> None:
+def normalise_changes(changes: Any) -> list[dict]:
+    """The changes AR reported that are safe to list and to offer Undo for.
+
+    AR's payload is untrusted input to the block that gates ``undo_change``'s deletes. Only
+    entries with a non-empty string doctype and name survive, with the one action/undo pair
+    P1 produces (create/delete); an entry naming any other action or undo is dropped.
+    """
+    if not isinstance(changes, list):
+        return []
+    clean = []
+    for change in changes:
+        if not isinstance(change, dict):
+            continue
+        doctype, name = change.get("doctype"), change.get("name")
+        if not (isinstance(doctype, str) and doctype and isinstance(name, str) and name):
+            continue
+        if change.get("action", "create") != "create" or change.get("undo", "delete") != "delete":
+            continue
+        clean.append(
+            {
+                "tool": change.get("tool"),
+                "doctype": doctype,
+                "name": name,
+                "action": "create",
+                "undo": "delete",
+            }
+        )
+    return clean
+
+
+def merge_changes_block(blocks: list[dict], changes: Any) -> None:
     """Join ``changes`` to the ``changes_made`` block in ``blocks`` (made if absent), in place.
 
-    Deduplicates on (doctype, name); a change already listed keeps its ``undone`` flag.
+    Normalises first, then deduplicates on (doctype, name); a change already listed keeps its
+    ``undone`` flag. Adds no block when nothing valid remains.
     """
+    changes = normalise_changes(changes)
     block = next((b for b in blocks if b.get("type") == CHANGES_BLOCK), None)
     if block is None:
+        if not changes:
+            return
         block = {"type": CHANGES_BLOCK, "id": _generate_id(CHANGES_BLOCK), "changes": []}
         blocks.append(block)
     known = {(c.get("doctype"), c.get("name")) for c in block["changes"]}
-    for change in changes or []:
-        key = (change.get("doctype"), change.get("name"))
-        if not all(key) or key in known:
+    for change in changes:
+        key = (change["doctype"], change["name"])
+        if key in known:
             continue
         known.add(key)
-        block["changes"].append(
-            {
-                "doctype": key[0],
-                "name": key[1],
-                "action": change.get("action") or "create",
-                "undo": change.get("undo") or "delete",
-                "undone": False,
-            }
-        )
-    if not block["changes"]:
-        blocks.remove(block)
+        block["changes"].append({**change, "undone": False})
 
 
 def add_changes_made(message: str, changes: list[dict]) -> None:
