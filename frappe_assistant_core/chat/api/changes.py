@@ -12,6 +12,7 @@ caller may delete it.
 
 import frappe
 from frappe import _
+from frappe.model.delete_doc import check_if_doc_is_dynamically_linked, check_if_doc_is_linked
 
 from ._rate_limits import rate_limit, session_user_or_ip
 from .block_builder import find_open_change, mark_change_undone
@@ -62,7 +63,12 @@ def undo_change(session_id: str, message_id: str, doctype: str, name: str) -> di
     if owner != frappe.session.user or not bound or creation < bound:
         return {"success": False, "reason": _("This record has changed since the chat created it")}
 
-    # delete_doc runs on_trash before it checks links; a refusal must undo what on_trash did.
+    # delete_doc runs on_trash hooks before it checks links, and Frappe's own hook deletes a
+    # Contact or Address linked only to this record, so check links first: Undo never cascades.
+    if _is_linked(frappe.get_doc(doctype, name)):
+        return {"success": False, "reason": _("Something now links to it")}
+
+    # A link made after that check still refuses the delete; undo what on_trash did then.
     frappe.db.savepoint(SAVEPOINT)
     try:
         frappe.delete_doc(doctype, name)
@@ -73,3 +79,14 @@ def undo_change(session_id: str, message_id: str, doctype: str, name: str) -> di
     frappe.db.release_savepoint(SAVEPOINT)
     mark_change_undone(row.name, doctype, name)
     return {"success": True}
+
+
+def _is_linked(doc) -> bool:
+    try:
+        check_if_doc_is_linked(doc)
+        check_if_doc_is_dynamically_linked(doc)
+    except frappe.LinkExistsError:
+        # The refusal is returned as a reason, not shown again as Frappe's own message.
+        frappe.clear_last_message()
+        return True
+    return False
