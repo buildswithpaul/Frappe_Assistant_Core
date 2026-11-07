@@ -97,7 +97,7 @@ function decisionLabel(block) {
 }
 
 .bac-item + .bac-item {
-	border-top: 1px solid var(--ql-subtle);
+	border-top: 1px solid var(--ql-border);
 }
 
 .bac-text {
