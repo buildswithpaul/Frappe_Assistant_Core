@@ -14,3 +14,13 @@ export function baseToolName(toolName) {
 export function isCustomisationRisk(block) {
 	return block?.interrupts?.[0]?.reason?.risk === "customisation";
 }
+
+// AR's approval level for a leveled write ("R2" or "R3"); absent for every other approval.
+export function approvalLevel(block) {
+	return block?.interrupts?.[0]?.reason?.level ?? null;
+}
+
+// "Don't ask again" is never offered where AR would still ask: customisations and R3 writes.
+export function canTrust(block) {
+	return !isCustomisationRisk(block) && approvalLevel(block) !== "R3";
+}
