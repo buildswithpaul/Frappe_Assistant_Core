@@ -50,7 +50,13 @@ def undo_change(session_id: str, message_id: str, doctype: str, name: str) -> di
         )
 
     owner, creation = frappe.db.get_value(doctype, name, ["owner", "creation"])
-    if owner != frappe.session.user or creation < row.creation:
+    turn_start = frappe.db.get_value(
+        "FAC Chat Message",
+        {"session_id": session_id, "role": "user", "creation": ["<=", row.creation]},
+        "creation",
+        order_by="creation desc",
+    )
+    if owner != frappe.session.user or (turn_start and creation < turn_start):
         return {"success": False, "reason": _("This record has changed since the chat created it")}
 
     # delete_doc runs on_trash before it checks links; a refusal must undo what on_trash did.
@@ -61,5 +67,6 @@ def undo_change(session_id: str, message_id: str, doctype: str, name: str) -> di
         frappe.db.rollback(save_point=SAVEPOINT)
         return {"success": False, "reason": _("Something now links to it")}
 
+    frappe.db.release_savepoint(SAVEPOINT)
     mark_change_undone(row.name, doctype, name)
     return {"success": True}
