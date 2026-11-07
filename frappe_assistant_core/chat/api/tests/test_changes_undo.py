@@ -19,8 +19,8 @@ class TestChangesUndo(BaseAssistantTest):
         self.sid = f"undo-{frappe.generate_hash(length=8)}"
         self.message_id = f"msg-{frappe.generate_hash(length=8)}"
         # The order a real turn writes: the user's message, then the record the chat creates
-        # while it runs, then the assistant row at stream end, where the relay calls
-        # add_changes_made when AR sends changes_made.
+        # while it runs; the assistant row is a shell made at stream_start, before the tools
+        # run, and the relay calls add_changes_made on it when AR sends changes_made.
         self._make_message(self.owner, self.sid, f"user-{self.message_id}", "user")
         self.created = self._make_style(self.owner)
         self.message = self._make_message(self.owner, self.sid, self.message_id)
@@ -199,3 +199,36 @@ class TestChangesUndo(BaseAssistantTest):
             result, {"success": False, "reason": "This record has changed since the chat created it"}
         )
         self.assertTrue(frappe.db.exists(DOCTYPE, earlier))
+
+    def _drop_turn_rows(self, conversation=False):
+        # Retention off or pruned history: the user rows (and the conversation row) are gone.
+        frappe.db.delete("FAC Chat Message", {"session_id": self.sid, "role": "user"})
+        if conversation:
+            frappe.db.delete("FAC Chat Conversation", {"name": self.sid})
+
+    def test_without_a_turn_row_a_record_made_before_the_session_is_refused(self):
+        earlier = self._make_style(self.owner)
+        sid = f"undo-late-{frappe.generate_hash(length=8)}"
+        message = self._make_message(self.owner, sid, "late")
+        add_changes_made(message, [self._change(earlier)])
+        frappe.set_user(self.owner)
+        result = self._undo(name=earlier, session_id=sid, message_id="late")
+        self.assertEqual(
+            result, {"success": False, "reason": "This record has changed since the chat created it"}
+        )
+        self.assertTrue(frappe.db.exists(DOCTYPE, earlier))
+
+    def test_without_a_turn_row_a_record_made_after_the_session_started_is_undone(self):
+        self._drop_turn_rows()
+        frappe.set_user(self.owner)
+        self.assertEqual(self._undo(), {"success": True})
+        self.assertFalse(frappe.db.exists(DOCTYPE, self.created))
+
+    def test_with_no_turn_row_and_no_conversation_undo_is_refused(self):
+        self._drop_turn_rows(conversation=True)
+        frappe.set_user(self.owner)
+        result = self._undo()
+        self.assertEqual(
+            result, {"success": False, "reason": "This record has changed since the chat created it"}
+        )
+        self.assertTrue(frappe.db.exists(DOCTYPE, self.created))

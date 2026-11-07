@@ -56,7 +56,10 @@ def undo_change(session_id: str, message_id: str, doctype: str, name: str) -> di
         "creation",
         order_by="creation desc",
     )
-    if owner != frappe.session.user or (turn_start and creation < turn_start):
+    # No turn row (retention off, or it was pruned): fall back to the conversation's start, and
+    # with neither on record there is nothing to prove the chat created the record.
+    bound = turn_start or frappe.db.get_value("FAC Chat Conversation", session_id, "creation")
+    if owner != frappe.session.user or not bound or creation < bound:
         return {"success": False, "reason": _("This record has changed since the chat created it")}
 
     # delete_doc runs on_trash before it checks links; a refusal must undo what on_trash did.
