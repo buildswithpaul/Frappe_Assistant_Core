@@ -36,6 +36,31 @@ except ImportError:  # Frappe v15
     from frappe.tests.utils import FrappeTestCase as IntegrationTestCase
 
 
+CUSTOM_TEST_DOCTYPE = "FAC Test Chat Record"
+
+
+def ensure_custom_test_doctype() -> str:
+    """A DocType with ``custom=1``, as a user builds one in Desk or through chat.
+
+    Creating a DocType runs DDL, which commits, so it cannot live inside a test's rolled-back
+    transaction. Call this from ``setUpClass`` BEFORE ``super().setUpClass()``: it is created
+    once and kept (like Frappe's own test records), and ``setUpClass`` commits the rest of the
+    insert; the records tests insert are rolled back.
+    """
+    if not frappe.db.exists("DocType", CUSTOM_TEST_DOCTYPE):
+        frappe.get_doc(
+            {
+                "doctype": "DocType",
+                "name": CUSTOM_TEST_DOCTYPE,
+                "module": "Custom",
+                "custom": 1,
+                "fields": [{"fieldname": "title", "label": "Title", "fieldtype": "Data"}],
+                "permissions": [{"role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1}],
+            }
+        ).insert(ignore_permissions=True)
+    return CUSTOM_TEST_DOCTYPE
+
+
 class BaseAssistantTest(IntegrationTestCase):
     """Base test class with common setup and utilities"""
 
