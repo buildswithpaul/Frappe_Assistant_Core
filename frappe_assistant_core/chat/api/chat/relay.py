@@ -218,6 +218,7 @@ from ..chat.helpers import (  # noqa: E402
 # at all because it was added to the main loop and never mirrored here.
 _SHARED_RELAY_EVENTS = frozenset(
     {
+        "changes_made",
         "context_summarized",
         "model_selected",
         "routing_notice",
@@ -245,6 +246,7 @@ _RESUME_PROGRESS_EVENTS = frozenset(
         "tool_cancelled",
         "approval_required",
         "workflow_created",
+        "changes_made",
         "stream_complete",
         "stream_cancelled",
     }
@@ -327,6 +329,19 @@ def _dispatch_relay_event(
                 "message_id": ar_message_id,
                 "task_id": data.get("task_id"),
                 "label": data.get("label", ""),
+            },
+        )
+
+    elif event_type == "changes_made":
+        changes = data.get("changes") or []
+        block_builder.add_changes_made(changes)
+        _emit_socket_event(
+            session_id,
+            {
+                "event": "changes_made",
+                "session_id": session_id,
+                "message_id": ar_message_id,
+                "changes": changes,
             },
         )
 
