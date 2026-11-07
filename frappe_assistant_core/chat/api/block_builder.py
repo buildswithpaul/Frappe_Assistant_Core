@@ -528,7 +528,8 @@ def normalise_changes(changes: Any) -> list[dict]:
 
     AR's payload is untrusted input to the block that gates ``undo_change``'s deletes. Only
     entries with a non-empty string doctype and name survive, with the one action/undo pair
-    P1 produces (create/delete); an entry naming any other action or undo is dropped.
+    P1 produces (create/delete); an entry naming any other action or undo is dropped. Only
+    doctype, name, action and undo are kept (the block adds ``undone``).
     """
     if not isinstance(changes, list):
         return []
@@ -543,7 +544,6 @@ def normalise_changes(changes: Any) -> list[dict]:
             continue
         clean.append(
             {
-                "tool": change.get("tool"),
                 "doctype": doctype,
                 "name": name,
                 "action": "create",
