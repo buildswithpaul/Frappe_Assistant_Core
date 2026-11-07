@@ -21,9 +21,16 @@ import frappe
 from frappe_assistant_core.plugins.faco.tools.customisation_impact import CustomisationImpact
 from frappe_assistant_core.tests.base_test import BaseAssistantTest
 from frappe_assistant_core.utils.change_facts import change_facts
+from frappe_assistant_core.utils.customisation import customisation_impact
 
 
 class TestChangeFacts(BaseAssistantTest):
+    def setUp(self):
+        super().setUp()
+        # The class shares one transaction, so rows a test inserts would leak into later tests.
+        frappe.db.savepoint("change_facts")
+        self.addCleanup(frappe.db.rollback, save_point="change_facts")
+
     def test_business_create_facts(self):
         facts = change_facts("create_document", {"doctype": "Note", "data": {"title": "x"}})
         self.assertEqual(
@@ -103,7 +110,80 @@ class TestChangeFacts(BaseAssistantTest):
     def test_impact_payload_carries_facts(self):
         tool_input = {"doctype": "Note", "data": {"title": "x"}}
         result = CustomisationImpact().execute({"tool_name": "create_document", "tool_input": tool_input})
-        self.assertEqual(result["facts"], change_facts("create_document", tool_input))
-        self.assertIs(result["success"], True)
-        self.assertIn("changes_live_code", result)
-        self.assertIn("switches_on", result)
+        facts = result.pop("facts")
+        self.assertEqual(facts, change_facts("create_document", tool_input))
+        self.assertEqual(result, {"success": True, **customisation_impact("create_document", tool_input)})
+
+    def test_document_action_and_run_workflow_submit(self):
+        base = {"doctype": "Note", "name": "x"}
+        self.assertTrue(change_facts("document_action", base)["submits"])
+        for action in ("submit", "cancel", "amend"):
+            self.assertTrue(change_facts("document_action", {**base, "action": action})["submits"], action)
+        self.assertTrue(change_facts("run_workflow", {**base, "action": "Approve"})["submits"])
+
+    def test_assignment_rule_sends_messages(self):
+        # An admin creates an Assignment Rule for that doctype in Desk; the test rollback removes it.
+        rule = frappe.get_doc(
+            {
+                "doctype": "Assignment Rule",
+                "__newname": "FAC facts test rule",
+                "document_type": "Note",
+                "assign_condition": "1 == 1",
+                "rule": "Round Robin",
+                "description": "x",
+                "priority": 0,
+                "assignment_days": [{"day": "Monday"}],
+                "users": [{"user": "Administrator"}],
+            }
+        ).insert(ignore_permissions=True)
+        self.assertTrue(change_facts("create_document", {"doctype": "Note", "data": {}})["sends_messages"])
+        rule.db_set("disabled", 1)
+        self.assertFalse(change_facts("create_document", {"doctype": "Note", "data": {}})["sends_messages"])
+
+    def test_workflow_email_alert_sends_messages(self):
+        # An admin creates an active Workflow with email alerts for that doctype in Desk.
+        frappe.get_doc(
+            {
+                "doctype": "Workflow",
+                "workflow_name": "FAC facts test workflow",
+                "document_type": "Note",
+                "is_active": 1,
+                "send_email_alert": 1,
+                "workflow_state_field": "title",
+                "states": [{"state": "Draft", "doc_status": "0", "allow_edit": "All"}],
+            }
+        ).insert(ignore_permissions=True)
+        self.assertTrue(change_facts("create_document", {"doctype": "Note", "data": {}})["sends_messages"])
+
+    def test_webhook_sends_messages(self):
+        # An admin creates a Webhook on that doctype in Desk; the test rollback removes it.
+        frappe.get_doc(
+            {
+                "doctype": "Webhook",
+                "__newname": "FAC facts test webhook",
+                "webhook_doctype": "Note",
+                "webhook_docevent": "after_insert",
+                "request_url": "https://example.com/hook",
+                "request_structure": "Form URL-Encoded",
+                "enabled": 1,
+            }
+        ).insert(ignore_permissions=True)
+        self.assertTrue(change_facts("create_document", {"doctype": "Note", "data": {}})["sends_messages"])
+
+    def test_password_field_doctype_is_user_admin(self):
+        # Google Calendar sits in the Integrations module and has Password fields but no api_key.
+        facts = change_facts("create_document", {"doctype": "Google Calendar", "data": {}})
+        self.assertEqual(facts["doctype_kind"], "user_admin")
+
+    def test_automation_doctypes_are_system(self):
+        for doctype in ("Assignment Rule", "Auto Repeat", "Reminder"):
+            facts = change_facts("create_document", {"doctype": doctype, "data": {}})
+            self.assertEqual(facts["doctype_kind"], "system", doctype)
+
+    def test_string_docstatus_submits(self):
+        facts = change_facts("update_document", {"doctype": "Note", "name": "x", "data": {"docstatus": "1"}})
+        self.assertTrue(facts["submits"])
+
+    def test_create_never_reports_exists(self):
+        facts = change_facts("create_document", {"doctype": "Note", "name": "x", "data": {}})
+        self.assertIsNone(facts["exists"])

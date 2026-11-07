@@ -23,6 +23,7 @@ treats a missing key, or an empty dict, as "FAC cannot say" and asks the user.
 from typing import Any, Dict
 
 import frappe
+from frappe.utils import cint
 
 from frappe_assistant_core.utils.customisation import CUSTOMISATION_DOCTYPES
 
@@ -38,7 +39,7 @@ USER_ADMIN_DOCTYPES = frozenset(
         "API Key",
     }
 )
-SYSTEM_MODULES = frozenset({"Core", "Integrations", "Email"})
+SYSTEM_MODULES = frozenset({"Core", "Integrations", "Email", "Automation"})
 MONEY_OR_STOCK_MODULES = frozenset({"Accounts", "Stock", "Payroll"})
 # Doctypes whose records notify someone as soon as they are saved.
 MESSAGING_DOCTYPES = frozenset(
@@ -68,7 +69,7 @@ def _facts(tool_name: str, tool_input: Any) -> Dict[str, Any]:
         "is_money_or_stock": meta.module in MONEY_OR_STOCK_MODULES,
         "submits": _submits(tool_name, tool_input),
         "sends_messages": _sends_messages(doctype),
-        "exists": bool(frappe.db.exists(doctype, name)) if name else None,
+        "exists": bool(frappe.db.exists(doctype, name)) if name and tool_name != "create_document" else None,
         "bulk": "records" in tool_input or "names" in tool_input,
     }
 
@@ -76,7 +77,9 @@ def _facts(tool_name: str, tool_input: Any) -> Dict[str, Any]:
 def _doctype_kind(doctype: str, meta) -> str:
     if doctype in CUSTOMISATION_DOCTYPES:
         return "customisation"
-    if doctype in USER_ADMIN_DOCTYPES or any(f.fieldname in CREDENTIAL_FIELDS for f in meta.fields):
+    if doctype in USER_ADMIN_DOCTYPES or any(
+        f.fieldname in CREDENTIAL_FIELDS or f.fieldtype == "Password" for f in meta.fields
+    ):
         return "user_admin"
     if meta.module in SYSTEM_MODULES or meta.issingle:
         return "system"
@@ -84,16 +87,23 @@ def _doctype_kind(doctype: str, meta) -> str:
 
 
 def _submits(tool_name: str, tool_input: Dict[str, Any]) -> bool:
+    if tool_name in ("document_action", "run_workflow"):
+        # Submit, cancel, amend and every workflow transition move the document's docstatus.
+        return True
     if tool_name == "delete_document":
         return False
     data = tool_input.get("data")
     docstatus = data.get("docstatus") if isinstance(data, dict) else None
-    return docstatus in (1, 2) or bool(tool_input.get("submit"))
+    return cint(docstatus) in (1, 2) or bool(tool_input.get("submit"))
 
 
 def _sends_messages(doctype: str) -> bool:
     if doctype in MESSAGING_DOCTYPES:
         return True
     notified = frappe.get_all("Notification", filters={"document_type": doctype, "enabled": 1}, limit=1)
+    assigned = frappe.get_all("Assignment Rule", filters={"document_type": doctype, "disabled": 0}, limit=1)
+    flowing = frappe.get_all(
+        "Workflow", filters={"document_type": doctype, "is_active": 1, "send_email_alert": 1}, limit=1
+    )
     hooked = frappe.get_all("Webhook", filters={"webhook_doctype": doctype, "enabled": 1}, limit=1)
-    return bool(notified or hooked)
+    return bool(notified or hooked or assigned or flowing)
