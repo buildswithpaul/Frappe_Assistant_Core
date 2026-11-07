@@ -46,6 +46,33 @@ MESSAGING_DOCTYPES = frozenset(
     {"ToDo", "Communication", "Email Queue", "Notification Log", "Event", "Comment"}
 )
 CREDENTIAL_FIELDS = frozenset({"api_key", "api_secret"})
+# Doctypes whose records other people see as soon as they are saved.
+GO_LIVE_DOCTYPES = frozenset(
+    {
+        "Web Page",
+        "Web Form",
+        "Workspace",
+        "Custom HTML Block",
+        "Letter Head",
+        "Website Theme",
+        "Dashboard",
+        "Dashboard Chart",
+        "Number Card",
+        "Blog Post",
+        "Print Format",
+        "Help Article",
+        "Portal Settings",
+    }
+)
+# Fields that, once set, put a record in front of other people.
+GO_LIVE_FIELDS = (
+    "published",
+    "public",
+    "is_public",
+    "notify_on_login",
+    "notify_on_every_login",
+    "is_default",
+)
 
 
 def change_facts(tool_name: str, tool_input: Any) -> Dict[str, Any]:
@@ -53,6 +80,8 @@ def change_facts(tool_name: str, tool_input: Any) -> Dict[str, Any]:
     try:
         return _facts(tool_name, tool_input)
     except Exception:
+        doctype = tool_input.get("doctype") if isinstance(tool_input, dict) else None
+        frappe.logger("frappe_assistant_core").warning(f"change_facts failed for doctype {doctype!r}")
         return {}
 
 
@@ -69,6 +98,8 @@ def _facts(tool_name: str, tool_input: Any) -> Dict[str, Any]:
         "is_money_or_stock": meta.module in MONEY_OR_STOCK_MODULES,
         "submits": _submits(tool_name, tool_input),
         "sends_messages": _sends_messages(doctype),
+        "custom_doctype": bool(meta.custom),
+        "affects_others": _affects_others(doctype, tool_input),
         "exists": bool(frappe.db.exists(doctype, name)) if name and tool_name != "create_document" else None,
         "bulk": "records" in tool_input or "names" in tool_input,
     }
@@ -97,6 +128,15 @@ def _submits(tool_name: str, tool_input: Dict[str, Any]) -> bool:
     return cint(docstatus) in (1, 2) or bool(tool_input.get("submit"))
 
 
+def _affects_others(doctype: str, tool_input: Dict[str, Any]) -> bool:
+    if doctype in GO_LIVE_DOCTYPES:
+        return True
+    data = tool_input.get("data")
+    if not isinstance(data, dict):
+        return False
+    return any(cint(data.get(field)) for field in GO_LIVE_FIELDS)
+
+
 def _sends_messages(doctype: str) -> bool:
     if doctype in MESSAGING_DOCTYPES:
         return True
@@ -106,4 +146,9 @@ def _sends_messages(doctype: str) -> bool:
         "Workflow", filters={"document_type": doctype, "is_active": 1, "send_email_alert": 1}, limit=1
     )
     hooked = frappe.get_all("Webhook", filters={"webhook_doctype": doctype, "enabled": 1}, limit=1)
-    return bool(notified or hooked or assigned or flowing)
+    scripted = frappe.get_all(
+        "Server Script",
+        filters={"reference_doctype": doctype, "script_type": "DocType Event", "disabled": 0},
+        limit=1,
+    )
+    return bool(notified or hooked or assigned or flowing or scripted)

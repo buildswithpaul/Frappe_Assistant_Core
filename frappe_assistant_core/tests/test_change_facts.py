@@ -19,12 +19,21 @@
 import frappe
 
 from frappe_assistant_core.plugins.faco.tools.customisation_impact import CustomisationImpact
-from frappe_assistant_core.tests.base_test import BaseAssistantTest
+from frappe_assistant_core.tests.base_test import (
+    CUSTOM_TEST_DOCTYPE,
+    BaseAssistantTest,
+    ensure_custom_test_doctype,
+)
 from frappe_assistant_core.utils.change_facts import change_facts
 from frappe_assistant_core.utils.customisation import customisation_impact
 
 
 class TestChangeFacts(BaseAssistantTest):
+    @classmethod
+    def setUpClass(cls):
+        ensure_custom_test_doctype()
+        super().setUpClass()
+
     def setUp(self):
         super().setUp()
         # The class shares one transaction, so rows a test inserts would leak into later tests.
@@ -40,6 +49,8 @@ class TestChangeFacts(BaseAssistantTest):
                 "is_money_or_stock": False,
                 "submits": False,
                 "sends_messages": False,
+                "custom_doctype": False,
+                "affects_others": False,
                 "exists": None,
                 "bulk": False,
             },
@@ -47,7 +58,14 @@ class TestChangeFacts(BaseAssistantTest):
 
     def test_facts_are_real_bools(self):
         facts = change_facts("create_document", {"doctype": "Journal Entry", "data": {}})
-        for key in ("is_money_or_stock", "submits", "sends_messages", "bulk"):
+        for key in (
+            "is_money_or_stock",
+            "submits",
+            "sends_messages",
+            "bulk",
+            "custom_doctype",
+            "affects_others",
+        ):
             self.assertIs(type(facts[key]), bool, key)
 
     def test_money_doctype(self):
@@ -187,3 +205,52 @@ class TestChangeFacts(BaseAssistantTest):
     def test_create_never_reports_exists(self):
         facts = change_facts("create_document", {"doctype": "Note", "name": "x", "data": {}})
         self.assertIsNone(facts["exists"])
+
+    def test_custom_doctype_fact(self):
+        facts = change_facts("create_document", {"doctype": CUSTOM_TEST_DOCTYPE, "data": {}})
+        self.assertIs(facts["custom_doctype"], True)
+        self.assertIs(facts["affects_others"], False)
+        self.assertIs(
+            change_facts("create_document", {"doctype": "Note", "data": {}})["custom_doctype"], False
+        )
+
+    def test_go_live_doctypes_affect_others(self):
+        for doctype in ("Web Page", "Workspace", "Letter Head", "Print Format", "Dashboard Chart"):
+            facts = change_facts("create_document", {"doctype": doctype, "data": {}})
+            self.assertIs(facts["affects_others"], True, doctype)
+
+    def test_go_live_fields_affect_others(self):
+        for data in ({"public": 1}, {"public": "1"}, {"notify_on_login": True}, {"is_default": 1}):
+            facts = change_facts("create_document", {"doctype": "Note", "data": data})
+            self.assertIs(facts["affects_others"], True, data)
+        for data in ({"public": 0}, {"public": "0"}, {"title": "public"}):
+            facts = change_facts("update_document", {"doctype": "Note", "name": "x", "data": data})
+            self.assertIs(facts["affects_others"], False, data)
+
+    def test_doctype_event_server_script_sends_messages(self):
+        frappe.conf.server_script_enabled = 1
+        self.addCleanup(frappe.conf.pop, "server_script_enabled", None)
+        # An admin writes a DocType Event Server Script for that doctype in Desk.
+        script = frappe.get_doc(
+            {
+                "doctype": "Server Script",
+                "name": "FAC facts test script",
+                "script_type": "DocType Event",
+                "reference_doctype": "Note",
+                "doctype_event": "After Insert",
+                "script": "pass",
+            }
+        ).insert(ignore_permissions=True)
+        self.assertTrue(change_facts("create_document", {"doctype": "Note", "data": {}})["sends_messages"])
+        script.db_set("disabled", 1)
+        self.assertFalse(change_facts("create_document", {"doctype": "Note", "data": {}})["sends_messages"])
+
+    def test_exception_is_logged_and_empty(self):
+        from unittest.mock import patch
+
+        with patch(
+            "frappe_assistant_core.utils.change_facts._facts", side_effect=RuntimeError("boom")
+        ), patch("frappe_assistant_core.utils.change_facts.frappe.logger") as logger:
+            self.assertEqual(change_facts("create_document", {"doctype": "Note"}), {})
+        message = logger.return_value.warning.call_args.args[0]
+        self.assertIn("Note", message)
