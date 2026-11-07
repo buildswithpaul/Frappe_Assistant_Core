@@ -21,6 +21,15 @@
 				@approve="(blockId, responses) => $emit('approve', blockId, responses)"
 			/>
 
+			<!-- Ordinary writes AR asked about in one pause, decided together -->
+			<BatchedApprovalCard
+				v-else-if="segment.type === 'approval_batch'"
+				:blocks="segment.blocks"
+				:submitting="isResuming"
+				@approve="(blockId, responses) => $emit('approve', blockId, responses)"
+				@reject="(blockId, responses) => $emit('reject', blockId, responses)"
+			/>
+
 			<!-- Interaction Card: HITL approval + LLM questions -->
 			<InteractionCard
 				v-else-if="segment.type === 'interaction'"
@@ -88,6 +97,14 @@
 				:block="segment"
 			/>
 
+			<!-- Records this turn created without asking, each with Undo. -->
+			<ChangesBlock
+				v-else-if="segment.type === 'changes_made'"
+				:block="segment"
+				:message-id="messageId"
+				:is-streaming="isStreaming"
+			/>
+
 			<!-- FAC Pages this turn wrote; a chip opens one in the page panel. -->
 			<div v-else-if="segment.type === 'page_chips'" class="page-chips">
 				<FacPageChip v-for="chip in segment.chips" :key="chip.name" :chip="chip" />
@@ -112,6 +129,9 @@ import ProcessingCard from "./ProcessingCard.vue";
 import ProcessingIndicator from "./ProcessingIndicator.vue";
 import InteractionCard from "./InteractionCard.vue";
 import QuestionGroupCard from "./interactions/QuestionGroupCard.vue";
+import BatchedApprovalCard from "./interactions/BatchedApprovalCard.vue";
+import { findApprovalBatch } from "./interactions/approvalBatch";
+import ChangesBlock from "./ChangesBlock.vue";
 import { findQuestionGroups } from "./interactions/questionGroup";
 import SourcesBlock from "./SourcesBlock.vue";
 import GeneratedDocumentsBlock from "./GeneratedDocumentsBlock.vue";
@@ -138,6 +158,11 @@ const props = defineProps({
 	isStreaming: {
 		type: Boolean,
 		default: false,
+	},
+	// The AR message id an Undo in this message's changes list names.
+	messageId: {
+		type: String,
+		default: null,
 	},
 	// An answered card's resume is in flight for this turn: the card is already
 	// resolved, but the message streams again only once the resume's first event
@@ -210,9 +235,20 @@ const groupedContent = computed(() => {
 	let sealedByApproval = false;
 	const questionGroups = findQuestionGroups(props.blocks);
 	const grouped = new Set([...questionGroups.values()].flat().map((b) => b.id));
+	const approvalBatch = findApprovalBatch(props.blocks);
+	const batched = new Set(approvalBatch.map((b) => b.id));
+	// The changes list sits under the answer, wherever the turn's events placed its block.
+	const changeLists = props.blocks.filter((b) => b.type === "changes_made" && b.changes?.length);
 
 	for (const block of props.blocks) {
-		if (block.type === "interaction" && grouped.has(block.id)) {
+		if (block.type === "interaction" && batched.has(block.id)) {
+			// The whole batch renders where its first approval sits.
+			if (block.id === approvalBatch[0].id) {
+				currentGroup = null;
+				sealedByApproval = false;
+				segments.push({ type: "approval_batch", id: `ab_${block.id}`, blocks: approvalBatch });
+			}
+		} else if (block.type === "interaction" && grouped.has(block.id)) {
 			// The whole group renders where its first question sits, waiting or answered.
 			if (questionGroups.has(block.id)) {
 				currentGroup = null;
@@ -273,6 +309,8 @@ const groupedContent = computed(() => {
 			segments.push(block);
 		}
 	}
+
+	segments.push(...changeLists);
 
 	// Derived from the tool_call blocks at render time, so a reloaded conversation keeps its chips.
 	const chips = chipsForMessage(props.blocks, conversationPageChips.value);

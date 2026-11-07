@@ -8,7 +8,8 @@
 import { ref, watch } from "vue";
 import { generateBlockId, findActiveMessage } from "./utils";
 import { INTERNAL_TOOLS } from "@/utils/internalTools";
-import { isCustomisationRisk } from "@/utils/toolNames";
+import { canTrust } from "@/utils/toolNames";
+import { mergeChanges, usableChanges } from "./changes";
 
 export { INTERNAL_TOOLS };
 
@@ -129,6 +130,20 @@ export function createBlockHandlers({
 			status: data.status,
 			action: data.action,
 		});
+	}
+
+	// Records the turn created without asking; the list offers Undo once the turn ends.
+	function handleChangesMadeEvent(data) {
+		const changes = usableChanges(data?.changes);
+		if (!changes.length) return;
+		const msg = findMessageById(data.message_id) || getOrCreateStreamingMessage();
+		if (!msg.blocks) msg.blocks = [];
+		mergeChanges(msg.blocks, changes);
+	}
+
+	function findMessageById(messageId) {
+		if (!messageId) return null;
+		return messages.value.findLast((m) => m.role === "assistant" && m.message_id === messageId) || null;
 	}
 
 	function handleModelSelected(data) {
@@ -417,7 +432,7 @@ export function createBlockHandlers({
 					sibling.type === "interaction" &&
 					sibling.status === "pending" &&
 					!sibling.decision &&
-					!isCustomisationRisk(sibling) &&
+					canTrust(sibling) &&
 					sibling.tool_name &&
 					sibling.tool_name === block.tool_name
 				) {
@@ -560,6 +575,7 @@ export function createBlockHandlers({
 		handlePlanEvent,
 		handleTaskActivity,
 		handleWorkflowCreatedEvent,
+		handleChangesMadeEvent,
 		handleModelSelected,
 		handleRoutingNotice,
 		handleThinkingEvent,

@@ -15,6 +15,7 @@ import { isPausedTurn } from "@/utils/turnState";
 import { createErrorState } from "./chat/errorState";
 import { createStreamManager } from "./chat/streamManager";
 import { createBlockHandlers } from "./chat/blockHandlers";
+import { createChangeActions } from "./chat/changes";
 import { createSendQueue } from "./chat/sendQueue";
 import { applyLiveSnapshot, createLiveTurnSync } from "./chat/liveTurnSync";
 import { createTurnClaim } from "./chat/turnClaim";
@@ -216,6 +217,7 @@ export const useChatStore = defineStore("chat", () => {
 		getSocketProbe: () => socketProbe,
 	});
 	const blocks = createBlockHandlers(sharedRefs);
+	const changeActions = createChangeActions({ messages, currentSessionId });
 
 	// Joining a turn that is running elsewhere (another surface, or this one
 	// before a reload or a lost socket). See stores/chat/liveTurnSync.js.
@@ -1212,6 +1214,8 @@ export const useChatStore = defineStore("chat", () => {
 		lastActivityTaskId: blocks.lastActivityTaskId,
 		handleTaskActivity: blocks.handleTaskActivity,
 		handleWorkflowCreatedEvent: blocks.handleWorkflowCreatedEvent,
+		handleChangesMadeEvent: blocks.handleChangesMadeEvent,
+		undoChange: changeActions.undoChange,
 		handleModelSelected: blocks.handleModelSelected,
 		handleRoutingNotice: blocks.handleRoutingNotice,
 		handleThinkingEvent: blocks.handleThinkingEvent,
