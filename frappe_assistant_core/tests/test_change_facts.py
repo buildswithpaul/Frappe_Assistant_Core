@@ -159,7 +159,12 @@ class TestChangeFacts(BaseAssistantTest):
         self.assertFalse(change_facts("create_document", {"doctype": "Note", "data": {}})["sends_messages"])
 
     def test_workflow_email_alert_sends_messages(self):
-        # An admin creates an active Workflow with email alerts for that doctype in Desk.
+        # An admin creates an active Workflow with email alerts for that doctype in Desk,
+        # adding its state from the link field first; fresh sites have no Workflow State rows.
+        if not frappe.db.exists("Workflow State", "FAC Facts Draft"):
+            frappe.get_doc({"doctype": "Workflow State", "workflow_state_name": "FAC Facts Draft"}).insert(
+                ignore_permissions=True
+            )
         frappe.get_doc(
             {
                 "doctype": "Workflow",
@@ -168,7 +173,7 @@ class TestChangeFacts(BaseAssistantTest):
                 "is_active": 1,
                 "send_email_alert": 1,
                 "workflow_state_field": "title",
-                "states": [{"state": "Draft", "doc_status": "0", "allow_edit": "All"}],
+                "states": [{"state": "FAC Facts Draft", "doc_status": "0", "allow_edit": "All"}],
             }
         ).insert(ignore_permissions=True)
         self.assertTrue(change_facts("create_document", {"doctype": "Note", "data": {}})["sends_messages"])
