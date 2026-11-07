@@ -5,14 +5,25 @@ from unittest.mock import patch
 
 import frappe
 
+from frappe_assistant_core.chat.api import changes
 from frappe_assistant_core.chat.api.block_builder import add_changes_made
 from frappe_assistant_core.chat.api.changes import undo_change
-from frappe_assistant_core.tests.base_test import BaseAssistantTest
+from frappe_assistant_core.tests.base_test import (
+    CUSTOM_TEST_DOCTYPE,
+    BaseAssistantTest,
+    ensure_custom_test_doctype,
+)
 
-DOCTYPE = "Role"
+# Only records of a custom doctype (built in Desk or by chat) are created without a card.
+DOCTYPE = CUSTOM_TEST_DOCTYPE
 
 
 class TestChangesUndo(BaseAssistantTest):
+    @classmethod
+    def setUpClass(cls):
+        ensure_custom_test_doctype()
+        super().setUpClass()
+
     def setUp(self):
         super().setUp()
         self.owner = self.make_throwaway_user("undo-owner", roles=("System Manager",))
@@ -54,17 +65,16 @@ class TestChangesUndo(BaseAssistantTest):
         finally:
             frappe.set_user("Administrator")
 
-    def _insert_style(self):
+    def _insert_style(self, name=None):
         return (
-            frappe.get_doc({"doctype": DOCTYPE, "role_name": f"undo-{frappe.generate_hash(length=8)}"})
-            .insert(ignore_permissions=True)
+            frappe.get_doc({"doctype": DOCTYPE, "title": "Site visit"})
+            .insert(ignore_permissions=True, set_name=name)
             .name
         )
 
     @staticmethod
     def _change(name, doctype=DOCTYPE):
         return {
-            "tool": "create_document",
             "doctype": doctype,
             "name": name,
             "action": "create",
@@ -72,10 +82,18 @@ class TestChangesUndo(BaseAssistantTest):
         }
 
     def _link_to_created(self):
-        # Something the user did after the create now points at the record.
-        frappe.get_doc(
-            {"doctype": "Custom DocPerm", "parent": "Note", "role": self.created, "permlevel": 0, "read": 1}
-        ).insert(ignore_permissions=True)
+        # The user later linked a Contact to the record in Desk (Contact > Links).
+        return (
+            frappe.get_doc(
+                {
+                    "doctype": "Contact",
+                    "first_name": f"undo-{frappe.generate_hash(length=6)}",
+                    "links": [{"link_doctype": DOCTYPE, "link_name": self.created}],
+                }
+            )
+            .insert(ignore_permissions=True)
+            .name
+        )
 
     def _block(self, message=None):
         raw = frappe.db.get_value("FAC Chat Message", message or self.message, "blocks")
@@ -131,12 +149,13 @@ class TestChangesUndo(BaseAssistantTest):
         self.assertFalse(self._block()[0]["changes"][0]["undone"])
 
     def test_linked_record_is_not_deleted(self):
-        self._link_to_created()
+        # Frappe's on_trash hook would delete a Contact linked only to this record.
+        contact = self._link_to_created()
         frappe.set_user(self.owner)
         result = self._undo()
-        self.assertFalse(result["success"])
-        self.assertEqual(result["reason"], "Something now links to it")
+        self.assertEqual(result, {"success": False, "reason": "Something now links to it"})
         self.assertTrue(frappe.db.exists(DOCTYPE, self.created))
+        self.assertTrue(frappe.db.exists("Contact", contact))
         self.assertFalse(self._block()[0]["changes"][0]["undone"])
 
     def test_blocks_merge_per_message(self):
@@ -153,8 +172,46 @@ class TestChangesUndo(BaseAssistantTest):
             self._undo()
         self.assertTrue(frappe.db.exists(DOCTYPE, self.created))
 
+    def _listed_role(self):
+        # A record whose doctype has a Python controller, listed on the message like a chat create.
+        role = frappe.get_doc({"doctype": "Role", "role_name": f"undo-{frappe.generate_hash(length=8)}"})
+        frappe.set_user(self.owner)
+        role = role.insert(ignore_permissions=True).name
+        frappe.set_user("Administrator")
+        add_changes_made(self.message, [self._change(role, "Role")])
+        return role
+
+    def test_undo_never_runs_an_on_trash_that_cascades(self):
+        from frappe.contacts.address_and_contact import delete_contact_and_address
+
+        role = self._listed_role()
+        contact = frappe.get_doc(
+            {
+                "doctype": "Contact",
+                "first_name": f"undo-{frappe.generate_hash(length=6)}",
+                "links": [{"link_doctype": "Role", "link_name": role}],
+            }
+        ).insert(ignore_permissions=True)
+
+        def cascade(doc, *args, **kwargs):
+            # As Customer, Supplier and Lead do: delete the Contacts linked only to this record,
+            # which clears the link delete_doc checks afterwards.
+            delete_contact_and_address(doc.doctype, doc.name)
+
+        frappe.set_user(self.owner)
+        with patch("frappe.core.doctype.role.role.Role.on_trash", cascade, create=True):
+            result = self._undo(name=role, doctype="Role")
+        self.assertEqual(result, {"success": False, "reason": "Something now links to it"})
+        self.assertTrue(frappe.db.exists("Role", role))
+        self.assertTrue(frappe.db.exists("Contact", contact.name))
+
     def test_linked_record_rolls_back_what_on_trash_did(self):
-        self._link_to_created()
+        # A link the pre-check missed (made by a concurrent request between the check and the
+        # delete) refuses delete_doc after on_trash already ran.
+        role = self._listed_role()
+        frappe.get_doc(
+            {"doctype": "Custom DocPerm", "parent": "Note", "role": role, "permlevel": 0, "read": 1}
+        ).insert(ignore_permissions=True)
         marker = f"marker-{frappe.generate_hash(length=6)}"
 
         def on_trash_side_effect(doc, *args, **kwargs):
@@ -162,10 +219,13 @@ class TestChangesUndo(BaseAssistantTest):
             frappe.db.set_value("FAC Chat Message", self.message, "content", marker)
 
         frappe.set_user(self.owner)
-        with patch("frappe.core.doctype.role.role.Role.on_trash", on_trash_side_effect, create=True):
-            result = self._undo()
+        with (
+            patch.object(changes, "_is_linked", return_value=False),
+            patch("frappe.core.doctype.role.role.Role.on_trash", on_trash_side_effect, create=True),
+        ):
+            result = self._undo(name=role, doctype="Role")
         self.assertFalse(result["success"])
-        self.assertTrue(frappe.db.exists(DOCTYPE, self.created))
+        self.assertTrue(frappe.db.exists("Role", role))
         self.assertNotEqual(frappe.db.get_value("FAC Chat Message", self.message, "content"), marker)
 
     def test_undo_refuses_a_record_recreated_by_someone_else(self):
@@ -173,7 +233,7 @@ class TestChangesUndo(BaseAssistantTest):
         frappe.delete_doc(DOCTYPE, self.created, force=True)
         other = self.make_throwaway_user("undo-other", roles=("System Manager",))
         frappe.set_user(other)
-        frappe.get_doc({"doctype": DOCTYPE, "role_name": self.created}).insert(ignore_permissions=True)
+        self._insert_style(name=self.created)
         frappe.set_user(self.owner)
         result = self._undo()
         self.assertEqual(
