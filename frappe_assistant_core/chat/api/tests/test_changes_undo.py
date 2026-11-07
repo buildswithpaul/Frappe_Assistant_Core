@@ -18,17 +18,19 @@ class TestChangesUndo(BaseAssistantTest):
         self.owner = self.make_throwaway_user("undo-owner", roles=("System Manager",))
         self.sid = f"undo-{frappe.generate_hash(length=8)}"
         self.message_id = f"msg-{frappe.generate_hash(length=8)}"
-        self.message = self._make_message(self.owner, self.sid, self.message_id)
+        # The order a real turn writes: the user's message, then the record the chat creates
+        # while it runs, then the assistant row at stream end, where the relay calls
+        # add_changes_made when AR sends changes_made.
+        self._make_message(self.owner, self.sid, f"user-{self.message_id}", "user")
         self.created = self._make_style(self.owner)
-        # The relay calls add_changes_made when AR sends changes_made.
+        self.message = self._make_message(self.owner, self.sid, self.message_id)
         add_changes_made(self.message, [self._change(self.created)])
 
     def tearDown(self):
         frappe.set_user("Administrator")
         super().tearDown()
 
-    def _make_message(self, user, session_id, message_id):
-        # An assistant turn row, as the relay persists it at stream end.
+    def _make_message(self, user, session_id, message_id, role="assistant"):
         return (
             frappe.get_doc(
                 {
@@ -36,7 +38,7 @@ class TestChangesUndo(BaseAssistantTest):
                     "session_id": session_id,
                     "message_id": message_id,
                     "user": user,
-                    "role": "assistant",
+                    "role": role,
                     "content": "Created it",
                 }
             )
@@ -184,3 +186,16 @@ class TestChangesUndo(BaseAssistantTest):
         frappe.set_user(self.owner)
         self.assertEqual(self._undo(), {"success": True})
         self.assertTrue(self._block()[0]["changes"][0]["undone"])
+
+    def test_undo_refuses_a_record_the_user_made_before_the_turn(self):
+        # The user made a record by hand, then asked in a new turn; the chat's list names it.
+        earlier = self._make_style(self.owner)
+        self._make_message(self.owner, self.sid, "user-later", "user")
+        later = self._make_message(self.owner, self.sid, "later")
+        add_changes_made(later, [self._change(earlier)])
+        frappe.set_user(self.owner)
+        result = self._undo(name=earlier, message_id="later")
+        self.assertEqual(
+            result, {"success": False, "reason": "This record has changed since the chat created it"}
+        )
+        self.assertTrue(frappe.db.exists(DOCTYPE, earlier))
