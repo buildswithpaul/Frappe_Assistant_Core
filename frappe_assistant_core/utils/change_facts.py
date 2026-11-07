@@ -131,10 +131,19 @@ def _submits(tool_name: str, tool_input: Dict[str, Any]) -> bool:
 def _affects_others(doctype: str, tool_input: Dict[str, Any]) -> bool:
     if doctype in GO_LIVE_DOCTYPES:
         return True
-    data = tool_input.get("data")
-    if not isinstance(data, dict):
-        return False
-    return any(cint(data.get(field)) for field in GO_LIVE_FIELDS)
+    field_sets = [tool_input["data"]] if "data" in tool_input else []
+    if "records" in tool_input:
+        records = tool_input["records"]
+        if not isinstance(records, list):
+            return True
+        # create_document takes field dicts; update_document takes {"name", "data"} entries.
+        field_sets += [r.get("data") if isinstance(r, dict) and "data" in r else r for r in records]
+    # A shape FAC does not recognise could hide a go-live field, so it counts as going live.
+    return any(not isinstance(fields, dict) or _sets_go_live_field(fields) for fields in field_sets)
+
+
+def _sets_go_live_field(fields: Dict[str, Any]) -> bool:
+    return any(cint(fields.get(field)) for field in GO_LIVE_FIELDS)
 
 
 def _sends_messages(doctype: str) -> bool:
