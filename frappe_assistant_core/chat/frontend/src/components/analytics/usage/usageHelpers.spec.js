@@ -1,8 +1,13 @@
-import { describe, it, expect } from "vitest";
+import { afterEach, describe, it, expect, vi } from "vitest";
 import { countMembersAtLimit, membersAtLimitLabel, monthAllowance } from "./usageHelpers";
 
 describe("monthAllowance", () => {
+	afterEach(() => vi.useRealTimers());
+
 	it("reads the billing cycle, not a window sum", () => {
+		// The reset date is the next cycle start after today: fix today, or the test fails once Nov 5 has passed
+		vi.useFakeTimers({ toFake: ["Date"] });
+		vi.setSystemTime(new Date(2026, 9, 20));
 		expect(
 			monthAllowance({ quota_used: 2500, quota_total: 10000, percentage_used: 25, billing_cycle_start: "2026-10-05" }),
 		).toEqual({ used: 2500, total: 10000, percent: 25, unlimited: false, unknown: false, resetDate: "Nov 5, 2026" });
