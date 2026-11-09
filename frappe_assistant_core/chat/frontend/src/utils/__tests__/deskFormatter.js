@@ -14,6 +14,15 @@ export function findFrappeJs(from = import.meta.dirname) {
 	}
 }
 
+/** The major version of the Frappe whose Desk scripts are in frappeJs (from findFrappeJs), or null. */
+export function frappeMajor(frappeJs) {
+	if (!frappeJs) return null;
+	const init = resolve(frappeJs, "..", "..", "..", "__init__.py");
+	if (!existsSync(init)) return null;
+	const found = /__version__\s*=\s*["'](\d+)\./.exec(readFileSync(init, "utf-8"));
+	return found ? Number(found[1]) : null;
+}
+
 // Loaded in this order, as Desk's bundle loads them. Their ES imports are of modules loaded here
 // or not needed by the formatter, so they are dropped.
 const SCRIPTS = [

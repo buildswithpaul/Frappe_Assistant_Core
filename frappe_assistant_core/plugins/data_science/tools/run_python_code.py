@@ -173,28 +173,27 @@ class ExecutePythonCode(BaseTool):
 
     def _get_dynamic_description(self) -> str:
         """Generate description based on library availability"""
-        base_description = """Execute Python in a sandboxed environment with built-in data access via `tools`.
+        base_description = """Run Python in a sandbox; read data via `tools`.
 
-PREFER THIS over separate fetch tools; fetch inside the code:
-  tools.get_documents(doctype, filters={}, fields=["*"], limit=100, group_by=None) -> {success, data, count}
-  tools.get_document(doctype, name) -> {success, data}
-  tools.generate_report(report_name, filters={}, format="json") -> {success, data, columns}
-  tools.get_report_info(report_name) -> {success, columns, filter_guidance}
-  tools.list_reports(module=None, report_type=None) -> {success, reports, count}
-  tools.search(query, doctype=None, limit=20)
-  tools.get_doctype_info(doctype) -> {success, fields, links}
-  The MCP read tools also work here, with the same arguments and results:
-  tools.list_documents, tools.report_list, tools.report_requirements, tools.search_documents
+PREFER THIS to separate fetch tools; fetch in the code:
+tools.get_documents(doctype, filters={}, fields=["*"], limit=100, group_by=None) -> {success, data, count}
+tools.get_document(doctype, name) -> {success, data}
+tools.generate_report(report_name, filters={}, format="json") -> {success, data, columns}
+tools.get_report_info(report_name) -> {success, columns, filter_guidance}
+tools.list_reports(module=None, report_type=None) -> {success, reports, count}
+tools.search(query, doctype=None, limit=20)
+tools.get_doctype_info(doctype) -> {success, fields, links}
+MCP read tools (same args/results): tools.list_documents, tools.report_list,
+tools.report_requirements, tools.search_documents
 
-RULES: no imports; no file/network access; no plotting (use the dashboard tools).
+RULES: no imports, file/network access or plotting (use dashboard tools).
 DATA: read-only, with the user's roles and User Permissions. frappe.get_list/get_all/get_doc and
 frappe.db.get_value/count/exists work; frappe.db.sql does not. Aggregate:
 fields=['customer', {'SUM': 'grand_total', 'as': 'total'}], group_by='customer'.
 
-FIGURES: only report numbers this run computed. Fetch rows inside the code
-(tools.get_documents or data_query); never retype earlier tool output by hand.
-Pass return_variables to limit what comes back. If this tool fails, say the
-calculation failed; do not estimate or retype the totals.
+FIGURES: report only numbers this run computed from rows it fetched (tools.get_documents
+or data_query); never retype earlier tool output. return_variables limits what comes back.
+If it fails, say the calculation failed; never estimate totals.
 
 PRE-LOADED: pd, np, frappe, math, datetime, json, re, statistics, random"""
 

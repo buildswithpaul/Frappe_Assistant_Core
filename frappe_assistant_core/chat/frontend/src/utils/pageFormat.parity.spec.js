@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-import { findFrappeJs, loadDeskFormatter } from "./__tests__/deskFormatter";
+import { findFrappeJs, frappeMajor, loadDeskFormatter } from "./__tests__/deskFormatter";
 import { FORMAT_CASES } from "./__tests__/pageFormatCases";
 import { formatValue } from "./pageFormat";
 
@@ -12,6 +12,10 @@ import { formatValue } from "./pageFormat";
 // recording; in a bench the live block below checks Frappe's code itself.
 const FIXTURE = resolve(import.meta.dirname, "__tests__/pageFormatCases.desk.json");
 const FRAPPE_JS = findFrappeJs();
+// The live check holds only for the Frappe major the recording came from: v15's frappe.format
+// shows some Percent and Float values differently (7.000% for 7%), so in a v15 bench it is skipped.
+const RECORDED_MAJOR = 16;
+const LIVE = Boolean(FRAPPE_JS) && frappeMajor(FRAPPE_JS) === RECORDED_MAJOR;
 
 const format = (c) => formatValue(c.settings, c.value, c.df, c.options, c.doc);
 
@@ -32,7 +36,7 @@ describe("frappe.format outside Desk, against Frappe's recorded output", () => {
 	});
 });
 
-describe.skipIf(!FRAPPE_JS)("frappe.format outside Desk, against Frappe's code in this bench", () => {
+describe.skipIf(!LIVE)("frappe.format outside Desk, against Frappe's code in this bench", () => {
 	let desk;
 	beforeAll(() => {
 		desk = loadDeskFormatter(FRAPPE_JS);

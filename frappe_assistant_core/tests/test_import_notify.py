@@ -54,7 +54,10 @@ class TestTheResultIsPostedInTheChat(BaseAssistantTest):
         self.addCleanup(published.stop)
 
     def tearDown(self):
-        frappe.local.job = None
+        # Removed, not set to None: Frappe's is_valid_http_method checks hasattr(frappe.local, "job"),
+        # so a None left behind makes every later test in the run look like a background job
+        if hasattr(frappe.local, "job"):
+            del frappe.local.job
         frappe.set_user("Administrator")
         self.delete_test_files()
         super().tearDown()
