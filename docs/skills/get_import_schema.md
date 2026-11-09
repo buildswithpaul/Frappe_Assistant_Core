@@ -61,7 +61,7 @@ It fails up front, with the reason in `error`, when the import can't happen. It 
    - **Say which record each column goes to** (#34414): a customer or supplier sheet becomes up to three records, the party, its Contact (phone, email, the contact's name) and its Address. Show the mapping in those three groups, so the user sees that the phone goes to the Contact, not the Customer.
    - The check saves each row as all of them together: if the Contact or the Address fails (an email ERPNext can't read, an address without a city), the whole row fails and nothing of it is imported. A row with no phone and no email makes no Contact. The Contact is the party's primary one, so its phone and email show on the Customer.
    - **No `addresses` table** (Frappe 15): the party has no address fields, so address columns can't come in with it. Say so, and leave them for an Address import linked to the parties, after them.
-   - Deleting an imported customer or supplier also deletes the Contact and Address made with it (ERPNext does it): when an import is undone, don't delete them separately.
+   - Deleting an imported customer or supplier also deletes the Contact and Address made with it (ERPNext does it).
 5. **Some data is its own DocType in ERPNext.** Without those tables, addresses, and contacts beyond the first, are separate **Address** and **Contact** records, not fields on Customer. Say so, and import them as a separate step.
 
 ## Related

@@ -84,7 +84,7 @@ NOT_TOOLS = {
 }
 TOOL_FAILURE_HEADING = "## When an import tool fails"
 DELEGATION_HEADING = "## Keep the migration in this conversation"
-UNDO_HEADING = "## Undoing an import"
+UNDO_HEADING = "## When the user asks to undo an import"
 
 
 def _load_manifest(name: str) -> list:
@@ -371,16 +371,17 @@ class TestSystemSkillManifest(BaseAssistantTest):
         self.assertIn("Never hand a migration, or any step of it, to a helper task (delegating it)", rule)
         self.assertIn("helpers don't have the import tools", rule)
 
-    def test_migrate_data_undoes_an_import_from_its_own_records(self):
+    def test_migrate_data_never_undoes_an_import(self):
         # "Undo that import" deleted the customers created after a minute, at once, with no question.
+        # Imports are not undone (2026-11-09): the user approved the import and ran it.
         content = _skill_content("migrate_data.md")
+        self.assertNotIn("## Undoing an import", content)
         self.assertIn(UNDO_HEADING, content)
         rule = _one_line(content.split(UNDO_HEADING)[1].split("\n## ")[0])
-        self.assertIn("never by creation time, owner or a name pattern", rule)
-        self.assertIn("Data Import Log", rule)
-        self.assertIn("created_records", rule)
-        self.assertIn("**Ask first**, with one confirm card (`ask_user`)", rule)
-        self.assertIn("even when deleting needs no approval card", rule)
+        self.assertIn("FAC doesn't undo imports", rule)
+        self.assertIn("never delete the imported records yourself", rule)
+        self.assertIn("not by creation time, owner or a name pattern", rule)
+        self.assertIn("`delete_document`", rule)
 
     def test_migrate_data_never_drops_a_column_unasked(self):
         # "State has no direct Customer field, so I'll skip it": the customers got the default territory
