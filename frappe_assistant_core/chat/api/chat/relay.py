@@ -24,6 +24,7 @@ from typing import NamedTuple
 
 import frappe
 from frappe import _
+from frappe.query_builder import DocType
 
 from frappe_assistant_core.chat.api.chat import live_turn
 
@@ -74,12 +75,14 @@ def _sdk_composer_kwargs(
     return kwargs
 
 
-def _discard_unanswered_user_message(message_name: str | None) -> None:
+def _discard_unanswered_user_message(message_name: str | None, session_id: str, user: str) -> None:
     """Remove the user message AR refused for a low balance, before it ran.
 
     "Send anyway" sends the same text again, so the refused row would otherwise
     stand twice in the transcript. Its uploads go back to pending, so the resend
-    links them to the new message as the first send did."""
+    links them to the new message as the first send did; their creation restarts
+    because the orphan sweep ages pending uploads by it. The conversation row
+    stays, since the SPA already lists it, and drops this message from its count."""
     if not message_name:
         return
     for file_name in frappe.get_all(
@@ -90,10 +93,26 @@ def _discard_unanswered_user_message(message_name: str | None) -> None:
         frappe.db.set_value(
             "File",
             file_name,
-            {"attached_to_doctype": None, "attached_to_name": None, "fac_pending_chat_attachment": 1},
+            {
+                "attached_to_doctype": None,
+                "attached_to_name": None,
+                "fac_pending_chat_attachment": 1,
+                "creation": frappe.utils.now(),
+            },
             update_modified=False,
         )
-    frappe.db.delete("FAC Chat Message", {"name": message_name, "role": "user"})
+    frappe.db.delete(
+        "FAC Chat Message",
+        {"name": message_name, "role": "user", "user": user, "session_id": session_id},
+    )
+    conversation = DocType("FAC Chat Conversation")
+    (
+        frappe.qb.update(conversation)
+        .set(conversation.message_count, conversation.message_count - 1)
+        .where(conversation.name == session_id)
+        .where(conversation.user == user)
+        .where(conversation.message_count > 0)
+    ).run()
 
 
 def _set_faco_message_with_retry(name: str, updates: dict, *, attempts: int = 3) -> bool:
@@ -2058,7 +2077,9 @@ def _relay_ar_stream(
                     "partial_response": full_response,
                 }
                 if error_code == "low_balance":
-                    _discard_unanswered_user_message(message_name)
+                    # AR refuses before the agent runs; a turn that produced anything keeps its message.
+                    if not full_response and blocks_snapshot == seed_blocks:
+                        _discard_unanswered_user_message(message_name, session_id, user)
                     error_event["low_balance"] = {
                         "estimate": data.get("estimate"),
                         "balance": data.get("balance"),

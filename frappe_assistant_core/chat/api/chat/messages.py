@@ -315,11 +315,12 @@ def start_turn(
             context=context if include_context and context else None,
             project=project,
         )
-        frappe.db.commit()  # nosemgrep: frappe-manual-commit — background thread / streaming context (not a request handler), explicit commit required to flush progress to DB.
-
-    # Attach files to the message — only meaningful when we persisted one.
-    if file_urls and user_msg is not None:
-        _attach_files_to_message(file_urls, user_msg.name)
+        # Attach files to the message — only meaningful when we persisted one.
+        if file_urls:
+            _attach_files_to_message(file_urls, user_msg.name)
+        # The relay runs on its own connection before this request commits, and a low-balance
+        # refusal hands these links back, so the message and its links commit before it starts.
+        frappe.db.commit()  # nosemgrep: frappe-manual-commit — the relay thread reads these rows on its own connection.
 
     # Prepare prompt - send the original user message to AR (not enriched with file content)
     # File content goes via system_prompt_addendum so it reaches the LLM without polluting

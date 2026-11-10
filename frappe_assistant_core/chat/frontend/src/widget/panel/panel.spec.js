@@ -458,6 +458,29 @@ describe("widget panel", () => {
 		);
 	});
 
+	it("Continue after the turn credit limit sends with the model and the page a typed message would", async () => {
+		const { setHost } = await import("../host/index.js");
+		const { deskHost } = await import("../host/deskHost.js");
+		setHost({ ...deskHost, sendContext: () => ({ type: "form", doctype: "Customer", name: "C-1" }) });
+		onTestFinished(() => setHost(null));
+		const chatStore = useChatStore();
+		chatStore.sendMessage = vi.fn().mockResolvedValue();
+		// A turn AR stopped at its credit budget (turn_budget_reached) is the bubble offering Continue.
+		chatStore.messages = [{ role: "assistant", content: "Part one", blocks: [], budgetReached: true }];
+		useModelStore().selectedModel = "claude-sonnet-4-6";
+		const w = mount(WidgetPanel, { global: { stubs } });
+		w.findComponent({ name: "ChatInterface" }).vm.$emit("continue-turn");
+		await flushPromises();
+		expect(chatStore.sendMessage).toHaveBeenCalledWith(
+			"Continue",
+			[],
+			JSON.stringify({ type: "form", doctype: "Customer", name: "C-1" }),
+			"claude-sonnet-4-6",
+			null,
+			{ skipQueue: false }
+		);
+	});
+
 	it("opens a continued conversation in the widget, with any pending approval", async () => {
 		const chatStore = useChatStore();
 		chatStore.loadMessages = vi.fn().mockResolvedValue();

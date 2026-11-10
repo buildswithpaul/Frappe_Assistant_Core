@@ -33,10 +33,12 @@ const props = defineProps({
 
 defineEmits(["send-anyway", "continue-turn"]);
 
+const credits = (value) => Number(value || 0).toFixed(1);
+
 const lowBalanceText = computed(() =>
 	__("This message may cost about {0} credits and you have {1} left.", [
-		props.message.lowBalance.estimate,
-		props.message.lowBalance.balance,
+		credits(props.message.lowBalance.estimate),
+		credits(props.message.lowBalance.balance),
 	])
 );
 </script>

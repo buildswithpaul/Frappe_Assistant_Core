@@ -56,6 +56,16 @@ describe("a low-balance refusal and Send anyway", () => {
 		expect(options.confirm_low_balance).toBe(1);
 	});
 
+	it("Send anyway is not queued, so the confirmation cannot be dropped", async () => {
+		// The queue keeps only text, files, context and model. A send is queued while a turn
+		// streams or a Stop's cancel is still in flight; the refused turn has already ended.
+		store.isStreaming = true;
+		await store.sendAnyway(store.messages.at(-1));
+
+		expect(api.chat.send).toHaveBeenCalledTimes(2);
+		expect(api.chat.send.mock.calls[1][7].confirm_low_balance).toBe(1);
+	});
+
 	it("Send anyway replaces the refused exchange rather than repeating it", async () => {
 		await store.sendAnyway(store.messages.at(-1));
 
