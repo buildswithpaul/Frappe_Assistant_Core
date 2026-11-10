@@ -394,21 +394,8 @@ def _plain_rows(data):
     return data
 
 
-def _frappe_rows_dataframe(real):
-    """pd.DataFrame that takes rows from frappe.get_all / frappe.db.sql (GitHub #379).
-
-    frappe._dict answers any attribute with None, so pandas reads ``ndim`` off a row and takes the
-    list for an array ("invalid __array_struct__"). This is pandas' DataFrame with one change: the
-    rows it is given are passed as plain dicts (_plain_rows). The rows keep their type in user code,
-    which reads them as ``row.field``.
-
-    A subclass, so class attributes (from_dict, from_records) are pandas' own with nothing
-    forwarded, and ``_constructor`` keeps the frames pandas returns (head, filters, concat) of this
-    class: ``type(df) is pd.DataFrame`` holds for them as it does outside the sandbox. A frame
-    pandas makes with its own class (Series.to_frame) is still ``isinstance(x, pd.DataFrame)``.
-    """
-    if real in _DATAFRAME_STANDINS:
-        return _DATAFRAME_STANDINS[real]
+def _same_class_checks(real):
+    """Metaclass under which isinstance/issubclass against the stand-in mean the real class."""
 
     class _Meta(type(real)):
         def __instancecheck__(cls, obj):
@@ -417,7 +404,38 @@ def _frappe_rows_dataframe(real):
         def __subclasscheck__(cls, sub):
             return issubclass(sub, real)
 
-    class DataFrame(real, metaclass=_Meta):
+    return _Meta
+
+
+def _frappe_rows_classes(real_frame, real_series):
+    """pd.DataFrame and pd.Series for the sandbox (GitHub #379).
+
+    frappe._dict answers any attribute with None, so pandas reads ``ndim`` off a row and takes the
+    list for an array ("invalid __array_struct__"). The DataFrame is pandas' own with one change: the
+    rows it is given are passed as plain dicts (_plain_rows). The rows keep their type in user code,
+    which reads them as ``row.field``.
+
+    Both are subclasses, so class attributes (from_dict, from_records) are pandas' own with nothing
+    forwarded. pandas' subclassing hooks keep what it returns in these classes: ``_constructor`` for
+    head, filters and concat, ``_constructor_sliced`` for a column or ``groupby().size()``, and
+    ``_constructor_expanddim`` for a frame built from a Series (``to_frame``, ``reset_index``). So
+    ``type(x) is pd.DataFrame`` holds for them as it does outside the sandbox, and isinstance checks
+    accept pandas' own objects as well.
+    """
+    key = (real_frame, real_series)
+    if key in _DATAFRAME_STANDINS:
+        return _DATAFRAME_STANDINS[key]
+
+    class Series(real_series, metaclass=_same_class_checks(real_series)):
+        @property
+        def _constructor(self):
+            return Series
+
+        @property
+        def _constructor_expanddim(self):
+            return DataFrame
+
+    class DataFrame(real_frame, metaclass=_same_class_checks(real_frame)):
         def __init__(self, data=None, *args, **kwargs):
             super().__init__(_plain_rows(data), *args, **kwargs)
 
@@ -425,10 +443,15 @@ def _frappe_rows_dataframe(real):
         def _constructor(self):
             return DataFrame
 
-    DataFrame.__module__ = real.__module__
-    DataFrame.__qualname__ = real.__qualname__
-    _DATAFRAME_STANDINS[real] = DataFrame
-    return DataFrame
+        @property
+        def _constructor_sliced(self):
+            return Series
+
+    for standin, real in ((DataFrame, real_frame), (Series, real_series)):
+        standin.__module__ = real.__module__
+        standin.__qualname__ = real.__qualname__
+    _DATAFRAME_STANDINS[key] = (DataFrame, Series)
+    return DataFrame, Series
 
 
 class _FilteredModule:
@@ -451,8 +474,9 @@ class _FilteredModule:
     def __getattr__(self, name):
         if name.startswith("_") or name in self._blocked or name.startswith("read_"):
             raise AttributeError(f"{self._label}.{name} is not available in run_python_code")
-        if self._label == "pandas" and name == "DataFrame":
-            return _frappe_rows_dataframe(self._mod.DataFrame)
+        if self._label == "pandas" and name in ("DataFrame", "Series"):
+            frame, series = _frappe_rows_classes(self._mod.DataFrame, self._mod.Series)
+            return frame if name == "DataFrame" else series
         return getattr(self._mod, name)
 
     def __setattr__(self, name, value):
