@@ -73,6 +73,13 @@
 				</button>
 			</div>
 
+			<TurnCreditNotices
+				:message="message"
+				:is-latest="isLatest"
+				@send-anyway="(msg) => $emit('send-anyway', msg)"
+				@continue-turn="$emit('continue-turn')"
+			/>
+
 			<!-- Message Actions (only for assistant) -->
 			<div v-if="!isUser" class="message-actions">
 				<button @click="copyMessage" class="action-btn" title="Copy message" aria-label="Copy message">
@@ -105,6 +112,7 @@ import { computed, ref, onMounted } from "vue";
 import { useUserStore } from "@/stores/userStore";
 import MessageBlockRenderer from "./MessageBlockRenderer.vue";
 import MessageFooter from "./MessageFooter.vue";
+import TurnCreditNotices from "./TurnCreditNotices.vue";
 import FacoRobot from "@/components/common/FacoRobot.vue";
 import { ensureHljs } from "@/utils/markdown.js";
 import { turnLabel, userInitial as deriveInitial } from "./turns.js";
@@ -133,7 +141,17 @@ const props = defineProps({
 	},
 });
 
-defineEmits(["toggleBlock", "approve", "reject", "previewDocument", "continue", "pin", "unqueue"]);
+defineEmits([
+	"toggleBlock",
+	"approve",
+	"reject",
+	"previewDocument",
+	"continue",
+	"pin",
+	"unqueue",
+	"send-anyway",
+	"continue-turn",
+]);
 
 const userStore = useUserStore();
 

@@ -264,6 +264,7 @@ def start_turn(
     client_signals: str | None = None,
     client_turn_id: str | None = None,
     project: str | None = None,
+    confirm_low_balance: bool | None = None,
 ) -> Future:
     """Gate, persist and relay one turn for the session user; returns the relay's Future.
 
@@ -377,6 +378,7 @@ def start_turn(
             thinking_enabled=_flag(thinking_enabled) if thinking_enabled is not None else None,
             reasoning_effort=effort,
             live_turn_token=turn,
+            confirm_low_balance=_flag(confirm_low_balance) or None,
         )
     except Exception:
         if turn:
@@ -402,6 +404,7 @@ def send_message(
     client_signals: str | None = None,
     client_turn_id: str | None = None,
     project: str | None = None,
+    confirm_low_balance: bool | None = None,
 ) -> dict:
     """
     Send a message to FACO and stream AI response via Socket.IO.
@@ -434,6 +437,8 @@ def send_message(
                     (cancel_stream) that already names it is kept by this accept.
             project (str): The caller's project for a chat that has no conversation row yet;
                     ignored once the row exists.
+            confirm_low_balance (bool): Set by "Send anyway" after AR refused this message
+                    because the balance may not cover it; AR then runs the turn.
 
     Returns:
             dict: Acknowledgment that processing has started; ``conversation`` is the caller's
@@ -483,6 +488,7 @@ def send_message(
             client_signals=client_signals,
             client_turn_id=client_turn_id,
             project=project,
+            confirm_low_balance=confirm_low_balance,
         )
 
         return {
