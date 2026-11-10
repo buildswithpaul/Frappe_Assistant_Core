@@ -174,18 +174,33 @@ class TestPreloadedImportsRun(BaseAssistantTest):
         self.assertPrints(
             "df = pd.DataFrame({'a': [1, 2], 'b': [3, 4]})\n"
             "parts = [df, df.head(1), df[df.a > 1], pd.concat([df, df]), pd.DataFrame.from_dict({'a': [1]}),"
-            " pd.DataFrame.from_records([{'a': 1}]), df.groupby('a').sum()]\n"
+            " pd.DataFrame.from_records([{'a': 1}]), df.groupby('a').sum(),"
+            " df.groupby('a').size().reset_index(), pd.Series([1, 2], name='a').to_frame(),"
+            " df['a'].to_frame(), df['a'].reset_index()]\n"
             "print([type(x) is pd.DataFrame for x in parts])\n"
             "print([type(x) == pd.DataFrame for x in parts])\n"
             "print([isinstance(x, pd.DataFrame) for x in parts])",
-            "\n".join(["[True, True, True, True, True, True, True]"] * 3),
+            "\n".join([str([True] * 11)] * 3),
         )
 
-    def test_a_frame_pandas_makes_with_its_own_class_is_still_a_dataframe(self):
-        # Series.to_frame builds pandas' own DataFrame, not the sandbox's: isinstance holds, type() is not
+    def test_frames_built_from_a_series_of_frappe_rows(self):
+        # Paul's case: groupby().size() is a Series, and reset_index() builds the frame from it
         self.assertPrints(
-            "f = pd.Series([1, 2], name='a').to_frame()\n" "print(isinstance(f, pd.DataFrame), len(f))",
-            "True 2",
+            "rows = frappe.get_all('User', fields=['name', 'user_type'], limit=5)\n"
+            "df = pd.DataFrame(rows)\n"
+            "x = df.groupby('user_type').size().reset_index()\n"
+            "y = df['name'].to_frame()\n"
+            "print(type(x) is pd.DataFrame, type(y) is pd.DataFrame, list(x.columns))",
+            "True True ['user_type', 0]",
+        )
+
+    def test_type_of_a_series_is_pd_series(self):
+        self.assertPrints(
+            "df = pd.DataFrame({'a': [1, 2], 'b': [3, 4]})\n"
+            "parts = [df['a'], df.a + 1, df.groupby('a').size(), df.sum(), df.iloc[0], pd.Series([1, 2])]\n"
+            "print([type(x) is pd.Series for x in parts])\n"
+            "print([isinstance(x, pd.Series) for x in parts])",
+            "\n".join([str([True] * 6)] * 2),
         )
 
     def test_unavailable_module_is_reported_not_silently_dropped(self):
