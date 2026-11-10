@@ -146,3 +146,49 @@ class TestUpdateDocumentEdits(BaseAssistantTest):
     def test_neither_data_nor_edits_is_refused(self):
         result = self._update(name=self.name)
         self.assertEqual(result["error"], "Pass the changes in 'data'.")
+
+    def test_second_edit_failing_leaves_the_record_unchanged(self):
+        before = self._stored()
+        result = self._update(name=self.name, edits=[_edit("first = 1", "first = 10"), _edit("absent", "x")])
+        self.assertEqual(result["error_type"], "edit_not_applied")
+        self.assertEqual(self._stored(), before)
+
+    def test_crlf_stored_value_is_edited_through_the_tool(self):
+        # Production reaches CRLF text when a script is pasted from a Windows editor into Desk.
+        frappe.db.set_value("Server Script", self.name, "script", "a = 1\r\nb = 2\r\nc = 3")
+        result = self._update(name=self.name, edits=[_edit("b = 2\nc = 3", "b = 20\nc = 30")])
+        self.assertTrue(result["success"], result)
+        self.assertEqual(self._stored(), "a = 1\r\nb = 20\r\nc = 30")
+
+    def test_null_edits_without_data_is_the_missing_changes_refusal(self):
+        result = self._update(name=self.name, edits=None)
+        self.assertEqual(result["error"], "Pass the changes in 'data'.")
+
+    def test_restricted_field_is_refused_before_any_match_is_reported(self):
+        # email_signature is on the all-roles sensitive list and is a Text Editor field of User,
+        # so production reaches this when an assistant is asked to edit a user's signature.
+        user = self.make_throwaway_user("fac-edits-restricted", roles=("Desk User",))
+        result = DocumentUpdate().execute(
+            {"doctype": "User", "name": user, "edits": [_edit("no such text", "x", "email_signature")]}
+        )
+        self.assertFalse(result["success"], result)
+        self.assertNotEqual(result.get("error_type"), "edit_not_applied")
+        self.assertIn("restricted", result["error"])
+
+
+class TestUpdateDocumentEditsOnSubmittedRecord(BaseAssistantTest):
+    def setUp(self):
+        super().setUp()
+        if not frappe.db.exists("DocType", "Telephony Call Type"):
+            self.skipTest("Telephony Call Type not available (ERPNext not installed)")
+        # Production reaches a submitted record when a user submits a Telephony Call Type.
+        doc = frappe.get_doc({"doctype": "Telephony Call Type", "call_type": "_Test FAC edits"}).insert()
+        doc.submit()
+        self.name = doc.name
+
+    def test_edit_to_a_field_not_allowed_on_submit_is_refused_by_the_tool_gate(self):
+        result = DocumentUpdate().execute(
+            {"doctype": "Telephony Call Type", "name": self.name, "edits": [_edit("Test", "x", "call_type")]}
+        )
+        self.assertFalse(result["success"], result)
+        self.assertIn("Cannot modify submitted document", result["error"])

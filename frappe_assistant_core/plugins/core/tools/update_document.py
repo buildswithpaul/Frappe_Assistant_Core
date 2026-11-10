@@ -228,6 +228,13 @@ def _split_rename(name: str, data: Dict[str, Any], arguments: Dict[str, Any]) ->
     return fields, requested
 
 
+def _edit_fields(edits: Any) -> List[str]:
+    """The field names a well-formed ``edits`` list names; a malformed one is refused later."""
+    if not isinstance(edits, list):
+        return []
+    return [e["field"] for e in edits if isinstance(e, dict) and isinstance(e.get("field"), str)]
+
+
 class DocumentUpdate(BaseTool):
     """
     Tool for updating existing Frappe documents.
@@ -338,7 +345,7 @@ class DocumentUpdate(BaseTool):
                 "doctype": doctype,
             }
 
-        if "edits" in arguments and forms != ["name"]:
+        if arguments.get("edits") is not None and forms != ["name"]:
             return {
                 "success": False,
                 "error": _("Edits work on one record at a time; pass 'name'."),
@@ -346,7 +353,7 @@ class DocumentUpdate(BaseTool):
             }
 
         if forms == ["name"]:
-            if "data" not in arguments and "edits" not in arguments:
+            if "data" not in arguments and arguments.get("edits") is None:
                 return {"success": False, "error": _("Pass the changes in 'data'."), "doctype": doctype}
             return self._update_one(
                 doctype, arguments["name"], arguments.get("data", {}), arguments, validate_only
@@ -466,6 +473,9 @@ class DocumentUpdate(BaseTool):
 
             return parent_info
 
+        # The edited fields are written like those in 'data', so every field gate sees them too
+        gated_data = {**data, **dict.fromkeys(_edit_fields(edits))}
+
         # Import security validation
         from frappe_assistant_core.core.security_config import (
             validate_document_access,
@@ -473,7 +483,7 @@ class DocumentUpdate(BaseTool):
 
         # Validate document access with comprehensive permission checking
         validation_result = validate_document_access(
-            user=frappe.session.user, doctype=doctype, name=name, perm_type="write", data=data
+            user=frappe.session.user, doctype=doctype, name=name, perm_type="write", data=gated_data
         )
 
         if not validation_result["success"]:
@@ -494,20 +504,6 @@ class DocumentUpdate(BaseTool):
                 problem = edit_target_problem(doctype, edits, data)
                 if problem:
                     return {"success": False, "error": problem, "doctype": doctype, "name": name}
-                try:
-                    data = effective_data(
-                        {edit["field"]: doc.get(edit["field"]) for edit in edits}, data, edits
-                    )
-                except EditError as e:
-                    return {
-                        "success": False,
-                        "error": str(e),
-                        "error_type": "edit_not_applied",
-                        "field": e.field,
-                        "match_count": e.count,
-                        "doctype": doctype,
-                        "name": name,
-                    }
 
             # Enhanced document state validation
             current_docstatus = getattr(doc, "docstatus", 0)
@@ -535,7 +531,7 @@ class DocumentUpdate(BaseTool):
             # Top-level restricted-field check (excludes child-table fields, which are checked
             # separately against the child doctype's restricted set).
             restricted_top_level = [
-                field for field in data.keys() if field in parent_restricted and field not in table_fields
+                field for field in gated_data if field in parent_restricted and field not in table_fields
             ]
             if restricted_top_level:
                 return {
@@ -545,6 +541,22 @@ class DocumentUpdate(BaseTool):
                         f"These fields require higher privileges."
                     ),
                 }
+
+            if edits is not None:
+                try:
+                    data = effective_data(
+                        {edit["field"]: doc.get(edit["field"]) for edit in edits}, data, edits
+                    )
+                except EditError as e:
+                    return {
+                        "success": False,
+                        "error": str(e),
+                        "error_type": "edit_not_applied",
+                        "field": e.field,
+                        "match_count": e.count,
+                        "doctype": doctype,
+                        "name": name,
+                    }
 
             refusal = server_script_guard(
                 doctype,
