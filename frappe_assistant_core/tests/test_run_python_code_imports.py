@@ -126,20 +126,27 @@ class TestPreloadedImportsRun(BaseAssistantTest):
 
     def test_import_pandas_as_pd_with_a_dataframe(self):
         # GitHub #378: the rewritten `pd = _preloaded_modules["pandas"]` looked like a DataFrame slice
-        # to the auto-fixer, which made it `..["pandas"].copy()` whenever the code said pd.DataFrame
+        # to the (since removed) .copy() auto-fixer, which made it `..["pandas"].copy()`
         self.assertPrints(
             "import pandas as pd\nimport numpy as np\ndf = pd.DataFrame({'a': [1, 2]})\nprint(len(df), np.sum([1, 2]))",
             "2 3",
         )
 
-    def test_a_real_dataframe_slice_still_gets_copy(self):
-        from frappe_assistant_core.plugins.data_science.tools.run_python_code import ExecutePythonCode
+    def test_list_index_is_not_rewritten_to_copy(self):
+        # The removed .copy() auto-fixer turned `first = data[0]` into `data[0].copy()` whenever the
+        # code mentioned pd.DataFrame or the name contained "data": 'int' object has no attribute 'copy'
+        self.assertPrints(
+            "import pandas as pd\ndata = [1, 2, 3]\nfirst = data[0]\nrow = data[1]\nprint(first, row)",
+            "1 2",
+        )
 
-        fixed = ExecutePythonCode()._preprocess_code_for_common_errors(
-            'pd = _preloaded_modules["pandas"]\ndf = pd.DataFrame({"a": [1]})\nsub = df[df.a > 0]'
-        )["code"]
-        self.assertIn('pd = _preloaded_modules["pandas"]\n', fixed)
-        self.assertIn("sub = df[df.a > 0].copy()", fixed)
+    def test_dict_lookup_is_not_rewritten_to_copy(self):
+        self.assertPrints(
+            "data = {'key': 5}\nvalue = data['key']\n"
+            "data_map = {'a': 'x'}\nletter = data_map['a']\n"
+            "df = pd.DataFrame({'a': [1]})\nprint(value, letter, len(df))",
+            "5 x 1",
+        )
 
     def test_dataframe_from_frappe_rows(self):
         # GitHub #379: frappe._dict answers any attribute with None, so pandas took the rows for an array
@@ -149,6 +156,51 @@ class TestPreloadedImportsRun(BaseAssistantTest):
             "print(list(df.columns), len(df) > 0, isinstance(df, pd.DataFrame),"
             " isinstance(df.head(1), pd.DataFrame), isinstance(pd.DataFrame.from_dict({'a': [1]}), pd.DataFrame))",
             "['name', 'enabled'] True True True True",
+        )
+
+    def test_dataframe_from_an_iterator_of_frappe_rows(self):
+        # A generator expression or map() of frappe rows failed the same way as a list did
+        self.assertPrints(
+            "rows = frappe.get_all('User', fields=['name', 'enabled'], limit=2)\n"
+            "a = pd.DataFrame(r for r in rows)\n"
+            "b = pd.DataFrame(map(lambda r: r, rows))\n"
+            "c = pd.DataFrame(data=(r for r in rows), columns=['name'])\n"
+            "print(len(a) == len(rows), len(b) == len(rows), list(c.columns))",
+            "True True ['name']",
+        )
+
+    def test_type_of_a_frame_is_pd_dataframe(self):
+        # LLM-written code compares types as well as using isinstance: both hold, as on develop
+        self.assertPrints(
+            "df = pd.DataFrame({'a': [1, 2], 'b': [3, 4]})\n"
+            "parts = [df, df.head(1), df[df.a > 1], pd.concat([df, df]), pd.DataFrame.from_dict({'a': [1]}),"
+            " pd.DataFrame.from_records([{'a': 1}]), df.groupby('a').sum(),"
+            " df.groupby('a').size().reset_index(), pd.Series([1, 2], name='a').to_frame(),"
+            " df['a'].to_frame(), df['a'].reset_index()]\n"
+            "print([type(x) is pd.DataFrame for x in parts])\n"
+            "print([type(x) == pd.DataFrame for x in parts])\n"
+            "print([isinstance(x, pd.DataFrame) for x in parts])",
+            "\n".join([str([True] * 11)] * 3),
+        )
+
+    def test_frames_built_from_a_series_of_frappe_rows(self):
+        # Paul's case: groupby().size() is a Series, and reset_index() builds the frame from it
+        self.assertPrints(
+            "rows = frappe.get_all('User', fields=['name', 'user_type'], limit=5)\n"
+            "df = pd.DataFrame(rows)\n"
+            "x = df.groupby('user_type').size().reset_index()\n"
+            "y = df['name'].to_frame()\n"
+            "print(type(x) is pd.DataFrame, type(y) is pd.DataFrame, list(x.columns))",
+            "True True ['user_type', 0]",
+        )
+
+    def test_type_of_a_series_is_pd_series(self):
+        self.assertPrints(
+            "df = pd.DataFrame({'a': [1, 2], 'b': [3, 4]})\n"
+            "parts = [df['a'], df.a + 1, df.groupby('a').size(), df.sum(), df.iloc[0], pd.Series([1, 2])]\n"
+            "print([type(x) is pd.Series for x in parts])\n"
+            "print([isinstance(x, pd.Series) for x in parts])",
+            "\n".join([str([True] * 6)] * 2),
         )
 
     def test_unavailable_module_is_reported_not_silently_dropped(self):

@@ -39,6 +39,15 @@ export const chat = {
 			client_turn_id: clientTurnId,
 		}),
 
+	// Resolves { success } or { success: false, reason }; throws when the caller may not undo it.
+	undoChange: (sessionId, messageId, doctype, name) =>
+		baseCall("frappe_assistant_core.chat.api.changes.undo_change", {
+			session_id: sessionId,
+			message_id: messageId,
+			doctype,
+			name,
+		}),
+
 	continueResponse: (sessionId, messageId, options = {}) =>
 		baseCall("frappe_assistant_core.chat.api.chat.continue_response", {
 			session_id: sessionId,

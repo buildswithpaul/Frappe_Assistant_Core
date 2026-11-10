@@ -37,6 +37,7 @@
 				:message-index="messageIndex"
 				:is-streaming="isStreaming"
 				:is-resuming="isResuming"
+				:message-id="message.message_id || null"
 				@toggle-block="(msgIdx, blockId) => $emit('toggleBlock', msgIdx, blockId)"
 				@approve="(blockId, responses) => $emit('approve', blockId, responses)"
 				@reject="(blockId, responses) => $emit('reject', blockId, responses)"

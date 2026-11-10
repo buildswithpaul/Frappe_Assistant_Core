@@ -194,7 +194,11 @@ def _update_faco_message_merged(
     return MergedWrite(False, None, None)
 
 
-from ..block_builder import truncate_result_for_emit  # noqa: E402
+from ..block_builder import (  # noqa: E402
+    merge_changes_block,
+    normalise_changes,
+    truncate_result_for_emit,
+)
 from ..chat.cancel import (  # noqa: E402
     ABORT_MARKER_TEXT,
     _abort_pending_interactions,
@@ -218,6 +222,7 @@ from ..chat.helpers import (  # noqa: E402
 # at all because it was added to the main loop and never mirrored here.
 _SHARED_RELAY_EVENTS = frozenset(
     {
+        "changes_made",
         "context_summarized",
         "model_selected",
         "routing_notice",
@@ -245,6 +250,7 @@ _RESUME_PROGRESS_EVENTS = frozenset(
         "tool_cancelled",
         "approval_required",
         "workflow_created",
+        "changes_made",
         "stream_complete",
         "stream_cancelled",
     }
@@ -252,6 +258,58 @@ _RESUME_PROGRESS_EVENTS = frozenset(
 
 # Resume refusals that mean the pause is gone for good: its cards can only expire.
 _PAUSE_GONE_CODES = frozenset({"INTERRUPT_EXPIRED", "INTERRUPT_NOT_FOUND"})
+
+
+def _group_changes_by_message(changes, ar_message_id: str | None) -> dict:
+    """AR's changes keyed by the message whose turn made each; one without an id is this turn's."""
+    groups: dict = {}
+    for change in changes if isinstance(changes, list) else []:
+        message_id = change.get("message_id") if isinstance(change, dict) else None
+        if not (isinstance(message_id, str) and message_id):
+            message_id = ar_message_id
+        groups.setdefault(message_id, []).append(change)
+    return groups
+
+
+def _merge_changes_into_row(row: str, changes: list[dict]) -> None:
+    def merge(current):
+        blocks = _parse_turn_blocks(current.blocks if current else None)
+        merge_changes_block(blocks, changes)
+        return {"blocks": json.dumps(blocks)}
+
+    _update_faco_message_merged(row, ["blocks"], merge)
+
+
+def _relay_changes_made(raw_changes, session_id: str, block_builder, ar_message_id: str | None) -> None:
+    """List each change on the message whose turn made it, and tell the SPA once per message.
+
+    A change from an earlier turn of this session (its receipt was drained late) joins that
+    message's stored row; one whose message has no row stays on the current message.
+    """
+    by_message: dict = {}
+    for message_id, group in _group_changes_by_message(raw_changes, ar_message_id).items():
+        changes = normalise_changes(group)
+        if not changes:
+            continue
+        row = None
+        if message_id != ar_message_id:
+            row = _find_assistant_msg_by_message_id(session_id, message_id)
+        if row:
+            _merge_changes_into_row(row, changes)
+        else:
+            message_id = ar_message_id
+            block_builder.add_changes_made(changes)
+        by_message.setdefault(message_id, []).extend(changes)
+    for message_id, changes in by_message.items():
+        _emit_socket_event(
+            session_id,
+            {
+                "event": "changes_made",
+                "session_id": session_id,
+                "message_id": message_id,
+                "changes": changes,
+            },
+        )
 
 
 def _dispatch_relay_event(
@@ -329,6 +387,9 @@ def _dispatch_relay_event(
                 "label": data.get("label", ""),
             },
         )
+
+    elif event_type == "changes_made":
+        _relay_changes_made(data.get("changes"), session_id, block_builder, ar_message_id)
 
     elif event_type == "thinking":
         block_builder.add_thinking(data.get("content", ""))

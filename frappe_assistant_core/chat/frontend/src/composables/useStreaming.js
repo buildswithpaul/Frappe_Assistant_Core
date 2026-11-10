@@ -438,6 +438,11 @@ export function useStreaming() {
 				chatStore.handleWorkflowCreatedEvent(data);
 				break;
 
+			case "changes_made":
+				chatStore.resetActivityTimeout();
+				chatStore.handleChangesMadeEvent(data);
+				break;
+
 			default:
 				// Unknown event type - ignore silently
 				break;

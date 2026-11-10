@@ -43,7 +43,7 @@
 			</button>
 
 			<template v-else>
-				<label v-if="!message.failed.value && !isCustomisation" class="trust-choice">
+				<label v-if="!message.failed.value && trustAllowed" class="trust-choice">
 					<input v-model="dontAskAgain" type="checkbox" :disabled="submitting || message.loading.value" />
 					{{ trustText }}
 				</label>
@@ -52,7 +52,7 @@
 					class="ql-btn ql-btn-approve"
 					:disabled="submitting || message.loading.value || codeLoading"
 					:aria-busy="clicked === 'approve' && submitting ? 'true' : null"
-					@click="handleApprove(dontAskAgain && !isCustomisation ? 'trust' : 'approve')"
+					@click="handleApprove(dontAskAgain && trustAllowed ? 'trust' : 'approve')"
 				>
 					{{ approveLabel }}
 				</button>
@@ -72,7 +72,7 @@
 <script setup>
 import { computed, ref } from "vue";
 import { __ } from "@/utils/i18n";
-import { baseToolName, isCustomisationRisk } from "@/utils/toolNames";
+import { baseToolName, canTrust } from "@/utils/toolNames";
 import ApprovalDetails from "./ApprovalDetails.vue";
 import EmailPreview from "./EmailPreview.vue";
 import ImportApprovalSummary from "./ImportApprovalSummary.vue";
@@ -92,8 +92,8 @@ const props = defineProps({
 const emit = defineEmits(["approve", "reject"]);
 
 const hasDecision = computed(() => Boolean(props.block.decision));
-// AR flags customisation writes: they are always asked about, so no "don't ask again".
-const isCustomisation = computed(() => isCustomisationRisk(props.block));
+// AR always asks about customisation and R3 writes, so they get no "don't ask again".
+const trustAllowed = computed(() => canTrust(props.block));
 // Ticked, the approve button also stops this tool asking again (AR Tool Trust "always").
 const dontAskAgain = ref(false);
 // True while the stored code a switch-on would run is loading; approving it unseen is the hole.

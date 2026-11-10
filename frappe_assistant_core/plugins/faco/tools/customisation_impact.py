@@ -21,6 +21,7 @@ from typing import Any, Dict
 from frappe import _
 
 from frappe_assistant_core.core.base_tool import BaseTool
+from frappe_assistant_core.utils.change_facts import change_facts
 from frappe_assistant_core.utils.customisation import customisation_impact
 
 
@@ -51,4 +52,8 @@ class CustomisationImpact(BaseTool):
         tool_input = arguments.get("tool_input")
         if not isinstance(tool_name, str) or not tool_name or not isinstance(tool_input, dict):
             return {"success": False, "error": _("tool_name and tool_input are required")}
-        return {"success": True, **customisation_impact(tool_name, tool_input)}
+        return {
+            "success": True,
+            **customisation_impact(tool_name, tool_input),
+            "facts": change_facts(tool_name, tool_input),
+        }

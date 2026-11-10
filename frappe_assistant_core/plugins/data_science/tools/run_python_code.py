@@ -173,27 +173,28 @@ class ExecutePythonCode(BaseTool):
 
     def _get_dynamic_description(self) -> str:
         """Generate description based on library availability"""
-        base_description = """Run Python in a sandbox; read data via `tools`.
+        base_description = """Execute Python in a sandboxed environment with built-in data access via `tools`.
 
-PREFER THIS to separate fetch tools; fetch in the code:
-tools.get_documents(doctype, filters={}, fields=["*"], limit=100, group_by=None) -> {success, data, count}
-tools.get_document(doctype, name) -> {success, data}
-tools.generate_report(report_name, filters={}, format="json") -> {success, data, columns}
-tools.get_report_info(report_name) -> {success, columns, filter_guidance}
-tools.list_reports(module=None, report_type=None) -> {success, reports, count}
-tools.search(query, doctype=None, limit=20)
-tools.get_doctype_info(doctype) -> {success, fields, links}
-MCP read tools (same args/results): tools.list_documents, tools.report_list,
-tools.report_requirements, tools.search_documents
+PREFER THIS over separate fetch tools; fetch inside the code:
+  tools.get_documents(doctype, filters={}, fields=["*"], limit=100, group_by=None) -> {success, data, count}
+  tools.get_document(doctype, name) -> {success, data}
+  tools.generate_report(report_name, filters={}, format="json") -> {success, data, columns}
+  tools.get_report_info(report_name) -> {success, columns, filter_guidance}
+  tools.list_reports(module=None, report_type=None) -> {success, reports, count}
+  tools.search(query, doctype=None, limit=20)
+  tools.get_doctype_info(doctype) -> {success, fields, links}
+  The MCP read tools also work here, with the same arguments and results:
+  tools.list_documents, tools.report_list, tools.report_requirements, tools.search_documents
 
-RULES: no imports, file/network access or plotting (use dashboard tools).
+RULES: no imports; no file/network access; no plotting (use the dashboard tools).
 DATA: read-only, with the user's roles and User Permissions. frappe.get_list/get_all/get_doc and
 frappe.db.get_value/count/exists work; frappe.db.sql does not. Aggregate:
 fields=['customer', {'SUM': 'grand_total', 'as': 'total'}], group_by='customer'.
 
-FIGURES: report only numbers this run computed from rows it fetched (tools.get_documents
-or data_query); never retype earlier tool output. return_variables limits what comes back.
-If it fails, say the calculation failed; never estimate totals.
+FIGURES: only report numbers this run computed. Fetch rows inside the code
+(tools.get_documents or data_query); never retype earlier tool output by hand.
+Pass return_variables to limit what comes back. If this tool fails, say the
+calculation failed; do not estimate or retype the totals.
 
 PRE-LOADED: pd, np, frappe, math, datetime, json, re, statistics, random"""
 
@@ -562,24 +563,6 @@ PRE-LOADED: pd, np, frappe, math, datetime, json, re, statistics, random"""
             if not code.startswith(warning):
                 code = warning + code
                 fixes_applied.append("ℹ️  Added warning about chained indexing")
-
-        # Fix 5: Auto-add .copy() when slicing DataFrames to avoid SettingWithCopyWarning
-        # Pattern: df2 = df[...] -> df2 = df[...].copy()
-        slice_pattern = r"(\w+)\s*=\s*(\w+)\[([^\]]+)\](?!\s*\.)"
-        if re.search(slice_pattern, code):
-            # Only apply if it looks like a DataFrame slice (not dict or list access)
-            def add_copy(match):
-                # a rewritten import (`pd = _preloaded_modules["pandas"]`) is a module, never a slice
-                if match.group(2) == "_preloaded_modules":
-                    return match.group(0)
-                if "pd.DataFrame" in code or "data" in match.group(2):
-                    return f"{match.group(1)} = {match.group(2)}[{match.group(3)}].copy()"
-                return match.group(0)
-
-            new_code = re.sub(slice_pattern, add_copy, code)
-            if new_code != code:
-                code = new_code
-                fixes_applied.append("✓ Added .copy() to DataFrame slices to avoid SettingWithCopyWarning")
 
         return {"success": True, "code": code, "fixes_applied": fixes_applied}
 

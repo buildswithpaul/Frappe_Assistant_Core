@@ -406,6 +406,23 @@ describe("live-turn gate on the realtime dispatcher", () => {
 		expect(store.queuedMessages).toHaveLength(1);
 	});
 
+	it("lists the records a turn created on its message", async () => {
+		store.currentSessionId = "s-gate";
+		api.chat.getLiveTurn.mockResolvedValue(null);
+		await store.sendMessage("Create two notes");
+		const answer = store.messages.at(-1);
+		const t1 = (seq, extra) => ({ session_id: "s-gate", turn: "T1", client_turn: answer._requestId, seq, ...extra });
+
+		handler(t1(1, { event: "stream_start", message_id: "m1" }));
+		handler(t1(2, {
+			event: "changes_made",
+			message_id: "m1",
+			changes: [{ doctype: "Note", name: "N-1", action: "create", undo: "delete" }],
+		}));
+
+		expect(answer.blocks.find((b) => b.type === "changes_made").changes.map((c) => c.name)).toEqual(["N-1"]);
+	});
+
 	it("stops dispatching to an unmounted composable", async () => {
 		const pinia = createPinia();
 		const wrapper = mount(
