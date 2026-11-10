@@ -648,7 +648,8 @@ export const useChatStore = defineStore("chat", () => {
 			resend.context,
 			resend.modelId,
 			resend.systemPromptAddendum,
-			{ confirmLowBalance: true }
+			// The refused turn has ended, and the queue would drop the confirmation.
+			{ skipQueue: true, confirmLowBalance: true }
 		);
 	}
 

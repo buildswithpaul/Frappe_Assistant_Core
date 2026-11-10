@@ -31,8 +31,15 @@ describe("MessageBubble low-balance preview", () => {
 		const wrapper = bubble(refused);
 		const notice = wrapper.find(".low-balance-notice");
 		expect(notice.exists()).toBe(true);
-		expect(notice.text()).toContain("This message may cost about 12.5 credits and you have 4 left.");
+		expect(notice.text()).toContain("This message may cost about 12.5 credits and you have 4.0 left.");
 		expect(notice.find(".send-anyway-btn").text()).toBe("Send anyway");
+	});
+
+	it("rounds the estimate and balance to one decimal place", () => {
+		const message = { ...refused, lowBalance: { ...refused.lowBalance, estimate: 12.46, balance: 49.87654 } };
+		expect(bubble(message).find(".low-balance-notice").text()).toContain(
+			"This message may cost about 12.5 credits and you have 49.9 left."
+		);
 	});
 
 	it("emits send-anyway with the refused message", async () => {

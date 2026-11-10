@@ -110,7 +110,7 @@ def _attach_files_to_message(file_urls: list[str], message_name: str) -> int:
         },
         fields=["name", "file_url"],
         order_by="creation desc",
-        limit_page_length=0,
+        limit=0,
     )
     # Newest first: the latest upload of each URL is the one the composer just made.
     latest = {}
@@ -136,8 +136,6 @@ def _attach_files_to_message(file_urls: list[str], message_name: str) -> int:
                 title="FACO File Attachment Error",
                 message=f"Error attaching file {file_doc.file_url}: {e!s}",
             )
-
-    frappe.db.commit()  # nosemgrep: frappe-manual-commit — background thread / streaming context (not a request handler), explicit commit required to flush progress to DB.
     return linked
 
 
