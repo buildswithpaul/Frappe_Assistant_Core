@@ -121,6 +121,7 @@ from .chat import (
 
 # ── Discovery banner ────────────────────────────────────────────────
 from .discovery import (
+    banner_shown,
     dismiss_banner,
     get_chat_analytics,
     get_chat_status,

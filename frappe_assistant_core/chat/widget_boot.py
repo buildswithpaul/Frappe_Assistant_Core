@@ -78,3 +78,12 @@ def extend_bootinfo(bootinfo, manifest_path: str | None = None) -> None:
             bootinfo.fac_widget = entry
     except Exception:
         frappe.logger("frappe_assistant_core").warning("FAC widget boot info skipped", exc_info=True)
+    # The Desk's FAC Chat banner and FAC Admin card offer the demo video when one is set.
+    try:
+        from frappe_assistant_core.chat.demo_video import demo_video
+
+        video = demo_video()
+        if video:
+            bootinfo.fac_demo_video = video
+    except Exception:
+        frappe.logger("frappe_assistant_core").warning("FAC demo video boot info skipped", exc_info=True)

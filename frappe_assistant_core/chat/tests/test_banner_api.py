@@ -115,3 +115,76 @@ class TestBannerAPI(BaseAssistantTest):
                 dismiss_banner()
         finally:
             frappe.set_user("Administrator")
+
+
+class TestBannerBell(BaseAssistantTest):
+    """banner_shown: the first time the banner shows, one bell notification keeps its link."""
+
+    def setUp(self):
+        super().setUp()
+        from frappe_assistant_core.chat.gate import clear_chat_gate_cache
+
+        frappe.db.set_single_value("Assistant Core Settings", "enable_fac_chat", 0)
+        frappe.db.delete("FAC Chat Banner Dismissal", {"user": "Administrator"})
+        frappe.db.delete("Notification Log", {"for_user": "Administrator", "link": "/app/fac-admin"})
+        clear_chat_gate_cache()
+        frappe.clear_cache()
+        frappe.set_user("Administrator")
+
+    def tearDown(self):
+        frappe.set_user("Administrator")
+        super().tearDown()
+
+    def _bells(self):
+        return frappe.get_all(
+            "Notification Log",
+            filters={"for_user": "Administrator", "link": "/app/fac-admin", "type": "Alert"},
+            pluck="subject",
+        )
+
+    def test_first_showing_leaves_one_bell_and_later_ones_none(self):
+        from frappe_assistant_core.chat.api.discovery import banner_shown
+
+        self.assertEqual(banner_shown(), {"notified": True})
+        self.assertEqual(banner_shown(), {"notified": False})
+        bells = self._bells()
+        self.assertEqual(len(bells), 1)
+        self.assertIn("FAC Chat is installed", bells[0])
+
+    def test_no_bell_once_chat_is_on_or_the_banner_was_dismissed(self):
+        from frappe_assistant_core.chat.api.discovery import banner_shown, dismiss_banner
+        from frappe_assistant_core.chat.gate import clear_chat_gate_cache
+
+        dismiss_banner()
+        self.assertEqual(banner_shown(), {"notified": False})
+        frappe.db.delete("FAC Chat Banner Dismissal", {"user": "Administrator"})
+
+        frappe.db.set_single_value("Assistant Core Settings", "enable_fac_chat", 1)
+        frappe.clear_cache()
+        clear_chat_gate_cache()
+        self.assertEqual(banner_shown(), {"notified": False})
+        self.assertEqual(self._bells(), [])
+
+    def test_no_bell_for_a_user_who_cannot_switch_chat_on(self):
+        from frappe_assistant_core.chat.api.discovery import banner_shown
+
+        if not frappe.db.exists("User", "test_non_admin@example.com"):
+            frappe.get_doc(
+                {
+                    "doctype": "User",
+                    "email": "test_non_admin@example.com",
+                    "first_name": "Non-admin",
+                    "send_welcome_email": 0,
+                    "roles": [{"role": "Guest"}],
+                }
+            ).insert(ignore_permissions=True)
+        try:
+            frappe.set_user("test_non_admin@example.com")
+            self.assertEqual(banner_shown(), {"notified": False})
+        finally:
+            frappe.set_user("Administrator")
+        self.assertFalse(
+            frappe.db.exists(
+                "Notification Log", {"for_user": "test_non_admin@example.com", "link": "/app/fac-admin"}
+            )
+        )

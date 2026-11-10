@@ -68,6 +68,33 @@ def dismiss_banner() -> dict:
     return {"dismissed": True}
 
 
+BANNER_BELL_LINK = "/app/fac-admin"
+
+
+@frappe.whitelist(methods=["POST"])
+def banner_shown() -> dict:
+    """Leave one bell notification the first time the banner shows, so the link outlives the page.
+
+    Sent here, not at install: Frappe sends no notifications while an app installs
+    (``frappe.flags.in_install``), and a fresh site may not have Redis yet.
+    """
+    if not should_show_banner():
+        return {"notified": False}
+    user = frappe.session.user
+    if frappe.db.exists("Notification Log", {"for_user": user, "link": BANNER_BELL_LINK, "type": "Alert"}):
+        return {"notified": False}
+    frappe.get_doc(
+        {
+            "doctype": "Notification Log",
+            "for_user": user,
+            "type": "Alert",
+            "subject": _("FAC Chat is installed. Watch the 30-second demo, then switch it on in FAC Admin."),
+            "link": BANNER_BELL_LINK,
+        }
+    ).insert(ignore_permissions=True)
+    return {"notified": True}
+
+
 @frappe.whitelist(methods=["GET"])
 def get_chat_status() -> dict:
     """Return current FAC Chat enablement state for the FAC Admin card."""

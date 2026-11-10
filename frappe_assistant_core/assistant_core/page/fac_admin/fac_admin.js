@@ -201,6 +201,7 @@ frappe.pages['fac-admin'].on_page_load = function(wrapper) {
                                 <button class="btn btn-xs btn-primary" id="toggle-fac-chat">
                                     <span id="toggle-fac-chat-text">Loading...</span>
                                 </button>
+                                ${frappe.boot.fac_demo_video ? `<button class="btn btn-xs btn-default" id="watch-fac-demo">${__('Watch demo')}</button>` : ''}
                                 <a href="/copilot" target="_blank" rel="noopener" class="btn btn-xs btn-default" id="open-copilot" aria-label="Open Copilot in a new tab">
                                     ${ns.icon('external-link')}
                                 </a>
@@ -289,6 +290,8 @@ frappe.pages['fac-admin'].on_page_load = function(wrapper) {
 
             // FAC Chat toggle
             $('#toggle-fac-chat').on('click', ns.toggleFacChat);
+            // Demo video (chat_banner.js, loaded on every Desk page, owns the player dialog)
+            $('#watch-fac-demo').on('click', () => frappe_assistant_core.chat.show_demo_video());
 
             // Copy MCP endpoint URL to clipboard
             $('#copy-endpoint').on('click', function() {
