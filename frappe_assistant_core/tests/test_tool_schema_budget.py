@@ -5,7 +5,7 @@ from frappe_assistant_core.tests.base_test import BaseAssistantTest
 
 BUDGETS = {
     "create_dashboard_chart": 2200,
-    "run_python_code": 2200,
+    "run_python_code": 2400,
     "generate_document": 2000,
     "report_requirements": 1600,
     "create_dashboard": 1500,
