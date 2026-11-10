@@ -126,10 +126,26 @@ class TestPreloadedImportsRun(BaseAssistantTest):
 
     def test_import_pandas_as_pd_with_a_dataframe(self):
         # GitHub #378: the rewritten `pd = _preloaded_modules["pandas"]` looked like a DataFrame slice
-        # to the auto-fixer, which made it `..["pandas"].copy()` whenever the code said pd.DataFrame
+        # to the (since removed) .copy() auto-fixer, which made it `..["pandas"].copy()`
         self.assertPrints(
             "import pandas as pd\nimport numpy as np\ndf = pd.DataFrame({'a': [1, 2]})\nprint(len(df), np.sum([1, 2]))",
             "2 3",
+        )
+
+    def test_list_index_is_not_rewritten_to_copy(self):
+        # The removed .copy() auto-fixer turned `first = data[0]` into `data[0].copy()` whenever the
+        # code mentioned pd.DataFrame or the name contained "data": 'int' object has no attribute 'copy'
+        self.assertPrints(
+            "import pandas as pd\ndata = [1, 2, 3]\nfirst = data[0]\nrow = data[1]\nprint(first, row)",
+            "1 2",
+        )
+
+    def test_dict_lookup_is_not_rewritten_to_copy(self):
+        self.assertPrints(
+            "data = {'key': 5}\nvalue = data['key']\n"
+            "data_map = {'a': 'x'}\nletter = data_map['a']\n"
+            "df = pd.DataFrame({'a': [1]})\nprint(value, letter, len(df))",
+            "5 x 1",
         )
 
     def test_dataframe_from_frappe_rows(self):
