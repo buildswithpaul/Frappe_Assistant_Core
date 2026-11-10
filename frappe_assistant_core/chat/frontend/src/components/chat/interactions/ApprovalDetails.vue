@@ -97,7 +97,7 @@ import { baseToolName } from "@/utils/toolNames";
 import { headlineKeys } from "./approvalHeadline";
 import { describeCondition } from "./conditions";
 import { goesLiveAudience, goesLiveFields, renameKeys, writesCondition } from "./customisation";
-import { applyEdits } from "./edits";
+import { applyEdits, unappliedEdits } from "./edits";
 import { useCurrentCode } from "./useCurrentCode";
 import {
 	displayValue,
@@ -145,7 +145,7 @@ const appliedEdits = computed(() =>
 	currentCode.value === null ? { values: {}, error: null, failedFields: [] } : applyEdits(currentCode.value, codeEdits.value),
 );
 const flat = computed(() => ({ ...writtenFlat.value, ...appliedEdits.value.values }));
-const rawEdits = computed(() => edits.value.filter((e) => !(e?.field in appliedEdits.value.values)));
+const rawEdits = computed(() => unappliedEdits(edits.value, appliedEdits.value.values));
 const hasContent = computed(() => Object.keys(flat.value).length > 0 || liveFields.value.length > 0);
 const doctype = computed(() => flat.value.doctype);
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { applyEdits, editedFields } from "./edits";
+import { applyEdits, editedFields, unappliedEdits } from "./edits";
 
 const edit = (field, find, replace) => ({ field, find, replace });
 
@@ -74,5 +74,12 @@ describe("editedFields", () => {
 		expect(editedFields({ data: {} })).toEqual([]);
 		expect(editedFields({ edits: "x" })).toEqual([]);
 		expect(editedFields({ edits: [null, { field: 3 }] })).toEqual([]);
+	});
+});
+
+describe("unappliedEdits", () => {
+	it("keeps every edit whose field was not applied, even one named like a prototype member", () => {
+		const edits = [edit("toString", "a", "b"), edit("html", "a", "b"), edit("constructor", "a", "b")];
+		expect(unappliedEdits(edits, { html: "b" }).map((e) => e.field)).toEqual(["toString", "constructor"]);
 	});
 });
