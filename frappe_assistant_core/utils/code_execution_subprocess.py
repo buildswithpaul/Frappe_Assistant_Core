@@ -35,6 +35,7 @@ import signal
 import sys
 import traceback
 import types as _types
+from collections.abc import Iterator
 from contextlib import redirect_stderr, redirect_stdout
 
 # Names user code reaches as modules. The sandbox has no import statement, so
@@ -375,6 +376,61 @@ _NUMPY_BLOCKED = frozenset(
 )
 
 
+_DATAFRAME_STANDINS = {}
+
+
+def _plain_rows(data):
+    """``data`` with frappe rows as plain dicts; anything else unchanged.
+
+    An iterator (a generator expression, map()) is read once into a list first, as pandas would
+    read it, so rows from it are converted too.
+    """
+    if isinstance(data, Iterator):
+        data = list(data)
+    if isinstance(data, (list, tuple)) and any(
+        type(row) is not dict and isinstance(row, dict) for row in data
+    ):
+        data = [dict(row) if isinstance(row, dict) else row for row in data]
+    return data
+
+
+def _frappe_rows_dataframe(real):
+    """pd.DataFrame that takes rows from frappe.get_all / frappe.db.sql (GitHub #379).
+
+    frappe._dict answers any attribute with None, so pandas reads ``ndim`` off a row and takes the
+    list for an array ("invalid __array_struct__"). This is pandas' DataFrame with one change: the
+    rows it is given are passed as plain dicts (_plain_rows). The rows keep their type in user code,
+    which reads them as ``row.field``.
+
+    A subclass, so class attributes (from_dict, from_records) are pandas' own with nothing
+    forwarded, and ``_constructor`` keeps the frames pandas returns (head, filters, concat) of this
+    class: ``type(df) is pd.DataFrame`` holds for them as it does outside the sandbox. A frame
+    pandas makes with its own class (Series.to_frame) is still ``isinstance(x, pd.DataFrame)``.
+    """
+    if real in _DATAFRAME_STANDINS:
+        return _DATAFRAME_STANDINS[real]
+
+    class _Meta(type(real)):
+        def __instancecheck__(cls, obj):
+            return isinstance(obj, real)
+
+        def __subclasscheck__(cls, sub):
+            return issubclass(sub, real)
+
+    class DataFrame(real, metaclass=_Meta):
+        def __init__(self, data=None, *args, **kwargs):
+            super().__init__(_plain_rows(data), *args, **kwargs)
+
+        @property
+        def _constructor(self):
+            return DataFrame
+
+    DataFrame.__module__ = real.__module__
+    DataFrame.__qualname__ = real.__qualname__
+    _DATAFRAME_STANDINS[real] = DataFrame
+    return DataFrame
+
+
 class _FilteredModule:
     """Expose a library module unchanged except for a denylist of I/O sinks.
 
@@ -395,6 +451,8 @@ class _FilteredModule:
     def __getattr__(self, name):
         if name.startswith("_") or name in self._blocked or name.startswith("read_"):
             raise AttributeError(f"{self._label}.{name} is not available in run_python_code")
+        if self._label == "pandas" and name == "DataFrame":
+            return _frappe_rows_dataframe(self._mod.DataFrame)
         return getattr(self._mod, name)
 
     def __setattr__(self, name, value):

@@ -81,7 +81,8 @@ class ChartSuggestionEngine:
             if not data_sample:
                 return field_analysis
 
-            df = pd.DataFrame(data_sample)
+            # frappe._dict answers any attribute with None, so pandas would take the rows for an array
+            df = pd.DataFrame([dict(row) if isinstance(row, dict) else row for row in data_sample])
 
             for field in fields:
                 if field not in df.columns:
