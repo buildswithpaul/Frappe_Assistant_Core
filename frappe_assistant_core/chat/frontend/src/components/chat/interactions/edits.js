@@ -56,7 +56,7 @@ export function applyEdits(current, edits) {
 			continue;
 		}
 		if (failedFields.includes(edit.field)) continue;
-		const stored = edit.field in values ? values[edit.field] : (current?.[edit.field] ?? "");
+		const stored = Object.hasOwn(values, edit.field) ? values[edit.field] : (current?.[edit.field] ?? "");
 		if (typeof stored !== "string") {
 			fail(edit.field, __("'{0}' is not a text field", [edit.field]));
 			continue;
@@ -69,4 +69,9 @@ export function applyEdits(current, edits) {
 	}
 	for (const field of failedFields) delete values[field];
 	return { values, error, failedFields };
+}
+
+/** The edits whose field `applyEdits` did not resolve, to show raw on the card. */
+export function unappliedEdits(edits, values) {
+	return (Array.isArray(edits) ? edits : []).filter((e) => !Object.hasOwn(values ?? {}, e?.field));
 }
