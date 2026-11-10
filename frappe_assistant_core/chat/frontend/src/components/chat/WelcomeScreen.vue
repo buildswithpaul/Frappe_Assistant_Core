@@ -14,6 +14,13 @@
 				<slot name="composer" />
 			</div>
 
+			<DiscoverTip
+				v-if="tipFeature"
+				:feature="tipFeature"
+				@open="discovery.openPreview"
+				@dismiss="discovery.dismissTip"
+			/>
+
 			<NeedsYou
 				v-if="homeEnabled"
 				:items="items"
@@ -41,6 +48,14 @@
 				</div>
 			</template>
 
+			<DiscoverRow
+				v-if="showDiscover"
+				:features="discovery.features"
+				:tried="triedIds"
+				@open="discovery.openPreview"
+				@hide="discovery.hideRow"
+			/>
+
 			<PackNudge
 				v-if="showZeroPackBanner"
 				:count="eligiblePackCount"
@@ -48,11 +63,22 @@
 				@dismiss="dismissBanner"
 			/>
 		</div>
+
+		<!-- "Show first, then ask": opens only after the user clicked a card or a tip. -->
+		<SpotlightModal
+			:content="discovery.preview"
+			@primary="discovery.tryPreview(router)"
+			@secondary="discovery.closePreview()"
+			@dismiss="discovery.closePreview()"
+			@close="discovery.closePreview()"
+		/>
+		<HomeCoachTour :active="coachActive" @done="onCoachDone" />
 	</div>
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
+import { useRouter } from "vue-router";
 import { storeToRefs } from "pinia";
 import { useUserStore } from "@/stores/userStore";
 import { useSuggestionStore } from "@/stores/suggestionStore";
@@ -68,6 +94,14 @@ import ContinueList from "@/components/chat/welcome/ContinueList.vue";
 import HomeStarters from "@/components/chat/welcome/HomeStarters.vue";
 import FirstRunStarters from "@/components/chat/welcome/FirstRunStarters.vue";
 import PackNudge from "@/components/chat/welcome/PackNudge.vue";
+import DiscoverRow from "@/components/chat/welcome/DiscoverRow.vue";
+import DiscoverTip from "@/components/chat/welcome/DiscoverTip.vue";
+import SpotlightModal from "@/components/spotlight/SpotlightModal.vue";
+import HomeCoachTour from "@/components/discover/HomeCoachTour.vue";
+import { featureById } from "@/components/discover/featureCatalog";
+import { useDiscoveryStore } from "@/stores/discoveryStore";
+import { useSpotlightStore } from "@/stores/spotlightStore";
+import { useTourStore } from "@/stores/tourStore";
 
 defineEmits(["suggestion", "navigate", "open-session"]);
 
@@ -126,7 +160,36 @@ function dismissBanner() {
 	bannerDismissed.value = true;
 }
 
+// Feature discovery: chat stays chat; Home shows what else FAC can do, and asks only after a click.
+// Day one keeps getting started simple: no Discover row or tip, only the 3-stop tour.
+const router = useRouter();
+const discovery = useDiscoveryStore();
+const tourStore = useTourStore();
+const spotlight = useSpotlightStore();
+discovery.ensureLoaded();
+const triedIds = computed(() => discovery.features.filter((f) => discovery.isTried(f.id)).map((f) => f.id));
+const showDiscover = computed(() => !dayOne.value && discovery.showRow);
+const tipFeature = computed(() =>
+	!dayOne.value && !discovery.showRow && discovery.tipId ? featureById(discovery.tipId) : null
+);
+
+const coachActive = ref(false);
+function maybeStartCoach() {
+	if (coachActive.value || !loaded.value || tourStore.isOpen || spotlight.current) return;
+	if (!discovery.maybeStartCoach({ dayOne: dayOne.value })) return;
+	coachActive.value = true;
+	discovery.setCoachOpen(true);
+}
+function onCoachDone() {
+	coachActive.value = false;
+	discovery.finishCoach();
+}
+// Start once "Needs you" has loaded (it is one of the stops), and not over the reel or a Spotlight.
+watch([loaded, () => tourStore.isOpen, () => spotlight.current], maybeStartCoach);
+
 onMounted(() => {
+	discovery.refreshTip();
+	maybeStartCoach();
 	if (userStore.isAdmin && !packsStore.items.length && !packsStore.loading) {
 		packsStore.load();
 	}

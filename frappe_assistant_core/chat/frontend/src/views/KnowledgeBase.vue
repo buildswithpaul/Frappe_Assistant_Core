@@ -136,6 +136,9 @@
 							:cta="knowledgeIncluded ? 'Upload your first document' : ''"
 							@cta="triggerUpload"
 						>
+							<template v-if="knowledgeIncluded" #explain>
+								<KnowledgeHowItWorks />
+							</template>
 							<template v-if="knowledgeIncluded" #footnote>
 								<p class="kb-empty-foot">
 									Supports PDF, Markdown, and Text up to 10 MB — or drag and drop
@@ -243,6 +246,7 @@ import ListPageShell from "@/components/common/list/ListPageShell.vue";
 import ListHeaderBand from "@/components/common/list/ListHeaderBand.vue";
 import AddSlotCard from "@/components/common/list/AddSlotCard.vue";
 import EmptyState from "@/components/common/list/EmptyState.vue";
+import KnowledgeHowItWorks from "@/components/knowledge/KnowledgeHowItWorks.vue";
 import UpgradeBanner from "@/components/common/UpgradeBanner.vue";
 import { api } from "@/api/client";
 import { ACCEPT_ATTRIBUTE } from "@/utils/knowledgeUpload";

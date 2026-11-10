@@ -49,6 +49,7 @@ import { useVisualViewportFrame } from "@/composables/useVisualViewportFrame";
 import { useThemeStore } from "@/stores/themeStore";
 import { useUserStore } from "@/stores/userStore";
 import { useTourStore } from "@/stores/tourStore";
+import { useDiscoveryStore } from "@/stores/discoveryStore";
 import { useChatStore } from "@/stores/chatStore";
 import { useApprovalAttention } from "@/composables/useApprovalAttention";
 import { useCheckoutReturn } from "@/composables/useCheckoutReturn";
@@ -130,6 +131,11 @@ onMounted(async () => {
 	isCheckingAuth.value = false;
 
 	checkoutReturn.run().catch((err) => logger.error("Checkout return failed:", err));
+
+	// Opening Knowledge, Agents or Pages once clears that feature's "new" dot and tip.
+	const discovery = useDiscoveryStore();
+	discovery.markRoute(router.currentRoute.value.path);
+	router.afterEach((to) => discovery.markRoute(to.path));
 
 	// Auto-play the reel for returning users on a new tour version.
 	// First-time users hit the inline onboarding wizard instead.

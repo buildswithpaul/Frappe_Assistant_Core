@@ -48,6 +48,7 @@ import { useRouter } from "vue-router";
 import { useUserStore } from "@/stores/userStore";
 import { __ } from "@/utils/i18n";
 import { useTourStore } from "@/stores/tourStore";
+import { useDiscoveryStore } from "@/stores/discoveryStore";
 
 const router = useRouter();
 const userStore = useUserStore();
@@ -215,7 +216,18 @@ const visibleGroups = computed(() => {
 	groups.push({
 		id: "help",
 		label: "Help",
-		items: [{ label: "Replay tour", icon: TourIcon, action: () => tourStore.open() }],
+		items: [
+			{ label: "Replay tour", icon: TourIcon, action: () => tourStore.open() },
+			// The 3-stop "where things are" tour runs on Home, so go there first.
+			{
+				label: "Show me around",
+				icon: TourIcon,
+				action: () => {
+					useDiscoveryStore().requestCoach();
+					router.push("/chat");
+				},
+			},
+		],
 	});
 
 	return groups;

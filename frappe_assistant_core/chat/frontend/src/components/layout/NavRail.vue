@@ -32,9 +32,10 @@
 				class="rail-item"
 				:class="{ active: route.path.startsWith('/knowledge') }"
 				data-test="rail-knowledge"
-				:aria-label="__('Knowledge Base')"
+				:aria-label="discovery.showDot('knowledge') ? __('Knowledge Base (new for you)') : __('Knowledge Base')"
 				:title="__('Knowledge Base')"
 			>
+				<span v-if="discovery.showDot('knowledge')" class="rail-dot" data-test="rail-dot-knowledge"></span>
 				<svg class="rail-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
 					<path
 						stroke-linecap="round"
@@ -51,9 +52,10 @@
 				class="rail-item"
 				:class="{ active: route.path.startsWith('/agents') }"
 				data-test="rail-agents"
-				:aria-label="__('Agents')"
+				:aria-label="discovery.showDot('agents') ? __('Agents (new for you)') : __('Agents')"
 				:title="__('Agents')"
 			>
+				<span v-if="discovery.showDot('agents')" class="rail-dot" data-test="rail-dot-agents"></span>
 				<svg class="rail-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
 					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
 				</svg>
@@ -124,6 +126,7 @@ import { storeToRefs } from "pinia";
 import { useRoute } from "vue-router";
 import { usePagesStore } from "@/stores/pagesStore";
 import { useUserStore } from "@/stores/userStore";
+import { useDiscoveryStore } from "@/stores/discoveryStore";
 import { __ } from "@/utils/i18n";
 import FacoRobot from "@/components/common/FacoRobot.vue";
 import UserDropdown from "./UserDropdown.vue";
@@ -137,6 +140,9 @@ const emit = defineEmits(["return-to-desk", "open-settings", "toggle-sidebar"]);
 const route = useRoute();
 const { memoryEnabled, workflowsEnabled } = storeToRefs(useUserStore());
 const pagesStore = usePagesStore();
+// A quiet dot on features this user has never opened; it goes once they open it.
+const discovery = useDiscoveryStore();
+discovery.ensureLoaded();
 
 onMounted(() => pagesStore.ensureLoaded());
 
@@ -190,6 +196,7 @@ function onChatClick(event, navigate) {
 }
 
 .rail-item {
+	position: relative;
 	display: flex;
 	align-items: center;
 	justify-content: center;
@@ -217,5 +224,32 @@ function onChatClick(event, navigate) {
 .rail-icon {
 	width: 1.25rem;
 	height: 1.25rem;
+}
+
+.rail-dot {
+	position: absolute;
+	top: 5px;
+	right: 5px;
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	background: var(--ql-gold);
+	border: 1.5px solid var(--ql-surface);
+	pointer-events: none;
+}
+.rail-dot::after {
+	content: "";
+	position: absolute;
+	inset: -2px;
+	border-radius: 50%;
+	border: 2px solid var(--ql-gold);
+	animation: rail-dot-ring 1.8s ease-out infinite;
+}
+@keyframes rail-dot-ring {
+	from { transform: scale(1); opacity: 0.9; }
+	to { transform: scale(2.4); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+	.rail-dot::after { animation: none; opacity: 0; }
 }
 </style>
