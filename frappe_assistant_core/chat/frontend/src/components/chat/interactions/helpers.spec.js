@@ -186,3 +186,10 @@ describe("isChildTable", () => {
 		expect(isChildTable("x")).toBe(false);
 	});
 });
+
+describe("flattenInput on an update with edits", () => {
+	it("leaves the edits list out, so it never renders as a child table", () => {
+		const edits = [{ field: "script", find: "a", replace: "b" }];
+		expect(flattenInput({ doctype: "Server Script", name: "SS-1", edits })).toEqual({ doctype: "Server Script", name: "SS-1" });
+	});
+});

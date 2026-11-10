@@ -1,6 +1,7 @@
 import { ref } from "vue";
 import { api } from "@/api/client";
 import { goesLiveFields } from "./customisation";
+import { editedFields } from "./edits";
 import { flattenInput, isChildTable, isCodeField } from "./helpers";
 import { rowCodeTables } from "./rowCode";
 
@@ -24,7 +25,11 @@ export function useCurrentCode(getBlock) {
 		const flat = flattenInput(block.input);
 		const { doctype, name } = flat;
 		if (typeof doctype !== "string" || typeof name !== "string") return;
-		const changed = Object.keys(flat).filter((k) => isCodeField(k, doctype, flat) && typeof flat[k] === "string");
+		// An edit's field is fetched too: the card applies the edit to the stored text to show the result.
+		const changed = [
+			...Object.keys(flat).filter((k) => isCodeField(k, doctype, flat) && typeof flat[k] === "string"),
+			...editedFields(block.input).filter((k) => isCodeField(k, doctype, flat)),
+		];
 		// Child tables whose rows hold code come back row by row, so the card diffs each row.
 		const tables = block.tool_name === "update_document" ? rowCodeTables(doctype).filter((t) => isChildTable(flat[t])) : [];
 		const fields = [...new Set([...changed, ...tables, ...live])];
