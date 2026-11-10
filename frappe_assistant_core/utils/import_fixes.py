@@ -255,6 +255,19 @@ def _fill(session, group: Dict[str, Any], fix: Dict[str, Any], wanted: List[Dict
             value = coming  # an earlier file of the plan creates it before these rows are imported
         else:
             _check_existing(session, {"label": df.label}, df.options, value)
+            leaf_only = dry_run.PARTY_DEFAULTS.get(session.target_doctype, {}).get(
+                df.fieldname, (None, False)
+            )[1]
+            if leaf_only and frappe.db.exists(df.options, {"name": value, "is_group": 1}):
+                # A group of the tree can't hold the party: ERPNext refuses it (live 2026-11-10)
+                leaves = frappe.get_list(
+                    df.options, filters={"is_group": 0}, pluck="name", limit_page_length=20
+                )
+                raise FixProblem(
+                    _("'{0}' is a group, so it can't hold records. Some that can: {1}.").format(
+                        value, ", ".join(leaves)
+                    )
+                )
     elif df.fieldtype == "Select":
         choices = [c for c in cstr(df.options).split("\n") if c]
         if value not in choices:

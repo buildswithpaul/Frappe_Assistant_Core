@@ -128,6 +128,7 @@ class StartImportSession(BaseTool):
             "message",
             "error",
             "source",
+            "sessions[].file_name",  # named after the uploaded file
             "sessions[].sample_rows",
             "sessions[].mapping",
             "sessions[].mapping_problems",
@@ -822,6 +823,9 @@ class StartImportSession(BaseTool):
 
         out: Dict[str, Any] = {
             "session_id": session.name,
+            # The session's own file, which start_import's card must name: not the export's (the
+            # .xml), which the reply's source names (live 2026-11-10)
+            "file_name": name,
             "target": target["name"],
             "rows": len(rows.rows),
             "sample_rows": rows.rows[:SAMPLE_SIZE],

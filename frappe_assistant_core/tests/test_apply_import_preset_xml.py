@@ -159,6 +159,15 @@ class TestImport(TallyXmlToolCase):
         self.assertIn("ledgers (Tally XML)", session.steps[0].message)
         self.assertTrue(session.file_name.startswith(f"Master-{self.tag} - Customers"))
 
+    def test_each_session_names_its_own_file_for_the_approval_card(self):
+        # Live 2026-11-10 (FAC Chat, v16): the reply named only the .xml (source.file_name), so the
+        # model put it on start_import's card, which refused after the user approved, and asked again.
+        result = self._ok({"file_id": self._file().name, "parts": ["ledgers"]})
+        for s in result["results"][0]["sessions"]:
+            stored = frappe.db.get_value("FAC Import Session", s["session_id"], "file_name")
+            self.assertEqual(s.get("file_name"), stored, s["target"])
+            self.assertTrue(stored.endswith(f" - {s['target']}.csv"), stored)
+
     def test_each_part_carries_its_warning_and_source(self):
         result = self._ok({"file_id": self._file().name, "parts": ["ledgers", "stock_items"]})
         for part in result["results"]:

@@ -644,6 +644,10 @@ class _Checker:
         self.title_df = _title_field(session, header, self.key_df or self.named_df)
         # A new record's mapped fields it can't be saved without: blank, the row is its own group
         self.required = _required_fields(session, header) if self.import_type == INSERT else []
+        # A preset's new Customers or Suppliers with no group the site can give them (live 2026-11-10)
+        self.party_gaps = (
+            _party_gaps(session, header) if self.import_type == INSERT and matches is None else []
+        )
         self.seen_titles: Dict[str, int] = {}
         self.shared_rows: List[int] = []
         self.groups: Dict[Tuple, Dict[str, Any]] = {}
@@ -686,6 +690,7 @@ class _Checker:
             problems += self._duplicate_problems(payload)
             problems += self._fetched_problems(payload)
             problems += self._required_problems(payload, {info.get("field") for _key, info in problems})
+            problems += self._party_gap_problems({info.get("field") for _key, info in problems})
         record, changed = self._record(payload), []
         if not problems and record:
             from frappe_assistant_core.utils import import_update
@@ -794,6 +799,25 @@ class _Checker:
                 "field": df.fieldname,
                 "label": label,
                 "message": _("{0} is empty.").format(label),
+            }
+            problems.append(((CAUSE_REQUIRED_MISSING, df.fieldname), info))
+        return problems
+
+    def _party_gap_problems(self, flagged=frozenset()) -> List[Tuple[Tuple, Dict]]:
+        """A group (or territory) the preset's file has no column for and the site's Settings has no
+        default that can hold records: a required value missing, which the user fills in once."""
+        problems = []
+        for df in self.party_gaps:
+            if df.fieldname in flagged:
+                continue
+            label = _(df.label)
+            info = {
+                "cause": CAUSE_REQUIRED_MISSING,
+                "field": df.fieldname,
+                "label": label,
+                "message": _("{0} is empty, and this site has no default {0} that can hold records.").format(
+                    label
+                ),
             }
             problems.append(((CAUSE_REQUIRED_MISSING, df.fieldname), info))
         return problems
@@ -1271,6 +1295,50 @@ def _required_fields(session, header) -> List[Tuple[Any, int]]:
         and column.df.parent == session.target_doctype
         and (column.df.fieldname == named or (column.df.reqd and not column.df.default))
     ]
+
+
+# The group (and territory) a new Customer or Supplier takes from the site's defaults (Selling or
+# Buying Settings write them): field -> (linked DocType, whether ERPNext refuses a group node). Only a
+# Customer's group is refused as a group (Customer.validate_customer_group); a group-node Territory or
+# Supplier Group is saved, so only a missing one is reported.
+PARTY_DEFAULTS = {
+    "Customer": {"customer_group": ("Customer Group", True), "territory": ("Territory", False)},
+    "Supplier": {"supplier_group": ("Supplier Group", False)},
+}
+
+
+def _party_gaps(session, header) -> List[Any]:
+    """The group and territory fields of a preset's new Customers or Suppliers that nothing will
+    fill. A preset (a Tally ledgers export) brings no such column, so each record takes the site's
+    default (what a new record gets: frappe.db.get_default); where there is none the record is saved
+    with the field empty, and a group-node Customer Group is refused (live 2026-11-10). Only then is
+    the field reported, as a required value missing that the user fills in once. A file the user
+    mapped themselves, a mapped or filled column, and a default ERPNext accepts are checked exactly
+    as before."""
+    from frappe_assistant_core.utils.import_opening_stock import PRESET_FILE
+
+    links = PARTY_DEFAULTS.get(session.target_doctype)
+    if not links:
+        return []
+    options = frappe.parse_json(session.template_options or "{}") or {}
+    if not isinstance(options, dict) or not options.get(PRESET_FILE):
+        return []
+    mapped = {
+        column.df.fieldname
+        for column in header.columns
+        if column.df and not column.skip_import and column.df.parent == session.target_doctype
+    }
+    meta = frappe.get_meta(session.target_doctype)
+    gaps = []
+    for field, (link, leaf_only) in links.items():
+        df = meta.get_field(field)
+        if not df or field in mapped:
+            continue
+        default = frappe.db.get_default(field)
+        if default and frappe.db.exists(link, {"name": default, **({"is_group": 0} if leaf_only else {})}):
+            continue
+        gaps.append(df)
+    return gaps
 
 
 def refusal(e: Exception) -> Tuple[str, str]:
