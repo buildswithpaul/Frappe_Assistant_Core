@@ -15,7 +15,7 @@
 			<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
 				d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
 		</svg>
-		<span>{{ __("This turn reached its credit limit.") }}</span>
+		<span>{{ budgetText }}</span>
 		<button v-if="isLatest" class="credit-notice-btn continue-btn" @click="$emit('continue-turn')">
 			{{ __("Continue") }}
 		</button>
@@ -34,6 +34,17 @@ const props = defineProps({
 defineEmits(["send-anyway", "continue-turn"]);
 
 const credits = (value) => Number(value || 0).toFixed(1);
+
+const BUDGET_TEXTS = {
+	limit_credits: () => __("This turn reached its credit limit."),
+	limit_turns: () => __("This answer reached its step limit."),
+	limit_total_tokens: () => __("This answer reached its length limit."),
+	limit_output_tokens: () => __("This answer reached its length limit."),
+};
+
+const budgetText = computed(() =>
+	(BUDGET_TEXTS[props.message.budgetStopReason] || (() => __("This answer was stopped at a limit.")))()
+);
 
 const lowBalanceText = computed(() =>
 	__("This message may cost about {0} credits and you have {1} left.", [
