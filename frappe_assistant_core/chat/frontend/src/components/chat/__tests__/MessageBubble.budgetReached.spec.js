@@ -21,12 +21,41 @@ describe("MessageBubble turn credit limit", () => {
 		const store = useChatStore();
 		store.messages.push({ role: "assistant", content: "Part one", blocks: [], isStreaming: true });
 		// AR emits this routing notice when the turn's credit budget stops it.
-		store.handleRoutingNotice({ code: "turn_budget_reached" });
+		store.handleRoutingNotice({ code: "turn_budget_reached", stop_reason: "limit_credits" });
 
 		const wrapper = bubble(store.messages.at(-1));
 		const notice = wrapper.find(".budget-notice");
 		expect(notice.exists()).toBe(true);
 		expect(notice.text()).toContain("This turn reached its credit limit.");
+		expect(notice.find(".continue-btn").exists()).toBe(true);
+	});
+
+	it("carries stop_reason from the notice onto the message", () => {
+		const store = useChatStore();
+		store.messages.push({ role: "assistant", content: "Part one", blocks: [], isStreaming: true });
+		// AR adds stop_reason to the turn_budget_reached routing notice for every limit stop.
+		store.handleRoutingNotice({ code: "turn_budget_reached", stop_reason: "limit_turns" });
+		expect(store.messages.at(-1).budgetStopReason).toBe("limit_turns");
+	});
+
+	it.each([
+		["limit_credits", "This turn reached its credit limit."],
+		["limit_turns", "This answer reached its step limit."],
+		["limit_total_tokens", "This answer reached its length limit."],
+		["limit_output_tokens", "This answer reached its length limit."],
+		[undefined, "This answer was stopped at a limit."],
+		["something_new", "This answer was stopped at a limit."],
+	])("words the notice for stop_reason %s and keeps Continue", (reason, text) => {
+		// The store sets budgetStopReason from the AR notice's stop_reason; a missing one stays undefined.
+		const wrapper = bubble({
+			role: "assistant",
+			content: "Part one",
+			blocks: [],
+			budgetReached: true,
+			budgetStopReason: reason,
+		});
+		const notice = wrapper.find(".budget-notice");
+		expect(notice.text()).toContain(text);
 		expect(notice.find(".continue-btn").exists()).toBe(true);
 	});
 

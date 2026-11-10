@@ -165,6 +165,7 @@ export function createBlockHandlers({
 		if (!lastMsg || lastMsg.role !== "assistant") return;
 		if (data.code === "turn_budget_reached") {
 			lastMsg.budgetReached = true;
+			lastMsg.budgetStopReason = data.stop_reason || null;
 		} else {
 			lastMsg.taskModelChange = { reason: data.reason || null, from: data.from, to: data.to };
 		}
