@@ -45,6 +45,7 @@ from frappe_assistant_core.chat.api.current_code import (
     ROW_CODE_COLUMNS_BY_DOCTYPE,
     TABLE_COLUMNS,
 )
+from frappe_assistant_core.utils.edits import EditError, edit_target_problem, effective_data
 from frappe_assistant_core.utils.field_code import (
     code_on_doctype,
     field_code,
@@ -641,6 +642,9 @@ def _permission_opens_code(doctype: Any, role: Any) -> bool:
     return role not in SYSTEM_ROLES and bool(code_going_live(doctype))
 
 
+_EDITS_DO_NOT_APPLY = "The edits do not apply to the stored record"
+
+
 def _dormancy(tool_name: str, tool_input: Any) -> Dict[str, Any]:
     if tool_name not in _WRITE_TOOLS or not isinstance(tool_input, dict):
         return {"dormant": False, "reason": "Not a customisation write"}
@@ -662,6 +666,15 @@ def _dormancy(tool_name: str, tool_input: Any) -> Dict[str, Any]:
     if not creating and stored is None:
         return {"dormant": False, "reason": "The record does not exist"}
     stored = stored or {}
+
+    edits = tool_input.get("edits")
+    if tool_name == "update_document" and edits:
+        try:
+            if edit_target_problem(doctype, edits, data):
+                return {"dormant": False, "reason": _EDITS_DO_NOT_APPLY}
+            data = effective_data(stored, data, edits)
+        except EditError:
+            return {"dormant": False, "reason": _EDITS_DO_NOT_APPLY}
 
     def before(field: str) -> Any:
         return stored.get(field)
