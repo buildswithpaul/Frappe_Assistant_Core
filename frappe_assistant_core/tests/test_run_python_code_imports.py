@@ -132,6 +132,45 @@ class TestPreloadedImportsRun(BaseAssistantTest):
             "2 3",
         )
 
+    def test_dataframe_from_frappe_rows(self):
+        # GitHub #379: frappe._dict answers any attribute with None, so pandas took the rows for an array
+        self.assertPrints(
+            "rows = frappe.get_all('User', fields=['name', 'enabled'], limit=2)\n"
+            "df = pd.DataFrame(rows)\n"
+            "print(list(df.columns), len(df) > 0, isinstance(df, pd.DataFrame),"
+            " isinstance(df.head(1), pd.DataFrame), isinstance(pd.DataFrame.from_dict({'a': [1]}), pd.DataFrame))",
+            "['name', 'enabled'] True True True True",
+        )
+
+    def test_dataframe_from_an_iterator_of_frappe_rows(self):
+        # A generator expression or map() of frappe rows failed the same way as a list did
+        self.assertPrints(
+            "rows = frappe.get_all('User', fields=['name', 'enabled'], limit=2)\n"
+            "a = pd.DataFrame(r for r in rows)\n"
+            "b = pd.DataFrame(map(lambda r: r, rows))\n"
+            "c = pd.DataFrame(data=(r for r in rows), columns=['name'])\n"
+            "print(len(a) == len(rows), len(b) == len(rows), list(c.columns))",
+            "True True ['name']",
+        )
+
+    def test_type_of_a_frame_is_pd_dataframe(self):
+        # LLM-written code compares types as well as using isinstance: both hold, as on develop
+        self.assertPrints(
+            "df = pd.DataFrame({'a': [1, 2], 'b': [3, 4]})\n"
+            "parts = [df, df.head(1), df[df.a > 1], pd.concat([df, df]), pd.DataFrame.from_dict({'a': [1]}),"
+            " pd.DataFrame.from_records([{'a': 1}]), df.groupby('a').sum()]\n"
+            "print([type(x) is pd.DataFrame for x in parts])\n"
+            "print([type(x) == pd.DataFrame for x in parts])\n"
+            "print([isinstance(x, pd.DataFrame) for x in parts])",
+            "\n".join(["[True, True, True, True, True, True, True]"] * 3),
+        )
+
+    def test_a_frame_pandas_makes_with_its_own_class_is_still_a_dataframe(self):
+        # Series.to_frame builds pandas' own DataFrame, not the sandbox's: isinstance holds, type() is not
+        self.assertPrints(
+            "f = pd.Series([1, 2], name='a').to_frame()\n" "print(isinstance(f, pd.DataFrame), len(f))",
+            "True 2",
+        )
 
     def test_unavailable_module_is_reported_not_silently_dropped(self):
         result = _run("import operator\nprint(operator.add(1, 2))")
