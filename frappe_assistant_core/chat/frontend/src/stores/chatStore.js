@@ -531,7 +531,7 @@ export const useChatStore = defineStore("chat", () => {
 		context = null,
 		modelId = null,
 		systemPromptAddendum = null,
-		{ skipQueue = false } = {}
+		{ skipQueue = false, confirmLowBalance = false } = {}
 	) {
 		// isStreaming stays true for the whole HITL-pause window (Task 7), and
 		// abortPendingInteraction() doesn't clear it either — only the eventual
@@ -591,6 +591,8 @@ export const useChatStore = defineStore("chat", () => {
 				timestamp: new Date().toISOString(),
 				isStreaming: true,
 				_requestId: streamRequestId.value,
+				// What "Send anyway" re-sends if AR refuses this send for a low balance.
+				_resend: { message, files: uploadedFiles, context, modelId, systemPromptAddendum },
 			};
 			messages.value.push(assistantMessage);
 
@@ -615,6 +617,7 @@ export const useChatStore = defineStore("chat", () => {
 					client_type: surface.clientType,
 					...(signals ? { client_signals: signals } : {}),
 					...(currentProjectId.value ? { project: currentProjectId.value } : {}),
+					...(confirmLowBalance ? { confirm_low_balance: 1 } : {}),
 				}
 			);
 			// The first send creates the conversation row; the ack carries it, so Recents
@@ -630,6 +633,35 @@ export const useChatStore = defineStore("chat", () => {
 			logger.error("Failed to send message:", err);
 			messages.value.pop();
 		}
+	}
+
+	// The relay deleted the refused user message, so the exchange goes and the same send runs again.
+	async function sendAnyway(message) {
+		const resend = message?.lowBalance?.resend;
+		const index = messages.value.indexOf(message);
+		if (!resend || index < 0) return;
+		const start = messages.value[index - 1]?.role === "user" ? index - 1 : index;
+		messages.value.splice(start, index - start + 1);
+		await sendMessage(
+			resend.message,
+			resend.files,
+			resend.context,
+			resend.modelId,
+			resend.systemPromptAddendum,
+			{ confirmLowBalance: true }
+		);
+	}
+
+	function markLowBalance(payload) {
+		const lastMsg = findActiveMessage(messages.value);
+		if (!lastMsg || lastMsg.role !== "assistant" || !lastMsg._resend) return false;
+		lastMsg.isStreaming = false;
+		lastMsg.lowBalance = {
+			estimate: payload?.low_balance?.estimate,
+			balance: payload?.low_balance?.balance,
+			resend: lastMsg._resend,
+		};
+		return true;
 	}
 
 	/**
@@ -1002,6 +1034,11 @@ export const useChatStore = defineStore("chat", () => {
 		// the background relay job throws outright) never reaches
 		// handleStreamResumed, so this flag must be cleared here too.
 		isSubmittingInterrupts.value = false;
+		// The bubble carries the preview and its Send anyway, so no error banner.
+		if (errorCode === "low_balance" && markLowBalance(payload)) {
+			streamingMessage.value = "";
+			return;
+		}
 		setError(errorMessage || "Stream error occurred", errorCode || null);
 		// The hand-picked model failed or is resting: the remedy is another model.
 		if (errorCode === "MODEL_FAILED" || errorCode === "MODEL_TEMPORARILY_UNAVAILABLE") {
@@ -1181,6 +1218,7 @@ export const useChatStore = defineStore("chat", () => {
 		startChatInProject,
 		// Message actions
 		sendMessage,
+		sendAnyway,
 		queuedMessages: sendQueue.queuedMessages,
 		unqueueMessage: sendQueue.unqueueMessage,
 		continueMessage,

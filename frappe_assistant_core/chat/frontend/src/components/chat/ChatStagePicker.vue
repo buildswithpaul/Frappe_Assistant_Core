@@ -62,6 +62,8 @@
 		@approve="(blockId, responses) => $emit('approve', blockId, responses)"
 		@reject="(blockId, responses) => $emit('reject', blockId, responses)"
 		@continue="(messageId) => $emit('continue', messageId)"
+		@send-anyway="(message) => $emit('send-anyway', message)"
+		@continue-turn="$emit('continue-turn')"
 		@pin="(messageId) => $emit('pin', messageId)"
 		@unqueue="(id) => $emit('unqueue', id)"
 	/>
@@ -120,5 +122,7 @@ defineEmits([
 	"continue",
 	"pin",
 	"unqueue",
+	"send-anyway",
+	"continue-turn",
 ]);
 </script>

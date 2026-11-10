@@ -21,6 +21,8 @@
 				@reject="(blockId, responses) => $emit('reject', blockId, responses)"
 				@preview-document="onPreviewDocument"
 				@continue="(messageId) => $emit('continue', messageId)"
+				@send-anyway="(message) => $emit('send-anyway', message)"
+				@continue-turn="$emit('continue-turn')"
 				@pin="(messageId) => $emit('pin', messageId)"
 				@unqueue="(id) => $emit('unqueue', id)"
 			/>
@@ -57,7 +59,7 @@ const props = defineProps({
 	},
 });
 
-defineEmits(["toggleBlock", "approve", "reject", "continue", "pin", "unqueue"]);
+defineEmits(["toggleBlock", "approve", "reject", "continue", "pin", "unqueue", "send-anyway", "continue-turn"]);
 
 // The active turn's own index, not "last item in the array" — a queued
 // message (or a context-summary divider) can trail the live assistant
