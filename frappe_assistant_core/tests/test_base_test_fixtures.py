@@ -201,10 +201,18 @@ class TestTheTestsLeaveOtherSessions(BaseAssistantTest):
     def _a_real_ended_session(self) -> str:
         """A session someone ended long ago on this site: retention's daily run would pick it.
         Written straight to the table, so it is no test's own."""
-        name, then = f"IMP-REAL-{frappe.generate_hash(length=8)}", frappe.utils.add_days(frappe.utils.now(), -400)
+        name, then = (
+            f"IMP-REAL-{frappe.generate_hash(length=8)}",
+            frappe.utils.add_days(frappe.utils.now(), -400),
+        )
         session = DocType("FAC Import Session")
         frappe.qb.into(session).columns(
-            session.name, session.status, session.owner, session.modified_by, session.creation, session.modified
+            session.name,
+            session.status,
+            session.owner,
+            session.modified_by,
+            session.creation,
+            session.modified,
         ).insert(name, "Completed", "Administrator", "Administrator", then, then).run()
         return name
 
@@ -244,6 +252,10 @@ class TestTheTestsLeaveOtherSessions(BaseAssistantTest):
                 continue
             with open(os.path.join(tests_dir, file_name)) as f:
                 for number, line in enumerate(f, 1):
+                    # fmt: off
                     if "purge_old_sessions()" in line and "def " not in line and "#" not in line.split("purge_old_sessions()")[0]:
                         offenders.append(f"{file_name}:{number}")
-        self.assertEqual(offenders, [], "use run_retention_on(...) so only the test's own sessions are purged")
+                    # fmt: on
+        self.assertEqual(
+            offenders, [], "use run_retention_on(...) so only the test's own sessions are purged"
+        )

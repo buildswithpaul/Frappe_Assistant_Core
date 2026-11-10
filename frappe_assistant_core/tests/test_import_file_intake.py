@@ -450,7 +450,9 @@ class TestFileIntake(BaseAssistantTest):
             request.db_set("status", "Pending Approval")
             request.trigger_data_deletion()
 
-        self.assertEqual(frappe.db.get_value("Personal Data Deletion Request", request.name, "status"), "Deleted")
+        self.assertEqual(
+            frappe.db.get_value("Personal Data Deletion Request", request.name, "status"), "Deleted"
+        )
         self.assertFalse(self._files_of(session_id))
         self.assertFalse(any(os.path.exists(path) for path in on_disk))
 
