@@ -33,6 +33,7 @@ from frappe_assistant_core.utils.customisation import (
     script_report_warning,
     server_script_guard,
 )
+from frappe_assistant_core.utils.edits import EditError, edit_target_problem, effective_data
 from frappe_assistant_core.utils.savepoint import open_savepoint, rollback_to_savepoint
 
 from .batch import MODE_SCHEMA, batch_refusal, run_batch, run_validation
@@ -254,6 +255,9 @@ class DocumentUpdate(BaseTool):
             "child row updates under the table fieldname (e.g. 'items'). "
             "To update many records of one DocType, pass 'names' with one 'data' for all of them, "
             "or 'records' ([{'name': ..., 'data': {...}}], at most 100) for different changes. "
+            "To change a small part of a long text or code field (a FAC Page's HTML, a script), pass "
+            "'edits' ([{'field', 'find', 'replace'}]) with 'name' instead of resending the whole field: "
+            "each 'find' must match the stored text exactly once. "
             "To test a rule that runs when a record is edited, pass validate_only: true; nothing is saved."
         )
         self.requires_permission = None  # Permission checked dynamically per DocType
@@ -281,6 +285,21 @@ class DocumentUpdate(BaseTool):
                         "refilled. Example patch: {'items': [{'name': 'abc-123', 'qty': 5}, "
                         "{'item_code': 'NEW', 'qty': 1}, {'name': 'old-1', '_delete': true}]}."
                     ),
+                },
+                "edits": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "field": {"type": "string"},
+                            "find": {"type": "string"},
+                            "replace": {"type": "string"},
+                        },
+                        "required": ["field", "find", "replace"],
+                    },
+                    "description": "Small changes to a long text or code field: each 'find' must match the stored "
+                    "text exactly once and is replaced by 'replace'. Applied in order. Use for edits "
+                    "to an existing FAC Page or script instead of resending the whole field.",
                 },
                 "names": {
                     "type": "array",
@@ -319,10 +338,19 @@ class DocumentUpdate(BaseTool):
                 "doctype": doctype,
             }
 
+        if "edits" in arguments and forms != ["name"]:
+            return {
+                "success": False,
+                "error": _("Edits work on one record at a time; pass 'name'."),
+                "doctype": doctype,
+            }
+
         if forms == ["name"]:
-            if "data" not in arguments:
+            if "data" not in arguments and "edits" not in arguments:
                 return {"success": False, "error": _("Pass the changes in 'data'."), "doctype": doctype}
-            return self._update_one(doctype, arguments["name"], arguments["data"], arguments, validate_only)
+            return self._update_one(
+                doctype, arguments["name"], arguments.get("data", {}), arguments, validate_only
+            )
 
         mode = arguments.get("mode", "all_or_nothing")
         if forms == ["names"]:
@@ -378,7 +406,8 @@ class DocumentUpdate(BaseTool):
     ) -> Dict[str, Any]:
         """Update an existing document, or with ``validate_only`` check the update and undo it"""
         data, rename_requested = _split_rename(name, data, arguments)
-        if rename_requested and not data:
+        edits = arguments.get("edits")
+        if rename_requested and not data and not edits:
             return {
                 "success": False,
                 "error": _(
@@ -460,6 +489,25 @@ class DocumentUpdate(BaseTool):
 
             # Get document
             doc = frappe.get_doc(doctype, name)
+
+            if edits is not None:
+                problem = edit_target_problem(doctype, edits, data)
+                if problem:
+                    return {"success": False, "error": problem, "doctype": doctype, "name": name}
+                try:
+                    data = effective_data(
+                        {edit["field"]: doc.get(edit["field"]) for edit in edits}, data, edits
+                    )
+                except EditError as e:
+                    return {
+                        "success": False,
+                        "error": str(e),
+                        "error_type": "edit_not_applied",
+                        "field": e.field,
+                        "match_count": e.count,
+                        "doctype": doctype,
+                        "name": name,
+                    }
 
             # Enhanced document state validation
             current_docstatus = getattr(doc, "docstatus", 0)
