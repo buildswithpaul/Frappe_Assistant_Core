@@ -564,24 +564,6 @@ PRE-LOADED: pd, np, frappe, math, datetime, json, re, statistics, random"""
                 code = warning + code
                 fixes_applied.append("ℹ️  Added warning about chained indexing")
 
-        # Fix 5: Auto-add .copy() when slicing DataFrames to avoid SettingWithCopyWarning
-        # Pattern: df2 = df[...] -> df2 = df[...].copy()
-        slice_pattern = r"(\w+)\s*=\s*(\w+)\[([^\]]+)\](?!\s*\.)"
-        if re.search(slice_pattern, code):
-            # Only apply if it looks like a DataFrame slice (not dict or list access)
-            def add_copy(match):
-                # a rewritten import (`pd = _preloaded_modules["pandas"]`) is a module, never a slice
-                if match.group(2) == "_preloaded_modules":
-                    return match.group(0)
-                if "pd.DataFrame" in code or "data" in match.group(2):
-                    return f"{match.group(1)} = {match.group(2)}[{match.group(3)}].copy()"
-                return match.group(0)
-
-            new_code = re.sub(slice_pattern, add_copy, code)
-            if new_code != code:
-                code = new_code
-                fixes_applied.append("✓ Added .copy() to DataFrame slices to avoid SettingWithCopyWarning")
-
         return {"success": True, "code": code, "fixes_applied": fixes_applied}
 
     def _check_and_handle_imports(self, code: str) -> Dict[str, Any]:
