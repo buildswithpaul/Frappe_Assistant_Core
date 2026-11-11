@@ -905,6 +905,7 @@ def _relay_ar_interrupt_resume(
     live_turn_token=None,
     system_prompt_addendum=None,
     context=None,
+    own_context=True,
 ):
     """
     Resume an interrupted AR stream by sending interrupt responses.
@@ -930,8 +931,9 @@ def _relay_ar_interrupt_resume(
     ``system_prompt_addendum`` is the conversation's attached files. AR rebuilds the
     agent's system prompt on a resume, so without it the rest of the turn cannot see them.
     """
-    frappe.init(site=site)
-    frappe.connect()
+    if own_context:
+        frappe.init(site=site)
+        frappe.connect()
     # Background-thread context re-establishment: `user` propagated from the
     # outer request handler, never client input. set_user keeps the Frappe
     # DOCNAME; AR is addressed by the email identity.
@@ -1503,7 +1505,8 @@ def _relay_ar_interrupt_resume(
         # The cancel flag stays: the next accepting endpoint clears it
         # (cancel.clear). Clearing it here could erase the next turn's Stop.
         frappe.db.commit()  # nosemgrep: frappe-manual-commit — background thread / streaming context (not a request handler), explicit commit required to flush progress to DB.
-        frappe.destroy()
+        if own_context:
+            frappe.destroy()
 
 
 def _relay_ar_stream(
@@ -1526,6 +1529,7 @@ def _relay_ar_stream(
     reasoning_effort=None,
     live_turn_token=None,
     confirm_low_balance=None,
+    own_context=True,
 ):
     """
     Relay SSE stream from AR to frontend via Socket.IO.
@@ -1571,9 +1575,10 @@ def _relay_ar_stream(
             confirm_low_balance: True when the user pressed "Send anyway" on AR's
                     low-balance preview; forwarded to AR when the installed SDK supports it.
     """
-    # Set up Frappe context for background thread
-    frappe.init(site=site)
-    frappe.connect()
+    # A relay running as an RQ job passes own_context=False and keeps the job's context.
+    if own_context:
+        frappe.init(site=site)
+        frappe.connect()
     # Background-thread context re-establishment (see _resume_ar_stream).
     # set_user keeps the Frappe DOCNAME; AR is addressed by the email identity.
     frappe.set_user(user)  # nosemgrep: frappe-setuser
@@ -2210,7 +2215,8 @@ def _relay_ar_stream(
         # The cancel flag stays: the next accepting endpoint clears it
         # (cancel.clear). Clearing it here could erase the next turn's Stop.
         frappe.db.commit()  # nosemgrep: frappe-manual-commit — background thread / streaming context (not a request handler), explicit commit required to flush progress to DB.
-        frappe.destroy()
+        if own_context:
+            frappe.destroy()
 
 
 def _persist_partial_assistant_turn(
