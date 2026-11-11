@@ -143,7 +143,8 @@ export function flattenInput(input) {
 		}
 	}
 
-	const skipKeys = new Set(["validate_only", "ignore_permissions", "ignore_mandatory"]);
+	// `edits` is a list of find/replace objects the card renders itself, not a child table.
+	const skipKeys = new Set(["validate_only", "ignore_permissions", "ignore_mandatory", "edits"]);
 	for (const [key, value] of Object.entries(input)) {
 		if (key in result || nestedKeys.includes(key) || skipKeys.has(key)) continue;
 		if (!isPlainObject(value)) result[key] = value;

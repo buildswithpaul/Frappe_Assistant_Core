@@ -158,11 +158,15 @@ export function createBlockHandlers({
 		}
 	}
 
-	// Only task_model_changed has a client-side line today; other codes reach the receipt.
+	// task_model_changed and turn_budget_reached have a client-side line; other codes reach the receipt.
 	function handleRoutingNotice(data) {
-		if (data?.code !== "task_model_changed") return;
+		if (data?.code !== "task_model_changed" && data?.code !== "turn_budget_reached") return;
 		const lastMsg = findActiveMessage(messages.value);
-		if (lastMsg && lastMsg.role === "assistant") {
+		if (!lastMsg || lastMsg.role !== "assistant") return;
+		if (data.code === "turn_budget_reached") {
+			lastMsg.budgetReached = true;
+			lastMsg.budgetStopReason = data.stop_reason || null;
+		} else {
 			lastMsg.taskModelChange = { reason: data.reason || null, from: data.from, to: data.to };
 		}
 	}

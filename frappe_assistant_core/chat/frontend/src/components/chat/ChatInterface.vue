@@ -23,6 +23,8 @@
 				@preview-document="onPreviewDocument"
 				@continue="(messageId) => $emit('continue', messageId)"
 				@retry="$emit('retry', retry.userMessage)"
+				@send-anyway="(message) => $emit('send-anyway', message)"
+				@continue-turn="$emit('continue-turn')"
 				@pin="(messageId) => $emit('pin', messageId)"
 				@unqueue="(id) => $emit('unqueue', id)"
 			/>
@@ -60,7 +62,17 @@ const props = defineProps({
 	},
 });
 
-defineEmits(["toggleBlock", "approve", "reject", "continue", "retry", "pin", "unqueue"]);
+defineEmits([
+	"toggleBlock",
+	"approve",
+	"reject",
+	"continue",
+	"retry",
+	"pin",
+	"unqueue",
+	"send-anyway",
+	"continue-turn",
+]);
 
 const retry = computed(() => retryTarget(props.messages));
 

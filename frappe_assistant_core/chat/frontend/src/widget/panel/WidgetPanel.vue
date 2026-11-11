@@ -75,6 +75,8 @@
 				@reject="onDecision"
 				@continue="chatStore.continueMessage"
 				@retry="chatStore.retryTurn"
+				@send-anyway="chatStore.sendAnyway"
+				@continue-turn="onSend({ message: __('Continue') })"
 				@unqueue="chatStore.unqueueMessage"
 			/>
 			<BrowserToolConfirm

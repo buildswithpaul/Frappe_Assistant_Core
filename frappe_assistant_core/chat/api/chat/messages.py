@@ -305,6 +305,7 @@ def start_turn(
     client_signals: str | None = None,
     client_turn_id: str | None = None,
     project: str | None = None,
+    confirm_low_balance: bool | None = None,
 ) -> Future:
     """Gate, persist and relay one turn for the session user; returns the relay's Future.
 
@@ -355,12 +356,13 @@ def start_turn(
             context=context if include_context and context else None,
             project=project,
         )
+        # Attach files to the message — only meaningful when we persisted one.
+        if file_urls:
+            _attach_files_to_message(file_urls, user_msg.name)
         _snapshot_pre_turn(session_id, user_msg.name)
-        frappe.db.commit()  # nosemgrep: frappe-manual-commit — background thread / streaming context (not a request handler), explicit commit required to flush progress to DB.
-
-    # Attach files to the message — only meaningful when we persisted one.
-    if file_urls and user_msg is not None:
-        _attach_files_to_message(file_urls, user_msg.name)
+        # The relay runs on its own connection before this request commits, and a low-balance
+        # refusal hands these links back, so the message and its links commit before it starts.
+        frappe.db.commit()  # nosemgrep: frappe-manual-commit — the relay thread reads these rows on its own connection.
 
     # Prepare prompt - send the original user message to AR (not enriched with file content)
     # File content goes via system_prompt_addendum so it reaches the LLM without polluting
@@ -401,6 +403,7 @@ def start_turn(
             reasoning_effort=reasoning_effort,
             client_turn_id=client_turn_id,
             project=project,
+            confirm_low_balance=confirm_low_balance,
         )
     except RelayUnavailable:
         if user_msg is not None:
@@ -450,6 +453,7 @@ def _launch_turn(
     reasoning_effort: str | None = None,
     client_turn_id: str | None = None,
     project: str | None = None,
+    confirm_low_balance: bool | None = None,
 ) -> Future:
     """Queue the relay for a turn whose user row is saved; returns the relay's Future."""
     effort = _effort(reasoning_effort)
@@ -480,6 +484,7 @@ def _launch_turn(
             thinking_enabled=_flag(thinking_enabled) if thinking_enabled is not None else None,
             reasoning_effort=effort,
             live_turn_token=turn,
+            confirm_low_balance=_flag(confirm_low_balance) or None,
         )
     except Exception:
         if turn:
@@ -505,6 +510,7 @@ def send_message(
     client_signals: str | None = None,
     client_turn_id: str | None = None,
     project: str | None = None,
+    confirm_low_balance: bool | None = None,
 ) -> dict:
     """
     Send a message to FACO and stream AI response via Socket.IO.
@@ -537,6 +543,8 @@ def send_message(
                     (cancel_stream) that already names it is kept by this accept.
             project (str): The caller's project for a chat that has no conversation row yet;
                     ignored once the row exists.
+            confirm_low_balance (bool): Set by "Send anyway" after AR refused this message
+                    because the balance may not cover it; AR then runs the turn.
 
     Returns:
             dict: Acknowledgment that processing has started; ``conversation`` is the caller's
@@ -586,6 +594,7 @@ def send_message(
             client_signals=client_signals,
             client_turn_id=client_turn_id,
             project=project,
+            confirm_low_balance=confirm_low_balance,
         )
 
         return {
