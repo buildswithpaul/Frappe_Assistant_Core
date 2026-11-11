@@ -77,3 +77,7 @@ def install() -> None:
         _grace_seconds = _read_grace()
         threading._register_atexit(_begin_drain)
         _installed = True
+
+
+def watch_rq_worker() -> None:
+    """Hook for an RQ worker running a relay job; filled in when worker shutdown is handled."""
