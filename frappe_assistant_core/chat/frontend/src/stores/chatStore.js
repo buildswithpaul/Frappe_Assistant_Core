@@ -622,10 +622,10 @@ export const useChatStore = defineStore("chat", () => {
 				);
 			const ack = await sendWithRestartRetry(send, {
 				onRetrying: () => {
-					bubble.content = restartingStatus();
+					bubble.statusNote = restartingStatus();
 				},
 			});
-			if (bubble.content === restartingStatus()) bubble.content = "";
+			bubble.statusNote = null;
 			const failure = restartFailure(ack);
 			if (failure) {
 				handleStreamError(failure.message, failure.code);
@@ -849,7 +849,23 @@ export const useChatStore = defineStore("chat", () => {
 			if (resumeModelId && resumeModelId !== "auto") {
 				payload.model_id = resumeModelId;
 			}
-			await call("frappe_assistant_core.chat.api.chat.resume_interrupt", payload);
+			const ack = await sendWithRestartRetry(
+				() => call("frappe_assistant_core.chat.api.chat.resume_interrupt", payload),
+				{
+					onRetrying: () => {
+						if (lastMsg) lastMsg.statusNote = restartingStatus();
+					},
+				}
+			);
+			if (lastMsg) lastMsg.statusNote = null;
+			const failure = restartFailure(ack);
+			if (failure) {
+				// Nothing was queued: the cards go back to the user to approve again.
+				blocks.revertInteractionDecisions(batch.blocks);
+				isSubmittingInterrupts.value = false;
+				setError(failure.message, failure.code);
+				return;
+			}
 			// Resume stream will deliver tool_call_result + further events via
 			// Socket.IO; flip the local card status now so the UI matches.
 			clearExpiryTimer();

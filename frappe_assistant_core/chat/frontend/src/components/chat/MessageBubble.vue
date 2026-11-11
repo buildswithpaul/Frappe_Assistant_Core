@@ -44,6 +44,9 @@
 				@preview-document="(doc) => $emit('previewDocument', doc)"
 			/>
 
+			<!-- Transient turn status, e.g. a re-send while the server restarts -->
+			<div v-if="message.statusNote" class="status-note" role="status">{{ message.statusNote }}</div>
+
 			<!-- Queued indicator (compose-while-streaming) -->
 			<span v-if="message.queued" class="queued-chip">
 				Queued
@@ -173,6 +176,12 @@ function copyMessage() {
 </script>
 
 <style scoped>
+.status-note {
+	font-size: 13px;
+	color: var(--ql-text-muted);
+	margin-top: 4px;
+}
+
 .ql-turn {
 	display: flex;
 	align-items: flex-start;
