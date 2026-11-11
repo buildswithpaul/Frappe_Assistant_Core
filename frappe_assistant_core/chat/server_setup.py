@@ -4,10 +4,13 @@
 
 """Check that the web server can carry FACO.
 
-A chat holds its web request open for the whole stream. Under gunicorn's default sync
-workers every chat occupies a whole worker, so a handful of people chatting starves the
-rest of the site. This reads the flags the running gunicorn master was started with and
-compares the request slots it gives against the number of people expected to chat at once.
+The browser's chat request returns at once and a relay thread holds the stream, but a turn
+still brings a stream of short requests: the chat's own polling, AR's MCP callbacks into the
+site, and the person's page loads. Gunicorn's default sync workers serve one request at a time,
+so those queue behind each other. This reads the flags the running gunicorn master was started
+with (GUNICORN_CMD_ARGS included) and compares the request slots they give against the number of
+people expected to chat at once. A config file (-c) can set anything, so it reads as unknown;
+async classes (gevent, eventlet, uvicorn) have no slot limit to judge and read as ok.
 """
 
 import os
@@ -20,7 +23,7 @@ from frappe import _
 RECOMMENDED_FIX = "--worker-class gthread --threads 8"
 DEFAULT_EXPECTED_CHATTERS = 10
 
-# Each chat needs one slot for its stream and one for the rest of that person's requests.
+# Each chat needs one slot for AR's MCP callbacks and one for the rest of that person's requests.
 SLOTS_PER_CHATTER = 2
 
 _GUNICORN_DEFAULTS = {"worker_class": "sync", "workers": 1, "threads": 1, "timeout": 30}
@@ -141,7 +144,7 @@ def assess(config: dict, expected_chatters: int) -> dict:
     if worker_class == "sync":
         result["reasons"].append(
             _(
-                "Web server uses sync workers, so each chat holds a whole worker. Run gunicorn with {0}."
+                "Web server uses sync workers, which serve one request at a time, so chat polling, MCP callbacks and page loads queue behind each other. Run gunicorn with {0}."
             ).format(RECOMMENDED_FIX)
         )
     elif result["slots"] < required_slots:
