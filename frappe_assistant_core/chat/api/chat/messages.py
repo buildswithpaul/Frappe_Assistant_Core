@@ -114,12 +114,13 @@ def _mark_turn_started(
         return None
 
 
-def _relay_in_job(in_process: bool) -> bool:
+def _relay_in_job(*, in_process: bool, restricted: bool) -> bool:
     """Whether a turn's relay runs as a faco_relay job. Decided once per turn, before its draining check.
 
-    In a job, a draining web worker can still accept the turn: the relay will not run in it.
+    In a job, a draining web worker can still accept the turn: the relay will not run in it. A
+    GDPR-restricted turn never runs as a job, so its content is never kept in the queue's Redis.
     """
-    return not in_process and relay_dispatch.use_job_relay()
+    return not in_process and not restricted and relay_dispatch.use_job_relay()
 
 
 class RelayStart(NamedTuple):
@@ -142,7 +143,10 @@ def _start_relay(start: RelayStart, fn, *args, **kwargs) -> Future | None:
 
     A job that cannot be enqueued falls back to the pool, never refuses the turn.
     """
-    job = _relay_in_job(start.in_process) if start.job is None else start.job
+    if start.job is None:
+        job = _relay_in_job(in_process=start.in_process, restricted=start.restricted)
+    else:
+        job = start.job
     mark = {"restricted": start.restricted, "message_id": start.message_id, "client_turn": start.client_turn}
     if job:
         turn = _mark_turn_started(start.session_id, relay="job", **mark)
@@ -392,17 +396,17 @@ def start_turn(
     if not access_check.get("can_use"):
         frappe.throw(access_check.get("reason", _("Cannot use FACO")))
 
-    # A pool turn is refused before anything is saved; the client sends the turn again.
-    job = _relay_in_job(in_process)
-    if not job and relay_shutdown.is_draining():
-        raise RelayUnavailable
-
-    _open_turn(session_id, client_turn_id)
-
     # FACO-M15: respect GDPR Article 18 processing restriction. When set,
     # skip message persistence entirely — the chat still runs (AR handles
     # the turn in-memory), but no content survives in FACO Message.
     restricted = _is_processing_restricted(frappe.session.user)
+
+    # A pool turn is refused before anything is saved; the client sends the turn again.
+    job = _relay_in_job(in_process=in_process, restricted=restricted)
+    if not job and relay_shutdown.is_draining():
+        raise RelayUnavailable
+
+    _open_turn(session_id, client_turn_id)
 
     # Save user message to database
     from frappe_assistant_core.chat.doctype.fac_chat_message.fac_chat_message import (
@@ -753,7 +757,7 @@ def _retry_locked(session_id: str, user_row, **launch) -> dict:
     if any(not a.errored and not a.aborted and _has_answer(a) for a in answers):
         return {"status": "already_complete"}
 
-    job = _relay_in_job(in_process=False)
+    job = _relay_in_job(in_process=False, restricted=False)
     if not job and relay_shutdown.is_draining():
         return _retry_ack()
 

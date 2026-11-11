@@ -107,13 +107,15 @@ def enqueue_relay(fn: Callable, args: tuple, kwargs: dict, *, job_id: str) -> No
     """Enqueue ``fn(*args, **kwargs)`` as the relay job for one turn.
 
     A second call with the same ``job_id`` while the first is queued or running
-    is a no-op. Any failure to enqueue is raised as ``RelayQueueUnavailable``.
+    is a no-op. Any failure to enqueue is raised as ``RelayQueueUnavailable``, and
+    leaves no message for the request to show: the turn falls back to the pool.
     """
     relay = next((key for key, name in RELAYS.items() if name == fn.__name__), None)
     if relay is None:
         raise ValueError(f"{fn.__name__} is not a relay function")
 
     relay_kwargs = dict(inspect.signature(fn).bind(*args, **kwargs).arguments)
+    messages_before = len(frappe.local.message_log)
     try:
         frappe.enqueue(
             JOB_METHOD,
@@ -121,11 +123,30 @@ def enqueue_relay(fn: Callable, args: tuple, kwargs: dict, *, job_id: str) -> No
             timeout=RELAY_JOB_TIMEOUT_SECONDS,
             job_id=job_id,
             deduplicate=True,
+            on_success=relay_job_succeeded,
+            on_failure=relay_job_failed,
             relay=relay,
             relay_kwargs=relay_kwargs,
         )
     except Exception as exc:
+        # frappe.throw (e.g. QueueOverloaded) logs a message before raising.
+        del frappe.local.message_log[messages_before:]
         raise RelayQueueUnavailable(str(exc)) from exc
+
+
+# The job's kwargs hold the user's message, attachments and context. RQ re-saves the job after
+# these callbacks run, so they change what RQ keeps rather than deleting the key themselves.
+def relay_job_succeeded(job, connection, result, *args, **kwargs) -> None:
+    """RQ success callback: a result TTL of 0 makes RQ delete the job instead of keeping it."""
+    job.result_ttl = 0
+
+
+def relay_job_failed(job, connection, exc_type, exc_value, tb) -> None:
+    """RQ failure callback: keep the failed record, without the turn's content."""
+    job.kwargs = {**job.kwargs, "kwargs": {"relay": job.kwargs.get("kwargs", {}).get("relay")}}
+    job.description = JOB_METHOD
+    # Frappe's own failure callback, which this one replaces.
+    background_jobs.truncate_failed_registry(job, connection, exc_type, exc_value, tb)
 
 
 def relay_job_lost(job_id: str) -> bool:

@@ -265,34 +265,55 @@ class TestRelayInBackgroundJob(BaseAssistantTest):
         self.assertEqual(ack["status"], "processing")
         self.assertIsNotNone(self._turn_job())
 
-    def test_restricted_user_enqueues_with_no_live_entry(self):
+    def test_restricted_user_never_runs_as_a_job(self):
         self._on_with_worker()
         # Production: the user asked for GDPR Article 18 processing restriction.
         with (
             patch.object(messages, "_is_processing_restricted", return_value=True),
-            patch.object(relay_dispatch, "enqueue_relay", wraps=relay_dispatch.enqueue_relay) as enqueue,
-            patch.object(messages._relay_pool, "submit", side_effect=AssertionError),
+            patch.object(relay_dispatch, "use_job_relay", wraps=relay_dispatch.use_job_relay) as use_job,
+            patch("frappe.enqueue", side_effect=AssertionError) as enqueue,
+            patch.object(messages._relay_pool, "submit") as submit,
         ):
             ack = messages.send_message(session_id=self.sid, message="hi")
         self.assertEqual(ack["status"], "processing")
+        submit.assert_called_once()
+        self.assertTrue(submit.call_args.args[13])  # restricted
+        self.assertIsNone(submit.call_args.kwargs["live_turn_token"])
+        # A swallowed enqueue failure would fall back to the pool too, so the calls are checked.
+        enqueue.assert_not_called()
+        use_job.assert_not_called()
         self.assertIsNone(live_turn.get(self.sid))
-        job_id = enqueue.call_args.kwargs["job_id"]
-        self.assertTrue(job_id.startswith("faco_relay|"))
-        job = get_job(job_id)
-        relay_kwargs = job.kwargs["kwargs"]["relay_kwargs"]
-        self.assertIsNone(relay_kwargs["live_turn_token"])
-        self.assertTrue(relay_kwargs["restricted"])
+
+    def test_overloaded_queue_falls_back_without_an_error_message(self):
+        self._on_with_worker()
+        # Production: faco_relay holds more queued jobs than max_queued_jobs allows, so the real
+        # _check_queue_size throws QueueOverloaded; a negative limit makes an empty queue "full".
+        with (
+            patch.dict(frappe.local.conf, {"max_queued_jobs": -(10**6)}),
+            patch.object(messages._relay_pool, "submit") as submit,
+        ):
+            logged = len(frappe.local.message_log)
+            ack = messages.send_message(session_id=self.sid, message="hi")
+        self.assertEqual(ack["status"], "processing")
+        submit.assert_called_once()
+        self.assertEqual(len(frappe.local.message_log), logged)
+        self.assertIsNone(live_turn.get(self.sid)["relay"])
 
     def test_double_send_runs_ar_only_for_the_newest_turn(self):
         self._on_with_worker()
-        jobs = []
-        for _attempt in range(2):
-            messages.send_message(session_id=self.sid, message="hi", client_turn_id="c1")
-            jobs.append(self._turn_job())
-        self.assertEqual(len({job.id for job in jobs}), 2)
-        for job in jobs:  # oldest first, as RQ would
-            self._run_job_inline(job)
-        self.assertEqual(self.client.stream_chat.call_count, 1)
+        older, newer = [], []
+        for job, text in ((older, "hi"), (newer, "hi, and which are overdue?")):
+            messages.send_message(session_id=self.sid, message=text, client_turn_id="c1")
+            job.append(self._turn_job())
+        older, newer = older[0], newer[0]
+        self.assertNotEqual(older.id, newer.id)
+
+        self._run_job_inline(older)  # oldest first, as RQ would
+        self.client.stream_chat.assert_not_called()
+
+        self._run_job_inline(newer)
+        self.client.stream_chat.assert_called_once()
+        self.assertEqual(self.client.stream_chat.call_args.args[:2], (self.sid, "hi, and which are overdue?"))
 
     def test_toggle_on_leaves_a_running_pool_turn_alone(self):
         with patch.object(messages._relay_pool, "submit"):
