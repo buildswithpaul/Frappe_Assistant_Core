@@ -197,17 +197,16 @@
 		>
 			<div class="banner-body">
 				<p class="banner-title">Web server</p>
-				<p v-if="serverSetup.status === 'ok'" class="banner-text">
+				<p v-if="serverSetup.status === 'ok' && serverSetup.slots" class="banner-text">
 					{{ serverSetup.slots }} request slots; FACO needs at least
 					{{ serverSetup.required_slots }}.
+				</p>
+				<p v-else-if="serverSetup.status === 'ok'" class="banner-text">
+					Workers handle many connections each, so no slot limit applies.
 				</p>
 				<template v-else>
 					<p v-for="reason in serverSetup.reasons" :key="reason" class="banner-text">
 						{{ reason }}
-					</p>
-					<p v-if="serverSetup.fix" class="banner-text">
-						Start gunicorn with <code>{{ serverSetup.fix }}</code
-						>.
 					</p>
 				</template>
 			</div>

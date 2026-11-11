@@ -49,6 +49,8 @@ frappe.ui.form.on("FAC Chat Settings", {
 	},
 
 	show_server_setup(frm) {
+		if (!frappe.user.has_role("System Manager")) return;
+
 		frappe.call({
 			method: "frappe_assistant_core.chat.server_setup.get_server_setup",
 			type: "GET",

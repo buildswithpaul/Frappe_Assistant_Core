@@ -12,7 +12,9 @@ const warning = {
 	status: "warning",
 	slots: 4,
 	required_slots: 20,
-	reasons: ["Web server uses sync workers, so each chat holds a whole worker."],
+	reasons: [
+		"Web server uses sync workers, so each chat holds a whole worker. Run gunicorn with --worker-class gthread --threads 8.",
+	],
 	fix: "--worker-class gthread --threads 8",
 };
 
@@ -32,7 +34,7 @@ describe("RegistrationDiagnostics web server row", () => {
 		const row = wrapper.find("[data-testid='server-setup']");
 		expect(row.text()).toContain("Web server");
 		expect(row.text()).toContain("sync workers");
-		expect(row.text()).toContain("--worker-class gthread --threads 8");
+		expect(row.text().split("--worker-class gthread --threads 8")).toHaveLength(2);
 		expect(row.classes()).toContain("banner-warn");
 	});
 
@@ -49,6 +51,14 @@ describe("RegistrationDiagnostics web server row", () => {
 		const row = wrapper.find("[data-testid='server-setup']");
 		expect(row.classes()).toContain("banner-success");
 		expect(row.text()).toContain("32 request slots");
+	});
+
+	it("does not print a slot count for workers that multiplex connections", async () => {
+		const wrapper = await runWith({
+			status: "ok",
+			server_setup: { status: "ok", slots: null, required_slots: 20, reasons: [], fix: null },
+		});
+		expect(wrapper.find("[data-testid='server-setup']").text()).not.toContain("null");
 	});
 
 	it("hides the row when the setup cannot be read", async () => {
