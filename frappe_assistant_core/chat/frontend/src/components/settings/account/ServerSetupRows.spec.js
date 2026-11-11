@@ -9,6 +9,16 @@ const relayOff = { status: "off", enabled: false, reasons: [], fix: null };
 const mountRows = (serverSetup) => mount(ServerSetupRows, { props: { serverSetup } });
 
 describe("ServerSetupRows", () => {
+	it("renders nothing when there is no server setup", () => {
+		const wrapper = mountRows(null);
+		expect(wrapper.find(".server-setup-rows").exists()).toBe(false);
+	});
+
+	it("renders nothing when the web row has nothing to say and relay is off", () => {
+		const wrapper = mountRows({ status: "unknown", relay: relayOff });
+		expect(wrapper.find(".server-setup-rows").exists()).toBe(false);
+	});
+
 	it("hides the relay row when the setting is off", () => {
 		const wrapper = mountRows({ ...web, relay: relayOff });
 		expect(wrapper.find("[data-testid='relay-workers']").exists()).toBe(false);

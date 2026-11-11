@@ -1,7 +1,7 @@
 <template>
-	<div class="server-setup-rows">
+	<div v-if="showWeb || showRelay" class="server-setup-rows">
 		<div
-			v-if="serverSetup && serverSetup.status !== 'unknown'"
+			v-if="showWeb"
 			class="setup-row"
 			:class="serverSetup.status === 'ok' ? 'banner-success' : 'banner-warn'"
 			data-testid="server-setup"
@@ -28,7 +28,7 @@
 		</div>
 
 		<div
-			v-if="relay && relay.status !== 'off'"
+			v-if="showRelay"
 			class="setup-row"
 			:class="relay.status === 'ok' ? 'banner-success' : 'banner-warn'"
 			data-testid="relay-workers"
@@ -63,6 +63,8 @@ const props = defineProps({
 });
 
 const relay = computed(() => props.serverSetup?.relay || null);
+const showWeb = computed(() => !!props.serverSetup && props.serverSetup.status !== "unknown");
+const showRelay = computed(() => !!relay.value && relay.value.status !== "off");
 </script>
 
 <style scoped>
