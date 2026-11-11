@@ -41,6 +41,8 @@ const quotaText = (wrapper) => wrapper.find("[data-test=plan-quota]").text();
 describe("PlanCard", () => {
 	beforeEach(() => {
 		setActivePinia(createPinia());
+		// Production sets "ready" once the access check answers.
+		useUserStore().registrationStatus = "ready";
 		getQuotaStatus.mockReset().mockResolvedValue(FREE_TENANT);
 		getMyCreditStatus.mockReset().mockResolvedValue(NO_PERSONAL_CAP);
 	});
