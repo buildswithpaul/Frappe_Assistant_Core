@@ -22,28 +22,41 @@ never record contents, names or messages. Each part is best-effort: one that fai
 import frappe
 
 from frappe_assistant_core.chat.server_setup import server_setup_report
+from frappe_assistant_core.utils.customisation import server_scripts_enabled
 
 # The figures and verdicts sent from the server-setup report; its reasons and fixes are text.
 WEB_SERVER_KEYS = ("source", "worker_class", "workers", "threads", "slots", "required_slots", "status")
-RELAY_KEYS = ("status", "enabled", "workers", "required_workers")
+RELAY_KEYS = ("status", "enabled", "queue_configured", "workers", "required_workers")
+
+# Each count's doctype and filters; Custom Fields that apps install are not the site's own.
+COUNTS = {
+    "custom_doctypes": ("DocType", {"custom": 1}),
+    "custom_fields": ("Custom Field", {"is_system_generated": 0}),
+    "server_scripts": ("Server Script", None),
+    "active_server_scripts": ("Server Script", {"disabled": 0}),
+    "client_scripts": ("Client Script", None),
+    "fac_pages": ("FAC Page", None),
+}
 
 
 def _customisation_counts() -> dict:
-    return {
-        "custom_doctypes": frappe.db.count("DocType", {"custom": 1}),
-        "custom_fields": frappe.db.count("Custom Field"),
-        "server_scripts": frappe.db.count("Server Script"),
-        "active_server_scripts": frappe.db.count("Server Script", {"disabled": 0}),
-        "client_scripts": frappe.db.count("Client Script"),
-        "fac_pages": frappe.db.count("FAC Page"),
+    # A table that does not exist yet (code deployed before migrate) leaves out only its own count
+    counts = {
+        key: frappe.db.count(doctype, filters)
+        for key, (doctype, filters) in COUNTS.items()
+        if frappe.db.table_exists(doctype)
     }
+    counts["server_scripts_enabled"] = server_scripts_enabled()
+    return counts
 
 
 def site_profile(versions: dict) -> dict:
     """The profile for this site; `versions` is frappe.utils.change_log.get_versions()."""
-    profile = {
-        "apps": {app: info.get("version") for app, info in versions.items() if info.get("version")},
-    }
+    profile = {}
+    apps = {app: info.get("version") for app, info in versions.items() if info.get("version")}
+    # No apps rather than an empty list, which would replace the ones FAC Cloud stored last time
+    if apps:
+        profile["apps"] = apps
     try:
         profile["customisations"] = _customisation_counts()
     except Exception:

@@ -4,6 +4,7 @@
 
 """The server-setup check reads gunicorn's real flags and warns when FACO cannot be carried."""
 
+import os
 from unittest.mock import MagicMock, patch
 
 import frappe
@@ -203,7 +204,7 @@ class TestReadAndEndpoints(BaseAssistantTest):
         self.assertEqual(config["workers"], 2)
 
     def test_falls_back_to_site_config(self):
-        with self._patch_master(["python", "serve"]), patch.object(
+        with self._patch_master(["python", "serve"]), self._patch_processes([]), patch.object(
             server_setup.frappe, "conf", frappe._dict(gunicorn_workers=6, http_timeout=90)
         ):
             config = read_web_server_config()
@@ -212,10 +213,59 @@ class TestReadAndEndpoints(BaseAssistantTest):
         self.assertIsNone(config["worker_class"])
 
     def test_unknown_when_nothing_readable(self):
-        with patch.object(server_setup.psutil, "Process", side_effect=OSError), patch.object(
-            server_setup.frappe, "conf", frappe._dict()
-        ):
+        with patch.object(server_setup.psutil, "Process", side_effect=OSError), self._patch_processes(
+            []
+        ), patch.object(server_setup.frappe, "conf", frappe._dict()):
             self.assertEqual(read_web_server_config()["source"], "unknown")
+
+    def _patch_processes(self, processes):
+        # A scheduler job's parent is `bench worker`, so production finds the bench's gunicorn master
+        # among the running processes; no master exists under run-tests, so the test lists them.
+        return patch.object(server_setup.psutil, "process_iter", return_value=processes)
+
+    def test_a_scheduler_job_finds_this_benchs_gunicorn_master(self):
+        sites = os.getcwd()
+        master = _FakeProcess(
+            10,
+            1,
+            [
+                "/bench/env/bin/gunicorn",
+                "-w",
+                "4",
+                "--threads",
+                "8",
+                "-k",
+                "gthread",
+                "frappe.app:application",
+            ],
+            sites,
+        )
+        child = _FakeProcess(11, 10, master.info["cmdline"], sites)
+        other_bench = _FakeProcess(
+            20, 1, ["/other/env/bin/gunicorn", "-w", "1", "frappe.app:application"], "/other/sites"
+        )
+        with self._patch_master(
+            ["python", "-m", "frappe.utils.bench_helper", "frappe", "worker"]
+        ), self._patch_processes([other_bench, child, master]):
+            config = read_web_server_config()
+        self.assertEqual(config["source"], "gunicorn")
+        self.assertEqual((config["worker_class"], config["workers"], config["threads"]), ("gthread", 4, 8))
+
+    def test_the_master_is_matched_by_its_chdir_when_its_directory_is_unreadable(self):
+        argv = ["/bench/env/bin/gunicorn", f"--chdir={os.getcwd()}", "-w", "3", "frappe.app:application"]
+        master = _FakeProcess(10, 1, argv, server_setup.psutil.AccessDenied())
+        with self._patch_master(["python", "worker"]), self._patch_processes([master]):
+            self.assertEqual(read_web_server_config()["workers"], 3)
+
+    def test_another_benchs_master_is_ignored(self):
+        other = _FakeProcess(
+            20, 1, ["/other/env/bin/gunicorn", "-w", "9", "frappe.app:application"], "/other/sites"
+        )
+        with self._patch_master(["python", "worker"]), self._patch_processes([other]), patch.object(
+            server_setup.frappe, "conf", frappe._dict(gunicorn_workers=6)
+        ):
+            config = read_web_server_config()
+        self.assertEqual((config["source"], config["workers"]), ("conf", 6))
 
     def test_get_server_setup_merges_config_and_assessment(self):
         with self._patch_master("gunicorn -w 4 -t 120".split()):
@@ -265,3 +315,20 @@ class TestSeedPatch(BaseAssistantTest):
         self.assertEqual(
             int(frappe.db.get_single_value("FAC Chat Settings", "expected_concurrent_chatters")), 40
         )
+
+
+class _FakeProcess:
+    """What psutil.process_iter(["pid", "ppid", "cmdline"]) yields; `cwd` may be an exception to raise."""
+
+    def __init__(self, pid, ppid, cmdline, cwd, environ=None):
+        self.info = {"pid": pid, "ppid": ppid, "cmdline": cmdline}
+        self._cwd = cwd
+        self._environ = environ or {}
+
+    def cwd(self):
+        if isinstance(self._cwd, Exception):
+            raise self._cwd
+        return self._cwd
+
+    def environ(self):
+        return self._environ

@@ -58,6 +58,32 @@ class TestSiteProfile(BaseAssistantTest):
         versions = {"frappe": {"version": "16.52.0"}, "erpnext": {"version": "16.20.1"}}
         self.assertEqual(site_profile(versions)["apps"], {"frappe": "16.52.0", "erpnext": "16.20.1"})
 
+    def test_without_versions_no_apps_are_sent(self):
+        # An empty list would replace the apps FAC Cloud stored from the last heartbeat
+        self.assertNotIn("apps", site_profile({}))
+
+    def test_custom_fields_count_only_those_people_added(self):
+        if not frappe.db.count("Custom Field", {"is_system_generated": 1}):
+            self.skipTest("this site has no app-installed Custom Fields to tell apart")
+        self.assertEqual(
+            site_profile({})["customisations"]["custom_fields"],
+            frappe.db.count("Custom Field", {"is_system_generated": 0}),
+        )
+
+    def test_a_doctype_whose_table_is_missing_leaves_out_only_its_count(self):
+        # Production: FAC's code is deployed before `bench migrate` creates the FAC Page table
+        real = frappe.db.table_exists
+        with patch.object(
+            frappe.db, "table_exists", side_effect=lambda dt, *a, **k: dt != "FAC Page" and real(dt)
+        ):
+            counts = site_profile({})["customisations"]
+        self.assertNotIn("fac_pages", counts)
+        self.assertIn("server_scripts", counts)
+
+    def test_says_whether_server_scripts_run_on_this_site(self):
+        with patch.object(site_profile_module, "server_scripts_enabled", autospec=True, return_value=False):
+            self.assertIs(site_profile({})["customisations"]["server_scripts_enabled"], False)
+
     def test_a_new_client_script_is_counted(self):
         before = site_profile({})["customisations"]["client_scripts"]
         frappe.get_doc(
@@ -105,7 +131,14 @@ class TestSiteProfile(BaseAssistantTest):
             },
         )
         self.assertEqual(
-            profile["relay"], {"status": "warning", "enabled": True, "workers": 2, "required_workers": 10}
+            profile["relay"],
+            {
+                "status": "warning",
+                "enabled": True,
+                "queue_configured": True,
+                "workers": 2,
+                "required_workers": 10,
+            },
         )
 
     def test_a_section_that_fails_is_left_out_and_the_rest_is_sent(self):
@@ -129,8 +162,23 @@ class TestHeartbeatSendsSiteProfile(BaseAssistantTest):
 
         with (
             patch("frappe_assistant_core.chat.fac_cloud_client.get_fac_cloud_client", return_value=client),
-            patch.object(sync, "site_profile", autospec=True, return_value=profile),
+            patch.object(site_profile_module, "site_profile", autospec=True, return_value=profile),
         ):
             sync._send_heartbeat()
 
         self.assertEqual(client.heartbeat.call_args.kwargs["site_profile"], profile)
+
+    def test_a_profile_that_fails_still_sends_the_heartbeat(self):
+        client = create_autospec(AssistantRuntimeClient, instance=True)
+        client.heartbeat.return_value = {"status": "ok"}
+
+        with (
+            patch("frappe_assistant_core.chat.fac_cloud_client.get_fac_cloud_client", return_value=client),
+            patch.object(
+                site_profile_module, "site_profile", autospec=True, side_effect=RuntimeError("boom")
+            ),
+        ):
+            sync._send_heartbeat()
+
+        client.heartbeat.assert_called_once()
+        self.assertIsNone(client.heartbeat.call_args.kwargs["site_profile"])
