@@ -192,11 +192,11 @@ def relay_report(expected_chatters: int) -> dict:
     result["queue_configured"] = relay_queue_configured()
     if result["queue_configured"]:
         counts = relay_worker_counts(fresh=True)
-        result.update(
-            workers=counts.live,
-            busy=counts.busy,
-            queued=background_jobs.get_queue(RELAY_QUEUE).count,
-        )
+        result.update(workers=counts.live, busy=counts.busy)
+        try:
+            result["queued"] = background_jobs.get_queue(RELAY_QUEUE).count
+        except Exception:
+            frappe.logger("faco.relay").exception("faco_relay queue count failed")
 
     if not result["queue_configured"]:
         result["reasons"].append(
