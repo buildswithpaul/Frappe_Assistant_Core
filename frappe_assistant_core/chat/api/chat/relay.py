@@ -1022,7 +1022,7 @@ def _relay_ar_interrupt_resume(
                 **_sdk_composer_kwargs(client.stream_chat, web_search, thinking_enabled, reasoning_effort),
             ),
             session_id,
-            cancelled=lambda: is_cancelled(session_id),
+            cancelled=lambda: is_cancelled(session_id) or relay_shutdown.should_give_up(),
         )
         started = last_progress = time.monotonic()
         stalled = False
@@ -1708,7 +1708,7 @@ def _relay_ar_stream(
                 ),
             ),
             session_id,
-            cancelled=lambda: is_cancelled(session_id),
+            cancelled=lambda: is_cancelled(session_id) or relay_shutdown.should_give_up(),
         )
         started = last_progress = time.monotonic()
         stalled = False
