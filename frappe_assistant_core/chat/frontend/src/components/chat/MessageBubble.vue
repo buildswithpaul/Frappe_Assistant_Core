@@ -76,6 +76,12 @@
 				</button>
 			</div>
 
+			<!-- Retry: the latest turn ended in an error or an interruption -->
+			<div v-if="canRetry" class="truncation-notice retry-notice">
+				<span>{{ __("This answer did not finish.") }}</span>
+				<button class="continue-btn retry-btn" @click="$emit('retry')">{{ __("Retry") }}</button>
+			</div>
+
 			<!-- Message Actions (only for assistant) -->
 			<div v-if="!isUser" class="message-actions">
 				<button @click="copyMessage" class="action-btn" title="Copy message" aria-label="Copy message">
@@ -110,6 +116,7 @@ import MessageBlockRenderer from "./MessageBlockRenderer.vue";
 import MessageFooter from "./MessageFooter.vue";
 import FacoRobot from "@/components/common/FacoRobot.vue";
 import { ensureHljs } from "@/utils/markdown.js";
+import { __ } from "@/utils/i18n";
 import { turnLabel, userInitial as deriveInitial } from "./turns.js";
 
 const props = defineProps({
@@ -134,9 +141,14 @@ const props = defineProps({
 		type: Boolean,
 		default: false,
 	},
+	// The latest turn errored and can be run again (retryTarget).
+	canRetry: {
+		type: Boolean,
+		default: false,
+	},
 });
 
-defineEmits(["toggleBlock", "approve", "reject", "previewDocument", "continue", "pin", "unqueue"]);
+defineEmits(["toggleBlock", "approve", "reject", "previewDocument", "continue", "retry", "pin", "unqueue"]);
 
 const userStore = useUserStore();
 

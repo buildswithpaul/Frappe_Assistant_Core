@@ -97,6 +97,7 @@
 						@approve="handleApprovalResponse"
 						@reject="handleApprovalResponse"
 						@continue="handleContinueResponse"
+						@retry="chatStore.retryTurn"
 						@pin="pinMessage"
 						@unqueue="handleUnqueue"
 					>

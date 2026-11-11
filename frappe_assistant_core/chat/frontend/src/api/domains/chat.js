@@ -122,6 +122,15 @@ export const chat = {
 			session_id: sessionId,
 		}),
 
+	// Runs the latest user message's errored turn again; refused for a turn that completed.
+	retryTurn: (sessionId, userMessage, options = {}) =>
+		baseCall("frappe_assistant_core.chat.api.chat.retry_turn", {
+			session_id: sessionId,
+			user_message: userMessage,
+			client_type: "spa",
+			...options,
+		}),
+
 	// Ends a turn whose relay died; the server refuses one that is still running.
 	markTurnInterrupted: (sessionId) =>
 		baseCall("frappe_assistant_core.chat.api.chat.mark_turn_interrupted", {

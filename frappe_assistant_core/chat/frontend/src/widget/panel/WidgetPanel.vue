@@ -74,6 +74,7 @@
 				@approve="onDecision"
 				@reject="onDecision"
 				@continue="chatStore.continueMessage"
+				@retry="chatStore.retryTurn"
 				@unqueue="chatStore.unqueueMessage"
 			/>
 			<BrowserToolConfirm

@@ -662,6 +662,72 @@ export const useChatStore = defineStore("chat", () => {
 	}
 
 	/**
+	 * Run the latest user message's errored or interrupted turn again. The partial bubble
+	 * goes and the new turn streams into a fresh one; the server deletes the partial row and
+	 * refuses a turn that completed (already_complete), which reloads the conversation.
+	 */
+	async function retryTurn(userMessageName) {
+		const sessionId = currentSessionId.value;
+		if (!sessionId || !userMessageName || isStreaming.value) return;
+		const userIndex = messages.value.findLastIndex((m) => m.role === "user");
+		if (userIndex < 0) return;
+
+		messages.value = messages.value.slice(0, userIndex + 1);
+		isStreaming.value = true;
+		streamingMessage.value = "";
+		streamRequestId.value = crypto.randomUUID();
+		turnClaim.releaseClaim();
+		stream.startStreamTimeout();
+		messages.value.push({
+			role: "assistant",
+			content: "",
+			blocks: [],
+			timestamp: new Date().toISOString(),
+			isStreaming: true,
+			_requestId: streamRequestId.value,
+		});
+		const bubble = messages.value[messages.value.length - 1];
+
+		try {
+			const modes = useComposerModesStore().modesFor(sessionId);
+			const ack = await sendWithRestartRetry(
+				() =>
+					api.chat.retryTurn(sessionId, userMessageName, {
+						web_search: modes.webSearch,
+						reasoning_effort: modes.effort,
+						// Older AR servers only read the boolean.
+						thinking_enabled: modes.effort !== "off",
+						client_turn_id: bubble._requestId,
+						client_type: getSurface().clientType,
+					}),
+				{
+					onRetrying: () => {
+						bubble.statusNote = restartingStatus();
+					},
+				}
+			);
+			bubble.statusNote = null;
+			const failure = restartFailure(ack);
+			if (failure) {
+				handleStreamError(failure.message, failure.code);
+				await readHistory(sessionId);
+			} else if (ack?.status === "already_complete" || ack?.status === "running") {
+				// Nothing was started here: show the conversation as the server has it, joining
+				// the turn that is still running.
+				stream.clearStreamTimeouts();
+				isStreaming.value = false;
+				await loadMessages(sessionId);
+			}
+		} catch (err) {
+			stream.clearStreamTimeouts();
+			isStreaming.value = false;
+			setError(err.message);
+			logger.error("Failed to retry the turn:", err);
+			await readHistory(sessionId).catch(() => {});
+		}
+	}
+
+	/**
 	 * Resume a truncated (max_tokens) assistant turn. Only valid on the
 	 * latest assistant message. Seeds streamingMessage with the bubble's
 	 * existing content so continuation-only deltas concatenate onto the
@@ -1233,6 +1299,7 @@ export const useChatStore = defineStore("chat", () => {
 		queuedMessages: sendQueue.queuedMessages,
 		unqueueMessage: sendQueue.unqueueMessage,
 		continueMessage,
+		retryTurn,
 		appendStreamChunk,
 		attachSources,
 		completeStreaming,

@@ -329,14 +329,7 @@ def start_turn(
     if relay_shutdown.is_draining():
         raise RelayUnavailable
 
-    # A Stop raised before this point belongs to an earlier turn, unless it
-    # names this request (cancel.clear).
-    clear_cancel(session_id, keep_turn=client_turn_id)
-
-    # A new turn names its own client; the chat app's claim on the last one ends here.
-    from frappe_assistant_core.plugins.faco.tools.browser_bridge import release_session_claim
-
-    release_session_claim(session_id)
+    _open_turn(session_id, client_turn_id)
 
     # FACO-M15: respect GDPR Article 18 processing restriction. When set,
     # skip message persistence entirely — the chat still runs (AR handles
@@ -346,6 +339,9 @@ def start_turn(
     # Save user message to database
     from frappe_assistant_core.chat.doctype.fac_chat_message.fac_chat_message import (
         FACChatMessage,
+    )
+    from frappe_assistant_core.chat.doctype.fac_chat_session_state.fac_chat_session_state import (
+        FACChatSessionState,
     )
 
     user_msg = None
@@ -357,6 +353,7 @@ def start_turn(
             context=context if include_context and context else None,
             project=project,
         )
+        _snapshot_pre_turn(session_id, user_msg.name)
         frappe.db.commit()  # nosemgrep: frappe-manual-commit — background thread / streaming context (not a request handler), explicit commit required to flush progress to DB.
 
     # Attach files to the message — only meaningful when we persisted one.
@@ -379,39 +376,100 @@ def start_turn(
     if page_addendum:
         system_prompt_addendum = (system_prompt_addendum or "") + page_addendum
 
-    effective_client_type = _effective_client_type(client_type)
-
     # Zero-retention: load the client-held session blob to round-trip to AR.
     # Skipped for restricted users — we never load or store their state.
+    session_state = None if restricted else FACChatSessionState.load_wire(session_id)
+
+    try:
+        return _launch_turn(
+            session_id,
+            full_prompt,
+            message,
+            context,
+            # None under M15 restriction — relay tolerates.
+            user_msg.name if user_msg is not None else None,
+            session_state,
+            restricted,
+            model_id=model_id,
+            attachments=attachments,
+            system_prompt_addendum=system_prompt_addendum,
+            client_type=client_type,
+            web_search=web_search,
+            thinking_enabled=thinking_enabled,
+            reasoning_effort=reasoning_effort,
+            client_turn_id=client_turn_id,
+            project=project,
+        )
+    except RelayUnavailable:
+        if user_msg is not None:
+            _discard_unsent_user_message(user_msg.name, session_id)
+        raise
+
+
+def _snapshot_pre_turn(session_id: str, user_msg_name: str) -> None:
+    """Keep the state Retry restarts from; a failure only costs Retry, never the send."""
     from frappe_assistant_core.chat.doctype.fac_chat_session_state.fac_chat_session_state import (
         FACChatSessionState,
     )
 
-    session_state = None if restricted else FACChatSessionState.load_wire(session_id)
+    try:
+        FACChatSessionState.snapshot_pre_turn(session_id, frappe.session.user, user_msg_name)
+    except Exception:
+        frappe.log_error(title="FAC pre-turn snapshot failed", message=f"session_id={session_id}")
 
-    # Process in background via bounded pool (FACO-H14) — relay from AR.
-    # user_msg_name may be None under M15 restriction — relay tolerates.
+
+def _open_turn(session_id: str, client_turn_id: str | None) -> None:
+    """End what the previous turn left behind before a new one is accepted."""
+    # A Stop raised before this point belongs to an earlier turn, unless it
+    # names this request (cancel.clear).
+    clear_cancel(session_id, keep_turn=client_turn_id)
+
+    # A new turn names its own client; the chat app's claim on the last one ends here.
+    from frappe_assistant_core.plugins.faco.tools.browser_bridge import release_session_claim
+
+    release_session_claim(session_id)
+
+
+def _launch_turn(
+    session_id: str,
+    prompt: str,
+    message: str,
+    context: dict | None,
+    user_msg_name: str | None,
+    session_state: dict | None,
+    restricted: bool,
+    *,
+    model_id: str | None = None,
+    attachments: list[dict] | None = None,
+    system_prompt_addendum: str | None = None,
+    client_type: str | None = None,
+    web_search: bool | None = None,
+    thinking_enabled: bool | None = None,
+    reasoning_effort: str | None = None,
+    client_turn_id: str | None = None,
+    project: str | None = None,
+) -> Future:
+    """Queue the relay for a turn whose user row is saved; returns the relay's Future."""
     effort = _effort(reasoning_effort)
     if effort is not None:
         thinking_enabled = effort != "off"
 
-    model_id = _effective_model_id(model_id)
-
     turn = _mark_turn_started(session_id, restricted=restricted, client_turn=client_turn_id)
     try:
+        # Process in background via bounded pool (FACO-H14) — relay from AR.
         return _submit_relay(
             _relay_ar_stream,
             session_id,
-            full_prompt,
+            prompt,
             message,
             _with_project_context(context, session_id, project),
-            user_msg.name if user_msg is not None else None,
+            user_msg_name,
             frappe.session.user,
             frappe.local.site,
-            model_id,
-            attachments,
+            _effective_model_id(model_id),
+            attachments or [],
             system_prompt_addendum,
-            effective_client_type,
+            _effective_client_type(client_type),
             session_state,
             restricted,
             # None must reach AR as absence (search available), not as an explicit
@@ -421,11 +479,9 @@ def start_turn(
             reasoning_effort=effort,
             live_turn_token=turn,
         )
-    except Exception as e:
+    except Exception:
         if turn:
             live_turn.clear(session_id, turn)
-        if isinstance(e, RelayUnavailable) and user_msg is not None:
-            _discard_unsent_user_message(user_msg.name, session_id)
         raise
 
 
@@ -546,6 +602,131 @@ def send_message(
     except Exception as e:
         frappe.log_error(title="FACO Agent Error", message=f"Error in send_message: {e!s}")
         frappe.throw(_("Error processing message: {0}").format(str(e)))
+
+
+@frappe.whitelist(methods=["POST"])
+@rate_limit(session_user_or_ip, limit=30, seconds=60)
+def retry_turn(
+    session_id: str,
+    user_message: str,
+    client_type: str | None = None,
+    web_search: bool | None = None,
+    thinking_enabled: bool | None = None,
+    reasoning_effort: str | None = None,
+    client_turn_id: str | None = None,
+) -> dict:
+    """Run the latest user message's turn again, from the state before it, in place of its partial.
+
+    A turn that completed is never re-run, so it is never billed twice. The message's text and
+    stored context are re-sent with the user's saved model; image attachments are not stored, so
+    they are not re-sent, while files attached by URL still reach the prompt through the
+    conversation addendum. Credits for the lost partial are not refunded.
+
+    Args:
+            session_id: Conversation session ID
+            user_message: Name of the FAC Chat Message row to retry; must be the latest user row
+            client_type, web_search, thinking_enabled, reasoning_effort, client_turn_id: as for
+                    send_message
+
+    Returns:
+            dict: ``status`` is "processing", "running" (the turn is still live),
+            "already_complete" (nothing changed) or "retry" (the worker is restarting)
+    """
+    _assert_session_owner(session_id)
+    from ..settings import can_use_faco
+
+    access_check = can_use_faco()
+    if not access_check.get("can_use"):
+        frappe.throw(access_check.get("reason", _("Cannot use FACO")))
+
+    user_row = _latest_user_row(session_id)
+    if not user_row or user_row.name != user_message:
+        frappe.throw(_("Only the latest message can be retried"))
+
+    entry = live_turn.get(session_id)
+    if entry:
+        if not live_turn.is_stale(entry):
+            return {"status": "running"}
+        live_turn.mark_turn_interrupted(session_id)
+
+    answers = frappe.get_all(
+        "FAC Chat Message",
+        filters={"session_id": session_id, "role": "assistant", "creation": [">", user_row.creation]},
+        fields=["name", "content", "errored", "aborted"],
+    )
+    if any(not a.errored and not a.aborted and (a.content or "").strip() for a in answers):
+        return {"status": "already_complete"}
+
+    if relay_shutdown.is_draining():
+        return _retry_ack()
+
+    from frappe_assistant_core.chat.doctype.fac_chat_conversation.fac_chat_conversation import (
+        FACChatConversation,
+    )
+    from frappe_assistant_core.chat.doctype.fac_chat_session_state.fac_chat_session_state import (
+        FACChatSessionState,
+    )
+
+    # The partial is replaced, not appended to.
+    for answer in answers:
+        frappe.delete_doc("FAC Chat Message", answer.name, ignore_permissions=True)
+        FACChatConversation.untouch(session_id)
+
+    restored, session_state = FACChatSessionState.restore_pre_turn(session_id, user_message)
+    if not restored:
+        frappe.throw(_("This turn can no longer be retried"))
+
+    _open_turn(session_id, client_turn_id)
+    try:
+        _launch_turn(
+            session_id,
+            user_row.content,
+            user_row.content,
+            _stored_context(user_row),
+            user_row.name,
+            session_state,
+            False,
+            system_prompt_addendum=_conversation_addendum(session_id, False),
+            client_type=client_type,
+            web_search=web_search,
+            thinking_enabled=thinking_enabled,
+            reasoning_effort=reasoning_effort,
+            client_turn_id=client_turn_id,
+        )
+    except RelayUnavailable:
+        return _retry_ack()
+    return {"status": "processing", "session_id": session_id}
+
+
+def _latest_user_row(session_id: str) -> frappe._dict | None:
+    rows = frappe.get_all(
+        "FAC Chat Message",
+        filters={"session_id": session_id, "role": "user"},
+        fields=[
+            "name",
+            "content",
+            "creation",
+            "context_type",
+            "context_doctype",
+            "context_name",
+            "context_url",
+        ],
+        order_by="creation desc",
+        limit=1,
+    )
+    return rows[0] if rows else None
+
+
+def _stored_context(row) -> dict | None:
+    """The page context the message was sent with, as FAC Chat Message stores it."""
+    if not row.context_type:
+        return None
+    return {
+        "type": row.context_type,
+        "doctype": row.context_doctype,
+        "name": row.context_name,
+        "url": row.context_url,
+    }
 
 
 def _paused_message_id(session_id: str) -> str | None:
