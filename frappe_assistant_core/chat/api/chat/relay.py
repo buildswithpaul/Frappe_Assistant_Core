@@ -995,6 +995,7 @@ def _relay_ar_interrupt_resume(
                 model_used,
                 resumed_message_id=message_id,
                 pause_consumed=False,
+                user=user,
             )
             return
 
@@ -1080,6 +1081,7 @@ def _relay_ar_interrupt_resume(
                     stream_iter=stream_iter,
                     resumed_message_id=message_id,
                     pause_consumed=pause_consumed,
+                    user=user,
                 )
                 return
 
@@ -1655,6 +1657,7 @@ def _relay_ar_stream(
                 collected_tool_calls,
                 model_used,
                 continued_turn=continued_turn,
+                user=user,
             )
             return
 
@@ -1742,6 +1745,7 @@ def _relay_ar_stream(
                     model_used,
                     continued_turn=continued_turn,
                     stream_iter=stream_iter,
+                    user=user,
                 )
                 return
 
@@ -2401,6 +2405,7 @@ def _handle_shutdown_interrupt(
     stream_iter=None,
     resumed_message_id: str | None = None,
     pause_consumed: bool = True,
+    user: str,
 ) -> None:
     """End a turn this exiting worker can no longer finish: keep its partial, flagged errored.
 
@@ -2439,6 +2444,7 @@ def _handle_shutdown_interrupt(
             continued_turn=continued_turn,
         )
 
+    _end_credit_status_freshness(user)
     _emit_socket_event(
         session_id,
         {
