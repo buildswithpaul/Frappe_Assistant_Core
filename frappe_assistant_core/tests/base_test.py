@@ -156,8 +156,9 @@ class BaseAssistantTest(IntegrationTestCase):
             with patch.object(CallbackManager, "add", add_or_run):
                 return on_trash(doc, *args, **kwargs)
 
-        File.on_trash = on_trash_now
-        cls.addClassCleanup(setattr, File, "on_trash", on_trash)
+        patcher = patch.object(File, "on_trash", on_trash_now)
+        patcher.start()
+        cls.addClassCleanup(patcher.stop)
 
     @classmethod
     def _block_commits(cls):
