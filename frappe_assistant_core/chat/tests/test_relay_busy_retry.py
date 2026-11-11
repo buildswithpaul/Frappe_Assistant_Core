@@ -14,11 +14,13 @@ import unittest
 from contextlib import ExitStack
 from unittest.mock import create_autospec, patch
 
+import frappe
 from assistant_runtime_sdk import AssistantRuntimeClient
 from frappe import _
 
 from frappe_assistant_core.chat.api.chat import busy_retry, relay
 from frappe_assistant_core.chat.api.chat.busy_retry import MAX_BUSY_RETRIES, stream_with_busy_retry
+from frappe_assistant_core.tests.base_test import BaseAssistantTest
 
 SESSION = "s-busy"
 EMIT = "frappe_assistant_core.chat.api.chat.busy_retry._emit_socket_event"
@@ -157,7 +159,7 @@ class TestRelayUsesBusyRetry(unittest.TestCase):
             enter(patch.object(relay, "is_cancelled", side_effect=cancelled or (lambda _sid: False)))
             enter(patch.object(relay, "_ensure_assistant_msg"))
             enter(patch.object(relay, "_persist_session_blob"))
-            enter(patch.object(relay, "_persist_partial_assistant_turn"))
+            self.persist_partial = enter(patch.object(relay, "_persist_partial_assistant_turn"))
             enter(patch.object(busy_retry.time, "sleep"))
             enter(patch.object(relay, "_emit_socket_event", side_effect=lambda _s, p: emitted.append(p)))
             enter(patch.object(busy_retry, "_emit_socket_event", side_effect=lambda _s, p: emitted.append(p)))
@@ -192,6 +194,23 @@ class TestRelayUsesBusyRetry(unittest.TestCase):
         self.assertEqual(errors[0]["error_code"], "AR_BUSY")
         self.assertEqual(errors[0]["error"], _("FAC Cloud is busy. Try again in a minute."))
 
+    def test_the_last_busy_refusal_records_an_empty_errored_answer(self):
+        streams = [[_busy(0.5)] for _i in range(MAX_BUSY_RETRIES + 1)]
+
+        self._run_send(streams)
+
+        # AR never named the turn, so the latest row belongs to an earlier turn: a new one is made.
+        self.persist_partial.assert_called_once_with(
+            "s1", None, "", [], [], "", "errored", fall_back_to_latest=False, continued_turn=None
+        )
+
+    def test_another_refusal_before_anything_streamed_records_nothing(self):
+        streams = [[{"event": "stream_error", "data": {"error": "x", "error_code": "RATE_LIMITED"}}]]
+
+        self._run_send(streams)
+
+        self.persist_partial.assert_not_called()
+
     def test_stop_during_a_busy_wait_aborts_the_turn_without_reopening(self):
         streams = [[_busy(5.0)], [{"event": "stream_complete", "data": {}}]]
         polls = iter([False, False, True])
@@ -200,6 +219,53 @@ class TestRelayUsesBusyRetry(unittest.TestCase):
 
         self.assertEqual(client.stream_chat.call_count, 1)
         self.assertEqual(emitted[-1]["event"], "stream_aborted")
+
+
+class TestBusyRefusalRow(BaseAssistantTest):
+    """The row the relay writes after the last busy refusal, against the real table."""
+
+    def setUp(self):
+        super().setUp()
+        self.user = self.make_throwaway_user("busy-refusal")
+        frappe.set_user(self.user)
+        self.sid = f"busy-refusal-{frappe.generate_hash(length=8)}"
+        # An earlier answered turn, then the user's new message that AR refused.
+        self.earlier = self._message("assistant", "An earlier answer")
+        self._message("user", "A new question")
+
+    def tearDown(self):
+        frappe.set_user("Administrator")
+        super().tearDown()
+
+    def _message(self, role, content):
+        return (
+            frappe.get_doc(
+                {
+                    "doctype": "FAC Chat Message",
+                    "session_id": self.sid,
+                    "user": self.user,
+                    "role": role,
+                    "content": content,
+                }
+            )
+            .insert(ignore_permissions=True)
+            .name
+        )
+
+    def test_a_new_empty_errored_answer_follows_the_refused_question(self):
+        relay._persist_partial_assistant_turn(
+            self.sid, None, "", [], [], None, "errored", fall_back_to_latest=False
+        )
+
+        rows = frappe.get_all(
+            "FAC Chat Message",
+            filters={"session_id": self.sid},
+            fields=["name", "role", "content", "errored"],
+            order_by="idx asc, creation asc",
+        )
+        self.assertEqual([r.role for r in rows], ["assistant", "user", "assistant"])
+        self.assertEqual((rows[-1].content or "", rows[-1].errored), ("", 1))
+        self.assertEqual(frappe.db.get_value("FAC Chat Message", self.earlier, "errored"), 0)
 
 
 if __name__ == "__main__":

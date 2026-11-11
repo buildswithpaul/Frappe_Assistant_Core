@@ -215,7 +215,7 @@ from ..chat.helpers import (  # noqa: E402
     _parse_turn_blocks,
     _update_subscription_cache,
 )
-from .busy_retry import stream_with_busy_retry  # noqa: E402
+from .busy_retry import BUSY_ERROR_CODE, stream_with_busy_retry  # noqa: E402
 
 # Event types whose handling is identical in both the main stream loop and
 # the HITL resume loop. Routing them through one function keeps the loops
@@ -2012,6 +2012,20 @@ def _relay_ar_stream(
                         model_used,
                         "errored",
                         continued_turn=continued_turn,
+                    )
+                elif error_code == BUSY_ERROR_CODE and not continued_turn:
+                    # A turn AR never started has no row, and the latest one belongs to an
+                    # earlier turn. An empty one is still recorded, so the turn can be retried.
+                    _persist_partial_assistant_turn(
+                        session_id,
+                        ar_message_id,
+                        full_response,
+                        blocks_snapshot,
+                        collected_tool_calls,
+                        model_used,
+                        "errored",
+                        fall_back_to_latest=False,
+                        continued_turn=None,
                     )
                 # The partial turn above is now in the transcript, so the carried
                 # state has to advance with it — otherwise the next turn replays a
