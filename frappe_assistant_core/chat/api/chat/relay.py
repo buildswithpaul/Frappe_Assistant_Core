@@ -844,7 +844,7 @@ def _settle_unconsumed_resume(
 
 
 def _end_credit_status_freshness(user: str) -> None:
-    """A finished turn made the cached credit figure out of date; a cache fault must not fail the turn."""
+    """A turn that spent credits made the cached figure out of date; a cache fault must not fail it."""
     try:
         credit_status_cache.invalidate(user)
     except Exception:
@@ -1359,6 +1359,7 @@ def _relay_ar_interrupt_resume(
             elif event_type == "stream_error":
                 _log_stream_error_detail(data)
                 if pause_consumed:
+                    _end_credit_status_freshness(user)
                     blocks_snapshot = block_builder.snapshot()
                     _persist_errored_resume_cycle(
                         session_id,
@@ -2005,6 +2006,7 @@ def _relay_ar_stream(
                 # A Continue refused before it produced anything leaves its
                 # answer as it stood: the clients keep it continuable.
                 if full_response or blocks_snapshot != seed_blocks:
+                    _end_credit_status_freshness(user)
                     _persist_partial_assistant_turn(
                         session_id,
                         ar_message_id,
