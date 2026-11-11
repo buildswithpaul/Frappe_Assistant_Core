@@ -129,3 +129,22 @@ class TestRelayReport(BaseAssistantTest):
             self.assertIn("relay", run_diagnostics()["server_setup"])
         self.assertIn("relay", get_server_setup())
         self.assertIn("relay", server_setup.server_setup_report())
+
+    def test_unreachable_queue_redis_leaves_queued_unknown_and_diagnostics_working(self):
+        self._turn_on()
+        frappe.set_user("Administrator")
+        # Production: the queue Redis (port 11000) is down while the site's own services are up.
+        with (
+            patch(
+                "frappe.utils.background_jobs.get_queue",
+                autospec=True,
+                side_effect=ConnectionError("queue redis down"),
+            ),
+            patch("frappe_assistant_core.chat.fac_cloud_client.get_fac_cloud_client", return_value=None),
+        ):
+            report = relay_report(10)
+            self.assertIn("relay", run_diagnostics()["server_setup"])
+            self.assertIn("relay", get_server_setup())
+        self.assertIsNone(report["queued"])
+        self.assertEqual(report["workers"], 0)
+        self.assertEqual(report["status"], "warning")
