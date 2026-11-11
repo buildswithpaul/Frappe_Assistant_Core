@@ -26,6 +26,7 @@ import frappe
 from frappe import _
 from frappe.query_builder import DocType
 
+from frappe_assistant_core.chat import credit_status_cache
 from frappe_assistant_core.chat.api.chat import live_turn, relay_shutdown
 
 from .._helpers import (
@@ -879,6 +880,14 @@ def _settle_unconsumed_resume(
     return block_builder.snapshot()
 
 
+def _end_credit_status_freshness(user: str) -> None:
+    """A turn that spent credits made the cached figure out of date; a cache fault must not fail it."""
+    try:
+        credit_status_cache.invalidate(user)
+    except Exception:
+        frappe.logger("faco").warning("Could not end credit status freshness", exc_info=True)
+
+
 def _relay_ar_interrupt_resume(
     session_id,
     interrupt_response,
@@ -1293,6 +1302,7 @@ def _relay_ar_interrupt_resume(
                 return
 
             elif event_type == "stream_complete":
+                _end_credit_status_freshness(user)
                 tokens_used = data.get("tokens_used", 0)
                 credits_used = data.get("credits_used", 0)
                 model_used = data.get("model", "")
@@ -1418,6 +1428,7 @@ def _relay_ar_interrupt_resume(
             elif event_type == "stream_error":
                 _log_stream_error_detail(data)
                 if pause_consumed:
+                    _end_credit_status_freshness(user)
                     blocks_snapshot = block_builder.snapshot()
                     _persist_errored_resume_cycle(
                         session_id,
@@ -1943,6 +1954,7 @@ def _relay_ar_stream(
                 return
 
             elif event_type == "stream_complete":
+                _end_credit_status_freshness(user)
                 tokens_used = data.get("tokens_used", 0)
                 credits_used = data.get("credits_used", 0)
                 model_used = data.get("model", "")
@@ -2098,6 +2110,7 @@ def _relay_ar_stream(
                 # A Continue refused before it produced anything leaves its
                 # answer as it stood: the clients keep it continuable.
                 if full_response or blocks_snapshot != seed_blocks:
+                    _end_credit_status_freshness(user)
                     _persist_partial_assistant_turn(
                         session_id,
                         ar_message_id,

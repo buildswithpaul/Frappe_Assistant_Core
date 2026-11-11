@@ -814,8 +814,8 @@ def run_diagnostics() -> dict:
     """Run AR registration diagnostics for this tenant."""
     frappe.only_for("System Manager")
     from frappe_assistant_core.chat.fac_cloud_client import get_fac_cloud_client
+    from frappe_assistant_core.chat.server_setup import server_setup_report
 
     client = get_fac_cloud_client()
-    if not client:
-        return {"status": "no_client"}
-    return client.diagnose_registration()
+    result = {"status": "no_client"} if not client else client.diagnose_registration()
+    return {**result, "server_setup": server_setup_report()}

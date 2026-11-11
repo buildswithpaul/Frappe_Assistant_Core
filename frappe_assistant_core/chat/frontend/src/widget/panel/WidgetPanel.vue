@@ -105,6 +105,7 @@
 			:is-admin="isAdmin"
 			:used="limitBlock.used"
 			:limit="limitBlock.limit"
+			:stale="limitBlock.stale"
 		/>
 		<InputArea
 			:hold-send="Boolean(limitBlock)"

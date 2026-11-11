@@ -176,3 +176,24 @@ class TestBothLoopsEndARateLimitedTurn(unittest.TestCase):
 
                 self.assertEqual(error["error_code"], "quota_exhausted")
                 self.assertIsNone(error.get("retry_after"))
+
+
+class TestResumeErrorEndsCreditFreshness(unittest.TestCase):
+    """A resume that did work before it failed was billed for it; one refused at once was not."""
+
+    def _invalidations(self, events) -> int:
+        with patch.object(relay, "_persist_errored_resume_cycle"), patch.object(
+            relay.credit_status_cache, "invalidate"
+        ) as invalidate:
+            _run_resume(events)
+        return invalidate.call_count
+
+    def test_a_resume_that_errors_after_progress_ends_the_freshness(self):
+        events = [
+            {"event": "stream_chunk", "data": {"content": "half"}},
+            {"event": "stream_error", "data": {"error": "x"}},
+        ]
+        self.assertEqual(self._invalidations(events), 1)
+
+    def test_a_resume_refused_before_progress_keeps_the_freshness(self):
+        self.assertEqual(self._invalidations([_rate_limited()]), 0)

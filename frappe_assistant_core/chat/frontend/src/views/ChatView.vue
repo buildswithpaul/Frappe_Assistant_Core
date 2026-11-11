@@ -666,6 +666,7 @@ const limitBannerProps = computed(() => ({
 	isAdmin: isAdmin.value,
 	used: limitBlock.value?.used || 0,
 	limit: limitBlock.value?.limit || 0,
+	stale: Boolean(limitBlock.value?.stale),
 }));
 
 // Shared bindings so hero and dock are guaranteed identical. camelCase on*

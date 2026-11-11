@@ -77,6 +77,8 @@ describe("router shim named routes", () => {
 describe("widget panel", () => {
 	beforeEach(() => {
 		setActivePinia(createPinia());
+		// Production sets "ready" once the access check answers.
+		useUserStore().registrationStatus = "ready";
 		resetConfirms();
 		localStorage.clear();
 		getQuotaStatus.mockReset().mockResolvedValue(null);
@@ -577,6 +579,15 @@ describe("widget panel", () => {
 			expect(w.findAllComponents(RouterLinkStub)).toHaveLength(0);
 		});
 
+		it("marks the banner's figure as possibly out of date when the backend served a stale one", async () => {
+			// The backend serves its last good copy, marked stale, while FAC Cloud is slow.
+			api.users.getMyCreditStatus.mockResolvedValueOnce({ ...atLimit, stale: true });
+			useUserStore().quotaInfo = { credits_exhausted: false, is_admin: false };
+			const w = mount(WidgetPanel, { global: { stubs: withLink } });
+			await flushPromises();
+			expect(w.find('[data-test="personal-limit-banner"]').text()).toContain("May be out of date");
+		});
+
 		it("sends as usual under the limit", async () => {
 			api.users.getMyCreditStatus.mockResolvedValueOnce({ ...atLimit, credits_used_this_month: 10 });
 			const chat = useChatStore();
@@ -726,6 +737,8 @@ describe("panel bootstrap", () => {
 
 	beforeEach(() => {
 		setActivePinia(createPinia());
+		// Production sets "ready" once the access check answers.
+		useUserStore().registrationStatus = "ready";
 		localStorage.clear();
 		window.frappe = { session: { user: "u@x.test" }, get_route: () => [] };
 		bridge.state.sessionId = "faco_1";
@@ -872,6 +885,8 @@ describe("panel bootstrap", () => {
 describe("widget Spotlight placement", () => {
 	beforeEach(() => {
 		setActivePinia(createPinia());
+		// Production sets "ready" once the access check answers.
+		useUserStore().registrationStatus = "ready";
 		window.frappe = { session: { user: "u@x.test" }, get_route: () => [] };
 	});
 
