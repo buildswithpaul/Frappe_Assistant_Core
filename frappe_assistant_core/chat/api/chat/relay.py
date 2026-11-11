@@ -25,6 +25,7 @@ from typing import NamedTuple
 import frappe
 from frappe import _
 
+from frappe_assistant_core.chat import credit_status_cache
 from frappe_assistant_core.chat.api.chat import live_turn
 
 from .._helpers import (
@@ -1224,6 +1225,7 @@ def _relay_ar_interrupt_resume(
                 return
 
             elif event_type == "stream_complete":
+                credit_status_cache.invalidate(user)
                 tokens_used = data.get("tokens_used", 0)
                 credits_used = data.get("credits_used", 0)
                 model_used = data.get("model", "")
@@ -1839,6 +1841,7 @@ def _relay_ar_stream(
                 return
 
             elif event_type == "stream_complete":
+                credit_status_cache.invalidate(user)
                 tokens_used = data.get("tokens_used", 0)
                 credits_used = data.get("credits_used", 0)
                 model_used = data.get("model", "")

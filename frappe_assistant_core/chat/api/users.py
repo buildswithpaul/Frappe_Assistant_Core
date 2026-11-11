@@ -7,7 +7,12 @@
 import frappe
 from frappe import _
 
-from ._helpers import _not_registered_error, _require_system_manager, _safe_error
+from ._helpers import (
+    _not_registered_error,
+    _require_system_manager,
+    _safe_error,
+    _user_message_for_ar_error,
+)
 from .auth import _ar_user_id
 
 
@@ -418,23 +423,40 @@ def get_my_credit_status():
     Get credit usage status for the current user.
 
     Available to ALL users (not admin-only). Returns the calling user's
-    credit limit and usage within the team pool.
+    credit limit and usage within the team pool. Served from a 45 s cache; when AR cannot
+    answer, the last known figure comes back with ``stale: True``, or ``unavailable: True``
+    when there is none. Makes at most one AR call, behind the AR breaker.
 
     Returns:
             dict: {"monthly_credit_limit": ..., "credits_used_this_month": ..., ...}
     """
-    try:
-        from frappe_assistant_core.chat.fac_cloud_client import get_fac_cloud_client
+    from frappe_assistant_core.chat import ar_breaker, credit_status_cache
+    from frappe_assistant_core.chat.fac_cloud_client import SHORT_CALL_TIMEOUT, get_fac_cloud_client
 
-        client = get_fac_cloud_client()
+    user = frappe.session.user
+    entry = credit_status_cache.get(user)
+    if entry and credit_status_cache.is_fresh(entry):
+        return entry["value"]
+
+    def _fallback():
+        return {**entry["value"], "stale": True} if entry else {"unavailable": True}
+
+    try:
+        client = get_fac_cloud_client(timeout=SHORT_CALL_TIMEOUT)
         if not client:
             return {"error": _not_registered_error()}
 
-        return client.get_my_credit_status(_ar_user_id(frappe.session.user))
-
+        status = ar_breaker.call(lambda: client.get_my_credit_status(_ar_user_id(user)))
+    except ar_breaker.BreakerOpen:
+        return _fallback()
     except Exception as e:
+        if ar_breaker.is_transport_failure(e):
+            return _fallback()
         frappe.log_error(title="FACO User Management Error", message=f"Error getting credit status: {e!s}")
-        return {"error": _safe_error(e, "FACO User Management Error")}
+        return {"error": _user_message_for_ar_error(e)}
+
+    credit_status_cache.put(user, status)
+    return status
 
 
 @frappe.whitelist(methods=["POST"])
