@@ -93,6 +93,25 @@ def _is_faco_member(user: str) -> bool:
     return is_member
 
 
+def _discovery_preferences(prefs) -> dict:
+    """The user's three Settings → Home switches for tips, stories and progress, plus the stored state.
+
+    A switch reads as on until the user turns it off (also before the columns exist, mid-migrate).
+    """
+    from frappe_assistant_core.chat.home_preferences import parse_discovery_state
+
+    def on(field: str) -> bool:
+        value = getattr(prefs, field, None)
+        return True if value is None else bool(int(value))
+
+    return {
+        "show_tips": on("show_tips"),
+        "show_whats_new": on("show_whats_new"),
+        "show_progress": on("show_progress"),
+        "state": parse_discovery_state(getattr(prefs, "discovery_state", None)),
+    }
+
+
 # Called on every page load to decide whether to render the chat widget.
 # Must work pre-auth so guests see an onboarding CTA; returns only a
 # boolean + a public reason string, never tenant data or tokens.
@@ -291,6 +310,7 @@ def can_use_faco() -> dict:
                 "quota_used": quota_used,
                 "quota_remaining": quota_remaining,
                 "is_unlimited": is_unlimited,
+                "discovery": _discovery_preferences(prefs),
             },
         }
 

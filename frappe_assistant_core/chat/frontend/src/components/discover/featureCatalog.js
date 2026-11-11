@@ -1,15 +1,13 @@
 /**
- * Feature discovery: what FAC shows on Home so people find Agents, Knowledge,
- * Pages and Prompt templates at their own pace. Pure: no Vue, no network.
+ * Feature discovery: the features a Did you know tip or the Your FAC panel can point to
+ * (Agents, Knowledge, Pages, Prompt templates), with the moving preview and the
+ * "Give it a try" target for each. Pure: no Vue, no network.
  *
  * The rule behind it: chat stays chat. Features are shown here, never pushed
  * inside a conversation. The "Want to try it?" question only comes after the
  * user clicked to see a feature.
  */
 import { __ } from "@/utils/i18n";
-
-export const DISCOVERY_KEY = (user) => `fac_discovery:${user}`;
-export const TIP_DAYS = 7;
 
 /**
  * One entry per feature. `capability` names a userStore flag that must be true
@@ -107,61 +105,6 @@ export function featureForPath(path) {
 	const p = String(path || "");
 	const hit = FEATURES.find((f) => f.routePrefix && (p === f.routePrefix || p.startsWith(`${f.routePrefix}/`)));
 	return hit ? hit.id : null;
-}
-
-export function emptyState() {
-	return { seen: [], dismissedTips: [], tip: null, rowHidden: false, coachDone: false };
-}
-
-/** Reads a stored state, keeping only known keys and types (storage can hold anything). */
-export function parseState(raw) {
-	const state = emptyState();
-	if (!raw) return state;
-	let data;
-	try {
-		data = JSON.parse(raw);
-	} catch {
-		return state;
-	}
-	if (!data || typeof data !== "object") return state;
-	const ids = (list) => (Array.isArray(list) ? list.filter((id) => FEATURE_IDS.includes(id)) : []);
-	state.seen = ids(data.seen);
-	state.dismissedTips = ids(data.dismissedTips);
-	state.rowHidden = data.rowHidden === true;
-	state.coachDone = data.coachDone === true;
-	const tip = data.tip;
-	if (tip && FEATURE_IDS.includes(tip.id) && /^\d{4}-\d{2}-\d{2}$/.test(tip.since || "")) {
-		state.tip = { id: tip.id, since: tip.since };
-	}
-	return state;
-}
-
-function daysBetween(fromIso, toIso) {
-	const [y1, m1, d1] = fromIso.split("-").map(Number);
-	const [y2, m2, d2] = toIso.split("-").map(Number);
-	return Math.round((Date.UTC(y2, m2 - 1, d2) - Date.UTC(y1, m1 - 1, d1)) / 86400000);
-}
-
-/**
- * The weekly "Did you know?" tip. One feature per week, only one the user has
- * not tried, and a dismissed tip never comes back. Returns `{ tip, state }`:
- * `tip` is the feature id to show (or null) and `state.tip` is what to store.
- *
- * Within a tip's week the same tip stays; once the user tries the feature or
- * dismisses the tip, nothing shows until the week is over.
- */
-export function pickTip({ state, candidates, today }) {
-	const current = state.tip;
-	if (current && daysBetween(current.since, today) < TIP_DAYS) {
-		const showable = candidates.includes(current.id) && !state.dismissedTips.includes(current.id);
-		return { tip: showable ? current.id : null, state };
-	}
-	const open = candidates.filter((id) => !state.dismissedTips.includes(id));
-	if (!open.length) return { tip: null, state };
-	// Rotate: the next open feature after last week's, so each gets a turn.
-	const after = current ? FEATURE_IDS.indexOf(current.id) : -1;
-	const next = open.find((id) => FEATURE_IDS.indexOf(id) > after) || open[0];
-	return { tip: next, state: { ...state, tip: { id: next, since: today } } };
 }
 
 /** The "show first, then ask" pop-up, in the shape SpotlightModal renders. */

@@ -201,7 +201,7 @@ frappe.pages['fac-admin'].on_page_load = function(wrapper) {
                                 <button class="btn btn-xs btn-primary" id="toggle-fac-chat">
                                     <span id="toggle-fac-chat-text">Loading...</span>
                                 </button>
-                                ${frappe.boot.fac_demo_video ? `<button class="btn btn-xs btn-default" id="watch-fac-demo">${__('Watch demo')}</button>` : ''}
+                                ${frappe.boot.fac_demo_video ? `<button class="btn btn-xs btn-default" id="watch-fac-demo">${__('How setup works (30 sec)')}</button>` : ''}
                                 <a href="/copilot" target="_blank" rel="noopener" class="btn btn-xs btn-default" id="open-copilot" aria-label="Open Copilot in a new tab">
                                     ${ns.icon('external-link')}
                                 </a>

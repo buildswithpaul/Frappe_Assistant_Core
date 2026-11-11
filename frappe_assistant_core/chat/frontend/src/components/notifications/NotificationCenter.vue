@@ -20,8 +20,11 @@
 							<span class="item-title">{{ n.title }}</span>
 							<span class="item-time">{{ formatTime(n.created_at) }}</span>
 						</div>
+						<span v-if="n.display_style === 'story'" class="item-kind">{{ __("What's new") }}</span>
 						<div v-if="n.message" class="item-message" v-html="renderNotificationMarkdown(n.message)"></div>
-						<a v-if="n.action_label && safeActionUrl(n.action_url)" :href="safeActionUrl(n.action_url)"
+						<button v-if="n.display_style === 'story'" type="button" data-testid="item-watch"
+							class="item-action item-watch" @click="replay(n)">{{ __("Watch") }}</button>
+						<a v-else-if="n.action_label && safeActionUrl(n.action_url)" :href="safeActionUrl(n.action_url)"
 							target="_blank" rel="noopener noreferrer" class="item-action">{{ n.action_label }}</a>
 					</div>
 					<button v-if="n.dismissible === true && !store.isDismissed(n)" data-testid="item-dismiss"
@@ -38,7 +41,9 @@
 
 <script setup>
 import { computed } from "vue";
-import { useNotificationStore } from "@/stores/notificationStore";
+import { inBell, useNotificationStore } from "@/stores/notificationStore";
+import { useDiscoveryStore } from "@/stores/discoveryStore";
+import { __ } from "@/utils/i18n";
 import { renderNotificationMarkdown } from "@/utils/markdown";
 import { typeClass, safeActionUrl, OUTAGE_TYPES } from "./typeMeta";
 
@@ -48,12 +53,20 @@ import { typeClass, safeActionUrl, OUTAGE_TYPES } from "./typeMeta";
 // panel-only containment check here would see the bell button as an outside
 // sibling on the very click that opens the panel — see NotificationBell.vue.
 defineProps({ open: { type: Boolean, default: false } });
+const emit = defineEmits(["close"]);
 
 const store = useNotificationStore();
+const discovery = useDiscoveryStore();
 
-// stable sort — outage-class first, original store order preserved within tiers
+// A story replays from here, any time; it opens over the page, so the bell closes first.
+function replay(n) {
+	emit("close");
+	discovery.openStory(n.id);
+}
+
+// Tips live on Home, not here. Stable sort — outage-class first, original store order preserved within tiers
 const items = computed(() =>
-	[...store.notifications].sort(
+	[...store.notifications].filter(inBell).sort(
 		(a, b) => (OUTAGE_TYPES.has(a.type) ? 0 : 1) - (OUTAGE_TYPES.has(b.type) ? 0 : 1)
 	)
 );
@@ -203,6 +216,19 @@ function formatTime(createdAt) {
 	font-weight: 600;
 	color: var(--ql-accent);
 	text-decoration: underline;
+}
+.item-kind {
+	display: inline-block;
+	margin-top: 0.125rem;
+	font-size: 0.6875rem;
+	font-weight: 600;
+	color: var(--ql-gold);
+}
+.item-watch {
+	background: none;
+	border: none;
+	padding: 0;
+	cursor: pointer;
 }
 .item-dismiss {
 	flex-shrink: 0;

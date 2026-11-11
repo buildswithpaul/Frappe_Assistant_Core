@@ -43,7 +43,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from "vue";
+import { ref, onMounted, watch } from "vue";
 import { useRouter } from "vue-router";
 import { useVisualViewportFrame } from "@/composables/useVisualViewportFrame";
 import { useThemeStore } from "@/stores/themeStore";
@@ -128,12 +128,19 @@ onMounted(async () => {
 		await router.replace("/chat");
 	}
 
+	// Tips, stories and the Your FAC ring start once the user can chat (also after onboarding finishes).
+	const discovery = useDiscoveryStore();
+	watch(
+		() => userStore.registrationStatus,
+		(status) => status === "ready" && discovery.init(),
+		{ immediate: true }
+	);
+
 	isCheckingAuth.value = false;
 
 	checkoutReturn.run().catch((err) => logger.error("Checkout return failed:", err));
 
-	// Opening Knowledge, Agents or Pages once clears that feature's "new" dot and tip.
-	const discovery = useDiscoveryStore();
+	// Opening Knowledge, Agents or Pages once clears that feature's "new" dot.
 	discovery.markRoute(router.currentRoute.value.path);
 	router.afterEach((to) => discovery.markRoute(to.path));
 

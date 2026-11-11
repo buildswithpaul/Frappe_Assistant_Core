@@ -12,7 +12,12 @@ from frappe import _
 from frappe.utils import cint, sbool
 
 from ..doctype.fac_chat_user_preferences.fac_chat_user_preferences import FACChatUserPreferences
-from ..home_preferences import HOME_SIGNALS_CACHE_KEY, load_home_preferences, parse_hidden_signals
+from ..home_preferences import (
+    HOME_SIGNALS_CACHE_KEY,
+    load_home_preferences,
+    parse_discovery_state,
+    parse_hidden_signals,
+)
 from ..home_signals import (
     CLIENT_SIDE_SIGNAL_ID,
     applicable_signals,
@@ -56,6 +61,9 @@ def _preferences_payload(user: str) -> dict:
         "hidden_signals": [signal_id for signal_id in prefs["hidden_signals"] if signal_id in known],
         "show_suggested_prompts": prefs["show_suggested_prompts"],
         "show_personalized_suggestions": prefs["show_personalized_suggestions"],
+        "show_tips": prefs["show_tips"],
+        "show_whats_new": prefs["show_whats_new"],
+        "show_progress": prefs["show_progress"],
         "signals": signals,
     }
 
@@ -73,6 +81,9 @@ def update_home_preferences(
     hidden_signals: list | str | None = None,
     show_suggested_prompts: bool | None = None,
     show_personalized_suggestions: bool | None = None,
+    show_tips: bool | None = None,
+    show_whats_new: bool | None = None,
+    show_progress: bool | None = None,
 ) -> dict:
     """Change the provided home preferences only; returns the same shape as ``get_home_preferences``.
 
@@ -92,6 +103,13 @@ def update_home_preferences(
         changes["show_suggested_prompts"] = _flag(show_suggested_prompts)
     if show_personalized_suggestions is not None:
         changes["show_personalized_suggestions"] = _flag(show_personalized_suggestions)
+    for field, value in (
+        ("show_tips", show_tips),
+        ("show_whats_new", show_whats_new),
+        ("show_progress", show_progress),
+    ):
+        if value is not None:
+            changes[field] = _flag(value)
 
     if changes:
         prefs = FACChatUserPreferences.get_or_create_preferences(user)
@@ -109,3 +127,22 @@ def hide_home_signal(signal_id: str) -> dict:
     prefs.hidden_home_signals = json.dumps(hidden)
     prefs.save(ignore_permissions=True)
     return {"hidden_signals": parse_hidden_signals(prefs.hidden_home_signals)}
+
+
+@frappe.whitelist(methods=["POST"])
+def save_discovery_state(state: dict | str) -> dict:
+    """Store the user's feature-discovery state (opened, used, today's tip, stories watched).
+
+    Kept on the user's preferences so it follows them across browsers. Unknown keys and
+    malformed values are dropped; returns what was stored.
+
+    Written straight to the column: a full save would run on_update, which drops the cached
+    "Needs you" cards, and this is saved far more often than the home settings change.
+    """
+    user = frappe.session.user
+    clean = parse_discovery_state(state)
+    FACChatUserPreferences.get_or_create_preferences(user)
+    frappe.db.set_value(
+        "FAC Chat User Preferences", user, "discovery_state", json.dumps(clean), update_modified=False
+    )
+    return clean

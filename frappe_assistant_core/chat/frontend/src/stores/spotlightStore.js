@@ -6,7 +6,6 @@ import { safeActionUrl } from "@/components/notifications/typeMeta";
 import { useNotificationStore } from "@/stores/notificationStore";
 import { useUserStore } from "@/stores/userStore";
 import { useTourStore } from "@/stores/tourStore";
-import { useDiscoveryStore } from "@/stores/discoveryStore";
 import { getSurface } from "@/stores/chat/surface";
 import { personalLimitBlock } from "@/utils/personalLimit";
 import {
@@ -46,7 +45,7 @@ export const useSpotlightStore = defineStore("spotlight", () => {
 		const user = useUserStore();
 		if (shownThisLoad || current.value || useTourStore().isOpen || user.registrationStatus !== "ready") return;
 		// Never over the first-login tour; SpotlightHost re-evaluates when it closes.
-		if (useDiscoveryStore().coachOpen) return;
+		if (useTourStore().coachOpen) return;
 		const who = user.user;
 
 		if (user.isAdmin && quotaState === "pending") return; // the in-flight check decides first

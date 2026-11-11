@@ -3,10 +3,11 @@ import { createPinia, setActivePinia } from "pinia";
 import { createRouter, createMemoryHistory } from "vue-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { getHome } = vi.hoisted(() => ({ getHome: vi.fn() }));
+const { getHome, dismissNotification } = vi.hoisted(() => ({ getHome: vi.fn(), dismissNotification: vi.fn() }));
 vi.mock("@/api/client", () => ({
 	api: {
-		home: { get: (...a) => getHome(...a), hideSignal: vi.fn() },
+		home: { get: (...a) => getHome(...a), hideSignal: vi.fn(), saveDiscoveryState: vi.fn().mockResolvedValue({}) },
+		notifications: { dismiss: (...a) => dismissNotification(...a) },
 		workflows: { listRuns: vi.fn().mockResolvedValue({ runs: [] }), list: vi.fn().mockResolvedValue({ workflows: [] }) },
 		billing: { getQuotaStatus: vi.fn().mockResolvedValue(null) },
 	},
@@ -16,17 +17,44 @@ import WelcomeScreen from "../WelcomeScreen.vue";
 import { useChatStore } from "@/stores/chatStore";
 import { useUserStore } from "@/stores/userStore";
 import { useDiscoveryStore } from "@/stores/discoveryStore";
-import { DISCOVERY_KEY } from "@/components/discover/featureCatalog";
+import { useNotificationStore } from "@/stores/notificationStore";
 
 const USER = "jane@example.com";
 const SESSION = { session_id: "s1", preview: "Q3 revenue", last_activity: "2026-10-16 10:00:00" };
 const HOME = { area: "business", items: [] };
+// A user FAC has known since before today; tips never show on the first day.
+const KNOWN = { first_day: "2026-11-01" };
+const TODAY = new Date(2026, 10, 12, 9, 0, 0);
+const TOMORROW = new Date(2026, 10, 13, 9, 0, 0);
+
+// AR "tip" notifications, as get_notifications returns them.
+const AGENTS_TIP = {
+	id: "tip-agents",
+	display_style: "tip",
+	priority: "normal",
+	title: "Did you know?",
+	message: "An agent can email you overdue invoices every Monday.",
+	highlights: ["Starts from a template", "About 1 minute"],
+	action_label: "Show me agents",
+	action_route: "/agents?tab=marketplace",
+	feature: "agents",
+	dismissible: true,
+};
+const KNOWLEDGE_TIP = {
+	...AGENTS_TIP,
+	id: "tip-knowledge",
+	message: "Upload your price list and FAC answers from it.",
+	action_route: "/knowledge",
+	feature: "knowledge",
+};
+
 const mounted = [];
-const stored = () => JSON.parse(localStorage.getItem(DISCOVERY_KEY(USER)) || "{}");
 
 async function mountHome({
 	sessions = [SESSION],
-	flags = { workflowsEnabled: true, memoryEnabled: true },
+	state = KNOWN,
+	tips = [AGENTS_TIP],
+	switches = {},
 	before = () => {},
 } = {}) {
 	const pinia = createPinia();
@@ -36,14 +64,22 @@ async function mountHome({
 		cb();
 		return 1;
 	});
-	Object.assign(useUserStore(), { user: USER, ...flags });
+	Object.assign(useUserStore(), {
+		user: USER,
+		workflowsEnabled: true,
+		memoryEnabled: true,
+		discoveryPrefs: { show_tips: true, show_whats_new: true, show_progress: true, ...switches, state },
+	});
 	useChatStore().hydrateSessions(sessions);
+	// Copies: dismissing marks the notification object itself, as AR's next poll would.
+	useNotificationStore().notifications = tips.map((t) => ({ ...t }));
 	const router = createRouter({
 		history: createMemoryHistory(),
 		routes: ["/chat", "/agents", "/knowledge"].map((path) => ({ path, component: { template: "<div />" } })),
 	});
 	router.push("/chat");
 	await router.isReady();
+	useDiscoveryStore().init();
 	before();
 	const w = mount(WelcomeScreen, {
 		slots: { composer: '<div class="composer-stub" />' },
@@ -57,85 +93,96 @@ async function mountHome({
 	return w;
 }
 
-const card = (w, id) => w.find(`[data-test="discover-${id}"]`);
+const tip = (w) => w.find("[data-test='discover-tip']");
+const state = () => useDiscoveryStore().state;
 
 afterEach(() => mounted.splice(0).forEach((w) => w.unmount()));
 
-describe("WelcomeScreen feature discovery", () => {
-	beforeEach(() => localStorage.clear());
-	afterEach(() => vi.unstubAllGlobals());
-
-	it("keeps day one simple: no Discover row and no tip", async () => {
-		const w = await mountHome({ sessions: [] });
-		expect(w.find("[data-test='discover-row']").exists()).toBe(false);
-		expect(w.find("[data-test='discover-tip']").exists()).toBe(false);
+describe("WelcomeScreen Did you know tip", () => {
+	beforeEach(() => {
+		localStorage.clear();
+		dismissNotification.mockReset().mockResolvedValue({});
+		vi.useFakeTimers({ toFake: ["Date"] });
+		vi.setSystemTime(TODAY);
+	});
+	afterEach(() => {
+		vi.useRealTimers();
+		vi.unstubAllGlobals();
 	});
 
-	it("shows only the features this user can use, each marked new until tried", async () => {
-		const w = await mountHome({ flags: { workflowsEnabled: false, memoryEnabled: false } });
-		expect(card(w, "agents").exists()).toBe(false);
-		expect(card(w, "knowledge").exists()).toBe(false);
-		expect(card(w, "pages").exists()).toBe(true);
-		expect(card(w, "templates").text()).toContain("New for you");
+	it("shows AR's words under the ask box", async () => {
+		const w = await mountHome();
+		expect(tip(w).text()).toContain("An agent can email you overdue invoices every Monday.");
+		expect(state().tip).toEqual({ id: "tip-agents", date: "2026-11-12" });
 	});
 
-	it("shows first, then asks: a card opens the pop-up and Maybe later only closes it", async () => {
+	it("keeps day one simple: no tip before the first chat, and none on FAC's first day with the user", async () => {
+		expect(tip(await mountHome({ sessions: [] })).exists()).toBe(false);
+		expect(tip(await mountHome({ state: {} })).exists()).toBe(false);
+		expect(state().first_day).toBe("2026-11-12");
+	});
+
+	it("shows first, then asks: Show me opens the pop-up and Maybe later only closes it", async () => {
 		const w = await mountHome();
 		expect(w.find("[data-test='spotlight-card']").exists()).toBe(false);
-		await card(w, "agents").trigger("click");
-		expect(w.find("[data-test='spotlight-card'] h2").text()).toBe("Agents do routine work for you");
-		expect(w.findAll("[data-test='spotlight-highlight']")).toHaveLength(3);
+		await w.find("[data-test='discover-tip-show']").trigger("click");
+		expect(w.find("[data-test='spotlight-card'] h2").text()).toBe("Did you know?");
+		expect(w.findAll("[data-test='spotlight-highlight']")).toHaveLength(2);
+		expect(w.find("[data-test='spotlight-primary']").text()).toBe("Show me agents");
 		await w.find("[data-test='spotlight-secondary']").trigger("click");
 		expect(w.find("[data-test='spotlight-card']").exists()).toBe(false);
-		expect(stored().seen ?? []).toEqual([]);
+		expect(state().seen).toEqual([]);
 	});
 
-	it("Give it a try on Agents opens the template marketplace and clears the feature's 'new'", async () => {
+	it("the pop-up's button goes where AR said, and the feature counts as opened", async () => {
 		const w = await mountHome();
-		await card(w, "agents").trigger("click");
+		await w.find("[data-test='discover-tip-show']").trigger("click");
 		await w.find("[data-test='spotlight-primary']").trigger("click");
 		await flushPromises();
 		expect(w.router.currentRoute.value.fullPath).toBe("/agents?tab=marketplace");
-		expect(stored().seen).toEqual(["agents"]);
-		expect(card(w, "agents").text()).not.toContain("New for you");
+		expect(state().seen).toEqual(["agents"]);
 	});
 
-	it("Give it a try on Pages fills the composer's question but never sends it", async () => {
+	it("× hides it for today only", async () => {
 		const w = await mountHome();
-		await card(w, "pages").trigger("click");
-		await w.find("[data-test='spotlight-primary']").trigger("click");
-		await flushPromises();
-		expect(w.router.currentRoute.value.path).toBe("/chat");
-		expect(w.router.currentRoute.value.query.prompt).toContain("save it as a Page");
+		await w.find("[data-test='discover-tip-dismiss']").trigger("click");
+		expect(tip(w).exists()).toBe(false);
+		expect(dismissNotification).not.toHaveBeenCalled();
+
+		const later = state();
+		expect(tip(await mountHome({ state: later })).exists()).toBe(false);
+		vi.setSystemTime(TOMORROW);
+		expect(tip(await mountHome({ state: later })).exists()).toBe(true);
 	});
 
-	it("Give it a try on Prompt templates asks ChatView for the template browser", async () => {
+	it("Don't show this tip again dismisses it on AR, for good", async () => {
 		const w = await mountHome();
-		await card(w, "templates").trigger("click");
-		await w.find("[data-test='spotlight-primary']").trigger("click");
-		expect(useDiscoveryStore().templatesRequested).toBe(1);
+		await w.find("[data-test='discover-tip-never']").trigger("click");
+		expect(tip(w).exists()).toBe(false);
+		expect(dismissNotification).toHaveBeenCalledWith("tip-agents");
 	});
 
-	it("after the row is hidden, one weekly tip shows instead, and a dismissed tip stays gone", async () => {
-		const w = await mountHome();
-		await w.find("[data-test='discover-hide']").trigger("click");
-		expect(w.find("[data-test='discover-row']").exists()).toBe(false);
-		expect(stored().rowHidden).toBe(true);
+	it("stops once the feature was really used, and shows the next one", async () => {
+		const w = await mountHome({ state: { ...KNOWN, used: ["agents"] }, tips: [AGENTS_TIP, KNOWLEDGE_TIP] });
+		expect(tip(w).text()).toContain("price list");
+	});
 
-		const again = await mountHome();
-		const tip = again.find("[data-test='discover-tip']");
-		expect(tip.exists()).toBe(true);
-		expect(tip.text()).toContain("Agents");
-		await again.find("[data-test='discover-tip-show']").trigger("click");
-		expect(again.find("[data-test='spotlight-card'] h2").text()).toBe("Agents do routine work for you");
-		await again.find("[data-test='spotlight-secondary']").trigger("click");
-		await again.find("[data-test='discover-tip-dismiss']").trigger("click");
-		expect(again.find("[data-test='discover-tip']").exists()).toBe(false);
-		expect(stored().dismissedTips).toEqual(["agents"]);
+	it("one tip a day: the same tip all day, a different one the next day", async () => {
+		const tips = [AGENTS_TIP, KNOWLEDGE_TIP];
+		await mountHome({ tips });
+		const today = state();
+		expect(tip(await mountHome({ tips, state: today })).text()).toContain("overdue invoices");
+		vi.setSystemTime(TOMORROW);
+		expect(tip(await mountHome({ tips, state: today })).text()).toContain("price list");
+	});
 
-		// Same week: no other tip yet.
-		const sameWeek = await mountHome();
-		expect(sameWeek.find("[data-test='discover-tip']").exists()).toBe(false);
+	it("shows nothing when the user turned tips off in Settings → Home", async () => {
+		expect(tip(await mountHome({ switches: { show_tips: false } })).exists()).toBe(false);
+	});
+
+	it("ignores AR notifications that are not tips", async () => {
+		const w = await mountHome({ tips: [{ ...AGENTS_TIP, display_style: "modal" }] });
+		expect(tip(w).exists()).toBe(false);
 	});
 });
 
@@ -150,26 +197,26 @@ describe("WelcomeScreen first-login tour", () => {
 	afterEach(() => vi.restoreAllMocks());
 
 	it("runs once for a first-time user and is skippable", async () => {
-		const w = await mountHome({ sessions: [] });
+		const w = await mountHome({ sessions: [], state: {} });
 		expect(w.find("[data-test='coach-tour']").exists()).toBe(true);
 		expect(useDiscoveryStore().coachOpen).toBe(true);
 		await w.find("[data-test='coach-skip']").trigger("click");
 		expect(w.find("[data-test='coach-tour']").exists()).toBe(false);
-		expect(stored().coachDone).toBe(true);
+		expect(state().coach_done).toBe(true);
 
-		const again = await mountHome({ sessions: [] });
+		const again = await mountHome({ sessions: [], state: state() });
 		expect(again.find("[data-test='coach-tour']").exists()).toBe(false);
 	});
 
 	it("walks the stops with Next and ends on Done", async () => {
-		const w = await mountHome({ sessions: [] });
+		const w = await mountHome({ sessions: [], state: {} });
 		// The rail is not part of WelcomeScreen, so this mount has two stops: composer and Needs you.
 		expect(w.text()).toContain("1 of 2");
 		await w.find("[data-test='coach-next']").trigger("click");
 		expect(w.text()).toContain("2 of 2");
 		expect(w.find("[data-test='coach-next']").text()).toBe("Done");
 		await w.find("[data-test='coach-next']").trigger("click");
-		expect(stored().coachDone).toBe(true);
+		expect(state().coach_done).toBe(true);
 	});
 
 	it("does not start by itself for a returning user, but Show me around starts it", async () => {

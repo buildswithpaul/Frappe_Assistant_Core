@@ -9,7 +9,7 @@
 			</svg>
 			<span v-if="store.unreadCount" data-testid="unread-badge" class="unread-badge">{{ store.unreadCount }}</span>
 		</button>
-		<NotificationCenter :open="open" />
+		<NotificationCenter :open="open" @close="open = false" />
 	</div>
 </template>
 

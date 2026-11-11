@@ -88,7 +88,9 @@ def banner_shown() -> dict:
             "doctype": "Notification Log",
             "for_user": user,
             "type": "Alert",
-            "subject": _("FAC Chat is installed. Watch the 30-second demo, then switch it on in FAC Admin."),
+            "subject": _(
+                "FAC Chat is installed. Switch it on in FAC Admin to ask your ERPNext data questions."
+            ),
             "link": BANNER_BELL_LINK,
         }
     ).insert(ignore_permissions=True)

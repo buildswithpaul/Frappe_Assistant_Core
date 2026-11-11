@@ -1,8 +1,6 @@
 <template>
 	<nav class="nav-rail" :aria-label="__('Main')">
-		<router-link to="/chat" class="rail-logo" :aria-label="__('FACO home')" :title="__('FACO')">
-			<FacoRobot size="sm" show-arms />
-		</router-link>
+		<RailBot />
 
 		<div class="rail-group">
 			<router-link v-slot="{ href, navigate }" to="/chat" custom>
@@ -128,7 +126,7 @@ import { usePagesStore } from "@/stores/pagesStore";
 import { useUserStore } from "@/stores/userStore";
 import { useDiscoveryStore } from "@/stores/discoveryStore";
 import { __ } from "@/utils/i18n";
-import FacoRobot from "@/components/common/FacoRobot.vue";
+import RailBot from "@/components/discover/RailBot.vue";
 import UserDropdown from "./UserDropdown.vue";
 
 const props = defineProps({
@@ -142,7 +140,6 @@ const { memoryEnabled, workflowsEnabled } = storeToRefs(useUserStore());
 const pagesStore = usePagesStore();
 // A quiet dot on features this user has never opened; it goes once they open it.
 const discovery = useDiscoveryStore();
-discovery.ensureLoaded();
 
 onMounted(() => pagesStore.ensureLoaded());
 
@@ -173,14 +170,6 @@ function onChatClick(event, navigate) {
 	border-right: 1px solid var(--ql-border);
 	height: 100%;
 	box-sizing: border-box;
-}
-
-.rail-logo {
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	width: 2.25rem;
-	height: 2.25rem;
 }
 
 .rail-group {

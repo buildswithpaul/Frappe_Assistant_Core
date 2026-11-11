@@ -6,7 +6,6 @@ import { useSpotlightStore } from "@/stores/spotlightStore";
 import { useNotificationStore } from "@/stores/notificationStore";
 import { useUserStore } from "@/stores/userStore";
 import { useTourStore } from "@/stores/tourStore";
-import { useDiscoveryStore } from "@/stores/discoveryStore";
 import SpotlightModal from "./SpotlightModal.vue";
 import SpotlightCard from "./SpotlightCard.vue";
 
@@ -19,8 +18,7 @@ const spotlight = useSpotlightStore();
 const { current } = storeToRefs(spotlight);
 const { notifications } = storeToRefs(useNotificationStore());
 const { registrationStatus } = storeToRefs(useUserStore());
-const { isOpen: tourOpen } = storeToRefs(useTourStore());
-const { coachOpen } = storeToRefs(useDiscoveryStore());
+const { isOpen: tourOpen, coachOpen } = storeToRefs(useTourStore());
 
 onMounted(() => spotlight.evaluate());
 watch([notifications, registrationStatus, tourOpen, coachOpen], () => spotlight.evaluate());

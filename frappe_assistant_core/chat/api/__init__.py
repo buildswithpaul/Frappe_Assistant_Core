@@ -152,6 +152,7 @@ from .home import (
     get_home_preferences,
     get_home_signals,
     hide_home_signal,
+    save_discovery_state,
     update_home_preferences,
 )
 

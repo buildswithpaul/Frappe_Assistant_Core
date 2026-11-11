@@ -18,6 +18,10 @@
   "needs_you_count",
   "hidden_home_signals",
   "show_personalized_suggestions",
+  "show_tips",
+  "show_whats_new",
+  "show_progress",
+  "discovery_state",
   "pinned_prompt_templates",
   "selected_model",
   "section_break_privacy",
@@ -109,6 +113,34 @@
    "label": "Show Personalised Suggestions"
   },
   {
+   "default": "1",
+   "description": "A short \"Did you know?\" tip under the ask box on Home",
+   "fieldname": "show_tips",
+   "fieldtype": "Check",
+   "label": "Show Did You Know Tips"
+  },
+  {
+   "default": "1",
+   "description": "A ring on the FAC bot when there is a new What's new story",
+   "fieldname": "show_whats_new",
+   "fieldtype": "Check",
+   "label": "Show What's New Stories"
+  },
+  {
+   "default": "1",
+   "description": "The Your FAC progress ring on the FAC bot",
+   "fieldname": "show_progress",
+   "fieldtype": "Check",
+   "label": "Show Your FAC Progress"
+  },
+  {
+   "description": "JSON: features opened and used, today's tip, stories seen, tour done",
+   "fieldname": "discovery_state",
+   "fieldtype": "Long Text",
+   "label": "Discovery State",
+   "hidden": 1
+  },
+  {
    "fieldname": "pinned_prompt_templates",
    "fieldtype": "Small Text",
    "label": "Pinned Prompt Templates",
@@ -148,7 +180,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-05-13 00:00:00.000000",
+ "modified": "2026-11-12 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Chat",
  "name": "FAC Chat User Preferences",

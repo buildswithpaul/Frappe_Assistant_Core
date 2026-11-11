@@ -10,9 +10,34 @@ from frappe import _
 from ._helpers import _not_registered_error, _require_system_manager, _safe_error
 from .auth import _ar_user_id
 
+INVITE_QUESTION_COUNT = 3
+
+
+def invite_questions(user_id: str) -> list[dict]:
+    """Three starter questions for the invited user's area, each with a link that opens FAC Chat with
+    the question already typed (``/copilot/chat?prompt=``; it fills the box and never sends).
+
+    The same starters Home shows for the user's roles, so the invite and the first visit agree.
+    """
+    from urllib.parse import quote
+
+    from .prompts import _role_bucket_prompts
+
+    prompts = _role_bucket_prompts(frappe.get_roles(user_id))[:INVITE_QUESTION_COUNT]
+    return [
+        {
+            "question": str(p["description"]),
+            "url": frappe.utils.get_url(f"/copilot/chat?prompt={quote(str(p['description']))}"),
+        }
+        for p in prompts
+    ]
+
 
 def _notify_invited_user(user_id: str, user_role: str | None, invited_by: str, *, is_resend: bool = False):
-    """Send a Desk (bell) notification to a freshly-invited user.
+    """Send a Desk (bell) notification and email to a freshly-invited user.
+
+    It says who gave them FAC Chat and offers three ready questions for their area. The bell
+    opens FAC Chat with the first one typed in; the email links all three.
 
     Fail-safe: a notification problem must never fail the invite, which has
     already succeeded on the AR backend. If the email has no enabled User on
@@ -23,21 +48,24 @@ def _notify_invited_user(user_id: str, user_role: str | None, invited_by: str, *
             enqueue_create_notification,
         )
 
+        esc = frappe.utils.escape_html
         # Map the wire-role "User" to the human-facing "Member" label used
         # throughout the UI; pass any other role through unchanged.
         role_label = "Member" if (user_role or "User") in ("User", "Member") else user_role
-        spa_url = frappe.utils.get_url("/copilot")
         inviter_name = frappe.utils.get_fullname(invited_by) or invited_by
+        questions = invite_questions(user_id)
 
         if is_resend:
-            subject = _("Reminder: you've been invited to the assistant team")
+            subject = _("Reminder: {0} gave you FAC Chat").format(esc(inviter_name))
         else:
-            subject = _("You've been invited to the assistant team")
+            subject = _("{0} gave you FAC Chat").format(esc(inviter_name))
 
-        body = _(
-            "{0} invited you to the assistant workspace as {1}. "
-            "Open the assistant and start chatting to join."
-        ).format(inviter_name, role_label)
+        intro = _(
+            "{0} added you to FAC Chat as {1}. It answers questions about your ERPNext data in plain words. "
+            "Pick a question to start; it opens with the question already typed in."
+        ).format(esc(inviter_name), esc(role_label))
+        items = "".join(f'<li><a href="{esc(q["url"])}">{esc(q["question"])}</a></li>' for q in questions)
+        body = f"<p>{intro}</p><ul>{items}</ul>" if items else f"<p>{intro}</p>"
 
         enqueue_create_notification(
             user_id,
@@ -46,7 +74,7 @@ def _notify_invited_user(user_id: str, user_role: str | None, invited_by: str, *
                 "subject": subject,
                 "email_content": body,
                 "from_user": invited_by,
-                "link": spa_url,
+                "link": questions[0]["url"] if questions else frappe.utils.get_url("/copilot"),
             },
         )
     except Exception:

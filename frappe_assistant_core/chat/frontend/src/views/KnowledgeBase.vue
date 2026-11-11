@@ -229,6 +229,7 @@ import { ref, computed, onMounted, onUnmounted, watch } from "vue";
 import { useRouter } from "vue-router";
 import { storeToRefs } from "pinia";
 import { useUserStore } from "@/stores/userStore";
+import { useDiscoveryStore } from "@/stores/discoveryStore";
 import { useDocumentUpload } from "@/composables/useDocumentUpload";
 import NavigationSidebar from "@/components/layout/NavigationSidebar.vue";
 import KnowledgeTopBar from "@/components/knowledge/KnowledgeTopBar.vue";
@@ -347,6 +348,8 @@ async function loadDocuments() {
 		if (result) {
 			documents.value = result.documents || [];
 			storage.value = result.storage || null;
+			// A file in Knowledge counts as "used" for Your FAC.
+			useDiscoveryStore().reportKnowledgeCount(documents.value.length);
 		}
 	} catch (e) {
 		loadError.value = e.message || "Failed to load documents";
