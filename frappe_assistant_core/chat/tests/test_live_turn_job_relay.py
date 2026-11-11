@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 import frappe
 from frappe.utils.background_jobs import get_job, get_queue, get_redis_conn
 from rq.job import JobStatus
+from rq.utils import now
 from rq.worker import Worker, WorkerStatus
 
 from frappe_assistant_core.chat.api.block_builder import BlockBuilder
@@ -116,6 +117,13 @@ class TestLiveTurnJobRelay(BaseAssistantTest):
     def test_queued_job_with_no_live_worker_is_stale_at_once(self):
         entry = self._job_entry(status=None, age=11)
         self.assertTrue(live_turn.is_stale(entry))
+
+    def test_queued_job_with_only_a_shutting_down_worker_is_stale_after_10s(self):
+        worker = self._worker(busy=True)
+        # Production: RQ writes this when the worker gets SIGTERM while its horse runs a job.
+        worker._shutdown_requested_date = now()
+        worker.set_shutdown_requested_date()
+        self.assertTrue(live_turn.is_stale(self._job_entry(status=None, age=11)))
 
     def test_queued_job_behind_busy_workers_is_stale_only_after_180s(self):
         self._worker(busy=True)
