@@ -1,17 +1,22 @@
 """Tests for relay_dispatch: when a turn's relay runs as an RQ job on faco_relay."""
 
 import pickle
+import sys
+import zlib
+from datetime import datetime, timezone
 from unittest.mock import patch
 
 import frappe
 from frappe.utils.background_jobs import get_job, get_queue, get_redis_conn
 from rq.job import JobStatus
+from rq.results import Result
 from rq.worker import Worker, WorkerStatus
 
 from frappe_assistant_core.chat.api.chat import relay, relay_dispatch
 from frappe_assistant_core.tests.base_test import BaseAssistantTest
 
 QUEUES = {"short": 300, "default": 300, "long": 1500, "faco_relay": 2100}
+SECRET = "what is the payroll of the ceo"
 
 
 class TestRelayDispatch(BaseAssistantTest):
@@ -28,6 +33,8 @@ class TestRelayDispatch(BaseAssistantTest):
     def tearDown(self):
         for job in self.jobs:
             try:
+                # A job RQ ended keeps its result stream apart from the job hash.
+                Result.delete_all(job)
                 job.delete()
             except Exception:
                 pass
@@ -179,3 +186,47 @@ class TestRelayDispatch(BaseAssistantTest):
         # Production: the job hash expired or was removed (result TTL, purge).
         job.delete()
         self.assertTrue(relay_dispatch.relay_job_lost(job_id))
+
+    def _enqueue_secret(self, turn):
+        job_id = relay_dispatch.relay_job_id(turn)
+        relay_dispatch.enqueue_relay(
+            relay._relay_ar_stream,
+            ("s-" + turn, SECRET, SECRET, None, None, "a@x.com", frappe.local.site),
+            {"live_turn_token": turn},
+            job_id=job_id,
+        )
+        self.jobs.append(get_job(job_id))
+        return job_id
+
+    def _end_as_rq_would(self, job_id, *, failed):
+        """RQ's own end of a job on a real enqueued job: the callback, then the worker's handling."""
+        worker = self._worker()
+        queue = get_queue("faco_relay")
+        # Production: the worker fetches the job, runs it, and stamps its start and end.
+        job = get_job(job_id)
+        job.started_at = job.ended_at = datetime.now(timezone.utc)
+        if failed:
+            try:
+                raise RuntimeError("relay crashed")
+            except RuntimeError:
+                exc_info = sys.exc_info()
+            job.execute_failure_callback(worker.death_penalty_class, *exc_info)
+            worker.handle_job_failure(job=job, queue=queue, exc_string="RuntimeError: relay crashed")
+        else:
+            job.execute_success_callback(worker.death_penalty_class, None)
+            worker.handle_job_success(job=job, queue=queue, started_job_registry=queue.started_job_registry)
+
+    def test_finished_job_leaves_redis_at_once(self):
+        job_id = self._enqueue_secret("tokok")
+        self._end_as_rq_would(job_id, failed=False)
+        self.assertIsNone(get_job(job_id))
+
+    def test_failed_job_keeps_no_turn_content(self):
+        job_id = self._enqueue_secret("tokfail")
+        self._end_as_rq_would(job_id, failed=True)
+
+        job = get_job(job_id)
+        self.assertEqual(job.get_status(), JobStatus.FAILED)
+        self.assertEqual(job.kwargs["kwargs"], {"relay": "stream"})
+        stored = get_redis_conn().hgetall(job.key)
+        self.assertNotIn(SECRET.encode(), b"".join(stored.values()) + zlib.decompress(stored[b"data"]))
