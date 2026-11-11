@@ -119,8 +119,15 @@ def _relay_in_job(*, in_process: bool, restricted: bool) -> bool:
 
     In a job, a draining web worker can still accept the turn: the relay will not run in it. A
     GDPR-restricted turn never runs as a job, so its content is never kept in the queue's Redis.
+    A failure deciding (the setting's column not migrated yet, Redis down) sends the turn to the pool.
     """
-    return not in_process and not restricted and relay_dispatch.use_job_relay()
+    if in_process or restricted:
+        return False
+    try:
+        return relay_dispatch.use_job_relay()
+    except Exception as e:
+        frappe.logger("faco.relay").warning(f"Relay dispatch decision failed, using the pool: {e!s}")
+        return False
 
 
 class RelayStart(NamedTuple):
