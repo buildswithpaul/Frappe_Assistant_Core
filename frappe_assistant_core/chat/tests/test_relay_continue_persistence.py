@@ -12,6 +12,7 @@ from unittest.mock import MagicMock, patch
 
 import frappe
 
+from frappe_assistant_core.chat import credit_status_cache
 from frappe_assistant_core.chat.api.chat import cancel as cancel_mod
 from frappe_assistant_core.chat.api.chat import relay
 from frappe_assistant_core.chat.api.chat.helpers import _load_turn_blocks
@@ -233,6 +234,28 @@ class TestAContinueAppendsToItsTurn(BaseAssistantTest):
                 # The event keeps reporting this cycle's cost; clients add it.
                 self.assertEqual(complete["credits_used"], 4)
                 self.assertEqual(complete["blocks"], json.loads(row.blocks))
+
+    def test_a_finished_turn_ends_the_credit_status_freshness(self):
+        # AR reports stream_complete once the turn's credits are spent; the cached figure is then out of date.
+        events = [
+            CONTINUE_START,
+            _event("stream_chunk", content=REST),
+            _event("stream_complete", credits_used=4),
+        ]
+        with patch.object(credit_status_cache, "invalidate") as invalidate:
+            self._continue(events)
+        invalidate.assert_called_once_with(self.user)
+
+    def test_a_cache_failure_does_not_break_turn_completion(self):
+        events = [
+            CONTINUE_START,
+            _event("stream_chunk", content=REST),
+            _event("stream_complete", credits_used=4),
+        ]
+        with patch.object(credit_status_cache, "invalidate", side_effect=ConnectionError("redis down")):
+            _client, emitted = self._continue(events)
+        self.assertEqual(emitted[-1]["event"], "stream_complete")
+        self.assertEqual(self._stored().content, FIRST_PART + REST)
 
     def test_a_continue_that_errors_mid_answer_appends_its_partial(self):
         _client, emitted = self._continue(

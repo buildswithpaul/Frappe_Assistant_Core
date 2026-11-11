@@ -1,13 +1,22 @@
 import { describe, expect, it } from "vitest";
 import { personalLimitBlock } from "./personalLimit";
 
+describe("stale figures", () => {
+	it("carries the stale flag into the block", () => {
+		const status = { has_individual_limit: true, monthly_credit_limit: 10, credits_used_this_month: 10 };
+		expect(personalLimitBlock({ ...status, stale: true }).stale).toBe(true);
+		expect(personalLimitBlock(status).stale).toBe(false);
+	});
+});
+
 describe("personalLimitBlock", () => {
 	it("is set when a member has used their whole personal limit", () => {
 		expect(personalLimitBlock({ has_individual_limit: true, monthly_credit_limit: 10000, credits_used_this_month: 11234 })).toEqual({
 			used: 11234,
 			limit: 10000,
+			stale: false,
 		});
-		expect(personalLimitBlock({ monthly_credit_limit: "500", credits_used_this_month: "500" })).toEqual({ used: 500, limit: 500 });
+		expect(personalLimitBlock({ monthly_credit_limit: "500", credits_used_this_month: "500" })).toEqual({ used: 500, limit: 500, stale: false });
 	});
 
 	it("is null under the limit, with no limit (0 draws on the team pool), or with no status", () => {

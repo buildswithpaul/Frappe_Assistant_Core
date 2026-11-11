@@ -13,6 +13,7 @@
 					)
 				}}
 			</p>
+			<p v-if="stale" class="limit-notice-text" data-test="stale-note">{{ __("May be out of date") }}</p>
 			<p class="limit-notice-text">
 				{{ __("Change it under Settings, Users, Monthly credit limit. 0 means no personal limit.") }}
 			</p>
@@ -30,6 +31,7 @@ import { __ } from "@/utils/i18n";
 defineProps({
 	used: { type: Number, required: true },
 	limit: { type: Number, required: true },
+	stale: { type: Boolean, default: false },
 });
 
 defineEmits(["open-users"]);

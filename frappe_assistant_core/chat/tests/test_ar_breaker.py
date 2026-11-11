@@ -71,6 +71,28 @@ class TestARBreaker(BaseAssistantTest):
         self.assertTrue(ar_breaker.is_transport_failure(ARTimeoutError("slow")))
         self.assertTrue(ar_breaker.is_transport_failure(ARConnectionError("down")))
 
+    def test_5xx_is_a_transport_failure(self):
+        for status in (500, 502, 503, 504):
+            self.assertTrue(ar_breaker.is_transport_failure(ARAPIError("down", status_code=status)))
+        self.assertFalse(ar_breaker.is_transport_failure(ARAPIError("bad", status_code=429)))
+
+    def test_marker_counts_only_for_timeouts_and_connection_errors(self):
+        # The SDK puts str(exception) in the marker; these are its own timeout and connection texts.
+        self.assertTrue(
+            ar_breaker.is_transport_marker({"_ar_unreachable": True, "error": "Request to x timed out"})
+        )
+        self.assertTrue(
+            ar_breaker.is_transport_marker({"_ar_unreachable": True, "error": "Failed to connect to x"})
+        )
+        self.assertFalse(
+            ar_breaker.is_transport_marker({"_ar_unreachable": True, "error": "Authentication failed"})
+        )
+        self.assertFalse(ar_breaker.is_transport_marker({"user_exists": True}))
+
+    def test_failure_counter_expires(self):
+        ar_breaker.record_failure()
+        self.assertGreater(frappe.cache.ttl(ar_breaker._key(ar_breaker._FAILURES_KEY)), 0)
+
     def test_call_records_only_transport_failures(self):
         def raise_4xx():
             raise ARAPIError("bad", status_code=400)

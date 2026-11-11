@@ -894,6 +894,14 @@ def _settle_unconsumed_resume(
     return block_builder.snapshot()
 
 
+def _end_credit_status_freshness(user: str) -> None:
+    """A finished turn made the cached credit figure out of date; a cache fault must not fail the turn."""
+    try:
+        credit_status_cache.invalidate(user)
+    except Exception:
+        frappe.logger("faco").warning("Could not end credit status freshness", exc_info=True)
+
+
 def _relay_ar_interrupt_resume(
     session_id,
     interrupt_response,
@@ -1276,7 +1284,7 @@ def _relay_ar_interrupt_resume(
                 return
 
             elif event_type == "stream_complete":
-                credit_status_cache.invalidate(user)
+                _end_credit_status_freshness(user)
                 tokens_used = data.get("tokens_used", 0)
                 credits_used = data.get("credits_used", 0)
                 model_used = data.get("model", "")
@@ -1897,7 +1905,7 @@ def _relay_ar_stream(
                 return
 
             elif event_type == "stream_complete":
-                credit_status_cache.invalidate(user)
+                _end_credit_status_freshness(user)
                 tokens_used = data.get("tokens_used", 0)
                 credits_used = data.get("credits_used", 0)
                 model_used = data.get("model", "")

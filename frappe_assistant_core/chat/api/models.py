@@ -95,7 +95,9 @@ def _model_list() -> tuple[dict | None, bool]:
     from frappe_assistant_core.chat.fac_cloud_client import SHORT_CALL_TIMEOUT, get_fac_cloud_client
 
     entry = frappe.cache.get_value(MODEL_LIST_KEY) or {}
-    result, at, last_good = entry.get("result"), entry.get("at", 0), entry.get("last_good")
+    result, at = entry.get("result"), entry.get("at", 0)
+    # A good list stays the last good one after it ages, so an outage can still serve it.
+    last_good = result if result is not None else entry.get("last_good")
     age = time.time() - at
     if result is not None and age < AVAILABLE_MODELS_TTL:
         return result, False
@@ -103,7 +105,6 @@ def _model_list() -> tuple[dict | None, bool]:
     if failed_recently or ar_breaker.is_open():
         return last_good, last_good is not None
 
-    last_good = result if result is not None else last_good
     try:
         client = get_fac_cloud_client(timeout=SHORT_CALL_TIMEOUT)
         if not client:
