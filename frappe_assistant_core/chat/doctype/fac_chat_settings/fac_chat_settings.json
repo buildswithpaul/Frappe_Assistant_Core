@@ -16,6 +16,7 @@
   "max_context_tokens",
   "enable_dom_extraction",
   "enable_browser_diagnostics",
+  "expected_concurrent_chatters",
   "widget_embed_section",
   "widget_embed_apps",
   "enable_raven_bot",
@@ -107,6 +108,13 @@
    "fieldname": "enable_browser_diagnostics",
    "fieldtype": "Check",
    "label": "Enable Browser Diagnostics"
+  },
+  {
+   "default": "10",
+   "description": "Seated users you expect to chat at the same time. The server-setup check wants at least twice this many web request slots.",
+   "fieldname": "expected_concurrent_chatters",
+   "fieldtype": "Int",
+   "label": "Expected Concurrent Chatters"
   },
   {
    "description": "Show the FACO widget inside these Frappe apps as well as Desk.",
