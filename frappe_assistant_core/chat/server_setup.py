@@ -104,14 +104,50 @@ def _master_environ_args(process: psutil.Process) -> str | None:
         return None
 
 
+def _serves_this_bench(process, argv: list[str], sites: str) -> bool:
+    """Whether a gunicorn process runs this bench's Frappe app: started in, or chdir'd to, our sites."""
+    if "frappe.app:application" not in argv:
+        return False
+    try:
+        if process.cwd() == sites:
+            return True
+    except (psutil.Error, OSError):
+        pass
+    return any(arg in (f"--chdir={sites}", sites) for arg in argv)
+
+
+def _bench_master() -> tuple[list[str], str | None] | None:
+    """This bench's gunicorn master, found among the running processes.
+
+    A web request's parent is the master; a scheduler job's parent is `bench worker`, so the
+    heartbeat looks for it. A web server in another container is not visible and stays unknown.
+    """
+    sites = os.getcwd()
+    gunicorn = {}
+    for process in psutil.process_iter(["pid", "ppid", "cmdline"]):
+        argv = process.info.get("cmdline") or []
+        if _is_gunicorn(argv) and _serves_this_bench(process, argv, sites):
+            gunicorn[process.info["pid"]] = process
+    for process in gunicorn.values():
+        if process.info.get("ppid") not in gunicorn:
+            return process.info["cmdline"], _master_environ_args(process)
+    return None
+
+
 def read_web_server_config() -> dict:
-    """Read how the web server running this request was started."""
+    """Read how this bench's web server was started."""
     config = {"worker_class": None, "workers": None, "threads": None, "timeout": None}
     try:
         master = psutil.Process(os.getppid())
         parsed = parse_gunicorn_cmdline(master.cmdline(), _master_environ_args(master))
     except (psutil.Error, OSError):
         parsed = None
+    if not parsed:
+        try:
+            found = _bench_master()
+        except (psutil.Error, OSError):
+            found = None
+        parsed = parse_gunicorn_cmdline(*found) if found else None
     if parsed:
         return {**config, **parsed, "source": "gunicorn"}
 
