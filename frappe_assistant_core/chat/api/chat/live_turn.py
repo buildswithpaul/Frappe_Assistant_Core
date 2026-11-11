@@ -360,6 +360,8 @@ def mark_turn_interrupted(session_id: str) -> dict:
             fall_back_to_latest=False,
         )
     clear(session_id, entry["turn"])
+    # The turn's asker spent any credits, not whoever ran this check.
+    relay._end_credit_status_freshness(entry.get("user") or frappe.session.user)
     if entry.get("relay") == "job":
         error = _("This answer was interrupted before it finished. Retry to run it again.")
     else:
