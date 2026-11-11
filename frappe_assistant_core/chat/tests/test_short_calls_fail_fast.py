@@ -94,11 +94,14 @@ class TestNotifications(ShortCallsBase):
         super().setUp()
         for target, kwargs in (
             (NOTIF_FACTORY, {"return_value": self.client}),
+            (FACTORY, {"return_value": self.client}),
             ("frappe_assistant_core.chat.api.notifications.is_chat_enabled", {"return_value": True}),
         ):
             patcher = patch(target, **kwargs)
             patcher.start()
             self.addCleanup(patcher.stop)
+        # Production reaches a seated user through AR's get_user_auth_status answering Active.
+        self.client.get_user_auth_status.return_value = {"user_exists": True, "user_status": "Active"}
         self.logs_before = _error_log_count(NOTIF_TITLE)
 
     def test_notifications_skip_ar_when_breaker_open(self):
