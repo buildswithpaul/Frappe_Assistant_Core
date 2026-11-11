@@ -23,6 +23,7 @@ from frappe import _
 
 from frappe_assistant_core.chat import ar_breaker
 from frappe_assistant_core.chat.api.auth import _ar_user_id
+from frappe_assistant_core.chat.api.settings.access import has_seat
 from frappe_assistant_core.chat.fac_cloud_client import SHORT_CALL_TIMEOUT, get_fac_cloud_client
 from frappe_assistant_core.chat.gate import is_chat_enabled
 
@@ -58,6 +59,9 @@ def get_notifications() -> dict:
                 return _response(payload["notifications"], user, degraded=bool(payload.get("degraded")))
         except (json.JSONDecodeError, TypeError):
             pass
+
+    if has_seat(frappe.session.user) is False:
+        return {**_response([], user, degraded=False), "no_seat": True}
 
     notifications = None
     if not ar_breaker.is_open():

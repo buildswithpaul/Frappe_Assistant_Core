@@ -36,6 +36,7 @@ class ShortCallsBase(BaseAssistantTest):
     def _clear(self):
         frappe.cache.delete_value(models.MODEL_LIST_KEY)
         frappe.cache.delete_value(f"faco_member:{MEMBER}")
+        frappe.cache.delete_value(access._last_known_key(MEMBER))
         frappe.cache.delete_value(notifications._cache_key(notifications._ar_user_id(frappe.session.user)))
         for name in (ar_breaker._FAILURES_KEY, ar_breaker._OPEN_KEY, ar_breaker._WAS_OPEN_KEY):
             frappe.cache.delete(ar_breaker._key(name))

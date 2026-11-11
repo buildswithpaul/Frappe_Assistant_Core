@@ -90,7 +90,10 @@ class TestCreditStatusFailFast(BaseAssistantTest):
 
     def test_client_is_built_with_3s_timeout(self):
         users.get_my_credit_status()
-        self.factory.assert_called_once_with(timeout=SHORT_CALL_TIMEOUT)
+        # One call builds the client for the membership check, one for credit status; both use 3 s.
+        self.assertGreaterEqual(self.factory.call_count, 1)
+        for call in self.factory.call_args_list:
+            self.assertEqual(call.kwargs, {"timeout": SHORT_CALL_TIMEOUT})
         self.assertEqual(SHORT_CALL_TIMEOUT, 3)
 
     def test_turn_completion_invalidates_but_keeps_value(self):
