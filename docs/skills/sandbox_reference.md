@@ -25,3 +25,4 @@ Use it before writing a Server Script, instead of guessing which `frappe.*` func
 1. **Look up before you write** — check each `frappe.*` call you plan to use against the list.
 2. **Narrow with a prefix** — `frappe.db` or `frappe.utils` is faster to read than the full list.
 3. **Build the script Disabled** — switch it on once it is ready, then read `recent_errors` for what it caused.
+4. **A save is checked too** — `create_document` and `update_document` refuse a Server Script that uses a name missing from this list, `.format()`, or code the sandbox will not compile, with `error_type: "server_script_sandbox"`.
