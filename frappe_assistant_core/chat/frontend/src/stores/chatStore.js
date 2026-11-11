@@ -1391,6 +1391,7 @@ export const useChatStore = defineStore("chat", () => {
 		undoChange: changeActions.undoChange,
 		handleModelSelected: blocks.handleModelSelected,
 		handleRoutingNotice: blocks.handleRoutingNotice,
+		handleStreamStatus: blocks.handleStreamStatus,
 		handleThinkingEvent: blocks.handleThinkingEvent,
 		completeThinkingBlock: blocks.completeThinkingBlock,
 		handleToolCallStart: blocks.handleToolCallStart,

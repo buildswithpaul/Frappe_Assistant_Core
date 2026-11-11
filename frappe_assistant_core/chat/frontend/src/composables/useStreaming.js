@@ -285,6 +285,10 @@ export function useStreaming() {
 		chatStore.resetActivityTimeout();
 
 		switch (data.event) {
+			case "stream_status":
+				// The activity timer already reset above: a retry wait is not silence.
+				chatStore.handleStreamStatus(data);
+				break;
 			case "stream_start":
 				// App-level zero-retention flag rides on stream_start (capabilities
 				// can't carry a per-app flag). Surface it read-only in PrivacySettings.
@@ -295,6 +299,7 @@ export function useStreaming() {
 				if (data.message_id || data.model_id) {
 					const lastMsg = findActiveMessage(chatStore.messages);
 					if (lastMsg && lastMsg.role === "assistant") {
+						lastMsg.busyRetrying = false;
 						if (data.message_id) {
 							lastMsg.message_id = data.message_id;
 							// Re-activate streaming on the existing message when resuming

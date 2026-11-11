@@ -171,6 +171,15 @@ export function createBlockHandlers({
 		}
 	}
 
+	// AR refused the stream because it is busy and FAC is waiting to retry it. The flag
+	// lives on the bubble so the processing indicator can say so; stream_start clears it.
+	function handleStreamStatus(data) {
+		const lastMsg = findActiveMessage(messages.value);
+		if (lastMsg && lastMsg.role === "assistant") {
+			lastMsg.busyRetrying = data?.status === "busy_retrying";
+		}
+	}
+
 	function handleThinkingEvent(data) {
 		const msg = getOrCreateStreamingMessage();
 
@@ -582,6 +591,7 @@ export function createBlockHandlers({
 		handleChangesMadeEvent,
 		handleModelSelected,
 		handleRoutingNotice,
+		handleStreamStatus,
 		handleThinkingEvent,
 		completeThinkingBlock,
 		handleToolCallStart,

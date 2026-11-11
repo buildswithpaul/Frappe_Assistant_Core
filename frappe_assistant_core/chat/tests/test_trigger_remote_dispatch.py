@@ -46,6 +46,11 @@ class TestClassifyException(unittest.TestCase):
         self.assertEqual(self._status(ARAPIError("Too many", status_code=429)), STATUS_QUOTA_SKIPPED)
         self.assertEqual(self._status(ARRateLimitError()), STATUS_QUOTA_SKIPPED)
 
+    def test_ar_busy_is_retryable_not_quota_skipped(self):
+        # SDK 1.14.0 raises this for AR's 503; the sweeper must retry it, not drop the event.
+        exc = ARRateLimitError("Service busy", retry_after=5.0, error_code="AR_BUSY")
+        self.assertEqual(self._status(exc), STATUS_ENQUEUE_FAILED)
+
     def test_server_and_network_errors_are_retryable(self):
         self.assertEqual(self._status(ARAPIError("Bad gateway", status_code=502)), STATUS_ENQUEUE_FAILED)
         self.assertEqual(self._status(ARTimeoutError()), STATUS_ENQUEUE_FAILED)

@@ -119,7 +119,11 @@
 		</div>
 
 		<!-- Processing indicator when waiting between blocks -->
-		<ProcessingIndicator v-if="showProcessingIndicator" :blocks="blocks" />
+		<ProcessingIndicator
+			v-if="showProcessingIndicator"
+			:blocks="blocks"
+			:busy-retrying="busyRetrying"
+		/>
 	</div>
 </template>
 
@@ -168,6 +172,11 @@ const props = defineProps({
 	// resolved, but the message streams again only once the resume's first event
 	// lands (chatStore.isSubmittingInterrupts spans that round trip).
 	isResuming: {
+		type: Boolean,
+		default: false,
+	},
+	// FAC is waiting to re-open a stream AR refused because it was busy.
+	busyRetrying: {
 		type: Boolean,
 		default: false,
 	},
