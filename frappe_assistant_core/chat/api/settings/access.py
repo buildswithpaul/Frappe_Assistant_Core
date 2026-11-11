@@ -63,7 +63,8 @@ def _faco_member_status(user: str) -> str:
                 # owner, whose seat is keyed by email, reads as a non-member).
                 result = client.get_user_auth_status(user_id=_ar_user_id(user)) or {}
                 if result.get("_ar_unreachable"):
-                    ar_breaker.record_failure()
+                    if ar_breaker.is_transport_marker(result):
+                        ar_breaker.record_failure()
                 else:
                     ar_breaker.record_success()
                     ar_status = result.get("user_status")

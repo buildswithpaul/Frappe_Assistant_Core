@@ -32,12 +32,16 @@ class TestCreditStatusFailFast(BaseAssistantTest):
         self.logs_before = _error_log_count()
         self.client = create_autospec(AssistantRuntimeClient, instance=True)
         self.client.get_my_credit_status.return_value = STATUS
+        # Production reaches a seated user through AR's get_user_auth_status answering Active.
+        self.client.get_user_auth_status.return_value = {"user_exists": True, "user_status": "Active"}
         patcher = patch(FACTORY, return_value=self.client)
         self.factory = patcher.start()
         self.addCleanup(patcher.stop)
 
     def _clear(self):
         frappe.cache.delete_value(credit_status_cache._key(self.user))
+        frappe.cache.delete_value(f"faco_member:{self.user}")
+        frappe.cache.delete_value(f"faco_member_last:{self.user}")
         for name in (ar_breaker._FAILURES_KEY, ar_breaker._OPEN_KEY, ar_breaker._WAS_OPEN_KEY):
             frappe.cache.delete(ar_breaker._key(name))
 
@@ -82,11 +86,31 @@ class TestCreditStatusFailFast(BaseAssistantTest):
         self.client.get_my_credit_status.assert_not_called()
 
     def test_non_transport_failure_writes_one_error_log(self):
-        self.client.get_my_credit_status.side_effect = ARAPIError("nope", status_code=500)
+        self.client.get_my_credit_status.side_effect = ARAPIError("nope", status_code=400)
         result = users.get_my_credit_status()
         self.assertIn("error", result)
         self.assertEqual(_error_log_count(), self.logs_before + 1)
         self.assertEqual(self.client.get_my_credit_status.call_count, 1)
+
+    def test_503_serves_stale_counts_for_the_breaker_and_logs_nothing(self):
+        # An AR restart or overload answers 502/503 at once through the proxy.
+        credit_status_cache.put(self.user, STATUS)
+        credit_status_cache.invalidate(self.user)
+        self.client.get_my_credit_status.side_effect = ARAPIError("busy", status_code=503)
+        result = users.get_my_credit_status()
+        self.assertTrue(result["stale"])
+        self.assertEqual(_error_log_count(), self.logs_before)
+        for _ in range(ar_breaker.FAILURE_THRESHOLD - 1):
+            users.get_my_credit_status()
+        self.assertTrue(ar_breaker.is_open())
+
+    def test_other_failure_serves_stale_with_one_error_log(self):
+        credit_status_cache.put(self.user, STATUS)
+        credit_status_cache.invalidate(self.user)
+        self.client.get_my_credit_status.side_effect = ARAPIError("nope", status_code=400)
+        result = users.get_my_credit_status()
+        self.assertTrue(result["stale"])
+        self.assertEqual(_error_log_count(), self.logs_before + 1)
 
     def test_client_is_built_with_3s_timeout(self):
         users.get_my_credit_status()

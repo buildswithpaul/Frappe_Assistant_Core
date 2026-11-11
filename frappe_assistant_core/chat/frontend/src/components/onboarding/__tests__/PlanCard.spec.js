@@ -61,6 +61,13 @@ describe("PlanCard", () => {
 		expect(quotaText(wrapper)).not.toContain("450,000");
 	});
 
+	it("marks a stale personal figure as possibly out of date", async () => {
+		getQuotaStatus.mockResolvedValue(TEAM_PRO_TENANT);
+		getMyCreditStatus.mockResolvedValue({ ...CAPPED_MEMBER, stale: true });
+		const wrapper = await mountCard();
+		expect(wrapper.find("[data-test=plan-stale]").text()).toBe("May be out of date");
+	});
+
 	it("labels the quota as personal when a cap governs the member", async () => {
 		getQuotaStatus.mockResolvedValue(TEAM_PRO_TENANT);
 		getMyCreditStatus.mockResolvedValue(CAPPED_MEMBER);

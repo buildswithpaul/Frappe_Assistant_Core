@@ -35,8 +35,9 @@ class ShortCallsBase(BaseAssistantTest):
 
     def _clear(self):
         frappe.cache.delete_value(models.MODEL_LIST_KEY)
-        frappe.cache.delete_value(f"faco_member:{MEMBER}")
-        frappe.cache.delete_value(access._last_known_key(MEMBER))
+        for user in (MEMBER, frappe.session.user):
+            frappe.cache.delete_value(f"faco_member:{user}")
+            frappe.cache.delete_value(access._last_known_key(user))
         frappe.cache.delete_value(notifications._cache_key(notifications._ar_user_id(frappe.session.user)))
         for name in (ar_breaker._FAILURES_KEY, ar_breaker._OPEN_KEY, ar_breaker._WAS_OPEN_KEY):
             frappe.cache.delete(ar_breaker._key(name))
@@ -82,6 +83,18 @@ class TestModelList(ShortCallsBase):
         models.get_available_models()
         self.client.list_available_models.assert_called_once_with(timeout=3)
         self.factory.assert_called_once_with(timeout=SHORT_CALL_TIMEOUT)
+
+    def test_aged_good_list_with_open_breaker_is_served_stale(self):
+        models.get_available_models()
+        # Production reaches this once the 300 s trust window has lapsed while the breaker is open.
+        entry = frappe.cache.get_value(models.MODEL_LIST_KEY)
+        entry["at"] -= models.AVAILABLE_MODELS_TTL + 1
+        frappe.cache.set_value(models.MODEL_LIST_KEY, entry)
+        self._open_breaker()
+        result = models.get_available_models()
+        self.assertTrue(result["stale"])
+        self.assertEqual(result["models"], MODELS["models"])
+        self.assertEqual(self.client.list_available_models.call_count, 1)
 
     def test_open_breaker_skips_model_list_call(self):
         self._open_breaker()
@@ -132,11 +145,25 @@ class TestMembership(ShortCallsBase):
 
     def test_membership_unreachable_feeds_the_breaker(self):
         # The SDK returns this marker instead of raising when its request fails.
-        self.client.get_user_auth_status.return_value = {"_ar_unreachable": True, "error": "x"}
+        self.client.get_user_auth_status.return_value = {
+            "_ar_unreachable": True,
+            "error": "Request to x timed out",
+        }
         for _ in range(ar_breaker.FAILURE_THRESHOLD):
             frappe.cache.delete_value(f"faco_member:{MEMBER}")
             self.assertTrue(access._is_faco_member(MEMBER))
         self.assertTrue(ar_breaker.is_open())
+
+    def test_membership_401_marker_does_not_open_the_breaker(self):
+        # The SDK returns the same marker for a 401 as for a timeout; only its text differs.
+        self.client.get_user_auth_status.return_value = {
+            "_ar_unreachable": True,
+            "error": "Authentication failed",
+        }
+        for _ in range(ar_breaker.FAILURE_THRESHOLD + 1):
+            frappe.cache.delete_value(f"faco_member:{MEMBER}")
+            access._is_faco_member(MEMBER)
+        self.assertFalse(ar_breaker.is_open())
 
     def test_membership_skips_ar_when_breaker_open_and_fails_open(self):
         self._open_breaker()

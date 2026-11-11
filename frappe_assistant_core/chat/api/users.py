@@ -429,6 +429,10 @@ def get_my_credit_status():
     answer, the last known figure comes back with ``stale: True``, or ``unavailable: True``
     when there is none. Makes at most one AR call, behind the AR breaker.
 
+    ``{"no_seat": True}`` comes back, with no AR call, for a user who has no Active seat, which
+    includes a site that is not registered (no member status exists there). An AR 404 from the
+    credit-status call, including tenant validation refusing the request, reads the same way.
+
     Returns:
             dict: {"monthly_credit_limit": ..., "credits_used_this_month": ..., ...}
     """
@@ -460,7 +464,7 @@ def get_my_credit_status():
         if isinstance(e, ARAPIError) and e.status_code == 404:
             return {"no_seat": True}
         frappe.log_error(title="FACO User Management Error", message=f"Error getting credit status: {e!s}")
-        return {"error": _user_message_for_ar_error(e)}
+        return {**entry["value"], "stale": True} if entry else {"error": _user_message_for_ar_error(e)}
 
     credit_status_cache.put(user, status)
     return status

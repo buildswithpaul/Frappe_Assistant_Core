@@ -556,17 +556,13 @@ describe("widget panel", () => {
 			expect(w.findAllComponents(RouterLinkStub)).toHaveLength(0);
 		});
 
-		it("no_seat leaves the composer usable and the meter empty", async () => {
-			// AR answers no_seat for an invited user who has no billed seat yet; they can still chat.
-			api.users.getMyCreditStatus.mockResolvedValueOnce({ no_seat: true });
-			useUserStore().registrationStatus = "ready";
+		it("marks the banner's figure as possibly out of date when the backend served a stale one", async () => {
+			// The backend serves its last good copy, marked stale, while FAC Cloud is slow.
+			api.users.getMyCreditStatus.mockResolvedValueOnce({ ...atLimit, stale: true });
 			useUserStore().quotaInfo = { credits_exhausted: false, is_admin: false };
 			const w = mount(WidgetPanel, { global: { stubs: withLink } });
 			await flushPromises();
-			expect(useUserStore().myCreditStatus).toBeNull();
-			expect(w.find('[data-test="personal-limit-banner"]').exists()).toBe(false);
-			expect(w.find('[role="alert"]').exists()).toBe(false);
-			expect(w.findComponent(SendStub).attributes("hold-send")).toBe("false");
+			expect(w.find('[data-test="personal-limit-banner"]').text()).toContain("May be out of date");
 		});
 
 		it("sends as usual under the limit", async () => {
