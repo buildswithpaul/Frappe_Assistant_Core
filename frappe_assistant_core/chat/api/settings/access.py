@@ -18,9 +18,16 @@ from frappe_assistant_core.chat.gate import is_chat_enabled
 # briefly so a real suspension takes effect quickly once AR is reachable again.
 _MEMBER_CACHE_TTL = 60
 _FAILOPEN_TTL = 5
+# The last definitive AR answer outlives any outage, so a known non-member stays out while AR is
+# unreachable; only a user AR has never answered for fails open.
+_LAST_KNOWN_TTL = 24 * 60 * 60
 
 
 _STATUSES = ("Active", "Pending", "none", "unknown")
+
+
+def _last_known_key(user: str) -> str:
+    return f"faco_member_last:{user}"
 
 
 def _faco_member_status(user: str) -> str:
@@ -29,6 +36,8 @@ def _faco_member_status(user: str) -> str:
     "none" is a definitive AR no (or an unregistered site); "unknown" covers AR unreachable, an
     open breaker and internal errors. Cached under ``faco_member:{user}`` as the status string
     (a legacy "1"/"0" reads as a miss) for 60 s when definitive, 5 s when AR cannot answer.
+    When it cannot, the user's last definitive answer (kept 24 h) is returned instead, and
+    "unknown" only when AR has never given one.
     """
     cache_key = f"faco_member:{user}"
     cached = frappe.cache.get_value(cache_key, expires=True)
@@ -62,6 +71,13 @@ def _faco_member_status(user: str) -> str:
                     definitive = settled = True
     except Exception:
         frappe.log_error(title="FACO membership check failed")
+
+    if definitive:
+        frappe.cache.set_value(_last_known_key(user), status, expires_in_sec=_LAST_KNOWN_TTL)
+    elif status == "unknown":
+        last_known = frappe.cache.get_value(_last_known_key(user), expires=True)
+        if last_known in _STATUSES[:3]:
+            status = last_known
 
     ttl = _MEMBER_CACHE_TTL if settled else _FAILOPEN_TTL
     frappe.cache.set_value(cache_key, status, expires_in_sec=ttl)
