@@ -10,6 +10,7 @@ import frappe
 from frappe.utils.background_jobs import get_job, get_queue, get_redis_conn
 from rq.job import JobStatus
 from rq.results import Result
+from rq.utils import now
 from rq.worker import Worker, WorkerStatus
 
 from frappe_assistant_core.chat.api.chat import relay, relay_dispatch
@@ -55,6 +56,13 @@ class TestRelayDispatch(BaseAssistantTest):
         if busy:
             worker.set_state(WorkerStatus.BUSY)
         self.workers.append(worker)
+        return worker
+
+    def _shutting_down_worker(self):
+        worker = self._worker(busy=True)
+        # Production: RQ writes this when the worker gets SIGTERM while its horse runs a job.
+        worker._shutdown_requested_date = now()
+        worker.set_shutdown_requested_date()
         return worker
 
     def _enqueue(self, turn):
@@ -104,6 +112,23 @@ class TestRelayDispatch(BaseAssistantTest):
         self._worker()
         self._worker(busy=True)
         self.assertEqual(relay_dispatch.relay_worker_counts(fresh=True), (2, 1))
+
+    def test_worker_in_warm_shutdown_is_neither_live_nor_busy(self):
+        self._shutting_down_worker()
+        self.assertEqual(relay_dispatch.relay_worker_counts(fresh=True), (0, 0))
+
+    def test_worker_in_warm_shutdown_beside_a_normal_one_counts_only_the_normal_one(self):
+        self._shutting_down_worker()
+        self._worker()
+        self.assertEqual(relay_dispatch.relay_worker_counts(fresh=True), (1, 0))
+
+    def test_setting_on_with_only_a_shutting_down_worker_is_not_used(self):
+        if self.real_workers:
+            self.skipTest("a real faco_relay worker is running on this bench")
+        # Production: an admin ticks the setting in FAC Admin -> Settings -> Chat & Widget.
+        frappe.db.set_single_value("FAC Chat Settings", "relay_in_background_job", 1)
+        self._shutting_down_worker()
+        self.assertFalse(relay_dispatch.use_job_relay())
 
     def test_probe_failure_reads_no_workers_and_is_cached(self):
         with patch.object(relay_dispatch, "Worker") as worker_cls:

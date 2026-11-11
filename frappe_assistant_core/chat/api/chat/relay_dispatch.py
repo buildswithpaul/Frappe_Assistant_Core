@@ -54,8 +54,15 @@ def relay_queue_configured() -> bool:
 
 
 def _probe_workers() -> WorkerCounts:
-    """Read the relay queue's workers from RQ; a Redis failure raises."""
-    workers = Worker.all(queue=background_jobs.get_queue(RELAY_QUEUE))
+    """Read the relay queue's workers from RQ; a Redis failure raises.
+
+    A worker in warm shutdown stays registered until its job ends but never takes another.
+    """
+    workers = [
+        worker
+        for worker in Worker.all(queue=background_jobs.get_queue(RELAY_QUEUE))
+        if worker.shutdown_requested_date is None
+    ]
     return WorkerCounts(
         live=len(workers),
         busy=sum(1 for worker in workers if worker.get_state() == WorkerStatus.BUSY),
