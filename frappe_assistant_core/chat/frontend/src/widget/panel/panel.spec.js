@@ -77,6 +77,8 @@ describe("router shim named routes", () => {
 describe("widget panel", () => {
 	beforeEach(() => {
 		setActivePinia(createPinia());
+		// Production sets "ready" once the access check answers.
+		useUserStore().registrationStatus = "ready";
 		resetConfirms();
 		localStorage.clear();
 		getQuotaStatus.mockReset().mockResolvedValue(null);
@@ -554,6 +556,19 @@ describe("widget panel", () => {
 			expect(w.findAllComponents(RouterLinkStub)).toHaveLength(0);
 		});
 
+		it("no_seat leaves the composer usable and the meter empty", async () => {
+			// AR answers no_seat for an invited user who has no billed seat yet; they can still chat.
+			api.users.getMyCreditStatus.mockResolvedValueOnce({ no_seat: true });
+			useUserStore().registrationStatus = "ready";
+			useUserStore().quotaInfo = { credits_exhausted: false, is_admin: false };
+			const w = mount(WidgetPanel, { global: { stubs: withLink } });
+			await flushPromises();
+			expect(useUserStore().myCreditStatus).toBeNull();
+			expect(w.find('[data-test="personal-limit-banner"]').exists()).toBe(false);
+			expect(w.find('[role="alert"]').exists()).toBe(false);
+			expect(w.findComponent(SendStub).attributes("hold-send")).toBe("false");
+		});
+
 		it("sends as usual under the limit", async () => {
 			api.users.getMyCreditStatus.mockResolvedValueOnce({ ...atLimit, credits_used_this_month: 10 });
 			const chat = useChatStore();
@@ -703,6 +718,8 @@ describe("panel bootstrap", () => {
 
 	beforeEach(() => {
 		setActivePinia(createPinia());
+		// Production sets "ready" once the access check answers.
+		useUserStore().registrationStatus = "ready";
 		localStorage.clear();
 		window.frappe = { session: { user: "u@x.test" }, get_route: () => [] };
 		bridge.state.sessionId = "faco_1";
@@ -849,6 +866,8 @@ describe("panel bootstrap", () => {
 describe("widget Spotlight placement", () => {
 	beforeEach(() => {
 		setActivePinia(createPinia());
+		// Production sets "ready" once the access check answers.
+		useUserStore().registrationStatus = "ready";
 		window.frappe = { session: { user: "u@x.test" }, get_route: () => [] };
 	});
 
