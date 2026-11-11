@@ -142,6 +142,24 @@ class TestRelayInBackgroundJob(BaseAssistantTest):
         redis_conn.assert_not_called()
         enqueue.assert_not_called()
 
+    def test_a_failing_dispatch_decision_falls_back_to_the_pool(self):
+        # Production: new code is served before `bench migrate` adds the relay_in_background_job field.
+        with (
+            patch.object(
+                relay_dispatch,
+                "job_relay_enabled",
+                autospec=True,
+                side_effect=frappe.db.InternalError("Field relay_in_background_job does not exist"),
+            ),
+            patch.object(messages._relay_pool, "submit") as submit,
+            patch("frappe.enqueue", side_effect=AssertionError) as enqueue,
+        ):
+            ack = messages.send_message(session_id=self.sid, message="hi")
+        self.assertEqual(ack["status"], "processing")
+        self.assertIs(submit.call_args.args[0], relay._relay_ar_stream)
+        self.assertIsNone(live_turn.get(self.sid)["relay"])
+        enqueue.assert_not_called()
+
     def test_send_enqueues_one_job_named_by_the_turn(self):
         self._on_with_worker()
         with patch.object(messages._relay_pool, "submit", side_effect=AssertionError):
