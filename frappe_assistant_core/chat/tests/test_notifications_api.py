@@ -35,7 +35,7 @@ class TestGetNotifications(BaseAssistantTest):
         client = MagicMock()
         client.get_notifications.return_value = {"notifications": [{"id": "N1"}]}
         result = self._call(client)
-        client.get_notifications.assert_called_once_with(user_id=self.user, timeout=5)
+        client.get_notifications.assert_called_once_with(user_id=self.user, timeout=3)
         self.assertEqual(result["user"], self.user)
         self.assertEqual(result["notifications"], [{"id": "N1"}])
         self.assertNotIn("degraded", result)
