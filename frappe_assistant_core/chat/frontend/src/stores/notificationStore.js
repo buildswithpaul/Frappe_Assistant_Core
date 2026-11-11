@@ -2,6 +2,7 @@ import { defineStore } from "pinia";
 import { ref, computed } from "vue";
 import { api } from "@/api/client";
 import { logger } from "@/utils/logger";
+import { useUserStore } from "@/stores/userStore";
 import { OUTAGE_TYPES } from "@/components/notifications/typeMeta";
 
 const POLL_INTERVAL_MS = 120_000;
@@ -73,10 +74,14 @@ export const useNotificationStore = defineStore("notifications", () => {
 	}
 
 	async function refresh() {
-		if (isLoading.value) return;
+		if (isLoading.value || useUserStore().registrationStatus !== "ready") return;
 		isLoading.value = true;
 		try {
 			const result = await api.notifications.get();
+			if (result?.no_seat) {
+				stopPolling();
+				return;
+			}
 			if (result && Array.isArray(result.notifications)) {
 				_setUser(result.user);
 				notifications.value = result.notifications;
@@ -120,6 +125,7 @@ export const useNotificationStore = defineStore("notifications", () => {
 
 	function startPolling() {
 		stopPolling();
+		if (useUserStore().registrationStatus !== "ready") return;
 		pollTimer = setInterval(refresh, POLL_INTERVAL_MS);
 		document.addEventListener("visibilitychange", _onVisibility);
 		refresh();

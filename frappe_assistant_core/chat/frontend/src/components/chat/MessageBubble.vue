@@ -37,12 +37,16 @@
 				:message-index="messageIndex"
 				:is-streaming="isStreaming"
 				:is-resuming="isResuming"
+				:busy-retrying="!!message.busyRetrying"
 				:message-id="message.message_id || null"
 				@toggle-block="(msgIdx, blockId) => $emit('toggleBlock', msgIdx, blockId)"
 				@approve="(blockId, responses) => $emit('approve', blockId, responses)"
 				@reject="(blockId, responses) => $emit('reject', blockId, responses)"
 				@preview-document="(doc) => $emit('previewDocument', doc)"
 			/>
+
+			<!-- Transient turn status, e.g. a re-send while the server restarts -->
+			<div v-if="message.statusNote" class="status-note" role="status">{{ message.statusNote }}</div>
 
 			<!-- Queued indicator (compose-while-streaming) -->
 			<span v-if="message.queued" class="queued-chip">
@@ -72,6 +76,19 @@
 					Continue response
 				</button>
 			</div>
+
+			<!-- Retry: the latest turn ended in an error or an interruption -->
+			<div v-if="canRetry" class="truncation-notice retry-notice">
+				<span>{{ __("This answer did not finish.") }}</span>
+				<button class="continue-btn retry-btn" @click="$emit('retry')">{{ __("Retry") }}</button>
+			</div>
+
+			<TurnCreditNotices
+				:message="message"
+				:is-latest="isLatest"
+				@send-anyway="(msg) => $emit('send-anyway', msg)"
+				@continue-turn="$emit('continue-turn')"
+			/>
 
 			<!-- Message Actions (only for assistant) -->
 			<div v-if="!isUser" class="message-actions">
@@ -105,8 +122,10 @@ import { computed, ref, onMounted } from "vue";
 import { useUserStore } from "@/stores/userStore";
 import MessageBlockRenderer from "./MessageBlockRenderer.vue";
 import MessageFooter from "./MessageFooter.vue";
+import TurnCreditNotices from "./TurnCreditNotices.vue";
 import FacoRobot from "@/components/common/FacoRobot.vue";
 import { ensureHljs } from "@/utils/markdown.js";
+import { __ } from "@/utils/i18n";
 import { turnLabel, userInitial as deriveInitial } from "./turns.js";
 
 const props = defineProps({
@@ -131,9 +150,25 @@ const props = defineProps({
 		type: Boolean,
 		default: false,
 	},
+	// The latest turn errored and can be run again (retryTarget).
+	canRetry: {
+		type: Boolean,
+		default: false,
+	},
 });
 
-defineEmits(["toggleBlock", "approve", "reject", "previewDocument", "continue", "pin", "unqueue"]);
+defineEmits([
+	"toggleBlock",
+	"approve",
+	"reject",
+	"previewDocument",
+	"continue",
+	"retry",
+	"pin",
+	"unqueue",
+	"send-anyway",
+	"continue-turn",
+]);
 
 const userStore = useUserStore();
 
@@ -173,6 +208,12 @@ function copyMessage() {
 </script>
 
 <style scoped>
+.status-note {
+	font-size: 13px;
+	color: var(--ql-text-muted);
+	margin-top: 4px;
+}
+
 .ql-turn {
 	display: flex;
 	align-items: flex-start;

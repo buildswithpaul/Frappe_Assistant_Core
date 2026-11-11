@@ -855,6 +855,24 @@ class TestDocumentBatch(BaseAssistantTest):
         self.assertFalse(response["success"], response)
         self.assertIn("not both", response["result"]["error"])
 
+    def test_an_update_list_with_edits_is_refused_not_saved_without_them(self):
+        # edits work on one record (with name): beside documents they would be dropped and the
+        # list saved without them, so the call is refused as documents beside name is.
+        (first,) = self._make_todos("Keep me")
+        modified = frappe.db.get_value("ToDo", first, "modified")
+
+        response = self._run(
+            "update_document",
+            {
+                "documents": [{"doctype": "ToDo", "name": first, "data": {"priority": "Low"}}],
+                "edits": [{"field": "description", "find": "Keep", "replace": "Lost"}],
+            },
+        )
+
+        self.assertFalse(response["success"], response)
+        self.assertIn("not both", response["result"]["error"])
+        self.assertEqual(frappe.db.get_value("ToDo", first, "modified"), modified)  # not saved
+
     def test_an_update_list_of_more_than_a_hundred_is_refused(self):
         documents = [{"doctype": "ToDo", "name": f"x{i}", "data": {"priority": "High"}} for i in range(101)]
 

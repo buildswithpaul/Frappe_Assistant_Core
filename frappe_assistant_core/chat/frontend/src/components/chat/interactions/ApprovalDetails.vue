@@ -73,6 +73,15 @@
 		<div v-for="[key] in clearedTables" :key="`cleared-${key}`" class="table-replaced">
 			{{ formatKey(key) }}: {{ tableReplacement(block.tool_name, []) }}
 		</div>
+		<div v-if="rawEdits.length" class="raw-edits" data-test="raw-edits">
+			<p v-if="appliedEdits.error" class="goes-live-missing" data-test="edits-notice">
+				{{ __("These edits could not be applied to the stored text, so they are shown as sent.") }}
+			</p>
+			<template v-for="(edit, i) in rawEdits" :key="i">
+				<CodePreview :label="`${formatKey(edit.field)}: ${__('find')}`" :code="edit.find" :language="codeLanguage(edit.field, doctype, flat)" />
+				<CodePreview :label="`${formatKey(edit.field)}: ${__('replace')}`" :code="edit.replace" :language="codeLanguage(edit.field, doctype, flat)" />
+			</template>
+		</div>
 		<template v-for="[key, rows] in tableRows" :key="key">
 			<div v-if="tableReplacement(block.tool_name, rows)" class="table-replaced">
 				{{ formatKey(key) }}: {{ tableReplacement(block.tool_name, rows) }}
@@ -107,6 +116,7 @@ import { baseToolName } from "@/utils/toolNames";
 import { headlineKeys } from "./approvalHeadline";
 import { describeCondition } from "./conditions";
 import { goesLiveAudience, goesLiveFields, renameKeys, writesCondition } from "./customisation";
+import { applyEdits, unappliedEdits } from "./edits";
 import { useCurrentCode } from "./useCurrentCode";
 import {
 	displayValue,
@@ -143,13 +153,22 @@ const openingLoading = ref(false);
 watch(() => codeLoading.value || openingLoading.value, (loading) => emit("blocking", loading), { immediate: true });
 
 // A rename the tool will not make is a notice (ApprovalNotes), never a changed field.
-const flat = computed(() => {
+const writtenFlat = computed(() => {
 	if (!props.block.input) return {};
 	const hidden = renameKeys(props.block.tool_name, props.block.input);
 	return Object.fromEntries(
 		Object.entries(flattenInput(props.block.input)).filter(([key]) => !hidden.includes(key)),
 	);
 });
+// Edits to code fields apply to the stored text once it has loaded; the card then shows and diffs
+// the result as if it had been written whole. Edits to other fields, or that do not apply, show raw.
+const edits = computed(() => (Array.isArray(props.block.input?.edits) ? props.block.input.edits : []));
+const codeEdits = computed(() => edits.value.filter((e) => isCodeField(e?.field, writtenFlat.value.doctype, writtenFlat.value)));
+const appliedEdits = computed(() =>
+	currentCode.value === null ? { values: {}, error: null, failedFields: [] } : applyEdits(currentCode.value, codeEdits.value),
+);
+const flat = computed(() => ({ ...writtenFlat.value, ...appliedEdits.value.values }));
+const rawEdits = computed(() => unappliedEdits(edits.value, appliedEdits.value.values));
 const hasContent = computed(() => Object.keys(flat.value).length > 0 || liveFields.value.length > 0);
 const doctype = computed(() => flat.value.doctype);
 
@@ -369,6 +388,12 @@ function previousCode(key) {
 	outline: 2px solid var(--ql-accent);
 	outline-offset: 2px;
 	border-radius: 4px;
+}
+
+.raw-edits {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
 }
 
 .code-stack {

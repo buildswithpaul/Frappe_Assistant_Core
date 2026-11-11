@@ -116,6 +116,82 @@ class FACChatSessionState(Document):
         }
 
     @staticmethod
+    def snapshot_pre_turn(session_id: str, user: str, user_message: str) -> None:
+        """Keep the state as it stood before ``user_message``'s turn, so Retry can start from it.
+
+        The relay replaces the live state as the turn runs, errors included. With no row yet
+        (the first turn), one is created with an empty state, which is what that turn began from.
+        """
+        name = frappe.db.exists("FAC Chat Session State", {"session_id": session_id})
+        if not name:
+            frappe.get_doc(
+                {
+                    "doctype": "FAC Chat Session State",
+                    "session_id": session_id,
+                    "user": user,
+                    "turn_seq": 0,
+                    "pre_turn_message": user_message,
+                    "pre_turn_seq": 0,
+                    "updated_at": frappe.utils.now(),
+                }
+            ).insert(ignore_permissions=True)
+            return
+        live = frappe.db.get_value(
+            "FAC Chat Session State",
+            name,
+            ["state_blob", "state_sig", "format_version", "turn_seq"],
+            as_dict=True,
+        )
+        frappe.db.set_value(
+            "FAC Chat Session State",
+            name,
+            {
+                "pre_turn_message": user_message,
+                "pre_turn_blob": live.state_blob,
+                "pre_turn_sig": live.state_sig,
+                "pre_turn_format_version": live.format_version,
+                "pre_turn_seq": live.turn_seq or 0,
+            },
+            update_modified=False,
+        )
+
+    @staticmethod
+    def restore_pre_turn(session_id: str, user_message: str) -> tuple[bool, dict | None]:
+        """Put back the state from before ``user_message``'s turn; ``(False, None)`` if none is kept.
+
+        ``turn_seq`` goes back too, so the retried turn's own write is newer, not dropped as stale.
+        Returns the restored wire form, None for a first turn.
+        """
+        row = frappe.db.get_value(
+            "FAC Chat Session State",
+            {"session_id": session_id},
+            [
+                "name",
+                "pre_turn_message",
+                "pre_turn_blob",
+                "pre_turn_sig",
+                "pre_turn_format_version",
+                "pre_turn_seq",
+            ],
+            as_dict=True,
+        )
+        if not row or row.pre_turn_message != user_message:
+            return False, None
+        frappe.db.set_value(
+            "FAC Chat Session State",
+            row.name,
+            {
+                "state_blob": row.pre_turn_blob,
+                "state_sig": row.pre_turn_sig,
+                "format_version": row.pre_turn_format_version,
+                "turn_seq": row.pre_turn_seq or 0,
+                "updated_at": frappe.utils.now(),
+            },
+        )
+        frappe.db.commit()  # nosemgrep: frappe-manual-commit — the relay thread reads this state on its own connection.
+        return True, FACChatSessionState.load_wire(session_id)
+
+    @staticmethod
     def delete_for_sessions(session_ids):
         """Delete state rows for one or many ``session_id`` values.
 

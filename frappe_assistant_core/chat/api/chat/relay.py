@@ -24,8 +24,10 @@ from typing import NamedTuple
 
 import frappe
 from frappe import _
+from frappe.query_builder import DocType
 
-from frappe_assistant_core.chat.api.chat import live_turn
+from frappe_assistant_core.chat import credit_status_cache
+from frappe_assistant_core.chat.api.chat import live_turn, relay_shutdown
 
 from .._helpers import (
     _not_registered_error,
@@ -33,35 +35,70 @@ from .._helpers import (
 )
 
 _reasoning_effort_drop_logged = False
+_confirm_low_balance_drop_logged = False
 
 
-def _accepts_reasoning_effort(stream_chat) -> bool:
+def _accepts_kwarg(stream_chat, name: str) -> bool:
     try:
         parameters = inspect.signature(stream_chat).parameters
     except (TypeError, ValueError):
         return False
-    return "reasoning_effort" in parameters or any(
-        p.kind is inspect.Parameter.VAR_KEYWORD for p in parameters.values()
-    )
+    return name in parameters or any(p.kind is inspect.Parameter.VAR_KEYWORD for p in parameters.values())
 
 
-def _sdk_composer_kwargs(stream_chat, web_search, thinking_enabled, reasoning_effort) -> dict:
-    """Keyword args for the SDK's stream_chat, omitting reasoning_effort when
-    the installed SDK predates it (it would raise TypeError on an unknown kwarg).
-    FAC pins the SDK exactly, so this only matters for editable / mispinned installs."""
-    global _reasoning_effort_drop_logged
+def _sdk_composer_kwargs(
+    stream_chat, web_search, thinking_enabled, reasoning_effort, confirm_low_balance=None
+) -> dict:
+    """Keyword args for the SDK's stream_chat, omitting reasoning_effort and
+    confirm_low_balance when the installed SDK predates them (it would raise
+    TypeError on an unknown kwarg). FAC pins the SDK exactly, so this only
+    matters for editable / mispinned installs."""
+    global _reasoning_effort_drop_logged, _confirm_low_balance_drop_logged
     kwargs = {"web_search": web_search, "thinking_enabled": thinking_enabled}
-    if reasoning_effort is None:
-        return kwargs
-    if _accepts_reasoning_effort(stream_chat):
-        kwargs["reasoning_effort"] = reasoning_effort
-    elif not _reasoning_effort_drop_logged:
-        _reasoning_effort_drop_logged = True
-        frappe.logger("fac.chat").warning(
-            "Installed assistant_runtime_sdk has no reasoning_effort parameter; "
-            "the thinking level is dropped and thinking_enabled decides the turn."
-        )
+    if reasoning_effort is not None:
+        if _accepts_kwarg(stream_chat, "reasoning_effort"):
+            kwargs["reasoning_effort"] = reasoning_effort
+        elif not _reasoning_effort_drop_logged:
+            _reasoning_effort_drop_logged = True
+            frappe.logger("fac.chat").warning(
+                "Installed assistant_runtime_sdk has no reasoning_effort parameter; "
+                "the thinking level is dropped and thinking_enabled decides the turn."
+            )
+    if confirm_low_balance:
+        if _accepts_kwarg(stream_chat, "confirm_low_balance"):
+            kwargs["confirm_low_balance"] = True
+        elif not _confirm_low_balance_drop_logged:
+            _confirm_low_balance_drop_logged = True
+            frappe.logger("fac.chat").warning(
+                "Installed assistant_runtime_sdk has no confirm_low_balance parameter; "
+                "a Send anyway is refused again for a low balance."
+            )
     return kwargs
+
+
+def _discard_unanswered_user_message(message_name: str | None, session_id: str, user: str) -> None:
+    """Remove the user message AR refused for a low balance, before it ran.
+
+    "Send anyway" sends the same text again, so the refused row would otherwise
+    stand twice in the transcript. Its uploads go back to pending, so the resend
+    links them to the new message as the first send did; their creation restarts
+    because the orphan sweep ages pending uploads by it. The conversation row
+    stays, since the SPA already lists it, and drops this message from its count."""
+    if not message_name:
+        return
+    _release_message_files(message_name)
+    frappe.db.delete(
+        "FAC Chat Message",
+        {"name": message_name, "role": "user", "user": user, "session_id": session_id},
+    )
+    conversation = DocType("FAC Chat Conversation")
+    (
+        frappe.qb.update(conversation)
+        .set(conversation.message_count, conversation.message_count - 1)
+        .where(conversation.name == session_id)
+        .where(conversation.user == user)
+        .where(conversation.message_count > 0)
+    ).run()
 
 
 def _set_faco_message_with_retry(name: str, updates: dict, *, attempts: int = 3) -> bool:
@@ -213,8 +250,10 @@ from ..chat.helpers import (  # noqa: E402
     _log_conversation,
     _log_stream_error_detail,
     _parse_turn_blocks,
+    _release_message_files,
     _update_subscription_cache,
 )
+from .busy_retry import BUSY_ERROR_CODE, stream_with_busy_retry  # noqa: E402
 
 # Event types whose handling is identical in both the main stream loop and
 # the HITL resume loop. Routing them through one function keeps the loops
@@ -842,6 +881,14 @@ def _settle_unconsumed_resume(
     return block_builder.snapshot()
 
 
+def _end_credit_status_freshness(user: str) -> None:
+    """A turn that spent credits made the cached figure out of date; a cache fault must not fail it."""
+    try:
+        credit_status_cache.invalidate(user)
+    except Exception:
+        frappe.logger("faco").warning("Could not end credit status freshness", exc_info=True)
+
+
 def _relay_ar_interrupt_resume(
     session_id,
     interrupt_response,
@@ -932,6 +979,22 @@ def _relay_ar_interrupt_resume(
             enabled=not restricted,
             turn=live_turn_token,
         )
+        # mark_turn_interrupted ended this turn while it waited in the pool: AR is never called.
+        if live_turn_token and not restricted and not live_turn.holds(session_id, live_turn_token):
+            return
+        # The pool runs what is still queued while the worker exits: never start AR then.
+        if relay_shutdown.is_draining():
+            _handle_shutdown_interrupt(
+                session_id,
+                ar_message_id,
+                full_response,
+                block_builder,
+                collected_tool_calls,
+                model_used,
+                resumed_message_id=message_id,
+                pause_consumed=False,
+            )
+            return
 
         # resume_interrupt cleared any older Stop when it accepted this resume,
         # so a flag up now is a Stop pressed while this relay waited to start.
@@ -942,22 +1005,28 @@ def _relay_ar_interrupt_resume(
             return
 
         # Resume stream — no message, just interrupt_response
-        stream_iter = client.stream_chat(
+        stream_iter = stream_with_busy_retry(
+            lambda: client.stream_chat(
+                session_id,
+                None,
+                ar_user,
+                client_type=client_type,
+                interrupt_response=interrupt_response,
+                message_id=message_id,
+                session_state=session_state,
+                model_id=model_id,
+                system_prompt_addendum=system_prompt_addendum,
+                context=context,
+                **_sdk_composer_kwargs(client.stream_chat, web_search, thinking_enabled, reasoning_effort),
+            ),
             session_id,
-            None,
-            ar_user,
-            client_type=client_type,
-            interrupt_response=interrupt_response,
-            message_id=message_id,
-            session_state=session_state,
-            model_id=model_id,
-            system_prompt_addendum=system_prompt_addendum,
-            context=context,
-            **_sdk_composer_kwargs(client.stream_chat, web_search, thinking_enabled, reasoning_effort),
+            cancelled=lambda: is_cancelled(session_id),
         )
         started = last_progress = time.monotonic()
         stalled = False
         for event in stream_iter:
+            if _turn_taken(session_id, stream_iter):
+                return
             # Cooperative cancellation: same treatment as the send funnel.
             # Without this, Stop pressed while a resume is streaming was a
             # total no-op — AR could tear the stream down and this loop
@@ -995,6 +1064,20 @@ def _relay_ar_interrupt_resume(
                         "partial_response": full_response,
                         "blocks": block_builder.snapshot(),
                     },
+                )
+                return
+            # This worker is exiting and the turn's time is up (relay_shutdown).
+            if relay_shutdown.should_give_up():
+                _handle_shutdown_interrupt(
+                    session_id,
+                    ar_message_id,
+                    full_response,
+                    block_builder,
+                    collected_tool_calls,
+                    model_used,
+                    stream_iter=stream_iter,
+                    resumed_message_id=message_id,
+                    pause_consumed=pause_consumed,
                 )
                 return
 
@@ -1224,6 +1307,7 @@ def _relay_ar_interrupt_resume(
                 return
 
             elif event_type == "stream_complete":
+                _end_credit_status_freshness(user)
                 tokens_used = data.get("tokens_used", 0)
                 credits_used = data.get("credits_used", 0)
                 model_used = data.get("model", "")
@@ -1349,6 +1433,7 @@ def _relay_ar_interrupt_resume(
             elif event_type == "stream_error":
                 _log_stream_error_detail(data)
                 if pause_consumed:
+                    _end_credit_status_freshness(user)
                     blocks_snapshot = block_builder.snapshot()
                     _persist_errored_resume_cycle(
                         session_id,
@@ -1440,6 +1525,7 @@ def _relay_ar_stream(
     thinking_enabled=None,
     reasoning_effort=None,
     live_turn_token=None,
+    confirm_low_balance=None,
 ):
     """
     Relay SSE stream from AR to frontend via Socket.IO.
@@ -1482,6 +1568,8 @@ def _relay_ar_stream(
                     the installed SDK supports it.
             live_turn_token: The turn token the endpoint wrote with live_turn.start,
                     adopted by the live snapshot and cleared if the relay ends early.
+            confirm_low_balance: True when the user pressed "Send anyway" on AR's
+                    low-balance preview; forwarded to AR when the installed SDK supports it.
     """
     # Set up Frappe context for background thread
     frappe.init(site=site)
@@ -1549,6 +1637,21 @@ def _relay_ar_stream(
             enabled=not restricted,
             turn=live_turn_token,
         )
+        # mark_turn_interrupted ended this turn while it waited in the pool: AR is never called.
+        if live_turn_token and not restricted and not live_turn.holds(session_id, live_turn_token):
+            return
+        # The pool runs what is still queued while the worker exits: never start AR then.
+        if relay_shutdown.is_draining():
+            _handle_shutdown_interrupt(
+                session_id,
+                ar_message_id,
+                full_response,
+                block_builder,
+                collected_tool_calls,
+                model_used,
+                continued_turn=continued_turn,
+            )
+            return
 
         # send_message or continue_response cleared any older Stop when it
         # accepted this turn, so a flag up now is a Stop pressed while this
@@ -1582,23 +1685,31 @@ def _relay_ar_stream(
 
         # Stream from AR
         # web_search / thinking_enabled / reasoning_effort are keyword-only on the SDK.
-        stream_iter = client.stream_chat(
+        stream_iter = stream_with_busy_retry(
+            lambda: client.stream_chat(
+                session_id,
+                full_prompt,
+                ar_user,
+                context,
+                model_id,
+                attachments,
+                system_prompt_addendum,
+                client_type=client_type,
+                session_state=session_state,
+                continue_from_message_id=continue_from_message_id,
+                message_id=continue_from_message_id,
+                **_sdk_composer_kwargs(
+                    client.stream_chat, web_search, thinking_enabled, reasoning_effort, confirm_low_balance
+                ),
+            ),
             session_id,
-            full_prompt,
-            ar_user,
-            context,
-            model_id,
-            attachments,
-            system_prompt_addendum,
-            client_type=client_type,
-            session_state=session_state,
-            continue_from_message_id=continue_from_message_id,
-            message_id=continue_from_message_id,
-            **_sdk_composer_kwargs(client.stream_chat, web_search, thinking_enabled, reasoning_effort),
+            cancelled=lambda: is_cancelled(session_id),
         )
         started = last_progress = time.monotonic()
         stalled = False
         for event in stream_iter:
+            if _turn_taken(session_id, stream_iter):
+                return
             # Cooperative cancellation: the cancel_stream endpoint sets a
             # Redis-backed flag, visible to any gunicorn worker. We poll it
             # between events so Stop takes effect within one tool / token
@@ -1613,6 +1724,19 @@ def _relay_ar_stream(
                     model_used,
                     stream_iter=stream_iter,
                     continued_turn=continued_turn,
+                )
+                return
+            # This worker is exiting and the turn's time is up (relay_shutdown).
+            if relay_shutdown.should_give_up():
+                _handle_shutdown_interrupt(
+                    session_id,
+                    ar_message_id,
+                    full_response,
+                    block_builder,
+                    collected_tool_calls,
+                    model_used,
+                    continued_turn=continued_turn,
+                    stream_iter=stream_iter,
                 )
                 return
 
@@ -1839,6 +1963,7 @@ def _relay_ar_stream(
                 return
 
             elif event_type == "stream_complete":
+                _end_credit_status_freshness(user)
                 tokens_used = data.get("tokens_used", 0)
                 credits_used = data.get("credits_used", 0)
                 model_used = data.get("model", "")
@@ -1994,6 +2119,7 @@ def _relay_ar_stream(
                 # A Continue refused before it produced anything leaves its
                 # answer as it stood: the clients keep it continuable.
                 if full_response or blocks_snapshot != seed_blocks:
+                    _end_credit_status_freshness(user)
                     _persist_partial_assistant_turn(
                         session_id,
                         ar_message_id,
@@ -2004,25 +2130,46 @@ def _relay_ar_stream(
                         "errored",
                         continued_turn=continued_turn,
                     )
+                elif error_code == BUSY_ERROR_CODE and not continued_turn:
+                    # A turn AR never started has no row, and the latest one belongs to an
+                    # earlier turn. An empty one is still recorded, so the turn can be retried.
+                    _persist_partial_assistant_turn(
+                        session_id,
+                        ar_message_id,
+                        full_response,
+                        blocks_snapshot,
+                        collected_tool_calls,
+                        model_used,
+                        "errored",
+                        fall_back_to_latest=False,
+                        continued_turn=None,
+                    )
                 # The partial turn above is now in the transcript, so the carried
                 # state has to advance with it — otherwise the next turn replays a
                 # blob that has never seen this turn's user message.
                 _persist_session_blob(session_id, user, data, zero_retention, restricted)
 
-                _emit_socket_event(
-                    session_id,
-                    {
-                        "event": "stream_error",
-                        "session_id": session_id,
-                        "error": error_msg,
-                        "error_code": error_code,
-                        "retry_after": data.get("retry_after"),
-                        "action_required": action_required,
-                        "message_id": ar_message_id,
-                        "blocks": blocks_snapshot,
-                        "partial_response": full_response,
-                    },
-                )
+                error_event = {
+                    "event": "stream_error",
+                    "session_id": session_id,
+                    "error": error_msg,
+                    "error_code": error_code,
+                    "retry_after": data.get("retry_after"),
+                    "action_required": action_required,
+                    "message_id": ar_message_id,
+                    "blocks": blocks_snapshot,
+                    "partial_response": full_response,
+                }
+                if error_code == "low_balance":
+                    # AR refuses before the agent runs; a turn that produced anything keeps its message.
+                    if not full_response and blocks_snapshot == seed_blocks:
+                        _discard_unanswered_user_message(message_name, session_id, user)
+                    error_event["low_balance"] = {
+                        "estimate": data.get("estimate"),
+                        "balance": data.get("balance"),
+                        "scope": data.get("scope"),
+                    }
+                _emit_socket_event(session_id, error_event)
 
             if stalled:
                 return
@@ -2218,6 +2365,89 @@ def _persist_continued_turn(
         continued_turn.model_breakdown = updates["model_breakdown"]
     if "tool_calls" in updates:
         continued_turn.tool_calls = updates["tool_calls"]
+
+
+def _turn_taken(session_id: str, stream_iter) -> bool:
+    """Whether the turn was ended elsewhere: marked interrupted, or replaced by a Retry.
+
+    Each AR event first moves the live entry past "starting". Once the entry is gone the relay
+    drops AR's stream and saves nothing: the turn is no longer this relay's to finish or bill.
+    """
+    live_turn.ar_responded(session_id)
+    if not live_turn.lost(session_id):
+        return False
+    try:
+        stream_iter.close()
+    except Exception as e:
+        frappe.logger("fac_live_turn").warning(f"stream_iter.close() raised for {session_id}: {e}")
+    return True
+
+
+def _handle_shutdown_interrupt(
+    session_id: str,
+    ar_message_id: str | None,
+    full_response: str,
+    block_builder,
+    collected_tool_calls: list,
+    model_used: str,
+    continued_turn=None,
+    *,
+    stream_iter=None,
+    resumed_message_id: str | None = None,
+    pause_consumed: bool = True,
+) -> None:
+    """End a turn this exiting worker can no longer finish: keep its partial, flagged errored.
+
+    The connection to AR is dropped so AR stops the agent. A resume adds its cycle to the turn's
+    row, and only once AR consumed the pause; before that the row already holds the pause.
+    """
+    try:
+        if stream_iter is not None:
+            stream_iter.close()
+    except Exception as e:
+        frappe.logger("faco.chat.shutdown").warning(f"stream_iter.close() raised for {session_id}: {e}")
+
+    blocks_snapshot = block_builder.snapshot()
+    if resumed_message_id is not None:
+        if pause_consumed:
+            _persist_errored_resume_cycle(
+                session_id,
+                ar_message_id,
+                resumed_message_id,
+                full_response,
+                block_builder,
+                collected_tool_calls,
+            )
+    else:
+        # A turn AR has not named has no row; the latest one belongs to an earlier turn. An
+        # empty one is still recorded, so the turn reads interrupted and can be retried.
+        _persist_partial_assistant_turn(
+            session_id,
+            ar_message_id,
+            full_response,
+            blocks_snapshot,
+            collected_tool_calls,
+            model_used,
+            "errored",
+            fall_back_to_latest=ar_message_id is not None,
+            continued_turn=continued_turn,
+        )
+
+    _emit_socket_event(
+        session_id,
+        {
+            "event": "stream_error",
+            "session_id": session_id,
+            "message_id": ar_message_id or resumed_message_id,
+            "error_code": "TURN_INTERRUPTED",
+            "error": _("This answer was interrupted by a server restart. Retry to run it again."),
+            "blocks": blocks_snapshot,
+            "partial_response": full_response,
+        },
+    )
+    live = live_turn.current(session_id)
+    if live is not None:
+        live_turn.clear(session_id, live.turn)
 
 
 def _handle_stream_aborted(
