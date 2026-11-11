@@ -6,9 +6,10 @@ Runs against the real site cache: the breaker is Redis state in production too.
 from unittest.mock import MagicMock, patch
 
 import frappe
-from assistant_runtime_sdk import ARAPIError, ARConnectionError, ARTimeoutError
+from assistant_runtime_sdk import ARAPIError, ARConnectionError, ARRateLimitError, ARTimeoutError
 
 from frappe_assistant_core.chat import ar_breaker
+from frappe_assistant_core.chat.tests.sdk_errors import sdk_http_error
 from frappe_assistant_core.tests.base_test import BaseAssistantTest
 
 _KEYS = (ar_breaker._FAILURES_KEY, ar_breaker._OPEN_KEY, ar_breaker._WAS_OPEN_KEY)
@@ -73,8 +74,15 @@ class TestARBreaker(BaseAssistantTest):
 
     def test_5xx_is_a_transport_failure(self):
         for status in (500, 502, 503, 504):
-            self.assertTrue(ar_breaker.is_transport_failure(ARAPIError("down", status_code=status)))
-        self.assertFalse(ar_breaker.is_transport_failure(ARAPIError("bad", status_code=429)))
+            self.assertTrue(ar_breaker.is_transport_failure(sdk_http_error(status)), status)
+        self.assertFalse(ar_breaker.is_transport_failure(sdk_http_error(429)))
+
+    def test_ar_busy_is_a_transport_failure(self):
+        # SDK 1.14.0 raises this for every 503: AR's busy refusal, maintenance mode, a proxy.
+        busy = ARRateLimitError("Service busy")
+        busy.error_code = "AR_BUSY"
+        self.assertTrue(ar_breaker.is_transport_failure(busy))
+        self.assertFalse(ar_breaker.is_transport_failure(ARRateLimitError("slow down")))
 
     def test_marker_counts_only_for_timeouts_and_connection_errors(self):
         # The SDK puts str(exception) in the marker; these are its own timeout and connection texts.

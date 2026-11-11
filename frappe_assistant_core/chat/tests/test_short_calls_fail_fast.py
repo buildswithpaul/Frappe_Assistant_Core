@@ -13,11 +13,13 @@ from frappe_assistant_core.chat import ar_breaker
 from frappe_assistant_core.chat.api import models, notifications
 from frappe_assistant_core.chat.api.settings import access
 from frappe_assistant_core.chat.fac_cloud_client import SHORT_CALL_TIMEOUT
+from frappe_assistant_core.chat.tests.sdk_errors import sdk_http_error
 from frappe_assistant_core.tests.base_test import BaseAssistantTest
 
 FACTORY = "frappe_assistant_core.chat.fac_cloud_client.get_fac_cloud_client"
 NOTIF_FACTORY = "frappe_assistant_core.chat.api.notifications.get_fac_cloud_client"
 NOTIF_TITLE = "FAC Notifications"
+MODELS_TITLE = "FACO Models Error"
 MODELS = {"models": [{"model_id": "m1", "tier": "Standard"}], "default_model": "m1"}
 MEMBER = "short-calls-member@example.com"
 
@@ -96,6 +98,24 @@ class TestModelList(ShortCallsBase):
         self.assertEqual(result["models"], MODELS["models"])
         self.assertEqual(self.client.list_available_models.call_count, 1)
 
+    def test_model_list_503_serves_stale_counts_for_the_breaker_and_logs_nothing(self):
+        logs_before = _error_log_count(MODELS_TITLE)
+        models.get_available_models()
+        # Production reaches this once the 300 s trust window has lapsed; age the entry by hand.
+        entry = frappe.cache.get_value(models.MODEL_LIST_KEY)
+        entry["at"] -= models.AVAILABLE_MODELS_TTL + 1
+        frappe.cache.set_value(models.MODEL_LIST_KEY, entry)
+        # An AR deploy (maintenance mode), a proxy or AR's stream cap answers 503.
+        self.client.list_available_models.side_effect = sdk_http_error(503, retry_after="5")
+        result = models.get_available_models()
+        self.assertTrue(result["stale"])
+        self.assertEqual(_error_log_count(MODELS_TITLE), logs_before)
+        self.assertFalse(ar_breaker.is_open())
+        # The 503 counted as one failure: two more reach the threshold of three.
+        ar_breaker.record_failure()
+        ar_breaker.record_failure()
+        self.assertTrue(ar_breaker.is_open())
+
     def test_open_breaker_skips_model_list_call(self):
         self._open_breaker()
         self.assertIn("error", models.get_available_models())
@@ -131,6 +151,18 @@ class TestNotifications(ShortCallsBase):
         self.assertEqual(self.client.get_notifications.call_args.kwargs["timeout"], 3)
         self.assertFalse(ar_breaker.is_open())
         # The timeout counted as one failure: two more reach the threshold of three.
+        ar_breaker.record_failure()
+        ar_breaker.record_failure()
+        self.assertTrue(ar_breaker.is_open())
+
+    def test_notifications_503_writes_no_error_log_and_counts_for_the_breaker(self):
+        # An AR deploy (maintenance mode), a proxy or AR's stream cap answers 503.
+        self.client.get_notifications.side_effect = sdk_http_error(503, retry_after="5")
+        result = notifications.get_notifications()
+        self.assertTrue(result["degraded"])
+        self.assertEqual(_error_log_count(NOTIF_TITLE), self.logs_before)
+        self.assertFalse(ar_breaker.is_open())
+        # The 503 counted as one failure: two more reach the threshold of three.
         ar_breaker.record_failure()
         ar_breaker.record_failure()
         self.assertTrue(ar_breaker.is_open())

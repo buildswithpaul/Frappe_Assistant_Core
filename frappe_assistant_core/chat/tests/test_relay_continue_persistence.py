@@ -246,6 +246,20 @@ class TestAContinueAppendsToItsTurn(BaseAssistantTest):
             self._continue(events)
         invalidate.assert_called_once_with(self.user)
 
+    def test_an_errored_turn_with_a_partial_ends_the_credit_status_freshness(self):
+        # AR bills the work a turn did before it failed, so the cached figure is out of date too.
+        events = [CONTINUE_START, _event("stream_chunk", content=REST), _event("stream_error", error="x")]
+        with patch.object(credit_status_cache, "invalidate") as invalidate:
+            self._continue(events)
+        invalidate.assert_called_once_with(self.user)
+
+    def test_a_refusal_before_anything_streamed_keeps_the_credit_status_fresh(self):
+        # A refused turn spent nothing; re-reading AR now would only add load to a busy AR.
+        events = [CONTINUE_START, _event("stream_error", error="busy", error_code="AR_BUSY")]
+        with patch.object(credit_status_cache, "invalidate") as invalidate:
+            self._continue(events)
+        invalidate.assert_not_called()
+
     def test_a_cache_failure_does_not_break_turn_completion(self):
         events = [
             CONTINUE_START,

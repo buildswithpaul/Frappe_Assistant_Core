@@ -12,6 +12,7 @@ from assistant_runtime_sdk import ARAPIError, ARTimeoutError, AssistantRuntimeCl
 from frappe_assistant_core.chat import ar_breaker, credit_status_cache
 from frappe_assistant_core.chat.api import users
 from frappe_assistant_core.chat.fac_cloud_client import SHORT_CALL_TIMEOUT
+from frappe_assistant_core.chat.tests.sdk_errors import sdk_http_error
 from frappe_assistant_core.tests.base_test import BaseAssistantTest
 
 FACTORY = "frappe_assistant_core.chat.fac_cloud_client.get_fac_cloud_client"
@@ -96,7 +97,7 @@ class TestCreditStatusFailFast(BaseAssistantTest):
         # An AR restart or overload answers 502/503 at once through the proxy.
         credit_status_cache.put(self.user, STATUS)
         credit_status_cache.invalidate(self.user)
-        self.client.get_my_credit_status.side_effect = ARAPIError("busy", status_code=503)
+        self.client.get_my_credit_status.side_effect = sdk_http_error(503, retry_after="5")
         result = users.get_my_credit_status()
         self.assertTrue(result["stale"])
         self.assertEqual(_error_log_count(), self.logs_before)

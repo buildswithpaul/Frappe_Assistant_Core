@@ -9,7 +9,7 @@ from collections.abc import Callable
 from typing import TypeVar
 
 import frappe
-from assistant_runtime_sdk import ARAPIError, ARConnectionError, ARTimeoutError
+from assistant_runtime_sdk import ARAPIError, ARConnectionError, ARRateLimitError, ARTimeoutError
 
 T = TypeVar("T")
 
@@ -20,6 +20,8 @@ FAILURE_WINDOW_SECONDS = 600  # isolated failures this far apart never add up to
 _FAILURES_KEY = "faco_ar_breaker_failures"
 _OPEN_KEY = "faco_ar_breaker_open"
 _WAS_OPEN_KEY = "faco_ar_breaker_was_open"
+
+AR_BUSY = "AR_BUSY"
 
 
 class BreakerOpen(Exception):
@@ -35,8 +37,13 @@ def _log():
 
 
 def is_transport_failure(exc: BaseException) -> bool:
-    """A timeout, a refused connection or a 5xx answer. Other 4xx answers are not outages."""
+    """A timeout, a refused connection or a 5xx answer. Other 4xx answers are not outages.
+
+    From SDK 1.14.0 every 503 arrives as an ``ARRateLimitError`` coded ``AR_BUSY``.
+    """
     if isinstance(exc, ARTimeoutError | ARConnectionError):
+        return True
+    if isinstance(exc, ARRateLimitError) and getattr(exc, "error_code", None) == AR_BUSY:
         return True
     return isinstance(exc, ARAPIError) and (getattr(exc, "status_code", None) or 0) >= 500
 
