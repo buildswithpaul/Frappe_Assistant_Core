@@ -27,13 +27,14 @@ from .._rate_limits import (
     rate_limit,
     session_user_or_ip,
 )
-from ..chat import live_turn
+from ..chat import live_turn, relay_shutdown
 from ..chat.cancel import _is_open_turn
 from ..chat.cancel import clear as clear_cancel
 from ..chat.conversation_files import conversation_files_addendum
 from ..chat.helpers import (
     _attach_files_to_message,
     _is_processing_restricted,
+    _release_message_files,
 )
 from ..chat.relay import (
     _relay_ar_interrupt_resume,
@@ -47,6 +48,44 @@ from ..models import usable_saved_model
 # so they don't block process shutdown. Overflow currently queues inside
 # the executor — bounded-queue rejection is a documented follow-up.
 _relay_pool = ThreadPoolExecutor(max_workers=20, thread_name_prefix="faco-relay")
+
+RESTART_RETRY_AFTER_SECONDS = 2
+
+
+class RelayUnavailable(Exception):
+    """This worker is restarting and cannot run a relay; the client should send again."""
+
+
+def _submit_relay(fn, *args, **kwargs) -> Future:
+    if relay_shutdown.is_draining():
+        raise RelayUnavailable
+    try:
+        return _relay_pool.submit(fn, *args, **kwargs)
+    except RuntimeError as e:
+        # A worker on its way out has shut its executor down.
+        if "cannot schedule new futures" in str(e):
+            raise RelayUnavailable from e
+        raise
+
+
+def _retry_ack() -> dict:
+    return {
+        "status": "retry",
+        "retry_after": RESTART_RETRY_AFTER_SECONDS,
+        "message": _("Server restarting, retrying…"),
+    }
+
+
+def _discard_unsent_user_message(message_name: str, session_id: str) -> None:
+    """Remove a user row whose turn never ran, so the client's re-send is the only copy."""
+    from frappe_assistant_core.chat.doctype.fac_chat_conversation.fac_chat_conversation import (
+        FACChatConversation,
+    )
+
+    _release_message_files(message_name)
+    frappe.delete_doc("FAC Chat Message", message_name, ignore_permissions=True)
+    FACChatConversation.untouch(session_id)
+    frappe.db.commit()  # nosemgrep: frappe-manual-commit — background thread / streaming context (not a request handler), explicit commit required to flush progress to DB.
 
 
 def _mark_turn_started(
@@ -286,6 +325,10 @@ def start_turn(
     if not access_check.get("can_use"):
         frappe.throw(access_check.get("reason", _("Cannot use FACO")))
 
+    # Refused before anything is saved; the client sends the turn again.
+    if relay_shutdown.is_draining():
+        raise RelayUnavailable
+
     # A Stop raised before this point belongs to an earlier turn, unless it
     # names this request (cancel.clear).
     clear_cancel(session_id, keep_turn=client_turn_id)
@@ -356,7 +399,7 @@ def start_turn(
 
     turn = _mark_turn_started(session_id, restricted=restricted, client_turn=client_turn_id)
     try:
-        return _relay_pool.submit(
+        return _submit_relay(
             _relay_ar_stream,
             session_id,
             full_prompt,
@@ -378,9 +421,11 @@ def start_turn(
             reasoning_effort=effort,
             live_turn_token=turn,
         )
-    except Exception:
+    except Exception as e:
         if turn:
             live_turn.clear(session_id, turn)
+        if isinstance(e, RelayUnavailable) and user_msg is not None:
+            _discard_unsent_user_message(user_msg.name, session_id)
         raise
 
 
@@ -492,6 +537,8 @@ def send_message(
             "message": _("Message is being processed. Response will be streamed via Socket.IO."),
         }
 
+    except RelayUnavailable:
+        return _retry_ack()
     # frappe.PermissionError does not subclass ValidationError, so the blanket
     # handler below would mask the ownership refusal as a generic error.
     except frappe.PermissionError:
@@ -628,7 +675,7 @@ def resume_interrupt(
             session_id, restricted=restricted, message_id=message_id, client_turn=client_turn_id
         )
         try:
-            _relay_pool.submit(
+            _submit_relay(
                 _relay_ar_interrupt_resume,
                 session_id,
                 interrupt_response,
@@ -659,6 +706,8 @@ def resume_interrupt(
             "message": _("Resuming agent with approval response."),
         }
 
+    except RelayUnavailable:
+        return _retry_ack()
     # frappe.PermissionError does not subclass ValidationError, so the blanket
     # handler below would mask the ownership refusal as a generic error.
     except frappe.PermissionError:
@@ -744,7 +793,7 @@ def continue_response(
             session_id, restricted=restricted, message_id=message_id, client_turn=client_turn_id
         )
         try:
-            _relay_pool.submit(
+            _submit_relay(
                 _relay_ar_stream,
                 session_id,
                 full_prompt=None,
@@ -776,6 +825,8 @@ def continue_response(
             "message": _("Continuing truncated response."),
         }
 
+    except RelayUnavailable:
+        return _retry_ack()
     # frappe.PermissionError does not subclass ValidationError, so the blanket
     # handler below would mask the ownership refusal as a generic error.
     except frappe.PermissionError:

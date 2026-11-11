@@ -19,6 +19,7 @@ import { createChangeActions } from "./chat/changes";
 import { createSendQueue } from "./chat/sendQueue";
 import { applyLiveSnapshot, createLiveTurnSync } from "./chat/liveTurnSync";
 import { createTurnClaim } from "./chat/turnClaim";
+import { restartFailure, restartingStatus, sendWithRestartRetry } from "./chat/restartRetry";
 import { isApprovalInteraction } from "./chat/interactionRegime";
 import { getSurface, surfaceClientSignals } from "./chat/surface";
 import { useComposerModesStore } from "./composerModesStore";
@@ -593,30 +594,43 @@ export const useChatStore = defineStore("chat", () => {
 				_requestId: streamRequestId.value,
 			};
 			messages.value.push(assistantMessage);
+			const bubble = messages.value[messages.value.length - 1];
 
 			const modes = useComposerModesStore().modesFor(currentSessionId.value);
 			const surface = getSurface();
 			const signals = surfaceClientSignals();
-			const ack = await api.chat.send(
-				currentSessionId.value,
-				message,
-				fileUrls,
-				context,
-				modelId ?? surface.modelId,
-				systemPromptAddendum,
-				attachments,
-				{
-					web_search: modes.webSearch,
-					reasoning_effort: modes.effort,
-					// Older AR servers only read the boolean.
-					thinking_enabled: modes.effort !== "off",
-					// A Stop names this request by the same id (streamManager.abortStream).
-					client_turn_id: assistantMessage._requestId,
-					client_type: surface.clientType,
-					...(signals ? { client_signals: signals } : {}),
-					...(currentProjectId.value ? { project: currentProjectId.value } : {}),
-				}
-			);
+			const send = () =>
+				api.chat.send(
+					currentSessionId.value,
+					message,
+					fileUrls,
+					context,
+					modelId ?? surface.modelId,
+					systemPromptAddendum,
+					attachments,
+					{
+						web_search: modes.webSearch,
+						reasoning_effort: modes.effort,
+						// Older AR servers only read the boolean.
+						thinking_enabled: modes.effort !== "off",
+						// A Stop names this request by the same id (streamManager.abortStream).
+						client_turn_id: assistantMessage._requestId,
+						client_type: surface.clientType,
+						...(signals ? { client_signals: signals } : {}),
+						...(currentProjectId.value ? { project: currentProjectId.value } : {}),
+					}
+				);
+			const ack = await sendWithRestartRetry(send, {
+				onRetrying: () => {
+					bubble.content = restartingStatus();
+				},
+			});
+			if (bubble.content === restartingStatus()) bubble.content = "";
+			const failure = restartFailure(ack);
+			if (failure) {
+				handleStreamError(failure.message, failure.code);
+				return;
+			}
 			// The first send creates the conversation row; the ack carries it, so Recents
 			// gains it without a reload (no row for a GDPR-restricted user).
 			const row = ack?.conversation;
@@ -663,15 +677,19 @@ export const useChatStore = defineStore("chat", () => {
 			// A continuation is the same turn finishing — it has to run under the
 			// toggles the turn was sent with, not AR's absence defaults.
 			const modes = useComposerModesStore().modesFor(currentSessionId.value);
-			await api.chat.continueResponse(currentSessionId.value, messageId, {
-				web_search: modes.webSearch,
-				reasoning_effort: modes.effort,
-				// Older AR servers only read the boolean.
-				thinking_enabled: modes.effort !== "off",
-				client_turn_id: lastMsg._requestId,
-				client_type: getSurface().clientType,
-				...(currentProjectId.value ? { project: currentProjectId.value } : {}),
-			});
+			const ack = await sendWithRestartRetry(() =>
+				api.chat.continueResponse(currentSessionId.value, messageId, {
+					web_search: modes.webSearch,
+					reasoning_effort: modes.effort,
+					// Older AR servers only read the boolean.
+					thinking_enabled: modes.effort !== "off",
+					client_turn_id: lastMsg._requestId,
+					client_type: getSurface().clientType,
+					...(currentProjectId.value ? { project: currentProjectId.value } : {}),
+				})
+			);
+			const failure = restartFailure(ack);
+			if (failure) handleStreamError(failure.message, failure.code);
 		} catch (err) {
 			stream.clearStreamTimeouts();
 			isStreaming.value = false;
