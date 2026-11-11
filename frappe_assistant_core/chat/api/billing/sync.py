@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import frappe
 
+from frappe_assistant_core.chat.site_profile import site_profile
+
 from .._helpers import (
     _log,
     _not_registered_error,
@@ -126,6 +128,7 @@ def _send_heartbeat():
             frappe_version=versions.get("frappe", {}).get("version"),
             erpnext_version=versions.get("erpnext", {}).get("version"),
             python_version=sys.version.split()[0],
+            site_profile=site_profile(versions),
             timeout=10,
         )
 
