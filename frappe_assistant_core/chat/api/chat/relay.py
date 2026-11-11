@@ -25,7 +25,7 @@ from typing import NamedTuple
 import frappe
 from frappe import _
 
-from frappe_assistant_core.chat.api.chat import live_turn
+from frappe_assistant_core.chat.api.chat import live_turn, relay_shutdown
 
 from .._helpers import (
     _not_registered_error,
@@ -1000,6 +1000,20 @@ def _relay_ar_interrupt_resume(
                     },
                 )
                 return
+            # This worker is exiting and the turn's time is up (relay_shutdown).
+            if relay_shutdown.should_give_up():
+                _handle_shutdown_interrupt(
+                    session_id,
+                    ar_message_id,
+                    full_response,
+                    block_builder,
+                    collected_tool_calls,
+                    model_used,
+                    stream_iter=stream_iter,
+                    resumed_message_id=message_id,
+                    pause_consumed=pause_consumed,
+                )
+                return
 
             # A rate_limited refusal arrives here as a stream_error (_normalize_ar_event).
             event_type, data = _normalize_ar_event(event.get("event"), event.get("data", {}))
@@ -1621,6 +1635,19 @@ def _relay_ar_stream(
                     continued_turn=continued_turn,
                 )
                 return
+            # This worker is exiting and the turn's time is up (relay_shutdown).
+            if relay_shutdown.should_give_up():
+                _handle_shutdown_interrupt(
+                    session_id,
+                    ar_message_id,
+                    full_response,
+                    block_builder,
+                    collected_tool_calls,
+                    model_used,
+                    continued_turn=continued_turn,
+                    stream_iter=stream_iter,
+                )
+                return
 
             # A rate_limited refusal arrives here as a stream_error (_normalize_ar_event).
             event_type, data = _normalize_ar_event(event.get("event"), event.get("data", {}))
@@ -2224,6 +2251,72 @@ def _persist_continued_turn(
         continued_turn.model_breakdown = updates["model_breakdown"]
     if "tool_calls" in updates:
         continued_turn.tool_calls = updates["tool_calls"]
+
+
+def _handle_shutdown_interrupt(
+    session_id: str,
+    ar_message_id: str | None,
+    full_response: str,
+    block_builder,
+    collected_tool_calls: list,
+    model_used: str,
+    continued_turn=None,
+    *,
+    stream_iter=None,
+    resumed_message_id: str | None = None,
+    pause_consumed: bool = True,
+) -> None:
+    """End a turn this exiting worker can no longer finish: keep its partial, flagged errored.
+
+    The connection to AR is dropped so AR stops the agent. A resume adds its cycle to the turn's
+    row, and only once AR consumed the pause; before that the row already holds the pause.
+    """
+    try:
+        if stream_iter is not None:
+            stream_iter.close()
+    except Exception as e:
+        frappe.logger("faco.chat.shutdown").warning(f"stream_iter.close() raised for {session_id}: {e}")
+
+    blocks_snapshot = block_builder.snapshot()
+    if resumed_message_id is not None:
+        if pause_consumed:
+            _persist_errored_resume_cycle(
+                session_id,
+                ar_message_id,
+                resumed_message_id,
+                full_response,
+                block_builder,
+                collected_tool_calls,
+            )
+    elif full_response or blocks_snapshot or continued_turn:
+        # A turn AR has not named has no row; the latest one belongs to an earlier turn.
+        _persist_partial_assistant_turn(
+            session_id,
+            ar_message_id,
+            full_response,
+            blocks_snapshot,
+            collected_tool_calls,
+            model_used,
+            "errored",
+            fall_back_to_latest=ar_message_id is not None,
+            continued_turn=continued_turn,
+        )
+
+    _emit_socket_event(
+        session_id,
+        {
+            "event": "stream_error",
+            "session_id": session_id,
+            "message_id": ar_message_id or resumed_message_id,
+            "error_code": "TURN_INTERRUPTED",
+            "error": _("This answer was interrupted by a server restart. Retry to run it again."),
+            "blocks": blocks_snapshot,
+            "partial_response": full_response,
+        },
+    )
+    live = live_turn.current(session_id)
+    if live is not None:
+        live_turn.clear(session_id, live.turn)
 
 
 def _handle_stream_aborted(

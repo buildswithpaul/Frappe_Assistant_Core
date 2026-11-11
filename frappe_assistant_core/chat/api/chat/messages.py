@@ -48,6 +48,8 @@ from ..models import usable_saved_model
 # so they don't block process shutdown. Overflow currently queues inside
 # the executor — bounded-queue rejection is a documented follow-up.
 _relay_pool = ThreadPoolExecutor(max_workers=20, thread_name_prefix="faco-relay")
+# After the pool exists: on exit, running relays get a deadline before the pool is joined.
+relay_shutdown.install()
 
 RESTART_RETRY_AFTER_SECONDS = 2
 
