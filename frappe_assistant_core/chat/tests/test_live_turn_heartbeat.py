@@ -147,7 +147,14 @@ class TestMarkTurnInterrupted(BaseAssistantTest):
     def test_mark_interrupted_persists_partial_as_errored(self):
         self._dead_streaming_turn()
         result = live_turn.mark_turn_interrupted(self.sid)
-        self.assertEqual(result, {"interrupted": True, "message_id": "m-dead"})
+        self.assertEqual(
+            result,
+            {
+                "interrupted": True,
+                "message_id": "m-dead",
+                "error": "This answer was interrupted by a server restart.",
+            },
+        )
         rows = self._assistant_rows()
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0].content, "Half an ans")
