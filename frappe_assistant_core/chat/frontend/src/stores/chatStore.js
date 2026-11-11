@@ -727,7 +727,7 @@ export const useChatStore = defineStore("chat", () => {
 		messages.value = messages.value.slice(0, userIndex + 1);
 		isStreaming.value = true;
 		streamingMessage.value = "";
-		streamRequestId.value = crypto.randomUUID();
+		streamRequestId.value = randomUUID();
 		turnClaim.releaseClaim();
 		stream.startStreamTimeout();
 		messages.value.push({
