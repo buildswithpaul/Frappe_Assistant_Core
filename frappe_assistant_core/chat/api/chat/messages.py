@@ -619,10 +619,12 @@ def retry_turn(
 ) -> dict:
     """Run the latest user message's turn again, from the state before it, in place of its partial.
 
-    A turn that completed is never re-run, so it is never billed twice. The message's text and
-    stored context are re-sent with the user's saved model; image attachments are not stored, so
-    they are not re-sent, while files attached by URL still reach the prompt through the
-    conversation addendum. Credits for the lost partial are not refunded.
+    A turn that completed (text or blocks) is never re-run, so it is never billed twice, and only
+    one Retry per conversation runs at a time. The message's text, stored context and the widget
+    page line are re-sent with the user's saved model. Image attachments and the browser's client
+    signals are not stored, so they are not re-sent; files attached by URL still reach the prompt
+    through the conversation addendum. Tools the failed attempt ran run again. Credits for the
+    lost partial are not refunded.
 
     Args:
             session_id: Conversation session ID
@@ -645,6 +647,26 @@ def retry_turn(
     if not user_row or user_row.name != user_message:
         frappe.throw(_("Only the latest message can be retried"))
 
+    # From the running check to the new turn's starting entry, one Retry at a time: two tabs
+    # retrying together must not both run the turn.
+    lock = _session_lock(f"fac_retry_lock:{session_id}")
+    if not lock.acquire():
+        return {"status": "running"}
+    try:
+        return _retry_locked(
+            session_id,
+            user_row,
+            client_type=client_type,
+            web_search=web_search,
+            thinking_enabled=thinking_enabled,
+            reasoning_effort=reasoning_effort,
+            client_turn_id=client_turn_id,
+        )
+    finally:
+        lock.release()
+
+
+def _retry_locked(session_id: str, user_row, **launch) -> dict:
     entry = live_turn.get(session_id)
     if entry:
         if not live_turn.is_stale(entry):
@@ -654,9 +676,10 @@ def retry_turn(
     answers = frappe.get_all(
         "FAC Chat Message",
         filters={"session_id": session_id, "role": "assistant", "creation": [">", user_row.creation]},
-        fields=["name", "content", "errored", "aborted"],
+        fields=["name", "content", "blocks", "errored", "aborted"],
     )
-    if any(not a.errored and not a.aborted and (a.content or "").strip() for a in answers):
+    # Text or blocks: a turn that only ran tools is as finished as one that answered in words.
+    if any(not a.errored and not a.aborted and _has_answer(a) for a in answers):
         return {"status": "already_complete"}
 
     if relay_shutdown.is_draining():
@@ -674,11 +697,14 @@ def retry_turn(
         frappe.delete_doc("FAC Chat Message", answer.name, ignore_permissions=True)
         FACChatConversation.untouch(session_id)
 
-    restored, session_state = FACChatSessionState.restore_pre_turn(session_id, user_message)
+    restored, session_state = FACChatSessionState.restore_pre_turn(session_id, user_row.name)
     if not restored:
         frappe.throw(_("This turn can no longer be retried"))
 
-    _open_turn(session_id, client_turn_id)
+    # Client signals are not stored, so a retry has none; the page line is rebuilt from the
+    # stored page, as start_turn wrote it.
+    addendum = (_conversation_addendum(session_id, False) or "") + _stored_page_addendum(user_row)
+    _open_turn(session_id, launch["client_turn_id"])
     try:
         _launch_turn(
             session_id,
@@ -688,16 +714,50 @@ def retry_turn(
             user_row.name,
             session_state,
             False,
-            system_prompt_addendum=_conversation_addendum(session_id, False),
-            client_type=client_type,
-            web_search=web_search,
-            thinking_enabled=thinking_enabled,
-            reasoning_effort=reasoning_effort,
-            client_turn_id=client_turn_id,
+            system_prompt_addendum=addendum or None,
+            **launch,
         )
     except RelayUnavailable:
         return _retry_ack()
     return {"status": "processing", "session_id": session_id}
+
+
+RETRY_LOCK_SECONDS = 60
+
+
+class _session_lock:
+    """A short site-scoped Redis lock; released only by its holder."""
+
+    def __init__(self, name: str):
+        self.key = frappe.cache().make_key(name)
+        self.token = frappe.generate_hash(length=16)
+
+    def acquire(self) -> bool:
+        # nosemgrep: frappe-cache-breaks-multitenancy — the key is site-prefixed (make_key); set_value has no NX
+        return bool(frappe.cache().set(self.key, self.token, nx=True, ex=RETRY_LOCK_SECONDS))
+
+    def release(self) -> None:
+        # nosemgrep: frappe-cache-breaks-multitenancy — the key is site-prefixed (make_key)
+        if frappe.cache().get(self.key) == self.token.encode():
+            frappe.cache().delete(self.key)
+
+
+def _has_answer(row) -> bool:
+    if (row.content or "").strip():
+        return True
+    try:
+        blocks = json.loads(row.blocks) if isinstance(row.blocks, str) else row.blocks
+    except ValueError:
+        # Unreadable blocks are still something the turn produced: never run it twice.
+        return bool(row.blocks)
+    return bool(blocks)
+
+
+def _stored_page_addendum(row) -> str:
+    """The prompt line for the widget page the message was sent from, or ""."""
+    if row.context_type != "Page" or not row.context_url:
+        return ""
+    return render_page_context({"type": "app_page", "path": row.context_url})
 
 
 def _latest_user_row(session_id: str) -> frappe._dict | None:

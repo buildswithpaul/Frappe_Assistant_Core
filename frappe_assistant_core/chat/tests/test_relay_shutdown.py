@@ -71,6 +71,7 @@ class TestRelayShutdown(BaseAssistantTest):
     def _run(self, events, *, resume=False):
         client = MagicMock()
         client.stream_chat.return_value = events
+        self.client = client
         published = []
 
         def collect(event, message, **kw):
@@ -155,6 +156,16 @@ class TestRelayShutdown(BaseAssistantTest):
         self.assertEqual(published[-1]["event"], "stream_error")
         self.assertEqual(published[-1]["error_code"], "TURN_INTERRUPTED")
         self.assertNotIn("stream_complete", [p["event"] for p in published])
+        self.assertIsNone(live_turn.get(self.sid))
+
+    def test_a_relay_dequeued_while_draining_never_calls_ar(self):
+        # The pool joins at exit by running what is still queued; draining began before it ran.
+        self._drain(GRACE_SECONDS)
+        published = self._run(iter([]))
+
+        self.client.stream_chat.assert_not_called()
+        self.assertEqual(published[-1]["error_code"], "TURN_INTERRUPTED")
+        self.assertEqual(self._row().errored, 1)
         self.assertIsNone(live_turn.get(self.sid))
 
     def test_not_draining_never_gives_up(self):

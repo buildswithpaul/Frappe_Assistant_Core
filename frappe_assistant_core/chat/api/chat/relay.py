@@ -935,6 +935,19 @@ def _relay_ar_interrupt_resume(
         # mark_turn_interrupted ended this turn while it waited in the pool: AR is never called.
         if live_turn_token and not restricted and not live_turn.holds(session_id, live_turn_token):
             return
+        # The pool runs what is still queued while the worker exits: never start AR then.
+        if relay_shutdown.is_draining():
+            _handle_shutdown_interrupt(
+                session_id,
+                ar_message_id,
+                full_response,
+                block_builder,
+                collected_tool_calls,
+                model_used,
+                resumed_message_id=message_id,
+                pause_consumed=False,
+            )
+            return
 
         # resume_interrupt cleared any older Stop when it accepted this resume,
         # so a flag up now is a Stop pressed while this relay waited to start.
@@ -961,6 +974,8 @@ def _relay_ar_interrupt_resume(
         started = last_progress = time.monotonic()
         stalled = False
         for event in stream_iter:
+            if _turn_taken(session_id, stream_iter):
+                return
             # Cooperative cancellation: same treatment as the send funnel.
             # Without this, Stop pressed while a resume is streaming was a
             # total no-op — AR could tear the stream down and this loop
@@ -1569,6 +1584,18 @@ def _relay_ar_stream(
         # mark_turn_interrupted ended this turn while it waited in the pool: AR is never called.
         if live_turn_token and not restricted and not live_turn.holds(session_id, live_turn_token):
             return
+        # The pool runs what is still queued while the worker exits: never start AR then.
+        if relay_shutdown.is_draining():
+            _handle_shutdown_interrupt(
+                session_id,
+                ar_message_id,
+                full_response,
+                block_builder,
+                collected_tool_calls,
+                model_used,
+                continued_turn=continued_turn,
+            )
+            return
 
         # send_message or continue_response cleared any older Stop when it
         # accepted this turn, so a flag up now is a Stop pressed while this
@@ -1619,6 +1646,8 @@ def _relay_ar_stream(
         started = last_progress = time.monotonic()
         stalled = False
         for event in stream_iter:
+            if _turn_taken(session_id, stream_iter):
+                return
             # Cooperative cancellation: the cancel_stream endpoint sets a
             # Redis-backed flag, visible to any gunicorn worker. We poll it
             # between events so Stop takes effect within one tool / token
@@ -2253,6 +2282,22 @@ def _persist_continued_turn(
         continued_turn.tool_calls = updates["tool_calls"]
 
 
+def _turn_taken(session_id: str, stream_iter) -> bool:
+    """Whether the turn was ended elsewhere: marked interrupted, or replaced by a Retry.
+
+    Each AR event first moves the live entry past "starting". Once the entry is gone the relay
+    drops AR's stream and saves nothing: the turn is no longer this relay's to finish or bill.
+    """
+    live_turn.ar_responded(session_id)
+    if not live_turn.lost(session_id):
+        return False
+    try:
+        stream_iter.close()
+    except Exception as e:
+        frappe.logger("fac_live_turn").warning(f"stream_iter.close() raised for {session_id}: {e}")
+    return True
+
+
 def _handle_shutdown_interrupt(
     session_id: str,
     ar_message_id: str | None,
@@ -2288,8 +2333,9 @@ def _handle_shutdown_interrupt(
                 block_builder,
                 collected_tool_calls,
             )
-    elif full_response or blocks_snapshot or continued_turn:
-        # A turn AR has not named has no row; the latest one belongs to an earlier turn.
+    else:
+        # A turn AR has not named has no row; the latest one belongs to an earlier turn. An
+        # empty one is still recorded, so the turn reads interrupted and can be retried.
         _persist_partial_assistant_turn(
             session_id,
             ar_message_id,

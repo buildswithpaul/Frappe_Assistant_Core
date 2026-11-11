@@ -217,6 +217,7 @@ export const useChatStore = defineStore("chat", () => {
 		isCancelling,
 		isSubmittingInterrupts,
 		reconcile: (sessionId) => reconcileFromServer(sessionId),
+		probeLiveTurn,
 		getSocketProbe: () => socketProbe,
 	});
 	const blocks = createBlockHandlers(sharedRefs);
@@ -225,8 +226,13 @@ export const useChatStore = defineStore("chat", () => {
 	// Joining a turn that is running elsewhere (another surface, or this one
 	// before a reload or a lost socket). See stores/chat/liveTurnSync.js.
 	function adoptLiveTurn(snap) {
-		// Its relay died; reconcileFromServer ends it rather than showing it run.
-		if (snap.stale) return;
+		// Its relay died: end it as interrupted and show the row as the server then has it.
+		if (snap.stale) {
+			reconcileFromServer(currentSessionId.value).catch((err) =>
+				logger.warn("Could not end a stale turn:", err)
+			);
+			return;
+		}
 		const msg = applyLiveSnapshot(messages.value, snap);
 		isStreaming.value = true;
 		stream.startStreamTimeout();
@@ -368,6 +374,18 @@ export const useChatStore = defineStore("chat", () => {
 	 * fire-and-forget pub/sub with no server replay buffer, so the only way
 	 * to recover them is to re-read what the relay already persisted.
 	 */
+	// A quiet stream whose relay died (stale entry) is ended now; anything else keeps waiting,
+	// and a turn that ended unseen is still settled by the activity watchdog's reconcile.
+	async function probeLiveTurn(sessionId) {
+		let live;
+		try {
+			live = await api.chat.getLiveTurn(sessionId);
+		} catch {
+			return;
+		}
+		if (live?.stale) await reconcileFromServer(sessionId);
+	}
+
 	async function reconcileFromServer(sessionId) {
 		if (!sessionId || sessionId !== currentSessionId.value) return;
 		const interrupted = await interruptStaleTurn(sessionId, {

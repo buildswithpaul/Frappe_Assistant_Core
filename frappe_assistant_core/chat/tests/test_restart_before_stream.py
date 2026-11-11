@@ -114,6 +114,11 @@ class TestRestartBeforeStream(BaseAssistantTest):
         self.assertFalse(row.attached_to_name)
 
     def test_other_submit_errors_still_raise(self):
-        with patch.object(messages._relay_pool, "submit", side_effect=RuntimeError("pool full")):
+        # send_message logs the failure; Error Log is MyISAM and would outlive the rollback.
+        with (
+            patch.object(messages._relay_pool, "submit", side_effect=RuntimeError("pool full")),
+            patch("frappe.log_error") as log_error,
+        ):
             with self.assertRaises(frappe.ValidationError):
                 messages.send_message(session_id=self.sid, message="hi")
+        log_error.assert_called_once()

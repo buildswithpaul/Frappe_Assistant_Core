@@ -1,5 +1,6 @@
 """Retry re-runs the latest user message from the state before its turn, never a finished one."""
 
+import json
 from unittest.mock import patch
 
 import frappe
@@ -49,11 +50,12 @@ class TestRetryTurn(BaseAssistantTest):
         FACChatSessionState.snapshot_pre_turn(self.sid, frappe.session.user, row.name)
         return row
 
-    def _assistant(self, content, *, errored=0, aborted=0, message_id="m-partial"):
+    def _assistant(self, content, *, errored=0, aborted=0, message_id="m-partial", blocks=None):
         row = FACChatMessage.create_message(session_id=self.sid, role="assistant", content=content)
-        frappe.db.set_value(
-            "FAC Chat Message", row.name, {"errored": errored, "aborted": aborted, "message_id": message_id}
-        )
+        values = {"errored": errored, "aborted": aborted, "message_id": message_id}
+        if blocks is not None:
+            values["blocks"] = json.dumps(blocks)
+        frappe.db.set_value("FAC Chat Message", row.name, values)
         return row.name
 
     def _rows(self, role):
@@ -108,6 +110,68 @@ class TestRetryTurn(BaseAssistantTest):
         self.assertEqual(self.submitted, [])
         self.assertEqual(self._rows("assistant"), [done])
         self.assertEqual(FACChatSessionState.load_wire(self.sid)["blob"], PRE_TURN["blob"])
+
+    def test_retry_refuses_a_completed_turn_whose_answer_is_only_tools(self):
+        user = self._user_turn()
+        # A turn that only ran tools (or made an artifact) finishes with no text of its own.
+        done = self._assistant(
+            "",
+            message_id="m-tools",
+            blocks=[{"type": "tool_call", "id": "t1", "tool_name": "create_document", "status": "success"}],
+        )
+
+        ack = messages.retry_turn(session_id=self.sid, user_message=user.name)
+
+        self.assertEqual(ack, {"status": "already_complete"})
+        self.assertEqual(self.submitted, [])
+        self.assertEqual(self._rows("assistant"), [done])
+
+    def test_two_concurrent_retries_run_once(self):
+        user = self._user_turn()
+        self._assistant("Half an ans", errored=1)
+        second = []
+        clicked = []
+        restore = FACChatSessionState.restore_pre_turn
+
+        def restore_while_another_tab_retries(session_id, user_message):
+            # The widget and the chat app both show Retry; the second click lands mid-retry.
+            if not clicked:
+                clicked.append(True)
+                second.append(messages.retry_turn(session_id=self.sid, user_message=user.name))
+            return restore(session_id, user_message)
+
+        with patch.object(
+            FACChatSessionState, "restore_pre_turn", side_effect=restore_while_another_tab_retries
+        ):
+            first = messages.retry_turn(session_id=self.sid, user_message=user.name)
+        after = messages.retry_turn(session_id=self.sid, user_message=user.name)
+
+        self.assertEqual(first["status"], "processing")
+        self.assertEqual(second, [{"status": "running"}])
+        self.assertEqual(after, {"status": "running"})
+        self.assertEqual(len(self.submitted), 1)
+
+    def test_retry_rebuilds_the_page_line_of_a_widget_message(self):
+        user = self._user_turn()
+        # The widget in Helpdesk stored its page as a "Page" context; start_turn wrote its prompt line.
+        frappe.db.set_value(
+            "FAC Chat Message",
+            user.name,
+            {
+                "context_type": "Page",
+                "context_url": "/helpdesk/tickets/1",
+                "context_doctype": None,
+                "context_name": None,
+            },
+        )
+        self._assistant("Half an ans", errored=1)
+        with patch.object(
+            messages, "render_page_context", return_value="\n\n## Page Context\n\nHelpdesk"
+        ) as render:
+            messages.retry_turn(session_id=self.sid, user_message=user.name)
+        render.assert_called_once_with({"type": "app_page", "path": "/helpdesk/tickets/1"})
+        args, _ = self.submitted[0]
+        self.assertIn("## Page Context", args[10])
 
     def test_retry_refuses_a_running_turn(self):
         user = self._user_turn()

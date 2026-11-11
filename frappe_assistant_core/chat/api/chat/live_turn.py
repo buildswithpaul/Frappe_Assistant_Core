@@ -14,7 +14,6 @@ GDPR-restricted users. A Redis failure here never stops the stream.
 
 from __future__ import annotations
 
-import os
 import threading
 import time
 import uuid
@@ -47,7 +46,6 @@ def _logger():
 
 
 def _write(session_id: str, entry: dict) -> None:
-    entry["owner_pid"] = os.getpid()
     entry["last_progress_at"] = time.time()
     frappe.cache().set_value(_key(session_id), entry, expires_in_sec=ENTRY_TTL_SECONDS)
 
@@ -140,9 +138,23 @@ class LiveTurn:
         self.message_id = message_id
         self.turn = turn or uuid.uuid4().hex
         self.seq = 0
+        # "starting" keeps the starting bound (is_stale) until AR sends its first event.
+        self.status = "starting"
+        # The entry was taken from this relay (mark_turn_interrupted, or a Retry's new turn).
+        self.lost = False
         self._ended = False
         self._written_at = None
-        self._save()
+        self._save(check=False)
+
+    def ar_responded(self) -> None:
+        """AR sent its first event: from now the turn is stale after STALE_AFTER_SECONDS."""
+        if self.status == "streaming" or self._ended:
+            return
+        self.status = "streaming"
+        try:
+            self._save()
+        except Exception as e:
+            _logger().warning(f"live turn snapshot skipped for {self.session_id}: {e!s}")
 
     def stamp(self, data: dict) -> None:
         self.seq += 1
@@ -171,7 +183,12 @@ class LiveTurn:
         except Exception as e:
             _logger().warning(f"live turn snapshot skipped for {self.session_id}: {e!s}")
 
-    def _save(self) -> None:
+    def _save(self, check: bool = True) -> None:
+        # Never revive or overwrite an entry this relay no longer holds; bind checked the first.
+        if check and not holds(self.session_id, self.turn):
+            self.lost = True
+            self._ended = True
+            return
         blocks = _trimmed(self.builder.snapshot())
         _write(
             self.session_id,
@@ -179,7 +196,7 @@ class LiveTurn:
                 "turn": self.turn,
                 "message_id": self.message_id,
                 "client_turn": self.client_turn,
-                "status": "streaming",
+                "status": self.status,
                 "started_at": frappe.utils.now(),
                 "seq": self.seq,
                 "text": "".join(b.get("content") or "" for b in blocks if b.get("type") == "text"),
@@ -247,6 +264,18 @@ def current(session_id: str) -> LiveTurn | None:
     return _registry().get(session_id)
 
 
+def ar_responded(session_id: str) -> None:
+    live = current(session_id)
+    if live is not None:
+        live.ar_responded()
+
+
+def lost(session_id: str) -> bool:
+    """Whether this relay's turn was ended elsewhere; it must stop without saving."""
+    live = current(session_id)
+    return live is not None and live.lost
+
+
 @frappe.whitelist(methods=["GET"])
 def get_live_turn(session_id: str) -> dict | None:
     """The running turn of a conversation the caller owns, or None; ``stale`` when its relay died."""
@@ -278,6 +307,11 @@ def mark_turn_interrupted(session_id: str) -> dict:
     """
     entry = _readable_entry(session_id)
     if not entry or not is_stale(entry):
+        return {"interrupted": False}
+    # Two surfaces can reconcile together; only one ends the turn.
+    claim = frappe.cache().make_key(f"fac_live_turn_mark:{session_id}:{entry['turn']}")
+    # nosemgrep: frappe-cache-breaks-multitenancy — the key is site-prefixed (make_key); set_value has no NX
+    if not frappe.cache().set(claim, 1, nx=True, ex=ENTRY_TTL_SECONDS):
         return {"interrupted": False}
     from frappe_assistant_core.chat.api.chat import relay
 
