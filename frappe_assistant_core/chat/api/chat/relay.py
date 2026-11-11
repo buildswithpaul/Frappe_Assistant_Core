@@ -215,6 +215,7 @@ from ..chat.helpers import (  # noqa: E402
     _parse_turn_blocks,
     _update_subscription_cache,
 )
+from .busy_retry import stream_with_busy_retry  # noqa: E402
 
 # Event types whose handling is identical in both the main stream loop and
 # the HITL resume loop. Routing them through one function keeps the loops
@@ -942,18 +943,22 @@ def _relay_ar_interrupt_resume(
             return
 
         # Resume stream — no message, just interrupt_response
-        stream_iter = client.stream_chat(
+        stream_iter = stream_with_busy_retry(
+            lambda: client.stream_chat(
+                session_id,
+                None,
+                ar_user,
+                client_type=client_type,
+                interrupt_response=interrupt_response,
+                message_id=message_id,
+                session_state=session_state,
+                model_id=model_id,
+                system_prompt_addendum=system_prompt_addendum,
+                context=context,
+                **_sdk_composer_kwargs(client.stream_chat, web_search, thinking_enabled, reasoning_effort),
+            ),
             session_id,
-            None,
-            ar_user,
-            client_type=client_type,
-            interrupt_response=interrupt_response,
-            message_id=message_id,
-            session_state=session_state,
-            model_id=model_id,
-            system_prompt_addendum=system_prompt_addendum,
-            context=context,
-            **_sdk_composer_kwargs(client.stream_chat, web_search, thinking_enabled, reasoning_effort),
+            cancelled=lambda: is_cancelled(session_id),
         )
         started = last_progress = time.monotonic()
         stalled = False
@@ -1582,19 +1587,23 @@ def _relay_ar_stream(
 
         # Stream from AR
         # web_search / thinking_enabled / reasoning_effort are keyword-only on the SDK.
-        stream_iter = client.stream_chat(
+        stream_iter = stream_with_busy_retry(
+            lambda: client.stream_chat(
+                session_id,
+                full_prompt,
+                ar_user,
+                context,
+                model_id,
+                attachments,
+                system_prompt_addendum,
+                client_type=client_type,
+                session_state=session_state,
+                continue_from_message_id=continue_from_message_id,
+                message_id=continue_from_message_id,
+                **_sdk_composer_kwargs(client.stream_chat, web_search, thinking_enabled, reasoning_effort),
+            ),
             session_id,
-            full_prompt,
-            ar_user,
-            context,
-            model_id,
-            attachments,
-            system_prompt_addendum,
-            client_type=client_type,
-            session_state=session_state,
-            continue_from_message_id=continue_from_message_id,
-            message_id=continue_from_message_id,
-            **_sdk_composer_kwargs(client.stream_chat, web_search, thinking_enabled, reasoning_effort),
+            cancelled=lambda: is_cancelled(session_id),
         )
         started = last_progress = time.monotonic()
         stalled = False
