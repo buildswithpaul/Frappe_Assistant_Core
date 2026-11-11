@@ -164,6 +164,9 @@ class TestReadAndEndpoints(BaseAssistantTest):
         super().setUp()
         # nosemgrep: frappe-setuser — test bootstrap; runs in an isolated transaction
         frappe.set_user("Administrator")
+        # An administrator on a live site may have set any number; the seed patch and install
+        # write 10, so pin that rather than depend on whatever this site stores.
+        frappe.db.set_single_value("FAC Chat Settings", "expected_concurrent_chatters", 10)
 
     def _patch_master(self, argv, env=None):
         # Production reads the gunicorn master's real cmdline via its parent pid; the test supplies
