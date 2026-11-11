@@ -46,6 +46,7 @@ class TestNoSeat(BaseAssistantTest):
 
     def _clear(self):
         frappe.cache.delete_value(f"faco_member:{self.user}")
+        frappe.cache.delete_value(access._last_known_key(self.user))
         frappe.cache.delete_value(credit_status_cache._key(self.user))
         frappe.cache.delete_value(notifications._cache_key(notifications._ar_user_id(self.user)))
         for name in (ar_breaker._FAILURES_KEY, ar_breaker._OPEN_KEY, ar_breaker._WAS_OPEN_KEY):
@@ -111,3 +112,63 @@ class TestNoSeat(BaseAssistantTest):
         self._auth_status({"user_exists": True, "user_status": "Pending"})
         access._faco_member_status(self.user)
         self.assertEqual(frappe.cache.get_value(f"faco_member:{self.user}"), "Pending")
+
+
+class TestLastKnownMembership(BaseAssistantTest):
+    """A user AR has already answered for keeps that answer while AR is unreachable."""
+
+    def setUp(self):
+        super().setUp()
+        self.user = "last-known-member@example.com"
+        self.client = create_autospec(AssistantRuntimeClient, instance=True)
+        self._clear()
+        self.addCleanup(self._clear)
+        patcher = patch(FACTORY, return_value=self.client)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def _clear(self):
+        frappe.cache.delete_value(f"faco_member:{self.user}")
+        frappe.cache.delete_value(access._last_known_key(self.user))
+        for name in (ar_breaker._FAILURES_KEY, ar_breaker._OPEN_KEY, ar_breaker._WAS_OPEN_KEY):
+            frappe.cache.delete(ar_breaker._key(name))
+
+    def _answer(self, result):
+        # Production records this when AR answers get_user_auth_status; the 60 s membership cache
+        # then lapses while the last-known copy stays for 24 h.
+        self.client.get_user_auth_status.return_value = result
+        access._faco_member_status(self.user)
+        frappe.cache.delete_value(f"faco_member:{self.user}")
+
+    def _open_breaker(self):
+        for _ in range(ar_breaker.FAILURE_THRESHOLD):
+            ar_breaker.record_failure()
+
+    def test_breaker_open_after_a_no_stays_out(self):
+        self._answer({"user_exists": False})
+        self._open_breaker()
+        self.assertFalse(access._is_faco_member(self.user))
+
+    def test_breaker_open_after_a_suspension_stays_out(self):
+        self._answer({"user_exists": True, "user_status": "Suspended"})
+        self._open_breaker()
+        self.assertFalse(access._is_faco_member(self.user))
+
+    def test_breaker_open_after_a_yes_stays_in(self):
+        self._answer({"user_exists": True, "user_status": "Active"})
+        self._open_breaker()
+        self.assertTrue(access._is_faco_member(self.user))
+
+    def test_breaker_open_without_history_fails_open_briefly(self):
+        self._open_breaker()
+        with patch.object(frappe.cache, "set_value", wraps=frappe.cache.set_value) as spy:
+            self.assertTrue(access._is_faco_member(self.user))
+        [call] = [c for c in spy.call_args_list if c.args[0] == f"faco_member:{self.user}"]
+        self.assertEqual(call.kwargs["expires_in_sec"], access._FAILOPEN_TTL)
+
+    def test_transport_failure_after_a_no_stays_out(self):
+        self._answer({"user_exists": False})
+        # The SDK returns this marker instead of raising when its request fails.
+        self.client.get_user_auth_status.return_value = {"_ar_unreachable": True, "error": "x"}
+        self.assertFalse(access._is_faco_member(self.user))
+        self.assertFalse(ar_breaker.is_open())
