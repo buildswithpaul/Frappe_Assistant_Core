@@ -60,10 +60,15 @@ def _is_faco_member(user: str) -> bool:
     is_member = True  # default fail-open until we get a definitive answer
     definitive = False  # True only when AR gave us a real yes/no (not a fail-open)
     try:
-        from frappe_assistant_core.chat.fac_cloud_client import get_fac_cloud_client
+        from frappe_assistant_core.chat import ar_breaker
+        from frappe_assistant_core.chat.fac_cloud_client import SHORT_CALL_TIMEOUT, get_fac_cloud_client
 
-        client = get_fac_cloud_client()
-        if not client:
+        breaker_open = ar_breaker.is_open()
+        client = None if breaker_open else get_fac_cloud_client(timeout=SHORT_CALL_TIMEOUT)
+        if breaker_open:
+            # Fail open without asking AR; the short TTL below re-checks once the breaker closes.
+            is_member = True
+        elif not client:
             # Unregistered site → not a member (the gate handles this earlier too).
             is_member = False
             definitive = True
@@ -74,8 +79,10 @@ def _is_faco_member(user: str) -> bool:
             result = client.get_user_auth_status(user_id=_ar_user_id(user)) or {}
             if result.get("_ar_unreachable"):
                 # Transient AR failure — trust the session, don't lock out.
+                ar_breaker.record_failure()
                 is_member = True
             else:
+                ar_breaker.record_success()
                 # AR answered authoritatively: gate on the real AR Tenant User status.
                 is_member = bool(result.get("user_exists")) and result.get("user_status") in (
                     "Active",
