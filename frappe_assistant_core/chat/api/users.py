@@ -5,6 +5,7 @@
 """Admin user management -- listing, adding, suspending, and deregistering AR users."""
 
 import frappe
+from assistant_runtime_sdk import ARAPIError
 from frappe import _
 
 from ._helpers import (
@@ -14,6 +15,7 @@ from ._helpers import (
     _user_message_for_ar_error,
 )
 from .auth import _ar_user_id
+from .settings.access import has_seat
 
 
 def _notify_invited_user(user_id: str, user_role: str | None, invited_by: str, *, is_resend: bool = False):
@@ -441,6 +443,9 @@ def get_my_credit_status():
     def _fallback():
         return {**entry["value"], "stale": True} if entry else {"unavailable": True}
 
+    if has_seat(user) is False:
+        return {"no_seat": True}
+
     try:
         client = get_fac_cloud_client(timeout=SHORT_CALL_TIMEOUT)
         if not client:
@@ -452,6 +457,8 @@ def get_my_credit_status():
     except Exception as e:
         if ar_breaker.is_transport_failure(e):
             return _fallback()
+        if isinstance(e, ARAPIError) and e.status_code == 404:
+            return {"no_seat": True}
         frappe.log_error(title="FACO User Management Error", message=f"Error getting credit status: {e!s}")
         return {"error": _user_message_for_ar_error(e)}
 
