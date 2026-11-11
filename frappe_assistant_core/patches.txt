@@ -63,3 +63,6 @@ frappe_assistant_core.patches.v3_1.move_send_email_to_core_plugin
 # Version 3.2.0 - chat history & projects: give every existing session a FAC Chat
 # Conversation row (new messages maintain their own row from here on)
 frappe_assistant_core.patches.v3_2.backfill_fac_chat_conversations
+
+# Version 3.3.0 - server-setup check: size it for 10 concurrent chatters until an admin sets a number
+frappe_assistant_core.patches.v3_3.seed_expected_concurrent_chatters
