@@ -119,6 +119,14 @@ class TestBusyRetry(unittest.TestCase):
         self.assertAlmostEqual(sum(sleeps), busy_retry.MAX_WAIT_SECONDS)
         self.assertEqual(emit.call_args.args[1]["retry_after"], busy_retry.MAX_WAIT_SECONDS)
 
+    def test_nan_retry_after_is_treated_as_invalid(self):
+        opener = _Opener([_busy(float("nan"))], [{"event": "stream_complete", "data": {}}])
+
+        _events, emit, sleeps = self.run_helper(opener)
+
+        self.assertAlmostEqual(sum(sleeps), 1.0)
+        self.assertEqual(emit.call_args.args[1]["retry_after"], 1.0)
+
     def test_other_first_event_passes_through_without_retry(self):
         evs = [{"event": "stream_error", "data": {"error_code": "RATE_LIMITED"}}]
         opener = _Opener(evs)
@@ -131,7 +139,7 @@ class TestBusyRetry(unittest.TestCase):
 
 
 class TestRelayUsesBusyRetry(unittest.TestCase):
-    def _run_send(self, streams):
+    def _run_send(self, streams, cancelled=None):
         # Autospec of the real SDK client: a renamed or missing stream_chat fails here,
         # which a bare MagicMock would let through.
         client = create_autospec(AssistantRuntimeClient, instance=True)
@@ -146,7 +154,7 @@ class TestRelayUsesBusyRetry(unittest.TestCase):
                 enter(patch(f"frappe.{name}"))
             enter(patch("frappe.db.get_value", return_value=None))
             enter(patch("frappe.db.commit"))
-            enter(patch.object(relay, "is_cancelled", return_value=False))
+            enter(patch.object(relay, "is_cancelled", side_effect=cancelled or (lambda _sid: False)))
             enter(patch.object(relay, "_ensure_assistant_msg"))
             enter(patch.object(relay, "_persist_session_blob"))
             enter(patch.object(relay, "_persist_partial_assistant_turn"))
@@ -183,6 +191,15 @@ class TestRelayUsesBusyRetry(unittest.TestCase):
         self.assertEqual(len(errors), 1)
         self.assertEqual(errors[0]["error_code"], "AR_BUSY")
         self.assertEqual(errors[0]["error"], _("FAC Cloud is busy. Try again in a minute."))
+
+    def test_stop_during_a_busy_wait_aborts_the_turn_without_reopening(self):
+        streams = [[_busy(5.0)], [{"event": "stream_complete", "data": {}}]]
+        polls = iter([False, False, True])
+
+        client, emitted = self._run_send(streams, cancelled=lambda _sid: next(polls, True))
+
+        self.assertEqual(client.stream_chat.call_count, 1)
+        self.assertEqual(emitted[-1]["event"], "stream_aborted")
 
 
 if __name__ == "__main__":

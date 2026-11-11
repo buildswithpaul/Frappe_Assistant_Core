@@ -32,7 +32,7 @@ def _busy_retry_after(event: dict) -> float | None:
     if data.get("error_code") != BUSY_ERROR_CODE:
         return None
     retry_after = data.get("retry_after")
-    if not isinstance(retry_after, (int, float)) or retry_after <= 0:
+    if not isinstance(retry_after, (int, float)) or not retry_after > 0:
         return 1.0
     return float(retry_after)
 
@@ -54,7 +54,7 @@ def stream_with_busy_retry(
     session_id: str,
     *,
     cancelled: Callable[[], bool],
-    sleep: Callable[[float], None] = time.sleep,
+    sleep: Callable[[float], None] | None = None,
 ) -> Iterator[dict]:
     """Yield the events of ``open_stream()``, re-opening it while AR reports busy.
 
@@ -62,6 +62,7 @@ def stream_with_busy_retry(
     event passes the whole stream through. A Stop during the wait yields one heartbeat and
     ends, so the relay's own cancel check runs and finalizes the turn as a Stop.
     """
+    sleep = sleep or time.sleep
     retries = 0
     while True:
         stream = open_stream()
