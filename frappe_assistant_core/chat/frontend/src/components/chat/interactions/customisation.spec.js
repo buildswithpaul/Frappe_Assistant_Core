@@ -61,6 +61,19 @@ describe("writeConsequence", () => {
 		).toBe(copy);
 	});
 
+	it("says so in the plural for a validate-only list of several doctypes", () => {
+		const documents = [
+			{ doctype: "ToDo", name: "a", data: {} },
+			{ doctype: "Note", name: "b", data: {} },
+		];
+		expect(writeConsequence("update_document", { documents, validate_only: true })).toBe(
+			"Checks these changes against your rules without saving them. Rules that run before save still run.",
+		);
+		expect(writeConsequence("create_document", { documents, validate_only: true })).toBe(
+			"Checks these records against your rules without saving them. Rules that run before save still run.",
+		);
+	});
+
 	it("keeps the modify copy for updates that are not validate-only", () => {
 		for (const flag of [false, "true", undefined]) {
 			expect(writeConsequence("update_document", { doctype: "ToDo", name: "TD-1", validate_only: flag })).toBe(

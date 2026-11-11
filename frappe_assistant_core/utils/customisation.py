@@ -72,6 +72,18 @@ CUSTOMISATION_DOCTYPES = frozenset(
     }
 )
 
+# Not customisations, but saving one adds custom fields, so it changes the database schema, which
+# commits the transaction: a list of documents (document_batch) can't hold one. Kept apart from
+# CUSTOMISATION_DOCTYPES, which the SPA and AR mirror. A list also stops any other schema change
+# while it is written; this list only refuses these before anything is written.
+SCHEMA_CHANGING_DOCTYPES = frozenset(
+    {
+        "Inventory Dimension",
+        "Accounting Dimension",
+        "Service Level Agreement",
+    }
+)
+
 # Roles that do not count as "other people" when judging whether a customisation can be felt.
 SYSTEM_ROLES = frozenset({"System Manager", "Administrator"})
 

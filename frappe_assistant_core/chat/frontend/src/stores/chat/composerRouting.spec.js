@@ -11,6 +11,17 @@ describe("resolveComposerRoute", () => {
 		).toBe("answer");
 	});
 
+	it("sends files as a new message, leaving the question, since an answer can't carry them", () => {
+		// FACO asks for a corrected file this way: "Can you upload the revised CSV?"
+		expect(
+			resolveComposerRoute({
+				isStreaming: false,
+				pendingInteraction: { regime: "question" },
+				hasFiles: true,
+			})
+		).toBe("abort-then-send");
+	});
+
 	it("routes to abort-then-send when an approval card is pending", () => {
 		expect(
 			resolveComposerRoute({

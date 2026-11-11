@@ -4,6 +4,8 @@
 
 """FAC Chat Project: ownership, validation, and the project endpoints."""
 
+from unittest.mock import patch
+
 import frappe
 
 from frappe_assistant_core.chat.doctype.fac_chat_project.fac_chat_project import (
@@ -14,6 +16,7 @@ from frappe_assistant_core.chat.doctype.fac_chat_project.fac_chat_project import
 from frappe_assistant_core.tests.base_test import BaseAssistantTest
 
 OTHER_USER = "fac-projects-other@example.com"
+PROJECTS = "frappe_assistant_core.chat.api.chat.projects"
 
 
 def ensure_user(email: str) -> str:
@@ -120,7 +123,13 @@ class TestProjectsApi(BaseAssistantTest):
 
         name = make_project("Administrator")
         FACChatMessage.create_message("test-proj-del-1", "user", "keep me", project=name)
-        delete_project(name)
+        # Conversations only: with AR's project features on (a site connected to FAC Cloud), the
+        # delete would call AR for real. test_project_memory and test_project_documents cover those calls.
+        with (
+            patch(f"{PROJECTS}.project_documents_enabled", return_value=False),
+            patch(f"{PROJECTS}.project_memory_enabled", return_value=False),
+        ):
+            delete_project(name)
         self.assertFalse(frappe.db.exists("FAC Chat Project", name))
         self.assertTrue(frappe.db.exists("FAC Chat Conversation", "test-proj-del-1"))
         self.assertIsNone(frappe.db.get_value("FAC Chat Conversation", "test-proj-del-1", "project"))

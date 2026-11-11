@@ -35,6 +35,31 @@ from frappe import _
 
 from frappe_assistant_core.core.base_tool import BaseTool
 
+# Tally writes control characters such as \x04 into names; they carry no data.
+_XML_CONTROL_CHARS = dict.fromkeys(c for c in range(32) if c not in (9, 10, 13))
+
+
+def _xml_local_name(tag: str) -> str:
+    """Drop the namespace from a tag or attribute name: "{TallyUDF}GSTIN" -> "GSTIN"."""
+    return tag.rsplit("}", 1)[-1]
+
+
+def _xml_cell(text: Optional[str]) -> str:
+    """One XML text value as a single clean line."""
+    return " ".join((text or "").translate(_XML_CONTROL_CHARS).split())
+
+
+def _xml_children(el) -> list:
+    """Child elements only: comments, processing instructions and entities have no str tag."""
+    return [c for c in el if isinstance(c.tag, str)]
+
+
+def _xml_release(el) -> None:
+    """Free an element iterparse has finished with, and its already-read siblings."""
+    el.clear()
+    while el.getprevious() is not None:
+        del el.getparent()[0]
+
 
 class ExtractFileContent(BaseTool):
     """
@@ -92,7 +117,7 @@ class ExtractFileContent(BaseTool):
                 "operation": {
                     "type": "string",
                     "enum": ["extract", "ocr", "parse_data", "extract_tables"],
-                    "description": "Operation: 'extract' (get text/data), 'ocr' (extract text from images), 'parse_data' (structured data from CSV/Excel), 'extract_tables' (extract tables from PDFs)",
+                    "description": "Operation: 'extract' (get text/data), 'ocr' (extract text from images), 'parse_data' (structured data from CSV/Excel/XML), 'extract_tables' (extract tables from PDFs)",
                 },
                 "language": {
                     "type": "string",
@@ -116,7 +141,7 @@ class ExtractFileContent(BaseTool):
 
     def _get_description(self) -> str:
         """Get tool description"""
-        return """Extract text and data from various file formats for analysis and processing. SUPPORTED FORMATS: PDF (text extraction, table extraction), Images JPG/PNG (OCR with PaddleOCR), Spreadsheets CSV/Excel (parse data), Documents DOCX/TXT (text extraction). OPERATIONS: extract (get text content), ocr (optical character recognition on images), parse_data (structured data from CSV/Excel), extract_tables (tables from PDFs). USE CASES: Read invoices, contracts, forms, reports, spreadsheets for analysis and data processing. Requires valid file URL from Frappe file system. Returns extracted content in text or structured format suitable for further processing."""
+        return """Extract text and data from various file formats for analysis and processing. SUPPORTED FORMATS: PDF (text extraction, table extraction), Images JPG/PNG (OCR with PaddleOCR), Spreadsheets CSV/Excel (parse data), XML data exports such as Tally (parse records), Documents DOCX/TXT (text extraction). OPERATIONS: extract (get text content), ocr (optical character recognition on images), parse_data (structured data from CSV/Excel/XML), extract_tables (tables from PDFs). USE CASES: Read invoices, contracts, forms, reports, spreadsheets for analysis and data processing. Requires valid file URL from Frappe file system. Returns extracted content in text or structured format suitable for further processing. NOT FOR IMPORTS: a CSV or Excel file the user wants imported into ERPNext goes to start_import_session, not here; this tool renames repeated headers (Phone.1) and reads 00123 as 123, so its columns won't match the import's."""
 
     def execute(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
         """Execute file content extraction"""
@@ -130,6 +155,20 @@ class ExtractFileContent(BaseTool):
             file_doc = self._get_file_document(arguments)
             if not file_doc:
                 return {"success": False, "error": "File not found or access denied"}
+
+            # A file an import session holds is read by the import tools, which show the model
+            # headers, samples and summaries only (#34003); the whole file isn't read into the chat.
+            from frappe_assistant_core.utils.import_session import holding_session
+
+            holding = holding_session(file_doc.name)
+            if holding:
+                return {
+                    "success": False,
+                    "error": _(
+                        "This file is being imported (import session {0}). Ask about it through the "
+                        "import: the session shows its columns, sample rows and what the check found."
+                    ).format(holding),
+                }
 
             # Check file size limits
             if not self._check_file_size(file_doc):
@@ -151,12 +190,12 @@ class ExtractFileContent(BaseTool):
             elif operation == "ocr":
                 result = self._perform_ocr(file_content, arguments, file_type=file_type)
             elif operation == "parse_data":
-                if file_type in ["csv", "excel"]:
+                if file_type in ["csv", "excel", "xml"]:
                     result = self._extract_content(file_content, file_type, arguments)
                 else:
                     return {
                         "success": False,
-                        "error": "parse_data operation only supports CSV and Excel files",
+                        "error": "parse_data operation only supports CSV, Excel and XML files",
                     }
             elif operation == "extract_tables":
                 if file_type == "pdf":
@@ -372,7 +411,9 @@ class ExtractFileContent(BaseTool):
             return "excel"
         elif file_name_lower.endswith(".docx"):
             return "docx"
-        elif file_name_lower.endswith((".txt", ".text")):
+        elif file_name_lower.endswith(".xml"):
+            return "xml"
+        elif file_name_lower.endswith((".txt", ".text", ".json")):
             return "text"
         else:
             # Try to detect from MIME type
@@ -388,7 +429,9 @@ class ExtractFileContent(BaseTool):
                     return "excel"
                 elif "word" in mime_type:
                     return "docx"
-                elif "text" in mime_type:
+                # Exact match: a bare "xml" substring would also catch OOXML
+                # types such as .pptx (application/vnd.openxmlformats-...).
+                elif "text" in mime_type or mime_type in ("application/json", "application/xml"):
                     return "text"
 
             return "unknown"
@@ -406,6 +449,8 @@ class ExtractFileContent(BaseTool):
                 return self._extract_csv_content(file_content)
             elif file_type == "excel":
                 return self._extract_excel_content(file_content)
+            elif file_type == "xml":
+                return self._extract_xml_content(file_content)
             elif file_type == "docx":
                 return self._extract_docx_content(file_content)
             elif file_type == "text":
@@ -827,7 +872,11 @@ class ExtractFileContent(BaseTool):
             import pandas as pd
 
             # Try different encodings
-            for encoding in ["utf-8", "latin-1", "cp1252"]:
+            encodings = ["utf-8", "latin-1", "cp1252"]
+            # BOM-prefixed UTF-16 would otherwise "decode" as latin-1 garbage.
+            if file_content.startswith((b"\xff\xfe", b"\xfe\xff")):
+                encodings.insert(0, "utf-16")
+            for encoding in encodings:
                 try:
                     df = pd.read_csv(io.BytesIO(file_content), encoding=encoding)
                     break
@@ -879,7 +928,8 @@ class ExtractFileContent(BaseTool):
 
                 # Create text representation
                 sheet_content = f"=== Sheet: {sheet_name} ===\n"
-                sheet_content += f"Columns: {', '.join(df.columns.tolist())}\n"
+                # Headers can be numbers or dates (e.g. a "2024" column).
+                sheet_content += f"Columns: {', '.join(str(c) for c in df.columns)}\n"
                 sheet_content += f"Rows: {len(df)}\n\n"
                 sheet_content += df.head(10).to_string()
 
@@ -896,6 +946,135 @@ class ExtractFileContent(BaseTool):
 
         except Exception as e:
             return {"success": False, "error": f"Excel extraction error: {str(e)}"}
+
+    def _extract_xml_content(self, file_content: bytes) -> Dict[str, Any]:
+        """Extract content from an XML data export, such as a Tally masters or vouchers file.
+
+        Each record type is reduced the way an Excel sheet is: its columns, row count and
+        first 10 rows. The file is streamed twice rather than loaded as one tree, since
+        exports run to tens of MB.
+        """
+        try:
+            import pandas as pd
+
+            record_paths = self._find_xml_record_paths(file_content)
+            record_types = {}
+            path = []
+
+            for event, el in self._iter_xml(file_content):
+                if event == "start":
+                    path.append(_xml_local_name(el.tag))
+                    continue
+                current = tuple(path)
+                path.pop()
+
+                if current in record_paths:
+                    tag, row = self._xml_record_row(el)
+                    record_type = record_types.setdefault(
+                        tag, {"columns": {}, "row_count": 0, "sample_data": []}
+                    )
+                    record_type["row_count"] += 1
+                    record_type["columns"].update(dict.fromkeys(row))
+                    if len(record_type["sample_data"]) < 10:
+                        record_type["sample_data"].append(row)
+                elif any(current[:i] in record_paths for i in range(1, len(current))):
+                    # Inside a record that has not ended yet; it is read when it does.
+                    continue
+                _xml_release(el)
+
+            if not record_types:
+                return {"success": False, "error": "No records found in XML file"}
+
+            all_records_content = []
+            structured_data = {}
+
+            for tag, record_type in record_types.items():
+                columns = list(record_type["columns"])
+                structured_data[tag] = {
+                    "columns": columns,
+                    "row_count": record_type["row_count"],
+                    "sample_data": record_type["sample_data"],
+                }
+
+                df = pd.DataFrame(record_type["sample_data"], columns=columns).fillna("")
+                records_content = f"=== Records: {tag} ===\n"
+                records_content += f"Columns: {', '.join(columns)}\n"
+                records_content += f"Rows: {record_type['row_count']}\n\n"
+                records_content += df.to_string()
+
+                all_records_content.append(records_content)
+
+            return {
+                "success": True,
+                "content": "\n\n".join(all_records_content),
+                "structured_data": structured_data,
+                "record_type_count": len(record_types),
+            }
+
+        except Exception as e:
+            return {"success": False, "error": f"XML extraction error: {str(e)}"}
+
+    def _find_xml_record_paths(self, file_content: bytes) -> set:
+        """Find the element paths that hold records: the outermost paths that repeat.
+
+        In a Tally export that is ENVELOPE/BODY/IMPORTDATA/REQUESTDATA/TALLYMESSAGE. A repeat
+        inside a record, such as a voucher's ledger entries, is part of that record.
+        """
+        counts = {}
+        path = []
+        for event, el in self._iter_xml(file_content):
+            if event == "start":
+                path.append(_xml_local_name(el.tag))
+                counts[tuple(path)] = counts.get(tuple(path), 0) + 1
+            else:
+                path.pop()
+                _xml_release(el)
+
+        repeated = {p for p, n in counts.items() if n > 1}
+        record_paths = {p for p in repeated if not any(p[:i] in repeated for i in range(1, len(p)))}
+        # Nothing repeats in a single-record file, so each child of the root is a record.
+        return record_paths or {p for p in counts if len(p) == 2}
+
+    @staticmethod
+    def _iter_xml(file_content: bytes):
+        from lxml import etree
+
+        # recover: Tally writes "&#4;" before group names such as Primary, which XML 1.0
+        # forbids. Entities stay unresolved and no DTD is loaded, so an XXE payload reads
+        # nothing from the server.
+        return etree.iterparse(
+            io.BytesIO(file_content),
+            events=("start", "end"),
+            recover=True,
+            resolve_entities=False,
+            load_dtd=False,
+            no_network=True,
+        )
+
+    @staticmethod
+    def _xml_record_row(el) -> tuple:
+        """Flatten one record element into (record type, {column: value})."""
+        children = _xml_children(el)
+        # Tally wraps every master and voucher in its own TALLYMESSAGE; the child is the record.
+        if len(children) == 1 and not el.attrib and (_xml_children(children[0]) or children[0].attrib):
+            el = children[0]
+            children = _xml_children(el)
+
+        tag = _xml_local_name(el.tag)
+        row = {_xml_local_name(k): _xml_cell(v) for k, v in el.attrib.items()}
+        if _xml_cell(el.text):
+            row[tag] = _xml_cell(el.text)
+
+        for child in children:
+            name = _xml_local_name(child.tag)
+            # A nested list (a ledger's ADDRESS.LIST, a voucher's ledger entries) becomes
+            # one cell, its values joined.
+            value = "; ".join(cell for cell in (_xml_cell(t) for t in child.itertext()) if cell)
+            if name in row:
+                value = "; ".join(cell for cell in (row[name], value) if cell)
+            row[name] = value
+
+        return tag, {name: value[:100] for name, value in row.items()}
 
     def _extract_docx_content(self, file_content: bytes) -> Dict[str, Any]:
         """Extract content from DOCX"""
@@ -947,7 +1126,11 @@ class ExtractFileContent(BaseTool):
         """Extract content from text file"""
         try:
             # Try different encodings
-            for encoding in ["utf-8", "latin-1", "cp1252", "ascii"]:
+            encodings = ["utf-8", "latin-1", "cp1252", "ascii"]
+            # BOM-prefixed UTF-16 would otherwise "decode" as latin-1 garbage.
+            if file_content.startswith((b"\xff\xfe", b"\xfe\xff")):
+                encodings.insert(0, "utf-16")
+            for encoding in encodings:
                 try:
                     text = file_content.decode(encoding)
                     return {"success": True, "content": text, "encoding": encoding}

@@ -2,6 +2,7 @@ import { defineStore } from "pinia";
 import { ref, computed, watch } from "vue";
 import { api } from "@/api/client";
 import { logger } from "@/utils/logger";
+import { randomUUID } from "@/utils/uuid";
 import {
 	answeredCardIds,
 	carryCardDecisions,
@@ -579,7 +580,7 @@ export const useChatStore = defineStore("chat", () => {
 
 			isStreaming.value = true;
 			streamingMessage.value = "";
-			streamRequestId.value = crypto.randomUUID();
+			streamRequestId.value = randomUUID();
 			turnClaim.releaseClaim();
 
 			stream.startStreamTimeout();
@@ -647,7 +648,7 @@ export const useChatStore = defineStore("chat", () => {
 
 		isStreaming.value = true;
 		streamingMessage.value = lastMsg.content || "";
-		streamRequestId.value = crypto.randomUUID();
+		streamRequestId.value = randomUUID();
 
 		lastMsg.isStreaming = true;
 		lastMsg.truncated = false;
@@ -797,7 +798,7 @@ export const useChatStore = defineStore("chat", () => {
 		const sessionId = currentSessionId.value;
 		// A resume is a request of its own, as a Continue is: from here on a
 		// Stop names it, never the request that paused the turn.
-		const clientTurnId = crypto.randomUUID();
+		const clientTurnId = randomUUID();
 		streamRequestId.value = clientTurnId;
 		if (lastMsg && lastMsg.role === "assistant") lastMsg._requestId = clientTurnId;
 

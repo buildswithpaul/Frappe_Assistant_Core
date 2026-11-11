@@ -28,7 +28,8 @@ jobs:
             python-version: '3.14'
             node-version: 24
     name: Server (${{ matrix.frappe-branch }})
-    timeout-minutes: 30
+    # The data-migration tests import into ERPNext for real: they take most of the run.
+    timeout-minutes: 60
 
     services:
       redis-cache:
@@ -119,6 +120,116 @@ jobs:
           bench build
         env:
           CI: 'Yes'
+
+      # A real ERPNext site has been through its setup wizard: a company and its accounts, a
+      # fiscal year, the root groups ("All Customer Groups", "All Item Groups") and the UOMs the
+      # data-migration tests import into. Without it nearly all of them fail on a missing root.
+      - name: Complete the ERPNext setup
+        working-directory: /home/runner/frappe-bench
+        run: |
+          year=$(date +%Y); [ "$(date +%m)" -lt 4 ] && year=$((year - 1))
+          bench --site test_site execute frappe.desk.page.setup_wizard.setup_wizard.setup_complete --kwargs "{\"args\": {
+            \"language\": \"English\", \"country\": \"India\", \"timezone\": \"Asia/Kolkata\", \"currency\": \"INR\",
+            \"company_name\": \"FAC Test India\", \"company_abbr\": \"FTI\", \"chart_of_accounts\": \"Standard\",
+            \"fy_start_date\": \"$year-04-01\", \"fy_end_date\": \"$((year + 1))-03-31\", \"setup_demo\": 0,
+            \"full_name\": \"Test Admin\", \"email\": \"admin@example.com\", \"domains\": [\"Manufacturing\"]}}"
+
+      - name: Run Tests
+        working-directory: /home/runner/frappe-bench
+        run: |
+          bench --site test_site set-config allow_tests true
+          bench --site test_site run-tests --app frappe_assistant_core
+        env:
+          TYPE: server
+
+  # India-only behaviour of the data migration (mandatory HSN codes, GSTIN, opening entries without
+  # e-invoices) skips where India Compliance is absent, so it gets a site with it installed (#34543).
+  # The other jobs don't change.
+  india-compliance:
+    runs-on: ubuntu-latest
+    name: Server with India Compliance (version-16)
+    timeout-minutes: 75
+
+    services:
+      redis-cache:
+        image: redis:alpine
+        ports:
+          - 13000:6379
+      redis-queue:
+        image: redis:alpine
+        ports:
+          - 11000:6379
+      mariadb:
+        image: mariadb:10.6
+        env:
+          MYSQL_ROOT_PASSWORD: root
+        ports:
+          - 3306:3306
+        options: --health-cmd="mariadb-admin ping" --health-interval=5s --health-timeout=2s --health-retries=3
+
+    steps:
+      - name: Clone
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          check-latest: true
+
+      - name: Install MariaDB Client
+        timeout-minutes: 5
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends mariadb-client
+          # As in the tests job: the client requires TLS by default and the service offers none.
+          printf '[client]\nskip-ssl\n' > ~/.my.cnf
+
+      - name: Setup
+        run: |
+          pip install frappe-bench
+          bench init --skip-redis-config-generation --skip-assets --python "$(which python)" --frappe-branch version-16 ~/frappe-bench
+          mariadb --host 127.0.0.1 --port 3306 -u root -proot -e "SET GLOBAL character_set_server = 'utf8mb4'"
+          mariadb --host 127.0.0.1 --port 3306 -u root -proot -e "SET GLOBAL collation_server = 'utf8mb4_unicode_ci'"
+
+      - name: Install
+        working-directory: /home/runner/frappe-bench
+        run: |
+          bench get-app erpnext --branch version-16
+          bench get-app india_compliance https://github.com/resilient-tech/india-compliance --branch version-16
+          bench get-app frappe_assistant_core $GITHUB_WORKSPACE
+          bench setup requirements --dev
+          bench new-site --db-root-password root --admin-password admin test_site
+          bench --site test_site install-app erpnext
+          bench --site test_site install-app india_compliance
+          bench --site test_site install-app frappe_assistant_core
+          bench build
+        env:
+          CI: 'Yes'
+
+      # As in the tests job: an Indian company through the setup wizard, which India Compliance
+      # needs for its GST accounts and settings.
+      - name: Complete the ERPNext setup
+        working-directory: /home/runner/frappe-bench
+        run: |
+          year=$(date +%Y); [ "$(date +%m)" -lt 4 ] && year=$((year - 1))
+          bench --site test_site execute frappe.desk.page.setup_wizard.setup_wizard.setup_complete --kwargs "{\"args\": {
+            \"language\": \"English\", \"country\": \"India\", \"timezone\": \"Asia/Kolkata\", \"currency\": \"INR\",
+            \"company_name\": \"FAC Test India\", \"company_abbr\": \"FTI\", \"chart_of_accounts\": \"Standard\",
+            \"fy_start_date\": \"$year-04-01\", \"fy_end_date\": \"$((year + 1))-03-31\", \"setup_demo\": 0,
+            \"full_name\": \"Test Admin\", \"email\": \"admin@example.com\", \"domains\": [\"Manufacturing\"]}}"
+
+      - name: Check India Compliance is installed
+        working-directory: /home/runner/frappe-bench
+        # a job that silently ran without it would skip the very tests it exists for
+        run: bench --site test_site list-apps | grep -q india_compliance
 
       - name: Run Tests
         working-directory: /home/runner/frappe-bench

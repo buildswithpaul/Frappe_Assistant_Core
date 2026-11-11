@@ -27,6 +27,7 @@ from frappe import _
 
 from frappe_assistant_core.core.base_tool import BaseTool, exception_message, permission_error_result
 from frappe_assistant_core.core.security_config import get_restricted_fields
+from frappe_assistant_core.utils import document_batch
 from frappe_assistant_core.utils.customisation import (
     customisation_result,
     desk_url,
@@ -252,8 +253,14 @@ class DocumentUpdate(BaseTool):
             "'Purchase Order Item') directly — that bypasses the parent's recalculation and leaves "
             "totals stale. Always call it on the parent doctype (e.g. 'Sales Order') and pass the "
             "child row updates under the table fieldname (e.g. 'items'). "
-            "To update many records of one DocType, pass 'names' with one 'data' for all of them, "
+            "MANY RECORDS OF ONE DOCTYPE: pass 'names' with one 'data' for all of them, "
             "or 'records' ([{'name': ..., 'data': {...}}], at most 100) for different changes. "
+            "RECORDS OF SEVERAL DOCTYPES AT ONCE: instead of doctype, name and data, pass documents, a list of "
+            "{doctype, name, data} (up to 100): one approval for all, and all are updated or none. "
+            "Customisations (Custom Field, Property Setter, Server Script, Role, Workflow and the "
+            "like) and records that change the database schema are not for a list: update them one "
+            "at a time, each with doctype, name and data. "
+            "Show the user the changes as a table first; the approval card then lists each one. "
             "To test a rule that runs when a record is edited, pass validate_only: true; nothing is saved."
         )
         self.requires_permission = None  # Permission checked dynamically per DocType
@@ -282,6 +289,19 @@ class DocumentUpdate(BaseTool):
                         "{'item_code': 'NEW', 'qty': 1}, {'name': 'old-1', '_delete': true}]}."
                     ),
                 },
+                "documents": {
+                    "type": "array",
+                    "description": "Several records in one call, instead of doctype, name and data: each {doctype, name, data}, updated in order. All are updated or none. Customisations and records that change the database schema are refused here: update them one at a time.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "doctype": {"type": "string"},
+                            "name": {"type": "string"},
+                            "data": {"type": "object"},
+                        },
+                        "required": ["doctype", "name", "data"],
+                    },
+                },
                 "names": {
                     "type": "array",
                     "items": {"type": "string"},
@@ -304,12 +324,21 @@ class DocumentUpdate(BaseTool):
                     ),
                 },
             },
-            "required": ["doctype"],
+            "required": [],
         }
 
     def execute(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
-        """Update one document, or several from ``names`` or ``records``"""
+        """Update one document, several of one DocType from ``names`` or ``records``, or, with
+        ``documents``, records of several DocTypes in one call"""
+        if document_batch.given(arguments.get("documents")):
+            return self._execute_many(arguments)
+
         doctype = arguments.get("doctype")
+        if not doctype:
+            return {
+                "success": False,
+                "error": _("Pass doctype, name and data for one record, or documents for several."),
+            }
         validate_only = arguments.get("validate_only", False)
         forms = [key for key in ("name", "names", "records") if key in arguments]
         if len(forms) != 1:
@@ -377,6 +406,9 @@ class DocumentUpdate(BaseTool):
         validate_only: bool = False,
     ) -> Dict[str, Any]:
         """Update an existing document, or with ``validate_only`` check the update and undo it"""
+        refused = document_batch.internal_keys_refusal(doctype, data)
+        if refused:
+            return refused
         data, rename_requested = _split_rename(name, data, arguments)
         if rename_requested and not data:
             return {
@@ -644,6 +676,72 @@ class DocumentUpdate(BaseTool):
 
             # Log failed update
             return result
+
+    # -- several documents in one call ------------------------------------------------------
+
+    def _execute_many(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
+        """Update ``documents`` in one call: checked first, then all updated or none."""
+        try:
+            documents = document_batch.read_documents(arguments, ("doctype", "name", "data"), with_name=True)
+            document_batch.check_access(documents, "write")
+            if arguments.get("validate_only"):
+                return self._validate_many(documents)
+            results = document_batch.write_all(
+                documents,
+                lambda entry: self.execute(
+                    {"doctype": entry["doctype"], "name": entry["name"], "data": dict(entry["data"])}
+                ),
+                _("updated"),
+            )
+        except document_batch.BatchProblem as e:
+            if e.written:
+                # The batch was undone, with the Error Log the failed record wrote: keep one.
+                frappe.log_error(title=_("Document Update Error"), message=str(e))
+            return e.as_result()
+        except Exception as e:
+            frappe.log_error(title=_("Document Update Error"), message=frappe.get_traceback())
+            return {"success": False, "error": exception_message(e)}
+
+        updated = [{"doctype": r["doctype"], "name": r["name"]} for r in results]
+        return {
+            "success": True,
+            "updated": updated,
+            "message": _("Updated {0}.").format(
+                _("1 record") if len(updated) == 1 else _("{0} records").format(len(updated))
+            ),
+        }
+
+    def _validate_many(self, documents) -> Dict[str, Any]:
+        """validate_only for a list: each record's change checked on its own and undone, none
+        saved, as create_document checks a list."""
+        checked, failed = [], 0
+        for number, entry in enumerate(documents, start=1):
+            result = self.execute(
+                {
+                    "doctype": entry["doctype"],
+                    "name": entry["name"],
+                    "data": dict(entry["data"]),
+                    "validate_only": True,
+                }
+            )
+            row = {
+                "document": number,
+                "doctype": entry["doctype"],
+                "name": entry["name"],
+                "validation_passed": bool(result.get("success")),
+            }
+            if not result.get("success"):
+                failed += 1
+                row["error"] = result.get("error")
+            checked.append(row)
+        return {
+            "success": not failed,
+            "validation_passed": not failed,
+            "documents": checked,
+            "message": _("{0} of {1} documents pass validation. Nothing was changed.").format(
+                len(documents) - failed, len(documents)
+            ),
+        }
 
 
 # Make sure class name matches file name for discovery

@@ -109,6 +109,11 @@ def permission_error_result(doctype: str, error: str, name: Optional[str] = None
     return result
 
 
+class InvalidArguments(frappe.ValidationError):
+    """A call's arguments don't fit the tool's input schema. The message is FAC's own, so the MCP
+    server doesn't fence it as file content (#34003)."""
+
+
 class BaseTool(ABC):
     """
     Base class for all Frappe Assistant Core tools.
@@ -124,6 +129,11 @@ class BaseTool(ABC):
         default_config: Default configuration values
         audit_executions: Whether each call writes an Assistant Audit Log row
     """
+
+    #: Result fields that carry the user's file content (dotted paths, "groups[].examples" for
+    #: a field of each list item). The MCP server wraps them in the untrusted-content fence
+    #: before the model reads them (#34003).
+    untrusted_fields: Tuple[str, ...] = ()
 
     def __init__(self):
         self.name: str = ""
@@ -178,7 +188,7 @@ class BaseTool(ABC):
         # Check required fields
         for field in required_fields:
             if field not in arguments:
-                frappe.throw(_("Missing required field: {0}").format(field), frappe.ValidationError)
+                frappe.throw(_("Missing required field: {0}").format(field), InvalidArguments)
 
         # Validate field types
         for field, value in arguments.items():
@@ -187,7 +197,7 @@ class BaseTool(ABC):
                 if not self._validate_type(value, expected_type):
                     frappe.throw(
                         _("Invalid type for field {0}: expected {1}").format(field, expected_type),
-                        frappe.ValidationError,
+                        InvalidArguments,
                     )
 
     def check_permission(self) -> None:
@@ -310,6 +320,8 @@ class BaseTool(ABC):
                 "error_type": "ValidationError",
                 "execution_time": execution_time,
             }
+            if isinstance(e, InvalidArguments):
+                response["own_message"] = True  # FAC's own words: nothing of the user's file in it
 
             self.log_execution(arguments, response, execution_time, status="Error")
 

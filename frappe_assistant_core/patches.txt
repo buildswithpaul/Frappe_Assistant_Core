@@ -60,6 +60,36 @@ frappe_assistant_core.patches.v3_1.rename_submit_document_to_document_action
 # was disabled keep the tool off, since the core plugin cannot be disabled
 frappe_assistant_core.patches.v3_1.move_send_email_to_core_plugin
 
+# Version 3.1.0 - Max Rows per Import for the data migration (#34003): set the default on
+# existing sites, where the Single's schema default doesn't apply
+frappe_assistant_core.patches.v3_1.set_max_import_rows
+
+# Version 3.1.0 - undo_import deletes records: privileged (destructiveHint) on sites whose
+# FAC Tool Configuration row was seeded as write, unless an administrator chose its category
+frappe_assistant_core.patches.v3_1.recategorize_undo_import
+
+# Version 3.1.0 - A migration plan is kept on its first file's session (#34351): clear the links
+# sessions still hold to FAC Migration Plan records, which Frappe's migrate removes
+frappe_assistant_core.patches.v3_1.plan_kept_on_its_first_session
+
 # Version 3.2.0 - chat history & projects: give every existing session a FAC Chat
 # Conversation row (new messages maintain their own row from here on)
 frappe_assistant_core.patches.v3_2.backfill_fac_chat_conversations
+
+# Version 3.2.0 - the import undo tools were removed (#34002): delete the stored settings of
+# preview_import_undo and undo_import (FAC Tool Configuration rows); safe to run twice
+frappe_assistant_core.patches.v3_2.remove_import_undo_tool_configurations
+frappe_assistant_core.patches.v3_2.end_import_undo_sessions
+frappe_assistant_core.patches.v3_2.recategorize_plan_tools
+
+# Version 3.2.0 - apply_import_preset is part of start_import_session (#34000): delete its stored
+# settings (FAC Tool Configuration row); safe to run twice
+frappe_assistant_core.patches.v3_2.remove_apply_import_preset_tool
+
+# Version 3.2.0 - plan_questions is dry_run_import with plan (#34351): delete its stored settings
+# (FAC Tool Configuration row); safe to run twice
+frappe_assistant_core.patches.v3_2.remove_plan_questions_tool
+
+# Version 3.2.0 - the data migration tools moved from core to the migration plugin: their stored
+# plugin and module path, and the plugin switched on so every site keeps them
+frappe_assistant_core.patches.v3_2.move_migration_tools_to_their_plugin

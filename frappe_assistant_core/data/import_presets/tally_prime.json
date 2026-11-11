@@ -1,0 +1,253 @@
+[
+  {
+    "id": "tally_prime.ledgers",
+    "system": "Tally Prime",
+    "source_system": "tally",
+    "export": "Ledgers (masters export or List of Accounts)",
+    "how_to_export": "Alt+E > Masters > Configure: Type of Master Ledgers, Format Excel (.xlsx), then E. Or Display More Reports > List of Accounts > Alt+E > Current > Excel.",
+    "verified": false,
+    "signature": {
+      "min_optional": 1,
+      "required": [["Name", "Name of Ledger"], ["Group Name", "Under", "Parent", "Under Group"]],
+      "optional": [
+        ["GST Registration -GSTIN/UIN", "GSTIN/UIN", "GST Number", "GST No.", "GST Identification Number"],
+        ["Mailing Name"], ["State"], ["E-mail", "E-mail address", "E-mail ID"],
+        ["Primary Mobile No.", "Primary Mobile Number", "Ledger Mobile"],
+        ["Ledger – Opening Balance", "Opening Balance"], ["PAN/IT No.", "PAN"]
+      ]
+    },
+    "skip": {"totals": ["Grand Total", "Total"]},
+    "columns": {
+      "Name": {"from": ["Name", "Name of Ledger"]},
+      "Group": {"from": ["Group Name", "Under", "Parent", "Under Group"]},
+      "GSTIN": {"from": ["GST Registration -GSTIN/UIN", "GSTIN/UIN", "GST Number", "GST No.", "GST Identification Number"]},
+      "Email": {"from": ["E-mail", "E-mail address", "E-mail ID"]},
+      "Mobile": {"from": ["Primary Mobile No.", "Primary Mobile Number", "Ledger Mobile", "Phone No.", "Phone Number"]},
+      "PAN": {"from": ["PAN/IT No.", "PAN", "Tax/Unique Identification Number"]},
+      "Opening Balance": {"from": ["Ledger – Opening Balance", "Opening Balance"], "parse": "amount"}
+    },
+    "targets": [
+      {"name": "Customers", "source_key": "Name", "when": {"column": "Group", "in": ["Sundry Debtors"]}, "doctype": "Customer",
+       "mapping": {"Name": "customer_name", "GSTIN": ["gstin", "tax_id"], "Email": "email_id", "Mobile": "mobile_no", "PAN": ["pan"]},
+       "constants": [{"column": "Customer Type", "field": "customer_type", "value": "Company"}]},
+      {"name": "Suppliers", "source_key": "Name", "when": {"column": "Group", "in": ["Sundry Creditors"]}, "doctype": "Supplier",
+       "mapping": {"Name": "supplier_name", "GSTIN": ["gstin", "tax_id"], "Email": "email_id", "Mobile": "mobile_no", "PAN": ["pan"]},
+       "constants": [{"column": "Supplier Type", "field": "supplier_type", "value": "Company"}]},
+      {"name": "Accounts", "source_key": "Name", "when": {"column": "Group", "not_in": ["Sundry Debtors", "Sundry Creditors"]}, "doctype": "Account",
+       "mapping": {"Name": "account_name", "Group": "parent_account"},
+       "inputs": [{"name": "company", "column": "Company", "field": "company", "ask": "Which company do these ledger accounts belong to?"}]}
+    ]
+  },
+  {
+    "id": "tally_prime.stock_items",
+    "system": "Tally Prime",
+    "source_system": "tally",
+    "export": "Stock items (masters export)",
+    "how_to_export": "Alt+E > Masters > Configure: Type of Master Stock Items, Format Excel (.xlsx), then E.",
+    "verified": false,
+    "signature": {
+      "min_optional": 1,
+      "required": [["Name", "Name of Item", "Stock Item"], ["Units", "UOM", "Base Units"]],
+      "optional": [["Group Name", "Under", "Parent Name", "Stock Group"], ["Part No.", "Part Number"], ["HSN/SAC", "HSN/SAC Code", "HSN Code"],
+                   ["Opening Balance – Quantity", "Opening Quantity"], ["Category", "Stock Category"], ["Alias"]]
+    },
+    "skip": {"totals": ["Grand Total", "Total"]},
+    "columns": {
+      "Name": {"from": ["Name", "Name of Item", "Stock Item"]},
+      "Group": {"from": ["Group Name", "Under", "Parent Name", "Stock Group"]},
+      "Units": {"from": ["Units", "UOM", "Base Units"], "parse": "unit"},
+      "Description": {"from": ["Description", "Remarks"]},
+      "HSN": {"from": ["HSN/SAC", "HSN/SAC Code", "HSN Code"]},
+      "GST Rate": {"from": ["Integrated Tax", "IGST Rate", "GST Rate", "Rate of Tax"], "parse": "percent"},
+      "Opening Quantity": {"from": ["Opening Balance – Quantity", "Opening Quantity"], "parse": "quantity"},
+      "Opening Rate": {"from": ["Opening Balance – Rate", "Opening Rate"], "parse": "rate"}
+    },
+    "targets": [
+      {"name": "Items", "source_key": "Name", "doctype": "Item",
+       "mapping": {"Name": "item_code", "Group": "item_group", "Units": "stock_uom", "Description": "description", "HSN": ["gst_hsn_code"]}}
+    ]
+  },
+  {
+    "id": "tally_prime.ledger_openings",
+    "system": "Tally Prime",
+    "source_system": "tally",
+    "export": "Ledger opening balances (XML masters export)",
+    "how_to_export": "Alt+E > Masters > Configure: Type of Master All Masters, Format XML (Data Interchange), then E.",
+    "verified": false,
+    "signature": {
+      "min_optional": 1,
+      "required": [["Ledger"], ["Opening Balance"]],
+      "optional": [["Group"]]
+    },
+    "columns": {
+      "Ledger": {"from": ["Ledger"]},
+      "Group": {"from": ["Group"]},
+      "Debit": {"from": ["Opening Balance"], "parse": "debit"},
+      "Credit": {"from": ["Opening Balance"], "parse": "credit"}
+    },
+    "targets": [
+      {"name": "Opening receivables", "engine": "opening_invoices", "invoice_type": "Sales",
+       "when": {"column": "Group", "in": ["Sundry Debtors"]},
+       "columns": {"Ledger": "party", "Debit": "outstanding_amount"}},
+      {"name": "Opening payables", "engine": "opening_invoices", "invoice_type": "Purchase",
+       "when": {"column": "Group", "in": ["Sundry Creditors"]},
+       "columns": {"Ledger": "party", "Credit": "outstanding_amount"}},
+      {"name": "Opening account balances", "engine": "opening_balances",
+       "when": {"column": "Group", "not_in": ["Sundry Debtors", "Sundry Creditors"]},
+       "columns": {"Ledger": "account", "Debit": "debit", "Credit": "credit"}}
+    ]
+  },
+  {
+    "id": "tally_prime.stock_openings",
+    "system": "Tally Prime",
+    "source_system": "tally",
+    "export": "Opening stock of the stock items (XML masters export)",
+    "how_to_export": "Alt+E > Masters > Configure: Type of Master All Masters, Format XML (Data Interchange), then E.",
+    "verified": false,
+    "signature": {
+      "min_optional": 1,
+      "required": [["Item"], ["Opening Quantity"]],
+      "optional": [["Opening Rate"]]
+    },
+    "columns": {
+      "Item": {"from": ["Item"]},
+      "Quantity": {"from": ["Opening Quantity"], "parse": "quantity"},
+      "UOM": {"from": ["Opening Quantity"], "parse": "unit"},
+      "Rate": {"from": ["Opening Rate"], "parse": "rate"}
+    },
+    "targets": [
+      {"name": "Opening stock", "engine": "opening_stock",
+       "columns": {"Item": "item_code", "Quantity": "qty", "UOM": "uom", "Rate": "valuation_rate"},
+       "inputs": [{"name": "warehouse", "column": "Warehouse", "field": "warehouse", "ask": "Which warehouse is this stock in?"}]}
+    ]
+  },
+  {
+    "id": "tally_prime.stock_groups",
+    "system": "Tally Prime",
+    "source_system": "tally",
+    "export": "Stock groups (XML masters export)",
+    "how_to_export": "Alt+E > Masters > Configure: Type of Master All Masters, Format XML (Data Interchange), then E.",
+    "verified": false,
+    "signature": {
+      "min_optional": 1,
+      "required": [["Stock Group Name"], ["Under Stock Group"]],
+      "optional": [["Quantities Added"]]
+    },
+    "columns": {
+      "Name": {"from": ["Stock Group Name"]},
+      "Parent": {"from": ["Under Stock Group"]},
+      "Is Group": {"from": []}
+    },
+    "group_flag": {"column": "Is Group", "name": "Name", "parent": "Parent"},
+    "targets": [
+      {"name": "Item Groups", "source_key": "Name", "doctype": "Item Group",
+       "mapping": {"Name": "item_group_name", "Parent": "parent_item_group", "Is Group": "is_group"}}
+    ]
+  },
+  {
+    "id": "tally_prime.trial_balance",
+    "system": "Tally Prime",
+    "export": "Trial Balance (detailed, closing balances)",
+    "how_to_export": "Display More Reports > Trial Balance, Alt+F5 (Detailed), F12: Expand all levels Yes, then Alt+E > Current > Excel (Spreadsheet).",
+    "verified": false,
+    "signature": {
+      "required": [["Debit", "Closing Balance"]],
+      "optional": [["Credit"], ["Particulars"]],
+      "title": ["*-*-* to *-*-*"]
+    },
+    "skip": {"totals": ["Grand Total", "Total"]},
+    "groups": {
+      "method": ["known_names", "indent"],
+      "column": "Particulars",
+      "names": ["Branch / Divisions", "Capital Account", "Current Assets", "Current Liabilities", "Direct Expenses", "Direct Incomes",
+                "Fixed Assets", "Indirect Expenses", "Indirect Incomes", "Investments", "Loans (Liability)", "Misc. Expenses (ASSET)",
+                "Purchase Accounts", "Sales Accounts", "Suspense A/c", "Bank Accounts", "Bank OD A/c", "Cash-in-Hand", "Deposits (Asset)",
+                "Duties & Taxes", "Loans & Advances (Asset)", "Provisions", "Reserves & Surplus", "Secured Loans", "Stock-in-Hand",
+                "Sundry Creditors", "Sundry Debtors", "Unsecured Loans"]
+    },
+    "columns": {
+      "Particulars": {"from": ["Particulars"], "from_index": 0},
+      "Debit": {"from": ["Debit"], "parse": "amount"},
+      "Credit": {"from": ["Credit"], "parse": "amount"},
+      "Balance": {"from": ["Closing Balance"], "parse": "amount"}
+    },
+    "targets": [
+      {"name": "Trial balance", "engine": "opening_balances",
+       "columns": {"Particulars": "account", "Debit": "debit", "Credit": "credit", "Balance": "balance"}}
+    ]
+  },
+  {
+    "id": "tally_prime.stock_summary",
+    "system": "Tally Prime",
+    "export": "Stock Summary (closing quantity, rate and value)",
+    "how_to_export": "Display More Reports > Stock Summary, F12: Expand all levels Yes, then Alt+E > Current > Excel (Spreadsheet). One godown at a time.",
+    "verified": false,
+    "signature": {
+      "required": [["Quantity"], ["Value"]],
+      "optional": [["Particulars"], ["Rate"]],
+      "title": ["*stock summary*", "*-*-* to *-*-*"]
+    },
+    "skip": {"totals": ["Grand Total", "Total"]},
+    "groups": {"method": "indent", "column": "Item"},
+    "columns": {
+      "Item": {"from": ["Particulars"], "from_index": 0},
+      "Quantity": {"from": ["Quantity"], "parse": "quantity"},
+      "UOM": {"from": ["Quantity"], "parse": "unit"},
+      "Rate": {"from": ["Rate"], "parse": "rate"},
+      "Value": {"from": ["Value"], "parse": "amount"}
+    },
+    "targets": [
+      {"name": "Opening stock", "engine": "opening_stock",
+       "columns": {"Item": "item_code", "Quantity": "qty", "UOM": "uom", "Rate": "valuation_rate", "Value": "amount"},
+       "inputs": [{"name": "warehouse", "column": "Warehouse", "field": "warehouse", "ask": "Which warehouse is this stock in?"}]}
+    ]
+  },
+  {
+    "id": "tally_prime.bills_receivable",
+    "system": "Tally Prime",
+    "export": "Bills Receivable (outstanding sales bills)",
+    "how_to_export": "Display More Reports > Statements of Accounts > Outstandings > Receivables, F12: Show Due On Yes, then Alt+E > Current > Excel.",
+    "verified": false,
+    "signature": {
+      "required": [["Party's Name", "Party Name"], ["Pending Amount", "Pending"]],
+      "optional": [["Ref. No.", "Ref No"], ["Due on", "Due Date"], ["Date"], ["Overdue by days"]],
+      "title": ["*bills receivable*", "*receivables*"]
+    },
+    "skip": {"totals": ["Grand Total", "Total"]},
+    "columns": {
+      "Date": {"from": ["Date"], "parse": "date", "formats": ["d-MMM-yy", "d-MMM-yyyy", "dd-MM-yyyy", "dd/MM/yyyy"]},
+      "Ref No": {"from": ["Ref. No.", "Ref No"]},
+      "Party": {"from": ["Party's Name", "Party Name"]},
+      "Pending Amount": {"from": ["Pending Amount", "Pending"], "parse": "amount"},
+      "Due on": {"from": ["Due on", "Due Date"], "parse": "date", "formats": ["d-MMM-yy", "d-MMM-yyyy", "dd-MM-yyyy", "dd/MM/yyyy"]}
+    },
+    "targets": [
+      {"name": "Open invoices", "engine": "opening_invoices", "invoice_type": "Sales",
+       "columns": {"Party": "party", "Ref No": "invoice_number", "Date": "posting_date", "Due on": "due_date", "Pending Amount": "outstanding_amount"}}
+    ]
+  },
+  {
+    "id": "tally_prime.bills_payable",
+    "system": "Tally Prime",
+    "export": "Bills Payable (outstanding purchase bills)",
+    "how_to_export": "Display More Reports > Statements of Accounts > Outstandings > Payables, F12: Show Due On Yes, then Alt+E > Current > Excel.",
+    "verified": false,
+    "signature": {
+      "required": [["Party's Name", "Party Name"], ["Pending Amount", "Pending"]],
+      "optional": [["Ref. No.", "Ref No"], ["Due on", "Due Date"], ["Date"], ["Overdue by days"]],
+      "title": ["*bills payable*", "*payables*"]
+    },
+    "skip": {"totals": ["Grand Total", "Total"]},
+    "columns": {
+      "Date": {"from": ["Date"], "parse": "date", "formats": ["d-MMM-yy", "d-MMM-yyyy", "dd-MM-yyyy", "dd/MM/yyyy"]},
+      "Ref No": {"from": ["Ref. No.", "Ref No"]},
+      "Party": {"from": ["Party's Name", "Party Name"]},
+      "Pending Amount": {"from": ["Pending Amount", "Pending"], "parse": "amount", "sign": "credit_positive"},
+      "Due on": {"from": ["Due on", "Due Date"], "parse": "date", "formats": ["d-MMM-yy", "d-MMM-yyyy", "dd-MM-yyyy", "dd/MM/yyyy"]}
+    },
+    "targets": [
+      {"name": "Open bills", "engine": "opening_invoices", "invoice_type": "Purchase",
+       "columns": {"Party": "party", "Ref No": "invoice_number", "Date": "posting_date", "Due on": "due_date", "Pending Amount": "outstanding_amount"}}
+    ]
+  }
+]

@@ -36,6 +36,9 @@ _VALID_STATUSES = {
 # from bloating when a tool returns a large payload.
 _OUTPUT_DATA_MAX_BYTES = 50_000
 
+# Assistant Audit Log's target_doctype is a Data field.
+_TARGET_DOCTYPE_LENGTH = 140
+
 
 def _sanitize_arguments(arguments: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     """Defensive sanitization at the audit sink — callers are expected to
@@ -105,6 +108,8 @@ def log_tool_execution(
         if isinstance(sanitized_arguments, dict):
             target_doctype = sanitized_arguments.get("doctype")
             target_name = sanitized_arguments.get("name")
+            if not target_doctype and sanitized_arguments.get("documents"):
+                target_doctype, target_name = _list_target(sanitized_arguments.get("documents"))
 
         # Serialize output for storage, clamp oversized payloads
         output_data_str, output_truncated = _serialize_for_audit(output_data)
@@ -145,6 +150,26 @@ def log_tool_execution(
     except Exception as e:
         # Don't fail tool execution due to audit logging issues
         frappe.logger("audit_trail").warning(f"Failed to log tool execution: {str(e)}")
+
+
+def _list_target(documents: Any) -> tuple:
+    """(target_doctype, target_name) for a call with a list of documents (create_document and
+    update_document): its distinct doctypes in order, cut to fit the field, and the name when the
+    list is one named record."""
+    if not isinstance(documents, list):
+        return None, None
+    entries = [entry for entry in documents if isinstance(entry, dict)]
+    doctypes = list(dict.fromkeys(str(e["doctype"]) for e in entries if e.get("doctype")))
+    if not doctypes:
+        return None, None
+    target_doctype = ", ".join(doctypes)
+    shown = len(doctypes)
+    while len(target_doctype) > _TARGET_DOCTYPE_LENGTH and shown > 1:
+        shown -= 1
+        target_doctype = ", ".join(doctypes[:shown]) + f", +{len(doctypes) - shown} more"
+    target_doctype = target_doctype[:_TARGET_DOCTYPE_LENGTH]
+    name = entries[0].get("name") if len(entries) == 1 else None
+    return target_doctype, (str(name) if name else None)
 
 
 def _serialize_for_audit(output_data: Any) -> tuple:

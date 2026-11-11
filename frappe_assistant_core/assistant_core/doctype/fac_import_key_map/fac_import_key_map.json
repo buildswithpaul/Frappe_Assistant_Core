@@ -1,0 +1,95 @@
+{
+ "actions": [],
+ "autoname": "hash",
+ "creation": "2026-10-27 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "source_system",
+  "source_key",
+  "column_break_1",
+  "target_doctype",
+  "target_name",
+  "section_origin",
+  "import_session",
+  "how"
+ ],
+ "fields": [
+  {
+   "fieldname": "source_system",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Source System",
+   "reqd": 1
+  },
+  {
+   "fieldname": "source_key",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Source Key",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "target_doctype",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Target DocType",
+   "options": "DocType",
+   "reqd": 1
+  },
+  {
+   "fieldname": "target_name",
+   "fieldtype": "Dynamic Link",
+   "in_list_view": 1,
+   "label": "Target Name",
+   "options": "target_doctype",
+   "reqd": 1
+  },
+  {
+   "fieldname": "section_origin",
+   "fieldtype": "Section Break",
+   "label": "Where it came from"
+  },
+  {
+   "description": "The import session that created the record. Kept as text: deleting the session must not delete the map.",
+   "fieldname": "import_session",
+   "fieldtype": "Data",
+   "label": "Import Session"
+  },
+  {
+   "default": "Imported",
+   "fieldname": "how",
+   "fieldtype": "Select",
+   "label": "How",
+   "options": "Imported"
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-10-27 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Assistant Core",
+ "name": "FAC Import Key Map",
+ "naming_rule": "Random",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager"
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

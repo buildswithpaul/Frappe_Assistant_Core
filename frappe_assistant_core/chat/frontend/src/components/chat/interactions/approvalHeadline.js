@@ -67,6 +67,19 @@ export function approvalHeadline(block) {
 	const name = fields.name ?? fields.docname;
 	if (!doctype) return formatToolName(tool);
 
+	if (tool === "start_import") {
+		// #34415: what is imported, from which file, as which records
+		const rows = Number(fields.rows);
+		const file = fields.file_name;
+		const update = fields.import_type === "Update Existing Records";
+		if (Number.isFinite(rows) && file) {
+			return update
+				? __("Update {0} {1} records from {2}", [rows, doctype, file])
+				: __("Import {0} rows of {1} as new {2} records", [rows, file, doctype]);
+		}
+		return update ? __("Update {0} records", [doctype]) : __("Import {0} records", [doctype]);
+	}
+
 	if (tool === "create_document") {
 		const label = newRecordLabel(fields);
 		if (isValidateOnly(tool, input)) {

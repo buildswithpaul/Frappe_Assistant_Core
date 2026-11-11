@@ -27,6 +27,7 @@ from frappe import _
 from frappe.model import no_value_fields, table_fields
 
 from frappe_assistant_core.core.base_tool import BaseTool
+from frappe_assistant_core.utils.untrusted_output import document_fields, fence_document, fence_fields
 
 # Operators Frappe accepts as the first element of a list-style filter value.
 # Anything else in that position means the list is a set of values, not [op, value].
@@ -671,7 +672,8 @@ class DocumentList(BaseTool):
             filtered_documents = []
             for doc in documents:
                 filtered_doc = filter_sensitive_fields(doc, doctype, user_role)
-                filtered_documents.append(filtered_doc)
+                # what a user's file said, kept on the record, reaches the model fenced (#34406)
+                filtered_documents.append(fence_document(doctype, filtered_doc))
 
             # Get permission-aware total count for pagination info.
             # Frappe v16 rejects SQL functions passed as strings in `fields`, so try the
@@ -805,6 +807,8 @@ class DocumentList(BaseTool):
             row = {GROUP_VALUE_KEY: raw.get(group_by)} if group_by else {}
             for spec in specs:
                 row[spec["alias"]] = number(raw.get(spec["alias"]))
+            if group_by in document_fields(doctype):
+                row = fence_fields(row, (GROUP_VALUE_KEY,))  # a file's name or sheet (#34406)
             rows.append(row)
 
         result = {

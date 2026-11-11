@@ -1,5 +1,13 @@
 <template>
-	<div class="widget-panel" @click.capture="interceptDeskLinks">
+	<div
+		class="widget-panel"
+		@click.capture="interceptDeskLinks"
+		@dragenter="fileDrop.onDragEnter"
+		@dragover="fileDrop.onDragOver"
+		@dragleave="fileDrop.onDragLeave"
+		@drop="fileDrop.onDrop"
+	>
+		<FileDropOverlay v-if="fileDrop.isDragging" />
 		<header class="wp-header">
 			<span class="wp-brand">FACO</span>
 			<div class="wp-actions">
@@ -117,7 +125,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, reactive, ref } from "vue";
 import { useChatStore } from "@/stores/chatStore";
 import { useUserStore } from "@/stores/userStore";
 import { useModelStore } from "@/stores/modelStore";
@@ -128,6 +136,8 @@ import { useMessageFileUpload } from "@/composables/useMessageFileUpload";
 import { useAutoScroll } from "@/composables/useAutoScroll";
 import { reconnectSocket } from "@/composables/useStreaming";
 import ChatInterface from "@/components/chat/ChatInterface.vue";
+import FileDropOverlay from "@/components/chat/FileDropOverlay.vue";
+import { useFileDrop } from "@/composables/useComposerFileDrop";
 import InputArea from "@/components/chat/InputArea.vue";
 import ConnectionBanners from "@/components/chat/ConnectionBanners.vue";
 import CreditMeter from "@/components/chat/CreditMeter.vue";
@@ -154,7 +164,9 @@ const chatStore = useChatStore();
 const modelStore = useModelStore();
 const userStore = useUserStore();
 const spotlight = useSpotlightStore();
-const { handleFileUpload, consumeUploadedFiles, discardUploads } = useMessageFileUpload();
+const { handleFileUpload, consumeUploadedFiles } = useMessageFileUpload();
+// Files dragged anywhere on the chat go to the composer (reactive: the template reads isDragging).
+const fileDrop = reactive(useFileDrop());
 const scroller = ref(null);
 useAutoScroll(
 	scroller,
@@ -214,9 +226,9 @@ async function onSend({ message, files = [] }) {
 	const route = resolveComposerRoute({
 		isStreaming: chatStore.isStreaming,
 		pendingInteraction: chatStore.pendingInteractionBlock,
+		hasFiles: files.length > 0,
 	});
 	if (route === "answer") {
-		discardUploads(files);
 		await chatStore.answerPendingQuestion(message);
 		return;
 	}
@@ -315,6 +327,7 @@ onUnmounted(stopMic);
 
 <style scoped>
 .widget-panel {
+	position: relative; /* the file drop overlay covers it */
 	flex: 1;
 	min-height: 0;
 	display: flex;

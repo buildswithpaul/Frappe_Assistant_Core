@@ -8,8 +8,10 @@
 
 import { __ } from "@/utils/i18n";
 import { titleWord } from "@/utils/toolLabel";
+import { baseToolName } from "@/utils/toolNames";
 
-const MAX_VALUE_LEN = 120;
+// A longer value folds to its first PREVIEW_LEN characters, with a control that shows it all.
+const PREVIEW_LEN = 120;
 
 // Field-name patterns that mark a value as money or a date for display.
 // Used by the approval table to render figures in tabular mono so values
@@ -87,6 +89,15 @@ export function isCodeField(key, doctype, fields = {}) {
 	);
 }
 
+// Code keys a single tool takes, with their language, so a record's field of the same name stays
+// plain: run_python_code's code runs on the server, and the user approves it line by line.
+const TOOL_CODE_KEYS = { run_python_code: { code: "python" } };
+
+/** The language of `key` when `toolName` takes it as code, or null when it is a plain field. */
+export function toolCodeLanguage(toolName, key) {
+	return TOOL_CODE_KEYS[toolName]?.[key] ?? null;
+}
+
 const PYTHON_KEYS = new Set(["script", "report_script", "condition"]);
 const JINJA_KEYS = new Set(["raw_commands", "cc", "bcc"]);
 
@@ -109,6 +120,27 @@ export function isChildTable(value) {
 	return Array.isArray(value) && value.length > 0 && value.every(isPlainObject);
 }
 
+/** A list of sentences, such as a migration plan's decisions: shown line by line (#34547). */
+export function isTextList(value) {
+	return Array.isArray(value) && value.length > 0 && value.every((item) => typeof item === "string");
+}
+
+/**
+ * What an update does to a child table it is given, when it isn't only the rows it names:
+ * update_document clears the table given [], and replaces every row when no row has a `name`
+ * (#34540), a bare value included (a Table MultiSelect row, normalize_child_rows). Null otherwise,
+ * and for any other tool.
+ */
+export function tableReplacement(toolName, value) {
+	if (baseToolName(toolName) !== "update_document" || !Array.isArray(value)) return null;
+	if (value.length === 0) return __("Removes all its rows");
+	// update_document's own test (has_named_row): one named row means it patches by name
+	if (!value.some((row) => isPlainObject(row) && row.name)) {
+		return __("Replaces all its rows with {0}", [value.length]);
+	}
+	return null;
+}
+
 /**
  * Flatten a tool input dict for human display.
  *
@@ -120,6 +152,19 @@ export function isChildTable(value) {
  * actual changes the user is being asked to authorize. A nested key that collides with a
  * record identity key (`data.name` on an update) is kept as `new_<key>`.
  */
+// A value the server fenced as file content (untrusted_output.py), passed back by the model as it
+// read it: the card shows the file's text, not the fence's tags and preamble (#34438). A fence is
+// just its tags now, the reply saying the preamble once; one with it inside is still read.
+const FENCED = /^\s*<import_file_content>\n[^\n]*\n([\s\S]*)\n<\/import_file_content>\s*$/;
+const TAGS_ONLY = /^\s*<import_file_content>([\s\S]*)<\/import_file_content>\s*$/;
+
+function unfenced(value) {
+	if (Array.isArray(value)) return value.map(unfenced);
+	if (typeof value !== "string") return value;
+	const match = FENCED.exec(value) || TAGS_ONLY.exec(value);
+	return match ? match[1] : value;
+}
+
 export function flattenInput(input) {
 	const result = {};
 	const metaKeys = ["doctype", "name", "docname", "title", "status"];
@@ -143,13 +188,120 @@ export function flattenInput(input) {
 		}
 	}
 
-	const skipKeys = new Set(["validate_only", "ignore_permissions", "ignore_mandatory"]);
+	// "documents" (several records in one call) is shown record by record, by documentTables.
+	// validated_fingerprint binds start_import to its check on the server: hex means nothing to the
+	// user, who approves the rows and the file it names (#34545).
+	const skipKeys = new Set([
+		"validate_only",
+		"ignore_permissions",
+		"ignore_mandatory",
+		"documents",
+		"validated_fingerprint",
+	]);
 	for (const [key, value] of Object.entries(input)) {
 		if (key in result || nestedKeys.includes(key) || skipKeys.has(key)) continue;
 		if (!isPlainObject(value)) result[key] = value;
 	}
 
+	for (const [key, value] of Object.entries(result)) result[key] = unfenced(value);
 	return result;
+}
+
+/** How many records a call writes with `documents` (several in one call); 0 without it. */
+export function documentCount(input) {
+	return input && Array.isArray(input.documents) ? input.documents.length : 0;
+}
+
+// Which key names the record, so it can lead its row: the record's own name (an update),
+// a prompt name, then a name field (customer_group_name, title, a Market Segment's market_segment).
+function nameRank(key, doctype) {
+	if (key === "name") return 0;
+	if (key === "__newname") return 1;
+	if (key === doctype.toLowerCase().replace(/ /g, "_") || /(^title$|_name$)/.test(key)) return 2;
+	return 3;
+}
+
+/**
+ * The records of a call that writes several (`documents`, as create_document and
+ * update_document take it), as one table per doctype, in order of first appearance:
+ * one column per key any of its records sends, the name first, and one row per record.
+ * An update row starts with the record's name. Every key is a column, `_assign` and
+ * `__newname` included: the server sets each one on the record, so the card shows each.
+ * Returns [] when the input has no such list.
+ */
+export function documentTables(input) {
+	const documents = input && Array.isArray(input.documents) ? input.documents : [];
+	const tables = new Map();
+	for (const entry of documents) {
+		const doc = isPlainObject(entry) ? entry : {};
+		const doctype = doc.doctype ? String(doc.doctype) : "Record";
+		if (!tables.has(doctype)) tables.set(doctype, { doctype, columns: [], rows: [] });
+		const table = tables.get(doctype);
+		const named = doc.name != null && doc.name !== "";
+		const row = named ? { name: doc.name } : {};
+		for (const [key, value] of Object.entries(isPlainObject(doc.data) ? doc.data : {})) {
+			// A data name that differs from the record's is a rename, kept as in flattenInput.
+			if (key === "name" && named) {
+				if (String(value).trim() !== String(doc.name).trim()) row.new_name ??= value;
+			} else row[key] = value;
+		}
+		for (const key of Object.keys(row)) if (!table.columns.includes(key)) table.columns.push(key);
+		table.rows.push(row);
+	}
+	return [...tables.values()].map((table) => ({
+		...table,
+		columns: table.columns
+			.map((key, index) => [key, index])
+			.sort((a, b) => nameRank(a[0], table.doctype) - nameRank(b[0], table.doctype) || a[1] - b[1])
+			.map(([key]) => key),
+	}));
+}
+
+/** "Customer Groups" for 2, "Territories", "Addresses", "UOMs"; the doctype itself for 1. */
+export function pluralDoctype(doctype, count) {
+	if (count === 1) return doctype;
+	if (/[^aeiou]y$/i.test(doctype)) return `${doctype.slice(0, -1)}ies`;
+	if (/(s|x|z|ch|sh)$/i.test(doctype)) return `${doctype}es`;
+	return `${doctype}s`;
+}
+
+/** "Create 21: 6 Customer Groups, 3 Territories, 12 UOMs", or "Update 2: 2 Customers". */
+export function documentsHeading(toolName, input) {
+	const tables = documentTables(input);
+	const total = tables.reduce((sum, table) => sum + table.rows.length, 0);
+	const counts = tables
+		.map((table) => `${table.rows.length} ${pluralDoctype(table.doctype, table.rows.length)}`)
+		.join(", ");
+	return baseToolName(toolName) === "update_document"
+		? __("Update {0}: {1}", [total, counts])
+		: __("Create {0}: {1}", [total, counts]);
+}
+
+/** A column's heading: the field's words, or the key itself for one that starts with "_". */
+export function columnLabel(key) {
+	return key.startsWith("_") ? key : formatKey(key);
+}
+
+/** A value as text in full, for a record table's cell: nothing is summarised or cut. */
+export function cellText(value) {
+	if (value == null || value === "") return "—";
+	if (typeof value === "boolean") return value ? "Yes" : "No";
+	if (Array.isArray(value)) {
+		return value.map((v) => (v !== null && typeof v === "object" ? JSON.stringify(v) : String(v))).join(", ");
+	}
+	if (typeof value === "object") return JSON.stringify(value);
+	return String(value);
+}
+
+/** True for text too long or with too many lines to show whole in a table cell or field row. */
+export function isLongValue(value) {
+	return typeof value === "string" && (value.length > PREVIEW_LEN || value.includes("\n"));
+}
+
+/** The start of a long value, on one line, for its folded cell. */
+export function previewText(value) {
+	const line = String(value).replace(/\s+/g, " ").trim();
+	return line.length > PREVIEW_LEN ? `${line.slice(0, PREVIEW_LEN)}…` : line;
 }
 
 export function formatToolName(name) {
@@ -176,9 +328,8 @@ export function formatValue(value) {
 		return `${keys.length} field${keys.length === 1 ? "" : "s"}`;
 	}
 	if (typeof value === "boolean") return value ? "Yes" : "No";
-	const s = String(value);
-	if (s.length > MAX_VALUE_LEN) return s.slice(0, MAX_VALUE_LEN) + "…";
-	return s;
+	// Never cut: a long value is shown folded by LongValue, which can open it in full.
+	return String(value);
 }
 
 /**
