@@ -20,6 +20,8 @@ import { createSendQueue } from "./chat/sendQueue";
 import { applyLiveSnapshot, createLiveTurnSync } from "./chat/liveTurnSync";
 import { createTurnClaim } from "./chat/turnClaim";
 import { restartFailure, restartingStatus, sendWithRestartRetry } from "./chat/restartRetry";
+import { interruptStaleTurn } from "./chat/interruptedTurn";
+import { __ } from "@/utils/i18n";
 import { isApprovalInteraction } from "./chat/interactionRegime";
 import { getSurface, surfaceClientSignals } from "./chat/surface";
 import { useComposerModesStore } from "./composerModesStore";
@@ -223,6 +225,8 @@ export const useChatStore = defineStore("chat", () => {
 	// Joining a turn that is running elsewhere (another surface, or this one
 	// before a reload or a lost socket). See stores/chat/liveTurnSync.js.
 	function adoptLiveTurn(snap) {
+		// Its relay died; reconcileFromServer ends it rather than showing it run.
+		if (snap.stale) return;
 		const msg = applyLiveSnapshot(messages.value, snap);
 		isStreaming.value = true;
 		stream.startStreamTimeout();
@@ -366,6 +370,17 @@ export const useChatStore = defineStore("chat", () => {
 	 */
 	async function reconcileFromServer(sessionId) {
 		if (!sessionId || sessionId !== currentSessionId.value) return;
+		const interrupted = await interruptStaleTurn(sessionId, {
+			fetchLiveTurn: api.chat.getLiveTurn,
+			markInterrupted: api.chat.markTurnInterrupted,
+		});
+		if (sessionId !== currentSessionId.value) return;
+		if (interrupted && (isStreaming.value || isSubmittingInterrupts.value)) {
+			handleStreamError(
+				__("This answer was interrupted by a server restart."),
+				"TURN_INTERRUPTED"
+			);
+		}
 		let serverMessages;
 		try {
 			// Loads the same recent-window as loadMessages (server caps at the

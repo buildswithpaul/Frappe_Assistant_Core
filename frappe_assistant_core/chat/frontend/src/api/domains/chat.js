@@ -122,6 +122,12 @@ export const chat = {
 			session_id: sessionId,
 		}),
 
+	// Ends a turn whose relay died; the server refuses one that is still running.
+	markTurnInterrupted: (sessionId) =>
+		baseCall("frappe_assistant_core.chat.api.chat.mark_turn_interrupted", {
+			session_id: sessionId,
+		}),
+
 	createSession: () =>
 		baseCall("frappe_assistant_core.chat.api.create_session"),
 

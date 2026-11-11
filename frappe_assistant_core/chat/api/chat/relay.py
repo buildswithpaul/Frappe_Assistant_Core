@@ -932,6 +932,9 @@ def _relay_ar_interrupt_resume(
             enabled=not restricted,
             turn=live_turn_token,
         )
+        # mark_turn_interrupted ended this turn while it waited in the pool: AR is never called.
+        if live_turn_token and not restricted and not live_turn.holds(session_id, live_turn_token):
+            return
 
         # resume_interrupt cleared any older Stop when it accepted this resume,
         # so a flag up now is a Stop pressed while this relay waited to start.
@@ -1549,6 +1552,9 @@ def _relay_ar_stream(
             enabled=not restricted,
             turn=live_turn_token,
         )
+        # mark_turn_interrupted ended this turn while it waited in the pool: AR is never called.
+        if live_turn_token and not restricted and not live_turn.holds(session_id, live_turn_token):
+            return
 
         # send_message or continue_response cleared any older Stop when it
         # accepted this turn, so a flag up now is a Stop pressed while this
