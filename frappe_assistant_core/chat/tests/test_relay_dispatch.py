@@ -22,6 +22,8 @@ class TestRelayDispatch(BaseAssistantTest):
         self.queues = patch("frappe.utils.background_jobs.get_queues_timeout", return_value=QUEUES)
         self.queues.start()
         self.workers, self.jobs = [], []
+        self.real_workers = relay_dispatch.relay_worker_counts(fresh=True).live
+        relay_dispatch._probe_cache.clear()
 
     def tearDown(self):
         for job in self.jobs:
@@ -70,6 +72,8 @@ class TestRelayDispatch(BaseAssistantTest):
         redis_conn.assert_not_called()
 
     def test_on_with_no_worker_is_not_used(self):
+        if self.real_workers:
+            self.skipTest("a real faco_relay worker is running on this bench")
         # Production: an admin ticks the setting in FAC Admin -> Settings -> Chat & Widget.
         frappe.db.set_single_value("FAC Chat Settings", "relay_in_background_job", 1)
         self.assertFalse(relay_dispatch.use_job_relay())
@@ -100,6 +104,12 @@ class TestRelayDispatch(BaseAssistantTest):
             self.assertEqual(relay_dispatch.relay_worker_counts(), (0, 0))
             relay_dispatch.relay_worker_counts()
             self.assertEqual(worker_cls.all.call_count, 1)
+
+    def test_job_lost_raises_when_the_worker_probe_fails_for_a_queued_job(self):
+        job_id, _ = self._enqueue("tokp")
+        with patch.object(relay_dispatch.Worker, "all", side_effect=ConnectionError):
+            with self.assertRaises(ConnectionError):
+                relay_dispatch.relay_job_lost(job_id)
 
     def test_enqueue_names_queue_timeout_and_binds_every_argument(self):
         job_id, job = self._enqueue("tok1")

@@ -46,6 +46,9 @@ class TestLiveTurnJobRelay(BaseAssistantTest):
         self.addCleanup(publish.stop)
         self.workers, self.jobs = [], []
         self.addCleanup(self._cleanup_rq)
+        if relay_dispatch.relay_worker_counts(fresh=True).live:
+            self.skipTest("a real faco_relay worker is running on this bench")
+        relay_dispatch._probe_cache.clear()
 
     def _cleanup_rq(self):
         for job in self.jobs:
@@ -144,8 +147,18 @@ class TestLiveTurnJobRelay(BaseAssistantTest):
         self.assertTrue(live_turn.is_stale(self._job_entry(status=None, age=11)))
 
     def test_pool_entry_never_reads_rq(self):
-        with patch.object(relay_dispatch, "relay_job_lost", side_effect=AssertionError):
-            live_turn.is_stale({"turn": "t", "status": "streaming", "last_progress_at": time.time() - 30})
+        with patch.object(relay_dispatch, "relay_job_lost") as lost:
+            stale = live_turn.is_stale(
+                {"turn": "t", "status": "streaming", "last_progress_at": time.time() - 30}
+            )
+        self.assertFalse(stale)
+        lost.assert_not_called()
+
+    def test_worker_probe_failure_never_ends_a_waiting_job_turn(self):
+        entry = self._job_entry(status=None, age=30)
+        # Production: the queue Redis blips while is_stale asks how many relay workers are alive.
+        with patch.object(relay_dispatch.Worker, "all", side_effect=ConnectionError):
+            self.assertFalse(live_turn.is_stale(entry))
 
     def test_lost_job_turn_is_interrupted_with_retry_copy_and_a_late_job_does_nothing(self):
         # Production: _start_relay writes the entry with relay="job", then enqueues; no worker runs.

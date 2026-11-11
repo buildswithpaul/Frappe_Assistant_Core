@@ -31,8 +31,8 @@ RELAYS: dict[str, str] = {"stream": "_relay_ar_stream", "resume": "_relay_ar_int
 _GONE_STATUSES = frozenset({JobStatus.FINISHED, JobStatus.FAILED, JobStatus.STOPPED, JobStatus.CANCELED})
 _WAITING_STATUSES = frozenset({JobStatus.QUEUED, JobStatus.DEFERRED, JobStatus.SCHEDULED})
 
-# (expires_at, WorkerCounts) per process
-_probe_cache: dict[str, tuple[float, WorkerCounts]] = {}
+# (expires_at, WorkerCounts, probe_succeeded) per process
+_probe_cache: dict[str, tuple[float, WorkerCounts, bool]] = {}
 _PROBE_KEY = "counts"
 
 
@@ -53,6 +53,15 @@ def relay_queue_configured() -> bool:
     return RELAY_QUEUE in background_jobs.get_queues_timeout()
 
 
+def _probe_workers() -> WorkerCounts:
+    """Read the relay queue's workers from RQ; a Redis failure raises."""
+    workers = Worker.all(queue=background_jobs.get_queue(RELAY_QUEUE))
+    return WorkerCounts(
+        live=len(workers),
+        busy=sum(1 for worker in workers if worker.get_state() == WorkerStatus.BUSY),
+    )
+
+
 def relay_worker_counts(*, fresh: bool = False) -> WorkerCounts:
     """Live and busy workers on the relay queue; (0, 0) when unconfigured or the probe fails."""
     now = time.monotonic()
@@ -64,19 +73,26 @@ def relay_worker_counts(*, fresh: bool = False) -> WorkerCounts:
         return WorkerCounts(0, 0)
 
     try:
-        workers = Worker.all(queue=background_jobs.get_queue(RELAY_QUEUE))
-        counts = WorkerCounts(
-            live=len(workers),
-            busy=sum(1 for worker in workers if worker.get_state() == WorkerStatus.BUSY),
-        )
-        ttl = PROBE_TTL_SECONDS
+        counts = _probe_workers()
+        ttl, ok = PROBE_TTL_SECONDS, True
     except Exception:
         frappe.logger("faco.relay").exception("faco_relay worker probe failed")
         counts = WorkerCounts(0, 0)
-        ttl = FAILED_PROBE_TTL_SECONDS
+        ttl, ok = FAILED_PROBE_TTL_SECONDS, False
 
-    _probe_cache[_PROBE_KEY] = (now + ttl, counts)
+    _probe_cache[_PROBE_KEY] = (now + ttl, counts, ok)
     return counts
+
+
+def _live_workers_or_raise() -> int:
+    """Live worker count for a staleness verdict: a cached success, else a probe that raises.
+
+    A failed probe's cached (0, 0) must never read as "no workers".
+    """
+    cached = _probe_cache.get(_PROBE_KEY)
+    if cached and cached[2] and cached[0] > time.monotonic():
+        return cached[1].live
+    return _probe_workers().live
 
 
 def use_job_relay() -> bool:
@@ -118,5 +134,5 @@ def relay_job_lost(job_id: str) -> bool:
     if status is None or status in _GONE_STATUSES:
         return True
     if status in _WAITING_STATUSES:
-        return relay_worker_counts().live == 0
+        return _live_workers_or_raise() == 0
     return False
