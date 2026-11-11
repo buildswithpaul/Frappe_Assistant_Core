@@ -37,7 +37,7 @@ import { fac_page_draft_srcdoc } from "@/utils/facPageDraft";
 import { chart } from "@/utils/pageCharts";
 import { snapshotHtml } from "@/utils/pagePrint";
 import { cleanSnapshot } from "@/utils/pageSnapshotSanitise";
-import { makeFrappeStandIn, runPageScript } from "@/utils/pageRuntime";
+import { failedCallText, makeFrappeStandIn, runPageScript } from "@/utils/pageRuntime";
 // The one copy of the kit, also served to the fac-pages Desk page from /assets.
 import kitCss from "../../../../../../public/css/mockup_kit.css?raw";
 
@@ -72,8 +72,8 @@ const draftSrcdoc = computed(() =>
 	fac_page_draft_srcdoc({ html: props.page.html, style: props.page.style, kit_css: kitCss }),
 );
 
-function onError(error) {
-	if (errors.length < 20) errors.push(String(error?.message || error));
+function onError(error, method) {
+	if (errors.length < 20) errors.push(method ? failedCallText(method, error) : String(error?.message || error));
 	emit("error", error);
 }
 

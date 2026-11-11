@@ -525,7 +525,7 @@ describe("createPageFrame", () => {
 		transport.get.mockRejectedValue(Object.assign(new Error("No permission"), { status: 403 }));
 		fromPage({ op: "call", id: 1, method: "frappe.client.get_list", args: {}, type: "GET" });
 		await settle();
-		expect(frame.errors).toEqual(["x is not defined", "frappe.client.get_list failed: No permission"]);
+		expect(frame.errors).toEqual(["x is not defined", "frappe.client.get_list failed (HTTP 403): No permission"]);
 		expect(onError).toHaveBeenCalledTimes(2);
 	});
 

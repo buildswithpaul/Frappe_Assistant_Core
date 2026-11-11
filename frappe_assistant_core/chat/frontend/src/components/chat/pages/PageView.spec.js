@@ -241,6 +241,13 @@ describe("PageView", () => {
 		expect(capture).toHaveBeenCalledWith({ scale: 1, quality: 80 });
 	});
 
+	it("tells FACO's screenshot which call on a shared page failed, and its HTTP status", async () => {
+		baseCall.mockRejectedValueOnce(Object.assign(new Error("Server Script failed"), { status: 500 }));
+		mountView({ ...published, script: "frappe.call({ method: 'team.get_board' });" });
+		await flushPromises();
+		expect(usePagePanel().pageView.value.errors()).toEqual(["team.get_board failed (HTTP 500): Server Script failed"]);
+	});
+
 	it("offers FACO's screenshot the personal page's frame capture", () => {
 		mountView(personal);
 		const view = usePagePanel().pageView.value;
