@@ -123,6 +123,41 @@ class BaseAssistantTest(IntegrationTestCase):
             frappe.set_user("Administrator")
 
         cls._block_commits()
+        cls._delete_files_from_disk_at_once()
+
+    @classmethod
+    def _delete_files_from_disk_at_once(cls):
+        """Delete a File's content from disk when the File is deleted, as Frappe 15 does.
+
+        Frappe 16 (November 2026) queues it for after the commit, which a test never reaches
+        (``_block_commits``). A deleted file then stayed on disk: the next upload of the same
+        name got a hash suffix (customers.csv became customers3f2a1b.csv), and a file a test
+        expects gone was still there. Worse, a test that commits for real ran every delete
+        queued before it, and one could remove the test's own file of that name.
+
+        While a File's on_trash runs, its own disk delete runs instead of being queued; every
+        other callback is queued as before. Frappe 15 deletes at once and queues nothing, so
+        nothing changes there.
+        """
+        from frappe.core.doctype.file.file import File
+        from frappe.utils import CallbackManager
+
+        on_trash = File.on_trash
+        add = CallbackManager.add
+
+        def on_trash_now(doc, *args, **kwargs):
+            def add_or_run(manager, func):
+                if getattr(func, "__self__", None) is doc and (
+                    getattr(func, "__func__", None) is File._delete_file_on_disk
+                ):
+                    return func()
+                return add(manager, func)
+
+            with patch.object(CallbackManager, "add", add_or_run):
+                return on_trash(doc, *args, **kwargs)
+
+        File.on_trash = on_trash_now
+        cls.addClassCleanup(setattr, File, "on_trash", on_trash)
 
     @classmethod
     def _block_commits(cls):

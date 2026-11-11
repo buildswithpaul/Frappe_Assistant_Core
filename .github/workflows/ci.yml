@@ -189,6 +189,8 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends mariadb-client
+          # As in the tests job: the client requires TLS by default and the service offers none.
+          printf '[client]\nskip-ssl\n' > ~/.my.cnf
 
       - name: Setup
         run: |
