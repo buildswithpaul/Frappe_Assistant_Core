@@ -11,6 +11,7 @@ compares the request slots it gives against the number of people expected to cha
 """
 
 import os
+import shlex
 
 import frappe
 import psutil
@@ -32,26 +33,39 @@ _OPTION_NAMES = {
     "-t": "timeout",
     "--timeout": "timeout",
     "--graceful-timeout": "graceful_timeout",
+    "-c": "config",
+    "--config": "config",
 }
 _INT_OPTIONS = {"workers", "threads", "timeout", "graceful_timeout"}
+# The classes whose request capacity is workers x threads. Others (gevent, eventlet, uvicorn)
+# multiplex connections inside a worker, so slots cannot be judged from these flags.
+_THREAD_BOUND_CLASSES = {"sync", "gthread"}
 
 
 def _is_gunicorn(argv: list[str]) -> bool:
     return any(os.path.basename(arg) == "gunicorn" for arg in argv[:3])
 
 
+def _split_option(arg: str) -> tuple[str, str | None]:
+    """Split `--opt=v`, `-w4` and `-k=v` into (option, attached value)."""
+    if arg.startswith("--"):
+        name, has_value, value = arg.partition("=")
+        return name, value if has_value else None
+    if arg.startswith("-") and len(arg) > 2:
+        return arg[:2], arg[2:].lstrip("=")
+    return arg, None
+
+
 def _option_values(argv: list[str]) -> dict:
     found = {}
     index = 0
     while index < len(argv):
-        arg = argv[index]
-        name, has_value, value = arg.partition("=")
+        name, value = _split_option(argv[index])
         key = _OPTION_NAMES.get(name)
-        if key and not has_value and index + 1 < len(argv):
-            value = argv[index + 1]
+        if key and value is None and index + 1 < len(argv):
             index += 1
-            has_value = True
-        if key and has_value:
+            value = argv[index]
+        if key and value is not None:
             try:
                 found[key] = int(value) if key in _INT_OPTIONS else value
             except ValueError:
@@ -60,30 +74,41 @@ def _option_values(argv: list[str]) -> dict:
     return found
 
 
-def parse_gunicorn_cmdline(argv: list[str]) -> dict | None:
-    """Return the worker settings in a gunicorn command line, or None if it is not gunicorn."""
+def parse_gunicorn_cmdline(argv: list[str], env_args: str | None = None) -> dict | None:
+    """Return the worker settings of a gunicorn master, or None if `argv` is not gunicorn.
+
+    `env_args` is the master's GUNICORN_CMD_ARGS; gunicorn applies it under the command line.
+    A config file may set anything not given as a flag, so with one present the missing
+    values are None rather than gunicorn's defaults.
+    """
     if not _is_gunicorn(argv):
         return None
-    parsed = {**_GUNICORN_DEFAULTS, **_option_values(argv)}
+    found = {**_option_values(shlex.split(env_args or "")), **_option_values(argv)}
+    defaults = {} if "config" in found else _GUNICORN_DEFAULTS
+    parsed = {key: found.get(key, defaults.get(key)) for key in _GUNICORN_DEFAULTS}
     # gunicorn's own rule: threads > 1 turns the sync class into gthread.
-    if parsed["worker_class"] == "sync" and parsed["threads"] > 1:
+    if parsed["worker_class"] == "sync" and (parsed["threads"] or 1) > 1:
         parsed["worker_class"] = "gthread"
     return parsed
+
+
+def _master_environ_args(process: psutil.Process) -> str | None:
+    try:
+        return process.environ().get("GUNICORN_CMD_ARGS")
+    except (psutil.Error, OSError):
+        return None
 
 
 def read_web_server_config() -> dict:
     """Read how the web server running this request was started."""
     config = {"worker_class": None, "workers": None, "threads": None, "timeout": None}
     try:
-        parsed = parse_gunicorn_cmdline(psutil.Process(os.getppid()).cmdline())
+        master = psutil.Process(os.getppid())
+        parsed = parse_gunicorn_cmdline(master.cmdline(), _master_environ_args(master))
     except (psutil.Error, OSError):
         parsed = None
     if parsed:
-        return {
-            **config,
-            **{key: parsed[key] for key in config},
-            "source": "gunicorn",
-        }
+        return {**config, **parsed, "source": "gunicorn"}
 
     workers = frappe.conf.get("gunicorn_workers")
     timeout = frappe.conf.get("http_timeout")
@@ -104,7 +129,12 @@ def assess(config: dict, expected_chatters: int) -> dict:
     }
     worker_class = config.get("worker_class")
     workers, threads = config.get("workers"), config.get("threads")
-    if config.get("source") != "gunicorn" or not (worker_class and workers and threads):
+    if config.get("source") != "gunicorn" or not worker_class:
+        return result
+    if worker_class not in _THREAD_BOUND_CLASSES:
+        result["status"] = "ok"
+        return result
+    if not (workers and threads):
         return result
 
     result["slots"] = workers * threads

@@ -65,6 +65,35 @@ class TestParseGunicornCmdline(BaseAssistantTest):
         parsed = parse_gunicorn_cmdline("gunicorn -w 2 --threads 4".split())
         self.assertEqual(parsed["worker_class"], "gthread")
 
+    def test_attached_short_forms(self):
+        parsed = parse_gunicorn_cmdline("gunicorn -w4 -k=gthread -t120 --threads 2".split())
+        self.assertEqual(
+            (parsed["workers"], parsed["worker_class"], parsed["timeout"], parsed["threads"]),
+            (4, "gthread", 120, 2),
+        )
+
+    def test_env_args_apply_under_the_cli_flags(self):
+        # Production: GUNICORN_CMD_ARGS is set in the gunicorn master's environment; gunicorn
+        # applies it over a config file and under the command line.
+        parsed = parse_gunicorn_cmdline(
+            "gunicorn -w 2 frappe.app:application".split(),
+            env_args="--workers 8 --threads=4 -k gthread",
+        )
+        self.assertEqual((parsed["workers"], parsed["threads"]), (2, 4))
+        self.assertEqual(parsed["worker_class"], "gthread")
+
+    def test_config_file_makes_missing_values_unknown_not_default(self):
+        parsed = parse_gunicorn_cmdline("gunicorn -c gunicorn.conf.py -w 4".split())
+        self.assertEqual(parsed["workers"], 4)
+        self.assertIsNone(parsed["threads"])
+        self.assertIsNone(parsed["worker_class"])
+        parsed = parse_gunicorn_cmdline("gunicorn --config=g.py".split())
+        self.assertIsNone(parsed["workers"])
+
+    def test_config_flag_in_env_args_counts(self):
+        parsed = parse_gunicorn_cmdline(["gunicorn"], env_args="--config g.py")
+        self.assertIsNone(parsed["worker_class"])
+
     def test_not_gunicorn_returns_none(self):
         self.assertIsNone(parse_gunicorn_cmdline(["python", "-m", "frappe.utils.bench_helper", "serve"]))
         self.assertIsNone(parse_gunicorn_cmdline(["werkzeug", "-w", "4"]))
@@ -101,6 +130,17 @@ class TestAssess(BaseAssistantTest):
         self.assertEqual(result["reasons"], [])
         self.assertIsNone(result["fix"])
 
+    def test_async_workers_get_no_false_warning(self):
+        for worker_class in ("gevent", "eventlet", "uvicorn.workers.UvicornWorker"):
+            result = assess(self._config(worker_class, 1, 1), 10)
+            self.assertEqual(result["status"], "ok", worker_class)
+            self.assertEqual(result["reasons"], [])
+            self.assertIsNone(result["fix"])
+
+    def test_config_file_with_unread_values_is_unknown(self):
+        result = assess(self._config(None, 4, None), 10)
+        self.assertEqual(result["status"], "unknown")
+
     def test_unknown_source_is_unknown_not_ok(self):
         config = {
             "worker_class": None,
@@ -125,11 +165,12 @@ class TestReadAndEndpoints(BaseAssistantTest):
         # nosemgrep: frappe-setuser — test bootstrap; runs in an isolated transaction
         frappe.set_user("Administrator")
 
-    def _patch_master(self, argv):
+    def _patch_master(self, argv, env=None):
         # Production reads the gunicorn master's real cmdline via its parent pid; the test supplies
         # the argv a bench-managed master shows, because no gunicorn master exists under run-tests.
         process = MagicMock()
         process.cmdline.return_value = argv
+        process.environ.return_value = env or {}
         return patch.object(server_setup.psutil, "Process", return_value=process)
 
     def test_reads_master_cmdline(self):
@@ -137,6 +178,23 @@ class TestReadAndEndpoints(BaseAssistantTest):
             config = read_web_server_config()
         self.assertEqual(config["source"], "gunicorn")
         self.assertEqual((config["workers"], config["threads"]), (2, 4))
+
+    def test_reads_gunicorn_cmd_args_from_master_environment(self):
+        with self._patch_master(
+            ["gunicorn", "frappe.app:application"],
+            env={"GUNICORN_CMD_ARGS": "--workers=4 --threads=8 --worker-class=gthread"},
+        ):
+            result = get_server_setup()
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["slots"], 32)
+
+    def test_unreadable_environment_still_reads_cmdline(self):
+        process = MagicMock()
+        process.cmdline.return_value = "gunicorn -w 2".split()
+        process.environ.side_effect = server_setup.psutil.AccessDenied()
+        with patch.object(server_setup.psutil, "Process", return_value=process):
+            config = read_web_server_config()
+        self.assertEqual(config["workers"], 2)
 
     def test_falls_back_to_site_config(self):
         with self._patch_master(["python", "serve"]), patch.object(
