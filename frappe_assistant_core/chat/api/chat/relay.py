@@ -24,6 +24,7 @@ from typing import NamedTuple
 
 import frappe
 from frappe import _
+from frappe.query_builder import DocType
 
 from frappe_assistant_core.chat.api.chat import live_turn
 
@@ -33,35 +34,85 @@ from .._helpers import (
 )
 
 _reasoning_effort_drop_logged = False
+_confirm_low_balance_drop_logged = False
 
 
-def _accepts_reasoning_effort(stream_chat) -> bool:
+def _accepts_kwarg(stream_chat, name: str) -> bool:
     try:
         parameters = inspect.signature(stream_chat).parameters
     except (TypeError, ValueError):
         return False
-    return "reasoning_effort" in parameters or any(
-        p.kind is inspect.Parameter.VAR_KEYWORD for p in parameters.values()
-    )
+    return name in parameters or any(p.kind is inspect.Parameter.VAR_KEYWORD for p in parameters.values())
 
 
-def _sdk_composer_kwargs(stream_chat, web_search, thinking_enabled, reasoning_effort) -> dict:
-    """Keyword args for the SDK's stream_chat, omitting reasoning_effort when
-    the installed SDK predates it (it would raise TypeError on an unknown kwarg).
-    FAC pins the SDK exactly, so this only matters for editable / mispinned installs."""
-    global _reasoning_effort_drop_logged
+def _sdk_composer_kwargs(
+    stream_chat, web_search, thinking_enabled, reasoning_effort, confirm_low_balance=None
+) -> dict:
+    """Keyword args for the SDK's stream_chat, omitting reasoning_effort and
+    confirm_low_balance when the installed SDK predates them (it would raise
+    TypeError on an unknown kwarg). FAC pins the SDK exactly, so this only
+    matters for editable / mispinned installs."""
+    global _reasoning_effort_drop_logged, _confirm_low_balance_drop_logged
     kwargs = {"web_search": web_search, "thinking_enabled": thinking_enabled}
-    if reasoning_effort is None:
-        return kwargs
-    if _accepts_reasoning_effort(stream_chat):
-        kwargs["reasoning_effort"] = reasoning_effort
-    elif not _reasoning_effort_drop_logged:
-        _reasoning_effort_drop_logged = True
-        frappe.logger("fac.chat").warning(
-            "Installed assistant_runtime_sdk has no reasoning_effort parameter; "
-            "the thinking level is dropped and thinking_enabled decides the turn."
-        )
+    if reasoning_effort is not None:
+        if _accepts_kwarg(stream_chat, "reasoning_effort"):
+            kwargs["reasoning_effort"] = reasoning_effort
+        elif not _reasoning_effort_drop_logged:
+            _reasoning_effort_drop_logged = True
+            frappe.logger("fac.chat").warning(
+                "Installed assistant_runtime_sdk has no reasoning_effort parameter; "
+                "the thinking level is dropped and thinking_enabled decides the turn."
+            )
+    if confirm_low_balance:
+        if _accepts_kwarg(stream_chat, "confirm_low_balance"):
+            kwargs["confirm_low_balance"] = True
+        elif not _confirm_low_balance_drop_logged:
+            _confirm_low_balance_drop_logged = True
+            frappe.logger("fac.chat").warning(
+                "Installed assistant_runtime_sdk has no confirm_low_balance parameter; "
+                "a Send anyway is refused again for a low balance."
+            )
     return kwargs
+
+
+def _discard_unanswered_user_message(message_name: str | None, session_id: str, user: str) -> None:
+    """Remove the user message AR refused for a low balance, before it ran.
+
+    "Send anyway" sends the same text again, so the refused row would otherwise
+    stand twice in the transcript. Its uploads go back to pending, so the resend
+    links them to the new message as the first send did; their creation restarts
+    because the orphan sweep ages pending uploads by it. The conversation row
+    stays, since the SPA already lists it, and drops this message from its count."""
+    if not message_name:
+        return
+    for file_name in frappe.get_all(
+        "File",
+        filters={"attached_to_doctype": "FAC Chat Message", "attached_to_name": message_name},
+        pluck="name",
+    ):
+        frappe.db.set_value(
+            "File",
+            file_name,
+            {
+                "attached_to_doctype": None,
+                "attached_to_name": None,
+                "fac_pending_chat_attachment": 1,
+                "creation": frappe.utils.now(),
+            },
+            update_modified=False,
+        )
+    frappe.db.delete(
+        "FAC Chat Message",
+        {"name": message_name, "role": "user", "user": user, "session_id": session_id},
+    )
+    conversation = DocType("FAC Chat Conversation")
+    (
+        frappe.qb.update(conversation)
+        .set(conversation.message_count, conversation.message_count - 1)
+        .where(conversation.name == session_id)
+        .where(conversation.user == user)
+        .where(conversation.message_count > 0)
+    ).run()
 
 
 def _set_faco_message_with_retry(name: str, updates: dict, *, attempts: int = 3) -> bool:
@@ -1445,6 +1496,7 @@ def _relay_ar_stream(
     thinking_enabled=None,
     reasoning_effort=None,
     live_turn_token=None,
+    confirm_low_balance=None,
 ):
     """
     Relay SSE stream from AR to frontend via Socket.IO.
@@ -1487,6 +1539,8 @@ def _relay_ar_stream(
                     the installed SDK supports it.
             live_turn_token: The turn token the endpoint wrote with live_turn.start,
                     adopted by the live snapshot and cleared if the relay ends early.
+            confirm_low_balance: True when the user pressed "Send anyway" on AR's
+                    low-balance preview; forwarded to AR when the installed SDK supports it.
     """
     # Set up Frappe context for background thread
     frappe.init(site=site)
@@ -1600,7 +1654,9 @@ def _relay_ar_stream(
                 session_state=session_state,
                 continue_from_message_id=continue_from_message_id,
                 message_id=continue_from_message_id,
-                **_sdk_composer_kwargs(client.stream_chat, web_search, thinking_enabled, reasoning_effort),
+                **_sdk_composer_kwargs(
+                    client.stream_chat, web_search, thinking_enabled, reasoning_effort, confirm_low_balance
+                ),
             ),
             session_id,
             cancelled=lambda: is_cancelled(session_id),
@@ -2032,20 +2088,27 @@ def _relay_ar_stream(
                 # blob that has never seen this turn's user message.
                 _persist_session_blob(session_id, user, data, zero_retention, restricted)
 
-                _emit_socket_event(
-                    session_id,
-                    {
-                        "event": "stream_error",
-                        "session_id": session_id,
-                        "error": error_msg,
-                        "error_code": error_code,
-                        "retry_after": data.get("retry_after"),
-                        "action_required": action_required,
-                        "message_id": ar_message_id,
-                        "blocks": blocks_snapshot,
-                        "partial_response": full_response,
-                    },
-                )
+                error_event = {
+                    "event": "stream_error",
+                    "session_id": session_id,
+                    "error": error_msg,
+                    "error_code": error_code,
+                    "retry_after": data.get("retry_after"),
+                    "action_required": action_required,
+                    "message_id": ar_message_id,
+                    "blocks": blocks_snapshot,
+                    "partial_response": full_response,
+                }
+                if error_code == "low_balance":
+                    # AR refuses before the agent runs; a turn that produced anything keeps its message.
+                    if not full_response and blocks_snapshot == seed_blocks:
+                        _discard_unanswered_user_message(message_name, session_id, user)
+                    error_event["low_balance"] = {
+                        "estimate": data.get("estimate"),
+                        "balance": data.get("balance"),
+                        "scope": data.get("scope"),
+                    }
+                _emit_socket_event(session_id, error_event)
 
             if stalled:
                 return

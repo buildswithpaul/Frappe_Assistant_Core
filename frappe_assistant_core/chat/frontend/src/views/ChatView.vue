@@ -97,6 +97,8 @@
 						@approve="handleApprovalResponse"
 						@reject="handleApprovalResponse"
 						@continue="handleContinueResponse"
+						@send-anyway="(message) => chatStore.sendAnyway(message)"
+						@continue-turn="sendOrKeep(__('Continue'))"
 						@pin="pinMessage"
 						@unqueue="handleUnqueue"
 					>
