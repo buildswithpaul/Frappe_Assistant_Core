@@ -4,15 +4,17 @@
 
 """Whitelisted endpoints that initiate or resume an AR chat stream.
 
-Both endpoints save state synchronously, then submit the SSE relay to
-the bounded background pool defined in this module. The relay itself
-lives in ``relay.py``.
+Both endpoints save state synchronously, then start the SSE relay through
+``_start_relay``: an RQ job on ``faco_relay`` when the setting is on and a
+relay worker listens, else the bounded background pool defined in this
+module. The relay itself lives in ``relay.py``.
 """
 
 from __future__ import annotations
 
 import json
 from concurrent.futures import Future, ThreadPoolExecutor
+from typing import NamedTuple
 
 import frappe
 from frappe import _
@@ -27,7 +29,7 @@ from .._rate_limits import (
     rate_limit,
     session_user_or_ip,
 )
-from ..chat import live_turn, relay_shutdown
+from ..chat import live_turn, relay_dispatch, relay_shutdown
 from ..chat.cancel import _is_open_turn
 from ..chat.cancel import clear as clear_cancel
 from ..chat.conversation_files import conversation_files_addendum
@@ -96,6 +98,7 @@ def _mark_turn_started(
     message_id: str | None = None,
     restricted: bool = False,
     client_turn: str | None = None,
+    relay: str | None = None,
 ) -> str | None:
     """Write the starting live-turn entry; never let a Redis failure block the turn.
 
@@ -105,10 +108,68 @@ def _mark_turn_started(
     if restricted:
         return None
     try:
-        return live_turn.start(session_id, message_id=message_id, client_turn=client_turn)
+        return live_turn.start(session_id, message_id=message_id, client_turn=client_turn, relay=relay)
     except Exception as e:
         frappe.logger("fac_live_turn").warning(f"Could not mark turn started for {session_id}: {e!s}")
         return None
+
+
+def _relay_in_job(in_process: bool) -> bool:
+    """Whether a turn's relay runs as a faco_relay job. Decided once per turn, before its draining check.
+
+    In a job, a draining web worker can still accept the turn: the relay will not run in it.
+    """
+    return not in_process and relay_dispatch.use_job_relay()
+
+
+class RelayStart(NamedTuple):
+    """The live-turn entry a relay starts under, and where the relay runs.
+
+    ``job`` is the caller's ``_relay_in_job`` answer when it already asked (for its draining
+    check); None lets ``_start_relay`` ask.
+    """
+
+    session_id: str
+    restricted: bool
+    message_id: str | None = None
+    client_turn: str | None = None
+    in_process: bool = False
+    job: bool | None = None
+
+
+def _start_relay(start: RelayStart, fn, *args, **kwargs) -> Future | None:
+    """Mark the turn started and run ``fn`` as a faco_relay job (None) or on the pool (its Future).
+
+    A job that cannot be enqueued falls back to the pool, never refuses the turn.
+    """
+    job = _relay_in_job(start.in_process) if start.job is None else start.job
+    mark = {"restricted": start.restricted, "message_id": start.message_id, "client_turn": start.client_turn}
+    if job:
+        turn = _mark_turn_started(start.session_id, relay="job", **mark)
+        try:
+            relay_dispatch.enqueue_relay(
+                fn, args, {**kwargs, "live_turn_token": turn}, job_id=relay_dispatch.relay_job_id(turn)
+            )
+            return None
+        except relay_dispatch.RelayQueueUnavailable as e:
+            frappe.logger("faco.relay").warning(
+                f"Relay job not enqueued for {start.session_id}, running in-process: {e!s}"
+            )
+        except Exception:
+            if turn:
+                live_turn.clear(start.session_id, turn)
+            raise
+        # The job-marked entry is replaced by the pool turn's own.
+        if turn:
+            live_turn.clear(start.session_id, turn)
+
+    turn = _mark_turn_started(start.session_id, **mark)
+    try:
+        return _submit_relay(fn, *args, live_turn_token=turn, **kwargs)
+    except Exception:
+        if turn:
+            live_turn.clear(start.session_id, turn)
+        raise
 
 
 def _effective_model_id(model_id: str | None) -> str | None:
@@ -306,11 +367,14 @@ def start_turn(
     client_turn_id: str | None = None,
     project: str | None = None,
     confirm_low_balance: bool | None = None,
-) -> Future:
-    """Gate, persist and relay one turn for the session user; returns the relay's Future.
+    in_process: bool = False,
+) -> Future | None:
+    """Gate, persist and relay one turn for the session user.
 
     send_message is its HTTP face. A non-browser surface (the Raven bot) calls it directly, so
-    the gate, persistence and relay are the same for every way into FACO.
+    the gate, persistence and relay are the same for every way into FACO. Returns the relay's
+    Future, or None when the relay runs as a faco_relay job; ``in_process`` keeps it in this
+    process (always a Future), for a caller that follows the relay through process-local state.
     """
     # The widget in another Frappe app sends its page; the server writes the prompt line, and
     # the message stores it in a shape FAC Chat Message accepts.
@@ -328,8 +392,9 @@ def start_turn(
     if not access_check.get("can_use"):
         frappe.throw(access_check.get("reason", _("Cannot use FACO")))
 
-    # Refused before anything is saved; the client sends the turn again.
-    if relay_shutdown.is_draining():
+    # A pool turn is refused before anything is saved; the client sends the turn again.
+    job = _relay_in_job(in_process)
+    if not job and relay_shutdown.is_draining():
         raise RelayUnavailable
 
     _open_turn(session_id, client_turn_id)
@@ -404,6 +469,8 @@ def start_turn(
             client_turn_id=client_turn_id,
             project=project,
             confirm_low_balance=confirm_low_balance,
+            in_process=in_process,
+            job=job,
         )
     except RelayUnavailable:
         if user_msg is not None:
@@ -454,42 +521,37 @@ def _launch_turn(
     client_turn_id: str | None = None,
     project: str | None = None,
     confirm_low_balance: bool | None = None,
-) -> Future:
-    """Queue the relay for a turn whose user row is saved; returns the relay's Future."""
+    in_process: bool = False,
+    job: bool | None = None,
+) -> Future | None:
+    """Queue the relay for a turn whose user row is saved; returns the relay's Future, or None for a job."""
     effort = _effort(reasoning_effort)
     if effort is not None:
         thinking_enabled = effort != "off"
 
-    turn = _mark_turn_started(session_id, restricted=restricted, client_turn=client_turn_id)
-    try:
-        # Process in background via bounded pool (FACO-H14) — relay from AR.
-        return _submit_relay(
-            _relay_ar_stream,
-            session_id,
-            prompt,
-            message,
-            _with_project_context(context, session_id, project),
-            user_msg_name,
-            frappe.session.user,
-            frappe.local.site,
-            _effective_model_id(model_id),
-            attachments or [],
-            system_prompt_addendum,
-            _effective_client_type(client_type),
-            session_state,
-            restricted,
-            # None must reach AR as absence (search available), not as an explicit
-            # off — only coerce when the caller actually supplied a value.
-            web_search=_flag(web_search) if web_search is not None else None,
-            thinking_enabled=_flag(thinking_enabled) if thinking_enabled is not None else None,
-            reasoning_effort=effort,
-            live_turn_token=turn,
-            confirm_low_balance=_flag(confirm_low_balance) or None,
-        )
-    except Exception:
-        if turn:
-            live_turn.clear(session_id, turn)
-        raise
+    return _start_relay(
+        RelayStart(session_id, restricted, client_turn=client_turn_id, in_process=in_process, job=job),
+        _relay_ar_stream,
+        session_id,
+        prompt,
+        message,
+        _with_project_context(context, session_id, project),
+        user_msg_name,
+        frappe.session.user,
+        frappe.local.site,
+        _effective_model_id(model_id),
+        attachments or [],
+        system_prompt_addendum,
+        _effective_client_type(client_type),
+        session_state,
+        restricted,
+        # None must reach AR as absence (search available), not as an explicit
+        # off — only coerce when the caller actually supplied a value.
+        web_search=_flag(web_search) if web_search is not None else None,
+        thinking_enabled=_flag(thinking_enabled) if thinking_enabled is not None else None,
+        reasoning_effort=effort,
+        confirm_low_balance=_flag(confirm_low_balance) or None,
+    )
 
 
 @frappe.whitelist(methods=["POST"])
@@ -691,7 +753,8 @@ def _retry_locked(session_id: str, user_row, **launch) -> dict:
     if any(not a.errored and not a.aborted and _has_answer(a) for a in answers):
         return {"status": "already_complete"}
 
-    if relay_shutdown.is_draining():
+    job = _relay_in_job(in_process=False)
+    if not job and relay_shutdown.is_draining():
         return _retry_ack()
 
     from frappe_assistant_core.chat.doctype.fac_chat_conversation.fac_chat_conversation import (
@@ -724,6 +787,7 @@ def _retry_locked(session_id: str, user_row, **launch) -> dict:
             session_state,
             False,
             system_prompt_addendum=addendum or None,
+            job=job,
             **launch,
         )
     except RelayUnavailable:
@@ -923,34 +987,26 @@ def resume_interrupt(
         # AR mints a new one and the decision lands on the wrong row.
         message_id = message_id or _paused_message_id(session_id)
 
-        turn = _mark_turn_started(
-            session_id, restricted=restricted, message_id=message_id, client_turn=client_turn_id
+        _start_relay(
+            RelayStart(session_id, restricted, message_id=message_id, client_turn=client_turn_id),
+            _relay_ar_interrupt_resume,
+            session_id,
+            interrupt_response,
+            frappe.session.user,
+            frappe.local.site,
+            effective_client_type,
+            message_id,
+            session_state,
+            restricted,
+            # The turn the user approved was sent with these; the resume is the
+            # same turn continuing, so it has to carry them too.
+            model_id=model_id,
+            system_prompt_addendum=_conversation_addendum(session_id, restricted, project),
+            context=_with_project_context(None, session_id, project),
+            web_search=_flag(web_search) if web_search is not None else None,
+            thinking_enabled=_flag(thinking_enabled) if thinking_enabled is not None else None,
+            reasoning_effort=effort,
         )
-        try:
-            _submit_relay(
-                _relay_ar_interrupt_resume,
-                session_id,
-                interrupt_response,
-                frappe.session.user,
-                frappe.local.site,
-                effective_client_type,
-                message_id,
-                session_state,
-                restricted,
-                # The turn the user approved was sent with these; the resume is the
-                # same turn continuing, so it has to carry them too.
-                model_id=model_id,
-                system_prompt_addendum=_conversation_addendum(session_id, restricted, project),
-                context=_with_project_context(None, session_id, project),
-                web_search=_flag(web_search) if web_search is not None else None,
-                thinking_enabled=_flag(thinking_enabled) if thinking_enabled is not None else None,
-                reasoning_effort=effort,
-                live_turn_token=turn,
-            )
-        except Exception:
-            if turn:
-                live_turn.clear(session_id, turn)
-            raise
 
         return {
             "status": "processing",
@@ -1041,35 +1097,27 @@ def continue_response(
         if effort is not None:
             thinking_enabled = effort != "off"
 
-        turn = _mark_turn_started(
-            session_id, restricted=restricted, message_id=message_id, client_turn=client_turn_id
+        _start_relay(
+            RelayStart(session_id, restricted, message_id=message_id, client_turn=client_turn_id),
+            _relay_ar_stream,
+            session_id,
+            full_prompt=None,
+            original_message=None,
+            context=_with_project_context(None, session_id, project),
+            message_name=None,
+            user=frappe.session.user,
+            site=frappe.local.site,
+            client_type=effective_client_type,
+            session_state=session_state,
+            restricted=restricted,
+            continue_from_message_id=message_id,
+            system_prompt_addendum=_conversation_addendum(session_id, restricted, project),
+            # A continuation is the same turn finishing; it must run under the
+            # same toggles, not fall back to AR's absence defaults.
+            web_search=_flag(web_search) if web_search is not None else None,
+            thinking_enabled=_flag(thinking_enabled) if thinking_enabled is not None else None,
+            reasoning_effort=effort,
         )
-        try:
-            _submit_relay(
-                _relay_ar_stream,
-                session_id,
-                full_prompt=None,
-                original_message=None,
-                context=_with_project_context(None, session_id, project),
-                message_name=None,
-                user=frappe.session.user,
-                site=frappe.local.site,
-                client_type=effective_client_type,
-                session_state=session_state,
-                restricted=restricted,
-                continue_from_message_id=message_id,
-                system_prompt_addendum=_conversation_addendum(session_id, restricted, project),
-                # A continuation is the same turn finishing; it must run under the
-                # same toggles, not fall back to AR's absence defaults.
-                web_search=_flag(web_search) if web_search is not None else None,
-                thinking_enabled=_flag(thinking_enabled) if thinking_enabled is not None else None,
-                reasoning_effort=effort,
-                live_turn_token=turn,
-            )
-        except Exception:
-            if turn:
-                live_turn.clear(session_id, turn)
-            raise
 
         return {
             "status": "processing",
