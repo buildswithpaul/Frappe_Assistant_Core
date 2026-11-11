@@ -13,6 +13,7 @@
 import { __ } from "@/utils/i18n";
 
 import { PAGE_FRAME_SANDBOX, makeNonce, pageFrameSrcdoc } from "./pageFrameDoc";
+import { failedCallText } from "./pageRuntime";
 import {
 	DOC_REPLACING_WRITES,
 	RECORD_WRITES,
@@ -350,7 +351,7 @@ export function createPageFrame({
 			toPage({ op: "reply", id: call.id, ok: true, message: message === undefined ? null : message });
 		} catch (error) {
 			const reply = errorReply(error);
-			noteError(__("{0} failed: {1}", [call.method, reply.message]));
+			noteError(failedCallText(call.method, reply));
 			toPage({ op: "reply", id: call.id, ok: false, error: reply });
 		} finally {
 			inFlight--;
