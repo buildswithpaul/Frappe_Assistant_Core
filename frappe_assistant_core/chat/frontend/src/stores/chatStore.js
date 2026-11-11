@@ -19,6 +19,9 @@ import { createChangeActions } from "./chat/changes";
 import { createSendQueue } from "./chat/sendQueue";
 import { applyLiveSnapshot, createLiveTurnSync } from "./chat/liveTurnSync";
 import { createTurnClaim } from "./chat/turnClaim";
+import { restartFailure, restartingStatus, sendWithRestartRetry } from "./chat/restartRetry";
+import { interruptStaleTurn } from "./chat/interruptedTurn";
+import { __ } from "@/utils/i18n";
 import { isApprovalInteraction } from "./chat/interactionRegime";
 import { getSurface, surfaceClientSignals } from "./chat/surface";
 import { useComposerModesStore } from "./composerModesStore";
@@ -214,6 +217,7 @@ export const useChatStore = defineStore("chat", () => {
 		isCancelling,
 		isSubmittingInterrupts,
 		reconcile: (sessionId) => reconcileFromServer(sessionId),
+		probeLiveTurn,
 		getSocketProbe: () => socketProbe,
 	});
 	const blocks = createBlockHandlers(sharedRefs);
@@ -222,6 +226,13 @@ export const useChatStore = defineStore("chat", () => {
 	// Joining a turn that is running elsewhere (another surface, or this one
 	// before a reload or a lost socket). See stores/chat/liveTurnSync.js.
 	function adoptLiveTurn(snap) {
+		// Its relay died: end it as interrupted and show the row as the server then has it.
+		if (snap.stale) {
+			reconcileFromServer(currentSessionId.value).catch((err) =>
+				logger.warn("Could not end a stale turn:", err)
+			);
+			return;
+		}
 		const msg = applyLiveSnapshot(messages.value, snap);
 		isStreaming.value = true;
 		stream.startStreamTimeout();
@@ -363,8 +374,31 @@ export const useChatStore = defineStore("chat", () => {
 	 * fire-and-forget pub/sub with no server replay buffer, so the only way
 	 * to recover them is to re-read what the relay already persisted.
 	 */
+	// A quiet stream whose relay died (stale entry) is ended now; anything else keeps waiting,
+	// and a turn that ended unseen is still settled by the activity watchdog's reconcile.
+	async function probeLiveTurn(sessionId) {
+		let live;
+		try {
+			live = await api.chat.getLiveTurn(sessionId);
+		} catch {
+			return;
+		}
+		if (live?.stale) await reconcileFromServer(sessionId);
+	}
+
 	async function reconcileFromServer(sessionId) {
 		if (!sessionId || sessionId !== currentSessionId.value) return;
+		const interrupted = await interruptStaleTurn(sessionId, {
+			fetchLiveTurn: api.chat.getLiveTurn,
+			markInterrupted: api.chat.markTurnInterrupted,
+		});
+		if (sessionId !== currentSessionId.value) return;
+		if (interrupted && (isStreaming.value || isSubmittingInterrupts.value)) {
+			handleStreamError(
+				__("This answer was interrupted by a server restart."),
+				"TURN_INTERRUPTED"
+			);
+		}
 		let serverMessages;
 		try {
 			// Loads the same recent-window as loadMessages (server caps at the
@@ -595,31 +629,44 @@ export const useChatStore = defineStore("chat", () => {
 				_resend: { message, files: uploadedFiles, context, modelId, systemPromptAddendum },
 			};
 			messages.value.push(assistantMessage);
+			const bubble = messages.value[messages.value.length - 1];
 
 			const modes = useComposerModesStore().modesFor(currentSessionId.value);
 			const surface = getSurface();
 			const signals = surfaceClientSignals();
-			const ack = await api.chat.send(
-				currentSessionId.value,
-				message,
-				fileUrls,
-				context,
-				modelId ?? surface.modelId,
-				systemPromptAddendum,
-				attachments,
-				{
-					web_search: modes.webSearch,
-					reasoning_effort: modes.effort,
-					// Older AR servers only read the boolean.
-					thinking_enabled: modes.effort !== "off",
-					// A Stop names this request by the same id (streamManager.abortStream).
-					client_turn_id: assistantMessage._requestId,
-					client_type: surface.clientType,
-					...(signals ? { client_signals: signals } : {}),
-					...(currentProjectId.value ? { project: currentProjectId.value } : {}),
-					...(confirmLowBalance ? { confirm_low_balance: 1 } : {}),
-				}
-			);
+			const send = () =>
+				api.chat.send(
+					currentSessionId.value,
+					message,
+					fileUrls,
+					context,
+					modelId ?? surface.modelId,
+					systemPromptAddendum,
+					attachments,
+					{
+						web_search: modes.webSearch,
+						reasoning_effort: modes.effort,
+						// Older AR servers only read the boolean.
+						thinking_enabled: modes.effort !== "off",
+						// A Stop names this request by the same id (streamManager.abortStream).
+						client_turn_id: assistantMessage._requestId,
+						client_type: surface.clientType,
+						...(signals ? { client_signals: signals } : {}),
+						...(currentProjectId.value ? { project: currentProjectId.value } : {}),
+						...(confirmLowBalance ? { confirm_low_balance: 1 } : {}),
+					}
+				);
+			const ack = await sendWithRestartRetry(send, {
+				onRetrying: () => {
+					bubble.statusNote = restartingStatus();
+				},
+			});
+			bubble.statusNote = null;
+			const failure = restartFailure(ack);
+			if (failure) {
+				handleStreamError(failure.message, failure.code);
+				return;
+			}
 			// The first send creates the conversation row; the ack carries it, so Recents
 			// gains it without a reload (no row for a GDPR-restricted user).
 			const row = ack?.conversation;
@@ -666,6 +713,72 @@ export const useChatStore = defineStore("chat", () => {
 	}
 
 	/**
+	 * Run the latest user message's errored or interrupted turn again. The partial bubble
+	 * goes and the new turn streams into a fresh one; the server deletes the partial row and
+	 * refuses a turn that completed (already_complete), which reloads the conversation.
+	 */
+	async function retryTurn(userMessageName) {
+		const sessionId = currentSessionId.value;
+		if (!sessionId || !userMessageName || isStreaming.value) return;
+		const userIndex = messages.value.findLastIndex((m) => m.role === "user");
+		if (userIndex < 0) return;
+
+		messages.value = messages.value.slice(0, userIndex + 1);
+		isStreaming.value = true;
+		streamingMessage.value = "";
+		streamRequestId.value = crypto.randomUUID();
+		turnClaim.releaseClaim();
+		stream.startStreamTimeout();
+		messages.value.push({
+			role: "assistant",
+			content: "",
+			blocks: [],
+			timestamp: new Date().toISOString(),
+			isStreaming: true,
+			_requestId: streamRequestId.value,
+		});
+		const bubble = messages.value[messages.value.length - 1];
+
+		try {
+			const modes = useComposerModesStore().modesFor(sessionId);
+			const ack = await sendWithRestartRetry(
+				() =>
+					api.chat.retryTurn(sessionId, userMessageName, {
+						web_search: modes.webSearch,
+						reasoning_effort: modes.effort,
+						// Older AR servers only read the boolean.
+						thinking_enabled: modes.effort !== "off",
+						client_turn_id: bubble._requestId,
+						client_type: getSurface().clientType,
+					}),
+				{
+					onRetrying: () => {
+						bubble.statusNote = restartingStatus();
+					},
+				}
+			);
+			bubble.statusNote = null;
+			const failure = restartFailure(ack);
+			if (failure) {
+				handleStreamError(failure.message, failure.code);
+				await readHistory(sessionId);
+			} else if (ack?.status === "already_complete" || ack?.status === "running") {
+				// Nothing was started here: show the conversation as the server has it, joining
+				// the turn that is still running.
+				stream.clearStreamTimeouts();
+				isStreaming.value = false;
+				await loadMessages(sessionId);
+			}
+		} catch (err) {
+			stream.clearStreamTimeouts();
+			isStreaming.value = false;
+			setError(err.message);
+			logger.error("Failed to retry the turn:", err);
+			await readHistory(sessionId).catch(() => {});
+		}
+	}
+
+	/**
 	 * Resume a truncated (max_tokens) assistant turn. Only valid on the
 	 * latest assistant message. Seeds streamingMessage with the bubble's
 	 * existing content so continuation-only deltas concatenate onto the
@@ -696,15 +809,19 @@ export const useChatStore = defineStore("chat", () => {
 			// A continuation is the same turn finishing — it has to run under the
 			// toggles the turn was sent with, not AR's absence defaults.
 			const modes = useComposerModesStore().modesFor(currentSessionId.value);
-			await api.chat.continueResponse(currentSessionId.value, messageId, {
-				web_search: modes.webSearch,
-				reasoning_effort: modes.effort,
-				// Older AR servers only read the boolean.
-				thinking_enabled: modes.effort !== "off",
-				client_turn_id: lastMsg._requestId,
-				client_type: getSurface().clientType,
-				...(currentProjectId.value ? { project: currentProjectId.value } : {}),
-			});
+			const ack = await sendWithRestartRetry(() =>
+				api.chat.continueResponse(currentSessionId.value, messageId, {
+					web_search: modes.webSearch,
+					reasoning_effort: modes.effort,
+					// Older AR servers only read the boolean.
+					thinking_enabled: modes.effort !== "off",
+					client_turn_id: lastMsg._requestId,
+					client_type: getSurface().clientType,
+					...(currentProjectId.value ? { project: currentProjectId.value } : {}),
+				})
+			);
+			const failure = restartFailure(ack);
+			if (failure) handleStreamError(failure.message, failure.code);
 		} catch (err) {
 			stream.clearStreamTimeouts();
 			isStreaming.value = false;
@@ -864,7 +981,23 @@ export const useChatStore = defineStore("chat", () => {
 			if (resumeModelId && resumeModelId !== "auto") {
 				payload.model_id = resumeModelId;
 			}
-			await call("frappe_assistant_core.chat.api.chat.resume_interrupt", payload);
+			const ack = await sendWithRestartRetry(
+				() => call("frappe_assistant_core.chat.api.chat.resume_interrupt", payload),
+				{
+					onRetrying: () => {
+						if (lastMsg) lastMsg.statusNote = restartingStatus();
+					},
+				}
+			);
+			if (lastMsg) lastMsg.statusNote = null;
+			const failure = restartFailure(ack);
+			if (failure) {
+				// Nothing was queued: the cards go back to the user to approve again.
+				blocks.revertInteractionDecisions(batch.blocks);
+				isSubmittingInterrupts.value = false;
+				setError(failure.message, failure.code);
+				return;
+			}
 			// Resume stream will deliver tool_call_result + further events via
 			// Socket.IO; flip the local card status now so the UI matches.
 			clearExpiryTimer();
@@ -1223,6 +1356,7 @@ export const useChatStore = defineStore("chat", () => {
 		queuedMessages: sendQueue.queuedMessages,
 		unqueueMessage: sendQueue.unqueueMessage,
 		continueMessage,
+		retryTurn,
 		appendStreamChunk,
 		attachSources,
 		completeStreaming,

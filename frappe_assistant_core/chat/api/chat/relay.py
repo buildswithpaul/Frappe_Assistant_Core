@@ -27,7 +27,7 @@ from frappe import _
 from frappe.query_builder import DocType
 
 from frappe_assistant_core.chat import credit_status_cache
-from frappe_assistant_core.chat.api.chat import live_turn
+from frappe_assistant_core.chat.api.chat import live_turn, relay_shutdown
 
 from .._helpers import (
     _not_registered_error,
@@ -86,22 +86,7 @@ def _discard_unanswered_user_message(message_name: str | None, session_id: str, 
     stays, since the SPA already lists it, and drops this message from its count."""
     if not message_name:
         return
-    for file_name in frappe.get_all(
-        "File",
-        filters={"attached_to_doctype": "FAC Chat Message", "attached_to_name": message_name},
-        pluck="name",
-    ):
-        frappe.db.set_value(
-            "File",
-            file_name,
-            {
-                "attached_to_doctype": None,
-                "attached_to_name": None,
-                "fac_pending_chat_attachment": 1,
-                "creation": frappe.utils.now(),
-            },
-            update_modified=False,
-        )
+    _release_message_files(message_name)
     frappe.db.delete(
         "FAC Chat Message",
         {"name": message_name, "role": "user", "user": user, "session_id": session_id},
@@ -265,6 +250,7 @@ from ..chat.helpers import (  # noqa: E402
     _log_conversation,
     _log_stream_error_detail,
     _parse_turn_blocks,
+    _release_message_files,
     _update_subscription_cache,
 )
 
@@ -992,6 +978,22 @@ def _relay_ar_interrupt_resume(
             enabled=not restricted,
             turn=live_turn_token,
         )
+        # mark_turn_interrupted ended this turn while it waited in the pool: AR is never called.
+        if live_turn_token and not restricted and not live_turn.holds(session_id, live_turn_token):
+            return
+        # The pool runs what is still queued while the worker exits: never start AR then.
+        if relay_shutdown.is_draining():
+            _handle_shutdown_interrupt(
+                session_id,
+                ar_message_id,
+                full_response,
+                block_builder,
+                collected_tool_calls,
+                model_used,
+                resumed_message_id=message_id,
+                pause_consumed=False,
+            )
+            return
 
         # resume_interrupt cleared any older Stop when it accepted this resume,
         # so a flag up now is a Stop pressed while this relay waited to start.
@@ -1018,6 +1020,8 @@ def _relay_ar_interrupt_resume(
         started = last_progress = time.monotonic()
         stalled = False
         for event in stream_iter:
+            if _turn_taken(session_id, stream_iter):
+                return
             # Cooperative cancellation: same treatment as the send funnel.
             # Without this, Stop pressed while a resume is streaming was a
             # total no-op — AR could tear the stream down and this loop
@@ -1055,6 +1059,20 @@ def _relay_ar_interrupt_resume(
                         "partial_response": full_response,
                         "blocks": block_builder.snapshot(),
                     },
+                )
+                return
+            # This worker is exiting and the turn's time is up (relay_shutdown).
+            if relay_shutdown.should_give_up():
+                _handle_shutdown_interrupt(
+                    session_id,
+                    ar_message_id,
+                    full_response,
+                    block_builder,
+                    collected_tool_calls,
+                    model_used,
+                    stream_iter=stream_iter,
+                    resumed_message_id=message_id,
+                    pause_consumed=pause_consumed,
                 )
                 return
 
@@ -1614,6 +1632,21 @@ def _relay_ar_stream(
             enabled=not restricted,
             turn=live_turn_token,
         )
+        # mark_turn_interrupted ended this turn while it waited in the pool: AR is never called.
+        if live_turn_token and not restricted and not live_turn.holds(session_id, live_turn_token):
+            return
+        # The pool runs what is still queued while the worker exits: never start AR then.
+        if relay_shutdown.is_draining():
+            _handle_shutdown_interrupt(
+                session_id,
+                ar_message_id,
+                full_response,
+                block_builder,
+                collected_tool_calls,
+                model_used,
+                continued_turn=continued_turn,
+            )
+            return
 
         # send_message or continue_response cleared any older Stop when it
         # accepted this turn, so a flag up now is a Stop pressed while this
@@ -1666,6 +1699,8 @@ def _relay_ar_stream(
         started = last_progress = time.monotonic()
         stalled = False
         for event in stream_iter:
+            if _turn_taken(session_id, stream_iter):
+                return
             # Cooperative cancellation: the cancel_stream endpoint sets a
             # Redis-backed flag, visible to any gunicorn worker. We poll it
             # between events so Stop takes effect within one tool / token
@@ -1680,6 +1715,19 @@ def _relay_ar_stream(
                     model_used,
                     stream_iter=stream_iter,
                     continued_turn=continued_turn,
+                )
+                return
+            # This worker is exiting and the turn's time is up (relay_shutdown).
+            if relay_shutdown.should_give_up():
+                _handle_shutdown_interrupt(
+                    session_id,
+                    ar_message_id,
+                    full_response,
+                    block_builder,
+                    collected_tool_calls,
+                    model_used,
+                    continued_turn=continued_turn,
+                    stream_iter=stream_iter,
                 )
                 return
 
@@ -2294,6 +2342,89 @@ def _persist_continued_turn(
         continued_turn.model_breakdown = updates["model_breakdown"]
     if "tool_calls" in updates:
         continued_turn.tool_calls = updates["tool_calls"]
+
+
+def _turn_taken(session_id: str, stream_iter) -> bool:
+    """Whether the turn was ended elsewhere: marked interrupted, or replaced by a Retry.
+
+    Each AR event first moves the live entry past "starting". Once the entry is gone the relay
+    drops AR's stream and saves nothing: the turn is no longer this relay's to finish or bill.
+    """
+    live_turn.ar_responded(session_id)
+    if not live_turn.lost(session_id):
+        return False
+    try:
+        stream_iter.close()
+    except Exception as e:
+        frappe.logger("fac_live_turn").warning(f"stream_iter.close() raised for {session_id}: {e}")
+    return True
+
+
+def _handle_shutdown_interrupt(
+    session_id: str,
+    ar_message_id: str | None,
+    full_response: str,
+    block_builder,
+    collected_tool_calls: list,
+    model_used: str,
+    continued_turn=None,
+    *,
+    stream_iter=None,
+    resumed_message_id: str | None = None,
+    pause_consumed: bool = True,
+) -> None:
+    """End a turn this exiting worker can no longer finish: keep its partial, flagged errored.
+
+    The connection to AR is dropped so AR stops the agent. A resume adds its cycle to the turn's
+    row, and only once AR consumed the pause; before that the row already holds the pause.
+    """
+    try:
+        if stream_iter is not None:
+            stream_iter.close()
+    except Exception as e:
+        frappe.logger("faco.chat.shutdown").warning(f"stream_iter.close() raised for {session_id}: {e}")
+
+    blocks_snapshot = block_builder.snapshot()
+    if resumed_message_id is not None:
+        if pause_consumed:
+            _persist_errored_resume_cycle(
+                session_id,
+                ar_message_id,
+                resumed_message_id,
+                full_response,
+                block_builder,
+                collected_tool_calls,
+            )
+    else:
+        # A turn AR has not named has no row; the latest one belongs to an earlier turn. An
+        # empty one is still recorded, so the turn reads interrupted and can be retried.
+        _persist_partial_assistant_turn(
+            session_id,
+            ar_message_id,
+            full_response,
+            blocks_snapshot,
+            collected_tool_calls,
+            model_used,
+            "errored",
+            fall_back_to_latest=ar_message_id is not None,
+            continued_turn=continued_turn,
+        )
+
+    _emit_socket_event(
+        session_id,
+        {
+            "event": "stream_error",
+            "session_id": session_id,
+            "message_id": ar_message_id or resumed_message_id,
+            "error_code": "TURN_INTERRUPTED",
+            "error": _("This answer was interrupted by a server restart. Retry to run it again."),
+            "blocks": blocks_snapshot,
+            "partial_response": full_response,
+        },
+    )
+    live = live_turn.current(session_id)
+    if live is not None:
+        live_turn.clear(session_id, live.turn)
 
 
 def _handle_stream_aborted(

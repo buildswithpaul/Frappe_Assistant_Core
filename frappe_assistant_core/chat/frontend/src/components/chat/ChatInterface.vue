@@ -16,11 +16,13 @@
 				:is-streaming="isStreaming && index === lastAssistantIndex"
 				:is-latest="index === lastAssistantIndex"
 				:is-resuming="isResuming && index === lastAssistantIndex"
+				:can-retry="!isStreaming && index === retry?.index"
 				@toggle-block="(msgIdx, blockId) => $emit('toggleBlock', msgIdx, blockId)"
 				@approve="(blockId, responses) => $emit('approve', blockId, responses)"
 				@reject="(blockId, responses) => $emit('reject', blockId, responses)"
 				@preview-document="onPreviewDocument"
 				@continue="(messageId) => $emit('continue', messageId)"
+				@retry="$emit('retry', retry.userMessage)"
 				@send-anyway="(message) => $emit('send-anyway', message)"
 				@continue-turn="$emit('continue-turn')"
 				@pin="(messageId) => $emit('pin', messageId)"
@@ -42,6 +44,7 @@ import { ref, computed } from "vue";
 import MessageBubble from "./MessageBubble.vue";
 import DocumentPreviewPanel from "@/components/knowledge/DocumentPreviewPanel.vue";
 import { api } from "@/api/client";
+import { retryTarget } from "@/stores/chat/retryTurn";
 
 const props = defineProps({
 	messages: {
@@ -59,7 +62,19 @@ const props = defineProps({
 	},
 });
 
-defineEmits(["toggleBlock", "approve", "reject", "continue", "pin", "unqueue", "send-anyway", "continue-turn"]);
+defineEmits([
+	"toggleBlock",
+	"approve",
+	"reject",
+	"continue",
+	"retry",
+	"pin",
+	"unqueue",
+	"send-anyway",
+	"continue-turn",
+]);
+
+const retry = computed(() => retryTarget(props.messages));
 
 // The active turn's own index, not "last item in the array" — a queued
 // message (or a context-summary divider) can trail the live assistant

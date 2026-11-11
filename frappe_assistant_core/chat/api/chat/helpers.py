@@ -139,6 +139,30 @@ def _attach_files_to_message(file_urls: list[str], message_name: str) -> int:
     return linked
 
 
+def _release_message_files(message_name: str) -> None:
+    """Hand a message's uploads back to the composer, pending again, so a re-send can link them.
+
+    Deleting the message would otherwise delete its attached files with it. Their creation
+    restarts because the orphan sweep ages pending uploads by it.
+    """
+    for name in frappe.get_all(
+        "File",
+        filters={"attached_to_doctype": "FAC Chat Message", "attached_to_name": message_name},
+        pluck="name",
+    ):
+        frappe.db.set_value(
+            "File",
+            name,
+            {
+                "attached_to_doctype": None,
+                "attached_to_name": None,
+                "fac_pending_chat_attachment": 1,
+                "creation": frappe.utils.now(),
+            },
+            update_modified=False,
+        )
+
+
 def _prepare_prompt(message: str, context: dict, include_context: bool) -> str:
     """
     Prepare the full prompt with optional context.

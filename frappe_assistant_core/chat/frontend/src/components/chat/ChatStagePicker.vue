@@ -62,6 +62,7 @@
 		@approve="(blockId, responses) => $emit('approve', blockId, responses)"
 		@reject="(blockId, responses) => $emit('reject', blockId, responses)"
 		@continue="(messageId) => $emit('continue', messageId)"
+		@retry="(userMessage) => $emit('retry', userMessage)"
 		@send-anyway="(message) => $emit('send-anyway', message)"
 		@continue-turn="$emit('continue-turn')"
 		@pin="(messageId) => $emit('pin', messageId)"
@@ -120,6 +121,7 @@ defineEmits([
 	"approve",
 	"reject",
 	"continue",
+	"retry",
 	"pin",
 	"unqueue",
 	"send-anyway",

@@ -44,6 +44,9 @@
 				@preview-document="(doc) => $emit('previewDocument', doc)"
 			/>
 
+			<!-- Transient turn status, e.g. a re-send while the server restarts -->
+			<div v-if="message.statusNote" class="status-note" role="status">{{ message.statusNote }}</div>
+
 			<!-- Queued indicator (compose-while-streaming) -->
 			<span v-if="message.queued" class="queued-chip">
 				Queued
@@ -71,6 +74,12 @@
 				>
 					Continue response
 				</button>
+			</div>
+
+			<!-- Retry: the latest turn ended in an error or an interruption -->
+			<div v-if="canRetry" class="truncation-notice retry-notice">
+				<span>{{ __("This answer did not finish.") }}</span>
+				<button class="continue-btn retry-btn" @click="$emit('retry')">{{ __("Retry") }}</button>
 			</div>
 
 			<TurnCreditNotices
@@ -115,6 +124,7 @@ import MessageFooter from "./MessageFooter.vue";
 import TurnCreditNotices from "./TurnCreditNotices.vue";
 import FacoRobot from "@/components/common/FacoRobot.vue";
 import { ensureHljs } from "@/utils/markdown.js";
+import { __ } from "@/utils/i18n";
 import { turnLabel, userInitial as deriveInitial } from "./turns.js";
 
 const props = defineProps({
@@ -139,6 +149,11 @@ const props = defineProps({
 		type: Boolean,
 		default: false,
 	},
+	// The latest turn errored and can be run again (retryTarget).
+	canRetry: {
+		type: Boolean,
+		default: false,
+	},
 });
 
 defineEmits([
@@ -147,6 +162,7 @@ defineEmits([
 	"reject",
 	"previewDocument",
 	"continue",
+	"retry",
 	"pin",
 	"unqueue",
 	"send-anyway",
@@ -191,6 +207,12 @@ function copyMessage() {
 </script>
 
 <style scoped>
+.status-note {
+	font-size: 13px;
+	color: var(--ql-text-muted);
+	margin-top: 4px;
+}
+
 .ql-turn {
 	display: flex;
 	align-items: flex-start;
