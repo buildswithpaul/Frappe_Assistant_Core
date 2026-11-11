@@ -115,6 +115,9 @@ class TestAssess(BaseAssistantTest):
         self.assertEqual(result["status"], "warning")
         self.assertEqual(result["fix"], RECOMMENDED_FIX)
         self.assertIn("sync workers", result["reasons"][0])
+        # The browser's chat request returns at once; a relay thread holds the stream, not a worker.
+        self.assertIn("one request at a time", result["reasons"][0])
+        self.assertNotIn("holds a whole worker", result["reasons"][0])
 
     def test_too_few_slots_warns(self):
         result = assess(self._config("gthread", 2, 4), 10)

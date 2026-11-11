@@ -13,7 +13,7 @@ const warning = {
 	slots: 4,
 	required_slots: 20,
 	reasons: [
-		"Web server uses sync workers, so each chat holds a whole worker. Run gunicorn with --worker-class gthread --threads 8.",
+		"Web server uses sync workers, which serve one request at a time, so chat polling, MCP callbacks and page loads queue behind each other. Run gunicorn with --worker-class gthread --threads 8.",
 	],
 	fix: "--worker-class gthread --threads 8",
 };
