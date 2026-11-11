@@ -219,6 +219,48 @@ class TestCustomisationImpact(BaseAssistantTest):
         self.assertTrue(r["changes_live_code"])
         self.assertIs(r["switches_on"], False)
 
+    @staticmethod
+    def _html_edit(find: str, replace: str) -> list:
+        return [{"field": "html", "find": find, "replace": replace}]
+
+    def test_edits_on_a_published_shared_page_change_live_code(self):
+        r = customisation_impact(
+            "update_document",
+            {"doctype": "FAC Page", "name": self.live_page, "edits": self._html_edit("<p>x</p>", "<p>y</p>")},
+        )
+
+        self.assertTrue(r["changes_live_code"])
+
+    def test_edits_that_leave_the_value_unchanged_do_not_change_live_code(self):
+        # find == replace: the effective value equals the stored one, as an edit that restores text does
+        r = customisation_impact(
+            "update_document",
+            {"doctype": "FAC Page", "name": self.live_page, "edits": self._html_edit("<p>x</p>", "<p>x</p>")},
+        )
+
+        self.assertFalse(r["changes_live_code"])
+
+    def test_edits_that_do_not_match_count_as_live(self):
+        r = customisation_impact(
+            "update_document",
+            {"doctype": "FAC Page", "name": self.draft_page, "edits": self._html_edit("<p>nope</p>", "")},
+        )
+
+        self.assertFalse(r["dormant"])
+        self.assertEqual(r["reason"], "The edits do not apply to the stored record")
+
+    def test_edits_on_an_unpublished_page_stay_dormant(self):
+        r = customisation_impact(
+            "update_document",
+            {
+                "doctype": "FAC Page",
+                "name": self.draft_page,
+                "edits": self._html_edit("<p>x</p>", "<p>y</p>"),
+            },
+        )
+
+        self.assertTrue(r["dormant"])
+
     def test_a_personal_pages_script_edit_does_not_change_live_code(self):
         name, _owner = self._personal_page(published=1)
         own = _impact("update_document", "FAC Page", {"script": "console.log(1)"}, name)

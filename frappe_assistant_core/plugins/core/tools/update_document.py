@@ -34,6 +34,7 @@ from frappe_assistant_core.utils.customisation import (
     script_report_warning,
     server_script_guard,
 )
+from frappe_assistant_core.utils.edits import EditError, edit_target_problem, effective_data
 from frappe_assistant_core.utils.savepoint import open_savepoint, rollback_to_savepoint
 
 from .batch import MODE_SCHEMA, batch_refusal, run_batch, run_validation
@@ -228,6 +229,13 @@ def _split_rename(name: str, data: Dict[str, Any], arguments: Dict[str, Any]) ->
     return fields, requested
 
 
+def _edit_fields(edits: Any) -> List[str]:
+    """The field names a well-formed ``edits`` list names; a malformed one is refused later."""
+    if not isinstance(edits, list):
+        return []
+    return [e["field"] for e in edits if isinstance(e, dict) and isinstance(e.get("field"), str)]
+
+
 class DocumentUpdate(BaseTool):
     """
     Tool for updating existing Frappe documents.
@@ -261,6 +269,9 @@ class DocumentUpdate(BaseTool):
             "like) and records that change the database schema are not for a list: update them one "
             "at a time, each with doctype, name and data. "
             "Show the user the changes as a table first; the approval card then lists each one. "
+            "To change a small part of a long text or code field (a FAC Page's HTML, a script), pass "
+            "'edits' ([{'field', 'find', 'replace'}]) with 'name' instead of resending the whole field: "
+            "each 'find' must match the stored text exactly once. "
             "To test a rule that runs when a record is edited, pass validate_only: true; nothing is saved."
         )
         self.requires_permission = None  # Permission checked dynamically per DocType
@@ -301,6 +312,21 @@ class DocumentUpdate(BaseTool):
                         },
                         "required": ["doctype", "name", "data"],
                     },
+                },
+                "edits": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "field": {"type": "string"},
+                            "find": {"type": "string"},
+                            "replace": {"type": "string"},
+                        },
+                        "required": ["field", "find", "replace"],
+                    },
+                    "description": "Small changes to a long text or code field: each 'find' must match the stored "
+                    "text exactly once and is replaced by 'replace'. Applied in order. Use for edits "
+                    "to an existing FAC Page or script instead of resending the whole field.",
                 },
                 "names": {
                     "type": "array",
@@ -348,10 +374,19 @@ class DocumentUpdate(BaseTool):
                 "doctype": doctype,
             }
 
+        if arguments.get("edits") is not None and forms != ["name"]:
+            return {
+                "success": False,
+                "error": _("Edits work on one record at a time; pass 'name'."),
+                "doctype": doctype,
+            }
+
         if forms == ["name"]:
-            if "data" not in arguments:
+            if "data" not in arguments and arguments.get("edits") is None:
                 return {"success": False, "error": _("Pass the changes in 'data'."), "doctype": doctype}
-            return self._update_one(doctype, arguments["name"], arguments["data"], arguments, validate_only)
+            return self._update_one(
+                doctype, arguments["name"], arguments.get("data", {}), arguments, validate_only
+            )
 
         mode = arguments.get("mode", "all_or_nothing")
         if forms == ["names"]:
@@ -410,7 +445,8 @@ class DocumentUpdate(BaseTool):
         if refused:
             return refused
         data, rename_requested = _split_rename(name, data, arguments)
-        if rename_requested and not data:
+        edits = arguments.get("edits")
+        if rename_requested and not data and not edits:
             return {
                 "success": False,
                 "error": _(
@@ -469,6 +505,9 @@ class DocumentUpdate(BaseTool):
 
             return parent_info
 
+        # The edited fields are written like those in 'data', so every field gate sees them too
+        gated_data = {**data, **dict.fromkeys(_edit_fields(edits))}
+
         # Import security validation
         from frappe_assistant_core.core.security_config import (
             validate_document_access,
@@ -476,7 +515,7 @@ class DocumentUpdate(BaseTool):
 
         # Validate document access with comprehensive permission checking
         validation_result = validate_document_access(
-            user=frappe.session.user, doctype=doctype, name=name, perm_type="write", data=data
+            user=frappe.session.user, doctype=doctype, name=name, perm_type="write", data=gated_data
         )
 
         if not validation_result["success"]:
@@ -492,6 +531,11 @@ class DocumentUpdate(BaseTool):
 
             # Get document
             doc = frappe.get_doc(doctype, name)
+
+            if edits is not None:
+                problem = edit_target_problem(doctype, edits, data)
+                if problem:
+                    return {"success": False, "error": problem, "doctype": doctype, "name": name}
 
             # Enhanced document state validation
             current_docstatus = getattr(doc, "docstatus", 0)
@@ -519,7 +563,7 @@ class DocumentUpdate(BaseTool):
             # Top-level restricted-field check (excludes child-table fields, which are checked
             # separately against the child doctype's restricted set).
             restricted_top_level = [
-                field for field in data.keys() if field in parent_restricted and field not in table_fields
+                field for field in gated_data if field in parent_restricted and field not in table_fields
             ]
             if restricted_top_level:
                 return {
@@ -529,6 +573,22 @@ class DocumentUpdate(BaseTool):
                         f"These fields require higher privileges."
                     ),
                 }
+
+            if edits is not None:
+                try:
+                    data = effective_data(
+                        {edit["field"]: doc.get(edit["field"]) for edit in edits}, data, edits
+                    )
+                except EditError as e:
+                    return {
+                        "success": False,
+                        "error": str(e),
+                        "error_type": "edit_not_applied",
+                        "field": e.field,
+                        "match_count": e.count,
+                        "doctype": doctype,
+                        "name": name,
+                    }
 
             refusal = server_script_guard(
                 doctype,
@@ -682,7 +742,10 @@ class DocumentUpdate(BaseTool):
     def _execute_many(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
         """Update ``documents`` in one call: checked first, then all updated or none."""
         try:
-            documents = document_batch.read_documents(arguments, ("doctype", "name", "data"), with_name=True)
+            # edits work on one record (with name), so they are refused beside documents too
+            documents = document_batch.read_documents(
+                arguments, ("doctype", "name", "data", "edits"), with_name=True
+            )
             document_batch.check_access(documents, "write")
             if arguments.get("validate_only"):
                 return self._validate_many(documents)

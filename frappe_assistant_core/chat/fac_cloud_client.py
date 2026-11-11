@@ -82,9 +82,15 @@ __all__ = [
 ]
 
 
-def get_fac_cloud_client() -> AssistantRuntimeClient | None:
+SHORT_CALL_TIMEOUT = 3
+
+
+def get_fac_cloud_client(timeout: float | None = None) -> AssistantRuntimeClient | None:
     """
     Factory function to get a configured FAC Cloud client from FAC Chat Settings.
+
+    Args:
+        timeout: Per-request timeout in seconds. None keeps the SDK default.
 
     Returns:
         Configured AssistantRuntimeClient or None if not registered
@@ -122,10 +128,12 @@ def get_fac_cloud_client() -> AssistantRuntimeClient | None:
         frappe.db.commit()
         return None
 
+    client_kwargs = {} if timeout is None else {"timeout": timeout}
     return AssistantRuntimeClient(
         tenant_id=settings.tenant_id,
         tenant_secret=tenant_secret,
         ar_url=fac_cloud_url,
+        **client_kwargs,
         # Origin binding (Phase 2): the SDK injects this into every signed
         # payload. AR's validate_tenant_signature rejects requests without it.
         site_url=frappe.utils.get_url(),

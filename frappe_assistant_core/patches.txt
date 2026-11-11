@@ -93,3 +93,6 @@ frappe_assistant_core.patches.v3_2.remove_plan_questions_tool
 # Version 3.2.0 - the data migration tools moved from core to the migration plugin: their stored
 # plugin and module path, and the plugin switched on so every site keeps them
 frappe_assistant_core.patches.v3_2.move_migration_tools_to_their_plugin
+
+# Version 3.3.0 - server-setup check: size it for 10 concurrent chatters until an admin sets a number
+frappe_assistant_core.patches.v3_3.seed_expected_concurrent_chatters

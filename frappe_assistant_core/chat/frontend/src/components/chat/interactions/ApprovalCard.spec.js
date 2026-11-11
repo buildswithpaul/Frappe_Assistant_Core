@@ -312,6 +312,36 @@ describe("ApprovalCard for customisations", () => {
 		expect(wrapper.find(".diff-add").text()).toContain("new");
 	});
 
+	it("update card with edits diffs stored code against the edited code", async () => {
+		currentCode.mockReset();
+		currentCode.mockResolvedValue({ script: "a\nold\nc" });
+		const block = scriptBlock({}, "update_document");
+		block.input = { doctype: "Server Script", name: "SS-1", edits: [{ field: "script", find: "old", replace: "new" }] };
+		const wrapper = mount(ApprovalCard, { props: { block } });
+		await flushPromises();
+		expect(currentCode).toHaveBeenCalledWith("Server Script", "SS-1", ["script"]);
+		expect(wrapper.find(".diff-del").text()).toContain("old");
+		expect(wrapper.find(".diff-add").text()).toContain("new");
+		expect(wrapper.find("[data-test=edits-notice]").exists()).toBe(false);
+		expect(wrapper.find("[data-test=raw-edits]").exists()).toBe(false);
+	});
+
+	it("shows the edits raw with a notice when they do not apply", async () => {
+		currentCode.mockReset();
+		currentCode.mockResolvedValue({ script: "a\nb" });
+		const block = scriptBlock({}, "update_document");
+		block.input = { doctype: "Server Script", name: "SS-1", edits: [{ field: "script", find: "zz", replace: "yy" }] };
+		const wrapper = mount(ApprovalCard, { props: { block } });
+		await flushPromises();
+		expect(wrapper.find("[data-test=edits-notice]").text()).toBe(
+			"These edits could not be applied to the stored text, so they are shown as sent.",
+		);
+		const raw = wrapper.find("[data-test=raw-edits]").text();
+		expect(raw).toContain("zz");
+		expect(raw).toContain("yy");
+		expect(wrapper.find(".diff-add").exists()).toBe(false);
+	});
+
 	it("diff falls back to new code when the current value cannot be fetched", async () => {
 		currentCode.mockReset();
 		currentCode.mockRejectedValue(new Error("denied"));

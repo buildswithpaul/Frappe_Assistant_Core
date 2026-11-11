@@ -9,6 +9,7 @@
 		<div v-if="showQuota" class="quota-pill" data-test="plan-quota">
 			<span class="quota-value">{{ quotaValue }}</span>
 			<span class="quota-label">{{ quotaLabel }}</span>
+			<span v-if="scope.stale" class="quota-label" data-test="plan-stale">May be out of date</span>
 		</div>
 
 		<ul class="perks">

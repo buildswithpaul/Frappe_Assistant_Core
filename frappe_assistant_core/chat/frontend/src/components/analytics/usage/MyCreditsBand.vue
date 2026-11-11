@@ -1,6 +1,7 @@
 <template>
 	<div class="my-credits-band">
 		<AllowanceCard v-bind="allowance" :label="label" :note="scope.isPersonal ? '' : __('Shared by your workspace')" />
+		<p v-if="scope.stale" class="stale-note" data-test="stale-note">{{ __("May be out of date") }}</p>
 		<p v-if="block" class="notice" role="status" data-test="at-limit">
 			{{ atLimitIntro }}
 			<router-link v-if="isAdmin" class="notice-link" to="/settings/users" data-test="change-limit">
@@ -73,6 +74,13 @@ const workspaceOutText = computed(() =>
 	display: grid;
 	gap: 0.75rem;
 	margin-bottom: 1.5rem;
+}
+
+.stale-note {
+	margin: 0;
+	font-size: 0.75rem;
+	font-style: italic;
+	color: var(--ql-text-muted, #6b7280);
 }
 
 .notice {
