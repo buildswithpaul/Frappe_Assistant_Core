@@ -1029,13 +1029,20 @@ class TestOneValueForEveryRow(BaseAssistantTest):
         # fill was refused and FACO could only leave the items out. A hook that refuses so stands in.
         from erpnext.stock.doctype.item.item import Item
 
+        from frappe_assistant_core.tests.base_test import item_hsn_fields
+
         brand = frappe.get_doc({"doctype": "Brand", "brand": f"Acme {self.tag}"}).insert().name
-        lines = ["Code,Name,UOM,Group"] + [f"B{i} {self.tag},Bolt {i},Nos,{self.group}" for i in (1, 2)]
+        hsn = list(item_hsn_fields().values())  # India Compliance refuses an Item without one
+        lines = ["Code,Name,UOM,Group" + (",HSN" if hsn else "")] + [
+            ",".join([f"B{i} {self.tag}", f"Bolt {i}", "Nos", self.group, *hsn]) for i in (1, 2)
+        ]
         file_doc = frappe.get_doc(
             {"doctype": "File", "file_name": "items.csv", "content": "\n".join(lines) + "\n", "is_private": 1}
         ).insert()
         session = self._run("start_import_session", {"file_url": file_doc.file_url})["result"]["session_id"]
         mapping = {"Code": "item_code", "Name": "item_name", "UOM": "stock_uom", "Group": "item_group"}
+        if hsn:
+            mapping["HSN"] = "gst_hsn_code"
         self.assertTrue(
             self._run("set_column_mapping", {"session": session, "doctype": "Item", "mapping": mapping})[
                 "success"
