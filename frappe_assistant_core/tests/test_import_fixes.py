@@ -953,6 +953,62 @@ class TestOneValueForEveryRow(BaseAssistantTest):
         groups = frappe.get_all("Item", filters={"item_code": ["like", f"% {self.tag}"]}, pluck="item_group")
         self.assertEqual(groups, [self.group, self.group])
 
+    def test_a_field_an_app_says_is_required_in_its_own_words_is_filled_in(self):
+        # PR #392, F4: India Compliance refuses an Item with "HSN/SAC Code is required. Please enter
+        # a valid HSN/SAC code." (a MandatoryError, not Frappe's "Value missing for Item: ..."), so
+        # fill was refused and FACO could only leave the items out. A hook that refuses so stands in.
+        from erpnext.stock.doctype.item.item import Item
+
+        brand = frappe.get_doc({"doctype": "Brand", "brand": f"Acme {self.tag}"}).insert().name
+        lines = ["Code,Name,UOM,Group"] + [f"B{i} {self.tag},Bolt {i},Nos,{self.group}" for i in (1, 2)]
+        file_doc = frappe.get_doc(
+            {"doctype": "File", "file_name": "items.csv", "content": "\n".join(lines) + "\n", "is_private": 1}
+        ).insert()
+        session = self._run("start_import_session", {"file_url": file_doc.file_url})["result"]["session_id"]
+        mapping = {"Code": "item_code", "Name": "item_name", "UOM": "stock_uom", "Group": "item_group"}
+        self.assertTrue(
+            self._run("set_column_mapping", {"session": session, "doctype": "Item", "mapping": mapping})[
+                "success"
+            ]
+        )
+        real_validate = Item.validate
+
+        def validate(item):
+            if not item.brand:
+                # nosemgrep: frappe-missing-translate-function-python — a test stand-in for an app's refusal
+                frappe.throw("Brand is required. Please enter a valid brand.", frappe.MandatoryError)
+            return real_validate(item)
+
+        with patch.object(Item, "validate", validate):
+            checked = self._run("dry_run_import", {"session": session})["result"]
+            group = next(g for g in checked["groups"] if g["error"] == "MandatoryError")
+            fill = [f for f in group["fixes"] if f["action"] == "fill"]
+            self.assertEqual([f["field"] for f in fill], ["brand"], group)
+
+            fixed = self._run(
+                "dry_run_import",
+                {"session": session, "fixes": [{"group": group["id"], "action": "fill", "value": brand}]},
+            )
+
+        self.assertTrue(fixed["success"], fixed)
+        self.assertEqual((fixed["result"]["ready"], fixed["result"]["failed"]), (2, 0))
+
+    def test_an_app_message_naming_no_field_of_the_doctype_offers_no_fill(self):
+        session = self._session()
+        group = {
+            "cause": import_dry_run.CAUSE_REJECTED,
+            "error": "MandatoryError",
+            "message": "Something else is required first.",
+        }
+
+        self.assertIsNone(import_fixes._fill_field(engine_session(session), group))
+
+    def test_hsn_explanation_offers_one_code_for_every_item(self):
+        explanation = import_fixes.known_refusal("HSN/SAC Code is required.", "3 rows")
+
+        self.assertNotIn("give the items their code first", explanation)
+        self.assertIn("one code for every item", explanation)
+
     def test_a_value_that_isnt_a_record_is_refused(self):
         session = self._session()
         checked = self._run("dry_run_import", {"session": session})["result"]

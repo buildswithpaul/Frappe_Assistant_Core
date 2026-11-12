@@ -224,15 +224,39 @@ def _fill_field(session, group: Dict[str, Any]):
         if group.get("parent", session.target_doctype) == session.target_doctype:
             df = meta.get_field(group.get("field"))
     elif group.get("cause") == dry_run.CAUSE_REJECTED and group.get("error") == "MandatoryError":
-        found = re.search(r"Value missing for (.+?): (.+)$", cstr(group.get("message")).strip())
+        message = cstr(group.get("message")).strip()
+        found = re.search(r"Value missing for (.+?): (.+)$", message)
         if found and found.group(1).strip() in (session.target_doctype, _(session.target_doctype)):
             label = found.group(2).strip()
             fields = [field for field in meta.fields if field.reqd and label in (field.label, _(field.label))]
             df = fields[0] if len(fields) == 1 else None
+        elif not found:
+            df = _field_named_in(meta, message)
     # One value for every record can't be what names or titles each, nor one no two records share
     if not df or df.unique or df.fieldname in (dry_run._name_field(session.target_doctype), meta.title_field):
         return None
     return df
+
+
+def _field_named_in(meta, message: str):
+    """The one field of ``meta`` an app's own "<Label> is required" names, or None. India Compliance
+    refuses an Item with "HSN/SAC Code is required. Please enter a valid HSN/SAC code." for its
+    HSN/SAC field, which isn't mandatory in the DocType (PR #392, F4). The longest label found in
+    the message wins (HSN/SAC over a field called Code); two fields with that label are no answer."""
+    from frappe.model import data_fieldtypes, table_fields
+
+    text = message.casefold()
+    found = {}
+    for field in meta.fields:
+        if field.fieldtype not in data_fieldtypes or field.fieldtype in table_fields or field.read_only:
+            continue
+        for label in {field.label, _(field.label)} - {None, ""}:
+            if re.search(r"(?<!\w)" + re.escape(label.casefold()) + r"(?!\w)", text):
+                found.setdefault(len(label), set()).add(field.fieldname)
+    if not found:
+        return None
+    longest = found[max(found)]
+    return meta.get_field(next(iter(longest))) if len(longest) == 1 else None
 
 
 def _fill(session, group: Dict[str, Any], fix: Dict[str, Any], wanted: List[Dict[str, Any]]):
@@ -507,7 +531,7 @@ def known_refusals() -> Tuple[Tuple[str, str], ...]:
             r"HSN.{0,3}SAC|HSN code",
             _(
                 "{0}: India Compliance needs an HSN/SAC code on each item. Map the column that has it, "
-                "or give the items their code first."
+                "or give one code for every item (fill)."
             ),
         ),
         (
