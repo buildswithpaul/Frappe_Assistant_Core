@@ -27,6 +27,7 @@ class StopMigrationPlan(BaseTool):
     def __init__(self):
         super().__init__()
         self.name = "stop_migration_plan"
+        self.retry_on_deadlock = True  # its work is all in the database
         self.description = (
             "Stop a migration plan when the user asks: a running one after the file importing now "
             "(what is already imported stays); one not run yet at once, nothing imported, so its "

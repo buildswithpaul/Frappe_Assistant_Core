@@ -80,6 +80,7 @@ class StartImportSession(BaseTool):
     def __init__(self):
         super().__init__()
         self.name = "start_import_session"
+        self.retry_on_deadlock = True  # its work is all in the database
         self.description = (
             "Start a data import: call it once for every file the user wants to import, a "
             "spreadsheet (.csv, .xlsx, .xls), a Tally XML masters export (.xml) or a Google Sheets "
@@ -693,6 +694,8 @@ class StartImportSession(BaseTool):
                     target_not_on_site,
                     target_already,
                 )
+            except frappe.QueryDeadlockError:
+                raise  # the database undid the call: _safe_execute runs it again or says so
             except Exception as e:
                 frappe.db.rollback(save_point=savepoint)
                 frappe.log_error(

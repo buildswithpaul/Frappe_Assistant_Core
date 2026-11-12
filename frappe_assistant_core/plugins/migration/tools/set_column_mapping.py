@@ -61,6 +61,7 @@ class SetColumnMapping(BaseTool):
     def __init__(self):
         super().__init__()
         self.name = "set_column_mapping"
+        self.retry_on_deadlock = True  # its work is all in the database
         self.description = (
             "Save which column of the user's migration file goes to which ERPNext field, on its "
             "import session. Pass only the columns to set or change; columns already mapped keep "
@@ -322,6 +323,8 @@ class SetColumnMapping(BaseTool):
                 )
             return result
 
+        except frappe.QueryDeadlockError:
+            raise  # the database undid the call: _safe_execute runs it again or says so
         except Exception as e:
             frappe.log_error(
                 title=_("Set Column Mapping Error"), message=f"Error saving column mapping: {e!s}"

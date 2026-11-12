@@ -41,6 +41,7 @@ class DryRunImport(BaseTool):
     def __init__(self):
         super().__init__()
         self.name = "dry_run_import"
+        self.retry_on_deadlock = True  # its work is all in the database
         self.description = (
             "Check every row of an import session's file the way the real import would, writing "
             "nothing: required fields, links, duplicates (in the file and already in ERPNext) and "
@@ -245,6 +246,8 @@ class DryRunImport(BaseTool):
                 return {"success": True, **import_failures.failed_rows_file(session)}
             except (import_failures.FailuresProblem, FileProblem) as e:
                 return {"success": False, "error": str(e), "session": session_name}
+            except frappe.QueryDeadlockError:
+                raise  # the database undid the call: _safe_execute runs it again or says so
             except Exception as e:
                 frappe.log_error(title=_("Failed Rows File Error"), message=frappe.get_traceback())
                 return {"success": False, "error": str(e), "session": session_name}
@@ -314,6 +317,8 @@ class DryRunImport(BaseTool):
             return {"success": False, "error": str(e), "problems": e.problems, "session": session_name}
         except (import_fixes.FixProblem, dry_run.DryRunProblem, FileProblem) as e:
             return {"success": False, "error": str(e), "session": session_name}
+        except frappe.QueryDeadlockError:
+            raise  # the database undid the call: _safe_execute runs it again or says so
         except Exception as e:
             frappe.log_error(title=_("Dry Run Import Error"), message=frappe.get_traceback())
             return {"success": False, "error": str(e), "session": session_name}
@@ -369,6 +374,8 @@ class DryRunImport(BaseTool):
             return _failed(str(e), applied, problems=e.problems)
         except (import_plan.PlanProblem, import_fixes.FixProblem) as e:
             return _failed(str(e), applied)
+        except frappe.QueryDeadlockError:
+            raise  # the database undid the call: _safe_execute runs it again or says so
         except Exception as e:
             frappe.log_error(title=_("Plan Check Error"), message=frappe.get_traceback())
             return _failed(exception_message(e), applied)

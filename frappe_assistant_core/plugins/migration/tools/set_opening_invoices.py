@@ -25,6 +25,7 @@ class SetOpeningInvoices(BaseTool):
     def __init__(self):
         super().__init__()
         self.name = "set_opening_invoices"
+        self.retry_on_deadlock = True  # its work is all in the database
         self.description = (
             "Make an import session's file the user's opening receivables (invoice_type Sales: what "
             "customers still owe) or payables (Purchase: what is still owed to suppliers), brought in "

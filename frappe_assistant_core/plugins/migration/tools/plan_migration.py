@@ -30,6 +30,7 @@ class PlanMigration(BaseTool):
     def __init__(self):
         super().__init__()
         self.name = "plan_migration"
+        self.retry_on_deadlock = True  # its work is all in the database
         self.description = (
             "Group the import sessions of one migration into a plan, ordered so each file comes "
             "after the files whose records it links to (Item Groups before Items, Items before Item "
@@ -167,6 +168,8 @@ class PlanMigration(BaseTool):
             plan.save_open()
         except import_plan.PlanProblem as e:
             return {"success": False, "error": str(e)}
+        except frappe.QueryDeadlockError:
+            raise  # the database undid the call: _safe_execute runs it again or says so
         except Exception as e:
             frappe.log_error(title=_("Plan Migration Error"), message=frappe.get_traceback())
             return {"success": False, "error": exception_message(e)}

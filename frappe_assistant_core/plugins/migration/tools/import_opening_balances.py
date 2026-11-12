@@ -100,6 +100,8 @@ class ImportOpeningBalances(BaseTool):
             opening_balances.create(session)
         except (opening_balances.OpeningBalancesProblem, FileProblem) as e:
             return {"success": False, "error": str(e), "session": name}
+        except frappe.QueryDeadlockError:
+            raise  # the database undid the call: _safe_execute runs it again or says so
         except Exception as e:
             frappe.log_error(title=_("Opening Balances Import Error"), message=frappe.get_traceback())
             return {"success": False, "error": exception_message(e), "session": name}

@@ -145,11 +145,25 @@ def log_tool_execution(
             }
         )
 
-        audit_doc.insert(ignore_permissions=True)
+        # Named without a series number: every tool call writes this row, after the tool has run,
+        # and two calls at once taking the next number of the day's series collide. On MariaDB
+        # 11.6+ (innodb_snapshot_isolation) the loser's whole transaction is rolled back, the
+        # tool's own work with it (PR #392, F1). The date stays in the name.
+        audit_doc.insert(ignore_permissions=True, set_name=_audit_name(audit_doc))
 
+    except frappe.QueryDeadlockError:
+        raise  # the database undid the call, the tool's work included: the caller must know
     except Exception as e:
         # Don't fail tool execution due to audit logging issues
         frappe.logger("audit_trail").warning(f"Failed to log tool execution: {str(e)}")
+
+
+def _audit_name(audit_doc) -> str:
+    """The row's name: its naming series' prefix (ASST-AUDIT-2026-11-12-) and a random part."""
+    from frappe.model.naming import parse_naming_series
+
+    series = audit_doc.naming_series or audit_doc.meta.get_field("naming_series").default
+    return parse_naming_series(series.rstrip(".")) + frappe.generate_hash(length=10)
 
 
 def _list_target(documents: Any) -> tuple:

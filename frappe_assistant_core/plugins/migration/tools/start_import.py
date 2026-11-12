@@ -158,6 +158,8 @@ class StartImport(BaseTool):
             return {"success": True, "session": session_name, "status": "Completed", "message": str(e)}
         except (import_run.ImportProblem, FileProblem) as e:
             return {"success": False, "error": str(e), "session": session_name}
+        except frappe.QueryDeadlockError:
+            raise  # the database undid the call: _safe_execute runs it again or says so
         except Exception as e:
             frappe.log_error(title=_("Start Import Error"), message=frappe.get_traceback())
             return {"success": False, "error": exception_message(e), "session": session_name}

@@ -124,6 +124,8 @@ class RunMigrationPlan(BaseTool):
             import_plan.start(plan)
         except import_plan.PlanProblem as e:
             return {"success": False, "error": str(e), "plan": plan.name}
+        except frappe.QueryDeadlockError:
+            raise  # the database undid the call: _safe_execute runs it again or says so
         except Exception as e:
             frappe.log_error(title=_("Run Migration Plan Error"), message=frappe.get_traceback())
             return {"success": False, "error": exception_message(e), "plan": plan.name}

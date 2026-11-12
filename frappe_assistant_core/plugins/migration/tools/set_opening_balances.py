@@ -25,6 +25,7 @@ class SetOpeningBalances(BaseTool):
     def __init__(self):
         super().__init__()
         self.name = "set_opening_balances"
+        self.retry_on_deadlock = True  # its work is all in the database
         self.description = (
             "Make an import session's file the old system's closing trial balance, brought in as one "
             "opening Journal Entry (voucher type Opening Entry) at the cut-off date. Use it instead of "

@@ -19,6 +19,7 @@ Base class for all MCP tools with configuration and dependency management.
 """
 
 import json
+import random
 import re
 import time
 import traceback
@@ -114,6 +115,20 @@ class InvalidArguments(frappe.ValidationError):
     server doesn't fence it as file content (#34003)."""
 
 
+#: How many more times a tool call that the database undid is run (retry_on_deadlock tools only).
+LOST_CALL_RETRIES = 2
+
+
+def lost_call_message() -> str:
+    """What a tool call says when the database undid it: a deadlock (MariaDB 1213) or, on MariaDB
+    11.6+ (innodb_snapshot_isolation), "Record has changed since last read" (1020). Frappe raises
+    frappe.QueryDeadlockError for both, and MariaDB has rolled the whole transaction back."""
+    return _(
+        "Another call changed the same records at the same moment, so the database undid this call "
+        "and nothing from it was saved. Call it again, one call at a time."
+    )
+
+
 class BaseTool(ABC):
     """
     Base class for all Frappe Assistant Core tools.
@@ -128,6 +143,9 @@ class BaseTool(ABC):
         dependencies: List of required dependencies
         default_config: Default configuration values
         audit_executions: Whether each call writes an Assistant Audit Log row
+        retry_on_deadlock: Whether a call the database undid (frappe.QueryDeadlockError) is run
+            again from the start. Only for a tool whose work is all in the database, so a call
+            run twice leaves what one call would: nothing it does outside is lost or doubled.
     """
 
     #: Result fields that carry the user's file content (dotted paths, "groups[].examples" for
@@ -151,6 +169,7 @@ class BaseTool(ABC):
         # Opt out only for a hidden check that never writes: its row would repeat the input of
         # the write it checks, which that write's own row already records.
         self.audit_executions: bool = True
+        self.retry_on_deadlock: bool = False
         self.logger = frappe.logger(self.__class__.__module__)
         self._config_cache: Optional[Dict[str, Any]] = None
 
@@ -245,12 +264,62 @@ class BaseTool(ABC):
         """
         Safely execute tool with error handling, timing, and audit logging.
 
+        A call the database undid is never reported as a success: MariaDB rolls the whole
+        transaction back on a deadlock, and on 11.6+ on "Record has changed since last read" (two
+        calls at once taking numbers from one naming series). The call is run again when the tool
+        allows it (retry_on_deadlock), otherwise it says that nothing was saved.
+
         Args:
             arguments: Tool arguments
 
         Returns:
             Execution result with success/error status
         """
+        start_time = time.time()
+        tries = 1 + (LOST_CALL_RETRIES if self.retry_on_deadlock else 0)
+        for attempt in range(tries):
+            savepoint = f"fac_tool_call_{frappe.generate_hash(length=8)}"
+            frappe.db.savepoint(savepoint)
+            try:
+                return self._execute_once(arguments)
+            except frappe.QueryDeadlockError as e:
+                self._undo_lost_call(savepoint)
+                lost = e
+                if attempt + 1 < tries:
+                    time.sleep(random.uniform(0.05, 0.25) * (attempt + 1))  # let the other call finish
+        return self._lost_call_response(arguments, lost, time.time() - start_time)
+
+    @staticmethod
+    def _undo_lost_call(savepoint: str) -> None:
+        """Undo what is left of a call the database undid. On MariaDB the transaction, and the
+        savepoint with it, is already gone: a full rollback then runs Frappe's own rollback work
+        (caches, files written for the call). A database that only undid the statement (the
+        tests, MariaDB 10.6's lock wait) still holds the savepoint, and the work before the call
+        stays."""
+        try:
+            frappe.db.rollback(save_point=savepoint)
+        except Exception:
+            frappe.db.rollback()
+        frappe.clear_messages()
+
+    def _lost_call_response(self, arguments: Dict[str, Any], error: Exception, execution_time: float):
+        response = {
+            "success": False,
+            "error": lost_call_message(),
+            "error_type": "DatabaseBusy",
+            "own_message": True,  # FAC's own words: nothing of the user's file in it
+            "execution_time": execution_time,
+        }
+        try:
+            self.log_execution(arguments, response, execution_time, status="Error", traceback_str=repr(error))
+        except frappe.QueryDeadlockError:
+            frappe.db.rollback()  # the call already failed: its audit row is the only thing lost
+        self.logger.warning(f"{self.name}: the database undid the call: {error!r}")
+        return response
+
+    def _execute_once(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
+        """One run of the tool, with its audit row. frappe.QueryDeadlockError is raised on to
+        _safe_execute: the database has undone everything this run did."""
         start_time = time.time()
 
         try:
@@ -295,6 +364,9 @@ class BaseTool(ABC):
                 self.logger.info(f"Successfully executed {self.name} in {execution_time:.3f}s")
 
             return response
+
+        except frappe.QueryDeadlockError:
+            raise
 
         except frappe.PermissionError as e:
             execution_time = time.time() - start_time
@@ -512,6 +584,8 @@ class BaseTool(ABC):
                 traceback_str=traceback_str,
                 output_data=sanitized_output,
             )
+        except frappe.QueryDeadlockError:
+            raise  # the database undid the whole call, the tool's work included: never a success
         except Exception as e:
             # Don't fail tool execution due to logging issues
             self.logger.warning(f"Failed to log execution for {self.name}: {str(e)}")
