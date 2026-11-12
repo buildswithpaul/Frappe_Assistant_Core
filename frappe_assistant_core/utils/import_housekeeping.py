@@ -115,6 +115,7 @@ def sessions(filters: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
             "target_doctype",
             "status",
             "plan_status",
+            "migration_plan",
             "modified",
             "source_file",
         ],
@@ -130,6 +131,19 @@ def sessions(filters: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
             order_by="idx asc",
         ):
             last_steps[step.parent] = f"{_(step.step)}: {_(step.outcome)}"
+    # A plan keeps its status on its first file's session: every file of it shows the plan's
+    # (PR #392, L5: the Plan column was filled on the first file only)
+    plans = {row.migration_plan for row in rows if row.migration_plan}
+    plan_status = dict(
+        frappe.get_all(
+            SESSION_DOCTYPE,
+            filters={"name": ["in", list(plans)]},
+            fields=["name", "plan_status"],
+            as_list=True,
+        )
+        if plans
+        else []
+    )
     today = now_datetime()
     out = []
     for row in rows:
@@ -143,7 +157,8 @@ def sessions(filters: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
                 "file_name": row.file_name,
                 "target_doctype": row.target_doctype,
                 "status": row.status,
-                "plan_status": row.plan_status,
+                "migration_plan": row.migration_plan,
+                "plan_status": plan_status.get(row.migration_plan) or row.plan_status,
                 "last_step": last_steps.get(row.name, ""),
                 "age_days": date_diff(today, row.modified),
                 "holds_file": 1

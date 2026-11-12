@@ -222,6 +222,16 @@ class TestDataImportSession(run_tests.ImportRunCase):
         self.assertIn("&lt;img src=x onerror=alert(1)&gt;", details)
         self.assertNotIn("<img", result["message"])
 
+    def test_the_details_are_read_without_scrolling_past_every_number(self):
+        # PR #392, L5: the open points sat off-screen, after fourteen number columns, and the values
+        # column was clipped
+        from frappe_assistant_core.utils import import_signoff
+
+        names = [c["fieldname"] for c in import_signoff.columns()]
+        self.assertEqual(names[:3], ["section", "item", "details"])
+        money = [c for c in import_signoff.columns() if c["fieldtype"] == "Float"]
+        self.assertTrue(all(c["width"] >= 150 for c in money), money)
+
     def test_an_apostrophe_is_shown_as_one(self):
         # PR #392, L5: an open point read "don&apos;t" in the chat. Desk shows a cell as HTML, and a
         # quote in its text is harmless there; the chat and the PDF show the text itself.

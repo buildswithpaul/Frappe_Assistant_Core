@@ -639,11 +639,14 @@ STATUS_TITLES = {"excluded": "Left out", "failed": "Failed", "not_imported": "No
 
 
 def columns() -> List[Dict[str, Any]]:
-    money = {"fieldtype": "Float", "precision": 2, "width": 130}
+    # The details right after the item, so an open point is read without scrolling past every
+    # number, and amounts wide enough for 2,45,400.00 (PR #392, L5)
+    money = {"fieldtype": "Float", "precision": 2, "width": 150}
     count = {"fieldtype": "Int", "width": 100}
     return [
         {"fieldname": "section", "label": _("Section"), "fieldtype": "Data", "width": 140},
         {"fieldname": "item", "label": _("Item"), "fieldtype": "Data", "width": 220},
+        {"fieldname": "details", "label": _("Details"), "fieldtype": "Data", "width": 420},
         {
             "fieldname": "company",
             "label": _("Company"),
@@ -662,7 +665,6 @@ def columns() -> List[Dict[str, Any]]:
         {"fieldname": "imported_amount", "label": _("Imported Rows Amount"), **money},
         {"fieldname": "in_erpnext", "label": _("In ERPNext"), **money},
         {"fieldname": "difference", "label": _("Difference"), **money},
-        {"fieldname": "details", "label": _("Details"), "fieldtype": "Data", "width": 420},
     ]
 
 
