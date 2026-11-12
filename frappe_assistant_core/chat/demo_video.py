@@ -2,7 +2,7 @@
 # Copyright (C) 2025 Paul Clinton
 # AGPL-3.0 License
 
-"""The FAC Chat setup video: a short YouTube walkthrough FAC Admin links to as "How setup works".
+"""The FAC Chat demo video: a short YouTube video the Desk shows before chat is switched on.
 
 There is no separate site to host it, so it lives on YouTube. The link is set once here for
 every site; a site can point elsewhere with ``fac_demo_video_url`` in site_config.json (for
@@ -15,8 +15,8 @@ from urllib.parse import parse_qs, urlparse
 
 import frappe
 
-# The 30-second "How setup works" walkthrough, shown from FAC Admin. Empty = no link anywhere.
-DEMO_VIDEO_URL = "https://youtu.be/tIjhyoiNvWs"
+# Set when the 30-second demo is published. Empty = no "Watch the demo" button anywhere.
+DEMO_VIDEO_URL = ""
 
 _VIDEO_ID = re.compile(r"^[A-Za-z0-9_-]{11}$")
 _LONG_HOSTS = {
