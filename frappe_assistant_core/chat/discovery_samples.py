@@ -19,6 +19,17 @@ def samples_enabled() -> bool:
     return bool(frappe.conf.get("fac_discovery_samples"))
 
 
+def with_sample_discovery(capabilities: dict) -> dict:
+    """Add the sample Your FAC powers to a capabilities response when AR sent none.
+
+    Both capabilities endpoints use this: init on boot, and get_capabilities, which the chat
+    page calls again afterwards and whose answer replaces the first one.
+    """
+    if samples_enabled() and not capabilities.get("discovery"):
+        return {**capabilities, "discovery": sample_discovery_capability()}
+    return capabilities
+
+
 def sample_notifications() -> list[dict]:
     """One tip and one story in the shape AR will send them."""
     return [
@@ -49,14 +60,17 @@ def sample_notifications() -> list[dict]:
                 {
                     "title": "⚡ Agents do the routine work",
                     "message": "Pick a template and FAC checks, emails or updates things for you on a schedule.",
+                    "feature": "agents",
                 },
                 {
                     "title": "📚 Answers from your own files",
                     "message": "Upload a price list or a policy to Knowledge and FAC answers from it.",
+                    "feature": "knowledge",
                 },
                 {
                     "title": "📊 Save any answer as a Page",
                     "message": "Ask for numbers, then keep them as a live Page you can share as PDF.",
+                    "feature": "pages",
                     "action_label": "Try it",
                     "action_route": "/chat",
                 },

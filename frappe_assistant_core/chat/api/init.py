@@ -428,11 +428,9 @@ def _format_user_auth(user_auth: dict | None, settings: Document) -> dict:
 
 def _with_sample_discovery(capabilities: dict) -> dict:
     """Add the sample Your FAC powers on a test site (site_config fac_discovery_samples) when AR sent none."""
-    from frappe_assistant_core.chat.discovery_samples import sample_discovery_capability, samples_enabled
+    from frappe_assistant_core.chat.discovery_samples import with_sample_discovery
 
-    if samples_enabled() and not capabilities.get("discovery"):
-        return {**capabilities, "discovery": sample_discovery_capability()}
-    return capabilities
+    return with_sample_discovery(capabilities)
 
 
 # ============================================================================

@@ -92,12 +92,19 @@ export function safeRoute(route) {
 	return typeof route === "string" && /^\/(?![/\\])/.test(route) && !/\s/.test(route) ? route : null;
 }
 
+/** A slide's picture: AR's image or video, else the moving preview of the feature it names, else none. */
+function slideMedia(s) {
+	if (s.media_url) return { url: s.media_url, type: s.media_type || "image", alt: s.media_alt || "" };
+	const feature = s.feature && featureById(s.feature);
+	return feature ? { art: "feature", feature: feature.id } : null;
+}
+
 function slideFrom(s) {
 	if (!s || typeof s !== "object" || !s.title) return null;
 	return {
 		title: String(s.title),
 		message: s.message ? String(s.message) : "",
-		media: s.media_url ? { url: s.media_url, type: s.media_type || "image", alt: s.media_alt || "" } : null,
+		media: slideMedia(s),
 		action: s.action_label && safeRoute(s.action_route) ? { label: s.action_label, route: s.action_route } : null,
 	};
 }

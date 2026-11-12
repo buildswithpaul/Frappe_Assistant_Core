@@ -5,6 +5,7 @@ import { __ } from "@/utils/i18n";
 import { renderNotificationMarkdown } from "@/utils/markdown";
 import { storySlides } from "@/components/discover/discoveryRules";
 import SpotlightMedia from "@/components/spotlight/SpotlightMedia.vue";
+import FeaturePreviewArt from "@/components/discover/FeaturePreviewArt.vue";
 
 /**
  * A What's new story: a few full-screen slides written in AR. Plays on its own, pauses while
@@ -118,8 +119,11 @@ onBeforeUnmount(stop);
 					<button type="button" class="story-x" :aria-label="__('Close')" data-test="story-close" @click="close">✕</button>
 				</div>
 
-				<div v-if="slide.media" class="story-media"><SpotlightMedia :media="slide.media" /></div>
-				<div class="story-body">
+				<div v-if="slide.media" class="story-media" data-test="story-media">
+					<FeaturePreviewArt v-if="slide.media.art === 'feature'" :feature="slide.media.feature" />
+					<SpotlightMedia v-else :media="slide.media" />
+				</div>
+				<div class="story-body" :class="{ 'story-body--alone': !slide.media }">
 					<h2 class="story-title">{{ slide.title }}</h2>
 					<div v-if="slide.message" class="story-text" v-html="renderNotificationMarkdown(slide.message)"></div>
 					<button v-if="slide.action" type="button" class="story-cta" data-test="story-action" @click="act(slide.action)">
@@ -156,6 +160,9 @@ onBeforeUnmount(stop);
 .story-media { flex: 1; min-height: 0; margin: 14px 0; overflow: hidden; border-radius: 12px; }
 .story-media :deep(img), .story-media :deep(video) { width: 100%; height: 100%; object-fit: cover; }
 .story-body { position: relative; z-index: 2; margin-top: auto; }
+/* A slide with no picture: its words sit in the middle, not under an empty box. */
+.story-body--alone { margin-block: auto; text-align: center; }
+.story-media :deep(.fpa) { height: 100%; }
 .story-title { margin: 0 0 6px; font-size: 22px; line-height: 1.25; font-weight: 700; }
 .story-text { font-size: 14px; line-height: 1.5; color: var(--ql-text-secondary); }
 .story-text :deep(p) { margin: 0; }

@@ -36,6 +36,7 @@ def get_capabilities() -> dict:
                     }
             }
     """
+    from frappe_assistant_core.chat.discovery_samples import with_sample_discovery
     from frappe_assistant_core.chat.fac_cloud_client import (
         get_capabilities as fetch_capabilities,
     )
@@ -47,23 +48,25 @@ def get_capabilities() -> dict:
 
         billing_enabled = result.get("features", {}).get("billing", True)
         set_field("billing_enabled", billing_enabled)
-        return result
+        return with_sample_discovery(result)
 
     # Default: companion-app features off so UI hides them when AR is unreachable
-    return {
-        "billing_enabled": True,
-        "available_gateways": [],
-        "version": "unknown",
-        "features": {
-            "streaming": True,
-            "mcp_servers": True,
-            "rag": False,
-            "memory": False,
-            "billing": True,
-            "workflows": False,
-            "web_search": False,
-        },
-    }
+    return with_sample_discovery(
+        {
+            "billing_enabled": True,
+            "available_gateways": [],
+            "version": "unknown",
+            "features": {
+                "streaming": True,
+                "mcp_servers": True,
+                "rag": False,
+                "memory": False,
+                "billing": True,
+                "workflows": False,
+                "web_search": False,
+            },
+        }
+    )
 
 
 @frappe.whitelist(methods=["GET"])

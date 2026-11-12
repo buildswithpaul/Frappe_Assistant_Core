@@ -119,6 +119,22 @@ describe("storySlides", () => {
 		expect(slides[2].action).toBeNull();
 	});
 
+	it("a slide with no picture shows its feature's moving preview, AR's own picture first", () => {
+		const slides = storySlides({
+			id: "s",
+			slides: [
+				{ title: "A", feature: "agents" },
+				{ title: "B", feature: "agents", media_url: "https://x/b.png" },
+				{ title: "C", feature: "unknown" },
+			],
+		});
+		expect(slides.map((s) => s.media)).toEqual([
+			{ art: "feature", feature: "agents" },
+			{ url: "https://x/b.png", type: "image", alt: "" },
+			null,
+		]);
+	});
+
 	it("a story without slides plays as one slide", () => {
 		expect(storySlides({ id: "s", title: "New", message: "Hello" })).toEqual([
 			{ title: "New", message: "Hello", media: null, action: null },

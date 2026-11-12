@@ -170,6 +170,20 @@ class TestDiscoverySamples(BaseAssistantTest):
             self.assertEqual(styles, ["tip", "story"])
             self.assertEqual(init_mod._with_sample_discovery(caps)["discovery"]["powers"][0]["id"], "setup")
 
+    def test_the_chat_pages_own_capabilities_call_keeps_the_sample_powers(self):
+        # ChatView reloads capabilities through get_capabilities after init; without the samples
+        # there, the Your FAC ring, its panel and the Unlocked toast all vanished on a test site.
+        from frappe_assistant_core.chat.api.settings import capabilities
+
+        fetch = patch(
+            "frappe_assistant_core.chat.fac_cloud_client.get_capabilities",
+            autospec=True,
+            return_value={"features": {"billing": True}},
+        )
+        with patch.dict(frappe.conf, {"fac_discovery_samples": 1}), fetch:
+            result = capabilities.get_capabilities()
+        self.assertEqual(result["discovery"]["powers"][0]["id"], "setup")
+
     def test_ar_powers_win_over_the_samples(self):
         from frappe_assistant_core.chat.api import init as init_mod
 
