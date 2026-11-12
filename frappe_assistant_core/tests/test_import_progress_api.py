@@ -140,6 +140,36 @@ class TestPlanProgressApi(BaseAssistantTest):
         self.assertEqual({f["file_name"] for f in reply["files"]}, {"groups.csv", "regions.csv"})
         self.assertTrue(all("created" in f and "status" in f for f in reply["files"]))
 
+    # -- what a file's progress says it did (PR #392, L1) -------------------------------------
+
+    def test_a_file_with_every_row_left_out_is_not_shown_as_imported(self):
+        session = self._mapped(
+            "groups.csv", f"Name\nG {self.tag}\n".encode(), "Item Group", {"Name": "item_group_name"}
+        )
+        frappe.db.set_value(
+            "FAC Import Session", session, {"status": "Completed", "excluded_rows": frappe.as_json([2])}
+        )
+
+        shown = imports.progress(frappe.get_doc("FAC Import Session", session))
+
+        self.assertEqual(shown["created"], 0)
+        self.assertEqual(shown["left_out"], 1)
+        self.assertNotEqual(shown["step"], "imported")
+        self.assertEqual(shown["status_text"], "All rows left out")
+
+    def test_a_master_made_on_the_way_is_not_counted_as_a_record_of_the_file(self):
+        # Live: "4 created" for a 3-row opening invoices file, the new customer counted too
+        session = self._mapped(
+            "groups.csv", f"Name\nG {self.tag}\n".encode(), "Item Group", {"Name": "item_group_name"}
+        )
+        doc = frappe.get_doc("FAC Import Session", session)
+        doc.append("created_records", {"record_doctype": "Item Group", "record_name": "All Item Groups"})
+        doc.append(
+            "created_records", {"record_doctype": "Customer Group", "record_name": "All Customer Groups"}
+        )
+
+        self.assertEqual(imports.progress(doc)["created"], 1)
+
     # -- the Stop button on the plan's progress block (PR #392, F7) --------------------------
 
     def _plan(self):

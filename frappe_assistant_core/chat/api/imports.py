@@ -57,15 +57,20 @@ def _ready(doc) -> Optional[int]:
 
 def progress(doc) -> Dict[str, Any]:
     """One session as the chat shows it: its step, the counts so far and the Data Import running it."""
-    from frappe_assistant_core.utils import import_failures
+    from frappe_assistant_core.utils import import_failures, import_fixes
 
     runs = import_failures.runs(doc)
-    created = sum(run["created"] for run in runs) or len(doc.created_records)
+    created = import_failures.created_count(doc)
     # a retry imports the rows that failed before: the last run's failures are the ones left
     failed = runs[-1]["failed"] if runs else 0
+    left_out = len(import_fixes.left_out(doc))
     step = STEP_OF_STATUS.get(doc.status)
     if doc.status == "Failed":
         step = "imported" if runs else "checked"
+    status_text = None
+    if doc.status == "Completed" and not created and left_out and not runs:
+        # Every row was left out: nothing was imported, though the session is done (PR #392, L1)
+        step, status_text = "checked", _("All rows left out")
     return {
         "session": doc.name,
         "file_name": doc.file_name,
@@ -78,6 +83,8 @@ def progress(doc) -> Dict[str, Any]:
         "total": _ready(doc),
         "created": created,
         "failed": failed,
+        "left_out": left_out,
+        "status_text": status_text,
         # Frappe's own form URL: /app on v15, /desk on v16
         "url": frappe.utils.get_url_to_form(SESSION, doc.name),
     }

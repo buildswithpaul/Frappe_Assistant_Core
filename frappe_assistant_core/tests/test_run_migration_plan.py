@@ -234,6 +234,19 @@ class TestRunMigrationPlan(ImportRunCase):
         reported = {f["session"]: f for f in import_plan.result(doc)["files"]}
         self.assertEqual(reported[items]["left_out"], 2)
 
+    def test_rows_the_user_left_out_before_the_run_are_counted(self):
+        # PR #392, L1: the plan's left-out count had only the rows its failure rule left out
+        plan, _groups, items = self._ready_plan()
+        frappe.db.set_value(SESSION, items, "excluded_rows", frappe.as_json([3]))
+        self._run("dry_run_import", {"plan": plan})
+
+        self._approve(plan)
+
+        doc = import_plan.get_plan(plan)
+        reported = {f["session"]: f for f in import_plan.result(doc)["files"]}
+        self.assertEqual(reported[items]["left_out"], 1)
+        self.assertIn("1 rows left out", doc.steps[-1].message)
+
     def test_the_stop_rule_stops_before_the_file(self):
         # G2 now fails the groups file's own check, just before its import: the plan stops there.
         plan, groups, _items = self._ready_plan(rule="stop")

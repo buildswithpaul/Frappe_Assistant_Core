@@ -44,6 +44,19 @@ describe("the plan's progress block: Stop (PR #392, F7)", () => {
 		w.unmount();
 	});
 
+	it("says a file had every row left out, not that it was imported (PR #392, L1)", async () => {
+		api.imports.planProgress.mockResolvedValue({
+			...running, status: "Completed", running: false, ended: true,
+			files: [{ session: "IMP-11", file_name: "suppliers.csv", status: "Completed", status_text: "All rows left out", created: 0, left_out: 4 }],
+		});
+		const w = mount(PlanProgressBlock, { props: { plan: "IMP-9" } });
+		await flushPromises();
+		expect(w.text()).toContain("All rows left out");
+		expect(w.text()).toContain("4 left out");
+		expect(w.text()).not.toContain("Completed0");
+		w.unmount();
+	});
+
 	it("has no Stop once the plan has ended", async () => {
 		api.imports.planProgress.mockResolvedValue({ ...running, status: "Completed", running: false, ended: true });
 		const w = mount(PlanProgressBlock, { props: { plan: "IMP-9" } });

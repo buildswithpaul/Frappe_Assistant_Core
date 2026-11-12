@@ -9,10 +9,11 @@
 		<ol class="pp-files">
 			<li v-for="file in plan.files" :key="file.session" class="pp-file">
 				<span class="pp-name">{{ file.file_name || file.doctype }}</span>
-				<span class="pp-file-status">{{ __(file.status || "") }}</span>
+				<span class="pp-file-status">{{ file.status_text || __(file.status || "") }}</span>
 				<span class="pp-figures">
 					{{ __("{0} created", [file.created || 0]) }}
 					<span v-if="file.failed" class="pp-failed">{{ __("{0} failed", [file.failed]) }}</span>
+					<span v-if="file.left_out" class="pp-left-out">{{ __("{0} left out", [file.left_out]) }}</span>
 				</span>
 			</li>
 		</ol>
@@ -122,6 +123,7 @@ const url = computed(() => {
 .pp-file-status { color: var(--ql-text-muted); }
 .pp-figures { color: var(--ql-text-muted); }
 .pp-failed { color: var(--ql-danger, #c0392b); margin-left: 6px; }
+.pp-left-out { margin-left: 6px; }
 .pp-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
 .pp-link { font-size: 12px; }
 .pp-stop {
