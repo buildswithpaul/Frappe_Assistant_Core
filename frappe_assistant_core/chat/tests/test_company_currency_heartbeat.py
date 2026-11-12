@@ -42,7 +42,11 @@ class TestCompany(BaseAssistantTest):
         super().setUp()
         if not frappe.db.exists("DocType", "Company"):
             self.skipTest("ERPNext is not installed")
-        self.company = frappe.get_all("Company", fields=["name", "default_currency", "country"], limit=1)[0]
+        companies = frappe.get_all("Company", fields=["name", "default_currency", "country"], limit=1)
+        if not companies:
+            # CI installs ERPNext without running its setup wizard, so it has no Company
+            self.skipTest("This site has no ERPNext company")
+        self.company = companies[0]
 
     def _code(self, country):
         return frappe.db.get_value("Country", country, "code").upper()
@@ -71,6 +75,8 @@ class TestCompany(BaseAssistantTest):
         ):
             self.assertEqual(company(), {})
 
+
+class TestCompanyWithoutERPNext(BaseAssistantTest):
     def test_without_erpnext_nothing_is_sent(self):
         real_exists = frappe.db.exists
 
