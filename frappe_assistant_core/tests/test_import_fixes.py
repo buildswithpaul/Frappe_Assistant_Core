@@ -285,6 +285,7 @@ class TestImportFixes(BaseAssistantTest):
 
     def test_a_misspelt_name_is_marked_likely_and_creating_it_says_so(self):
         # Offered as an equal choice, "create" made a misspelt Customer Group that stayed on the site.
+        # Two letters off: one letter off ("Hospitls") isn't offered as a new record at all (F5).
         t = self.tag
         meant = f"Hospitals {t}"
         frappe.get_doc(
@@ -295,7 +296,7 @@ class TestImportFixes(BaseAssistantTest):
             }
         ).insert()
 
-        _session, result = self._session([[f"Alpha {t}", f"Hospitls {t}", "Company", ""]])
+        _session, result = self._session([[f"Alpha {t}", f"Hosptls {t}", "Company", ""]])
 
         group = self._group(result, "Missing link")
         mapping, create = group["fixes"][0], group["fixes"][1]
@@ -756,6 +757,75 @@ class TestImportFixes(BaseAssistantTest):
         self.assertFalse(response["success"])
         frappe.set_user("Administrator")
         self.assertFalse(self._doc(session).excluded_rows)
+
+
+class TestGroupNodes(BaseAssistantTest):
+    """PR #392, F5: "Karnatka" found no match while the group territory "Karnataka" exists, and FACO
+    offered to create "Karnatka". ERPNext takes a group Territory on a Customer: only the trees
+    whose group nodes it refuses (a Customer's group, an Account, a Cost Center, a Warehouse) leave
+    them out."""
+
+    def setUp(self):
+        super().setUp()
+        frappe.set_user("Administrator")
+        self.tag = frappe.generate_hash(length=5)
+        self.state = f"Karnataka{self.tag}"
+        frappe.get_doc(
+            {
+                "doctype": "Territory",
+                "territory_name": self.state,
+                "parent_territory": "All Territories",
+                "is_group": 1,
+            }
+        ).insert()
+        self.group = f"Wholesale{self.tag}"
+        frappe.get_doc(
+            {
+                "doctype": "Customer Group",
+                "customer_group_name": self.group,
+                "parent_customer_group": "All Customer Groups",
+                "is_group": 1,
+            }
+        ).insert()
+
+    def test_a_group_territory_is_a_close_name(self):
+        self.assertIn(self.state, import_fixes.closest_names("Territory", f"Karnatka{self.tag}"))
+
+    def test_a_group_customer_group_is_not(self):
+        self.assertNotIn(self.group, import_fixes.closest_names("Customer Group", f"Wholsale{self.tag}"))
+
+    def test_a_tree_s_parent_may_be_a_group(self):
+        self.assertIn(
+            self.group, import_fixes.closest_names("Customer Group", f"Wholsale{self.tag}", groups=True)
+        )
+
+    def test_a_value_one_letter_from_a_record_is_mapped_never_created(self):
+        session = frappe._dict(target_doctype="Customer", migration_plan=None, name=None)
+        group = {
+            "cause": import_dry_run.CAUSE_MISSING_LINK,
+            "link_doctype": "Territory",
+            "parent": "Customer",
+            "field": "territory",
+            "label": "Territory",
+            "value": f"Karnatka{self.tag}",
+            "count": 2,
+        }
+        with patch.object(import_fixes, "_with_target", lambda session, group: group):
+            advice = import_fixes.advise(session, group)
+
+        actions = [fix["action"] for fix in advice["fixes"]]
+        self.assertNotIn("create", actions, advice)
+        self.assertEqual(advice["fixes"][0]["likely"], self.state)
+        self.assertIn(self.state, advice["cannot_create"])
+
+    def test_no_default_territory_doesnt_say_a_group_cant_hold_records(self):
+        df = frappe.get_meta("Customer").get_field("territory")
+        checker = import_dry_run._Checker.__new__(import_dry_run._Checker)
+        checker.party_gaps = [df]
+
+        ((key, info),) = checker._party_gap_problems()
+
+        self.assertNotIn("hold records", info["message"])
 
 
 class TestRowRanges(BaseAssistantTest):

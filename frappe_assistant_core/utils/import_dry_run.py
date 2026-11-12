@@ -857,13 +857,17 @@ class _Checker:
             if df.fieldname in flagged:
                 continue
             label = _(df.label)
+            leaf_only = PARTY_DEFAULTS.get(df.parent, {}).get(df.fieldname, (None, False))[1]
+            message = (
+                _("{0} is empty, and this site has no default {0} that can hold records.")
+                if leaf_only  # a group Customer Group is refused: the default must be a leaf
+                else _("{0} is empty, and this site has no default {0}.")
+            )
             info = {
                 "cause": CAUSE_REQUIRED_MISSING,
                 "field": df.fieldname,
                 "label": label,
-                "message": _("{0} is empty, and this site has no default {0} that can hold records.").format(
-                    label
-                ),
+                "message": message.format(label),
             }
             problems.append(((CAUSE_REQUIRED_MISSING, df.fieldname), info))
         return problems
