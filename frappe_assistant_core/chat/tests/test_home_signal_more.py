@@ -110,6 +110,16 @@ class TestStaleDrafts(BaseAssistantTest):
         self.assertEqual(result.count, 1)
         self.assertIn("Material Request", result.detail)
 
+    def test_the_ask_names_the_documents_it_counted(self):
+        self._draft(self.user, untouched_days=10)
+        result = home_signals._stale_drafts(self.user, COMPANY)
+        self.assertIn("Material Request", result.ask)
+        self.assertIn(COMPANY, result.ask)
+
+    def test_a_draft_for_another_company_is_not_counted(self):
+        self._draft(self.user, untouched_days=10)
+        self.assertIsNone(home_signals._stale_drafts(self.user, "Some Other Company"))
+
     def test_a_recent_draft_is_not_stale(self):
         self._draft(self.user, untouched_days=2)
         self.assertIsNone(home_signals._stale_drafts(self.user, None))
@@ -177,21 +187,22 @@ class TestDeliveredNotBilled(BaseAssistantTest):
         ).insert(ignore_permissions=True)
         receipt.submit()
 
-    def _deliver(self):
+    def _deliver(self, qty: int = 1, customer: str | None = None, target_warehouse: str | None = None):
         # Production path: a submitted Delivery Note with no invoice against it reads "To Bill".
         note = frappe.get_doc(
             {
                 "doctype": "Delivery Note",
                 "company": COMPANY,
-                "customer": self.customer,
+                "customer": customer or self.customer,
                 "currency": "INR",
                 "conversion_rate": 1,
                 "items": [
                     {
                         "item_code": ITEM,
-                        "qty": 1,
+                        "qty": qty,
                         "rate": 100,
                         "warehouse": WAREHOUSE,
+                        "target_warehouse": target_warehouse,
                         "cost_center": f"Main - {ABBR}",
                     }
                 ],
@@ -209,6 +220,36 @@ class TestDeliveredNotBilled(BaseAssistantTest):
         note = self._deliver()
         # Production path: closing a Delivery Note marks it as needing no invoice.
         note.update_status("Closed")
+        self.assertEqual(home_signals._delivered_not_billed(self.user, COMPANY).count, before)
+
+    def test_a_partly_billed_delivery_still_counts(self):
+        from erpnext.stock.doctype.delivery_note.delivery_note import make_sales_invoice
+
+        before = home_signals._delivered_not_billed(self.user, COMPANY).count
+        note = self._deliver(qty=2)
+        # Production path: the customer is invoiced for part of the delivery, which makes the
+        # note "Partially Billed".
+        invoice = make_sales_invoice(note.name)
+        invoice.items[0].qty = 1
+        invoice.insert(ignore_permissions=True)
+        invoice.submit()
+        self.assertEqual(frappe.db.get_value("Delivery Note", note.name, "status"), "Partially Billed")
+        self.assertEqual(home_signals._delivered_not_billed(self.user, COMPANY).count, before + 1)
+
+    def test_a_delivery_to_an_internal_customer_is_not_counted(self):
+        # Production path: a branch transfer is delivered to a customer that represents the company
+        # itself; such notes are seldom invoiced, so they would sit on the card for ever.
+        internal = frappe.get_doc(
+            {
+                "doctype": "Customer",
+                "customer_name": f"Signal Internal {frappe.generate_hash(length=6)}",
+                "is_internal_customer": 1,
+                "represents_company": COMPANY,
+                "companies": [{"company": COMPANY}],
+            }
+        ).insert(ignore_permissions=True)
+        before = home_signals._delivered_not_billed(self.user, COMPANY).count
+        self._deliver(customer=internal.name, target_warehouse=f"Finished Goods - {ABBR}")
         self.assertEqual(home_signals._delivered_not_billed(self.user, COMPANY).count, before)
 
     def test_shows_for_accounts_and_sales_but_not_stock(self):
@@ -280,19 +321,22 @@ class TestSystemManagerSignals(BaseAssistantTest):
         self.admin = self.make_throwaway_user("sysadmin", roles=("System Manager",))
 
     def test_counts_an_email_that_ended_in_error(self):
+        # The dev site has real failures too, so the test reads the change it makes.
+        before = home_signals._failed_emails(self.admin, None).count
         # Production path: the email queue marks a send that keeps failing as Error.
         frappe.get_doc(
             {"doctype": "Email Queue", "status": "Error", "sender": "noreply@example.com", "message": "x"}
         ).db_insert()
-        self.assertEqual(home_signals._failed_emails(self.admin, None).count, 1)
+        self.assertEqual(home_signals._failed_emails(self.admin, None).count, before + 1)
 
     def test_counts_each_failing_job_once(self):
+        before = home_signals._failed_scheduled_jobs(self.admin, None).count
         # Production path: the scheduler writes one Failed log per failed run.
         for job in ("signal_job_a", "signal_job_a", "signal_job_b"):
             frappe.get_doc(
                 {"doctype": "Scheduled Job Log", "scheduled_job_type": job, "status": "Failed"}
             ).db_insert()
-        self.assertEqual(home_signals._failed_scheduled_jobs(self.admin, None).count, 2)
+        self.assertEqual(home_signals._failed_scheduled_jobs(self.admin, None).count, before + 2)
 
     def test_only_system_managers_get_them(self):
         # Both DocTypes are readable by System Manager alone, so the read check gates the cards.

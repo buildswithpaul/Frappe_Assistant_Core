@@ -743,15 +743,17 @@ def _stale_drafts(user: str, company: str | None) -> SignalResult | None:
                 continue
             if frappe.db.exists("Workflow", {"document_type": doctype, "is_active": 1}):
                 continue
-            counts[doctype] = count_visible(
-                doctype, {"owner": user, "docstatus": 0, "modified": ["<", cutoff]}, user
-            )
+            filters = _company_scoped({"owner": user, "docstatus": 0, "modified": ["<", cutoff]}, company)
+            counts[doctype] = count_visible(doctype, filters, user)
         except Exception:
             _log_signal_error(f"stale_drafts {doctype}")
     count = sum(counts.values())
     if not count:
         return None
     top_doctype = max(counts, key=counts.get)
+    # The ask names exactly the DocTypes counted, so FACO's answer matches the number.
+    doctypes = ", ".join(_(doctype) for doctype, n in counts.items() if n)
+    days = STALE_DRAFT_DAYS
     return SignalResult(
         count=count,
         title=(
@@ -760,7 +762,13 @@ def _stale_drafts(user: str, company: str | None) -> SignalResult | None:
             else _("drafts you started and never submitted")
         ),
         detail=_("Mostly {0}; none touched for {1} days").format(_(top_doctype), STALE_DRAFT_DAYS),
-        ask=_("Which documents did I save as drafts and not touch for {0} days?").format(STALE_DRAFT_DAYS),
+        ask=(
+            _("Which of my draft {0} for {1} have not been touched for {2} days?").format(
+                doctypes, company, days
+            )
+            if company
+            else _("Which of my draft {0} have not been touched for {1} days?").format(doctypes, days)
+        ),
         action=_("Finish or delete them"),
         source=_(top_doctype),
     )
@@ -768,16 +776,29 @@ def _stale_drafts(user: str, company: str | None) -> SignalResult | None:
 
 def _delivered_not_billed(user: str, company: str | None) -> SignalResult | None:
     count = count_visible(
-        "Delivery Note", _company_scoped({"docstatus": 1, "is_return": 0, "status": "To Bill"}, company), user
+        "Delivery Note",
+        _company_scoped(
+            {
+                "docstatus": 1,
+                "is_return": 0,
+                # Branch transfers to the company's own customer are seldom invoiced.
+                "is_internal_customer": 0,
+                "status": ["in", ["To Bill", "Partially Billed"]],
+            },
+            company,
+        ),
+        user,
     )
     return SignalResult(
         count=count,
         title=(_("delivery not yet invoiced") if count == 1 else _("deliveries not yet invoiced")),
-        detail=_("Goods delivered to customers that have not been billed"),
+        detail=_("Goods delivered to customers that are not fully billed"),
         ask=(
-            _("Which delivery notes for {0} are delivered but not yet billed?").format(company)
+            _("Which delivery notes for {0} are not fully billed, leaving out internal transfers?").format(
+                company
+            )
             if company
-            else _("Which delivery notes are delivered but not yet billed?")
+            else _("Which delivery notes are not fully billed, leaving out internal transfers?")
         ),
         action=_("Bill them"),
         source=_("Delivery Note"),
