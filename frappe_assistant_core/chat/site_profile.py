@@ -14,9 +14,10 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""The site profile the FAC Cloud heartbeat sends: installed apps, customisation counts and the
-web-server setup, so FAC Cloud can warn a site early and support it. Counts and verdicts only,
-never record contents, names or messages. Each part is best-effort: one that fails is left out.
+"""The site profile the FAC Cloud heartbeat sends: installed apps, customisation counts, the
+web-server setup and the ERPNext company's currency and country, so FAC Cloud can warn a site
+early, support it and price its plans. Counts, verdicts and codes only, never record contents,
+names or messages. Each part is best-effort: one that fails is left out.
 """
 
 import frappe
@@ -50,6 +51,32 @@ def _customisation_counts() -> dict:
     return counts
 
 
+def company() -> dict:
+    """The ERPNext company's currency and ISO country code; FAC Cloud prices plans in that
+    currency until a billing address is saved. The default company, else the only one; empty
+    without ERPNext or when neither picks one."""
+    if not frappe.db.exists("DocType", "Company"):
+        return {}
+    name = _default_company()
+    if not name:
+        companies = frappe.get_all("Company", pluck="name", limit=2)
+        name = companies[0] if len(companies) == 1 else None
+    values = name and frappe.db.get_value("Company", name, ["default_currency", "country"], as_dict=True)
+    if not values:
+        return {}
+    code = values.country and frappe.db.get_value("Country", values.country, "code")
+    return {
+        key: value
+        for key, value in (("currency", values.default_currency), ("country", (code or "").upper()))
+        if value
+    }
+
+
+def _default_company() -> str | None:
+    """ERPNext keeps it on Global Defaults; it is not a `default_company` default."""
+    return frappe.db.get_single_value("Global Defaults", "default_company")
+
+
 def site_profile(versions: dict) -> dict:
     """The profile for this site; `versions` is frappe.utils.change_log.get_versions()."""
     profile = {}
@@ -67,4 +94,9 @@ def site_profile(versions: dict) -> dict:
         profile["relay"] = {key: report["relay"].get(key) for key in RELAY_KEYS}
     except Exception:
         frappe.logger("faco.billing").exception("FACO heartbeat: server setup report failed")
+    try:
+        if facts := company():
+            profile["company"] = facts
+    except Exception:
+        frappe.logger("faco.billing").exception("FACO heartbeat: company lookup failed")
     return profile

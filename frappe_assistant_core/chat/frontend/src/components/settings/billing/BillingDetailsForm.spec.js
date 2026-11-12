@@ -69,6 +69,19 @@ describe("BillingDetailsForm", () => {
 		expect(saveBillingDetails.mock.calls[0][0].billing_country).toBe("KE");
 	});
 
+	it("starts on the company's country when no billing country is saved", async () => {
+		const w = await mountForm({ ...SAVED, billing_country: "", billing_state: "", suggested_country: "KE" });
+		expect(w.find("#bd-country").element.value).toBe("KE");
+		await w.find("form").trigger("submit");
+		await flushPromises();
+		expect(saveBillingDetails.mock.calls[0][0]).not.toHaveProperty("suggested_country");
+	});
+
+	it("keeps a saved country over the company's", async () => {
+		const w = await mountForm({ ...SAVED, suggested_country: "KE" });
+		expect(w.find("#bd-country").element.value).toBe("IN");
+	});
+
 	it("still offers the built-in countries when the list cannot load", async () => {
 		getBillingCountries.mockRejectedValue(new Error("offline"));
 		const w = await mountForm();
