@@ -62,6 +62,14 @@ export function approvalHeadline(block) {
 	const tool = baseToolName(block?.tool_name);
 	const input = block?.input && typeof block.input === "object" ? block.input : null;
 	if (!input) return formatToolName(tool);
+	if (tool === "run_migration_plan" && input.plan) {
+		// PR #392, L4: the card's title was the tool's name
+		const files = Number(input.files);
+		const rows = Number(input.rows);
+		return Number.isFinite(files) && Number.isFinite(rows) && input.files != null && input.rows != null
+			? __("Run migration plan {0}: {1} files, {2} rows", [input.plan, files, rows])
+			: __("Run migration plan {0}", [input.plan]);
+	}
 	const fields = flattenInput(input);
 	const doctype = fields.doctype;
 	const name = fields.name ?? fields.docname;

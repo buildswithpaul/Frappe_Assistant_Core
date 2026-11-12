@@ -40,6 +40,9 @@
 								<span v-if="tableReplacement(toolName, row[key])" class="table-replaced">
 									{{ tableReplacement(toolName, row[key]) }}
 								</span>
+								<span v-else-if="tablePatchNote(toolName, row[key])" class="table-kept">
+									{{ tablePatchNote(toolName, row[key]) }}
+								</span>
 								<RowsToggle v-if="isChildTable(row[key])" :rows="row[key]" />
 								<LongValue v-else-if="isLongValue(row[key])" :value="row[key]" :code="isCodeKey(key)" />
 								<template v-else-if="!isEmptyList(row[key])">{{ cellText(row[key]) }}</template>
@@ -66,6 +69,7 @@ import {
 	documentsHeading,
 	isChildTable,
 	tableReplacement,
+	tablePatchNote,
 	isCodeKey,
 	isLongValue,
 	isMonoValue,
@@ -86,6 +90,11 @@ const isEmptyList = (value) => Array.isArray(value) && value.length === 0;
 </script>
 
 <style scoped>
+.table-kept {
+	display: block;
+	font-size: 12px;
+	color: var(--ql-text-muted);
+}
 .table-replaced {
 	display: block;
 	color: var(--ql-danger);

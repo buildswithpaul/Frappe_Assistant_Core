@@ -1187,7 +1187,16 @@ def _opening_entry(session) -> List[str]:
             fmt_money(abs(balance), 2),
             opening_balances.settings(session).get("temporary_opening_account"),
         )
-    return [line]
+    lines = [line]
+    settings = opening_balances.settings(session)
+    if settings.get("profit_and_loss") == "retained_earnings":
+        # The user approves this too: it was only in FACO's reply (PR #392, L4)
+        lines.append(
+            _("{0}: Profit and Loss rows are rolled into {1}, an Equity account.").format(
+                session.file_name, settings.get("retained_earnings_account")
+            )
+        )
+    return lines
 
 
 def decisions(plan, files: List[Any], new: List[Dict[str, Any]]) -> List[str]:

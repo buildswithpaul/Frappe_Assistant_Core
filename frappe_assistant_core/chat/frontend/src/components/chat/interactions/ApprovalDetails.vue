@@ -77,6 +77,9 @@
 			<div v-if="tableReplacement(block.tool_name, rows)" class="table-replaced">
 				{{ formatKey(key) }}: {{ tableReplacement(block.tool_name, rows) }}
 			</div>
+			<div v-else-if="tablePatchNote(block.tool_name, rows)" class="table-kept">
+				{{ formatKey(key) }}: {{ tablePatchNote(block.tool_name, rows) }}
+			</div>
 			<ChildTable :label="key" :rows="rows" />
 		</template>
 		<div v-if="rowCode.length" class="code-stack">
@@ -118,6 +121,7 @@ import {
 	isChildTable,
 	isTextList,
 	tableReplacement,
+	tablePatchNote,
 	isLongValue,
 	isEvalExpression,
 	codeLanguage,
@@ -302,6 +306,11 @@ function previousCode(key) {
 	color: var(--ql-danger);
 }
 
+.table-kept {
+	margin: 4px 0;
+	font-size: 12px;
+	color: var(--ql-text-muted);
+}
 .table-replaced {
 	margin: 6px 0 0;
 	color: var(--ql-danger);
