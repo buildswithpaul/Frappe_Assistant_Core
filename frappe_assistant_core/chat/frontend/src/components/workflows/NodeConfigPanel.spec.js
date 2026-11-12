@@ -59,6 +59,19 @@ describe("NodeConfigPanel", () => {
 		expect(w.findComponent({ name: "AgentConfig" }).exists()).toBe(true);
 	});
 
+	it("routes a decision node to the decision form", async () => {
+		const w = mountPanel(node("decision"));
+		await flushPromises();
+		expect(w.findComponent({ name: "DecisionNodeConfig" }).exists()).toBe(true);
+		expect(w.findComponent({ name: "SimpleNodeConfig" }).exists()).toBe(false);
+	});
+
+	it("tells the user a step type it does not know cannot be edited here", async () => {
+		const w = mountPanel(node("future_step", { anything: 1 }));
+		await flushPromises();
+		expect(w.get('[data-test="unknown-node-type"]').text()).toContain("future_step");
+	});
+
 	it("renames the node from the header", async () => {
 		const w = mountPanel(node("tool"));
 		const input = w.get(".label-input");

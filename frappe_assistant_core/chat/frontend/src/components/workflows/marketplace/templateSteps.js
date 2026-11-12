@@ -20,6 +20,7 @@ const NODE_KINDS = {
 	agent: () => __("AI step"),
 	transform: () => __("Prepares the data"),
 	condition: () => __("Check"),
+	decision: () => __("AI picks a branch"),
 	loop: () => __("Repeats for each item"),
 	output: () => __("Result"),
 };

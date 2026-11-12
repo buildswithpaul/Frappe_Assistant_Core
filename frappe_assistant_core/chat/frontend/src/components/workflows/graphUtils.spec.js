@@ -1,5 +1,14 @@
 import { describe, it, expect } from "vitest";
-import { NODE_TYPES, NODE_LIMITS, clampInt, getDefaultConfig, getDefaultLabel, validateGraph } from "./graphUtils.js";
+import {
+	NODE_TYPES,
+	NODE_LIMITS,
+	clampInt,
+	getDefaultConfig,
+	getDefaultLabel,
+	graphJsonToVueFlow,
+	validateGraph,
+	vueFlowToGraphJson,
+} from "./graphUtils.js";
 
 describe("agent node — Task label, agent discriminator", () => {
 	it("palette chip for the agent node type is labelled 'Task'", () => {
@@ -115,5 +124,124 @@ describe("tool name must be bare", () => {
 	it("accepts a bare tool name", () => {
 		const result = validateGraph([node("t", "tool", { tool_name: "generate_report" })], []);
 		expect(result.valid).toBe(true);
+	});
+});
+
+describe("decision node", () => {
+	const decision = (config = {}, label = "Refund?") =>
+		node("d", "decision", { ...getDefaultConfig("decision"), question: "Refund?", ...config }, label);
+	const errorsFor = (config, edges = []) => validateGraph([decision(config)], edges).errors;
+
+	it("is offered in the palette with a Yes/No default", () => {
+		expect(NODE_TYPES.map((t) => t.type)).toContain("decision");
+		expect(getDefaultConfig("decision")).toEqual({ question: "", choices: ["Yes", "No"] });
+		expect(getDefaultLabel("decision")).toBe("Decision");
+	});
+
+	it("accepts a question with two distinct choices", () => {
+		expect(errorsFor({})).toEqual([]);
+	});
+
+	it("requires a question", () => {
+		expect(errorsFor({ question: "  " })).toEqual([
+			'Decision "Refund?": Ask a question for the AI to answer',
+		]);
+	});
+
+	it("caps the question at 2000 characters", () => {
+		expect(errorsFor({ question: "x".repeat(2000) })).toEqual([]);
+		expect(errorsFor({ question: "x".repeat(2001) })[0]).toContain("longer than 2000");
+	});
+
+	it("needs between 2 and 10 choices", () => {
+		expect(errorsFor({ choices: ["Yes"] })[0]).toContain("between 2 and 10");
+		const ten = Array.from({ length: 10 }, (_, i) => `c${i}`);
+		expect(errorsFor({ choices: ten })).toEqual([]);
+		expect(errorsFor({ choices: [...ten, "c10"] })[0]).toContain("between 2 and 10");
+	});
+
+	it("rejects an empty choice, even one of spaces", () => {
+		expect(errorsFor({ choices: ["Yes", "  "] })[0]).toContain("cannot be empty");
+	});
+
+	it("caps a choice at 60 characters", () => {
+		expect(errorsFor({ choices: ["Yes", "n".repeat(60)] })).toEqual([]);
+		expect(errorsFor({ choices: ["Yes", "n".repeat(61)] })[0]).toContain("60 characters");
+	});
+
+	it("rejects a choice repeated in another case", () => {
+		expect(errorsFor({ choices: ["Yes", "yes"] })[0]).toContain('"yes" is already a choice');
+	});
+
+	it("reserves uncertain in any case", () => {
+		expect(errorsFor({ choices: ["Yes", "Uncertain"] })[0]).toContain('"uncertain" is reserved');
+	});
+
+	it("accepts edges labelled with its choices", () => {
+		const nodes = [decision(), node("a", "output"), node("b", "output")];
+		const edges = [
+			{ source: "d", target: "a", sourceHandle: "Yes" },
+			{ source: "d", target: "b", sourceHandle: "No" },
+		];
+		expect(validateGraph(nodes, edges).valid).toBe(true);
+	});
+
+	it("flags an edge left behind by a renamed choice on the decision node", () => {
+		const nodes = [decision({ choices: ["Approve", "No"] }), node("a", "output")];
+		const result = validateGraph(nodes, [{ source: "d", target: "a", sourceHandle: "Yes" }]);
+		expect(result.issues).toEqual([
+			{
+				nodeId: "d",
+				message: 'Decision "Refund?": a connection leaves from "Yes", which is no longer a choice',
+			},
+		]);
+	});
+
+	it("matches the choice text exactly", () => {
+		const nodes = [decision(), node("a", "output")];
+		expect(validateGraph(nodes, [{ source: "d", target: "a", sourceHandle: "yes" }]).valid).toBe(false);
+	});
+
+	it("allows an unlabelled edge only as the sole way out", () => {
+		const nodes = [decision(), node("a", "output"), node("b", "output")];
+		expect(validateGraph(nodes, [{ source: "d", target: "a" }]).valid).toBe(true);
+		const result = validateGraph(nodes, [
+			{ source: "d", target: "a" },
+			{ source: "d", target: "b", sourceHandle: "No" },
+		]);
+		expect(result.errors).toEqual(['Decision "Refund?": connect each step from one of the choices']);
+	});
+});
+
+describe("decision edges through the graph conversion", () => {
+	it("keeps each choice as the edge condition and the source handle", () => {
+		const graph = {
+			nodes: [
+				{ id: "d", type: "decision", config: { question: "Q?", choices: ["Refund", "Replace"] } },
+				{ id: "a", type: "output" },
+				{ id: "b", type: "output" },
+			],
+			edges: [
+				{ id: "e1", source: "d", target: "a", condition: "Refund" },
+				{ id: "e2", source: "d", target: "b", condition: "Replace" },
+			],
+		};
+		const { nodes, edges } = graphJsonToVueFlow(graph);
+		expect(nodes[0].type).toBe("decision");
+		expect(edges.map((e) => e.sourceHandle)).toEqual(["Refund", "Replace"]);
+
+		const back = JSON.parse(vueFlowToGraphJson(nodes, edges));
+		expect(back.nodes[0]).toMatchObject({ type: "decision", config: graph.nodes[0].config });
+		expect(back.edges.map((e) => e.condition)).toEqual(["Refund", "Replace"]);
+	});
+
+	it("round-trips a node type this builder does not know, config untouched", () => {
+		const graph = {
+			nodes: [{ id: "x", type: "future_step", config: { anything: [1, 2] } }],
+			edges: [],
+		};
+		const { nodes, edges } = graphJsonToVueFlow(graph);
+		const back = JSON.parse(vueFlowToGraphJson(nodes, edges));
+		expect(back.nodes[0]).toMatchObject({ type: "future_step", config: { anything: [1, 2] } });
 	});
 });

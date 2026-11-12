@@ -59,6 +59,15 @@
 				@reload-tools="reloadTools"
 			/>
 
+			<DecisionNodeConfig
+				v-else-if="node.type === 'decision'"
+				:key="node.id"
+				:config="config"
+				:variables="variables"
+				:readonly="readonly"
+				@update="handleAgentUpdate"
+			/>
+
 			<!-- Condition / Transform / Input / Output — small, shared shell -->
 			<SimpleNodeConfig
 				v-else
@@ -100,6 +109,7 @@ import NodeRunSection from "./NodeRunSection.vue";
 import SimpleNodeConfig from "./config/SimpleNodeConfig.vue";
 import ToolNodeConfig from "./config/ToolNodeConfig.vue";
 import LoopNodeConfig from "./config/LoopNodeConfig.vue";
+import DecisionNodeConfig from "./config/DecisionNodeConfig.vue";
 import ConfigPanelHeader from "./config/ConfigPanelHeader.vue";
 
 const TOOLS_RELOAD_DELAY_MS = 400;
@@ -147,6 +157,7 @@ const nodeColor = computed(() => {
 		transform: "#0F6E5C",
 		tool: "#0F6E5C",
 		loop: "#8A857C",
+		decision: "#C9A227",
 		"workflow-output": "#8A857C",
 	};
 	return byType[props.node.type] || "#64748b";
