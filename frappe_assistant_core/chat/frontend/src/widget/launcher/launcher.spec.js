@@ -4,7 +4,7 @@ import { mirrorDeskTheme } from "./theme.js";
 import { parseShortcut, bindShortcut } from "./shortcut.js";
 import { applyDiagnosticsSwitch } from "./access.js";
 import { setupAutofade } from "./autofade.js";
-import { startTooltips } from "./tooltips.js";
+import { startTooltips, isNewToFac, pageMessage, NEW_USER_DAYS } from "./tooltips.js";
 
 describe("launcher view", () => {
 	beforeEach(() => (document.body.innerHTML = ""));
@@ -103,6 +103,76 @@ describe("tooltips", () => {
 		const stop = startTooltips(view, () => false);
 		stop();
 		expect(view.tooltip.classList.contains("faco-show")).toBe(false);
+	});
+});
+
+describe("tooltips about the page, in a user's first days", () => {
+	const DAY = 86_400_000;
+	let route;
+
+	beforeEach(() => {
+		vi.useFakeTimers();
+		document.body.innerHTML = "";
+		localStorage.clear();
+		route = ["Form", "Sales Invoice", "ACC-SINV-00412"];
+		const frm = { doctype: "Sales Invoice", docname: "ACC-SINV-00412", doc: { name: "ACC-SINV-00412" }, is_new: () => false };
+		window.frappe = {
+			session: { user: "new@example.com" },
+			get_route: () => route,
+			router: { doctype_layout: null },
+			views: { formview: { "Sales Invoice": { frm } } },
+		};
+	});
+	afterEach(() => {
+		vi.useRealTimers();
+		delete window.frappe;
+	});
+
+	// Every message the cycle puts up, read at the moment it is shown.
+	const shownTexts = (view) => {
+		const texts = [];
+		const add = view.tooltip.classList.add.bind(view.tooltip.classList);
+		vi.spyOn(view.tooltip.classList, "add").mockImplementation((cls) => {
+			if (cls === "faco-show") texts.push(view.tooltip.textContent.trim());
+			add(cls);
+		});
+		vi.advanceTimersByTime(60_000);
+		return texts;
+	};
+
+	it("a new user on a record gets one message about it, then quiet", () => {
+		const view = createLauncherView(document);
+		startTooltips(view, () => false);
+		expect(shownTexts(view)).toEqual(["💬Ask me anything about ACC-SINV-00412"]);
+	});
+
+	it("after the first 7 days, or on a page with no record, the usual three messages", () => {
+		localStorage.setItem("fac_launcher_first_seen:new@example.com", String(Date.now() - NEW_USER_DAYS * DAY));
+		const view = createLauncherView(document);
+		startTooltips(view, () => false);
+		expect(shownTexts(view)).toHaveLength(3);
+		expect(view.tooltip.textContent).not.toContain("ACC-SINV");
+
+		localStorage.clear();
+		route = ["Workspaces", "Home"];
+		const other = createLauncherView(document);
+		startTooltips(other, () => false);
+		expect(shownTexts(other)).toHaveLength(3);
+	});
+
+	it("the 7 days count from the first time the launcher started for this user", () => {
+		const now = Date.now();
+		expect(isNewToFac("a@x.com", now)).toBe(true);
+		expect(isNewToFac("a@x.com", now + 6 * DAY)).toBe(true);
+		expect(isNewToFac("a@x.com", now + 7 * DAY)).toBe(false);
+		expect(isNewToFac(null, now)).toBe(false);
+	});
+
+	it("names a list or report, and says nothing about a new unsaved record", () => {
+		expect(pageMessage({ type: "List", doctype: "Customer" }).text).toBe("Ask me about your Customer list");
+		expect(pageMessage({ type: "Report", name: "Accounts Receivable" }).text).toBe("Ask me to explain Accounts Receivable");
+		expect(pageMessage({ type: "Form", doctype: "Customer", name: "new-customer-1", is_new: true })).toBeNull();
+		expect(pageMessage({ type: "Workspace" })).toBeNull();
 	});
 });
 
