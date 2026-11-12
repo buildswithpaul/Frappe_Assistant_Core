@@ -278,8 +278,11 @@ class BaseTool(ABC):
         start_time = time.time()
         tries = 1 + (LOST_CALL_RETRIES if self.retry_on_deadlock else 0)
         for attempt in range(tries):
-            savepoint = f"fac_tool_call_{frappe.generate_hash(length=8)}"
-            frappe.db.savepoint(savepoint)
+            # No connection, no transaction to undo: a tool run outside a request (a thread of its own)
+            savepoint = None
+            if getattr(frappe.local, "db", None):
+                savepoint = f"fac_tool_call_{frappe.generate_hash(length=8)}"
+                frappe.db.savepoint(savepoint)
             try:
                 return self._execute_once(arguments)
             except frappe.QueryDeadlockError as e:
@@ -290,16 +293,17 @@ class BaseTool(ABC):
         return self._lost_call_response(arguments, lost, time.time() - start_time)
 
     @staticmethod
-    def _undo_lost_call(savepoint: str) -> None:
+    def _undo_lost_call(savepoint: Optional[str]) -> None:
         """Undo what is left of a call the database undid. On MariaDB the transaction, and the
         savepoint with it, is already gone: a full rollback then runs Frappe's own rollback work
         (caches, files written for the call). A database that only undid the statement (the
         tests, MariaDB 10.6's lock wait) still holds the savepoint, and the work before the call
         stays."""
-        try:
-            frappe.db.rollback(save_point=savepoint)
-        except Exception:
-            frappe.db.rollback()
+        if savepoint:
+            try:
+                frappe.db.rollback(save_point=savepoint)
+            except Exception:
+                frappe.db.rollback()
         frappe.clear_messages()
 
     def _lost_call_response(self, arguments: Dict[str, Any], error: Exception, execution_time: float):
