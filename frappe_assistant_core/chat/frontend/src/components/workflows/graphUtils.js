@@ -37,12 +37,13 @@ export function graphJsonToVueFlow(graphJson) {
 		},
 	}));
 
+	const resolve = decisionLabelResolver(nodes);
 	const edges = (graph.edges || []).map((e, i) => ({
 		id: e.id || `e-${e.source}-${e.target}-${i}`,
 		source: e.source,
 		target: e.target,
-		sourceHandle: e.condition || undefined,
-		label: e.condition || "",
+		sourceHandle: resolve(e.source, e.condition) || undefined,
+		label: resolve(e.source, e.condition) || "",
 		type: "smoothstep",
 		// A DAG is unreadable without direction, and two nodes side by side
 		// give the eye no other cue which way the data flows.
@@ -62,6 +63,7 @@ export function graphJsonToVueFlow(graphJson) {
  * Convert Vue Flow state back to backend graph JSON string.
  */
 export function vueFlowToGraphJson(nodes, edges, globalSettings = {}) {
+	const resolve = decisionLabelResolver(nodes);
 	return JSON.stringify({
 		version: "1.0",
 		nodes: nodes.map((n) => ({
@@ -80,8 +82,8 @@ export function vueFlowToGraphJson(nodes, edges, globalSettings = {}) {
 				source: e.source,
 				target: e.target,
 			};
-			if (e.sourceHandle) edge.condition = e.sourceHandle;
-			else if (e.label) edge.condition = e.label;
+			const condition = resolve(e.source, edgeCondition(e));
+			if (condition) edge.condition = condition;
 			return edge;
 		}),
 		global_settings: globalSettings,
@@ -201,11 +203,11 @@ export const DECISION_LIMITS = {
  */
 export function decisionConfigProblems(config = {}) {
 	const L = DECISION_LIMITS;
-	const question = String(config.question ?? "");
+	const question = config.question;
 	const choices = Array.isArray(config.choices) ? config.choices : [];
 
 	let questionProblem = "";
-	if (!question.trim()) questionProblem = __("Ask a question for the AI to answer");
+	if (typeof question !== "string" || !question.trim()) questionProblem = __("Ask a question for the AI to answer");
 	else if (question.length > L.questionMaxLength)
 		questionProblem = __("The question is longer than {0} characters", [L.questionMaxLength]);
 
@@ -214,15 +216,15 @@ export function decisionConfigProblems(config = {}) {
 		list = __("Give between {0} and {1} choices", [L.minChoices, L.maxChoices]);
 
 	const seen = new Set();
-	const choiceProblems = choices.map((raw) => {
-		const choice = String(raw ?? "").trim();
-		const key = choice.toLowerCase();
-		if (!choice) return __("A choice cannot be empty");
+	const choiceProblems = choices.map((choice) => {
+		if (typeof choice !== "string" || !choice.trim()) return __("A choice cannot be empty");
+		// The engine measures the choice as stored, surrounding spaces included.
 		if (choice.length > L.choiceMaxLength)
 			return __("Keep a choice to {0} characters", [L.choiceMaxLength]);
+		const key = decisionKey(choice);
 		if (key === L.reservedChoice)
 			return __('"{0}" is reserved; choose another word', [L.reservedChoice]);
-		if (seen.has(key)) return __('"{0}" is already a choice', [choice]);
+		if (seen.has(key)) return __('"{0}" is already a choice', [choice.trim()]);
 		seen.add(key);
 		return "";
 	});
@@ -233,6 +235,35 @@ export function decisionConfigProblems(config = {}) {
 /** The label an edge carries in the graph JSON (its `condition`). */
 function edgeCondition(edge) {
 	return edge.sourceHandle || edge.label || "";
+}
+
+/** How the engine compares an edge label with a choice: trimmed, ignoring case. */
+function decisionKey(text) {
+	return typeof text === "string" ? text.trim().toLowerCase() : "";
+}
+
+/** A decision node's choices as its handles carry them: trimmed text, blanks dropped. */
+export function decisionChoices(config = {}) {
+	return (Array.isArray(config.choices) ? config.choices : [])
+		.filter((c) => typeof c === "string")
+		.map((c) => c.trim())
+		.filter(Boolean);
+}
+
+/**
+ * (sourceId, label) → the label to use for that edge. An edge out of a decision
+ * node takes the text of the choice it matches the way the engine matches it,
+ * so "Complaint" or " complaint" binds to the handle of choice "complaint". Any
+ * other label is returned as is, for validateGraph to flag.
+ */
+function decisionLabelResolver(nodes) {
+	const byKey = new Map();
+	for (const n of nodes) {
+		if (toBackendType(n.type) !== "decision") continue;
+		const choices = new Map(decisionChoices(n.data?.config).map((c) => [decisionKey(c), c]));
+		byKey.set(n.id, choices);
+	}
+	return (source, label) => byKey.get(source)?.get(decisionKey(label)) ?? label;
 }
 
 export function clampInt(value, { min, max, default: fallback } = {}) {
@@ -339,15 +370,13 @@ export function validateGraph(nodes, edges) {
  */
 function checkDecisionEdges(node, config, edges, report) {
 	const outgoing = edges.filter((e) => e.source === node.id);
-	const choices = new Set(
-		(Array.isArray(config.choices) ? config.choices : []).map((c) => String(c ?? ""))
-	);
+	const choices = new Set(decisionChoices(config).map(decisionKey));
 	const stale = new Set();
 	let unlabelled = 0;
 	for (const edge of outgoing) {
 		const condition = edgeCondition(edge);
-		if (!condition) unlabelled += 1;
-		else if (!choices.has(condition)) stale.add(condition);
+		if (!decisionKey(condition)) unlabelled += 1;
+		else if (!choices.has(decisionKey(condition))) stale.add(condition.trim());
 	}
 	for (const condition of stale) {
 		report(__('a connection leaves from "{0}", which is no longer a choice', [condition]));
