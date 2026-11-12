@@ -670,13 +670,20 @@ def rows(report: Dict[str, Any]) -> List[Dict[str, Any]]:
     """The report as one table, a section after another: records per DocType, why rows aren't
     in, opening balances, the trial balance, the open points and the sessions. The text comes
     from users' files, their reasons and ERPNext's messages, and Desk shows a report's cells and
-    message as HTML: so every text is escaped here."""
+    message as HTML: so every text is escaped here, its markup only (<, > and &). A quote is
+    harmless in a cell's text, and the chat and the PDF show the text itself: "don&apos;t" was
+    what an open point read there (PR #392, L5)."""
     out = _rows(report)
     for row in out:
         for key in ("item", "details"):
             if row.get(key) not in (None, ""):
-                row[key] = escape_html(cstr(row[key]))
+                row[key] = escape_markup(cstr(row[key]))
     return out
+
+
+def escape_markup(text: str) -> str:
+    """``text`` with its markup escaped for Desk's HTML, quotes left as they are."""
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
 def _rows(report: Dict[str, Any]) -> List[Dict[str, Any]]:
