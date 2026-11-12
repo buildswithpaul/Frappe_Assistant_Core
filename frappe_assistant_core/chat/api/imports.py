@@ -18,6 +18,7 @@ from typing import Any, Dict, List, Optional, Union
 
 import frappe
 from frappe import _
+from frappe.utils import cint, cstr
 
 SESSION = "FAC Import Session"
 #: At most this many sessions in one call: a conversation's imports, not a site's
@@ -248,13 +249,45 @@ def import_card(session: str) -> Dict[str, Any]:
     shown = ", ".join(pairs[:4])
     if len(pairs) > 4:
         shown += " " + _("and {0} more").format(len(pairs) - 4)
+    update = doc.import_type == "Update Existing Records"
     return {
         "session": doc.name,
         "file_name": doc.file_name,
         "doctype": doc.target_doctype,
-        "update": doc.import_type == "Update Existing Records",
+        "update": update,
         "rows": summary.get("ready"),
         "left_out": len(import_fixes.left_out(doc)),
         "submit": bool(doc.get("submit_after_import")),
         "mapping": shown,
+        "changes": _changes(summary.get("update")) if update else None,
+    }
+
+
+#: A value on the approval card is cut to this many characters
+CARD_VALUE_LENGTH = 80
+
+
+def _changes(preview: Any) -> Optional[Dict[str, Any]]:
+    """An update's old and new values, from its last check, for the approval card (PR #392, F6):
+    the card said "Update 1 Customer records" with counts only, and the values were shown only if
+    the model chose to. The user approves what changes, so the card shows it."""
+    if not isinstance(preview, dict):
+        return None
+
+    def shown(value: Any) -> str:
+        text = cstr(value)
+        return text if len(text) <= CARD_VALUE_LENGTH else text[: CARD_VALUE_LENGTH - 1] + "…"
+
+    samples = []
+    for sample in preview.get("samples") or []:
+        changes = [
+            {"label": cstr(c.get("label")), "old": shown(c.get("old")), "new": shown(c.get("new"))}
+            for c in sample.get("changes") or []
+        ]
+        samples.append({"record": cstr(sample.get("record")), "changes": changes})
+    return {
+        "records": cint(preview.get("records_changing")),
+        "fields": cint(preview.get("fields_changing")),
+        "by_field": preview.get("by_field") or {},
+        "samples": samples,
     }

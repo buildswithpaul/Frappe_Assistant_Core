@@ -29,6 +29,41 @@ describe("the import approval card (#34415)", () => {
 		expect(text).toContain("Amount → Outstanding Amount");
 	});
 
+	it("shows an update's old and new values on the card itself (PR #392, F6)", async () => {
+		api.imports.importCard.mockResolvedValue({
+			file_name: "customers.csv",
+			doctype: "Customer",
+			update: true,
+			rows: 7,
+			left_out: 0,
+			submit: false,
+			mapping: "Mobile → Mobile No",
+			changes: {
+				records: 7,
+				fields: 9,
+				by_field: { "Mobile No": 7, Territory: 2 },
+				samples: [
+					{ record: "CUST-0001", changes: [{ label: "Mobile No", old: "98450 11111", new: "98450 22222" }, { label: "Territory", old: "", new: "Karnataka" }] },
+				],
+			},
+		});
+		const w = mount(ImportApprovalSummary, { props: { input: { session: "IMP-2", rows: 7 } } });
+		await flushPromises();
+		const text = w.text();
+		expect(text).toContain("9 changes in 7 records");
+		expect(text).toContain("CUST-0001");
+		expect(text).toContain("98450 11111 → 98450 22222");
+		expect(text).toContain("(empty) → Karnataka");
+		expect(w.find(".ia-changes p").exists()).toBe(false); // a <p> in a turn is restyled (cf8e5fa8)
+	});
+
+	it("shows no changes for new records", async () => {
+		api.imports.importCard.mockResolvedValue({ file_name: "c.csv", doctype: "Customer", update: false, rows: 3, changes: null });
+		const w = mount(ImportApprovalSummary, { props: { input: { session: "IMP-3" } } });
+		await flushPromises();
+		expect(w.find(".ia-changes").exists()).toBe(false);
+	});
+
 	it("names the import in the card's title", () => {
 		const block = { tool_name: "start_import", input: { doctype: "Customer", rows: 250, file_name: "customers.csv", import_type: "Insert New Records" } };
 		expect(approvalHeadline(block)).toBe("Import 250 rows of customers.csv as new Customer records");
