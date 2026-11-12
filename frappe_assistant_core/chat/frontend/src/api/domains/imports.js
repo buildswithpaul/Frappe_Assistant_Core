@@ -15,6 +15,9 @@ export const imports = {
 	/** A migration plan's status and each file's progress (#34351). */
 	planProgress: (plan) => getCall(API + "plan_progress", { plan }),
 
+	/** The Stop button on the plan's progress block, through stop_migration_plan (PR #392, F7). */
+	stopPlan: (plan) => baseCall(API + "stop_plan", { plan }),
+
 	/** The import approval card's file, counts, submit flag and mapping line (#34415). */
 	importCard: (session) => getCall(API + "import_card", { session }),
 };

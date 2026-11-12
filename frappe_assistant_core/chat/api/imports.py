@@ -118,6 +118,28 @@ def plan_progress(plan: str) -> Dict[str, Any]:
 PLAN_ENDED = ("Completed", "Partially Completed", "Failed", "Stopped")
 
 
+@frappe.whitelist(methods=["POST"])
+def stop_plan(plan: str) -> Dict[str, Any]:
+    """The Stop button on the plan's progress block (PR #392, F7): a "stop now" typed in the chat
+    waited in the composer while FACO's turn ran, and the plan had finished by the time it was
+    sent. The click stops the plan at once through stop_migration_plan itself, so its checks, its
+    permission and its audit are the tool's; the user's own click needs no approval card. What's
+    imported stays: a running plan stops after the file importing now."""
+    from frappe_assistant_core.core.tool_registry import get_tool_registry
+
+    if not frappe.db.exists(SESSION, plan) or not frappe.has_permission(SESSION, "read", doc=plan):
+        raise frappe.DoesNotExistError(_("Migration plan {0} not found.").format(plan))
+    reply = get_tool_registry().get_tool("stop_migration_plan")._safe_execute({"plan": plan})
+    result = reply.get("result") if isinstance(reply, dict) and "result" in reply else reply
+    ok = bool(reply.get("success")) and bool((result or {}).get("success", True))
+    out = {"success": ok, "progress": plan_progress(plan)}
+    if ok:
+        out["message"] = (result or {}).get("message")
+    else:
+        out["error"] = (result or {}).get("error") or reply.get("error")
+    return out
+
+
 # -- the mapping review card and the import approval card (#34415) -----------------------------
 
 #: How many of a column's first values the review card shows

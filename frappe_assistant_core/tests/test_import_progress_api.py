@@ -9,6 +9,7 @@
 """Import progress in FAC Chat (#34416): where a conversation's sessions stand, read by the chat."""
 
 import json
+from unittest.mock import patch
 
 import frappe
 
@@ -138,6 +139,68 @@ class TestPlanProgressApi(BaseAssistantTest):
         self.assertFalse(reply["ended"])
         self.assertEqual({f["file_name"] for f in reply["files"]}, {"groups.csv", "regions.csv"})
         self.assertTrue(all("created" in f and "status" in f for f in reply["files"]))
+
+    # -- the Stop button on the plan's progress block (PR #392, F7) --------------------------
+
+    def _plan(self):
+        from frappe_assistant_core.core.tool_registry import get_tool_registry
+
+        groups = self._mapped(
+            "groups.csv", f"Name\nG {self.tag}\n".encode(), "Item Group", {"Name": "item_group_name"}
+        )
+        return (
+            get_tool_registry()
+            .get_tool("plan_migration")
+            ._safe_execute({"sessions": [groups]})["result"]["plan"]
+        )
+
+    def test_the_block_stops_a_running_plan_after_its_file_without_a_chat_turn(self):
+        # Live: "stop now" waited in the composer while FACO's turn ran, and the plan had finished
+        # by the time it was sent
+        from frappe_assistant_core.utils import import_plan
+
+        plan = self._plan()
+        running = import_plan.get_plan(plan)
+        running.status = "Running"
+        running.save()
+
+        with patch.object(import_plan, "alive", return_value=True):
+            reply = imports.stop_plan(plan)
+
+        self.assertTrue(reply["success"], reply)
+        self.assertIn("stops once", reply["message"])
+        self.assertEqual(import_plan._settings(plan).get("stop_requested"), 1)
+        self.assertEqual(reply["progress"]["plan"], plan)
+        audit = frappe.get_all("Assistant Audit Log", filters={"tool_name": "stop_migration_plan"}, limit=1)
+        self.assertTrue(audit)  # the stop_migration_plan tool did it: its checks and its audit row
+
+    def test_the_block_drops_a_plan_not_run_yet(self):
+        plan = self._plan()
+
+        reply = imports.stop_plan(plan)
+
+        self.assertTrue(reply["success"], reply)
+        self.assertEqual(reply["progress"]["status"], "Stopped")
+        self.assertTrue(reply["progress"]["ended"])
+
+    def test_an_ended_plan_says_it_isnt_running(self):
+        plan = self._plan()
+        imports.stop_plan(plan)
+
+        reply = imports.stop_plan(plan)
+
+        self.assertFalse(reply["success"])
+        self.assertIn("not running", reply["error"])
+
+    def test_another_users_plan_cant_be_stopped(self):
+        plan = self._plan()
+        frappe.set_user(self.make_throwaway_user("stopper", roles=("Desk User",)))
+        try:
+            with self.assertRaises(frappe.DoesNotExistError):
+                imports.stop_plan(plan)
+        finally:
+            frappe.set_user("Administrator")
+        self.assertNotEqual(frappe.db.get_value("FAC Import Session", plan, "status"), "Stopped")
 
     def test_another_users_plan_is_not_found(self):
         viewer = self.make_throwaway_user("viewer", roles=("Desk User",))

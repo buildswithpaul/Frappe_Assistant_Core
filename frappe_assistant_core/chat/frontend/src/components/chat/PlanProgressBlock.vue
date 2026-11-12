@@ -16,7 +16,19 @@
 				</span>
 			</li>
 		</ol>
-		<a v-if="url" class="pp-link" :href="url" target="_blank" rel="noopener">{{ __("Open in Desk") }}</a>
+		<div class="pp-foot">
+			<a v-if="url" class="pp-link" :href="url" target="_blank" rel="noopener">{{ __("Open in Desk") }}</a>
+			<button
+				v-if="plan.running && !stopAsked"
+				type="button"
+				class="pp-stop"
+				:disabled="stopping"
+				@click="stop"
+			>
+				{{ stopping ? __("Stopping…") : __("Stop after this file") }}
+			</button>
+		</div>
+		<div v-if="stopNote" class="pp-note" :class="{ 'pp-refused': stopRefused }">{{ stopNote }}</div>
 	</div>
 </template>
 
@@ -33,6 +45,30 @@ const props = defineProps({ plan: { type: String, required: true } });
 const plan = ref(null);
 let timer = null;
 let stopped = false;
+
+// Stop works without a chat turn (PR #392, F7): typed in the chat, "stop now" waited behind
+// FACO's turn until the plan had finished. The server stops it through stop_migration_plan.
+const stopping = ref(false);
+const stopAsked = ref(false);
+const stopNote = ref("");
+const stopRefused = ref(false);
+
+async function stop() {
+	stopping.value = true;
+	try {
+		const reply = await api.imports.stopPlan(props.plan);
+		stopRefused.value = !reply?.success;
+		stopNote.value = reply?.success ? reply.message || __("The plan is stopping.") : reply?.error || __("The plan couldn't be stopped.");
+		stopAsked.value = Boolean(reply?.success);
+		if (reply?.progress) plan.value = reply.progress;
+	} catch (e) {
+		logger.warn("stop plan:", e);
+		stopRefused.value = true;
+		stopNote.value = __("The plan couldn't be stopped.");
+	} finally {
+		stopping.value = false;
+	}
+}
 
 async function refresh() {
 	try {
@@ -86,5 +122,20 @@ const url = computed(() => {
 .pp-file-status { color: var(--ql-text-muted); }
 .pp-figures { color: var(--ql-text-muted); }
 .pp-failed { color: var(--ql-danger, #c0392b); margin-left: 6px; }
+.pp-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
 .pp-link { font-size: 12px; }
+.pp-stop {
+	margin-left: auto;
+	padding: 3px 10px;
+	border: 1px solid var(--ql-border);
+	border-radius: 8px;
+	background: var(--ql-surface, transparent);
+	color: var(--ql-danger, #c0392b);
+	font-size: 12px;
+	font-weight: 600;
+	cursor: pointer;
+}
+.pp-stop:disabled { opacity: 0.6; cursor: default; }
+.pp-note { margin-top: 6px; font-size: 12px; color: var(--ql-text-muted); }
+.pp-refused { color: var(--ql-danger, #c0392b); }
 </style>
