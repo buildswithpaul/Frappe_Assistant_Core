@@ -82,6 +82,9 @@
 				@approve="onDecision"
 				@reject="onDecision"
 				@continue="chatStore.continueMessage"
+				@retry="chatStore.retryTurn"
+				@send-anyway="chatStore.sendAnyway"
+				@continue-turn="onSend({ message: __('Continue') })"
 				@unqueue="chatStore.unqueueMessage"
 			/>
 			<BrowserToolConfirm
@@ -110,6 +113,7 @@
 			:is-admin="isAdmin"
 			:used="limitBlock.used"
 			:limit="limitBlock.limit"
+			:stale="limitBlock.stale"
 		/>
 		<InputArea
 			:hold-send="Boolean(limitBlock)"

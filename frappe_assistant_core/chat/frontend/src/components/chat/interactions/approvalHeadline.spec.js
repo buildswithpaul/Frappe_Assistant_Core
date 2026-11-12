@@ -31,6 +31,13 @@ describe("approvalHeadline", () => {
 		);
 	});
 
+	it("an edits-only update keeps the Update headline", () => {
+		const edits = [{ field: "script", find: "a", replace: "b" }];
+		expect(approvalHeadline(block("update_document", { doctype: "Server Script", name: "SS-1", edits }))).toBe(
+			"Update Server Script SS-1",
+		);
+	});
+
 	it("names a new record by its doctype and the field a person knows it by", () => {
 		expect(approvalHeadline(block("create_document", { doctype: "Customer", data: { customer_name: "MIGTEST Trader 01" } }))).toBe(
 			"Create Customer “MIGTEST Trader 01”",

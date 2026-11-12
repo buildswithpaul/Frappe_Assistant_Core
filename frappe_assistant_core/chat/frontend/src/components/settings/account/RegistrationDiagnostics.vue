@@ -187,11 +187,35 @@
 				<pre class="raw-result">{{ JSON.stringify(result, null, 2) }}</pre>
 			</div>
 		</div>
+
+		<!-- Web server setup travels with every diagnostics result, whatever the registration status -->
+		<div
+			v-if="serverSetup && serverSetup.status !== 'unknown'"
+			class="result-banner server-setup"
+			:class="serverSetup.status === 'ok' ? 'banner-success' : 'banner-warn'"
+			data-testid="server-setup"
+		>
+			<div class="banner-body">
+				<p class="banner-title">Web server</p>
+				<p v-if="serverSetup.status === 'ok' && serverSetup.slots" class="banner-text">
+					{{ serverSetup.slots }} request slots; FACO needs at least
+					{{ serverSetup.required_slots }}.
+				</p>
+				<p v-else-if="serverSetup.status === 'ok'" class="banner-text">
+					Workers handle many connections each, so no slot limit applies.
+				</p>
+				<template v-else>
+					<p v-for="reason in serverSetup.reasons" :key="reason" class="banner-text">
+						{{ reason }}
+					</p>
+				</template>
+			</div>
+		</div>
 	</div>
 </template>
 
 <script setup>
-import { ref } from "vue";
+import { computed, ref } from "vue";
 import { api } from "@/api/client";
 import { logger } from "@/utils/logger";
 
@@ -200,6 +224,7 @@ defineEmits(["open-rebind"]);
 const running = ref(false);
 const result = ref(null);
 const error = ref(null);
+const serverSetup = computed(() => result.value?.server_setup || null);
 
 async function runDiagnostics() {
 	running.value = true;

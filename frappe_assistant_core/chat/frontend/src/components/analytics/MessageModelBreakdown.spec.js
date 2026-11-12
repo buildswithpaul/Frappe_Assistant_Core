@@ -52,4 +52,13 @@ describe("MessageModelBreakdown", () => {
 		const wrapper = mount(MessageModelBreakdown, { props: { breakdown: [] } });
 		expect(wrapper.findAll(".breakdown-row")).toHaveLength(0);
 	});
+	it("shows readable role labels and a colon-free class for crew roles", () => {
+		const wrapper = mount(MessageModelBreakdown, {
+			props: { breakdown: [{ model_id: "m", role: "crew:draft", credits: 5 }, BREAKDOWN[0]] },
+		});
+		const roles = wrapper.findAll(".bd-role");
+		expect(roles[0].text()).toBe("Crew \u00b7 draft");
+		expect(roles[0].classes()).toContain("crew");
+		expect(roles[1].text()).toBe("Lead");
+	});
 });

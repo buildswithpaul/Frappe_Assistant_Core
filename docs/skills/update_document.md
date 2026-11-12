@@ -14,6 +14,7 @@ The `update_document` tool modifies field values on an existing Frappe document.
 | `records` | array | One of `name`/`names`/`records` | Several documents of this DocType, each `{"name": ..., "data": {...}}`, for different changes |
 | `mode` | string | No | For `names`/`records`: `all_or_nothing` (default) or `continue` |
 | `data` | object | With `name` or `names` | Only the fields to change. For child tables, pass a list of row dicts under the table fieldname; a Table MultiSelect also takes its link values |
+| `edits` | array | No | With `name` only: small changes to a long text or code field, each `{"field", "find", "replace"}` (see [Small edits to long text and code](#small-edits-to-long-text-and-code)) |
 | `documents` | array | Instead of all the above | Records of several DocTypes: a list of `{doctype, name, data}`, up to 100, all updated or none. See **Several records at once** |
 | `validate_only` | boolean | No | `true` checks the change without saving it (see [Checking a change without saving](#checking-a-change-without-saving)) |
 
@@ -128,6 +129,34 @@ Each record goes through the single-update path, with the same checks.
 - `mode: "all_or_nothing"` (the default) saves nothing if any record fails, and `failed_record` names the record and its error. `mode: "continue"` saves the records that pass and lists each record's outcome in `results`.
 - Customisation DocTypes (Custom Field, Property Setter, Server Script, Client Script, DocType, Workflow, Report, Print Format, Notification and similar) are refused in a batch: write them one at a time so each one is previewed.
 
+## Small edits to long text and code
+
+To change part of a long field, such as a FAC Page's `html`, `script` or `style`, or a Server Script's `script`, pass `edits` with `name` instead of sending the whole field again. Each edit is `{"field", "find", "replace"}`:
+
+```json
+{
+  "doctype": "FAC Page",
+  "name": "overdue-invoices-a1b2",
+  "edits": [
+    {"field": "script", "find": "limit: 20", "replace": "limit: 50"},
+    {"field": "style", "find": "#tasks td { padding: 4px 8px; }", "replace": "#tasks td { padding: 8px 12px; }"}
+  ]
+}
+```
+
+- `find` is literal text, not a pattern. Copy it from the current code (fetch it with `get_document` first) and keep it short but unique.
+- `find` must match its field **exactly once**. Zero matches or several both fail, so add surrounding text until it is unique.
+- Edits apply in order, and a later edit sees the result of the earlier ones.
+- A field stored with Windows line endings (`\r\n`) keeps them: a plain newline in `find` and `replace` is read as `\r\n`.
+- Only text and code fields take edits: Small Text, Text, Long Text, Text Editor, Markdown Editor, HTML Editor, Code and JSON. Any other field is refused.
+- `edits` needs `name`. It is refused with `names` or `records`.
+- You can send `data` as well, but a field may not appear in both `edits` and `data`.
+- Send the whole field in `data` only for a rewrite.
+
+If an edit cannot be applied, nothing is saved and the result carries `error_type: "edit_not_applied"`, the `field` and `match_count` (how often `find` matched). Fetch the field again, then retry with a `find` that matches once.
+
+The saved record goes through the same checks as any update, so permissions, restricted fields and the Server Script rules apply to the edited result.
+
 ## Checking a change without saving
 
 Pass `validate_only: true` to test a change, typically a rule that runs when a record is edited (a Before Save server script, a validate hook that compares old and new values):
@@ -146,7 +175,7 @@ The change goes through the same checks as a real update: write permission on th
 ## Best Practices
 
 1. **Fetch first with `get_document`** — understand current values (and child-row `name`s) before updating.
-2. **Only include changed fields** — don't send the entire document.
+2. **Only include changed fields** — don't send the entire document. For a small change to a long text or code field, use `edits` rather than resending the field.
 3. **Use the parent doctype for child-row edits** — never target a child-table doctype directly.
 4. **Prefer patch mode for child tables** — it's surgical and won't drop rows you didn't mean to.
 5. **Use replace mode only when you intend a wipe-and-refill** — it discards any row you omit.

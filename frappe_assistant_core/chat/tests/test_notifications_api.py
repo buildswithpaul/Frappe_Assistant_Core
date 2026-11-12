@@ -12,6 +12,8 @@ MOD = "frappe_assistant_core.chat.api.notifications"
 
 def _clear_cache_for(user):
     frappe.cache.delete_value(f"fac_notifications:{user}")
+    frappe.cache.delete_value(f"faco_member:{user}")
+    frappe.cache.delete_value(f"faco_member_last:{user}")
 
 
 class TestGetNotifications(BaseAssistantTest):
@@ -26,16 +28,18 @@ class TestGetNotifications(BaseAssistantTest):
     def _call(self, client):
         from frappe_assistant_core.chat.api import notifications as api
 
+        # Production reaches a seated user through AR's get_user_auth_status answering Active.
+        client.get_user_auth_status.return_value = {"user_exists": True, "user_status": "Active"}
         with patch(f"{MOD}.get_fac_cloud_client", return_value=client), patch(
-            f"{MOD}.is_chat_enabled", return_value=True
-        ):
+            "frappe_assistant_core.chat.fac_cloud_client.get_fac_cloud_client", return_value=client
+        ), patch(f"{MOD}.is_chat_enabled", return_value=True):
             return api.get_notifications()
 
     def test_fetch_passes_normalized_user_and_caches(self):
         client = MagicMock()
         client.get_notifications.return_value = {"notifications": [{"id": "N1"}]}
         result = self._call(client)
-        client.get_notifications.assert_called_once_with(user_id=self.user, timeout=5)
+        client.get_notifications.assert_called_once_with(user_id=self.user, timeout=3)
         self.assertEqual(result["user"], self.user)
         self.assertEqual(result["notifications"], [{"id": "N1"}])
         self.assertNotIn("degraded", result)
@@ -145,9 +149,11 @@ class TestFallbackNotificationNormalization(BaseAssistantTest):
     def _call(self, client):
         from frappe_assistant_core.chat.api import notifications as api
 
+        # Production reaches a seated user through AR's get_user_auth_status answering Active.
+        client.get_user_auth_status.return_value = {"user_exists": True, "user_status": "Active"}
         with patch(f"{MOD}.get_fac_cloud_client", return_value=client), patch(
-            f"{MOD}.is_chat_enabled", return_value=True
-        ):
+            "frappe_assistant_core.chat.fac_cloud_client.get_fac_cloud_client", return_value=client
+        ), patch(f"{MOD}.is_chat_enabled", return_value=True):
             return api.get_notifications()
 
 
@@ -157,9 +163,11 @@ class TestDismissNotification(BaseAssistantTest):
 
         client = MagicMock()
         client.dismiss_notification.side_effect = RuntimeError("AR down")
+        # Production reaches a seated user through AR's get_user_auth_status answering Active.
+        client.get_user_auth_status.return_value = {"user_exists": True, "user_status": "Active"}
         with patch(f"{MOD}.get_fac_cloud_client", return_value=client), patch(
-            f"{MOD}.is_chat_enabled", return_value=True
-        ):
+            "frappe_assistant_core.chat.fac_cloud_client.get_fac_cloud_client", return_value=client
+        ), patch(f"{MOD}.is_chat_enabled", return_value=True):
             result = api.dismiss_notification(notification_id="N1")
         self.assertEqual(result["status"], "local_only")
 
@@ -171,9 +179,11 @@ class TestDismissNotification(BaseAssistantTest):
         frappe.cache.set_value(f"fac_notifications:{user}", "[]", expires_in_sec=60)
         client = MagicMock()
         client.dismiss_notification.return_value = {"status": "dismissed"}
+        # Production reaches a seated user through AR's get_user_auth_status answering Active.
+        client.get_user_auth_status.return_value = {"user_exists": True, "user_status": "Active"}
         with patch(f"{MOD}.get_fac_cloud_client", return_value=client), patch(
-            f"{MOD}.is_chat_enabled", return_value=True
-        ):
+            "frappe_assistant_core.chat.fac_cloud_client.get_fac_cloud_client", return_value=client
+        ), patch(f"{MOD}.is_chat_enabled", return_value=True):
             result = api.dismiss_notification(notification_id="N1")
         self.assertEqual(result["status"], "dismissed")
         self.assertIsNone(frappe.cache.get_value(f"fac_notifications:{user}", expires=True))

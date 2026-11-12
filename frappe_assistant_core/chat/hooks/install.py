@@ -25,16 +25,28 @@ set_single_value so the row exists in the DB immediately).
 import frappe
 
 from frappe_assistant_core.chat.cloud_url import sync_cloud_url_mirror
+from frappe_assistant_core.chat.server_setup import DEFAULT_EXPECTED_CHATTERS
 
 
 def after_install() -> None:
     """Seed FAC Chat Settings defaults on fresh install."""
     _seed_fac_cloud_url()
+    _seed_expected_concurrent_chatters()
 
 
 def _seed_fac_cloud_url() -> None:
     try:
         sync_cloud_url_mirror()
+    except Exception:
+        # FAC Chat Settings table may not exist yet during a partial migration.
+        pass
+
+
+def _seed_expected_concurrent_chatters() -> None:
+    try:
+        frappe.db.set_single_value(
+            "FAC Chat Settings", "expected_concurrent_chatters", DEFAULT_EXPECTED_CHATTERS
+        )
     except Exception:
         # FAC Chat Settings table may not exist yet during a partial migration.
         pass

@@ -19,6 +19,7 @@ MAX_MODEL_ID_LENGTH = 140
 AVAILABLE_MODELS_TTL = 300  # seconds a user's available-model ids are trusted
 AVAILABLE_MODELS_FAILURE_TTL = 30  # seconds an AR outage is remembered, so turns do not each wait
 AVAILABLE_MODELS_TIMEOUT = 3  # a turn waits at most this long for AR's list
+MODEL_LIST_KEY = "fac_model_list"  # site-wide copy of AR's model list
 
 
 def _saved_model() -> str:
@@ -78,6 +79,51 @@ def usable_saved_model() -> str:
     return saved if ids is not None and saved in ids else ""
 
 
+class _NotRegistered(Exception):
+    """The site has no FAC Cloud client."""
+
+
+def _model_list() -> tuple[dict | None, bool]:
+    """AR's model list for this site and whether it is a stale copy; (None, False) when unknown.
+
+    Shared by every user. A good answer is trusted for AVAILABLE_MODELS_TTL and an outage is
+    remembered for AVAILABLE_MODELS_FAILURE_TTL, during which the last good list is served as
+    stale. An open breaker skips AR. Answers carrying an error_code are returned uncached so an
+    accepted-terms retry is not held back.
+    """
+    from frappe_assistant_core.chat import ar_breaker
+    from frappe_assistant_core.chat.fac_cloud_client import SHORT_CALL_TIMEOUT, get_fac_cloud_client
+
+    entry = frappe.cache.get_value(MODEL_LIST_KEY) or {}
+    result, at = entry.get("result"), entry.get("at", 0)
+    # A good list stays the last good one after it ages, so an outage can still serve it.
+    last_good = result if result is not None else entry.get("last_good")
+    age = time.time() - at
+    if result is not None and age < AVAILABLE_MODELS_TTL:
+        return result, False
+    failed_recently = entry and result is None and age < AVAILABLE_MODELS_FAILURE_TTL
+    if failed_recently or ar_breaker.is_open():
+        return last_good, last_good is not None
+
+    try:
+        client = get_fac_cloud_client(timeout=SHORT_CALL_TIMEOUT)
+        if not client:
+            raise _NotRegistered
+        fresh = ar_breaker.call(lambda: client.list_available_models(timeout=AVAILABLE_MODELS_TIMEOUT))
+    except _NotRegistered:
+        raise
+    except Exception as e:
+        if not ar_breaker.is_transport_failure(e):
+            frappe.log_error(title="FACO Models Error", message=f"Error getting models: {e!s}")
+        fresh = None
+    if fresh:
+        if not fresh.get("error_code"):
+            frappe.cache.set_value(MODEL_LIST_KEY, {"result": fresh, "at": time.time(), "last_good": None})
+        return fresh, False
+    frappe.cache.set_value(MODEL_LIST_KEY, {"result": None, "at": time.time(), "last_good": last_good})
+    return last_good, last_good is not None
+
+
 @frappe.whitelist(methods=["GET"])
 def get_available_models():
     """
@@ -103,14 +149,8 @@ def get_available_models():
             }
     """
     try:
-        from frappe_assistant_core.chat.fac_cloud_client import get_fac_cloud_client
-
-        client = get_fac_cloud_client()
-        if not client:
-            return {"error": _not_registered_error()}
-
-        result = client.list_available_models(timeout=8)
-        if not result:
+        result, stale = _model_list()
+        if result is None:
             return {"error": _("Failed to fetch models")}
 
         # AR gates this endpoint on terms acceptance and answers with an
@@ -142,7 +182,7 @@ def get_available_models():
             if selected != "auto" and selected not in model_ids:
                 selected = ""
 
-        return {
+        payload = {
             "success": True,
             "models": models,
             "models_by_tier": models_by_tier,
@@ -151,7 +191,12 @@ def get_available_models():
             "selected_model": selected,
             "auto_mode": result.get("auto_mode"),
         }
+        if stale:
+            payload["stale"] = True
+        return payload
 
+    except _NotRegistered:
+        return {"error": _not_registered_error()}
     except Exception as e:
         frappe.log_error(title="FACO Models Error", message=f"Error getting models: {e!s}")
         return {"error": _safe_error(e, "FACO Models Error")}

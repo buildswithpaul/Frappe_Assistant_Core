@@ -18,6 +18,79 @@ from frappe_assistant_core.chat.gate import is_chat_enabled
 # briefly so a real suspension takes effect quickly once AR is reachable again.
 _MEMBER_CACHE_TTL = 60
 _FAILOPEN_TTL = 5
+# The last definitive AR answer outlives any outage, so a known non-member stays out while AR is
+# unreachable; only a user AR has never answered for fails open.
+_LAST_KNOWN_TTL = 24 * 60 * 60
+
+
+_STATUSES = ("Active", "Pending", "none", "unknown")
+
+
+def _last_known_key(user: str) -> str:
+    return f"faco_member_last:{user}"
+
+
+def _faco_member_status(user: str) -> str:
+    """AR's membership status for `user`: "Active", "Pending", "none" or "unknown".
+
+    "none" is a definitive AR no (or an unregistered site); "unknown" covers AR unreachable, an
+    open breaker and internal errors. Cached under ``faco_member:{user}`` as the status string
+    (a legacy "1"/"0" reads as a miss) for 60 s when definitive, 5 s when AR cannot answer.
+    When it cannot, the user's last definitive answer (kept 24 h) is returned instead, and
+    "unknown" only when AR has never given one.
+    """
+    cache_key = f"faco_member:{user}"
+    cached = frappe.cache.get_value(cache_key, expires=True)
+    if cached in _STATUSES:
+        return cached
+
+    status = "unknown"
+    definitive = False  # AR gave a real yes/no
+    settled = False  # the answer needs no retry soon: definitive, or an unregistered site
+    try:
+        from frappe_assistant_core.chat import ar_breaker
+        from frappe_assistant_core.chat.fac_cloud_client import SHORT_CALL_TIMEOUT, get_fac_cloud_client
+
+        if not ar_breaker.is_open():
+            client = get_fac_cloud_client(timeout=SHORT_CALL_TIMEOUT)
+            if not client:
+                # Unregistered site → not a member (the gate handles this earlier too).
+                status = "none"
+                settled = True
+            else:
+                # AR keys AR Tenant Users by email — query with the normalized
+                # identity, not the raw Frappe username (else the Administrator
+                # owner, whose seat is keyed by email, reads as a non-member).
+                result = client.get_user_auth_status(user_id=_ar_user_id(user)) or {}
+                if result.get("_ar_unreachable"):
+                    if ar_breaker.is_transport_marker(result):
+                        ar_breaker.record_failure()
+                else:
+                    ar_breaker.record_success()
+                    ar_status = result.get("user_status")
+                    status = ar_status if result.get("user_exists") and ar_status in _STATUSES[:2] else "none"
+                    definitive = settled = True
+    except Exception:
+        frappe.log_error(title="FACO membership check failed")
+
+    if definitive:
+        frappe.cache.set_value(_last_known_key(user), status, expires_in_sec=_LAST_KNOWN_TTL)
+    elif status == "unknown":
+        last_known = frappe.cache.get_value(_last_known_key(user), expires=True)
+        if last_known in _STATUSES[:3]:
+            status = last_known
+
+    ttl = _MEMBER_CACHE_TTL if settled else _FAILOPEN_TTL
+    frappe.cache.set_value(cache_key, status, expires_in_sec=ttl)
+    return status
+
+
+def has_seat(user: str) -> bool | None:
+    """True for an Active member, False for Pending or none, None when AR cannot say."""
+    status = _faco_member_status(user)
+    if status == "unknown":
+        return None
+    return status == "Active"
 
 
 def _is_faco_member(user: str) -> bool:
@@ -52,45 +125,7 @@ def _is_faco_member(user: str) -> bool:
     suspension takes effect quickly once AR is reachable again, rather than
     granting a stale 60s of access off one bad call.
     """
-    cache_key = f"faco_member:{user}"
-    cached = frappe.cache.get_value(cache_key, expires=True)
-    if cached is not None:
-        return cached in (True, "1", 1)
-
-    is_member = True  # default fail-open until we get a definitive answer
-    definitive = False  # True only when AR gave us a real yes/no (not a fail-open)
-    try:
-        from frappe_assistant_core.chat.fac_cloud_client import get_fac_cloud_client
-
-        client = get_fac_cloud_client()
-        if not client:
-            # Unregistered site → not a member (the gate handles this earlier too).
-            is_member = False
-            definitive = True
-        else:
-            # AR keys AR Tenant Users by email — query with the normalized
-            # identity, not the raw Frappe username (else the Administrator
-            # owner, whose seat is keyed by email, reads as a non-member).
-            result = client.get_user_auth_status(user_id=_ar_user_id(user)) or {}
-            if result.get("_ar_unreachable"):
-                # Transient AR failure — trust the session, don't lock out.
-                is_member = True
-            else:
-                # AR answered authoritatively: gate on the real AR Tenant User status.
-                is_member = bool(result.get("user_exists")) and result.get("user_status") in (
-                    "Active",
-                    "Pending",
-                )
-                definitive = True
-    except Exception:
-        # Unexpected internal error → fail OPEN; don't crash or wall off the gate.
-        # (Definitive AR "no" answers are handled above and stay fail-CLOSED.)
-        frappe.log_error(title="FACO membership check failed")
-        is_member = True
-
-    ttl = _MEMBER_CACHE_TTL if definitive else _FAILOPEN_TTL
-    frappe.cache.set_value(cache_key, "1" if is_member else "0", expires_in_sec=ttl)
-    return is_member
+    return _faco_member_status(user) != "none"
 
 
 # Called on every page load to decide whether to render the chat widget.

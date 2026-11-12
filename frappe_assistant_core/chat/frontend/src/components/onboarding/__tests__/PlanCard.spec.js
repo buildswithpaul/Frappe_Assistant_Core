@@ -41,6 +41,8 @@ const quotaText = (wrapper) => wrapper.find("[data-test=plan-quota]").text();
 describe("PlanCard", () => {
 	beforeEach(() => {
 		setActivePinia(createPinia());
+		// Production sets "ready" once the access check answers.
+		useUserStore().registrationStatus = "ready";
 		getQuotaStatus.mockReset().mockResolvedValue(FREE_TENANT);
 		getMyCreditStatus.mockReset().mockResolvedValue(NO_PERSONAL_CAP);
 	});
@@ -57,6 +59,13 @@ describe("PlanCard", () => {
 		const wrapper = await mountCard();
 		expect(quotaText(wrapper)).toContain("50,000");
 		expect(quotaText(wrapper)).not.toContain("450,000");
+	});
+
+	it("marks a stale personal figure as possibly out of date", async () => {
+		getQuotaStatus.mockResolvedValue(TEAM_PRO_TENANT);
+		getMyCreditStatus.mockResolvedValue({ ...CAPPED_MEMBER, stale: true });
+		const wrapper = await mountCard();
+		expect(wrapper.find("[data-test=plan-stale]").text()).toBe("May be out of date");
 	});
 
 	it("labels the quota as personal when a cap governs the member", async () => {
