@@ -212,6 +212,14 @@ class TestDryRunImport(BaseAssistantTest):
 
         self.assertIsNone(self._summary_rows_of(self._check(session)))
 
+    def test_a_groups_fixes_are_asked_on_one_single_choice_card(self):
+        # PR #392, L3: a single file's question card had checkboxes, so "Create territory" and
+        # "Leave out" could both be ticked; the plan's guidance already said single_select
+        description = self.registry.get_tool("dry_run_import").description
+
+        self.assertIn("one single-choice card per group", description)
+        self.assertIn("never multi_select: a group's fixes exclude each other", description)
+
     # -- what a check must not leave behind -------------------------------------------
 
     def test_a_row_with_no_customer_name_is_its_own_group(self):
