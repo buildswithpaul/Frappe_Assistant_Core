@@ -15,7 +15,7 @@ from dataclasses import dataclass
 
 import frappe
 from frappe import _, _lt
-from frappe.utils import add_days, fmt_money, get_datetime, now_datetime, today
+from frappe.utils import add_days, add_to_date, fmt_money, get_datetime, now_datetime, today
 
 from frappe_assistant_core.chat.home_preferences import load_home_preferences
 from frappe_assistant_core.plugins.core.tools.get_pending_approvals import (
@@ -28,7 +28,7 @@ LENS_ROLES: dict[str, tuple[str, ...]] = {
     "sales": ("Sales Manager", "Sales User"),
     "stock": ("Stock Manager", "Stock User", "Purchase Manager", "Purchase User", "Item Manager"),
     "hr": ("HR Manager", "HR User"),
-    "support": ("Support Team", "Helpdesk Agent"),
+    "support": ("Support Team", "Agent", "Agent Manager"),
 }
 
 LENS_AREA = {
@@ -50,6 +50,10 @@ QUOTATION_WINDOW_DAYS = 7
 STALE_LEAD_DAYS = 14
 LEAVE_START_WINDOW_DAYS = 3
 REORDER_ITEMS_LIMIT = 500
+STALE_DRAFT_DAYS = 7
+TICKET_SLA_WINDOW_HOURS = 4
+FAILED_EMAIL_DAYS = 7
+FAILED_JOB_HOURS = 24
 ERROR_LOG_INTERVAL = 3600
 ERROR_KEY_PREFIX = "fac_home_signals_err:"
 
@@ -699,6 +703,175 @@ def _expense_claims_to_approve(user: str, company: str | None) -> SignalResult |
     )
 
 
+def _unread_mentions(user: str, company: str | None) -> SignalResult | None:
+    count = count_visible("Notification Log", {"for_user": user, "type": "Mention", "read": 0}, user)
+    return SignalResult(
+        count=count,
+        title=_("unread mention of you") if count == 1 else _("unread mentions of you"),
+        detail=_("Comments where someone @mentioned you"),
+        ask=_("Show the unread mentions of me"),
+        action=_("See who mentioned you"),
+        source=_("Notification Log"),
+    )
+
+
+# Submittable documents people commonly start and forget; a DocType under an active workflow is
+# left out, because its draft may be waiting on someone else rather than on its owner.
+STALE_DRAFT_DOCTYPES = (
+    "Quotation",
+    "Sales Order",
+    "Sales Invoice",
+    "Delivery Note",
+    "Purchase Order",
+    "Purchase Invoice",
+    "Purchase Receipt",
+    "Payment Entry",
+    "Journal Entry",
+    "Stock Entry",
+    "Material Request",
+)
+
+
+def _stale_drafts(user: str, company: str | None) -> SignalResult | None:
+    cutoff = add_days(today(), -STALE_DRAFT_DAYS)
+    counts: dict[str, int] = {}
+    for doctype in STALE_DRAFT_DOCTYPES:
+        try:
+            if not frappe.db.exists("DocType", doctype) or not frappe.has_permission(
+                doctype, "read", user=user
+            ):
+                continue
+            if frappe.db.exists("Workflow", {"document_type": doctype, "is_active": 1}):
+                continue
+            counts[doctype] = count_visible(
+                doctype, {"owner": user, "docstatus": 0, "modified": ["<", cutoff]}, user
+            )
+        except Exception:
+            _log_signal_error(f"stale_drafts {doctype}")
+    count = sum(counts.values())
+    if not count:
+        return None
+    top_doctype = max(counts, key=counts.get)
+    return SignalResult(
+        count=count,
+        title=(
+            _("draft you started and never submitted")
+            if count == 1
+            else _("drafts you started and never submitted")
+        ),
+        detail=_("Mostly {0}; none touched for {1} days").format(_(top_doctype), STALE_DRAFT_DAYS),
+        ask=_("Which documents did I save as drafts and not touch for {0} days?").format(STALE_DRAFT_DAYS),
+        action=_("Finish or delete them"),
+        source=_(top_doctype),
+    )
+
+
+def _delivered_not_billed(user: str, company: str | None) -> SignalResult | None:
+    count = count_visible(
+        "Delivery Note", _company_scoped({"docstatus": 1, "is_return": 0, "status": "To Bill"}, company), user
+    )
+    return SignalResult(
+        count=count,
+        title=(_("delivery not yet invoiced") if count == 1 else _("deliveries not yet invoiced")),
+        detail=_("Goods delivered to customers that have not been billed"),
+        ask=(
+            _("Which delivery notes for {0} are delivered but not yet billed?").format(company)
+            if company
+            else _("Which delivery notes are delivered but not yet billed?")
+        ),
+        action=_("Bill them"),
+        source=_("Delivery Note"),
+    )
+
+
+def _ticket_sla_due(user: str, company: str | None) -> SignalResult | None:
+    # Open is a status category from Helpdesk 1.x; older Helpdesk has only the status names.
+    open_filter = (
+        {"status_category": "Open"}
+        if frappe.get_meta("HD Ticket").has_field("status_category")
+        else {"status": ["not in", ["Resolved", "Closed"]]}
+    )
+    now = now_datetime()
+    cutoff = add_to_date(now, hours=TICKET_SLA_WINDOW_HOURS)
+    rows = frappe.get_list(
+        "HD Ticket",
+        filters={**open_filter, "_assign": ["like", f'%"{user}"%']},
+        or_filters=[["resolution_by", "<=", cutoff], ["response_by", "<=", cutoff]],
+        fields=["resolution_by", "response_by", "first_responded_on"],
+        limit_page_length=0,
+        user=user,
+    )
+
+    def due_at(row: dict):
+        # A first response already given no longer counts; only its resolution deadline does.
+        times = [row.resolution_by]
+        if not row.first_responded_on:
+            times.append(row.response_by)
+        return min((get_datetime(t) for t in times if t), default=None)
+
+    deadlines = [at for at in (due_at(row) for row in rows) if at and at <= cutoff]
+    count = len(deadlines)
+    if not count:
+        return None
+    late = sum(1 for at in deadlines if at < now)
+    hours = TICKET_SLA_WINDOW_HOURS
+    if late == count:
+        detail = _("All of them are past their SLA")
+    elif late:
+        detail = _("{0} past their SLA, the rest due within {1} hours").format(late, hours)
+    else:
+        detail = _("Due within {0} hours").format(hours)
+    return SignalResult(
+        count=count,
+        title=(
+            _("ticket of yours near or past its SLA")
+            if count == 1
+            else _("tickets of yours near or past their SLA")
+        ),
+        detail=detail,
+        ask=_(
+            "Show the open helpdesk tickets assigned to me that are past their SLA or due within {0} hours"
+        ).format(hours),
+        action=_("Answer them"),
+        source=_("HD Ticket"),
+    )
+
+
+def _failed_emails(user: str, company: str | None) -> SignalResult | None:
+    since = add_days(now_datetime(), -FAILED_EMAIL_DAYS)
+    count = count_visible("Email Queue", {"status": "Error", "creation": [">", since]}, user)
+    return SignalResult(
+        count=count,
+        title=_("email that failed to send") if count == 1 else _("emails that failed to send"),
+        detail=_("Outgoing emails in the last {0} days that ended in an error").format(FAILED_EMAIL_DAYS),
+        ask=_("Which emails failed to send in the last {0} days, and why?").format(FAILED_EMAIL_DAYS),
+        action=_("See what failed"),
+        source=_("Email Queue"),
+    )
+
+
+def _failed_scheduled_jobs(user: str, company: str | None) -> SignalResult | None:
+    since = add_to_date(now_datetime(), hours=-FAILED_JOB_HOURS)
+    jobs = frappe.get_list(
+        "Scheduled Job Log",
+        filters={"status": "Failed", "creation": [">", since]},
+        pluck="scheduled_job_type",
+        group_by="scheduled_job_type",
+        order_by="",
+        limit_page_length=0,
+        user=user,
+    )
+    count = len(jobs)
+    return SignalResult(
+        count=count,
+        title=_("scheduled job failing") if count == 1 else _("scheduled jobs failing"),
+        detail=_("Background jobs that failed in the last {0} hours").format(FAILED_JOB_HOURS),
+        ask=_("Which scheduled jobs failed in the last {0} hours, and why?").format(FAILED_JOB_HOURS),
+        action=_("See what failed"),
+        source=_("Scheduled Job Log"),
+    )
+
+
 CATALOGUE: list[Signal] = [
     Signal(
         id="approvals",
@@ -816,5 +989,59 @@ CATALOGUE: list[Signal] = [
         requires_doctypes=("Expense Claim",),
         requires_apps=("hrms",),
         compute=_expense_claims_to_approve,
+    ),
+    Signal(
+        id="mentions",
+        label=_lt("Unread mentions"),
+        lenses=(),
+        tone="warning",
+        requires_doctypes=("Notification Log",),
+        requires_apps=(),
+        compute=_unread_mentions,
+    ),
+    Signal(
+        id="stale_drafts",
+        label=_lt("Drafts never submitted"),
+        lenses=(),
+        tone="neutral",
+        requires_doctypes=(),
+        requires_apps=(),
+        compute=_stale_drafts,
+    ),
+    Signal(
+        id="delivered_not_billed",
+        label=_lt("Delivered but not billed"),
+        lenses=("accounts", "sales"),
+        tone="warning",
+        requires_doctypes=("Delivery Note",),
+        requires_apps=(),
+        compute=_delivered_not_billed,
+    ),
+    Signal(
+        id="ticket_sla",
+        label=_lt("Tickets near or past their SLA"),
+        lenses=("support",),
+        tone="danger",
+        requires_doctypes=("HD Ticket",),
+        requires_apps=("helpdesk",),
+        compute=_ticket_sla_due,
+    ),
+    Signal(
+        id="failed_emails",
+        label=_lt("Emails that failed to send"),
+        lenses=(),
+        tone="danger",
+        requires_doctypes=("Email Queue",),
+        requires_apps=(),
+        compute=_failed_emails,
+    ),
+    Signal(
+        id="failed_scheduled_jobs",
+        label=_lt("Failing scheduled jobs"),
+        lenses=(),
+        tone="warning",
+        requires_doctypes=("Scheduled Job Log",),
+        requires_apps=(),
+        compute=_failed_scheduled_jobs,
     ),
 ]
