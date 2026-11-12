@@ -412,14 +412,30 @@ class BaseTool(ABC):
         return config
 
     def _get_app_config(self) -> Dict[str, Any]:
-        """Get app-level configuration from hooks"""
-        try:
-            from frappe.utils import get_hooks
+        """Get app-level configuration from the `assistant_tool_configs` hook.
 
-            tool_configs = get_hooks("assistant_tool_configs") or {}
-            return tool_configs.get(self.name, {})
-        except Exception:
-            return {}
+        Each installed app's dict is read as written, in install order, so a
+        later app overrides an earlier one key by key. frappe.get_hooks is not
+        used: it merges dict hooks by turning every value into a list
+        ({"max_rows": [100]}), which hands the tool the wrong type and cannot
+        tell a list-valued setting from the same key set by two apps.
+        """
+        config: Dict[str, Any] = {}
+        for app in frappe.get_installed_apps():
+            try:
+                hooks = frappe.get_module(f"{app}.hooks")
+            except ImportError:
+                continue
+            app_config = (getattr(hooks, "assistant_tool_configs", None) or {}).get(self.name)
+            if app_config is None:
+                continue
+            if not isinstance(app_config, dict):
+                self.logger.warning(
+                    f"Ignoring assistant_tool_configs['{self.name}'] from {app}: expected a dict"
+                )
+                continue
+            config.update(app_config)
+        return config
 
     def _get_site_config(self) -> Dict[str, Any]:
         """Get site-level configuration from site_config.json"""
