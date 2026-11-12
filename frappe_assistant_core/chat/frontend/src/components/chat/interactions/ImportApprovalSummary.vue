@@ -73,6 +73,8 @@ onMounted(async () => {
 	grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
 	gap: 6px 14px;
 	margin: 6px 0 4px;
+	/* the card's own side padding, as ApprovalDetails has: File / Into sat against the border (PR #392, L2) */
+	padding: 0 16px;
 	font-size: 13px;
 }
 .import-approval dt { color: var(--ql-text-muted); font-weight: 500; }
