@@ -30,7 +30,7 @@
 import { computed, nextTick, watch } from "vue";
 import { Handle, Position, useVueFlow } from "@vue-flow/core";
 import { __ } from "@/utils/i18n";
-import { NODE_TYPES } from "../graphUtils";
+import { NODE_TYPES, decisionChoices } from "../graphUtils";
 import NodeIssueMarker from "./NodeIssueMarker.vue";
 
 const props = defineProps({
@@ -42,12 +42,9 @@ const ICON = NODE_TYPES.find((t) => t.type === "decision").iconPath;
 
 const question = computed(() => String(props.data.config?.question || "").trim());
 
-// A blank choice has no text to label an edge with, so it gets no handle.
-const choices = computed(() =>
-	(Array.isArray(props.data.config?.choices) ? props.data.config.choices : [])
-		.map((c) => String(c ?? "").trim())
-		.filter(Boolean)
-);
+// A blank choice has no text to label an edge with, so it gets no handle. The
+// trimmed text is also what graphJsonToVueFlow binds a loaded edge to.
+const choices = computed(() => decisionChoices(props.data.config));
 
 // Vue Flow measures a handle once, on mount. Re-measure when the choices change
 // so an edge follows its choice to its new row.

@@ -169,8 +169,27 @@ describe("decision node", () => {
 		expect(errorsFor({ choices: ["Yes", "n".repeat(61)] })[0]).toContain("60 characters");
 	});
 
+	it("counts surrounding spaces toward the 60, as the engine stores them", () => {
+		expect(errorsFor({ choices: ["Yes", ` ${"n".repeat(59)} `] })[0]).toContain("60 characters");
+	});
+
 	it("rejects a choice repeated in another case", () => {
 		expect(errorsFor({ choices: ["Yes", "yes"] })[0]).toContain('"yes" is already a choice');
+	});
+
+	it("rejects a choice repeated with surrounding spaces", () => {
+		expect(errorsFor({ choices: ["Yes", " Yes "] })[0]).toContain('"Yes" is already a choice');
+	});
+
+	it("rejects a choice that is not text", () => {
+		expect(errorsFor({ choices: ["Yes", 5] })[0]).toContain("cannot be empty");
+	});
+
+	it("rejects a question that is not text instead of reading it as one", () => {
+		expect(errorsFor({ question: 42 })).toEqual([
+			'Decision "Refund?": Ask a question for the AI to answer',
+		]);
+		expect(errorsFor({ question: ["Refund?"] })[0]).toContain("Ask a question");
 	});
 
 	it("reserves uncertain in any case", () => {
@@ -197,9 +216,30 @@ describe("decision node", () => {
 		]);
 	});
 
-	it("matches the choice text exactly", () => {
-		const nodes = [decision(), node("a", "output")];
-		expect(validateGraph(nodes, [{ source: "d", target: "a", sourceHandle: "yes" }]).valid).toBe(false);
+	it("matches an edge to a choice trimmed and ignoring case, as the engine does", () => {
+		const nodes = [decision({ choices: ["complaint", " question "] }), node("a", "output"), node("b", "output")];
+		const edges = [
+			{ source: "d", target: "a", sourceHandle: "Complaint" },
+			{ source: "d", target: "b", sourceHandle: "  QUESTION" },
+		];
+		expect(validateGraph(nodes, edges).valid).toBe(true);
+	});
+
+	it("still flags a label that is no choice in any case or spacing", () => {
+		const nodes = [decision({ choices: ["complaint", "question"] }), node("a", "output")];
+		const result = validateGraph(nodes, [{ source: "d", target: "a", sourceHandle: " Refund " }]);
+		expect(result.errors).toEqual([
+			'Decision "Refund?": a connection leaves from "Refund", which is no longer a choice',
+		]);
+	});
+
+	it("treats a label of only spaces as unlabelled", () => {
+		const nodes = [decision(), node("a", "output"), node("b", "output")];
+		const result = validateGraph(nodes, [
+			{ source: "d", target: "a", sourceHandle: "  " },
+			{ source: "d", target: "b", sourceHandle: "No" },
+		]);
+		expect(result.errors).toEqual(['Decision "Refund?": connect each step from one of the choices']);
 	});
 
 	it("allows an unlabelled edge only as the sole way out", () => {
@@ -233,6 +273,52 @@ describe("decision edges through the graph conversion", () => {
 		const back = JSON.parse(vueFlowToGraphJson(nodes, edges));
 		expect(back.nodes[0]).toMatchObject({ type: "decision", config: graph.nodes[0].config });
 		expect(back.edges.map((e) => e.condition)).toEqual(["Refund", "Replace"]);
+	});
+
+	it("binds an edge whose label differs in case or spacing to its choice, and saves the choice", () => {
+		const graph = {
+			nodes: [
+				{ id: "d", type: "decision", config: { question: "Q?", choices: ["complaint", " question "] } },
+				{ id: "a", type: "output" },
+				{ id: "b", type: "output" },
+			],
+			edges: [
+				{ id: "e1", source: "d", target: "a", condition: "Complaint" },
+				{ id: "e2", source: "d", target: "b", condition: "QUESTION " },
+			],
+		};
+		const { nodes, edges } = graphJsonToVueFlow(graph);
+		// The handle ids DecisionNode renders: the trimmed choice text.
+		expect(edges.map((e) => e.sourceHandle)).toEqual(["complaint", "question"]);
+		expect(edges.map((e) => e.label)).toEqual(["complaint", "question"]);
+		expect(validateGraph(nodes, edges).valid).toBe(true);
+
+		const back = JSON.parse(vueFlowToGraphJson(nodes, edges));
+		expect(back.edges.map((e) => e.condition)).toEqual(["complaint", "question"]);
+		expect(back.nodes[0].config.choices).toEqual(["complaint", " question "]);
+	});
+
+	it("keeps an unknown decision label as is, so validation can flag it", () => {
+		const graph = {
+			nodes: [
+				{ id: "d", type: "decision", config: { question: "Q?", choices: ["Yes", "No"] } },
+				{ id: "a", type: "output" },
+			],
+			edges: [{ id: "e1", source: "d", target: "a", condition: "Maybe" }],
+		};
+		const { nodes, edges } = graphJsonToVueFlow(graph);
+		expect(edges[0].sourceHandle).toBe("Maybe");
+		expect(validateGraph(nodes, edges).valid).toBe(false);
+		expect(JSON.parse(vueFlowToGraphJson(nodes, edges)).edges[0].condition).toBe("Maybe");
+	});
+
+	it("leaves condition-node labels untouched", () => {
+		const graph = {
+			nodes: [{ id: "c", type: "condition" }, { id: "a", type: "output" }],
+			edges: [{ id: "e1", source: "c", target: "a", condition: "pass" }],
+		};
+		const { nodes, edges } = graphJsonToVueFlow(graph);
+		expect(JSON.parse(vueFlowToGraphJson(nodes, edges)).edges[0].condition).toBe("pass");
 	});
 
 	it("round-trips a node type this builder does not know, config untouched", () => {
