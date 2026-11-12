@@ -117,6 +117,15 @@ CAUSE_NO_MATCH = "No match"
 CAUSE_MANY_MATCHES = "More than one match"
 CAUSE_SAME_RECORD = "Same record twice"
 CAUSE_FETCHED = "Comes from a linked record"  # a fetch_from field: saving copies it back
+CAUSE_SUMMARY_ROW = "Looks like a total row"  # a spreadsheet's total or footer line, not a record
+#: A spreadsheet's total line: its first filled cell is Total, Totals, Grand Total or Sub-total,
+#: alone or followed by ":", "(" or " - " ("Total: 3 suppliers", "GRAND TOTAL (2)"), never a
+#: name that starts so ("Total Solutions", "Total-Tech", "Totally Fresh"). A preset drops such rows
+#: by its own patterns; any other file had them checked, and imported, as records (PR #392, F2).
+TOTAL_LINE = re.compile(r"^(grand|sub)?[\s-]*totals?\s*(:|\(|-\s|$)", re.IGNORECASE)
+#: The last lines of a file, under a blank line, one filled cell each, are its footer
+#: ("Printed by Accounts on 12-11-2026") when there are this many at most.
+FOOTER_LINES = 3
 
 
 class DryRunProblem(Exception):
@@ -434,6 +443,7 @@ def run(session_name: str, commit_progress: bool = False, in_background: bool = 
         coming=import_plan.planned_names(session),
         later=import_plan.later_names(session),
     )
+    checker.note_layout(payloads)
     excluded = _excluded_rows(session)
     imported = imported_rows(session)
     total = len(payloads)
@@ -558,6 +568,11 @@ class _SessionImporter(Importer):
         return result[0] if isinstance(result, tuple) else result
 
 
+def _filled(values) -> List[str]:
+    """A file row's filled cells, as text."""
+    return [text for text in (cstr(value).strip() for value in values or []) if text]
+
+
 def _value_warnings(header, doctype: str) -> Dict[int, List[Dict[str, Any]]]:
     """Row number → the warnings Frappe 15 gives a row for a Link or Select value it can't use.
     Frappe 16 gives them once per column instead, with its rows (Column.invalid_value_items), and
@@ -666,10 +681,36 @@ class _Checker:
         # Fields an old ID column is mapped to (#34244): a value left in them is an ID not imported yet
         self.translated = import_keys.translated_fields(session)
         self.preview = {"records_changing": 0, "fields_changing": 0, "by_field": {}, "samples": []}
+        self.footer_rows: set = set()  # note_layout()
         if matches is not None:
             from frappe_assistant_core.utils import import_update
 
             self.key_label = import_update.key_label(session)
+
+    def note_layout(self, payloads) -> None:
+        """The file's footer: its last lines under a blank line, a few, one filled cell each."""
+        numbers = sorted(row.row_number for payload in payloads for row in payload.rows)
+        if not numbers:
+            return
+        start = len(numbers) - 1
+        while start > 0 and numbers[start - 1] == numbers[start] - 1:
+            start -= 1
+        last = numbers[start:]
+        if start == 0 or len(last) > FOOTER_LINES:  # no blank line above them, or too many for a footer
+            return
+        lines = {row.row_number: row for payload in payloads for row in payload.rows}
+        if all(len(_filled(lines[n].data)) == 1 for n in last):
+            self.footer_rows = set(last)
+
+    def _summary_problem(self, payload) -> Optional[Tuple[Tuple, Dict]]:
+        """A total or footer line of the spreadsheet: its own group, for the user to leave out."""
+        if len(payload.rows) != 1:
+            return None
+        row = payload.rows[0]
+        filled = _filled(row.data)
+        if not filled or not (TOTAL_LINE.match(filled[0]) or row.row_number in self.footer_rows):
+            return None
+        return (CAUSE_SUMMARY_ROW,), {"cause": CAUSE_SUMMARY_ROW, "values": [filled[0]]}
 
     def check(self, payload, excluded: set, imported: set = frozenset()) -> None:
         row_numbers = [row.row_number for row in payload.rows]
@@ -678,6 +719,11 @@ class _Checker:
             return
         if excluded.intersection(row_numbers):
             self.rows += [{"row": n, "status": "excluded"} for n in row_numbers]
+            return
+        summary = self._summary_problem(payload)
+        if summary:  # not a record: what else it lacks is no question for the user
+            ids = [self._group(*summary, payload)]
+            self.rows += [{"row": n, "status": "failed", "groups": ids} for n in row_numbers]
             return
 
         needs = self._needs(payload)

@@ -672,6 +672,10 @@ def advise(session, group: Dict[str, Any]) -> Dict[str, Any]:
         ),
         dry_run.CAUSE_SAME_RECORD: _("{0}: another row updates the same record, so only the first can. {2}"),
         dry_run.CAUSE_FETCHED: _("{0}: {2}"),
+        dry_run.CAUSE_SUMMARY_ROW: _(
+            "{0}: a total or footer line of the spreadsheet, not a record. Leave it out; if it "
+            "really is a record, change it in the file."
+        ),
     }
     template = explanations.get(cause, _("{0} would fail. {2}"))
     explanation = template.format(rows, label, group.get("message") or "").strip()

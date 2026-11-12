@@ -144,6 +144,74 @@ class TestDryRunImport(BaseAssistantTest):
         url = frappe.db.get_value("FAC Import Session", session, "validation_results")
         return json.loads(frappe.get_doc("File", {"file_url": url}).get_content())
 
+    # -- a spreadsheet's own lines: totals and footers (PR #392, F2) ----------------------
+
+    def _summary_rows_of(self, result):
+        groups = [g for g in result["groups"] if g["cause"] == import_dry_run.CAUSE_SUMMARY_ROW]
+        if groups:
+            groups[0]["rows"] = [example["row"] for example in groups[0]["examples"]]
+        return groups[0] if groups else None
+
+    def test_a_total_row_is_not_a_record(self):
+        # Live: "Total: 3 suppliers" under a blank row became a Supplier, the check said ready
+        t = self.tag
+        rows = [[f"Alpha {t}", GROUP, "Company", ""], [f"Beta {t}", GROUP, "Company", ""], [""]]
+        session = self._session(rows + [["Total: 2 customers", "", "", ""]])
+
+        result = self._check(session)
+
+        group = self._summary_rows_of(result)
+        self.assertIsNotNone(group, result["groups"])
+        self.assertEqual(group["rows"], [5])
+        self.assertEqual([fix["action"] for fix in group["fixes"]], ["leave_out"])
+        self.assertIn("Total: 2 customers", group["explanation"])
+        self.assertEqual(len(result["groups"]), 1, result["groups"])  # its blanks aren't asked about too
+        self.assertEqual(result["ready"], 2)
+
+    def test_grand_totals_and_sub_totals_are_found_anywhere(self):
+        t = self.tag
+        session = self._session(
+            [
+                [f"Alpha {t}", GROUP, "Company", ""],
+                ["Sub-total", "", "", "1"],
+                [f"Beta {t}", GROUP, "Company", ""],
+                ["GRAND TOTAL (2)", "", "", ""],
+            ]
+        )
+
+        group = self._summary_rows_of(self._check(session))
+
+        self.assertEqual(group["rows"], [3, 5])
+
+    def test_a_footer_line_under_a_blank_row_is_not_a_record(self):
+        t = self.tag
+        rows = [[f"Alpha {t}", GROUP, "Company", "x"], [f"Beta {t}", GROUP, "Company", ""], [""]]
+        session = self._session(rows + [["Printed by Accounts on 12-11-2026", "", "", ""]])
+
+        group = self._summary_rows_of(self._check(session))
+
+        self.assertEqual(group["rows"], [5])
+
+    def test_a_name_that_starts_with_total_is_a_record(self):
+        t = self.tag
+        session = self._session(
+            [[f"Total Solutions {t}", GROUP, "Company", ""], [f"Totally Fresh {t}", GROUP, "Company", ""]]
+        )
+
+        result = self._check(session)
+
+        self.assertIsNone(self._summary_rows_of(result), result["groups"])
+        self.assertEqual(result["ready"], 2)
+
+    def test_a_short_row_after_a_blank_row_in_the_middle_is_a_record(self):
+        # Only the last lines of the file can be its footer: a blank line between records isn't one
+        t = self.tag
+        rows = [[f"Alpha {t}", GROUP, "Company", "x"], [""], [f"Beta {t}", "", "", ""]]
+        rows += [[f"Gamma {t}", GROUP, "Company", "y"], [f"Delta {t}", GROUP, "Company", "z"]]
+        session = self._session(rows)
+
+        self.assertIsNone(self._summary_rows_of(self._check(session)))
+
     # -- what a check must not leave behind -------------------------------------------
 
     def test_a_row_with_no_customer_name_is_its_own_group(self):
