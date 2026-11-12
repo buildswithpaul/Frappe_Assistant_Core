@@ -142,6 +142,25 @@ class TestImportHousekeeping(BaseAssistantTest):
         self.assertIn(stuck, {row["session"] for row in rows})
         self.assertNotIn(done, {row["session"] for row in rows})
 
+    def test_every_session_of_a_plan_shows_its_plan(self):
+        # PR #392, L5: the Plan column was filled only on the plan's first session, and the
+        # session ids were cut to "IMP-2026-169..."
+        from frappe_assistant_core.assistant_core.report.import_sessions.import_sessions import execute
+
+        first, second = self._session("Completed"), self._session("Completed")
+        frappe.db.set_value(SESSION, first, {"migration_plan": first, "plan_status": "Partially Completed"})
+        frappe.db.set_value(SESSION, second, "migration_plan", first)
+
+        columns, rows = execute({})
+
+        by_name = {row["session"]: row for row in rows}
+        for name in (first, second):
+            self.assertEqual(by_name[name]["migration_plan"], first)
+            self.assertEqual(by_name[name]["plan_status"], "Partially Completed")
+        widths = {c["fieldname"]: c["width"] for c in columns}
+        self.assertGreaterEqual(widths["session"], 170)
+        self.assertIn("migration_plan", widths)
+
     def test_the_report_is_for_system_managers(self):
         from frappe_assistant_core.assistant_core.report.import_sessions.import_sessions import execute
 

@@ -292,6 +292,21 @@ def next_steps() -> str:
     )
 
 
+def created_count(session) -> int:
+    """The records the session's file made: its Data Imports' count, else its Created Records of
+    the file's own DocType. A master made on the way (an opening invoice's new customer, a stock
+    row's batch, a plan's missing group) isn't one of them: a 3-row opening invoices file said
+    "4 created" (PR #392, L1)."""
+    from frappe_assistant_core.utils import import_dry_run as dry_run
+
+    made = sum(run["created"] for run in runs(session))
+    if made:
+        return made
+    engine = dry_run.special_engine(session)
+    kinds = set(getattr(engine, "RECORD_DOCTYPES", ()) or (session.target_doctype,))
+    return sum(1 for record in session.created_records if record.record_doctype in kinds)
+
+
 def runs(session) -> List[Dict[str, Any]]:
     """Every Data Import of the session once, oldest first, with its counts from its log."""
     names, purposes = [], {}

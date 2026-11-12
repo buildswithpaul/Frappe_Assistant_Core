@@ -18,6 +18,7 @@ from typing import Any, Dict, List, Optional, Union
 
 import frappe
 from frappe import _
+from frappe.utils import cint, cstr
 
 SESSION = "FAC Import Session"
 #: At most this many sessions in one call: a conversation's imports, not a site's
@@ -56,15 +57,20 @@ def _ready(doc) -> Optional[int]:
 
 def progress(doc) -> Dict[str, Any]:
     """One session as the chat shows it: its step, the counts so far and the Data Import running it."""
-    from frappe_assistant_core.utils import import_failures
+    from frappe_assistant_core.utils import import_failures, import_fixes
 
     runs = import_failures.runs(doc)
-    created = sum(run["created"] for run in runs) or len(doc.created_records)
+    created = import_failures.created_count(doc)
     # a retry imports the rows that failed before: the last run's failures are the ones left
     failed = runs[-1]["failed"] if runs else 0
+    left_out = len(import_fixes.left_out(doc))
     step = STEP_OF_STATUS.get(doc.status)
     if doc.status == "Failed":
         step = "imported" if runs else "checked"
+    status_text = None
+    if doc.status == "Completed" and not created and left_out and not runs:
+        # Every row was left out: nothing was imported, though the session is done (PR #392, L1)
+        step, status_text = "checked", _("All rows left out")
     return {
         "session": doc.name,
         "file_name": doc.file_name,
@@ -77,6 +83,8 @@ def progress(doc) -> Dict[str, Any]:
         "total": _ready(doc),
         "created": created,
         "failed": failed,
+        "left_out": left_out,
+        "status_text": status_text,
         # Frappe's own form URL: /app on v15, /desk on v16
         "url": frappe.utils.get_url_to_form(SESSION, doc.name),
     }
@@ -115,6 +123,28 @@ def plan_progress(plan: str) -> Dict[str, Any]:
 
 
 PLAN_ENDED = ("Completed", "Partially Completed", "Failed", "Stopped")
+
+
+@frappe.whitelist(methods=["POST"])
+def stop_plan(plan: str) -> Dict[str, Any]:
+    """The Stop button on the plan's progress block (PR #392, F7): a "stop now" typed in the chat
+    waited in the composer while FACO's turn ran, and the plan had finished by the time it was
+    sent. The click stops the plan at once through stop_migration_plan itself, so its checks, its
+    permission and its audit are the tool's; the user's own click needs no approval card. What's
+    imported stays: a running plan stops after the file importing now."""
+    from frappe_assistant_core.core.tool_registry import get_tool_registry
+
+    if not frappe.db.exists(SESSION, plan) or not frappe.has_permission(SESSION, "read", doc=plan):
+        raise frappe.DoesNotExistError(_("Migration plan {0} not found.").format(plan))
+    reply = get_tool_registry().get_tool("stop_migration_plan")._safe_execute({"plan": plan})
+    result = reply.get("result") if isinstance(reply, dict) and "result" in reply else reply
+    ok = bool(reply.get("success")) and bool((result or {}).get("success", True))
+    out = {"success": ok, "progress": plan_progress(plan)}
+    if ok:
+        out["message"] = (result or {}).get("message")
+    else:
+        out["error"] = (result or {}).get("error") or reply.get("error")
+    return out
 
 
 # -- the mapping review card and the import approval card (#34415) -----------------------------
@@ -248,13 +278,45 @@ def import_card(session: str) -> Dict[str, Any]:
     shown = ", ".join(pairs[:4])
     if len(pairs) > 4:
         shown += " " + _("and {0} more").format(len(pairs) - 4)
+    update = doc.import_type == "Update Existing Records"
     return {
         "session": doc.name,
         "file_name": doc.file_name,
         "doctype": doc.target_doctype,
-        "update": doc.import_type == "Update Existing Records",
+        "update": update,
         "rows": summary.get("ready"),
         "left_out": len(import_fixes.left_out(doc)),
         "submit": bool(doc.get("submit_after_import")),
         "mapping": shown,
+        "changes": _changes(summary.get("update")) if update else None,
+    }
+
+
+#: A value on the approval card is cut to this many characters
+CARD_VALUE_LENGTH = 80
+
+
+def _changes(preview: Any) -> Optional[Dict[str, Any]]:
+    """An update's old and new values, from its last check, for the approval card (PR #392, F6):
+    the card said "Update 1 Customer records" with counts only, and the values were shown only if
+    the model chose to. The user approves what changes, so the card shows it."""
+    if not isinstance(preview, dict):
+        return None
+
+    def shown(value: Any) -> str:
+        text = cstr(value)
+        return text if len(text) <= CARD_VALUE_LENGTH else text[: CARD_VALUE_LENGTH - 1] + "…"
+
+    samples = []
+    for sample in preview.get("samples") or []:
+        changes = [
+            {"label": cstr(c.get("label")), "old": shown(c.get("old")), "new": shown(c.get("new"))}
+            for c in sample.get("changes") or []
+        ]
+        samples.append({"record": cstr(sample.get("record")), "changes": changes})
+    return {
+        "records": cint(preview.get("records_changing")),
+        "fields": cint(preview.get("fields_changing")),
+        "by_field": preview.get("by_field") or {},
+        "samples": samples,
     }

@@ -82,6 +82,62 @@ class TestImportReviewApi(ImportRunCase):
         finally:
             frappe.set_user("Administrator")
 
+    def test_an_update_s_card_has_the_old_and_new_values(self):
+        # PR #392, F6: "Update 1 Customer records" with counts only; the values that change were
+        # shown only if the model chose to, though the dry run had them
+        session = self._mapped()
+        doc = frappe.get_doc("FAC Import Session", session)
+        preview = {
+            "records_changing": 7,
+            "fields_changing": 9,
+            "by_field": {"Mobile No": 7, "Territory": 2},
+            "samples": [
+                {
+                    "row": 2,
+                    "record": "CUST-0001",
+                    "changes": [
+                        {
+                            "field": "mobile_no",
+                            "label": "Mobile No",
+                            "old": "98450 11111",
+                            "new": "98450 22222",
+                        },
+                        {"field": "territory", "label": "Territory", "old": None, "new": "Karnataka"},
+                    ],
+                },
+                {
+                    "row": 3,
+                    "record": "CUST-0002",
+                    "changes": [
+                        {"field": "mobile_no", "label": "Mobile No", "old": "1" * 300, "new": "2"},
+                    ],
+                },
+            ],
+        }
+        frappe.db.set_value(
+            "FAC Import Session",
+            session,
+            {
+                "import_type": "Update Existing Records",
+                "validation_summary": frappe.as_json({"ready": 7, "update": preview}),
+            },
+        )
+
+        changes = imports.import_card(doc.name)["changes"]
+
+        self.assertEqual((changes["records"], changes["fields"]), (7, 9))
+        self.assertEqual(changes["by_field"], {"Mobile No": 7, "Territory": 2})
+        first = changes["samples"][0]
+        self.assertEqual(first["record"], "CUST-0001")
+        self.assertEqual(
+            first["changes"][0], {"label": "Mobile No", "old": "98450 11111", "new": "98450 22222"}
+        )
+        self.assertEqual(first["changes"][1]["old"], "")
+        self.assertLessEqual(len(changes["samples"][1]["changes"][0]["old"]), 81)  # a long value is cut
+
+    def test_a_new_records_card_has_no_changes(self):
+        self.assertIsNone(imports.import_card(self._mapped())["changes"])
+
     def test_the_approval_card_has_the_file_records_and_mapping(self):
         session = self._mapped()
 

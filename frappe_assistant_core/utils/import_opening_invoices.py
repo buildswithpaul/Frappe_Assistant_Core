@@ -37,6 +37,7 @@ from frappe_assistant_core.utils.savepoint import open_savepoint, rollback_to_sa
 TOOL = "Opening Invoice Creation Tool"
 IMPORT_TOOL = "import_opening_invoices"
 INVOICE_DOCTYPES = {"Sales": "Sales Invoice", "Purchase": "Purchase Invoice"}
+RECORD_DOCTYPES = tuple(INVOICE_DOCTYPES.values())  # what the file makes (import_failures.created_count)
 PARTY_TYPES = {"Sales": "Customer", "Purchase": "Supplier"}
 PARTY_FIELDS = {"Customer": "customer", "Supplier": "supplier"}
 PARTY_NAME_FIELDS = {"Customer": "customer_name", "Supplier": "supplier_name"}

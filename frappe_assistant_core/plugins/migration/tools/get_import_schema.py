@@ -41,6 +41,7 @@ class GetImportSchema(BaseTool):
     def __init__(self):
         super().__init__()
         self.name = "get_import_schema"
+        self.retry_on_deadlock = True  # its work is all in the database
         self.description = (
             "List the fields a data import can fill on a DocType: fieldname, label, type, required "
             "flag, Select options or Link target, and each child table with its own fields. Use it "
@@ -71,6 +72,8 @@ class GetImportSchema(BaseTool):
                 return {"success": False, "error": problem, "doctype": doctype}
             return {"success": True, **build_import_schema(doctype)}
 
+        except frappe.QueryDeadlockError:
+            raise  # the database undid the call: _safe_execute runs it again or says so
         except Exception as e:
             frappe.log_error(
                 title=_("Get Import Schema Error"), message=f"Error building import schema: {e!s}"

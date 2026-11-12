@@ -13,7 +13,7 @@ import unittest
 
 import frappe
 
-from frappe_assistant_core.tests.base_test import item_hsn_fields
+from frappe_assistant_core.tests.base_test import BaseAssistantTest, item_hsn_fields
 from frappe_assistant_core.tests.test_import_opening_invoices import OpeningInvoicesCase
 from frappe_assistant_core.tests.test_import_opening_stock import OpeningStockCase
 from frappe_assistant_core.tests.test_import_run import ImportRunCase
@@ -494,3 +494,31 @@ class TestCutOffChoices(unittest.TestCase):
         self.assertEqual(
             self._choices("Stock_31-Sep.xlsx", "2026-11-05"), self._choices("Stock.xlsx", "2026-11-05")
         )
+
+
+class TestThePlanCardSaysTheProfitAndLossRule(BaseAssistantTest):
+    """PR #392, L4: the plan's approval card didn't say that the trial balance's Profit and Loss rows
+    are rolled into an equity account; the user approved it without seeing it."""
+
+    def _session(self, mode, account=None):
+        settings = {"temporary_opening_account": "Temporary Opening - T", "profit_and_loss": mode}
+        if account:
+            settings["retained_earnings_account"] = account
+        return frappe._dict(
+            file_name="trial_balance.xlsx",
+            template_options=frappe.as_json({"opening_balances": settings}),
+            validation_summary=frappe.as_json(
+                {"opening_balances": {"total_debit": 100, "total_credit": 100, "balancing_amount": 0}}
+            ),
+        )
+
+    def test_rolled_into_retained_earnings_is_on_the_card(self):
+        lines = import_plan._opening_entry(self._session("retained_earnings", "Retained Earnings - T"))
+
+        self.assertTrue(any("Retained Earnings - T" in line for line in lines), lines)
+        self.assertTrue(any("Profit and Loss" in line for line in lines), lines)
+
+    def test_nothing_is_said_when_they_are_left_out(self):
+        lines = import_plan._opening_entry(self._session("stop"))
+
+        self.assertFalse(any("Profit and Loss" in line for line in lines), lines)

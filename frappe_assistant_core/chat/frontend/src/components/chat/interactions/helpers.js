@@ -141,6 +141,24 @@ export function tableReplacement(toolName, value) {
 	return null;
 }
 
+/** An update that patches a child table by row name says what it does to the rows, and that the
+ * rows not listed stay (PR #392, L4: a Fiscal Year card showed only the row it added). Null where the
+ * table is replaced: tableReplacement says that. */
+export function tablePatchNote(toolName, value) {
+	if (baseToolName(toolName) !== "update_document" || !Array.isArray(value) || !value.length) return null;
+	const rows = value.filter(isPlainObject);
+	if (!rows.some((row) => row.name)) return null;
+	const added = rows.filter((row) => !row.name).length;
+	const removed = rows.filter((row) => row.name && row._delete).length;
+	const changed = rows.length - added - removed;
+	const parts = [];
+	if (added) parts.push(__("adds {0}", [added]));
+	if (changed) parts.push(__("changes {0}", [changed]));
+	if (removed) parts.push(__("removes {0}", [removed]));
+	const what = parts.join(", ");
+	return __("{0}; the rows not listed stay as they are", [what.charAt(0).toUpperCase() + what.slice(1)]);
+}
+
 /**
  * Flatten a tool input dict for human display.
  *

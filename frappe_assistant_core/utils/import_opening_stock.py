@@ -33,6 +33,7 @@ from frappe_assistant_core.utils.import_session import read_sheet_rows, readable
 from frappe_assistant_core.utils.savepoint import open_savepoint, rollback_to_savepoint
 
 TARGET = "Stock Reconciliation"
+RECORD_DOCTYPES = (TARGET,)  # what the file makes (import_failures.created_count)
 IMPORT_TOOL = "import_opening_stock"
 ITEM_TABLE = "Stock Reconciliation Item"
 PURPOSE = "Opening Stock"

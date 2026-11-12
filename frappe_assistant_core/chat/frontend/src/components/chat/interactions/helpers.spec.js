@@ -15,6 +15,7 @@ import {
 	toolCodeLanguage,
 	isChildTable,
 	tableReplacement,
+	tablePatchNote,
 } from "./helpers";
 
 describe("isMoneyKey", () => {
@@ -53,6 +54,24 @@ describe("isMonoValue", () => {
 	it("is false for plain text fields", () => {
 		expect(isMonoValue("customer", "Promantia")).toBe(false);
 		expect(isMonoValue("currency", "INR")).toBe(false);
+	});
+});
+
+describe("tablePatchNote: an update that patches a child table (PR #392, L4)", () => {
+	// Live: a Fiscal Year card showed only the company row it added, not that the other two stay
+	it("says the rows not listed stay", () => {
+		const rows = [{ name: "row-1", company: "A" }, { company: "PR392 Test Co" }];
+		expect(tablePatchNote("update_document", rows)).toBe("Adds 1, changes 1; the rows not listed stay as they are");
+	});
+	it("counts the rows it removes", () => {
+		expect(tablePatchNote("update_document", [{ name: "row-1", _delete: true }])).toBe(
+			"Removes 1; the rows not listed stay as they are",
+		);
+	});
+	it("says nothing where the table is replaced, or for another tool", () => {
+		expect(tablePatchNote("update_document", [{ company: "A" }])).toBeNull();
+		expect(tablePatchNote("update_document", [])).toBeNull();
+		expect(tablePatchNote("create_document", [{ name: "x" }, { company: "A" }])).toBeNull();
 	});
 });
 

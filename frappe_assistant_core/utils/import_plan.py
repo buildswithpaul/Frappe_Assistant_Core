@@ -1187,7 +1187,16 @@ def _opening_entry(session) -> List[str]:
             fmt_money(abs(balance), 2),
             opening_balances.settings(session).get("temporary_opening_account"),
         )
-    return [line]
+    lines = [line]
+    settings = opening_balances.settings(session)
+    if settings.get("profit_and_loss") == "retained_earnings":
+        # The user approves this too: it was only in FACO's reply (PR #392, L4)
+        lines.append(
+            _("{0}: Profit and Loss rows are rolled into {1}, an Equity account.").format(
+                session.file_name, settings.get("retained_earnings_account")
+            )
+        )
+    return lines
 
 
 def decisions(plan, files: List[Any], new: List[Dict[str, Any]]) -> List[str]:
@@ -1660,18 +1669,26 @@ def _file_done(plan_name: str, session_name: str) -> bool:
 
 
 def _finish(plan_name: str) -> None:
+    from frappe_assistant_core.utils import import_fixes
+
     plan = get_plan(plan_name)
     files = children(plan)
-    left_out = sum((_progress(plan).get("left_out") or {}).values())
+    by_rule = sum((_progress(plan).get("left_out") or {}).values())
+    # Every row left out: the user's own choices before the run too, not only the rule's (PR #392, L1)
+    left_out = max(sum(len(import_fixes.left_out(s)) for s in files), by_rule)
     if all(s.status == "Failed" for s in files):
         status = "Failed"
-    elif left_out or any(s.status != "Completed" for s in files):
+    elif by_rule or any(s.status != "Completed" for s in files):
         status = "Partially Completed"
     else:
         status = "Completed"
     message = _("{0} files imported.").format(len(files))
-    if left_out:
-        message += " " + _("{0} rows left out, as they would have failed.").format(left_out)
+    if by_rule:
+        message += " " + _("{0} rows left out, {1} of them as they would have failed.").format(
+            left_out, by_rule
+        )
+    elif left_out:
+        message += " " + _("{0} rows left out, as asked.").format(left_out)
     _end(plan_name, status, message)
 
 
@@ -1685,20 +1702,20 @@ def _end(plan_name: str, status: str, message: str) -> None:
 
 def result(plan) -> Dict[str, Any]:
     """The run as FACO reports it: each file's state and counts, and what the plan says."""
-    from frappe_assistant_core.utils import import_failures
+    from frappe_assistant_core.utils import import_failures, import_fixes
 
-    left_out = _progress(plan).get("left_out") or {}
+    by_rule = _progress(plan).get("left_out") or {}
     files = []
     for session in children(plan):
-        created = sum(run["created"] for run in import_failures.runs(session)) or len(session.created_records)
         files.append(
             {
                 "session": session.name,
                 "file_name": session.file_name,
                 "doctype": session.target_doctype,
                 "status": session.status,
-                "created": created,
-                "left_out": left_out.get(session.name, 0),
+                "created": import_failures.created_count(session),
+                # the user's own and the failure rule's (PR #392, L1)
+                "left_out": max(len(import_fixes.left_out(session)), by_rule.get(session.name, 0)),
             }
         )
     return {

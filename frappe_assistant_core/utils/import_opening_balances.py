@@ -33,6 +33,7 @@ from frappe_assistant_core.utils.import_mapping import save_mapping, session_hea
 from frappe_assistant_core.utils.import_session import read_sheet_rows, readable_session_file
 
 TARGET = "Journal Entry"
+RECORD_DOCTYPES = (TARGET,)  # what the file makes (import_failures.created_count)
 VOUCHER_TYPE = "Opening Entry"
 IMPORT_TOOL = "import_opening_balances"
 ACCOUNT_TABLE = "accounts"

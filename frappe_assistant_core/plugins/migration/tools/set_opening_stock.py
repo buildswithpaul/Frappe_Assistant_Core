@@ -24,6 +24,7 @@ class SetOpeningStock(BaseTool):
     def __init__(self):
         super().__init__()
         self.name = "set_opening_stock"
+        self.retry_on_deadlock = True  # its work is all in the database
         self.description = (
             "Make an import session's file the user's opening stock: closing quantities and values "
             "from the old system, brought in as a Stock Reconciliation with purpose Opening Stock "

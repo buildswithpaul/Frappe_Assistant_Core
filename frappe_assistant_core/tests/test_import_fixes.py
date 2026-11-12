@@ -285,6 +285,7 @@ class TestImportFixes(BaseAssistantTest):
 
     def test_a_misspelt_name_is_marked_likely_and_creating_it_says_so(self):
         # Offered as an equal choice, "create" made a misspelt Customer Group that stayed on the site.
+        # Two letters off: one letter off ("Hospitls") isn't offered as a new record at all (F5).
         t = self.tag
         meant = f"Hospitals {t}"
         frappe.get_doc(
@@ -295,7 +296,7 @@ class TestImportFixes(BaseAssistantTest):
             }
         ).insert()
 
-        _session, result = self._session([[f"Alpha {t}", f"Hospitls {t}", "Company", ""]])
+        _session, result = self._session([[f"Alpha {t}", f"Hosptls {t}", "Company", ""]])
 
         group = self._group(result, "Missing link")
         mapping, create = group["fixes"][0], group["fixes"][1]
@@ -758,6 +759,75 @@ class TestImportFixes(BaseAssistantTest):
         self.assertFalse(self._doc(session).excluded_rows)
 
 
+class TestGroupNodes(BaseAssistantTest):
+    """PR #392, F5: "Karnatka" found no match while the group territory "Karnataka" exists, and FACO
+    offered to create "Karnatka". ERPNext takes a group Territory on a Customer: only the trees
+    whose group nodes it refuses (a Customer's group, an Account, a Cost Center, a Warehouse) leave
+    them out."""
+
+    def setUp(self):
+        super().setUp()
+        frappe.set_user("Administrator")
+        self.tag = frappe.generate_hash(length=5)
+        self.state = f"Karnataka{self.tag}"
+        frappe.get_doc(
+            {
+                "doctype": "Territory",
+                "territory_name": self.state,
+                "parent_territory": "All Territories",
+                "is_group": 1,
+            }
+        ).insert()
+        self.group = f"Wholesale{self.tag}"
+        frappe.get_doc(
+            {
+                "doctype": "Customer Group",
+                "customer_group_name": self.group,
+                "parent_customer_group": "All Customer Groups",
+                "is_group": 1,
+            }
+        ).insert()
+
+    def test_a_group_territory_is_a_close_name(self):
+        self.assertIn(self.state, import_fixes.closest_names("Territory", f"Karnatka{self.tag}"))
+
+    def test_a_group_customer_group_is_not(self):
+        self.assertNotIn(self.group, import_fixes.closest_names("Customer Group", f"Wholsale{self.tag}"))
+
+    def test_a_tree_s_parent_may_be_a_group(self):
+        self.assertIn(
+            self.group, import_fixes.closest_names("Customer Group", f"Wholsale{self.tag}", groups=True)
+        )
+
+    def test_a_value_one_letter_from_a_record_is_mapped_never_created(self):
+        session = frappe._dict(target_doctype="Customer", migration_plan=None, name=None)
+        group = {
+            "cause": import_dry_run.CAUSE_MISSING_LINK,
+            "link_doctype": "Territory",
+            "parent": "Customer",
+            "field": "territory",
+            "label": "Territory",
+            "value": f"Karnatka{self.tag}",
+            "count": 2,
+        }
+        with patch.object(import_fixes, "_with_target", lambda session, group: group):
+            advice = import_fixes.advise(session, group)
+
+        actions = [fix["action"] for fix in advice["fixes"]]
+        self.assertNotIn("create", actions, advice)
+        self.assertEqual(advice["fixes"][0]["likely"], self.state)
+        self.assertIn(self.state, advice["cannot_create"])
+
+    def test_no_default_territory_doesnt_say_a_group_cant_hold_records(self):
+        df = frappe.get_meta("Customer").get_field("territory")
+        checker = import_dry_run._Checker.__new__(import_dry_run._Checker)
+        checker.party_gaps = [df]
+
+        ((key, info),) = checker._party_gap_problems()
+
+        self.assertNotIn("hold records", info["message"])
+
+
 class TestRowRanges(BaseAssistantTest):
     def test_short_lists_are_given_in_full(self):
         self.assertEqual(import_fixes.row_ranges([2, 3, 4, 9]), "2-4, 9")
@@ -952,6 +1022,69 @@ class TestOneValueForEveryRow(BaseAssistantTest):
         self.assertTrue(imported["success"], imported)
         groups = frappe.get_all("Item", filters={"item_code": ["like", f"% {self.tag}"]}, pluck="item_group")
         self.assertEqual(groups, [self.group, self.group])
+
+    def test_a_field_an_app_says_is_required_in_its_own_words_is_filled_in(self):
+        # PR #392, F4: India Compliance refuses an Item with "HSN/SAC Code is required. Please enter
+        # a valid HSN/SAC code." (a MandatoryError, not Frappe's "Value missing for Item: ..."), so
+        # fill was refused and FACO could only leave the items out. A hook that refuses so stands in.
+        from erpnext.stock.doctype.item.item import Item
+
+        from frappe_assistant_core.tests.base_test import item_hsn_fields
+
+        brand = frappe.get_doc({"doctype": "Brand", "brand": f"Acme {self.tag}"}).insert().name
+        hsn = list(item_hsn_fields().values())  # India Compliance refuses an Item without one
+        lines = ["Code,Name,UOM,Group" + (",HSN" if hsn else "")] + [
+            ",".join([f"B{i} {self.tag}", f"Bolt {i}", "Nos", self.group, *hsn]) for i in (1, 2)
+        ]
+        file_doc = frappe.get_doc(
+            {"doctype": "File", "file_name": "items.csv", "content": "\n".join(lines) + "\n", "is_private": 1}
+        ).insert()
+        session = self._run("start_import_session", {"file_url": file_doc.file_url})["result"]["session_id"]
+        mapping = {"Code": "item_code", "Name": "item_name", "UOM": "stock_uom", "Group": "item_group"}
+        if hsn:
+            mapping["HSN"] = "gst_hsn_code"
+        self.assertTrue(
+            self._run("set_column_mapping", {"session": session, "doctype": "Item", "mapping": mapping})[
+                "success"
+            ]
+        )
+        real_validate = Item.validate
+
+        def validate(item):
+            if not item.brand:
+                # nosemgrep: frappe-missing-translate-function-python — a test stand-in for an app's refusal
+                frappe.throw("Brand is required. Please enter a valid brand.", frappe.MandatoryError)
+            return real_validate(item)
+
+        with patch.object(Item, "validate", validate):
+            checked = self._run("dry_run_import", {"session": session})["result"]
+            group = next(g for g in checked["groups"] if g["error"] == "MandatoryError")
+            fill = [f for f in group["fixes"] if f["action"] == "fill"]
+            self.assertEqual([f["field"] for f in fill], ["brand"], group)
+
+            fixed = self._run(
+                "dry_run_import",
+                {"session": session, "fixes": [{"group": group["id"], "action": "fill", "value": brand}]},
+            )
+
+        self.assertTrue(fixed["success"], fixed)
+        self.assertEqual((fixed["result"]["ready"], fixed["result"]["failed"]), (2, 0))
+
+    def test_an_app_message_naming_no_field_of_the_doctype_offers_no_fill(self):
+        session = self._session()
+        group = {
+            "cause": import_dry_run.CAUSE_REJECTED,
+            "error": "MandatoryError",
+            "message": "Something else is required first.",
+        }
+
+        self.assertIsNone(import_fixes._fill_field(engine_session(session), group))
+
+    def test_hsn_explanation_offers_one_code_for_every_item(self):
+        explanation = import_fixes.known_refusal("HSN/SAC Code is required.", "3 rows")
+
+        self.assertNotIn("give the items their code first", explanation)
+        self.assertIn("one code for every item", explanation)
 
     def test_a_value_that_isnt_a_record_is_refused(self):
         session = self._session()

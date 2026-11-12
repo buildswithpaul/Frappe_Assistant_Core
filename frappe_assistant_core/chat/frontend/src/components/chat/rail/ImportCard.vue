@@ -23,6 +23,8 @@
 				</template>
 				{{ __("{0} created", [figures(session).created]) }}
 				<template v-if="figures(session).failed"> · {{ __("{0} failed", [figures(session).failed]) }}</template>
+				<!-- the server's words, already translated: "All rows left out" (PR #392, L1) -->
+				<template v-if="session.status_text"> · {{ session.status_text }}</template>
 			</div>
 		</div>
 	</div>

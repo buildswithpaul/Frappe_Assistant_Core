@@ -222,6 +222,32 @@ class TestDataImportSession(run_tests.ImportRunCase):
         self.assertIn("&lt;img src=x onerror=alert(1)&gt;", details)
         self.assertNotIn("<img", result["message"])
 
+    def test_the_details_are_read_without_scrolling_past_every_number(self):
+        # PR #392, L5: the open points sat off-screen, after fourteen number columns, and the values
+        # column was clipped
+        from frappe_assistant_core.utils import import_signoff
+
+        names = [c["fieldname"] for c in import_signoff.columns()]
+        self.assertEqual(names[:3], ["section", "item", "details"])
+        money = [c for c in import_signoff.columns() if c["fieldtype"] == "Float"]
+        self.assertTrue(all(c["width"] >= 150 for c in money), money)
+
+    def test_an_apostrophe_is_shown_as_one(self):
+        # PR #392, L5: an open point read "don&apos;t" in the chat. Desk shows a cell as HTML, and a
+        # quote in its text is harmless there; the chat and the PDF show the text itself.
+        session, _checked, _result = self._partly_imported()
+        doc = self._doc(session)
+        rules = frappe.parse_json(doc.transformation_rules)
+        rules["left_out"]["3"] = "O'Brien & Sons <b>don't</b> buy \"retail\""
+        doc.db_set("transformation_rules", frappe.as_json(rules))
+
+        result = self._report(import_session=session)
+
+        details = " ".join(row.get("details") or "" for row in result["data"])
+        self.assertIn("O'Brien &amp; Sons &lt;b&gt;don't&lt;/b&gt; buy \"retail\"", details)
+        self.assertNotIn("&apos;", details)
+        self.assertNotIn("&#39;", details)
+
     def test_without_document_the_message_is_the_headline(self):
         session, _checked, _result = self._partly_imported()
 

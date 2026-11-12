@@ -31,7 +31,8 @@ const { state } = useImportProgress(computed(() => [props.session]));
 const session = computed(() => state.sessions[props.session] || null);
 const numbers = computed(() => figures(session.value) || { total: 0, done: 0, created: 0, failed: 0, percent: 0 });
 const what = computed(() => session.value?.file_name || session.value?.doctype || props.session);
-const statusText = computed(() => (session.value?.status ? __(session.value.status) : ""));
+// "All rows left out" for a file that ended with nothing imported (PR #392, L1): the server's words
+const statusText = computed(() => session.value?.status_text || (session.value?.status ? __(session.value.status) : ""));
 const url = computed(() => {
 	const safe = safeUrl(session.value?.url);
 	return safe ? localizeSiteLink(safe) : null;
