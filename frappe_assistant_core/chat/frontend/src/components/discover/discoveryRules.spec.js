@@ -5,7 +5,9 @@ import {
 	liveTips,
 	parseState,
 	pickDailyTip,
+	powerColor,
 	progressOf,
+	ringSegments,
 	safeRoute,
 	storySlides,
 	tipContent,
@@ -192,5 +194,39 @@ describe("safeRoute and tipContent", () => {
 			primary: { label: "Show me", route: "/agents" },
 		});
 		expect(tipContent(tip("t", { action_route: "javascript:x" })).primary.route).toBeNull();
+	});
+});
+
+describe("powerColor and ringSegments", () => {
+	const powers = ["setup", "ask", "templates", "knowledge", "pages", "agents", "extra"].map((id) => ({ id }));
+
+	it("gives each power its own colour, going round after six", () => {
+		expect(powers.map((_, i) => powerColor(i))).toEqual([
+			"var(--ql-power-1)",
+			"var(--ql-power-2)",
+			"var(--ql-power-3)",
+			"var(--ql-power-4)",
+			"var(--ql-power-5)",
+			"var(--ql-power-6)",
+			"var(--ql-power-1)",
+		]);
+	});
+
+	it("splits the ring into one arc per power, in order, with a gap between arcs", () => {
+		const segs = ringSegments(powers.slice(0, 6), ["pages"], { circ: 120, gap: 4 });
+		expect(segs.map((s) => [s.id, s.done])).toEqual([
+			["setup", true],
+			["ask", false],
+			["templates", false],
+			["knowledge", false],
+			["pages", true],
+			["agents", false],
+		]);
+		expect(segs[0]).toMatchObject({ dasharray: "16 104", dashoffset: -2, color: "var(--ql-power-1)" });
+		expect(segs[4]).toMatchObject({ dashoffset: -82, color: "var(--ql-power-5)" });
+	});
+
+	it("draws nothing for an empty list", () => {
+		expect(ringSegments([], [], { circ: 120, gap: 4 })).toEqual([]);
 	});
 });

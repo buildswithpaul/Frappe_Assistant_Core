@@ -123,7 +123,15 @@ describe("NavRail bot: Your FAC ring", () => {
 		await bot(w).trigger("click");
 		await flushPromises();
 		const panel = w.find("[data-test='your-fac-panel']");
-		expect(panel.text()).toContain("1 of 6");
+		// As in the plan: a ring with "1 of 6 powers" and the next one to try.
+		expect(panel.find("[data-test='your-fac-ring'] svg").exists()).toBe(true);
+		expect(panel.find("[data-test='your-fac-count']").text()).toBe("1 of 6 powers");
+		expect(panel.find("[data-test='your-fac-next']").text()).toBe("Next: Ask your data");
+		// One arc per power, in its own colour once used: only setup is done here.
+		const segs = panel.findAll("[data-test^='your-fac-seg-']");
+		expect(segs).toHaveLength(6);
+		expect(segs.map((s) => s.classes("done"))).toEqual([true, false, false, false, false, false]);
+		expect(panel.find("[data-test='power-ask']").attributes("style")).toContain("--power-color: var(--ql-power-2)");
 		expect(w.findAll("[data-test^='power-try-']")).toHaveLength(5);
 		await w.find("[data-test='power-try-agents']").trigger("click");
 		await flushPromises();
@@ -172,6 +180,23 @@ describe("NavRail bot: What's new story", () => {
 		await flushPromises();
 		expect(w.router.currentRoute.value.path).toBe("/agents");
 		expect(useDiscoveryStore().state.stories_seen).toEqual(["story-nov"]);
+	});
+
+	it("a slide shows its feature's preview, and one with nothing to show has no empty picture box", async () => {
+		const story = {
+			...STORY,
+			slides: [
+				{ title: "One", message: "First", feature: "agents" },
+				{ title: "Two", message: "Second" },
+			],
+		};
+		const w = await mountRail({ notifications: [story] });
+		await bot(w).trigger("click");
+		await flushPromises();
+		expect(w.find("[data-test='story-media'] [data-test='feature-preview-art']").exists()).toBe(true);
+		await w.find("[data-test='story-next']").trigger("click");
+		expect(w.find("[data-test='story-media']").exists()).toBe(false);
+		expect(w.find(".story-body--alone").exists()).toBe(true);
 	});
 
 	it("no story ring when the user turned What's new off", async () => {

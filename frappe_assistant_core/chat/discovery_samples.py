@@ -13,6 +13,7 @@ import frappe
 
 SAMPLE_TIP_ID = "sample-tip-agents"
 SAMPLE_STORY_ID = "sample-story-whats-new"
+SAMPLE_STORY_2_ID = "sample-story-your-fac"
 
 
 def samples_enabled() -> bool:
@@ -71,6 +72,31 @@ def sample_notifications() -> list[dict]:
                     "title": "📊 Save any answer as a Page",
                     "message": "Ask for numbers, then keep them as a live Page you can share as PDF.",
                     "feature": "pages",
+                    "action_label": "Try it",
+                    "action_route": "/chat",
+                },
+            ],
+            "dismissible": True,
+            "dismissed": False,
+            "created_at": "",
+        },
+        {
+            # A second story, so a test user who watched the first one gets the next unseen one.
+            "id": SAMPLE_STORY_2_ID,
+            "display_style": "story",
+            "type": "feature",
+            "priority": "normal",
+            "title": "Your FAC",
+            "message": "A ring that shows what you have tried.",
+            "slides": [
+                {
+                    "title": "🎯 One colour for each power",
+                    "message": "Each thing you try in FAC fills its own piece of the ring on the FAC bot.",
+                },
+                {
+                    "title": "📌 Pin the questions you ask often",
+                    "message": "Save a question as a prompt template and run it again in one click.",
+                    "feature": "templates",
                     "action_label": "Try it",
                     "action_route": "/chat",
                 },

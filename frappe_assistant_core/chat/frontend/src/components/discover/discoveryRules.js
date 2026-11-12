@@ -142,6 +142,27 @@ export function progressOf(powers, used) {
 	return { done, total: powers.length, next: powers.find((p) => !isPowerUsed(p.id, used)) || null };
 }
 
+/** Each power's colour, by its place in AR's list: --ql-power-1 … --ql-power-6, then round again. */
+export function powerColor(index) {
+	return `var(--ql-power-${(index % 6) + 1})`;
+}
+
+/**
+ * The Your FAC ring as one arc per power, in list order: done arcs take the power's colour,
+ * the rest stay grey. `circ` is the circle's length, `gap` the space between arcs.
+ */
+export function ringSegments(powers, used, { circ, gap }) {
+	const step = circ / (powers.length || 1);
+	const length = Math.max(step - gap, 0);
+	return powers.map((p, i) => ({
+		id: p.id,
+		done: isPowerUsed(p.id, used),
+		color: powerColor(i),
+		dasharray: `${length} ${circ - length}`,
+		dashoffset: -(i * step + gap / 2),
+	}));
+}
+
 /**
  * The "Show me" pop-up for a tip, in the shape SpotlightModal renders. A tip without its own
  * picture gets the moving preview of its feature, when the site has one.

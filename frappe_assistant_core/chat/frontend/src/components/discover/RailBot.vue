@@ -6,10 +6,11 @@ import { useDiscoveryStore } from "@/stores/discoveryStore";
 import FacoRobot from "@/components/common/FacoRobot.vue";
 import StoryPlayer from "@/components/stories/StoryPlayer.vue";
 import YourFacPanel from "./YourFacPanel.vue";
+import { ringSegments } from "./discoveryRules";
 
 /**
  * The FAC bot at the top of the rail: the only bot on screen. A coloured ring while a What's new
- * story is waiting (tap = watch it); otherwise the gold Your FAC ring (tap = the powers panel);
+ * story is waiting (tap = watch it); otherwise the Your FAC ring, one colour per power, (tap = the powers panel);
  * with both switched off, or nothing from AR, it is the plain home link it always was.
  */
 const router = useRouter();
@@ -23,10 +24,9 @@ const mode = computed(() => {
 	if (discovery.showProgress) return "progress";
 	return "home";
 });
-const arc = computed(() => {
-	const { done, total } = discovery.progress;
-	return total ? CIRC * (1 - done / total) : CIRC;
-});
+const segments = computed(() =>
+	ringSegments(discovery.powers, discovery.state.used, { circ: CIRC, gap: 3 })
+);
 const label = computed(() => {
 	if (mode.value === "story") return __("What's new: {0}", [discovery.waitingStory.title || ""]);
 	const { done, total } = discovery.progress;
@@ -66,16 +66,20 @@ function openSettings() {
 	>
 		<svg class="bot-ring" viewBox="0 0 48 48" aria-hidden="true">
 			<template v-if="mode === 'progress'">
-				<circle class="ring-track" cx="24" cy="24" :r="R" />
-				<circle
-					class="ring-fill"
-					cx="24"
-					cy="24"
-					:r="R"
-					:stroke-dasharray="CIRC"
-					:stroke-dashoffset="arc"
-					data-test="rail-bot-progress"
-				/>
+				<g data-test="rail-bot-progress">
+					<circle
+						v-for="s in segments"
+						:key="s.id"
+						class="ring-seg"
+						:class="{ done: s.done }"
+						cx="24"
+						cy="24"
+						:r="R"
+						:stroke-dasharray="s.dasharray"
+						:stroke-dashoffset="s.dashoffset"
+						:style="{ '--power-color': s.color }"
+					/>
+				</g>
 			</template>
 			<circle v-else class="ring-story" cx="24" cy="24" :r="R" />
 		</svg>
@@ -103,8 +107,8 @@ function openSettings() {
 .rail-bot:focus-visible { outline: 2px solid var(--ql-accent); outline-offset: 2px; }
 .bot-ring { position: absolute; inset: 0; width: 100%; height: 100%; transform: rotate(-90deg); pointer-events: none; }
 .bot-ring circle { fill: none; stroke-width: 3; }
-.ring-track { stroke: var(--ql-subtle); }
-.ring-fill { stroke: var(--ql-gold); stroke-linecap: round; transition: stroke-dashoffset 0.6s ease; }
+.ring-seg { stroke: var(--ql-subtle); transition: stroke 0.4s ease; }
+.ring-seg.done { stroke: var(--power-color); }
 .ring-story { stroke: var(--ql-accent); }
 .is-story .bot-ring { animation: story-spin 6s linear infinite; }
 .is-story .ring-story { stroke-dasharray: 10 4; }
@@ -117,6 +121,6 @@ function openSettings() {
 @keyframes bot-pop { 50% { transform: scale(1.12); } }
 @media (prefers-reduced-motion: reduce) {
 	.is-story .bot-ring, .unlocked { animation: none; }
-	.ring-fill { transition: none; }
+	.ring-seg { transition: none; }
 }
 </style>

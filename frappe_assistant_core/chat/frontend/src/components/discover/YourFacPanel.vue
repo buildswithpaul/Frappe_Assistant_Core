@@ -1,7 +1,7 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
 import { __ } from "@/utils/i18n";
-import { isPowerUsed } from "./discoveryRules";
+import { isPowerUsed, powerColor, ringSegments } from "./discoveryRules";
 
 /**
  * Your FAC: the powers AR lists, which ones this user has really used, and a Try on the next one.
@@ -16,9 +16,17 @@ const emit = defineEmits(["try", "close", "settings"]);
 const panel = ref(null);
 
 const rows = computed(() =>
-	props.powers.map((p) => ({ ...p, done: isPowerUsed(p.id, props.used), next: props.progress.next?.id === p.id }))
+	props.powers.map((p, i) => ({
+		...p,
+		done: isPowerUsed(p.id, props.used),
+		next: props.progress.next?.id === p.id,
+		color: powerColor(i),
+	}))
 );
-const percent = computed(() => (props.progress.total ? (props.progress.done / props.progress.total) * 100 : 0));
+// The big ring: one arc per power, each in its own colour once it is used.
+const R = 33;
+const CIRC = 2 * Math.PI * R;
+const segments = computed(() => ringSegments(props.powers, props.used, { circ: CIRC, gap: 4 }));
 
 function onDocPointer(e) {
 	// The bot that opened the panel toggles it itself.
@@ -46,15 +54,33 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocPointer))
 		data-test="your-fac-panel"
 		@keydown="onKeydown"
 	>
-		<header class="yf-head">
-			<h2 class="yf-title">{{ __("Your FAC") }}</h2>
-			<span class="yf-count">{{ __("{0} of {1}", [progress.done, progress.total]) }}</span>
-		</header>
-		<div class="yf-bar" aria-hidden="true"><span :style="{ width: `${percent}%` }"></span></div>
-		<p v-if="progress.done === progress.total" class="yf-all">{{ __("You've tried everything FAC can do. Nice.") }}</p>
+		<h2 class="yf-title">{{ __("Your FAC") }}</h2>
+		<div class="yf-ring" data-test="your-fac-ring">
+			<svg viewBox="0 0 74 74" aria-hidden="true">
+				<circle
+					v-for="s in segments"
+					:key="s.id"
+					class="yf-seg"
+					:class="{ done: s.done }"
+					cx="37"
+					cy="37"
+					:r="R"
+					:stroke-dasharray="s.dasharray"
+					:stroke-dashoffset="s.dashoffset"
+					:style="{ '--power-color': s.color }"
+					:data-test="`your-fac-seg-${s.id}`"
+				/>
+			</svg>
+			<span class="yf-ring-text">
+				<b data-test="your-fac-count">{{ __("{0} of {1} powers", [progress.done, progress.total]) }}</b>
+				<small data-test="your-fac-next">
+					{{ progress.next ? __("Next: {0}", [progress.next.label]) : __("All done. Nice work.") }}
+				</small>
+			</span>
+		</div>
 
 		<ul class="yf-list">
-			<li v-for="p in rows" :key="p.id" class="yf-row" :class="{ done: p.done, next: p.next }" :data-test="`power-${p.id}`">
+			<li v-for="p in rows" :key="p.id" class="yf-row" :class="{ done: p.done, next: p.next }" :style="{ '--power-color': p.color }" :data-test="`power-${p.id}`">
 				<span class="yf-mark" aria-hidden="true">{{ p.done ? "✓" : "" }}</span>
 				<span class="yf-text">
 					<span class="yf-label">{{ p.label }}<span v-if="p.done" class="sr-only">, {{ __("done") }}</span></span>
@@ -84,12 +110,16 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocPointer))
 	padding: 16px; box-sizing: border-box; border: 1px solid var(--ql-border); border-radius: 14px;
 	background: var(--ql-surface); box-shadow: 0 12px 32px color-mix(in srgb, var(--ql-text) 18%, transparent); outline: none;
 }
-.yf-head { display: flex; align-items: baseline; justify-content: space-between; }
 .yf-title { margin: 0; font-size: 16px; font-weight: 700; color: var(--ql-text); }
-.yf-count { font-size: 12.5px; font-weight: 600; color: var(--ql-gold); }
-.yf-bar { height: 6px; margin: 10px 0 12px; overflow: hidden; border-radius: 3px; background: var(--ql-subtle); }
-.yf-bar span { display: block; height: 100%; border-radius: 3px; background: var(--ql-gold); transition: width 0.4s ease; }
-.yf-all { margin: 0 0 8px; font-size: 13px; color: var(--ql-text-secondary); }
+.yf-ring { display: flex; align-items: center; gap: 14px; margin: 12px 0 14px; }
+.yf-ring svg { flex: none; width: 74px; height: 74px; transform: rotate(-90deg); }
+.yf-ring circle { fill: none; stroke-width: 7; }
+.yf-seg { stroke: var(--ql-subtle); transition: stroke 0.4s ease; }
+.yf-seg.done { stroke: var(--power-color); }
+.yf-ring-text { display: flex; flex-direction: column; min-width: 0; }
+.yf-ring-text b { font-family: var(--ql-font-display, Georgia, serif); font-size: 22px; font-weight: 600; line-height: 1.2; color: var(--ql-text); }
+.yf-ring-text small { font-size: 12.5px; color: var(--ql-text-muted); }
+@media (prefers-reduced-motion: reduce) { .yf-seg { transition: none; } }
 .yf-list { margin: 0; padding: 0; list-style: none; }
 .yf-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--ql-border); }
 .yf-row:first-child { border-top: 0; }
@@ -97,8 +127,9 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocPointer))
 	flex: none; display: flex; align-items: center; justify-content: center; width: 20px; height: 20px;
 	border: 1.5px solid var(--ql-border); border-radius: 50%; font-size: 11px; font-weight: 700; color: var(--ql-bg);
 }
-.yf-row.done .yf-mark { border-color: var(--ql-gold); background: var(--ql-gold); }
-.yf-row.next .yf-mark { border-color: var(--ql-gold); }
+/* Each power keeps its own colour: filled when done, an outline on the next one to try. */
+.yf-row.done .yf-mark { border-color: var(--power-color); background: var(--power-color); }
+.yf-row.next .yf-mark { border-color: var(--power-color); }
 .yf-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .yf-label { font-size: 13.5px; font-weight: 600; color: var(--ql-text); }
 .yf-row.done .yf-label { color: var(--ql-text-secondary); }

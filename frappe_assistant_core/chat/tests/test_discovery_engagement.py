@@ -167,7 +167,7 @@ class TestDiscoverySamples(BaseAssistantTest):
             styles = [
                 n["display_style"] for n in notifications._response([], "u", degraded=False)["notifications"]
             ]
-            self.assertEqual(styles, ["tip", "story"])
+            self.assertEqual(styles, ["tip", "story", "story"])
             self.assertEqual(init_mod._with_sample_discovery(caps)["discovery"]["powers"][0]["id"], "setup")
 
     def test_the_chat_pages_own_capabilities_call_keeps_the_sample_powers(self):
