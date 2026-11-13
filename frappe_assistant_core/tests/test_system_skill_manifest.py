@@ -319,7 +319,15 @@ class TestSystemSkillManifest(BaseAssistantTest):
         entry = next(e for e in _load_manifest("system_skills.json") if e["skill_id"] == "page-reports")
         self.assertEqual((entry["status"], entry["visibility"]), ("Published", "Public"))
         text = self._read_skill("page_reports.md")
-        for claim in ("fac.report(", "no_access", "preparing", "report_access", "Never recompute"):
+        for claim in (
+            "fac.report(",
+            "no_access",
+            "preparing",
+            '"error"',
+            "report_access",
+            "Never recompute",
+            "group_by_party",
+        ):
             self.assertIn(claim, text)
         for name in ("pages_in_chat.md", "fac_page.md", "mockup_kit.md"):
             self.assertIn('get_skill("page-reports")', self._read_skill(name), name)

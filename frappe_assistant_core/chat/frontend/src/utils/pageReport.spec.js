@@ -106,6 +106,27 @@ describe("report", () => {
 		expect(r.status).toBe("no_access");
 	});
 
+	it("reads a prepared report whose result has been generated", async () => {
+		// query_report.run adds prepared_report and the Prepared Report's doc to a completed result.
+		const r = await report(fakeFrappe({ run: { ...AR_FIXTURE, prepared_report: true, doc: { name: "PR-0001" } } }), "Accounts Receivable");
+		expect(r.status).toBe("ok");
+		expect(r.rows).toHaveLength(2);
+		expect(r.total).toMatchObject({ outstanding: 1873899.0 });
+	});
+
+	it("returns error with the server's message when a run is refused on a filter value", async () => {
+		// validate_filters_permissions throws a ValidationError (HTTP 417) for a company the viewer cannot read.
+		const refused = Object.assign(new Error("You do not have access to Company C"), { status: 417 });
+		const r = await report(fakeFrappe({ runError: refused }), "Profit and Loss Statement", { company: "C" });
+		expect(r).toMatchObject({ status: "error", message: "You do not have access to Company C", rows: [] });
+	});
+
+	it("asks Desk not to open its message dialog over the page", async () => {
+		const f = fakeFrappe();
+		await report(f, "Profit and Loss Statement");
+		expect(f.calls.map((c) => c.silent)).toEqual([true, true]);
+	});
+
 	it("rethrows any other failure so the host can report it", async () => {
 		await expect(report(fakeFrappe({ runError: new Error("boom") }), "Profit and Loss Statement")).rejects.toThrow("boom");
 	});
