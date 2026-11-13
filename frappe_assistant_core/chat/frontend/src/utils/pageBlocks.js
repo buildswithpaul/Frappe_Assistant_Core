@@ -14,6 +14,38 @@ import { __ } from "@/utils/i18n";
 import { makeEditors } from "./pageEditList";
 
 const message = (r) => r?.message;
+let pickers = 0;
+
+/**
+ * A period select the page fills with its periods. A change the user makes calls onChange; set()
+ * changes it from the page without calling it, so a page can follow Present mode or a link.
+ */
+function periodPicker(root, { options = [], value, onChange, label = __("Period") } = {}) {
+	const id = `mk-period-${++pickers}`;
+	const field = document.createElement("div");
+	field.className = "mk-field mk-period";
+	const caption = document.createElement("label");
+	caption.htmlFor = id;
+	caption.textContent = label;
+	const select = document.createElement("select");
+	select.id = id;
+	for (const option of options) {
+		const item = document.createElement("option");
+		item.value = typeof option === "string" ? option : option.value;
+		item.textContent = typeof option === "string" ? option : option.label ?? option.value;
+		select.append(item);
+	}
+	if (value !== undefined) select.value = value;
+	select.addEventListener("change", () => onChange?.(select.value));
+	field.append(caption, select);
+	root.append(field);
+	return {
+		value: () => select.value,
+		set(next) {
+			select.value = next;
+		},
+	};
+}
 
 /** The page tools for a page whose script sees `frappe`. */
 export function makeBlocks(frappe) {
@@ -36,9 +68,5 @@ export function makeBlocks(frappe) {
 		return when ? __("Updated by {0} · {1}", [doc.modified_by, when]) : __("Updated by {0}", [doc.modified_by]);
 	}
 
-	const notYet = (name) => () => {
-		throw new Error(`fac.${name} is not available yet`);
-	};
-
-	return { canWrite, updated, ...makeEditors(frappe, canWrite), periodPicker: notYet("periodPicker") };
+	return { canWrite, updated, ...makeEditors(frappe, canWrite), periodPicker };
 }
