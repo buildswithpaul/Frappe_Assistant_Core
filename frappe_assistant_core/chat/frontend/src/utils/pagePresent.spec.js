@@ -109,6 +109,19 @@ describe("mountPresentControls", () => {
 		expect(container.querySelector(".fac-present-where b")).toBeNull();
 	});
 
+	it("gives the container a page background while presenting, and puts its style back after", async () => {
+		// The container sits outside the page's shadow root, where the kit's styles do not reach,
+		// so full screen would otherwise show the browser's black backdrop.
+		const container = page();
+		container.style.padding = "3px";
+		const presenting = await mountPresentControls({ container, deck: fakeDeck(), fullscreen: false });
+		expect(container.style.background).toBe("rgb(255, 255, 255)");
+		expect(container.style.overflow).toBe("auto");
+		await presenting.stop();
+		expect(container.style.background).toBe("");
+		expect(container.style.padding).toBe("3px");
+	});
+
 	it("moves with the keyboard and stops with Escape", async () => {
 		const container = page();
 		const deck = fakeDeck();

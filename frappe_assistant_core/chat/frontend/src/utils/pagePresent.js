@@ -10,6 +10,9 @@ import { __ } from "@/utils/i18n";
 const PRESENTING = "fac-presenting";
 const OFF = "fac-present-off";
 const CONTAINER = "fac-present-container";
+// The container is outside the page's shadow root, where the kit's styles do not reach, so its
+// presenting look is set inline; without a background, full screen shows a black backdrop.
+const CONTAINER_STYLE = { background: "#ffffff", overflow: "auto", padding: "24px", boxSizing: "border-box" };
 
 const KEYS = {
 	ArrowRight: "next",
@@ -94,6 +97,7 @@ export async function mountPresentControls({ container, deck, onExit, fullscreen
 	let state = await deck.start();
 	let stopped = false;
 	let enteredFullscreen = false;
+	const savedStyle = Object.fromEntries(Object.keys(CONTAINER_STYLE).map((key) => [key, container.style[key]]));
 
 	const bar = document.createElement("div");
 	bar.className = "fac-present-bar";
@@ -144,6 +148,7 @@ export async function mountPresentControls({ container, deck, onExit, fullscreen
 		doc.removeEventListener("fullscreenchange", onFullscreen);
 		bar.remove();
 		container.classList.remove(CONTAINER);
+		Object.assign(container.style, savedStyle);
 		if (doc.fullscreenElement === container) await doc.exitFullscreen?.().catch(() => {});
 		await deck.stop();
 		onExit?.();
@@ -155,6 +160,7 @@ export async function mountPresentControls({ container, deck, onExit, fullscreen
 	doc.addEventListener("keydown", onKey);
 	doc.addEventListener("fullscreenchange", onFullscreen);
 	container.classList.add(CONTAINER);
+	Object.assign(container.style, CONTAINER_STYLE);
 	container.append(bar);
 	draw();
 
