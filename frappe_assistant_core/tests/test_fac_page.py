@@ -1116,3 +1116,45 @@ class TestReportAccess(BaseAssistantTest):
         frappe.set_user("Guest")
         with self.assertRaises(frappe.PermissionError):
             report_access([self.REPORT])
+
+
+class TestFACPageDocTypes(BaseAssistantTest):
+    """A page records the doctypes it reads or writes, so FACO reuses them when it changes the page."""
+
+    def tearDown(self):
+        # nosemgrep: frappe-setuser — restores the session the tests above switched away from
+        frappe.set_user("Administrator")
+        super().tearDown()
+
+    def _personal(self, **fields) -> str:
+        # Production: FACO's create_document inserts a personal page as a Desk user.
+        user = self.make_throwaway_user("fac-doctypes", roles=("Report Manager",))
+        # nosemgrep: frappe-setuser — test acts as a non-Administrator inside the test transaction
+        frappe.set_user(user)
+        doc = frappe.get_doc(
+            {
+                "doctype": "FAC Page",
+                "title": "Review",
+                "slug": f"review-{frappe.generate_hash(length=6).lower()}",
+                "html": "<p>x</p>",
+                **fields,
+            }
+        )
+        doc.insert()
+        return doc.name
+
+    def test_a_page_records_the_doctypes_it_uses(self):
+        name = self._personal(doctypes=[{"doctype_link": "ToDo"}, {"doctype_link": "Note"}])
+        recorded = [row.doctype_link for row in frappe.get_doc("FAC Page", name).doctypes]
+        self.assertEqual(recorded, ["ToDo", "Note"])
+
+    def test_a_page_cannot_record_a_doctype_that_does_not_exist(self):
+        with self.assertRaises(frappe.LinkValidationError):
+            self._personal(doctypes=[{"doctype_link": "No Such DocType"}])
+
+    def test_deleting_a_page_leaves_its_doctypes_and_records(self):
+        name = self._personal(doctypes=[{"doctype_link": "ToDo"}])
+        todo = frappe.get_doc({"doctype": "ToDo", "description": "kept"}).insert()
+        frappe.delete_doc("FAC Page", name)
+        self.assertTrue(frappe.db.exists("DocType", "ToDo"))
+        self.assertTrue(frappe.db.exists("ToDo", todo.name))
