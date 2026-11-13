@@ -6,4 +6,5 @@
  */
 export { deskBlocks, makeBlocks } from "./pageBlocks";
 export { chart } from "./pageCharts";
+export { makePresenter, mountPresentControls } from "./pagePresent";
 export { report } from "./pageReport";

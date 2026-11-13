@@ -144,6 +144,16 @@ describe("editList", () => {
 		expect(root.querySelector("p.mk-edit-error").textContent).toBe("Not permitted");
 	});
 
+	it("marks every edit control so Present mode hides it", async () => {
+		const root = mount();
+		await makeBlocks(fakeFrappe({ docs: [update] })).editList(root, { doctype: "BU Update", name: "BU-0001", table: "risks", columns: RISKS, canEdit: true });
+		button(root, "Edit").click();
+		const buttons = [...root.querySelectorAll("button")];
+		expect(buttons.length).toBeGreaterThan(0);
+		expect(buttons.every((b) => b.classList.contains("mk-edit"))).toBe(true);
+		expect(root.querySelector(".mk-edit-rows").classList.contains("mk-edit")).toBe(true);
+	});
+
 	it("saves nothing on Cancel", async () => {
 		const root = mount();
 		const f = fakeFrappe({ docs: [update] });

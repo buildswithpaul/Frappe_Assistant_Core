@@ -265,3 +265,18 @@ body,
 .mk-period {
 	max-width: 220px;
 }
+
+/* Present mode (pagePresent.js): one section per screen, edit controls hidden. */
+.fac-presenting .mk-section.fac-present-off {
+	display: none;
+}
+
+.fac-presenting .mk-edit {
+	display: none !important;
+}
+
+.fac-present-container:fullscreen {
+	background: var(--mk-bg);
+	overflow: auto;
+	padding: 24px;
+}
