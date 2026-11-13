@@ -11,7 +11,7 @@
 	/>
 	<!-- A personal page runs at once, in a frame that reads as the user and asks before a change.
 	     Only a page that says it is Shared runs beside the chat, so a missing flag fails closed. -->
-	<div v-else-if="personal" class="page-view-frame">
+	<div v-else-if="personal" ref="personalBox" class="page-view-frame">
 		<PageFrame
 			ref="personalFrame"
 			:page="page"
@@ -38,7 +38,7 @@ import { fac_page_draft_srcdoc } from "@/utils/facPageDraft";
 import { makeBlocks } from "@/utils/pageBlocks";
 import { chart } from "@/utils/pageCharts";
 import { report } from "@/utils/pageReport";
-import { makePresenter, mountPresentControls } from "@/utils/pagePresent";
+import { makePresenter, mountPresentControls, remoteDeck } from "@/utils/pagePresent";
 import { snapshotHtml } from "@/utils/pagePrint";
 import { cleanSnapshot } from "@/utils/pageSnapshotSanitise";
 import { failedCallText, makeFrappeStandIn, runPageScript } from "@/utils/pageRuntime";
@@ -65,6 +65,7 @@ const WIDE_PAGE_PX = 900;
 const host = ref(null);
 const draftFrame = ref(null);
 const personalFrame = ref(null);
+const personalBox = ref(null);
 // The charts this render drew; a newer version or a closed panel disposes them.
 const charts = [];
 // What went wrong while this version ran, for FACO's screenshot to report.
@@ -133,32 +134,44 @@ onMounted(() => {
 
 // Present mode: a shared page's sections are switched in its shadow root here, a personal page's
 // inside its own frame. On a phone it stays in the panel, since phones often refuse full screen.
+// `presenting` is a start token until the controls are up, then their handle, so a second request
+// or an unmount while starting never leaves a second presentation or a stray key listener behind.
 let presenting = null;
+let unmounted = false;
 async function present() {
 	if (presenting || !published.value) return;
+	const token = {};
+	presenting = token;
 	const frame = personal.value ? personalFrame.value : null;
-	const deck = frame
-		? {
-				start: () => frame.present("start"),
-				show: (index) => frame.present("show", index),
-				stop: () => frame.present("stop").catch(() => {}),
-			}
-		: makePresenter(host.value.shadowRoot);
-	const container = (frame ? null : host.value?.parentElement) || document.querySelector(".page-view-frame");
-	presenting = await mountPresentControls({
-		container,
-		deck,
-		fullscreen: !isNarrow(),
-		onExit: () => (presenting = null),
-	}).catch((error) => {
-		presenting = null;
+	const container = frame ? personalBox.value : host.value?.parentElement;
+	const deck = frame ? remoteDeck(frame) : makePresenter(host.value.shadowRoot);
+	let handle = null;
+	try {
+		handle = await mountPresentControls({
+			container,
+			deck,
+			fullscreen: !isNarrow(),
+			onExit: () => {
+				if (presenting === handle || presenting === token) presenting = null;
+			},
+		});
+	} catch (error) {
+		if (presenting === token) presenting = null;
 		onError(error);
-		return null;
-	});
+		return;
+	}
+	if (presenting !== token || unmounted || !handle.active) {
+		handle.stop();
+		if (presenting === token) presenting = null;
+		return;
+	}
+	presenting = handle;
 }
 
 onBeforeUnmount(() => {
-	presenting?.stop();
+	unmounted = true;
+	presenting?.stop?.();
+	presenting = null;
 	hidePageView();
 	charts.splice(0).forEach((handle) => handle.dispose());
 });

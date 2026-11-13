@@ -11,8 +11,19 @@ const PRESENTING = "fac-presenting";
 const OFF = "fac-present-off";
 const CONTAINER = "fac-present-container";
 // The container is outside the page's shadow root, where the kit's styles do not reach, so its
-// presenting look is set inline; without a background, full screen shows a black backdrop.
-const CONTAINER_STYLE = { background: "#ffffff", overflow: "auto", padding: "24px", boxSizing: "border-box" };
+// presenting look is set inline: it covers the screen (full screen or not, so the bar is always in
+// view) and scrolls inside, and without a background full screen shows a black backdrop.
+const CONTAINER_STYLE = {
+	position: "fixed",
+	inset: "0",
+	zIndex: "2147482999",
+	display: "flex",
+	flexDirection: "column",
+	background: "#ffffff",
+	overflow: "auto",
+	padding: "24px",
+	boxSizing: "border-box",
+};
 
 const KEYS = {
 	ArrowRight: "next",
@@ -30,7 +41,9 @@ const KEYS = {
 /** What a key does while presenting, or null; typing in a field is left alone. */
 export function presentKey(event) {
 	if (event.ctrlKey || event.metaKey || event.altKey) return null;
-	const target = event.target;
+	// A key pressed in a shared page's shadow root reaches the document retargeted to its host, so
+	// the field it was typed in is the first entry of its composed path.
+	const target = event.composedPath?.()[0] || event.target;
 	if (target?.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target?.tagName || "")) return null;
 	return KEYS[event.key] || null;
 }
@@ -97,15 +110,17 @@ export async function mountPresentControls({ container, deck, onExit, fullscreen
 	let state = await deck.start();
 	let stopped = false;
 	let enteredFullscreen = false;
-	const savedStyle = Object.fromEntries(Object.keys(CONTAINER_STYLE).map((key) => [key, container.style[key]]));
+	const savedStyle = container.style.cssText;
 
 	const bar = document.createElement("div");
 	bar.className = "fac-present-bar";
 	bar.setAttribute("role", "toolbar");
 	bar.setAttribute("aria-label", __("Present"));
+	// Last in the scrolling container: at its foot when the section is short, held there by sticky
+	// when the section is taller than the screen.
 	bar.style.cssText =
-		"position:fixed;left:50%;bottom:20px;transform:translateX(-50%);z-index:2147483000;display:flex;align-items:center;gap:4px;" +
-		"padding:4px 8px;border-radius:999px;background:rgba(17,17,17,0.82);color:#fff;font:14px/1.4 sans-serif;";
+		"position:sticky;bottom:0;margin:auto auto 0;flex:none;z-index:2147483000;display:flex;align-items:center;gap:4px;" +
+		"width:max-content;max-width:100%;padding:4px 8px;border-radius:999px;background:rgba(17,17,17,0.82);color:#fff;font:14px/1.4 sans-serif;";
 	const prev = control("button", "fac-present-prev", __("Previous section"), "◀");
 	const where = control("span", "fac-present-where");
 	where.style.cssText = "padding:0 12px;white-space:nowrap;max-width:60vw;overflow:hidden;text-overflow:ellipsis;";
@@ -148,7 +163,7 @@ export async function mountPresentControls({ container, deck, onExit, fullscreen
 		doc.removeEventListener("fullscreenchange", onFullscreen);
 		bar.remove();
 		container.classList.remove(CONTAINER);
-		Object.assign(container.style, savedStyle);
+		container.style.cssText = savedStyle;
 		if (doc.fullscreenElement === container) await doc.exitFullscreen?.().catch(() => {});
 		await deck.stop();
 		onExit?.();
@@ -172,5 +187,27 @@ export async function mountPresentControls({ container, deck, onExit, fullscreen
 			// Refused or unsupported: present inside the page's own area.
 		}
 	}
-	return { key, stop };
+	return {
+		key,
+		stop,
+		get active() {
+			return !stopped;
+		},
+	};
+}
+
+/**
+ * The deck for a personal page, whose frame presents its own sections. A start the frame answered
+ * too late still switched it into present mode, so a failed start tells it to stop.
+ */
+export function remoteDeck(frame) {
+	return {
+		start: () =>
+			frame.present("start").catch((error) => {
+				frame.present("stop").catch(() => {});
+				throw error;
+			}),
+		show: (index) => frame.present("show", index),
+		stop: () => frame.present("stop").catch(() => {}),
+	};
 }

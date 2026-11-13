@@ -340,38 +340,60 @@
 	}
 
 	// Present mode (pagePresent.js, in the charts bundle): a shared page's sections are switched in
-	// its shadow root here; a personal page switches its own inside its frame.
+	// its shadow root here; a personal page switches its own inside its frame. `presenting` is a
+	// start token until the controls are up, then their handle, so a second press, a stop or a move
+	// away while starting never leaves a second presentation or a stray key listener behind.
 	let presenting = null;
 	function present(page, data, is_latest) {
 		if (presenting) return;
+		const token = {};
+		presenting = token;
+		const give_up = () => {
+			if (presenting === token) presenting = null;
+		};
 		load_script(CHARTS_URL, "charts").then(() => {
 			const bundle = window.fac_page_charts;
 			const box = page.main.find(".fac-page-frame").get(0);
-			if (!is_latest() || !bundle || !box) return;
 			// create_shadow_element puts the shadow root on a custom element inside the box.
-			const shadow_host = [...box.querySelectorAll("*")].find((el) => el.shadowRoot);
-			if (data.visibility === "Shared" && !shadow_host) return;
+			const shadow_host = box && [...box.querySelectorAll("*")].find((el) => el.shadowRoot);
+			if (presenting !== token || !is_latest() || !bundle || !box) return give_up();
+			if (data.visibility === "Shared" && !shadow_host) return give_up();
 			const deck =
-				data.visibility === "Shared"
-					? bundle.makePresenter(shadow_host.shadowRoot)
-					: {
-							start: () => shown_frame.present("start"),
-							show: (index) => shown_frame.present("show", index),
-							stop: () => shown_frame.present("stop").catch(() => {}),
-					  };
+				data.visibility === "Shared" ? bundle.makePresenter(shadow_host.shadowRoot) : bundle.remoteDeck(shown_frame);
+			let handle = null;
 			bundle
-				.mountPresentControls({ container: box, deck, onExit: () => (presenting = null) })
-				.then((handle) => (presenting = handle))
+				.mountPresentControls({
+					container: box,
+					deck,
+					onExit: () => {
+						if (presenting === handle || presenting === token) presenting = null;
+					},
+				})
+				.then((started) => {
+					handle = started;
+					if (presenting !== token || !is_latest() || !started.active) {
+						started.stop();
+						return give_up();
+					}
+					presenting = started;
+				})
 				.catch(() => {
-					presenting = null;
+					give_up();
 					frappe.show_alert({ message: __("This page could not be presented."), indicator: "orange" });
 				});
 		});
 	}
 
-	function dispose_shown() {
-		if (presenting) presenting.stop();
+	function stop_presenting() {
+		if (presenting && presenting.stop) presenting.stop();
 		presenting = null;
+	}
+
+	// Leaving fac-pages for another Desk page stops presenting, so its keys are Desk's again.
+	frappe.pages["fac-pages"].on_page_hide = stop_presenting;
+
+	function dispose_shown() {
+		stop_presenting();
 		dispose_shown_charts();
 		open_prompts.forEach((decide) => decide(false));
 		prompt_chain = Promise.resolve();
