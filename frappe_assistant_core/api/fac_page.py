@@ -82,8 +82,10 @@ _CODE_FUNCTIONS = {"expression"}
 _SAME_ORIGIN_URL = re.compile(r"^/(?:files|assets)/")
 # A preview shows a page's static html; fewer elements than this means its script builds it.
 PREVIEW_MIN_ELEMENTS = 3
-# A larger html is left out of the Pages list, which carries every page's preview at once.
-MAX_PREVIEW_HTML = 100_000
+# The Pages list carries every page's preview at once, so a page whose cleaned html or style is
+# larger shows its initial instead.
+MAX_PREVIEW_HTML = 30_000
+MAX_PREVIEW_STYLE = 10_000
 # The most reports one report_access call checks: a page shows a handful, never dozens.
 MAX_REPORT_ACCESS_NAMES = 20
 
@@ -209,18 +211,27 @@ def list_pages() -> list[dict]:
             "published",
             "owner",
             "modified",
-            "html",
-            "style",
         ],
         order_by="modified desc",
     )
     opened = [record for record in records if _page_access(record.name, user) == _OPEN]
     roles_by_page = _roles_by_page([record.name for record in opened if record.visibility == SHARED])
     manager = is_system_manager(user)
+    # Only the pages the user may open have their markup read.
+    names = [record.name for record in opened]
+    markup = {
+        row.name: row
+        for row in (
+            frappe.get_all("FAC Page", filters={"name": ["in", names]}, fields=["name", "html", "style"])
+            if names
+            else []
+        )
+    }
     pages = []
     for record in opened:
         shared = record.visibility == SHARED
-        preview_html, preview_style = _preview(record.html, record.style, record.visibility)
+        page_markup = markup.get(record.name) or frappe._dict()
+        preview_html, preview_style = _preview(page_markup.html, page_markup.style, record.visibility)
         pages.append(
             {
                 "name": record.name,
@@ -338,11 +349,16 @@ def _preview(html: str | None, style: str | None, visibility: str) -> tuple[str 
     shows the page's layout, never its data. A page whose script builds it, or whose html is too
     large to carry in the list, has none.
     """
-    if not html or len(html) > MAX_PREVIEW_HTML:
+    if not html or len(html) > MAX_PREVIEW_HTML or len(style or "") > MAX_PREVIEW_STYLE:
         return None, None
     # Cleaned as get_page serves the page, then as a draft, which also drops link targets.
     cleaned = _draft_html(_served_html(html, False, visibility))
-    if not cleaned or len(BeautifulSoup(cleaned, "html.parser").find_all(True)) < PREVIEW_MIN_ELEMENTS:
+    if not cleaned or len(cleaned) > MAX_PREVIEW_HTML:
+        return None, None
+    soup = BeautifulSoup(cleaned, "html.parser")
+    # A skeleton of empty cards and tables the script fills would preview as a blank box.
+    visible = soup.get_text(strip=True) or soup.find(["img", "svg"])
+    if not visible or len(soup.find_all(True)) < PREVIEW_MIN_ELEMENTS:
         return None, None
     return cleaned, _personal_style(style) if visibility != SHARED else style
 
