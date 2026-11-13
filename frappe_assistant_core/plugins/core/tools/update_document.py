@@ -575,7 +575,22 @@ class DocumentUpdate(BaseTool):
                     ),
                 }
 
+            from frappe_assistant_core.utils.permissions import unwritable_fieldnames
+
             if edits is not None:
+                # An edit reads the stored value to match 'find', so on a field the user may not
+                # write (Desk shows no editor) it is refused before any matching (#390).
+                locked = unwritable_fieldnames(doc, _edit_fields(edits))
+                if locked:
+                    return {
+                        "success": False,
+                        "error": _("You do not have permission to edit the field {0}.").format(
+                            ", ".join(locked)
+                        ),
+                        "error_type": "field_not_writable",
+                        "doctype": doctype,
+                        "name": name,
+                    }
                 try:
                     data = effective_data(
                         {edit["field"]: doc.get(edit["field"]) for edit in edits}, data, edits
@@ -605,6 +620,18 @@ class DocumentUpdate(BaseTool):
             )
             if refusal:
                 return refusal
+
+            # Fields Frappe will put back on save, being above the user's write permlevel. The
+            # save itself is left to Frappe as it is; the reply just must not claim them (#390).
+            not_applied = unwritable_fieldnames(doc, [field for field in data if field not in table_fields])
+            applied = [field for field in data if field not in not_applied]
+            not_applied_note = (
+                _(
+                    "Not applied: {0}. You do not have permission to change these fields, so the stored values were kept."
+                ).format(", ".join(not_applied))
+                if not_applied
+                else None
+            )
 
             # Read before the setattr loop below, which overwrites the stored values
             warning = script_report_warning(doctype, data, current=doc)
@@ -652,12 +679,15 @@ class DocumentUpdate(BaseTool):
                     "doctype": doctype,
                     "name": name,
                     "url": desk_url(doctype, name),
-                    "fields_validated": list(data.keys()),
+                    "fields_validated": applied,
                     "message": _("The change to {0} '{1}' passed validation. Nothing was saved.").format(
                         doctype, name
                     ),
                     "next_step": _("Call update_document without validate_only to save the change."),
                 }
+                if not_applied:
+                    result["not_applied_fields"] = not_applied
+                    result["message"] = f"{result['message']} {not_applied_note}"
                 if warning:
                     result["warning"] = warning
                 return result
@@ -675,7 +705,7 @@ class DocumentUpdate(BaseTool):
                 "name": doc.name,
                 "doctype": doctype,
                 "url": desk_url(doctype, doc.name),
-                "updated_fields": list(data.keys()),
+                "updated_fields": applied,
                 "docstatus": updated_docstatus,
                 "state_description": "Draft" if updated_docstatus == 0 else "Unknown",
                 "workflow_state": updated_workflow_state,
@@ -684,6 +714,9 @@ class DocumentUpdate(BaseTool):
                 "modified_by": doc.modified_by,
                 "message": f"{doctype} '{doc.name}' updated successfully",
             }
+            if not_applied:
+                result["not_applied_fields"] = not_applied
+                result["message"] = f"{result['message']}. {not_applied_note}"
 
             result.update(customisation_result(doctype, doc, warning))
 
