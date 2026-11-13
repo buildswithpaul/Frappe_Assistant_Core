@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { makePresenter, mountPresentControls, presentKey } from "./pagePresent";
+import { makePresenter, mountPresentControls, presentKey, remoteDeck } from "./pagePresent";
 
 const PAGE = `<div class="fac-page-root">
 	<section class="mk-section" data-title="Company"><button class="mk-edit">Edit</button></section>
@@ -164,5 +164,55 @@ describe("mountPresentControls", () => {
 		await Promise.resolve();
 		expect(deck.calls.at(-1)).toEqual(["stop"]);
 		expect(container.querySelector(".fac-present-bar")).toBeNull();
+	});
+});
+
+describe("Present mode, from the review", () => {
+	const fakeDeck = () => {
+		const calls = [];
+		const titles = ["A", "B", "C"];
+		return {
+			calls,
+			start: () => (calls.push(["start"]), { index: 0, count: 3, titles }),
+			show: (i) => (calls.push(["show", i]), { index: i, count: 3, titles }),
+			stop: () => calls.push(["stop"]),
+		};
+	};
+
+	it("leaves typing in a field inside a shared page's shadow root alone", async () => {
+		const container = page('<div class="host"></div>');
+		const shadow = container.querySelector(".host").attachShadow({ mode: "open" });
+		shadow.innerHTML = "<select><option>NOV</option><option>OCT</option></select>";
+		const deck = fakeDeck();
+		await mountPresentControls({ container, deck, fullscreen: false });
+		shadow.querySelector("select").dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, composed: true }));
+		await Promise.resolve();
+		expect(deck.calls.some(([call]) => call === "show")).toBe(false);
+	});
+
+	it("covers the screen and pins the bar to its foot, then puts the container back", async () => {
+		const container = page();
+		container.style.cssText = "contain: layout paint; overflow: clip;";
+		const before = container.style.cssText;
+		const presenting = await mountPresentControls({ container, deck: fakeDeck(), fullscreen: false });
+		expect(container.style.position).toBe("fixed");
+		expect(container.style.overflow).toBe("auto");
+		expect(container.querySelector(".fac-present-bar").style.position).toBe("sticky");
+		expect(presenting.active).toBe(true);
+		await presenting.stop();
+		expect(presenting.active).toBe(false);
+		expect(container.style.cssText).toBe(before);
+	});
+
+	it("tells a personal page's frame to stop when its start failed, so it is not left half-presented", async () => {
+		const sent = [];
+		const frame = {
+			present: (command) => {
+				sent.push(command);
+				return command === "start" ? Promise.reject(new Error("The page did not answer.")) : Promise.resolve(null);
+			},
+		};
+		await expect(remoteDeck(frame).start()).rejects.toThrow("did not answer");
+		expect(sent).toEqual(["start", "stop"]);
 	});
 });

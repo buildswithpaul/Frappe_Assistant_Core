@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { makePresenter, mountPresentControls } from "@/utils/pagePresent";
+import { makePresenter, mountPresentControls, remoteDeck } from "@/utils/pagePresent";
 
 import { facPagesSource } from "./facPagesSource";
 
@@ -50,7 +50,7 @@ function loadDeskPage(data) {
 }
 
 beforeEach(() => {
-	window.fac_page_charts = { makePresenter, mountPresentControls };
+	window.fac_page_charts = { makePresenter, mountPresentControls, remoteDeck };
 	// A draft loads the kit to inline it; the test serves an empty one.
 	vi.stubGlobal("fetch", vi.fn(() => Promise.resolve({ ok: true, text: () => Promise.resolve("") })));
 });
@@ -76,6 +76,31 @@ describe("fac-pages Desk page and Present", () => {
 		const shadow = document.querySelector("custom-block-abcde").shadowRoot;
 		expect([...shadow.querySelectorAll(".mk-section")].map((s) => s.classList.contains("fac-present-off"))).toEqual([false, true]);
 		expect(frappe.show_alert).not.toHaveBeenCalled();
+	});
+
+	const shared = { title: "Review", html: SECTIONS, style: "", script: "", draft: false, visibility: "Shared" };
+	const pressPresent = () => {
+		deskPage.set_secondary_action.mock.calls.at(-1)[1]();
+		document.head.querySelectorAll("script").forEach((s) => s.dispatchEvent(new Event("load")));
+	};
+
+	it("starts once however often Present is pressed", async () => {
+		loadDeskPage(shared);
+		await vi.waitFor(() => expect(frappe.create_shadow_element).toHaveBeenCalled());
+		pressPresent();
+		pressPresent();
+		await vi.waitFor(() => expect(document.querySelector(".fac-present-bar")).not.toBeNull());
+		await new Promise((resolve) => setTimeout(resolve, 20));
+		expect(document.querySelectorAll(".fac-present-bar")).toHaveLength(1);
+	});
+
+	it("stops presenting when the user leaves the page", async () => {
+		loadDeskPage(shared);
+		await vi.waitFor(() => expect(frappe.create_shadow_element).toHaveBeenCalled());
+		pressPresent();
+		await vi.waitFor(() => expect(document.querySelector(".fac-present-bar")).not.toBeNull());
+		frappe.pages["fac-pages"].on_page_hide(wrapper);
+		await vi.waitFor(() => expect(document.querySelector(".fac-present-bar")).toBeNull());
 	});
 
 	it("offers no Present for a draft", () => {
