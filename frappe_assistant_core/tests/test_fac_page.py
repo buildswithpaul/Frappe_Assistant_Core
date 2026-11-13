@@ -216,6 +216,8 @@ class TestFACPage(BaseAssistantTest):
 
         for wiring in ("frappe.client.set_value", "frappe.client.delete", "set_primary_action", "&page="):
             self.assertIn(wiring, page.script)
+        # frappe.confirm renders its message as html, so the title goes in escaped.
+        self.assertIn("frappe.confirm(fac_page_delete_message(p.title)", page.script)
 
     def test_the_host_page_gives_page_scripts_fac_chart_and_report(self):
         # The page script runs with fac in Desk as in the chat panel; the built helper is served
@@ -950,6 +952,33 @@ class TestListPages(BaseAssistantTest):
     def test_a_page_built_by_its_script_has_no_preview(self):
         user = self._desk_user("fac-list-empty")
         item = self._item(user, self._build_personal(user, self._slug("empty"), html='<div id="root"></div>'))
+        self.assertEqual((item["preview_html"], item["preview_style"]), (None, None))
+
+    def test_an_empty_skeleton_has_no_preview(self):
+        # fac_page.md's own reference: a card and a table the script fills, so nothing to show.
+        html = '<div class="mk-page"><div class="mk-card"><table class="mk-table" id="tasks"></table></div></div>'
+        item = self._item(
+            "Administrator", self._build_personal("Administrator", self._slug("skel"), html=html)
+        )
+        self.assertIsNone(item["preview_html"])
+
+    def test_a_preview_whose_cleaned_html_outgrows_the_cap_is_dropped(self):
+        from frappe_assistant_core.api.fac_page import MAX_PREVIEW_HTML
+
+        # Cleaning adds markup, so html just under the cap can come out over it.
+        unit = "<p class=a><b>x</b></p>"  # cleaned as <p class="a">, two characters longer
+        html = unit * (MAX_PREVIEW_HTML // len(unit))
+        self.assertLessEqual(len(html), MAX_PREVIEW_HTML)
+        user = self._desk_user("fac-list-grow")
+        item = self._item(user, self._build_personal(user, self._slug("grow"), html=html))
+        self.assertIsNone(item["preview_html"])
+
+    def test_a_page_with_an_oversized_style_has_no_preview(self):
+        from frappe_assistant_core.api.fac_page import MAX_PREVIEW_STYLE
+
+        html = '<div class="mk-card"><span>A</span><b>B</b></div>'
+        style = ".mk-card { color: teal; }\n" * (MAX_PREVIEW_STYLE // 20)
+        item = self._item("Administrator", self._build_shared(self._slug("css"), html=html, style=style))
         self.assertEqual((item["preview_html"], item["preview_style"]), (None, None))
 
     def test_an_oversized_page_has_no_preview(self):

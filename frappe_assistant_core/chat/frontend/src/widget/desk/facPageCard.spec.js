@@ -7,7 +7,10 @@ import { describe, expect, it, vi } from "vitest";
 const DIR = resolve(import.meta.dirname, "../../../../../assistant_core/page/fac_pages");
 const SOURCE = ["fac_page_draft.js", "fac_page_card.js"].map((file) => readFileSync(resolve(DIR, file), "utf-8")).join("\n");
 const translate = (text, args = []) => args.reduce((out, arg, i) => out.replace(`{${i}}`, arg), text);
-const fac_page_card = new Function("__", `${SOURCE}\nreturn fac_page_card;`)(translate);
+const { fac_page_card, fac_page_delete_message } = new Function(
+	"__",
+	`${SOURCE}\nreturn { fac_page_card, fac_page_delete_message };`,
+)(translate);
 
 const base = {
 	name: "payment-tracker-3fa9c1",
@@ -103,5 +106,39 @@ describe("fac_page_card", () => {
 		expect(item.querySelector("img")).toBeNull();
 		expect(item.querySelector(".fac-page-index-description b")).toBeNull();
 		expect(item.querySelector(".fac-page-index-title").textContent).toBe('<img src=x onerror="alert(1)">');
+	});
+
+	it("opens the menu as a keyboard user expects, and closes it with Escape", () => {
+		const item = card(smPersonal);
+		document.body.append(item);
+		const button = item.querySelector("button.fac-page-index-menu");
+		expect(button.getAttribute("aria-expanded")).toBe("false");
+		button.click();
+		expect(button.getAttribute("aria-expanded")).toBe("true");
+		const entries = [...item.querySelectorAll(".fac-page-index-menu-item")];
+		expect(entries.every((el) => el.tagName === "BUTTON")).toBe(true);
+		expect(document.activeElement).toBe(entries[0]);
+		item.querySelector(".fac-page-index-menu-list").dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+		expect(item.querySelector(".fac-page-index-menu-list").hidden).toBe(true);
+		expect(button.getAttribute("aria-expanded")).toBe("false");
+		expect(document.activeElement).toBe(button);
+		item.remove();
+	});
+
+	it("closes the menu on a click outside it", () => {
+		const item = card(smPersonal);
+		document.body.append(item);
+		item.querySelector("button.fac-page-index-menu").click();
+		document.body.click();
+		expect(item.querySelector(".fac-page-index-menu-list").hidden).toBe(true);
+		item.remove();
+	});
+});
+
+describe("fac_page_delete_message", () => {
+	it("escapes the title, since Desk's confirm dialog renders its message as html", () => {
+		const message = fac_page_delete_message('<img src=x onerror="alert(1)">');
+		expect(message).not.toContain("<img");
+		expect(message).toContain("&lt;img src=x onerror=&quot;alert(1)&quot;&gt;");
 	});
 });

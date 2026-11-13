@@ -129,7 +129,7 @@
 					__("Rename")
 				),
 			remove: (p) =>
-				frappe.confirm(__("Delete the page “{0}”? This cannot be undone.", [p.title]), () =>
+				frappe.confirm(fac_page_delete_message(p.title), () =>
 					frappe.xcall("frappe.client.delete", { doctype: "FAC Page", name: p.name }).then(reload)
 				),
 		};

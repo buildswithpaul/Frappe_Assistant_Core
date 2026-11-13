@@ -87,42 +87,83 @@ function fac_page_card_menu(page, can_chat, actions) {
 	if (!entries.length) return null;
 
 	const wrap = fac_page_index_el("div", "fac-page-index-menu-wrap", "position:absolute;top:6px;right:6px;");
-	const button = fac_page_index_el(
-		"button",
-		"btn btn-default btn-xs fac-page-index-menu",
-		"line-height:1;padding:2px 6px;",
-		"⋯"
-	);
+	const button = fac_page_index_el("button", "btn btn-default btn-xs fac-page-index-menu", "line-height:1;padding:2px 6px;", "⋯");
 	button.type = "button";
 	button.setAttribute("aria-label", __("Page actions"));
-	button.setAttribute("aria-haspopup", "true");
+	button.setAttribute("aria-haspopup", "menu");
+	button.setAttribute("aria-expanded", "false");
 	const list = fac_page_index_el(
-		"ul",
+		"div",
 		"fac-page-index-menu-list",
-		"position:absolute;right:0;top:100%;z-index:5;min-width:160px;margin:4px 0 0;padding:4px 0;list-style:none;" +
+		"position:absolute;right:0;top:100%;z-index:5;min-width:160px;margin-top:4px;padding:4px 0;display:flex;flex-direction:column;" +
 			"background:var(--card-bg);border:1px solid var(--border-color);border-radius:var(--border-radius-md);box-shadow:var(--shadow-md);"
 	);
+	list.setAttribute("role", "menu");
 	list.hidden = true;
-	for (const [label, action] of entries) {
+	const items = entries.map(([label, action]) => {
 		const entry = fac_page_index_el(
-			"li",
+			"button",
 			"fac-page-index-menu-item",
-			"padding:6px 12px;cursor:pointer;white-space:nowrap;",
+			"padding:6px 12px;border:0;background:none;text-align:left;white-space:nowrap;color:var(--text-color);",
 			label
 		);
+		entry.type = "button";
 		entry.setAttribute("role", "menuitem");
 		entry.addEventListener("click", () => {
-			list.hidden = true;
+			close(false);
 			action(page);
 		});
 		list.append(entry);
+		return entry;
+	});
+
+	const outside = (event) => {
+		if (!wrap.contains(event.target)) close(false);
+	};
+	function open() {
+		list.hidden = false;
+		button.setAttribute("aria-expanded", "true");
+		document.addEventListener("click", outside, true);
+		items[0].focus();
+	}
+	function close(refocus) {
+		if (list.hidden) return;
+		list.hidden = true;
+		button.setAttribute("aria-expanded", "false");
+		document.removeEventListener("click", outside, true);
+		if (refocus) button.focus();
 	}
 	button.addEventListener("click", (event) => {
 		event.preventDefault();
-		list.hidden = !list.hidden;
+		if (list.hidden) open();
+		else close(true);
+	});
+	// Escape closes; arrow keys move between the items, as a menu does.
+	list.addEventListener("keydown", (event) => {
+		const at = items.indexOf(document.activeElement);
+		if (event.key === "Escape") {
+			event.preventDefault();
+			close(true);
+		} else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+			event.preventDefault();
+			const step = event.key === "ArrowDown" ? 1 : -1;
+			items[(at + step + items.length) % items.length].focus();
+		}
 	});
 	wrap.append(button, list);
 	return wrap;
+}
+
+// Desk's frappe.confirm renders its message as html, and __ does not escape its arguments.
+// eslint-disable-next-line no-unused-vars
+function fac_page_delete_message(title) {
+	return __("Delete the page “{0}”? This cannot be undone.", [fac_page_index_escape(title)]);
+}
+
+const FAC_PAGE_INDEX_ESCAPES = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
+
+function fac_page_index_escape(text) {
+	return String(text == null ? "" : text).replace(/[&<>"']/g, (char) => FAC_PAGE_INDEX_ESCAPES[char]);
 }
 
 function fac_page_index_context(page) {
