@@ -25,13 +25,12 @@ HOME_PREFERENCE_FIELDS = (
     "show_suggested_prompts",
     "show_personalized_suggestions",
     "show_tips",
-    "show_whats_new",
     "show_progress",
 )
 
 # What the SPA may keep in ``discovery_state``: lists of ids, the tour flag and a few dates. Anything
 # else is dropped, so a bad or oversized save can never grow the row.
-DISCOVERY_LIST_KEYS = ("seen", "used", "celebrated", "stories_seen", "tips_dismissed")
+DISCOVERY_LIST_KEYS = ("seen", "used", "celebrated", "tips_dismissed")
 DISCOVERY_LIST_MAX = 50
 DISCOVERY_ID_MAX = 140
 _ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -69,7 +68,6 @@ def load_home_preferences(user: str) -> dict:
         "show_suggested_prompts": flag("show_suggested_prompts"),
         "show_personalized_suggestions": flag("show_personalized_suggestions"),
         "show_tips": flag("show_tips"),
-        "show_whats_new": flag("show_whats_new"),
         "show_progress": flag("show_progress"),
     }
 
@@ -82,8 +80,8 @@ def parse_discovery_state(raw: dict | str | None) -> dict:
     """The stored feature-discovery state, keeping only known keys and types; malformed input reads as empty.
 
     Opened features (``seen``), features really used (``used``), unlocks already celebrated,
-    stories already watched, the tour, and today's tip. Losing any of it only means a tip,
-    a dot or a story shows once more.
+    tips the user never wants again, the tour, and today's tip. Losing any of it only means a
+    tip or a dot shows once more.
     """
     if isinstance(raw, str):
         try:

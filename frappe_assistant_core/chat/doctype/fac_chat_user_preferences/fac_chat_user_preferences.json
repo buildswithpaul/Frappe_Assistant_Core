@@ -19,7 +19,6 @@
   "hidden_home_signals",
   "show_personalized_suggestions",
   "show_tips",
-  "show_whats_new",
   "show_progress",
   "discovery_state",
   "pinned_prompt_templates",
@@ -118,13 +117,6 @@
    "fieldname": "show_tips",
    "fieldtype": "Check",
    "label": "Show Did You Know Tips"
-  },
-  {
-   "default": "1",
-   "description": "A ring on the FAC bot when there is a new What's new story",
-   "fieldname": "show_whats_new",
-   "fieldtype": "Check",
-   "label": "Show What's New Stories"
   },
   {
    "default": "1",

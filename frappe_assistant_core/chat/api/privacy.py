@@ -84,7 +84,6 @@ def export_my_data() -> dict:
             "hidden_home_signals",
             "show_personalized_suggestions",
             "show_tips",
-            "show_whats_new",
             "show_progress",
         ],
         as_dict=True,
@@ -100,7 +99,6 @@ def export_my_data() -> dict:
             "hidden_home_signals": parse_hidden_signals(prefs.hidden_home_signals),
             "show_personalized_suggestions": bool(prefs.show_personalized_suggestions),
             "show_tips": bool(prefs.show_tips),
-            "show_whats_new": bool(prefs.show_whats_new),
             "show_progress": bool(prefs.show_progress),
         }
 

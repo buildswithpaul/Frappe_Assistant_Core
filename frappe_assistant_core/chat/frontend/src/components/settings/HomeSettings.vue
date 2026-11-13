@@ -114,11 +114,6 @@ const toggleRows = computed(() => [
 		description: __("One short tip a day under the ask box, about something you have not tried yet."),
 	},
 	{
-		key: "show_whats_new",
-		label: __("What's new stories"),
-		description: __("A ring on the FAC bot when something new ships. Tap it to watch."),
-	},
-	{
 		key: "show_progress",
 		label: __("Your FAC progress"),
 		description: __("A ring on the FAC bot showing how much of FAC you have tried."),

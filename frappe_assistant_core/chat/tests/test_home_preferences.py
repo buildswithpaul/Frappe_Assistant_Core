@@ -96,7 +96,6 @@ class TestSignalFiltering(HomePreferencesTestCase):
                 "show_suggested_prompts": True,
                 "show_personalized_suggestions": True,
                 "show_tips": True,
-                "show_whats_new": True,
                 "show_progress": True,
             },
         )

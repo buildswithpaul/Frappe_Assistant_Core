@@ -53,7 +53,7 @@ async function mountHome({
 		user: USER,
 		workflowsEnabled: true,
 		memoryEnabled: true,
-		discoveryPrefs: { show_tips: true, show_whats_new: true, show_progress: true, ...switches, state },
+		discoveryPrefs: { show_tips: true, show_progress: true, ...switches, state },
 	});
 	useChatStore().hydrateSessions(sessions);
 	const router = createRouter({

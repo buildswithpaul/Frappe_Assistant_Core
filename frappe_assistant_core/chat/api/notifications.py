@@ -85,11 +85,6 @@ def get_notifications() -> dict:
 
 
 def _response(notifications: list, user: str, *, degraded: bool) -> dict:
-    from frappe_assistant_core.chat.discovery_samples import sample_notifications, samples_enabled
-
-    if samples_enabled():
-        # A test site's sample tip and story (site_config fac_discovery_samples), until AR sends real ones.
-        notifications = [*notifications, *sample_notifications()]
     response = {"notifications": notifications, "user": user}
     if degraded:
         response["degraded"] = True

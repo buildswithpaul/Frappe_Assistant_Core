@@ -34,7 +34,7 @@ export const useUserStore = defineStore("user", () => {
 	const memoryEnabled = ref(false); // default false — no onboarding without memory app
 	const workflowsEnabled = ref(false); // default false — no workflows without workflows app
 	const privacyConsentComplete = ref(false); // default false — must complete privacy consent screen
-	// Settings → Home switches for tips, stories and progress, plus the stored discovery state.
+	// Settings → Home switches for tips and progress, plus the stored discovery state.
 	const discoveryPrefs = ref(null);
 
 	// AR's terms gate. Blocks stream_chat AND list_available_models, so this is

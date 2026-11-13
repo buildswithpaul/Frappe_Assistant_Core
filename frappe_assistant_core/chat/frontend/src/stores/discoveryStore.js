@@ -9,7 +9,6 @@ import { usePagesStore } from "@/stores/pagesStore";
 import { useChatStore } from "@/stores/chatStore";
 import { useTemplateStore } from "@/stores/templateStore";
 import { useWorkflowStore } from "@/stores/workflowStore";
-import { useNotificationStore } from "@/stores/notificationStore";
 import { useTourStore } from "@/stores/tourStore";
 import { localDate } from "@/components/spotlight/spotlightRules";
 import { availableFeatures, featureById, featureForPath, previewContent } from "@/components/discover/featureCatalog";
@@ -23,19 +22,18 @@ import {
 	pickDailyTip,
 	progressOf,
 	tipContent,
-	unseenStory,
 } from "@/components/discover/discoveryRules";
 
 const SAVE_DELAY_MS = 800;
 const LOAD_QUIET_MS = 4000;
 
 /**
- * Feature discovery in the full FAC Chat (/copilot): the daily Did you know tip, What's new
- * stories, the Your FAC ring, the rail dots and the 3-stop tour.
+ * Feature discovery in the full FAC Chat (/copilot): the daily Did you know tip, the Your FAC
+ * ring, the rail dots and the 3-stop tour.
  *
- * Tips ship with FAC (dailyTips.js). AR decides the rest: stories are AR notifications, powers
- * come from capabilities. This store decides when, from what the user really did, and keeps
- * that on the user's preferences so it follows them across browsers.
+ * Tips ship with FAC (dailyTips.js); the Your FAC powers come from AR's capabilities. This store
+ * decides when, from what the user really did, and keeps that on the user's preferences so it
+ * follows them across browsers.
  *
  * Nothing runs until App.vue calls init(): the Desk widget shares some stores with this
  * one and must stay a plain chat.
@@ -43,14 +41,13 @@ const LOAD_QUIET_MS = 4000;
 export const useDiscoveryStore = defineStore("discovery", () => {
 	const state = ref(emptyState());
 	const started = ref(false);
-	const switches = ref({ show_tips: true, show_whats_new: true, show_progress: true });
+	const switches = ref({ show_tips: true, show_progress: true });
 	const preview = ref(null);
 	// Lives on the tour store so the Spotlight can see it; read and set here for Home and the rail.
 	const coachOpen = computed(() => useTourStore().coachOpen);
 	const coachRequested = ref(false);
 	// ChatView owns the template browser; it watches this counter.
 	const templatesRequested = ref(0);
-	const story = ref(null);
 	const panelOpen = ref(false);
 	const justUnlocked = ref(null);
 	let saveTimer = null;
@@ -83,7 +80,6 @@ export const useDiscoveryStore = defineStore("discovery", () => {
 		if (prefs) {
 			switches.value = {
 				show_tips: prefs.show_tips !== false,
-				show_whats_new: prefs.show_whats_new !== false,
 				show_progress: prefs.show_progress !== false,
 			};
 		}
@@ -102,7 +98,6 @@ export const useDiscoveryStore = defineStore("discovery", () => {
 		const next = { ...switches.value };
 		for (const key of Object.keys(next)) if (key in patch) next[key] = patch[key] !== false;
 		switches.value = next;
-		if (!next.show_whats_new) story.value = null;
 		if (!next.show_progress) panelOpen.value = false;
 	}
 
@@ -221,12 +216,10 @@ export const useDiscoveryStore = defineStore("discovery", () => {
 	}
 
 	// ── Did you know ────────────────────────────────────────────────────
-	const notifications = computed(() => useNotificationStore().notifications);
 	const siteTips = () => {
 		const user = useUserStore();
 		return dailyTips({ workflowsEnabled: user.workflowsEnabled, memoryEnabled: user.memoryEnabled });
 	};
-	const isDismissed = (n) => useNotificationStore().isDismissed(n);
 
 	const tip = ref(null);
 	/** Home asks once per visit, so a tip never changes under the user's eyes. */
@@ -255,26 +248,6 @@ export const useDiscoveryStore = defineStore("discovery", () => {
 
 	function showTip(n) {
 		preview.value = tipContent(n);
-	}
-
-	// ── What's new ──────────────────────────────────────────────────────
-	const waitingStory = computed(() => {
-		if (!started.value || !switches.value.show_whats_new) return null;
-		return unseenStory(notifications.value, { seen: state.value.stories_seen, isDismissed });
-	});
-
-	function openStory(id) {
-		const n = id ? notifications.value.find((x) => x.id === id) : waitingStory.value;
-		if (n) story.value = n;
-	}
-
-	/** Watched to the end or closed: seen, here and on AR. */
-	function closeStory() {
-		const n = story.value;
-		story.value = null;
-		if (!n) return;
-		addTo("stories_seen", n.id);
-		if (n.dismissible === true && !isDismissed(n)) useNotificationStore().dismiss(n.id);
 	}
 
 	// ── Show me pop-up (tips) ───────────────────────────────────────────
@@ -346,8 +319,6 @@ export const useDiscoveryStore = defineStore("discovery", () => {
 		progress,
 		showProgress,
 		tip,
-		waitingStory,
-		story,
 		panelOpen,
 		justUnlocked,
 		preview,
@@ -368,8 +339,6 @@ export const useDiscoveryStore = defineStore("discovery", () => {
 		hideTipToday,
 		neverShowTip,
 		showTip,
-		openStory,
-		closeStory,
 		openPreview,
 		closePreview,
 		tryPreview,

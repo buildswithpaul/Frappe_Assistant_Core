@@ -128,7 +128,7 @@ onMounted(async () => {
 		await router.replace("/chat");
 	}
 
-	// Tips, stories and the Your FAC ring start once the user can chat (also after onboarding finishes).
+	// Tips and the Your FAC ring start once the user can chat (also after onboarding finishes).
 	const discovery = useDiscoveryStore();
 	watch(
 		() => userStore.registrationStatus,

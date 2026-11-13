@@ -1,10 +1,9 @@
 /**
- * Did you know tips, What's new stories and Your FAC progress. Pure: no Vue, no network.
+ * Did you know tips and Your FAC progress. Pure: no Vue, no network.
  *
- * Tips ship with FAC (dailyTips.js), one set per release. AR decides the rest: stories are AR
- * notifications (display_style "story"), powers come from capabilities.discovery. This file decides
- * when: a tip once a day, taking turns, until its feature is used; never on day one; a story until
- * it is watched; the ring from real usage.
+ * Tips ship with FAC (dailyTips.js), one set per release; the Your FAC powers come from AR's
+ * capabilities.discovery. This file decides when: a tip once a day, taking turns, until its feature
+ * is used; never on day one; the ring from real usage.
  */
 import { __ } from "@/utils/i18n";
 import { featureById } from "./featureCatalog";
@@ -15,7 +14,7 @@ export const POWER_IDS = ["setup", "ask", "templates", "knowledge", "pages", "ag
 /** Which userStore flag must be on for a power to be offered (null = always). */
 const POWER_CAPABILITY = { knowledge: "memoryEnabled", agents: "workflowsEnabled" };
 
-export const LIST_KEYS = ["seen", "used", "celebrated", "stories_seen", "tips_dismissed"];
+export const LIST_KEYS = ["seen", "used", "celebrated", "tips_dismissed"];
 const LIST_MAX = 50;
 const ID_MAX = 140;
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -25,7 +24,6 @@ export function emptyState() {
 		seen: [],
 		used: [],
 		celebrated: [],
-		stories_seen: [],
 		tips_dismissed: [],
 		coach_done: false,
 		tip: null,
@@ -75,42 +73,9 @@ export function pickDailyTip({ tips, state, today, dayOne, order = tips.map((t) 
 	return { tip: next, state: { ...state, tip: { id: next.id, date: today } } };
 }
 
-/** The first story AR sent that this user has not watched yet. */
-export function unseenStory(notifications, { seen = [], isDismissed = (n) => Boolean(n.dismissed) } = {}) {
-	return (
-		(notifications || []).find(
-			(n) => n && n.display_style === "story" && validId(n.id) && !isDismissed(n) && !seen.includes(n.id)
-		) || null
-	);
-}
-
 /** A route inside FAC Chat: starts with one "/", no whitespace. */
 export function safeRoute(route) {
 	return typeof route === "string" && /^\/(?![/\\])/.test(route) && !/\s/.test(route) ? route : null;
-}
-
-/** A slide's picture: AR's image or video, else the moving preview of the feature it names, else none. */
-function slideMedia(s) {
-	if (s.media_url) return { url: s.media_url, type: s.media_type || "image", alt: s.media_alt || "" };
-	const feature = s.feature && featureById(s.feature);
-	return feature ? { art: "feature", feature: feature.id } : null;
-}
-
-function slideFrom(s) {
-	if (!s || typeof s !== "object" || !s.title) return null;
-	return {
-		title: String(s.title),
-		message: s.message ? String(s.message) : "",
-		media: slideMedia(s),
-		action: s.action_label && safeRoute(s.action_route) ? { label: s.action_label, route: s.action_route } : null,
-	};
-}
-
-/** A story's slides; a story without `slides` plays as one slide made from its own fields. */
-export function storySlides(story) {
-	if (!story) return [];
-	const slides = Array.isArray(story.slides) ? story.slides.map(slideFrom).filter(Boolean) : [];
-	return slides.length ? slides : [slideFrom(story)].filter(Boolean);
 }
 
 /** The Your FAC powers AR listed, in AR's order, keeping only ids the site can check and features it has. */

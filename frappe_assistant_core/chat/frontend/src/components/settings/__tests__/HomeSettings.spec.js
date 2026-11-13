@@ -60,11 +60,11 @@ describe("HomeSettings", () => {
 		expect(updatePreferences).toHaveBeenLastCalledWith({ show_suggested_prompts: false });
 	});
 
-	it("the tips, stories and progress switches save, and FAC follows them at once", async () => {
-		let current = { ...PREFS, show_tips: true, show_whats_new: true, show_progress: true };
+	it("the tips and progress switches save, and FAC follows them at once", async () => {
+		let current = { ...PREFS, show_tips: true, show_progress: true };
 		updatePreferences.mockImplementation(async (patch) => (current = { ...current, ...patch }));
 		const w = await mountSettings(current);
-		for (const key of ["show_tips", "show_whats_new", "show_progress"]) {
+		for (const key of ["show_tips", "show_progress"]) {
 			await w.find(`#home-${key}`).setValue(false);
 			await flushPromises();
 			expect(updatePreferences).toHaveBeenLastCalledWith({ [key]: false });

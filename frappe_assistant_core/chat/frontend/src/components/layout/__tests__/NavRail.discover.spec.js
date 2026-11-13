@@ -31,17 +31,6 @@ const POWERS = {
 		{ id: "agents", label: "Agents", try_route: "/agents?tab=marketplace" },
 	],
 };
-const STORY = {
-	id: "story-nov",
-	display_style: "story",
-	title: "New in FAC",
-	dismissible: true,
-	slides: [
-		{ title: "One", message: "First" },
-		{ title: "Two", message: "Second", action_label: "Try it", action_route: "/agents" },
-	],
-};
-
 async function mountRail({ state = {}, switches = {}, discovery = POWERS, notifications = [], sessions = [] } = {}) {
 	const pinia = createPinia();
 	setActivePinia(pinia);
@@ -51,7 +40,7 @@ async function mountRail({ state = {}, switches = {}, discovery = POWERS, notifi
 		memoryEnabled: true,
 		workflowsEnabled: true,
 		capabilities: discovery ? { discovery } : {},
-		discoveryPrefs: { show_tips: true, show_whats_new: true, show_progress: true, ...switches, state },
+		discoveryPrefs: { show_tips: true, show_progress: true, ...switches, state },
 	});
 	Object.assign(usePagesStore(), { pages: [], loaded: true });
 	useChatStore().hydrateSessions(sessions);
@@ -148,59 +137,11 @@ describe("NavRail bot: Your FAC ring", () => {
 	});
 });
 
-describe("NavRail bot: What's new story", () => {
-	it("a waiting story takes the bot first; watching it marks it seen here and on AR, then the ring is back", async () => {
-		const w = await mountRail({ notifications: [STORY] });
-		expect(bot(w).attributes("aria-label")).toBe("What's new: New in FAC");
-		expect(bot(w).text()).toContain("NEW");
-
-		await bot(w).trigger("click");
-		await flushPromises();
-		expect(w.find("[data-test='story-player']").text()).toContain("First");
-		await w.find("[data-test='story-next']").trigger("click");
-		expect(w.find("[data-test='story-player']").text()).toContain("Second");
-		await w.find("[data-test='story-next']").trigger("click");
-		await flushPromises();
-
-		expect(w.find("[data-test='story-player']").exists()).toBe(false);
-		expect(useDiscoveryStore().state.stories_seen).toEqual(["story-nov"]);
-		expect(baseCall).toHaveBeenCalledWith(
-			"frappe_assistant_core.chat.api.notifications.dismiss_notification",
-			expect.objectContaining({ notification_id: "story-nov" })
-		);
-		expect(bot(w).attributes("aria-label")).toBe("Your FAC: 1 of 6 tried");
-	});
-
-	it("a slide's button goes where AR said and closes the story", async () => {
-		const w = await mountRail({ notifications: [STORY] });
-		await bot(w).trigger("click");
-		await flushPromises();
-		await w.find("[data-test='story-next']").trigger("click");
-		await w.find("[data-test='story-action']").trigger("click");
-		await flushPromises();
-		expect(w.router.currentRoute.value.path).toBe("/agents");
-		expect(useDiscoveryStore().state.stories_seen).toEqual(["story-nov"]);
-	});
-
-	it("a slide shows its feature's preview, and one with nothing to show has no empty picture box", async () => {
-		const story = {
-			...STORY,
-			slides: [
-				{ title: "One", message: "First", feature: "agents" },
-				{ title: "Two", message: "Second" },
-			],
-		};
+describe("NavRail bot: no stories in this build", () => {
+	it("a story AR sends never takes the bot: the Your FAC ring stays", async () => {
+		const story = { id: "story-nov", display_style: "story", title: "New in FAC", slides: [{ title: "One" }] };
 		const w = await mountRail({ notifications: [story] });
-		await bot(w).trigger("click");
-		await flushPromises();
-		expect(w.find("[data-test='story-media'] [data-test='feature-preview-art']").exists()).toBe(true);
-		await w.find("[data-test='story-next']").trigger("click");
-		expect(w.find("[data-test='story-media']").exists()).toBe(false);
-		expect(w.find(".story-body--alone").exists()).toBe(true);
-	});
-
-	it("no story ring when the user turned What's new off", async () => {
-		const w = await mountRail({ notifications: [STORY], switches: { show_whats_new: false } });
 		expect(bot(w).attributes("aria-label")).toBe("Your FAC: 1 of 6 tried");
+		expect(bot(w).text()).not.toContain("NEW");
 	});
 });

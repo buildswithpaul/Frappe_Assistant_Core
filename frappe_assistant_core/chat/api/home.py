@@ -62,7 +62,6 @@ def _preferences_payload(user: str) -> dict:
         "show_suggested_prompts": prefs["show_suggested_prompts"],
         "show_personalized_suggestions": prefs["show_personalized_suggestions"],
         "show_tips": prefs["show_tips"],
-        "show_whats_new": prefs["show_whats_new"],
         "show_progress": prefs["show_progress"],
         "signals": signals,
     }
@@ -82,7 +81,6 @@ def update_home_preferences(
     show_suggested_prompts: bool | None = None,
     show_personalized_suggestions: bool | None = None,
     show_tips: bool | None = None,
-    show_whats_new: bool | None = None,
     show_progress: bool | None = None,
 ) -> dict:
     """Change the provided home preferences only; returns the same shape as ``get_home_preferences``.
@@ -105,7 +103,6 @@ def update_home_preferences(
         changes["show_personalized_suggestions"] = _flag(show_personalized_suggestions)
     for field, value in (
         ("show_tips", show_tips),
-        ("show_whats_new", show_whats_new),
         ("show_progress", show_progress),
     ):
         if value is not None:

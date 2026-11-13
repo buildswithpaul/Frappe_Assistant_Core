@@ -6,10 +6,6 @@ import { OUTAGE_TYPES } from "@/components/notifications/typeMeta";
 
 const POLL_INTERVAL_MS = 120_000;
 
-// AR display styles with their own place in /copilot: a pop-up (Spotlight) and a What's new story on
-// the rail bot. Neither is ever a banner, here or in the Desk widget. (Tips ship with FAC, not from AR.)
-const OWN_PLACE_STYLES = new Set(["modal", "story"]);
-
 function loadSet(key) {
 	try {
 		const v = JSON.parse(localStorage.getItem(key) || "[]");
@@ -45,7 +41,7 @@ export const useNotificationStore = defineStore("notifications", () => {
 	const bannerNotification = computed(
 		() =>
 			activeNotifications.value.find(
-				(n) => n.priority === "high" && !OUTAGE_TYPES.has(n.type) && !OWN_PLACE_STYLES.has(n.display_style)
+				(n) => n.priority === "high" && !OUTAGE_TYPES.has(n.type) && n.display_style !== "modal"
 			) || null
 	);
 	const unreadCount = computed(

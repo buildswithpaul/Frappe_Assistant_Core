@@ -4,14 +4,13 @@ import { useRouter } from "vue-router";
 import { __ } from "@/utils/i18n";
 import { useDiscoveryStore } from "@/stores/discoveryStore";
 import FacoRobot from "@/components/common/FacoRobot.vue";
-import StoryPlayer from "@/components/stories/StoryPlayer.vue";
 import YourFacPanel from "./YourFacPanel.vue";
 import { ringSegments } from "./discoveryRules";
 
 /**
- * The FAC bot at the top of the rail: the only bot on screen. A coloured ring while a What's new
- * story is waiting (tap = watch it); otherwise the Your FAC ring, one colour per power, (tap = the powers panel);
- * with both switched off, or nothing from AR, it is the plain home link it always was.
+ * The FAC bot at the top of the rail: the only bot on screen. The Your FAC ring, one colour per
+ * power (tap = the powers panel); with progress switched off, or no powers from AR, it is the plain
+ * home link it always was.
  */
 const router = useRouter();
 const discovery = useDiscoveryStore();
@@ -19,23 +18,17 @@ const discovery = useDiscoveryStore();
 const R = 21;
 const CIRC = 2 * Math.PI * R;
 
-const mode = computed(() => {
-	if (discovery.waitingStory) return "story";
-	if (discovery.showProgress) return "progress";
-	return "home";
-});
+const mode = computed(() => (discovery.showProgress ? "progress" : "home"));
 const segments = computed(() =>
 	ringSegments(discovery.powers, discovery.state.used, { circ: CIRC, gap: 3 })
 );
 const label = computed(() => {
-	if (mode.value === "story") return __("What's new: {0}", [discovery.waitingStory.title || ""]);
 	const { done, total } = discovery.progress;
 	return __("Your FAC: {0} of {1} tried", [done, total]);
 });
 
 function onClick() {
-	if (mode.value === "story") discovery.openStory();
-	else if (discovery.panelOpen) discovery.closePanel();
+	if (discovery.panelOpen) discovery.closePanel();
 	else discovery.openPanel();
 }
 
@@ -57,34 +50,30 @@ function openSettings() {
 		v-else
 		type="button"
 		class="rail-bot"
-		:class="[`is-${mode}`, { unlocked: discovery.justUnlocked }]"
+		:class="{ unlocked: discovery.justUnlocked }"
 		:aria-label="label"
 		:title="label"
-		:aria-expanded="mode === 'progress' ? discovery.panelOpen : undefined"
+		:aria-expanded="discovery.panelOpen"
 		data-test="rail-bot"
 		@click="onClick"
 	>
 		<svg class="bot-ring" viewBox="0 0 48 48" aria-hidden="true">
-			<template v-if="mode === 'progress'">
-				<g data-test="rail-bot-progress">
-					<circle
-						v-for="s in segments"
-						:key="s.id"
-						class="ring-seg"
-						:class="{ done: s.done }"
-						cx="24"
-						cy="24"
-						:r="R"
-						:stroke-dasharray="s.dasharray"
-						:stroke-dashoffset="s.dashoffset"
-						:style="{ '--power-color': s.color }"
-					/>
-				</g>
-			</template>
-			<circle v-else class="ring-story" cx="24" cy="24" :r="R" />
+			<g data-test="rail-bot-progress">
+				<circle
+					v-for="s in segments"
+					:key="s.id"
+					class="ring-seg"
+					:class="{ done: s.done }"
+					cx="24"
+					cy="24"
+					:r="R"
+					:stroke-dasharray="s.dasharray"
+					:stroke-dashoffset="s.dashoffset"
+					:style="{ '--power-color': s.color }"
+				/>
+			</g>
 		</svg>
 		<FacoRobot size="sm" show-arms />
-		<span v-if="mode === 'story'" class="bot-new">{{ __("NEW") }}</span>
 	</button>
 
 	<YourFacPanel
@@ -96,7 +85,6 @@ function openSettings() {
 		@close="discovery.closePanel()"
 		@settings="openSettings"
 	/>
-	<StoryPlayer :story="discovery.story" @close="discovery.closeStory()" />
 </template>
 
 <style scoped>
@@ -109,18 +97,10 @@ function openSettings() {
 .bot-ring circle { fill: none; stroke-width: 3; }
 .ring-seg { stroke: var(--ql-subtle); transition: stroke 0.4s ease; }
 .ring-seg.done { stroke: var(--power-color); }
-.ring-story { stroke: var(--ql-accent); }
-.is-story .bot-ring { animation: story-spin 6s linear infinite; }
-.is-story .ring-story { stroke-dasharray: 10 4; }
-.bot-new {
-	position: absolute; bottom: -4px; left: 50%; transform: translateX(-50%); padding: 0 4px; border-radius: 6px;
-	background: var(--ql-accent); color: #fff; font-size: 8.5px; font-weight: 800; letter-spacing: 0.04em; line-height: 13px;
-}
 .unlocked { animation: bot-pop 0.6s ease 2; }
-@keyframes story-spin { to { transform: rotate(270deg); } }
 @keyframes bot-pop { 50% { transform: scale(1.12); } }
 @media (prefers-reduced-motion: reduce) {
-	.is-story .bot-ring, .unlocked { animation: none; }
+	.unlocked { animation: none; }
 	.ring-seg { transition: none; }
 }
 </style>

@@ -9,9 +9,7 @@ import {
 	progressOf,
 	ringSegments,
 	safeRoute,
-	storySlides,
 	tipContent,
-	unseenStory,
 } from "./discoveryRules";
 
 const tip = (id, extra = {}) => ({ id, title: "Did you know?", message: id, ...extra });
@@ -100,56 +98,6 @@ describe("pickDailyTip", () => {
 		expect(pickDailyTip({ tips: [tip("a"), tip("b")], state: yesterdayC, today, order }).tip.id).toBe("a");
 		const onlyA = { ...known, tip: { id: "a", date: "2026-11-11" } };
 		expect(pickDailyTip({ tips: [tip("a")], state: onlyA, today, order }).tip.id).toBe("a");
-	});
-});
-
-describe("unseenStory", () => {
-	const story = (id, extra = {}) => ({ id, display_style: "story", title: id, ...extra });
-
-	it("the first story not watched and not dismissed", () => {
-		const list = [story("s1", { dismissed: true }), story("s2"), story("s3")];
-		expect(unseenStory(list, { seen: ["s2"] }).id).toBe("s3");
-		expect(unseenStory([tip("t")])).toBeNull();
-	});
-});
-
-describe("storySlides", () => {
-	it("reads AR's slides, keeping an action only with a safe route", () => {
-		const slides = storySlides({
-			id: "s",
-			slides: [
-				{ title: "One", message: "m", media_url: "https://x/a.png" },
-				{ title: "Two", action_label: "Try", action_route: "/agents" },
-				{ title: "Three", action_label: "Bad", action_route: "https://evil.example" },
-				{ message: "no title" },
-			],
-		});
-		expect(slides.map((s) => s.title)).toEqual(["One", "Two", "Three"]);
-		expect(slides[0].media).toEqual({ url: "https://x/a.png", type: "image", alt: "" });
-		expect(slides[1].action).toEqual({ label: "Try", route: "/agents" });
-		expect(slides[2].action).toBeNull();
-	});
-
-	it("a slide with no picture shows its feature's moving preview, AR's own picture first", () => {
-		const slides = storySlides({
-			id: "s",
-			slides: [
-				{ title: "A", feature: "agents" },
-				{ title: "B", feature: "agents", media_url: "https://x/b.png" },
-				{ title: "C", feature: "unknown" },
-			],
-		});
-		expect(slides.map((s) => s.media)).toEqual([
-			{ art: "feature", feature: "agents" },
-			{ url: "https://x/b.png", type: "image", alt: "" },
-			null,
-		]);
-	});
-
-	it("a story without slides plays as one slide", () => {
-		expect(storySlides({ id: "s", title: "New", message: "Hello" })).toEqual([
-			{ title: "New", message: "Hello", media: null, action: null },
-		]);
 	});
 });
 

@@ -2,11 +2,11 @@
 # Copyright (C) 2025 Paul Clinton
 # AGPL-3.0 License
 
-"""Did you know tips, What's new stories and the Your FAC ring: the site's half.
+"""Did you know tips and the Your FAC ring: the site's half.
 
-AR sends the words (tip/story notifications, the powers list); the site keeps each user's
-three Settings → Home switches and their discovery state, and adds ready questions to the
-invite. Samples only show on a site that asks for them in site_config.
+Tips ship with FAC and AR sends the powers list; the site keeps each user's two Settings → Home
+switches and their discovery state, and adds ready questions to the invite. Sample powers only
+show on a site that asks for them in site_config.
 """
 
 import json
@@ -88,20 +88,18 @@ class TestDiscoverySwitches(BaseAssistantTest):
         super().setUp()
         self.user = frappe.session.user
         self.addCleanup(frappe.cache.hdel, home.HOME_SIGNALS_CACHE_KEY, self.user)
-        home.update_home_preferences(show_tips=True, show_whats_new=True, show_progress=True)
+        home.update_home_preferences(show_tips=True, show_progress=True)
 
     def test_switches_are_on_by_default_without_a_preferences_row(self):
         prefs = load_home_preferences("nobody-has-this-user@example.com")
         self.assertTrue(prefs["show_tips"])
-        self.assertTrue(prefs["show_whats_new"])
         self.assertTrue(prefs["show_progress"])
 
     def test_each_switch_saves_on_its_own(self):
-        result = home.update_home_preferences(show_whats_new="false")
-        self.assertFalse(result["show_whats_new"])
-        self.assertTrue(result["show_tips"])
+        result = home.update_home_preferences(show_tips="false")
+        self.assertFalse(result["show_tips"])
         self.assertTrue(result["show_progress"])
-        self.assertFalse(home.get_home_preferences()["show_whats_new"])
+        self.assertFalse(home.get_home_preferences()["show_tips"])
 
     def test_the_page_gets_the_switches_and_the_state_with_its_access_check(self):
         home.update_home_preferences(show_progress=False)
@@ -110,8 +108,8 @@ class TestDiscoverySwitches(BaseAssistantTest):
         prefs = FACChatUserPreferences.get_or_create_preferences(self.user)
         discovery = _discovery_preferences(prefs)
         self.assertEqual(
-            {k: discovery[k] for k in ("show_tips", "show_whats_new", "show_progress")},
-            {"show_tips": True, "show_whats_new": True, "show_progress": False},
+            {k: discovery[k] for k in ("show_tips", "show_progress")},
+            {"show_tips": True, "show_progress": False},
         )
         self.assertEqual(discovery["state"]["used"], ["ask"])
 
@@ -164,18 +162,11 @@ class TestInviteQuestions(BaseAssistantTest):
 class TestDiscoverySamples(BaseAssistantTest):
     def test_samples_only_on_a_site_that_asks_for_them(self):
         from frappe_assistant_core.chat.api import init as init_mod
-        from frappe_assistant_core.chat.api import notifications
 
         caps = {"features": {}}
         with patch.dict(frappe.conf, {"fac_discovery_samples": 0}):
-            self.assertEqual(notifications._response([], "u", degraded=False)["notifications"], [])
             self.assertNotIn("discovery", init_mod._with_sample_discovery(caps))
         with patch.dict(frappe.conf, {"fac_discovery_samples": 1}):
-            styles = [
-                n["display_style"] for n in notifications._response([], "u", degraded=False)["notifications"]
-            ]
-            # Tips ship with FAC itself, so AR (and its samples) only send stories.
-            self.assertEqual(styles, ["story", "story"])
             self.assertEqual(init_mod._with_sample_discovery(caps)["discovery"]["powers"][0]["id"], "setup")
 
     def test_the_chat_pages_own_capabilities_call_keeps_the_sample_powers(self):

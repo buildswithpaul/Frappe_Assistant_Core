@@ -32,19 +32,6 @@ describe("notificationStore", () => {
 		expect(JSON.parse(localStorage.getItem("fac_notif_seen:a@x.com"))).toEqual(["n1"]);
 	});
 
-	it("a story is never a banner (FAC Chat or the Desk widget), and counts in the bell as What's new", async () => {
-		api.notifications.get.mockResolvedValue({
-			notifications: [N({ id: "s1", priority: "high", display_style: "story" })],
-			user: "a@x.com",
-		});
-		const store = useNotificationStore();
-		await store.refresh();
-		expect(store.bannerNotification).toBeNull();
-		expect(store.unreadCount).toBe(1); // the story, shown in the bell as What's new
-		store.markAllSeen();
-		expect(JSON.parse(localStorage.getItem("fac_notif_seen:a@x.com"))).toEqual(["s1"]);
-	});
-
 	it("keeps previous list on fetch failure", async () => {
 		const store = useNotificationStore();
 		api.notifications.get.mockResolvedValue({ notifications: [N()], user: "a@x.com" });
