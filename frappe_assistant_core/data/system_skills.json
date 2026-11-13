@@ -510,6 +510,15 @@
     "content_file": "pages_in_chat.md"
   },
   {
+    "skill_id": "page-reports",
+    "title": "Pages from Reports",
+    "description": "Use when a FAC Page shows figures a report already computes, such as P&L, Accounts Receivable or a custom report: read it with fac.report, use its totals and summary, and show no-access and preparing states.",
+    "skill_type": "Workflow",
+    "status": "Published",
+    "visibility": "Public",
+    "content_file": "page_reports.md"
+  },
+  {
     "skill_id": "test-as-user-usage",
     "title": "How to Use test_as_user",
     "description": "Checking what another user may read, write, create or submit after changing roles, user permissions or sharing",
