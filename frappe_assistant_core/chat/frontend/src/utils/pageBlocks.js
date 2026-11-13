@@ -11,6 +11,8 @@
  */
 import { __ } from "@/utils/i18n";
 
+import { makeEditors } from "./pageEditList";
+
 const message = (r) => r?.message;
 
 /** The page tools for a page whose script sees `frappe`. */
@@ -38,5 +40,5 @@ export function makeBlocks(frappe) {
 		throw new Error(`fac.${name} is not available yet`);
 	};
 
-	return { canWrite, updated, editText: notYet("editText"), editList: notYet("editList"), periodPicker: notYet("periodPicker") };
+	return { canWrite, updated, ...makeEditors(frappe, canWrite), periodPicker: notYet("periodPicker") };
 }
