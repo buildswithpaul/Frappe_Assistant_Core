@@ -78,3 +78,27 @@ describe("periodPicker", () => {
 		expect(el.querySelector("b")).toBeNull();
 	});
 });
+
+describe("hasRole", () => {
+	const ROLES = "frappe_assistant_core.api.fac_page.my_roles";
+
+	it("answers whether the viewer holds the role, asking the server once", async () => {
+		const f = fakeFrappe({ answers: { [ROLES]: ["Sales User"] } });
+		const blocks = makeBlocks(f);
+		expect(await blocks.hasRole("Sales User")).toBe(true);
+		expect(await blocks.hasRole("Stock User")).toBe(false);
+		expect(f.calls.filter((c) => c.method === ROLES)).toHaveLength(1);
+		expect(f.calls[0].type).toBe("GET");
+	});
+
+	it("answers false when the check fails, so Edit stays hidden", async () => {
+		const f = fakeFrappe({ answers: { [ROLES]: new Error("offline") } });
+		expect(await makeBlocks(f).hasRole("Sales User")).toBe(false);
+	});
+
+	it("answers false for no role without asking", async () => {
+		const f = fakeFrappe();
+		expect(await makeBlocks(f).hasRole("")).toBe(false);
+		expect(f.calls).toHaveLength(0);
+	});
+});

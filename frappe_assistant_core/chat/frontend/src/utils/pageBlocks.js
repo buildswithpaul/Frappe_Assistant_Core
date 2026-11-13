@@ -63,13 +63,27 @@ export function makeBlocks(frappe) {
 		}
 	}
 
+	// The viewer's roles, read once per page run: whether to show Edit on a unit's record. The
+	// page's Server Script still refuses a save by anyone outside the unit's team.
+	let roles = null;
+	async function hasRole(role) {
+		if (!role) return false;
+		try {
+			roles = roles || frappe.call({ method: "frappe_assistant_core.api.fac_page.my_roles", type: "GET", args: {} });
+			return (message(await roles) || []).includes(role);
+		} catch {
+			roles = null;
+			return false;
+		}
+	}
+
 	function updated(doc = {}) {
 		if (!doc.modified_by) return "";
 		const when = doc.modified ? frappe.datetime.str_to_user(doc.modified) : "";
 		return when ? __("Updated by {0} · {1}", [doc.modified_by, when]) : __("Updated by {0}", [doc.modified_by]);
 	}
 
-	return { canWrite, updated, ...makeEditors(frappe, canWrite), periodPicker };
+	return { canWrite, hasRole, updated, ...makeEditors(frappe, canWrite), periodPicker };
 }
 
 /**
