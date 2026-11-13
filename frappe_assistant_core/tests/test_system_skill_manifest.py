@@ -568,3 +568,10 @@ class TestSystemSkillManifest(BaseAssistantTest):
             text = self._read_skill(name)
             self.assertIn("Present", text, name)
             self.assertIn("data-title", text, name)
+
+    def test_page_skills_cover_the_traps_filming_found(self):
+        # FACO subtracted one P&L month from the next, though each column is already that month's
+        # own figure, and a page could not refresh its "Updated by" line after an inline save.
+        self.assertIn("accumulated_values", self._read_skill("page_reports.md"))
+        self.assertIn("never subtract one period column from another", self._read_skill("page_reports.md"))
+        self.assertIn("onSaved", self._read_skill("mockup_kit.md"))

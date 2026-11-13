@@ -120,6 +120,77 @@ describe("editList", () => {
 		expect(f.calls.find((c) => c.method === SAVE).args.doc.risks[0]).toMatchObject({ severity: "URGENT", description: "Old scale, reworded" });
 	});
 
+	it("lets a second list on the same record save after the first one did", async () => {
+		// A unit's update carries risks and priorities; both lists sit on one page, and Frappe
+		// refuses a save whose modified is older than the record's.
+		const PRIORITIES = [{ fieldname: "description", label: "Priority", fieldtype: "Small Text" }];
+		const record = { ...update, priorities: [{ name: "p1", description: "Close reviews" }] };
+		let stored = structuredClone(record);
+		const f = fakeFrappe({
+			docs: [record],
+			answers: {
+				[SAVE]: (args) => {
+					if (args.doc.modified !== stored.modified) throw Object.assign(new Error("modified after you have opened it"), { status: 417 });
+					stored = { ...args.doc, modified: `2026-11-13 10:0${f.calls.length}:00` };
+					return stored;
+				},
+			},
+		});
+		f.db.get_doc = () => Promise.resolve(structuredClone(stored));
+		const blocks = makeBlocks(f);
+		const risks = mount();
+		const priorities = document.createElement("div");
+		document.body.append(priorities);
+		await blocks.editList(risks, { doctype: "BU Update", name: "BU-0001", table: "risks", columns: RISKS, canEdit: true });
+		await blocks.editList(priorities, { doctype: "BU Update", name: "BU-0001", table: "priorities", columns: PRIORITIES, canEdit: true });
+		button(risks, "Edit").click();
+		button(risks, "Save").click();
+		await settle();
+		button(priorities, "Edit").click();
+		priorities.querySelector("textarea").value = "Close reviews this week";
+		button(priorities, "Save").click();
+		await settle();
+		expect(priorities.querySelector("p.mk-edit-error")?.hidden ?? true).toBe(true);
+		expect(stored.priorities[0].description).toBe("Close reviews this week");
+		priorities.remove();
+	});
+
+	it("still refuses a save over someone else's change", async () => {
+		const root = mount();
+		const f = fakeFrappe({ docs: [update], answers: { [SAVE]: (args) => args.doc } });
+		const blocks = makeBlocks(f);
+		await blocks.editList(root, { doctype: "BU Update", name: "BU-0001", table: "risks", columns: RISKS, canEdit: true });
+		button(root, "Edit").click();
+		button(root, "Save").click();
+		await settle();
+		expect(f.calls.find((c) => c.method === SAVE).args.doc.modified).toBe(update.modified);
+	});
+
+	it("takes the record's latest time when the page reloads a list", async () => {
+		// The page reloads a list after it changed the record itself, or to show someone's update.
+		const root = mount();
+		const later = { ...update, modified: "2026-11-13 12:00:00" };
+		const f = fakeFrappe({ docs: [update, later], answers: { [SAVE]: (args) => args.doc } });
+		const list = await makeBlocks(f).editList(root, { doctype: "BU Update", name: "BU-0001", table: "risks", columns: RISKS, canEdit: true });
+		await list.reload();
+		button(root, "Edit").click();
+		button(root, "Save").click();
+		await settle();
+		expect(f.calls.find((c) => c.method === SAVE).args.doc.modified).toBe("2026-11-13 12:00:00");
+	});
+
+	it("tells the page when a save went through, with the saved record", async () => {
+		const root = mount();
+		const saved = [];
+		const f = fakeFrappe({ docs: [update], answers: { [SAVE]: (args) => ({ ...args.doc, modified_by: "kavya@example.com" }) } });
+		await makeBlocks(f).editList(root, { doctype: "BU Update", name: "BU-0001", table: "risks", columns: RISKS, canEdit: true, onSaved: (doc) => saved.push(doc) });
+		button(root, "Edit").click();
+		button(root, "Save").click();
+		await settle();
+		expect(saved).toHaveLength(1);
+		expect(saved[0].modified_by).toBe("kavya@example.com");
+	});
+
 	it("drops a removed row", async () => {
 		const root = mount();
 		const f = fakeFrappe({ docs: [update], answers: { [SAVE]: (args) => args.doc } });
