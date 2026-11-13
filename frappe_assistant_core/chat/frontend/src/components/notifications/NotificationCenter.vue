@@ -41,7 +41,7 @@
 
 <script setup>
 import { computed } from "vue";
-import { inBell, useNotificationStore } from "@/stores/notificationStore";
+import { useNotificationStore } from "@/stores/notificationStore";
 import { useDiscoveryStore } from "@/stores/discoveryStore";
 import { __ } from "@/utils/i18n";
 import { renderNotificationMarkdown } from "@/utils/markdown";
@@ -66,7 +66,7 @@ function replay(n) {
 
 // Tips live on Home, not here. Stable sort — outage-class first, original store order preserved within tiers
 const items = computed(() =>
-	[...store.notifications].filter(inBell).sort(
+	[...store.notifications].sort(
 		(a, b) => (OUTAGE_TYPES.has(a.type) ? 0 : 1) - (OUTAGE_TYPES.has(b.type) ? 0 : 1)
 	)
 );

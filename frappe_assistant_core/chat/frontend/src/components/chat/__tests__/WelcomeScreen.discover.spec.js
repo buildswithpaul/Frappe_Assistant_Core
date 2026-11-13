@@ -4,6 +4,7 @@ import { createRouter, createMemoryHistory } from "vue-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const { getHome, dismissNotification } = vi.hoisted(() => ({ getHome: vi.fn(), dismissNotification: vi.fn() }));
+// Tips ship with FAC (dailyTips.js); none of them comes from AR, so nothing here is dismissed on AR.
 vi.mock("@/api/client", () => ({
 	api: {
 		home: { get: (...a) => getHome(...a), hideSignal: vi.fn(), saveDiscoveryState: vi.fn().mockResolvedValue({}) },
@@ -27,33 +28,17 @@ const KNOWN = { first_day: "2026-11-01" };
 const TODAY = new Date(2026, 10, 12, 9, 0, 0);
 const TOMORROW = new Date(2026, 10, 13, 9, 0, 0);
 
-// AR "tip" notifications, as get_notifications returns them.
-const AGENTS_TIP = {
-	id: "tip-agents",
-	display_style: "tip",
-	priority: "normal",
-	title: "Did you know?",
-	message: "An agent can email you overdue invoices every Monday.",
-	highlights: ["Starts from a template", "About 1 minute"],
-	action_label: "Show me agents",
-	action_route: "/agents?tab=marketplace",
-	feature: "agents",
-	dismissible: true,
-};
-const KNOWLEDGE_TIP = {
-	...AGENTS_TIP,
-	id: "tip-knowledge",
-	message: "Upload your price list and FAC answers from it.",
-	action_route: "/knowledge",
-	feature: "knowledge",
-};
+// FAC's own tips take turns in this order: ask, agents, templates, knowledge, pages. A user with a
+// chat has used Ask, so their first tip is the agents one.
+const AGENTS = "An agent can email you overdue invoices every Monday";
+const TEMPLATES = "Save it as a prompt template";
+const KNOWLEDGE = "Upload a price list";
 
 const mounted = [];
 
 async function mountHome({
 	sessions = [SESSION],
 	state = KNOWN,
-	tips = [AGENTS_TIP],
 	switches = {},
 	before = () => {},
 } = {}) {
@@ -71,8 +56,6 @@ async function mountHome({
 		discoveryPrefs: { show_tips: true, show_whats_new: true, show_progress: true, ...switches, state },
 	});
 	useChatStore().hydrateSessions(sessions);
-	// Copies: dismissing marks the notification object itself, as AR's next poll would.
-	useNotificationStore().notifications = tips.map((t) => ({ ...t }));
 	const router = createRouter({
 		history: createMemoryHistory(),
 		routes: ["/chat", "/agents", "/knowledge"].map((path) => ({ path, component: { template: "<div />" } })),
@@ -110,10 +93,10 @@ describe("WelcomeScreen Did you know tip", () => {
 		vi.unstubAllGlobals();
 	});
 
-	it("shows AR's words under the ask box", async () => {
+	it("shows FAC's own tip under the ask box", async () => {
 		const w = await mountHome();
-		expect(tip(w).text()).toContain("An agent can email you overdue invoices every Monday.");
-		expect(state().tip).toEqual({ id: "tip-agents", date: "2026-11-12" });
+		expect(tip(w).text()).toContain(AGENTS);
+		expect(state().tip).toEqual({ id: "agents-routine-work", date: "2026-11-12" });
 	});
 
 	it("keeps day one simple: no tip before the first chat, and none on FAC's first day with the user", async () => {
@@ -127,14 +110,14 @@ describe("WelcomeScreen Did you know tip", () => {
 		expect(w.find("[data-test='spotlight-card']").exists()).toBe(false);
 		await w.find("[data-test='discover-tip-show']").trigger("click");
 		expect(w.find("[data-test='spotlight-card'] h2").text()).toBe("Did you know?");
-		expect(w.findAll("[data-test='spotlight-highlight']")).toHaveLength(2);
+		expect(w.findAll("[data-test='spotlight-highlight']")).toHaveLength(1);
 		expect(w.find("[data-test='spotlight-primary']").text()).toBe("Show me agents");
 		await w.find("[data-test='spotlight-secondary']").trigger("click");
 		expect(w.find("[data-test='spotlight-card']").exists()).toBe(false);
 		expect(state().seen).toEqual([]);
 	});
 
-	it("the pop-up's button goes where AR said, and the feature counts as opened", async () => {
+	it("the pop-up's button goes where the tip says, and the feature counts as opened", async () => {
 		const w = await mountHome();
 		await w.find("[data-test='discover-tip-show']").trigger("click");
 		await w.find("[data-test='spotlight-primary']").trigger("click");
@@ -147,7 +130,6 @@ describe("WelcomeScreen Did you know tip", () => {
 		const w = await mountHome();
 		await w.find("[data-test='discover-tip-dismiss']").trigger("click");
 		expect(tip(w).exists()).toBe(false);
-		expect(dismissNotification).not.toHaveBeenCalled();
 
 		const later = state();
 		expect(tip(await mountHome({ state: later })).exists()).toBe(false);
@@ -155,34 +137,48 @@ describe("WelcomeScreen Did you know tip", () => {
 		expect(tip(await mountHome({ state: later })).exists()).toBe(true);
 	});
 
-	it("Don't show this tip again dismisses it on AR, for good", async () => {
+	it("Don't show this tip again keeps it gone for good, on the user's own state, never on AR", async () => {
 		const w = await mountHome();
 		await w.find("[data-test='discover-tip-never']").trigger("click");
 		expect(tip(w).exists()).toBe(false);
-		expect(dismissNotification).toHaveBeenCalledWith("tip-agents");
-	});
+		expect(state().tips_dismissed).toEqual(["agents-routine-work"]);
+		expect(dismissNotification).not.toHaveBeenCalled();
 
-	it("stops once the feature was really used, and shows the next one", async () => {
-		const w = await mountHome({ state: { ...KNOWN, used: ["agents"] }, tips: [AGENTS_TIP, KNOWLEDGE_TIP] });
-		expect(tip(w).text()).toContain("price list");
-	});
-
-	it("one tip a day: the same tip all day, a different one the next day", async () => {
-		const tips = [AGENTS_TIP, KNOWLEDGE_TIP];
-		await mountHome({ tips });
-		const today = state();
-		expect(tip(await mountHome({ tips, state: today })).text()).toContain("overdue invoices");
 		vi.setSystemTime(TOMORROW);
-		expect(tip(await mountHome({ tips, state: today })).text()).toContain("price list");
+		expect(tip(await mountHome({ state: state() })).text()).toContain(TEMPLATES);
+	});
+
+	it("skips a tip about a feature the user already uses", async () => {
+		const w = await mountHome({ state: { ...KNOWN, used: ["agents", "templates"] } });
+		expect(tip(w).text()).toContain(KNOWLEDGE);
+	});
+
+	it("one tip a day: the same tip all day, the next one the next day", async () => {
+		await mountHome();
+		const today = state();
+		expect(tip(await mountHome({ state: today })).text()).toContain(AGENTS);
+		vi.setSystemTime(TOMORROW);
+		expect(tip(await mountHome({ state: today })).text()).toContain(TEMPLATES);
+	});
+
+	it("leaves out tips about a feature this site has switched off", async () => {
+		const w = await mountHome({ before: () => Object.assign(useUserStore(), { workflowsEnabled: false }) });
+		expect(tip(w).text()).toContain(TEMPLATES);
 	});
 
 	it("shows nothing when the user turned tips off in Settings → Home", async () => {
 		expect(tip(await mountHome({ switches: { show_tips: false } })).exists()).toBe(false);
 	});
 
-	it("ignores AR notifications that are not tips", async () => {
-		const w = await mountHome({ tips: [{ ...AGENTS_TIP, display_style: "modal" }] });
-		expect(tip(w).exists()).toBe(false);
+	it("ignores anything AR sends: tips are FAC's own", async () => {
+		const w = await mountHome({
+			before: () => {
+				useNotificationStore().notifications = [
+					{ id: "ar-tip", display_style: "tip", title: "Did you know?", message: "From AR", feature: "agents" },
+				];
+			},
+		});
+		expect(tip(w).text()).not.toContain("From AR");
 	});
 });
 

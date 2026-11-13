@@ -32,12 +32,9 @@ describe("notificationStore", () => {
 		expect(JSON.parse(localStorage.getItem("fac_notif_seen:a@x.com"))).toEqual(["n1"]);
 	});
 
-	it("a tip or story is never a banner (FAC Chat or the Desk widget), and a tip never counts in the bell", async () => {
+	it("a story is never a banner (FAC Chat or the Desk widget), and counts in the bell as What's new", async () => {
 		api.notifications.get.mockResolvedValue({
-			notifications: [
-				N({ id: "t1", priority: "high", display_style: "tip" }),
-				N({ id: "s1", priority: "high", display_style: "story" }),
-			],
+			notifications: [N({ id: "s1", priority: "high", display_style: "story" })],
 			user: "a@x.com",
 		});
 		const store = useNotificationStore();

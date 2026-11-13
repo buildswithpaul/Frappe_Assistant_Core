@@ -2,16 +2,16 @@
 # Copyright (C) 2025 Paul Clinton
 # AGPL-3.0 License
 
-"""Sample Did you know tip, What's new story and Your FAC powers, for trying the feature on a test site.
+"""Sample What's new stories and Your FAC powers, for trying the feature on a test site.
 
-AR is the source of all three. Until AR sends ``tip`` / ``story`` notifications and a
-``capabilities.discovery`` block, a test site can set ``"fac_discovery_samples": 1`` in
-site_config.json to see them. Off everywhere else: nothing here runs without that key.
+AR is the source of both; daily tips ship with FAC itself, in dailyTips.js. Until AR sends
+``story`` notifications and a ``capabilities.discovery`` block, a test site can set
+``"fac_discovery_samples": 1`` in site_config.json to see them. Off everywhere else: nothing
+here runs without that key.
 """
 
 import frappe
 
-SAMPLE_TIP_ID = "sample-tip-agents"
 SAMPLE_STORY_ID = "sample-story-whats-new"
 SAMPLE_STORY_2_ID = "sample-story-your-fac"
 
@@ -32,24 +32,8 @@ def with_sample_discovery(capabilities: dict) -> dict:
 
 
 def sample_notifications() -> list[dict]:
-    """One tip and one story in the shape AR will send them."""
+    """Two stories in the shape AR sends them."""
     return [
-        {
-            "id": SAMPLE_TIP_ID,
-            "display_style": "tip",
-            "type": "feature",
-            "priority": "normal",
-            "title": "Did you know?",
-            "message": "An agent can email you overdue invoices every Monday.",
-            "highlights": ["Starts from a ready-made template", "About 1 minute to set up"],
-            "action_label": "Show me agents",
-            "action_route": "/agents?tab=marketplace",
-            "feature": "agents",
-            "repeat": "daily",
-            "dismissible": True,
-            "dismissed": False,
-            "created_at": "",
-        },
         {
             "id": SAMPLE_STORY_ID,
             "display_style": "story",

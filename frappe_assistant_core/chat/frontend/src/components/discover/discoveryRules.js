@@ -1,9 +1,10 @@
 /**
  * Did you know tips, What's new stories and Your FAC progress. Pure: no Vue, no network.
  *
- * AR decides what and who: tips and stories are AR notifications (display_style "tip" / "story"),
- * powers come from capabilities.discovery. This file decides when: a tip once a day until its
- * feature is used, never on day one; a story until it is watched; the ring from real usage.
+ * Tips ship with FAC (dailyTips.js), one set per release. AR decides the rest: stories are AR
+ * notifications (display_style "story"), powers come from capabilities.discovery. This file decides
+ * when: a tip once a day, taking turns, until its feature is used; never on day one; a story until
+ * it is watched; the ring from real usage.
  */
 import { __ } from "@/utils/i18n";
 import { featureById } from "./featureCatalog";
@@ -14,11 +15,10 @@ export const POWER_IDS = ["setup", "ask", "templates", "knowledge", "pages", "ag
 /** Which userStore flag must be on for a power to be offered (null = always). */
 const POWER_CAPABILITY = { knowledge: "memoryEnabled", agents: "workflowsEnabled" };
 
-export const LIST_KEYS = ["seen", "used", "celebrated", "stories_seen"];
+export const LIST_KEYS = ["seen", "used", "celebrated", "stories_seen", "tips_dismissed"];
 const LIST_MAX = 50;
 const ID_MAX = 140;
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
-const PRIORITY_RANK = { high: 0, normal: 1, low: 2 };
 
 export function emptyState() {
 	return {
@@ -26,6 +26,7 @@ export function emptyState() {
 		used: [],
 		celebrated: [],
 		stories_seen: [],
+		tips_dismissed: [],
 		coach_done: false,
 		tip: null,
 		tip_hidden_on: null,
@@ -52,29 +53,25 @@ export function parseState(raw) {
 	return state;
 }
 
-const byPriority = (a, b) => (PRIORITY_RANK[a.priority] ?? 1) - (PRIORITY_RANK[b.priority] ?? 1);
-
-/** Tips AR sent that are still live: not dismissed for good, and not about a feature already used. */
-export function liveTips(notifications, { used = [], isDismissed = (n) => Boolean(n.dismissed) } = {}) {
-	return (notifications || [])
-		.filter((n) => n && n.display_style === "tip" && validId(n.id) && !isDismissed(n))
-		.filter((n) => !(n.feature && used.includes(n.feature)))
-		.sort(byPriority);
+/** The tips still live for this user: not "never again", and not about a feature they already use. */
+export function liveTips(tips, { used = [], dismissed = [] } = {}) {
+	return (tips || []).filter((t) => !dismissed.includes(t.id) && !(t.feature && used.includes(t.feature)));
 }
 
 /**
- * Today's tip, at most one a day. Keeps today's tip if it is still live; otherwise picks the
- * highest-priority live tip, preferring a different one from the last day's. Returns
- * `{ tip, state }`: the notification to show (or null) and the state to store.
+ * Today's tip, at most one a day. Keeps today's tip if it is still live; otherwise the next live
+ * tip after the last day's in `order`, going round after the last, so every tip gets its turn.
+ * Returns `{ tip, state }`: the tip to show (or null) and the state to store.
  */
-export function pickDailyTip({ tips, state, today, dayOne }) {
+export function pickDailyTip({ tips, state, today, dayOne, order = tips.map((t) => t.id) }) {
 	if (dayOne || state.first_day === today || state.tip_hidden_on === today) return { tip: null, state };
 	const current = state.tip;
 	if (current && current.date === today) {
 		return { tip: tips.find((t) => t.id === current.id) || null, state };
 	}
 	if (!tips.length) return { tip: null, state };
-	const next = tips.find((t) => !current || t.id !== current.id) || tips[0];
+	const last = current ? order.indexOf(current.id) : -1;
+	const next = (last >= 0 && tips.find((t) => order.indexOf(t.id) > last)) || tips[0];
 	return { tip: next, state: { ...state, tip: { id: next.id, date: today } } };
 }
 

@@ -14,7 +14,7 @@ import {
 	unseenStory,
 } from "./discoveryRules";
 
-const tip = (id, extra = {}) => ({ id, display_style: "tip", title: "Did you know?", message: id, ...extra });
+const tip = (id, extra = {}) => ({ id, title: "Did you know?", message: id, ...extra });
 const known = { ...emptyState(), first_day: "2026-11-01" };
 
 describe("parseState", () => {
@@ -22,6 +22,7 @@ describe("parseState", () => {
 		const state = parseState({
 			seen: ["agents", 3, "", "agents"],
 			used: ["x".repeat(141), "pages"],
+			tips_dismissed: ["agents-routine-work", 5],
 			coach_done: "yes",
 			tip: { id: "t1", date: "12/11/2026" },
 			tip_hidden_on: "2026-11-12",
@@ -32,6 +33,7 @@ describe("parseState", () => {
 			...emptyState(),
 			seen: ["agents"],
 			used: ["pages"],
+			tips_dismissed: ["agents-routine-work"],
 			tip_hidden_on: "2026-11-12",
 			first_day: "2026-11-01",
 		});
@@ -44,22 +46,12 @@ describe("parseState", () => {
 });
 
 describe("liveTips", () => {
-	it("keeps tips only, drops dismissed ones and ones about a used feature, high priority first", () => {
-		const tips = liveTips(
-			[
-				tip("a", { feature: "agents" }),
-				tip("b", { dismissed: true }),
-				{ id: "m", display_style: "modal" },
-				tip("c", { priority: "low" }),
-				tip("d", { priority: "high" }),
-			],
-			{ used: ["agents"] }
-		);
-		expect(tips.map((t) => t.id)).toEqual(["d", "c"]);
-	});
-
-	it("uses the store's dismissal check, which includes local dismissals", () => {
-		expect(liveTips([tip("a")], { isDismissed: () => true })).toEqual([]);
+	it("drops a tip the user asked never to see again, and one about a feature they already use", () => {
+		const tips = liveTips([tip("a", { feature: "agents" }), tip("b"), tip("c", { feature: "pages" })], {
+			used: ["agents"],
+			dismissed: ["b"],
+		});
+		expect(tips.map((t) => t.id)).toEqual(["c"]);
 	});
 });
 
@@ -87,10 +79,27 @@ describe("pickDailyTip", () => {
 		expect(pickDailyTip({ tips: [tip("b")], state, today }).tip).toBeNull();
 	});
 
-	it("a new day prefers a different tip, and falls back to the same one when it is the only one", () => {
-		const state = { ...known, tip: { id: "a", date: "2026-11-11" } };
-		expect(pickDailyTip({ tips: [tip("a"), tip("b")], state, today }).tip.id).toBe("b");
-		expect(pickDailyTip({ tips: [tip("a")], state, today }).tip.id).toBe("a");
+	it("a new day moves to the next tip and goes round, so every tip gets its turn", () => {
+		const order = ["a", "b", "c"];
+		const tips = order.map((id) => tip(id));
+		const seen = [];
+		let state = known;
+		for (const day of ["2026-11-12", "2026-11-13", "2026-11-14", "2026-11-15"]) {
+			const picked = pickDailyTip({ tips, state, today: day, order });
+			seen.push(picked.tip.id);
+			state = picked.state;
+		}
+		expect(seen).toEqual(["a", "b", "c", "a"]);
+	});
+
+	it("skips past a tip that is gone, and keeps the only one left", () => {
+		const order = ["a", "b", "c"];
+		const yesterdayB = { ...known, tip: { id: "b", date: "2026-11-11" } };
+		expect(pickDailyTip({ tips: [tip("a"), tip("c")], state: yesterdayB, today, order }).tip.id).toBe("c");
+		const yesterdayC = { ...known, tip: { id: "c", date: "2026-11-11" } };
+		expect(pickDailyTip({ tips: [tip("a"), tip("b")], state: yesterdayC, today, order }).tip.id).toBe("a");
+		const onlyA = { ...known, tip: { id: "a", date: "2026-11-11" } };
+		expect(pickDailyTip({ tips: [tip("a")], state: onlyA, today, order }).tip.id).toBe("a");
 	});
 });
 
@@ -183,7 +192,7 @@ describe("safeRoute and tipContent", () => {
 		for (const bad of ["//evil", "/\\evil", "https://x", "/a b", null]) expect(safeRoute(bad)).toBeNull();
 	});
 
-	it("a tip's pop-up uses AR's words, and the feature's own preview when AR sent no picture", () => {
+	it("a tip's pop-up uses the tip's words, and the feature's own moving preview", () => {
 		const content = tipContent(tip("t", { feature: "agents", action_label: "Show me", action_route: "/agents" }));
 		expect(content).toMatchObject({
 			kind: "tip",

@@ -13,6 +13,7 @@ import { useNotificationStore } from "@/stores/notificationStore";
 import { useTourStore } from "@/stores/tourStore";
 import { localDate } from "@/components/spotlight/spotlightRules";
 import { availableFeatures, featureById, featureForPath, previewContent } from "@/components/discover/featureCatalog";
+import { TIP_ORDER, dailyTips } from "@/components/discover/dailyTips";
 import {
 	availablePowers,
 	emptyState,
@@ -32,9 +33,9 @@ const LOAD_QUIET_MS = 4000;
  * Feature discovery in the full FAC Chat (/copilot): the daily Did you know tip, What's new
  * stories, the Your FAC ring, the rail dots and the 3-stop tour.
  *
- * AR decides what and who (tips and stories are AR notifications, powers come from
- * capabilities). This store decides when, from what the user really did, and keeps that on
- * the user's preferences so it follows them across browsers.
+ * Tips ship with FAC (dailyTips.js). AR decides the rest: stories are AR notifications, powers
+ * come from capabilities. This store decides when, from what the user really did, and keeps
+ * that on the user's preferences so it follows them across browsers.
  *
  * Nothing runs until App.vue calls init(): the Desk widget shares some stores with this
  * one and must stay a plain chat.
@@ -221,6 +222,10 @@ export const useDiscoveryStore = defineStore("discovery", () => {
 
 	// ── Did you know ────────────────────────────────────────────────────
 	const notifications = computed(() => useNotificationStore().notifications);
+	const siteTips = () => {
+		const user = useUserStore();
+		return dailyTips({ workflowsEnabled: user.workflowsEnabled, memoryEnabled: user.memoryEnabled });
+	};
 	const isDismissed = (n) => useNotificationStore().isDismissed(n);
 
 	const tip = ref(null);
@@ -230,8 +235,8 @@ export const useDiscoveryStore = defineStore("discovery", () => {
 			tip.value = null;
 			return;
 		}
-		const tips = liveTips(notifications.value, { used: state.value.used, isDismissed });
-		const picked = pickDailyTip({ tips, state: state.value, today: localDate(now), dayOne });
+		const tips = liveTips(siteTips(), { used: state.value.used, dismissed: state.value.tips_dismissed });
+		const picked = pickDailyTip({ tips, state: state.value, today: localDate(now), dayOne, order: TIP_ORDER });
 		if (picked.state !== state.value) update({ tip: picked.state.tip });
 		tip.value = picked.tip;
 	}
@@ -242,10 +247,10 @@ export const useDiscoveryStore = defineStore("discovery", () => {
 		update({ tip_hidden_on: localDate() });
 	}
 
-	/** "Don't show this tip again": dismissed on AR, so it stays gone on every device. */
+	/** "Don't show this tip again": kept on the user's preferences, so it stays gone on every device. */
 	function neverShowTip(id) {
 		tip.value = null;
-		useNotificationStore().dismiss(id);
+		addTo("tips_dismissed", id);
 	}
 
 	function showTip(n) {
@@ -295,7 +300,7 @@ export const useDiscoveryStore = defineStore("discovery", () => {
 		}
 	}
 
-	/** The pop-up's main button: AR's route when the tip has one, else the feature's own try. */
+	/** The pop-up's main button: the tip's route when it has one, else the feature's own try. */
 	function tryPreview(router) {
 		const content = preview.value;
 		preview.value = null;

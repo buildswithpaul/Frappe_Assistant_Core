@@ -31,7 +31,7 @@ HOME_PREFERENCE_FIELDS = (
 
 # What the SPA may keep in ``discovery_state``: lists of ids, the tour flag and a few dates. Anything
 # else is dropped, so a bad or oversized save can never grow the row.
-DISCOVERY_LIST_KEYS = ("seen", "used", "celebrated", "stories_seen")
+DISCOVERY_LIST_KEYS = ("seen", "used", "celebrated", "stories_seen", "tips_dismissed")
 DISCOVERY_LIST_MAX = 50
 DISCOVERY_ID_MAX = 140
 _ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")

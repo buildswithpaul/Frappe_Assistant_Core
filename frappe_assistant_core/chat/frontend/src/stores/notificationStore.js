@@ -6,11 +6,9 @@ import { OUTAGE_TYPES } from "@/components/notifications/typeMeta";
 
 const POLL_INTERVAL_MS = 120_000;
 
-// AR display styles with their own place in /copilot: a pop-up (Spotlight), a Did you know tip on
-// Home, a What's new story on the rail bot. None of them is ever a banner, here or in the Desk widget.
-const OWN_PLACE_STYLES = new Set(["modal", "tip", "story"]);
-// A tip lives on Home, not in the bell.
-export const inBell = (n) => n.display_style !== "tip";
+// AR display styles with their own place in /copilot: a pop-up (Spotlight) and a What's new story on
+// the rail bot. Neither is ever a banner, here or in the Desk widget. (Tips ship with FAC, not from AR.)
+const OWN_PLACE_STYLES = new Set(["modal", "story"]);
 
 function loadSet(key) {
 	try {
@@ -51,7 +49,7 @@ export const useNotificationStore = defineStore("notifications", () => {
 			) || null
 	);
 	const unreadCount = computed(
-		() => activeNotifications.value.filter((n) => inBell(n) && !seenIds.value.has(n.id)).length
+		() => activeNotifications.value.filter((n) => !seenIds.value.has(n.id)).length
 	);
 
 	function _setUser(user) {
@@ -102,7 +100,7 @@ export const useNotificationStore = defineStore("notifications", () => {
 	}
 
 	function markAllSeen() {
-		for (const n of activeNotifications.value) if (inBell(n)) seenIds.value.add(n.id);
+		for (const n of activeNotifications.value) seenIds.value.add(n.id);
 		if (currentUser.value) saveSet(seenKey(), seenIds.value);
 	}
 

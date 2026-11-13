@@ -53,6 +53,13 @@ class TestDiscoveryState(BaseAssistantTest):
         self.assertNotIn("anything", state)
         self.assertEqual(parse_discovery_state("not json")["seen"], [])
 
+    def test_a_tip_the_user_never_wants_again_is_kept_on_every_device(self):
+        # "Don't show this tip again" saves the tip id here: tips ship with FAC, so AR has no record.
+        saved = home.save_discovery_state(json.dumps({"tips_dismissed": ["agents-routine-work", 7, ""]}))
+        self.assertEqual(saved["tips_dismissed"], ["agents-routine-work"])
+        stored = json.loads(frappe.db.get_value(PREFS, self.user, "discovery_state"))
+        self.assertEqual(stored["tips_dismissed"], ["agents-routine-work"])
+
     def test_parse_caps_every_list(self):
         state = parse_discovery_state({"seen": [f"id-{i}" for i in range(80)]})
         self.assertEqual(len(state["seen"]), 50)
@@ -167,7 +174,8 @@ class TestDiscoverySamples(BaseAssistantTest):
             styles = [
                 n["display_style"] for n in notifications._response([], "u", degraded=False)["notifications"]
             ]
-            self.assertEqual(styles, ["tip", "story", "story"])
+            # Tips ship with FAC itself, so AR (and its samples) only send stories.
+            self.assertEqual(styles, ["story", "story"])
             self.assertEqual(init_mod._with_sample_discovery(caps)["discovery"]["powers"][0]["id"], "setup")
 
     def test_the_chat_pages_own_capabilities_call_keeps_the_sample_powers(self):
