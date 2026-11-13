@@ -167,3 +167,101 @@ body,
 		height: auto;
 	}
 }
+
+/* Sections and editing, for pages people type into (the page tools in pageBlocks.js). */
+.mk-section {
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+}
+
+.mk-section-head {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: 12px;
+	flex-wrap: wrap;
+}
+
+.mk-section-meta {
+	color: var(--mk-text-muted);
+	font-size: 12px;
+}
+
+.mk-list {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.mk-text {
+	white-space: pre-line;
+}
+
+.mk-edit-row {
+	display: flex;
+	gap: 8px;
+	align-items: flex-start;
+	margin-bottom: 8px;
+}
+
+.mk-edit-row input,
+.mk-edit-row select,
+.mk-edit-row textarea {
+	padding: 6px 10px;
+	border: 1px solid var(--mk-border);
+	border-radius: var(--mk-radius);
+	background: var(--mk-surface);
+	font: inherit;
+}
+
+.mk-edit-row textarea {
+	flex: 1;
+	min-height: 2.5em;
+}
+
+.mk-edit-error {
+	color: #b42318;
+	font-size: 12px;
+}
+
+/* Severity badges; each pair keeps AA contrast. */
+.mk-sev-high {
+	background: #fee4e2;
+	color: #912018;
+}
+
+.mk-sev-med {
+	background: #fef0c7;
+	color: #7a2e0e;
+}
+
+.mk-sev-low {
+	background: #f2f4f7;
+	color: #344054;
+}
+
+/* Filled-in markers: give the dot an aria-label or a text label beside it. */
+.mk-status-done,
+.mk-status-pending {
+	display: inline-block;
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	vertical-align: middle;
+}
+
+.mk-status-done {
+	background: #12b76a;
+}
+
+.mk-status-pending {
+	background: #f79009;
+}
+
+.mk-period {
+	max-width: 220px;
+}
