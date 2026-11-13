@@ -32,6 +32,35 @@ Website users cannot build pages, and a page cannot be shared with Frappe's Shar
 
 To share a user's personal page, update it with `visibility: "Shared"`, the `roles` and `published: 1`. It keeps its name. That change opens the page to other people, so it asks for approval.
 
+## Pages people type into
+
+When a page's teams write their own part of it, such as each business unit's risks and priorities for a fortnightly review, keep what they write in doctypes the page's build plan creates, and keep each unit's part to its own team.
+
+1. **Shape.**
+   - A **period** doctype, one record per period, named by it (`autoname: field:period`), for company-wide fields and targets.
+   - A **unit update** doctype, one record per unit and period, with `period` (Link to the period doctype), `business_unit` (Link to a small **Business Unit** doctype, or to Cost Center or Department if the site already uses one for its units; check with `list_documents`) and a child table for each repeating item, such as risks with a `severity` Select (`HIGH`, `MED`, `LOW`) and a description. Name it `autoname: format:{period}-{business_unit}` so a unit has one update per period.
+   - Turn on **Track Changes** for both, so the record shows who changed what.
+2. **Who edits which unit.**
+   - Give the Business Unit doctype an `editor_role` field (Link to Role), one role per unit such as "Decathlon BU Editor", and give each team its role on the plan, as an update of each `User`.
+   - Give the unit update doctype `read` for everyone who opens the page, and `write` and `create` for the editor roles.
+   - Add this **Before Save Server Script** on the unit update doctype and list it on the plan. It refuses a save by anyone outside the unit's team; change the doctype names if yours differ. Server Scripts cannot call `str.format`, so keep the message as it is:
+
+     ```python
+     role = frappe.db.get_value("Business Unit", doc.business_unit, "editor_role")
+     is_manager = frappe.db.exists("Has Role", {"parent": frappe.session.user, "parenttype": "User", "role": "System Manager"})
+     has_role = role and frappe.db.exists("Has Role", {"parent": frappe.session.user, "parenttype": "User", "role": role})
+     if not (is_manager or has_role):
+         frappe.throw(_("Only this business unit's team can change its update."))
+     ```
+
+   - On the page, pass `canEdit: await fac.hasRole(unit.editor_role)` to `fac.editList` and `fac.editText` (`get_skill("mockup-kit")`), so Edit shows only to the team. The Server Script still decides every save.
+   - Never use **User Permissions on Cost Center** (or on the unit) for this: they also hide the other units' records, which everyone reads in the meeting, and they narrow every cost-center report for that user.
+3. **Report figures.** Each viewer sees only the reports their roles allow (`get_skill("page-reports")`). List on the plan the report roles each team needs, such as Accounts User for P&L.
+4. **History.** Never overwrite a past period: the page's period picker reads that period's records.
+5. **Carry-over.** Offer a "Copy open items from last period" button that creates this period's update from the last one's rows. Run it only when the user clicks it.
+6. **Record and reuse.** Set the page's `doctypes` to every doctype it reads or writes. Before changing a page, read its `doctypes` and reuse them; never create a second set for the same purpose. Deleting the page leaves them and their records.
+7. **Check it** with `test_as_user`: a member of unit A can `write` A's update and is refused on B's (the Server Script's message), and every viewer can `read` both.
+
 ## Reference
 
 ```json
@@ -44,6 +73,7 @@ To share a user's personal page, update it with `visibility: "Shared"`, the `rol
     "visibility": "Shared",
     "published": 0,
     "roles": [{"role": "Projects User"}],
+    "doctypes": [{"doctype_link": "Task"}],
     "html": "<div class=\"mk-page\"><div class=\"mk-card\"><table class=\"mk-table\" id=\"tasks\"></table></div></div>",
     "script": "const esc = frappe.utils.escape_html;\nfrappe.db.get_list('Task', {fields: ['name', 'subject', 'status'], limit: 20}).then((rows) => {\n  root_element.querySelector('#tasks').innerHTML = rows.map((r) => `<tr><td>${esc(r.subject)}</td><td>${esc(r.status)}</td></tr>`).join('');\n});",
     "style": "#tasks td { padding: 4px 8px; }"
@@ -56,6 +86,7 @@ To share a user's personal page, update it with `visibility: "Shared"`, the `rol
 - **`html`** is static markup. The `mockup-kit` classes (`mk-page`, `mk-card`, `mk-table` and the rest) work here as in a mockup. Put event handlers in the `script` (`root_element.querySelector(...).addEventListener(...)`), never inline. A personal page's html keeps only allowlisted tags and attributes, so its code lives only in `script`. It is served without inline handlers (`onclick`, `onerror` and the rest), `javascript:` and `data:` URLs (so no `data:` images), `<script>`, `<iframe>`, `<object>`, `<embed>`, `<base>` or SVG animation. Forms, inputs and buttons are kept. Inline `<svg>` shapes lose their drawing attributes there, so draw charts with `fac.chart` from the script. For figures a report already computes, such as P&L or receivables, read the report with `fac.report` (`get_skill("page-reports")`). For anything people type into the page, use `fac.editList`, `fac.editText` and `fac.periodPicker`, never `frappe.ui` dialogs, so the page also works beside the chat (`get_skill("mockup-kit")`).
 - **`script`** runs after the html renders. `root_element` is the page's shadow root (on a personal page, the page's own element), so find elements with `root_element.querySelector`, not `document`. In Desk it has the normal `frappe` object; in the chat panel only a small part of it (see `pages-in-chat`). It runs as the viewer, so `frappe.call` and `frappe.db` read and write only what that user may.
 - **`style`** applies to this page only, and stays inside the page's box: a `position: fixed` element is fixed to the page, not the screen. A personal page's style is served without `@import` or any at-rule other than `@media`, `@supports`, `@keyframes` and `@font-face`, and without any declaration whose `url(...)`, `image-set()` or similar is not a `/files/...` or `/assets/...` path on this site. A stylesheet that does not parse cleanly is served empty. Inline `style` attributes in its html follow the same rule.
+- **`doctypes`**: every doctype the page reads or writes, as `{"doctype_link": ...}` rows. Read it before changing the page and reuse those doctypes. It grants nothing, and deleting the page leaves them.
 - **`roles`** (shared pages only): users with any listed role can open the page. No roles means System Managers only. "All" or "Guest" opens it to every logged-in user, website users included, so pick roles on purpose.
 
 ## Gotchas
