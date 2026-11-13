@@ -20,6 +20,7 @@ import glob
 import hashlib
 import json
 import os
+import textwrap
 from unittest.mock import patch
 
 import frappe
@@ -1182,3 +1183,52 @@ class TestMyRoles(BaseAssistantTest):
         frappe.set_user("Guest")
         with self.assertRaises(frappe.PermissionError):
             my_roles()
+
+
+def _unit_editor_template() -> str:
+    """The Before Save Server Script fac_page.md gives FACO, exactly as written there."""
+    path = os.path.join(
+        os.path.dirname(frappe.get_app_path("frappe_assistant_core")), "docs", "skills", "fac_page.md"
+    )
+    with open(path, encoding="utf-8") as f:
+        text = f.read()
+    start = text.index("```python", text.index("Before Save Server Script")) + len("```python")
+    return textwrap.dedent(text[start : text.index("```", start)]).strip()
+
+
+class TestUnitEditorTemplate(BaseAssistantTest):
+    """The skill's Server Script runs in Frappe's sandbox and keeps a unit's record to its team."""
+
+    def tearDown(self):
+        # nosemgrep: frappe-setuser — restores the session the tests above switched away from
+        frappe.set_user("Administrator")
+        super().tearDown()
+
+    def _run(self, user: str):
+        from frappe.utils.safe_exec import safe_exec
+
+        # The site has no Business Unit doctype; production reaches this lookup when a unit
+        # update is saved and reads the unit's editor_role.
+        real = frappe.db.get_value
+
+        def unit_role(doctype, *args, **kwargs):
+            return "Unit A Editor" if doctype == "Business Unit" else real(doctype, *args, **kwargs)
+
+        # nosemgrep: frappe-setuser — the script runs as the user saving the record
+        frappe.set_user(user)
+        with patch.object(frappe.db, "get_value", autospec=True, side_effect=unit_role):
+            safe_exec(_unit_editor_template(), _locals={"doc": frappe._dict(business_unit="Unit A")})
+
+    def test_someone_outside_the_unit_is_refused(self):
+        user = self.make_throwaway_user("fac-unit-out", roles=("Report Manager",))
+        with self.assertRaises(frappe.ValidationError) as caught:
+            self._run(user)
+        self.assertIn("Only this business unit's team", str(caught.exception))
+
+    def test_the_units_team_may_save(self):
+        if not frappe.db.exists("Role", "Unit A Editor"):
+            frappe.get_doc({"doctype": "Role", "role_name": "Unit A Editor", "desk_access": 1}).insert()
+        self._run(self.make_throwaway_user("fac-unit-in", roles=("Unit A Editor",)))
+
+    def test_a_system_manager_may_save(self):
+        self._run("Administrator")

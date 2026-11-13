@@ -91,6 +91,7 @@ A page can let people type into records with the page tools. They work in Desk, 
 | `mk-status-done`, `mk-status-pending` | an 8px dot for "filled in" or "still to do"; put a word or `aria-label` beside it |
 
 - **`fac.canWrite(doctype, name)`** resolves `true` when the viewer may change the record. It only decides whether to show edit controls; the server checks every save.
+- **`fac.hasRole(role)`** resolves `true` when the viewer holds `role`, asking once per page run. Use it for `canEdit` on a unit's record, from the unit's `editor_role` (`get_skill("fac-page")`); the record's Server Script still decides every save.
 - **`fac.updated(doc)`** returns "Updated by … · date" from the record's `modified_by` and `modified`.
 - **`fac.editList(el, { doctype, name, table, columns, canEdit, emptyText })`** shows the record's child table `table` as a list and, for someone who may change the record, an Edit button to edit, add and remove rows. Each column is `{ fieldname, label, fieldtype }` with `fieldtype` `"Data"`, `"Small Text"` or `"Select"` (give `options`), and `badge: true` to show the value as a severity badge. Save keeps every field the page does not show. If someone else changed the record since the page read it, Frappe refuses the save ("modified after you have opened it"): the rows stay as typed with that reason below them, so tell the user to reload the page. Any other refusal shows the same way. Leave `canEdit` out to ask `fac.canWrite`. It resolves `{ reload() }`.
 - **`fac.editText(el, { doctype, name, fieldname, multiline, canEdit, emptyText })`** does the same for one text field.
@@ -112,17 +113,24 @@ On a personal page each save asks the user first, listing the fields and rows it
 ```js
 const show = async (period) => {
   const [row] = await frappe.db.get_list("BU Update", { filters: { period, business_unit: "Decathlon" }, fields: ["name"], limit: 1 });
-  if (!row) return (root_element.querySelector("#risks").textContent = __("Not filled in yet"));
+  if (!row) {
+    root_element.querySelector("#risks").textContent = __("Not filled in yet");
+    root_element.querySelector("#notes").textContent = "";
+    root_element.querySelector("#updated").textContent = "";
+    return;
+  }
   const doc = await frappe.db.get_doc("BU Update", row.name);
+  const unit = await frappe.db.get_doc("Business Unit", "Decathlon");
+  const canEdit = await fac.hasRole(unit.editor_role);
   root_element.querySelector("#updated").textContent = fac.updated(doc);
   await fac.editList(root_element.querySelector("#risks"), {
-    doctype: "BU Update", name: row.name, table: "risks",
+    doctype: "BU Update", name: row.name, table: "risks", canEdit,
     columns: [
       { fieldname: "severity", label: __("Severity"), fieldtype: "Select", options: ["HIGH", "MED", "LOW"], badge: true },
       { fieldname: "description", label: __("Risk"), fieldtype: "Small Text" },
     ],
   });
-  await fac.editText(root_element.querySelector("#notes"), { doctype: "BU Update", name: row.name, fieldname: "notes", multiline: true });
+  await fac.editText(root_element.querySelector("#notes"), { doctype: "BU Update", name: row.name, fieldname: "notes", multiline: true, canEdit });
 };
 fac.periodPicker(root_element.querySelector("#period"), { options: ["NOV-26 F1", "OCT-26 F2"], value: "NOV-26 F1", onChange: show });
 show("NOV-26 F1");
