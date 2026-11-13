@@ -302,7 +302,7 @@ import { deriveArtifacts } from "@/utils/contextArtifacts";
 import { isPausedTurn, isStoppedTurn } from "@/utils/turnState";
 import ContextRail from "@/components/chat/ContextRail.vue";
 import PageDock from "@/components/chat/pages/PageDock.vue";
-import { usePagePanel } from "@/composables/usePagePanel";
+import { isNarrow, usePagePanel } from "@/composables/usePagePanel";
 import { logger } from "@/utils/logger";
 import { usePreferences } from "@/composables/usePreferences";
 import { resolveReadWidth } from "@/utils/chatWidth";
@@ -396,6 +396,10 @@ usePromptFromRoute({
 	router,
 	pendingPrompt,
 	isNewChat: () => !route.params.sessionId && messages.value.length === 0,
+	// On a phone the page would cover the composer the prompt waits in, as PagesView's share says.
+	openPage: (name) => {
+		if (!isNarrow()) usePagePanel().open(name);
+	},
 });
 
 useSupportFromRoute({ route, router, supportStore: useSupportStore() });

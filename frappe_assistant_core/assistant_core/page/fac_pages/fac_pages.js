@@ -69,6 +69,7 @@
 	// FAC Chat. The chat link shows only to those who can.
 	function show_index(page, is_latest) {
 		dispose_shown();
+		clear_header_actions(page);
 		page.set_title(__("Pages"));
 		show_message(page, __("Loading…"));
 		const pages = frappe.xcall("frappe_assistant_core.api.fac_page.list_pages", {}, "GET");
@@ -79,6 +80,11 @@
 		Promise.all([pages, chat, load_kit()])
 			.then(([list, can_chat, kit_css]) => {
 				if (!is_latest()) return;
+				const actions = gallery_actions(page, is_latest);
+				if (can_chat) {
+					page.set_primary_action(__("New page"), actions.new_page);
+					page.set_secondary_action(__("Open in FAC Chat"), () => (window.location.href = "/copilot/pages"));
+				}
 				page.main.empty().append(
 					fac_page_index({
 						pages: list,
@@ -86,6 +92,7 @@
 						updated: (modified) => frappe.datetime.prettyDate(modified),
 						kit_css,
 						can_chat,
+						actions,
 					})
 				);
 			})
@@ -94,8 +101,43 @@
 			});
 	}
 
+	function clear_header_actions(page) {
+		page.clear_primary_action();
+		page.clear_secondary_action();
+	}
+
+	// FACO asks in a chat, so Edit and Share open one with the request waiting in its composer and
+	// the page beside it (usePromptFromRoute). Rename and Delete go through frappe.client, so the
+	// FAC Page controller and its permissions decide; the gallery only offers what they allow.
+	function gallery_actions(page, is_latest) {
+		const chat = (prompt, name) =>
+			(window.location.href =
+				`/copilot/chat?prompt=${encodeURIComponent(prompt)}` + (name ? `&page=${encodeURIComponent(name)}` : ""));
+		const reload = () => is_latest() && show_index(page, is_latest);
+		return {
+			new_page: () => chat(`${__("Build me a page that")} `),
+			edit: (p) => chat(`${__("Change my page “{0}” ({1}):", [p.title, p.name])} `, p.name),
+			share: (p) => chat(__("Share my page “{0}” ({1}) with my team", [p.title, p.name]), p.name),
+			rename: (p) =>
+				frappe.prompt(
+					{ fieldname: "title", fieldtype: "Data", label: __("Title"), reqd: 1, default: p.title },
+					({ title }) =>
+						frappe
+							.xcall("frappe.client.set_value", { doctype: "FAC Page", name: p.name, fieldname: "title", value: title })
+							.then(reload),
+					__("Rename page"),
+					__("Rename")
+				),
+			remove: (p) =>
+				frappe.confirm(__("Delete the page “{0}”? This cannot be undone.", [p.title]), () =>
+					frappe.xcall("frappe.client.delete", { doctype: "FAC Page", name: p.name }).then(reload)
+				),
+		};
+	}
+
 	function render(page, name, data, is_latest) {
 		dispose_shown();
+		clear_header_actions(page);
 		page.set_title(data.title);
 		// Only a page that says it is not a draft runs, so a response missing the flag fails closed.
 		if (data.draft !== false) {

@@ -30,7 +30,7 @@ function loadDeskPage(data) {
 		pages: { "fac-pages": {} },
 		session: { user: "avery@example.com" },
 		csrf_token: "csrf-1",
-		ui: { make_app_page: () => ({ main: page_main, set_title: vi.fn() }) },
+		ui: { make_app_page: () => ({ main: page_main, set_title: vi.fn(), clear_primary_action: vi.fn(), clear_secondary_action: vi.fn() }) },
 		get_route: () => ["fac-pages", "sales-a1b2c3"],
 		call: ({ callback }) => callback({ message: data }),
 		create_shadow_element: vi.fn(),
