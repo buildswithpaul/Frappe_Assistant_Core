@@ -340,7 +340,8 @@ def _preview(html: str | None, style: str | None, visibility: str) -> tuple[str 
     """
     if not html or len(html) > MAX_PREVIEW_HTML:
         return None, None
-    cleaned = _draft_html(html)
+    # Cleaned as get_page serves the page, then as a draft, which also drops link targets.
+    cleaned = _draft_html(_served_html(html, False, visibility))
     if not cleaned or len(BeautifulSoup(cleaned, "html.parser").find_all(True)) < PREVIEW_MIN_ELEMENTS:
         return None, None
     return cleaned, _personal_style(style) if visibility != SHARED else style
