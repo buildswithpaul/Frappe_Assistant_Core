@@ -38,11 +38,11 @@ When a page's teams write their own part of it, such as each business unit's ris
 
 1. **Shape.**
    - A **period** doctype, one record per period, named by it (`autoname: field:period`), for company-wide fields and targets.
-   - A **unit update** doctype, one record per unit and period, with `period` (Link to the period doctype), `business_unit` (Link to a small **Business Unit** doctype, or to Cost Center or Department if the site already uses one for its units; check with `list_documents`) and a child table for each repeating item, such as risks with a `severity` Select (`HIGH`, `MED`, `LOW`) and a description. Name it `autoname: format:{period}-{business_unit}` so a unit has one update per period.
+   - A **unit update** doctype, one record per unit and period, with `period` (Link to the period doctype), `business_unit` (Link to a small **Business Unit** doctype, or to Cost Center or Department if the site already uses one for its units; check with `list_documents`) and a child table for each repeating item, such as risks with a `severity` Select (`HIGH`, `MED`, `LOW`) and a description. Name it `autoname: format:{period}-{business_unit}` so a unit has one update per period, and make `period` and `business_unit` `reqd` and `set_only_once`, so nobody can move a record to another unit or period by changing them.
    - Turn on **Track Changes** for both, so the record shows who changed what.
 2. **Who edits which unit.**
    - Give the Business Unit doctype an `editor_role` field (Link to Role), one role per unit such as "Decathlon BU Editor", and give each team its role on the plan, as an update of each `User`.
-   - Give the unit update doctype `read` for everyone who opens the page, and `write` and `create` for the editor roles.
+   - Give the unit update doctype `read` for everyone who opens the page, and `write` and `create` for the editor roles. Give the Business Unit doctype `read` for everyone who opens the page too: the page reads each unit's `editor_role`, and without it a viewer's sections never draw.
    - Add this **Before Save Server Script** on the unit update doctype and list it on the plan. It refuses a save by anyone outside the unit's team; change the doctype names if yours differ. Server Scripts cannot call `str.format`, so keep the message as it is:
 
      ```python
@@ -59,7 +59,7 @@ When a page's teams write their own part of it, such as each business unit's ris
 4. **History.** Never overwrite a past period: the page's period picker reads that period's records.
 5. **Carry-over.** Offer a "Copy open items from last period" button that creates this period's update from the last one's rows. Run it only when the user clicks it.
 6. **Record and reuse.** Set the page's `doctypes` to every doctype it reads or writes. Before changing a page, read its `doctypes` and reuse them; never create a second set for the same purpose. Deleting the page leaves them and their records.
-7. **Check it** with `test_as_user`: a member of unit A can `write` A's update and is refused on B's (the Server Script's message), and every viewer can `read` both.
+7. **Check it.** With `test_as_user`, check that every viewer can `read` both units' updates and the Business Unit doctype, and that each editor role can `write` the unit update doctype. `test_as_user` cannot see the Server Script, so it reports `write` allowed on another unit's update too. To check the unit rule, ask a member of unit A to try saving B's section and confirm they see the script's message; don't change permissions because `test_as_user` says allowed.
 
 ## Reference
 
