@@ -33,6 +33,7 @@ from frappe_assistant_core.api.fac_page import (
     get_page,
     is_page_api_method,
     list_pages,
+    my_roles,
     page_format_settings,
     report_access,
 )
@@ -1158,3 +1159,26 @@ class TestFACPageDocTypes(BaseAssistantTest):
         frappe.delete_doc("FAC Page", name)
         self.assertTrue(frappe.db.exists("DocType", "ToDo"))
         self.assertTrue(frappe.db.exists("ToDo", todo.name))
+
+
+class TestMyRoles(BaseAssistantTest):
+    """my_roles, which a page asks to show Edit only to a unit's team."""
+
+    def tearDown(self):
+        # nosemgrep: frappe-setuser — restores the session the tests above switched away from
+        frappe.set_user("Administrator")
+        super().tearDown()
+
+    def test_my_roles_lists_only_the_viewers_own_roles(self):
+        user = self.make_throwaway_user("fac-my-roles", roles=("Report Manager",))
+        # nosemgrep: frappe-setuser — test acts as a non-Administrator inside the test transaction
+        frappe.set_user(user)
+        roles = my_roles()
+        self.assertIn("Report Manager", roles)
+        self.assertNotIn("System Manager", roles)
+
+    def test_my_roles_refuses_guest(self):
+        # nosemgrep: frappe-setuser — an anonymous request runs as Guest
+        frappe.set_user("Guest")
+        with self.assertRaises(frappe.PermissionError):
+            my_roles()

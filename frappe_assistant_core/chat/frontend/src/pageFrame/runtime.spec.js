@@ -52,4 +52,16 @@ describe("the personal page frame's runtime", () => {
 		expect(call).toMatchObject({ method: "frappe.client.has_permission", args: { doctype: "ToDo", docname: "T-1", perm_type: "write" } });
 		posted.mockRestore();
 	});
+
+	it("gives the page fac.hasRole, which asks the host for the viewer's roles", async () => {
+		window.fac_page_charts = { report, makeBlocks };
+		const posted = vi.spyOn(window, "postMessage");
+		let fac;
+		window.__fac_page.run((root_element, pageFrappe, translate, pageFac) => (fac = pageFac));
+		fac.hasRole("Sales User");
+		await Promise.resolve();
+		const call = posted.mock.calls.map(([message]) => message).find((message) => message.op === "call" && message.method.endsWith("my_roles"));
+		expect(call).toBeTruthy();
+		posted.mockRestore();
+	});
 });

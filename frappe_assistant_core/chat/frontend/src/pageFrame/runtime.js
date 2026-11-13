@@ -61,7 +61,7 @@ const frappe = makeFrappeStandIn(
 
 // The page tools come from the same bundle, found when a tool is first called, as fac.chart and
 // fac.report find it; without the bundle each tool says so.
-const PAGE_TOOLS = ["canWrite", "updated", "editText", "editList", "periodPicker"];
+const PAGE_TOOLS = ["canWrite", "hasRole", "updated", "editText", "editList", "periodPicker"];
 let pageTools = null;
 
 function pageTool(name) {

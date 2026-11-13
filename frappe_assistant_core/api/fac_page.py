@@ -298,6 +298,18 @@ def report_access(reports: list | str) -> dict[str, bool]:
     return {name: can_run_report(name) for name in dict.fromkeys(names)}
 
 
+@frappe.whitelist(methods=["GET"])
+def my_roles() -> list[str]:
+    """The session user's own roles, so a page shows Edit only to a unit's team.
+
+    A user cannot read the roles on their own User record, and a doctype permission cannot say
+    which unit's record they may change. The page's Server Script still decides every save.
+    """
+    if frappe.session.user == "Guest":
+        frappe.throw(_("Log in to view this page."), frappe.PermissionError)
+    return sorted(frappe.get_roles())
+
+
 def can_open_page(name: str, user: str) -> bool:
     """Whether ``user`` may open the FAC Page ``name``, decided as ``get_page`` decides it."""
     return _page_access(name, user) == _OPEN

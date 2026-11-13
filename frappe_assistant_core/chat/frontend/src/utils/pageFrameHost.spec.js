@@ -648,3 +648,9 @@ describe("PAGE_READ_METHODS for page tools", () => {
 		expect(PAGE_READ_METHODS.has("frappe.client.has_permission")).toBe(true);
 	});
 });
+
+describe("PAGE_READ_METHODS for the viewer's roles", () => {
+	it("lets a page read the viewer's own roles without asking", () => {
+		expect(PAGE_READ_METHODS.has("frappe_assistant_core.api.fac_page.my_roles")).toBe(true);
+	});
+});
