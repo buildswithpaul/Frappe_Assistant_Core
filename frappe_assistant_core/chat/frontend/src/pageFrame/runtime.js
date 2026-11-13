@@ -59,6 +59,20 @@ const frappe = makeFrappeStandIn(
 	},
 );
 
+// The page tools come from the same bundle, found when a tool is first called, as fac.chart and
+// fac.report find it; without the bundle each tool says so.
+const PAGE_TOOLS = ["canWrite", "updated", "editText", "editList", "periodPicker"];
+let pageTools = null;
+
+function pageTool(name) {
+	return (...args) => {
+		const bundle = window.fac_page_charts;
+		if (!bundle?.makeBlocks) throw new Error(__("Page tools could not be loaded"));
+		pageTools = pageTools || bundle.makeBlocks(frappe);
+		return pageTools[name](...args);
+	};
+}
+
 const fac = {
 	chart(el, option) {
 		const bundle = window.fac_page_charts;
@@ -70,6 +84,7 @@ const fac = {
 		if (!bundle) throw new Error(__("Reports could not be loaded"));
 		return bundle.report(frappe, name, filters);
 	},
+	...Object.fromEntries(PAGE_TOOLS.map((name) => [name, pageTool(name)])),
 };
 
 const root = () => document.querySelector(".fac-page-root") || document.body;

@@ -144,6 +144,17 @@ describe("PageView", () => {
 		getCall.mockReset();
 	});
 
+	it("gives the script fac.canWrite, which asks whether the viewer may change a record", async () => {
+		getCall.mockImplementation(() => Promise.resolve({ has_permission: true }));
+		const view = mountView({
+			...published,
+			script: "fac.canWrite('ToDo', 'T-1').then((ok) => { root_element.querySelector('.mk-card').textContent = String(ok); });",
+		});
+		await flushPromises();
+		expect(view.find(".page-view-host").element.shadowRoot.querySelector(".mk-card").textContent).toBe("true");
+		getCall.mockReset();
+	});
+
 	it("disposes the page's charts when it unmounts", () => {
 		const page = {
 			...published,
