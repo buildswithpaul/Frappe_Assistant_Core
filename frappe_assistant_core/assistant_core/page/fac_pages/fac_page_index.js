@@ -41,6 +41,8 @@ function fac_page_index({ pages, href, updated, kit_css, can_chat, actions = {} 
 		const chip = fac_page_index_el("button", "btn btn-default btn-xs fac-page-index-chip", "border-radius:999px;", `${__(label)} ${count}`);
 		chip.type = "button";
 		chip.dataset.filter = key;
+		chip._fac_label = __(label);
+		chip._fac_keeps = keeps;
 		chip.addEventListener("click", () => {
 			state.filter = key;
 			apply();
@@ -51,7 +53,7 @@ function fac_page_index({ pages, href, updated, kit_css, can_chat, actions = {} 
 
 	const cards = all.map((page) => {
 		const card = fac_page_card(page, card_options);
-		card.dataset.search = `${page.title || page.name} ${page.description || ""}`.toLowerCase();
+		card.dataset.search = fac_page_index_search_text(page);
 		card._fac_page = page;
 		return card;
 	});
@@ -68,7 +70,13 @@ function fac_page_index({ pages, href, updated, kit_css, can_chat, actions = {} 
 			card.hidden = !(keeps(card._fac_page) && (!query || card.dataset.search.includes(query)));
 			if (!card.hidden) shown++;
 		}
-		for (const chip of chip_buttons) chip.classList.toggle("active", chip.dataset.filter === state.filter);
+		// Each chip counts the pages it would show for the current search, so the numbers match
+		// the cards on screen.
+		const matching = all.filter((page) => !query || fac_page_index_search_text(page).includes(query));
+		for (const chip of chip_buttons) {
+			chip.classList.toggle("active", chip.dataset.filter === state.filter);
+			chip.textContent = `${chip._fac_label} ${matching.filter(chip._fac_keeps).length}`;
+		}
 		nomatch.hidden = shown > 0;
 		nomatch.textContent = query ? __("No pages match “{0}”", [state.query.trim()]) : __("No pages here yet.");
 	}
@@ -81,6 +89,10 @@ function fac_page_index({ pages, href, updated, kit_css, can_chat, actions = {} 
 	fac_page_index_scale_previews(grid);
 	apply();
 	return root;
+}
+
+function fac_page_index_search_text(page) {
+	return `${page.title || page.name} ${page.description || ""}`.toLowerCase();
 }
 
 // The user's own pages first, then shared ones, each in the order list_pages gave.
