@@ -710,4 +710,12 @@ describe("Desk's theme through the frame", () => {
 		mountFrame({ theme: "dark" });
 		expect(frame.element.srcdoc).toMatch(/data-theme=(&quot;|")dark/);
 	});
+
+	it("sends a theme changed before the page was ready once it is", () => {
+		mountFrame({ theme: "light" });
+		frame.setTheme("dark");
+		replies.length = 0;
+		fromPage({ op: "ready" });
+		expect(replies.filter((r) => r.op === "theme").map((r) => r.theme)).toEqual(["dark"]);
+	});
 });

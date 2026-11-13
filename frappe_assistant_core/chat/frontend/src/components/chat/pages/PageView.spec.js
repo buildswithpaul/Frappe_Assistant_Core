@@ -323,12 +323,16 @@ describe("PageView", () => {
 
 	describe("in Desk's theme", () => {
 		const setTheme = (theme) => document.documentElement.setAttribute("data-theme", theme);
+		// A page coloured only with the kit's tokens, as the mockup-kit skill asks.
+		const themed = { ...published, style: ".mk-card { color: var(--mk-text); }" };
 		afterEach(() => document.documentElement.removeAttribute("data-theme"));
 
 		it("draws a shared page in Desk's theme and follows a change", async () => {
 			setTheme("dark");
-			const host = mountView(published).find(".page-view-host").element;
+			const host = mountView(themed).find(".page-view-host").element;
 			expect(host.getAttribute("data-theme")).toBe("dark");
+			// The box behind the page is dark too; Vue's scoped :global() could not target it.
+			expect(wrapper.find(".page-view-frame").classes()).toContain("page-view-dark");
 			setTheme("light");
 			await flushPromises();
 			expect(host.getAttribute("data-theme")).toBe("light");
@@ -336,16 +340,28 @@ describe("PageView", () => {
 
 		it("draws a draft in Desk's theme and redraws it on a change", async () => {
 			setTheme("dark");
-			const w = mountView({ ...published, draft: true });
+			const w = mountView({ ...themed, draft: true });
 			expect(w.find("iframe").attributes("srcdoc")).toContain('<html data-theme="dark">');
 			setTheme("light");
 			await flushPromises();
 			expect(w.find("iframe").attributes("srcdoc")).toContain('<html data-theme="light">');
 		});
 
+		it("keeps a page that sets its own colours light, as it was written", () => {
+			setTheme("dark");
+			const own = { style: ".mk-card { background: #fff; }" };
+			const host = mountView({ ...published, ...own }).find(".page-view-host").element;
+			expect(host.getAttribute("data-theme")).toBe("light");
+			expect(wrapper.find(".page-view-frame").classes()).not.toContain("page-view-dark");
+			wrapper.unmount();
+			expect(mountView({ ...published, ...own, draft: true }).find("iframe").attributes("srcdoc")).toContain('<html data-theme="light">');
+			wrapper.unmount();
+			expect(mountView({ ...personal, ...own }).find("iframe.fac-page-sandbox").attributes("srcdoc")).toMatch(/data-theme=(&quot;|")light/);
+		});
+
 		it("starts a personal page in Desk's theme and tells its frame of a change", async () => {
 			setTheme("dark");
-			const w = mountView(personal);
+			const w = mountView({ ...personal, style: themed.style });
 			const frame = w.find("iframe.fac-page-sandbox").element;
 			expect(frame.getAttribute("srcdoc")).toMatch(/data-theme=(&quot;|")dark/);
 			// jsdom loads no srcdoc frame; the page's window stands in as the outer frame's one child.
