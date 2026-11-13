@@ -51,11 +51,24 @@ function input(column, value) {
 const failure = (error) => String(error?.userMessage || error?.message || __("This could not be saved."));
 
 export function makeEditors(frappe, canWrite) {
-	const read = (doctype, name) => frappe.db.get_doc(doctype, name);
+	// The modified time this page last saw for each record. Every list and text on the page shares
+	// it, so one block's save does not make another block's look stale; a change by anyone else
+	// still leaves it behind the record's, and Frappe refuses that save.
+	const seen = new Map();
+	const key = (doctype, name) => `${doctype}\u0000${name}`;
+	const note = (doctype, name, doc) => {
+		if (doc?.modified) seen.set(key(doctype, name), doc.modified);
+		return doc;
+	};
+	const read = async (doctype, name) => {
+		const doc = await frappe.db.get_doc(doctype, name);
+		if (!seen.has(key(doctype, name))) note(doctype, name, doc);
+		return doc;
+	};
 	const allowed = (options) => (options.canEdit === undefined ? canWrite(options.doctype, options.name) : Boolean(options.canEdit));
 
 	async function editList(root, options) {
-		const { doctype, name, table, columns, emptyText = __("Nothing yet") } = options;
+		const { doctype, name, table, columns, onSaved, emptyText = __("Nothing yet") } = options;
 		const canEdit = await allowed(options);
 		let doc = await read(doctype, name);
 
@@ -102,14 +115,15 @@ export function makeEditors(frappe, canWrite) {
 					const current = await read(doctype, name);
 					// The time the rows on screen were read: Frappe refuses the save if the record
 					// changed since, instead of losing or reverting someone else's rows.
-					current.modified = doc.modified;
+					current.modified = seen.get(key(doctype, name)) || doc.modified;
 					const stored = new Map((current[table] || []).map((row) => [row.name, row]));
 					current[table] = edited
 						.filter(({ line, values }) => line._row?.name || Object.values(values).some((value) => value !== ""))
 						.map(({ line, values }) => (line._row?.name ? { ...(stored.get(line._row.name) || line._row), ...values } : values));
 					const r = await frappe.call({ method: "frappe.client.save", args: { doc: current } });
-					doc = r?.message || current;
+					doc = note(doctype, name, r?.message) || current;
 					view();
+					onSaved?.(doc);
 				} catch (e) {
 					error.textContent = failure(e);
 					error.hidden = false;
@@ -127,14 +141,14 @@ export function makeEditors(frappe, canWrite) {
 		view();
 		return {
 			async reload() {
-				doc = await read(doctype, name);
+				doc = note(doctype, name, await frappe.db.get_doc(doctype, name));
 				view();
 			},
 		};
 	}
 
 	async function editText(root, options) {
-		const { doctype, name, fieldname, multiline = false, emptyText = __("Nothing yet") } = options;
+		const { doctype, name, fieldname, multiline = false, onSaved, emptyText = __("Nothing yet") } = options;
 		const canEdit = await allowed(options);
 		let doc = await read(doctype, name);
 
@@ -156,8 +170,9 @@ export function makeEditors(frappe, canWrite) {
 						method: "frappe.client.set_value",
 						args: { doctype, name, fieldname, value: field.value },
 					});
-					doc = r?.message || { ...doc, [fieldname]: field.value };
+					doc = note(doctype, name, r?.message) || { ...doc, [fieldname]: field.value };
 					view();
+					onSaved?.(doc);
 				} catch (e) {
 					error.textContent = failure(e);
 					error.hidden = false;
@@ -169,7 +184,7 @@ export function makeEditors(frappe, canWrite) {
 		view();
 		return {
 			async reload() {
-				doc = await read(doctype, name);
+				doc = note(doctype, name, await frappe.db.get_doc(doctype, name));
 				view();
 			},
 		};
