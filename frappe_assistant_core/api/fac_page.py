@@ -25,7 +25,11 @@ from frappe import _
 from frappe.utils.html_utils import sanitize_html
 from tinycss2.serializer import serialize_identifier
 
-from frappe_assistant_core.assistant_core.doctype.fac_page.fac_page import SHARED, SYSTEM_MANAGER
+from frappe_assistant_core.assistant_core.doctype.fac_page.fac_page import (
+    SHARED,
+    SYSTEM_MANAGER,
+    is_system_manager,
+)
 
 _OPEN, _NOT_FOUND, _NOT_ALLOWED = "open", "not found", "not allowed"
 
@@ -76,6 +80,10 @@ _FETCHING_FUNCTIONS = {"image-set", "-webkit-image-set", "src", "image", "cross-
 _CODE_PROPERTIES = {"behavior", "-moz-binding"}
 _CODE_FUNCTIONS = {"expression"}
 _SAME_ORIGIN_URL = re.compile(r"^/(?:files|assets)/")
+# A preview shows a page's static html; fewer elements than this means its script builds it.
+PREVIEW_MIN_ELEMENTS = 3
+# A larger html is left out of the Pages list, which carries every page's preview at once.
+MAX_PREVIEW_HTML = 100_000
 # The most reports one report_access call checks: a page shows a handful, never dozens.
 MAX_REPORT_ACCESS_NAMES = 20
 
@@ -193,23 +201,43 @@ def list_pages() -> list[dict]:
     records = frappe.get_all(
         "FAC Page",
         or_filters={"visibility": SHARED, "owner": user},
-        fields=["name", "title", "visibility", "published", "owner", "modified"],
+        fields=[
+            "name",
+            "title",
+            "description",
+            "visibility",
+            "published",
+            "owner",
+            "modified",
+            "html",
+            "style",
+        ],
         order_by="modified desc",
     )
     opened = [record for record in records if _page_access(record.name, user) == _OPEN]
     roles_by_page = _roles_by_page([record.name for record in opened if record.visibility == SHARED])
-    pages = [
-        {
-            "name": record.name,
-            "title": record.title,
-            "visibility": record.visibility,
-            "draft": record.visibility == SHARED and not record.published,
-            "owner_is_me": record.owner == user,
-            "modified": str(record.modified),
-            "roles": roles_by_page.get(record.name, []),
-        }
-        for record in opened
-    ]
+    manager = is_system_manager(user)
+    pages = []
+    for record in opened:
+        shared = record.visibility == SHARED
+        preview_html, preview_style = _preview(record.html, record.style, record.visibility)
+        pages.append(
+            {
+                "name": record.name,
+                "title": record.title,
+                "description": record.description,
+                "visibility": record.visibility,
+                "draft": shared and not record.published,
+                "owner_is_me": record.owner == user,
+                "modified": str(record.modified),
+                "roles": roles_by_page.get(record.name, []),
+                # What the menu offers; the controller and DocType permissions still decide.
+                "can_manage": manager if shared else record.owner == user,
+                "can_share": not shared and manager,
+                "preview_html": preview_html,
+                "preview_style": preview_style,
+            }
+        )
     # Stable sort keeps each group newest first.
     return sorted(pages, key=lambda page: page["visibility"] == SHARED)
 
@@ -301,6 +329,21 @@ def _page_access(name: str, user: str) -> str:
 def _listed_roles(name: str) -> list[str]:
     """The roles in the page's FAC Page Role rows."""
     return frappe.get_all("FAC Page Role", filters={"parenttype": "FAC Page", "parent": name}, pluck="role")
+
+
+def _preview(html: str | None, style: str | None, visibility: str) -> tuple[str | None, str | None]:
+    """A page's static html, cleaned as a draft's, and its style, for the Pages list's preview.
+
+    The list renders it in an empty-sandbox frame, so no script runs and nothing is fetched: it
+    shows the page's layout, never its data. A page whose script builds it, or whose html is too
+    large to carry in the list, has none.
+    """
+    if not html or len(html) > MAX_PREVIEW_HTML:
+        return None, None
+    cleaned = _draft_html(html)
+    if not cleaned or len(BeautifulSoup(cleaned, "html.parser").find_all(True)) < PREVIEW_MIN_ELEMENTS:
+        return None, None
+    return cleaned, _personal_style(style) if visibility != SHARED else style
 
 
 def _served_html(html: str | None, draft: bool, visibility: str) -> str | None:

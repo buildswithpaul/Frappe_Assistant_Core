@@ -874,19 +874,62 @@ class TestListPages(BaseAssistantTest):
         # nosemgrep: frappe-setuser — test acts as a non-Administrator inside the test transaction
         frappe.set_user(user)
 
-    def _build_personal(self, user: str, slug: str) -> str:
+    def _build_personal(self, user: str, slug: str, **fields) -> str:
         # Production: FACO's create_document inserts a personal page as the session user.
         self._act_as(user)
         doc = frappe.get_doc(
-            {"doctype": "FAC Page", "title": f"Mine {slug}", "slug": slug, "html": "<p>x</p>"}
+            {"doctype": "FAC Page", "title": f"Mine {slug}", "slug": slug, "html": "<p>x</p>", **fields}
         )
         doc.insert()
         return doc.name
 
-    def _build_shared(self, slug: str, published: int = 1, roles: tuple = ()) -> str:
+    def _build_shared(self, slug: str, published: int = 1, roles: tuple = (), **fields) -> str:
         # Production: a System Manager shares a page and publishes it through an approval card.
         self._act_as("Administrator")
-        return _insert_shared_page(published, roles, slug=slug, title=f"Team {slug}", script="", style="")
+        fields = {"title": f"Team {slug}", "script": "", "style": "", **fields}
+        return _insert_shared_page(published, roles, slug=slug, **fields)
+
+    def _item(self, user: str, name: str) -> dict:
+        self._act_as(user)
+        return next(page for page in list_pages() if page["name"] == name)
+
+    def test_a_page_lists_its_description(self):
+        user = self._desk_user("fac-list-desc")
+        name = self._build_personal(user, self._slug("desc"), description="Overdue invoices")
+        self.assertEqual(self._item(user, name)["description"], "Overdue invoices")
+
+    def test_the_owner_manages_their_personal_page(self):
+        user = self._desk_user("fac-list-own")
+        item = self._item(user, self._build_personal(user, self._slug("own")))
+        self.assertEqual((item["can_manage"], item["can_share"]), (True, False))
+
+    def test_a_system_manager_may_share_their_personal_page(self):
+        item = self._item("Administrator", self._build_personal("Administrator", self._slug("sm-own")))
+        self.assertEqual((item["can_manage"], item["can_share"]), (True, True))
+
+    def test_a_shared_page_is_managed_by_system_managers_only(self):
+        name = self._build_shared(self._slug("team"), roles=("Report Manager",))
+        reader = self._item(self._desk_user("fac-list-reader"), name)
+        self.assertEqual((reader["can_manage"], reader["can_share"]), (False, False))
+        self.assertTrue(self._item("Administrator", name)["can_manage"])
+
+    def test_a_preview_is_the_sanitised_html_without_script(self):
+        html = '<div class="mk-card"><span>A</span><b>B</b><img src="x" onerror="alert(1)"></div>'
+        item = self._item("Administrator", self._build_shared(self._slug("pv"), html=html, script="go()"))
+        self.assertIn("mk-card", item["preview_html"])
+        self.assertNotIn("onerror", item["preview_html"])
+        self.assertNotIn("script", item)
+        self.assertNotIn("html", item)
+
+    def test_a_page_built_by_its_script_has_no_preview(self):
+        user = self._desk_user("fac-list-empty")
+        item = self._item(user, self._build_personal(user, self._slug("empty"), html='<div id="root"></div>'))
+        self.assertEqual((item["preview_html"], item["preview_style"]), (None, None))
+
+    def test_an_oversized_page_has_no_preview(self):
+        user = self._desk_user("fac-list-big")
+        item = self._item(user, self._build_personal(user, self._slug("big"), html="<p>x</p>" * 20000))
+        self.assertIsNone(item["preview_html"])
 
     def _slug(self, base: str) -> str:
         return f"{base}-{frappe.generate_hash(length=6).lower()}"

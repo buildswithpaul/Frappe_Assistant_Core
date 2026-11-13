@@ -8,6 +8,7 @@
  "engine": "InnoDB",
  "field_order": [
   "title",
+  "description",
   "slug",
   "column_break_main",
   "visibility",
@@ -26,6 +27,12 @@
    "in_list_view": 1,
    "label": "Title",
    "reqd": 1
+  },
+  {
+   "fieldname": "description",
+   "fieldtype": "Small Text",
+   "label": "Description",
+   "description": "One line shown under the title in the Pages list."
   },
   {
    "description": "Lower-case letters and digits in words joined by single hyphens, at most 80 characters. Unique among shared pages, and among each user's own pages. It cannot change after the page is saved.",
