@@ -561,3 +561,10 @@ class TestSystemSkillManifest(BaseAssistantTest):
         self.assertIn("Business Unit doctype `read`", text)
         # test_as_user checks doctype permissions only and never runs the Server Script.
         self.assertIn("test_as_user` cannot see the Server Script", text)
+
+    def test_pages_for_meetings_are_built_in_sections(self):
+        # Present mode shows one mk-section per screen, titled by data-title.
+        for name in ("mockup_kit.md", "fac_page.md"):
+            text = self._read_skill(name)
+            self.assertIn("Present", text, name)
+            self.assertIn("data-title", text, name)
