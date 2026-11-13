@@ -42,6 +42,9 @@ const finishLoading = (type = "load") => chartScripts().at(-1).dispatchEvent(new
 
 // What create_shadow_element does with the js it is given: a global script (frappe is a Desk
 // global) whose only own binding is root_element, the shadow root.
+// A shadow root, as root_element always is in Desk.
+const shadowRoot = () => document.createElement("div").attachShadow({ mode: "open" });
+
 function runAsDesk(js, root) {
 	new Function("ROOT", "frappe", `(function () { let root_element = ROOT; ${js} })();`)(root, frappe);
 }
@@ -53,7 +56,7 @@ async function showAndRun() {
 	// A repeated load event is harmless: the bundle promise has already settled.
 	if (chartScripts().length) finishLoading();
 	await vi.waitFor(() => expect(frappe.create_shadow_element).toHaveBeenCalledTimes(before + 1));
-	const root = document.createElement("div");
+	const root = shadowRoot();
 	root.innerHTML = '<div class="chart"></div>';
 	runAsDesk(frappe.create_shadow_element.mock.calls.at(-1)[3], root);
 	return root;
@@ -96,7 +99,7 @@ describe("fac-pages Desk page and fac.chart", () => {
 		finishLoading();
 		await vi.waitFor(() => expect(frappe.create_shadow_element).toHaveBeenCalledOnce());
 		const js = frappe.create_shadow_element.mock.calls[0][3];
-		const root = document.createElement("div");
+		const root = shadowRoot();
 		root.innerHTML = '<div class="chart"></div>';
 		runAsDesk(js, root);
 		expect(window.fac_page_charts.chart).toHaveBeenCalledWith(root.querySelector(".chart"), {
@@ -139,7 +142,7 @@ describe("fac-pages Desk page and fac.chart", () => {
 		frappe.setPage(late);
 		show();
 		await vi.waitFor(() => expect(frappe.create_shadow_element).toHaveBeenCalledTimes(2));
-		runAsDesk(frappe.create_shadow_element.mock.calls[1][3], document.createElement("div"));
+		runAsDesk(frappe.create_shadow_element.mock.calls[1][3], shadowRoot());
 		frappe.setPage({ ...published, script: "" });
 		show();
 		await vi.waitFor(() => expect(frappe.create_shadow_element).toHaveBeenCalledTimes(3));
@@ -155,7 +158,7 @@ describe("fac-pages Desk page and fac.chart", () => {
 		finishLoading("error");
 		await vi.waitFor(() => expect(frappe.create_shadow_element).toHaveBeenCalledOnce());
 		const js = frappe.create_shadow_element.mock.calls[0][3];
-		const root = document.createElement("div");
+		const root = shadowRoot();
 		root.innerHTML = '<div class="chart"></div>';
 		expect(() => runAsDesk(js, root)).toThrow("Charts could not be loaded");
 	});

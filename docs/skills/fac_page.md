@@ -92,6 +92,7 @@ When a page's teams write their own part of it, such as each business unit's ris
 
 ## Gotchas
 
+- In the page's `style`, colour only with the kit's tokens (`var(--mk-bg)`, `var(--mk-surface)`, `var(--mk-text)`, `var(--mk-border)` and the rest in `mockup-kit`), never a literal colour, so the page follows Desk's light or dark theme. A page that names a colour of its own is always shown light. To move an older page to dark, replace its colours with these tokens.
 - Escape record values before putting them into html with `frappe.utils.escape_html`, which works in Desk and in the chat panel.
 - Use `frappe.format(value, df, options, doc)` for numbers, amounts, dates and durations only (`Currency`, `Float`, `Int`, `Percent`, `Date`, `Datetime`, `Time`, `Duration`). For these it returns plain text in Desk and in the chat panel alike, with the site's number, currency and date settings, so escape it too. For an amount in a record's own currency, set `options` to the record's currency field (`"currency"`) and pass the record as `doc`; a currency code in `options` is ignored. For text and link values, use the record's own value escaped with `frappe.utils.escape_html`, never `frappe.format`. See `pages-in-chat`.
 - A script must never turn page text into markup or code: no `innerHTML` of text read from the page (`el.innerHTML = el.dataset.tpl`, `el.textContent`), no `new Function` or `eval` of it. Build markup from record values escaped with `frappe.utils.escape_html`.

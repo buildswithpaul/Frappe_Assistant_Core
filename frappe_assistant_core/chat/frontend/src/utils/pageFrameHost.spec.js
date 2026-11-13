@@ -696,3 +696,26 @@ describe("Present mode through the frame", () => {
 		vi.useRealTimers();
 	});
 });
+
+describe("Desk's theme through the frame", () => {
+	it("tells the page a new theme, only ever dark or light", () => {
+		mountFrame();
+		fromPage({ op: "ready" });
+		frame.setTheme("dark");
+		frame.setTheme("solarized");
+		expect(replies.filter((r) => r.op === "theme").map((r) => r.theme)).toEqual(["dark", "light"]);
+	});
+
+	it("builds the frame in the theme it is given", () => {
+		mountFrame({ theme: "dark" });
+		expect(frame.element.srcdoc).toMatch(/data-theme=(&quot;|")dark/);
+	});
+
+	it("sends a theme changed before the page was ready once it is", () => {
+		mountFrame({ theme: "light" });
+		frame.setTheme("dark");
+		replies.length = 0;
+		fromPage({ op: "ready" });
+		expect(replies.filter((r) => r.op === "theme").map((r) => r.theme)).toEqual(["dark"]);
+	});
+});

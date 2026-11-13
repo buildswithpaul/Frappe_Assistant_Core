@@ -5,6 +5,7 @@
  * asks for full screen and maps the keys, around any deck that can start, show and stop, local or
  * across the personal page's frame. Bundled for Desk (pageFacBundle.js) and the frame runtime.
  */
+import { deskTheme, followDeskTheme } from "@/utils/deskTheme";
 import { __ } from "@/utils/i18n";
 
 const PRESENTING = "fac-presenting";
@@ -12,18 +13,21 @@ const OFF = "fac-present-off";
 const CONTAINER = "fac-present-container";
 // The container is outside the page's shadow root, where the kit's styles do not reach, so its
 // presenting look is set inline: it covers the screen (full screen or not, so the bar is always in
-// view) and scrolls inside, and without a background full screen shows a black backdrop.
+// view) and scrolls inside, and without a background full screen shows a black backdrop. The
+// background is the kit's page background in Desk's theme.
 const CONTAINER_STYLE = {
 	position: "fixed",
 	inset: "0",
 	zIndex: "2147482999",
 	display: "flex",
 	flexDirection: "column",
-	background: "#ffffff",
 	overflow: "auto",
 	padding: "24px",
 	boxSizing: "border-box",
 };
+
+// The kit's --mk-bg in each theme (mockup_kit.css).
+const PAGE_BACKGROUND = { light: "#ffffff", dark: "#171717" };
 
 const KEYS = {
 	ArrowRight: "next",
@@ -103,14 +107,20 @@ function control(tag, className, label, text) {
 
 /**
  * Presents `deck` in `container`: controls at its foot, full screen when allowed, and the keys.
- * Resolves `{key(action), stop()}`; leaving full screen, Exit or Escape stops it.
+ * Resolves `{key(action), stop()}`; leaving full screen, Exit or Escape stops it. `theme` is the
+ * page's theme, "dark" or "light", or a function giving it; it is read again when Desk's changes.
  */
-export async function mountPresentControls({ container, deck, onExit, fullscreen = true }) {
+export async function mountPresentControls({ container, deck, onExit, fullscreen = true, theme = deskTheme }) {
 	const doc = container.ownerDocument;
 	let state = await deck.start();
 	let stopped = false;
 	let enteredFullscreen = false;
 	const savedStyle = container.style.cssText;
+	const paint = () => {
+		const current = typeof theme === "function" ? theme() : theme;
+		container.style.background = PAGE_BACKGROUND[current === "dark" ? "dark" : "light"];
+	};
+	let stopTheme = () => {};
 
 	const bar = document.createElement("div");
 	bar.className = "fac-present-bar";
@@ -161,6 +171,7 @@ export async function mountPresentControls({ container, deck, onExit, fullscreen
 		stopped = true;
 		doc.removeEventListener("keydown", onKey);
 		doc.removeEventListener("fullscreenchange", onFullscreen);
+		stopTheme();
 		bar.remove();
 		container.classList.remove(CONTAINER);
 		container.style.cssText = savedStyle;
@@ -176,6 +187,9 @@ export async function mountPresentControls({ container, deck, onExit, fullscreen
 	doc.addEventListener("fullscreenchange", onFullscreen);
 	container.classList.add(CONTAINER);
 	Object.assign(container.style, CONTAINER_STYLE);
+	paint();
+	// After a Vue watcher or Desk's own observer has passed the change on to the page.
+	stopTheme = followDeskTheme(() => setTimeout(paint));
 	container.append(bar);
 	draw();
 

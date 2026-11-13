@@ -19,6 +19,8 @@
 	let shown = null;
 	// The personal page's frame shown, disposed when the user moves on.
 	let shown_frame = null;
+	// The page shown, whose theme follows Desk's unless it sets its own colours.
+	let shown_data = null;
 
 	// fac_page_draft_srcdoc and fac_page_draft_frame, inlined by render_include on page load.
 	// {% include "frappe_assistant_core/assistant_core/page/fac_pages/fac_page_draft.js" %}
@@ -159,6 +161,7 @@
 		ready.then(() => {
 			if (!is_latest()) return;
 			shown = make_fac();
+			shown_data = data;
 			const frame = document.createElement("div");
 			frame.className = "fac-page-frame";
 			frame.style.cssText = PAGE_FRAME_STYLE;
@@ -171,8 +174,10 @@
 				host,
 				`<div class="fac-page-root">${data.html || ""}</div>`,
 				css,
-				with_page_globals(script)
+				with_page_globals(script, fac_page_theme_of(data))
 			);
+			// Also set here: a page whose script does not parse never runs the line that sets it.
+			set_shadow_theme(fac_page_theme_of(data));
 		});
 	}
 
@@ -190,9 +195,11 @@
 			const box = document.createElement("div");
 			box.className = "fac-page-frame";
 			box.style.cssText = PAGE_FRAME_STYLE;
+			shown_data = data;
 			shown_frame = host.createPageFrame({
 				page: data,
 				kitCss: kit_css,
+				theme: fac_page_theme_of(data),
 				user: frappe.session.user,
 				version: window._version_number || "",
 				pageName: name,
@@ -365,6 +372,7 @@
 				.mountPresentControls({
 					container: box,
 					deck,
+					theme: () => fac_page_theme_of(data),
 					onExit: () => {
 						if (presenting === handle || presenting === token) presenting = null;
 					},
@@ -392,6 +400,25 @@
 	// Leaving fac-pages for another Desk page stops presenting, so its keys are Desk's again.
 	frappe.pages["fac-pages"].on_page_hide = stop_presenting;
 
+	function set_shadow_theme(theme) {
+		document.querySelectorAll(".fac-page-frame *").forEach((el) => {
+			if (el.shadowRoot) el.setAttribute("data-theme", theme);
+		});
+	}
+
+	// Desk's theme changed: the page shown follows it, unless it sets its own colours, and a draft or
+	// a preview that follows it, which runs nothing, is redrawn in it.
+	new MutationObserver(() => {
+		if (shown_data) {
+			set_shadow_theme(fac_page_theme_of(shown_data));
+			if (shown_frame && shown_frame.setTheme) shown_frame.setTheme(fac_page_theme_of(shown_data));
+		}
+		const theme = fac_page_theme();
+		document.querySelectorAll("iframe[data-fac-follows-theme]").forEach((frame) => {
+			frame.srcdoc = frame.srcdoc.replace(/^<!doctype html><html data-theme="\w+">/, `<!doctype html><html data-theme="${theme}">`);
+		});
+	}).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+
 	function dispose_shown() {
 		stop_presenting();
 		dispose_shown_charts();
@@ -399,6 +426,7 @@
 		prompt_chain = Promise.resolve();
 		if (shown_frame) shown_frame.dispose();
 		shown_frame = null;
+		shown_data = null;
 	}
 
 	function load_kit() {
@@ -465,11 +493,14 @@
 	// starts. The chat panel runs it as new Function("root_element", "frappe", "__", "fac", script),
 	// so here it runs as a function of fac and frappe as well: the same scoping, no global named
 	// fac, and a frappe.format that returns text as the panel's does (fac_page_frappe.js).
-	function with_page_globals(script) {
+	function with_page_globals(script, theme) {
 		const entry = frappe.pages["fac-pages"];
 		entry.fac = shown.fac;
 		entry.page_frappe = entry.page_frappe || fac_page_frappe(frappe);
+		// The kit's dark tokens key on the shadow host, so it carries Desk's theme before the page's
+		// script runs; a chart the script draws reads it.
 		return (
+			`root_element.host.setAttribute("data-theme", ${JSON.stringify(theme === "dark" ? "dark" : "light")});\n` +
 			`(function (fac, frappe) {\n${script}\n})` +
 			`(frappe.pages["fac-pages"].fac, frappe.pages["fac-pages"].page_frappe);`
 		);
@@ -485,7 +516,10 @@
 				.empty()
 				.append(
 					$('<p class="text-muted"></p>').text(__("Draft. Scripts run once the page is published.")),
-					fac_page_draft_frame({ html: data.html, style: data.style, kit_css })
+					fac_page_mark_follows_theme(
+						fac_page_draft_frame({ html: data.html, style: data.style, kit_css, theme: fac_page_theme_of(data) }),
+						data
+					)
 				);
 		});
 	}

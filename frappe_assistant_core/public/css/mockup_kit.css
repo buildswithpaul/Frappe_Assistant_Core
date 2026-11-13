@@ -1,5 +1,7 @@
 /* The mockup kit. MockupFrame inlines it in a sandboxed iframe (:root, body); the fac-pages Desk page
-   links it into a shadow root (:host, .fac-page-root). Keep both selector forms on each base rule. */
+   links it into a shadow root (:host, .fac-page-root). Keep both selector forms on each base rule.
+   Every colour is a token below, so a page follows Desk's theme: the host puts data-theme="dark" on
+   the frame's document or on the shadow host. */
 
 :root,
 :host {
@@ -10,8 +12,41 @@
 	--mk-text-muted: #7c7c7c;
 	--mk-primary: #171717;
 	--mk-primary-text: #ffffff;
+	--mk-danger: #b42318;
+	--mk-sev-high-bg: #fee4e2;
+	--mk-sev-high-text: #912018;
+	--mk-sev-med-bg: #fef0c7;
+	--mk-sev-med-text: #7a2e0e;
+	--mk-sev-low-bg: #f2f4f7;
+	--mk-sev-low-text: #344054;
+	--mk-ok: #12b76a;
+	--mk-warn: #f79009;
 	--mk-radius: 8px;
 	--mk-font: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+/* Desk's dark palette (bg #171717, text #d9d9d9). Screen only: a page prints light. */
+@media screen {
+	:root[data-theme="dark"],
+	:host([data-theme="dark"]) {
+		--mk-bg: #171717;
+		--mk-surface: #1f1f1f;
+		--mk-border: #333333;
+		--mk-text: #ededed;
+		--mk-text-muted: #999999;
+		--mk-primary: #f8f8f8;
+		--mk-primary-text: #171717;
+		--mk-danger: #f97066;
+		--mk-sev-high-bg: #55160c;
+		--mk-sev-high-text: #fecdca;
+		--mk-sev-med-bg: #4e1d09;
+		--mk-sev-med-text: #fedf89;
+		--mk-sev-low-bg: #2b2b2b;
+		--mk-sev-low-text: #d0d5dd;
+		--mk-ok: #32d583;
+		--mk-warn: #fdb022;
+		color-scheme: dark;
+	}
 }
 
 * {
@@ -215,6 +250,7 @@ body,
 	border: 1px solid var(--mk-border);
 	border-radius: var(--mk-radius);
 	background: var(--mk-surface);
+	color: var(--mk-text);
 	font: inherit;
 }
 
@@ -224,24 +260,24 @@ body,
 }
 
 .mk-edit-error {
-	color: #b42318;
+	color: var(--mk-danger);
 	font-size: 12px;
 }
 
 /* Severity badges; each pair keeps AA contrast. */
 .mk-sev-high {
-	background: #fee4e2;
-	color: #912018;
+	background: var(--mk-sev-high-bg);
+	color: var(--mk-sev-high-text);
 }
 
 .mk-sev-med {
-	background: #fef0c7;
-	color: #7a2e0e;
+	background: var(--mk-sev-med-bg);
+	color: var(--mk-sev-med-text);
 }
 
 .mk-sev-low {
-	background: #f2f4f7;
-	color: #344054;
+	background: var(--mk-sev-low-bg);
+	color: var(--mk-sev-low-text);
 }
 
 /* Filled-in markers: give the dot an aria-label or a text label beside it. */
@@ -255,11 +291,11 @@ body,
 }
 
 .mk-status-done {
-	background: #12b76a;
+	background: var(--mk-ok);
 }
 
 .mk-status-pending {
-	background: #f79009;
+	background: var(--mk-warn);
 }
 
 .mk-period {

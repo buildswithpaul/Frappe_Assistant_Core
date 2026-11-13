@@ -81,4 +81,12 @@ describe("the personal page frame's runtime", () => {
 		expect(posted.mock.calls.map(([m]) => m).some((m) => m.op === "present_key")).toBe(false);
 		posted.mockRestore();
 	});
+
+	it("switches the page to the theme the host names, and to light for anything else", () => {
+		const fromHost = (data) => window.dispatchEvent(new MessageEvent("message", { data: { fac_page: 1, ...data }, source: window }));
+		fromHost({ op: "theme", theme: "dark" });
+		expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
+		fromHost({ op: "theme", theme: "sepia" });
+		expect(document.documentElement.getAttribute("data-theme")).toBe("light");
+	});
 });

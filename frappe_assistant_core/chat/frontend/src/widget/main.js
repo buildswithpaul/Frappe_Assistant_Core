@@ -2,7 +2,7 @@ import { logger } from "@/utils/logger";
 import { bridge } from "./bridge.js";
 import { createLauncherView } from "./launcher/view.js";
 import { checkAccess, applyDiagnosticsSwitch } from "./launcher/access.js";
-import { mirrorDeskTheme } from "./launcher/theme.js";
+import { mirrorDeskTheme } from "@/utils/deskTheme";
 import { installFontFaces } from "./launcher/fonts.js";
 import { restorePosition, enableDrag, consumeDrag } from "./launcher/position.js";
 import { setupAutofade, isUserActive } from "./launcher/autofade.js";

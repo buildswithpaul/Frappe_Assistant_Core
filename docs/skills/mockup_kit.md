@@ -11,6 +11,7 @@ The same classes work in a FAC Page's `html` (see the `fac-page` skill), so a mo
 - Write the inside of a page: no `<html>`, `<head>` or `<body>` tags.
 - Use inline `<svg>` or `data:` URIs for images. Nothing external loads (no fonts, scripts, stylesheets or image URLs).
 - Keep it under 200 KB, and show the screen as the user will see it, with sample data.
+- Colour only with the kit's tokens: `var(--mk-bg)` (page), `var(--mk-surface)` (inputs, quiet panels), `var(--mk-border)`, `var(--mk-text)`, `var(--mk-text-muted)`, `var(--mk-primary)` with `var(--mk-primary-text)`, and `var(--mk-danger)`, `var(--mk-ok)`, `var(--mk-warn)`. The kit switches them to Desk's light or dark theme, in the mockup, the page panel and Desk alike. A page or mockup that names any colour of its own (`#fff`, `white`, `rgb(…)`, in its style or an inline `style`) is always shown light, even in a dark Desk. For a severity, use the `mk-sev-*` badge classes.
 
 ## Classes
 
@@ -143,5 +144,5 @@ show("NOV-26 F1");
 The chat's page panel has a Download PDF button. It prints the page as it is drawn at that moment, charts included, in the kit's design:
 
 - A4 portrait, or landscape when the page is wider than 900 px, with 12 mm margins. The suggested file name is the page title and today's date.
-- Shadows are dropped and colours print as shown.
+- The page prints in the light theme, whatever theme the user has. Shadows are dropped.
 - A card, a table row and a chart are not split across sheets. A chart wider than the sheet is scaled down to fit.
