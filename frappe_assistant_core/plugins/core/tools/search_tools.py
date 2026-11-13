@@ -33,6 +33,14 @@ from typing import Any, Dict, List, Optional, Tuple
 import frappe
 from frappe import _
 
+from frappe_assistant_core.core.field_access import FieldAccessError, check_query_fields
+from frappe_assistant_core.core.security_config import get_user_primary_role
+from frappe_assistant_core.utils.permissions import (
+    readable_fieldnames,
+    readable_index_content,
+    unreadable_field_labels,
+)
+
 # DocTypes scanned by the fallback global search, used only when the
 # __global_search index has nothing for the query.
 FALLBACK_GLOBAL_DOCTYPES = [
@@ -199,10 +207,10 @@ class SearchTools:
         if not raw:
             return [], False
 
-        return SearchTools._filter_by_row_permissions(raw), True
+        return SearchTools._filter_by_row_permissions(raw, query), True
 
     @staticmethod
-    def _filter_by_row_permissions(hits: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def _filter_by_row_permissions(hits: List[Dict[str, Any]], query: str = "") -> List[Dict[str, Any]]:
         """Drop indexed hits the user cannot actually read.
 
         ``frappe.utils.global_search.search`` intersects with DocType-level read
@@ -234,6 +242,8 @@ class SearchTools:
 
         results = []
         seen = set()
+        user_role = get_user_primary_role(frappe.session.user)
+        hidden_labels: Dict[str, set] = {}
         for hit in hits:
             doctype, name = hit.get("doctype"), hit.get("name")
             key = (doctype, name)
@@ -243,8 +253,16 @@ class SearchTools:
             if key in seen or name not in permitted.get(doctype, set()):
                 continue
 
+            if doctype not in hidden_labels:
+                hidden_labels[doctype] = unreadable_field_labels(doctype, user_role)
+            keep, content = readable_index_content(
+                (hit.get("content") or "").strip(), hidden_labels[doctype], query, name
+            )
+            if not keep:
+                # The hit matched only on a field the user cannot read (#390).
+                continue
+
             seen.add(key)
-            content = (hit.get("content") or "").strip()
             results.append(
                 {
                     "doctype": doctype,
@@ -317,8 +335,16 @@ class SearchTools:
             if not query and not filters:
                 return {"success": False, "error": _("A search query or filters are required")}
 
+            user_role = get_user_primary_role(frappe.session.user)
+            if filters:
+                # A filter on a field the user cannot read narrows the result to its value (#390).
+                try:
+                    check_query_fields(doctype, user_role, filters=filters)
+                except FieldAccessError as e:
+                    return {"success": False, "error": str(e), "doctype": doctype}
+
             meta = frappe.get_meta(doctype)
-            search_fields = resolve_search_fields(meta) or ["name"]
+            search_fields = readable_fieldnames(meta, resolve_search_fields(meta), user_role) or ["name"]
 
             # An empty query means the caller is filtering only, so no text match
             # should be OR'd in.
