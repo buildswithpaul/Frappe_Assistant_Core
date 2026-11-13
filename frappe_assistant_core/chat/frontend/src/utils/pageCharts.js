@@ -21,12 +21,20 @@ use([
 	SVGRenderer,
 ]);
 
-// The kit sizes and print-protects this class; pages render on the kit's light surface.
+// The kit sizes and print-protects this class.
 const CHART_CLASS = "mk-chart";
 // Room for the axis labels inside the chart's box: ECharts' default margins cut long values off.
 const DEFAULT_GRID = { left: 8, right: 16, top: 24, bottom: 8, containLabel: true };
 // The series types registered above; ECharts would skip any other silently.
 const SERIES_TYPES = ["bar", "line", "pie"];
+
+// A page is dark when its shadow host, or a frame's own document, carries Desk's dark theme. A dark
+// chart uses ECharts' dark theme for its text and lines, over the page's own background.
+function isDarkPage(el) {
+	const root = el.getRootNode();
+	const holder = root instanceof ShadowRoot ? root.host : el.ownerDocument.documentElement;
+	return holder.getAttribute("data-theme") === "dark";
+}
 
 function checkSeries(option) {
 	const series = [].concat(option?.series || []);
@@ -46,8 +54,14 @@ function checkSeries(option) {
 export function chart(el, option = {}) {
 	checkSeries(option);
 	el.classList.add(CHART_CLASS);
-	const instance = init(el, null, { renderer: "svg" });
-	instance.setOption({ color: QL_VIZ_SEQUENCE, grid: DEFAULT_GRID, ...option });
+	const dark = isDarkPage(el);
+	const instance = init(el, dark ? "dark" : null, { renderer: "svg" });
+	instance.setOption({
+		color: QL_VIZ_SEQUENCE,
+		grid: DEFAULT_GRID,
+		...(dark ? { backgroundColor: "transparent" } : {}),
+		...option,
+	});
 
 	// The panel and Desk both resize with the window and the chat beside them.
 	const observer = typeof ResizeObserver === "function" ? new ResizeObserver(() => instance.resize()) : null;
