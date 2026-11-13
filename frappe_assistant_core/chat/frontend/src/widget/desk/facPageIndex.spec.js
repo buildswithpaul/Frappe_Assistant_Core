@@ -83,6 +83,17 @@ describe("fac_page_index", () => {
 		expect(visibleTitles(root)).toEqual(["My Receivables"]);
 	});
 
+	it("counts only the pages that match the search", () => {
+		const root = render({ pages: [shared, personal, draft] });
+		const search = root.querySelector("input.fac-page-index-search");
+		search.value = "overdue";
+		search.dispatchEvent(new Event("input"));
+		expect(texts(root, ".fac-page-index-chip")).toEqual(["All 1", "Mine 1", "Shared 0", "Drafts 0"]);
+		search.value = "";
+		search.dispatchEvent(new Event("input"));
+		expect(texts(root, ".fac-page-index-chip")).toEqual(["All 3", "Mine 1", "Shared 1", "Drafts 1"]);
+	});
+
 	it("says no page matches a search, and keeps the filters", () => {
 		const root = render({ pages: [shared, personal] });
 		const search = root.querySelector("input.fac-page-index-search");
