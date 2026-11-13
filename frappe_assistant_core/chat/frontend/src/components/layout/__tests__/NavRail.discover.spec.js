@@ -37,7 +37,7 @@ const POWERS = {
 async function mountRail({ state = {}, switches = {}, discovery = POWERS, notifications = [], sessions = [], pages = [], before = () => {} } = {}) {
 	const pinia = createPinia();
 	setActivePinia(pinia);
-	baseCall.mockClear();
+	baseCall.mockReset().mockResolvedValue({});
 	Object.assign(useUserStore(), {
 		user: USER,
 		memoryEnabled: true,
@@ -51,7 +51,7 @@ async function mountRail({ state = {}, switches = {}, discovery = POWERS, notifi
 	useNotificationStore().notifications = notifications.map((n) => ({ ...n }));
 	const router = createRouter({
 		history: createMemoryHistory(),
-		routes: ["/chat", "/knowledge", "/agents", "/analytics", "/settings/home"].map((path) => ({
+		routes: ["/chat", "/chat/:sessionId", "/knowledge", "/agents", "/analytics", "/settings/home"].map((path) => ({
 			path,
 			component: { template: "<div />" },
 		})),
@@ -179,16 +179,26 @@ describe("NavRail bot: Ask and Pages explain first", () => {
 		await flushPromises();
 	}
 
-	it("Try on Ask shows what it is, and its button asks the user's own starter in a new chat", async () => {
+	// FAC starts every chat as a session (/chat/<id>); the question waits for it, as a project's first message.
+	const newChat = () =>
+		baseCall.mockImplementation(async (method) =>
+			method === "frappe_assistant_core.chat.api.create_session" ? { session_id: "s-new" } : {}
+		);
+
+	it("Try on Ask shows what it is, and its button opens a new chat with the user's short starter queued", async () => {
 		const w = await mountRail({ discovery: POWERS });
-		useSuggestionStore().allSuggestions = [{ source: "curated", description: "Which items are below reorder level?" }];
+		newChat();
+		useSuggestionStore().allSuggestions = [
+			{ source: "curated", description: "Analyze customer relationship data…" },
+			{ source: "curated", kind: "find", description: "Which items are below reorder level?" },
+		];
 		await openTry(w, "ask");
 		expect(w.find("[data-test='your-fac-panel']").exists()).toBe(false);
 		expect(w.find("[data-test='spotlight-card'] h2").text()).toBe("Ask your data in plain words");
 		await w.find("[data-test='spotlight-primary']").trigger("click");
 		await flushPromises();
-		expect(w.router.currentRoute.value.path).toBe("/chat");
-		expect(useDiscoveryStore().askRequested).toEqual({ text: "Which items are below reorder level?" });
+		expect(w.router.currentRoute.value.path).toBe("/chat/s-new");
+		expect(useChatStore().takeFirstMessage("s-new")).toBe("Which items are below reorder level?");
 		expect(w.find("[data-test='spotlight-card']").exists()).toBe(false);
 	});
 
@@ -197,16 +207,19 @@ describe("NavRail bot: Ask and Pages explain first", () => {
 		await openTry(w, "pages");
 		expect(w.find("[data-test='spotlight-card'] h2").text()).toBe("Pages: live reports from any answer");
 		await w.find("[data-test='spotlight-secondary']").trigger("click");
+		await flushPromises();
 		expect(w.find("[data-test='spotlight-card']").exists()).toBe(false);
-		expect(useDiscoveryStore().askRequested).toBeNull();
+		expect(w.router.currentRoute.value.path).toBe("/chat");
 	});
 
-	it("Pages' button asks for a Page and counts Pages as opened", async () => {
+	it("Pages' button asks for a Page in a new chat and counts Pages as opened", async () => {
 		const w = await mountRail({ discovery: POWERS });
+		newChat();
 		await openTry(w, "pages");
 		await w.find("[data-test='spotlight-primary']").trigger("click");
 		await flushPromises();
-		expect(useDiscoveryStore().askRequested.text).toBe("Show this month's sales by customer and save it as a Page.");
+		expect(w.router.currentRoute.value.path).toBe("/chat/s-new");
+		expect(useChatStore().takeFirstMessage("s-new")).toBe("Show this month's sales by customer and save it as a Page.");
 		expect(useDiscoveryStore().state.seen).toContain("pages");
 	});
 });

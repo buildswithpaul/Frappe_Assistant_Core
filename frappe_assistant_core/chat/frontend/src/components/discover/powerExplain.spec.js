@@ -17,12 +17,14 @@ describe("powerExplain", () => {
 		expect(pages.media).toEqual({ art: "feature", feature: "pages" });
 	});
 
-	it("Ask asks the user's own first Home starter, skipping page asks; a fixed question when there is none", () => {
-		const suggestions = [
-			{ source: "page", description: "Summarise this invoice" },
-			{ source: "curated", description: "Which items are below reorder level?" },
-		];
-		expect(questionFor("ask", suggestions)).toBe("Which items are below reorder level?");
+	it("Ask picks the user's short Find it starter over a long analysis; See it next; never a page ask", () => {
+		const analysis = { source: "curated", description: "Analyze customer relationship data including lead pipeline…" };
+		const see = { source: "curated", kind: "see", description: "Top 10 customers by revenue this month" };
+		const find = { source: "curated", kind: "find", description: "Who owes us the most, and since when?" };
+		const page = { source: "page", kind: "find", description: "Summarise this invoice" };
+		expect(questionFor("ask", [analysis, page, see, find])).toBe("Who owes us the most, and since when?");
+		expect(questionFor("ask", [analysis, see])).toBe("Top 10 customers by revenue this month");
+		expect(questionFor("ask", [analysis])).toBe(analysis.description);
 		expect(questionFor("ask", [])).toBe("Who are my top 5 customers by sales this year?");
 	});
 

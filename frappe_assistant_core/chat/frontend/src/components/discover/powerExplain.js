@@ -47,11 +47,14 @@ export function explainContent(id) {
 }
 
 /**
- * The question a power's button asks. Ask uses the user's own first Home starter (Home picks those
- * for the user's role), so a stock user is not asked about receivables.
+ * The question a power's button asks. Ask uses one of the user's own Home starters (Home picks those
+ * for the user's role, so a stock user is not asked about receivables): a short lookup (the Find it
+ * card) first, then a See it one, so the first answer is quick and plain.
  */
 export function questionFor(id, suggestions = []) {
 	if (id === "pages") return featureById("pages").tryIt.prompt();
-	const starter = (suggestions || []).find((s) => s && s.source !== "page" && s.description);
+	const starters = (suggestions || []).filter((s) => s && s.source !== "page" && s.description);
+	const starter =
+		starters.find((s) => s.kind === "find") || starters.find((s) => s.kind === "see") || starters[0];
 	return starter ? starter.description : FALLBACK_QUESTION();
 }

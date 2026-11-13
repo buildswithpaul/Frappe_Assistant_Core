@@ -43,9 +43,8 @@ export const useDiscoveryStore = defineStore("discovery", () => {
 	const coachRequested = ref(false);
 	// ChatView owns the template browser; it watches this counter.
 	const templatesRequested = ref(0);
-	// Ask and Pages explain first (the card), then ask their question in a new chat: ChatView takes it.
+	// Ask and Pages explain first (the card), then ask their question in a new chat.
 	const explain = ref(null);
-	const askRequested = ref(null);
 	const panelOpen = ref(false);
 	const justUnlocked = ref(null);
 	let saveTimer = null;
@@ -220,8 +219,11 @@ export const useDiscoveryStore = defineStore("discovery", () => {
 		explain.value = null;
 	}
 
-	/** The card's button: AR's Try route when it set one, else ask the power's question in a new chat. */
-	function tryExplained(router) {
+	/**
+	 * The card's button: AR's Try route when it set one, else open a new chat with the power's
+	 * question queued. ChatView sends it once that chat has loaded, as for a project's first message.
+	 */
+	async function tryExplained(router) {
 		const content = explain.value;
 		explain.value = null;
 		if (!content) return;
@@ -229,15 +231,11 @@ export const useDiscoveryStore = defineStore("discovery", () => {
 		const power = powers.value.find((p) => p.id === id);
 		if (power && power.tryRoute) return router.push(power.tryRoute);
 		if (featureById(id)) markSeen(id);
-		askRequested.value = { text: questionFor(id, useSuggestionStore().allSuggestions) };
-		router.push("/chat");
-	}
-
-	/** ChatView takes the question once it is showing a new chat; null when nothing is waiting. */
-	function takeAskRequest() {
-		const request = askRequested.value;
-		askRequested.value = null;
-		return request ? request.text : null;
+		const chat = useChatStore();
+		const sessionId = await chat.createSession();
+		if (!sessionId) return;
+		chat.queueFirstMessage(sessionId, questionFor(id, useSuggestionStore().allSuggestions));
+		router.push(`/chat/${sessionId}`);
 	}
 
 	function goTo(feature, router) {
@@ -289,7 +287,6 @@ export const useDiscoveryStore = defineStore("discovery", () => {
 		coachRequested,
 		templatesRequested,
 		explain,
-		askRequested,
 		init,
 		setSwitches,
 		showDot,
@@ -302,7 +299,6 @@ export const useDiscoveryStore = defineStore("discovery", () => {
 		tryPower,
 		closeExplain,
 		tryExplained,
-		takeAskRequest,
 		maybeStartCoach,
 		requestCoach,
 		setCoachOpen,
