@@ -8,7 +8,7 @@ function parse(srcdoc) {
 	return new DOMParser().parseFromString(srcdoc, "text/html");
 }
 
-export function describeDraftBuilder(label, { srcdoc: buildSrcdoc, frame: buildFrame }) {
+export function describeDraftBuilder(label, { srcdoc: buildSrcdoc, frame: buildFrame, shownTheme }) {
 	describe(`${label}: draft srcdoc`, () => {
 		const srcdoc = buildSrcdoc({
 			html: '<div class="mk-card">Plan</div>',
@@ -57,6 +57,33 @@ export function describeDraftBuilder(label, { srcdoc: buildSrcdoc, frame: buildF
 			expect(frame.getAttribute("sandbox")).toBe("");
 			expect(frame.srcdoc).toContain("<p>x</p>");
 			expect(frame.srcdoc).toContain(CSP);
+		});
+	});
+
+	describe(`${label}: the theme a page is shown in`, () => {
+		it("follows a dark Desk when the page colours only with the kit's tokens", () => {
+			const page = { html: '<div class="mk-card" style="padding: 8px">Sales</div>', style: ".x { background: var(--mk-surface); }" };
+			expect(shownTheme(page, "dark")).toBe("dark");
+			expect(shownTheme(page, "light")).toBe("light");
+		});
+
+		it.each([
+			["a hex colour in its style", { style: ".card { background: #fff; }" }],
+			["an rgb colour in its style", { style: ".card { color: rgb(17, 17, 17); }" }],
+			["an hsl colour in its style", { style: ".card { color: hsl(0 0% 10%); }" }],
+			["a named colour in its style", { style: ".card { background: white; }" }],
+			["a colour in an inline style", { html: '<div style="color:#b42318">-4,200</div>' }],
+		])("stays light when the page sets its own colours: %s", (_, page) => {
+			expect(shownTheme(page, "dark")).toBe("light");
+		});
+
+		it("is not misled by words in the page's text", () => {
+			expect(shownTheme({ html: "<p>Black Friday orders, white goods</p>", style: "" }, "dark")).toBe("dark");
+		});
+
+		it("is light for anything but a dark Desk", () => {
+			expect(shownTheme({}, "automatic")).toBe("light");
+			expect(shownTheme({}, undefined)).toBe("light");
 		});
 	});
 }

@@ -130,6 +130,25 @@ describe("mountPresentControls", () => {
 		document.documentElement.removeAttribute("data-theme");
 	});
 
+	it("keeps the container light for a page shown light in a dark Desk", async () => {
+		document.documentElement.setAttribute("data-theme", "dark");
+		const container = page();
+		await mountPresentControls({ container, deck: fakeDeck(), fullscreen: false, theme: "light" });
+		expect(container.style.background).toBe("rgb(255, 255, 255)");
+		document.documentElement.removeAttribute("data-theme");
+	});
+
+	it("repaints the container when Desk's theme changes while presenting", async () => {
+		document.documentElement.setAttribute("data-theme", "light");
+		const container = page();
+		const presenting = await mountPresentControls({ container, deck: fakeDeck(), fullscreen: false });
+		document.documentElement.setAttribute("data-theme", "dark");
+		await new Promise((resolve) => setTimeout(resolve, 5));
+		expect(container.style.background).toBe("rgb(23, 23, 23)");
+		await presenting.stop();
+		document.documentElement.removeAttribute("data-theme");
+	});
+
 	it("moves with the keyboard and stops with Escape", async () => {
 		const container = page();
 		const deck = fakeDeck();

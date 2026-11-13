@@ -88,9 +88,18 @@ describe("MockupFrame", () => {
 		document.documentElement.setAttribute("data-theme", "dark");
 		const w = mount(MockupFrame, { props: { html: "<div class='mk-card'>x</div>" } });
 		expect(w.find("iframe").attributes("srcdoc")).toContain('<html data-theme="dark">');
+		expect(w.find("iframe").classes()).toContain("mockup-frame-dark");
 		document.documentElement.setAttribute("data-theme", "light");
 		await new Promise((resolve) => setTimeout(resolve, 0));
 		await w.vm.$nextTick();
+		expect(w.find("iframe").attributes("srcdoc")).toContain('<html data-theme="light">');
+		w.unmount();
+		document.documentElement.removeAttribute("data-theme");
+	});
+
+	it("keeps a mockup that sets its own colours light", () => {
+		document.documentElement.setAttribute("data-theme", "dark");
+		const w = mount(MockupFrame, { props: { html: '<div style="background:#fff">x</div>' } });
 		expect(w.find("iframe").attributes("srcdoc")).toContain('<html data-theme="light">');
 		w.unmount();
 		document.documentElement.removeAttribute("data-theme");

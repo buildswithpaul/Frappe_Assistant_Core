@@ -11,13 +11,13 @@
 	/>
 	<!-- A personal page runs at once, in a frame that reads as the user and asks before a change.
 	     Only a page that says it is Shared runs beside the chat, so a missing flag fails closed. -->
-	<div v-else-if="personal" ref="personalBox" class="page-view-frame">
+	<div v-else-if="personal" ref="personalBox" class="page-view-frame" :class="{ 'page-view-dark': pageTheme === 'dark' }">
 		<PageFrame
 			ref="personalFrame"
 			:page="page"
 			:user="user"
 			:kit-css="kitCss"
-			:theme="theme"
+			:theme="pageTheme"
 			:page-name="pageName"
 			:ask-user="askUser"
 			@unsupported="emit('unsupported', $event)"
@@ -25,18 +25,18 @@
 			@present-key="presenting?.key($event)"
 		/>
 	</div>
-	<div v-else class="page-view-frame">
+	<div v-else class="page-view-frame" :class="{ 'page-view-dark': pageTheme === 'dark' }">
 		<div ref="host" class="page-view-host" />
 	</div>
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 
 import { baseCall, getCall } from "@/api/_core";
 import { isNarrow, usePagePanel } from "@/composables/usePagePanel";
-import { deskTheme, followDeskTheme, mirrorDeskTheme } from "@/utils/deskTheme";
-import { fac_page_draft_srcdoc } from "@/utils/facPageDraft";
+import { deskTheme, followDeskTheme } from "@/utils/deskTheme";
+import { fac_page_draft_srcdoc, fac_page_shown_theme } from "@/utils/facPageDraft";
 import { makeBlocks } from "@/utils/pageBlocks";
 import { chart } from "@/utils/pageCharts";
 import { report } from "@/utils/pageReport";
@@ -75,14 +75,15 @@ const errors = [];
 const published = computed(() => props.page.draft === false);
 const personal = computed(() => published.value && props.page.visibility !== "Shared");
 
-// Desk's theme: a shared page's shadow host carries it, a draft is redrawn in it, a personal page's
-// frame is told of it. A print is drawn without it, so it stays light.
-const theme = ref(deskTheme());
-const stopTheme = followDeskTheme((next) => (theme.value = next));
-let stopHostTheme = () => {};
+// The page's theme: Desk's, unless the page sets its own colours. A shared page's shadow host
+// carries it, a draft is redrawn in it, a personal page's frame is told of it. A print is drawn
+// without it, so it stays light.
+const deskThemeNow = ref(deskTheme());
+const stopTheme = followDeskTheme((next) => (deskThemeNow.value = next));
+const pageTheme = computed(() => fac_page_shown_theme(props.page, deskThemeNow.value));
 
 const draftSrcdoc = computed(() =>
-	fac_page_draft_srcdoc({ html: props.page.html, style: props.page.style, kit_css: kitCss, theme: theme.value }),
+	fac_page_draft_srcdoc({ html: props.page.html, style: props.page.style, kit_css: kitCss, theme: pageTheme.value }),
 );
 
 function onError(error, method) {
@@ -101,7 +102,7 @@ function pageFragment(html) {
 // A Shared page, published through the go-live card that showed its code, runs in the chat as in
 // Desk. The page owns its shadow root: a key on this component, not a re-render, shows a newer version.
 function renderShared() {
-	stopHostTheme = mirrorDeskTheme(host.value);
+	host.value.setAttribute("data-theme", pageTheme.value);
 	const root = host.value.attachShadow({ mode: "open" });
 	const style = document.createElement("style");
 	style.textContent = `${kitCss}\n${props.page.style || ""}`;
@@ -124,6 +125,8 @@ function renderShared() {
 	const result = runPageScript(props.page.script, root, standIn, fac);
 	if (result.error && !result.unsupported) onError(result.error);
 }
+
+watch(pageTheme, (next) => host.value?.setAttribute("data-theme", next));
 
 // FACO's screenshot captures the page shown here; a draft's frame cannot be read.
 let hidePageView = () => {};
@@ -160,6 +163,7 @@ async function present() {
 			container,
 			deck,
 			fullscreen: !isNarrow(),
+			theme: () => pageTheme.value,
 			onExit: () => {
 				if (presenting === handle || presenting === token) presenting = null;
 			},
@@ -183,7 +187,6 @@ onBeforeUnmount(() => {
 	presenting = null;
 	hidePageView();
 	stopTheme();
-	stopHostTheme();
 	charts.splice(0).forEach((handle) => handle.dispose());
 });
 
@@ -223,7 +226,7 @@ defineExpose({ printSnapshot, present });
 	border-radius: var(--ql-radius-lg);
 	background: #fff;
 }
-:global([data-theme="dark"]) .page-view-frame {
+.page-view-dark {
 	background: #171717;
 }
 .page-view-host {

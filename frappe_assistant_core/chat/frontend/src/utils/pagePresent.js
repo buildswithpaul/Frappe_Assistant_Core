@@ -5,7 +5,7 @@
  * asks for full screen and maps the keys, around any deck that can start, show and stop, local or
  * across the personal page's frame. Bundled for Desk (pageFacBundle.js) and the frame runtime.
  */
-import { deskTheme } from "@/utils/deskTheme";
+import { deskTheme, followDeskTheme } from "@/utils/deskTheme";
 import { __ } from "@/utils/i18n";
 
 const PRESENTING = "fac-presenting";
@@ -107,14 +107,20 @@ function control(tag, className, label, text) {
 
 /**
  * Presents `deck` in `container`: controls at its foot, full screen when allowed, and the keys.
- * Resolves `{key(action), stop()}`; leaving full screen, Exit or Escape stops it.
+ * Resolves `{key(action), stop()}`; leaving full screen, Exit or Escape stops it. `theme` is the
+ * page's theme, "dark" or "light", or a function giving it; it is read again when Desk's changes.
  */
-export async function mountPresentControls({ container, deck, onExit, fullscreen = true }) {
+export async function mountPresentControls({ container, deck, onExit, fullscreen = true, theme = deskTheme }) {
 	const doc = container.ownerDocument;
 	let state = await deck.start();
 	let stopped = false;
 	let enteredFullscreen = false;
 	const savedStyle = container.style.cssText;
+	const paint = () => {
+		const current = typeof theme === "function" ? theme() : theme;
+		container.style.background = PAGE_BACKGROUND[current === "dark" ? "dark" : "light"];
+	};
+	let stopTheme = () => {};
 
 	const bar = document.createElement("div");
 	bar.className = "fac-present-bar";
@@ -165,6 +171,7 @@ export async function mountPresentControls({ container, deck, onExit, fullscreen
 		stopped = true;
 		doc.removeEventListener("keydown", onKey);
 		doc.removeEventListener("fullscreenchange", onFullscreen);
+		stopTheme();
 		bar.remove();
 		container.classList.remove(CONTAINER);
 		container.style.cssText = savedStyle;
@@ -179,7 +186,10 @@ export async function mountPresentControls({ container, deck, onExit, fullscreen
 	doc.addEventListener("keydown", onKey);
 	doc.addEventListener("fullscreenchange", onFullscreen);
 	container.classList.add(CONTAINER);
-	Object.assign(container.style, CONTAINER_STYLE, { background: PAGE_BACKGROUND[deskTheme()] });
+	Object.assign(container.style, CONTAINER_STYLE);
+	paint();
+	// After a Vue watcher or Desk's own observer has passed the change on to the page.
+	stopTheme = followDeskTheme(() => setTimeout(paint));
 	container.append(bar);
 	draw();
 

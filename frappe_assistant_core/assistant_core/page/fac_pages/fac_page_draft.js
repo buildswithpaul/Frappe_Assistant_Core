@@ -23,6 +23,26 @@ function fac_page_draft_srcdoc({ html, style, kit_css, theme } = {}) {
 	);
 }
 
+// A page follows Desk's dark theme only when it colours with the kit's tokens. One that names its
+// own colours, in its style or an inline style, stays light: a fixed white card would otherwise
+// hold the dark theme's light text.
+const FAC_PAGE_OWN_COLOUR =
+	/#[0-9a-f]{3,8}\b|\b(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\s*\(|\b(?:white|black|red|green|blue|gray|grey|silver|orange|yellow|purple|navy|teal|maroon)\b/i;
+
+function fac_page_sets_own_colours({ html, style } = {}) {
+	// Only declaration values: an id selector such as #add-row is not a colour.
+	const values = [...String(style || "").matchAll(/:\s*([^;{}]+)/g)].map((m) => m[1]);
+	for (const m of String(html || "").matchAll(/\b(?:style|color|bgcolor)\s*=\s*(?:"([^"]*)"|'([^']*)')/gi)) {
+		values.push(m[1] ?? m[2]);
+	}
+	return values.some((value) => FAC_PAGE_OWN_COLOUR.test(value));
+}
+
+// eslint-disable-next-line no-unused-vars
+function fac_page_shown_theme(page, desk_theme) {
+	return desk_theme === "dark" && !fac_page_sets_own_colours(page) ? "dark" : "light";
+}
+
 // eslint-disable-next-line no-unused-vars
 function fac_page_draft_frame(parts) {
 	const frame = document.createElement("iframe");
