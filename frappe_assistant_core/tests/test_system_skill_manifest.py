@@ -529,3 +529,11 @@ class TestSystemSkillManifest(BaseAssistantTest):
         text = self._read_skill("fac_page.md")
         self.assertIn('"description":', text)
         self.assertIn("Pages list", text)
+
+    def test_pages_edit_records_with_the_blocks(self):
+        # Hand-written frappe.ui dialogs break a page beside the chat; the page tools work everywhere.
+        text = self._read_skill("mockup_kit.md")
+        for claim in ("fac.editList(", "fac.editText(", "fac.periodPicker(", "fac.canWrite(", "mk-section"):
+            self.assertIn(claim, text)
+        self.assertIn("fac.editList", self._read_skill("fac_page.md"))
+        self.assertIn("fac.editList", self._read_skill("pages_in_chat.md"))
