@@ -1,4 +1,5 @@
 import { EXAMPLE_SITE } from "@/utils/__tests__/pageFormatCases";
+import { makeBlocks } from "@/utils/pageBlocks";
 import { report } from "@/utils/pageReport";
 
 // The frame's config, as pageFrameDoc.js writes it from get_page's response.
@@ -37,6 +38,18 @@ describe("the personal page frame's runtime", () => {
 			method: "frappe_assistant_core.api.fac_page.report_access",
 			args: { reports: ["Profit and Loss Statement"] },
 		});
+		posted.mockRestore();
+	});
+
+	it("gives the page fac.canWrite, which asks the host about the viewer's permission", async () => {
+		window.fac_page_charts = { report, makeBlocks };
+		const posted = vi.spyOn(window, "postMessage");
+		let fac;
+		window.__fac_page.run((root_element, pageFrappe, translate, pageFac) => (fac = pageFac));
+		fac.canWrite("ToDo", "T-1");
+		await Promise.resolve();
+		const call = posted.mock.calls.map(([message]) => message).find((message) => message.op === "call");
+		expect(call).toMatchObject({ method: "frappe.client.has_permission", args: { doctype: "ToDo", docname: "T-1", perm_type: "write" } });
 		posted.mockRestore();
 	});
 });

@@ -35,7 +35,7 @@ export { fetchTransport, queryArgs } from "./pageFetchTransport";
 // permission. The chat's stand-in frappe uses get_list, get_value and get. query_report.run runs a
 // report's own code and getdoc a controller's onload; both are what the user can already run from
 // Desk, and GET rolls back any database write they make. report_access answers only whether the
-// user may run each report.
+// user may run each report, and has_permission whether they may read or change a record.
 export const PAGE_READ_METHODS = new Set([
 	"frappe.client.get",
 	"frappe.client.get_list",
@@ -47,6 +47,7 @@ export const PAGE_READ_METHODS = new Set([
 	"frappe.desk.query_report.run",
 	"frappe.desk.form.load.getdoc",
 	"frappe_assistant_core.api.fac_page.report_access",
+	"frappe.client.has_permission",
 ]);
 
 // Per page, in memory only: the content the answers below were given for, the methods the user
