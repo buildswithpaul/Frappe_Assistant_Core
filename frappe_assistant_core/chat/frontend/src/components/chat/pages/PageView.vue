@@ -17,6 +17,7 @@
 			:page="page"
 			:user="user"
 			:kit-css="kitCss"
+			:theme="theme"
 			:page-name="pageName"
 			:ask-user="askUser"
 			@unsupported="emit('unsupported', $event)"
@@ -34,6 +35,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 
 import { baseCall, getCall } from "@/api/_core";
 import { isNarrow, usePagePanel } from "@/composables/usePagePanel";
+import { deskTheme, followDeskTheme, mirrorDeskTheme } from "@/utils/deskTheme";
 import { fac_page_draft_srcdoc } from "@/utils/facPageDraft";
 import { makeBlocks } from "@/utils/pageBlocks";
 import { chart } from "@/utils/pageCharts";
@@ -73,8 +75,14 @@ const errors = [];
 const published = computed(() => props.page.draft === false);
 const personal = computed(() => published.value && props.page.visibility !== "Shared");
 
+// Desk's theme: a shared page's shadow host carries it, a draft is redrawn in it, a personal page's
+// frame is told of it. A print is drawn without it, so it stays light.
+const theme = ref(deskTheme());
+const stopTheme = followDeskTheme((next) => (theme.value = next));
+let stopHostTheme = () => {};
+
 const draftSrcdoc = computed(() =>
-	fac_page_draft_srcdoc({ html: props.page.html, style: props.page.style, kit_css: kitCss }),
+	fac_page_draft_srcdoc({ html: props.page.html, style: props.page.style, kit_css: kitCss, theme: theme.value }),
 );
 
 function onError(error, method) {
@@ -93,6 +101,7 @@ function pageFragment(html) {
 // A Shared page, published through the go-live card that showed its code, runs in the chat as in
 // Desk. The page owns its shadow root: a key on this component, not a re-render, shows a newer version.
 function renderShared() {
+	stopHostTheme = mirrorDeskTheme(host.value);
 	const root = host.value.attachShadow({ mode: "open" });
 	const style = document.createElement("style");
 	style.textContent = `${kitCss}\n${props.page.style || ""}`;
@@ -173,6 +182,8 @@ onBeforeUnmount(() => {
 	presenting?.stop?.();
 	presenting = null;
 	hidePageView();
+	stopTheme();
+	stopHostTheme();
 	charts.splice(0).forEach((handle) => handle.dispose());
 });
 
@@ -201,8 +212,8 @@ defineExpose({ printSnapshot, present });
    element cannot cover the chat. Paint containment makes the box the containing block of fixed
    elements and clips them. It is set here, outside the shadow host, where the page's own :host
    rules cannot undo it. The box scrolls the page, so a wide page still scrolls sideways. A
-   personal page's frame scrolls inside itself. The page is a light document in either theme, on
-   the kit's white, as it prints. */
+   personal page's frame scrolls inside itself. Its background is the kit's, in Desk's theme; a print
+   is always light. */
 .page-view-frame {
 	height: 100%;
 	overflow: auto;
@@ -211,6 +222,9 @@ defineExpose({ printSnapshot, present });
 	border: 1px solid var(--ql-border);
 	border-radius: var(--ql-radius-lg);
 	background: #fff;
+}
+:global([data-theme="dark"]) .page-view-frame {
+	background: #171717;
 }
 .page-view-host {
 	display: block;

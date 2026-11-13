@@ -122,6 +122,14 @@ describe("mountPresentControls", () => {
 		expect(container.style.padding).toBe("3px");
 	});
 
+	it("gives the container the kit's dark background when Desk is dark", async () => {
+		document.documentElement.setAttribute("data-theme", "dark");
+		const container = page();
+		await mountPresentControls({ container, deck: fakeDeck(), fullscreen: false });
+		expect(container.style.background).toBe("rgb(23, 23, 23)");
+		document.documentElement.removeAttribute("data-theme");
+	});
+
 	it("moves with the keyboard and stops with Escape", async () => {
 		const container = page();
 		const deck = fakeDeck();

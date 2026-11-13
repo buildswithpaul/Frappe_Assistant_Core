@@ -320,4 +320,40 @@ describe("PageView", () => {
 		const w = mountView({ ...published, draft: true });
 		expect(usePagePanel().pageView.value).toMatchObject({ element: w.find("iframe").element, draft: true });
 	});
+
+	describe("in Desk's theme", () => {
+		const setTheme = (theme) => document.documentElement.setAttribute("data-theme", theme);
+		afterEach(() => document.documentElement.removeAttribute("data-theme"));
+
+		it("draws a shared page in Desk's theme and follows a change", async () => {
+			setTheme("dark");
+			const host = mountView(published).find(".page-view-host").element;
+			expect(host.getAttribute("data-theme")).toBe("dark");
+			setTheme("light");
+			await flushPromises();
+			expect(host.getAttribute("data-theme")).toBe("light");
+		});
+
+		it("draws a draft in Desk's theme and redraws it on a change", async () => {
+			setTheme("dark");
+			const w = mountView({ ...published, draft: true });
+			expect(w.find("iframe").attributes("srcdoc")).toContain('<html data-theme="dark">');
+			setTheme("light");
+			await flushPromises();
+			expect(w.find("iframe").attributes("srcdoc")).toContain('<html data-theme="light">');
+		});
+
+		it("starts a personal page in Desk's theme and tells its frame of a change", async () => {
+			setTheme("dark");
+			const w = mountView(personal);
+			const frame = w.find("iframe.fac-page-sandbox").element;
+			expect(frame.getAttribute("srcdoc")).toMatch(/data-theme=(&quot;|")dark/);
+			// jsdom loads no srcdoc frame; the page's window stands in as the outer frame's one child.
+			const pageWindow = { postMessage: vi.fn() };
+			Object.defineProperty(frame, "contentWindow", { value: { frames: [pageWindow] } });
+			setTheme("light");
+			await flushPromises();
+			expect(pageWindow.postMessage).toHaveBeenCalledWith({ fac_page: 1, op: "theme", theme: "light" }, "*");
+		});
+	});
 });

@@ -14,6 +14,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 
+import { deskTheme, followDeskTheme } from "@/utils/deskTheme";
 import { __ } from "@/utils/i18n";
 // The one copy of the kit, also served to the fac-pages Desk page from /assets.
 import kitCss from "../../../../../../../public/css/mockup_kit.css?raw";
@@ -34,12 +35,15 @@ const props = defineProps({
 
 const frame = ref(null);
 const height = ref(MIN_HEIGHT);
+// Desk's theme, which the kit's tokens follow; a change redraws the mockup.
+const theme = ref(deskTheme());
+const stopTheme = followDeskTheme((next) => (theme.value = next));
 
 const tooLarge = computed(() => new TextEncoder().encode(props.html).length > MAX_BYTES);
 
 const doc = computed(
 	() =>
-		`<!doctype html><html><head><meta charset="utf-8">` +
+		`<!doctype html><html data-theme="${theme.value}"><head><meta charset="utf-8">` +
 		`<meta http-equiv="Content-Security-Policy" content="${CSP}">` +
 		`<style>${kitCss}</style></head><body>${props.html}` +
 		`<script>${HEIGHT_SCRIPT}<\/script></body></html>`,
@@ -55,7 +59,10 @@ function onMessage(event) {
 }
 
 onMounted(() => window.addEventListener("message", onMessage));
-onBeforeUnmount(() => window.removeEventListener("message", onMessage));
+onBeforeUnmount(() => {
+	window.removeEventListener("message", onMessage);
+	stopTheme();
+});
 </script>
 
 <style scoped>
@@ -64,6 +71,10 @@ onBeforeUnmount(() => window.removeEventListener("message", onMessage));
 	border: 1px solid var(--outline-gray-2, #ededed);
 	border-radius: 8px;
 	background: #fff;
+}
+
+:global([data-theme="dark"]) .mockup-frame {
+	background: #171717;
 }
 
 .mockup-too-large {

@@ -100,4 +100,36 @@ describe("chart", () => {
 		mountChart({ ...option, series: [{ type: "line", data: [1, 3, 2] }] });
 		expect(el.querySelector("svg")).not.toBeNull();
 	});
+
+	describe("in a dark page", () => {
+		// What the axis labels are drawn in, read off the svg ECharts drew.
+		const labelFills = (root) => [...root.querySelectorAll("svg text")].map((t) => t.getAttribute("fill") || t.style.fill);
+
+		it("draws readable text on a page whose shadow host is dark, on the page's own background", () => {
+			const host = document.createElement("div");
+			host.setAttribute("data-theme", "dark");
+			document.body.append(host);
+			const shadow = host.attachShadow({ mode: "open" });
+			el = document.createElement("div");
+			shadow.append(el);
+			handle = chart(el, option);
+			const opt = getInstanceByDom(el).getOption();
+			expect(opt.backgroundColor).toBe("transparent");
+			const light = (fill) => /^#(e|f|d|c|b|a|9)/i.test(fill) || /^rgba?\((1[5-9]\d|2\d\d)/.test(fill);
+			expect(labelFills(el).filter(Boolean).every(light)).toBe(true);
+			host.remove();
+		});
+
+		it("draws a frame's chart dark when the frame's document is dark", () => {
+			document.documentElement.setAttribute("data-theme", "dark");
+			mountChart();
+			expect(getInstanceByDom(el).getOption().backgroundColor).toBe("transparent");
+			document.documentElement.removeAttribute("data-theme");
+		});
+
+		it("keeps a light page's chart as it was", () => {
+			mountChart();
+			expect(getInstanceByDom(el).getOption().backgroundColor).not.toBe("transparent");
+		});
+	});
 });

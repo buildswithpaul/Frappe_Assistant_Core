@@ -83,4 +83,16 @@ describe("MockupFrame", () => {
 		expect(remove).toHaveBeenCalledWith("message", handler);
 		vi.restoreAllMocks();
 	});
+
+	it("draws the mockup in Desk's theme and redraws it on a change", async () => {
+		document.documentElement.setAttribute("data-theme", "dark");
+		const w = mount(MockupFrame, { props: { html: "<div class='mk-card'>x</div>" } });
+		expect(w.find("iframe").attributes("srcdoc")).toContain('<html data-theme="dark">');
+		document.documentElement.setAttribute("data-theme", "light");
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		await w.vm.$nextTick();
+		expect(w.find("iframe").attributes("srcdoc")).toContain('<html data-theme="light">');
+		w.unmount();
+		document.documentElement.removeAttribute("data-theme");
+	});
 });
