@@ -391,9 +391,10 @@
 				return bundle.report(frappe, name, filters);
 			},
 		};
-		// The page tools, from the same bundle; loaded before the script runs (render_shared).
+		// The page tools, from the same bundle; loaded before the script runs (render_shared). They
+		// send their calls with fetch, so a refused save opens no Desk dialog over the page.
 		const bundle = window.fac_page_charts;
-		if (bundle && bundle.makeBlocks) Object.assign(fac, bundle.makeBlocks(frappe));
+		if (bundle && bundle.deskBlocks) Object.assign(fac, bundle.deskBlocks(frappe, () => frappe.csrf_token));
 		const dispose = () => handles.splice(0).forEach((handle) => handle.dispose());
 		return { fac, dispose };
 	}
