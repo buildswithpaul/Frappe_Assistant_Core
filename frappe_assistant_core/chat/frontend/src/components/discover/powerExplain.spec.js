@@ -28,7 +28,8 @@ describe("powerExplain", () => {
 		expect(questionFor("ask", [])).toBe("Who are my top 5 customers by sales this year?");
 	});
 
-	it("Pages asks for numbers and to save them as a Page", () => {
-		expect(questionFor("pages")).toBe("Show this month's sales by customer and save it as a Page.");
+	// Not "this month": early in a month, or on a quiet site, that is an empty Page on the first try.
+	it("Pages asks for a few months of numbers and to save them as a Page", () => {
+		expect(questionFor("pages")).toBe("Show sales by customer for the last 3 months and save it as a Page.");
 	});
 });

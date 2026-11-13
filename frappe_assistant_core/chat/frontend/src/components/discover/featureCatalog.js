@@ -68,7 +68,7 @@ export const FEATURES = [
 			__("A stock report you can share as PDF"),
 		],
 		note: () => __("FAC writes the question for you; you press send"),
-		tryIt: { prompt: () => __("Show this month's sales by customer and save it as a Page.") },
+		tryIt: { prompt: () => __("Show sales by customer for the last 3 months and save it as a Page.") },
 	},
 	{
 		id: "templates",

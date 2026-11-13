@@ -219,7 +219,7 @@ describe("NavRail bot: Ask and Pages explain first", () => {
 		await w.find("[data-test='spotlight-primary']").trigger("click");
 		await flushPromises();
 		expect(w.router.currentRoute.value.path).toBe("/chat/s-new");
-		expect(useChatStore().takeFirstMessage("s-new")).toBe("Show this month's sales by customer and save it as a Page.");
+		expect(useChatStore().takeFirstMessage("s-new")).toBe("Show sales by customer for the last 3 months and save it as a Page.");
 		expect(useDiscoveryStore().state.seen).toContain("pages");
 	});
 });
