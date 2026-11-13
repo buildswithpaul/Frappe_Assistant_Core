@@ -79,14 +79,16 @@ For figures a report already computes, read the report with `fac.report(name, fi
 
 A page can let people type into records with the page tools. They work in Desk, beside the chat and on a personal page, so use them for anything people edit on a page, never `frappe.ui` dialogs, `frappe.prompt` or a hand-built form. The records belong in a doctype (`get_skill("fac-page")`); the tools only show and save them.
 
+**Pages for a meeting.** The user presents a published page with the **Present** button, in Desk or beside the chat: full screen, one `mk-section` at a time, moved with the arrow keys, Esc to leave. Build every page meant for a meeting from `mk-section` blocks, one per screen, each with a short `data-title` such as "Company", "Finance" or "Decathlon". A page without sections presents as one screen.
+
 | Class | What |
 |---|---|
-| `mk-section` | one block of the page, such as one business unit; give it `data-title` |
+| `mk-section` | one block of the page, such as one business unit, and one screen in Present mode; give it a `data-title`, which Present shows as the screen's title |
 | `mk-section-head` | the section's title row: title on the left, meta and actions on the right |
 | `mk-section-meta` | small muted text, such as `fac.updated(doc)` |
 | `mk-list` | a plain list of rows (`fac.editList` uses it) |
 | `mk-text` | text that keeps its line breaks (`fac.editText` uses it) |
-| `mk-edit` | marks a control that changes data; Present mode hides it |
+| `mk-edit` | marks a control that changes data; Present mode hides it, and the page tools mark their own edit controls |
 | `mk-sev-high`, `mk-sev-med`, `mk-sev-low` | add to `mk-badge` for a HIGH, MED or LOW severity |
 | `mk-status-done`, `mk-status-pending` | an 8px dot for "filled in" or "still to do"; put a word or `aria-label` beside it |
 
