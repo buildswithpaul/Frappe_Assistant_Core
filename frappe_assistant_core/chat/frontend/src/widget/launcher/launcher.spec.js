@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createLauncherView } from "./view.js";
-import { mirrorDeskTheme } from "./theme.js";
 import { parseShortcut, bindShortcut } from "./shortcut.js";
 import { applyDiagnosticsSwitch } from "./access.js";
 import { setupAutofade } from "./autofade.js";
@@ -32,19 +31,6 @@ describe("launcher view", () => {
 		view.setDot(true);
 		view.setDot(false);
 		expect(view.host.shadowRoot.querySelector(".faco-spotlight-dot")).toBeNull();
-	});
-});
-
-describe("theme mirror", () => {
-	it("copies Desk's theme now and follows a later html[data-theme] change", async () => {
-		document.documentElement.setAttribute("data-theme", "light");
-		const host = document.createElement("div");
-		const stop = mirrorDeskTheme(host);
-		expect(host.getAttribute("data-theme")).toBe("light");
-		document.documentElement.setAttribute("data-theme", "dark");
-		await new Promise((r) => setTimeout(r, 0));
-		expect(host.getAttribute("data-theme")).toBe("dark");
-		stop();
 	});
 });
 

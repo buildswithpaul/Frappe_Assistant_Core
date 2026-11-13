@@ -11,7 +11,7 @@ import { placePanel } from "./placement.js";
 import { isolateTyping } from "./keyIsolation.js";
 import { TELEPORT_TARGET_KEY } from "@/composables/useTeleportTarget";
 import { configureWidgetSurface } from "./widgetSurface.js";
-import { mirrorDeskTheme } from "../launcher/theme.js";
+import { mirrorDeskTheme } from "@/utils/deskTheme";
 
 export async function mountPanel(config) {
 	configureWidgetSurface();
