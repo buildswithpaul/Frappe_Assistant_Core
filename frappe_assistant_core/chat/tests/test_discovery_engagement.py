@@ -150,19 +150,20 @@ class TestInviteQuestions(BaseAssistantTest):
         self.assertIn("as Member", doc["email_content"])
 
 
-class TestDiscoverySamples(BaseAssistantTest):
-    def test_samples_only_on_a_site_that_asks_for_them(self):
+class TestDefaultPowers(BaseAssistantTest):
+    def test_every_site_gets_the_six_powers_when_ar_sends_none(self):
+        # No site_config switch: a site whose AR has no discovery block still shows the ring.
         from frappe_assistant_core.chat.api import init as init_mod
 
-        caps = {"features": {}}
-        with patch.dict(frappe.conf, {"fac_discovery_samples": 0}):
-            self.assertNotIn("discovery", init_mod._with_sample_discovery(caps))
-        with patch.dict(frappe.conf, {"fac_discovery_samples": 1}):
-            self.assertEqual(init_mod._with_sample_discovery(caps)["discovery"]["powers"][0]["id"], "setup")
+        powers = init_mod._with_default_discovery({"features": {}})["discovery"]["powers"]
+        self.assertEqual(
+            [p["id"] for p in powers], ["setup", "ask", "templates", "knowledge", "pages", "agents"]
+        )
+        self.assertEqual(powers[-1]["try_route"], "/agents?tab=marketplace")
 
-    def test_the_chat_pages_own_capabilities_call_keeps_the_sample_powers(self):
-        # ChatView reloads capabilities through get_capabilities after init; without the samples
-        # there, the Your FAC ring, its panel and the Unlocked toast all vanished on a test site.
+    def test_the_chat_pages_own_capabilities_call_keeps_the_powers(self):
+        # ChatView reloads capabilities through get_capabilities after init; without the powers
+        # there, the Your FAC ring, its panel and the Unlocked toast all vanished.
         from frappe_assistant_core.chat.api.settings import capabilities
 
         fetch = patch(
@@ -170,13 +171,23 @@ class TestDiscoverySamples(BaseAssistantTest):
             autospec=True,
             return_value={"features": {"billing": True}},
         )
-        with patch.dict(frappe.conf, {"fac_discovery_samples": 1}), fetch:
+        with fetch:
             result = capabilities.get_capabilities()
         self.assertEqual(result["discovery"]["powers"][0]["id"], "setup")
 
-    def test_ar_powers_win_over_the_samples(self):
+    def test_ar_unreachable_still_shows_the_ring(self):
+        from frappe_assistant_core.chat.api.settings import capabilities
+
+        with patch(
+            "frappe_assistant_core.chat.fac_cloud_client.get_capabilities", autospec=True, return_value=None
+        ):
+            result = capabilities.get_capabilities()
+        self.assertTrue(result["discovery"]["progress_enabled"])
+
+    def test_ar_powers_win_over_the_defaults(self):
         from frappe_assistant_core.chat.api import init as init_mod
 
         caps = {"discovery": {"powers": [{"id": "ask", "label": "From AR"}]}}
-        with patch.dict(frappe.conf, {"fac_discovery_samples": 1}):
-            self.assertEqual(init_mod._with_sample_discovery(caps), caps)
+        self.assertEqual(init_mod._with_default_discovery(caps), caps)
+        off = {"discovery": {"progress_enabled": False, "powers": []}}
+        self.assertEqual(init_mod._with_default_discovery(off), off)

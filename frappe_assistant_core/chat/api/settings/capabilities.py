@@ -36,7 +36,7 @@ def get_capabilities() -> dict:
                     }
             }
     """
-    from frappe_assistant_core.chat.discovery_samples import with_sample_discovery
+    from frappe_assistant_core.chat.discovery_defaults import with_default_discovery
     from frappe_assistant_core.chat.fac_cloud_client import (
         get_capabilities as fetch_capabilities,
     )
@@ -48,10 +48,10 @@ def get_capabilities() -> dict:
 
         billing_enabled = result.get("features", {}).get("billing", True)
         set_field("billing_enabled", billing_enabled)
-        return with_sample_discovery(result)
+        return with_default_discovery(result)
 
     # Default: companion-app features off so UI hides them when AR is unreachable
-    return with_sample_discovery(
+    return with_default_discovery(
         {
             "billing_enabled": True,
             "available_gateways": [],

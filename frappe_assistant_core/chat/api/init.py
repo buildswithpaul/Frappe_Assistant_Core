@@ -140,7 +140,7 @@ def initialize_spa() -> dict:
     return {
         "access": access,
         "quota": quota,
-        "capabilities": _with_sample_discovery(capabilities or _default_capabilities()),
+        "capabilities": _with_default_discovery(capabilities or _default_capabilities()),
         "user_auth": _format_user_auth(user_auth, settings),
         "terms": _format_terms(ar_results.get("terms"), is_admin),
         "onboarding": None,  # Retained for backward compat (mobile). Onboarding chat removed.
@@ -422,15 +422,15 @@ def _format_user_auth(user_auth: dict | None, settings: Document) -> dict:
 
 
 # ============================================================================
-# Helper: Your FAC powers on a test site
+# Helper: the default Your FAC powers
 # ============================================================================
 
 
-def _with_sample_discovery(capabilities: dict) -> dict:
-    """Add the sample Your FAC powers on a test site (site_config fac_discovery_samples) when AR sent none."""
-    from frappe_assistant_core.chat.discovery_samples import with_sample_discovery
+def _with_default_discovery(capabilities: dict) -> dict:
+    """Add the default Your FAC powers when AR sent none, so every site shows the ring."""
+    from frappe_assistant_core.chat.discovery_defaults import with_default_discovery
 
-    return with_sample_discovery(capabilities)
+    return with_default_discovery(capabilities)
 
 
 # ============================================================================
