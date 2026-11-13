@@ -11,6 +11,7 @@ let frappe;
 let wrapper;
 let main;
 let frames;
+let scriptErrors = [];
 
 function loadDeskPage(data) {
 	main = document.createElement("div");
@@ -30,7 +31,12 @@ function loadDeskPage(data) {
 			host.append(block);
 			const root = block.attachShadow({ mode: "open" });
 			root.innerHTML = html;
-			new Function("ROOT", "frappe", `(function () { let root_element = ROOT; ${js} })();`)(root, frappe);
+			// A browser reports a script that does not parse and carries on; so does this.
+			try {
+				new Function("ROOT", "frappe", `(function () { let root_element = ROOT; ${js} })();`)(root, frappe);
+			} catch (error) {
+				scriptErrors.push(error);
+			}
 		}),
 	};
 	const $ = () => ({ text: (message) => Object.assign(document.createElement("p"), { textContent: message }) });
@@ -46,6 +52,7 @@ const shadowHost = () => main.querySelector("custom-block-abcde");
 
 beforeEach(() => {
 	frames = [];
+	scriptErrors = [];
 	window.fac_page_frame_host = {
 		createPageFrame: vi.fn((options) => {
 			const handle = { options, element: document.createElement("iframe"), dispose: vi.fn(), setTheme: vi.fn() };
@@ -102,5 +109,31 @@ describe("fac-pages Desk page in Desk's theme", () => {
 		setTheme("light");
 		await tick();
 		expect(main.querySelector("iframe").srcdoc).toContain('<html data-theme="light">');
+	});
+
+	it("keeps a page that sets its own colours light in a dark Desk, and leaves it so on a change", async () => {
+		setTheme("dark");
+		loadDeskPage({ ...shared, style: ".card { background: #fff; }" });
+		await vi.waitFor(() => expect(shadowHost()?.getAttribute("data-theme")).toBe("light"));
+		setTheme("light");
+		setTheme("dark");
+		await tick();
+		expect(shadowHost().getAttribute("data-theme")).toBe("light");
+	});
+
+	it("starts a personal page that sets its own colours light", async () => {
+		setTheme("dark");
+		loadDeskPage({ ...shared, visibility: "Only me", owner_is_me: true, style: ".card { color: rgb(0, 0, 0); }" });
+		document.head.querySelectorAll("script").forEach((s) => s.dispatchEvent(new Event("load")));
+		await vi.waitFor(() => expect(frames).toHaveLength(1));
+		expect(frames[0].options.theme).toBe("light");
+	});
+
+	it("gives a shared page Desk's theme even when its script does not parse", async () => {
+		setTheme("dark");
+		loadDeskPage({ ...shared, script: "this is not ) javascript" });
+		await vi.waitFor(() => expect(shadowHost()).not.toBeNull());
+		expect(scriptErrors[0]).toBeInstanceOf(SyntaxError);
+		expect(shadowHost().getAttribute("data-theme")).toBe("dark");
 	});
 });

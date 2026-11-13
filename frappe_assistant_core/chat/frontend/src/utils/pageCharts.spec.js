@@ -127,6 +127,47 @@ describe("chart", () => {
 			document.documentElement.removeAttribute("data-theme");
 		});
 
+		// ECharts' dark theme draws axis labels in this colour.
+		const DARK_LABEL = /#b9b8ce/i;
+		const darkHost = () => {
+			const host = document.createElement("div");
+			host.setAttribute("data-theme", "dark");
+			document.body.append(host);
+			const shadow = host.attachShadow({ mode: "open" });
+			el = document.createElement("div");
+			shadow.append(el);
+			return { host, shadow };
+		};
+
+		it("redraws when the page's theme changes", async () => {
+			const { host } = darkHost();
+			handle = chart(el, option);
+			handle.update({ title: { text: "Sales" } });
+			host.setAttribute("data-theme", "light");
+			await new Promise((resolve) => setTimeout(resolve, 0));
+			const opt = getInstanceByDom(el).getOption();
+			expect(opt.backgroundColor).not.toBe("transparent");
+			expect(opt.title[0].text).toBe("Sales");
+			expect(el.innerHTML).not.toMatch(DARK_LABEL);
+			host.remove();
+		});
+
+		it("prints a dark page's chart in light colours, on paper", async () => {
+			const { host, shadow } = darkHost();
+			const root = document.createElement("div");
+			root.className = "fac-page-root";
+			shadow.append(root);
+			root.append(el);
+			handle = chart(el, option);
+			expect(el.innerHTML).toMatch(DARK_LABEL);
+			const { snapshotHtml } = await import("./pagePrint");
+			const printed = snapshotHtml(root);
+			expect(printed).toContain("<svg");
+			expect(printed).toContain("Feb");
+			expect(printed).not.toMatch(DARK_LABEL);
+			host.remove();
+		});
+
 		it("keeps a light page's chart as it was", () => {
 			mountChart();
 			expect(getInstanceByDom(el).getOption().backgroundColor).not.toBe("transparent");

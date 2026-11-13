@@ -11,7 +11,7 @@ The same classes work in a FAC Page's `html` (see the `fac-page` skill), so a mo
 - Write the inside of a page: no `<html>`, `<head>` or `<body>` tags.
 - Use inline `<svg>` or `data:` URIs for images. Nothing external loads (no fonts, scripts, stylesheets or image URLs).
 - Keep it under 200 KB, and show the screen as the user will see it, with sample data.
-- Colour only with the kit's tokens: `var(--mk-bg)` (page), `var(--mk-surface)` (inputs, quiet panels), `var(--mk-border)`, `var(--mk-text)`, `var(--mk-text-muted)`, `var(--mk-primary)` with `var(--mk-primary-text)`, and `var(--mk-danger)`, `var(--mk-ok)`, `var(--mk-warn)`. The kit switches them to Desk's light or dark theme, in the mockup, the page panel and Desk alike. A literal colour (`#fff`, `white`, `rgb(…)`) stays the same in both themes and leaves a light patch on a dark page. For a severity, use the `mk-sev-*` badge classes.
+- Colour only with the kit's tokens: `var(--mk-bg)` (page), `var(--mk-surface)` (inputs, quiet panels), `var(--mk-border)`, `var(--mk-text)`, `var(--mk-text-muted)`, `var(--mk-primary)` with `var(--mk-primary-text)`, and `var(--mk-danger)`, `var(--mk-ok)`, `var(--mk-warn)`. The kit switches them to Desk's light or dark theme, in the mockup, the page panel and Desk alike. A page or mockup that names any colour of its own (`#fff`, `white`, `rgb(…)`, in its style or an inline `style`) is always shown light, even in a dark Desk. For a severity, use the `mk-sev-*` badge classes.
 
 ## Classes
 

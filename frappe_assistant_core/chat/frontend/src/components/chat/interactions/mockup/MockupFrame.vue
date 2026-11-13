@@ -8,6 +8,7 @@
 		:title="title"
 		:style="{ height: `${height}px` }"
 		class="mockup-frame"
+		:class="{ 'mockup-frame-dark': theme === 'dark' }"
 	/>
 </template>
 
@@ -15,6 +16,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 
 import { deskTheme, followDeskTheme } from "@/utils/deskTheme";
+import { fac_page_shown_theme } from "@/utils/facPageDraft";
 import { __ } from "@/utils/i18n";
 // The one copy of the kit, also served to the fac-pages Desk page from /assets.
 import kitCss from "../../../../../../../public/css/mockup_kit.css?raw";
@@ -35,9 +37,11 @@ const props = defineProps({
 
 const frame = ref(null);
 const height = ref(MIN_HEIGHT);
-// Desk's theme, which the kit's tokens follow; a change redraws the mockup.
-const theme = ref(deskTheme());
-const stopTheme = followDeskTheme((next) => (theme.value = next));
+// Desk's theme, which the kit's tokens follow, unless the mockup sets its own colours; a change
+// redraws the mockup.
+const deskThemeNow = ref(deskTheme());
+const stopTheme = followDeskTheme((next) => (deskThemeNow.value = next));
+const theme = computed(() => fac_page_shown_theme({ html: props.html }, deskThemeNow.value));
 
 const tooLarge = computed(() => new TextEncoder().encode(props.html).length > MAX_BYTES);
 
@@ -73,7 +77,7 @@ onBeforeUnmount(() => {
 	background: #fff;
 }
 
-:global([data-theme="dark"]) .mockup-frame {
+.mockup-frame-dark {
 	background: #171717;
 }
 

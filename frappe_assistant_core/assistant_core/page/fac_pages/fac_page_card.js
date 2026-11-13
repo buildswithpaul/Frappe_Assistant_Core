@@ -44,9 +44,20 @@ function fac_page_card(page, { href, updated, kit_css, can_chat, actions = {} } 
 	return item;
 }
 
-// Desk's theme: a page and its preview follow it, and anything but dark is light.
+// Desk's theme, and anything but dark is light.
 function fac_page_theme() {
 	return document.documentElement.getAttribute("data-theme") === "dark" ? "dark" : "light";
+}
+
+// The theme a page is shown in: Desk's, unless the page sets its own colours.
+function fac_page_theme_of(page) {
+	return fac_page_shown_theme(page, fac_page_theme());
+}
+
+// A frame that runs nothing is redrawn when Desk's theme changes, if its page follows the theme.
+function fac_page_mark_follows_theme(frame, page) {
+	if (fac_page_shown_theme(page, "dark") === "dark") frame.dataset.facFollowsTheme = "1";
+	return frame;
 }
 
 function fac_page_preview(page, kit_css) {
@@ -81,8 +92,9 @@ function fac_page_preview(page, kit_css) {
 		html: page.preview_html,
 		style: page.preview_style,
 		kit_css,
-		theme: fac_page_theme(),
+		theme: fac_page_theme_of({ html: page.preview_html, style: page.preview_style }),
 	});
+	fac_page_mark_follows_theme(frame, { html: page.preview_html, style: page.preview_style });
 	box.append(frame);
 	return box;
 }
