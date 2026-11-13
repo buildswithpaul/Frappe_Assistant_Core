@@ -64,4 +64,21 @@ describe("the personal page frame's runtime", () => {
 		expect(call).toBeTruthy();
 		posted.mockRestore();
 	});
+
+	it("presents the page's sections when the host asks, and forwards the keys only meanwhile", async () => {
+		document.querySelector(".fac-page-root").innerHTML =
+			'<section class="mk-section" data-title="Company"></section><section class="mk-section" data-title="Finance"></section>';
+		const posted = vi.spyOn(window, "postMessage");
+		const fromHost = (data) => window.dispatchEvent(new MessageEvent("message", { data: { fac_page: 1, ...data }, source: window }));
+		fromHost({ op: "present", id: 7, command: "start" });
+		const result = posted.mock.calls.map(([m]) => m).find((m) => m.op === "present_result" && m.id === 7);
+		expect(result.state).toMatchObject({ index: 0, count: 2 });
+		document.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight" }));
+		expect(posted.mock.calls.map(([m]) => m)).toContainEqual(expect.objectContaining({ op: "present_key", key: "next" }));
+		fromHost({ op: "present", id: 8, command: "stop" });
+		posted.mockClear();
+		document.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight" }));
+		expect(posted.mock.calls.map(([m]) => m).some((m) => m.op === "present_key")).toBe(false);
+		posted.mockRestore();
+	});
 });

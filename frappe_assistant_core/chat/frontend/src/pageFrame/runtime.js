@@ -10,6 +10,7 @@
 import { __ } from "@/utils/i18n";
 import { snapshotHtml } from "@/utils/pagePrint";
 import { makeFrappeStandIn } from "@/utils/pageRuntime";
+import { makePresenter, presentKey } from "@/utils/pagePresent";
 
 import { capturePage, pageText } from "./capture";
 import { guardLoadingElements, removeLoadingElements, removeWebRtc } from "./hardening";
@@ -102,6 +103,30 @@ async function capture({ id, scale, quality }) {
 	}
 }
 
+// Present mode, asked for by the host, which draws the controls: this frame switches its own
+// sections and, while presenting, passes on the keys pressed inside it.
+let presenter = null;
+const forwardKey = (event) => {
+	const key = presentKey(event);
+	if (!key) return;
+	event.preventDefault();
+	post({ op: "present_key", key });
+};
+
+function present({ id, command, index }) {
+	presenter = presenter || makePresenter(document);
+	let state = null;
+	if (command === "start") {
+		state = presenter.start();
+		document.addEventListener("keydown", forwardKey);
+	} else if (command === "show") state = presenter.show(index);
+	else if (command === "stop") {
+		presenter.stop();
+		document.removeEventListener("keydown", forwardKey);
+	}
+	post({ op: "present_result", id, state });
+}
+
 function snapshot({ id }) {
 	const el = root();
 	post({ op: "snapshot_result", id, html: snapshotHtml(el), wide: el.scrollWidth > WIDE_PAGE_PX });
@@ -123,6 +148,7 @@ window.addEventListener("message", (event) => {
 		}
 	} else if (data.op === "snapshot") snapshot(data);
 	else if (data.op === "capture") capture(data);
+	else if (data.op === "present") present(data);
 });
 
 window.addEventListener("error", (event) => reportError(event.error || event.message));
