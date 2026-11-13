@@ -190,3 +190,98 @@ def get_skill_permission_query_conditions(user=None):
         """)
 
     return "(" + " OR ".join(conditions) + ")"
+
+
+# Field-level read access: what of a record, or of a search-index hit, reaches a user who may read
+# the record but not every field of it (GitHub #390). Desk drops such fields, and so must every
+# tool that returns record data. Which field is readable is decided by
+# core.field_access.is_field_readable (permlevel plus FAC's restricted lists).
+# Imports stay inside the functions: hooks load this module for every permission query.
+
+# What frappe.utils.global_search puts between the "Label : value" parts of a hit's content.
+INDEX_SEPARATOR = " ||| "
+
+
+def readable_doc_dict(doc, user_role: str) -> dict:
+    """`doc` as a dict holding only what the user may read.
+
+    Fields above the user's permlevel are dropped first, from the parent and its child rows, as
+    frappe.client.get does for Desk. FAC's SENSITIVE_FIELDS and ADMIN_ONLY_FIELDS are then masked.
+    """
+    from frappe_assistant_core.core.security_config import filter_sensitive_fields
+
+    doc.apply_fieldlevel_read_permissions()
+    return filter_sensitive_fields(doc.as_dict(), doc.doctype, user_role)
+
+
+def unwritable_fieldnames(doc, fieldnames) -> list:
+    """The `fieldnames` of `doc` above the user's write permlevel.
+
+    Frappe's own rule, from Document.validate_higher_perm_levels: on save it puts back the stored
+    value of each such field, and the Administrator is exempt. Desk shows no editor for them.
+    """
+    from frappe.model import display_fieldtypes
+
+    if frappe.session.user == "Administrator":
+        return []
+
+    write_levels = doc.get_permlevel_access("write")
+    unwritable = []
+    for fieldname in fieldnames:
+        df = doc.meta.get_field(fieldname)
+        if (
+            df
+            and df.permlevel
+            and df.permlevel not in write_levels
+            and df.fieldtype not in display_fieldtypes
+        ):
+            unwritable.append(fieldname)
+    return unwritable
+
+
+def readable_fieldnames(meta, fieldnames: list, user_role: str) -> list:
+    """The `fieldnames` the user may read; matching a text query on any other gives its value away."""
+    from frappe_assistant_core.core.field_access import is_field_readable
+
+    return [fieldname for fieldname in fieldnames if is_field_readable(meta, fieldname, user_role)]
+
+
+def unreadable_field_labels(doctype: str, user_role: str) -> set:
+    """Labels of the fields, on `doctype` and its child tables, the user may not read."""
+    from frappe_assistant_core.core.field_access import is_field_readable
+
+    meta = frappe.get_meta(doctype)
+    labels = {
+        df.label for df in meta.fields if df.label and not is_field_readable(meta, df.fieldname, user_role)
+    }
+    for table_field in meta.get_table_fields():
+        child = frappe.get_meta(table_field.options)
+        labels.update(
+            df.label
+            for df in child.fields
+            if df.label and not is_field_readable(child, df.fieldname, user_role, parenttype=doctype)
+        )
+    return labels
+
+
+def readable_index_content(content: str, hidden_labels: set, query: str, name: str) -> tuple:
+    """(keep the hit, its content without the hidden fields), for a __global_search hit.
+
+    Frappe indexes each field as "Label : value" with no regard to permlevel. A hit whose readable
+    content and name hold none of the query's words matched only on a hidden field, so returning it
+    would confirm that field's value; it is dropped.
+    """
+    if not content or not hidden_labels:
+        return True, content
+
+    parts = content.split(INDEX_SEPARATOR)
+    kept = [
+        part for part in parts if not any(part.strip().startswith(f"{label} : ") for label in hidden_labels)
+    ]
+    if len(kept) == len(parts):
+        return True, content
+
+    readable = INDEX_SEPARATOR.join(kept)
+    searchable = f"{readable} {name}".lower()
+    words = (query or "").lower().split()
+    return (not words or any(word in searchable for word in words)), readable

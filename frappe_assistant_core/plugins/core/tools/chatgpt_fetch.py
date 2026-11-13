@@ -77,10 +77,8 @@ class ChatGPTFetch(BaseTool):
             - url: URL for citation
             - metadata: Additional document metadata
         """
-        from frappe_assistant_core.core.security_config import (
-            filter_sensitive_fields,
-            validate_document_access,
-        )
+        from frappe_assistant_core.core.security_config import validate_document_access
+        from frappe_assistant_core.utils.permissions import readable_doc_dict
 
         try:
             doc_id = arguments.get("id", "").strip()
@@ -107,7 +105,8 @@ class ChatGPTFetch(BaseTool):
 
             user_role = validation_result["role"]
             doc = frappe.get_doc(doctype, name)
-            doc_dict = filter_sensitive_fields(doc.as_dict(), doctype, user_role)
+            # Only the fields the user may read: permlevel as on Desk (#390), then FAC's sensitive fields
+            doc_dict = readable_doc_dict(doc, user_role)
 
             # Create title from name field or document name
             title = doc_dict.get("title") or doc_dict.get("name") or name
