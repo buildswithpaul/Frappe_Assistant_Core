@@ -56,4 +56,10 @@ describe("the Desk chart bundle", () => {
 		win.eval(bundle);
 		expect(win.eval("typeof fac_page_charts.report")).toBe("function");
 	});
+
+	it("gives Desk the page tools", () => {
+		const win = browserWindow();
+		win.eval(bundle);
+		expect(win.eval("typeof fac_page_charts.makeBlocks")).toBe("function");
+	});
 });

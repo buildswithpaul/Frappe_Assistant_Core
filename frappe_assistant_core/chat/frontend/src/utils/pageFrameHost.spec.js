@@ -642,3 +642,9 @@ describe("PAGE_READ_METHODS", () => {
 		expect(PAGE_READ_METHODS.has("frappe_assistant_core.api.fac_page.report_access")).toBe(true);
 	});
 });
+
+describe("PAGE_READ_METHODS for page tools", () => {
+	it("lets a page check whether its viewer may change a record without asking", () => {
+		expect(PAGE_READ_METHODS.has("frappe.client.has_permission")).toBe(true);
+	});
+});

@@ -391,6 +391,9 @@
 				return bundle.report(frappe, name, filters);
 			},
 		};
+		// The page tools, from the same bundle; loaded before the script runs (render_shared).
+		const bundle = window.fac_page_charts;
+		if (bundle && bundle.makeBlocks) Object.assign(fac, bundle.makeBlocks(frappe));
 		const dispose = () => handles.splice(0).forEach((handle) => handle.dispose());
 		return { fac, dispose };
 	}

@@ -34,6 +34,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { baseCall, getCall } from "@/api/_core";
 import { usePagePanel } from "@/composables/usePagePanel";
 import { fac_page_draft_srcdoc } from "@/utils/facPageDraft";
+import { makeBlocks } from "@/utils/pageBlocks";
 import { chart } from "@/utils/pageCharts";
 import { report } from "@/utils/pageReport";
 import { snapshotHtml } from "@/utils/pagePrint";
@@ -106,6 +107,7 @@ function renderShared() {
 			return handle;
 		},
 		report: (name, filters) => report(standIn, name, filters),
+		...makeBlocks(standIn),
 	};
 	const result = runPageScript(props.page.script, root, standIn, fac);
 	if (result.error && !result.unsupported) onError(result.error);
