@@ -3,6 +3,7 @@ import { ref, computed } from "vue";
 import { api } from "@/api/client";
 import { logger } from "@/utils/logger";
 import { __ } from "@/utils/i18n";
+import { noteAgentCreated } from "@/composables/agentCreated";
 
 // Every status a run can end in. Cancelled and Timed Out are terminal too —
 // treating only Completed/Failed as "done" leaves the toolbar spinning.
@@ -116,6 +117,7 @@ export const useWorkflowStore = defineStore("workflows", () => {
 				defaultUserId,
 				graphJson,
 			});
+			noteAgentCreated();
 			// Reload list to include the new workflow
 			await loadWorkflows(statusFilter.value, currentPage.value);
 			return result;
@@ -510,6 +512,7 @@ export const useWorkflowStore = defineStore("workflows", () => {
 				variables,
 				defaultModelId
 			);
+			noteAgentCreated();
 			await loadWorkflows(statusFilter.value, currentPage.value);
 			return result;
 		} catch (err) {
@@ -660,6 +663,7 @@ export const useWorkflowStore = defineStore("workflows", () => {
 			}
 		);
 		if (created?.name) {
+			noteAgentCreated();
 			const settings = {};
 			if (source.error_strategy) settings.error_strategy = source.error_strategy;
 			if (source.timeout_seconds) settings.timeout_seconds = source.timeout_seconds;

@@ -9,6 +9,8 @@ import { useChatStore } from "@/stores/chatStore";
 import { useDiscoveryStore } from "@/stores/discoveryStore";
 import { useNotificationStore } from "@/stores/notificationStore";
 import { useSuggestionStore } from "@/stores/suggestionStore";
+import { useWorkflowStore } from "@/stores/workflowStore";
+import { agentsCreated, noteAgentCreated } from "@/composables/agentCreated";
 
 const { baseCall } = vi.hoisted(() => ({ baseCall: vi.fn().mockResolvedValue({}) }));
 vi.mock("@/api/domains/facPage", () => ({
@@ -32,7 +34,7 @@ const POWERS = {
 		{ id: "agents", label: "Agents", try_route: "/agents?tab=marketplace" },
 	],
 };
-async function mountRail({ state = {}, switches = {}, discovery = POWERS, notifications = [], sessions = [] } = {}) {
+async function mountRail({ state = {}, switches = {}, discovery = POWERS, notifications = [], sessions = [], pages = [], before = () => {} } = {}) {
 	const pinia = createPinia();
 	setActivePinia(pinia);
 	baseCall.mockClear();
@@ -43,7 +45,8 @@ async function mountRail({ state = {}, switches = {}, discovery = POWERS, notifi
 		capabilities: discovery ? { discovery } : {},
 		discoveryPrefs: { show_progress: true, ...switches, state },
 	});
-	Object.assign(usePagesStore(), { pages: [], loaded: true });
+	Object.assign(usePagesStore(), { pages, loaded: true });
+	before();
 	useChatStore().hydrateSessions(sessions);
 	useNotificationStore().notifications = notifications.map((n) => ({ ...n }));
 	const router = createRouter({
@@ -135,6 +138,36 @@ describe("NavRail bot: Your FAC ring", () => {
 			expect(bot(w).exists()).toBe(false);
 			expect(w.find("a.rail-bot").attributes("href")).toBe("/chat");
 		}
+	});
+});
+
+describe("NavRail bot: only the user's own work counts", () => {
+	const label = (w) => bot(w).attributes("aria-label");
+
+	it("a colleague's shared Page does not tick Pages; the user's own does", async () => {
+		expect(label(await mountRail({ pages: [{ name: "team-report", owner_is_me: false }] }))).toBe("Your FAC: 1 of 6 tried");
+		expect(label(await mountRail({ pages: [{ name: "my-report", owner_is_me: true }] }))).toBe("Your FAC: 2 of 6 tried");
+	});
+
+	it("the site's agents do not tick Agents; creating one does", async () => {
+		agentsCreated.value = 0;
+		// AR lists every agent on the site, with no word on who made it.
+		const w = await mountRail({ before: () => (useWorkflowStore().workflows = [{ name: "WF-1" }]) });
+		expect(label(w)).toBe("Your FAC: 1 of 6 tried");
+		noteAgentCreated();
+		await flushPromises();
+		expect(label(w)).toBe("Your FAC: 2 of 6 tried");
+		agentsCreated.value = 0;
+	});
+
+	it("a file someone else uploaded does not tick Knowledge; the user's own does", async () => {
+		const w = await mountRail();
+		useDiscoveryStore().reportKnowledge([{ document_id: "d1", is_owner: false }]);
+		await flushPromises();
+		expect(label(w)).toBe("Your FAC: 1 of 6 tried");
+		useDiscoveryStore().reportKnowledge([{ document_id: "d2", is_owner: true }]);
+		await flushPromises();
+		expect(label(w)).toBe("Your FAC: 2 of 6 tried");
 	});
 });
 

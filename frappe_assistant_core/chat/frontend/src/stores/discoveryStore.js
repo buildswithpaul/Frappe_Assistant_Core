@@ -8,8 +8,8 @@ import { useUserStore } from "@/stores/userStore";
 import { usePagesStore } from "@/stores/pagesStore";
 import { useChatStore } from "@/stores/chatStore";
 import { useTemplateStore } from "@/stores/templateStore";
-import { useWorkflowStore } from "@/stores/workflowStore";
 import { useTourStore } from "@/stores/tourStore";
+import { agentsCreated } from "@/composables/agentCreated";
 import { useSuggestionStore } from "@/stores/suggestionStore";
 import { availableFeatures, featureById, featureForPath } from "@/components/discover/featureCatalog";
 import { EXPLAINED_POWERS, explainContent, questionFor } from "@/components/discover/powerExplain";
@@ -142,25 +142,26 @@ export const useDiscoveryStore = defineStore("discovery", () => {
 	function watchUsage() {
 		const when = (source, id) => watch(source, (yes) => yes && markUsed(id), { immediate: true });
 		when(() => useChatStore().sortedSessions.length > 0, "ask");
-		when(() => usePagesStore().hasPages, "pages");
-		when(() => useWorkflowStore().hasWorkflows, "agents");
+		// Only the user's own: a colleague's shared Page or the site's agents are not "used" by this user.
+		when(() => usePagesStore().pages.some((p) => p.owner_is_me), "pages");
+		when(() => agentsCreated.value > 0, "agents");
 		when(() => useTemplateStore().pinnedNames.length > 0, "templates");
 	}
 
 	/** Knowledge has no store; its page reports what it loaded. */
-	function reportKnowledgeCount(count) {
-		if (count > 0) markUsed("knowledge");
+	/** The Knowledge page loaded its list: a file the user uploaded themselves counts. */
+	function reportKnowledge(documents) {
+		if ((documents || []).some((d) => d.is_owner)) markUsed("knowledge");
 	}
 
 	/** Opening the panel checks the powers not used yet, once each, at one item per call. */
 	const checked = new Set();
 	async function checkUnused() {
 		const checks = {
-			agents: async () => ((await api.workflows.list(null, 0, 1))?.workflows || []).length > 0,
-			knowledge: async () => ((await api.documents.list({ limit: 1 }))?.documents || []).length > 0,
+			knowledge: async () => ((await api.documents.list())?.documents || []).some((d) => d.is_owner),
 			pages: async () => {
 				await usePagesStore().ensureLoaded();
-				return usePagesStore().hasPages;
+				return usePagesStore().pages.some((p) => p.owner_is_me);
 			},
 			templates: async () => {
 				await useTemplateStore().loadTemplates();
@@ -295,7 +296,7 @@ export const useDiscoveryStore = defineStore("discovery", () => {
 		markSeen,
 		markRoute,
 		markUsed,
-		reportKnowledgeCount,
+		reportKnowledge,
 		openPanel,
 		closePanel,
 		tryPower,

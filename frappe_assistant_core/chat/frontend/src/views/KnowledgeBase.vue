@@ -334,8 +334,8 @@ async function loadDocuments() {
 		if (result) {
 			documents.value = result.documents || [];
 			storage.value = result.storage || null;
-			// A file in Knowledge counts as "used" for Your FAC.
-			useDiscoveryStore().reportKnowledgeCount(documents.value.length);
+			// A file the user uploaded counts as "used" for Your FAC; a colleague's shared one does not.
+			useDiscoveryStore().reportKnowledge(documents.value);
 		}
 	} catch (e) {
 		loadError.value = e.message || "Failed to load documents";
