@@ -1216,7 +1216,10 @@ class TestUnitEditorTemplate(BaseAssistantTest):
 
         # nosemgrep: frappe-setuser — the script runs as the user saving the record
         frappe.set_user(user)
-        with patch.object(frappe.db, "get_value", autospec=True, side_effect=unit_role):
+        # Production runs it on a bench whose common_site_config sets server_script_enabled; CI's
+        # bench does not, and safe_exec refuses to run anything there.
+        enabled = patch("frappe.utils.safe_exec.is_safe_exec_enabled", return_value=True)
+        with enabled, patch.object(frappe.db, "get_value", autospec=True, side_effect=unit_role):
             safe_exec(_unit_editor_template(), _locals={"doc": frappe._dict(business_unit="Unit A")})
 
     def test_someone_outside_the_unit_is_refused(self):
