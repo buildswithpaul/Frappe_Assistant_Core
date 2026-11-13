@@ -537,3 +537,18 @@ class TestSystemSkillManifest(BaseAssistantTest):
             self.assertIn(claim, text)
         self.assertIn("fac.editList", self._read_skill("fac_page.md"))
         self.assertIn("fac.editList", self._read_skill("pages_in_chat.md"))
+
+    def test_pages_people_type_into_keep_each_unit_to_its_team(self):
+        # A unit's record must be editable by its own team only, enforced on the server, without
+        # User Permissions that would hide other units' sections from the meeting.
+        text = self._read_skill("fac_page.md")
+        for claim in (
+            "editor_role",
+            "Before Save",
+            "Track Changes",
+            "doctypes",
+            "fac.hasRole",
+            "User Permissions on Cost Center",
+        ):
+            self.assertIn(claim, text)
+        self.assertIn("fac.hasRole(", self._read_skill("mockup_kit.md"))
