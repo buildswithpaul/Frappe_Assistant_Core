@@ -562,6 +562,14 @@ class TestSystemSkillManifest(BaseAssistantTest):
         # test_as_user checks doctype permissions only and never runs the Server Script.
         self.assertIn("test_as_user` cannot see the Server Script", text)
 
+    def test_pages_are_coloured_with_kit_tokens_so_they_follow_desks_theme(self):
+        # A page follows Desk's light or dark theme only through the kit's tokens.
+        kit = self._read_skill("mockup_kit.md")
+        for token in ("var(--mk-bg)", "var(--mk-surface)", "var(--mk-text)", "var(--mk-border)"):
+            self.assertIn(token, kit)
+        self.assertIn("dark", kit)
+        self.assertIn("var(--mk-", self._read_skill("fac_page.md"))
+
     def test_pages_for_meetings_are_built_in_sections(self):
         # Present mode shows one mk-section per screen, titled by data-title.
         for name in ("mockup_kit.md", "fac_page.md"):
