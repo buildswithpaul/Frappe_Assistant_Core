@@ -40,7 +40,7 @@ async function mountRail({ state = {}, switches = {}, discovery = POWERS, notifi
 		memoryEnabled: true,
 		workflowsEnabled: true,
 		capabilities: discovery ? { discovery } : {},
-		discoveryPrefs: { show_tips: true, show_progress: true, ...switches, state },
+		discoveryPrefs: { show_progress: true, ...switches, state },
 	});
 	Object.assign(usePagesStore(), { pages: [], loaded: true });
 	useChatStore().hydrateSessions(sessions);

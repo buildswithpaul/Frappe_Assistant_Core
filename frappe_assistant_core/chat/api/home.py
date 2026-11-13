@@ -61,7 +61,6 @@ def _preferences_payload(user: str) -> dict:
         "hidden_signals": [signal_id for signal_id in prefs["hidden_signals"] if signal_id in known],
         "show_suggested_prompts": prefs["show_suggested_prompts"],
         "show_personalized_suggestions": prefs["show_personalized_suggestions"],
-        "show_tips": prefs["show_tips"],
         "show_progress": prefs["show_progress"],
         "signals": signals,
     }
@@ -80,7 +79,6 @@ def update_home_preferences(
     hidden_signals: list | str | None = None,
     show_suggested_prompts: bool | None = None,
     show_personalized_suggestions: bool | None = None,
-    show_tips: bool | None = None,
     show_progress: bool | None = None,
 ) -> dict:
     """Change the provided home preferences only; returns the same shape as ``get_home_preferences``.
@@ -101,12 +99,8 @@ def update_home_preferences(
         changes["show_suggested_prompts"] = _flag(show_suggested_prompts)
     if show_personalized_suggestions is not None:
         changes["show_personalized_suggestions"] = _flag(show_personalized_suggestions)
-    for field, value in (
-        ("show_tips", show_tips),
-        ("show_progress", show_progress),
-    ):
-        if value is not None:
-            changes[field] = _flag(value)
+    if show_progress is not None:
+        changes["show_progress"] = _flag(show_progress)
 
     if changes:
         prefs = FACChatUserPreferences.get_or_create_preferences(user)
@@ -128,7 +122,7 @@ def hide_home_signal(signal_id: str) -> dict:
 
 @frappe.whitelist(methods=["POST"])
 def save_discovery_state(state: dict | str) -> dict:
-    """Store the user's feature-discovery state (opened, used, today's tip, stories watched).
+    """Store the user's feature-discovery state (features opened and used, unlocks, the tour).
 
     Kept on the user's preferences so it follows them across browsers. Unknown keys and
     malformed values are dropped; returns what was stored.

@@ -14,14 +14,6 @@
 				<slot name="composer" />
 			</div>
 
-			<DiscoverTip
-				v-if="discovery.tip"
-				:tip="discovery.tip"
-				@show="discovery.showTip"
-				@hide="discovery.hideTipToday"
-				@never="discovery.neverShowTip"
-			/>
-
 			<NeedsYou
 				v-if="homeEnabled"
 				:items="items"
@@ -57,21 +49,12 @@
 			/>
 		</div>
 
-		<!-- "Show first, then ask": opens only after the user clicked Show me on a tip. -->
-		<SpotlightModal
-			:content="discovery.preview"
-			@primary="discovery.tryPreview(router)"
-			@secondary="discovery.closePreview()"
-			@dismiss="discovery.closePreview()"
-			@close="discovery.closePreview()"
-		/>
 		<HomeCoachTour :active="coachActive" @done="onCoachDone" />
 	</div>
 </template>
 
 <script setup>
 import { computed, onMounted, ref, watch } from "vue";
-import { useRouter } from "vue-router";
 import { storeToRefs } from "pinia";
 import { useUserStore } from "@/stores/userStore";
 import { useSuggestionStore } from "@/stores/suggestionStore";
@@ -87,12 +70,9 @@ import ContinueList from "@/components/chat/welcome/ContinueList.vue";
 import HomeStarters from "@/components/chat/welcome/HomeStarters.vue";
 import FirstRunStarters from "@/components/chat/welcome/FirstRunStarters.vue";
 import PackNudge from "@/components/chat/welcome/PackNudge.vue";
-import DiscoverTip from "@/components/chat/welcome/DiscoverTip.vue";
-import SpotlightModal from "@/components/spotlight/SpotlightModal.vue";
 import HomeCoachTour from "@/components/discover/HomeCoachTour.vue";
 import { useDiscoveryStore } from "@/stores/discoveryStore";
 import { useSpotlightStore } from "@/stores/spotlightStore";
-import { useNotificationStore } from "@/stores/notificationStore";
 import { useTourStore } from "@/stores/tourStore";
 
 defineEmits(["suggestion", "navigate", "open-session"]);
@@ -152,18 +132,10 @@ function dismissBanner() {
 	bannerDismissed.value = true;
 }
 
-// Feature discovery: chat stays chat. One Did you know tip a day (written in AR), and a pop-up only after
-// Show me. Day one keeps getting started simple: no tip, only the 3-stop tour.
-const router = useRouter();
+// Feature discovery: chat stays chat. Day one gets the 3-stop tour, once.
 const discovery = useDiscoveryStore();
 const tourStore = useTourStore();
 const spotlight = useSpotlightStore();
-const notificationStore = useNotificationStore();
-watch(
-	[() => discovery.started, () => notificationStore.notifications, dayOne],
-	() => discovery.refreshTip({ dayOne: dayOne.value }),
-	{ immediate: true }
-);
 
 const coachActive = ref(false);
 function maybeStartCoach() {

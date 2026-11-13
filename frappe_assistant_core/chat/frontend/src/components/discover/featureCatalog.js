@@ -1,5 +1,5 @@
 /**
- * Feature discovery: the features a Did you know tip or the Your FAC panel can point to
+ * Feature discovery: the features the rail dots and the Your FAC panel can point to
  * (Agents, Knowledge, Pages, Prompt templates), with the moving preview and the
  * "Give it a try" target for each. Pure: no Vue, no network.
  *

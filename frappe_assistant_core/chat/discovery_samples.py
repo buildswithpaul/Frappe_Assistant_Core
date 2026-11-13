@@ -4,9 +4,8 @@
 
 """Sample Your FAC powers, for trying the ring on a test site.
 
-AR is the source of the powers; daily tips ship with FAC itself, in dailyTips.js. Until AR sends a
-``capabilities.discovery`` block, a test site can set ``"fac_discovery_samples": 1`` in
-site_config.json to see them. Off everywhere else: nothing here runs without that key.
+AR is the source of the powers. Until AR sends a ``capabilities.discovery`` block, a test site
+can set ``"fac_discovery_samples": 1`` in site_config.json to see them. Off everywhere else: nothing here runs without that key.
 """
 
 import frappe

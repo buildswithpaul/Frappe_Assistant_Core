@@ -109,11 +109,6 @@ const toggleRows = computed(() => [
 		description: __("Uses AI about once a day to suggest questions for you. Turn off to save usage."),
 	},
 	{
-		key: "show_tips",
-		label: __("Did you know tips"),
-		description: __("One short tip a day under the ask box, about something you have not tried yet."),
-	},
-	{
 		key: "show_progress",
 		label: __("Your FAC progress"),
 		description: __("A ring on the FAC bot showing how much of FAC you have tried."),

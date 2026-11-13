@@ -3,12 +3,10 @@ import { createPinia, setActivePinia } from "pinia";
 import { createRouter, createMemoryHistory } from "vue-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { getHome, dismissNotification } = vi.hoisted(() => ({ getHome: vi.fn(), dismissNotification: vi.fn() }));
-// Tips ship with FAC (dailyTips.js); none of them comes from AR, so nothing here is dismissed on AR.
+const { getHome } = vi.hoisted(() => ({ getHome: vi.fn() }));
 vi.mock("@/api/client", () => ({
 	api: {
 		home: { get: (...a) => getHome(...a), hideSignal: vi.fn(), saveDiscoveryState: vi.fn().mockResolvedValue({}) },
-		notifications: { dismiss: (...a) => dismissNotification(...a) },
 		workflows: { listRuns: vi.fn().mockResolvedValue({ runs: [] }), list: vi.fn().mockResolvedValue({ workflows: [] }) },
 		billing: { getQuotaStatus: vi.fn().mockResolvedValue(null) },
 	},
@@ -18,27 +16,15 @@ import WelcomeScreen from "../WelcomeScreen.vue";
 import { useChatStore } from "@/stores/chatStore";
 import { useUserStore } from "@/stores/userStore";
 import { useDiscoveryStore } from "@/stores/discoveryStore";
-import { useNotificationStore } from "@/stores/notificationStore";
 
 const USER = "jane@example.com";
 const SESSION = { session_id: "s1", preview: "Q3 revenue", last_activity: "2026-10-16 10:00:00" };
 const HOME = { area: "business", items: [] };
-// A user FAC has known since before today; tips never show on the first day.
-const KNOWN = { first_day: "2026-11-01" };
-const TODAY = new Date(2026, 10, 12, 9, 0, 0);
-const TOMORROW = new Date(2026, 10, 13, 9, 0, 0);
-
-// FAC's own tips take turns in this order: ask, agents, templates, knowledge, pages. A user with a
-// chat has used Ask, so their first tip is the agents one.
-const AGENTS = "An agent can email you overdue invoices every Monday";
-const TEMPLATES = "Save it as a prompt template";
-const KNOWLEDGE = "Upload a price list";
-
 const mounted = [];
 
 async function mountHome({
 	sessions = [SESSION],
-	state = KNOWN,
+	state = {},
 	switches = {},
 	before = () => {},
 } = {}) {
@@ -53,7 +39,7 @@ async function mountHome({
 		user: USER,
 		workflowsEnabled: true,
 		memoryEnabled: true,
-		discoveryPrefs: { show_tips: true, show_progress: true, ...switches, state },
+		discoveryPrefs: { show_progress: true, ...switches, state },
 	});
 	useChatStore().hydrateSessions(sessions);
 	const router = createRouter({
@@ -76,109 +62,15 @@ async function mountHome({
 	return w;
 }
 
-const tip = (w) => w.find("[data-test='discover-tip']");
 const state = () => useDiscoveryStore().state;
 
 afterEach(() => mounted.splice(0).forEach((w) => w.unmount()));
 
-describe("WelcomeScreen Did you know tip", () => {
-	beforeEach(() => {
-		localStorage.clear();
-		dismissNotification.mockReset().mockResolvedValue({});
-		vi.useFakeTimers({ toFake: ["Date"] });
-		vi.setSystemTime(TODAY);
-	});
-	afterEach(() => {
-		vi.useRealTimers();
-		vi.unstubAllGlobals();
-	});
-
-	it("shows FAC's own tip under the ask box", async () => {
-		const w = await mountHome();
-		expect(tip(w).text()).toContain(AGENTS);
-		expect(state().tip).toEqual({ id: "agents-routine-work", date: "2026-11-12" });
-	});
-
-	it("keeps day one simple: no tip before the first chat, and none on FAC's first day with the user", async () => {
-		expect(tip(await mountHome({ sessions: [] })).exists()).toBe(false);
-		expect(tip(await mountHome({ state: {} })).exists()).toBe(false);
-		expect(state().first_day).toBe("2026-11-12");
-	});
-
-	it("shows first, then asks: Show me opens the pop-up and Maybe later only closes it", async () => {
-		const w = await mountHome();
+describe("WelcomeScreen: no Did you know tip", () => {
+	it("Home shows no tip, on any day", async () => {
+		const w = await mountHome({ state: { first_day: "2026-11-01" } });
+		expect(w.find("[data-test='discover-tip']").exists()).toBe(false);
 		expect(w.find("[data-test='spotlight-card']").exists()).toBe(false);
-		await w.find("[data-test='discover-tip-show']").trigger("click");
-		expect(w.find("[data-test='spotlight-card'] h2").text()).toBe("Did you know?");
-		expect(w.findAll("[data-test='spotlight-highlight']")).toHaveLength(1);
-		expect(w.find("[data-test='spotlight-primary']").text()).toBe("Show me agents");
-		await w.find("[data-test='spotlight-secondary']").trigger("click");
-		expect(w.find("[data-test='spotlight-card']").exists()).toBe(false);
-		expect(state().seen).toEqual([]);
-	});
-
-	it("the pop-up's button goes where the tip says, and the feature counts as opened", async () => {
-		const w = await mountHome();
-		await w.find("[data-test='discover-tip-show']").trigger("click");
-		await w.find("[data-test='spotlight-primary']").trigger("click");
-		await flushPromises();
-		expect(w.router.currentRoute.value.fullPath).toBe("/agents?tab=marketplace");
-		expect(state().seen).toEqual(["agents"]);
-	});
-
-	it("× hides it for today only", async () => {
-		const w = await mountHome();
-		await w.find("[data-test='discover-tip-dismiss']").trigger("click");
-		expect(tip(w).exists()).toBe(false);
-
-		const later = state();
-		expect(tip(await mountHome({ state: later })).exists()).toBe(false);
-		vi.setSystemTime(TOMORROW);
-		expect(tip(await mountHome({ state: later })).exists()).toBe(true);
-	});
-
-	it("Don't show this tip again keeps it gone for good, on the user's own state, never on AR", async () => {
-		const w = await mountHome();
-		await w.find("[data-test='discover-tip-never']").trigger("click");
-		expect(tip(w).exists()).toBe(false);
-		expect(state().tips_dismissed).toEqual(["agents-routine-work"]);
-		expect(dismissNotification).not.toHaveBeenCalled();
-
-		vi.setSystemTime(TOMORROW);
-		expect(tip(await mountHome({ state: state() })).text()).toContain(TEMPLATES);
-	});
-
-	it("skips a tip about a feature the user already uses", async () => {
-		const w = await mountHome({ state: { ...KNOWN, used: ["agents", "templates"] } });
-		expect(tip(w).text()).toContain(KNOWLEDGE);
-	});
-
-	it("one tip a day: the same tip all day, the next one the next day", async () => {
-		await mountHome();
-		const today = state();
-		expect(tip(await mountHome({ state: today })).text()).toContain(AGENTS);
-		vi.setSystemTime(TOMORROW);
-		expect(tip(await mountHome({ state: today })).text()).toContain(TEMPLATES);
-	});
-
-	it("leaves out tips about a feature this site has switched off", async () => {
-		const w = await mountHome({ before: () => Object.assign(useUserStore(), { workflowsEnabled: false }) });
-		expect(tip(w).text()).toContain(TEMPLATES);
-	});
-
-	it("shows nothing when the user turned tips off in Settings → Home", async () => {
-		expect(tip(await mountHome({ switches: { show_tips: false } })).exists()).toBe(false);
-	});
-
-	it("ignores anything AR sends: tips are FAC's own", async () => {
-		const w = await mountHome({
-			before: () => {
-				useNotificationStore().notifications = [
-					{ id: "ar-tip", display_style: "tip", title: "Did you know?", message: "From AR", feature: "agents" },
-				];
-			},
-		});
-		expect(tip(w).text()).not.toContain("From AR");
 	});
 });
 

@@ -2,11 +2,11 @@
 # Copyright (C) 2025 Paul Clinton
 # AGPL-3.0 License
 
-"""Did you know tips and the Your FAC ring: the site's half.
+"""The Your FAC ring: the site's half.
 
-Tips ship with FAC and AR sends the powers list; the site keeps each user's two Settings → Home
-switches and their discovery state, and adds ready questions to the invite. Sample powers only
-show on a site that asks for them in site_config.
+AR sends the powers list; the site keeps each user's Settings → Home progress switch and their
+discovery state, and adds ready questions to the invite. Sample powers only show on a site that
+asks for them in site_config.
 """
 
 import json
@@ -33,32 +33,24 @@ class TestDiscoveryState(BaseAssistantTest):
         FACChatUserPreferences.get_or_create_preferences(self.user)
         frappe.db.set_value(PREFS, self.user, "discovery_state", None, update_modified=False)
 
-    def test_parse_keeps_only_known_keys_ids_and_dates(self):
+    def test_parse_keeps_only_known_keys_and_ids(self):
         state = parse_discovery_state(
             {
                 "seen": ["agents", 3, "", "agents"],
                 "used": ["x" * 141, "pages"],
                 "coach_done": "yes",
-                "tip": {"id": "tip-1", "date": "12/11/2026"},
-                "tip_hidden_on": "2026-11-12",
-                "first_day": "2026-11-01",
+                "tip": {"id": "tip-1", "date": "2026-11-12"},
+                "tips_dismissed": ["agents-routine-work"],
                 "anything": "else",
             }
         )
         self.assertEqual(state["seen"], ["agents"])
         self.assertEqual(state["used"], ["pages"])
         self.assertFalse(state["coach_done"])
-        self.assertIsNone(state["tip"])
-        self.assertEqual(state["tip_hidden_on"], "2026-11-12")
-        self.assertNotIn("anything", state)
+        # No Did you know tips any more: what an older build stored for them is dropped.
+        for gone in ("tip", "tips_dismissed", "anything"):
+            self.assertNotIn(gone, state)
         self.assertEqual(parse_discovery_state("not json")["seen"], [])
-
-    def test_a_tip_the_user_never_wants_again_is_kept_on_every_device(self):
-        # "Don't show this tip again" saves the tip id here: tips ship with FAC, so AR has no record.
-        saved = home.save_discovery_state(json.dumps({"tips_dismissed": ["agents-routine-work", 7, ""]}))
-        self.assertEqual(saved["tips_dismissed"], ["agents-routine-work"])
-        stored = json.loads(frappe.db.get_value(PREFS, self.user, "discovery_state"))
-        self.assertEqual(stored["tips_dismissed"], ["agents-routine-work"])
 
     def test_parse_caps_every_list(self):
         state = parse_discovery_state({"seen": [f"id-{i}" for i in range(80)]})
@@ -88,18 +80,17 @@ class TestDiscoverySwitches(BaseAssistantTest):
         super().setUp()
         self.user = frappe.session.user
         self.addCleanup(frappe.cache.hdel, home.HOME_SIGNALS_CACHE_KEY, self.user)
-        home.update_home_preferences(show_tips=True, show_progress=True)
+        home.update_home_preferences(show_progress=True)
 
-    def test_switches_are_on_by_default_without_a_preferences_row(self):
+    def test_the_switch_is_on_by_default_without_a_preferences_row(self):
         prefs = load_home_preferences("nobody-has-this-user@example.com")
-        self.assertTrue(prefs["show_tips"])
         self.assertTrue(prefs["show_progress"])
+        self.assertNotIn("show_tips", prefs)
 
-    def test_each_switch_saves_on_its_own(self):
-        result = home.update_home_preferences(show_tips="false")
-        self.assertFalse(result["show_tips"])
-        self.assertTrue(result["show_progress"])
-        self.assertFalse(home.get_home_preferences()["show_tips"])
+    def test_the_switch_saves(self):
+        result = home.update_home_preferences(show_progress="false")
+        self.assertFalse(result["show_progress"])
+        self.assertFalse(home.get_home_preferences()["show_progress"])
 
     def test_the_page_gets_the_switches_and_the_state_with_its_access_check(self):
         home.update_home_preferences(show_progress=False)
@@ -108,8 +99,8 @@ class TestDiscoverySwitches(BaseAssistantTest):
         prefs = FACChatUserPreferences.get_or_create_preferences(self.user)
         discovery = _discovery_preferences(prefs)
         self.assertEqual(
-            {k: discovery[k] for k in ("show_tips", "show_progress")},
-            {"show_tips": True, "show_progress": False},
+            {k: v for k, v in discovery.items() if k != "state"},
+            {"show_progress": False},
         )
         self.assertEqual(discovery["state"]["used"], ["ask"])
 

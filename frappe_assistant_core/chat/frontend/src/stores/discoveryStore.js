@@ -10,30 +10,24 @@ import { useChatStore } from "@/stores/chatStore";
 import { useTemplateStore } from "@/stores/templateStore";
 import { useWorkflowStore } from "@/stores/workflowStore";
 import { useTourStore } from "@/stores/tourStore";
-import { localDate } from "@/components/spotlight/spotlightRules";
-import { availableFeatures, featureById, featureForPath, previewContent } from "@/components/discover/featureCatalog";
-import { TIP_ORDER, dailyTips } from "@/components/discover/dailyTips";
+import { availableFeatures, featureById, featureForPath } from "@/components/discover/featureCatalog";
 import {
 	availablePowers,
 	emptyState,
 	isPowerUsed,
-	liveTips,
 	parseState,
-	pickDailyTip,
 	progressOf,
-	tipContent,
 } from "@/components/discover/discoveryRules";
 
 const SAVE_DELAY_MS = 800;
 const LOAD_QUIET_MS = 4000;
 
 /**
- * Feature discovery in the full FAC Chat (/copilot): the daily Did you know tip, the Your FAC
- * ring, the rail dots and the 3-stop tour.
+ * Feature discovery in the full FAC Chat (/copilot): the Your FAC ring, the rail dots and the
+ * 3-stop tour.
  *
- * Tips ship with FAC (dailyTips.js); the Your FAC powers come from AR's capabilities. This store
- * decides when, from what the user really did, and keeps that on the user's preferences so it
- * follows them across browsers.
+ * The Your FAC powers come from AR's capabilities. This store decides when, from what the user
+ * really did, and keeps that on the user's preferences so it follows them across browsers.
  *
  * Nothing runs until App.vue calls init(): the Desk widget shares some stores with this
  * one and must stay a plain chat.
@@ -41,8 +35,7 @@ const LOAD_QUIET_MS = 4000;
 export const useDiscoveryStore = defineStore("discovery", () => {
 	const state = ref(emptyState());
 	const started = ref(false);
-	const switches = ref({ show_tips: true, show_progress: true });
-	const preview = ref(null);
+	const switches = ref({ show_progress: true });
 	// Lives on the tour store so the Spotlight can see it; read and set here for Home and the rail.
 	const coachOpen = computed(() => useTourStore().coachOpen);
 	const coachRequested = ref(false);
@@ -79,13 +72,11 @@ export const useDiscoveryStore = defineStore("discovery", () => {
 		const prefs = useUserStore().discoveryPrefs;
 		if (prefs) {
 			switches.value = {
-				show_tips: prefs.show_tips !== false,
 				show_progress: prefs.show_progress !== false,
 			};
 		}
 		state.value = parseState(prefs && prefs.state);
 		started.value = true;
-		if (!state.value.first_day) update({ first_day: localDate() });
 		watchUsage();
 		// What the checks find while the app loads (chats, Pages) was done before: no toast for it.
 		setTimeout(() => {
@@ -215,51 +206,6 @@ export const useDiscoveryStore = defineStore("discovery", () => {
 		if (feature) goTo(feature, router);
 	}
 
-	// ── Did you know ────────────────────────────────────────────────────
-	const siteTips = () => {
-		const user = useUserStore();
-		return dailyTips({ workflowsEnabled: user.workflowsEnabled, memoryEnabled: user.memoryEnabled });
-	};
-
-	const tip = ref(null);
-	/** Home asks once per visit, so a tip never changes under the user's eyes. */
-	function refreshTip({ dayOne = false, now = new Date() } = {}) {
-		if (!started.value || !switches.value.show_tips) {
-			tip.value = null;
-			return;
-		}
-		const tips = liveTips(siteTips(), { used: state.value.used, dismissed: state.value.tips_dismissed });
-		const picked = pickDailyTip({ tips, state: state.value, today: localDate(now), dayOne, order: TIP_ORDER });
-		if (picked.state !== state.value) update({ tip: picked.state.tip });
-		tip.value = picked.tip;
-	}
-
-	/** × : not today. */
-	function hideTipToday() {
-		tip.value = null;
-		update({ tip_hidden_on: localDate() });
-	}
-
-	/** "Don't show this tip again": kept on the user's preferences, so it stays gone on every device. */
-	function neverShowTip(id) {
-		tip.value = null;
-		addTo("tips_dismissed", id);
-	}
-
-	function showTip(n) {
-		preview.value = tipContent(n);
-	}
-
-	// ── Show me pop-up (tips) ───────────────────────────────────────────
-	function openPreview(id) {
-		const feature = featureById(id);
-		if (feature) preview.value = previewContent(feature);
-	}
-
-	function closePreview() {
-		preview.value = null;
-	}
-
 	function goTo(feature, router) {
 		markSeen(feature.id);
 		const target = feature.tryIt;
@@ -270,21 +216,6 @@ export const useDiscoveryStore = defineStore("discovery", () => {
 			router.push({ path: "/chat", query: { prompt: target.prompt() } });
 		} else if (target.route) {
 			router.push(target.route);
-		}
-	}
-
-	/** The pop-up's main button: the tip's route when it has one, else the feature's own try. */
-	function tryPreview(router) {
-		const content = preview.value;
-		preview.value = null;
-		if (!content) return;
-		if (content.kind === "tip") tip.value = null;
-		const feature = content.feature && featureById(content.feature);
-		if (content.primary && content.primary.route) {
-			if (feature) markSeen(feature.id);
-			router.push(content.primary.route);
-		} else if (feature) {
-			goTo(feature, router);
 		}
 	}
 
@@ -318,10 +249,8 @@ export const useDiscoveryStore = defineStore("discovery", () => {
 		powers,
 		progress,
 		showProgress,
-		tip,
 		panelOpen,
 		justUnlocked,
-		preview,
 		coachOpen,
 		coachRequested,
 		templatesRequested,
@@ -335,13 +264,6 @@ export const useDiscoveryStore = defineStore("discovery", () => {
 		openPanel,
 		closePanel,
 		tryPower,
-		refreshTip,
-		hideTipToday,
-		neverShowTip,
-		showTip,
-		openPreview,
-		closePreview,
-		tryPreview,
 		maybeStartCoach,
 		requestCoach,
 		setCoachOpen,

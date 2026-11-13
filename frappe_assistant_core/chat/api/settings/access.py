@@ -94,9 +94,9 @@ def _is_faco_member(user: str) -> bool:
 
 
 def _discovery_preferences(prefs) -> dict:
-    """The user's three Settings → Home switches for tips, stories and progress, plus the stored state.
+    """The user's Settings → Home switch for progress, plus the stored state.
 
-    A switch reads as on until the user turns it off (also before the columns exist, mid-migrate).
+    The switch reads as on until the user turns it off (also before the column exists, mid-migrate).
     """
     from frappe_assistant_core.chat.home_preferences import parse_discovery_state
 
@@ -105,7 +105,6 @@ def _discovery_preferences(prefs) -> dict:
         return True if value is None else bool(int(value))
 
     return {
-        "show_tips": on("show_tips"),
         "show_progress": on("show_progress"),
         "state": parse_discovery_state(getattr(prefs, "discovery_state", None)),
     }

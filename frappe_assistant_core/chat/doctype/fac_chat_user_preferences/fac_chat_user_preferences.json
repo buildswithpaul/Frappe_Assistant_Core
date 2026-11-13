@@ -18,7 +18,6 @@
   "needs_you_count",
   "hidden_home_signals",
   "show_personalized_suggestions",
-  "show_tips",
   "show_progress",
   "discovery_state",
   "pinned_prompt_templates",
@@ -110,13 +109,6 @@
    "fieldname": "show_personalized_suggestions",
    "fieldtype": "Check",
    "label": "Show Personalised Suggestions"
-  },
-  {
-   "default": "1",
-   "description": "A short \"Did you know?\" tip under the ask box on Home",
-   "fieldname": "show_tips",
-   "fieldtype": "Check",
-   "label": "Show Did You Know Tips"
   },
   {
    "default": "1",
