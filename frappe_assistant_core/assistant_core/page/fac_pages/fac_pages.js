@@ -145,6 +145,7 @@
 			return;
 		}
 		page.main.empty();
+		if (data.draft === false) page.set_secondary_action(__("Present"), () => present(page, data, is_latest));
 		// Only a page that says it is Shared runs in Desk itself; any other runs in the frame.
 		if (data.visibility === "Shared") render_shared(page, data, is_latest);
 		else render_personal(page, name, data, is_latest);
@@ -198,6 +199,7 @@
 				transport: host.fetchTransport(() => frappe.csrf_token),
 				askUser: (request) => ask_user(prompts, request),
 				onHeight: (height) => (shown_frame.element.style.height = `${Math.max(height, 200)}px`),
+				onPresentKey: (key) => presenting && presenting.key(key),
 			});
 			shown_frame.element.style.cssText = "display:block;width:100%;height:480px;border:0;";
 			box.append(shown_frame.element);
@@ -337,7 +339,36 @@
 		});
 	}
 
+	// Present mode (pagePresent.js, in the charts bundle): a shared page's sections are switched in
+	// its shadow root here; a personal page switches its own inside its frame.
+	let presenting = null;
+	function present(page, data, is_latest) {
+		if (presenting) return;
+		load_script(CHARTS_URL, "charts").then(() => {
+			const bundle = window.fac_page_charts;
+			const box = page.main.find(".fac-page-frame").get(0);
+			if (!is_latest() || !bundle || !box) return;
+			const deck =
+				data.visibility === "Shared"
+					? bundle.makePresenter(box.querySelector("div").shadowRoot)
+					: {
+							start: () => shown_frame.present("start"),
+							show: (index) => shown_frame.present("show", index),
+							stop: () => shown_frame.present("stop").catch(() => {}),
+					  };
+			bundle
+				.mountPresentControls({ container: box, deck, onExit: () => (presenting = null) })
+				.then((handle) => (presenting = handle))
+				.catch(() => {
+					presenting = null;
+					frappe.show_alert({ message: __("This page could not be presented."), indicator: "orange" });
+				});
+		});
+	}
+
 	function dispose_shown() {
+		if (presenting) presenting.stop();
+		presenting = null;
 		dispose_shown_charts();
 		open_prompts.forEach((decide) => decide(false));
 		prompt_chain = Promise.resolve();

@@ -21,6 +21,7 @@
 			:ask-user="askUser"
 			@unsupported="emit('unsupported', $event)"
 			@error="onError"
+			@present-key="presenting?.key($event)"
 		/>
 	</div>
 	<div v-else class="page-view-frame">
@@ -32,11 +33,12 @@
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 
 import { baseCall, getCall } from "@/api/_core";
-import { usePagePanel } from "@/composables/usePagePanel";
+import { isNarrow, usePagePanel } from "@/composables/usePagePanel";
 import { fac_page_draft_srcdoc } from "@/utils/facPageDraft";
 import { makeBlocks } from "@/utils/pageBlocks";
 import { chart } from "@/utils/pageCharts";
 import { report } from "@/utils/pageReport";
+import { makePresenter, mountPresentControls } from "@/utils/pagePresent";
 import { snapshotHtml } from "@/utils/pagePrint";
 import { cleanSnapshot } from "@/utils/pageSnapshotSanitise";
 import { failedCallText, makeFrappeStandIn, runPageScript } from "@/utils/pageRuntime";
@@ -129,7 +131,34 @@ onMounted(() => {
 	});
 });
 
+// Present mode: a shared page's sections are switched in its shadow root here, a personal page's
+// inside its own frame. On a phone it stays in the panel, since phones often refuse full screen.
+let presenting = null;
+async function present() {
+	if (presenting || !published.value) return;
+	const frame = personal.value ? personalFrame.value : null;
+	const deck = frame
+		? {
+				start: () => frame.present("start"),
+				show: (index) => frame.present("show", index),
+				stop: () => frame.present("stop").catch(() => {}),
+			}
+		: makePresenter(host.value.shadowRoot);
+	const container = (frame ? null : host.value?.parentElement) || document.querySelector(".page-view-frame");
+	presenting = await mountPresentControls({
+		container,
+		deck,
+		fullscreen: !isNarrow(),
+		onExit: () => (presenting = null),
+	}).catch((error) => {
+		presenting = null;
+		onError(error);
+		return null;
+	});
+}
+
 onBeforeUnmount(() => {
+	presenting?.stop();
 	hidePageView();
 	charts.splice(0).forEach((handle) => handle.dispose());
 });
@@ -151,7 +180,7 @@ async function printSnapshot() {
 	return { ...base, html: snapshotHtml(root), wide: root.scrollWidth > WIDE_PAGE_PX };
 }
 
-defineExpose({ printSnapshot });
+defineExpose({ printSnapshot, present });
 </script>
 
 <style scoped>
