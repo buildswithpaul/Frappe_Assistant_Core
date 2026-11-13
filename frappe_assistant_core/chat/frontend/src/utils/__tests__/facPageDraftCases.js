@@ -33,6 +33,12 @@ export function describeDraftBuilder(label, { srcdoc: buildSrcdoc, frame: buildF
 			expect(doc.querySelectorAll("link, script")).toHaveLength(0);
 		});
 
+		it("draws the draft in Desk's theme, and anything but dark is light", () => {
+			const themed = (theme) => parse(buildSrcdoc({ html: "", style: "", kit_css: "", theme })).documentElement.getAttribute("data-theme");
+			expect(themed("dark")).toBe("dark");
+			expect([themed(undefined), themed("light"), themed('"><b>')]).toEqual(["light", "light", "light"]);
+		});
+
 		it("keeps a style that closes its own tag inside the style element", () => {
 			const doc = parse(buildSrcdoc({ html: "", style: "</style><form action='x'></form>", kit_css: "" }));
 			expect(doc.querySelector("form")).toBeNull();

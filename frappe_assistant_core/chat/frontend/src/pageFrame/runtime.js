@@ -127,6 +127,11 @@ function present({ id, command, index }) {
 	post({ op: "present_result", id, state });
 }
 
+// Desk's theme, as the host passes it on when it changes; the kit's tokens follow it.
+function setTheme({ theme }) {
+	document.documentElement.setAttribute("data-theme", theme === "dark" ? "dark" : "light");
+}
+
 function snapshot({ id }) {
 	const el = root();
 	post({ op: "snapshot_result", id, html: snapshotHtml(el), wide: el.scrollWidth > WIDE_PAGE_PX });
@@ -149,6 +154,7 @@ window.addEventListener("message", (event) => {
 	} else if (data.op === "snapshot") snapshot(data);
 	else if (data.op === "capture") capture(data);
 	else if (data.op === "present") present(data);
+	else if (data.op === "theme") setTheme(data);
 });
 
 window.addEventListener("error", (event) => reportError(event.error || event.message));

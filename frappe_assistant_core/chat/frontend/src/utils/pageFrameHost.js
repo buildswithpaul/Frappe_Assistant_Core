@@ -152,6 +152,7 @@ const errorReply = (error) => ({
  * @param {(name: string) => void} [options.onUnsupported] a Desk member the script reached for
  * @param {(height: number) => void} [options.onHeight] the page's height, as it changes
  * @param {() => void} [options.onReady] the script has run
+ * @param {"dark"|"light"} [options.theme] Desk's theme when the frame is built; setTheme follows a change
  * @returns {{element: HTMLIFrameElement, errors: string[], snapshot: Function, dispose: Function}}
  */
 // A presented page's state as the frame reports it: null after stop, undefined when malformed.
@@ -185,6 +186,7 @@ export function createPageFrame({
 	onHeight,
 	onReady,
 	onPresentKey,
+	theme,
 }) {
 	const element = document.createElement("iframe");
 	element.setAttribute("sandbox", PAGE_FRAME_SANDBOX);
@@ -201,6 +203,7 @@ export function createPageFrame({
 		origin,
 		nonce: makeNonce(),
 		version,
+		theme,
 	});
 
 	const errors = [];
@@ -508,6 +511,8 @@ export function createPageFrame({
 		},
 		/** Present mode, run inside the frame: "start", "show" with an index, or "stop". */
 		present: (command, index) => request("present", { command, index }, PRESENT_TIMEOUT_MS),
+		/** Desk's theme changed: the page switches without reloading. */
+		setTheme: (next) => toPage({ op: "theme", theme: next === "dark" ? "dark" : "light" }),
 		/** The page's rendered markup, for Download PDF: {html, wide}. */
 		snapshot: async () => {
 			await whenIdle();

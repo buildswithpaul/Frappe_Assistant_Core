@@ -9,11 +9,11 @@
 
 export const FAC_PAGE_DRAFT_CSP = "default-src 'none'; style-src 'unsafe-inline'; img-src data:";
 
-export function fac_page_draft_srcdoc({ html, style, kit_css } = {}) {
+export function fac_page_draft_srcdoc({ html, style, kit_css, theme } = {}) {
 	// A style that closes its own tag would otherwise end the style element early.
 	const css = `${kit_css || ""}\n${style || ""}`.replace(/<\/style/gi, "<\\/style");
 	return (
-		"<!doctype html><html><head>" +
+		`<!doctype html><html data-theme="${theme === "dark" ? "dark" : "light"}"><head>` +
 		`<meta http-equiv="Content-Security-Policy" content="${FAC_PAGE_DRAFT_CSP}">` +
 		'<meta charset="utf-8">' +
 		`<style>${css}</style>` +
