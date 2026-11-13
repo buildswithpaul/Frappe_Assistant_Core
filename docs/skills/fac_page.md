@@ -39,6 +39,7 @@ To share a user's personal page, update it with `visibility: "Shared"`, the `rol
   "doctype": "FAC Page",
   "data": {
     "title": "Team Planner",
+    "description": "Who is on which project this week",
     "slug": "team-planner",
     "visibility": "Shared",
     "published": 0,
@@ -50,6 +51,7 @@ To share a user's personal page, update it with `visibility: "Shared"`, the `rol
 }
 ```
 
+- **`description`**: one line saying what the page shows. It appears under the title in the Pages list in Desk, so set it on every page.
 - **`slug`**: lower-case words joined by single hyphens, at most 80 characters. A shared page's name is its slug; a personal page's name adds the owner's tag. It must be unique among shared pages, and among each user's own pages. It cannot change after the page is saved.
 - **`html`** is static markup. The `mockup-kit` classes (`mk-page`, `mk-card`, `mk-table` and the rest) work here as in a mockup. Put event handlers in the `script` (`root_element.querySelector(...).addEventListener(...)`), never inline. A personal page's html keeps only allowlisted tags and attributes, so its code lives only in `script`. It is served without inline handlers (`onclick`, `onerror` and the rest), `javascript:` and `data:` URLs (so no `data:` images), `<script>`, `<iframe>`, `<object>`, `<embed>`, `<base>` or SVG animation. Forms, inputs and buttons are kept. Inline `<svg>` shapes lose their drawing attributes there, so draw charts with `fac.chart` from the script. For figures a report already computes, such as P&L or receivables, read the report with `fac.report` (`get_skill("page-reports")`).
 - **`script`** runs after the html renders. `root_element` is the page's shadow root (on a personal page, the page's own element), so find elements with `root_element.querySelector`, not `document`. In Desk it has the normal `frappe` object; in the chat panel only a small part of it (see `pages-in-chat`). It runs as the viewer, so `frappe.call` and `frappe.db` read and write only what that user may.
