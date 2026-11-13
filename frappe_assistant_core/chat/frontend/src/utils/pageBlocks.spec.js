@@ -38,3 +38,43 @@ describe("updated", () => {
 	});
 });
 
+
+describe("periodPicker", () => {
+	const mountPicker = (options) => {
+		const el = document.createElement("div");
+		const picker = makeBlocks(fakeFrappe()).periodPicker(el, options);
+		return { el, picker, select: el.querySelector("select") };
+	};
+
+	it("lists the periods, from plain strings or value and label pairs, with the current one chosen", () => {
+		const { el, select } = mountPicker({ options: ["NOV-26 F1", "OCT-26 F2"], value: "OCT-26 F2", label: "Period" });
+		expect([...select.options].map((o) => o.value)).toEqual(["NOV-26 F1", "OCT-26 F2"]);
+		expect(select.value).toBe("OCT-26 F2");
+		expect(el.querySelector(".mk-field.mk-period label").textContent).toBe("Period");
+		const pairs = mountPicker({ options: [{ value: "p1", label: "First" }] }).select;
+		expect([pairs.options[0].value, pairs.options[0].textContent]).toEqual(["p1", "First"]);
+	});
+
+	it("tells the page when the user picks another period", () => {
+		const changes = [];
+		const { picker, select } = mountPicker({ options: ["A", "B"], value: "A", onChange: (v) => changes.push(v) });
+		select.value = "B";
+		select.dispatchEvent(new Event("change"));
+		expect(changes).toEqual(["B"]);
+		expect(picker.value()).toBe("B");
+	});
+
+	it("changes the period from the page without reporting it back", () => {
+		const changes = [];
+		const { picker, select } = mountPicker({ options: ["A", "B"], value: "A", onChange: (v) => changes.push(v) });
+		picker.set("B");
+		expect(select.value).toBe("B");
+		expect(changes).toEqual([]);
+	});
+
+	it("sets labels as text, never as html", () => {
+		const { el } = mountPicker({ options: [{ value: "x", label: "<b>x</b>" }], label: "<img src=x>" });
+		expect(el.querySelector("img")).toBeNull();
+		expect(el.querySelector("b")).toBeNull();
+	});
+});
