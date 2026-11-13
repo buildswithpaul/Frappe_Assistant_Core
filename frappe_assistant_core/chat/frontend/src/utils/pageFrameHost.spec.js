@@ -627,6 +627,14 @@ describe("fetchTransport", () => {
 		vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false, status: 403, json: async () => body })));
 		await expect(fetchTransport(() => "").get("a.b", {})).rejects.toMatchObject({ message: "Not permitted", status: 403 });
 	});
+
+	it("never leaves a tag from a message's markup, closed or not", async () => {
+		const message = "<b>Denied</b><img src=x onerror=alert(1)//";
+		const body = { exc: "x", _server_messages: JSON.stringify([JSON.stringify({ message })]) };
+		vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false, status: 417, json: async () => body })));
+		const error = await fetchTransport(() => "").get("a.b", {}).catch((e) => e);
+		expect(error.message).toBe("Denied");
+	});
 });
 
 describe("PAGE_READ_METHODS", () => {
