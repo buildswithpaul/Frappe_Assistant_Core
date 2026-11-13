@@ -331,3 +331,10 @@ class TestSystemSkillManifest(BaseAssistantTest):
             self.assertIn(claim, text)
         for name in ("pages_in_chat.md", "fac_page.md", "mockup_kit.md"):
             self.assertIn('get_skill("page-reports")', self._read_skill(name), name)
+
+    def test_pages_are_created_with_a_description(self):
+        # The Desk Pages gallery shows each page's description under its title.
+        self.assertIn("`description`", self._read_skill("pages_in_chat.md"))
+        text = self._read_skill("fac_page.md")
+        self.assertIn('"description":', text)
+        self.assertIn("Pages list", text)
