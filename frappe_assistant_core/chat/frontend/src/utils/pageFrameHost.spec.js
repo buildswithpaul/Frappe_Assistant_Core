@@ -654,3 +654,45 @@ describe("PAGE_READ_METHODS for the viewer's roles", () => {
 		expect(PAGE_READ_METHODS.has("frappe_assistant_core.api.fac_page.my_roles")).toBe(true);
 	});
 });
+
+describe("Present mode through the frame", () => {
+	it("asks the frame to present and takes back its state", async () => {
+		mountFrame();
+		fromPage({ op: "ready" });
+		const started = frame.present("start");
+		await vi.waitFor(() => expect(replies.find((r) => r.op === "present")).toBeDefined());
+		const { id, command } = replies.find((r) => r.op === "present");
+		expect(command).toBe("start");
+		fromPage({ op: "present_result", id, state: { index: 0, count: 2, titles: ["Company", "Finance"] } });
+		expect(await started).toEqual({ index: 0, count: 2, titles: ["Company", "Finance"] });
+	});
+
+	it("refuses a state the frame should never send", async () => {
+		mountFrame();
+		fromPage({ op: "ready" });
+		const started = frame.present("start");
+		await vi.waitFor(() => expect(replies.find((r) => r.op === "present")).toBeDefined());
+		const { id } = replies.find((r) => r.op === "present");
+		fromPage({ op: "present_result", id, state: { index: 0, count: 10000, titles: [] } });
+		await expect(started).rejects.toThrow();
+	});
+
+	it("passes on only the presenting keys", () => {
+		const onPresentKey = vi.fn();
+		mountFrame({ onPresentKey });
+		fromPage({ op: "present_key", key: "next" });
+		fromPage({ op: "present_key", key: "rm -rf" });
+		expect(onPresentKey.mock.calls).toEqual([["next"]]);
+	});
+
+	it("gives up when the frame never answers", async () => {
+		vi.useFakeTimers();
+		mountFrame();
+		fromPage({ op: "ready" });
+		const started = frame.present("start");
+		const outcome = expect(started).rejects.toThrow();
+		await vi.advanceTimersByTimeAsync(3500);
+		await outcome;
+		vi.useRealTimers();
+	});
+});
