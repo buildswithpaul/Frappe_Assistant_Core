@@ -79,12 +79,12 @@ export function makeEditors(frappe, canWrite) {
 
 		function edit() {
 			root.replaceChildren();
-			const box = el("div", "mk-edit-rows");
+			const box = el("div", "mk-edit-rows mk-edit");
 			const addRow = (row) => {
 				const line = el("div", "mk-edit-row");
 				line._row = row;
 				for (const column of columns) line.append(input(column, row?.[column.fieldname]));
-				line.append(btn(__("Remove"), "mk-btn mk-edit-remove", () => line.remove()));
+				line.append(btn(__("Remove"), "mk-btn mk-edit mk-edit-remove", () => line.remove()));
 				box.append(line);
 			};
 			(doc?.[table] || []).forEach(addRow);
@@ -117,9 +117,9 @@ export function makeEditors(frappe, canWrite) {
 			};
 			root.append(
 				box,
-				btn(__("Add row"), "mk-btn mk-edit-add", () => addRow(null)),
-				btn(__("Save"), "mk-btn mk-btn-primary", save),
-				btn(__("Cancel"), "mk-btn", view),
+				btn(__("Add row"), "mk-btn mk-edit mk-edit-add", () => addRow(null)),
+				btn(__("Save"), "mk-btn mk-btn-primary mk-edit", save),
+				btn(__("Cancel"), "mk-btn mk-edit", view),
 				error,
 			);
 		}
@@ -163,7 +163,7 @@ export function makeEditors(frappe, canWrite) {
 					error.hidden = false;
 				}
 			};
-			root.replaceChildren(field, btn(__("Save"), "mk-btn mk-btn-primary", save), btn(__("Cancel"), "mk-btn", view), error);
+			root.replaceChildren(field, btn(__("Save"), "mk-btn mk-btn-primary mk-edit", save), btn(__("Cancel"), "mk-btn mk-edit", view), error);
 		}
 
 		view();

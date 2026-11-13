@@ -21,6 +21,8 @@ describe("the mockup kit", () => {
 		".mk-status-done",
 		".mk-status-pending",
 		".mk-period",
+		".fac-presenting",
+		".fac-present-off",
 	])("styles %s", (selector) => {
 		expect(KIT).toContain(selector);
 	});
