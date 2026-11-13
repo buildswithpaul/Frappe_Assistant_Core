@@ -172,6 +172,19 @@ describe("PageView", () => {
 		expect(shadow.querySelector(".fac-presenting")).toBeNull();
 	});
 
+	it("presents once however often it is asked, and stops when the view goes", async () => {
+		const view = mountView({
+			...published,
+			html: '<section class="mk-section" data-title="A">A</section><section class="mk-section" data-title="B">B</section>',
+		});
+		await Promise.all([view.vm.present(), view.vm.present()]);
+		expect(document.querySelectorAll(".fac-present-bar")).toHaveLength(1);
+		view.unmount();
+		wrapper = null;
+		await flushPromises();
+		expect(document.querySelector(".fac-present-bar")).toBeNull();
+	});
+
 	it("disposes the page's charts when it unmounts", () => {
 		const page = {
 			...published,
