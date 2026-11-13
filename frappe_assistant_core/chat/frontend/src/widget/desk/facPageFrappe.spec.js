@@ -28,7 +28,7 @@ const fac_page_frappe = new Function(`${WRAPPER}\nreturn fac_page_frappe;`)();
 function deskLikeFrappe(page) {
 	const frappe = {
 		pages: { "fac-pages": {} },
-		ui: { make_app_page: () => ({ main: page.main, set_title: vi.fn(), clear_primary_action: vi.fn(), clear_secondary_action: vi.fn() }), Dialog: vi.fn() },
+		ui: { make_app_page: () => ({ main: page.main, set_title: vi.fn(), clear_primary_action: vi.fn(), clear_secondary_action: vi.fn(), set_secondary_action: vi.fn() }), Dialog: vi.fn() },
 		get_route: () => ["fac-pages", "outstanding"],
 		call: vi.fn(({ callback }) => callback({ message: page.data })),
 		create_shadow_element: vi.fn(),

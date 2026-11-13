@@ -24,7 +24,7 @@ function loadDeskPage(initial = published) {
 	const main = { empty: () => main, append: (el) => main.el.append(el), el: document.createElement("div") };
 	frappe = {
 		pages: { "fac-pages": {} },
-		ui: { make_app_page: () => ({ main, set_title: vi.fn(), clear_primary_action: vi.fn(), clear_secondary_action: vi.fn() }) },
+		ui: { make_app_page: () => ({ main, set_title: vi.fn(), clear_primary_action: vi.fn(), clear_secondary_action: vi.fn(), set_secondary_action: vi.fn() }) },
 		get_route: () => ["fac-pages", "sales"],
 		call: ({ callback }) => callback({ message: page }),
 		setPage: (next) => (page = next),
