@@ -12,6 +12,7 @@
 import { __ } from "@/utils/i18n";
 
 import { makeEditors } from "./pageEditList";
+import { fetchTransport } from "./pageFetchTransport";
 
 const message = (r) => r?.message;
 let pickers = 0;
@@ -69,4 +70,22 @@ export function makeBlocks(frappe) {
 	}
 
 	return { canWrite, updated, ...makeEditors(frappe, canWrite), periodPicker };
+}
+
+/**
+ * The page tools for the fac-pages Desk page. Desk's frappe.call opens its message dialog over the
+ * page for a refused call, and for a 403 also routes away from it, losing what the user typed; so
+ * these send their calls with fetch, as the user, and show the server's reason inline instead.
+ */
+export function deskBlocks(deskFrappe, getCsrfToken) {
+	const transport = fetchTransport(getCsrfToken);
+	const call = ({ method, type, args }) =>
+		(String(type || "POST").toUpperCase() === "GET" ? transport.get(method, args) : transport.post(method, args)).then(
+			(message) => ({ message }),
+		);
+	return makeBlocks({
+		call,
+		db: { get_doc: (doctype, name) => transport.get("frappe.client.get", { doctype, name }) },
+		datetime: deskFrappe.datetime,
+	});
 }

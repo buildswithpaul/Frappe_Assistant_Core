@@ -223,7 +223,8 @@ class TestFACPage(BaseAssistantTest):
         page = frappe.get_doc("Page", HOST_PAGE)
         page.load_assets()
 
-        self.assertIn("bundle.makeBlocks(frappe)", page.script)
+        # Desk's tools send their calls with fetch, so a refused save opens no dialog over the page.
+        self.assertIn("bundle.deskBlocks(frappe, () => frappe.csrf_token)", page.script)
 
     def test_the_host_page_gives_page_scripts_fac_chart_and_report(self):
         # The page script runs with fac in Desk as in the chat panel; the built helper is served

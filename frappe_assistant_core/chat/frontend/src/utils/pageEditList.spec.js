@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 
-import { makeBlocks } from "./pageBlocks";
+import { deskBlocks, makeBlocks } from "./pageBlocks";
 import { fakeFrappe } from "./__tests__/pageBlocksFake";
 
 const SAVE = "frappe.client.save";
@@ -95,6 +95,31 @@ describe("editList", () => {
 		expect(root.querySelector("ul.mk-list").textContent).toContain("Content development");
 	});
 
+	it("sends the record's time from when the page read it, so Frappe refuses a save over someone else's change", async () => {
+		// Frappe's save compares modified with the stored record and refuses a stale one; a row
+		// someone else added or changed meanwhile would otherwise be lost or reverted.
+		const root = mount();
+		const now = { ...update, modified: "2026-11-13 11:30:00", risks: [...update.risks, { name: "r2", severity: "LOW", description: "Added by someone else" }] };
+		const f = fakeFrappe({ docs: [update, now], answers: { [SAVE]: (args) => args.doc } });
+		await makeBlocks(f).editList(root, { doctype: "BU Update", name: "BU-0001", table: "risks", columns: RISKS, canEdit: true });
+		button(root, "Edit").click();
+		button(root, "Save").click();
+		await settle();
+		expect(f.calls.find((c) => c.method === SAVE).args.doc.modified).toBe("2026-11-13 10:00:00");
+	});
+
+	it("keeps a stored value that is not among the column's options", async () => {
+		const root = mount();
+		const doc = { ...update, risks: [{ name: "r1", severity: "URGENT", description: "Old scale" }] };
+		const f = fakeFrappe({ docs: [doc], answers: { [SAVE]: (args) => args.doc } });
+		await makeBlocks(f).editList(root, { doctype: "BU Update", name: "BU-0001", table: "risks", columns: RISKS, canEdit: true });
+		button(root, "Edit").click();
+		root.querySelector("textarea").value = "Old scale, reworded";
+		button(root, "Save").click();
+		await settle();
+		expect(f.calls.find((c) => c.method === SAVE).args.doc.risks[0]).toMatchObject({ severity: "URGENT", description: "Old scale, reworded" });
+	});
+
 	it("drops a removed row", async () => {
 		const root = mount();
 		const f = fakeFrappe({ docs: [update], answers: { [SAVE]: (args) => args.doc } });
@@ -154,5 +179,33 @@ describe("editText", () => {
 		await settle();
 		expect(root.querySelector("input").value).toBe("Edited");
 		expect(root.querySelector("p.mk-edit-error").textContent).toBe("Validation failed");
+	});
+});
+
+describe("deskBlocks", () => {
+	// Desk's frappe.call opens its message dialog over the page for a refused save, and a 403 also
+	// routes away from it, so the Desk page's tools send their calls with fetch.
+	const deskFrappe = { datetime: { str_to_user: () => "13-11-2026" } };
+	const reply = (status, body) => Promise.resolve({ ok: status < 400, status, statusText: "", json: () => Promise.resolve(body) });
+
+	it("shows the server's reason for a refused save inline, through fetch", async () => {
+		const sent = [];
+		globalThis.fetch = (url, init) => {
+			sent.push({ url, init });
+			if (url.includes("frappe.client.get")) return reply(200, { message: update });
+			const messages = JSON.stringify([JSON.stringify({ message: "Description is mandatory" })]);
+			return reply(417, { exc_type: "MandatoryError", _server_messages: messages });
+		};
+		const root = mount();
+		await deskBlocks(deskFrappe, () => "csrf-1").editList(root, { doctype: "BU Update", name: "BU-0001", table: "risks", columns: RISKS, canEdit: true });
+		button(root, "Edit").click();
+		button(root, "Save").click();
+		await settle();
+		await settle();
+		expect(root.querySelector("p.mk-edit-error").textContent).toBe("Description is mandatory");
+		const save = sent.find((s) => s.url.includes("frappe.client.save"));
+		expect(save.init.method).toBe("POST");
+		expect(save.init.headers["X-Frappe-CSRF-Token"]).toBe("csrf-1");
+		delete globalThis.fetch;
 	});
 });
