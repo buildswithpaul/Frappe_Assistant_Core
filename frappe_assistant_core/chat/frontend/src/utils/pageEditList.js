@@ -2,8 +2,9 @@
  * fac.editList and fac.editText: a FAC Page shows a record's child rows or one of its text fields
  * and lets someone who may change the record edit it in place (pageBlocks.js).
  *
- * A save starts from the record as it is now, read again, so it keeps what anyone else changed
- * meanwhile and every field the page does not show. A refused save keeps what the user typed and
+ * A save starts from the record as it is now, read again, so it keeps every field the page does
+ * not show, and sends the record's modified time from when the page read it, so Frappe refuses a
+ * save over a change someone else made meanwhile. A refused save keeps what the user typed and
  * says why. Every value is set as text.
  */
 import { __ } from "@/utils/i18n";
@@ -34,7 +35,10 @@ function input(column, value) {
 	let node;
 	if (column.fieldtype === "Select") {
 		node = el("select");
-		for (const option of column.options || []) node.append(el("option", "", option));
+		const options = [...(column.options || [])];
+		// A stored value outside the options stays selectable, so saving another field keeps it.
+		if (value && !options.includes(value)) options.unshift(value);
+		for (const option of options) node.append(el("option", "", option));
 	} else {
 		node = el(column.fieldtype === "Small Text" ? "textarea" : "input");
 	}
@@ -96,6 +100,9 @@ export function makeEditors(frappe, canWrite) {
 				});
 				try {
 					const current = await read(doctype, name);
+					// The time the rows on screen were read: Frappe refuses the save if the record
+					// changed since, instead of losing or reverting someone else's rows.
+					current.modified = doc.modified;
 					const stored = new Map((current[table] || []).map((row) => [row.name, row]));
 					current[table] = edited
 						.filter(({ line, values }) => line._row?.name || Object.values(values).some((value) => value !== ""))

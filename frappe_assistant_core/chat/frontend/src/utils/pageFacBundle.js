@@ -4,6 +4,6 @@
  * runs the same code as the chat panel. The global keeps its first name so no host's loader
  * changes.
  */
-export { makeBlocks } from "./pageBlocks";
+export { deskBlocks, makeBlocks } from "./pageBlocks";
 export { chart } from "./pageCharts";
 export { report } from "./pageReport";
