@@ -10,7 +10,9 @@ import { useChatStore } from "@/stores/chatStore";
 import { useTemplateStore } from "@/stores/templateStore";
 import { useWorkflowStore } from "@/stores/workflowStore";
 import { useTourStore } from "@/stores/tourStore";
+import { useSuggestionStore } from "@/stores/suggestionStore";
 import { availableFeatures, featureById, featureForPath } from "@/components/discover/featureCatalog";
+import { EXPLAINED_POWERS, explainContent, questionFor } from "@/components/discover/powerExplain";
 import {
 	availablePowers,
 	emptyState,
@@ -41,6 +43,9 @@ export const useDiscoveryStore = defineStore("discovery", () => {
 	const coachRequested = ref(false);
 	// ChatView owns the template browser; it watches this counter.
 	const templatesRequested = ref(0);
+	// Ask and Pages explain first (the card), then ask their question in a new chat: ChatView takes it.
+	const explain = ref(null);
+	const askRequested = ref(null);
 	const panelOpen = ref(false);
 	const justUnlocked = ref(null);
 	let saveTimer = null;
@@ -199,11 +204,39 @@ export const useDiscoveryStore = defineStore("discovery", () => {
 	/** "Try" in the panel: AR's route, else where that feature's own "Give it a try" goes. */
 	function tryPower(id, router) {
 		panelOpen.value = false;
+		if (EXPLAINED_POWERS.includes(id)) {
+			explain.value = explainContent(id);
+			return;
+		}
 		const power = powers.value.find((p) => p.id === id);
 		if (power && power.tryRoute) return router.push(power.tryRoute);
 		if (id === "ask") return router.push("/chat");
 		const feature = featureById(id);
 		if (feature) goTo(feature, router);
+	}
+
+	function closeExplain() {
+		explain.value = null;
+	}
+
+	/** The card's button: AR's Try route when it set one, else ask the power's question in a new chat. */
+	function tryExplained(router) {
+		const content = explain.value;
+		explain.value = null;
+		if (!content) return;
+		const id = content.power;
+		const power = powers.value.find((p) => p.id === id);
+		if (power && power.tryRoute) return router.push(power.tryRoute);
+		if (featureById(id)) markSeen(id);
+		askRequested.value = { text: questionFor(id, useSuggestionStore().allSuggestions) };
+		router.push("/chat");
+	}
+
+	/** ChatView takes the question once it is showing a new chat; null when nothing is waiting. */
+	function takeAskRequest() {
+		const request = askRequested.value;
+		askRequested.value = null;
+		return request ? request.text : null;
 	}
 
 	function goTo(feature, router) {
@@ -254,6 +287,8 @@ export const useDiscoveryStore = defineStore("discovery", () => {
 		coachOpen,
 		coachRequested,
 		templatesRequested,
+		explain,
+		askRequested,
 		init,
 		setSwitches,
 		showDot,
@@ -264,6 +299,9 @@ export const useDiscoveryStore = defineStore("discovery", () => {
 		openPanel,
 		closePanel,
 		tryPower,
+		closeExplain,
+		tryExplained,
+		takeAskRequest,
 		maybeStartCoach,
 		requestCoach,
 		setCoachOpen,

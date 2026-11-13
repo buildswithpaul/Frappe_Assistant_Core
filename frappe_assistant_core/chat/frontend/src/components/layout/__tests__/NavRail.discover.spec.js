@@ -8,6 +8,7 @@ import { useUserStore } from "@/stores/userStore";
 import { useChatStore } from "@/stores/chatStore";
 import { useDiscoveryStore } from "@/stores/discoveryStore";
 import { useNotificationStore } from "@/stores/notificationStore";
+import { useSuggestionStore } from "@/stores/suggestionStore";
 
 const { baseCall } = vi.hoisted(() => ({ baseCall: vi.fn().mockResolvedValue({}) }));
 vi.mock("@/api/domains/facPage", () => ({
@@ -134,6 +135,46 @@ describe("NavRail bot: Your FAC ring", () => {
 			expect(bot(w).exists()).toBe(false);
 			expect(w.find("a.rail-bot").attributes("href")).toBe("/chat");
 		}
+	});
+});
+
+describe("NavRail bot: Ask and Pages explain first", () => {
+	async function openTry(w, id) {
+		await bot(w).trigger("click");
+		await flushPromises();
+		await w.find(`[data-test='power-try-${id}']`).trigger("click");
+		await flushPromises();
+	}
+
+	it("Try on Ask shows what it is, and its button asks the user's own starter in a new chat", async () => {
+		const w = await mountRail({ discovery: POWERS });
+		useSuggestionStore().allSuggestions = [{ source: "curated", description: "Which items are below reorder level?" }];
+		await openTry(w, "ask");
+		expect(w.find("[data-test='your-fac-panel']").exists()).toBe(false);
+		expect(w.find("[data-test='spotlight-card'] h2").text()).toBe("Ask your data in plain words");
+		await w.find("[data-test='spotlight-primary']").trigger("click");
+		await flushPromises();
+		expect(w.router.currentRoute.value.path).toBe("/chat");
+		expect(useDiscoveryStore().askRequested).toEqual({ text: "Which items are below reorder level?" });
+		expect(w.find("[data-test='spotlight-card']").exists()).toBe(false);
+	});
+
+	it("Try on Pages explains Pages first; Maybe later asks nothing", async () => {
+		const w = await mountRail({ discovery: POWERS });
+		await openTry(w, "pages");
+		expect(w.find("[data-test='spotlight-card'] h2").text()).toBe("Pages: live reports from any answer");
+		await w.find("[data-test='spotlight-secondary']").trigger("click");
+		expect(w.find("[data-test='spotlight-card']").exists()).toBe(false);
+		expect(useDiscoveryStore().askRequested).toBeNull();
+	});
+
+	it("Pages' button asks for a Page and counts Pages as opened", async () => {
+		const w = await mountRail({ discovery: POWERS });
+		await openTry(w, "pages");
+		await w.find("[data-test='spotlight-primary']").trigger("click");
+		await flushPromises();
+		expect(useDiscoveryStore().askRequested.text).toBe("Show this month's sales by customer and save it as a Page.");
+		expect(useDiscoveryStore().state.seen).toContain("pages");
 	});
 });
 

@@ -5,6 +5,7 @@ import { __ } from "@/utils/i18n";
 import { useDiscoveryStore } from "@/stores/discoveryStore";
 import FacoRobot from "@/components/common/FacoRobot.vue";
 import YourFacPanel from "./YourFacPanel.vue";
+import SpotlightModal from "@/components/spotlight/SpotlightModal.vue";
 import { ringSegments } from "./discoveryRules";
 
 /**
@@ -84,6 +85,14 @@ function openSettings() {
 		@try="onTry"
 		@close="discovery.closePanel()"
 		@settings="openSettings"
+	/>
+	<!-- Ask and Pages explain first; the button then asks their question in a new chat. -->
+	<SpotlightModal
+		:content="discovery.explain"
+		@primary="discovery.tryExplained(router)"
+		@secondary="discovery.closeExplain()"
+		@dismiss="discovery.closeExplain()"
+		@close="discovery.closeExplain()"
 	/>
 </template>
 

@@ -256,6 +256,7 @@ import { useChatStore } from "@/stores/chatStore";
 import { useUserStore } from "@/stores/userStore";
 import { useModelStore } from "@/stores/modelStore";
 import { useSuggestionStore } from "@/stores/suggestionStore";
+import { useAskRequest } from "@/composables/useAskRequest";
 import { useDiscoveryStore } from "@/stores/discoveryStore";
 import { resolveComposerRoute } from "@/stores/chat/composerRouting";
 import { resolutionFor } from "@/stores/chat/interactionRegime";
@@ -394,6 +395,9 @@ watch(
 	() => useDiscoveryStore().templatesRequested,
 	() => openTemplateBrowser()
 );
+
+// Your FAC's Ask and Pages: the question their card asks is sent like a Home starter.
+useAskRequest({ route, messages, send: (text) => handleSuggestion(text) });
 
 usePromptFromRoute({
 	route,
