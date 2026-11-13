@@ -4,6 +4,7 @@ import { api } from "@/api/client";
 import { useProjectsStore } from "@/stores/projectsStore";
 import { logger } from "@/utils/logger";
 import { siteRefusal } from "@/utils/siteRefusal";
+import { setUploadLimit } from "@/utils/uploadLimit";
 
 export const useUserStore = defineStore("user", () => {
 	// State
@@ -417,6 +418,7 @@ export const useUserStore = defineStore("user", () => {
 			// and `if (data.outstanding)` would leave a settled balance showing
 			// until the next full reload.
 			outstanding.value = data.outstanding || null;
+			setUploadLimit(data.upload_limit);
 
 			// Hydrate capabilities
 			if (data.capabilities) {

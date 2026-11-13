@@ -29,19 +29,22 @@ function getCookieValue(name) {
 	return match ? decodeURIComponent(match[1]) : null;
 }
 
-function initializeSpaSocket(chatStore) {
-	if (spaSocketInitialized) return spaSocket;
-
-	const host = window.location.hostname;
-	const protocol = window.location.protocol;
+/**
+ * The socket server's address, the way Frappe's own socketio client finds it:
+ * the page's own origin behind nginx, or the socketio port when `bench start`
+ * serves the site itself (Frappe's dev_server flag, or localhost).
+ */
+export function spaSocketUrl(loc = window.location, win = window) {
+	const host = loc.hostname;
+	const protocol = loc.protocol;
 
 	// Determine if we're in a local development environment
-	const isLocalDev = host === "localhost" || host === "127.0.0.1";
+	const isLocalDev = Boolean(win.dev_server) || host === "localhost" || host === "127.0.0.1";
 
 	// Get site name - try multiple sources
 	// For local dev, window.site_name is typically set by Frappe
 	// For production, it's usually in frappe.boot.sitename
-	let siteName = window.frappe?.boot?.sitename || window.site_name;
+	let siteName = win.frappe?.boot?.sitename || win.site_name;
 
 	// Fallback for site name
 	if (!siteName) {
@@ -54,17 +57,19 @@ function initializeSpaSocket(chatStore) {
 		}
 	}
 
-	// Build socket URL based on environment
-	let socketUrl;
 	if (isLocalDev) {
 		// Local development: Use explicit port (socket server runs on separate port)
-		const port = window.frappe?.boot?.socketio_port || window.socketio_port || 9000;
-		socketUrl = `${protocol}//${host}:${port}/${siteName}`;
-	} else {
-		// Production (Frappe Cloud): Socket goes through nginx proxy on standard port
-		// No explicit port needed - nginx routes /socket.io/* to internal socketio server
-		socketUrl = `${protocol}//${host}/${siteName}`;
+		const port = win.frappe?.boot?.socketio_port || win.socketio_port || 9000;
+		return `${protocol}//${host}:${port}/${siteName}`;
 	}
+	// Production: the socket goes through nginx on the page's own address, port included
+	return `${loc.origin}/${siteName}`;
+}
+
+function initializeSpaSocket(chatStore) {
+	if (spaSocketInitialized) return spaSocket;
+
+	const socketUrl = spaSocketUrl();
 
 	logger.debug("Connecting to socket:", socketUrl);
 
@@ -267,6 +272,12 @@ export function useStreaming() {
 	function handleStreamEvent(data, { admitted = false } = {}) {
 		// Ignore events for other sessions
 		if (data.session_id !== chatStore.currentSessionId) {
+			return;
+		}
+		// A background check, import or plan ended and FACO posted its result (#34416): no turn
+		// streams it, so the conversation is read again, keeping any turn that streams now.
+		if (data.event === "message_posted") {
+			chatStore.reconcileFromServer(data.session_id);
 			return;
 		}
 		// Numbered events pass through the live-turn sync: held while this

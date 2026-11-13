@@ -106,6 +106,24 @@
 				:block="segment"
 			/>
 
+			<!-- The user's answer to a question FACO asked, where they gave it (#34546) -->
+			<UserAnswer v-else-if="segment.type === 'user_answer'" :text="segment.text" />
+
+			<!-- A mapping this turn saved: the user can review and change it here (#34415) -->
+			<MappingReviewBlock
+				v-else-if="segment.type === 'mapping_review'"
+				:session="segment.session"
+			/>
+
+			<!-- An import this turn started: its progress, live while it runs (#34416) -->
+			<ImportProgressBlock
+				v-else-if="segment.type === 'import_progress'"
+				:session="segment.session"
+			/>
+
+			<!-- A migration plan this turn ran: each file's status while it runs (#34351) -->
+			<PlanProgressBlock v-else-if="segment.type === 'plan_progress'" :plan="segment.plan" />
+
 			<!-- Records this turn created without asking, each with Undo. -->
 			<ChangesBlock
 				v-else-if="segment.type === 'changes_made'"
@@ -151,6 +169,12 @@ import { findQuestionGroups } from "./interactions/questionGroup";
 import SourcesBlock from "./SourcesBlock.vue";
 import GeneratedDocumentsBlock from "./GeneratedDocumentsBlock.vue";
 import WorkflowCreatedBlock from "./WorkflowCreatedBlock.vue";
+import ImportProgressBlock from "./ImportProgressBlock.vue";
+import MappingReviewBlock from "./MappingReviewBlock.vue";
+import PlanProgressBlock from "./PlanProgressBlock.vue";
+import UserAnswer from "./interactions/UserAnswer.vue";
+import { userAnswer } from "./interactions/userAnswer";
+import { mappingSteps, startedImports, startedPlans } from "@/utils/importSessions";
 import FacPageChip from "./pages/FacPageChip.vue";
 import { usePagePanel } from "@/composables/usePagePanel";
 import { chipsForMessage } from "@/utils/pageChips";
@@ -306,6 +330,13 @@ const groupedContent = computed(() => {
 				} else {
 					segments.push(block);
 				}
+				const answer = userAnswer(block);
+				if (answer) {
+					// The user's words show as theirs, where they said them; the steps after start below
+					segments.push({ type: "user_answer", id: `ua_${block.id}`, text: answer });
+					currentGroup = null;
+					sealedByApproval = false;
+				}
 			}
 		} else if (block.type === "thinking" || block.type === "tool_call") {
 			if (!currentGroup || sealedByApproval) {
@@ -339,6 +370,25 @@ const groupedContent = computed(() => {
 		}
 	}
 
+	// Derived from the tool_call blocks at render time, so a reloaded conversation keeps them.
+	const importing = startedImports(props.blocks);
+	// a session this turn also imported shows its progress, not a mapping that can't change now.
+	// Each review sits with the step that saved its mapping, after what the turn said about it:
+	// at the end, it fell below a later "the import is running" (DM53).
+	const reviews = mappingSteps(props.blocks).filter((step) => !importing.includes(step.session));
+	for (const step of reviews.slice().reverse()) {
+		let at = segments.findIndex((s) => s.blocks?.some((b) => b.id === step.blockId));
+		if (at === -1) at = segments.length - 1;
+		at += 1;
+		while (segments[at]?.type === "text") at += 1;
+		segments.splice(at, 0, { type: "mapping_review", id: `mapping_review:${step.session}`, session: step.session });
+	}
+	for (const session of importing) {
+		segments.push({ type: "import_progress", id: `import_progress:${session}`, session });
+	}
+	for (const plan of startedPlans(props.blocks)) {
+		segments.push({ type: "plan_progress", id: `plan_progress:${plan}`, plan });
+	}
 	segments.push(...changeLists);
 
 	// Derived from the tool_call blocks at render time, so a reloaded conversation keeps its chips.

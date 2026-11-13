@@ -8,13 +8,14 @@ The `update_document` tool modifies field values on an existing Frappe document.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `doctype` | string | **Yes** | Exact **parent** DocType name (e.g., `Sales Order`, not `Sales Order Item`) |
+| `doctype` | string | **Yes**, except with `documents` | Exact **parent** DocType name (e.g., `Sales Order`, not `Sales Order Item`) |
 | `name` | string | One of `name`/`names`/`records` | Document name/ID to update |
-| `names` | array | One of `name`/`names`/`records` | Several documents that all get the same `data` |
-| `records` | array | One of `name`/`names`/`records` | Several documents, each `{"name": ..., "data": {...}}`, for different changes |
+| `names` | array | One of `name`/`names`/`records` | Several documents of this DocType that all get the same `data` |
+| `records` | array | One of `name`/`names`/`records` | Several documents of this DocType, each `{"name": ..., "data": {...}}`, for different changes |
 | `mode` | string | No | For `names`/`records`: `all_or_nothing` (default) or `continue` |
 | `data` | object | With `name` or `names` | Only the fields to change. For child tables, pass a list of row dicts under the table fieldname; a Table MultiSelect also takes its link values |
 | `edits` | array | No | With `name` only: small changes to a long text or code field, each `{"field", "find", "replace"}` (see [Small edits to long text and code](#small-edits-to-long-text-and-code)) |
+| `documents` | array | Instead of all the above | Records of several DocTypes: a list of `{doctype, name, data}`, up to 100, all updated or none. See **Several records at once** |
 | `validate_only` | boolean | No | `true` checks the change without saving it (see [Checking a change without saving](#checking-a-change-without-saving)) |
 
 ## Response Format
@@ -180,6 +181,27 @@ The change goes through the same checks as a real update: write permission on th
 5. **Use replace mode only when you intend a wipe-and-refill** — it discards any row you omit.
 6. **Link fields use the `name`** — not the display title. Use `search_documents` with `purpose: "link_value"` to find valid values.
 7. **Cannot update submitted documents** — `docstatus=1` documents must be amended or cancelled first.
+
+## Several records at once
+
+Pass `documents` instead of `doctype`, `name` and `data`: one call, so the user approves **once** for all of them.
+
+```json
+{
+  "documents": [
+    {"doctype": "Customer", "name": "CUST-0001", "data": {"territory": "Karnataka"}},
+    {"doctype": "Customer", "name": "CUST-0002", "data": {"territory": "Karnataka"}}
+  ]
+}
+```
+
+- **Up to 100 records**; each `data` works as for one record (child tables included).
+- **Customisations and schema changes one at a time.** A customisation (Custom Field, Property Setter, Client or Server Script, Custom DocPerm, DocType, Role, Report, Print Format, Notification, Workflow, Workflow State, Workflow Action Master) or a record whose save changes the database schema (Inventory Dimension, Accounting Dimension, Service Level Agreement) is refused in `documents`, before anything is changed: `error_type: "one_at_a_time"`, with every such record in `problems`. Update each of them on its own, with `doctype`, `name` and `data`, one call each (the user approves each customisation); the other records may still go as a list. Any other record whose save would change the schema fails the list the same way (`error_type: "schema_change_in_list"`), and nothing is changed.
+- **All or nothing.** Every record is checked first (permission, restricted fields); then they are updated one by one with the same checks as a single record. If one fails, none is changed, and the error names it: "Document 2 (Customer 'CUST-0002') couldn't be updated: … Nothing was updated." What a save sends out at once can't be taken back, as with one record: a Notification's Slack or SMS message, say.
+- **No keys that start with an underscore**, except a child row's `_delete`. `_assign`, `_comments`, `_liked_by`, `_user_tags` and the like are Frappe's own: a record (or a child row) with one is refused before anything is changed, `error_type: "internal_key"`, with each record and key in `problems`.
+- **Show the user the changes as a table before calling.** The approval card then shows one table per DocType: each record's name, then every field it changes.
+
+Reply: `{"success": true, "updated": [{"doctype": "Customer", "name": "CUST-0001"}, …], "message": "Updated 2 records."}`. When nothing was changed: `success: false`, the `error`, and `problems` (each with the record's number `document` and why).
 
 ## Edge Cases
 

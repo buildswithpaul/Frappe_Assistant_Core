@@ -164,6 +164,39 @@ describe("ApprovalCard for other tools", () => {
 	});
 });
 
+describe("ApprovalCard for an import's start", () => {
+	// #34545: the card listed "Validated Fingerprint: b801d68f2bf0" among the fields (test.local)
+	it("shows no fingerprint, even with every field open", async () => {
+		const input = {
+			doctype: "Customer",
+			file_name: "UI_Test_Customers.csv",
+			import_type: "Insert New Records",
+			rows: 3,
+			submit_after_import: false,
+			validated_fingerprint: "b801d68f2bf0",
+		};
+		const wrapper = mount(ApprovalCard, { props: { block: { id: "s1", tool_name: "start_import", input, interrupts } } });
+		const toggle = wrapper.find(".field-toggle");
+		if (toggle.exists()) await toggle.trigger("click");
+
+		expect(wrapper.text()).not.toContain("Fingerprint");
+		expect(wrapper.text()).not.toContain("b801d68f2bf0");
+	});
+});
+
+describe("ApprovalCard for a migration plan's run", () => {
+	// #34547: the card read "Decisions: 2 items", behind "+ 2 more", though the user approves them
+	it("lists every decision as a line, in sight", () => {
+		const decisions = ["Create GST HSN Code 82041100.", "Rows that still fail when their file comes up: the plan stops."];
+		const input = { plan: "IMP-1", files: 3, rows: 11, masters: 1, cut_off: "", decisions };
+		const block = { id: "t9", tool_name: "run_migration_plan", input, interrupts };
+		const wrapper = mount(ApprovalCard, { props: { block } });
+
+		expect(wrapper.findAll(".value-lines li").map((li) => li.text())).toEqual(decisions);
+		expect(wrapper.text()).not.toContain("2 items");
+	});
+});
+
 describe("ApprovalCard for customisations", () => {
 	const lines = (n) => Array.from({ length: n }, (_, i) => `line_${i} = ${i}`).join("\n");
 	const scriptBlock = (data, tool = "create_document") => ({
@@ -243,20 +276,28 @@ describe("ApprovalCard for customisations", () => {
 		]);
 	});
 
-	it("shows only ten child rows and counts the rest", () => {
+	it("shows ten child rows and opens the rest on request", async () => {
 		const rows = Array.from({ length: 13 }, (_, i) => ({ state: `S${i}` }));
 		const block = { id: "t8", tool_name: "create_document", input: { doctype: "Workflow", data: { states: rows } }, interrupts };
 		const wrapper = mount(ApprovalCard, { props: { block } });
 		expect(wrapper.findAll("table.child-table tbody tr")).toHaveLength(10);
-		expect(wrapper.text()).toContain("+ 3 more");
+		const toggle = wrapper.find("button.child-rows-toggle");
+		expect(toggle.text()).toBe("Show all 13 rows");
+		await toggle.trigger("click");
+		expect(wrapper.findAll("table.child-table tbody tr")).toHaveLength(13);
+		expect(wrapper.find("table.child-table").text()).toContain("S12");
 	});
 
-	it("still truncates long non-code text at 120", () => {
-		const block = { id: "t9", tool_name: "create_document", input: { doctype: "ToDo", description: "x".repeat(300) }, interrupts };
+	it("opens long non-code text in full instead of cutting it at 120", async () => {
+		const description = "x".repeat(299) + "Z";
+		const block = { id: "t9", tool_name: "create_document", input: { doctype: "ToDo", description }, interrupts };
 		const wrapper = mount(ApprovalCard, { props: { block } });
 		expect(wrapper.find(".code-preview").exists()).toBe(false);
-		const value = wrapper.findAll(".field-value").find((v) => v.text().startsWith("xxx"));
-		expect(value.text()).toBe("x".repeat(120) + "…");
+		const value = () => wrapper.findAll(".field-value").find((v) => v.text().startsWith("xxx"));
+		expect(value().text()).toContain("x".repeat(120) + "…");
+		expect(value().text()).not.toContain("Z");
+		await value().find("button.value-toggle").trigger("click");
+		expect(value().find(".value-full").text()).toBe(description);
 	});
 
 	it("update card shows a line diff of old vs new code", async () => {
@@ -783,6 +824,342 @@ describe("ApprovalCard field conditions", () => {
 	});
 });
 
+function recordsCard(input, toolName = "create_document", blockInterrupts = []) {
+	return mount(ApprovalCard, { props: { block: { id: "b1", tool_name: toolName, input, interrupts: blockInterrupts } } });
+}
+
+const masters = (count) =>
+	Array.from({ length: count }, (_, i) => ({
+		doctype: "Customer Group",
+		data: { customer_group_name: `Group ${i + 1}`, parent_customer_group: "All Customer Groups" },
+	}));
+
+// 6 Customer Groups, 3 Territories and 12 UOMs, interleaved as a dry run's masters plan can be.
+function mixedList() {
+	const groups = masters(6);
+	const territories = Array.from({ length: 3 }, (_, i) => ({
+		doctype: "Territory",
+		data: { territory_name: `Zone ${i + 1}`, parent_territory: "All Territories" },
+	}));
+	const uoms = Array.from({ length: 12 }, (_, i) => ({
+		doctype: "UOM",
+		data: i % 2 ? { uom_name: `Unit ${i + 1}` } : { uom_name: `Unit ${i + 1}`, must_be_whole_number: 1 },
+	}));
+	return [groups[0], territories[0], uoms[0], ...groups.slice(1), ...territories.slice(1), ...uoms.slice(1)];
+}
+
+const lines = (n) => Array.from({ length: n }, (_, i) => `line_${i} = ${i}`).join("\n");
+
+// One table per doctype: its header keys and its own rows (not the rows of a child table in it).
+function recordTables(wrapper) {
+	return wrapper.findAll("table.records-table").map((table) => ({
+		doctype: table.find("caption").text(),
+		columns: table.findAll(":scope > thead > tr > th").map((th) => th.text()),
+		rows: table.findAll(":scope > tbody > tr").map((tr) => tr.findAll(":scope > td").map((td) => td.text())),
+	}));
+}
+
+describe("ApprovalCard with several records", () => {
+	it("lists every record being approved in a table, with the subtitle", async () => {
+		const wrapper = recordsCard({ documents: masters(3), import_session: "IMP-1" }, "create_document", interrupts);
+
+		expect(recordTables(wrapper)).toEqual([
+			{
+				doctype: "Customer Group (3)",
+				columns: ["Customer Group Name", "Parent Customer Group"],
+				rows: [
+					["Group 1", "All Customer Groups"],
+					["Group 2", "All Customer Groups"],
+					["Group 3", "All Customer Groups"],
+				],
+			},
+		]);
+		expect(wrapper.text()).not.toContain("3 items");
+		expect(wrapper.find(".approval-subtitle").text()).toBe(
+			"This will write 3 new records to your ERP, all or none",
+		);
+		await wrapper.find(".ql-btn-approve").trigger("click");
+		expect(wrapper.emitted("approve")[0]).toEqual(["b1", [{ interruptId: "i1", response: "approve" }]]);
+		await wrapper.find(".ql-btn-reject").trigger("click");
+		expect(wrapper.emitted("reject")[0]).toEqual(["b1", [{ interruptId: "i1", response: "rejected" }]]);
+	});
+
+	it("shows every key a record writes, _assign and __newname included", () => {
+		const wrapper = recordsCard({
+			documents: [
+				{
+					doctype: "Customer Group",
+					data: {
+						customer_group_name: "Retail",
+						parent_customer_group: "All Customer Groups",
+						__newname: "Retail-01",
+						_assign: '["a@x.com"]',
+					},
+				},
+				masters(1)[0],
+			],
+		});
+
+		const [table] = recordTables(wrapper);
+		expect(table.columns).toEqual(["__newname", "Customer Group Name", "Parent Customer Group", "_assign"]);
+		expect(table.rows[0]).toEqual(["Retail-01", "Retail", "All Customer Groups", '["a@x.com"]']);
+	});
+
+	it("opens a record's child rows instead of saying 3 items", async () => {
+		const seenBy = [
+			{ name: "r1", user: "a@x.com" },
+			{ name: "r2", user: "b@x.com", _delete: true },
+			{ user: "c@x.com" },
+		];
+		const wrapper = recordsCard(
+			{
+				documents: [
+					{ doctype: "Note", name: "N-1", data: { seen_by: seenBy } },
+					{ doctype: "Note", name: "N-2", data: { public: 1 } },
+				],
+			},
+			"update_document",
+		);
+
+		expect(wrapper.text()).not.toContain("3 items");
+		const toggle = wrapper.find("button.rows-toggle");
+		expect(toggle.text()).toBe("3 rows");
+		expect(wrapper.find("table.rows-table").exists()).toBe(false);
+		await toggle.trigger("click");
+		const rows = wrapper.find("table.rows-table");
+		expect(rows.findAll("th").map((th) => th.text())).toEqual(["Name", "User", "_delete"]);
+		expect(rows.findAll(":scope > tbody > tr").map((tr) => tr.findAll("td").map((td) => td.text()))).toEqual([
+			["r1", "a@x.com", ""],
+			["r2", "b@x.com", "Yes"],
+			["", "c@x.com", ""],
+		]);
+	});
+
+	it("child row control reports aria-expanded", async () => {
+		const wrapper = recordsCard(
+			{ documents: [{ doctype: "Note", name: "N-1", data: { seen_by: [{ user: "a@x.com" }] } }, { doctype: "Note", name: "N-2", data: { public: 1 } }] },
+			"update_document",
+		);
+
+		const toggle = wrapper.find("button.rows-toggle");
+		expect(toggle.text()).toBe("1 row");
+		expect(toggle.attributes("aria-expanded")).toBe("false");
+		await toggle.trigger("click");
+		expect(toggle.attributes("aria-expanded")).toBe("true");
+	});
+
+	it("reveals a 500-character value in full", async () => {
+		const description = "d".repeat(499) + "Z";
+		const wrapper = recordsCard({
+			documents: [
+				{ doctype: "ToDo", data: { description } },
+				{ doctype: "ToDo", data: { description: "Short" } },
+			],
+		});
+
+		const cell = () => wrapper.findAll("table.records-table > tbody > tr")[0].find("td");
+		expect(cell().text()).not.toContain("Z");
+		const toggle = cell().find("button.value-toggle");
+		expect(toggle.attributes("aria-expanded")).toBe("false");
+		await toggle.trigger("click");
+		expect(cell().find(".value-full").text()).toBe(description);
+		expect(cell().find("button.value-toggle").attributes("aria-expanded")).toBe("true");
+	});
+
+	it("reveals a long script in a record in full", async () => {
+		const script = lines(60);
+		const wrapper = recordsCard({
+			documents: [
+				{ doctype: "Web Page", data: { title: "Help", script } },
+				{ doctype: "Web Page", data: { title: "About" } },
+			],
+		});
+
+		const row = () => wrapper.findAll("table.records-table > tbody > tr")[0];
+		expect(row().text()).not.toContain("line_59 = 59");
+		await row().find("button.value-toggle").trigger("click");
+		expect(row().find(".value-full").text()).toBe(script);
+	});
+
+	it("renders one table per doctype with one column per field", () => {
+		const wrapper = recordsCard({ documents: mixedList() });
+
+		const tables = recordTables(wrapper);
+		expect(tables.map((t) => t.doctype)).toEqual(["Customer Group (6)", "Territory (3)", "UOM (12)"]);
+		expect(tables.map((t) => t.columns)).toEqual([
+			["Customer Group Name", "Parent Customer Group"],
+			["Territory Name", "Parent Territory"],
+			["Uom Name", "Must Be Whole Number"],
+		]);
+		expect(tables.map((t) => t.rows.length)).toEqual([6, 3, 12]);
+		expect(tables[0].rows.map((r) => r[0])).toEqual(["Group 1", "Group 2", "Group 3", "Group 4", "Group 5", "Group 6"]);
+	});
+
+	it("leaves a cell empty for a field a record doesn't set", () => {
+		const wrapper = recordsCard({ documents: mixedList() });
+
+		const uoms = recordTables(wrapper)[2];
+		expect(uoms.rows[0]).toEqual(["Unit 1", "1"]);
+		expect(uoms.rows[1]).toEqual(["Unit 2", ""]);
+	});
+
+	it("heads a create list with its total and each doctype's count", () => {
+		const wrapper = recordsCard({ documents: mixedList() });
+
+		expect(wrapper.find("[data-test='records-heading']").text()).toBe(
+			"Create 21: 6 Customer Groups, 3 Territories, 12 UOMs",
+		);
+	});
+
+	it("heads an update list with Update", () => {
+		const wrapper = recordsCard(
+			{
+				documents: [
+					{ doctype: "Customer", name: "C-1", data: { territory: "Karnataka" } },
+					{ doctype: "Customer", name: "C-2", data: { territory: "Karnataka" } },
+					{ doctype: "Address", name: "A-1", data: { city: "Mysuru" } },
+				],
+			},
+			"update_document",
+		);
+
+		expect(wrapper.find("[data-test='records-heading']").text()).toBe("Update 3: 2 Customers, 1 Address");
+	});
+
+	it("puts all 100 records in a scroll container", () => {
+		const documents = Array.from({ length: 100 }, (_, i) => ({
+			doctype: ["Customer Group", "Territory", "UOM"][i % 3],
+			data: { [["customer_group_name", "territory_name", "uom_name"][i % 3]]: `Record ${i + 1}` },
+		}));
+		const wrapper = recordsCard({ documents });
+
+		const scroll = wrapper.find("[data-test='records-scroll']");
+		expect(scroll.findAll("table.records-table > tbody > tr")).toHaveLength(100);
+		expect(scroll.text()).toContain("Record 100");
+		expect(scroll.element.style.maxHeight).toBe("320px");
+		expect(wrapper.text()).not.toMatch(/Show all \d+/);
+	});
+
+	it("starts an update row with the record's name", () => {
+		const wrapper = recordsCard(
+			{
+				documents: [
+					{ doctype: "Customer", name: "C-1", data: { territory: "Karnataka", credit_limit: 0 } },
+					{ doctype: "Customer", name: "C-2", data: { territory: "Kerala" } },
+				],
+			},
+			"update_document",
+		);
+
+		const [table] = recordTables(wrapper);
+		expect(table.columns).toEqual(["Name", "Territory", "Credit Limit"]);
+		expect(table.rows).toEqual([
+			["C-1", "Karnataka", "0"],
+			["C-2", "Kerala", ""],
+		]);
+	});
+
+	it("starts a create row with its name field", () => {
+		const wrapper = recordsCard({
+			documents: [
+				{ doctype: "Customer Group", data: { parent_customer_group: "All Customer Groups", customer_group_name: "Hospitals" } },
+				{ doctype: "Market Segment", data: { description: "Care", market_segment: "Healthcare" } },
+			],
+		});
+
+		const [groups, segments] = recordTables(wrapper);
+		expect(groups.columns[0]).toBe("Customer Group Name");
+		expect(groups.rows[0][0]).toBe("Hospitals");
+		expect(segments.columns[0]).toBe("Market Segment");
+		expect(segments.rows[0][0]).toBe("Healthcare");
+	});
+
+	it("every toggle is a button with aria-expanded that follows its state", async () => {
+		const list = recordsCard(
+			{
+				documents: [
+					{ doctype: "Note", name: "N-1", data: { content: "c".repeat(300), seen_by: [{ user: "a@x.com" }] } },
+					{ doctype: "Note", name: "N-2", data: { public: 1 } },
+				],
+			},
+			"update_document",
+		);
+		const single = mount(ApprovalCard, {
+			props: {
+				block: {
+					id: "s1",
+					tool_name: "create_document",
+					input: {
+						doctype: "Workflow",
+						data: {
+							a: "1",
+							b: "2",
+							c: "3",
+							d: "4",
+							e: "5",
+							note: "n".repeat(300),
+							// long enough to fold: a short script is shown whole, with no toggle
+							script: lines(20),
+							states: Array.from({ length: 12 }, (_, i) => ({ state: `S${i}` })),
+						},
+					},
+					interrupts,
+				},
+			},
+		});
+
+		const toggles = [
+			[list, "button.records-toggle"],
+			[list, "button.rows-toggle"],
+			[list, "button.value-toggle"],
+			[single, "button.field-toggle"],
+			[single, "button.child-rows-toggle"],
+			[single, "button.code-toggle"],
+		];
+		for (const [wrapper, selector] of toggles) {
+			const toggle = wrapper.find(selector);
+			expect(toggle.exists(), selector).toBe(true);
+			expect(toggle.element.tagName, selector).toBe("BUTTON");
+			expect(toggle.attributes("aria-expanded"), selector).toBe("false");
+			await toggle.trigger("click");
+			expect(wrapper.find(selector).attributes("aria-expanded"), selector).toBe("true");
+			await wrapper.find(selector).trigger("click");
+			expect(wrapper.find(selector).attributes("aria-expanded"), selector).toBe("false");
+		}
+		// The long note is folded behind Show all fields; open it, then its own toggle.
+		await single.find("button.field-toggle").trigger("click");
+		const valueToggle = single.find("button.value-toggle");
+		expect(valueToggle.attributes("aria-expanded")).toBe("false");
+		await valueToggle.trigger("click");
+		expect(single.find("button.value-toggle").attributes("aria-expanded")).toBe("true");
+	});
+
+	it("says how many records an update list changes", () => {
+		const wrapper = recordsCard(
+			{
+				documents: [
+					{ doctype: "Customer", name: "C-1", data: { territory: "Karnataka" } },
+					{ doctype: "Customer", name: "C-2", data: { territory: "Karnataka" } },
+				],
+			},
+			"update_document",
+		);
+
+		expect(wrapper.find(".approval-subtitle").text()).toBe(
+			"This will modify 2 existing records in your ERP, all or none",
+		);
+	});
+
+	it("leaves a single-record card as it was", () => {
+		const wrapper = recordsCard({ doctype: "ToDo", data: { description: "Call the bank" } });
+
+		expect(wrapper.find(".approval-records").exists()).toBe(false);
+		expect(wrapper.find(".approval-subtitle").text()).toBe("This will write a new record to your ERP");
+		// The title names the record now, so its description isn't repeated as a field
+		expect(wrapper.find(".approval-title").text()).toContain("Call the bank");
+	});
+});
+
 describe("ApprovalCard heading and progress", () => {
 	const todo = { id: "h1", tool_name: "create_document", input: { doctype: "ToDo", data: { description: "Call Blue Harbor", priority: "High" } }, interrupts };
 
@@ -810,6 +1187,68 @@ describe("ApprovalCard heading and progress", () => {
 	});
 });
 
+describe("ApprovalCard on an update that empties or replaces a child table", () => {
+	// #34540: update_document given items [] deletes every row, and rows without a name replace
+	// them all, while the card showed "—" or a plain table, like a field not sent or rows added
+	const update = (items) =>
+		mount(ApprovalCard, {
+			props: {
+				block: { id: "c1", tool_name: "update_document", input: { doctype: "Sales Order", name: "SO-1", data: { items } }, interrupts },
+			},
+		});
+
+	it("says an empty list removes all its rows, in sight", () => {
+		const wrapper = update([]);
+		expect(wrapper.find(".table-replaced").text()).toBe("Items: Removes all its rows");
+		expect(wrapper.find(".approval-table").exists()).toBe(false);
+	});
+
+	it("says rows without a name replace all its rows, above the rows", () => {
+		const wrapper = update([{ item_code: "SRV-001", qty: 1 }]);
+		expect(wrapper.find(".table-replaced").text()).toBe("Items: Replaces all its rows with 1");
+		expect(wrapper.text()).toContain("SRV-001");
+	});
+
+	it("says bare values replace all its rows, above the values", () => {
+		const wrapper = mount(ApprovalCard, {
+			props: {
+				block: {
+					id: "c2",
+					tool_name: "update_document",
+					input: { doctype: "Pricing Rule", name: "PR-1", data: { customer_groups: ["Retail", "Export"] } },
+					interrupts,
+				},
+			},
+		});
+		expect(wrapper.find(".table-replaced").text()).toBe("Customer Groups: Replaces all its rows with 2");
+		expect(wrapper.findAll(".value-lines li").map((li) => li.text())).toEqual(["Retail", "Export"]);
+	});
+
+	it("says nothing when the rows are named, as the update patches them", () => {
+		expect(update([{ name: "row-1", qty: 2 }]).find(".table-replaced").exists()).toBe(false);
+	});
+
+	it("says so for each record of a batch update", () => {
+		const documents = [
+			{ doctype: "Sales Order", name: "SO-1", data: { items: [] } },
+			{ doctype: "Sales Order", name: "SO-2", data: { items: [{ item_code: "SRV-001", qty: 1 }] } },
+		];
+		const wrapper = recordsCard({ documents }, "update_document", interrupts);
+		expect(wrapper.findAll(".table-replaced").map((p) => p.text())).toEqual([
+			"Removes all its rows",
+			"Replaces all its rows with 1",
+		]);
+	});
+
+	it("shows a batch record's bare values beside the warning", () => {
+		const documents = [{ doctype: "Pricing Rule", name: "PR-1", data: { customer_groups: ["Retail", "Export"] } }];
+		const [table] = recordTables(recordsCard({ documents }, "update_document", interrupts));
+		const cell = table.rows[0][table.columns.indexOf("Customer Groups")];
+		expect(cell).toContain("Replaces all its rows with 2");
+		expect(cell).toContain("Retail");
+	});
+});
+
 describe("ApprovalCard blank values", () => {
 	it("leaves out a blank field on an action, but keeps one an update clears", () => {
 		const action = mount(ApprovalCard, {
@@ -820,6 +1259,73 @@ describe("ApprovalCard blank values", () => {
 			props: { block: { id: "b2", tool_name: "update_document", input: { doctype: "ToDo", name: "TD-1", data: { description: "" } }, interrupts } },
 		});
 		expect(update.findAll(".field-key").map((k) => k.text())).toEqual(["Description"]);
+	});
+});
+
+describe("ApprovalCard for run_python_code", () => {
+	// The user approves server code here: it reads line by line, not folded into one paragraph
+	const script = [
+		"# Count the customers in each group",
+		'groups = frappe.get_all("Customer Group", pluck="name")',
+		'counts = {g: frappe.db.count("Customer", {"customer_group": g}) for g in groups}',
+		"print(sorted(counts.items(), key=lambda kv: -kv[1])[:5])",
+	].join("\n");
+	const pythonBlock = (input) => ({ id: "py1", tool_name: "run_python_code", input, interrupts });
+
+	it("shows the code in the code box, every line, as Python", () => {
+		const wrapper = mount(ApprovalCard, { props: { block: pythonBlock({ code: script }) } });
+		const box = wrapper.findAllComponents(CodePreview).find((c) => c.props("label") === "Code");
+		expect(box).toBeTruthy();
+		expect(box.props("language")).toBe("python");
+		expect(box.find("pre").text()).toContain('groups = frappe.get_all("Customer Group", pluck="name")');
+		expect(box.find("pre").text().split("\n").length).toBeGreaterThanOrEqual(4);
+		expect(wrapper.findAll(".field-key").map((k) => k.text())).not.toContain("Code");
+	});
+
+	it("keeps its other inputs as plain fields", () => {
+		const wrapper = mount(ApprovalCard, {
+			props: { block: pythonBlock({ code: script, return_variables: ["counts"] }) },
+		});
+		expect(wrapper.text()).toContain("Return Variables");
+		expect(wrapper.text()).toContain("counts");
+	});
+
+	it("leaves a field named code plain on a record", () => {
+		const wrapper = mount(ApprovalCard, {
+			props: {
+				block: { id: "c1", tool_name: "create_document", input: { doctype: "Item Barcode", data: { code: "8901234" } }, interrupts },
+			},
+		});
+		expect(wrapper.findAllComponents(CodePreview).length).toBe(0);
+		expect(wrapper.findAll(".field-key").map((k) => k.text())).toContain("Code");
+	});
+});
+
+describe("ApprovalCard for an opening entry (#34433)", () => {
+	it("shows its totals and the line to Temporary Opening that balances it", () => {
+		const input = {
+			session: "IMP-1",
+			company: "Acme",
+			cut_off: "2026-03-31",
+			rows: 12,
+			total_debit: 1500,
+			total_credit: 1200,
+			balancing_amount: -300,
+			covered_debit: 0,
+			covered_credit: 0,
+			excluded_debit: 50,
+			excluded_credit: 0,
+		};
+		const wrapper = mount(ApprovalCard, {
+			props: { block: { id: "o1", tool_name: "import_opening_balances", input, interrupts } },
+		});
+		const summary = wrapper.find(".opening-approval");
+		expect(summary.exists()).toBe(true);
+		expect(summary.text()).toContain("1,500.00");
+		expect(summary.text()).toContain("1,200.00");
+		expect(summary.text()).toContain("Credit 300.00 to Temporary Opening");
+		expect(summary.text()).toContain("Left out");
+		expect(summary.text()).not.toContain("Covered by other imports");
 	});
 });
 

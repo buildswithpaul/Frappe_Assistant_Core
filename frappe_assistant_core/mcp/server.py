@@ -413,12 +413,14 @@ class MCPServer:
             )
 
             is_error = False
+            own_message = False  # an error FAC wrote itself, with nothing of the user's file in it
             if tool.get("safeExecuteEnvelope") and isinstance(result, dict):
                 if result.get("success") is True and "result" in result:
                     result = result["result"]
                 elif result.get("success") is False:
                     is_error = True
                     inner = result.get("result")
+                    own_message = bool(result.get("own_message"))
                     result = (
                         inner
                         if isinstance(inner, dict)
@@ -435,6 +437,16 @@ class MCPServer:
             image_content = None
             if isinstance(result, dict):
                 image_content = result.pop("_image_content", None)
+
+            # The user's file content, fenced so the model reads it as data (#34003).
+            if isinstance(result, dict):
+                from frappe_assistant_core.utils.untrusted_output import fence_fields, with_notice
+
+                if tool.get("untrustedFields"):
+                    fenced = [f for f in tool["untrustedFields"] if not (own_message and f == "error")]
+                    result = fence_fields(result, fenced)
+                # once per reply, for its fields and the records get_document fenced itself
+                result = with_notice(result)
 
             # Serialize the text result (default=str handles datetime, Decimal, etc.)
             if isinstance(result, str):

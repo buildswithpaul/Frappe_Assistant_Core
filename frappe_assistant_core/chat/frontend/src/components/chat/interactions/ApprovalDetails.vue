@@ -28,12 +28,18 @@
 					}"
 				>
 					<ConditionValue v-if="isCondition(key)" :expression="value" />
+					<LongValue v-else-if="isLongValue(value)" :value="value" />
 					<template v-else>{{ displayValue(key, value) }}</template>
 				</span>
 			</template>
 			<template v-if="fieldSplit.overflowCount > 0">
 				<span class="field-more">{{ __("+ {0} more", [fieldSplit.overflowCount]) }}</span>
-				<button type="button" class="field-toggle" @click="showAllFields = !showAllFields">
+				<button
+					type="button"
+					class="field-toggle"
+					:aria-expanded="String(showAllFields)"
+					@click="showAllFields = !showAllFields"
+				>
 					{{ showAllFields ? __("Show fewer fields") : __("Show all fields") }}
 				</button>
 			</template>
@@ -44,7 +50,7 @@
 				:key="key"
 				:label="codeLabel(key, value)"
 				:code="value"
-				:language="codeLanguage(key, doctype, flat)"
+				:language="rowLanguage(key)"
 				:previous="previousCode(key)"
 			/>
 			<CodePreview
@@ -55,6 +61,18 @@
 				:language="codeLanguage(key, doctype, flat)"
 			/>
 		</div>
+		<div v-for="[key, lines] in listRows" :key="key" class="value-list">
+			<div v-if="tableReplacement(block.tool_name, lines)" class="table-replaced">
+				{{ formatKey(key) }}: {{ tableReplacement(block.tool_name, lines) }}
+			</div>
+			<span class="field-key">{{ formatKey(key) }}</span>
+			<ul class="value-lines">
+				<li v-for="(line, i) in lines" :key="i">{{ line }}</li>
+			</ul>
+		</div>
+		<div v-for="[key] in clearedTables" :key="`cleared-${key}`" class="table-replaced">
+			{{ formatKey(key) }}: {{ tableReplacement(block.tool_name, []) }}
+		</div>
 		<div v-if="rawEdits.length" class="raw-edits" data-test="raw-edits">
 			<p v-if="appliedEdits.error" class="goes-live-missing" data-test="edits-notice">
 				{{ __("These edits could not be applied to the stored text, so they are shown as sent.") }}
@@ -64,12 +82,15 @@
 				<CodePreview :label="`${formatKey(edit.field)}: ${__('replace')}`" :code="edit.replace" :language="codeLanguage(edit.field, doctype, flat)" />
 			</template>
 		</div>
-		<ChildTable
-			v-for="[key, rows] in tableRows"
-			:key="key"
-			:label="key"
-			:rows="rows"
-		/>
+		<template v-for="[key, rows] in tableRows" :key="key">
+			<div v-if="tableReplacement(block.tool_name, rows)" class="table-replaced">
+				{{ formatKey(key) }}: {{ tableReplacement(block.tool_name, rows) }}
+			</div>
+			<div v-else-if="tablePatchNote(block.tool_name, rows)" class="table-kept">
+				{{ formatKey(key) }}: {{ tablePatchNote(block.tool_name, rows) }}
+			</div>
+			<ChildTable :label="key" :rows="rows" />
+		</template>
 		<div v-if="rowCode.length" class="code-stack">
 			<CodePreview
 				v-for="cell in rowCode"
@@ -93,6 +114,7 @@ import ChildTable from "./ChildTable.vue";
 import OpeningCode from "./OpeningCode.vue";
 import ConditionValue from "./ConditionValue.vue";
 import CodePreview from "./CodePreview.vue";
+import LongValue from "./LongValue.vue";
 import { baseToolName } from "@/utils/toolNames";
 import { headlineKeys } from "./approvalHeadline";
 import { describeCondition } from "./conditions";
@@ -107,8 +129,13 @@ import {
 	isMoneyKey,
 	isCodeField,
 	isChildTable,
+	isTextList,
+	tableReplacement,
+	tablePatchNote,
+	isLongValue,
 	isEvalExpression,
 	codeLanguage,
+	toolCodeLanguage,
 	splitDetailFields,
 } from "./helpers";
 import { rowCodeCells, rowsWithoutCode } from "./rowCode";
@@ -152,8 +179,19 @@ const doctype = computed(() => flat.value.doctype);
 // Code and child tables always show in full; only the plain fields fold behind "Show all fields".
 const codeRows = computed(() =>
 	Object.entries(flat.value).filter(
-		([k, v]) => isCodeField(k, doctype.value, flat.value) && typeof v === "string" && v !== "",
+		([k, v]) =>
+			(isCodeField(k, doctype.value, flat.value) || toolCodeLanguage(props.block.tool_name, k)) &&
+			typeof v === "string" &&
+			v !== "",
 	),
+);
+const rowLanguage = (key) =>
+	toolCodeLanguage(props.block.tool_name, key) || codeLanguage(key, doctype.value, flat.value);
+// Every line of a list in sight, not "2 items" behind "+ more": the user approves them (#34547)
+const listRows = computed(() => Object.entries(flat.value).filter(([, v]) => isTextList(v)));
+// An update given [] deletes every row of that table: said in red, always in sight, not "—" (#34540)
+const clearedTables = computed(() =>
+	Object.entries(flat.value).filter(([, v]) => Array.isArray(v) && v.length === 0 && tableReplacement(props.block.tool_name, v)),
 );
 // Code in child rows (a transition's condition, a field's eval: condition) shows in full below its
 // table, diffed against the stored row on an update, and not in the table.
@@ -179,6 +217,8 @@ const plainFields = computed(() =>
 			([k, v]) =>
 				!codeRows.value.some(([ck]) => ck === k) &&
 				!isChildTable(v) &&
+				!isTextList(v) &&
+				!clearedTables.value.some(([ck]) => ck === k) &&
 				!shownInTitle.value.includes(k) &&
 				(keepsBlanks.value || !isBlank(v)),
 		),
@@ -283,6 +323,29 @@ function previousCode(key) {
 .goes-live-missing {
 	margin: 0;
 	color: var(--ql-danger);
+}
+
+.table-kept {
+	margin: 4px 0;
+	font-size: 12px;
+	color: var(--ql-text-muted);
+}
+.table-replaced {
+	margin: 6px 0 0;
+	color: var(--ql-danger);
+	font-weight: 600;
+}
+
+.value-list {
+	grid-column: 1 / -1;
+	padding: 6px 0 0;
+}
+
+.value-lines {
+	margin: 4px 0 0;
+	padding-left: 18px;
+	font-size: 12px;
+	color: var(--ql-text);
 }
 
 .approval-table {

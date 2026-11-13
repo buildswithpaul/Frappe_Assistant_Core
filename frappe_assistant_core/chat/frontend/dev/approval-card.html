@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Approval card harness (dev only)</title>
+  <!--
+    Dev-only page: renders the real ApprovalCard with fixed blocks, so the card can be checked
+    without FAC Cloud. Not an input of `npm run build`; it never ships. Start it with
+      npx vite --config dev/vite.config.js --host 0.0.0.0 --port 5179
+    from chat/frontend, then open http://localhost:5179/dev/approval-card.html
+  -->
+</head>
+<body>
+  <div id="app"></div>
+  <script type="module" src="./approval-card.js"></script>
+</body>
+</html>

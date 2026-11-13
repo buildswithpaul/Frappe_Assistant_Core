@@ -150,8 +150,14 @@ doc_events = {
 
 scheduler_events = {
     "cron": {
-        "0 0 * * *": ["frappe_assistant_core.assistant_core.server.cleanup_old_logs"],
+        "0 0 * * *": [
+            "frappe_assistant_core.assistant_core.server.cleanup_old_logs",
+            # old-ID rows whose record was deleted by hand since (#34244)
+            "frappe_assistant_core.utils.import_keys.sweep_orphans",
+        ],
         "*/30 * * * *": ["frappe_assistant_core.utils.cache.warm_cache"],
+        # a migration plan whose worker died is Running for ever: end it (#34431)
+        "*/10 * * * *": ["frappe_assistant_core.utils.import_plan.sweep_dead_plans"],
     },
     # Hourly tasks removed - no longer needed after Assistant Connection Log removal
 }
@@ -198,6 +204,10 @@ page_renderer = [
 # -----------------------------------------------------------
 
 # ignore_links_on_delete = ["Communication", "ToDo"]
+
+# A record an import made (a customer, an item) can be deleted although the import key map
+# still names it: the map never blocks that, and a row whose record is gone stops resolving (#34244).
+ignore_links_on_delete = ["FAC Import Key Map"]
 
 
 # User Data Protection
@@ -415,6 +425,12 @@ after_migrate.append("frappe_assistant_core.chat.cloud_url.sync_cloud_url_mirror
 # FAC Bot in Raven: create the bot on migrate once switched on; the cached on/off state follows
 # FAC Chat Settings.
 after_migrate.append("frappe_assistant_core.integrations.raven.bot.ensure_bot_after_migrate")
+# A personal data deletion only redacts text: an import session's files go with it too (#34539).
+# on_change, not on_update: Frappe ends the request with db_set("status", "Deleted"), which runs
+# on_change only (on_change also runs after every save).
+doc_events.setdefault("Personal Data Deletion Request", {})["on_change"] = (
+    "frappe_assistant_core.utils.import_retention.purge_user_sessions"
+)
 doc_events.setdefault("FAC Chat Settings", {})["on_update"] = (
     "frappe_assistant_core.integrations.raven.bot.clear_state_cache"
 )
@@ -433,27 +449,31 @@ scheduler_events["cron"].setdefault("*/5 * * * *", []).append(
 permission_query_conditions.update(
     {
         "FAC Chat Message": (
-            "frappe_assistant_core.chat.utils.permissions" ".get_faco_message_permission_query_conditions"
+            "frappe_assistant_core.chat.utils.permissions.get_faco_message_permission_query_conditions"
         ),
         "FAC Chat Usage Log": (
-            "frappe_assistant_core.chat.utils.permissions" ".get_faco_usage_log_permission_query_conditions"
+            "frappe_assistant_core.chat.utils.permissions.get_faco_usage_log_permission_query_conditions"
         ),
         "FAC Chat User Preferences": (
             "frappe_assistant_core.chat.utils.permissions"
             ".get_faco_user_preferences_permission_query_conditions"
         ),
         "FAC Chat Conversation": (
-            "frappe_assistant_core.chat.utils.permissions"
-            ".get_faco_conversation_permission_query_conditions"
+            "frappe_assistant_core.chat.utils.permissions.get_faco_conversation_permission_query_conditions"
         ),
         "FAC Chat Project": (
-            "frappe_assistant_core.chat.utils.permissions" ".get_faco_project_permission_query_conditions"
+            "frappe_assistant_core.chat.utils.permissions.get_faco_project_permission_query_conditions"
         ),
         # Zero-retention session blob: scoped to owner only (no System Manager
         # role exemption — only literal Administrator) to close the All-role IDOR.
         "FAC Chat Session State": (
             "frappe_assistant_core.chat.doctype.fac_chat_session_state"
             ".fac_chat_session_state.get_permission_query_conditions"
+        ),
+        # Import sessions follow FAC Chat Message: their user, and System Managers.
+        "FAC Import Session": (
+            "frappe_assistant_core.assistant_core.doctype.fac_import_session"
+            ".fac_import_session.get_permission_query_conditions"
         ),
     }
 )
@@ -469,7 +489,10 @@ has_permission = {
     ),
     "FAC Chat Project": ("frappe_assistant_core.chat.utils.permissions.has_faco_project_permission"),
     "FAC Chat Session State": (
-        "frappe_assistant_core.chat.doctype.fac_chat_session_state" ".fac_chat_session_state.has_permission"
+        "frappe_assistant_core.chat.doctype.fac_chat_session_state.fac_chat_session_state.has_permission"
+    ),
+    "FAC Import Session": (
+        "frappe_assistant_core.assistant_core.doctype.fac_import_session.fac_import_session.has_permission"
     ),
     # A personal page opens only for its owner; System Managers act on any page.
     "FAC Page": "frappe_assistant_core.assistant_core.doctype.fac_page.fac_page.has_permission",
@@ -520,6 +543,7 @@ scheduler_events.setdefault("daily", [])
 scheduler_events["daily"].extend(
     [
         "frappe_assistant_core.chat.scheduler.retention.cleanup_old_messages",
+        "frappe_assistant_core.utils.import_retention.purge_old_sessions",
         "frappe_assistant_core.chat.scheduler.attachment_sweep.sweep_orphan_chat_attachments",
         "frappe_assistant_core.chat.workflows.triggers.cleanup.prune_trigger_logs",
     ]
@@ -540,6 +564,7 @@ user_data_fields = [
     {"doctype": "FAC Chat Message", "filter_by": "user", "strict": False},
     {"doctype": "FAC Chat User Preferences", "filter_by": "user", "strict": False},
     {"doctype": "FAC Chat Usage Log", "filter_by": "user", "strict": False},
+    {"doctype": "FAC Import Session", "filter_by": "user", "strict": False},
     {"doctype": "FAC Chat Conversation", "filter_by": "user", "strict": False},
     {"doctype": "FAC Chat Project", "filter_by": "user", "strict": False},
 ]

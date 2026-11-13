@@ -1,0 +1,59 @@
+[
+  {
+    "id": "marg.ledgers",
+    "system": "Marg ERP",
+    "source_system": "marg",
+    "export": "All Ledgers (parties)",
+    "how_to_export": "Books > All Ledgers > Excel icon, Formatted No, Balance only Yes, Format-2.",
+    "verified": false,
+    "signature": {
+      "min_optional": 1,
+      "required": [["Ledger Name", "Party Name"], ["Group", "Group Name"]],
+      "optional": [["Station"], ["Area"], ["GSTIN", "GST No."], ["Mobile", "Phone"], ["Address"], ["State"], ["Opening", "Balance"], ["Dr/Cr"]]
+    },
+    "skip": {"totals": ["Total", "Grand Total"]},
+    "columns": {
+      "Name": {"from": ["Ledger Name", "Party Name"]},
+      "Group": {"from": ["Group", "Group Name"]},
+      "GSTIN": {"from": ["GSTIN", "GST No."]},
+      "Mobile": {"from": ["Mobile", "Phone"]},
+      "Station": {"from": ["Station"]}
+    },
+    "targets": [
+      {"name": "Customers", "source_key": "Name", "when": {"column": "Group", "in": ["Sundry Debtors"]}, "doctype": "Customer",
+       "mapping": {"Name": "customer_name", "GSTIN": ["gstin", "tax_id"], "Mobile": "mobile_no"},
+       "constants": [{"column": "Customer Type", "field": "customer_type", "value": "Company"}]},
+      {"name": "Suppliers", "source_key": "Name", "when": {"column": "Group", "in": ["Sundry Creditors"]}, "doctype": "Supplier",
+       "mapping": {"Name": "supplier_name", "GSTIN": ["gstin", "tax_id"], "Mobile": "mobile_no"},
+       "constants": [{"column": "Supplier Type", "field": "supplier_type", "value": "Company"}]}
+    ]
+  },
+  {
+    "id": "marg.items",
+    "system": "Marg ERP",
+    "source_system": "marg",
+    "export": "Product list",
+    "how_to_export": "Masters > Inventory > Product list > Alt+P > Excel.",
+    "verified": false,
+    "signature": {
+      "min_optional": 1,
+      "required": [["Product Name", "Item Name", "Product"], ["Packing"], ["Company"]],
+      "optional": [["Unit"], ["HSN"], ["GST %", "GST", "Tax"], ["MRP"], ["Rate"]]
+    },
+    "skip": {"totals": ["Total", "Grand Total"]},
+    "columns": {
+      "Item": {"from": ["Product Name", "Item Name", "Product"]},
+      "Unit": {"from": ["Unit"], "default": "Nos"},
+      "HSN": {"from": ["HSN"]},
+      "GST Rate": {"from": ["GST %", "GST", "Tax"], "parse": "percent"},
+      "Rate": {"from": ["Rate"], "parse": "amount"},
+      "Packing": {"from": ["Packing"]},
+      "Manufacturer": {"from": ["Company"]}
+    },
+    "targets": [
+      {"name": "Items", "source_key": "Item", "doctype": "Item",
+       "mapping": {"Item": "item_code", "Unit": "stock_uom", "HSN": ["gst_hsn_code"], "Rate": "standard_rate"},
+       "constants": [{"column": "Item Group", "field": "item_group", "value": "All Item Groups"}]}
+    ]
+  }
+]

@@ -10,33 +10,47 @@
 				</thead>
 				<tbody>
 					<tr v-for="(row, i) in shownRows" :key="i">
-						<td v-for="col in columns" :key="col">{{ formatValue(row[col]) }}</td>
+						<td v-for="col in columns" :key="col">
+							<LongValue v-if="isLongValue(row[col])" :value="row[col]" />
+							<template v-else>{{ formatValue(row[col]) }}</template>
+						</td>
 					</tr>
 				</tbody>
 			</table>
 		</div>
-		<div v-if="rows.length > MAX_ROWS" class="field-more">{{ __("+ {0} more", [rows.length - MAX_ROWS]) }}</div>
+		<button
+			v-if="rows.length > MAX_ROWS"
+			type="button"
+			class="child-rows-toggle"
+			:aria-expanded="String(showAll)"
+			@click="showAll = !showAll"
+		>
+			{{ showAll ? __("Show fewer rows ‹") : __("Show all {0} rows", [rows.length]) }}
+		</button>
 	</div>
 </template>
 
 <script setup>
-import { computed } from "vue";
+import { computed, ref } from "vue";
 import { __ } from "@/utils/i18n";
-import { formatKey, formatValue } from "./helpers";
+import LongValue from "./LongValue.vue";
+import { formatKey, formatValue, isLongValue } from "./helpers";
 
 const props = defineProps({
 	label: { type: String, required: true },
 	rows: { type: Array, required: true },
 });
 
+// The first rows show; the rest open on request, so every row can be seen before approving.
 const MAX_ROWS = 10;
 const SKIPPED_COLUMNS = new Set(["name", "idx", "doctype", "parent", "parentfield", "parenttype"]);
 
-const shownRows = computed(() => props.rows.slice(0, MAX_ROWS));
+const showAll = ref(false);
+const shownRows = computed(() => (showAll.value ? props.rows : props.rows.slice(0, MAX_ROWS)));
 
 const columns = computed(() => {
 	const seen = new Set();
-	for (const row of shownRows.value) {
+	for (const row of props.rows) {
 		for (const [key, value] of Object.entries(row)) {
 			if (SKIPPED_COLUMNS.has(key)) continue;
 			if (value === null || typeof value !== "object") seen.add(key);
@@ -85,8 +99,17 @@ const columns = computed(() => {
 	border-bottom: none;
 }
 
-.field-more {
+.child-rows-toggle {
 	margin-top: 4px;
-	color: var(--ql-text-muted);
+	background: transparent;
+	border: none;
+	padding: 0;
+	font-size: 11.5px;
+	color: var(--ql-accent);
+	cursor: pointer;
+}
+
+.child-rows-toggle:hover {
+	color: var(--ql-accent-hover);
 }
 </style>

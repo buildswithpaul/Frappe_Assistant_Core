@@ -17,6 +17,14 @@
 
 		<div v-else-if="toolDescription" class="approval-description">{{ toolDescription }}</div>
 
+		<!-- An import: its file, new or updated records, rows left out, submitting, the mapping (#34415) -->
+		<ImportApprovalSummary v-if="isImport && block.input" :input="block.input" />
+		<!-- An opening entry: its totals and its balancing line (#34433) -->
+		<OpeningBalancesApprovalSummary v-else-if="isOpeningBalances && block.input" :input="block.input" />
+
+		<!-- Several records in one call: each one, so the user sees what they approve -->
+		<RecordTables v-if="recordCount" :input="block.input" :tool-name="block.tool_name" />
+
 		<ApprovalDetails v-if="!message.entry.value" :block="block" @blocking="codeLoading = $event" />
 
 		<template #actions>
@@ -67,9 +75,13 @@ import { __ } from "@/utils/i18n";
 import { baseToolName, canTrust } from "@/utils/toolNames";
 import ApprovalDetails from "./ApprovalDetails.vue";
 import EmailPreview from "./EmailPreview.vue";
+import ImportApprovalSummary from "./ImportApprovalSummary.vue";
+import OpeningBalancesApprovalSummary from "./OpeningBalancesApprovalSummary.vue";
 import InteractionShell from "./InteractionShell.vue";
+import RecordTables from "./RecordTables.vue";
 import { approvalHeadline, trustLabel } from "./approvalHeadline";
 import { goesLiveFields, writeConsequence } from "./customisation";
+import { documentCount } from "./helpers";
 import { useMessagePreview } from "./useMessagePreview";
 
 const props = defineProps({
@@ -99,7 +111,7 @@ const title = computed(() =>
 const subtitle = computed(() =>
 	message.entry.value
 		? message.preview.value?.context || ""
-		: writeConsequence(props.block.tool_name, props.block.input),
+		: consequence.value,
 );
 
 const ICON_BY_TOOL = { create_document: "create", update_document: "update", delete_document: "delete" };
@@ -110,6 +122,8 @@ const icon = computed(() => {
 });
 
 const trustText = computed(() => trustLabel(props.block.tool_name));
+const isImport = computed(() => baseToolName(props.block.tool_name) === "start_import");
+const isOpeningBalances = computed(() => baseToolName(props.block.tool_name) === "import_opening_balances");
 
 const approveLabel = computed(() => {
 	if (clicked.value === "approve" && props.submitting) return __("Approving…");
@@ -122,6 +136,21 @@ const decidedLabel = computed(() => {
 	if (r === "trusted") return __("Approved, won't ask again");
 	if (r === "rejected") return __("Rejected");
 	return __("Decided");
+});
+
+// Several records in one call (create_document / update_document `documents`).
+const recordCount = computed(() => documentCount(props.block.input));
+
+// Several records: how many, and that they are written all or none.
+const MANY_CONSEQUENCES = {
+	create_document: (count) => __("This will write {0} new records to your ERP, all or none", [count]),
+	update_document: (count) => __("This will modify {0} existing records in your ERP, all or none", [count]),
+};
+
+const consequence = computed(() => {
+	const many = MANY_CONSEQUENCES[baseToolName(props.block.tool_name)];
+	if (many && recordCount.value > 1) return many(recordCount.value);
+	return writeConsequence(props.block.tool_name, props.block.input);
 });
 
 // First sentence of the full MCP tool description so the user sees *what

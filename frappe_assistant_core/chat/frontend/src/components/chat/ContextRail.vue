@@ -49,6 +49,9 @@
 			</div>
 		</div>
 
+		<!-- Imports of this conversation: where each file stands, live while it imports (#34416) -->
+		<ImportCard :messages="chatStore.messages" />
+
 		<!-- Records & sources -->
 		<div v-if="artifacts.records.length" class="rail-group">
 			<div class="rail-group-label">Records &amp; sources</div>
@@ -111,6 +114,7 @@
 import { computed } from "vue";
 import ActivityTimeline from "./rail/ActivityTimeline.vue";
 import TaskList from "./rail/TaskList.vue";
+import ImportCard from "./rail/ImportCard.vue";
 import { useChatStore } from "@/stores/chatStore";
 import { __ } from "@/utils/i18n";
 

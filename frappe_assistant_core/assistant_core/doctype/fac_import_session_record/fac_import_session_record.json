@@ -1,0 +1,50 @@
+{
+ "actions": [],
+ "creation": "2026-10-07 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 0,
+ "engine": "InnoDB",
+ "field_order": [
+  "record_doctype",
+  "record_name",
+  "parent_record"
+ ],
+ "fields": [
+  {
+   "fieldname": "record_doctype",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "DocType",
+   "options": "DocType",
+   "read_only": 1
+  },
+  {
+   "fieldname": "record_name",
+   "fieldtype": "Dynamic Link",
+   "in_list_view": 1,
+   "label": "Name",
+   "options": "record_doctype",
+   "read_only": 1
+  },
+  {
+   "description": "The parent of a tree record, e.g. the parent Customer Group.",
+   "fieldname": "parent_record",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Parent",
+   "read_only": 1
+  }
+ ],
+ "istable": 1,
+ "links": [],
+ "modified": "2026-10-07 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Assistant Core",
+ "name": "FAC Import Session Record",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0
+}

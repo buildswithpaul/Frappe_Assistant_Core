@@ -53,7 +53,14 @@
 					@collapse="toggleIndexCollapsed"
 				/>
 			</aside>
-			<div class="chat-area">
+			<div
+				class="chat-area"
+				@dragenter="fileDrop.onDragEnter"
+				@dragover="fileDrop.onDragOver"
+				@dragleave="fileDrop.onDragLeave"
+				@drop="fileDrop.onDrop"
+			>
+				<FileDropOverlay v-if="fileDrop.isDragging" />
 				<!-- Connection + error banners -->
 				<ConnectionBanners
 					:connection-visible="connectionVisible"
@@ -253,7 +260,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, nextTick, defineAsyncComponent } from "vue";
+import { ref, computed, watch, nextTick, defineAsyncComponent, reactive } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useChatStore } from "@/stores/chatStore";
 import { useUserStore } from "@/stores/userStore";
@@ -271,6 +278,8 @@ import ProjectPage from "@/components/projects/ProjectPage.vue";
 import { useConversationsStore } from "@/stores/conversationsStore";
 import { useProjectsStore } from "@/stores/projectsStore";
 import InputArea from "@/components/chat/InputArea.vue";
+import FileDropOverlay from "@/components/chat/FileDropOverlay.vue";
+import { useFileDrop } from "@/composables/useComposerFileDrop";
 import ConnectionBanners from "@/components/chat/ConnectionBanners.vue";
 import PersonalLimitBanner from "@/components/chat/PersonalLimitBanner.vue";
 import ChatStagePicker from "@/components/chat/ChatStagePicker.vue";
@@ -299,6 +308,7 @@ import { useSheetDismiss } from "@/composables/useSheetDismiss";
 import { useComposerFocus } from "@/composables/useComposerFocus";
 import { useComposerLimitHold } from "@/composables/useComposerLimitHold";
 import { deriveArtifacts } from "@/utils/contextArtifacts";
+import { conversationImportSessions } from "@/utils/importSessions";
 import { isPausedTurn, isStoppedTurn } from "@/utils/turnState";
 import ContextRail from "@/components/chat/ContextRail.vue";
 import PageDock from "@/components/chat/pages/PageDock.vue";
@@ -320,6 +330,8 @@ const userStore = useUserStore();
 const conversationsStore = useConversationsStore();
 const projectsStore = useProjectsStore();
 const modelStore = useModelStore();
+// Files dragged anywhere on the chat go to the composer (reactive: the template reads isDragging).
+const fileDrop = reactive(useFileDrop());
 const suggestionStore = useSuggestionStore();
 const { showError } = useToast();
 
@@ -405,7 +417,7 @@ usePromptFromRoute({
 useSupportFromRoute({ route, router, supportStore: useSupportStore() });
 
 // File pre-upload flow (matches widget — upload on select, attach on send)
-const { handleFileUpload, consumeUploadedFiles, discardUploads } = useMessageFileUpload();
+const { handleFileUpload, consumeUploadedFiles } = useMessageFileUpload();
 
 // True during onboarding screens (registration, user setup, feature tour) — hides sidebar & topbar
 const isOnboarding = computed(() => {
@@ -469,7 +481,9 @@ const activeTurnPaused = computed(
 	() => isPausedTurn(activeAssistantMessage.value?.blocks) || chatStore.isSubmittingInterrupts
 );
 
-const railHasArtifacts = computed(() => activeArtifacts.value.hasArtifacts);
+// A conversation that worked on an import keeps its Import card on the rail (#34416)
+const conversationImports = computed(() => conversationImportSessions(chatStore.messages));
+const railHasArtifacts = computed(() => activeArtifacts.value.hasArtifacts || conversationImports.value.length > 0);
 // Each page write is a rail artifact; an open page keeps the docked rail folded to its tab.
 const { openName: openPageName } = usePagePanel();
 const pageOpen = computed(() => Boolean(openPageName.value));
@@ -693,15 +707,9 @@ async function handleSendMessage({ message, files = [] }) {
 	const route = resolveComposerRoute({
 		isStreaming: isStreaming.value,
 		pendingInteraction: chatStore.pendingInteractionBlock,
+		hasFiles: files.length > 0,
 	});
 	if (route === "answer") {
-		// The resume wire format has no attachment slot — staged files can't
-		// ride along with a card answer, so drop them and say so rather than
-		// silently losing what the user just uploaded.
-		discardUploads(files);
-		if (files.length) {
-			showError("Attachments can't be sent with a card answer — they were removed.");
-		}
 		await chatStore.answerPendingQuestion(message);
 		return;
 	}

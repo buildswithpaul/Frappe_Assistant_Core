@@ -48,10 +48,68 @@ CUSTOMISATION_SKILLS = (
 )
 RETIRED_TEMPLATE = "export_fac_skills"
 
+MIGRATE_DATA = "migrate-data"
+# The words users start a migration with (#34004): the description is what makes FACO load it.
+MIGRATE_DATA_TRIGGERS = ("migrate", "import my", "Tally")
+MIGRATE_DATA_STEPS = (
+    "Session",
+    "Mapping",
+    "Cleaning",
+    "Dry run",
+    "Fixes",
+    "Import",
+    "Failed rows",
+    "Report",
+)
+# Code names the page uses that are arguments or result keys, not tools. ask_user is a
+# FAC Cloud tool, so it has no file on the site.
+NOT_TOOLS = {
+    "ask_user",
+    "closest",
+    "cut_off_choices",
+    "documents",
+    "failed_rows_file",
+    "fixes",
+    "google_sheets_url",
+    "import_session",
+    "likely",
+    "mapping",
+    "migration_plan",
+    "old_id_columns",
+    "opening_setup",
+    "plan",
+    "plan_settings",
+    "session_id",
+    "status",
+}
+TOOL_FAILURE_HEADING = "## When an import tool fails"
+DELEGATION_HEADING = "## Keep the migration in this conversation"
+UNDO_HEADING = "## When the user asks to undo an import"
+
 
 def _load_manifest(name: str) -> list:
     with open(os.path.join(APP_DIR, "data", name), encoding="utf-8") as f:
         return json.load(f)
+
+
+def _skill_content(content_file: str) -> str:
+    with open(os.path.join(REPO_DIR, "docs", "skills", content_file), encoding="utf-8") as f:
+        return f.read()
+
+
+def _one_line(text: str) -> str:
+    """The text with its line wrapping undone, so a phrase is found wherever the page wraps it."""
+    return " ".join(text.split())
+
+
+def _tool_files() -> set:
+    return {
+        os.path.splitext(name)[0]
+        for plugin in os.listdir(os.path.join(APP_DIR, "plugins"))
+        if os.path.isdir(os.path.join(APP_DIR, "plugins", plugin, "tools"))
+        for name in os.listdir(os.path.join(APP_DIR, "plugins", plugin, "tools"))
+        if name.endswith(".py")
+    }
 
 
 class TestSystemSkillManifest(BaseAssistantTest):
@@ -220,6 +278,139 @@ class TestSystemSkillManifest(BaseAssistantTest):
                 "'Discount limit on Sales Invoice submit', not 'Block discount above 15%'", text, name
             )
             self.assertIn("Changing a value never needs a rename.", text, name)
+
+    def test_migrate_data_installs_as_a_published_workflow(self):
+        _install_system_skills()
+
+        skill = frappe.db.get_value(
+            "FAC Skill",
+            {"skill_id": MIGRATE_DATA},
+            ["is_system", "status", "skill_type", "content"],
+            as_dict=True,
+        )
+        self.assertIsNotNone(skill, f"{MIGRATE_DATA} was not installed")
+        self.assertEqual(skill.is_system, 1)
+        self.assertEqual(skill.status, "Published")
+        self.assertEqual(skill.skill_type, "Workflow")
+        self.assertTrue(skill.content.startswith("# Migrate Data"))
+
+    def test_migrate_data_description_has_the_users_words(self):
+        entry = next(e for e in _load_manifest("system_skills.json") if e["skill_id"] == MIGRATE_DATA)
+        for words in MIGRATE_DATA_TRIGGERS:
+            self.assertIn(words.lower(), entry["description"].lower())
+
+    def test_migrate_data_lists_the_steps_in_order(self):
+        content = _skill_content("migrate_data.md")
+        positions = [content.find(f"**{step}**") for step in MIGRATE_DATA_STEPS]
+        self.assertNotIn(-1, positions, dict(zip(MIGRATE_DATA_STEPS, positions)))
+        self.assertEqual(positions, sorted(positions))
+
+    def test_migrate_data_cleaning_checks_the_file_before_its_fixes(self):
+        # A fix names a group of the last check, so a first call with fixes finds no group:
+        # the Cleaning step has to say to check the file first.
+        row = next(line for line in _skill_content("migrate_data.md").splitlines() if "**Cleaning**" in line)
+        tool = row.split("|")[3]
+        self.assertIn("`dry_run_import`", tool)
+        self.assertIn("`fixes`", tool)
+        self.assertLess(tool.find("`dry_run_import`"), tool.find("then"), row)
+        self.assertLess(tool.find("then"), tool.find("`fixes`"), row)
+
+    def test_a_plans_sign_off_is_asked_for_by_the_plan(self):
+        # The sign-off covers a plan's files with migration_plan (#34549); the plan page still said
+        # import_session = the plan's sessions, which takes in no earlier test run but isn't the scope
+        # the report states
+        content = _one_line(_skill_content("run_migration_plan.md"))
+        self.assertIn("`migration_plan` = the plan", content)
+        self.assertNotIn("`import_session` = the plan's sessions", content)
+
+    def test_migrate_data_names_only_tools_and_skills_that_exist(self):
+        # The page is the model's guide to the tools: a renamed or removed tool left in it
+        # sends FACO to a tool that isn't there.
+        content = _skill_content("migrate_data.md")
+        tools = _tool_files()
+        for name in set(re.findall(r"`([a-z][a-z0-9_]*)`", content)) - NOT_TOOLS:
+            self.assertIn(name, tools, f"migrate_data.md names `{name}`, which is not a tool")
+
+        skill_ids = {e["skill_id"] for e in _load_manifest("system_skills.json")}
+        for skill_id in re.findall(r'get_skill\("([a-z0-9_-]+)"\)', content):
+            self.assertIn(skill_id, skill_ids)
+
+    def _tool_failure_rule(self) -> str:
+        # The section the rule lives in (#34410): FACO fell back to create_document there.
+        content = _skill_content("migrate_data.md")
+        self.assertIn(TOOL_FAILURE_HEADING, content)
+        return _one_line(content.split(TOOL_FAILURE_HEADING)[1].split("\n## ")[0])
+
+    def test_migrate_data_stops_and_reports_when_an_import_tool_fails(self):
+        rule = self._tool_failure_rule()
+        for tool in (
+            "start_import_session",
+            "set_column_mapping",
+            "dry_run_import",
+            "start_import",
+            "plan_migration",
+            "run_migration_plan",
+            "import_opening_balances",
+        ):
+            self.assertIn(f"`{tool}`", rule, tool)
+        self.assertIn("fails or isn't available", rule)
+        self.assertIn("tell the user it failed and what the error was", rule)
+        self.assertIn("Then stop.", rule)
+
+    def test_migrate_data_never_falls_back_to_create_document(self):
+        rule = self._tool_failure_rule()
+        self.assertIn("Never import the file's records another way", rule)
+        for words in ("`create_document`", "`update_document`", "one record at a time", "`documents` list"):
+            self.assertIn(words, rule, words)
+
+    def test_migrate_data_keeps_a_migration_out_of_helpers(self):
+        # #34410: in Auto mode FACO handed the migration to helper tasks, which have no import tools
+        content = _skill_content("migrate_data.md")
+        self.assertIn(DELEGATION_HEADING, content)
+        rule = _one_line(content.split(DELEGATION_HEADING)[1].split("\n## ")[0])
+        self.assertIn("Never hand a migration, or any step of it, to a helper task (delegating it)", rule)
+        self.assertIn("helpers don't have the import tools", rule)
+
+    def test_migrate_data_never_undoes_an_import(self):
+        # "Undo that import" deleted the customers created after a minute, at once, with no question.
+        # Imports are not undone (2026-11-09): the user approved the import and ran it.
+        content = _skill_content("migrate_data.md")
+        self.assertNotIn("## Undoing an import", content)
+        self.assertIn(UNDO_HEADING, content)
+        rule = _one_line(content.split(UNDO_HEADING)[1].split("\n## ")[0])
+        self.assertIn("FAC doesn't undo imports", rule)
+        self.assertIn("never delete the imported records yourself", rule)
+        self.assertIn("not by creation time, owner or a name pattern", rule)
+        self.assertIn("`delete_document`", rule)
+
+    def test_migrate_data_never_drops_a_column_unasked(self):
+        # "State has no direct Customer field, so I'll skip it": the customers got the default territory
+        content = _one_line(_skill_content("migrate_data.md"))
+        self.assertIn('A column goes to "Don\'t Import" only when the user says so.', content)
+
+    def test_migrate_data_never_replaces_a_users_value_unasked(self):
+        content = _one_line(_skill_content("migrate_data.md"))
+        self.assertIn(
+            "A value from the user's file is never replaced by a different value "
+            '(for example "Retail" with "Commercial") unless the user chose that in a fix group.',
+            content,
+        )
+        self.assertIn("Close matches are offered, never applied unasked.", content)
+
+    def test_create_document_skill_is_not_a_way_to_import_a_file(self):
+        text = _one_line(self._read_skill("create_document.md"))
+        self.assertIn("`documents` is not a way to import a user's file", text)
+        self.assertIn("`start_import_session`", text)
+        self.assertIn("if they fail, stop and tell the user", text)
+        # The exception stays: a session's missing masters, with import_session.
+        self.assertIn("## Missing masters of an import", text)
+
+    def test_installed_migrate_data_skill_has_the_tool_failure_rule(self):
+        _install_system_skills()
+
+        content = frappe.db.get_value("FAC Skill", {"skill_id": MIGRATE_DATA}, "content")
+        self.assertIn(TOOL_FAILURE_HEADING, content)
+        self.assertIn("Never import the file's records another way", content)
 
     def test_personal_pages_are_built_without_a_plan(self):
         # A personal page reads only what its owner may and asks before any change; a plan card adds nothing.

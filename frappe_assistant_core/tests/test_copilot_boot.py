@@ -20,6 +20,17 @@ class TestCopilotBoot(BaseAssistantTest):
         boot = get_boot()
         self.assertEqual(boot.get("site_url"), frappe.utils.get_url())
 
+    def test_boot_says_whether_bench_start_serves_the_site(self):
+        # The SPA's socket goes to socketio_port under `bench start`, else through nginx on the
+        # page's own address. Manufactured: `bench start` sets DEV_SERVER, a test run doesn't.
+        previous = frappe.local.dev_server
+        self.addCleanup(setattr, frappe.local, "dev_server", previous)
+
+        frappe.local.dev_server = 1
+        self.assertIs(get_boot()["dev_server"], True)
+        frappe.local.dev_server = 0
+        self.assertIs(get_boot()["dev_server"], False)
+
     def test_signed_out_visitor_gets_a_temporary_redirect_to_login(self):
         # Redmine #34442: a permanent (301) redirect can be cached and keep bouncing after sign-in.
         # Manufactured: production reaches this once an administrator switches FAC Chat on.
