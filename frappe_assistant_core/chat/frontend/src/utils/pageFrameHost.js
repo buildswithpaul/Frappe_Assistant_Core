@@ -84,6 +84,12 @@ const MAX_DIMENSION = 20000;
 // The page's own size, which a picture of a tall page reports beside its smaller one.
 const MAX_PAGE_DIMENSION = 1000000;
 const RESULT_TIMEOUT_MS = 15000;
+// How long Present waits for the frame; an older runtime never answers.
+const PRESENT_TIMEOUT_MS = 3000;
+// The presenting keys the frame may pass on, and the most sections a presented page may report.
+const PRESENT_KEYS = new Set(["next", "prev", "first", "last", "exit"]);
+const MAX_PRESENT_SECTIONS = 200;
+const MAX_PRESENT_TITLE = 120;
 // A print or a picture waits for the script to run and its calls to come back, this long at most,
 // then this long with nothing in flight, so the figures it fetched are drawn.
 const IDLE_TIMEOUT_MS = 8000;
@@ -148,6 +154,23 @@ const errorReply = (error) => ({
  * @param {() => void} [options.onReady] the script has run
  * @returns {{element: HTMLIFrameElement, errors: string[], snapshot: Function, dispose: Function}}
  */
+// A presented page's state as the frame reports it: null after stop, undefined when malformed.
+function presentState(state) {
+	if (state === null) return null;
+	const { index, count, titles } = isPlainObject(state) ? state : {};
+	const valid =
+		Number.isInteger(count) &&
+		count >= 1 &&
+		count <= MAX_PRESENT_SECTIONS &&
+		Number.isInteger(index) &&
+		index >= 0 &&
+		index < count &&
+		Array.isArray(titles) &&
+		titles.length <= count &&
+		titles.every((title) => typeof title === "string");
+	return valid ? { index, count, titles: titles.map((title) => title.slice(0, MAX_PRESENT_TITLE)) } : undefined;
+}
+
 export function createPageFrame({
 	page,
 	kitCss,
@@ -161,6 +184,7 @@ export function createPageFrame({
 	onUnsupported,
 	onHeight,
 	onReady,
+	onPresentKey,
 }) {
 	const element = document.createElement("iframe");
 	element.setAttribute("sandbox", PAGE_FRAME_SANDBOX);
@@ -435,18 +459,26 @@ export function createPageFrame({
 				if (!ok) return settle(data.id, new Error(__("The page sent nothing to print.")));
 				return settle(data.id, { html: data.html, wide: data.wide === true });
 			}
+			case "present_result": {
+				const state = presentState(data.state);
+				if (state === undefined) return settle(data.id, new Error(__("This page could not be presented.")));
+				return settle(data.id, state);
+			}
+			case "present_key":
+				if (PRESENT_KEYS.has(data.key)) onPresentKey?.(data.key);
+				return;
 			default:
 		}
 	}
 
-	function request(op, extra = {}) {
+	function request(op, extra = {}, timeoutMs = RESULT_TIMEOUT_MS) {
 		if (startFailure) return Promise.reject(startFailure);
 		const id = ++nextId;
 		return new Promise((resolve, reject) => {
 			const timer = setTimeout(() => {
 				results.delete(id);
 				reject(new Error(__("The page did not answer.")));
-			}, RESULT_TIMEOUT_MS);
+			}, timeoutMs);
 			results.set(id, { resolve, reject, timer });
 			toPage({ op, id, ...extra });
 		});
@@ -474,6 +506,8 @@ export function createPageFrame({
 			await whenIdle();
 			return request("capture", { scale, quality });
 		},
+		/** Present mode, run inside the frame: "start", "show" with an index, or "stop". */
+		present: (command, index) => request("present", { command, index }, PRESENT_TIMEOUT_MS),
 		/** The page's rendered markup, for Download PDF: {html, wide}. */
 		snapshot: async () => {
 			await whenIdle();
