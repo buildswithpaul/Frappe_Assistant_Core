@@ -30,7 +30,11 @@ def default_discovery_capability() -> dict:
         "powers": [
             {"id": "setup", "label": _("Set up FAC")},
             {"id": "ask", "label": _("Ask your data"), "description": _("Get your first answer")},
-            {"id": "templates", "label": _("Prompt templates"), "description": _("Pin a saved question")},
+            {
+                "id": "templates",
+                "label": _("Prompt templates"),
+                "description": _("Ask a ready-made question"),
+            },
             {"id": "knowledge", "label": _("Knowledge"), "description": _("Answers from your own files")},
             {"id": "pages", "label": _("Pages"), "description": _("Keep an answer as a live report")},
             {

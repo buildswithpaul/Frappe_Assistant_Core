@@ -10,7 +10,7 @@ import { useDiscoveryStore } from "@/stores/discoveryStore";
 import { useNotificationStore } from "@/stores/notificationStore";
 import { useSuggestionStore } from "@/stores/suggestionStore";
 import { useWorkflowStore } from "@/stores/workflowStore";
-import { agentsCreated, noteAgentCreated } from "@/composables/agentCreated";
+import { agentsCreated, noteAgentCreated, noteTemplateUsed, templatesUsed } from "@/composables/usageSignals";
 
 const { baseCall } = vi.hoisted(() => ({ baseCall: vi.fn().mockResolvedValue({}) }));
 vi.mock("@/api/domains/facPage", () => ({
@@ -158,6 +158,16 @@ describe("NavRail bot: only the user's own work counts", () => {
 		await flushPromises();
 		expect(label(w)).toBe("Your FAC: 2 of 6 tried");
 		agentsCreated.value = 0;
+	});
+
+	it("using a prompt template ticks Prompt templates, not only pinning one", async () => {
+		templatesUsed.value = 0;
+		const w = await mountRail();
+		expect(label(w)).toBe("Your FAC: 1 of 6 tried");
+		noteTemplateUsed();
+		await flushPromises();
+		expect(label(w)).toBe("Your FAC: 2 of 6 tried");
+		templatesUsed.value = 0;
 	});
 
 	it("a file someone else uploaded does not tick Knowledge; the user's own does", async () => {

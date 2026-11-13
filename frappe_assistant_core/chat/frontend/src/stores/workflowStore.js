@@ -3,7 +3,7 @@ import { ref, computed } from "vue";
 import { api } from "@/api/client";
 import { logger } from "@/utils/logger";
 import { __ } from "@/utils/i18n";
-import { noteAgentCreated } from "@/composables/agentCreated";
+import { noteAgentCreated } from "@/composables/usageSignals";
 
 // Every status a run can end in. Cancelled and Timed Out are terminal too —
 // treating only Completed/Failed as "done" leaves the toolbar spinning.

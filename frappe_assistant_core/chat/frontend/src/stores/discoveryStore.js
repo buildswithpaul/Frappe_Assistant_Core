@@ -9,7 +9,7 @@ import { usePagesStore } from "@/stores/pagesStore";
 import { useChatStore } from "@/stores/chatStore";
 import { useTemplateStore } from "@/stores/templateStore";
 import { useTourStore } from "@/stores/tourStore";
-import { agentsCreated } from "@/composables/agentCreated";
+import { agentsCreated, templatesUsed } from "@/composables/usageSignals";
 import { useSuggestionStore } from "@/stores/suggestionStore";
 import { availableFeatures, featureById, featureForPath } from "@/components/discover/featureCatalog";
 import { EXPLAINED_POWERS, explainContent, questionFor } from "@/components/discover/powerExplain";
@@ -144,7 +144,7 @@ export const useDiscoveryStore = defineStore("discovery", () => {
 		// Only the user's own: a colleague's shared Page or the site's agents are not "used" by this user.
 		when(() => usePagesStore().pages.some((p) => p.owner_is_me), "pages");
 		when(() => agentsCreated.value > 0, "agents");
-		when(() => useTemplateStore().pinnedNames.length > 0, "templates");
+		when(() => useTemplateStore().pinnedNames.length > 0 || templatesUsed.value > 0, "templates");
 	}
 
 	/** Knowledge has no store; its page reports what it loaded. */
