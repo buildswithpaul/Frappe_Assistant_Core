@@ -552,3 +552,12 @@ class TestSystemSkillManifest(BaseAssistantTest):
         ):
             self.assertIn(claim, text)
         self.assertIn("fac.hasRole(", self._read_skill("mockup_kit.md"))
+
+    def test_a_unit_record_cannot_change_hands_and_the_rule_is_checked_by_trying_it(self):
+        text = self._read_skill("fac_page.md")
+        # A unit editor could move another unit's record to their own unit by changing business_unit.
+        self.assertIn("set_only_once", text)
+        # Viewers read the Business Unit for its editor_role; without read their sections never render.
+        self.assertIn("Business Unit doctype `read`", text)
+        # test_as_user checks doctype permissions only and never runs the Server Script.
+        self.assertIn("test_as_user` cannot see the Server Script", text)
