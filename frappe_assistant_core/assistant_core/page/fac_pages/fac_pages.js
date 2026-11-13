@@ -348,9 +348,12 @@
 			const bundle = window.fac_page_charts;
 			const box = page.main.find(".fac-page-frame").get(0);
 			if (!is_latest() || !bundle || !box) return;
+			// create_shadow_element puts the shadow root on a custom element inside the box.
+			const shadow_host = [...box.querySelectorAll("*")].find((el) => el.shadowRoot);
+			if (data.visibility === "Shared" && !shadow_host) return;
 			const deck =
 				data.visibility === "Shared"
-					? bundle.makePresenter(box.querySelector("div").shadowRoot)
+					? bundle.makePresenter(shadow_host.shadowRoot)
 					: {
 							start: () => shown_frame.present("start"),
 							show: (index) => shown_frame.present("show", index),
