@@ -921,6 +921,16 @@ class TestListPages(BaseAssistantTest):
         self.assertNotIn("script", item)
         self.assertNotIn("html", item)
 
+    def test_a_personal_preview_drops_off_site_urls_as_get_page_does(self):
+        # The preview frame's CSP blocks fetches; the html is cleaned as get_page serves it too.
+        user = self._desk_user("fac-list-url")
+        html = (
+            '<div class="mk-card"><span style="background:url(https://evil.example/x)">A</span><b>B</b></div>'
+        )
+        item = self._item(user, self._build_personal(user, self._slug("url"), html=html))
+        self.assertNotIn("evil.example", item["preview_html"])
+        self.assertIn("mk-card", item["preview_html"])
+
     def test_a_page_built_by_its_script_has_no_preview(self):
         user = self._desk_user("fac-list-empty")
         item = self._item(user, self._build_personal(user, self._slug("empty"), html='<div id="root"></div>'))
