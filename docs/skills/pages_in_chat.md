@@ -28,6 +28,7 @@ When a user asks for a report, a summary or "a PDF of …" about their own data,
 - **`root_element`**, the page's own element. Find elements with `root_element.querySelector` or `root_element.getElementById`.
 - **Event handlers in the script only**: `root_element.querySelector("#refresh").addEventListener("click", load)`. Inline handlers (`onclick="..."`) and `javascript:` links are stripped from a personal page's html.
 - **`fac.chart(el, option)`** draws an ECharts bar, line or pie chart as SVG (see `mockup-kit`).
+- **`mk-section` blocks with a `data-title`** make a page presentable: the **Present** button in the panel shows one section per screen (`get_skill("mockup-kit")`).
 - **`fac.editList`, `fac.editText`, `fac.periodPicker`, `fac.canWrite` and `fac.updated`** let people type into records on the page: use them, never `frappe.ui` dialogs, so the page works beside the chat too (`get_skill("mockup-kit")`).
 - **`fac.report(name, filters)`** reads a report the viewer may run, such as P&L or receivables, as clean rows, totals and summary: use it for any figure a report already computes (`get_skill("page-reports")`).
 - **`__(text)`** for translatable text.
