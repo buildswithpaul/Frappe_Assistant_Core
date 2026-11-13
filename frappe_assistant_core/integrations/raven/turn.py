@@ -195,6 +195,8 @@ def _run_turn(msg, kind: str, raven_bot, reply_channel: str, session_id: str) ->
             attachments=images,
             system_prompt_addendum=addendum,
             client_type="raven",
+            # The observer above is process-local: the relay must run in this job, not its own.
+            in_process=True,
         )
         future.result(timeout=TURN_TIMEOUT)
         # A stream can end with no final event (FAC Cloud's worker died); never leave "…".

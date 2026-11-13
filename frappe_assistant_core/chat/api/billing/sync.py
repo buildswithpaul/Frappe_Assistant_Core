@@ -120,12 +120,22 @@ def _send_heartbeat():
             # Best-effort — heartbeat still proceeds without version metadata.
             frappe.logger("faco.billing").exception("FACO heartbeat: get_versions failed")
 
+        profile = None
+        try:
+            # Imported here: the profile reads processes and counts, and must never break the sync
+            from frappe_assistant_core.chat.site_profile import site_profile
+
+            profile = site_profile(versions)
+        except Exception:
+            frappe.logger("faco.billing").exception("FACO heartbeat: site profile failed")
+
         result = client.heartbeat(
             copilot_version=versions.get("frappe_assistant_core", {}).get("version"),
             fac_version=versions.get("frappe_assistant_core", {}).get("version"),
             frappe_version=versions.get("frappe", {}).get("version"),
             erpnext_version=versions.get("erpnext", {}).get("version"),
             python_version=sys.version.split()[0],
+            site_profile=profile,
             timeout=10,
         )
 

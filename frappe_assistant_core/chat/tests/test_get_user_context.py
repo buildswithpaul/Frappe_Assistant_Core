@@ -54,3 +54,27 @@ class TestGetUserContext(BaseAssistantTest):
         ctx = _get_user_context(email)
         self.assertEqual(ctx.get("email"), email)
         self.assertEqual(ctx.get("display_name"), "Ctx")
+
+    def test_timezone_falls_back_to_system_timezone_when_user_has_none(self):
+        from frappe.utils import get_system_timezone
+
+        from frappe_assistant_core.chat.api.auth import _get_user_context
+
+        email = "ctx_no_tz@example.com"
+        if not frappe.db.exists("User", email):
+            frappe.get_doc(
+                {
+                    "doctype": "User",
+                    "email": email,
+                    "first_name": "NoTz",
+                    "enabled": 1,
+                    "send_welcome_email": 0,
+                }
+            ).insert(ignore_permissions=True)
+        # Time Zone is optional on User and nothing fills it on insert, so any
+        # user who never set it (Administrator included) reaches this state.
+        frappe.db.set_value("User", email, "time_zone", None)
+
+        ctx = _get_user_context(email)
+
+        self.assertEqual(ctx.get("timezone"), get_system_timezone())

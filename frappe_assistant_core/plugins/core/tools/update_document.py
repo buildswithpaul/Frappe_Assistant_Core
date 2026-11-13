@@ -32,6 +32,7 @@ from frappe_assistant_core.utils.customisation import (
     customisation_result,
     desk_url,
     script_report_warning,
+    server_script_code_guard,
     server_script_guard,
 )
 from frappe_assistant_core.utils.edits import EditError, edit_target_problem, effective_data
@@ -596,6 +597,11 @@ class DocumentUpdate(BaseTool):
                 current_disabled=doc.get("disabled"),
                 current_reference_doctype=doc.get("reference_doctype"),
                 current_script_type=doc.get("script_type"),
+            ) or server_script_code_guard(
+                doctype,
+                data,
+                current_script=doc.get("script"),
+                current_disabled=doc.get("disabled"),
             )
             if refusal:
                 return refusal

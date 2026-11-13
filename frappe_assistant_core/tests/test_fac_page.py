@@ -34,6 +34,7 @@ from frappe_assistant_core.api.fac_page import (
     is_page_api_method,
     list_pages,
     page_format_settings,
+    report_access,
 )
 from frappe_assistant_core.plugins.core.tools.create_document import DocumentCreate
 from frappe_assistant_core.plugins.core.tools.get_document import DocumentGet
@@ -200,7 +201,7 @@ class TestFACPage(BaseAssistantTest):
         self.assertIn('frame.setAttribute("sandbox", "")', page.script)
         self.assertNotIn("{% include", page.script)
 
-    def test_the_host_page_gives_page_scripts_fac_chart(self):
+    def test_the_host_page_gives_page_scripts_fac_chart_and_report(self):
         # The page script runs with fac in Desk as in the chat panel; the built helper is served
         # from /assets, and bench build makes it (it is not committed).
         page = frappe.get_doc("Page", HOST_PAGE)
@@ -208,6 +209,7 @@ class TestFACPage(BaseAssistantTest):
 
         self.assertIn("/assets/frappe_assistant_core/js/fac_page_charts.js?v=", page.script)
         self.assertIn("const bundle = window.fac_page_charts;", page.script)
+        self.assertIn("bundle.report(frappe, name, filters)", page.script)
         self.assertIn("with_page_globals(script)", page.script)
 
     def test_the_host_page_gives_page_scripts_a_frappe_whose_format_returns_text(self):
@@ -974,3 +976,38 @@ class TestListPages(BaseAssistantTest):
         self._act_as("Guest")
         with self.assertRaises(frappe.PermissionError):
             list_pages()
+
+
+class TestReportAccess(BaseAssistantTest):
+    """report_access, which a page asks before running a report, so Desk never opens its
+    "Not permitted" dialog over the page."""
+
+    # A frappe-core report open to System Managers only, so these run without ERPNext.
+    REPORT = "Permitted Documents For User"
+
+    def test_report_access_allows_a_report_the_user_may_run(self):
+        self.assertEqual(report_access([self.REPORT]), {self.REPORT: True})
+
+    def test_report_access_refuses_a_report_outside_the_users_roles(self):
+        # A Desk user without System Manager, the way a BU team member opens a finance page.
+        user = self.make_throwaway_user("report-access", roles=("Report Manager",))
+        # nosemgrep: frappe-setuser — test acts as a non-Administrator inside the test transaction
+        frappe.set_user(user)
+        self.assertEqual(report_access([self.REPORT]), {self.REPORT: False})
+
+    def test_report_access_refuses_a_missing_report(self):
+        self.assertEqual(report_access(["No Such Report"]), {"No Such Report": False})
+
+    def test_report_access_reads_names_sent_as_json(self):
+        # A GET request carries the list as a JSON string.
+        self.assertEqual(report_access(json.dumps([self.REPORT])), {self.REPORT: True})
+
+    def test_report_access_caps_the_names_it_checks(self):
+        with self.assertRaises(frappe.ValidationError):
+            report_access([f"R{i}" for i in range(21)])
+
+    def test_report_access_refuses_guest(self):
+        # nosemgrep: frappe-setuser — an anonymous request runs as Guest
+        frappe.set_user("Guest")
+        with self.assertRaises(frappe.PermissionError):
+            report_access([self.REPORT])

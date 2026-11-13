@@ -73,6 +73,8 @@ frappe.db.get_list("Sales Invoice", {
 });
 ```
 
+For figures a report already computes, read the report with `fac.report(name, filters)` and chart its rows or period columns instead of recomputing them (`get_skill("page-reports")`).
+
 ## Printing
 
 The chat's page panel has a Download PDF button. It prints the page as it is drawn at that moment, charts included, in the kit's design:

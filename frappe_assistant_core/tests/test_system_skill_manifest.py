@@ -503,3 +503,22 @@ class TestSystemSkillManifest(BaseAssistantTest):
         _install_system_prompt_templates()
 
         self.assertFalse(frappe.db.exists("Prompt Template", {"prompt_id": RETIRED_TEMPLATE}))
+
+    def test_pages_from_reports_read_through_fac_report(self):
+        # A page that recomputes a report, or draws 0 for a report its viewer may not run,
+        # shows figures that disagree with ERPNext.
+        entry = next(e for e in _load_manifest("system_skills.json") if e["skill_id"] == "page-reports")
+        self.assertEqual((entry["status"], entry["visibility"]), ("Published", "Public"))
+        text = self._read_skill("page_reports.md")
+        for claim in (
+            "fac.report(",
+            "no_access",
+            "preparing",
+            '"error"',
+            "report_access",
+            "Never recompute",
+            "group_by_party",
+        ):
+            self.assertIn(claim, text)
+        for name in ("pages_in_chat.md", "fac_page.md", "mockup_kit.md"):
+            self.assertIn('get_skill("page-reports")', self._read_skill(name), name)

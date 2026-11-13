@@ -65,6 +65,11 @@ const fac = {
 		if (!bundle) throw new Error(__("Charts could not be loaded"));
 		return bundle.chart(el, option);
 	},
+	report(name, filters) {
+		const bundle = window.fac_page_charts;
+		if (!bundle) throw new Error(__("Reports could not be loaded"));
+		return bundle.report(frappe, name, filters);
+	},
 };
 
 const root = () => document.querySelector(".fac-page-root") || document.body;

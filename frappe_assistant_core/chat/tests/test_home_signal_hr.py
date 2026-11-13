@@ -27,7 +27,7 @@ class TestHrSignalCatalogue(unittest.TestCase):
         ids = [signal.id for signal in home_signals.CATALOGUE]
         stock_last = ids.index("pending_material_requests")
         self.assertEqual(ids[stock_last + 1 : stock_last + 1 + len(HR_IDS)], HR_IDS)
-        for signal in home_signals.CATALOGUE[stock_last + 1 :]:
+        for signal in home_signals.CATALOGUE[stock_last + 1 : stock_last + 1 + len(HR_IDS)]:
             self.assertEqual(signal.lenses, ("hr",))
 
 

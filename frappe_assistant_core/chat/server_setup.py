@@ -19,8 +19,10 @@ import shlex
 import frappe
 import psutil
 from frappe import _
+from frappe.utils import background_jobs
 
 RECOMMENDED_FIX = "--worker-class gthread --threads 8"
+RELAY_WORKER_FIX = "bench worker --queue faco_relay"
 DEFAULT_EXPECTED_CHATTERS = 10
 
 # Each chat needs one slot for AR's MCP callbacks and one for the rest of that person's requests.
@@ -102,14 +104,50 @@ def _master_environ_args(process: psutil.Process) -> str | None:
         return None
 
 
+def _serves_this_bench(process, argv: list[str], sites: str) -> bool:
+    """Whether a gunicorn process runs this bench's Frappe app: started in, or chdir'd to, our sites."""
+    if "frappe.app:application" not in argv:
+        return False
+    try:
+        if process.cwd() == sites:
+            return True
+    except (psutil.Error, OSError):
+        pass
+    return any(arg in (f"--chdir={sites}", sites) for arg in argv)
+
+
+def _bench_master() -> tuple[list[str], str | None] | None:
+    """This bench's gunicorn master, found among the running processes.
+
+    A web request's parent is the master; a scheduler job's parent is `bench worker`, so the
+    heartbeat looks for it. A web server in another container is not visible and stays unknown.
+    """
+    sites = os.getcwd()
+    gunicorn = {}
+    for process in psutil.process_iter(["pid", "ppid", "cmdline"]):
+        argv = process.info.get("cmdline") or []
+        if _is_gunicorn(argv) and _serves_this_bench(process, argv, sites):
+            gunicorn[process.info["pid"]] = process
+    for process in gunicorn.values():
+        if process.info.get("ppid") not in gunicorn:
+            return process.info["cmdline"], _master_environ_args(process)
+    return None
+
+
 def read_web_server_config() -> dict:
-    """Read how the web server running this request was started."""
+    """Read how this bench's web server was started."""
     config = {"worker_class": None, "workers": None, "threads": None, "timeout": None}
     try:
         master = psutil.Process(os.getppid())
         parsed = parse_gunicorn_cmdline(master.cmdline(), _master_environ_args(master))
     except (psutil.Error, OSError):
         parsed = None
+    if not parsed:
+        try:
+            found = _bench_master()
+        except (psutil.Error, OSError):
+            found = None
+        parsed = parse_gunicorn_cmdline(*found) if found else None
     if parsed:
         return {**config, **parsed, "source": "gunicorn"}
 
@@ -164,9 +202,70 @@ def get_expected_chatters() -> int:
     return int(configured or DEFAULT_EXPECTED_CHATTERS)
 
 
+def relay_report(expected_chatters: int) -> dict:
+    """Judge whether the chat relay workers can carry `expected_chatters` people chatting at once."""
+    from frappe_assistant_core.chat.api.chat.relay_dispatch import (
+        RELAY_QUEUE,
+        job_relay_enabled,
+        relay_queue_configured,
+        relay_worker_counts,
+    )
+
+    result = {
+        "status": "off",
+        "enabled": job_relay_enabled(),
+        "queue_configured": False,
+        "workers": 0,
+        "busy": 0,
+        "queued": None,
+        "required_workers": expected_chatters,
+        "reasons": [],
+        "fix": None,
+    }
+    if not result["enabled"]:
+        return result
+
+    result["queue_configured"] = relay_queue_configured()
+    if result["queue_configured"]:
+        counts = relay_worker_counts(fresh=True)
+        result.update(workers=counts.live, busy=counts.busy)
+        try:
+            result["queued"] = background_jobs.get_queue(RELAY_QUEUE).count
+        except Exception:
+            frappe.logger("faco.relay").exception("faco_relay queue count failed")
+
+    if not result["queue_configured"]:
+        result["reasons"].append(
+            _(
+                "Chat relays are set to run in background jobs, but the {0} queue is not configured, so they still run in the web workers. Add {0} to workers in common_site_config.json, run bench setup supervisor (or add a relay worker service in Docker), and restart."
+            ).format(RELAY_QUEUE)
+        )
+    elif not result["workers"]:
+        result["reasons"].append(
+            _(
+                "Chat relays are set to run in background jobs, but no worker is listening on the {0} queue, so they still run in the web workers. Start one with: bench worker --queue {0}."
+            ).format(RELAY_QUEUE)
+        )
+    elif result["workers"] < expected_chatters:
+        result["reasons"].append(
+            _(
+                "{0} relay workers can carry {0} chats at once; you expect {1} people chatting at the same time. Add relay workers to the {2} queue."
+            ).format(result["workers"], expected_chatters, RELAY_QUEUE)
+        )
+
+    result["status"] = "warning" if result["reasons"] else "ok"
+    result["fix"] = RELAY_WORKER_FIX if result["reasons"] else None
+    return result
+
+
 def server_setup_report() -> dict:
     config = read_web_server_config()
-    return {**config, **assess(config, get_expected_chatters())}
+    expected_chatters = get_expected_chatters()
+    return {
+        **config,
+        **assess(config, expected_chatters),
+        "relay": relay_report(expected_chatters),
+    }
 
 
 @frappe.whitelist(methods=["GET"])

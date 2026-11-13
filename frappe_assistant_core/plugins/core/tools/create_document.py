@@ -30,6 +30,7 @@ from frappe_assistant_core.utils.customisation import (
     customisation_result,
     desk_url,
     script_report_warning,
+    server_script_code_guard,
     server_script_guard,
 )
 from frappe_assistant_core.utils.savepoint import (
@@ -332,7 +333,7 @@ class DocumentCreate(BaseTool):
                     }
                 child_rows[field] = rows
 
-            refusal = server_script_guard(doctype, data)
+            refusal = server_script_guard(doctype, data) or server_script_code_guard(doctype, data)
             if refusal:
                 return refusal
 

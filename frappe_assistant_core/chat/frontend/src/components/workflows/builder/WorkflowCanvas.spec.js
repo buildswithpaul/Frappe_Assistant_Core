@@ -1,12 +1,21 @@
 import { describe, it, expect, vi } from "vitest";
-import { mount } from "@vue/test-utils";
+import { mount, flushPromises } from "@vue/test-utils";
 import { ref, computed, h } from "vue";
 import { createPinia, setActivePinia } from "pinia";
 import WorkflowCanvas from "@/components/workflows/builder/WorkflowCanvas.vue";
 import { useWorkflowGraphActions } from "@/composables/useWorkflowGraphActions";
+import { graphJsonToVueFlow } from "@/components/workflows/graphUtils";
+import DecisionNode from "@/components/workflows/nodes/DecisionNode.vue";
+import UnknownNode from "@/components/workflows/nodes/UnknownNode.vue";
 
 setActivePinia(createPinia());
 window.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} });
+// Every browser has ResizeObserver; jsdom does not, and Vue Flow observes its pane with one.
+globalThis.ResizeObserver ??= class {
+	observe() {}
+	unobserve() {}
+	disconnect() {}
+};
 
 /**
  * The builder reaches into this component for two things that a plain
@@ -55,6 +64,32 @@ describe("WorkflowCanvas", () => {
 
 		expect(calls).toEqual([area.element]);
 		expect(nodes.value.map((n) => n.type)).toEqual(["agent"]);
+	});
+
+	it("draws a node type it has no component for instead of dropping it", async () => {
+		// An older builder loading a graph a newer one saved: the type comes
+		// straight from the stored graph JSON through graphJsonToVueFlow.
+		const { nodes } = graphJsonToVueFlow({
+			nodes: [{ id: "x", type: "future_step", label: "From a newer builder", config: {} }],
+			edges: [],
+		});
+		const w = mount(WorkflowCanvas, { props: { nodes } });
+		await flushPromises();
+		const node = w.findComponent(UnknownNode);
+		expect(node.exists()).toBe(true);
+		expect(node.text()).toContain("From a newer builder");
+		expect(node.text()).toContain("future_step");
+	});
+
+	it("draws a decision node with its own component", async () => {
+		const { nodes } = graphJsonToVueFlow({
+			nodes: [{ id: "d", type: "decision", config: { question: "Q?", choices: ["A", "B"] } }],
+			edges: [],
+		});
+		const w = mount(WorkflowCanvas, { props: { nodes } });
+		await flushPromises();
+		expect(w.findComponent(DecisionNode).exists()).toBe(true);
+		expect(w.findComponent(UnknownNode).exists()).toBe(false);
 	});
 
 	it("offers a retry that emits upward when the load failed", async () => {

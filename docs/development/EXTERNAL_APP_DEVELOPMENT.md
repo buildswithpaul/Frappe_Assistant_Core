@@ -612,6 +612,10 @@ Tools support a three-level configuration hierarchy:
 2. **App-Level Overrides** (in hooks.py)
 3. **Site-Level Overrides** (in site_config.json)
 
+Each level overrides the one before it, key by key. When several installed apps
+configure the same tool, they apply in install order, so the app installed last
+wins. Values arrive as written, so a list stays a list.
+
 ```python
 # In your tool's execute method
 config = self.get_config()

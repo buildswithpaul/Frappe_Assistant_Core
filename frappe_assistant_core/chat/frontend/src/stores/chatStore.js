@@ -396,7 +396,7 @@ export const useChatStore = defineStore("chat", () => {
 		if (sessionId !== currentSessionId.value) return;
 		if (interrupted && (isStreaming.value || isSubmittingInterrupts.value)) {
 			handleStreamError(
-				__("This answer was interrupted by a server restart."),
+				interrupted.error || __("This answer was interrupted by a server restart."),
 				"TURN_INTERRUPTED"
 			);
 		}

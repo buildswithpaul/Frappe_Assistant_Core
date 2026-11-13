@@ -2,7 +2,8 @@ import { flushPromises, mount } from "@vue/test-utils";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 const baseCall = vi.fn();
-vi.mock("@/api/_core", () => ({ baseCall: (...a) => baseCall(...a), getCall: vi.fn() }));
+const getCall = vi.fn();
+vi.mock("@/api/_core", () => ({ baseCall: (...a) => baseCall(...a), getCall: (...a) => getCall(...a) }));
 
 import { usePagePanel } from "@/composables/usePagePanel";
 import PageView from "./PageView.vue";
@@ -125,6 +126,24 @@ describe("PageView", () => {
 		expect(wrapper.emitted("error")).toBeUndefined();
 	});
 
+	it("gives the script fac.report, which reads a report the viewer may run", async () => {
+		getCall.mockImplementation((method) =>
+			Promise.resolve(method.endsWith("report_access") ? { "Profit and Loss Statement": false } : {}),
+		);
+		const view = mountView({
+			...published,
+			script:
+				"fac.report('Profit and Loss Statement', {company: 'C'}).then((r) => { root_element.querySelector('.mk-card').textContent = r.status; });",
+		});
+		await flushPromises();
+		const shadow = view.find(".page-view-host").element.shadowRoot;
+		expect(shadow.querySelector(".mk-card").textContent).toBe("no_access");
+		expect(getCall).toHaveBeenCalledWith("frappe_assistant_core.api.fac_page.report_access", {
+			reports: JSON.stringify(["Profit and Loss Statement"]),
+		});
+		getCall.mockReset();
+	});
+
 	it("disposes the page's charts when it unmounts", () => {
 		const page = {
 			...published,
@@ -239,6 +258,13 @@ describe("PageView", () => {
 		});
 		expect(await usePagePanel().pageView.value.capture({ scale: 1, quality: 80 })).toBe(shot);
 		expect(capture).toHaveBeenCalledWith({ scale: 1, quality: 80 });
+	});
+
+	it("tells FACO's screenshot which call on a shared page failed, and its HTTP status", async () => {
+		baseCall.mockRejectedValueOnce(Object.assign(new Error("Server Script failed"), { status: 500 }));
+		mountView({ ...published, script: "frappe.call({ method: 'team.get_board' });" });
+		await flushPromises();
+		expect(usePagePanel().pageView.value.errors()).toEqual(["team.get_board failed (HTTP 500): Server Script failed"]);
 	});
 
 	it("offers FACO's screenshot the personal page's frame capture", () => {

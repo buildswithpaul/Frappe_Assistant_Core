@@ -96,3 +96,6 @@ frappe_assistant_core.patches.v3_2.move_migration_tools_to_their_plugin
 
 # Version 3.3.0 - server-setup check: size it for 10 concurrent chatters until an admin sets a number
 frappe_assistant_core.patches.v3_3.seed_expected_concurrent_chatters
+
+# Version 3.3.0 - relay chat answers in a background job: off until an admin switches it on
+frappe_assistant_core.patches.v3_3.seed_relay_in_background_job

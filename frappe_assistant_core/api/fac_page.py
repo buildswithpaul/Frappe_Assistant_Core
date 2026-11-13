@@ -76,6 +76,8 @@ _FETCHING_FUNCTIONS = {"image-set", "-webkit-image-set", "src", "image", "cross-
 _CODE_PROPERTIES = {"behavior", "-moz-binding"}
 _CODE_FUNCTIONS = {"expression"}
 _SAME_ORIGIN_URL = re.compile(r"^/(?:files|assets)/")
+# The most reports one report_access call checks: a page shows a handful, never dozens.
+MAX_REPORT_ACCESS_NAMES = 20
 
 
 class _UnsafeStyle(Exception):
@@ -233,6 +235,28 @@ def is_page_api_method(method: str) -> bool:
     from frappe.core.doctype.server_script.server_script_utils import get_server_script_map
 
     return method in get_server_script_map().get("_api", {})
+
+
+@frappe.whitelist(methods=["GET"])
+def report_access(reports: list | str) -> dict[str, bool]:
+    """Which of ``reports`` the session user may run, as Desk decides when it opens one.
+
+    A page asks before it runs a report: in Desk a refused run opens the "Not permitted" dialog
+    and leaves the page. The answer names only reports, never their data.
+    """
+    if frappe.session.user == "Guest":
+        frappe.throw(_("Log in to view this page."), frappe.PermissionError)
+    names = frappe.parse_json(reports) if isinstance(reports, str) else reports
+    if not isinstance(names, list) or not all(isinstance(name, str) for name in names):
+        frappe.throw(_("Send the report names as a list."), frappe.ValidationError)
+    if len(names) > MAX_REPORT_ACCESS_NAMES:
+        frappe.throw(
+            _("A page can check at most {0} reports at once.").format(MAX_REPORT_ACCESS_NAMES),
+            frappe.ValidationError,
+        )
+    from frappe_assistant_core.plugins.core.tools.report_access import can_run_report
+
+    return {name: can_run_report(name) for name in dict.fromkeys(names)}
 
 
 def can_open_page(name: str, user: str) -> bool:

@@ -319,13 +319,16 @@ async function load() {
 	try {
 		const [, result] = await Promise.all([loadCountries(), api.billing.getBillingDetails()]);
 		if (result) {
-			Object.assign(form.value, result);
+			// The site's own ERPNext company country, offered until one is saved.
+			const { suggested_country: suggested, ...details } = result;
+			Object.assign(form.value, details);
 			// `billing_country` comes back as the ERPNext country name (e.g.
 			// "India") — map it back to the ISO code the <select> expects.
 			const match = countries.value.find(
 				(c) => c.label.toLowerCase() === String(form.value.billing_country).toLowerCase()
 			);
 			if (match) form.value.billing_country = match.code;
+			if (!form.value.billing_country && suggested) form.value.billing_country = suggested;
 		}
 	} catch (e) {
 		// First-time users have no ERPNext Customer yet — backend returns

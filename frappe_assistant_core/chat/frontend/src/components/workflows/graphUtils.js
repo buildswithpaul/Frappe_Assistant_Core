@@ -37,12 +37,14 @@ export function graphJsonToVueFlow(graphJson) {
 		},
 	}));
 
+	const resolve = decisionLabelResolver(nodes);
+	const byId = new Map(nodes.map((n) => [n.id, n]));
 	const edges = (graph.edges || []).map((e, i) => ({
 		id: e.id || `e-${e.source}-${e.target}-${i}`,
 		source: e.source,
 		target: e.target,
-		sourceHandle: e.condition || undefined,
-		label: e.condition || "",
+		sourceHandle: resolve(e.source, e.condition) || undefined,
+		label: edgeLabel(byId.get(e.source), resolve(e.source, e.condition)),
 		type: "smoothstep",
 		// A DAG is unreadable without direction, and two nodes side by side
 		// give the eye no other cue which way the data flows.
@@ -62,6 +64,7 @@ export function graphJsonToVueFlow(graphJson) {
  * Convert Vue Flow state back to backend graph JSON string.
  */
 export function vueFlowToGraphJson(nodes, edges, globalSettings = {}) {
+	const resolve = decisionLabelResolver(nodes);
 	return JSON.stringify({
 		version: "1.0",
 		nodes: nodes.map((n) => ({
@@ -80,8 +83,8 @@ export function vueFlowToGraphJson(nodes, edges, globalSettings = {}) {
 				source: e.source,
 				target: e.target,
 			};
-			if (e.sourceHandle) edge.condition = e.sourceHandle;
-			else if (e.label) edge.condition = e.label;
+			const condition = resolve(e.source, edgeCondition(e));
+			if (condition) edge.condition = condition;
 			return edge;
 		}),
 		global_settings: globalSettings,
@@ -110,6 +113,7 @@ export function getDefaultLabel(type) {
 		transform: __("Transform"),
 		tool: __("Tool"),
 		loop: __("For each"),
+		decision: __("Decision"),
 	};
 	return labels[type] || type;
 }
@@ -158,6 +162,8 @@ export function getDefaultConfig(type) {
 				use_memory: false,
 				max_tool_calls: 25,
 			};
+		case "decision":
+			return { question: "", choices: ["Yes", "No"] };
 		default:
 			return {};
 	}
@@ -176,6 +182,101 @@ export const NODE_LIMITS = {
 		timeout_seconds: { min: 30, max: 3600 },
 	},
 };
+
+/**
+ * Decision node rules. Must stay equal to the engine's decision validation in
+ * assistant_runtime_workflows — a choice the form accepts but the engine
+ * rejects fails only at save time.
+ */
+export const DECISION_LIMITS = {
+	questionMaxLength: 2000,
+	choiceMaxLength: 60,
+	minChoices: 2,
+	maxChoices: 10,
+	// The engine answers "uncertain" when it cannot pick, so no branch may use it.
+	reservedChoice: "uncertain",
+};
+
+/**
+ * What is wrong with a decision node's config, phrased for the form that edits
+ * it: { question, list, choices } where `choices[i]` is the problem with the
+ * i-th choice ("" when none). validateGraph prefixes each with the node's label.
+ */
+export function decisionConfigProblems(config = {}) {
+	const L = DECISION_LIMITS;
+	const question = config.question;
+	const choices = Array.isArray(config.choices) ? config.choices : [];
+
+	let questionProblem = "";
+	if (typeof question !== "string" || !question.trim()) questionProblem = __("Ask a question for the AI to answer");
+	else if (question.length > L.questionMaxLength)
+		questionProblem = __("The question is longer than {0} characters", [L.questionMaxLength]);
+
+	let list = "";
+	if (choices.length < L.minChoices || choices.length > L.maxChoices)
+		list = __("Give between {0} and {1} choices", [L.minChoices, L.maxChoices]);
+
+	const seen = new Set();
+	const choiceProblems = choices.map((choice) => {
+		if (typeof choice !== "string" || !choice.trim()) return __("A choice cannot be empty");
+		// The engine measures the choice as stored, surrounding spaces included.
+		if (choice.length > L.choiceMaxLength)
+			return __("Keep a choice to {0} characters", [L.choiceMaxLength]);
+		const key = decisionKey(choice);
+		if (key === L.reservedChoice)
+			return __('"{0}" is reserved; choose another word', [L.reservedChoice]);
+		if (seen.has(key)) return __('"{0}" is already a choice', [choice.trim()]);
+		seen.add(key);
+		return "";
+	});
+
+	return { question: questionProblem, list, choices: choiceProblems };
+}
+
+/**
+ * The text drawn on an edge out of `sourceNode` that carries `condition`. A
+ * decision edge draws none: its choice is written beside the handle it leaves
+ * from, and edges from several choices to one step share their last stretch,
+ * where their labels would stack into an unreadable pile.
+ */
+export function edgeLabel(sourceNode, condition) {
+	if (toBackendType(sourceNode?.type) === "decision") return "";
+	return condition || "";
+}
+
+/** The label an edge carries in the graph JSON (its `condition`). */
+function edgeCondition(edge) {
+	return edge.sourceHandle || edge.label || "";
+}
+
+/** How the engine compares an edge label with a choice: trimmed, ignoring case. */
+function decisionKey(text) {
+	return typeof text === "string" ? text.trim().toLowerCase() : "";
+}
+
+/** A decision node's choices as its handles carry them: trimmed text, blanks dropped. */
+export function decisionChoices(config = {}) {
+	return (Array.isArray(config.choices) ? config.choices : [])
+		.filter((c) => typeof c === "string")
+		.map((c) => c.trim())
+		.filter(Boolean);
+}
+
+/**
+ * (sourceId, label) → the label to use for that edge. An edge out of a decision
+ * node takes the text of the choice it matches the way the engine matches it,
+ * so "Complaint" or " complaint" binds to the handle of choice "complaint". Any
+ * other label is returned as is, for validateGraph to flag.
+ */
+function decisionLabelResolver(nodes) {
+	const byKey = new Map();
+	for (const n of nodes) {
+		if (toBackendType(n.type) !== "decision") continue;
+		const choices = new Map(decisionChoices(n.data?.config).map((c) => [decisionKey(c), c]));
+		byKey.set(n.id, choices);
+	}
+	return (source, label) => byKey.get(source)?.get(decisionKey(label)) ?? label;
+}
 
 export function clampInt(value, { min, max, default: fallback } = {}) {
 	if (value === "" || value === null || value === undefined) return fallback;
@@ -235,6 +336,15 @@ export function validateGraph(nodes, edges) {
 		if (bt === "loop" && !config.system_prompt) {
 			add(n.id, __('"{0}" has no instructions for each item', [labelOf(n)]));
 		}
+		if (bt === "decision") {
+			const problems = decisionConfigProblems(config);
+			for (const message of [problems.question, problems.list, ...problems.choices]) {
+				if (message) add(n.id, __('Decision "{0}": {1}', [labelOf(n), message]));
+			}
+			checkDecisionEdges(n, config, edges, (message) =>
+				add(n.id, __('Decision "{0}": {1}', [labelOf(n), message]))
+			);
+		}
 	}
 
 	const byId = new Map(nodes.map((n) => [n.id, n]));
@@ -262,6 +372,30 @@ export function validateGraph(nodes, edges) {
 	}
 
 	return result();
+}
+
+/**
+ * Each edge out of a decision node is one of its choices. An unlabelled edge is
+ * accepted only as the node's sole way out, the same rule the engine applies to
+ * condition nodes. Renaming or removing a choice leaves its edges pointing at a
+ * handle that no longer exists; this is where that surfaces.
+ */
+function checkDecisionEdges(node, config, edges, report) {
+	const outgoing = edges.filter((e) => e.source === node.id);
+	const choices = new Set(decisionChoices(config).map(decisionKey));
+	const stale = new Set();
+	let unlabelled = 0;
+	for (const edge of outgoing) {
+		const condition = edgeCondition(edge);
+		if (!decisionKey(condition)) unlabelled += 1;
+		else if (!choices.has(decisionKey(condition))) stale.add(condition.trim());
+	}
+	for (const condition of stale) {
+		report(__('a connection leaves from "{0}", which is no longer a choice', [condition]));
+	}
+	if (unlabelled && outgoing.length > 1) {
+		report(__("connect each step from one of the choices"));
+	}
 }
 
 /**
@@ -308,6 +442,14 @@ export const NODE_TYPES = [
 		description: "Branch based on rules",
 		color: "var(--ql-warning)",
 		iconPath: "M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4",
+	},
+	{
+		type: "decision",
+		label: "Decision",
+		description: "Let AI choose a branch: ask a question, list the answers, connect each answer to a step.",
+		color: "var(--ql-warning)",
+		iconPath:
+			"M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z",
 	},
 	{
 		type: "transform",

@@ -13,6 +13,7 @@
 import { __ } from "@/utils/i18n";
 
 import { PAGE_FRAME_SANDBOX, makeNonce, pageFrameSrcdoc } from "./pageFrameDoc";
+import { failedCallText } from "./pageRuntime";
 import {
 	DOC_REPLACING_WRITES,
 	RECORD_WRITES,
@@ -33,7 +34,8 @@ export { fetchTransport, queryArgs } from "./pageFetchTransport";
 // The reads a page runs without asking: Frappe's own read endpoints, which check the user's
 // permission. The chat's stand-in frappe uses get_list, get_value and get. query_report.run runs a
 // report's own code and getdoc a controller's onload; both are what the user can already run from
-// Desk, and GET rolls back any database write they make.
+// Desk, and GET rolls back any database write they make. report_access answers only whether the
+// user may run each report.
 export const PAGE_READ_METHODS = new Set([
 	"frappe.client.get",
 	"frappe.client.get_list",
@@ -44,6 +46,7 @@ export const PAGE_READ_METHODS = new Set([
 	"frappe.desk.reportview.get_count",
 	"frappe.desk.query_report.run",
 	"frappe.desk.form.load.getdoc",
+	"frappe_assistant_core.api.fac_page.report_access",
 ]);
 
 // Per page, in memory only: the content the answers below were given for, the methods the user
@@ -350,7 +353,7 @@ export function createPageFrame({
 			toPage({ op: "reply", id: call.id, ok: true, message: message === undefined ? null : message });
 		} catch (error) {
 			const reply = errorReply(error);
-			noteError(__("{0} failed: {1}", [call.method, reply.message]));
+			noteError(failedCallText(call.method, reply));
 			toPage({ op: "reply", id: call.id, ok: false, error: reply });
 		} finally {
 			inFlight--;

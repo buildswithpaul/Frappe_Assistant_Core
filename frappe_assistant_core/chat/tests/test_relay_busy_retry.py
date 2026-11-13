@@ -10,6 +10,7 @@ client it is waiting, and gives up with one friendly error. Stand-ins below are 
 generators: ``sleep`` is injected, and ``_emit_socket_event`` is the only patched boundary.
 """
 
+import time
 import unittest
 from contextlib import ExitStack
 from unittest.mock import create_autospec, patch
@@ -18,7 +19,7 @@ import frappe
 from assistant_runtime_sdk import AssistantRuntimeClient
 from frappe import _
 
-from frappe_assistant_core.chat.api.chat import busy_retry, relay
+from frappe_assistant_core.chat.api.chat import busy_retry, relay, relay_shutdown
 from frappe_assistant_core.chat.api.chat.busy_retry import MAX_BUSY_RETRIES, stream_with_busy_retry
 from frappe_assistant_core.tests.base_test import BaseAssistantTest
 
@@ -141,11 +142,17 @@ class TestBusyRetry(unittest.TestCase):
 
 
 class TestRelayUsesBusyRetry(unittest.TestCase):
-    def _run_send(self, streams, cancelled=None):
+    def _run_send(self, streams, cancelled=None, on_first_stream=None, resume=False):
         # Autospec of the real SDK client: a renamed or missing stream_chat fails here,
         # which a bare MagicMock would let through.
         client = create_autospec(AssistantRuntimeClient, instance=True)
-        client.stream_chat.side_effect = lambda *a, **k: _stream(*streams.pop(0))
+
+        def open_stream(*_a, **_k):
+            if on_first_stream and client.stream_chat.call_count == 1:
+                on_first_stream()
+            return _stream(*streams.pop(0))
+
+        client.stream_chat.side_effect = open_stream
         emitted = []
         with ExitStack() as stack:
             enter = stack.enter_context
@@ -160,18 +167,28 @@ class TestRelayUsesBusyRetry(unittest.TestCase):
             enter(patch.object(relay, "_ensure_assistant_msg"))
             enter(patch.object(relay, "_persist_session_blob"))
             self.persist_partial = enter(patch.object(relay, "_persist_partial_assistant_turn"))
-            enter(patch.object(busy_retry.time, "sleep"))
+            self.sleep = enter(patch.object(busy_retry.time, "sleep"))
             enter(patch.object(relay, "_emit_socket_event", side_effect=lambda _s, p: emitted.append(p)))
             enter(patch.object(busy_retry, "_emit_socket_event", side_effect=lambda _s, p: emitted.append(p)))
-            relay._relay_ar_stream(
-                session_id="s1",
-                full_prompt="hi",
-                original_message="hi",
-                context=None,
-                message_name=None,
-                user="member@example.com",
-                site="site",
-            )
+            if resume:
+                enter(patch.object(relay, "_persist_errored_resume_cycle"))
+                relay._relay_ar_interrupt_resume(
+                    "s1",
+                    [{"interruptId": "i1", "response": "approve"}],
+                    "member@example.com",
+                    "site",
+                    message_id="m1",
+                )
+            else:
+                relay._relay_ar_stream(
+                    session_id="s1",
+                    full_prompt="hi",
+                    original_message="hi",
+                    context=None,
+                    message_name=None,
+                    user="member@example.com",
+                    site="site",
+                )
         return client, emitted
 
     def test_send_funnel_reopens_the_stream_when_busy(self):
@@ -219,6 +236,34 @@ class TestRelayUsesBusyRetry(unittest.TestCase):
 
         self.assertEqual(client.stream_chat.call_count, 1)
         self.assertEqual(emitted[-1]["event"], "stream_aborted")
+
+    def _start_expired_drain(self):
+        # Production: gunicorn's graceful exit (or Task 6's RQ shutdown poll) starts this drain,
+        # and a relay that outlives its grace sees a deadline in the past.
+        self.addCleanup(relay_shutdown._draining.clear)
+        self.addCleanup(setattr, relay_shutdown, "_deadline", None)
+        relay_shutdown._deadline = time.monotonic() - 1
+        relay_shutdown._draining.set()
+
+    def _assert_gave_up_without_waiting(self, client, emitted):
+        self.assertEqual(client.stream_chat.call_count, 1)
+        self.assertEqual(emitted[-1]["event"], "stream_error")
+        self.assertEqual(emitted[-1]["error_code"], "TURN_INTERRUPTED")
+        self.sleep.assert_not_called()
+
+    def test_busy_wait_gives_up_when_the_worker_is_exiting(self):
+        streams = [[_busy(25.0)], [{"event": "stream_complete", "data": {}}]]
+
+        client, emitted = self._run_send(streams, on_first_stream=self._start_expired_drain)
+
+        self._assert_gave_up_without_waiting(client, emitted)
+
+    def test_resume_busy_wait_gives_up_when_the_worker_is_exiting(self):
+        streams = [[_busy(25.0)], [{"event": "stream_complete", "data": {}}]]
+
+        client, emitted = self._run_send(streams, on_first_stream=self._start_expired_drain, resume=True)
+
+        self._assert_gave_up_without_waiting(client, emitted)
 
 
 class TestBusyRefusalRow(BaseAssistantTest):

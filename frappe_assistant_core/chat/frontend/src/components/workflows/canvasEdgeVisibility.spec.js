@@ -126,3 +126,33 @@ describe("isValidConnection under Vue Flow's edge ingestion", () => {
 		expect(isValidConnection({ source: "out", target: "a" })).toBe(false);
 	});
 });
+
+describe("onConnect labels", () => {
+	const connect = (sourceType, sourceHandle) => {
+		const edges = ref([]);
+		const { onConnect } = useBuilderGraph({
+			nodes: ref([
+				{ id: "s", type: sourceType, data: { config: { choices: ["complaint", "order"] } } },
+				{ id: "out", type: "workflow-output" },
+			]),
+			edges,
+			selectedNode: ref(null),
+			canEdit: ref(true),
+			scheduleAutoSave: () => {},
+			project: null,
+			canvasAreaRef: ref(null),
+		});
+		onConnect({ source: "s", target: "out", sourceHandle });
+		return edges.value[0];
+	};
+
+	it("draws no label on an edge dragged from a decision choice, but keeps its condition", () => {
+		const edge = connect("decision", "complaint");
+		expect(edge.label).toBe("");
+		expect(edge.sourceHandle).toBe("complaint");
+	});
+
+	it("still labels an edge dragged from a condition's pass handle", () => {
+		expect(connect("condition", "pass").label).toBe("pass");
+	});
+});

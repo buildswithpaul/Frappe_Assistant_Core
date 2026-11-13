@@ -4,7 +4,7 @@
 (function () {
 	// Desk's build version (v15 and v16 set it in the page template), so a rebuilt kit is refetched.
 	const KIT_CSS_URL = `/assets/frappe_assistant_core/css/mockup_kit.css?v=${window._version_number || ""}`;
-	// fac.chart, built from the chat's pageCharts module (vite.pagecharts.config.js).
+	// fac.chart and fac.report, built from the chat's pageFacBundle module (vite.pagecharts.config.js).
 	const CHARTS_URL = `/assets/frappe_assistant_core/js/fac_page_charts.js?v=${window._version_number || ""}`;
 	// A personal page's frame and bridge, built from the chat's pageFrameHost module
 	// (vite.pageframehost.config.js).
@@ -326,7 +326,8 @@
 		return loaded[key];
 	}
 
-	// fac.chart as the chat panel offers it, recording each chart so the next render disposes it.
+	// fac.chart and fac.report as the chat panel offers them, recording each chart so the next render
+	// disposes it.
 	function make_fac() {
 		const handles = [];
 		const fac = {
@@ -338,6 +339,11 @@
 				// A chart drawn after the user moved on belongs to a page no longer shown.
 				if (!shown || shown.fac !== fac) dispose();
 				return handle;
+			},
+			report(name, filters) {
+				const bundle = window.fac_page_charts;
+				if (!bundle) throw new Error(__("Reports could not be loaded"));
+				return bundle.report(frappe, name, filters);
 			},
 		};
 		const dispose = () => handles.splice(0).forEach((handle) => handle.dispose());

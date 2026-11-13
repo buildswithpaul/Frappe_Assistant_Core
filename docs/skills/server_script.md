@@ -44,6 +44,15 @@ Adds a rule that runs on the server when a document is saved, submitted, cancell
 6. **Never test a rule with real records.** Do not create records to trigger a rule and then delete them, and never act as another user. Real test rows are left behind when the new rule blocks deleting them.
 7. **Check who can read, write or submit the target document type or record** with `test_as_user`. It checks permissions only; it does not show what a validation script blocks.
 
+## Sandbox traps
+
+A create or update whose code would fail in the sandbox is refused with `error_type: "server_script_sandbox"`, and nothing is saved. `error` names each line and what to use instead. Fix those lines and save again. These are the mistakes that come up most:
+
+- **`frappe.get_roles` does not exist in the sandbox.** Read the user's roles with `frappe.get_all("Has Role", filters={"parent": frappe.session.user, "parenttype": "User"}, pluck="role")`.
+- **`.format()` and `.format_map()` are blocked.** Use an f-string: `f"{count} items"`.
+- **`+=` (or any augmented assignment) on an item or slice is not allowed**, such as `totals[key] += 1`. Write it out: `totals[key] = totals[key] + 1`. On a plain variable, `total += 1` is fine.
+- **An API script is a script body, not a module.** No `import`, no `def` wrapped in `@frappe.whitelist()`. Read the inputs from `frappe.form_dict` and set `frappe.response["message"]`.
+
 ## Reference
 
 ```json

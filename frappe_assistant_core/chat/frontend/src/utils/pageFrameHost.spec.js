@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { createPageFrame, fetchTransport, readCall } from "./pageFrameHost";
+import { PAGE_READ_METHODS, createPageFrame, fetchTransport, readCall } from "./pageFrameHost";
 
 const PAGE = { title: "Sales", html: "<p>Sales</p>", style: "", script: "" };
 
@@ -525,7 +525,7 @@ describe("createPageFrame", () => {
 		transport.get.mockRejectedValue(Object.assign(new Error("No permission"), { status: 403 }));
 		fromPage({ op: "call", id: 1, method: "frappe.client.get_list", args: {}, type: "GET" });
 		await settle();
-		expect(frame.errors).toEqual(["x is not defined", "frappe.client.get_list failed: No permission"]);
+		expect(frame.errors).toEqual(["x is not defined", "frappe.client.get_list failed (HTTP 403): No permission"]);
 		expect(onError).toHaveBeenCalledTimes(2);
 	});
 
@@ -626,5 +626,11 @@ describe("fetchTransport", () => {
 		const body = { exc: "x", _server_messages: JSON.stringify([JSON.stringify({ message: "<b>Not permitted</b>" })]) };
 		vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false, status: 403, json: async () => body })));
 		await expect(fetchTransport(() => "").get("a.b", {})).rejects.toMatchObject({ message: "Not permitted", status: 403 });
+	});
+});
+
+describe("PAGE_READ_METHODS", () => {
+	it("lets a page check which reports its viewer may run without asking", () => {
+		expect(PAGE_READ_METHODS.has("frappe_assistant_core.api.fac_page.report_access")).toBe(true);
 	});
 });
