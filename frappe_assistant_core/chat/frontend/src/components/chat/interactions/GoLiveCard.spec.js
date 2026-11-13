@@ -1,7 +1,19 @@
 import { mount } from "@vue/test-utils";
-import { describe, it, expect } from "vitest";
+import { createPinia } from "pinia";
+import { describe, it, expect, vi } from "vitest";
+
+vi.mock("@/api/client", () => ({
+	api: {
+		tools: {
+			currentCode: vi.fn().mockRejectedValue(new Error("not fetched")),
+			fieldPlacement: vi.fn().mockRejectedValue(new Error("not fetched")),
+			codeGoingLive: vi.fn().mockResolvedValue([]),
+		},
+	},
+}));
 
 import GoLiveCard from "./GoLiveCard.vue";
+import ApprovalDetails from "./ApprovalDetails.vue";
 
 const serverScript = (id, name) => ({
 	type: "interaction",
@@ -47,16 +59,16 @@ describe("GoLiveCard", () => {
 		expect(wrapper.find(".single-card").exists()).toBe(false);
 	});
 
-	it("show code reveals only that row's card details", async () => {
+	it("show code reveals only that row's details", async () => {
 		const wrapper = mountCard();
 		await wrapper.findAll(".glc-toggle")[1].trigger("click");
-		const cards = wrapper.findAll(".single-card");
-		expect(cards).toHaveLength(1);
-		expect(cards[0].text()).toBe("b");
+		const details = wrapper.findAllComponents(ApprovalDetails);
+		expect(details).toHaveLength(1);
+		expect(details[0].props("block").id).toBe("b");
 		expect(wrapper.findAll(".glc-toggle")[1].text()).toBe("Hide code");
 
 		await wrapper.findAll(".glc-toggle")[1].trigger("click");
-		expect(wrapper.find(".single-card").exists()).toBe(false);
+		expect(wrapper.findComponent(ApprovalDetails).exists()).toBe(false);
 	});
 
 	it("approve all emits once per undecided block", async () => {
@@ -85,5 +97,47 @@ describe("GoLiveCard", () => {
 		await button(wrapper, "Review each").trigger("click");
 		expect(wrapper.findAll(".single-card").map((c) => c.text())).toEqual(["a", "b"]);
 		expect(button(wrapper, "Approve all")).toBeUndefined();
+	});
+
+	it("shows read-only details with no decision controls inside an item", async () => {
+		const wrapper = mount(GoLiveCard, {
+			props: { blocks: [serverScript("a", "Alpha"), serverScript("b", "Beta")], submitting: false },
+			global: { plugins: [createPinia()] },
+		});
+		await wrapper.findAll(".glc-toggle")[0].trigger("click");
+		const item = wrapper.findAll(".glc-item")[0];
+		expect(item.findComponent(ApprovalDetails).exists()).toBe(true);
+		expect(item.find(".glc-code").text()).toContain("frappe.msgprint(1)");
+		expect(item.find(".ql-btn-approve").exists()).toBe(false);
+		expect(item.find(".ql-btn-reject").exists()).toBe(false);
+		expect(item.find(".trust-choice").exists()).toBe(false);
+		expect(item.find("input[type=checkbox]").exists()).toBe(false);
+	});
+
+	it("disables Approve all while a revealed item is still loading its code", async () => {
+		const wrapper = mountCard();
+		await wrapper.findAll(".glc-toggle")[0].trigger("click");
+		const details = wrapper.findComponent(ApprovalDetails);
+		details.vm.$emit("blocking", true);
+		await wrapper.vm.$nextTick();
+		expect(button(wrapper, "Approve all").attributes("disabled")).toBeDefined();
+		expect(button(wrapper, "Reject all").attributes("disabled")).toBeUndefined();
+
+		details.vm.$emit("blocking", false);
+		await wrapper.vm.$nextTick();
+		expect(button(wrapper, "Approve all").attributes("disabled")).toBeUndefined();
+	});
+
+	it("labels decided items and reads Decided once all are decided", async () => {
+		const blocks = [serverScript("a", "Alpha"), serverScript("b", "Beta")];
+		blocks[0].decision = { resolution: "approved", responses: [] };
+		const wrapper = mountCard(blocks);
+		expect(wrapper.findAll(".glc-decision").map((d) => d.text())).toEqual(["Approved"]);
+		expect(wrapper.find(".glc-status").exists()).toBe(false);
+
+		blocks[1].decision = { resolution: "rejected", responses: [] };
+		await wrapper.setProps({ blocks: [...blocks] });
+		expect(wrapper.findAll(".glc-decision").map((d) => d.text())).toEqual(["Approved", "Rejected"]);
+		expect(wrapper.find(".glc-status").text()).toBe("Decided");
 	});
 });

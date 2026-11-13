@@ -32,7 +32,7 @@
 					</button>
 				</div>
 				<div v-if="isOpen(block.id)" class="glc-code">
-					<InteractionCard :block="block" />
+					<ApprovalDetails :block="block" @blocking="setBlocking(block.id, $event)" />
 				</div>
 			</li>
 		</ul>
@@ -49,7 +49,12 @@
 				<button type="button" class="ql-btn ql-btn-reject" :disabled="submitting" @click="decideAll('reject')">
 					{{ __("Reject all") }}
 				</button>
-				<button type="button" class="ql-btn ql-btn-approve" :disabled="submitting" @click="decideAll('approve')">
+				<button
+					type="button"
+					class="ql-btn ql-btn-approve"
+					:disabled="submitting || blockingIds.size > 0"
+					@click="decideAll('approve')"
+				>
 					{{ __("Approve all") }}
 				</button>
 			</template>
@@ -61,6 +66,7 @@
 import { computed, ref } from "vue";
 import { __ } from "@/utils/i18n";
 import InteractionCard from "../InteractionCard.vue";
+import ApprovalDetails from "./ApprovalDetails.vue";
 import InteractionShell from "./InteractionShell.vue";
 import { approvalHeadline } from "./approvalHeadline";
 
@@ -74,6 +80,8 @@ const emit = defineEmits(["approve", "reject"]);
 // "Review each" hands every change to its own card; there is no folding back mid-decision.
 const reviewing = ref(false);
 const openIds = ref(new Set());
+// Revealed items still loading the code they replace; approving waits on them, as one card does.
+const blockingIds = ref(new Set());
 
 const allDecided = computed(() => props.blocks.every((b) => b.decision));
 
@@ -83,9 +91,20 @@ function isOpen(id) {
 	return openIds.value.has(id);
 }
 
+function setBlocking(id, loading) {
+	const next = new Set(blockingIds.value);
+	if (loading) next.add(id);
+	else next.delete(id);
+	blockingIds.value = next;
+}
+
 function toggle(id) {
 	const next = new Set(openIds.value);
-	if (!next.delete(id)) next.add(id);
+	if (!next.delete(id)) {
+		next.add(id);
+	} else {
+		setBlocking(id, false);
+	}
 	openIds.value = next;
 }
 
