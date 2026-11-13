@@ -155,6 +155,23 @@ describe("PageView", () => {
 		getCall.mockReset();
 	});
 
+	it("presents a shared page one section at a time, with its edit controls hidden", async () => {
+		const view = mountView({
+			...published,
+			html: '<section class="mk-section" data-title="Company"><button class="mk-edit">Edit</button></section><section class="mk-section" data-title="Finance">B</section>',
+		});
+		await view.vm.present();
+		const frame = view.find(".page-view-frame").element;
+		expect(frame.querySelector(".fac-present-bar")).not.toBeNull();
+		const shadow = view.find(".page-view-host").element.shadowRoot;
+		expect([...shadow.querySelectorAll(".mk-section")].map((s) => s.classList.contains("fac-present-off"))).toEqual([false, true]);
+		expect(shadow.querySelector(".fac-page-root").classList.contains("fac-presenting")).toBe(true);
+		document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+		await flushPromises();
+		expect(frame.querySelector(".fac-present-bar")).toBeNull();
+		expect(shadow.querySelector(".fac-presenting")).toBeNull();
+	});
+
 	it("disposes the page's charts when it unmounts", () => {
 		const page = {
 			...published,

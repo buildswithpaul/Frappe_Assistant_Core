@@ -222,6 +222,27 @@ describe("PagePanel", () => {
 		expect(args.wide).toBe(false);
 	});
 
+	it("offers Present for a published page and presents its sections", async () => {
+		getPage.mockResolvedValue(
+			page({
+				visibility: "Shared",
+				html: '<section class="mk-section" data-title="Company">A</section><section class="mk-section" data-title="Finance">B</section>',
+			}),
+		);
+		const w = await mountPanel();
+		await w.find("button.page-panel-present").trigger("click");
+		await flushPromises();
+		expect(document.querySelector(".fac-present-bar .fac-present-where").textContent).toBe("1 / 2 · Company");
+		document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+		await flushPromises();
+		expect(document.querySelector(".fac-present-bar")).toBeNull();
+	});
+
+	it("offers no Present for a draft, which cannot run", async () => {
+		getPage.mockResolvedValue(page({ visibility: "Shared", draft: true }));
+		expect((await mountPanel()).find("button.page-panel-present").exists()).toBe(false);
+	});
+
 	it("offers Download PDF only once the page has loaded", async () => {
 		getPage.mockRejectedValue(new Error("gone"));
 		const w = await mountPanel();

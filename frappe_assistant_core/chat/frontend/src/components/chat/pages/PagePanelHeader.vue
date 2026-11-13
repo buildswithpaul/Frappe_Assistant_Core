@@ -36,6 +36,10 @@
 					/>
 				</svg>
 			</button>
+			<button v-if="presentable" type="button" class="page-panel-present" @click="emit('present')">
+				<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H4zM12 16v4m-4 0h8" /></svg>
+				<span class="page-panel-pdf-label">{{ __("Present") }}</span>
+			</button>
 			<button type="button" class="page-panel-pdf" :disabled="pdfDisabled" @click="emit('pdf')">
 				<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
 				<span class="page-panel-pdf-label">{{ __("Download PDF") }}</span>
@@ -59,10 +63,12 @@ defineProps({
 	shareable: { type: Boolean, default: false },
 	deskUrl: { type: String, required: true },
 	pdfDisabled: { type: Boolean, default: false },
+	// A published page can be presented, one section per screen; a draft runs nothing.
+	presentable: { type: Boolean, default: false },
 	backLabel: { type: String, default: () => __("Back to chat") },
 });
 
-const emit = defineEmits(["close", "share", "pdf"]);
+const emit = defineEmits(["close", "share", "pdf", "present"]);
 </script>
 
 <style scoped>
@@ -126,7 +132,7 @@ const emit = defineEmits(["close", "share", "pdf"]);
 	color: var(--ql-text);
 }
 .page-panel-icon svg,
-.page-panel-pdf svg {
+.page-panel-pdf svg, .page-panel-present svg {
 	width: 18px;
 	height: 18px;
 	fill: none;
@@ -135,7 +141,7 @@ const emit = defineEmits(["close", "share", "pdf"]);
 	stroke-linecap: round;
 	stroke-linejoin: round;
 }
-.page-panel-pdf {
+.page-panel-pdf, .page-panel-present {
 	display: inline-flex;
 	align-items: center;
 	gap: 6px;
@@ -151,16 +157,16 @@ const emit = defineEmits(["close", "share", "pdf"]);
 	cursor: pointer;
 	transition: background-color 0.15s ease, border-color 0.15s ease;
 }
-.page-panel-pdf:hover:not(:disabled) {
+.page-panel-pdf:hover:not(:disabled), .page-panel-present:hover:not(:disabled) {
 	border-color: var(--ql-border-hover);
 	background: var(--ql-subtle);
 }
-.page-panel-pdf:disabled {
+.page-panel-pdf:disabled, .page-panel-present:disabled {
 	opacity: 0.5;
 	cursor: default;
 }
 .page-panel-icon:focus-visible,
-.page-panel-pdf:focus-visible {
+.page-panel-pdf:focus-visible, .page-panel-present:focus-visible {
 	outline: 2px solid var(--ql-accent);
 	outline-offset: 1px;
 }
@@ -181,7 +187,7 @@ const emit = defineEmits(["close", "share", "pdf"]);
 	.page-panel-close {
 		display: none;
 	}
-	.page-panel-pdf {
+	.page-panel-pdf, .page-panel-present {
 		width: 32px;
 		margin: 0;
 		padding: 0;

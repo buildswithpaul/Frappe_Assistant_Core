@@ -228,6 +228,15 @@ class TestFACPage(BaseAssistantTest):
         # Desk's tools send their calls with fetch, so a refused save opens no dialog over the page.
         self.assertIn("bundle.deskBlocks(frappe, () => frappe.csrf_token)", page.script)
 
+    def test_the_host_page_offers_present_for_published_pages(self):
+        # Present runs the page's sections full screen; a draft runs nothing, so it gets none.
+        page = frappe.get_doc("Page", HOST_PAGE)
+        page.load_assets()
+
+        for wiring in ('__("Present")', "mountPresentControls", "makePresenter", "onPresentKey"):
+            self.assertIn(wiring, page.script)
+        self.assertIn('if (data.draft === false) page.set_secondary_action(__("Present")', page.script)
+
     def test_the_host_page_gives_page_scripts_fac_chart_and_report(self):
         # The page script runs with fac in Desk as in the chat panel; the built helper is served
         # from /assets, and bench build makes it (it is not committed).

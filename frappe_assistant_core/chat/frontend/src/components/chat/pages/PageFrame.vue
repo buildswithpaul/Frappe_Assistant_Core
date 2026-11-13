@@ -20,7 +20,7 @@ const props = defineProps({
 	askUser: { type: Function, required: true },
 });
 
-const emit = defineEmits(["unsupported", "error", "ready"]);
+const emit = defineEmits(["unsupported", "error", "ready", "present-key"]);
 
 const container = ref(null);
 let frame = null;
@@ -44,6 +44,7 @@ onMounted(() => {
 		onError: (message) => emit("error", new Error(message)),
 		onUnsupported: (name) => emit("unsupported", name),
 		onReady: () => emit("ready"),
+		onPresentKey: (key) => emit("present-key", key),
 	});
 	container.value.append(frame.element);
 });
@@ -53,6 +54,7 @@ onBeforeUnmount(() => frame?.dispose());
 defineExpose({
 	capture: (options) => frame.capture(options),
 	snapshot: () => frame.snapshot(),
+	present: (command, index) => frame.present(command, index),
 	errors: () => frame?.errors || [],
 });
 </script>
