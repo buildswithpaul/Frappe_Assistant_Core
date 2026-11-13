@@ -193,6 +193,7 @@
 			shown_frame = host.createPageFrame({
 				page: data,
 				kitCss: kit_css,
+				theme: fac_page_theme(),
 				user: frappe.session.user,
 				version: window._version_number || "",
 				pageName: name,
@@ -392,6 +393,19 @@
 	// Leaving fac-pages for another Desk page stops presenting, so its keys are Desk's again.
 	frappe.pages["fac-pages"].on_page_hide = stop_presenting;
 
+	// Desk's theme changed: a shared page's shadow host and a personal page's frame follow it, and a
+	// draft or a preview, which run nothing, are redrawn in it.
+	new MutationObserver(() => {
+		const theme = fac_page_theme();
+		document.querySelectorAll(".fac-page-frame *").forEach((el) => {
+			if (el.shadowRoot) el.setAttribute("data-theme", theme);
+		});
+		if (shown_frame && shown_frame.setTheme) shown_frame.setTheme(theme);
+		document.querySelectorAll("iframe.fac-page-draft-frame, iframe.fac-page-index-preview-frame").forEach((frame) => {
+			frame.srcdoc = frame.srcdoc.replace(/^<!doctype html><html data-theme="\w+">/, `<!doctype html><html data-theme="${theme}">`);
+		});
+	}).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+
 	function dispose_shown() {
 		stop_presenting();
 		dispose_shown_charts();
@@ -469,7 +483,10 @@
 		const entry = frappe.pages["fac-pages"];
 		entry.fac = shown.fac;
 		entry.page_frappe = entry.page_frappe || fac_page_frappe(frappe);
+		// The kit's dark tokens key on the shadow host, so it carries Desk's theme before the page's
+		// script runs; a chart the script draws reads it.
 		return (
+			`root_element.host.setAttribute("data-theme", ${JSON.stringify(fac_page_theme())});\n` +
 			`(function (fac, frappe) {\n${script}\n})` +
 			`(frappe.pages["fac-pages"].fac, frappe.pages["fac-pages"].page_frappe);`
 		);
@@ -485,7 +502,7 @@
 				.empty()
 				.append(
 					$('<p class="text-muted"></p>').text(__("Draft. Scripts run once the page is published.")),
-					fac_page_draft_frame({ html: data.html, style: data.style, kit_css })
+					fac_page_draft_frame({ html: data.html, style: data.style, kit_css, theme: fac_page_theme() })
 				);
 		});
 	}

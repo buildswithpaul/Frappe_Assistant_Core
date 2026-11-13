@@ -5,6 +5,7 @@
  * asks for full screen and maps the keys, around any deck that can start, show and stop, local or
  * across the personal page's frame. Bundled for Desk (pageFacBundle.js) and the frame runtime.
  */
+import { deskTheme } from "@/utils/deskTheme";
 import { __ } from "@/utils/i18n";
 
 const PRESENTING = "fac-presenting";
@@ -12,18 +13,21 @@ const OFF = "fac-present-off";
 const CONTAINER = "fac-present-container";
 // The container is outside the page's shadow root, where the kit's styles do not reach, so its
 // presenting look is set inline: it covers the screen (full screen or not, so the bar is always in
-// view) and scrolls inside, and without a background full screen shows a black backdrop.
+// view) and scrolls inside, and without a background full screen shows a black backdrop. The
+// background is the kit's page background in Desk's theme.
 const CONTAINER_STYLE = {
 	position: "fixed",
 	inset: "0",
 	zIndex: "2147482999",
 	display: "flex",
 	flexDirection: "column",
-	background: "#ffffff",
 	overflow: "auto",
 	padding: "24px",
 	boxSizing: "border-box",
 };
+
+// The kit's --mk-bg in each theme (mockup_kit.css).
+const PAGE_BACKGROUND = { light: "#ffffff", dark: "#171717" };
 
 const KEYS = {
 	ArrowRight: "next",
@@ -175,7 +179,7 @@ export async function mountPresentControls({ container, deck, onExit, fullscreen
 	doc.addEventListener("keydown", onKey);
 	doc.addEventListener("fullscreenchange", onFullscreen);
 	container.classList.add(CONTAINER);
-	Object.assign(container.style, CONTAINER_STYLE);
+	Object.assign(container.style, CONTAINER_STYLE, { background: PAGE_BACKGROUND[deskTheme()] });
 	container.append(bar);
 	draw();
 
