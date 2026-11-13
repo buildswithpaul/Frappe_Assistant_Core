@@ -35,6 +35,7 @@ import { baseCall, getCall } from "@/api/_core";
 import { usePagePanel } from "@/composables/usePagePanel";
 import { fac_page_draft_srcdoc } from "@/utils/facPageDraft";
 import { chart } from "@/utils/pageCharts";
+import { report } from "@/utils/pageReport";
 import { snapshotHtml } from "@/utils/pagePrint";
 import { cleanSnapshot } from "@/utils/pageSnapshotSanitise";
 import { failedCallText, makeFrappeStandIn, runPageScript } from "@/utils/pageRuntime";
@@ -104,6 +105,7 @@ function renderShared() {
 			charts.push(handle);
 			return handle;
 		},
+		report: (name, filters) => report(standIn, name, filters),
 	};
 	const result = runPageScript(props.page.script, root, standIn, fac);
 	if (result.error && !result.unsupported) onError(result.error);

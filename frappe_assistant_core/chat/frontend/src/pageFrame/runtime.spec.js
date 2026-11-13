@@ -1,4 +1,5 @@
 import { EXAMPLE_SITE } from "@/utils/__tests__/pageFormatCases";
+import { report } from "@/utils/pageReport";
 
 // The frame's config, as pageFrameDoc.js writes it from get_page's response.
 beforeAll(async () => {
@@ -21,5 +22,21 @@ describe("the personal page frame's runtime", () => {
 		window.__fac_page.run((root_element, pageFrappe) => (frappe = pageFrappe));
 		expect(frappe.format(79360, { fieldtype: "Currency" })).toBe("₹ 79,360.00");
 		expect(frappe.session.user).toBe("avery@example.com");
+	});
+
+	it("gives the page fac.report, which asks the host which reports the viewer may run", async () => {
+		// The frame loads the bundle that sets window.fac_page_charts before the page runs.
+		window.fac_page_charts = { report };
+		const posted = vi.spyOn(window, "postMessage");
+		let fac;
+		window.__fac_page.run((root_element, pageFrappe, translate, pageFac) => (fac = pageFac));
+		fac.report("Profit and Loss Statement", { company: "C" });
+		await Promise.resolve();
+		const call = posted.mock.calls.map(([message]) => message).find((message) => message.op === "call");
+		expect(call).toMatchObject({
+			method: "frappe_assistant_core.api.fac_page.report_access",
+			args: { reports: ["Profit and Loss Statement"] },
+		});
+		posted.mockRestore();
 	});
 });
