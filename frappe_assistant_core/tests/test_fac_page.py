@@ -246,7 +246,7 @@ class TestFACPage(BaseAssistantTest):
         self.assertIn("/assets/frappe_assistant_core/js/fac_page_charts.js?v=", page.script)
         self.assertIn("const bundle = window.fac_page_charts;", page.script)
         self.assertIn("bundle.report(frappe, name, filters)", page.script)
-        self.assertIn("with_page_globals(script)", page.script)
+        self.assertIn("with_page_globals(script, fac_page_theme_of(data))", page.script)
 
     def test_the_host_page_gives_page_scripts_a_frappe_whose_format_returns_text(self):
         # Desk's frappe.format returns html; a Shared page's script gets the wrapper that returns
