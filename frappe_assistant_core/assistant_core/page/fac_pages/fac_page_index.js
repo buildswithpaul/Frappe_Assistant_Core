@@ -1,89 +1,131 @@
-// The list of pages the fac-pages Desk page shows at /app/fac-pages. Keep this first line a comment:
+// The Pages gallery the fac-pages Desk page shows at /app/fac-pages. Keep this first line a comment:
 // fac_pages.js inlines the file through Frappe's render_include from a line that starts with "//".
 //
 // It lists what list_pages returns, which is what get_page would open, so the user only sees pages
-// that open. Desk is the one place a user without FAC Chat can find a page shared with them. Every
-// title and role is the page author's text, so it is set as text, never as html. Tested by
+// that open. Desk is the one place a user without FAC Chat can find a page shared with them. The
+// cards come from fac_page_card.js; this file lays them out with search and filters. Tested by
 // chat/frontend/src/widget/desk/facPageIndex.spec.js.
 
-const FAC_PAGE_INDEX_MAX_ROLES = 2;
+// Each filter chip: its label and which pages it keeps.
+const FAC_PAGE_INDEX_FILTERS = [
+	["all", "All", () => true],
+	["mine", "Mine", (page) => page.visibility !== "Shared"],
+	["shared", "Shared", (page) => page.visibility === "Shared" && !page.draft],
+	["drafts", "Drafts", (page) => page.draft],
+];
 
 // eslint-disable-next-line no-unused-vars
-function fac_page_index({ pages, href, updated, chat_url } = {}) {
-	const root = fac_page_index_el("div", "fac-page-index", "display:flex;flex-direction:column;gap:24px;padding:16px;");
-	if (chat_url) {
-		const link = fac_page_index_el("a", "btn btn-default btn-sm fac-page-index-chat", "align-self:flex-end;");
-		link.href = chat_url;
-		link.textContent = __("Open in FAC Chat");
-		root.append(link);
-	}
-	const mine = (pages || []).filter((page) => page.visibility !== "Shared");
-	const shared = (pages || []).filter((page) => page.visibility === "Shared");
-	if (!mine.length && !shared.length) {
+function fac_page_index({ pages, href, updated, kit_css, can_chat, actions = {} } = {}) {
+	const root = fac_page_index_el("div", "fac-page-index", "display:flex;flex-direction:column;gap:16px;padding:16px;");
+	const all = fac_page_index_order(pages || []);
+	const card_options = { href, updated, kit_css, can_chat, actions };
+	if (!all.length) {
 		root.append(
 			fac_page_index_el("p", "text-muted fac-page-index-empty", "margin:0;", __("No pages have been shared with you yet."))
 		);
+		if (can_chat && actions.new_page) root.append(fac_page_index_grid([fac_page_index_new_tile(actions.new_page)]));
 		return root;
 	}
-	if (mine.length) root.append(fac_page_index_section(__("Your pages"), mine, href, updated));
-	if (shared.length) root.append(fac_page_index_section(__("Shared with you"), shared, href, updated));
+
+	const state = { filter: "all", query: "" };
+	const search = fac_page_index_el("input", "form-control input-sm fac-page-index-search", "max-width:320px;");
+	search.type = "search";
+	search.placeholder = __("Search pages…");
+	search.setAttribute("aria-label", __("Search pages"));
+
+	const chips = fac_page_index_el("div", "fac-page-index-chips", "display:flex;flex-wrap:wrap;gap:6px;");
+	const chip_buttons = [];
+	for (const [key, label, keeps] of FAC_PAGE_INDEX_FILTERS) {
+		const count = all.filter(keeps).length;
+		if (key === "drafts" && !count) continue;
+		const chip = fac_page_index_el("button", "btn btn-default btn-xs fac-page-index-chip", "border-radius:999px;", `${__(label)} ${count}`);
+		chip.type = "button";
+		chip.dataset.filter = key;
+		chip.addEventListener("click", () => {
+			state.filter = key;
+			apply();
+		});
+		chip_buttons.push(chip);
+		chips.append(chip);
+	}
+
+	const cards = all.map((page) => {
+		const card = fac_page_card(page, card_options);
+		card.dataset.search = `${page.title || page.name} ${page.description || ""}`.toLowerCase();
+		card._fac_page = page;
+		return card;
+	});
+	const tiles = can_chat && actions.new_page ? [fac_page_index_new_tile(actions.new_page)] : [];
+	const grid = fac_page_index_grid([...cards, ...tiles]);
+	const nomatch = fac_page_index_el("p", "text-muted fac-page-index-nomatch", "margin:0;");
+	nomatch.hidden = true;
+
+	function apply() {
+		const keeps = FAC_PAGE_INDEX_FILTERS.find(([key]) => key === state.filter)[2];
+		const query = state.query.trim().toLowerCase();
+		let shown = 0;
+		for (const card of cards) {
+			card.hidden = !(keeps(card._fac_page) && (!query || card.dataset.search.includes(query)));
+			if (!card.hidden) shown++;
+		}
+		for (const chip of chip_buttons) chip.classList.toggle("active", chip.dataset.filter === state.filter);
+		nomatch.hidden = shown > 0;
+		nomatch.textContent = query ? __("No pages match “{0}”", [state.query.trim()]) : __("No pages here yet.");
+	}
+	search.addEventListener("input", () => {
+		state.query = search.value;
+		apply();
+	});
+
+	root.append(search, chips, grid, nomatch);
+	fac_page_index_scale_previews(grid);
+	apply();
 	return root;
 }
 
-function fac_page_index_section(title, pages, href, updated) {
-	const section = fac_page_index_el("section", "fac-page-index-section");
-	const heading = fac_page_index_el(
-		"h2",
-		"fac-page-index-heading",
-		"margin:0 0 12px;font-size:12px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;color:var(--text-muted);",
-		`${title} · ${pages.length}`
-	);
-	const list = fac_page_index_el(
+// The user's own pages first, then shared ones, each in the order list_pages gave.
+function fac_page_index_order(pages) {
+	return [...pages.filter((page) => page.visibility !== "Shared"), ...pages.filter((page) => page.visibility === "Shared")];
+}
+
+function fac_page_index_grid(items) {
+	const grid = fac_page_index_el(
 		"ul",
 		"fac-page-index-list",
 		"display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;margin:0;padding:0;list-style:none;"
 	);
-	for (const page of pages) list.append(fac_page_index_item(page, href, updated));
-	section.append(heading, list);
-	return section;
+	grid.append(...items);
+	return grid;
 }
 
-function fac_page_index_item(page, href, updated) {
-	const item = fac_page_index_el("li");
-	const link = fac_page_index_el(
-		"a",
-		"fac-page-index-item",
-		"display:flex;flex-direction:column;gap:4px;height:100%;padding:12px 14px;border:1px solid var(--border-color);" +
-			"border-radius:var(--border-radius-lg);background:var(--card-bg);color:var(--text-color);text-decoration:none;"
+function fac_page_index_new_tile(new_page) {
+	const tile = fac_page_index_el(
+		"li",
+		"fac-page-index-new",
+		"display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;min-height:180px;cursor:pointer;" +
+			"border:1px dashed var(--border-color);border-radius:var(--border-radius-lg);color:var(--text-color);"
 	);
-	link.href = href(page.name);
-	link.append(
-		fac_page_index_el("span", "fac-page-index-title", "font-weight:600;overflow-wrap:anywhere;", page.title || page.name),
-		fac_page_index_el("span", "text-muted small fac-page-index-context", "", fac_page_index_context(page))
+	tile.setAttribute("role", "button");
+	tile.tabIndex = 0;
+	tile.append(
+		fac_page_index_el("span", "fac-page-index-new-label", "font-weight:600;", __("+ New page")),
+		fac_page_index_el("span", "text-muted small", "", __("Describe it to FACO"))
 	);
-	if (page.modified) {
-		link.append(
-			fac_page_index_el("span", "text-muted small fac-page-index-updated", "", __("Updated {0}", [updated(page.modified)]))
-		);
-	}
-	item.append(link);
-	return item;
+	tile.addEventListener("click", () => new_page());
+	tile.addEventListener("keydown", (event) => {
+		if (event.key === "Enter" || event.key === " ") {
+			event.preventDefault();
+			new_page();
+		}
+	});
+	return tile;
 }
 
-function fac_page_index_context(page) {
-	if (page.draft) return __("Draft · not published yet, only admins see it");
-	if (page.visibility !== "Shared") return __("Only you");
-	const roles = page.roles || [];
-	if (!roles.length) return __("Shared");
-	const shown = roles.slice(0, FAC_PAGE_INDEX_MAX_ROLES).join(", ");
-	const more = roles.length - FAC_PAGE_INDEX_MAX_ROLES;
-	return __("Shared with {0}", [more > 0 ? `${shown} +${more}` : shown]);
-}
-
-function fac_page_index_el(tag, class_name, css, text) {
-	const el = document.createElement(tag);
-	if (class_name) el.className = class_name;
-	if (css) el.style.cssText = css;
-	if (text !== undefined) el.textContent = text;
-	return el;
+// A preview lays the page out FAC_PAGE_PREVIEW_WIDTH wide and is scaled to its card's width.
+function fac_page_index_scale_previews(grid) {
+	if (typeof ResizeObserver === "undefined") return;
+	new ResizeObserver(() => {
+		const box = grid.querySelector(".fac-page-index-preview");
+		if (box && box.clientWidth) grid.style.setProperty("--fac-preview-scale", String(box.clientWidth / FAC_PAGE_PREVIEW_WIDTH));
+	}).observe(grid);
 }

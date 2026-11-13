@@ -22,7 +22,9 @@
 
 	// fac_page_draft_srcdoc and fac_page_draft_frame, inlined by render_include on page load.
 	// {% include "frappe_assistant_core/assistant_core/page/fac_pages/fac_page_draft.js" %}
-	// fac_page_index, inlined the same way.
+	// fac_page_card and fac_page_index, the Pages gallery, inlined the same way; the card first,
+	// since the gallery builds its cards with it.
+	// {% include "frappe_assistant_core/assistant_core/page/fac_pages/fac_page_card.js" %}
 	// {% include "frappe_assistant_core/assistant_core/page/fac_pages/fac_page_index.js" %}
 	// fac_page_frappe, the frappe a Shared page's script gets, inlined the same way.
 	// {% include "frappe_assistant_core/assistant_core/page/fac_pages/fac_page_frappe.js" %}
@@ -74,15 +76,16 @@
 			.xcall("frappe_assistant_core.chat.api.settings.access.can_use_faco", {}, "GET")
 			.then((access) => Boolean(access && access.can_use))
 			.catch(() => false);
-		Promise.all([pages, chat])
-			.then(([list, can_chat]) => {
+		Promise.all([pages, chat, load_kit()])
+			.then(([list, can_chat, kit_css]) => {
 				if (!is_latest()) return;
 				page.main.empty().append(
 					fac_page_index({
 						pages: list,
 						href: (name) => frappe.router.make_url(["fac-pages", name]),
 						updated: (modified) => frappe.datetime.prettyDate(modified),
-						chat_url: can_chat ? "/copilot/pages" : "",
+						kit_css,
+						can_chat,
 					})
 				);
 			})

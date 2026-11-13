@@ -1,85 +1,120 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-// The Desk page inlines this plain script with Frappe's render_include, so the test loads it the same way:
-// as source text, evaluated for the function it declares, with Desk's global __.
-const SOURCE = readFileSync(
-	resolve(import.meta.dirname, "../../../../../assistant_core/page/fac_pages/fac_page_index.js"),
-	"utf-8",
-);
+// The Desk page inlines these plain scripts with Frappe's render_include, so the test loads them the same
+// way: as source text, evaluated together for the functions they declare, with Desk's global __.
+const DIR = resolve(import.meta.dirname, "../../../../../assistant_core/page/fac_pages");
+const SOURCE = ["fac_page_draft.js", "fac_page_card.js", "fac_page_index.js"]
+	.map((file) => readFileSync(resolve(DIR, file), "utf-8"))
+	.join("\n");
 const translate = (text, args = []) => args.reduce((out, arg, i) => out.replace(`{${i}}`, arg), text);
 const fac_page_index = new Function("__", `${SOURCE}\nreturn fac_page_index;`)(translate);
 
 const personal = {
 	name: "my-receivables",
 	title: "My Receivables",
+	description: "Overdue invoices by customer",
 	visibility: "Only me",
 	draft: false,
 	modified: "2026-10-27 10:00:00",
 	roles: [],
+	can_manage: true,
+	can_share: false,
+	preview_html: null,
 };
 const shared = {
 	name: "quick-customer",
 	title: "Quick Customer",
+	description: "",
 	visibility: "Shared",
 	draft: false,
 	modified: "2026-10-27 09:00:00",
 	roles: ["Sales User"],
+	can_manage: false,
+	can_share: false,
+	preview_html: null,
 };
+const draft = { ...shared, name: "bu-margin", title: "BU Margin", draft: true, can_manage: true };
 
 const render = (options) =>
 	fac_page_index({
 		href: (name) => `/app/fac-pages/${name}`,
 		updated: () => "2 hours ago",
+		kit_css: "",
 		...options,
 	});
 const texts = (root, selector) => [...root.querySelectorAll(selector)].map((el) => el.textContent);
+const visibleTitles = (root) =>
+	[...root.querySelectorAll(".fac-page-index-card")]
+		.filter((card) => !card.hidden)
+		.map((card) => card.querySelector(".fac-page-index-title").textContent);
 
 describe("fac_page_index", () => {
-	it("groups the user's own pages before the pages shared with them", () => {
+	it("lists every page as a card, the user's own first", () => {
 		const root = render({ pages: [shared, personal] });
-		expect(texts(root, ".fac-page-index-heading")).toEqual(["Your pages · 1", "Shared with you · 1"]);
-		expect(texts(root, ".fac-page-index-title")).toEqual(["My Receivables", "Quick Customer"]);
+		expect(visibleTitles(root)).toEqual(["My Receivables", "Quick Customer"]);
 	});
 
-	it("opens each page in Desk", () => {
-		const root = render({ pages: [shared] });
-		expect(root.querySelector("a.fac-page-index-item").getAttribute("href")).toBe("/app/fac-pages/quick-customer");
+	it("counts each filter, and shows Drafts only when there are drafts", () => {
+		expect(texts(render({ pages: [shared, personal] }), ".fac-page-index-chip")).toEqual(["All 2", "Mine 1", "Shared 1"]);
+		expect(texts(render({ pages: [shared, personal, draft] }), ".fac-page-index-chip")).toEqual([
+			"All 3",
+			"Mine 1",
+			"Shared 1",
+			"Drafts 1",
+		]);
 	});
 
-	it("says who a shared page is shared with, and when it was updated", () => {
-		const root = render({ pages: [{ ...shared, roles: ["Accounts User", "Sales Manager", "Sales User"] }, personal] });
-		expect(texts(root, ".fac-page-index-context")).toEqual(["Only you", "Shared with Accounts User, Sales Manager +1"]);
-		expect(texts(root, ".fac-page-index-updated")).toEqual(["Updated 2 hours ago", "Updated 2 hours ago"]);
+	it("filters the cards by the chip clicked and marks it active", () => {
+		const root = render({ pages: [shared, personal, draft] });
+		const drafts = [...root.querySelectorAll(".fac-page-index-chip")].find((chip) => chip.textContent === "Drafts 1");
+		drafts.click();
+		expect(visibleTitles(root)).toEqual(["BU Margin"]);
+		expect(drafts.classList.contains("active")).toBe(true);
 	});
 
-	it("marks a draft as not published", () => {
-		const root = render({ pages: [{ ...shared, draft: true }] });
-		expect(texts(root, ".fac-page-index-context")).toEqual(["Draft · not published yet, only admins see it"]);
+	it("searches titles and descriptions as the user types", () => {
+		const root = render({ pages: [shared, personal] });
+		const search = root.querySelector("input.fac-page-index-search");
+		search.value = "OVERDUE";
+		search.dispatchEvent(new Event("input"));
+		expect(visibleTitles(root)).toEqual(["My Receivables"]);
 	});
 
-	it("shows only the sections that have pages", () => {
-		const root = render({ pages: [shared] });
-		expect(texts(root, ".fac-page-index-heading")).toEqual(["Shared with you · 1"]);
+	it("says no page matches a search, and keeps the filters", () => {
+		const root = render({ pages: [shared, personal] });
+		const search = root.querySelector("input.fac-page-index-search");
+		search.value = "payroll";
+		search.dispatchEvent(new Event("input"));
+		const nomatch = root.querySelector(".fac-page-index-nomatch");
+		expect(nomatch.hidden).toBe(false);
+		expect(nomatch.textContent).toBe("No pages match “payroll”");
+		expect(root.querySelectorAll(".fac-page-index-chip")).toHaveLength(3);
+		expect(root.querySelector(".fac-page-index-empty")).toBeNull();
 	});
 
-	it("says so when there are no pages, instead of a blank screen", () => {
-		const root = render({ pages: [] });
+	it("says so when there are no pages, and offers a new page to those who can chat", () => {
+		const new_page = vi.fn();
+		const root = render({ pages: [], can_chat: true, actions: { new_page } });
 		expect(texts(root, ".fac-page-index-empty")).toEqual(["No pages have been shared with you yet."]);
-		expect(root.querySelector(".fac-page-index-item")).toBeNull();
+		root.querySelector(".fac-page-index-new").click();
+		expect(new_page).toHaveBeenCalled();
 	});
 
-	it("links to FAC Chat only when given a chat link", () => {
-		expect(render({ pages: [shared] }).querySelector(".fac-page-index-chat")).toBeNull();
-		const link = render({ pages: [shared], chat_url: "/copilot/pages" }).querySelector(".fac-page-index-chat");
-		expect(link.getAttribute("href")).toBe("/copilot/pages");
+	it("ends the grid with a New page tile only for those who can chat", () => {
+		const actions = { new_page: vi.fn() };
+		expect(render({ pages: [shared], actions }).querySelector(".fac-page-index-new")).toBeNull();
+		const grid = render({ pages: [shared], can_chat: true, actions }).querySelector(".fac-page-index-list");
+		expect(grid.lastElementChild.classList.contains("fac-page-index-new")).toBe(true);
 	});
 
-	it("sets a page's title as text, never as html", () => {
-		const root = render({ pages: [{ ...shared, title: '<img src=x onerror="alert(1)">' }] });
-		expect(root.querySelector("img")).toBeNull();
-		expect(texts(root, ".fac-page-index-title")).toEqual(['<img src=x onerror="alert(1)">']);
+	it("sets a search term as text in the no-match line", () => {
+		const root = render({ pages: [shared] });
+		const search = root.querySelector("input.fac-page-index-search");
+		search.value = "<img src=x onerror=alert(1)>";
+		search.dispatchEvent(new Event("input"));
+		expect(root.querySelector(".fac-page-index-nomatch img")).toBeNull();
 	});
 });
