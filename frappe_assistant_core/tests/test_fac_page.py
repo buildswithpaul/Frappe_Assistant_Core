@@ -208,6 +208,15 @@ class TestFACPage(BaseAssistantTest):
         self.assertIn("function fac_page_card", page.script)
         self.assertIn("function fac_page_index", page.script)
 
+    def test_the_host_page_wires_the_gallery_actions(self):
+        # Rename and delete go through frappe.client, so the controller and permissions decide;
+        # Edit with FACO and Share open the chat with the page beside it.
+        page = frappe.get_doc("Page", HOST_PAGE)
+        page.load_assets()
+
+        for wiring in ("frappe.client.set_value", "frappe.client.delete", "set_primary_action", "&page="):
+            self.assertIn(wiring, page.script)
+
     def test_the_host_page_gives_page_scripts_fac_chart_and_report(self):
         # The page script runs with fac in Desk as in the chat panel; the built helper is served
         # from /assets, and bench build makes it (it is not committed).
