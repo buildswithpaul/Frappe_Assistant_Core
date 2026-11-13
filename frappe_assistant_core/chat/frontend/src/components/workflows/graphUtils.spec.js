@@ -290,7 +290,6 @@ describe("decision edges through the graph conversion", () => {
 		const { nodes, edges } = graphJsonToVueFlow(graph);
 		// The handle ids DecisionNode renders: the trimmed choice text.
 		expect(edges.map((e) => e.sourceHandle)).toEqual(["complaint", "question"]);
-		expect(edges.map((e) => e.label)).toEqual(["complaint", "question"]);
 		expect(validateGraph(nodes, edges).valid).toBe(true);
 
 		const back = JSON.parse(vueFlowToGraphJson(nodes, edges));
@@ -318,7 +317,28 @@ describe("decision edges through the graph conversion", () => {
 			edges: [{ id: "e1", source: "c", target: "a", condition: "pass" }],
 		};
 		const { nodes, edges } = graphJsonToVueFlow(graph);
+		expect(edges[0].label).toBe("pass");
 		expect(JSON.parse(vueFlowToGraphJson(nodes, edges)).edges[0].condition).toBe("pass");
+	});
+
+	it("draws no label on a decision edge, so edges from several choices to one step stay readable", () => {
+		// The choice is written beside its handle; three edge labels at a shared
+		// last stretch stacked into one unreadable pile in the browser.
+		const graph = {
+			nodes: [
+				{ id: "d", type: "decision", config: { question: "Q?", choices: ["complaint", "question", "order"] } },
+				{ id: "a", type: "output" },
+			],
+			edges: ["complaint", "question", "order"].map((c) => ({ id: c, source: "d", target: "a", condition: c })),
+		};
+		const { nodes, edges } = graphJsonToVueFlow(graph);
+		expect(edges.map((e) => e.label)).toEqual(["", "", ""]);
+		expect(edges.map((e) => e.sourceHandle)).toEqual(["complaint", "question", "order"]);
+		expect(JSON.parse(vueFlowToGraphJson(nodes, edges)).edges.map((e) => e.condition)).toEqual([
+			"complaint",
+			"question",
+			"order",
+		]);
 	});
 
 	it("round-trips a node type this builder does not know, config untouched", () => {

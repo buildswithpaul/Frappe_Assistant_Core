@@ -38,12 +38,13 @@ export function graphJsonToVueFlow(graphJson) {
 	}));
 
 	const resolve = decisionLabelResolver(nodes);
+	const byId = new Map(nodes.map((n) => [n.id, n]));
 	const edges = (graph.edges || []).map((e, i) => ({
 		id: e.id || `e-${e.source}-${e.target}-${i}`,
 		source: e.source,
 		target: e.target,
 		sourceHandle: resolve(e.source, e.condition) || undefined,
-		label: resolve(e.source, e.condition) || "",
+		label: edgeLabel(byId.get(e.source), resolve(e.source, e.condition)),
 		type: "smoothstep",
 		// A DAG is unreadable without direction, and two nodes side by side
 		// give the eye no other cue which way the data flows.
@@ -230,6 +231,17 @@ export function decisionConfigProblems(config = {}) {
 	});
 
 	return { question: questionProblem, list, choices: choiceProblems };
+}
+
+/**
+ * The text drawn on an edge out of `sourceNode` that carries `condition`. A
+ * decision edge draws none: its choice is written beside the handle it leaves
+ * from, and edges from several choices to one step share their last stretch,
+ * where their labels would stack into an unreadable pile.
+ */
+export function edgeLabel(sourceNode, condition) {
+	if (toBackendType(sourceNode?.type) === "decision") return "";
+	return condition || "";
 }
 
 /** The label an edge carries in the graph JSON (its `condition`). */
