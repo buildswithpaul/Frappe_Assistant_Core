@@ -48,13 +48,6 @@
 										type="search"
 										placeholder="Search…"
 									/>
-									<button
-										v-if="knowledgeIncluded"
-										class="ql-primary-action"
-										@click="triggerUpload"
-									>
-										+ Upload
-									</button>
 								</template>
 							</ListHeaderBand>
 						</template>
@@ -172,13 +165,7 @@
 							@preview="openPreview"
 							@delete="confirmDelete"
 							@manage-access="openAccessModal"
-						>
-							<AddSlotCard
-								v-if="knowledgeIncluded"
-								label="Add document"
-								@click="triggerUpload"
-							/>
-						</KnowledgeDocumentGrid>
+						/>
 					</ListPageShell>
 				</template>
 
@@ -245,7 +232,6 @@ import KnowledgeToolbar from "@/components/knowledge/KnowledgeToolbar.vue";
 import KnowledgeDocumentGrid from "@/components/knowledge/KnowledgeDocumentGrid.vue";
 import ListPageShell from "@/components/common/list/ListPageShell.vue";
 import ListHeaderBand from "@/components/common/list/ListHeaderBand.vue";
-import AddSlotCard from "@/components/common/list/AddSlotCard.vue";
 import EmptyState from "@/components/common/list/EmptyState.vue";
 import KnowledgeHowItWorks from "@/components/knowledge/KnowledgeHowItWorks.vue";
 import UpgradeBanner from "@/components/common/UpgradeBanner.vue";
