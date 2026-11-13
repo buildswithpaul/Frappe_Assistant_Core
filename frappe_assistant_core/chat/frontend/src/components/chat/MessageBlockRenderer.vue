@@ -30,6 +30,15 @@
 				@reject="(blockId, responses) => $emit('reject', blockId, responses)"
 			/>
 
+			<!-- Switch-on writes in one pause: one Go-live card, each one's code a click away -->
+			<GoLiveCard
+				v-else-if="segment.type === 'go_live_batch'"
+				:blocks="segment.blocks"
+				:submitting="isResuming"
+				@approve="(blockId, responses) => $emit('approve', blockId, responses)"
+				@reject="(blockId, responses) => $emit('reject', blockId, responses)"
+			/>
+
 			<!-- Interaction Card: HITL approval + LLM questions -->
 			<InteractionCard
 				v-else-if="segment.type === 'interaction'"
@@ -134,7 +143,9 @@ import ProcessingIndicator from "./ProcessingIndicator.vue";
 import InteractionCard from "./InteractionCard.vue";
 import QuestionGroupCard from "./interactions/QuestionGroupCard.vue";
 import BatchedApprovalCard from "./interactions/BatchedApprovalCard.vue";
+import GoLiveCard from "./interactions/GoLiveCard.vue";
 import { findApprovalBatch } from "./interactions/approvalBatch";
+import { findGoLiveBatch } from "./interactions/goLiveBatch";
 import ChangesBlock from "./ChangesBlock.vue";
 import { findQuestionGroups } from "./interactions/questionGroup";
 import SourcesBlock from "./SourcesBlock.vue";
@@ -244,13 +255,22 @@ const groupedContent = computed(() => {
 	let sealedByApproval = false;
 	const questionGroups = findQuestionGroups(props.blocks);
 	const grouped = new Set([...questionGroups.values()].flat().map((b) => b.id));
-	const approvalBatch = findApprovalBatch(props.blocks);
+	const goLiveBatch = findGoLiveBatch(props.blocks);
+	const goingLive = new Set(goLiveBatch.map((b) => b.id));
+	const approvalBatch = findApprovalBatch(props.blocks.filter((b) => !goingLive.has(b.id)));
 	const batched = new Set(approvalBatch.map((b) => b.id));
 	// The changes list sits under the answer, wherever the turn's events placed its block.
 	const changeLists = props.blocks.filter((b) => b.type === "changes_made" && b.changes?.length);
 
 	for (const block of props.blocks) {
-		if (block.type === "interaction" && batched.has(block.id)) {
+		if (block.type === "interaction" && goingLive.has(block.id)) {
+			// The whole batch renders where its first switch-on sits.
+			if (block.id === goLiveBatch[0].id) {
+				currentGroup = null;
+				sealedByApproval = false;
+				segments.push({ type: "go_live_batch", id: `gl_${block.id}`, blocks: goLiveBatch });
+			}
+		} else if (block.type === "interaction" && batched.has(block.id)) {
 			// The whole batch renders where its first approval sits.
 			if (block.id === approvalBatch[0].id) {
 				currentGroup = null;
