@@ -10,7 +10,7 @@ The `list_user_dashboards` tool lists all dashboards accessible to the current u
 |-----------|------|----------|---------|-------------|
 | `dashboard_type` | string | No | `"all"` | `"insights"`, `"frappe_dashboard"`, or `"all"` |
 | `include_shared` | boolean | No | `true` | Include dashboards shared with user |
-| `user` | string | No | current user | Specific user to list for |
+| `user` | string | No | current user | List the dashboards this user owns. Only those the current user may open are returned, as in Desk; another user's shares need permission to read DocShare (otherwise `error_type: "permission_error"` — pass `include_shared: false` or leave `user` out) |
 
 ## Response Format
 
