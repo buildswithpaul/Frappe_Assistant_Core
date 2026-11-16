@@ -72,7 +72,7 @@ const MAX_QUEUED_READS = 200;
 // After this many refusals on one version of a page, it may only read.
 const MAX_DENIALS = 3;
 // Answers whether a dotless name is a Server Script API method the site has not remapped.
-const PAGE_API_CHECK = "frappe_assistant_core.api.fac_page.is_page_api_method";
+export const PAGE_API_CHECK = "frappe_assistant_core.api.fac_page.is_page_api_method";
 
 const MAX_ARGS_BYTES = 1024 * 1024;
 const MAX_ERRORS = 20;
