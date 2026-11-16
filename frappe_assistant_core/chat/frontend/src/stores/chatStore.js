@@ -154,6 +154,19 @@ export const useChatStore = defineStore("chat", () => {
 		return text;
 	}
 
+	// Text a new chat opens with in its ask box, for the user to edit and send themselves.
+	const firstDraft = ref(null);
+	function queueFirstDraft(sessionId, text) {
+		firstDraft.value = { sessionId, text };
+	}
+
+	function takeFirstDraft(sessionId) {
+		if (firstDraft.value?.sessionId !== sessionId) return null;
+		const { text } = firstDraft.value;
+		firstDraft.value = null;
+		return text;
+	}
+
 	const currentProjectId = computed(() =>
 		currentSession.value ? currentSession.value.project || null : pendingProjectFor(currentSessionId.value)
 	);
@@ -1349,6 +1362,8 @@ export const useChatStore = defineStore("chat", () => {
 		setPendingProject,
 		queueFirstMessage,
 		takeFirstMessage,
+		queueFirstDraft,
+		takeFirstDraft,
 		currentProjectId,
 		loadMoreSessions,
 		patchSession,

@@ -106,6 +106,16 @@ describe("KnowledgeBase plan gate", () => {
 		});
 	});
 
+	describe("when the plan includes the knowledge base", () => {
+		it("offers one Upload, in the top bar: none beside the search, no Add document tile", async () => {
+			const w = await mountKb({ features: { knowledge_base: true }, documents: [ONE_DOC] });
+			const uploads = w.findAll("button").filter((b) => /upload/i.test(b.text()));
+			expect(uploads).toHaveLength(1);
+			expect(w.find(".top-bar").element.contains(uploads[0].element)).toBe(true);
+			expect(w.text()).not.toContain("Add document");
+		});
+	});
+
 	describe("when the server does not say (older AR)", () => {
 		it("keeps upload, drag-and-drop, and no upgrade note", async () => {
 			const w = await mountKb();

@@ -266,6 +266,7 @@ import { useChatStore } from "@/stores/chatStore";
 import { useUserStore } from "@/stores/userStore";
 import { useModelStore } from "@/stores/modelStore";
 import { useSuggestionStore } from "@/stores/suggestionStore";
+import { useDiscoveryStore } from "@/stores/discoveryStore";
 import { resolveComposerRoute } from "@/stores/chat/composerRouting";
 import { resolutionFor } from "@/stores/chat/interactionRegime";
 import { useToast } from "@/composables/useToast";
@@ -402,6 +403,12 @@ const {
 	submitParameters,
 	closeParameterModal,
 } = useTemplateExecution();
+
+// Home's "Prompt templates" card: "Give it a try" opens the same template browser as the + menu.
+watch(
+	() => useDiscoveryStore().templatesRequested,
+	() => openTemplateBrowser()
+);
 
 usePromptFromRoute({
 	route,
@@ -592,7 +599,7 @@ useChatViewInit(
 	{ chatStore, userStore, modelStore, suggestionStore },
 	{ route, router },
 	{ registrationStatus, isUserSetupComplete },
-	{ onFirstMessage: (text) => sendOrKeep(text) }
+	{ onFirstMessage: (text) => sendOrKeep(text), onFirstDraft: (text) => prefillComposer(text) }
 );
 
 // Auto-scroll to bottom on new messages / streaming chunks

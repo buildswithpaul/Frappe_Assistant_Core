@@ -1,6 +1,7 @@
 import { ref } from "vue";
 import { useTemplateStore } from "@/stores/templateStore";
 import { logger } from "@/utils/logger";
+import { noteTemplateUsed } from "@/composables/usageSignals";
 
 /**
  * Encapsulates the prompt-template picker + parameter modal flow.
@@ -60,6 +61,7 @@ export function useTemplateExecution() {
 				// Populate the input box instead of auto-sending — lets the user
 				// review and edit before sending
 				pendingPrompt.value = result.prompt;
+				noteTemplateUsed();
 			}
 		} catch (error) {
 			logger.error("Failed to execute template:", error);

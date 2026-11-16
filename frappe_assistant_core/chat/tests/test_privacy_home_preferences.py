@@ -54,6 +54,20 @@ class TestPrivacyHomePreferences(BaseAssistantTest):
         self.assertIs(prefs["show_suggested_prompts"], False)
         self.assertIs(prefs["show_personalized_suggestions"], False)
 
+    def test_export_includes_what_the_user_opened_and_used(self):
+        # Production writes this through save_discovery_state as the user opens and uses features.
+        frappe.db.set_value(
+            "FAC Chat User Preferences",
+            self.EMAIL,
+            "discovery_state",
+            '{"seen": ["knowledge"], "used": ["ask"], "coach_done": true}',
+            update_modified=False,
+        )
+        state = privacy.export_my_data()["data"]["faco"]["faco_preferences"]["discovery_state"]
+        self.assertEqual(state["seen"], ["knowledge"])
+        self.assertEqual(state["used"], ["ask"])
+        self.assertIs(state["coach_done"], True)
+
     def test_erase_drops_the_cached_home_payload(self):
         frappe.cache.hset(HOME_SIGNALS_CACHE_KEY, self.EMAIL, {"items": []})
         with patch("frappe.utils.password.check_password"):

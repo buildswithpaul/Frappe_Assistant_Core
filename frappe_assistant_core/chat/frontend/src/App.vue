@@ -43,12 +43,13 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from "vue";
+import { ref, onMounted, watch } from "vue";
 import { useRouter } from "vue-router";
 import { useVisualViewportFrame } from "@/composables/useVisualViewportFrame";
 import { useThemeStore } from "@/stores/themeStore";
 import { useUserStore } from "@/stores/userStore";
 import { useTourStore } from "@/stores/tourStore";
+import { useDiscoveryStore } from "@/stores/discoveryStore";
 import { useChatStore } from "@/stores/chatStore";
 import { useApprovalAttention } from "@/composables/useApprovalAttention";
 import { useCheckoutReturn } from "@/composables/useCheckoutReturn";
@@ -127,9 +128,21 @@ onMounted(async () => {
 		await router.replace("/chat");
 	}
 
+	// The Your FAC ring starts once the user can chat (also after onboarding finishes).
+	const discovery = useDiscoveryStore();
+	watch(
+		() => userStore.registrationStatus,
+		(status) => status === "ready" && discovery.init(),
+		{ immediate: true }
+	);
+
 	isCheckingAuth.value = false;
 
 	checkoutReturn.run().catch((err) => logger.error("Checkout return failed:", err));
+
+	// Opening Knowledge, Agents or Pages once clears that feature's "new" dot.
+	discovery.markRoute(router.currentRoute.value.path);
+	router.afterEach((to) => discovery.markRoute(to.path));
 
 	// Auto-play the reel for returning users on a new tour version.
 	// First-time users hit the inline onboarding wizard instead.
