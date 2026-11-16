@@ -14,32 +14,6 @@
 
 frappe.provide("frappe_assistant_core.chat");
 
-// The 30-second "How setup works" video (YouTube; see chat/demo_video.py), opened from FAC Admin.
-// Played in a Desk dialog so the admin stays on the page, with a plain link for anyone whose network
-// blocks the embed.
-frappe_assistant_core.chat.show_demo_video = function () {
-	const video = frappe.boot && frappe.boot.fac_demo_video;
-	if (!video) return;
-	const esc = frappe.utils.escape_html;
-	const dialog = new frappe.ui.Dialog({
-		title: __("How FAC Chat setup works"),
-		size: "large",
-		fields: [{ fieldtype: "HTML", fieldname: "video" }],
-	});
-	dialog.fields_dict.video.$wrapper.html(`
-		<div style="position: relative; aspect-ratio: 16 / 9; background: #000; border-radius: 8px; overflow: hidden;">
-			<iframe src="${esc(video.embed)}" title="${esc(__("FAC Chat demo"))}"
-				style="position: absolute; inset: 0; width: 100%; height: 100%; border: 0;"
-				allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>
-		</div>
-		<p class="text-muted small" style="margin-top: 8px;">
-			<a href="${esc(video.url)}" target="_blank" rel="noopener noreferrer">${__("Open on YouTube")}</a>
-		</p>`);
-	// Stop playback when the dialog closes.
-	dialog.onhide = () => dialog.fields_dict.video.$wrapper.empty();
-	dialog.show();
-};
-
 // One button: it switches FAC Chat on right here and opens it, where the onboarding takes over.
 frappe_assistant_core.chat._switch_on = function ($button) {
 	$button.prop("disabled", true).text(__("Switching on…"));
