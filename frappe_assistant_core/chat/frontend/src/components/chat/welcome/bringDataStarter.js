@@ -1,6 +1,6 @@
 import { __ } from "@/utils/i18n";
 
-export const BRING_DATA_SOURCE = "migration";
+export const BRING_DATA_SOURCE = "bring_data";
 
 // The "Bring your data in" starter. The server only says whether this user may see it
 // (`bring_data_in` on the suggestions payload); the copy is built here so `__()` resolves
