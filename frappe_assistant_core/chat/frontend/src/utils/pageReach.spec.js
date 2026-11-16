@@ -132,6 +132,25 @@ describe("createPageReach", () => {
 		expect(shown.fields).toEqual(["last_login"]);
 	});
 
+	it.each([
+		["every field as bare values", { fields: ["*"], as_dict: 0 }, [["B-1", "DE89"]], [], ["frappe.client.get_list"]],
+		["a child table's field, against every doctype's list", { fields: [{ members: ["last_login"] }] }, [], ["last_login"], []],
+		["a filter on a hidden field", { filters: { iban: "DE89" } }, [{ name: "B-1" }], ["iban"], []],
+		["a filter list on a hidden field", { filters: '[["Bank Account", "iban", "like", "DE%"]]' }, [], ["iban"], []],
+		["an or_filters list on a hidden field", { or_filters: [["iban", "=", "DE89"]] }, [], ["iban"], []],
+		["a sort on a hidden field", { order_by: "name asc, iban desc" }, [], ["iban"], []],
+		["a filter's value, which is not a field", { filters: [{ status: "Needs review" }] }, [], [], []],
+		["a sort by an expression", { order_by: "length(iban)" }, [], [], ["frappe.client.get_list"]],
+	])("counts %s", async (_, args, answer, fields, methods) => {
+		const shown = await reachAfter(WITHHELD, [["frappe.client.get_list", { doctype: "Bank Account", ...args }, answer]]);
+		expect(shown).toEqual({ fields, methods });
+	});
+
+	it("leaves a keyed answer to every field to its keys", async () => {
+		const shown = await reachAfter(WITHHELD, [["frappe.client.get_list", { doctype: "Bank Account", fields: ["*"] }, [{ name: "B" }]]]);
+		expect(shown).toEqual({ fields: [], methods: [] });
+	});
+
 	it("finds a hidden field that is an old-style report column, named by its label", async () => {
 		const shown = await reachAfter(WITHHELD, [
 			["frappe.desk.query_report.run", { report_name: "Bank" }, { columns: ["Supplier:Link/Supplier:120", "IBAN:Data:100"], result: [["S", "DE89"]] }],

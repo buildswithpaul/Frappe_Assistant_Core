@@ -19,32 +19,62 @@ const MAX_NODES = 50000;
 
 const isBlank = (value) => value === null || value === undefined || value === "";
 
-// The field names a call asks for: Frappe's `fields`, `fieldname` and `field` args, as a list, a
-// JSON string or, for a child table in Frappe v16, an object.
-function requestedFields(args) {
-	const names = [];
-	const collect = (value) => {
-		if (typeof value === "string") names.push(value);
-		else if (Array.isArray(value)) value.forEach(collect);
+// An arg as Frappe reads it: a JSON string is parsed back, anything else is kept as it is.
+function parsedArg(value) {
+	if (typeof value !== "string" || !/^\s*[[{"]/.test(value)) return value;
+	try {
+		return JSON.parse(value);
+	} catch {
+		return value;
+	}
+}
+
+/**
+ * Every field a call names, as {reference, anywhere}: those it asks for (`fields`, `fieldname`,
+ * `field`), filters on (`filters`, `or_filters`) or sorts and groups by (`order_by`, `group_by`).
+ * A filter or a sort narrows which records show, so it gives a field away one query at a time.
+ * `anywhere` marks a field of a doctype only the server knows (a child table's, or a filter's
+ * named doctype), to check against every doctype's hidden fields.
+ */
+function referencedFields(args) {
+	const found = [];
+	const collect = (value, anywhere) => {
+		if (typeof value === "string") found.push({ reference: value, anywhere });
+		else if (Array.isArray(value)) value.forEach((item) => collect(item, anywhere));
 		else if (value && typeof value === "object") {
+			// Frappe v16 names a child table's fields as {table_field: [fields]}.
 			for (const [key, item] of Object.entries(value)) {
-				collect(key);
-				collect(item);
+				collect(key, anywhere);
+				collect(item, true);
 			}
 		}
 	};
-	for (const key of ["fields", "fieldname", "field"]) {
-		let value = args?.[key];
-		if (typeof value === "string" && /^\s*[[{"]/.test(value)) {
-			try {
-				value = JSON.parse(value);
-			} catch {
-				// Not JSON: a single field name.
+	for (const key of ["fields", "fieldname", "field"]) collect(parsedArg(args?.[key]), false);
+	for (const key of ["filters", "or_filters"]) {
+		const filters = parsedArg(args?.[key]);
+		if (typeof filters === "string") found.push({ reference: filters, anywhere: true });
+		else if (Array.isArray(filters)) {
+			// [field, operator, value], or [doctype, field, operator, value].
+			for (const filter of filters) {
+				if (typeof filter === "string") found.push({ reference: filter, anywhere: true });
+				else if (filter && typeof filter === "object" && !Array.isArray(filter)) {
+					Object.keys(filter).forEach((field) => found.push({ reference: field, anywhere: true }));
+				}
+				else if (filter.length >= 4) found.push({ reference: String(filter[1]), anywhere: true });
+				else found.push({ reference: String(filter[0]), anywhere: false });
 			}
+		} else if (filters && typeof filters === "object") {
+			Object.keys(filters).forEach((field) => found.push({ reference: field, anywhere: false }));
 		}
-		collect(value);
 	}
-	return names;
+	for (const key of ["order_by", "group_by"]) {
+		if (typeof args?.[key] !== "string") continue;
+		for (const part of args[key].split(",")) {
+			const reference = part.trim().replace(/\s+(asc|desc)$/i, "");
+			if (reference) found.push({ reference, anywhere: false });
+		}
+	}
+	return found;
 }
 
 // A field name, bare or through its table (`tabBank Account`.iban, items.item_code), or null for an
@@ -120,11 +150,13 @@ export function createPageReach(withheld) {
 		const doctype = typeof args?.doctype === "string" ? args.doctype : "";
 		if (hiddenDoctypes.has(doctype)) fields.add(doctype);
 		const hidden = hiddenFor(doctype);
-		// A field asked for counts whatever the answer's shape: as_dict=0 answers with bare values.
-		for (const reference of requestedFields(args)) {
+		// A field named counts whatever the answer's shape: as_dict=0 answers with bare values, so
+		// every field asked for that way can't be checked by its key.
+		const asList = [0, false, "0", "false"].includes(args?.as_dict);
+		for (const { reference, anywhere } of referencedFields(args)) {
 			const field = plainField(reference);
-			if (field === null) methods.add(method);
-			else noteField(reference.includes(".") ? hiddenAnywhere : hidden, field);
+			if (field === null || (field === "*" && asList)) methods.add(method);
+			else noteField(anywhere || reference.includes(".") ? hiddenAnywhere : hidden, field);
 		}
 		if (!findFields(answer, hidden)) methods.add(method);
 	}
