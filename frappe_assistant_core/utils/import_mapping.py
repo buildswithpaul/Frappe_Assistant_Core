@@ -155,9 +155,16 @@ def _linked_tables(meta, provided: Optional[Dict[str, Any]]) -> List[Dict[str, A
 
 
 def _importable_fields(meta, docfields=None) -> List[Dict[str, Any]]:
+    from frappe_assistant_core.utils.permissions import unwritable_meta_fieldnames
+
+    # A new record keeps its default in a field above the user's write permlevel (Frappe's
+    # validate_higher_perm_levels), so a column mapped to one would import as blank (#390).
+    unwritable = set() if meta.istable else unwritable_meta_fieldnames(meta)
     fields = []
     for df in meta.fields if docfields is None else docfields:
         if df.fieldtype in display_fieldtypes + no_value_fields or df.hidden or df.read_only:
+            continue
+        if df.fieldname in unwritable:
             continue
         field: Dict[str, Any] = {
             "fieldname": df.fieldname,

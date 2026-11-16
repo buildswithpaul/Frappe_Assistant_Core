@@ -51,7 +51,7 @@ def stub_user_role(test):
     frappe.get_roles meanwhile, with the roles cache cold, would cache the stub's answer as
     Administrator's roles for the rest of the run, so every later admin check fails.
     """
-    role = patch.object(search_tools, "get_user_primary_role", return_value="System Manager")
+    role = patch.object(search_tools, "get_user_primary_role", autospec=True, return_value="System Manager")
     role.start()
     test.addCleanup(role.stop)
 
@@ -148,10 +148,10 @@ class TestGlobalSearch(BaseAssistantTest):
     def setUp(self):
         super().setUp()
         # These tests stub frappe.get_list/get_all, which loading a DocType's meta also uses. The
-        # permlevel trim of a hit's content is covered in test_fieldlevel_read_access.
-        labels = patch.object(search_tools, "unreadable_field_labels", return_value=set())
-        labels.start()
-        self.addCleanup(labels.stop)
+        # permlevel handling of a hit is covered in test_fieldlevel_read_access.
+        blind = patch.object(search_tools, "indexes_unreadable_field", autospec=True, return_value=False)
+        blind.start()
+        self.addCleanup(blind.stop)
         stub_user_role(self)
 
     def test_indexed_hits_are_filtered_by_row_permissions(self):
@@ -438,6 +438,30 @@ class TestLinkSearch(BaseAssistantTest):
 
         self.assertFalse(result.get("success"))
         self.assertIn("permission", result.get("error", "").lower())
+
+    def test_filters_are_checked_before_frappe_runs_them(self):
+        """A filter on a field the user cannot read narrows the result to its value (#390)."""
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(search_tools.frappe.db, "exists", return_value=True))
+            stack.enter_context(patch.object(search_tools.frappe, "has_permission", return_value=True))
+            stub_user_role(self)
+            check = stack.enter_context(
+                patch.object(
+                    search_tools,
+                    "check_query_fields",
+                    autospec=True,
+                    side_effect=search_tools.FieldAccessError(
+                        "You do not have permission to query the field ctc."
+                    ),
+                )
+            )
+            frappe_search_link = stack.enter_context(patch("frappe.desk.search.search_link"))
+
+            result = SearchTools.search_link(doctype="Employee", query="", filters={"ctc": [">", 100000]})
+
+        self.assertFalse(result.get("success"), result)
+        check.assert_called_once_with("Employee", "System Manager", filters={"ctc": [">", 100000]})
+        frappe_search_link.assert_not_called()
 
     def test_list_documents_link_suggestions_still_work(self):
         """list_documents reads `value` off these results for unresolved_filters."""

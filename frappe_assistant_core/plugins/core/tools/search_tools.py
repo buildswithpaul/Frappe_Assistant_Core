@@ -28,6 +28,7 @@ full-text search intersects only with DocType-level read access, so its hits are
 re-validated through ``frappe.get_list`` before being returned (issue #189).
 """
 
+import re
 from typing import Any, Dict, List, Optional, Tuple
 
 import frappe
@@ -36,9 +37,10 @@ from frappe import _
 from frappe_assistant_core.core.field_access import FieldAccessError, check_query_fields
 from frappe_assistant_core.core.security_config import get_user_primary_role
 from frappe_assistant_core.utils.permissions import (
+    INDEX_SEPARATOR,
+    field_reader,
+    indexes_unreadable_field,
     readable_fieldnames,
-    readable_index_content,
-    unreadable_field_labels,
 )
 
 # DocTypes scanned by the fallback global search, used only when the
@@ -207,10 +209,12 @@ class SearchTools:
         if not raw:
             return [], False
 
-        return SearchTools._filter_by_row_permissions(raw, query), True
+        return SearchTools._filter_by_row_permissions(raw, query, limit), True
 
     @staticmethod
-    def _filter_by_row_permissions(hits: List[Dict[str, Any]], query: str = "") -> List[Dict[str, Any]]:
+    def _filter_by_row_permissions(
+        hits: List[Dict[str, Any]], query: str = "", limit: int = 20
+    ) -> List[Dict[str, Any]]:
         """Drop indexed hits the user cannot actually read.
 
         ``frappe.utils.global_search.search`` intersects with DocType-level read
@@ -243,7 +247,10 @@ class SearchTools:
         results = []
         seen = set()
         user_role = get_user_primary_role(frappe.session.user)
-        hidden_labels: Dict[str, set] = {}
+        # DocTypes whose index text holds a field this user may not read (#390). Neither that text
+        # nor the fact that a record matched can be shown, so they are searched again below,
+        # over the fields the user may read.
+        blind: Dict[str, bool] = {}
         for hit in hits:
             doctype, name = hit.get("doctype"), hit.get("name")
             key = (doctype, name)
@@ -253,16 +260,13 @@ class SearchTools:
             if key in seen or name not in permitted.get(doctype, set()):
                 continue
 
-            if doctype not in hidden_labels:
-                hidden_labels[doctype] = unreadable_field_labels(doctype, user_role)
-            keep, content = readable_index_content(
-                (hit.get("content") or "").strip(), hidden_labels[doctype], query, name
-            )
-            if not keep:
-                # The hit matched only on a field the user cannot read (#390).
+            if doctype not in blind:
+                blind[doctype] = indexes_unreadable_field(doctype, user_role)
+            if blind[doctype]:
                 continue
 
             seen.add(key)
+            content = (hit.get("content") or "").strip()
             results.append(
                 {
                     "doctype": doctype,
@@ -271,6 +275,73 @@ class SearchTools:
                 }
             )
 
+        for doctype in [doctype for doctype, hides in blind.items() if hides]:
+            for row in SearchTools._readable_field_search(doctype, query, limit, user_role):
+                key = (doctype, row["name"])
+                if key not in seen:
+                    seen.add(key)
+                    results.append(row)
+
+        return results
+
+    @staticmethod
+    def _readable_field_search(doctype: str, query: str, limit: int, user_role: str) -> List[Dict[str, Any]]:
+        """Global-search hits on `doctype` found in, and shown from, only the fields the user may read.
+
+        The same fields the index holds (in_global_search, on the record and its rows), less the
+        unreadable ones, matched with LIKE through frappe.get_list, so row permissions apply too.
+        Frappe splits a global-search query into words on "&"; spaces split it here as well.
+        """
+        from frappe.utils import strip_html_tags
+
+        words = [word for word in re.split(r"[&\s]+", query or "") if word]
+        if not words:
+            return []
+
+        meta = frappe.get_meta(doctype)
+        can_read = field_reader(meta, user_role)
+        fields = [df for df in meta.get_global_search_fields() if can_read(df.fieldname)]
+        or_filters = [[doctype, df.fieldname, "like", f"%{word}%"] for df in fields for word in words]
+        for table_field in meta.get_table_fields():
+            child = frappe.get_meta(table_field.options)
+            child_can_read = field_reader(child, user_role, parenttype=doctype)
+            or_filters.extend(
+                [child.name, df.fieldname, "like", f"%{word}%"]
+                for df in child.get_global_search_fields()
+                if child_can_read(df.fieldname)
+                for word in words
+            )
+        if not or_filters:
+            return []
+
+        shown = [df for df in fields if df.fieldname != "name"]
+        try:
+            rows = frappe.get_list(
+                doctype,
+                or_filters=or_filters,
+                fields=["name"] + [df.fieldname for df in shown],
+                limit=limit,
+                distinct=True,
+                ignore_permissions=False,
+            )
+        except Exception:
+            # Fail closed, as the row-permission check above does.
+            return []
+
+        results = []
+        for row in rows:
+            content = INDEX_SEPARATOR.join(
+                f"{df.label} : {strip_html_tags(str(row.get(df.fieldname)))}"
+                for df in shown
+                if row.get(df.fieldname) not in (None, "")
+            )
+            results.append(
+                {
+                    "doctype": doctype,
+                    "name": row.get("name"),
+                    "content": content[:MAX_CONTENT_SNIPPET] if content else None,
+                }
+            )
         return results
 
     @staticmethod
@@ -402,6 +473,14 @@ class SearchTools:
                     "success": False,
                     "error": _("No read permission for DocType '{0}'").format(doctype),
                 }
+
+            if filters:
+                # Frappe 15's link search runs a filter on a field the user cannot read, so
+                # repeated filters narrow down its value (#390); the same check search_doctype uses.
+                try:
+                    check_query_fields(doctype, get_user_primary_role(frappe.session.user), filters=filters)
+                except FieldAccessError as e:
+                    return {"success": False, "error": str(e), "doctype": doctype}
 
             from frappe.desk.search import search_link as frappe_search_link
 
