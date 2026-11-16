@@ -466,6 +466,37 @@ class TestFieldLevelReadAccess(BaseAssistantTest):
         )
         self.assertEqual([row["name"] for row in rows], [self.todo.name])
 
+    def test_run_python_code_takes_aliases_and_expressions_over_readable_fields(self):
+        # Sandbox code that worked before the fail-closed check must keep working: grouping by an
+        # alias, and Frappe 15's ifnull(...) filter key on a field the user may read.
+        from frappe_assistant_core.utils import sandbox_frappe
+        from frappe_assistant_core.utils.permissions import hidden_query_fields
+
+        self.as_user()
+        fields = ["date(creation) as day", "count(name) as n", {"COUNT": "*", "as": "c"}, "count(*) as k"]
+        self.assertEqual(
+            hidden_query_fields("ToDo", group_by="day", aliases={"day", "n", "c", "k"}, fields=fields), []
+        )
+        self.assertEqual(hidden_query_fields("ToDo", filters=[["ifnull(status, '')", "=", "Open"]]), [])
+        # The same forms over a hidden field, or an alias that names a column, stay refused.
+        self.assertEqual(
+            hidden_query_fields("ToDo", group_by="DESCRIPTION", aliases={"DESCRIPTION"}), ["DESCRIPTION"]
+        )
+        hidden_ifnull = "ifnull(description, '')"
+        self.assertEqual(
+            hidden_query_fields("ToDo", filters=[[hidden_ifnull, "like", "%a%"]]), [hidden_ifnull]
+        )
+
+        if int(frappe.__version__.split(".")[0]) < 16:  # Frappe 16 refuses these SQL forms itself
+            rows = sandbox_frappe.get_list(
+                "ToDo", fields=["date(creation) as day", "count(name) as n"], group_by="day"
+            )
+            self.assertTrue(rows)
+            rows = sandbox_frappe.get_list(
+                "ToDo", filters=[["ifnull(status, '')", "=", "Open"]], fields=["name"]
+            )
+            self.assertIn(self.todo.name, [row["name"] for row in rows])
+
     def test_run_python_code_queries_a_child_table_through_its_parent(self):
         from frappe_assistant_core.utils import sandbox_frappe
 
