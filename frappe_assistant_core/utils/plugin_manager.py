@@ -170,6 +170,26 @@ class PluginDiscovery:
         return None
 
 
+def read_legacy_enabled_plugins() -> Set[str]:
+    """The plugins `Assistant Core Settings.enabled_plugins_list` names, plus core.
+
+    An empty, missing or unreadable list means core only, which is what production has always
+    read from it. An unreadable list is logged, not swallowed.
+    """
+    logger = frappe.logger("plugin_persistence")
+    try:
+        raw = frappe.db.get_single_value(
+            PluginConfig.PLUGIN_SETTINGS_DOCTYPE, PluginConfig.PLUGIN_SETTINGS_FIELD
+        )
+        parsed = json.loads(raw) if raw else []
+        if not isinstance(parsed, list):
+            raise ValueError("not a list")
+    except Exception as e:
+        logger.error(f"Legacy enabled_plugins_list is unreadable, treating it as core only: {e}")
+        return {"core"}
+    return set(parsed) | {"core"}
+
+
 class PluginPersistence:
     """Handles plugin state persistence using FAC Plugin Configuration DocType.
 
@@ -211,16 +231,7 @@ class PluginPersistence:
 
     def _load_from_legacy_json(self) -> Set[str]:
         """Load from legacy JSON field in Assistant Core Settings."""
-        try:
-            settings = frappe.get_single(PluginConfig.PLUGIN_SETTINGS_DOCTYPE)
-            enabled_list = getattr(settings, PluginConfig.PLUGIN_SETTINGS_FIELD, None)
-
-            if enabled_list:
-                return set(json.loads(enabled_list))
-            return set()
-        except Exception as e:
-            self.logger.error(f"Failed to load from legacy JSON: {e}")
-            return set()
+        return read_legacy_enabled_plugins()
 
     def save_plugin_state(self, plugin_name: str, enabled: bool, plugin_info=None) -> bool:
         """Save a single plugin's enabled state.

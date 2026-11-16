@@ -138,6 +138,10 @@ def after_install():
     # Install skills from other apps
     _install_app_skills()
 
+    # Offer the migration plugin on a fresh install, as the v3_2 patch does on an upgraded site;
+    # before the sync, which would otherwise seed its row switched off
+    _enable_migration_plugin()
+
     # Sync plugin configurations from discovered plugins
     _sync_plugin_configurations()
 
@@ -822,6 +826,15 @@ def _install_app_skills():
         frappe.logger("migration_hooks").error(f"Failed to install app skills: {str(e)}")
 
 
+def _enable_migration_plugin():
+    try:
+        from frappe_assistant_core.patches.v3_2.move_migration_tools_to_their_plugin import enable_plugin
+
+        enable_plugin()
+    except Exception as e:
+        frappe.logger("migration_hooks").error(f"Failed to enable the migration plugin: {str(e)}")
+
+
 def _sync_plugin_configurations():
     """
     Sync plugin configurations from discovered plugins.
@@ -841,23 +854,14 @@ def _sync_plugin_configurations():
             )
             return
 
-        from frappe_assistant_core.utils.plugin_manager import PluginDiscovery
+        from frappe_assistant_core.utils.plugin_manager import PluginDiscovery, read_legacy_enabled_plugins
 
         discovery = PluginDiscovery()
         discovered_plugins = discovery.discover_plugins()
         discovered_plugin_names = set(discovered_plugins.keys())
 
-        # Load existing enabled state from legacy JSON (for migration)
-        legacy_enabled = set()
-        try:
-            settings = frappe.get_single("Assistant Core Settings")
-            enabled_list = getattr(settings, "enabled_plugins_list", None)
-            if enabled_list:
-                import json
-
-                legacy_enabled = set(json.loads(enabled_list))
-        except Exception:
-            pass
+        # An empty or unreadable list means core only, as the plugin manager reads it
+        legacy_enabled = read_legacy_enabled_plugins()
 
         created_count = 0
         skipped_count = 0
@@ -869,9 +873,7 @@ def _sync_plugin_configurations():
                 skipped_count += 1
                 continue
 
-            # Determine if plugin should be enabled
-            # Use legacy JSON state if available, otherwise default to enabled
-            is_enabled = 1 if plugin_name in legacy_enabled or not legacy_enabled else 0
+            is_enabled = 1 if plugin_name in legacy_enabled else 0
 
             # Create configuration
             config = frappe.new_doc("FAC Plugin Configuration")
