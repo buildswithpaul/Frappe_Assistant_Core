@@ -82,7 +82,7 @@ class CorePlugin(BasePlugin):
             ToolPack(
                 id="builder",
                 title="Builder checks",
-                description="Check user access, sandbox rules and recent errors while building a site",
+                description="Finding out why something on the site fails or who can see it: a user's access, error logs, failing server scripts",
                 tools=("test_as_user", "sandbox_reference", "recent_errors"),
             )
         ]

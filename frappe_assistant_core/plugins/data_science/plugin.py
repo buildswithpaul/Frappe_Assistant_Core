@@ -65,7 +65,7 @@ class DataSciencePlugin(BasePlugin):
             ToolPack(
                 id="analysis",
                 title="Analysis",
-                description="Run Python code and database queries for deeper analysis",
+                description="Running a custom SQL query or Python over the site's data: counts, statistics, ad-hoc analysis",
                 tools=("run_python_code", "run_database_query"),
             )
         ]

@@ -113,25 +113,25 @@ class FacoPlugin(BasePlugin):
             ToolPack(
                 id="crm",
                 title="Frappe CRM",
-                description="Follow up on Frappe CRM leads and deals: activity, email and lead conversion",
+                description="Working with Frappe CRM leads and deals: their activity, emailing a lead, converting a lead to a deal",
                 tools=("add_crm_activity", "convert_crm_lead", "get_crm_activity", "send_crm_email"),
             ),
             ToolPack(
                 id="helpdesk",
                 title="Helpdesk",
-                description="Reply on a Helpdesk ticket through Helpdesk's own flow",
+                description="Replying to a customer on a Helpdesk ticket",
                 tools=("reply_to_helpdesk_ticket",),
             ),
             ToolPack(
                 id="insights",
                 title="Frappe Insights",
-                description="Read Frappe Insights dashboards and charts with their numbers",
+                description="Reading reports built in the Frappe Insights app: its dashboards, charts and their numbers",
                 tools=("get_insights_chart", "get_insights_dashboard", "list_insights_dashboards"),
             ),
             ToolPack(
                 id="browser",
                 title="Browser",
-                description="Read and drive the page the user has open in FAC Chat",
+                description="Reading or acting on the page the user has open in their browser: the current form, a screenshot, navigating",
                 tools=(
                     "browser_capture_diagnostics",
                     "browser_get_form_data",
