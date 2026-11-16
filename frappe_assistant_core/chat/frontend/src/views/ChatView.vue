@@ -578,7 +578,7 @@ useChatViewInit(
 	{ chatStore, userStore, modelStore, suggestionStore },
 	{ route, router },
 	{ registrationStatus, isUserSetupComplete },
-	{ onFirstMessage: (text) => sendOrKeep(text) }
+	{ onFirstMessage: (text) => sendOrKeep(text), onFirstDraft: (text) => prefillComposer(text) }
 );
 
 // Auto-scroll to bottom on new messages / streaming chunks

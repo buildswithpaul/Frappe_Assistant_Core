@@ -15,6 +15,10 @@ describe("powerExplain", () => {
 		expect(pages).toMatchObject({ power: "pages", title: "Pages: live reports from any answer" });
 		expect(pages.body).toContain("save the answer as a Page");
 		expect(pages.media).toEqual({ art: "feature", feature: "pages" });
+		// Either FAC asks, or the user asks in their own words.
+		expect(ask.secondary.label).toBe("I'll ask my own");
+		expect(pages.primary.label).toBe("Make a Page for me");
+		expect(pages.secondary.label).toBe("I'll write my own");
 	});
 
 	it("Ask picks the user's short Find it starter over a long analysis; See it next; never a page ask", () => {

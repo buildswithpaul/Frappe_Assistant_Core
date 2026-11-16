@@ -14,7 +14,8 @@ import { readHandoff } from "@/utils/sessionHandoff";
  * @param {object} stores - { chatStore, userStore, modelStore, suggestionStore }
  * @param {object} routing - { route, router }
  * @param {object} state - { registrationStatus, isUserSetupComplete }
- * @param {object} [hooks] - { onFirstMessage(text) } sends a project page's queued first message
+ * @param {object} [hooks] - { onFirstMessage(text) } sends a project page's queued first message;
+ *   { onFirstDraft(text) } puts a queued draft in the ask box, unsent
  */
 export function useChatViewInit(stores, routing, state, hooks = {}) {
 	const { chatStore, userStore, modelStore, suggestionStore } = stores;
@@ -27,6 +28,8 @@ export function useChatViewInit(stores, routing, state, hooks = {}) {
 		if (route.params.sessionId !== sessionId || chatStore.currentSessionId !== sessionId) return;
 		const text = chatStore.takeFirstMessage(sessionId);
 		if (text) await hooks.onFirstMessage?.(text);
+		const draft = chatStore.takeFirstDraft?.(sessionId);
+		if (draft) hooks.onFirstDraft?.(draft);
 	}
 
 	onMounted(async () => {

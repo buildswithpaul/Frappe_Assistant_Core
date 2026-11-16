@@ -143,4 +143,11 @@ export const COACH_STOPS = [
 		text: () => __("Knowledge, Agents, Pages and more. Explore them whenever you like."),
 		place: "right",
 	},
+	// Only when the Your FAC ring shows: the bot is a plain link otherwise, without this data-test.
+	{
+		selector: "[data-test='rail-bot']",
+		title: () => __("Your FAC"),
+		text: () => __("Six things FAC can do for you. Click here to try one, and see what you have done so far."),
+		place: "right",
+	},
 ];

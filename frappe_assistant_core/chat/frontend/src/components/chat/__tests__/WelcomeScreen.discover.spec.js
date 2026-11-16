@@ -107,6 +107,20 @@ describe("WelcomeScreen first-login tour", () => {
 		expect(state().coach_done).toBe(true);
 	});
 
+	it("ends on the Your FAC ring when the rail shows it", async () => {
+		// The ring lives on the rail, outside Home; stand one in, as the app has it.
+		const ring = Object.assign(document.createElement("button"), { textContent: "ring" });
+		ring.setAttribute("data-test", "rail-bot");
+		document.body.appendChild(ring);
+		const w = await mountHome({ sessions: [], state: {} });
+		expect(w.text()).toContain("1 of 3");
+		await w.find("[data-test='coach-next']").trigger("click");
+		await w.find("[data-test='coach-next']").trigger("click");
+		expect(w.text()).toContain("3 of 3");
+		expect(w.text()).toContain("Your FAC");
+		ring.remove();
+	});
+
 	it("does not start by itself for a returning user, but Show me around starts it", async () => {
 		const w = await mountHome();
 		expect(w.find("[data-test='coach-tour']").exists()).toBe(false);

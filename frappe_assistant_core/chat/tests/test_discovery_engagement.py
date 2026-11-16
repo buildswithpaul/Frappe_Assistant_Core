@@ -52,6 +52,13 @@ class TestDiscoveryState(BaseAssistantTest):
             self.assertNotIn(gone, state)
         self.assertEqual(parse_discovery_state("not json")["seen"], [])
 
+    def test_a_closed_guide_stays_closed_on_every_device(self):
+        # The guide on a power's page: its close button saves the power id here.
+        saved = home.save_discovery_state(json.dumps({"guides_dismissed": ["knowledge", 3, ""]}))
+        self.assertEqual(saved["guides_dismissed"], ["knowledge"])
+        stored = json.loads(frappe.db.get_value(PREFS, self.user, "discovery_state"))
+        self.assertEqual(stored["guides_dismissed"], ["knowledge"])
+
     def test_parse_caps_every_list(self):
         state = parse_discovery_state({"seen": [f"id-{i}" for i in range(80)]})
         self.assertEqual(len(state["seen"]), 50)

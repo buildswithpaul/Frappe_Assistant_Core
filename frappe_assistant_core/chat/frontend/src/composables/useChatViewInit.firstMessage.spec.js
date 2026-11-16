@@ -14,10 +14,12 @@ function setup() {
 		}),
 		hydratePendingInterrupt: vi.fn(),
 		takeFirstMessage: vi.fn((id) => (id === "s1" ? "hello" : null)),
+		takeFirstDraft: vi.fn((id) => (id === "s2" ? "my own words" : null)),
 		loadSessions: vi.fn(),
 	};
 	const route = reactive({ params: {}, query: {} });
 	const onFirstMessage = vi.fn(async (text) => calls.push(`send:${text}`));
+	const onFirstDraft = vi.fn((text) => calls.push(`draft:${text}`));
 	const Host = defineComponent({
 		setup() {
 			// Not "ready": the mount branch stays out of the way, as for a user mid-onboarding.
@@ -25,14 +27,26 @@ function setup() {
 				{ chatStore, userStore: {}, modelStore: {}, suggestionStore: {} },
 				{ route, router: { push: vi.fn() } },
 				{ registrationStatus: ref("pending"), isUserSetupComplete: ref(false) },
-				{ onFirstMessage }
+				{ onFirstMessage, onFirstDraft }
 			);
 			return () => null;
 		},
 	});
 	mount(Host);
-	return { route, calls, onFirstMessage };
+	return { route, calls, onFirstMessage, onFirstDraft };
 }
+
+describe("useChatViewInit first draft", () => {
+	it("puts a queued draft in the ask box after the new chat loads, and sends nothing", async () => {
+		const { route, calls, onFirstMessage, onFirstDraft } = setup();
+		route.params.sessionId = "s2";
+		await nextTick();
+		await flushPromises();
+		expect(calls).toEqual(["load:s2", "draft:my own words"]);
+		expect(onFirstDraft).toHaveBeenCalledTimes(1);
+		expect(onFirstMessage).not.toHaveBeenCalled();
+	});
+});
 
 describe("useChatViewInit first message", () => {
 	it("sends the queued first message after the new session has loaded", async () => {

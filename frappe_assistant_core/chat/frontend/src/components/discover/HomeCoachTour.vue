@@ -1,6 +1,6 @@
 <script setup>
-// The first-login tour: three stops that show WHERE things are (the composer, the
-// "Needs you" cards, the left rail), not how every feature works. Skippable, and
+// The first-login tour: stops that show WHERE things are (the composer, the "Needs you"
+// cards, the left rail, the Your FAC ring), not how every feature works. Skippable, and
 // replayable from Settings → Help → "Show me around". A stop whose element is not
 // on screen (Needs you switched off, the rail on a phone) is left out.
 import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";

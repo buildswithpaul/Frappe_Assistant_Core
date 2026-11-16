@@ -3,8 +3,8 @@ import { featureById, previewContent } from "./featureCatalog";
 
 /**
  * Your FAC: the powers whose Try explains first. Many users do not know what asking their data or
- * a Page does, so Try shows a card (what it is, examples), and its button then does the thing
- * itself: it asks a question in a new chat, which FAC answers straight away.
+ * a Page does, so Try shows a card (what it is, examples) with a choice: FAC asks a question for
+ * them in a new chat, or they write their own. Either way the power ticks once they have asked.
  */
 export const EXPLAINED_POWERS = ["ask", "pages"];
 
@@ -18,7 +18,7 @@ export function explainContent(id) {
 			kind: "power",
 			id: "power-ask",
 			power: "ask",
-			eyebrow: __("FAC asks one for you"),
+			eyebrow: __("FAC can ask one for you, or ask your own"),
 			title: __("Ask your data in plain words"),
 			body: __(
 				"Type a question the way you would ask a colleague. FAC looks it up in your ERPNext data, with your own permissions, and answers in seconds."
@@ -30,7 +30,7 @@ export function explainContent(id) {
 			],
 			media: null,
 			primary: { label: __("Ask one for me") },
-			secondary: { label: __("Maybe later") },
+			secondary: { label: __("I'll ask my own") },
 		};
 	}
 	if (id === "pages") {
@@ -39,8 +39,9 @@ export function explainContent(id) {
 			kind: "power",
 			id: "power-pages",
 			power: "pages",
-			eyebrow: __("FAC asks it for you and saves the Page"),
+			eyebrow: __("FAC can make one for you, or write your own"),
 			primary: { label: __("Make a Page for me") },
+			secondary: { label: __("I'll write my own") },
 		};
 	}
 	return null;

@@ -212,11 +212,34 @@ describe("NavRail bot: Ask and Pages explain first", () => {
 		expect(w.find("[data-test='spotlight-card']").exists()).toBe(false);
 	});
 
-	it("Try on Pages explains Pages first; Maybe later asks nothing", async () => {
+	it("I'll ask my own opens an empty new chat: nothing is sent, and Ask ticks only once they ask", async () => {
 		const w = await mountRail({ discovery: POWERS });
+		newChat();
+		await openTry(w, "ask");
+		await w.find("[data-test='spotlight-secondary']").trigger("click");
+		await flushPromises();
+		expect(w.router.currentRoute.value.path).toBe("/chat/s-new");
+		expect(useChatStore().takeFirstMessage("s-new")).toBeNull();
+		expect(useChatStore().takeFirstDraft("s-new")).toBeNull();
+		expect(bot(w).attributes("aria-label")).toBe("Your FAC: 1 of 6 tried");
+	});
+
+	it("Pages' I'll write my own puts the Page question in the ask box to edit, unsent", async () => {
+		const w = await mountRail({ discovery: POWERS });
+		newChat();
 		await openTry(w, "pages");
 		expect(w.find("[data-test='spotlight-card'] h2").text()).toBe("Pages: live reports from any answer");
 		await w.find("[data-test='spotlight-secondary']").trigger("click");
+		await flushPromises();
+		expect(w.router.currentRoute.value.path).toBe("/chat/s-new");
+		expect(useChatStore().takeFirstMessage("s-new")).toBeNull();
+		expect(useChatStore().takeFirstDraft("s-new")).toBe("Show sales by customer for the last 3 months and save it as a Page.");
+	});
+
+	it("the card's close button asks nothing", async () => {
+		const w = await mountRail({ discovery: POWERS });
+		await openTry(w, "ask");
+		await w.find(".spot-close").trigger("click");
 		await flushPromises();
 		expect(w.find("[data-test='spotlight-card']").exists()).toBe(false);
 		expect(w.router.currentRoute.value.path).toBe("/chat");
@@ -231,6 +254,51 @@ describe("NavRail bot: Ask and Pages explain first", () => {
 		expect(w.router.currentRoute.value.path).toBe("/chat/s-new");
 		expect(useChatStore().takeFirstMessage("s-new")).toBe("Show sales by customer for the last 3 months and save it as a Page.");
 		expect(useDiscoveryStore().state.seen).toContain("pages");
+	});
+});
+
+describe("NavRail bot: a guide on a power's page", () => {
+	const guide = (w) => w.find("[data-test='power-guide']");
+	async function go(w, path) {
+		await w.router.push(path);
+		useDiscoveryStore().markRoute(path);
+		await flushPromises();
+	}
+
+	it("Knowledge's page tells a first-timer to upload their own file, as others' files may show", async () => {
+		const w = await mountRail();
+		await go(w, "/knowledge");
+		expect(guide(w).attributes("data-guide")).toBe("knowledge");
+		expect(guide(w).text()).toContain("Upload your own file");
+	});
+
+	it("Agents' page says to create their own agent; the chat has no guide", async () => {
+		const w = await mountRail();
+		await go(w, "/agents");
+		expect(guide(w).attributes("data-guide")).toBe("agents");
+		await go(w, "/chat");
+		expect(guide(w).exists()).toBe(false);
+	});
+
+	it("Try on Prompt templates shows its guide over the template list", async () => {
+		const w = await mountRail();
+		await bot(w).trigger("click");
+		await flushPromises();
+		await w.find("[data-test='power-try-templates']").trigger("click");
+		await flushPromises();
+		expect(guide(w).attributes("data-guide")).toBe("templates");
+	});
+
+	it("no guide once the power is used, and its close button closes it for good", async () => {
+		const used = await mountRail({ state: { used: ["knowledge"] } });
+		await go(used, "/knowledge");
+		expect(guide(used).exists()).toBe(false);
+		const w = await mountRail();
+		await go(w, "/knowledge");
+		await w.find("[data-test='power-guide-dismiss']").trigger("click");
+		await flushPromises();
+		expect(guide(w).exists()).toBe(false);
+		expect(useDiscoveryStore().state.guides_dismissed).toEqual(["knowledge"]);
 	});
 });
 

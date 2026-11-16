@@ -6,6 +6,7 @@ import { useDiscoveryStore } from "@/stores/discoveryStore";
 import FacoRobot from "@/components/common/FacoRobot.vue";
 import YourFacPanel from "./YourFacPanel.vue";
 import SpotlightModal from "@/components/spotlight/SpotlightModal.vue";
+import PowerGuide from "./PowerGuide.vue";
 import { ringSegments } from "./discoveryRules";
 
 /**
@@ -86,11 +87,12 @@ function openSettings() {
 		@close="discovery.closePanel()"
 		@settings="openSettings"
 	/>
-	<!-- Ask and Pages explain first; the button then asks their question in a new chat. -->
+	<PowerGuide v-if="discovery.guide" :guide="discovery.guide" @dismiss="discovery.dismissGuide" />
+	<!-- Ask and Pages explain first: FAC asks for the user, or they ask their own, in a new chat. -->
 	<SpotlightModal
 		:content="discovery.explain"
 		@primary="discovery.tryExplained(router)"
-		@secondary="discovery.closeExplain()"
+		@secondary="discovery.askOwn(router)"
 		@dismiss="discovery.closeExplain()"
 		@close="discovery.closeExplain()"
 	/>

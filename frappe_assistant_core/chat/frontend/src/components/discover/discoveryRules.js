@@ -11,7 +11,7 @@ export const POWER_IDS = ["setup", "ask", "templates", "knowledge", "pages", "ag
 /** Which userStore flag must be on for a power to be offered (null = always). */
 const POWER_CAPABILITY = { knowledge: "memoryEnabled", agents: "workflowsEnabled" };
 
-export const LIST_KEYS = ["seen", "used", "celebrated"];
+export const LIST_KEYS = ["seen", "used", "celebrated", "guides_dismissed"];
 const LIST_MAX = 50;
 const ID_MAX = 140;
 
@@ -20,6 +20,7 @@ export function emptyState() {
 		seen: [],
 		used: [],
 		celebrated: [],
+		guides_dismissed: [],
 		coach_done: false,
 	};
 }

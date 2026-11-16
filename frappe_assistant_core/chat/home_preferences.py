@@ -28,7 +28,7 @@ HOME_PREFERENCE_FIELDS = (
 
 # What the SPA may keep in ``discovery_state``: lists of ids, the tour flag and a few dates. Anything
 # else is dropped, so a bad or oversized save can never grow the row.
-DISCOVERY_LIST_KEYS = ("seen", "used", "celebrated")
+DISCOVERY_LIST_KEYS = ("seen", "used", "celebrated", "guides_dismissed")
 DISCOVERY_LIST_MAX = 50
 DISCOVERY_ID_MAX = 140
 

@@ -13,6 +13,7 @@ import { agentsCreated, templatesUsed } from "@/composables/usageSignals";
 import { useSuggestionStore } from "@/stores/suggestionStore";
 import { availableFeatures, featureById, featureForPath } from "@/components/discover/featureCatalog";
 import { EXPLAINED_POWERS, explainContent, questionFor } from "@/components/discover/powerExplain";
+import { GUIDES, guideForPath } from "@/components/discover/powerGuides";
 import {
 	availablePowers,
 	emptyState,
@@ -45,6 +46,9 @@ export const useDiscoveryStore = defineStore("discovery", () => {
 	const templatesRequested = ref(0);
 	// Ask and Pages explain first (the card), then ask their question in a new chat.
 	const explain = ref(null);
+	// The page the user is on, and a guide Try asked for (templates opens a list, not a page).
+	const currentPath = ref("");
+	const requestedGuide = ref(null);
 	const panelOpen = ref(false);
 	const justUnlocked = ref(null);
 	let saveTimer = null;
@@ -119,6 +123,23 @@ export const useDiscoveryStore = defineStore("discovery", () => {
 	function markRoute(path) {
 		const id = featureForPath(path);
 		if (id) markSeen(id);
+		currentPath.value = path;
+		if (!path.startsWith("/chat")) requestedGuide.value = null;
+	}
+
+	// ── Guides (one line on a power's page) ─────────────────────────────
+	const guide = computed(() => {
+		if (!showProgress.value) return null;
+		const id = requestedGuide.value || guideForPath(currentPath.value);
+		if (!id || !powers.value.some((p) => p.id === id)) return null;
+		if (isPowerUsed(id, state.value.used) || state.value.guides_dismissed.includes(id)) return null;
+		return { id, text: GUIDES[id].text() };
+	});
+
+	/** ✕ on a guide: not again, on any device. */
+	function dismissGuide(id) {
+		if (requestedGuide.value === id) requestedGuide.value = null;
+		addTo("guides_dismissed", id);
 	}
 
 	// ── Used (real data) ────────────────────────────────────────────────
@@ -212,6 +233,7 @@ export const useDiscoveryStore = defineStore("discovery", () => {
 		if (power && power.tryRoute) return router.push(power.tryRoute);
 		if (id === "ask") return router.push("/chat");
 		const feature = featureById(id);
+		if (id === "templates") requestedGuide.value = "templates";
 		if (feature) goTo(feature, router);
 	}
 
@@ -235,6 +257,23 @@ export const useDiscoveryStore = defineStore("discovery", () => {
 		const sessionId = await chat.createSession();
 		if (!sessionId) return;
 		chat.queueFirstMessage(sessionId, questionFor(id, useSuggestionStore().allSuggestions));
+		router.push(`/chat/${sessionId}`);
+	}
+
+	/**
+	 * The card's other button: the user asks in their own words. A new chat opens, empty for Ask and
+	 * with Pages' question in the ask box to edit; the power ticks once they have asked.
+	 */
+	async function askOwn(router) {
+		const content = explain.value;
+		explain.value = null;
+		if (!content) return;
+		const id = content.power;
+		if (featureById(id)) markSeen(id);
+		const chat = useChatStore();
+		const sessionId = await chat.createSession();
+		if (!sessionId) return;
+		if (id === "pages") chat.queueFirstDraft(sessionId, questionFor(id));
 		router.push(`/chat/${sessionId}`);
 	}
 
@@ -297,8 +336,11 @@ export const useDiscoveryStore = defineStore("discovery", () => {
 		openPanel,
 		closePanel,
 		tryPower,
+		guide,
+		dismissGuide,
 		closeExplain,
 		tryExplained,
+		askOwn,
 		maybeStartCoach,
 		requestCoach,
 		setCoachOpen,
