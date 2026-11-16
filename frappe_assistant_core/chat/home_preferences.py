@@ -89,3 +89,17 @@ def parse_discovery_state(raw: dict | str | None) -> dict:
         state[key] = list(dict.fromkeys(ids))[-DISCOVERY_LIST_MAX:]
     state["coach_done"] = raw.get("coach_done") is True
     return state
+
+
+def merge_discovery_state(stored: dict, incoming: dict) -> dict:
+    """Both parsed states together: every id either one lists, and the tour done if either says so.
+
+    Each open tab posts its whole state, so a tab that loaded earlier must not drop what
+    another tab saved since. Nothing is ever taken out of these lists, so a union is safe.
+    """
+    merged = {
+        key: list(dict.fromkeys(stored[key] + incoming[key]))[-DISCOVERY_LIST_MAX:]
+        for key in DISCOVERY_LIST_KEYS
+    }
+    merged["coach_done"] = stored["coach_done"] or incoming["coach_done"]
+    return merged

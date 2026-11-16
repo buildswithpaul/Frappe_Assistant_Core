@@ -15,6 +15,7 @@ from ..doctype.fac_chat_user_preferences.fac_chat_user_preferences import FACCha
 from ..home_preferences import (
     HOME_SIGNALS_CACHE_KEY,
     load_home_preferences,
+    merge_discovery_state,
     parse_discovery_state,
     parse_hidden_signals,
 )
@@ -125,14 +126,17 @@ def save_discovery_state(state: dict | str) -> dict:
     """Store the user's feature-discovery state (features opened and used, unlocks, the tour).
 
     Kept on the user's preferences so it follows them across browsers. Unknown keys and
-    malformed values are dropped; returns what was stored.
+    malformed values are dropped. Merged with what is stored, so a second open tab holding older
+    state cannot drop what this one saved; returns what was stored.
 
     Written straight to the column: a full save would run on_update, which drops the cached
     "Needs you" cards, and this is saved far more often than the home settings change.
     """
     user = frappe.session.user
-    clean = parse_discovery_state(state)
-    FACChatUserPreferences.get_or_create_preferences(user)
+    stored = frappe.db.get_value("FAC Chat User Preferences", user, "discovery_state")
+    if stored is None and not frappe.db.exists("FAC Chat User Preferences", user):
+        FACChatUserPreferences.get_or_create_preferences(user)
+    clean = merge_discovery_state(parse_discovery_state(stored), parse_discovery_state(state))
     frappe.db.set_value(
         "FAC Chat User Preferences", user, "discovery_state", json.dumps(clean), update_modified=False
     )

@@ -4,9 +4,8 @@
 
 """The Your FAC ring: the site's half.
 
-AR sends the powers list; the site keeps each user's Settings → Home progress switch and their
-discovery state, and adds ready questions to the invite. Sample powers only show on a site that
-asks for them in site_config.
+FAC ships six powers and uses AR's list when AR sends one; the site keeps each user's
+Settings → Home progress switch and their discovery state, and adds ready questions to the invite.
 """
 
 import json
@@ -80,6 +79,21 @@ class TestDiscoveryState(BaseAssistantTest):
         self.addCleanup(frappe.cache.hdel, home.HOME_SIGNALS_CACHE_KEY, self.user)
         home.save_discovery_state({"seen": ["pages"]})
         self.assertEqual(frappe.cache.hget(home.HOME_SIGNALS_CACHE_KEY, self.user), cached)
+
+    def test_a_tab_with_older_state_keeps_what_another_tab_saved(self):
+        # Two open tabs each post their whole state; the one that saves last knew less.
+        home.save_discovery_state({"used": ["ask"], "celebrated": ["ask"], "coach_done": True})
+        saved = home.save_discovery_state({"used": ["pages"], "celebrated": ["pages"], "seen": ["agents"]})
+        self.assertEqual(saved["used"], ["ask", "pages"])
+        self.assertEqual(saved["celebrated"], ["ask", "pages"])
+        self.assertEqual(saved["seen"], ["agents"])
+        self.assertIs(saved["coach_done"], True)
+        self.assertEqual(json.loads(frappe.db.get_value(PREFS, self.user, "discovery_state")), saved)
+
+    def test_save_does_not_load_the_whole_preferences_row(self):
+        with patch.object(FACChatUserPreferences, "get_or_create_preferences", autospec=True) as load:
+            home.save_discovery_state({"seen": ["pages"]})
+        load.assert_not_called()
 
 
 class TestDiscoverySwitches(BaseAssistantTest):

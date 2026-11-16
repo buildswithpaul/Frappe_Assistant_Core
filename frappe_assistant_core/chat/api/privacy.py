@@ -14,7 +14,11 @@ to HMAC-signed AR API calls.
 import frappe
 from frappe import _
 
-from frappe_assistant_core.chat.home_preferences import HOME_SIGNALS_CACHE_KEY, parse_hidden_signals
+from frappe_assistant_core.chat.home_preferences import (
+    HOME_SIGNALS_CACHE_KEY,
+    parse_discovery_state,
+    parse_hidden_signals,
+)
 
 from .auth import _ar_user_id
 from .chat.projects import project_documents_enabled, project_memory_enabled
@@ -84,6 +88,7 @@ def export_my_data() -> dict:
             "hidden_home_signals",
             "show_personalized_suggestions",
             "show_progress",
+            "discovery_state",
         ],
         as_dict=True,
     )
@@ -98,6 +103,7 @@ def export_my_data() -> dict:
             "hidden_home_signals": parse_hidden_signals(prefs.hidden_home_signals),
             "show_personalized_suggestions": bool(prefs.show_personalized_suggestions),
             "show_progress": bool(prefs.show_progress),
+            "discovery_state": parse_discovery_state(prefs.discovery_state),
         }
 
     faco_data["faco_projects"] = frappe.get_all(

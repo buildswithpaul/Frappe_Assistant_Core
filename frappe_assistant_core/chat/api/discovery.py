@@ -69,6 +69,8 @@ def dismiss_banner() -> dict:
 
 
 BANNER_BELL_LINK = "/app/fac-admin"
+# A user default, not the Notification Log itself: Frappe's log cleanup deletes old logs.
+BANNER_BELL_SENT = "fac_chat_banner_bell_sent"
 
 
 @frappe.whitelist(methods=["POST"])
@@ -76,13 +78,15 @@ def banner_shown() -> dict:
     """Leave one bell notification the first time the banner shows, so the link outlives the page.
 
     Sent here, not at install: Frappe sends no notifications while an app installs
-    (``frappe.flags.in_install``), and a fresh site may not have Redis yet.
+    (``frappe.flags.in_install``), and a fresh site may not have Redis yet. Sent once per user
+    ever, and taken away when chat is switched on (``toggle_chat``).
     """
     if not should_show_banner():
         return {"notified": False}
     user = frappe.session.user
-    if frappe.db.exists("Notification Log", {"for_user": user, "link": BANNER_BELL_LINK, "type": "Alert"}):
+    if frappe.defaults.get_user_default(BANNER_BELL_SENT, user):
         return {"notified": False}
+    frappe.defaults.set_user_default(BANNER_BELL_SENT, "1", user)
     frappe.get_doc(
         {
             "doctype": "Notification Log",
@@ -95,6 +99,11 @@ def banner_shown() -> dict:
         }
     ).insert(ignore_permissions=True)
     return {"notified": True}
+
+
+def _remove_banner_bells() -> None:
+    """Chat is on: the bell's "Switch it on" is no longer true, for any admin."""
+    frappe.db.delete("Notification Log", {"link": BANNER_BELL_LINK, "type": "Alert"})
 
 
 @frappe.whitelist(methods=["GET"])
@@ -225,6 +234,9 @@ def toggle_chat(enabled: int | bool) -> dict:
     # Drop the Single DocType value cache so subsequent reads on this worker
     # pick up the new value within the same request.
     frappe.clear_document_cache("Assistant Core Settings", "Assistant Core Settings")
+
+    if new_state:
+        _remove_banner_bells()
 
     faco_plugin_state = _sync_faco_plugin_state(bool(new_state))
 
