@@ -43,6 +43,7 @@ import { report } from "@/utils/pageReport";
 import { makePresenter, mountPresentControls, remoteDeck } from "@/utils/pagePresent";
 import { snapshotHtml } from "@/utils/pagePrint";
 import { cleanSnapshot } from "@/utils/pageSnapshotSanitise";
+import { createPageReach } from "@/utils/pageReach";
 import { failedCallText, makeFrappeStandIn, runPageScript } from "@/utils/pageRuntime";
 // The one copy of the kit, also served to the fac-pages Desk page from /assets.
 import kitCss from "../../../../../../public/css/mockup_kit.css?raw";
@@ -50,7 +51,7 @@ import kitCss from "../../../../../../public/css/mockup_kit.css?raw";
 import PageFrame from "./PageFrame.vue";
 
 const props = defineProps({
-	// get_page's response: {title, html, script, style, draft, visibility, format_settings}.
+	// get_page's response: {title, html, script, style, draft, visibility, format_settings, withheld}.
 	page: { type: Object, required: true },
 	user: { type: String, default: "" },
 	// The FAC Page record name, which a personal page's "Allow for this page" is scoped to.
@@ -72,6 +73,8 @@ const personalBox = ref(null);
 const charts = [];
 // What went wrong while this version ran, for FACO's screenshot to report.
 const errors = [];
+// What a shared page has shown that FAC's tools hide from FACO; a personal page's frame keeps its own.
+const reach = createPageReach(props.page.withheld);
 const published = computed(() => props.page.draft === false);
 const personal = computed(() => published.value && props.page.visibility !== "Shared");
 
@@ -110,7 +113,11 @@ function renderShared() {
 	if (!props.page.script) return;
 
 	const standIn = makeFrappeStandIn(
-		{ baseCall, getCall, user: props.user },
+		{
+			baseCall: (method, args) => reach.watch(method, args, baseCall(method, args)),
+			getCall: (method, args) => reach.watch(method, args, getCall(method, args)),
+			user: props.user,
+		},
 		{ onUnsupported: (name) => emit("unsupported", name), onError, formatSettings: props.page.format_settings },
 	);
 	const fac = {
@@ -141,6 +148,7 @@ onMounted(() => {
 		draft: !published.value,
 		capture: personal.value ? capturePersonal : null,
 		errors: () => (personal.value ? personalFrame.value?.errors() || [] : errors),
+		shown: () => (personal.value ? (personalFrame.value?.shown() ?? null) : reach.shown()),
 	});
 });
 
