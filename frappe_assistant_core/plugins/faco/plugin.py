@@ -39,6 +39,7 @@ Utility modules (not registered as tools):
 
 from typing import Any, Dict, List, Optional, Tuple
 
+from frappe_assistant_core.core.tool_packs import ToolPack
 from frappe_assistant_core.plugins.base_plugin import BasePlugin
 
 
@@ -103,6 +104,43 @@ class FacoPlugin(BasePlugin):
             "customisation_impact",
             # FAC Cloud checks a build plan against the site before showing it. Never shown to the model.
             "check_build_plan",
+        ]
+
+    def get_tool_packs(self) -> List[ToolPack]:
+        # screenshot_vision has no registered tool on this branch, so it is not listed.
+        # generate_document and attach_chat_file stay in the base set.
+        return [
+            ToolPack(
+                id="crm",
+                title="Frappe CRM",
+                description="Follow up on Frappe CRM leads and deals: activity, email and lead conversion",
+                tools=("add_crm_activity", "convert_crm_lead", "get_crm_activity", "send_crm_email"),
+            ),
+            ToolPack(
+                id="helpdesk",
+                title="Helpdesk",
+                description="Reply on a Helpdesk ticket through Helpdesk's own flow",
+                tools=("reply_to_helpdesk_ticket",),
+            ),
+            ToolPack(
+                id="insights",
+                title="Frappe Insights",
+                description="Read Frappe Insights dashboards and charts with their numbers",
+                tools=("get_insights_chart", "get_insights_dashboard", "list_insights_dashboards"),
+            ),
+            ToolPack(
+                id="browser",
+                title="Browser",
+                description="Read and drive the page the user has open in FAC Chat",
+                tools=(
+                    "browser_capture_diagnostics",
+                    "browser_get_form_data",
+                    "browser_get_page_context",
+                    "browser_navigate_to",
+                    "browser_take_screenshot",
+                    "browser_wait_for_page",
+                ),
+            ),
         ]
 
     def is_fac_cloud_only(self) -> bool:

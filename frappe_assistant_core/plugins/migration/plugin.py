@@ -14,6 +14,7 @@ Brings a client's data into ERPNext from their old system: import sessions and t
 
 from typing import Any, Dict, List, Optional, Tuple
 
+from frappe_assistant_core.core.tool_packs import ToolPack
 from frappe_assistant_core.plugins.base_plugin import BasePlugin
 
 
@@ -50,6 +51,23 @@ class MigrationPlugin(BasePlugin):
             "plan_migration",
             "run_migration_plan",
             "stop_migration_plan",
+        ]
+
+    def get_tool_packs(self) -> List[ToolPack]:
+        return [
+            ToolPack(
+                id="migration",
+                title="Data migration",
+                description="Bring a client's data in from their old system: sessions, plans, opening entries",
+                tools=tuple(self.get_tools()),
+                file_types=("csv", "xlsx", "xls", "xml"),
+                skills=(
+                    "migrate-data",
+                    "plan-migration-usage",
+                    "run-migration-plan-usage",
+                    "migration-sign-off",
+                ),
+            )
         ]
 
     def validate_environment(self) -> Tuple[bool, Optional[str]]:
