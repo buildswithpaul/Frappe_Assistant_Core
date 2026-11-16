@@ -67,6 +67,25 @@ def query_restricted_fields(doctype: str, user_role: str) -> Set[str]:
     return restricted
 
 
+def withheld_from_assistant(user_role: str) -> dict:
+    """What FAC's read tools hide from `user_role`, for a page's screenshot to check against.
+
+    `fields` are hidden on every DocType, `doctypes` maps a DocType to its further hidden fields,
+    and `hidden_doctypes` are DocTypes hidden whole. All three are empty for a System Manager.
+    """
+    everywhere = query_restricted_fields("", user_role)
+    named = (set(SENSITIVE_FIELDS) | set(ADMIN_ONLY_FIELDS)) - {"all_doctypes"}
+    doctypes = {}
+    for doctype in sorted(named):
+        extra = query_restricted_fields(doctype, user_role) - everywhere
+        if extra:
+            doctypes[doctype] = sorted(extra)
+    hidden = []
+    if user_role == "Assistant User":
+        hidden = sorted(doctype for doctype, fields in ADMIN_ONLY_FIELDS.items() if fields == "*")
+    return {"fields": sorted(everywhere), "doctypes": doctypes, "hidden_doctypes": hidden}
+
+
 def is_field_readable(meta, fieldname: str, user_role: str, parenttype: Optional[str] = None) -> bool:
     """Whether `user_role`'s user may read `fieldname` of `meta`, by FAC's lists and by permlevel."""
     if fieldname in query_restricted_fields(meta.name, user_role):

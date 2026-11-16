@@ -30,7 +30,12 @@ from unittest.mock import patch
 
 import frappe
 
-from frappe_assistant_core.core.field_access import FieldAccessError, check_query_fields, resolve_field
+from frappe_assistant_core.core.field_access import (
+    FieldAccessError,
+    check_query_fields,
+    resolve_field,
+    withheld_from_assistant,
+)
 from frappe_assistant_core.plugins.core.tools.list_documents import DocumentList
 from frappe_assistant_core.plugins.core.tools.metadata_tools import MetadataTools
 from frappe_assistant_core.tests.base_test import BaseAssistantTest
@@ -216,3 +221,27 @@ class TestQueryFieldAccess(BaseAssistantTest):
         fieldnames = {field["fieldname"] for field in result["fields"]}
         self.assertIn("status", fieldnames)
         self.assertNotIn("priority", fieldnames)
+
+
+class TestWithheldFromAssistant(BaseAssistantTest):
+    """What a page's picture must not show without asking: what FAC's read tools hide from the role."""
+
+    def test_a_default_user_is_withheld_the_sensitive_fields(self):
+        withheld = withheld_from_assistant("Default")
+
+        self.assertIn("iban", withheld["fields"])
+        self.assertIn("bank_account_no", withheld["fields"])
+        self.assertIn("last_login", withheld["doctypes"]["User"])
+        self.assertNotIn("iban", withheld["doctypes"].get("User", []))
+        self.assertEqual(withheld["hidden_doctypes"], [])
+
+    def test_an_assistant_user_is_withheld_the_admin_only_doctypes(self):
+        withheld = withheld_from_assistant("Assistant User")
+
+        self.assertIn("System Settings", withheld["hidden_doctypes"])
+        self.assertIn("roles", withheld["doctypes"]["User"])
+
+    def test_a_system_manager_is_withheld_nothing(self):
+        self.assertEqual(
+            withheld_from_assistant("System Manager"), {"fields": [], "doctypes": {}, "hidden_doctypes": []}
+        )
