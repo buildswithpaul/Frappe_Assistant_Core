@@ -70,10 +70,10 @@ function showPage({ draft = false, errors = [], shown } = {}) {
 }
 
 // A personal page: its frame draws itself and sends the picture back.
-function showPersonalPage({ capture, errors = [] }) {
+function showPersonalPage({ capture, errors = [], shown }) {
 	hide();
 	pageElement = null;
-	hide = usePagePanel().showPageView({ capture, errors: () => errors });
+	hide = usePagePanel().showPageView({ capture, errors: () => errors, ...(shown ? { shown } : {}) });
 }
 
 beforeEach(() => {
@@ -385,6 +385,21 @@ describe("useSpaBrowserTools", () => {
 		expect(confirms.value).toEqual([]);
 		expect(h2c.calls).toEqual([]);
 		expect(results()[0].error).toMatch(/hide from you.*Ask again/);
+	});
+
+	it("uploads nothing it didn't ask about when a hidden field lands while the picture is drawn", async () => {
+		let shown = { fields: [], methods: [] };
+		const capture = vi.fn(async () => {
+			shown = { fields: ["iban"], methods: [] };
+			return { blob: new Blob(["jpeg"], { type: "image/jpeg" }), width: 4, height: 4, text: "DE89" };
+		});
+		showPersonalPage({ capture, shown: () => shown });
+		wrapper = mount(Host);
+		await call("n4");
+		expect(capture).toHaveBeenCalled();
+		expect(uploadFile).not.toHaveBeenCalled();
+		expect(results()[0].error).toMatch(/Ask again/);
+		expect(JSON.stringify(results()[0])).not.toContain("DE89");
 	});
 
 	it("captures nothing when another page was opened while the user decided", async () => {

@@ -73,9 +73,13 @@ export async function takePageScreenshot(params = {}, askedAbout = undefined, { 
 	if (askedAbout !== undefined && panel.openName.value !== askedAbout) {
 		return { error: __("Another page was opened before this one could be captured. Ask again.") };
 	}
-	if (unasked && needsAsking(shownOnPage())) {
-		return { error: __("The page now shows data FAC's tools hide from you. Ask again to look at it.") };
-	}
+	// Checked again once the picture is drawn: a read that landed meanwhile may be in it.
+	const nowHidden = () =>
+		unasked && needsAsking(shownOnPage())
+			? { error: __("The page now shows data FAC's tools hide from you. Ask again to look at it.") }
+			: null;
+	const hiddenBefore = nowHidden();
+	if (hiddenBefore) return hiddenBefore;
 	const view = panel.pageView.value;
 	// The page's visible text and errors go with every answer, picture or not, so FACO can check the
 	// page when it can't read images or the picture fails.
@@ -87,6 +91,8 @@ export async function takePageScreenshot(params = {}, askedAbout = undefined, { 
 	});
 	try {
 		const shot = view.capture ? await captureFrame(view, params) : await captureElement(view, params);
+		const hiddenAfter = nowHidden();
+		if (hiddenAfter) return hiddenAfter;
 		const { blob, text, page_width: pageWidth, page_height: pageHeight, ...size } = shot;
 		// A canvas past the browser's maximum size encodes to null.
 		if (!blob) return { error: __("Screenshot too large to encode."), ...size, ...check(text) };

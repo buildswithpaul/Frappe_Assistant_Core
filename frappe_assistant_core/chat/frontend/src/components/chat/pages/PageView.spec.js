@@ -311,27 +311,10 @@ describe("PageView", () => {
 	// get_page's withheld for a viewer who is not a System Manager.
 	const withheld = { fields: ["iban"], doctypes: {}, hidden_doctypes: [] };
 
-	it("tells FACO's screenshot when a shared page has shown a field FAC's tools hide", async () => {
-		baseCall.mockResolvedValueOnce({ supplier: "S-1", iban: "DE89" });
-		getCall.mockResolvedValueOnce({ name: "S-1" });
-		mountView({
-			...published,
-			withheld,
-			script: "frappe.call({ method: 'frappe.client.get', args: { doctype: 'Bank Account', name: 'B' } }); frappe.db.get_value('Supplier', 'S-1', 'name');",
-		});
+	it("never says a shared page shows nothing hidden, since its script could fetch past any watch", async () => {
+		getCall.mockResolvedValueOnce([{ name: "S-1" }]);
+		mountView({ ...published, withheld, script: "frappe.db.get_list('Supplier');" });
 		await flushPromises();
-		expect(usePagePanel().pageView.value.shown()).toEqual({ fields: ["iban"], methods: [] });
-	});
-
-	it("watches a shared page's frappe.db reads too", async () => {
-		getCall.mockResolvedValueOnce([{ name: "B", iban: "DE89" }]);
-		mountView({ ...published, withheld, script: "frappe.db.get_list('Bank Account', { fields: ['*'] });" });
-		await flushPromises();
-		expect(usePagePanel().pageView.value.shown().fields).toEqual(["iban"]);
-	});
-
-	it("cannot tell FACO's screenshot what a page from an older server shows", () => {
-		mountView(published);
 		expect(usePagePanel().pageView.value.shown()).toBe(null);
 	});
 
