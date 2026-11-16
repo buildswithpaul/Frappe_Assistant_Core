@@ -399,14 +399,14 @@ class MCPServer:
 
     @staticmethod
     def _tool_pack_meta(packs: list, listed: list, ar_session_id: str) -> Optional[Dict]:
-        """The listing ``_meta`` AR reads: the pack catalogue and the packs this conversation's
-        files want. None when it can't be built: tools/list must never fail for it."""
+        """The listing ``_meta`` AR reads: the pack catalogue, the packs this conversation's
+        files want and the user's tool-loading choice. None when it can't be built: tools/list must never fail for it."""
         import frappe
 
         from frappe_assistant_core.core import tool_pack_listing
 
         try:
-            return {
+            meta = {
                 "fac/packs": tool_pack_listing.catalogue(packs, listed),
                 "fac/wanted_packs": tool_pack_listing.wanted_packs(ar_session_id, frappe.session.user, packs),
             }
@@ -415,6 +415,22 @@ class MCPServer:
                 "MCP tools/list: tool pack catalogue unreadable, sent without it", exc_info=True
             )
             return None
+        meta.update(MCPServer._tool_loading_meta())
+        return meta
+
+    @staticmethod
+    def _tool_loading_meta() -> Dict:
+        """``{"fac/tool_loading": "dynamic" | "all"}`` for the session user; empty when the
+        preference can't be read, which AR treats as dynamic."""
+        import frappe
+
+        from frappe_assistant_core.chat.tool_loading import tool_loading_mode
+
+        try:
+            return {"fac/tool_loading": tool_loading_mode(frappe.session.user)}
+        except Exception:
+            frappe.logger().warning("MCP tools/list: tool loading preference unreadable", exc_info=True)
+            return {}
 
     def _handle_tools_call(self, params: Dict, tool_registry: Optional[Dict] = None) -> Dict:
         """

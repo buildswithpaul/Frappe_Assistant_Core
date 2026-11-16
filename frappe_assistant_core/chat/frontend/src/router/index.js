@@ -97,6 +97,11 @@ const routes = [
 				component: () => import("@/components/settings/HomeSettings.vue"),
 			},
 			{
+				path: "tools",
+				name: "settings-tools",
+				component: () => import("@/components/settings/ToolsSettings.vue"),
+			},
+			{
 				path: "privacy",
 				name: "settings-privacy",
 				component: () => import("@/components/settings/PrivacySettings.vue"),

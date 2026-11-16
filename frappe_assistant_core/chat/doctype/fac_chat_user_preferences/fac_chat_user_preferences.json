@@ -18,6 +18,7 @@
   "needs_you_count",
   "hidden_home_signals",
   "show_personalized_suggestions",
+  "load_tools_as_needed",
   "pinned_prompt_templates",
   "selected_model",
   "section_break_privacy",
@@ -107,6 +108,13 @@
    "fieldname": "show_personalized_suggestions",
    "fieldtype": "Check",
    "label": "Show Personalised Suggestions"
+  },
+  {
+   "default": "1",
+   "description": "FACO loads only the tools a conversation needs. Off gives FACO every tool on every message. An unset value counts as on.",
+   "fieldname": "load_tools_as_needed",
+   "fieldtype": "Check",
+   "label": "Load Tools As Needed"
   },
   {
    "fieldname": "pinned_prompt_templates",

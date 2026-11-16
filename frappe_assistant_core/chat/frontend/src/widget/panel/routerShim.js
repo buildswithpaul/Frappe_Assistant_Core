@@ -15,6 +15,7 @@ const NAMED_ROUTES = [
 	["settings-profile", "/settings/profile"],
 	["settings-appearance", "/settings/appearance"],
 	["settings-home", "/settings/home"],
+	["settings-tools", "/settings/tools"],
 	["settings-privacy", "/settings/privacy"],
 	["MyTickets", "/settings/my-tickets"],
 	["settings-routing", "/settings/routing"],
