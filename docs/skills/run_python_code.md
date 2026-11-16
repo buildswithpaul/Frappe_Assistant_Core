@@ -416,5 +416,5 @@ print(f"\nReport: {dt.year}-{dt.month:02d}-{dt.day:02d}")
 | `frappe._dict not serializable` | `frappe.get_all` rows to pandas | Wrap with `dict(r)` |
 | `frappe.db.sql is not available` | Raw SQL can't be permission-checked | Aggregate fields + `group_by`, or pandas |
 | `PermissionError` / `No permission to read` | The user's roles or User Permissions exclude it | Expected — tell the user; don't work around it |
-| `Not permitted to filter, sort or group … by …` | A filter, `order_by` or `group_by` names a field above the user's permission level (Desk hides it) | Expected — leave that field out; don't try to narrow it down another way |
+| `Not permitted to filter, sort or group … by …` | A filter, `order_by` or `group_by` names a field above the user's permission level (Desk hides it), or a name that isn't exactly a field (`STATUS`, `ifnull(status, '')`) | Use the field's exact name; for a hidden field, leave it out and don't try to narrow it down another way. Querying a child table directly? Pass `parent_doctype=` so the parent's field permissions apply. `order_by` may name an alias from `fields` (`count(name) as total`) |
 | `tuple index out of range` | `frappe.utils.fmt_money()` is broken | `f"₹{value:,.0f}"` |

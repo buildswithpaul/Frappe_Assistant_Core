@@ -90,16 +90,13 @@ def withheld_from_assistant(user_role: str) -> dict:
 
 
 def is_field_readable(meta, fieldname: str, user_role: str, parenttype: Optional[str] = None) -> bool:
-    """Whether `user_role`'s user may read `fieldname` of `meta`, by FAC's lists and by permlevel."""
-    if fieldname in query_restricted_fields(meta.name, user_role):
-        return False
+    """Whether `user_role`'s user may read `fieldname` of `meta`, by FAC's lists and by permlevel.
 
-    df = meta.get_field(fieldname)
-    # Standard columns have no DocField, and a permlevel-0 field is readable to anyone who reads
-    # the DocType, which is also all a DocType without permission rules (a Single, say) offers.
-    if not df or not df.permlevel:
-        return True
-    return df.permlevel in meta.get_permlevel_access("read", parenttype=parenttype)
+    The same rule every FAC tool uses: utils.permissions.field_reader.
+    """
+    from frappe_assistant_core.utils.permissions import field_reader
+
+    return field_reader(meta, user_role, parenttype)(fieldname)
 
 
 def is_column(doctype: str, fieldname: str) -> bool:
@@ -138,8 +135,18 @@ def resolve_field(doctype: str, reference: str) -> Tuple[str, str]:
     return target, fieldname
 
 
-def check_field(doctype: str, reference: str, user_role: str, target_doctype: Optional[str] = None) -> None:
-    """Raise FieldAccessError unless the user may query `reference` on a `doctype` query."""
+def check_field(
+    doctype: str,
+    reference: str,
+    user_role: str,
+    target_doctype: Optional[str] = None,
+    parent_doctype: Optional[str] = None,
+) -> None:
+    """Raise FieldAccessError unless the user may query `reference` on a `doctype` query.
+
+    `parent_doctype`: the parent a query on a child table is made through (frappe.get_list's
+    parent_doctype), which grants the child's permission levels.
+    """
     if target_doctype:
         target = target_doctype.replace("`", "").removeprefix("tab")
         if not frappe.db.exists("DocType", target):
@@ -158,6 +165,8 @@ def check_field(doctype: str, reference: str, user_role: str, target_doctype: Op
             parenttype = doctype
         elif not frappe.has_permission(target, "read"):
             raise FieldAccessError(_("You do not have permission to query the field {0}.").format(reference))
+    elif meta.istable:
+        parenttype = parent_doctype
 
     if not is_field_readable(meta, fieldname, user_role, parenttype=parenttype):
         raise FieldAccessError(_("You do not have permission to query the field {0}.").format(reference))
