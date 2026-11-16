@@ -24,8 +24,9 @@ from typing import Any, Dict, List
 
 import frappe
 from frappe import _
+from frappe.share import get_shared
 
-from frappe_assistant_core.core.base_tool import BaseTool
+from frappe_assistant_core.core.base_tool import BaseTool, permission_error_result
 
 
 class ListUserDashboards(BaseTool):
@@ -42,7 +43,7 @@ class ListUserDashboards(BaseTool):
             "properties": {
                 "user": {
                     "type": "string",
-                    "description": "Specific user to list dashboards for (defaults to current user)",
+                    "description": "List the dashboards this user owns (defaults to current user). Only dashboards the current user may read are returned, and another user's shares only to a user who may read DocShare.",
                 },
                 "dashboard_type": {
                     "type": "string",
@@ -61,18 +62,28 @@ class ListUserDashboards(BaseTool):
     def execute(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
         """List accessible dashboards"""
         try:
-            user = arguments.get("user", frappe.session.user)
+            user = arguments.get("user") or frappe.session.user
             dashboard_type = arguments.get("dashboard_type", "all")
             include_shared = arguments.get("include_shared", True)
 
+            # Who a dashboard is shared with is read from DocShare, which Desk shows only to
+            # those who may read it; the caller's own shares are always theirs to see.
+            if (
+                include_shared
+                and user != frappe.session.user
+                and not frappe.has_permission("DocShare", "read")
+            ):
+                return permission_error_result(
+                    "Dashboard",
+                    _("You may list only your own dashboards and those shared with you."),
+                )
+
+            fields = ["name", "dashboard_name", "creation", "modified", "module"]
             dashboards = []
 
-            # Get user's own dashboards
-            own_dashboards = frappe.get_all(
-                "Dashboard",
-                filters={"owner": user},
-                fields=["name", "dashboard_name", "creation", "modified", "module"],
-            )
+            # get_list, as the Desk list view: the session user's read permission and the
+            # Dashboard permission query apply (get_all skipped both).
+            own_dashboards = frappe.get_list("Dashboard", filters={"owner": user}, fields=fields)
 
             for dashboard in own_dashboards:
                 dashboards.append(
@@ -87,30 +98,25 @@ class ListUserDashboards(BaseTool):
 
             # Get shared dashboards if requested
             if include_shared:
-                shared_docs = frappe.get_all(
-                    "DocShare",
-                    filters={"share_name": user, "share_doctype": "Dashboard", "read": 1},
-                    fields=["share_name", "everyone"],
+                # Frappe's own lookup: shares to this user or to everyone (the old filter
+                # matched share_name against the user, so it found nothing).
+                own_names = {dashboard.name for dashboard in own_dashboards}
+                shared_names = [name for name in get_shared("Dashboard", user) if name not in own_names]
+                shared_dashboards = (
+                    frappe.get_list("Dashboard", filters={"name": ["in", shared_names]}, fields=fields)
+                    if shared_names
+                    else []
                 )
-
-                for shared in shared_docs:
-                    try:
-                        dashboard_doc = frappe.get_doc("Dashboard", shared.share_name)
-                        dashboards.append(
-                            {
-                                "name": dashboard_doc.name,
-                                "dashboard_name": dashboard_doc.dashboard_name,
-                                "creation": dashboard_doc.creation,
-                                "modified": dashboard_doc.modified,
-                                "module": dashboard_doc.module,
-                                "access_type": "shared",
-                                "dashboard_type": "insights"
-                                if dashboard_doc.module == "Insights"
-                                else "frappe_dashboard",
-                            }
-                        )
-                    except Exception:
-                        continue  # Skip if dashboard doesn't exist or no access
+                for dashboard in shared_dashboards:
+                    dashboards.append(
+                        {
+                            **dashboard,
+                            "access_type": "shared",
+                            "dashboard_type": "insights"
+                            if dashboard.module == "Insights"
+                            else "frappe_dashboard",
+                        }
+                    )
 
             # Filter by dashboard type if specified
             if dashboard_type != "all":
