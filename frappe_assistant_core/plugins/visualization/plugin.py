@@ -26,6 +26,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import frappe
 from frappe import _
 
+from frappe_assistant_core.core.tool_packs import ToolPack
 from frappe_assistant_core.plugins.base_plugin import BasePlugin
 
 
@@ -59,6 +60,16 @@ class VisualizationPlugin(BasePlugin):
             "create_dashboard",
             "create_dashboard_chart",
             "list_user_dashboards",
+        ]
+
+    def get_tool_packs(self) -> List[ToolPack]:
+        return [
+            ToolPack(
+                id="dashboards",
+                title="Dashboards",
+                description="Create Frappe dashboards and charts and list the user's dashboards",
+                tools=("create_dashboard", "create_dashboard_chart", "list_user_dashboards"),
+            )
         ]
 
     def validate_environment(self) -> Tuple[bool, Optional[str]]:

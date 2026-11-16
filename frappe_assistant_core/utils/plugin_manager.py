@@ -24,7 +24,7 @@ import inspect
 import json
 import threading
 import traceback
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
@@ -32,6 +32,7 @@ from typing import Any, Dict, List, Optional, Set
 import frappe
 
 from frappe_assistant_core.core.base_tool import BaseTool
+from frappe_assistant_core.core.tool_packs import ToolPack
 from frappe_assistant_core.plugins.base_plugin import BasePlugin
 
 
@@ -56,6 +57,7 @@ class PluginInfo:
     tools: List[str]
     error_message: Optional[str] = None
     fac_cloud_only: bool = False
+    tool_packs: List[ToolPack] = field(default_factory=list)
 
 
 @dataclass
@@ -162,6 +164,7 @@ class PluginDiscovery:
                     state=PluginState.DISCOVERED,
                     tools=plugin_instance.get_tools(),
                     fac_cloud_only=plugin_instance.is_fac_cloud_only(),
+                    tool_packs=plugin_instance.get_tool_packs(),
                 )
 
         return None
@@ -376,6 +379,25 @@ class PluginManager:
                 self._load_tools()
 
             return self._loaded_tools.copy()
+
+    def get_tool_packs(self) -> List[ToolPack]:
+        """Tool packs declared by enabled plugins, ordered by pack id."""
+        with self._lock:
+            enabled = self.get_enabled_plugins()
+            packs = [
+                pack
+                for name, plugin_info in self._discovered_plugins.items()
+                if name in enabled
+                for pack in plugin_info.tool_packs
+            ]
+            return sorted(packs, key=lambda pack: pack.id)
+
+    def pack_of(self, tool_name: str) -> Optional[str]:
+        """Id of the pack a tool belongs to, or None when it is in the base set."""
+        for pack in self.get_tool_packs():
+            if tool_name in pack.tools:
+                return pack.id
+        return None
 
     def get_fac_cloud_only_tools(self) -> Set[str]:
         """Names of loaded tools whose plugin declared ``is_fac_cloud_only()``.
