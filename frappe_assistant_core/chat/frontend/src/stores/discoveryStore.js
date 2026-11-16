@@ -18,6 +18,7 @@ import {
 	availablePowers,
 	emptyState,
 	isPowerUsed,
+	mergeState,
 	parseState,
 	progressOf,
 } from "@/components/discover/discoveryRules";
@@ -59,7 +60,13 @@ export const useDiscoveryStore = defineStore("discovery", () => {
 	function save() {
 		clearTimeout(saveTimer);
 		saveTimer = setTimeout(() => {
-			api.home.saveDiscoveryState(state.value).catch((err) => logger.warn("Discovery state not saved:", err));
+			api.home
+				.saveDiscoveryState(state.value)
+				// The server merges in what other tabs saved; take that in so their unlocks are not celebrated again.
+				.then((saved) => {
+					if (saved && typeof saved === "object") state.value = mergeState(state.value, parseState(saved));
+				})
+				.catch((err) => logger.warn("Discovery state not saved:", err));
 		}, SAVE_DELAY_MS);
 	}
 
@@ -83,13 +90,21 @@ export const useDiscoveryStore = defineStore("discovery", () => {
 				show_progress: prefs.show_progress !== false,
 			};
 		}
-		state.value = parseState(prefs && prefs.state);
+		// Keep what was marked before init (App.vue reports the landing route as soon as it can).
+		const early = state.value;
+		state.value = mergeState(parseState(prefs && prefs.state), early);
 		started.value = true;
 		watchUsage();
 		// What the checks find while the app loads (chats, Pages) was done before: no toast for it.
-		setTimeout(() => {
+		const quiet = [new Promise((resolve) => setTimeout(resolve, LOAD_QUIET_MS))];
+		// First load with Your FAC (new user, or one who just upgraded): check every power now, quietly,
+		// so what they did before is ticked without a toast each, and save so this runs only once.
+		const firstLoad = Boolean(prefs) && prefs.state == null;
+		if (firstLoad) quiet.push(checkUnused().then(save));
+		else if (Object.values(early).some((v) => Array.isArray(v) && v.length)) save();
+		Promise.all(quiet).then(() => {
 			celebrate = true;
-		}, LOAD_QUIET_MS);
+		});
 	}
 
 	/** Settings → Home changed a switch. */

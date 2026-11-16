@@ -10,6 +10,8 @@ import { useDiscoveryStore } from "@/stores/discoveryStore";
 import { useNotificationStore } from "@/stores/notificationStore";
 import { useSuggestionStore } from "@/stores/suggestionStore";
 import { useWorkflowStore } from "@/stores/workflowStore";
+import { useToast } from "@/composables/useToast";
+import { getCall } from "@/api/_core";
 import { agentsCreated, noteAgentCreated, noteTemplateUsed, templatesUsed } from "@/composables/usageSignals";
 
 const { baseCall } = vi.hoisted(() => ({ baseCall: vi.fn().mockResolvedValue({}) }));
@@ -64,6 +66,7 @@ async function mountRail({ state = {}, switches = {}, discovery = POWERS, notifi
 	});
 	await flushPromises();
 	w.router = router;
+	w.pinia = pinia;
 	return w;
 }
 
@@ -308,5 +311,55 @@ describe("NavRail bot: no stories in this build", () => {
 		const w = await mountRail({ notifications: [story] });
 		expect(bot(w).attributes("aria-label")).toBe("Your FAC: 1 of 6 tried");
 		expect(bot(w).text()).not.toContain("NEW");
+	});
+});
+
+describe("Your FAC state: an upgrade, two tabs, and a page opened before start", () => {
+	const unlockToasts = () => useToast().toasts.value.filter((t) => t.message.startsWith("Unlocked"));
+	const saves = () => baseCall.mock.calls.filter(([m]) => m.endsWith("save_discovery_state"));
+
+	it("ticks what a user already did on their first load, with no Unlocked toast, and saves it", async () => {
+		useToast().toasts.value = [];
+		getCall.mockImplementation(async (method) =>
+			method.endsWith("list_documents") ? { documents: [{ name: "D1", is_owner: true }] } : {}
+		);
+		try {
+			// This test's own store: a page left mounted by an earlier test can switch the active pinia.
+			const store = useDiscoveryStore((await mountRail({ state: null })).pinia);
+			expect(store.state.used).toContain("knowledge");
+			expect(store.state.celebrated).toContain("knowledge");
+			// Later, the Knowledge page reports the same file: still no toast.
+			store.reportKnowledge([{ is_owner: true }]);
+			expect(unlockToasts()).toEqual([]);
+			// Saved, so the next load is not a first load.
+			await vi.waitFor(() => expect(saves().length).toBeGreaterThan(0), { timeout: 2000 });
+		} finally {
+			getCall.mockReset().mockResolvedValue({});
+		}
+	});
+
+	it("takes in what another tab saved, so that tab's unlock is not celebrated again here", async () => {
+		vi.useFakeTimers();
+		try {
+			const w = await mountRail();
+			const fromServer = { seen: ["knowledge"], used: ["pages"], celebrated: ["pages"], guides_dismissed: [], coach_done: true };
+			baseCall.mockImplementation(async (method) => (method.endsWith("save_discovery_state") ? fromServer : {}));
+			const store = useDiscoveryStore(w.pinia);
+			store.markSeen("knowledge");
+			vi.runOnlyPendingTimers();
+			await flushPromises();
+			expect(store.state.used).toContain("pages");
+			expect(store.state.celebrated).toContain("pages");
+			expect(store.state.coach_done).toBe(true);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("keeps a page the user opened before the store started", async () => {
+		// App.vue reports the landing route as soon as the router is ready, before access (and init) resolve.
+		const w = await mountRail({ state: { seen: ["agents"] }, before: () => useDiscoveryStore().markRoute("/knowledge") });
+		expect(useDiscoveryStore(w.pinia).state.seen).toEqual(expect.arrayContaining(["agents", "knowledge"]));
+		expect(dot(w, "knowledge").exists()).toBe(false);
 	});
 });

@@ -147,7 +147,7 @@ export const COACH_STOPS = [
 	{
 		selector: "[data-test='rail-bot']",
 		title: () => __("Your FAC"),
-		text: () => __("Six things FAC can do for you. Click here to try one, and see what you have done so far."),
+		text: () => __("What FAC can do for you. Click here to try one, and see what you have done so far."),
 		place: "right",
 	},
 ];

@@ -5,6 +5,7 @@ import {
 	featureForPath,
 	previewContent,
 	featureById,
+	COACH_STOPS,
 } from "./featureCatalog";
 
 const ALL = ["agents", "knowledge", "pages", "templates"];
@@ -36,5 +37,12 @@ describe("previewContent", () => {
 			expect(c.primary.label).toBe("Give it a try");
 			expect(c.secondary.label).toBe("Maybe later");
 		}
+	});
+});
+
+describe("COACH_STOPS", () => {
+	it("does not count the powers on the ring: a site without Knowledge or Agents shows fewer", () => {
+		const ring = COACH_STOPS.find((s) => s.selector === "[data-test='rail-bot']");
+		expect(ring.text()).not.toMatch(/\b(six|6)\b/i);
 	});
 });

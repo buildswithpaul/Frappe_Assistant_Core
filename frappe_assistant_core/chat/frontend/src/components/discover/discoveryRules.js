@@ -39,6 +39,17 @@ export function parseState(raw) {
 	return state;
 }
 
+/**
+ * Two parsed states together, as the server's merge_discovery_state: every id either lists, the
+ * tour done if either says so. Nothing is ever taken out of these lists, so a union is safe.
+ */
+export function mergeState(a, b) {
+	const merged = emptyState();
+	for (const key of LIST_KEYS) merged[key] = [...new Set([...a[key], ...b[key]])].slice(-LIST_MAX);
+	merged.coach_done = a.coach_done || b.coach_done;
+	return merged;
+}
+
 /** A route inside FAC Chat: starts with one "/", no whitespace. */
 export function safeRoute(route) {
 	return typeof route === "string" && /^\/(?![/\\])/.test(route) && !/\s/.test(route) ? route : null;

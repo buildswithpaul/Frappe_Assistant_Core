@@ -125,6 +125,13 @@ class TestDiscoverySwitches(BaseAssistantTest):
         )
         self.assertEqual(discovery["state"]["used"], ["ask"])
 
+    def test_the_page_can_tell_a_first_load_from_an_empty_state(self):
+        # Every user's first load with Your FAC (new, or just upgraded): nothing saved yet.
+        prefs = FACChatUserPreferences.get_or_create_preferences(self.user)
+        frappe.db.set_value(PREFS, self.user, "discovery_state", None, update_modified=False)
+        prefs.reload()
+        self.assertIsNone(_discovery_preferences(prefs)["state"])
+
 
 class TestInviteQuestions(BaseAssistantTest):
     INVITEE = "invitee_questions@example.com"

@@ -129,7 +129,7 @@ def _is_faco_member(user: str) -> bool:
 
 
 def _discovery_preferences(prefs) -> dict:
-    """The user's Settings → Home switch for progress, plus the stored state.
+    """The user's Settings → Home switch for progress, plus the stored state (None if never saved).
 
     The switch reads as on until the user turns it off (also before the column exists, mid-migrate).
     """
@@ -141,7 +141,8 @@ def _discovery_preferences(prefs) -> dict:
 
     return {
         "show_progress": on("show_progress"),
-        "state": parse_discovery_state(getattr(prefs, "discovery_state", None)),
+        # None until the first save: the page then ticks what the user already did, without toasts.
+        "state": parse_discovery_state(raw) if (raw := getattr(prefs, "discovery_state", None)) else None,
     }
 
 

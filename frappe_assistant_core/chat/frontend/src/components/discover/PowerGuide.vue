@@ -1,25 +1,30 @@
 <script setup>
 import { __ } from "@/utils/i18n";
+import { useTeleportTarget } from "@/composables/useTeleportTarget";
 
 /** One line on a power's page for a first-timer: what to do here to try it. ✕ closes it for good. */
 defineProps({ guide: { type: Object, required: true } });
 defineEmits(["dismiss"]);
+// Out of the rail's stacking context, beside the template list it must show above.
+const teleportTarget = useTeleportTarget();
 </script>
 
 <template>
-	<div class="pg" role="status" data-test="power-guide" :data-guide="guide.id">
-		<span class="pg-badge" aria-hidden="true">✦</span>
-		<p class="pg-text"><b>{{ __("Your FAC") }}</b> {{ guide.text }}</p>
-		<button
-			type="button"
-			class="pg-x"
-			data-test="power-guide-dismiss"
-			:aria-label="__('Close this guide')"
-			@click="$emit('dismiss', guide.id)"
-		>
-			✕
-		</button>
-	</div>
+	<Teleport :to="teleportTarget">
+		<div class="pg" role="status" data-test="power-guide" :data-guide="guide.id">
+			<span class="pg-badge" aria-hidden="true">✦</span>
+			<p class="pg-text"><b>{{ __("Your FAC") }}</b> {{ guide.text }}</p>
+			<button
+				type="button"
+				class="pg-x"
+				data-test="power-guide-dismiss"
+				:aria-label="__('Close this guide')"
+				@click="$emit('dismiss', guide.id)"
+			>
+				✕
+			</button>
+		</div>
+	</Teleport>
 </template>
 
 <style scoped>
