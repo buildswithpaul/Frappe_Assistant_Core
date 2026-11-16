@@ -159,9 +159,29 @@ def get_list(doctype, *args, **kwargs):
         kwargs.setdefault("filters", args[1])
     for key in _BLOCKED_KWARGS:
         kwargs.pop(key, None)
+    _refuse_hidden_query_fields(doctype, kwargs)
     if "fields" in kwargs:
         kwargs["fields"] = _normalize_fields(kwargs["fields"])
     return frappe.get_list(doctype, **kwargs)
+
+
+def _refuse_hidden_query_fields(doctype, kwargs) -> None:
+    """Refuse a filter, sort or grouping on a field the user may not read (#390).
+
+    frappe.get_list drops such a field from ``fields``, but Frappe 15 runs a filter on it, so
+    repeated counts or lookups narrow down its value. Frappe 16 refuses it; so does this, on both.
+    """
+    from frappe_assistant_core.utils.permissions import hidden_query_fields
+
+    hidden = []
+    for filters in (kwargs.get("filters"), kwargs.get("or_filters")):
+        hidden += hidden_query_fields(doctype, filters=filters)
+    hidden += hidden_query_fields(doctype, order_by=kwargs.get("order_by"), group_by=kwargs.get("group_by"))
+    if hidden:
+        raise frappe.PermissionError(
+            f"Not permitted to filter, sort or group {doctype} by {', '.join(dict.fromkeys(hidden))}: "
+            "your role cannot read that field."
+        )
 
 
 def get_all(doctype, *args, **kwargs):
