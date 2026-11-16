@@ -23,11 +23,9 @@ Admin toggle wrote only the rows. The two can disagree, and some sites have no r
 
 The legacy list is what the site has been running on, so it is authoritative: every plugin it
 names gets an enabled row and every other plugin a disabled one, and the core plugin is always on.
-An empty or unreadable list is a fresh install, which the after_migrate sync seeds, so the rows
-are left to it. Safe to run twice.
+An empty or unreadable list means core only, as it always has when read, so it reconciles the rows
+to that. Safe to run twice.
 """
-
-import json
 
 import frappe
 
@@ -39,12 +37,9 @@ def execute():
     if not frappe.db.table_exists(PLUGIN_DOCTYPE):
         return
 
-    legacy = _legacy_enabled_plugins()
-    if not legacy:
-        return
-    enabled = legacy | {CORE_PLUGIN}
+    from frappe_assistant_core.utils.plugin_manager import PluginDiscovery, read_legacy_enabled_plugins
 
-    from frappe_assistant_core.utils.plugin_manager import PluginDiscovery
+    enabled = read_legacy_enabled_plugins() | {CORE_PLUGIN}
 
     discovered = PluginDiscovery().discover_plugins()
     existing = set(frappe.get_all(PLUGIN_DOCTYPE, pluck="plugin_name"))
@@ -65,13 +60,3 @@ def execute():
                 "discovered_at": frappe.utils.now(),
             }
         ).insert(ignore_permissions=True)
-
-
-def _legacy_enabled_plugins() -> set[str]:
-    """The plugins the legacy list names; empty when it is absent, empty or not readable."""
-    try:
-        raw = frappe.db.get_single_value("Assistant Core Settings", "enabled_plugins_list")
-        parsed = json.loads(raw) if raw else []
-    except Exception:
-        return set()
-    return set(parsed) if isinstance(parsed, list) else set()
