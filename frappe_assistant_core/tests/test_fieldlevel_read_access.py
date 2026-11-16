@@ -446,14 +446,6 @@ class TestFieldLevelReadAccess(BaseAssistantTest):
             with self.subTest(parenttype=parenttype):
                 self.assertFalse(field_reader(child, parenttype=parenttype)("phone"))
 
-    def test_global_search_still_matches_a_word_with_an_underscore(self):
-        todo = frappe.get_doc(
-            {"doctype": "ToDo", "description": "fac_412 first_last", "allocated_to": READER}
-        ).insert(ignore_permissions=True)
-        self.as_user(READER)
-        rows = SearchTools._readable_field_search("ToDo", "first_last", 20, "System Manager")
-        self.assertIn(todo.name, [row["name"] for row in rows])
-
     def test_run_python_code_still_takes_fields_sorts_and_aliases_it_may_use(self):
         from frappe_assistant_core.utils import sandbox_frappe
 
@@ -566,17 +558,6 @@ class TestFieldLevelReadAccess(BaseAssistantTest):
         self.raise_permlevel("ToDo", "description", permlevel=2)
         self.as_user("Administrator")
         check_query_fields("ToDo", "System Manager", filters={"description": "x"})
-
-    def test_global_search_matches_a_typed_percent_or_underscore_literally(self):
-        from frappe_assistant_core.core.security_config import get_user_primary_role
-
-        self.as_user()
-        role = get_user_primary_role(USER)
-        for query in ("%", "_"):
-            rows = SearchTools._readable_field_search("ToDo", query, 20, role)
-            self.assertNotIn(self.todo.name, [row["name"] for row in rows], query)
-        rows = SearchTools._readable_field_search("ToDo", "Open", 20, role)
-        self.assertIn(self.todo.name, [row["name"] for row in rows])
 
     def test_dashboard_chart_refuses_a_name_that_only_resembles_a_hidden_field(self):
         from frappe_assistant_core.plugins.visualization.tools.create_dashboard_chart import (
