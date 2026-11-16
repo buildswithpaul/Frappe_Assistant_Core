@@ -156,6 +156,13 @@ If an edit cannot be applied, nothing is saved and the result carries `error_typ
 
 The saved record goes through the same checks as any update, so permissions, restricted fields and the Server Script rules apply to the edited result.
 
+## Fields the user may not change
+
+A field above the user's write permission level has no editor in Desk, and on save Frappe keeps its stored value.
+
+- An `edits` entry on such a field is refused before anything is matched, with `error_type: "field_not_writable"`. Don't retry it with another `find`; tell the user they can't change that field.
+- A value for such a field in `data`, including a field of a child row (`items.discount_percentage`), is not saved. The rest of the update is. The reply lists those fields in `not_applied_fields`, not in `updated_fields` (or `fields_validated` for `validate_only`), and the `message` says the stored values were kept. Tell the user which fields did not change; never say they were updated.
+
 ## Checking a change without saving
 
 Pass `validate_only: true` to test a change, typically a rule that runs when a record is edited (a Before Save server script, a validate hook that compares old and new values):
