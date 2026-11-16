@@ -9,6 +9,7 @@ from unittest.mock import patch
 import frappe
 
 from frappe_assistant_core.chat.doctype.fac_chat_message.fac_chat_message import FACChatMessage
+from frappe_assistant_core.core import tool_pack_listing
 from frappe_assistant_core.mcp.server import MCPServer
 from frappe_assistant_core.tests.base_test import BaseAssistantTest
 from frappe_assistant_core.utils.plugin_manager import PluginManager, get_plugin_manager
@@ -86,3 +87,24 @@ class TestToolPackListing(BaseAssistantTest):
     def test_catalogue_omits_pack_with_no_listed_tools(self):
         result = self._list("list_documents", ar_session="s1")
         self.assertEqual(result["_meta"]["fac/packs"], [])
+
+    def test_unreadable_packs_still_list_every_tool(self):
+        with patch.object(
+            PluginManager, "get_tool_packs", autospec=True, side_effect=RuntimeError("bad pack")
+        ):
+            result = self._list("start_import", "list_documents", ar_session="s1")
+
+        self.assertEqual([t["name"] for t in result["tools"]], ["start_import", "list_documents"])
+        # Without the packs, AR treats every tool as base.
+        self.assertNotIn("_meta", result)
+        self.assertFalse(any("_meta" in t for t in result["tools"]))
+
+    def test_unreadable_attachments_still_list_every_tool_with_its_pack(self):
+        with patch.object(
+            tool_pack_listing, "wanted_packs", autospec=True, side_effect=RuntimeError("db gone")
+        ):
+            result = self._list("start_import", "list_documents", ar_session="s1")
+
+        self.assertEqual([t["name"] for t in result["tools"]], ["start_import", "list_documents"])
+        self.assertNotIn("_meta", result)
+        self.assertEqual(result["tools"][0]["_meta"], {"fac/pack": "migration"})

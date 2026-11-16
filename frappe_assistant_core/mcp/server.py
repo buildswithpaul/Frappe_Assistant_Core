@@ -343,11 +343,7 @@ class MCPServer:
         except Exception:
             pass
 
-        from frappe_assistant_core.core import tool_pack_listing
-        from frappe_assistant_core.utils.plugin_manager import get_plugin_manager
-
-        packs = get_plugin_manager().get_tool_packs()
-        pack_of = tool_pack_listing.pack_map(packs)
+        packs, pack_of = self._tool_packs()
 
         for tool in tool_registry.values():
             description = tool["description"]
@@ -376,13 +372,49 @@ class MCPServer:
 
         # Only AR reads the catalogue; other MCP clients get the listing unchanged.
         ar_session_id = getattr(frappe.local, "ar_session_id", None)
-        if ar_session_id:
-            result["_meta"] = {
-                "fac/packs": tool_pack_listing.catalogue(packs, (t["name"] for t in tools_list)),
-                "fac/wanted_packs": tool_pack_listing.wanted_packs(ar_session_id, frappe.session.user, packs),
-            }
+        if ar_session_id and packs is not None:
+            listing_meta = self._tool_pack_meta(packs, [t["name"] for t in tools_list], ar_session_id)
+            if listing_meta is not None:
+                result["_meta"] = listing_meta
 
         return result
+
+    @staticmethod
+    def _tool_packs() -> tuple:
+        """The enabled plugins' tool packs and ``{tool: pack_id}``; ``(None, {})`` when they can't
+        be read, and every tool is then listed as base."""
+        import frappe
+
+        from frappe_assistant_core.core import tool_pack_listing
+        from frappe_assistant_core.utils.plugin_manager import get_plugin_manager
+
+        try:
+            packs = get_plugin_manager().get_tool_packs()
+            return packs, tool_pack_listing.pack_map(packs)
+        except Exception:
+            frappe.logger().warning(
+                "MCP tools/list: tool packs unreadable, listing every tool as base", exc_info=True
+            )
+            return None, {}
+
+    @staticmethod
+    def _tool_pack_meta(packs: list, listed: list, ar_session_id: str) -> Optional[Dict]:
+        """The listing ``_meta`` AR reads: the pack catalogue and the packs this conversation's
+        files want. None when it can't be built: tools/list must never fail for it."""
+        import frappe
+
+        from frappe_assistant_core.core import tool_pack_listing
+
+        try:
+            return {
+                "fac/packs": tool_pack_listing.catalogue(packs, listed),
+                "fac/wanted_packs": tool_pack_listing.wanted_packs(ar_session_id, frappe.session.user, packs),
+            }
+        except Exception:
+            frappe.logger().warning(
+                "MCP tools/list: tool pack catalogue unreadable, sent without it", exc_info=True
+            )
+            return None
 
     def _handle_tools_call(self, params: Dict, tool_registry: Optional[Dict] = None) -> Dict:
         """
