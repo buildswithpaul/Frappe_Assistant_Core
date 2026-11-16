@@ -701,18 +701,22 @@
             panel.addClass('open');
             btn.addClass('active');
             ns.state.openConfigPanels[toolName] = true;
-            // A copy of the roles and users as they are now, for Cancel to put back
-            const tool = ns.toolsData.find(t => t.name === toolName);
-            ns.state.savedAccess = ns.state.savedAccess || {};
-            ns.state.savedAccess[toolName] = {
-                role_access: JSON.parse(JSON.stringify(tool?.role_access || [])),
-                user_access: JSON.parse(JSON.stringify(tool?.user_access || []))
-            };
+            ns.saveAccessCopy(toolName);
             // Load roles if not already loaded
             if (ns.state.availableRoles.length === 0) {
                 ns.loadAvailableRoles();
             }
         }
+    };
+
+    // A copy of a tool's roles and users as they are now, for Cancel to put back
+    ns.saveAccessCopy = function(toolName) {
+        const tool = ns.toolsData.find(t => t.name === toolName);
+        ns.state.savedAccess = ns.state.savedAccess || {};
+        ns.state.savedAccess[toolName] = {
+            role_access: JSON.parse(JSON.stringify(tool?.role_access || [])),
+            user_access: JSON.parse(JSON.stringify(tool?.user_access || []))
+        };
     };
 
     // Load available roles
@@ -891,6 +895,9 @@
             },
             callback: function(response) {
                 if (response.message && response.message.success) {
+                    // The roles and users are stored now: if the category update fails and the
+                    // panel stays open, Cancel must put back these, not the ones it opened with
+                    ns.saveAccessCopy(toolName);
                     // Now update category
                     frappe.call({
                         method: "frappe_assistant_core.api.admin_api.update_tool_category",
