@@ -15,6 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import json
+import re
 
 import frappe
 from frappe import _, get_doc, has_permission
@@ -202,6 +203,9 @@ def get_skill_permission_query_conditions(user=None):
 # What frappe.utils.global_search puts between the "Label : value" parts of a hit's content.
 INDEX_SEPARATOR = " ||| "
 
+# A selected expression that names no column at all: count(*), optionally aliased.
+COUNT_ALL = re.compile(r"^\s*count\s*\(\s*\*\s*\)\s*(as\s+`?\w+`?)?\s*$", re.IGNORECASE)
+
 
 def field_reader(meta, user_role: str = None, parenttype: str = None):
     """A `can_read(fieldname)` check for `meta`: FAC's one rule for reading a field.
@@ -364,8 +368,8 @@ def hidden_query_fields(
 
     `parent_doctype` is the parent a child-table query is made through, as in frappe.get_list.
     `aliases` are names the query's `fields` give their expressions (`count(name) as total`):
-    order_by may name one that matches no column in any case, since the expressions themselves
-    are checked here.
+    order_by and group_by may name one that matches no column in any case, since the expressions
+    themselves are checked here.
     """
     from frappe_assistant_core.core.field_access import (
         SORT_DIRECTION,
@@ -383,7 +387,26 @@ def hidden_query_fields(
             return True
         return False
 
-    hidden = [reference for target, reference in filter_references(filters) if refused(reference, target)]
+    def refused_expression(expression: str) -> list:
+        """The columns of `expression` the user may not use; the whole of it if none can be found."""
+        if expression.strip() == "*":  # {"COUNT": "*"}
+            return []
+        try:
+            found = list(expression_columns(expression))
+        except FieldAccessError:
+            return [expression]
+        if not found and not COUNT_ALL.match(expression):
+            return [expression]  # nothing to check against, so nothing is let through
+        return [column for column in found if refused(column)]
+
+    hidden = []
+    for target, reference in filter_references(filters):
+        if not refused(reference, target):
+            continue
+        # Frappe 15 runs a filter key such as ifnull(status, ''): fine when every column in it
+        # may be read. A bare name in another case (DESCRIPTION) has no "(" and stays refused.
+        if target or "(" not in reference or refused_expression(reference):
+            hidden.append(reference)
 
     for entry in [fields] if isinstance(fields, (str, dict)) else fields or []:
         if isinstance(entry, dict):
@@ -392,17 +415,15 @@ def hidden_query_fields(
             expressions = [entry]
         else:
             continue
-        hidden += [
-            column
-            for expression in expressions
-            for column in expression_columns(expression)
-            if refused(column)
-        ]
+        for expression in expressions:
+            hidden += refused_expression(expression)
 
     columns = {name.lower() for name in STANDARD_COLUMNS}
     columns.update(df.fieldname.lower() for df in frappe.get_meta(doctype).fields if df.fieldname)
+    # An alias that is no column's name in any case can only mean the selected expression, which
+    # is checked above; MariaDB would read one that matches a column as that column.
     safe_aliases = {alias for alias in aliases if alias.lower() not in columns}
-    for clause, allowed in ((order_by, safe_aliases), (group_by, set())):
+    for clause, allowed in ((order_by, safe_aliases), (group_by, safe_aliases)):
         if not clause or not isinstance(clause, str):
             continue
         for column in expression_columns(SORT_DIRECTION.sub("", clause)):
