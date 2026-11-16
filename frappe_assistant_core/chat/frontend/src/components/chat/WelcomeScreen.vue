@@ -48,11 +48,13 @@
 				@dismiss="dismissBanner"
 			/>
 		</div>
+
+		<HomeCoachTour :active="coachActive" @done="onCoachDone" />
 	</div>
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { storeToRefs } from "pinia";
 import { useUserStore } from "@/stores/userStore";
 import { useSuggestionStore } from "@/stores/suggestionStore";
@@ -68,6 +70,10 @@ import ContinueList from "@/components/chat/welcome/ContinueList.vue";
 import HomeStarters from "@/components/chat/welcome/HomeStarters.vue";
 import FirstRunStarters from "@/components/chat/welcome/FirstRunStarters.vue";
 import PackNudge from "@/components/chat/welcome/PackNudge.vue";
+import HomeCoachTour from "@/components/discover/HomeCoachTour.vue";
+import { useDiscoveryStore } from "@/stores/discoveryStore";
+import { useSpotlightStore } from "@/stores/spotlightStore";
+import { useTourStore } from "@/stores/tourStore";
 
 defineEmits(["suggestion", "navigate", "open-session"]);
 
@@ -126,7 +132,27 @@ function dismissBanner() {
 	bannerDismissed.value = true;
 }
 
+// Feature discovery: chat stays chat. Day one gets the 3-stop tour, once.
+const discovery = useDiscoveryStore();
+const tourStore = useTourStore();
+const spotlight = useSpotlightStore();
+
+const coachActive = ref(false);
+function maybeStartCoach() {
+	if (coachActive.value || !loaded.value || tourStore.isOpen || spotlight.current) return;
+	if (!discovery.maybeStartCoach({ dayOne: dayOne.value })) return;
+	coachActive.value = true;
+	discovery.setCoachOpen(true);
+}
+function onCoachDone() {
+	coachActive.value = false;
+	discovery.finishCoach();
+}
+// Start once "Needs you" has loaded (it is one of the stops), and not over the reel or a Spotlight.
+watch([loaded, () => tourStore.isOpen, () => spotlight.current, () => discovery.started], maybeStartCoach);
+
 onMounted(() => {
+	maybeStartCoach();
 	if (userStore.isAdmin && !packsStore.items.length && !packsStore.loading) {
 		packsStore.load();
 	}

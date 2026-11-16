@@ -15,7 +15,7 @@ vi.mock("@/api/client", () => ({
 	api: { workflows: wf },
 	default: { workflows: wf },
 }));
-vi.mock("vue-router", () => ({ useRouter: () => ({ push: vi.fn() }) }));
+vi.mock("vue-router", () => ({ useRouter: () => ({ push: vi.fn() }), useRoute: () => ({ query: {} }) }));
 
 import { useToast } from "@/composables/useToast";
 import { useUserStore } from "@/stores/userStore";

@@ -34,6 +34,8 @@ export const useUserStore = defineStore("user", () => {
 	const memoryEnabled = ref(false); // default false — no onboarding without memory app
 	const workflowsEnabled = ref(false); // default false — no workflows without workflows app
 	const privacyConsentComplete = ref(false); // default false — must complete privacy consent screen
+	// Settings → Home switch for progress, plus the stored discovery state.
+	const discoveryPrefs = ref(null);
 
 	// AR's terms gate. Blocks stream_chat AND list_available_models, so this is
 	// app-level rather than a model-picker concern. Defaults to "not blocked":
@@ -430,6 +432,7 @@ export const useUserStore = defineStore("user", () => {
 			if (access.preferences) {
 				privacyConsentComplete.value =
 					access.preferences.privacy_consent_complete || false;
+				discoveryPrefs.value = access.preferences.discovery || null;
 			}
 
 			// Hydrate user auth
@@ -503,6 +506,7 @@ export const useUserStore = defineStore("user", () => {
 		memoryEnabled,
 		workflowsEnabled,
 		privacyConsentComplete,
+		discoveryPrefs,
 		zeroRetention,
 		termsState,
 		outstanding,

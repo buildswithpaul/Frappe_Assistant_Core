@@ -14,14 +14,31 @@
 
 frappe.provide("frappe_assistant_core.chat");
 
+// One button: it switches FAC Chat on right here and opens it, where the onboarding takes over.
+frappe_assistant_core.chat._switch_on = function ($button) {
+	$button.prop("disabled", true).text(__("Switching on…"));
+	frappe.call({
+		method: "frappe_assistant_core.chat.api.toggle_chat",
+		type: "POST",
+		args: { enabled: 1 },
+		callback: function () {
+			window.location.href = "/copilot";
+		},
+		error: function () {
+			$button.prop("disabled", false).text(__("Switch on FAC Chat"));
+		},
+	});
+};
+
 frappe_assistant_core.chat._render_banner = function () {
 	const banner_html = `
-		<div class="fac-chat-banner alert alert-info" style="margin: 10px 20px; display: flex; align-items: center; gap: 12px;">
-			<div style="flex: 1;">
-				<strong>New in FAC 3.0: FAC Chat</strong> — an in-Frappe AI chat assistant.
+		<div class="fac-chat-banner alert alert-info" style="margin: 10px 20px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+			<div style="flex: 1; min-width: 220px;">
+				<strong>${__("FAC Chat is installed")}</strong> —
+				${__("ask questions about your ERPNext data in plain words.")}
 			</div>
-			<a href="/app/fac-admin" class="btn btn-primary btn-xs">Enable it</a>
-			<button type="button" class="btn btn-default btn-xs fac-chat-banner-dismiss">Dismiss</button>
+			<button type="button" class="btn btn-primary btn-xs fac-chat-banner-switch-on">${__("Switch on FAC Chat")}</button>
+			<button type="button" class="btn btn-default btn-xs fac-chat-banner-dismiss">${__("Dismiss")}</button>
 		</div>
 	`;
 
@@ -35,6 +52,13 @@ frappe_assistant_core.chat._render_banner = function () {
 		return;
 	}
 	$target.prepend($banner);
+
+	$banner.find(".fac-chat-banner-switch-on").on("click", function () {
+		frappe_assistant_core.chat._switch_on($(this));
+	});
+
+	// The bell keeps the link after the banner is dismissed or scrolled away (once per admin).
+	frappe.call({ method: "frappe_assistant_core.chat.api.banner_shown", type: "POST" });
 
 	$banner.find(".fac-chat-banner-dismiss").on("click", function () {
 		frappe.call({

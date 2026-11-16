@@ -128,6 +128,24 @@ def _is_faco_member(user: str) -> bool:
     return _faco_member_status(user) != "none"
 
 
+def _discovery_preferences(prefs) -> dict:
+    """The user's Settings → Home switch for progress, plus the stored state (None if never saved).
+
+    The switch reads as on until the user turns it off (also before the column exists, mid-migrate).
+    """
+    from frappe_assistant_core.chat.home_preferences import parse_discovery_state
+
+    def on(field: str) -> bool:
+        value = getattr(prefs, field, None)
+        return True if value is None else bool(int(value))
+
+    return {
+        "show_progress": on("show_progress"),
+        # None until the first save: the page then ticks what the user already did, without toasts.
+        "state": parse_discovery_state(raw) if (raw := getattr(prefs, "discovery_state", None)) else None,
+    }
+
+
 # Called on every page load to decide whether to render the chat widget.
 # Must work pre-auth so guests see an onboarding CTA; returns only a
 # boolean + a public reason string, never tenant data or tokens.
@@ -326,6 +344,7 @@ def can_use_faco() -> dict:
                 "quota_used": quota_used,
                 "quota_remaining": quota_remaining,
                 "is_unlimited": is_unlimited,
+                "discovery": _discovery_preferences(prefs),
             },
         }
 

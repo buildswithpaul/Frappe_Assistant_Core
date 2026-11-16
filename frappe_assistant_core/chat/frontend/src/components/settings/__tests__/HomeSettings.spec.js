@@ -1,8 +1,9 @@
 import { flushPromises, mount } from "@vue/test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { getPreferences, updatePreferences, showError, loadSuggestions } = vi.hoisted(() => ({
+const { getPreferences, updatePreferences, showError, loadSuggestions, setSwitches } = vi.hoisted(() => ({
 	loadSuggestions: vi.fn(),
+	setSwitches: vi.fn(),
 	getPreferences: vi.fn(),
 	updatePreferences: vi.fn(),
 	showError: vi.fn(),
@@ -11,6 +12,7 @@ vi.mock("@/api/client", () => ({
 	api: { home: { getPreferences: (...a) => getPreferences(...a), updatePreferences: (...a) => updatePreferences(...a) } },
 }));
 vi.mock("@/stores/suggestionStore", () => ({ useSuggestionStore: () => ({ loadSuggestions }) }));
+vi.mock("@/stores/discoveryStore", () => ({ useDiscoveryStore: () => ({ setSwitches }) }));
 vi.mock("@/composables/useToast", () => ({ useToast: () => ({ showError }) }));
 
 import HomeSettings from "../HomeSettings.vue";
@@ -56,6 +58,18 @@ describe("HomeSettings", () => {
 		expect(updatePreferences).toHaveBeenLastCalledWith({ show_personalized_suggestions: false });
 		await w.find("#home-show_suggested_prompts").setValue(false);
 		expect(updatePreferences).toHaveBeenLastCalledWith({ show_suggested_prompts: false });
+	});
+
+	it("the progress switch saves, and FAC follows it at once", async () => {
+		let current = { ...PREFS, show_progress: true };
+		updatePreferences.mockImplementation(async (patch) => (current = { ...current, ...patch }));
+		const w = await mountSettings(current);
+		for (const key of ["show_progress"]) {
+			await w.find(`#home-${key}`).setValue(false);
+			await flushPromises();
+			expect(updatePreferences).toHaveBeenLastCalledWith({ [key]: false });
+			expect(setSwitches).toHaveBeenLastCalledWith({ [key]: false });
+		}
 	});
 
 	it("the cards select saves a number", async () => {

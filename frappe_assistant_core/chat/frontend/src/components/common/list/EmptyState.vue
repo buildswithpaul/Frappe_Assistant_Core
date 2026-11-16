@@ -5,6 +5,7 @@
 		</div>
 		<h3 class="ql-empty-title">{{ title }}</h3>
 		<p v-if="description" class="ql-empty-desc">{{ description }}</p>
+		<slot name="explain" />
 		<button v-if="cta" type="button" class="ql-empty-cta" @click="$emit('cta')">
 			{{ cta }}
 		</button>
