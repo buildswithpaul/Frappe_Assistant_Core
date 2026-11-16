@@ -13,9 +13,12 @@ On "Restrict to Listed Roles" a user gets the tool when they have a listed role 
 themselves; System Managers always get it. A tool a user can't use is neither listed nor run.
 """
 
+from unittest.mock import patch
+
 import frappe
 
 from frappe_assistant_core.api.admin_api import get_tool_configurations, update_tool_role_access
+from frappe_assistant_core.assistant_core.doctype.fac_tool_configuration import fac_tool_configuration
 from frappe_assistant_core.assistant_core.doctype.fac_tool_configuration.fac_tool_configuration import (
     get_tool_access_status,
 )
@@ -45,7 +48,7 @@ class ToolUserAccessCase(BaseAssistantTest):
         get_tool_registry().clear_cache()
         super().tearDown()
 
-    def _user(self, email, roles):
+    def _user(self, email, roles, enabled=1):
         if not frappe.db.exists("User", email):
             frappe.get_doc(
                 {
@@ -57,7 +60,10 @@ class ToolUserAccessCase(BaseAssistantTest):
             ).insert(ignore_permissions=True)
         user = frappe.get_doc("User", email)
         user.set("roles", [])
-        user.add_roles(*roles)
+        user.enabled = enabled
+        user.save(ignore_permissions=True)
+        if roles:
+            user.add_roles(*roles)
         return email
 
     def _config(self, mode, roles=(), users=()):
@@ -136,3 +142,64 @@ class ToolUserAccessCase(BaseAssistantTest):
         self._config(RESTRICTED, users=[self.listed])
         tool = next(t for t in get_tool_configurations()["tools"] if t["name"] == TOOL)
         self.assertEqual([u["user"] for u in tool["user_access"]], [self.listed])
+
+    def test_the_configuration_itself_knows_a_listed_user(self):
+        # FACToolConfiguration.user_has_access, beside the registry's own check
+        doc = self._config(RESTRICTED, roles=[STORES], users=[self.listed])
+        self.assertTrue(doc.user_has_access(self.listed))
+        self.assertFalse(doc.user_has_access(self.other))
+
+    # -- the server's own rules for the list (review of #417) ---------------------------------
+
+    def test_users_that_cant_be_listed_are_refused(self):
+        website = self._user("fac-tua-website@example.com", [])
+        disabled = self._user("fac-tua-disabled@example.com", [SELLERS], enabled=0)
+        for users in (["Guest"], ["Administrator"], [website], [disabled], [self.listed, self.listed]):
+            with self.subTest(users=users), self.assertRaises(frappe.ValidationError):
+                self._config(RESTRICTED, users=users)
+
+    def test_a_user_disabled_after_being_listed_doesnt_block_a_save(self):
+        doc = self._config(RESTRICTED, users=[self.listed])
+        frappe.db.set_value("User", self.listed, "enabled", 0)
+        doc.reload()
+        doc.tool_category = "read_only"
+        doc.save(ignore_permissions=True)  # raises if the kept user were checked again
+
+    def test_the_card_takes_plain_names(self):
+        self._config("Allow All")
+        result = update_tool_role_access(TOOL, RESTRICTED, roles=[STORES], users=[self.listed])
+        self.assertTrue(result["success"], result)
+        doc = frappe.get_doc("FAC Tool Configuration", TOOL)
+        self.assertEqual(
+            ([r.role for r in doc.role_access], [u.user for u in doc.user_access]), ([STORES], [self.listed])
+        )
+
+    def test_the_card_says_which_entry_it_cant_read(self):
+        self._config(RESTRICTED, users=[self.listed])
+        result = update_tool_role_access(TOOL, RESTRICTED, users=[{"name": self.other}])
+        self.assertFalse(result["success"])
+        self.assertIn("'user'", result["message"])
+        doc = frappe.get_doc("FAC Tool Configuration", TOOL)
+        self.assertEqual([u.user for u in doc.user_access], [self.listed])
+
+    def test_the_card_says_why_a_user_is_refused(self):
+        result = update_tool_role_access(TOOL, RESTRICTED, users=["Guest"])
+        self.assertEqual((result["success"], result["message"]), (False, "Guest can't be listed on a tool"))
+
+    # -- before bench migrate adds the users table ----------------------------------------------
+
+    def test_before_migrate_the_tools_page_loads(self):
+        # Production is here between updating the code and running bench migrate
+        self._config(RESTRICTED, users=[self.listed])
+        with patch.object(fac_tool_configuration, "user_access_ready", autospec=True, return_value=False):
+            tools = get_tool_configurations()["tools"]
+            result = update_tool_role_access(TOOL, RESTRICTED, users=[self.listed])
+        self.assertEqual(next(t for t in tools if t["name"] == TOOL)["user_access"], [])
+        self.assertFalse(result["success"])
+
+    def test_before_migrate_a_configuration_has_no_users_to_read(self):
+        # Loaded before migrate, the document has no user_access attribute at all
+        doc = self._config(RESTRICTED, roles=[STORES], users=[self.listed])
+        del doc.user_access
+        doc._validate_role_access()
+        self.assertFalse(doc.user_has_access(self.other))
