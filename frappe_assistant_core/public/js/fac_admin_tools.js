@@ -556,7 +556,7 @@
                                 <label class="fac-config-label">Role Access Mode</label>
                                 <select class="fac-config-select fac-role-mode-select" data-tool="${tool.name}">
                                     <option value="Allow All" ${tool.role_access_mode === 'Allow All' ? 'selected' : ''}>Allow All Users</option>
-                                    <option value="Restrict to Listed Roles" ${tool.role_access_mode === 'Restrict to Listed Roles' ? 'selected' : ''}>Restrict to Listed Roles and Users</option>
+                                    <option value="Restrict to Listed Roles" ${tool.role_access_mode === 'Restrict to Listed Roles' ? 'selected' : ''}>${__('Restrict to Listed Roles and Users')}</option>
                                 </select>
                             </div>
                             <div class="fac-config-group">
@@ -580,11 +580,11 @@
                                 </div>
                             </div>
                             <div class="fac-config-group">
-                                <label class="fac-config-label">Allowed Users</label>
+                                <label class="fac-config-label">${__('Allowed Users')}</label>
                                 <div class="fac-role-tags" id="user-tags-${tool.name}">
                                     ${userTagsHtml}
-                                    <button type="button" class="fac-add-role-btn fac-add-user-btn" data-tool="${tool.name}" aria-label="Add user to ${frappe.utils.escape_html(tool.display_name)}">
-                                        ${ns.icon('plus')} Add User
+                                    <button type="button" class="fac-add-role-btn fac-add-user-btn" data-tool="${tool.name}" aria-label="${__('Add user to {0}', [frappe.utils.escape_html(tool.display_name)])}">
+                                        ${ns.icon('plus')} ${__('Add User')}
                                     </button>
                                 </div>
                             </div>
@@ -667,6 +667,14 @@
         // Cancel button handlers
         $('.fac-config-cancel').off('click').on('click', function() {
             const toolName = $(this).data('tool');
+            // Put back the roles and users the card had when it was opened: adding or removing
+            // one changes ns.toolsData, which the next Save would send
+            const saved = ns.state.savedAccess?.[toolName];
+            const tool = ns.toolsData.find(t => t.name === toolName);
+            if (saved && tool) {
+                tool.role_access = saved.role_access;
+                tool.user_access = saved.user_access;
+            }
             ns.toggleConfigPanel(toolName, false);
             // Re-render to reset any unsaved changes
             ns.renderToolsList();
@@ -688,10 +696,18 @@
             panel.removeClass('open');
             btn.removeClass('active');
             delete ns.state.openConfigPanels[toolName];
+            delete ns.state.savedAccess?.[toolName];
         } else {
             panel.addClass('open');
             btn.addClass('active');
             ns.state.openConfigPanels[toolName] = true;
+            // A copy of the roles and users as they are now, for Cancel to put back
+            const tool = ns.toolsData.find(t => t.name === toolName);
+            ns.state.savedAccess = ns.state.savedAccess || {};
+            ns.state.savedAccess[toolName] = {
+                role_access: JSON.parse(JSON.stringify(tool?.role_access || [])),
+                user_access: JSON.parse(JSON.stringify(tool?.user_access || []))
+            };
             // Load roles if not already loaded
             if (ns.state.availableRoles.length === 0) {
                 ns.loadAvailableRoles();
@@ -785,7 +801,7 @@
         const safe = frappe.utils.escape_html(user);
         return `<span class="fac-role-tag" data-user="${safe}">
             ${safe}
-            <button type="button" class="fac-role-remove-btn" aria-label="Remove user ${safe}" data-tool="${toolName}" data-user="${safe}">
+            <button type="button" class="fac-role-remove-btn" aria-label="${__('Remove user {0}', [safe])}" data-tool="${toolName}" data-user="${safe}">
                 ${ns.icon('x', { className: 'remove-user', attrs: `data-tool="${toolName}" data-user="${safe}"` })}
             </button>
         </span>`;
@@ -796,13 +812,13 @@
         const tool = ns.toolsData.find(t => t.name === toolName);
         const existingUsers = (tool?.user_access || []).map(u => u.user);
         const dialog = new frappe.ui.Dialog({
-            title: 'Add User',
+            title: __('Add User'),
             fields: [
                 {
                     fieldname: 'user',
                     fieldtype: 'Link',
                     options: 'User',
-                    label: 'User',
+                    label: __('User'),
                     reqd: 1,
                     get_query: () => ({
                         filters: {
@@ -813,7 +829,7 @@
                     })
                 }
             ],
-            primary_action_label: 'Add',
+            primary_action_label: __('Add'),
             primary_action: function(values) {
                 if (!existingUsers.includes(values.user)) {
                     ns.addUser(toolName, values.user);
