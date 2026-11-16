@@ -28,11 +28,13 @@ from unittest.mock import patch
 import frappe
 
 from frappe_assistant_core.plugins.core.tools.chatgpt_fetch import ChatGPTFetch
+from frappe_assistant_core.plugins.core.tools.create_document import DocumentCreate
 from frappe_assistant_core.plugins.core.tools.get_document import DocumentGet
 from frappe_assistant_core.plugins.core.tools.search_documents import SearchDocuments
 from frappe_assistant_core.plugins.core.tools.search_tools import SearchTools
 from frappe_assistant_core.plugins.core.tools.update_document import DocumentUpdate
 from frappe_assistant_core.tests.base_test import BaseAssistantTest
+from frappe_assistant_core.utils.permissions import unwritable_fieldnames
 
 USER = "fac.fieldlevel.read@example.com"
 # Reads the description through a permlevel-1 rule its role is given in setUp.
@@ -140,11 +142,51 @@ class TestFieldLevelReadAccess(BaseAssistantTest):
         result = SearchDocuments().execute({"doctype": "ToDo", "query": SECRET})
         self.assertIn(self.todo.name, [row.get("name") for row in result.get("results") or []])
 
-    def indexed_hit(self, query):
-        content = f"Status : Open ||| Description : Board pay review {SECRET}"
+    def indexed_hit(self, query, content=None):
+        content = content or f"Status : Open ||| Description : Board pay review {SECRET}"
         hit = {"doctype": "ToDo", "name": self.todo.name, "content": content}
-        with patch("frappe.utils.global_search.search", return_value=[hit]):
+        with patch("frappe.utils.global_search.search", autospec=True, return_value=[hit]):
             return SearchTools.global_search(query=query, limit=20)
+
+    def test_global_search_shows_none_of_the_index_text_of_a_doctype_with_a_hidden_field(self):
+        # The index keeps a field's label from when the record was indexed (a renamed field keeps
+        # its old one), and a value may hold the " ||| " separator, so the text cannot be trimmed
+        # reliably. The hit is found again in, and shown from, the readable fields only.
+        self.as_user()
+        content = f"Status : Open ||| Monthly Pay : {SECRET} ||| Description : a ||| bank {SECRET}"
+        result = self.indexed_hit("Open", content)
+        self.assertEqual([hit["name"] for hit in result["results"]], [self.todo.name])
+        self.assertIn("Status : Open", result["results"][0]["content"])
+        self.assertNoSecret(result["results"])
+
+    def test_link_search_refuses_a_filter_on_a_hidden_field(self):
+        self.as_user()
+        result = SearchTools.search_link(
+            doctype="ToDo", query="", filters={"description": ["like", f"%{SECRET}%"]}
+        )
+        self.assertFalse(result.get("success"), result)
+        self.assertIn("You do not have permission to query the field description", result.get("error", ""))
+
+    def test_run_python_code_refuses_a_filter_on_a_hidden_field(self):
+        from frappe_assistant_core.utils import sandbox_frappe
+        from frappe_assistant_core.utils.tool_api import FrappeAssistantAPI
+
+        hidden = {"description": ["like", f"%{SECRET}%"]}
+        self.as_user()
+        for call in (
+            lambda: sandbox_frappe.count("ToDo", hidden),
+            lambda: sandbox_frappe.exists("ToDo", hidden),
+            lambda: sandbox_frappe.get_value("ToDo", hidden, "name"),
+            lambda: sandbox_frappe.get_list("ToDo", filters=hidden, fields=["name"]),
+            lambda: sandbox_frappe.get_all("ToDo", or_filters=hidden, fields=["name"]),
+        ):
+            with self.assertRaises(frappe.PermissionError):
+                call()
+        result = FrappeAssistantAPI(USER).get_documents("ToDo", filters=hidden, fields=["name"])
+        self.assertFalse(result["success"], result)
+
+        self.as_user(READER)
+        self.assertEqual(sandbox_frappe.count("ToDo", hidden), 1)
 
     def test_global_search_snippet_leaves_out_a_hidden_field(self):
         self.as_user()
@@ -216,3 +258,137 @@ class TestFieldLevelReadAccess(BaseAssistantTest):
         self.assertTrue(result.get("success"), result)
         self.assertNotIn("not_applied_fields", result)
         self.assertIn("Board salary", self.stored_description())
+
+    def test_a_field_a_hook_lets_through_is_not_reported_as_not_applied(self):
+        # Frappe skips a field named in flags.ignore_permlevel_for_fields when it resets values.
+        self.as_user()
+        doc = frappe.get_doc("ToDo", self.todo.name)
+        self.assertEqual(unwritable_fieldnames(doc, ["description"]), ["description"])
+        doc.flags.ignore_permlevel_for_fields = ["description"]
+        self.assertEqual(unwritable_fieldnames(doc, ["description"]), [])
+
+    # Child rows, creating, importing and charting. READER may read and write ToDo at level 1 but
+    # holds no level-1 rule on Contact, so a level-1 Contact Phone field is above its levels.
+
+    def raise_permlevel(self, doctype, fieldname, permlevel=1):
+        frappe.make_property_setter(
+            {
+                "doctype": doctype,
+                "fieldname": fieldname,
+                "property": "permlevel",
+                "value": permlevel,
+                "property_type": "Int",
+            },
+            validate_fields_for_doctype=False,
+        )
+        frappe.clear_cache(doctype=doctype)
+        self.addCleanup(frappe.clear_cache, doctype=doctype)
+
+    def test_a_child_row_write_frappe_puts_back_is_reported_as_not_applied(self):
+        self.raise_permlevel("Contact Phone", "phone")
+        contact = frappe.get_doc(
+            {"doctype": "Contact", "first_name": "FAC 390", "phone_nos": [{"phone": "111"}]}
+        ).insert(ignore_permissions=True)
+        row = contact.phone_nos[0].name
+
+        self.as_user(READER)
+        result = DocumentUpdate().execute(
+            {
+                "doctype": "Contact",
+                "name": contact.name,
+                "data": {"phone_nos": [{"name": row, "phone": "999"}]},
+            }
+        )
+        self.assertTrue(result.get("success"), result)
+        self.assertEqual(result.get("not_applied_fields"), ["phone_nos.phone"], result)
+        self.assertEqual(frappe.db.get_value("Contact Phone", row, "phone"), "111")
+
+    def test_create_does_not_report_back_a_child_value_the_user_cannot_read(self):
+        # ERPNext fills such values on save (a Timesheet's costing_rate from Activity Cost); the
+        # "overridden" warning returned the saved value, or by its absence confirmed a guess.
+        self.raise_permlevel("Contact Phone", "phone")
+        contact_class = type(frappe.new_doc("Contact"))
+        validate = contact_class.validate
+        hidden_phone = "+1 650 390 0390"  # a valid number, as Frappe checks it after validate
+
+        def fill_hidden_value(doc):
+            validate(doc)
+            doc.phone_nos[0].phone = hidden_phone
+
+        self.as_user(READER)
+        with patch.object(contact_class, "validate", autospec=True, side_effect=fill_hidden_value):
+            result = DocumentCreate().execute(
+                {"doctype": "Contact", "data": {"first_name": "FAC 390", "phone_nos": [{"phone": "123"}]}}
+            )
+        self.assertTrue(result.get("success"), result)
+        self.assertNotIn(hidden_phone, json.dumps(result, default=str))
+        self.assertNotIn("warnings", result)
+
+    def test_create_reports_a_field_frappe_resets_as_not_applied(self):
+        self.raise_permlevel("ToDo", "priority", permlevel=2)
+        self.as_user(READER)
+        data = {"description": "FAC 390 create", "priority": "High", "allocated_to": READER}
+
+        checked = DocumentCreate().execute({"doctype": "ToDo", "data": data, "validate_only": True})
+        self.assertTrue(checked.get("success"), checked)
+        self.assertNotIn("priority", checked["fields_validated"])
+        self.assertEqual(checked.get("not_applied_fields"), ["priority"])
+
+        result = DocumentCreate().execute({"doctype": "ToDo", "data": data})
+        self.assertTrue(result.get("success"), result)
+        self.assertEqual(result.get("not_applied_fields"), ["priority"])
+        self.assertEqual(frappe.db.get_value("ToDo", result["name"], "priority"), "Medium")
+
+    def test_import_schema_leaves_out_a_field_the_user_cannot_write(self):
+        from frappe_assistant_core.utils.import_mapping import build_import_schema
+
+        self.as_user()
+        fields = [field["fieldname"] for field in build_import_schema("ToDo")["fields"]]
+        self.assertNotIn("description", fields)
+        self.assertIn("priority", fields)
+
+        self.as_user(READER)
+        self.assertIn("description", [field["fieldname"] for field in build_import_schema("ToDo")["fields"]])
+
+    def test_a_fallback_value_comes_only_from_a_field_the_user_may_read(self):
+        # send_crm_email falls back on the lead's email and add_crm_activity on its phone: a
+        # hidden one was sent to, or logged on a call, and returned to the user.
+        from frappe_assistant_core.utils.permissions import readable_value
+
+        self.as_user()
+        self.assertIsNone(readable_value(frappe.get_doc("ToDo", self.todo.name), "description"))
+        self.as_user(READER)
+        self.assertIn(SECRET, readable_value(frappe.get_doc("ToDo", self.todo.name), "description"))
+
+    def test_a_call_log_does_not_take_a_phone_number_the_user_cannot_read(self):
+        from frappe_assistant_core.plugins.faco.tools.add_crm_activity import _phone
+
+        self.raise_permlevel("Contact", "mobile_no")
+        contact = frappe.get_doc(
+            {
+                "doctype": "Contact",
+                "first_name": "FAC 390",
+                "phone_nos": [{"phone": "+1 650 390 0390", "is_primary_mobile_no": 1}],
+            }
+        ).insert(ignore_permissions=True)
+        self.as_user(READER)
+        self.assertEqual(_phone(frappe.get_doc("Contact", contact.name)), "")
+        self.as_user("Administrator")
+        self.assertEqual(_phone(frappe.get_doc("Contact", contact.name)), "+1 650 390 0390")
+
+    def test_dashboard_chart_refuses_a_field_the_user_cannot_read(self):
+        from frappe_assistant_core.plugins.visualization.tools.create_dashboard_chart import (
+            CreateDashboardChart,
+        )
+
+        self.as_user()
+        for arguments in (
+            {"based_on": "description"},
+            {"aggregate_function": "Count", "filters": {"description": ["like", f"%{SECRET}%"]}},
+        ):
+            result = CreateDashboardChart().execute(
+                {"chart_name": "FAC 390 chart", "chart_type": "bar", "doctype": "ToDo", **arguments}
+            )
+            self.assertFalse(result.get("success"), result)
+            self.assertEqual(result.get("error_type"), "field_not_readable", result)
+            self.assertIn("description", result["error"])

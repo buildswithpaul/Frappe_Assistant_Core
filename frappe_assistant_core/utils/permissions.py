@@ -192,14 +192,47 @@ def get_skill_permission_query_conditions(user=None):
     return "(" + " OR ".join(conditions) + ")"
 
 
-# Field-level read access: what of a record, or of a search-index hit, reaches a user who may read
-# the record but not every field of it (GitHub #390). Desk drops such fields, and so must every
-# tool that returns record data. Which field is readable is decided by
-# core.field_access.is_field_readable (permlevel plus FAC's restricted lists).
+# Field-level access: what of a record reaches a user who may read the record but not every field
+# of it (GitHub #390). The rule is Frappe's own: Meta.get_permitted_fieldnames for reading,
+# Meta/Document.get_permlevel_access and BaseDocument.reset_values_if_no_permlevel_access for
+# writing. Each helper asks Frappe once per DocType. With a `user_role`, FAC's own SENSITIVE_FIELDS
+# and ADMIN_ONLY_FIELDS are withheld as well (core.field_access.query_restricted_fields).
 # Imports stay inside the functions: hooks load this module for every permission query.
 
 # What frappe.utils.global_search puts between the "Label : value" parts of a hit's content.
 INDEX_SEPARATOR = " ||| "
+
+
+def field_reader(meta, user_role: str = None, parenttype: str = None):
+    """A `can_read(fieldname)` check for `meta`, built once from Frappe's permitted fields.
+
+    A child table's fields need `parenttype`, as in Frappe: the child has no permissions of its
+    own. A standard column (name, owner, modified) has no DocField and is read with the record.
+    """
+    from frappe_assistant_core.core.field_access import query_restricted_fields
+
+    restricted = query_restricted_fields(meta.name, user_role) if user_role else set()
+    if frappe.session.user == "Administrator":
+        # Document.apply_fieldlevel_read_permissions exempts the Administrator.
+        return lambda fieldname: fieldname not in restricted
+
+    permitted = set(meta.get_permitted_fieldnames(parenttype=parenttype, permission_type="read"))
+
+    def can_read(fieldname: str) -> bool:
+        if fieldname in restricted:
+            return False
+        return fieldname in permitted or meta.get_field(fieldname) is None
+
+    return can_read
+
+
+def readable_value(doc, fieldname: str):
+    """``doc``'s value of ``fieldname`` if the user may read that field, else None.
+
+    For a tool that falls back on a value the user didn't give (a lead's email or phone): a field
+    above the user's permlevel must not be used, nor echoed back, on their behalf.
+    """
+    return doc.get(fieldname) if field_reader(doc.meta)(fieldname) else None
 
 
 def readable_doc_dict(doc, user_role: str) -> dict:
@@ -214,74 +247,143 @@ def readable_doc_dict(doc, user_role: str) -> dict:
     return filter_sensitive_fields(doc.as_dict(), doc.doctype, user_role)
 
 
-def unwritable_fieldnames(doc, fieldnames) -> list:
-    """The `fieldnames` of `doc` above the user's write permlevel.
+def readable_fieldnames(meta, fieldnames: list, user_role: str, parenttype: str = None) -> list:
+    """The `fieldnames` the user may read; matching a text query on any other gives its value away."""
+    can_read = field_reader(meta, user_role, parenttype)
+    return [fieldname for fieldname in fieldnames if can_read(fieldname)]
 
-    Frappe's own rule, from Document.validate_higher_perm_levels: on save it puts back the stored
-    value of each such field, and the Administrator is exempt. Desk shows no editor for them.
+
+def _reset_fieldnames(meta, write_levels, ignored=()) -> set:
+    """Fields of `meta` Frappe puts back on save for a user who may write only `write_levels`.
+
+    BaseDocument.reset_values_if_no_permlevel_access: a field above those levels, not a display
+    field, and not named in the document's flags.ignore_permlevel_for_fields.
     """
     from frappe.model import display_fieldtypes
 
-    if frappe.session.user == "Administrator":
-        return []
-
-    write_levels = doc.get_permlevel_access("write")
-    unwritable = []
-    for fieldname in fieldnames:
-        df = doc.meta.get_field(fieldname)
-        if (
-            df
-            and df.permlevel
-            and df.permlevel not in write_levels
-            and df.fieldtype not in display_fieldtypes
-        ):
-            unwritable.append(fieldname)
-    return unwritable
-
-
-def readable_fieldnames(meta, fieldnames: list, user_role: str) -> list:
-    """The `fieldnames` the user may read; matching a text query on any other gives its value away."""
-    from frappe_assistant_core.core.field_access import is_field_readable
-
-    return [fieldname for fieldname in fieldnames if is_field_readable(meta, fieldname, user_role)]
-
-
-def unreadable_field_labels(doctype: str, user_role: str) -> set:
-    """Labels of the fields, on `doctype` and its child tables, the user may not read."""
-    from frappe_assistant_core.core.field_access import is_field_readable
-
-    meta = frappe.get_meta(doctype)
-    labels = {
-        df.label for df in meta.fields if df.label and not is_field_readable(meta, df.fieldname, user_role)
+    return {
+        df.fieldname
+        for df in meta.get_high_permlevel_fields()
+        if df.permlevel not in write_levels
+        and df.fieldtype not in display_fieldtypes
+        and df.fieldname not in ignored
     }
+
+
+def _skips_permlevel_reset(doc) -> bool:
+    # Document.validate_higher_perm_levels returns early in these cases.
+    return bool(
+        frappe.session.user == "Administrator" or doc.flags.ignore_permissions or frappe.flags.in_install
+    )
+
+
+def unwritable_fieldnames(doc, fieldnames, meta=None) -> list:
+    """The `fieldnames` Frappe will not take from this user when `doc` is saved.
+
+    Frappe's rule, from Document.validate_higher_perm_levels: on save it puts back the stored value
+    (the default, on a new record) of each field above the user's write permlevel. Pass a child
+    table's `meta` to check fields of `doc`'s rows: they use the parent's permissions.
+    """
+    if _skips_permlevel_reset(doc):
+        return []
+    # A row's own flags are not the parent's; only the parent's are known here.
+    ignored = (doc.flags.get("ignore_permlevel_for_fields") or ()) if meta is None else ()
+    reset = _reset_fieldnames(meta or doc.meta, doc.get_permlevel_access("write"), ignored)
+    return [fieldname for fieldname in fieldnames if fieldname in reset]
+
+
+def unwritable_row_fields(doc, data: dict, table_fields: dict) -> list:
+    """`table.field` for each child-row field in `data` Frappe puts back when `doc` is saved.
+
+    Frappe resets child rows only on a record that already exists; a new record's rows keep what
+    they were given.
+    """
+    if doc.is_new() or _skips_permlevel_reset(doc):
+        return []
+    write_levels = doc.get_permlevel_access("write")
+    not_applied = []
+    for field, rows in data.items():
+        if field not in table_fields or not isinstance(rows, list):
+            continue
+        keys = sorted({key for row in rows if isinstance(row, dict) for key in row})
+        reset = _reset_fieldnames(frappe.get_meta(table_fields[field].options), write_levels)
+        not_applied.extend(f"{field}.{key}" for key in keys if key in reset)
+    return not_applied
+
+
+def unwritable_meta_fieldnames(meta) -> set:
+    """Fields of `meta` a new record of it would not take from the session user (Data Import)."""
+    if frappe.session.user == "Administrator":
+        return set()
+    return _reset_fieldnames(meta, meta.get_permlevel_access("write"))
+
+
+def hidden_query_fields(
+    doctype: str, filters=None, order_by: str = None, group_by: str = None, user_role: str = None
+) -> list:
+    """The field references in `filters`, `order_by` and `group_by` the user may not read.
+
+    frappe.get_list strips an unreadable field from `fields`, and Frappe 15.121 refuses one in
+    order_by and group_by, but Frappe 15 runs a filter on it, so repeated filters narrow down its
+    value. Frappe 16 refuses such a filter; this applies that rule on both. A reference Frappe
+    itself would reject (an alias, an unknown column) is left to Frappe.
+    """
+    from frappe_assistant_core.core.field_access import (
+        SORT_DIRECTION,
+        FieldAccessError,
+        expression_columns,
+        filter_references,
+        resolve_field,
+    )
+
+    readers = {}
+
+    def readable(target: str, fieldname: str) -> bool:
+        if target not in readers:
+            meta = frappe.get_meta(target)
+            parenttype = doctype if target != doctype and meta.istable else None
+            readers[target] = field_reader(meta, user_role, parenttype)
+        return readers[target](fieldname)
+
+    references = [
+        (target.replace("`", "").removeprefix("tab") if target else None, reference)
+        for target, reference in filter_references(filters)
+    ]
+    for clause in (order_by, group_by):
+        if clause and isinstance(clause, str):
+            references.extend((None, column) for column in expression_columns(SORT_DIRECTION.sub("", clause)))
+
+    hidden = []
+    for target, reference in references:
+        if target:
+            if not frappe.db.exists("DocType", target):
+                continue
+            fieldname = reference.replace("`", "").strip()
+        else:
+            try:
+                target, fieldname = resolve_field(doctype, reference)
+            except FieldAccessError:
+                continue
+        if not readable(target, fieldname):
+            hidden.append(reference)
+    return hidden
+
+
+def indexes_unreadable_field(doctype: str, user_role: str) -> bool:
+    """Whether the global-search index holds a field of `doctype`, or of its rows, the user may not read.
+
+    Frappe indexes every in_global_search field as "Label : value" with no regard to permlevel, so
+    for such a DocType neither the indexed text nor the fact that a record matched can be shown.
+    """
+    meta = frappe.get_meta(doctype)
+    can_read = field_reader(meta, user_role)
+    if any(not can_read(df.fieldname) for df in meta.get_global_search_fields()):
+        return True
     for table_field in meta.get_table_fields():
         child = frappe.get_meta(table_field.options)
-        labels.update(
-            df.label
-            for df in child.fields
-            if df.label and not is_field_readable(child, df.fieldname, user_role, parenttype=doctype)
-        )
-    return labels
-
-
-def readable_index_content(content: str, hidden_labels: set, query: str, name: str) -> tuple:
-    """(keep the hit, its content without the hidden fields), for a __global_search hit.
-
-    Frappe indexes each field as "Label : value" with no regard to permlevel. A hit whose readable
-    content and name hold none of the query's words matched only on a hidden field, so returning it
-    would confirm that field's value; it is dropped.
-    """
-    if not content or not hidden_labels:
-        return True, content
-
-    parts = content.split(INDEX_SEPARATOR)
-    kept = [
-        part for part in parts if not any(part.strip().startswith(f"{label} : ") for label in hidden_labels)
-    ]
-    if len(kept) == len(parts):
-        return True, content
-
-    readable = INDEX_SEPARATOR.join(kept)
-    searchable = f"{readable} {name}".lower()
-    words = (query or "").lower().split()
-    return (not words or any(word in searchable for word in words)), readable
+        fields = child.get_global_search_fields()
+        if fields:
+            child_can_read = field_reader(child, user_role, parenttype=doctype)
+            if any(not child_can_read(df.fieldname) for df in fields):
+                return True
+    return False

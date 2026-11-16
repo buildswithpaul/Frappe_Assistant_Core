@@ -43,6 +43,7 @@ Use this, not `get_doctype_info`, for imports. `get_doctype_info` returns a DocT
 - **`link`**: the value must be an existing record of that DocType (e.g. an Item Group that exists).
 - **`options`**: a Select field accepts only these values. Very long lists are cut to 25, with `options_total`.
 - **`note`**: what to know about the field. A field Frappe types "Read Only" is listed as `Data` with a note: it is importable, and the note says what becomes of the value (e.g. Customer's `mobile_no`: "On a new Customer, ERPNext creates the primary contact from this.").
+- **Fields left out**: a field above the user's write permission level isn't listed, because Frappe would keep its default and the column would import as blank. If the file has a column for one, map it to "Don't Import" and tell the user someone with that access must fill it.
 - **`child_tables`**: rows inside the record, such as an Item's barcodes. Map their columns as `barcodes.barcode`. A table with a `note` (Frappe 16's `contacts` and `addresses` on Customer and Supplier) holds other records the import creates and links to the record.
 
 ## When it fails
