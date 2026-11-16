@@ -95,6 +95,56 @@ describe("createPageReach", () => {
 		expect(shown).toEqual({ fields: [], methods: [] });
 	});
 
+	it.each([
+		["a hidden field it asked for, whatever the answer's shape", { fields: ["name", "iban"], as_dict: 0 }, [["B-1", "DE89"]], ["iban"], []],
+		["a hidden field named through its table", { fields: '["`tabBank Account`.`iban`"]' }, [], ["iban"], []],
+		["a hidden field asked for by get_value", { fieldname: ["iban"] }, {}, ["iban"], []],
+		["an alias, which renames a field in the answer", { fields: ["iban as x"] }, [{ x: "DE89" }], [], ["frappe.client.get_list"]],
+		["an alias written without AS", { fields: ["`tabBank Account`.iban x"] }, [{ x: "DE89" }], [], ["frappe.client.get_list"]],
+		["an expression", { fields: ["concat(iban, '')"] }, [{ c: "DE89" }], [], ["frappe.client.get_list"]],
+	])("counts %s", async (_, args, answer, fields, methods) => {
+		const shown = await reachAfter(WITHHELD, [["frappe.client.get_list", { doctype: "Bank Account", ...args }, answer]]);
+		expect(shown).toEqual({ fields, methods });
+	});
+
+	it("counts a hidden field asked for or answered in upper case, which MariaDB reads as the same column", async () => {
+		const asked = await reachAfter(WITHHELD, [["frappe.client.get_list", { doctype: "Bank Account", fields: ["IBAN"] }, []]]);
+		const answered = await reachAfter(WITHHELD, [["frappe.client.get", { doctype: "Bank Account" }, { IBAN: "DE89" }]]);
+		expect(asked.fields).toEqual(["iban"]);
+		expect(answered.fields).toEqual(["iban"]);
+	});
+
+	it("checks each record in an answer against its own doctype's hidden fields", async () => {
+		const saved = await reachAfter(WITHHELD, [
+			["frappe.client.save", { doc: { doctype: "User", name: "u" } }, { doctype: "User", name: "u", last_login: "x" }],
+		]);
+		const child = await reachAfter(WITHHELD, [
+			["frappe.client.get", { doctype: "Team", name: "T" }, { doctype: "Team", members: [{ doctype: "User", last_login: "x" }] }],
+		]);
+		expect(saved.fields).toEqual(["last_login"]);
+		expect(child.fields).toEqual(["last_login"]);
+	});
+
+	it("checks a field read through a link against every doctype's hidden fields", async () => {
+		const shown = await reachAfter(WITHHELD, [
+			["frappe.client.get_list", { doctype: "ToDo", fields: ["allocated_to.last_login"] }, [{ last_login: "x" }]],
+		]);
+		expect(shown.fields).toEqual(["last_login"]);
+	});
+
+	it("finds a hidden field that is an old-style report column, named by its label", async () => {
+		const shown = await reachAfter(WITHHELD, [
+			["frappe.desk.query_report.run", { report_name: "Bank" }, { columns: ["Supplier:Link/Supplier:120", "IBAN:Data:100"], result: [["S", "DE89"]] }],
+		]);
+		expect(shown.fields).toEqual(["iban"]);
+	});
+
+	it("counts an answer too big to search as one it can't check", async () => {
+		const rows = Array.from({ length: 60000 }, (_, i) => ({ n: i }));
+		const shown = await reachAfter(WITHHELD, [["frappe.client.get_list", { doctype: "ToDo" }, rows]]);
+		expect(shown.methods).toEqual(["frappe.client.get_list"]);
+	});
+
 	it("hands the call's own answer and failure back unchanged", async () => {
 		const reach = createPageReach(WITHHELD);
 		const answer = { iban: "DE89" };

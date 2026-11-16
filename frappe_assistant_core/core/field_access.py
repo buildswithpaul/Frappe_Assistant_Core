@@ -72,6 +72,9 @@ def withheld_from_assistant(user_role: str) -> dict:
 
     `fields` are hidden on every DocType, `doctypes` maps a DocType to its further hidden fields,
     and `hidden_doctypes` are DocTypes hidden whole. All three are empty for a System Manager.
+    Like query_restricted_fields, it leaves out owner, modified_by, docstatus and the rest of
+    ADMIN_ONLY_FIELDS["all_doctypes"]: they are write-protected for an Assistant User, not secret,
+    and Desk shows them on every record.
     """
     everywhere = query_restricted_fields("", user_role)
     named = (set(SENSITIVE_FIELDS) | set(ADMIN_ONLY_FIELDS)) - {"all_doctypes"}
