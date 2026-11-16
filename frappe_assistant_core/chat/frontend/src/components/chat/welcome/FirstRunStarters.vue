@@ -2,14 +2,18 @@
 	<div class="frs">
 		<button
 			v-for="card in cards"
-			:key="card.text"
+			:key="card.prompt"
 			type="button"
 			class="frs-card"
-			@click="$emit('pick', card.text)"
+			:class="`frs-card--${card.kind}`"
+			@click="$emit('pick', card.prompt)"
 		>
 			<span class="frs-preview" :class="`frs-preview--${card.kind}`" aria-hidden="true">
 				<template v-if="card.kind === 'see'">
 					<i v-for="h in BAR_HEIGHTS" :key="h" :style="{ height: `${h}%` }"></i>
+				</template>
+				<template v-else-if="card.kind === 'bring'">
+					<i v-for="w in BRING_WIDTHS" :key="w" :style="{ width: `${w}%` }"></i>
 				</template>
 				<template v-else-if="card.kind === 'find'">
 					<i v-for="w in ROW_WIDTHS" :key="w" :style="{ width: `${w}%` }"></i>
@@ -27,6 +31,7 @@
 <script setup>
 import { computed } from "vue";
 import { __ } from "@/utils/i18n";
+import { BRING_DATA_SOURCE } from "./bringDataStarter";
 
 const props = defineProps({ tiles: { type: Array, default: () => [] } });
 defineEmits(["pick"]);
@@ -34,6 +39,7 @@ defineEmits(["pick"]);
 const BAR_HEIGHTS = [38, 62, 48, 86, 70];
 const ROW_WIDTHS = [92, 78, 86, 64];
 const EMAIL_WIDTHS = [48, 100, 90, 56];
+const BRING_WIDTHS = [100, 100, 100];
 
 const KINDS = ["see", "find", "do"];
 const KIND_LABELS = [
@@ -47,20 +53,26 @@ const KIND_LABELS = [
 // personalized tile without a kind never takes a labelled slot. A missing kind is filled from the remaining tiles, shown
 // without a label and previewed as its own kind when it has one.
 const cards = computed(() => {
+	const starters = props.tiles.filter((t) => t.source !== BRING_DATA_SOURCE);
 	const picked = KIND_LABELS.map(({ kind, label }) => {
-		const tile = props.tiles.find((t) => t.kind === kind);
+		const tile = starters.find((t) => t.kind === kind);
 		return tile ? { kind, label: label(), tile } : { kind, label: "", tile: null };
 	});
 	const used = new Set(picked.map((c) => c.tile).filter(Boolean));
-	const spare = props.tiles.filter((t) => !used.has(t));
-	return picked
+	const spare = starters.filter((t) => !used.has(t));
+	// The "Bring your data in" tile is offered beside the three kinds, never in their place.
+	const bring = props.tiles
+		.filter((t) => t.source === BRING_DATA_SOURCE)
+		.map((t) => ({ kind: "bring", label: t.title, text: t.subtext, prompt: t.description }));
+	const kindCards = picked
 		.map((c) => {
 			if (c.tile) return c;
 			const tile = spare.shift() || null;
 			return { ...c, kind: KINDS.includes(tile?.kind) ? tile.kind : "find", tile };
 		})
 		.filter((c) => c.tile)
-		.map((c) => ({ kind: c.kind, label: c.label, text: c.tile.description }));
+		.map((c) => ({ kind: c.kind, label: c.label, text: c.tile.description, prompt: c.tile.description }));
+	return [...kindCards, ...bring];
 });
 </script>
 
@@ -87,8 +99,9 @@ const cards = computed(() => {
 .frs-preview--see { align-items: flex-end; }
 .frs-preview--see i { flex: 1; background: var(--ql-accent); opacity: 0.55; }
 .frs-preview--see i:nth-child(4) { opacity: 1; }
-.frs-preview--find, .frs-preview--do { flex-direction: column; justify-content: center; gap: 6px; }
-.frs-preview--find i, .frs-preview--do i { height: 6px; }
+.frs-card--bring { grid-column: 1 / -1; }
+.frs-preview--find, .frs-preview--do, .frs-preview--bring { flex-direction: column; justify-content: center; gap: 6px; }
+.frs-preview--find i, .frs-preview--do i, .frs-preview--bring i { height: 6px; }
 .frs-preview--do i:first-child { background: var(--ql-gold); }
 @media (max-width: 719px) {
 	.frs { grid-template-columns: 1fr; }

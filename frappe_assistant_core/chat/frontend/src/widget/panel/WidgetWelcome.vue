@@ -50,6 +50,7 @@ import { useChatStore } from "@/stores/chatStore";
 import { useSuggestionStore } from "@/stores/suggestionStore";
 import { greetingLineForHour, displayNameFromUser } from "@/components/chat/welcomeGreeting";
 import { selectWelcomeTiles } from "@/components/chat/welcome/welcomeRelevance";
+import { withBringData } from "@/components/chat/welcome/bringDataStarter";
 import { fillPageAsk } from "@/components/chat/welcome/pageAskFill";
 import { useHomeSignals } from "@/composables/useHomeSignals";
 import { __ } from "@/utils/i18n";
@@ -89,11 +90,13 @@ const tiles = computed(() =>
 	selectWelcomeTiles({
 		suggestions: starterSuggestions.value,
 		resumePreviews: resumeSessions.value.map((s) => s.preview || ""),
+		bringData: suggestionStore.bringDataIn,
 	})
 );
 const firstRunTiles = computed(() => {
 	const starters = starterSuggestions.value.filter((s) => s.description);
-	return starters.length ? starters : tiles.value;
+	// The fallback tiles already carry the starter.
+	return starters.length ? withBringData(starters, suggestionStore.bringDataIn) : tiles.value;
 });
 
 // The document name stays in this browser: the server only ever sees {type, doctype}.
