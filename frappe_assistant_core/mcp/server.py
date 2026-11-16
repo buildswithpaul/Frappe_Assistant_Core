@@ -343,6 +343,12 @@ class MCPServer:
         except Exception:
             pass
 
+        from frappe_assistant_core.core import tool_pack_listing
+        from frappe_assistant_core.utils.plugin_manager import get_plugin_manager
+
+        packs = get_plugin_manager().get_tool_packs()
+        pack_of = tool_pack_listing.pack_map(packs)
+
         for tool in tool_registry.values():
             description = tool["description"]
 
@@ -361,9 +367,22 @@ class MCPServer:
             if tool.get("annotations"):
                 tool_spec["annotations"] = tool["annotations"]
 
+            if tool["name"] in pack_of:
+                tool_spec["_meta"] = {"fac/pack": pack_of[tool["name"]]}
+
             tools_list.append(tool_spec)
 
-        return {"tools": tools_list}
+        result = {"tools": tools_list}
+
+        # Only AR reads the catalogue; other MCP clients get the listing unchanged.
+        ar_session_id = getattr(frappe.local, "ar_session_id", None)
+        if ar_session_id:
+            result["_meta"] = {
+                "fac/packs": tool_pack_listing.catalogue(packs, (t["name"] for t in tools_list)),
+                "fac/wanted_packs": tool_pack_listing.wanted_packs(ar_session_id, frappe.session.user, packs),
+            }
+
+        return result
 
     def _handle_tools_call(self, params: Dict, tool_registry: Optional[Dict] = None) -> Dict:
         """
