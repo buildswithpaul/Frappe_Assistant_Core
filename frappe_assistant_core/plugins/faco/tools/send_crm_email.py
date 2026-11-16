@@ -6,6 +6,7 @@ from frappe import _
 from frappe_assistant_core.plugins.faco.crm.email import crm_sender
 from frappe_assistant_core.plugins.faco.crm.tool import RECORD_SCHEMA, CrmTool, resolve_record
 from frappe_assistant_core.utils.message_body import as_html_body
+from frappe_assistant_core.utils.permissions import readable_value
 from frappe_assistant_core.utils.savepoint import open_savepoint, release_savepoint, rollback_to_savepoint
 
 # make() inserts the Communication before it sends; a send that fails must not leave an
@@ -55,7 +56,9 @@ class SendCrmEmail(CrmTool):
         message = arguments.get("message") or ""
         if not subject or not message.strip():
             return {"success": False, "error": _("The email needs a subject and a message")}
-        recipients = _addresses(arguments.get("recipients")) or _addresses([doc.get("email")])
+        # The record's own address only from a field the user may read (#390): it is sent to and
+        # returned in `recipients`.
+        recipients = _addresses(arguments.get("recipients")) or _addresses([readable_value(doc, "email")])
         if not recipients:
             return {
                 "success": False,

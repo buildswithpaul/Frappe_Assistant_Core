@@ -350,6 +350,32 @@ class TestFieldLevelReadAccess(BaseAssistantTest):
         self.as_user(READER)
         self.assertIn("description", [field["fieldname"] for field in build_import_schema("ToDo")["fields"]])
 
+    def test_a_fallback_value_comes_only_from_a_field_the_user_may_read(self):
+        # send_crm_email falls back on the lead's email and add_crm_activity on its phone: a
+        # hidden one was sent to, or logged on a call, and returned to the user.
+        from frappe_assistant_core.utils.permissions import readable_value
+
+        self.as_user()
+        self.assertIsNone(readable_value(frappe.get_doc("ToDo", self.todo.name), "description"))
+        self.as_user(READER)
+        self.assertIn(SECRET, readable_value(frappe.get_doc("ToDo", self.todo.name), "description"))
+
+    def test_a_call_log_does_not_take_a_phone_number_the_user_cannot_read(self):
+        from frappe_assistant_core.plugins.faco.tools.add_crm_activity import _phone
+
+        self.raise_permlevel("Contact", "mobile_no")
+        contact = frappe.get_doc(
+            {
+                "doctype": "Contact",
+                "first_name": "FAC 390",
+                "phone_nos": [{"phone": "+1 650 390 0390", "is_primary_mobile_no": 1}],
+            }
+        ).insert(ignore_permissions=True)
+        self.as_user(READER)
+        self.assertEqual(_phone(frappe.get_doc("Contact", contact.name)), "")
+        self.as_user("Administrator")
+        self.assertEqual(_phone(frappe.get_doc("Contact", contact.name)), "+1 650 390 0390")
+
     def test_dashboard_chart_refuses_a_field_the_user_cannot_read(self):
         from frappe_assistant_core.plugins.visualization.tools.create_dashboard_chart import (
             CreateDashboardChart,

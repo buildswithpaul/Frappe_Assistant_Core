@@ -211,8 +211,12 @@ def field_reader(meta, user_role: str = None, parenttype: str = None):
     """
     from frappe_assistant_core.core.field_access import query_restricted_fields
 
-    permitted = set(meta.get_permitted_fieldnames(parenttype=parenttype, permission_type="read"))
     restricted = query_restricted_fields(meta.name, user_role) if user_role else set()
+    if frappe.session.user == "Administrator":
+        # Document.apply_fieldlevel_read_permissions exempts the Administrator.
+        return lambda fieldname: fieldname not in restricted
+
+    permitted = set(meta.get_permitted_fieldnames(parenttype=parenttype, permission_type="read"))
 
     def can_read(fieldname: str) -> bool:
         if fieldname in restricted:
@@ -220,6 +224,15 @@ def field_reader(meta, user_role: str = None, parenttype: str = None):
         return fieldname in permitted or meta.get_field(fieldname) is None
 
     return can_read
+
+
+def readable_value(doc, fieldname: str):
+    """``doc``'s value of ``fieldname`` if the user may read that field, else None.
+
+    For a tool that falls back on a value the user didn't give (a lead's email or phone): a field
+    above the user's permlevel must not be used, nor echoed back, on their behalf.
+    """
+    return doc.get(fieldname) if field_reader(doc.meta)(fieldname) else None
 
 
 def readable_doc_dict(doc, user_role: str) -> dict:
