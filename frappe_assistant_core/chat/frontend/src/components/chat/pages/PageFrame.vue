@@ -7,10 +7,11 @@ import { onBeforeUnmount, onMounted, ref, watch } from "vue";
 
 import { baseCall, getCall } from "@/api/_core";
 import { createPageFrame, queryArgs } from "@/utils/pageFrameHost";
+import { createPageReach } from "@/utils/pageReach";
 
 // A personal page ("Only me"): it runs at once, inside a frame that cannot act as the user.
 const props = defineProps({
-	// get_page's response: {title, html, script, style}.
+	// get_page's response: {title, html, script, style, withheld}.
 	page: { type: Object, required: true },
 	user: { type: String, default: "" },
 	kitCss: { type: String, default: "" },
@@ -26,6 +27,8 @@ const emit = defineEmits(["unsupported", "error", "ready", "present-key"]);
 
 const container = ref(null);
 let frame = null;
+// What the page has shown that FAC's tools hide from FACO, for FACO's screenshot.
+const reach = createPageReach(props.page.withheld);
 
 // Set by the SPA build (vite.config.js); a test run has none.
 const BUILD_ID = typeof __FAC_BUILD_ID__ !== "undefined" ? __FAC_BUILD_ID__ : "";
@@ -40,8 +43,8 @@ onMounted(() => {
 		pageName: props.pageName,
 		// The host has checked the name is a plain dotted path; encoding it keeps it one path segment.
 		transport: {
-			get: (method, args) => getCall(encodeURIComponent(method), queryArgs(args)),
-			post: (method, args) => baseCall(encodeURIComponent(method), args),
+			get: (method, args) => reach.watch(method, args, getCall(encodeURIComponent(method), queryArgs(args))),
+			post: (method, args) => reach.watch(method, args, baseCall(encodeURIComponent(method), args)),
 		},
 		askUser: (request) => props.askUser(request),
 		onError: (message) => emit("error", new Error(message)),
@@ -64,6 +67,7 @@ defineExpose({
 	snapshot: () => frame.snapshot(),
 	present: (command, index) => frame.present(command, index),
 	errors: () => frame?.errors || [],
+	shown: () => reach.shown(),
 });
 </script>
 
