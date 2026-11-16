@@ -698,9 +698,10 @@ class TestUpdateFetchedFields(UpdateCase):
         self.assertEqual((group["count"], group["field"]), (1, "email_id"), group)
         self.assertEqual((result["ready"], result["failed"]), (1, 1), result)
 
-    def test_a_link_the_user_cannot_read_is_not_named(self):
-        # The dry run reads the stored link with frappe.db; a link above the user's permlevel
-        # must not reach the message (review of #390).
+    def test_a_link_the_user_cannot_read_decides_nothing(self):
+        # The dry run reads the stored link with frappe.db; a link above the user's permlevel must
+        # not reach the message, nor decide whether a row is flagged (reviews of #390 and #412).
+        # Customer a has the contact set and b has none: both rows read the same.
         self._need_fetched()
         frappe.make_property_setter(
             {
@@ -721,8 +722,9 @@ class TestUpdateFetchedFields(UpdateCase):
 
         _session, result = self._check(self._rows("999", "888"))
 
-        [group] = [g for g in result["groups"] if g["cause"] == "Comes from a linked record"]
-        self.assertEqual(group["field"], "mobile_no", group)
+        self.assertEqual(
+            [g for g in result["groups"] if g["cause"] == "Comes from a linked record"], [], result
+        )
         self.assertNotIn(self.contact, json.dumps(result, default=str))
 
     def test_the_groups_fix_is_to_leave_the_rows_out(self):

@@ -392,3 +392,215 @@ class TestFieldLevelReadAccess(BaseAssistantTest):
             self.assertFalse(result.get("success"), result)
             self.assertEqual(result.get("error_type"), "field_not_readable", result)
             self.assertIn("description", result["error"])
+
+    # Second review of PR #412. A name the user types must resolve to a field exactly, or it is
+    # refused: MariaDB reads DESCRIPTION as description, and Frappe 15 passes ifnull(...) through.
+
+    def test_run_python_code_refuses_a_name_that_only_resembles_a_hidden_field(self):
+        from frappe_assistant_core.utils import sandbox_frappe
+
+        like = ["like", f"%{SECRET}%"]
+        self.as_user()
+        for kwargs in (
+            {"filters": [["DESCRIPTION", *like]]},
+            {"filters": {"Description": like}},
+            {"filters": [["ifnull(description, '')", *like]]},
+            {"filters": [["ToDo", "DESCRIPTION", *like]]},
+            {"or_filters": [["DESCRIPTION", *like]]},
+            {"order_by": "DESCRIPTION desc"},
+            {"order_by": "ifnull(description, '') desc"},
+            {"group_by": "DESCRIPTION"},
+        ):
+            with self.subTest(kwargs=kwargs), self.assertRaises(frappe.PermissionError):
+                sandbox_frappe.get_list("ToDo", fields=["name"], **kwargs)
+        with self.assertRaises(frappe.PermissionError):
+            sandbox_frappe.count("ToDo", [["DESCRIPTION", *like]])
+
+    def test_run_python_code_refuses_an_expression_or_alias_over_a_hidden_field(self):
+        # Frappe 15 keeps an expression such as max(description)*1 in the SELECT, and an alias that
+        # matches a column in another case lets MariaDB sort by that column.
+        from frappe_assistant_core.utils import sandbox_frappe
+
+        self.as_user()
+        for kwargs in (
+            {"fields": ["name", "max(description)*1 as d"]},
+            {"fields": ["name", "description as DESCRIPTION"], "order_by": "DESCRIPTION desc"},
+            {"fields": ["name", "count(name) as DESCRIPTION"], "order_by": "DESCRIPTION desc"},
+            {"fields": ["name", {"MAX": "description", "as": "d"}]},
+        ):
+            with self.subTest(kwargs=kwargs), self.assertRaises(frappe.PermissionError):
+                sandbox_frappe.get_list("ToDo", **kwargs)
+        with self.assertRaises(frappe.PermissionError):
+            sandbox_frappe.get_value("ToDo", self.todo.name, "max(description)*1")
+
+        self.as_user(READER)
+        self.assertIn(SECRET, sandbox_frappe.get_value("ToDo", self.todo.name, "max(description) as d"))
+
+    def test_a_child_field_needs_a_parent_that_holds_the_table(self):
+        from frappe_assistant_core.utils.permissions import field_reader
+
+        self.raise_permlevel("Contact Phone", "phone")
+        self.as_user(READER)
+        child = frappe.get_meta("Contact Phone")
+        for parenttype in ("Contact Phone", "ToDo", "No Such DocType", None):
+            with self.subTest(parenttype=parenttype):
+                self.assertFalse(field_reader(child, parenttype=parenttype)("phone"))
+
+    def test_run_python_code_still_takes_fields_sorts_and_aliases_it_may_use(self):
+        from frappe_assistant_core.utils import sandbox_frappe
+
+        self.as_user()
+        rows = sandbox_frappe.get_list(
+            "ToDo",
+            fields=["status", "count(name) as total"],
+            filters=[["ToDo", "status", "=", "Open"], ["allocated_to", "=", USER]],
+            group_by="status",
+            order_by="total desc",
+        )
+        self.assertEqual([(row["status"], row["total"]) for row in rows], [("Open", 1)])
+        rows = sandbox_frappe.get_list(
+            "ToDo",
+            filters={"name": self.todo.name},
+            fields=["name"],
+            order_by="`tabToDo`.modified desc, creation",
+        )
+        self.assertEqual([row["name"] for row in rows], [self.todo.name])
+
+    def test_run_python_code_takes_aliases_and_expressions_over_readable_fields(self):
+        # Sandbox code that worked before the fail-closed check must keep working: grouping by an
+        # alias, and Frappe 15's ifnull(...) filter key on a field the user may read.
+        from frappe_assistant_core.utils import sandbox_frappe
+        from frappe_assistant_core.utils.permissions import hidden_query_fields
+
+        self.as_user()
+        fields = ["date(creation) as day", "count(name) as n", {"COUNT": "*", "as": "c"}, "count(*) as k"]
+        self.assertEqual(
+            hidden_query_fields("ToDo", group_by="day", aliases={"day", "n", "c", "k"}, fields=fields), []
+        )
+        self.assertEqual(hidden_query_fields("ToDo", filters=[["ifnull(status, '')", "=", "Open"]]), [])
+        # The same forms over a hidden field, or an alias that names a column, stay refused.
+        self.assertEqual(
+            hidden_query_fields("ToDo", group_by="DESCRIPTION", aliases={"DESCRIPTION"}), ["DESCRIPTION"]
+        )
+        hidden_ifnull = "ifnull(description, '')"
+        self.assertEqual(
+            hidden_query_fields("ToDo", filters=[[hidden_ifnull, "like", "%a%"]]), [hidden_ifnull]
+        )
+
+        if int(frappe.__version__.split(".")[0]) < 16:  # Frappe 16 refuses these SQL forms itself
+            rows = sandbox_frappe.get_list(
+                "ToDo", fields=["date(creation) as day", "count(name) as n"], group_by="day"
+            )
+            self.assertTrue(rows)
+            rows = sandbox_frappe.get_list(
+                "ToDo", filters=[["ifnull(status, '')", "=", "Open"]], fields=["name"]
+            )
+            self.assertIn(self.todo.name, [row["name"] for row in rows])
+
+    def test_run_python_code_queries_a_child_table_through_its_parent(self):
+        from frappe_assistant_core.utils import sandbox_frappe
+
+        phone = "+1 650 390 0390"
+        contact = frappe.get_doc(
+            {"doctype": "Contact", "first_name": "FAC 412", "phone_nos": [{"phone": phone}]}
+        ).insert(ignore_permissions=True)
+        self.as_user(READER)
+        rows = sandbox_frappe.get_all(
+            "Contact Phone", filters={"phone": phone}, fields=["parent"], parent_doctype="Contact"
+        )
+        self.assertIn(contact.name, [row["parent"] for row in rows])
+
+        # A child field above the levels the parent grants stays refused, and with no parent
+        # named only the child's level-0 fields may be used.
+        self.as_user("Administrator")
+        self.raise_permlevel("Contact Phone", "phone")
+        self.as_user(READER)
+        for kwargs in ({"parent_doctype": "Contact"}, {}):
+            with self.subTest(kwargs=kwargs), self.assertRaises(frappe.PermissionError):
+                sandbox_frappe.get_all("Contact Phone", filters={"phone": phone}, fields=["parent"], **kwargs)
+
+    def test_link_search_does_not_match_or_show_a_hidden_search_field(self):
+        # ToDo's search_fields include description: Frappe matches the text against it and shows
+        # its value in each result's description.
+        self.as_user()
+        result = SearchTools.search_link(doctype="ToDo", query=SECRET)
+        self.assertTrue(result.get("success"), result)
+        self.assertEqual(result["results"], [])
+
+        result = SearchTools.search_link(doctype="ToDo", query=self.todo.name)
+        self.assertEqual([row["value"] for row in result["results"]], [self.todo.name])
+        self.assertNoSecret(result)
+
+    def test_link_search_still_matches_a_search_field_the_user_may_read(self):
+        self.as_user(READER)
+        result = SearchTools.search_link(doctype="ToDo", query=SECRET)
+        self.assertIn(self.todo.name, [row["value"] for row in result["results"]])
+
+    def test_link_search_passes_an_apps_own_filter_keys_to_its_query(self):
+        # A standard_queries hook (Frappe's own User query, say) takes keys that aren't columns.
+        hooked = patch(
+            "frappe_assistant_core.plugins.core.tools.search_tools.has_link_query",
+            autospec=True,
+            return_value=True,
+        )
+        frappe_search = patch("frappe.desk.search.search_link", autospec=True, return_value=[])
+        with hooked, frappe_search as search:
+            self.as_user(READER)
+            result = SearchTools.search_link(doctype="ToDo", query="", filters={"warehouse": "Stores"})
+            self.assertTrue(result.get("success"), result)
+            search.assert_called_once()
+
+            # A key that names a field, in any case, or isn't a plain ASCII name, is still checked.
+            self.as_user()
+            for filters in (
+                {"description": "x"},
+                {"DESCRIPTION": "x"},
+                {"ifnull(description, '')": "x"},
+                {"dèscription": "x"},
+            ):
+                result = SearchTools.search_link(doctype="ToDo", query="", filters=filters)
+                self.assertFalse(result.get("success"), (filters, result))
+
+    def test_link_search_over_readable_fields_keeps_an_apps_query_usable(self):
+        # ToDo's search fields include the hidden description, so FAC searches the readable ones
+        # itself. The app's own keys can't apply there and are left out; column keys still apply.
+        hooked = patch(
+            "frappe_assistant_core.plugins.core.tools.search_tools.has_link_query",
+            autospec=True,
+            return_value=True,
+        )
+        with hooked:
+            self.as_user()
+            result = SearchTools.search_link(
+                doctype="ToDo", query=self.todo.name, filters={"warehouse": "Stores", "status": "Open"}
+            )
+            self.assertTrue(result.get("success"), result)
+            self.assertEqual([row["value"] for row in result["results"]], [self.todo.name])
+            result = SearchTools.search_link(
+                doctype="ToDo", query=self.todo.name, filters={"warehouse": "Stores", "status": "Closed"}
+            )
+            self.assertEqual(result["results"], [], result)
+
+    def test_the_administrator_may_query_every_field_as_they_may_read_it(self):
+        # One rule for reading and querying: Document.apply_fieldlevel_read_permissions exempts
+        # the Administrator, so the query check does too.
+        from frappe_assistant_core.core.field_access import check_query_fields
+
+        self.raise_permlevel("ToDo", "description", permlevel=2)
+        self.as_user("Administrator")
+        check_query_fields("ToDo", "System Manager", filters={"description": "x"})
+
+    def test_dashboard_chart_refuses_a_name_that_only_resembles_a_hidden_field(self):
+        from frappe_assistant_core.plugins.visualization.tools.create_dashboard_chart import (
+            CreateDashboardChart,
+        )
+
+        self.as_user()
+        for arguments in (
+            {"based_on": "DESCRIPTION"},
+            {"aggregate_function": "Count", "filters": [["DESCRIPTION", "like", f"%{SECRET}%"]]},
+        ):
+            result = CreateDashboardChart().execute(
+                {"chart_name": "FAC 412 chart", "chart_type": "bar", "doctype": "ToDo", **arguments}
+            )
+            self.assertEqual(result.get("error_type"), "field_not_readable", result)

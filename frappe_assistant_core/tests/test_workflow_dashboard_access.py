@@ -54,6 +54,22 @@ class TestRunWorkflowReadCheck(RealWorkflowTestCase):
         self.assertNotIn(self.states["Draft"], json.dumps(result, default=str))
         self.assertNotIn("available_actions", result)
 
+    def test_a_user_who_may_read_none_of_the_doctype_cannot_tell_which_names_exist(self):
+        self.make_workflow()
+        doc = self.make_transaction()
+        outsider = self.make_desk_user("fac-wf-guesser")
+
+        # nosemgrep: frappe-setuser — runs as a real user; tearDown restores Administrator
+        frappe.set_user(outsider)
+        self.assertFalse(frappe.has_permission(DOCTYPE, "read"))
+        existing, missing = (
+            RunWorkflow().execute({"doctype": DOCTYPE, "name": name, "action": APPROVE})
+            for name in (doc.name, "FAC-NO-SUCH-RECORD")
+        )
+
+        self.assertEqual(missing.get("error_type"), "permission_error", missing)
+        self.assertEqual(existing.get("error"), missing.get("error"))
+
 
 class TestListUserDashboardsAccess(BaseAssistantTest):
     def tearDown(self):

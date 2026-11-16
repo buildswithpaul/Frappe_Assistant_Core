@@ -28,7 +28,7 @@ import frappe
 from frappe import _
 
 from frappe_assistant_core.core.base_tool import BaseTool, exception_message, permission_error_result
-from frappe_assistant_core.core.field_access import FieldAccessError
+from frappe_assistant_core.core.field_access import FieldAccessError, is_column
 from frappe_assistant_core.core.security_config import get_user_primary_role
 from frappe_assistant_core.utils.permissions import field_reader, hidden_query_fields
 
@@ -133,7 +133,9 @@ class CreateDashboardChart(BaseTool):
             if hidden:
                 return {
                     "success": False,
-                    "error": f"You do not have permission to chart by the field {', '.join(hidden)}.",
+                    "error": _("You can't chart {0} by {1}: it is not a field your role can read.").format(
+                        _(doctype), ", ".join(hidden)
+                    ),
                     "error_type": "field_not_readable",
                 }
             # Only fields the user may read, so auto-detection never picks a hidden one.
@@ -247,7 +249,12 @@ class CreateDashboardChart(BaseTool):
             arguments.get(key)
             for key in ("value_based_on", "based_on", "group_by_based_on", "time_series_based_on")
         ]
-        hidden = [field for field in named if isinstance(field, str) and field and not can_read(field)]
+        # Exactly a field, or MariaDB would still group by `DESCRIPTION` as description.
+        hidden = [
+            field
+            for field in named
+            if isinstance(field, str) and field and not (is_column(meta.name, field) and can_read(field))
+        ]
         filters = arguments.get("filters")
         if filters:
             try:

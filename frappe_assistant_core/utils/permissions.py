@@ -15,6 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import json
+import re
 
 import frappe
 from frappe import _, get_doc, has_permission
@@ -202,12 +203,25 @@ def get_skill_permission_query_conditions(user=None):
 # What frappe.utils.global_search puts between the "Label : value" parts of a hit's content.
 INDEX_SEPARATOR = " ||| "
 
+# A selected expression that names no column at all: count(*), optionally aliased.
+COUNT_ALL = re.compile(r"^\s*count\s*\(\s*\*\s*\)\s*(as\s+`?\w+`?)?\s*$", re.IGNORECASE)
+
 
 def field_reader(meta, user_role: str = None, parenttype: str = None):
-    """A `can_read(fieldname)` check for `meta`, built once from Frappe's permitted fields.
+    """A `can_read(fieldname)` check for `meta`: FAC's one rule for reading a field.
 
-    A child table's fields need `parenttype`, as in Frappe: the child has no permissions of its
-    own. A standard column (name, owner, modified) has no DocField and is read with the record.
+    The rule of Frappe 16's filter check (DatabaseQuery._check_field_permission): a field above
+    permlevel 0 is readable only at a level the user's roles grant (Meta.get_permlevel_access); a
+    level-0 field goes with the record the user may already query; a DocType with no permission
+    rules shows every field. Meta.get_permitted_fieldnames, which Frappe uses to strip read
+    results, is stricter for a select-only user and for a child with no parent; FAC strips
+    results through Frappe itself, so this rule only decides what a user may query or is shown
+    by FAC. A child table's levels come from a parent (`parenttype`) that embeds it; with no such
+    parent, only its level-0 fields are readable.
+
+    This answers for a known field. A name with no DocField (a standard column such as name or
+    owner) counts as readable, so a name the caller typed must be resolved first
+    (core.field_access.check_field), which refuses one it can't match.
     """
     from frappe_assistant_core.core.field_access import query_restricted_fields
 
@@ -216,14 +230,28 @@ def field_reader(meta, user_role: str = None, parenttype: str = None):
         # Document.apply_fieldlevel_read_permissions exempts the Administrator.
         return lambda fieldname: fieldname not in restricted
 
-    permitted = set(meta.get_permitted_fieldnames(parenttype=parenttype, permission_type="read"))
+    if meta.istable and not _embeds(parenttype, meta.name):
+        levels = {0}
+    elif not meta.get_permissions(parenttype=parenttype):
+        return lambda fieldname: fieldname not in restricted
+    else:
+        levels = {0, *meta.get_permlevel_access("read", parenttype=parenttype)}
 
     def can_read(fieldname: str) -> bool:
         if fieldname in restricted:
             return False
-        return fieldname in permitted or meta.get_field(fieldname) is None
+        df = meta.get_field(fieldname)
+        return df is None or (df.permlevel or 0) in levels
 
     return can_read
+
+
+def _embeds(parenttype: str, child: str) -> bool:
+    """Whether `parenttype` is a DocType of its own with a table of `child` rows."""
+    if not parenttype or not frappe.db.exists("DocType", parenttype):
+        return False
+    parent = frappe.get_meta(parenttype)
+    return not parent.istable and any(df.options == child for df in parent.get_table_fields())
 
 
 def readable_value(doc, fieldname: str):
@@ -277,18 +305,17 @@ def _skips_permlevel_reset(doc) -> bool:
     )
 
 
-def unwritable_fieldnames(doc, fieldnames, meta=None) -> list:
-    """The `fieldnames` Frappe will not take from this user when `doc` is saved.
+def unwritable_fieldnames(doc, fieldnames) -> list:
+    """The `fieldnames` of `doc` itself Frappe will not take from this user when it is saved.
 
     Frappe's rule, from Document.validate_higher_perm_levels: on save it puts back the stored value
-    (the default, on a new record) of each field above the user's write permlevel. Pass a child
-    table's `meta` to check fields of `doc`'s rows: they use the parent's permissions.
+    (the default, on a new record) of each field above the user's write permlevel. Child rows:
+    unwritable_row_fields.
     """
     if _skips_permlevel_reset(doc):
         return []
-    # A row's own flags are not the parent's; only the parent's are known here.
-    ignored = (doc.flags.get("ignore_permlevel_for_fields") or ()) if meta is None else ()
-    reset = _reset_fieldnames(meta or doc.meta, doc.get_permlevel_access("write"), ignored)
+    ignored = doc.flags.get("ignore_permlevel_for_fields") or ()
+    reset = _reset_fieldnames(doc.meta, doc.get_permlevel_access("write"), ignored)
     return [fieldname for fieldname in fieldnames if fieldname in reset]
 
 
@@ -319,53 +346,91 @@ def unwritable_meta_fieldnames(meta) -> set:
 
 
 def hidden_query_fields(
-    doctype: str, filters=None, order_by: str = None, group_by: str = None, user_role: str = None
+    doctype: str,
+    filters=None,
+    order_by: str = None,
+    group_by: str = None,
+    user_role: str = None,
+    parent_doctype: str = None,
+    aliases=(),
+    fields=None,
 ) -> list:
-    """The field references in `filters`, `order_by` and `group_by` the user may not read.
+    """The references in `filters`, `order_by`, `group_by` and `fields` expressions that aren't a
+    field the user may read.
 
-    frappe.get_list strips an unreadable field from `fields`, and Frappe 15.121 refuses one in
-    order_by and group_by, but Frappe 15 runs a filter on it, so repeated filters narrow down its
-    value. Frappe 16 refuses such a filter; this applies that rule on both. A reference Frappe
-    itself would reject (an alias, an unknown column) is left to Frappe.
+    frappe.get_list strips an unreadable bare field from `fields`, but Frappe 15 runs a filter on
+    it, so repeated filters narrow down its value, and keeps an expression such as
+    `max(salary)*1`. Frappe 16 refuses such a filter; this applies that rule on both. Each
+    reference must resolve to a DocField or standard column exactly, as check_query_fields
+    requires: MariaDB reads `SALARY` as salary, and Frappe 15 passes an unknown name or an
+    ifnull(...) through, so anything that doesn't resolve is refused too. A bare name in `fields`
+    is left to frappe.get_list, which drops it when unreadable.
+
+    `parent_doctype` is the parent a child-table query is made through, as in frappe.get_list.
+    `aliases` are names the query's `fields` give their expressions (`count(name) as total`):
+    order_by and group_by may name one that matches no column in any case, since the expressions
+    themselves are checked here.
     """
     from frappe_assistant_core.core.field_access import (
         SORT_DIRECTION,
+        STANDARD_COLUMNS,
         FieldAccessError,
+        check_field,
         expression_columns,
         filter_references,
-        resolve_field,
     )
 
-    readers = {}
+    def refused(reference: str, target: str = None) -> bool:
+        try:
+            check_field(doctype, reference, user_role, target_doctype=target, parent_doctype=parent_doctype)
+        except FieldAccessError:
+            return True
+        return False
 
-    def readable(target: str, fieldname: str) -> bool:
-        if target not in readers:
-            meta = frappe.get_meta(target)
-            parenttype = doctype if target != doctype and meta.istable else None
-            readers[target] = field_reader(meta, user_role, parenttype)
-        return readers[target](fieldname)
-
-    references = [
-        (target.replace("`", "").removeprefix("tab") if target else None, reference)
-        for target, reference in filter_references(filters)
-    ]
-    for clause in (order_by, group_by):
-        if clause and isinstance(clause, str):
-            references.extend((None, column) for column in expression_columns(SORT_DIRECTION.sub("", clause)))
+    def refused_expression(expression: str) -> list:
+        """The columns of `expression` the user may not use; the whole of it if none can be found."""
+        if expression.strip() == "*":  # {"COUNT": "*"}
+            return []
+        try:
+            found = list(expression_columns(expression))
+        except FieldAccessError:
+            return [expression]
+        if not found and not COUNT_ALL.match(expression):
+            return [expression]  # nothing to check against, so nothing is let through
+        return [column for column in found if refused(column)]
 
     hidden = []
-    for target, reference in references:
-        if target:
-            if not frappe.db.exists("DocType", target):
-                continue
-            fieldname = reference.replace("`", "").strip()
-        else:
-            try:
-                target, fieldname = resolve_field(doctype, reference)
-            except FieldAccessError:
-                continue
-        if not readable(target, fieldname):
+    for target, reference in filter_references(filters):
+        if not refused(reference, target):
+            continue
+        # Frappe 15 runs a filter key such as ifnull(status, ''): fine when every column in it
+        # may be read. A bare name in another case (DESCRIPTION) has no "(" and stays refused.
+        if target or "(" not in reference or refused_expression(reference):
             hidden.append(reference)
+
+    for entry in [fields] if isinstance(fields, (str, dict)) else fields or []:
+        if isinstance(entry, dict):
+            expressions = [value for key, value in entry.items() if key != "as" and isinstance(value, str)]
+        elif isinstance(entry, str) and entry != "*" and not entry.isidentifier():
+            expressions = [entry]
+        else:
+            continue
+        for expression in expressions:
+            hidden += refused_expression(expression)
+
+    columns = {name.lower() for name in STANDARD_COLUMNS}
+    columns.update(df.fieldname.lower() for df in frappe.get_meta(doctype).fields if df.fieldname)
+    # An alias that is no column's name in any case can only mean the selected expression, which
+    # is checked above; MariaDB would read one that matches a column as that column.
+    safe_aliases = {alias for alias in aliases if alias.lower() not in columns}
+    for clause, allowed in ((order_by, safe_aliases), (group_by, safe_aliases)):
+        if not clause or not isinstance(clause, str):
+            continue
+        for column in expression_columns(SORT_DIRECTION.sub("", clause)):
+            if column.replace("`", "").strip() in allowed:
+                continue
+            if refused(column):
+                hidden.append(column)
     return hidden
 
 

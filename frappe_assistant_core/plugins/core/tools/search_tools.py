@@ -34,7 +34,13 @@ from typing import Any, Dict, List, Optional, Tuple
 import frappe
 from frappe import _
 
-from frappe_assistant_core.core.field_access import FieldAccessError, check_query_fields
+from frappe_assistant_core.core.field_access import (
+    STANDARD_COLUMNS,
+    FieldAccessError,
+    check_field,
+    check_query_fields,
+    filter_references,
+)
 from frappe_assistant_core.core.security_config import get_user_primary_role
 from frappe_assistant_core.utils.permissions import (
     INDEX_SEPARATOR,
@@ -83,6 +89,25 @@ RETURNABLE_FIELDTYPES = {"Data", "Small Text", "Select", "Link", "Read Only"}
 
 # Cap on fields joined into one OR query, to keep the SQL sane on wide DocTypes.
 MAX_SEARCH_FIELDS = 5
+
+
+def like_pattern(word: str) -> Optional[str]:
+    """`%word%` for a LIKE filter, where a `%` or `_` the user typed can't match every row; or None.
+
+    Frappe 16 passes the value as a parameter, so they are escaped and matched literally. Frappe 15
+    doubles every backslash in a LIKE value itself, so an escape can't get through: there a `%` is
+    dropped, as Frappe's own link search does, and a word of only `_` is left out.
+    """
+    if int(frappe.__version__.split(".")[0]) >= 16:
+        return "%" + word.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+    word = word.replace("%", "")
+    return f"%{word}%" if word.strip("_") else None
+
+
+def has_link_query(doctype: str) -> bool:
+    """Whether Frappe's link search for `doctype` runs an app's query (the standard_queries hook)."""
+    return doctype in (frappe.get_hooks("standard_queries") or {})
+
 
 # Default page length for link-value resolution, matching Frappe's own.
 DEFAULT_LINK_LIMIT = 10
@@ -459,7 +484,9 @@ class SearchTools:
         """Resolve valid values for a Link field, autocomplete-style.
 
         Delegates to Frappe's own link search so per-DocType ``standard_queries``
-        hooks and user permissions apply, and labels come back display-ready.
+        hooks and user permissions apply, and labels come back display-ready. For a DocType whose
+        title or search fields include one the user can't read, FAC searches the readable fields
+        itself instead (_readable_link_search).
         """
         try:
             if not doctype:
@@ -474,22 +501,32 @@ class SearchTools:
                     "error": _("No read permission for DocType '{0}'").format(doctype),
                 }
 
-            if filters:
-                # Frappe 15's link search runs a filter on a field the user cannot read, so
-                # repeated filters narrow down its value (#390); the same check search_doctype uses.
+            user_role = get_user_primary_role(frappe.session.user)
+            meta = frappe.get_meta(doctype)
+            hooked = has_link_query(doctype)
+            # Frappe 15's link search runs a filter on a field the user cannot read, so repeated
+            # filters narrow down its value (#390).
+            try:
+                SearchTools._check_link_filters(doctype, user_role, filters, hooked)
+            except FieldAccessError as e:
+                return {"success": False, "error": str(e), "doctype": doctype}
+
+            if SearchTools._link_search_reads_hidden_field(meta, user_role):
                 try:
-                    check_query_fields(doctype, get_user_primary_role(frappe.session.user), filters=filters)
+                    results = SearchTools._readable_link_search(
+                        meta, (query or "").strip(), filters, limit, user_role, hooked
+                    )
                 except FieldAccessError as e:
                     return {"success": False, "error": str(e), "doctype": doctype}
+            else:
+                from frappe.desk.search import search_link as frappe_search_link
 
-            from frappe.desk.search import search_link as frappe_search_link
-
-            results = frappe_search_link(
-                doctype=doctype,
-                txt=(query or "").strip(),
-                filters=filters or {},
-                page_length=limit,
-            )
+                results = frappe_search_link(
+                    doctype=doctype,
+                    txt=(query or "").strip(),
+                    filters=filters or {},
+                    page_length=limit,
+                )
 
             return {
                 "success": True,
@@ -506,3 +543,114 @@ class SearchTools:
                 title=_("Link Search Error"), message=f"Error searching {doctype} links: {str(e)}"
             )
             return {"success": False, "error": str(e)}
+
+    @staticmethod
+    def _check_link_filters(doctype: str, user_role: str, filters, hooked: bool) -> None:
+        """Raise FieldAccessError for a link-search filter on anything but a field the user may read.
+
+        A DocType with a standard_queries hook hands its filters to the app's query, which may
+        take keys that aren't columns. There a key that names a column is checked, exactly or in
+        another case (MariaDB reads `TAX_ID` as tax_id), and anything but a plain ASCII name (an
+        expression, an accented variant MariaDB may fold onto a column) is refused.
+        """
+        if not filters:
+            return
+        check_query_fields(doctype, user_role, filters=None if hooked else filters)
+        if not hooked:
+            return
+
+        columns = {name.lower() for name in STANDARD_COLUMNS}
+        columns.update(df.fieldname.lower() for df in frappe.get_meta(doctype).fields if df.fieldname)
+        for target, reference in filter_references(filters):
+            try:
+                check_field(doctype, reference, user_role, target_doctype=target)
+            except FieldAccessError:
+                key = reference.replace("`", "").strip()
+                if target or not (key.isascii() and key.isidentifier()) or key.lower() in columns:
+                    raise
+
+    @staticmethod
+    def _is_query_column(doctype: str, condition) -> bool:
+        """Whether a filter condition names a field or column of the query (not an app's own key)."""
+        from frappe_assistant_core.core.field_access import is_column, resolve_field
+
+        try:
+            for target, reference in filter_references([condition]):
+                if target:
+                    target = target.replace("`", "").removeprefix("tab")
+                    if not (
+                        frappe.db.exists("DocType", target) and is_column(target, reference.replace("`", ""))
+                    ):
+                        return False
+                else:
+                    resolve_field(doctype, reference)
+        except FieldAccessError:
+            return False
+        return True
+
+    @staticmethod
+    def _link_search_reads_hidden_field(meta, user_role: str) -> bool:
+        """Whether Frappe's link search for `meta` would match on, or show, a field the user can't read.
+
+        Frappe matches the text against the title and search_fields and shows their values in
+        each result's description, with no regard to permlevel. An app's own query (standard_queries)
+        is taken to search the same fields.
+        """
+        can_read = field_reader(meta, user_role)
+        return any(
+            fieldname and not can_read(fieldname)
+            for fieldname in [meta.title_field, *meta.get_search_fields()]
+        )
+
+    @staticmethod
+    def _readable_link_search(
+        meta, query: str, filters, limit: int, user_role: str, hooked: bool = False
+    ) -> List[Dict[str, Any]]:
+        """Frappe's link search over the fields the user may read: `value` and `description` rows.
+
+        As in frappe.desk.search.search_widget, disabled records are left out and the text is
+        matched against the name and the search fields, here only the readable ones. For a
+        DocType with an app's query, its own keys that aren't columns (already checked by
+        _check_link_filters) can't apply here and are left out; the column keys still apply.
+        """
+        from frappe.utils import cstr
+        from frappe.utils.data import make_filter_tuple
+
+        doctype = meta.name
+        if isinstance(filters, dict):
+            conditions = [make_filter_tuple(doctype, key, value) for key, value in filters.items()]
+        else:
+            conditions = [condition for condition in filters or [] if isinstance(condition, (list, tuple))]
+        if hooked:
+            conditions = [c for c in conditions if SearchTools._is_query_column(doctype, c)]
+        check_query_fields(doctype, user_role, filters=conditions)
+
+        search_fields = readable_fieldnames(meta, resolve_search_fields(meta), user_role)
+        if meta.get("fields", {"fieldname": "enabled", "fieldtype": "Check"}):
+            conditions.append([doctype, "enabled", "=", 1])
+        if meta.get("fields", {"fieldname": "disabled", "fieldtype": "Check"}):
+            conditions.append([doctype, "disabled", "!=", 1])
+        or_filters = None
+        if query:
+            pattern = like_pattern(query)
+            if not pattern:
+                return []
+            or_filters = [[doctype, field, "like", pattern] for field in ["name", *search_fields]]
+
+        shown = [field for field in returnable_fields(meta, search_fields) if field != "name"]
+        rows = frappe.get_list(
+            doctype,
+            filters=conditions,
+            or_filters=or_filters,
+            fields=["name", *shown],
+            limit=limit,
+            order_by="modified desc",
+            ignore_permissions=False,
+        )
+        return [
+            {
+                "value": row.get("name"),
+                "description": ", ".join(cstr(row.get(field)) for field in shown if row.get(field)),
+            }
+            for row in rows
+        ]

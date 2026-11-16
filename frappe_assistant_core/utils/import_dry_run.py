@@ -1117,7 +1117,9 @@ class _Checker:
 
         meta = frappe.get_meta(self.doctype)
         # The stored values below are read with frappe.db, so a field above the user's permlevel
-        # is checked here: its value must not reach the message, nor decide whether there is one.
+        # is checked first: its value must not reach the message, nor decide whether there is one.
+        # A link the user can't read isn't looked at, so no row is flagged through it, and the
+        # import behaves as Data Import does for that user.
         can_read = field_reader(meta)
         problems = []
         for field, value in payload.doc.items():
@@ -1128,34 +1130,25 @@ class _Checker:
                 continue
             link_field = df.fetch_from.split(".")[0]
             link_df = meta.get_field(link_field)
+            if not link_df or not can_read(link_field):
+                continue
             linked = frappe.db.get_value(self.doctype, record, link_field)
-            if not link_df or not linked:
+            if not linked:
                 continue
             if can_read(field) and import_update._same(
                 df, frappe.db.get_value(self.doctype, record, field), value
             ):
                 continue
-            if can_read(link_field):
-                message = _(
-                    "{0} on {1} {2} comes from its {3} {4}, so an import can't change it here. Change it on the {5}."
-                ).format(
-                    _(df.label),
-                    _(self.doctype),
-                    record,
-                    _(link_df.label),
-                    linked,
-                    _(link_df.options or link_df.label),
-                )
-            else:
-                message = _(
-                    "{0} on {1} {2} comes from its {3}, so an import can't change it here. Change it on the {4}."
-                ).format(
-                    _(df.label),
-                    _(self.doctype),
-                    record,
-                    _(link_df.label),
-                    _(link_df.options or link_df.label),
-                )
+            message = _(
+                "{0} on {1} {2} comes from its {3} {4}, so an import can't change it here. Change it on the {5}."
+            ).format(
+                _(df.label),
+                _(self.doctype),
+                record,
+                _(link_df.label),
+                linked,
+                _(link_df.options or link_df.label),
+            )
             problems.append(
                 (
                     (CAUSE_FETCHED, field),

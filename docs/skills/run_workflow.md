@@ -38,4 +38,4 @@ The `run_workflow` tool executes workflow actions on documents — Submit, Appro
 - **No workflow defined** — some DocTypes don't have workflows; use `document_action` for simple submit.
 - **Workflow defined** — `document_action` refuses to submit or cancel a document whose DocType has an active Workflow, and names the `run_workflow` action to use instead. `document_action` with `amend` still works for a document cancelled here.
 - **Permission denied** — workflow actions are permission-controlled per state/role.
-- **A record the user may not read** — refused with `error_type: "permission_error"` before anything else, with no state or actions. Don't retry another action; tell the user they don't have access to it.
+- **A record the user may not read** — refused with `error_type: "permission_error"` before anything else, with no state or actions. Don't retry another action; tell the user they don't have access to it. A user who may read no record of the DocType gets this for every name, existing or not.
