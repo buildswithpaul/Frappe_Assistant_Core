@@ -403,13 +403,6 @@ class PluginManager:
             ]
             return sorted(packs, key=lambda pack: pack.id)
 
-    def pack_of(self, tool_name: str) -> Optional[str]:
-        """Id of the pack a tool belongs to, or None when it is in the base set."""
-        for pack in self.get_tool_packs():
-            if tool_name in pack.tools:
-                return pack.id
-        return None
-
     def get_fac_cloud_only_tools(self) -> Set[str]:
         """Names of loaded tools whose plugin declared ``is_fac_cloud_only()``.
 
