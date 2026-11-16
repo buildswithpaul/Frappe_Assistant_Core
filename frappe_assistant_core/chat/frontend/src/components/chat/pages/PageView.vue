@@ -50,7 +50,7 @@ import kitCss from "../../../../../../public/css/mockup_kit.css?raw";
 import PageFrame from "./PageFrame.vue";
 
 const props = defineProps({
-	// get_page's response: {title, html, script, style, draft, visibility, format_settings}.
+	// get_page's response: {title, html, script, style, draft, visibility, format_settings, withheld}.
 	page: { type: Object, required: true },
 	user: { type: String, default: "" },
 	// The FAC Page record name, which a personal page's "Allow for this page" is scoped to.
@@ -141,6 +141,9 @@ onMounted(() => {
 		draft: !published.value,
 		capture: personal.value ? capturePersonal : null,
 		errors: () => (personal.value ? personalFrame.value?.errors() || [] : errors),
+		// Only a personal page's frame sends every call through its host; a shared page's script runs
+		// in this document, where it could fetch past any watch, so FACO asks before looking at it.
+		shown: () => (personal.value ? (personalFrame.value?.shown() ?? null) : null),
 	});
 });
 

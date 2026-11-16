@@ -2,6 +2,8 @@
 // Personalized (≤3) → pinned → role starters → contextual → generic defaults; dedup by description;
 // drop anything the Resume cards already own; always fill to 4.
 
+import { BRING_DATA_SOURCE, bringDataStarter } from "@/components/chat/welcome/bringDataStarter";
+
 const TILE_COUNT = 4;
 const PERSONALIZED_CAP = 3;
 
@@ -43,12 +45,17 @@ function duplicatesResume(description, resumePreview) {
 	return r.includes(d) || d.includes(r);
 }
 
-export function selectWelcomeTiles({ suggestions = [], resumePreviews = [], resumePreview = "" }) {
+export function selectWelcomeTiles({
+	suggestions = [],
+	resumePreviews = [],
+	resumePreview = "",
+	bringData = false,
+}) {
 	const previews = [...(resumePreviews || []), resumePreview].filter(Boolean);
 	const dupResume = (description) => previews.some((p) => duplicatesResume(description, p));
 
 	const seen = new Set();
-	const pool = suggestions.filter((sg) => {
+	const pool = (bringData ? [...suggestions, bringDataStarter()] : suggestions).filter((sg) => {
 		const key = norm(sg.description);
 		if (!key || seen.has(key) || dupResume(sg.description)) return false;
 		seen.add(key);
@@ -59,6 +66,7 @@ export function selectWelcomeTiles({ suggestions = [], resumePreviews = [], resu
 	const ordered = [
 		...bySource("personalized").slice(0, PERSONALIZED_CAP),
 		...bySource("pinned"),
+		...bySource(BRING_DATA_SOURCE),
 		...bySource("role"),
 		...bySource("contextual"),
 		...bySource("default"),

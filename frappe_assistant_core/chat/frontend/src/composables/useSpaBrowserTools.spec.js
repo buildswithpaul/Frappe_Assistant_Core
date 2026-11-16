@@ -61,17 +61,19 @@ let wrapper;
 let pageElement;
 let session = "s1";
 
-function showPage({ draft = false, errors = [] } = {}) {
+// `shown` is what the page has shown that FAC's tools hide from FACO (utils/pageReach.js); a page
+// view without it is one whose server sent no withheld list, so FACO asks.
+function showPage({ draft = false, errors = [], shown } = {}) {
 	hide();
 	pageElement = document.createElement(draft ? "iframe" : "div");
-	hide = usePagePanel().showPageView({ element: pageElement, draft, errors: () => errors });
+	hide = usePagePanel().showPageView({ element: pageElement, draft, errors: () => errors, ...(shown ? { shown } : {}) });
 }
 
 // A personal page: its frame draws itself and sends the picture back.
-function showPersonalPage({ capture, errors = [] }) {
+function showPersonalPage({ capture, errors = [], shown }) {
 	hide();
 	pageElement = null;
-	hide = usePagePanel().showPageView({ capture, errors: () => errors });
+	hide = usePagePanel().showPageView({ capture, errors: () => errors, ...(shown ? { shown } : {}) });
 }
 
 beforeEach(() => {
@@ -348,6 +350,56 @@ describe("useSpaBrowserTools", () => {
 		await pending;
 		expect(h2c.calls[0].el).toBe(pageElement);
 		expect(results()[0]).toMatchObject({ call_id: "c2", result: { file_url: "/private/files/shot.jpg" } });
+	});
+
+	it("looks without asking when the page has shown nothing FAC's tools hide from FACO", async () => {
+		showPage({ shown: () => ({ fields: [], methods: [] }) });
+		wrapper = mount(Host);
+		await call("n1");
+		expect(confirms.value).toEqual([]);
+		expect(h2c.calls[0].el).toBe(pageElement);
+		expect(results()[0]).toMatchObject({ call_id: "n1", result: { file_url: "/private/files/shot.jpg" } });
+	});
+
+	it("asks, naming them, when the page has shown fields FAC's tools hide or calls it can't check", async () => {
+		showPage({ shown: () => ({ fields: ["bank_account_no", "iban"], methods: ["my_app.api.balances"] }) });
+		wrapper = mount(Host);
+		const pending = call("n2");
+		await flushPromises();
+		expect(confirms.value).toHaveLength(1);
+		expect(confirms.value[0].request.copy.detail).toMatch(/bank_account_no, iban/);
+		expect(confirms.value[0].request.copy.detail).toMatch(/my_app\.api\.balances/);
+		settleConfirm(confirms.value[0], "deny");
+		await pending;
+		expect(h2c.calls).toEqual([]);
+	});
+
+	it("captures nothing it didn't ask about once the page shows a hidden field before the picture", async () => {
+		let shown = { fields: [], methods: [] };
+		showPage({ shown: () => shown });
+		wrapper = mount(Host);
+		const pending = call("n3");
+		// A read the page started earlier lands while the capture waits for the page to settle.
+		shown = { fields: ["iban"], methods: [] };
+		await pending;
+		expect(confirms.value).toEqual([]);
+		expect(h2c.calls).toEqual([]);
+		expect(results()[0].error).toMatch(/hide from you.*Ask again/);
+	});
+
+	it("uploads nothing it didn't ask about when a hidden field lands while the picture is drawn", async () => {
+		let shown = { fields: [], methods: [] };
+		const capture = vi.fn(async () => {
+			shown = { fields: ["iban"], methods: [] };
+			return { blob: new Blob(["jpeg"], { type: "image/jpeg" }), width: 4, height: 4, text: "DE89" };
+		});
+		showPersonalPage({ capture, shown: () => shown });
+		wrapper = mount(Host);
+		await call("n4");
+		expect(capture).toHaveBeenCalled();
+		expect(uploadFile).not.toHaveBeenCalled();
+		expect(results()[0].error).toMatch(/Ask again/);
+		expect(JSON.stringify(results()[0])).not.toContain("DE89");
 	});
 
 	it("captures nothing when another page was opened while the user decided", async () => {

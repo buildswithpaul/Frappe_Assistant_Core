@@ -99,3 +99,7 @@ frappe_assistant_core.patches.v3_3.seed_expected_concurrent_chatters
 
 # Version 3.3.0 - relay chat answers in a background job: off until an admin switches it on
 frappe_assistant_core.patches.v3_3.seed_relay_in_background_job
+
+# Version 3.4.0 - plugin settings are read from their FAC Plugin Configuration rows again (#34662):
+# make the rows say what the legacy enabled_plugins_list says, which is what sites ran on
+frappe_assistant_core.patches.v3_4.reconcile_plugin_configuration

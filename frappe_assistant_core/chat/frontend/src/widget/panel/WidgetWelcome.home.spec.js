@@ -332,4 +332,36 @@ describe("widget home", () => {
 		await w.find(".ny-note-link").trigger("click");
 		expect(open).toHaveBeenCalledWith("/copilot/settings/home", "_blank", "noopener");
 	});
+
+	describe("Bring your data in", () => {
+		const PROMPT =
+			"I want to bring my data into ERPNext from my old system (spreadsheets or a Tally export). What do you need from me?";
+		const serve = (bringDataIn) =>
+			api.suggestions.get.mockResolvedValue({ suggestions: [STARTER], bring_data_in: bringDataIn });
+
+		it("shows on the home tiles under the same flag and sends its prompt", async () => {
+			onRoute(["List", "Customer"]);
+			serve(true);
+			const w = await mountHome();
+			const row = w.findAll(".hs-row").find((r) => r.text().includes("Bring your data in"));
+			expect(row).toBeTruthy();
+			await row.trigger("click");
+			expect(w.emitted("suggestion")).toEqual([[PROMPT]]);
+		});
+
+		it("shows on the day-one cards under the same flag", async () => {
+			onRoute(["List", "Customer"]);
+			api.chat.getSessions.mockResolvedValue([]);
+			serve(true);
+			const w = await mountHome();
+			expect(w.findAll(".frs-label").map((l) => l.text())).toContain("Bring your data in");
+		});
+
+		it("is hidden without the flag", async () => {
+			onRoute(["List", "Customer"]);
+			serve(false);
+			const w = await mountHome();
+			expect(w.text()).not.toContain("Bring your data in");
+		});
+	});
 });

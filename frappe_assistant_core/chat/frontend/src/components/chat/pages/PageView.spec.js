@@ -308,6 +308,32 @@ describe("PageView", () => {
 		expect(usePagePanel().pageView.value.errors()).toEqual(["team.get_board failed (HTTP 500): Server Script failed"]);
 	});
 
+	// get_page's withheld for a viewer who is not a System Manager.
+	const withheld = { fields: ["iban"], doctypes: {}, hidden_doctypes: [] };
+
+	it("never says a shared page shows nothing hidden, since its script could fetch past any watch", async () => {
+		getCall.mockResolvedValueOnce([{ name: "S-1" }]);
+		mountView({ ...published, withheld, script: "frappe.db.get_list('Supplier');" });
+		await flushPromises();
+		expect(usePagePanel().pageView.value.shown()).toBe(null);
+	});
+
+	it("asks a personal page's frame what it has shown", () => {
+		const shown = { fields: ["iban"], methods: [] };
+		const PageFrame = {
+			setup(_, { expose }) {
+				expose({ capture: vi.fn(), snapshot: vi.fn(), errors: () => [], shown: () => shown });
+				return () => null;
+			},
+		};
+		wrapper = mount(PageView, {
+			props: { page: { ...personal, withheld }, user: "avery@example.com" },
+			global: { stubs: { PageFrame } },
+			attachTo: document.body,
+		});
+		expect(usePagePanel().pageView.value.shown()).toBe(shown);
+	});
+
 	it("offers FACO's screenshot the personal page's frame capture", () => {
 		mountView(personal);
 		const view = usePagePanel().pageView.value;

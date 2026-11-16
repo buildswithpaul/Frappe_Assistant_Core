@@ -33,6 +33,7 @@ from frappe_assistant_core.utils.customisation import (
     server_script_code_guard,
     server_script_guard,
 )
+from frappe_assistant_core.utils.permissions import field_reader, unwritable_fieldnames
 from frappe_assistant_core.utils.savepoint import (
     open_savepoint,
     release_savepoint,
@@ -64,6 +65,19 @@ def _default_todo_allocation(doc: Any) -> None:
 
     if not doc.has_permission("create"):
         doc.allocated_to = frappe.session.user
+
+
+def _not_applied(doc: Any, data: Dict[str, Any], table_fields: Dict[str, Any]) -> list:
+    """The fields of ``data`` Frappe set to their defaults on insert, being above the user's
+    write permlevel (Document.validate_higher_perm_levels). A new record's child rows keep what
+    they were given, so only the record's own fields are checked (#390)."""
+    return unwritable_fieldnames(doc, [field for field in data if field not in table_fields])
+
+
+def _not_applied_note(not_applied: list) -> str:
+    return _(
+        "Not applied: {0}. You do not have permission to set these fields, so their default values were kept."
+    ).format(", ".join(not_applied))
 
 
 def _prepare_for_insert(doc: Any) -> None:
@@ -373,15 +387,20 @@ class DocumentCreate(BaseTool):
                 finally:
                     rollback_to_savepoint(_VALIDATE_SAVEPOINT, marks, doctype, doc.name)
 
-                return {
+                not_applied = _not_applied(doc, data, table_fields)
+                result = {
                     "success": True,
                     "validation_passed": True,
                     "doctype": doctype,
                     "message": f"{doctype} data validation passed successfully",
-                    "fields_validated": list(data.keys()),
+                    "fields_validated": [field for field in data if field not in not_applied],
                     "child_tables": list(table_fields.keys()) if table_fields else [],
                     "next_step": "Use create_document with validate_only=false to actually create the document",
                 }
+                if not_applied:
+                    result["not_applied_fields"] = not_applied
+                    result["message"] = f"{result['message']}. {_not_applied_note(not_applied)}"
+                return result
 
             # Capture input child-table values for post-save comparison (issue #181).
             # The normalized rows, so a Table MultiSelect value compares as its row.
@@ -389,15 +408,23 @@ class DocumentCreate(BaseTool):
 
             # Save document
             doc.insert()
+            # After the insert, so a field a hook let through (ignore_permlevel_for_fields) counts.
+            not_applied = _not_applied(doc, data, table_fields)
             # Check for silently overridden field values
             warnings = []
             for field, input_rows in input_child_values.items():
                 saved_rows = doc.get(field) or []
+                # A value the user may not read is not reported back, nor that it changed (#390).
+                can_read = field_reader(
+                    frappe.get_meta(table_fields[field].options), user_role, parenttype=doctype
+                )
                 for idx, input_row in enumerate(input_rows):
                     if idx >= len(saved_rows):
                         break
                     saved_row = saved_rows[idx]
                     for key, input_val in input_row.items():
+                        if not can_read(key):
+                            continue
                         saved_val = getattr(saved_row, key, None)
                         if saved_val is not None and str(saved_val) != str(input_val):
                             # Skip numeric false positives (1 vs 1.0, 100 vs 100.0)
@@ -496,7 +523,10 @@ class DocumentCreate(BaseTool):
                     "Use document_get to view the submitted document",
                 ]
 
-            # Log successful creation
+            if not_applied:
+                result["not_applied_fields"] = not_applied
+                result["message"] = f"{result['message']}. {_not_applied_note(not_applied)}"
+
             # Add warnings if any fields were silently overridden
             if warnings:
                 result["warnings"] = warnings

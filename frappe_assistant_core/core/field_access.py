@@ -67,17 +67,36 @@ def query_restricted_fields(doctype: str, user_role: str) -> Set[str]:
     return restricted
 
 
-def is_field_readable(meta, fieldname: str, user_role: str, parenttype: Optional[str] = None) -> bool:
-    """Whether `user_role`'s user may read `fieldname` of `meta`, by FAC's lists and by permlevel."""
-    if fieldname in query_restricted_fields(meta.name, user_role):
-        return False
+def withheld_from_assistant(user_role: str) -> dict:
+    """What FAC's read tools hide from `user_role`, for a page's screenshot to check against.
 
-    df = meta.get_field(fieldname)
-    # Standard columns have no DocField, and a permlevel-0 field is readable to anyone who reads
-    # the DocType, which is also all a DocType without permission rules (a Single, say) offers.
-    if not df or not df.permlevel:
-        return True
-    return df.permlevel in meta.get_permlevel_access("read", parenttype=parenttype)
+    `fields` are hidden on every DocType, `doctypes` maps a DocType to its further hidden fields,
+    and `hidden_doctypes` are DocTypes hidden whole. All three are empty for a System Manager.
+    Like query_restricted_fields, it leaves out owner, modified_by, docstatus and the rest of
+    ADMIN_ONLY_FIELDS["all_doctypes"]: they are write-protected for an Assistant User, not secret,
+    and Desk shows them on every record.
+    """
+    everywhere = query_restricted_fields("", user_role)
+    named = (set(SENSITIVE_FIELDS) | set(ADMIN_ONLY_FIELDS)) - {"all_doctypes"}
+    doctypes = {}
+    for doctype in sorted(named):
+        extra = query_restricted_fields(doctype, user_role) - everywhere
+        if extra:
+            doctypes[doctype] = sorted(extra)
+    hidden = []
+    if user_role == "Assistant User":
+        hidden = sorted(doctype for doctype, fields in ADMIN_ONLY_FIELDS.items() if fields == "*")
+    return {"fields": sorted(everywhere), "doctypes": doctypes, "hidden_doctypes": hidden}
+
+
+def is_field_readable(meta, fieldname: str, user_role: str, parenttype: Optional[str] = None) -> bool:
+    """Whether `user_role`'s user may read `fieldname` of `meta`, by FAC's lists and by permlevel.
+
+    The same rule every FAC tool uses: utils.permissions.field_reader.
+    """
+    from frappe_assistant_core.utils.permissions import field_reader
+
+    return field_reader(meta, user_role, parenttype)(fieldname)
 
 
 def is_column(doctype: str, fieldname: str) -> bool:
@@ -116,8 +135,18 @@ def resolve_field(doctype: str, reference: str) -> Tuple[str, str]:
     return target, fieldname
 
 
-def check_field(doctype: str, reference: str, user_role: str, target_doctype: Optional[str] = None) -> None:
-    """Raise FieldAccessError unless the user may query `reference` on a `doctype` query."""
+def check_field(
+    doctype: str,
+    reference: str,
+    user_role: str,
+    target_doctype: Optional[str] = None,
+    parent_doctype: Optional[str] = None,
+) -> None:
+    """Raise FieldAccessError unless the user may query `reference` on a `doctype` query.
+
+    `parent_doctype`: the parent a query on a child table is made through (frappe.get_list's
+    parent_doctype), which grants the child's permission levels.
+    """
     if target_doctype:
         target = target_doctype.replace("`", "").removeprefix("tab")
         if not frappe.db.exists("DocType", target):
@@ -136,6 +165,8 @@ def check_field(doctype: str, reference: str, user_role: str, target_doctype: Op
             parenttype = doctype
         elif not frappe.has_permission(target, "read"):
             raise FieldAccessError(_("You do not have permission to query the field {0}.").format(reference))
+    elif meta.istable:
+        parenttype = parent_doctype
 
     if not is_field_readable(meta, fieldname, user_role, parenttype=parenttype):
         raise FieldAccessError(_("You do not have permission to query the field {0}.").format(reference))

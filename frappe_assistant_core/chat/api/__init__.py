@@ -241,6 +241,12 @@ from .team_instructions import (
     update_shared_knowledge,
 )
 
+# ── Tool loading ─────────────────────────────────────────────────────
+from .tool_loading import (
+    get_tool_loading,
+    set_tool_loading,
+)
+
 # ── Users (Admin) ────────────────────────────────────────────────────
 from .users import (
     add_user,

@@ -74,10 +74,8 @@ class DocumentGet(BaseTool):
             }
 
         # Import security validation
-        from frappe_assistant_core.core.security_config import (
-            filter_sensitive_fields,
-            validate_document_access,
-        )
+        from frappe_assistant_core.core.security_config import validate_document_access
+        from frappe_assistant_core.utils.permissions import readable_doc_dict
 
         # Validate document access with comprehensive permission checking
         validation_result = validate_document_access(
@@ -98,11 +96,8 @@ class DocumentGet(BaseTool):
             # Get document
             doc = frappe.get_doc(doctype, name)
 
-            # Convert to dict
-            doc_dict = doc.as_dict()
-
-            # Filter sensitive fields based on user role
-            filtered_doc = filter_sensitive_fields(doc_dict, doctype, user_role)
+            # Only the fields the user may read: permlevel as on Desk (#390), then FAC's sensitive fields
+            filtered_doc = readable_doc_dict(doc, user_role)
             # what a user's file said, kept on the record, reaches the model fenced (#34003)
             filtered_doc = fence_document(doctype, filtered_doc)
 

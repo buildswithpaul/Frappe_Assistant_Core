@@ -818,6 +818,12 @@ class TestPageFormatSettings(BaseAssistantTest):
         self.assertEqual(settings["date_format"], "mm/dd/yyyy")
         self.assertEqual(settings["currency"], "ZZA")
 
+    def test_get_page_says_what_faco_may_not_see(self):
+        # The screenshot looks without asking only when the page shows nothing on this list.
+        withheld = self._open_as_reader()["withheld"]
+
+        self.assertIn("iban", withheld["fields"])
+
     def test_a_users_own_defaults_are_left_out(self):
         frappe.db.set_default("number_format", "#,###.##")
         frappe.db.set_default("currency", "ZZA")

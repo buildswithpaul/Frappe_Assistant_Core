@@ -24,7 +24,7 @@ import inspect
 import json
 import threading
 import traceback
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
@@ -32,6 +32,7 @@ from typing import Any, Dict, List, Optional, Set
 import frappe
 
 from frappe_assistant_core.core.base_tool import BaseTool
+from frappe_assistant_core.core.tool_packs import ToolPack
 from frappe_assistant_core.plugins.base_plugin import BasePlugin
 
 
@@ -56,6 +57,7 @@ class PluginInfo:
     tools: List[str]
     error_message: Optional[str] = None
     fac_cloud_only: bool = False
+    tool_packs: List[ToolPack] = field(default_factory=list)
 
 
 @dataclass
@@ -162,9 +164,30 @@ class PluginDiscovery:
                     state=PluginState.DISCOVERED,
                     tools=plugin_instance.get_tools(),
                     fac_cloud_only=plugin_instance.is_fac_cloud_only(),
+                    tool_packs=plugin_instance.get_tool_packs(),
                 )
 
         return None
+
+
+def read_legacy_enabled_plugins() -> Set[str]:
+    """The plugins `Assistant Core Settings.enabled_plugins_list` names, plus core.
+
+    An empty, missing or unreadable list means core only, which is what production has always
+    read from it. An unreadable list is logged, not swallowed.
+    """
+    logger = frappe.logger("plugin_persistence")
+    try:
+        raw = frappe.db.get_single_value(
+            PluginConfig.PLUGIN_SETTINGS_DOCTYPE, PluginConfig.PLUGIN_SETTINGS_FIELD
+        )
+        parsed = json.loads(raw) if raw else []
+        if not isinstance(parsed, list):
+            raise ValueError("not a list")
+    except Exception as e:
+        logger.error(f"Legacy enabled_plugins_list is unreadable, treating it as core only: {e}")
+        return {"core"}
+    return set(parsed) | {"core"}
 
 
 class PluginPersistence:
@@ -184,15 +207,16 @@ class PluginPersistence:
         Falls back to legacy JSON field if DocType doesn't exist yet.
         """
         try:
-            # Check if the new DocType table exists
-            if frappe.db.table_exists("tabFAC Plugin Configuration"):
+            # table_exists adds the "tab" prefix itself
+            if frappe.db.table_exists(PluginConfig.PLUGIN_CONFIG_DOCTYPE):
                 # Use the new DocType-based approach (atomic, no JSON parsing)
                 enabled = frappe.get_all(
                     PluginConfig.PLUGIN_CONFIG_DOCTYPE,
                     filters={"enabled": 1},
                     pluck="plugin_name",
                 )
-                return set(enabled)
+                # The core plugin cannot be switched off, so it is on whatever the rows say
+                return set(enabled) | {"core"}
             else:
                 # Fallback to legacy JSON field during migration
                 return self._load_from_legacy_json()
@@ -207,16 +231,7 @@ class PluginPersistence:
 
     def _load_from_legacy_json(self) -> Set[str]:
         """Load from legacy JSON field in Assistant Core Settings."""
-        try:
-            settings = frappe.get_single(PluginConfig.PLUGIN_SETTINGS_DOCTYPE)
-            enabled_list = getattr(settings, PluginConfig.PLUGIN_SETTINGS_FIELD, None)
-
-            if enabled_list:
-                return set(json.loads(enabled_list))
-            return set()
-        except Exception as e:
-            self.logger.error(f"Failed to load from legacy JSON: {e}")
-            return set()
+        return read_legacy_enabled_plugins()
 
     def save_plugin_state(self, plugin_name: str, enabled: bool, plugin_info=None) -> bool:
         """Save a single plugin's enabled state.
@@ -375,6 +390,18 @@ class PluginManager:
                 self._load_tools()
 
             return self._loaded_tools.copy()
+
+    def get_tool_packs(self) -> List[ToolPack]:
+        """Tool packs declared by enabled plugins, ordered by pack id."""
+        with self._lock:
+            enabled = self.get_enabled_plugins()
+            packs = [
+                pack
+                for name, plugin_info in self._discovered_plugins.items()
+                if name in enabled
+                for pack in plugin_info.tool_packs
+            ]
+            return sorted(packs, key=lambda pack: pack.id)
 
     def get_fac_cloud_only_tools(self) -> Set[str]:
         """Names of loaded tools whose plugin declared ``is_fac_cloud_only()``.

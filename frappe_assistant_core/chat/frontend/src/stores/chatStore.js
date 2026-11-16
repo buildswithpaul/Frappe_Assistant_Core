@@ -180,12 +180,14 @@ export const useChatStore = defineStore("chat", () => {
 
 	// Latest assistant message's unresolved interaction, with the routing
 	// regime: any pending approval forces "approval" for the whole turn.
+	// A card the user already decided stays "pending" until its resume returns,
+	// but no longer waits on the composer: text typed then queues (#34548).
 	const pendingInteractionBlock = computed(() => {
 		for (let i = messages.value.length - 1; i >= 0; i--) {
 			const m = messages.value[i];
 			if (m.role !== "assistant" || !Array.isArray(m.blocks)) continue;
 			const pending = m.blocks.filter(
-				(b) => b.type === "interaction" && b.status === "pending"
+				(b) => b.type === "interaction" && b.status === "pending" && !b.decision
 			);
 			if (pending.length === 0) continue;
 			const hasApproval = pending.some((b) => isApprovalInteraction(b.interactionType));

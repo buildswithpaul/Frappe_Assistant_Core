@@ -10,7 +10,17 @@ PRIORITIES = ("Low", "Medium", "High")
 
 
 def _phone(doc) -> str:
-    return doc.get("mobile_no") or doc.get("phone") or ""
+    """The record's mobile or phone number, from a field the user may read (#390)."""
+    from frappe_assistant_core.utils.permissions import field_reader
+
+    can_read = field_reader(doc.meta)
+    return next((doc.get(f) for f in ("mobile_no", "phone") if can_read(f) and doc.get(f)), "")
+
+
+def _own_phone() -> str:
+    # The user's own profile: theirs to read whatever the permission levels on User.
+    user = frappe.get_doc("User", frappe.session.user)
+    return user.get("mobile_no") or user.get("phone") or ""
 
 
 class AddCrmActivity(CrmTool):
@@ -89,7 +99,7 @@ class AddCrmActivity(CrmTool):
             ).insert()
         else:
             direction = "Incoming" if arguments.get("direction") == "Incoming" else "Outgoing"
-            ours = arguments.get("our_phone") or _phone(frappe.get_doc("User", frappe.session.user))
+            ours = arguments.get("our_phone") or _own_phone()
             theirs = arguments.get("their_phone") or _phone(doc)
             missing = [
                 label

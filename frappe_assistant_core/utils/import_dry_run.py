@@ -1113,8 +1113,14 @@ class _Checker:
         if not record:
             return []
         from frappe_assistant_core.utils import import_update
+        from frappe_assistant_core.utils.permissions import field_reader
 
         meta = frappe.get_meta(self.doctype)
+        # The stored values below are read with frappe.db, so a field above the user's permlevel
+        # is checked first: its value must not reach the message, nor decide whether there is one.
+        # A link the user can't read isn't looked at, so no row is flagged through it, and the
+        # import behaves as Data Import does for that user.
+        can_read = field_reader(meta)
         problems = []
         for field, value in payload.doc.items():
             df = meta.get_field(field)
@@ -1124,10 +1130,14 @@ class _Checker:
                 continue
             link_field = df.fetch_from.split(".")[0]
             link_df = meta.get_field(link_field)
-            linked = frappe.db.get_value(self.doctype, record, link_field)
-            if not link_df or not linked:
+            if not link_df or not can_read(link_field):
                 continue
-            if import_update._same(df, frappe.db.get_value(self.doctype, record, field), value):
+            linked = frappe.db.get_value(self.doctype, record, link_field)
+            if not linked:
+                continue
+            if can_read(field) and import_update._same(
+                df, frappe.db.get_value(self.doctype, record, field), value
+            ):
                 continue
             message = _(
                 "{0} on {1} {2} comes from its {3} {4}, so an import can't change it here. Change it on the {5}."

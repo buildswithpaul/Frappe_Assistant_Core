@@ -12,6 +12,8 @@ export const useSuggestionStore = defineStore("suggestions", () => {
 	// The context currently being fetched, so a newer one can supersede it.
 	let inFlightKey = null;
 	const suggestionsDisabled = ref(false);
+	// Whether the server allows the "Bring your data in" starter for this user.
+	const bringDataIn = ref(false);
 
 	const hasSuggestions = computed(() => allSuggestions.value.length > 0);
 
@@ -47,6 +49,7 @@ export const useSuggestionStore = defineStore("suggestions", () => {
 				allSuggestions.value = result || [];
 			}
 			suggestionsDisabled.value = Boolean(result?.suggestions_disabled);
+			bringDataIn.value = result?.bring_data_in === true;
 			lastContextKey.value = contextKey;
 		} catch (err) {
 			logger.error("Failed to load suggestions:", err);
@@ -63,6 +66,7 @@ export const useSuggestionStore = defineStore("suggestions", () => {
 
 	function clear() {
 		allSuggestions.value = [];
+		bringDataIn.value = false;
 		lastContextKey.value = null;
 		inFlightKey = null;
 	}
@@ -71,6 +75,7 @@ export const useSuggestionStore = defineStore("suggestions", () => {
 		allSuggestions,
 		isLoading,
 		suggestionsDisabled,
+		bringDataIn,
 		hasSuggestions,
 		loadSuggestions,
 		clear,

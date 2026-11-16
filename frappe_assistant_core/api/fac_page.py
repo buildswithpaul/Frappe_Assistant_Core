@@ -30,6 +30,8 @@ from frappe_assistant_core.assistant_core.doctype.fac_page.fac_page import (
     SYSTEM_MANAGER,
     is_system_manager,
 )
+from frappe_assistant_core.core.field_access import withheld_from_assistant
+from frappe_assistant_core.core.security_config import get_user_primary_role
 
 _OPEN, _NOT_FOUND, _NOT_ALLOWED = "open", "not found", "not allowed"
 
@@ -129,6 +131,8 @@ def get_page(slug: str) -> dict:
         "visibility": page.visibility,
         "owner_is_me": page.owner == user,
         "format_settings": page_format_settings(),
+        # FACO's screenshot of the page asks first only when the page has shown one of these.
+        "withheld": withheld_from_assistant(get_user_primary_role(user)),
     }
 
 

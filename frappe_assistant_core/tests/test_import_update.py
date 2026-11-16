@@ -12,6 +12,7 @@ and many-match rows are reported, the check shows old and new values, and the up
 Data Import's Update Existing Records, so MIG-09 handles what fails.
 """
 
+import json
 import unittest
 import unittest.mock
 
@@ -696,6 +697,35 @@ class TestUpdateFetchedFields(UpdateCase):
         [group] = [g for g in result["groups"] if g["cause"] == "Comes from a linked record"]
         self.assertEqual((group["count"], group["field"]), (1, "email_id"), group)
         self.assertEqual((result["ready"], result["failed"]), (1, 1), result)
+
+    def test_a_link_the_user_cannot_read_decides_nothing(self):
+        # The dry run reads the stored link with frappe.db; a link above the user's permlevel must
+        # not reach the message, nor decide whether a row is flagged (reviews of #390 and #412).
+        # Customer a has the contact set and b has none: both rows read the same.
+        self._need_fetched()
+        frappe.make_property_setter(
+            {
+                "doctype": "Customer",
+                "fieldname": "customer_primary_contact",
+                "property": "permlevel",
+                "value": 2,
+                "property_type": "Int",
+            },
+            validate_fields_for_doctype=False,
+        )
+        frappe.clear_cache(doctype="Customer")
+        self.addCleanup(frappe.clear_cache, doctype="Customer")
+        clerk = self.make_throwaway_user("fac-import-clerk", roles=("Sales Master Manager", "System Manager"))
+        self.addCleanup(frappe.set_user, "Administrator")
+        # nosemgrep: frappe-setuser — runs as a real user; the cleanup restores Administrator
+        frappe.set_user(clerk)
+
+        _session, result = self._check(self._rows("999", "888"))
+
+        self.assertEqual(
+            [g for g in result["groups"] if g["cause"] == "Comes from a linked record"], [], result
+        )
+        self.assertNotIn(self.contact, json.dumps(result, default=str))
 
     def test_the_groups_fix_is_to_leave_the_rows_out(self):
         self._need_fetched()
